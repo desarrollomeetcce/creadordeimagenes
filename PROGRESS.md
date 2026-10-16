@@ -1,5 +1,17 @@
 # Avance por fases · continuación del desarrollo
 
+## Continuación · preparación de IA y prueba opcional explícita
+
+Panel OWNER incorpora lista de preparación: clave guardada, cambios guardados, verificación vigente y revisión coincidente, modelos compatibles, parámetros y reserva positiva con límites suficientes. Los cambios locales deshabilitan verificación hasta guardarlos, bloquean la prueba y restablecen el consentimiento. Guardar sigue exigiendo nueva verificación. El catálogo se describe como resultado de la última consulta filtrada por compatibilidad; no afirma saldo ni generación exitosa y avisa cuando necesita renovarse.
+
+La prueba opcional ahora declara explícitamente modalidad Imagen + Texto y salida plana en su snapshot. La revisión inicial del modo Texto sugirió erróneamente que no llamaba imágenes: al seguir el worker se confirmó que el camino plano ya hacía ambas llamadas; no se atribuye a esta etapa la reparación de un fallo inexistente. El nuevo test recorre autorización HTTP, doble solicitud con igual requestId, ejecución, llamadas simuladas exactas (una dirección, una imagen), segunda ejecución sin duplicar, ledger de coste desconocido y descarga PNG privada.
+
+73 escenarios de integración HTTP/PostgreSQL aprobados (74 resultados incluyendo contenedor), 16 unitarias, tipos, build e instalación sin base. Una primera ejecución local omitió WORKFLOW_TARGET_WORLD=local en el proceso del test; se corrigió el entorno y se repitió la suite completa, sin cambios de permisos ni lógica de producción. No se hicieron llamadas de IA ni se alteraron los presupuestos o credenciales externos. La consulta de metadatos del 16/10/2026 confirmó modelos guardados, pero estado UNVERIFIED y límites/reserva cero; no se leyó ni descifró la clave. No hay migraciones.
+
+Chromium aprobó estados pendiente/listo, reserva cero, bloqueo por cambios sin guardar, restablecimiento del consentimiento y guardado seguido de nueva verificación pendiente. Móvil de 390 px inspeccionado sin desbordamiento ni errores JavaScript; no se enviaron solicitudes de verificación ni prueba al proveedor. El primer guion sintético no preparó maskedKey, por lo que el resumen señaló correctamente clave pendiente; se completó la fixture y se repitió.
+
+Revisión posterior tras el aviso del titular: reserva por afiche USD 3, máximo por operación USD 3 y límites diario/mensual USD 10 guardados (revisión 4). La configuración continúa UNVERIFIED, por lo que sigue pendiente pulsar Verificar conexión después de ese guardado. Son límites locales elegidos por OWNER, no precios confirmados del proveedor. No se modificaron ni se ejecutó generación real.
+
 ## Continuación · consumo completo e informes descargables
 
 Consumo de IA consulta todas las operaciones autorizadas con paginación de 50 y filtros por período en días de Lima, estado, modelo y coste informado/desconocido. OWNER ve todas las cuentas; ADMIN/USER sus propias operaciones y OBSERVER no accede. Los totales corresponden a todo el filtro, distinguen reservas locales, costes realmente informados, valores cero y cargos inciertos. La precisión usa enteros microUSD y seis decimales, incluso por encima del límite seguro de Number. Los nombres de recursos se resuelven según acceso vigente, sin snapshots, prompts ni credenciales.

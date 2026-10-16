@@ -1,5 +1,13 @@
 # Pruebas y evidencia
 
+## Continuación: preparación y generación opcional de prueba
+
+73 escenarios HTTP/PostgreSQL aprobados (74 resultados con contenedor), 16 unitarias, tipos, build e instalación sin base. Nuevo caso a través de POST ai/test: rechaza ausencia de consentimiento antes de crear trabajos; dos solicitudes con igual requestId devuelven el mismo trabajo y una única reserva. Snapshot explícito Imagen + Texto / flat. Adaptador simulado exige modelos/parámetros guardados, cuenta una dirección y una imagen, publica PNG y segunda ejecución no vuelve a llamar. Coste real permanece nulo; descarga privada PNG validada por firma.
+
+La primera ejecución omitió WORKFLOW_TARGET_WORLD=local en el proceso de pruebas y rechazó los casos de segundo plano; se configuró correctamente el entorno y se repitió toda la suite con base sintética limpia. La inspección del worker confirmó que la modalidad plana anterior ya invocaba imágenes incluso con el rótulo Texto; el cambio explicita su intención, no corrige una omisión de llamada. No se ejecutaron llamadas facturables ni cambios en datos externos.
+
+Chromium: configuración incompleta con conexión y presupuesto pendientes; configuración sintética preparada habilita prueba solo tras consentimiento; cambiar calidad invalida consentimiento y bloquea prueba/verificación hasta guardar; guardado requiere nueva comprobación. Sin POST de verificación ni generación, móvil 390 px sin desbordamiento/errores. La fixture inicial omitió maskedKey y fue rechazada correctamente por la lista de preparación; se completó y el recorrido final pasó.
+
 ## Continuación: consumo paginado, CSV y ZIP de 200 afiches
 
 72 escenarios HTTP/PostgreSQL aprobados (73 resultados con contenedor), cuatro escenarios SMTP adicionales, 16 unitarias, TypeScript, build e instalación sin base. La nueva prueba de consumo prepara 230 operaciones y comprueba páginas sin repeticiones, totales completos, un coste cero y otro superior al entero seguro de Number, reservas liberadas excluidas y cargos inciertos separados. Comprueba búsqueda literal, filtros combinados y errores de validación; OWNER global, ADMIN/USER propios, OBSERVER 403 y anónimo 401. Ninguna respuesta contiene usage privado ni prompts.

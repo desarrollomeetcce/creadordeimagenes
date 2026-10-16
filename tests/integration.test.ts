@@ -6051,6 +6051,134 @@ test("Integración HTTP + PostgreSQL (base exclusiva de pruebas, sin llamadas ex
         assert.equal(await db.usageLedger.count(), before);
       },
     );
+    await t.test(
+      "prueba IA opcional: consentimiento, imagen real simulada e idempotencia sin repetir llamadas",
+      async () => {
+        const { adapter, compatibleModels } = await import("../lib/providers");
+        const { encryptKey } = await import("../lib/crypto");
+        const prior = await db.providerConfiguration.findUniqueOrThrow({
+          where: { id: "global" },
+        });
+        const provider = adapter("openai"),
+          oldDirect = provider.direct,
+          oldGenerate = provider.generate;
+        let directs = 0,
+          images = 0;
+        const bytes = await (
+          await import("sharp")
+        )
+          .default({
+            create: {
+              width: 64,
+              height: 64,
+              channels: 3,
+              background: "#237355",
+            },
+          })
+          .png()
+          .toBuffer();
+        try {
+          await db.providerConfiguration.update({
+            where: { id: "global" },
+            data: {
+              encryptedKey: encryptKey(config.apiKey),
+              provider: "openai",
+              status: "VERIFIED",
+              verifiedAt: new Date(),
+              verifiedRevision: prior.revision,
+              imageModel: "gpt-image-1",
+              creativeModel: "gpt-4.1-mini",
+              quality: "low",
+              resolution: "1024x1024",
+              models: compatibleModels(["gpt-image-1", "gpt-4.1-mini"]),
+              imageReserveMicros: 1000n,
+              monthlyLimitMicros: 100000000000000n,
+              dailyLimitMicros: 100000000000000n,
+              operationLimitMicros: 100000000000000n,
+            },
+          });
+          provider.direct = async (_key, model, prompt) => {
+            directs++;
+            assert.equal(model, "gpt-4.1-mini");
+            assert(prompt.includes("Prueba de conexión"));
+            return {
+              text: "Afiche de prueba sin logos ni precios",
+              usage: null,
+            };
+          };
+          provider.generate = async (_key, args) => {
+            images++;
+            assert.equal(args.model, "gpt-image-1");
+            assert.equal(args.size, "1024x1024");
+            assert.equal(args.quality, "low");
+            return { bytes, usage: null };
+          };
+          const requestId = randomUUID();
+          const before = await db.generationJob.count();
+          assert.equal(
+            (await owner.call("ai/test", "POST", { requestId })).status,
+            400,
+          );
+          assert.equal(await db.generationJob.count(), before);
+          const accepted = await owner.call("ai/test", "POST", {
+            requestId,
+            confirmCharge: true,
+          });
+          assert.equal(accepted.status, 202);
+          const id = accepted.body.jobs[0];
+          const job = await db.generationJob.findUniqueOrThrow({
+            where: { id },
+          });
+          assert.equal((job.snapshot as any).mode, "Imagen + Texto");
+          assert.equal((job.snapshot as any).renderMode, "flat");
+          assert.equal(directs + images, 0);
+          const duplicate = await owner.call("ai/test", "POST", {
+            requestId,
+            confirmCharge: true,
+          });
+          assert.deepEqual(duplicate.body.jobs, [id]);
+          assert.equal(await db.generationJob.count(), before + 1);
+          assert.equal(await runOne({ id }), true);
+          assert.equal(await runOne({ id }), false);
+          assert.equal(directs, 1);
+          assert.equal(images, 1);
+          assert.equal(
+            (await db.generationJob.findUniqueOrThrow({ where: { id } }))
+              .status,
+            "COMPLETED",
+          );
+          const ledger = await db.usageLedger.findUniqueOrThrow({
+            where: { jobId: id },
+          });
+          assert.equal(ledger.actualMicros, null);
+          assert.equal(ledger.status, "CONSUMED_ESTIMATE");
+          const result = await db.variation.findFirstOrThrow({
+            where: { jobId: id },
+          });
+          const downloaded = await fetch(
+            root + `/api/variations/${result.id}?download`,
+            { headers: { Cookie: owner.cookie } },
+          );
+          assert.equal(downloaded.status, 200);
+          assert(
+            Buffer.from(await downloaded.arrayBuffer())
+              .subarray(0, 8)
+              .equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10])),
+          );
+        } finally {
+          provider.direct = oldDirect;
+          provider.generate = oldGenerate;
+          await db.providerConfiguration.update({
+            where: { id: "global" },
+            data: {
+              ...prior,
+              models: JSON.parse(JSON.stringify(prior.models)),
+              alternatives: JSON.parse(JSON.stringify(prior.alternatives)),
+            },
+          });
+        }
+      },
+    );
     await t.test("cierre de sesión invalida el token", async () => {
       assert.equal((await user.call("auth/logout", "POST")).status, 200);
       assert.equal((await user.call("projects")).status, 401);

@@ -1825,18 +1825,65 @@ function AISettings() {
     [],
   );
   const [charge, setCharge] = useState(false);
+  const [dirty, setDirty] = useState(false);
   const t = useTask();
   const refresh = useCallback(async () => {
     const r = await api("ai/config");
     setC(r.configuration);
+    setDirty(false);
+    setCharge(false);
     setAvailable(r.providers);
   }, []);
   useEffect(() => {
     void t.run(refresh, "");
   }, [refresh]);
   if (!c) return <p>Cargando configuración segura…{t.notice}</p>;
-  const update = (k: string, v: unknown) => setC({ ...c, [k]: v });
+  const update = (k: string, v: unknown) => {
+    setC({ ...c, [k]: v });
+    setDirty(true);
+    setCharge(false);
+  };
   const image = c.models.find((m: any) => m.id === c.imageModel);
+  const verified =
+    c.status === "VERIFIED" &&
+    c.verifiedRevision === c.revision &&
+    c.verifiedAt &&
+    Date.now() - new Date(c.verifiedAt).getTime() < 86400000;
+  const reserve = Number(c.imageReserveMicros);
+  const checks = [
+    { label: "Clave guardada en el servidor", ok: !!c.maskedKey },
+    { label: "Cambios guardados", ok: !dirty && !key },
+    {
+      label: "Conexión verificada durante las últimas 24 horas",
+      ok: !!verified,
+    },
+    {
+      label: "Modelos de imagen y dirección creativa compatibles seleccionados",
+      ok:
+        !!image &&
+        image.kind === "image" &&
+        c.models.some(
+          (m: any) => m.id === c.creativeModel && m.kind === "creative",
+        ),
+    },
+    {
+      label: "Calidad y resolución compatibles",
+      ok:
+        !!image?.qualities.includes(c.quality) &&
+        !!image?.resolutions.includes(c.resolution),
+    },
+    {
+      label: "Reserva por afiche mayor que cero y límites suficientes",
+      ok:
+        reserve > 0 &&
+        [
+          c.monthlyLimitMicros,
+          c.dailyLimitMicros,
+          c.operationLimitMicros,
+        ].every((v: string) => Number(v) >= reserve),
+    },
+  ];
+  const ready = checks.every((check) => check.ok);
   const save = async () => {
     await api("ai/config", "PUT", {
       provider: c.provider,
@@ -1882,6 +1929,27 @@ function AISettings() {
         presupuesto configurado. Una suscripción a ChatGPT no cubre el consumo
         de API.
       </div>
+      <section className="panel stack" aria-label="Estado de preparación de IA">
+        <h2>Antes de generar</h2>
+        <ul>
+          {checks.map((check) => (
+            <li key={check.label}>
+              <strong>{check.ok ? "Listo" : "Pendiente"}:</strong> {check.label}
+            </li>
+          ))}
+        </ul>
+        <p className="hint">
+          {ready
+            ? "Configuración preparada para solicitar una prueba. Todavía no demuestra que una imagen se genere correctamente ni confirma saldo."
+            : "Completa los pasos pendientes. Después de guardar modelos o límites, vuelve a verificar la conexión."}
+        </p>
+        {(dirty || key) && (
+          <div className="notice">
+            Hay cambios sin guardar. Guarda la configuración y después verifica
+            la conexión. La prueba usará únicamente los valores guardados.
+          </div>
+        )}
+      </section>
       <section className="panel stack">
         <h2>01　Proveedor y credenciales</h2>
         <div className="fields">
@@ -1903,7 +1971,10 @@ function AISettings() {
             <input
               type="password"
               value={key}
-              onChange={(e) => setKey(e.target.value)}
+              onChange={(e) => {
+                setKey(e.target.value);
+                setCharge(false);
+              }}
               placeholder={c.maskedKey ?? "Introduce tu clave API"}
               autoComplete="off"
               spellCheck={false}
@@ -1935,7 +2006,7 @@ function AISettings() {
             Guardar configuración
           </button>
           <button
-            disabled={t.busy || !!key || !c.maskedKey}
+            disabled={t.busy || dirty || !!key || !c.maskedKey}
             onClick={() =>
               void t.run(async () => {
                 await api("ai/verify", "POST");
@@ -1987,6 +2058,14 @@ function AISettings() {
           </p>
         ) : (
           <>
+            <p className="hint">
+              Estos modelos proceden de la última consulta al proveedor y del
+              filtro de compatibilidad de la aplicación.{" "}
+              {verified
+                ? "La consulta está vigente."
+                : "La configuración necesita una nueva verificación antes de generar."}{" "}
+              Consultar modelos no confirma saldo ni generación.
+            </p>
             <div className="fields">
               <label>
                 Modelo de imágenes
@@ -1994,7 +2073,7 @@ function AISettings() {
                   list="image-models"
                   value={c.imageModel ?? ""}
                   onChange={(e) => update("imageModel", e.target.value)}
-                  placeholder="Busca en modelos verificados"
+                  placeholder="Busca en modelos consultados"
                 />
                 <datalist id="image-models">
                   {c.models
@@ -2143,7 +2222,7 @@ function AISettings() {
           Entiendo el posible cargo y autorizo una generación de prueba.
         </label>
         <button
-          disabled={!charge || t.busy || c.status !== "VERIFIED"}
+          disabled={!charge || t.busy || !ready}
           onClick={() =>
             void t.run(async () => {
               await api("ai/test", "POST", {

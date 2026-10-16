@@ -580,7 +580,8 @@ async function handle(
               snapshot: {
                 prompt:
                   "Genera un afiche tipográfico que diga Prueba de conexión. No uses logos ni precios.",
-                mode: "Texto",
+                mode: "Imagen + Texto",
+                renderMode: "flat",
                 index: 0,
                 format: "1:1",
               },
