@@ -292,6 +292,11 @@ textarea {
 input[type="checkbox"] {
   width: auto;
 }
+input[type="color"] {
+  width: 56px;
+  height: 40px;
+  padding: 4px;
+}
 input[type="file"] {
   font-size: 12px;
 }

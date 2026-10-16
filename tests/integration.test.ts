@@ -383,6 +383,131 @@ test("Integración HTTP + PostgreSQL (base exclusiva de pruebas, sin llamadas ex
       },
     );
     await t.test(
+      "marca de proyecto: identidad aislada, permisos y revisión concurrente",
+      async () => {
+        const path = `projects/${pid}/brand`;
+        const initial = await user.call(path);
+        assert.equal(initial.status, 200);
+        assert.equal(initial.body.kit, null);
+        assert.equal(initial.body.canEdit, true);
+        assert.equal((await admin.call(path)).body.canEdit, false);
+        const values = {
+          expectedRevision: 0,
+          name: "Tienda de prueba",
+          prompt: "Comunicación cálida y directa.",
+          colors: ["#123456", "#ffffff"],
+          font: "DejaVu Serif",
+          logoAttachmentIds: [],
+        };
+        assert.equal((await admin.call(path, "PUT", values)).status, 403);
+        const saved = await user.call(path, "PUT", values);
+        assert.equal(saved.status, 200);
+        assert.equal(saved.body.revision, 1);
+        assert.equal((await user.call(path, "PUT", values)).status, 409);
+        assert.equal(
+          (
+            await user.call(path, "PUT", {
+              ...values,
+              expectedRevision: 1,
+              colors: ["red"],
+            })
+          ).status,
+          400,
+        );
+        const instructions = (
+          await user.call(`subproducts/${sid}/instructions`)
+        ).body;
+        assert(instructions.text.includes("Tienda de prueba"));
+        assert(instructions.text.includes("#123456"));
+        assert(instructions.text.includes("DejaVu Serif"));
+        assert.equal(instructions.brand.revision, 1);
+        const ownProjects = (await owner.call("projects")).body;
+        const seed = ownProjects.find(
+          (p: any) => p.name === "Cursos y Diplomados",
+        );
+        assert.equal(
+          (await owner.call(`projects/${seed.id}/brand`)).body.kit,
+          null,
+        );
+        assert.equal(
+          (await user.call(`projects/${seed.id}/brand`)).status,
+          404,
+        );
+      },
+    );
+    await t.test(
+      "logos de marca: archivos propios, selección y protección contra borrado",
+      async () => {
+        const sharp = (await import("sharp")).default;
+        const image = await sharp({
+          create: { width: 40, height: 20, channels: 3, background: "#123456" },
+        })
+          .png()
+          .toBuffer();
+        const upload = async (scope: string, id: string, name: string) => {
+          const form = new FormData();
+          form.set("scope", scope);
+          form.set("resourceId", id);
+          form.set("purpose", "Logo");
+          form.set(
+            "file",
+            new File([new Uint8Array(image)], name, { type: "image/png" }),
+          );
+          const result = await fetch(root + "/api/attachments", {
+            method: "POST",
+            headers: { Cookie: user.cookie, Origin: root },
+            body: form,
+          });
+          assert.equal(result.status, 201);
+          return (await result.json()).id as string;
+        };
+        const first = await upload("project", pid, "logo-marca.png"),
+          second = await upload("project", pid, "logo-no-seleccionado.png"),
+          nested = await upload("category", cid, "logo-categoria.png");
+        const values = {
+          expectedRevision: 1,
+          name: "Tienda de prueba",
+          prompt: "Comunicación cálida y directa.",
+          colors: ["#123456"],
+          font: "DejaVu Serif",
+          logoAttachmentIds: [nested],
+        };
+        assert.equal(
+          (await user.call(`projects/${pid}/brand`, "PUT", values)).status,
+          400,
+        );
+        assert.equal(
+          (
+            await user.call(`projects/${pid}/brand`, "PUT", {
+              ...values,
+              logoAttachmentIds: [first],
+            })
+          ).status,
+          200,
+        );
+        assert.equal(
+          (await user.call(`attachments/${first}`, "DELETE")).status,
+          409,
+        );
+        const instructions = (
+          await user.call(`subproducts/${sid}/instructions`)
+        ).body;
+        const ids = instructions.attachments.map((a: any) => a.id);
+        assert(ids.includes(first));
+        assert(ids.includes(nested));
+        assert(!ids.includes(second));
+        assert.equal(instructions.brand.revision, 2);
+        assert(!JSON.stringify(instructions).includes("test-assets"));
+        // A lower level may override the preferred palette through ordinary instructions.
+        const { resolveInstructions } = await import("../lib/inheritance");
+        const resolved = resolveInstructions([
+          { name: "Marca", prompt: "Paleta de marca preferida: #123456." },
+          { name: "Categoría", prompt: "Usar exclusivamente colores #ff0000." },
+        ]);
+        assert(!resolved.text.includes("#123456"));
+      },
+    );
+    await t.test(
       "conector: respuestas simuladas prueban éxito y error sin afirmar conexión externa",
       async () => {
         const original = globalThis.fetch;
@@ -1088,6 +1213,268 @@ test("Integración HTTP + PostgreSQL (base exclusiva de pruebas, sin llamadas ex
         });
         assert.equal(response.status, 200);
         assert.equal((await user.call(`variations/${id}/design`)).status, 410);
+      },
+    );
+    await t.test(
+      "nuevos lotes guardan una copia de marca sin alterar trabajos anteriores",
+      async () => {
+        const result = await user.call(`subproducts/${sid}/generate`, "POST", {
+          confirmCharge: true,
+          reviewedInstructions: true,
+          requestId: randomUUID(),
+        });
+        assert.equal(result.status, 202);
+        const job = await db.generationJob.findUniqueOrThrow({
+          where: { id: result.body.jobs[0] },
+        });
+        assert.equal((job.snapshot as any).brand.revision, 2);
+        assert((job.snapshot as any).prompt.includes("#123456"));
+        const kit = (await user.call(`projects/${pid}/brand`)).body.kit;
+        const { revision, projectId, updatedAt, ...values } = kit;
+        assert.equal(
+          (
+            await user.call(`projects/${pid}/brand`, "PUT", {
+              ...values,
+              expectedRevision: revision,
+              name: "Nueva marca",
+            })
+          ).status,
+          200,
+        );
+        const original = await db.generationJob.findUniqueOrThrow({
+          where: { id: job.id },
+        });
+        assert.equal((original.snapshot as any).brand.name, "Tienda de prueba");
+        for (const id of result.body.jobs)
+          await user.call(`jobs/${id}/cancel`, "POST");
+      },
+    );
+    const security = new Client();
+    let securityId = "",
+      resetToken = "";
+    const recoveredPassword = "Recuperada-segura-0123456789";
+    await t.test(
+      "recuperación exclusiva OWNER con reautenticación y token almacenado solo como hash",
+      async () => {
+        await security.call("auth/register", "POST", {
+          email: `security-${tag}@example.test`,
+          password,
+          name: "Seguridad",
+        });
+        securityId = (await owner.call("users")).body.find(
+          (u: any) => u.email === `security-${tag}@example.test`,
+        ).id;
+        await owner.call(`users/${securityId}`, "PATCH", {
+          role: "USER",
+          status: "APPROVED",
+        });
+        await security.call("auth/login", "POST", {
+          email: `security-${tag}@example.test`,
+          password,
+        });
+        const endpoint = `users/${securityId}/recovery`;
+        assert.equal(
+          (await user.call(endpoint, "POST", { currentPassword: password }))
+            .status,
+          403,
+        );
+        assert.equal(
+          (await admin.call(endpoint, "POST", { currentPassword: password }))
+            .status,
+          403,
+        );
+        assert.equal(
+          (
+            await owner.call(endpoint, "POST", {
+              currentPassword: "Contraseña-incorrecta-01234",
+            })
+          ).status,
+          403,
+        );
+        const first = await owner.call(endpoint, "POST", {
+          currentPassword: password,
+        });
+        assert.equal(first.status, 201);
+        const next = await owner.call(endpoint, "POST", {
+          currentPassword: password,
+        });
+        assert.equal(next.status, 201);
+        resetToken = next.body.token;
+        assert.equal(
+          (
+            await anonymous.call("auth/reset-password", "POST", {
+              token: first.body.token,
+              newPassword: recoveredPassword,
+            })
+          ).status,
+          400,
+        );
+        const stored = await db.passwordReset.findMany({
+          where: { userId: securityId },
+        });
+        assert.equal(stored.length, 1);
+        assert(!JSON.stringify(stored).includes(resetToken));
+        assert(
+          !JSON.stringify((await owner.call("audit")).body).includes(
+            resetToken,
+          ),
+        );
+      },
+    );
+    await t.test(
+      "recuperación de un solo uso, incluso ante solicitudes concurrentes",
+      async () => {
+        const results = await Promise.all(
+          [1, 2].map(() =>
+            anonymous.call("auth/reset-password", "POST", {
+              token: resetToken,
+              newPassword: recoveredPassword,
+            }),
+          ),
+        );
+        assert.deepEqual(results.map((r) => r.status).sort(), [200, 400]);
+        assert.equal((await security.call("auth/me")).status, 401);
+        assert.equal(
+          (
+            await security.call("auth/login", "POST", {
+              email: `security-${tag}@example.test`,
+              password,
+            })
+          ).status,
+          401,
+        );
+        assert.equal(
+          (
+            await security.call("auth/login", "POST", {
+              email: `security-${tag}@example.test`,
+              password: recoveredPassword,
+            })
+          ).status,
+          200,
+        );
+        assert.equal(
+          (
+            await anonymous.call("auth/reset-password", "POST", {
+              token: resetToken,
+              newPassword: password,
+            })
+          ).status,
+          400,
+        );
+      },
+    );
+    await t.test(
+      "caducidad de enlaces y suspensión revocan la recuperación",
+      async () => {
+        const endpoint = `users/${securityId}/recovery`;
+        const expired = await owner.call(endpoint, "POST", {
+          currentPassword: password,
+        });
+        await db.passwordReset.updateMany({
+          where: { userId: securityId },
+          data: { expiresAt: new Date(0) },
+        });
+        assert.equal(
+          (
+            await anonymous.call("auth/reset-password", "POST", {
+              token: expired.body.token,
+              newPassword: password,
+            })
+          ).status,
+          400,
+        );
+        const valid = await owner.call(endpoint, "POST", {
+          currentPassword: password,
+        });
+        await owner.call(`users/${securityId}`, "PATCH", {
+          role: "USER",
+          status: "SUSPENDED",
+        });
+        assert.equal(
+          (await owner.call(endpoint, "POST", { currentPassword: password }))
+            .status,
+          409,
+        );
+        await owner.call(`users/${securityId}`, "PATCH", {
+          role: "USER",
+          status: "APPROVED",
+        });
+        assert.equal(
+          (
+            await anonymous.call("auth/reset-password", "POST", {
+              token: valid.body.token,
+              newPassword: password,
+            })
+          ).status,
+          400,
+        );
+      },
+    );
+    await t.test(
+      "cambiar contraseña exige la actual y cierra sesiones y enlaces pendientes",
+      async () => {
+        await security.call("auth/login", "POST", {
+          email: `security-${tag}@example.test`,
+          password: recoveredPassword,
+        });
+        const second = new Client();
+        await second.call("auth/login", "POST", {
+          email: `security-${tag}@example.test`,
+          password: recoveredPassword,
+        });
+        const reset = await owner.call(`users/${securityId}/recovery`, "POST", {
+          currentPassword: password,
+        });
+        assert.equal(
+          (
+            await security.call("auth/change-password", "POST", {
+              currentPassword: password,
+              newPassword: "Nueva-segura-0123456789",
+            })
+          ).status,
+          403,
+        );
+        assert.equal(
+          (
+            await security.call("auth/change-password", "POST", {
+              currentPassword: recoveredPassword,
+              newPassword: "corta",
+            })
+          ).status,
+          400,
+        );
+        assert.equal(
+          (
+            await security.call("auth/change-password", "POST", {
+              currentPassword: recoveredPassword,
+              newPassword: "Nueva-segura-0123456789",
+            })
+          ).status,
+          200,
+        );
+        assert.equal((await second.call("auth/me")).status, 401);
+        assert.equal((await security.call("auth/me")).status, 401);
+        assert.equal(
+          (
+            await anonymous.call("auth/reset-password", "POST", {
+              token: reset.body.token,
+              newPassword: password,
+            })
+          ).status,
+          400,
+        );
+        assert.equal(
+          (
+            await security.call("auth/login", "POST", {
+              email: `security-${tag}@example.test`,
+              password: "Nueva-segura-0123456789",
+            })
+          ).status,
+          200,
+        );
+        const logs = JSON.stringify((await owner.call("audit")).body);
+        assert(!logs.includes(recoveredPassword));
+        assert(!logs.includes(reset.body.token));
       },
     );
     await t.test(

@@ -27,6 +27,16 @@ model User {
   sessions Session[]
   projects Project[]
   memberships ProjectMember[]
+  passwordResets PasswordReset[]
+}
+model PasswordReset {
+  tokenHash String @id
+  userId String
+  user User @relation(fields:[userId],references:[id])
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  @@index([userId])
+  @@index([expiresAt])
 }
 model Session {
   id String @id
@@ -48,6 +58,7 @@ model Project {
   deletedAt DateTime?
   categories Category[]
   members ProjectMember[]
+  brandKit BrandKit?
 }
 model ProjectMember {
   projectId String
@@ -97,7 +108,27 @@ model Attachment {
   text String @default("")
   size Int
   createdAt DateTime @default(now())
+  brandLogos BrandLogo[]
   @@index([scope,resourceId])
+}
+
+model BrandKit {
+  projectId String @id
+  project Project @relation(fields:[projectId],references:[id])
+  name String @default("")
+  prompt String @default("")
+  colors Json @default("[]")
+  font String?
+  revision Int @default(1)
+  updatedAt DateTime @updatedAt
+  logos BrandLogo[]
+}
+model BrandLogo {
+  projectId String
+  brand BrandKit @relation(fields:[projectId],references:[projectId],onDelete:Cascade)
+  attachmentId String
+  attachment Attachment @relation(fields:[attachmentId],references:[id],onDelete:Restrict)
+  @@id([projectId,attachmentId])
 }
 model ProviderConfiguration {
   id String @id @default("global")

@@ -51,6 +51,7 @@ export async function regenerateSelected(
         format: snapshot.format ?? "1:1",
         renderMode: document ? "editable" : (snapshot.renderMode ?? "flat"),
         sourceVariationId: id,
+        brand: snapshot.brand ?? null,
         attachmentIds: snapshot.attachmentIds ?? [],
       },
     });

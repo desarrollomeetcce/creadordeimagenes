@@ -186,7 +186,7 @@ async function handle(
           "Tu cuenta todavía no está aprobada o está suspendida.",
           403,
         );
-        await session(user.id);
+        await session(user.id, user.passwordHash);
         await audit(user.id, "INICIO_SESION");
         return send({ ok: true });
       }
@@ -232,7 +232,7 @@ async function handle(
           });
           return u;
         });
-        await session(user.id);
+        await session(user.id, user.passwordHash);
         await audit(user.id, "INSTALACION_INICIAL");
         return send({ ok: true }, 201);
       }
@@ -252,7 +252,57 @@ async function handle(
         201,
       );
     }
+    if (route === "auth/reset-password" && method === "POST") {
+      const { resetPassword } = await import("@/lib/accounts");
+      return send(await resetPassword(await body(req)));
+    }
     const user = await actor();
+    if (route === "auth/change-password" && method === "POST") {
+      const { changePassword } = await import("@/lib/accounts");
+      const result = await changePassword(user, await body(req));
+      (await cookies()).delete("session");
+      return send(result);
+    }
+    if (
+      parts[0] === "users" &&
+      parts[1] &&
+      parts[2] === "recovery" &&
+      parts.length === 3 &&
+      method === "POST"
+    ) {
+      const { issuePasswordReset } = await import("@/lib/accounts");
+      return send(
+        await issuePasswordReset(user, parts[1], await body(req)),
+        201,
+      );
+    }
+    if (
+      parts[0] === "projects" &&
+      parts[1] &&
+      parts[2] === "brand" &&
+      parts.length === 3
+    ) {
+      const project = await projectAccess(
+        user,
+        parts[1],
+        method === "GET" ? "VIEW" : "EDIT",
+      );
+      const { readBrand, saveBrand } = await import("@/lib/brand");
+      if (method === "GET")
+        return send({
+          kit: await readBrand(project.id),
+          canEdit:
+            user.role === "OWNER" ||
+            project.ownerId === user.id ||
+            project.members.some(
+              (m) =>
+                m.userId === user.id &&
+                ["EDIT", "MANAGE"].includes(m.permission),
+            ),
+        });
+      if (method === "PUT")
+        return send(await saveBrand(user, project.id, await body(req)));
+    }
     if (route === "auth/me" && method === "GET")
       return send({
         id: user.id,
@@ -696,33 +746,24 @@ async function handle(
         return send({ ok: true });
       }
       if (parts[2] === "instructions" && method === "GET") {
-        const result = resolveInstructions([
-          { name: "Proyecto", prompt: sub.category.project.prompt },
-          { name: "Categoría", prompt: sub.category.prompt },
-          { name: "Subproducto", prompt: sub.prompt },
-        ]);
-        const attachments = await db.attachment.findMany({
-          where: {
-            OR: [
-              { scope: "project", resourceId: sub.category.projectId },
-              { scope: "category", resourceId: sub.categoryId },
-              { scope: "subproduct", resourceId: id },
-            ],
-          },
-          select: {
-            id: true,
-            name: true,
-            purpose: true,
-            text: true,
-            mime: true,
-          },
-        });
+        const { previewSubproduct } = await import("@/lib/generation");
+        const preview = await previewSubproduct(id);
         return send({
-          ...result,
-          settings: effectiveSettings(sub.category.settings, sub.settings),
-          attachments,
+          ...preview.instructions,
+          settings: preview.settings,
+          brand: preview.brand,
+          attachments: preview.attachments.map(
+            ({ id, name, purpose, text, mime }) => ({
+              id,
+              name,
+              purpose,
+              text,
+              mime,
+            }),
+          ),
         });
       }
+
       if (parts[2] === "generate" && method === "POST") {
         const b = z
           .object({
@@ -820,6 +861,11 @@ async function handle(
         const a = await db.attachment.findUnique({ where: { id: parts[1] } });
         demand(a, "Adjunto no encontrado.", 404);
         await resourceAccess(user, a.scope, a.resourceId, "EDIT");
+        demand(
+          !(await db.brandLogo.findFirst({ where: { attachmentId: a.id } })),
+          "Este logo forma parte de la identidad de marca. Retíralo de la identidad antes de eliminarlo.",
+          409,
+        );
         const used = await db.imageVersion.findFirst({
           where: {
             document: {
@@ -1094,6 +1140,7 @@ async function handle(
           );
         await tx.user.update({ where: { id: target.id }, data: b });
         await tx.session.deleteMany({ where: { userId: target.id } });
+        await tx.passwordReset.deleteMany({ where: { userId: target.id } });
       });
       await audit(user.id, "USUARIO_ACTUALIZADO", parts[1]);
       return send({ ok: true });

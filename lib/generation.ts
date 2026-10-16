@@ -1,6 +1,7 @@
 import { db } from "./db";
 import { demand } from "./errors";
 import { configured, reserveJobs } from "./ai";
+import { readBrand, brandInstructions } from "./brand";
 import {
   effectiveSettings,
   resolveInstructions,
@@ -11,12 +12,14 @@ export async function previewSubproduct(id: string) {
     where: { id },
     include: { category: { include: { project: true } } },
   });
+  const brand = await readBrand(s.category.projectId);
   const instructions = resolveInstructions([
+    { name: "Identidad de marca", prompt: brandInstructions(brand) },
     { name: "Proyecto", prompt: s.category.project.prompt },
     { name: "Categoría", prompt: s.category.prompt },
     { name: "Subproducto", prompt: s.prompt },
   ]);
-  const attachments = await db.attachment.findMany({
+  const inheritedAttachments = await db.attachment.findMany({
     where: {
       OR: [
         { scope: "project", resourceId: s.category.projectId },
@@ -25,10 +28,18 @@ export async function previewSubproduct(id: string) {
       ],
     },
   });
+  const attachments = inheritedAttachments.filter(
+    (a) =>
+      !brand ||
+      a.scope !== "project" ||
+      !/logo/i.test(a.purpose) ||
+      brand.logoAttachmentIds.includes(a.id),
+  );
   return {
     sub: s,
     instructions,
     attachments,
+    brand,
     settings: effectiveSettings(s.category.settings, s.settings),
   };
 }
@@ -62,6 +73,10 @@ export async function generateBatch(
       ),
       `${sub.name}: un documento no contiene texto extraíble; utiliza TXT o un PDF con texto.`,
     );
+    demand(
+      p.attachments.filter((a) => a.mime.startsWith("image/")).length <= 9,
+      `${sub.name}: utiliza como máximo nueve referencias visuales por afiche.`,
+    );
     const modes = [
       ...Array(s.textCount).fill("Texto"),
       ...Array(s.imageTextCount).fill("Imagen + Texto"),
@@ -78,6 +93,7 @@ export async function generateBatch(
           index,
           format: s.format,
           renderMode: s.editable ? "editable" : "flat",
+          brand: p.brand,
           attachmentIds: p.attachments
             .filter((a) => a.mime.startsWith("image/"))
             .map((a) => a.id),

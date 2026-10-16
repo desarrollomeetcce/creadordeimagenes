@@ -2,11 +2,12 @@
 
 ## Alcance
 
-La referencia sigue siendo el prompt maestro completo (54 secciones) y el requisito obligatorio de administración visual de IA. Se conservan en docs/MASTER_SPEC.md y docs/MASTER_SPEC_PDF.txt. Esta continuación añade comportamiento real a la primera entrega y mantiene el mismo PR. La plataforma completa todavía no se declara terminada ni desplegada.
+La referencia sigue siendo el prompt maestro completo (54 secciones) y el requisito obligatorio de administración visual de IA. Se conservan en docs/MASTER_SPEC.md y docs/MASTER_SPEC_PDF.txt. Esta continuación añade comportamiento real a la primera entrega y se integra en la rama main, como solicitó el OWNER. La plataforma completa todavía no se declara terminada ni desplegada.
 
 ## Funciones implementadas
 
-- Instalación segura de OWNER, login/logout, registro pendiente, aprobaciones, roles y protección del último OWNER activo.
+- Instalación segura de OWNER, login/logout, registro pendiente, aprobaciones, roles y protección del último OWNER activo. Cambio de contraseña con reautenticación, cierre de todas las sesiones y revocación de enlaces. Recuperación asistida por OWNER mediante enlace de un solo uso, válido 30 minutos y entregado manualmente; solo se persiste su hash.
+- Identidad de marca por proyecto: nombre, instrucciones, paleta preferida, tipografía disponible y selección de logos propios. Herencia con prioridad de niveles específicos, protección de logos usados, permisos y control de revisión concurrente. Cada generación conserva una copia de la marca; cambiarla no modifica los trabajos anteriores.
 - Proyectos independientes y proyecto inicial Cursos y Diplomados con su prompt completo. Categorías, creación de 1–20 subproductos por operación sin limitar el total de la categoría, formularios compactos y prompts versionados.
 - Herencia operativa y resolución convencional de conflictos básicos comerciales, con vista previa y revisión humana. No se atribuye comprensión semántica completa al motor convencional.
 - Adjuntos privados TXT/CSV, PDF/DOCX con extracción convencional de texto e imágenes PNG/JPG/WebP. SVG simples con lista permitida estricta, rasterización a PNG y rechazo de scripts, enlaces, entidades y elementos no admitidos.
@@ -28,7 +29,7 @@ La referencia sigue siendo el prompt maestro completo (54 secciones) y el requis
 - Cliente Prisma generado y migración aditiva aplicada correctamente en PostgreSQL temporal.
 - TypeScript y compilación de producción aprobados.
 - 15 pruebas unitarias aprobadas: incluyen cifrado, herencia, contratos de IA simulados, documentos, proporciones, edición gráfica, logos y SVG.
-- Suite de integración ampliada contra HTTP/PostgreSQL reales: edición/versiones, concurrencia, IA simulada, revisión, duplicación, cancelación, biblioteca, presets, límites particulares, regeneración selectiva y limpieza. Resultado: 33 escenarios aprobados (34 resultados contando el contenedor de la suite).
+- Suite de integración ampliada contra HTTP/PostgreSQL reales: edición/versiones, concurrencia, IA simulada, revisión, duplicación, cancelación, biblioteca, presets, límites particulares, regeneración selectiva y limpieza. Resultado: 40 escenarios aprobados (41 resultados contando el contenedor de la suite).
 - No se han utilizado credenciales reales de IA ni efectuado llamadas facturables. Las pruebas de proveedor usan transporte simulado explícito; no establecen conectividad real con OpenAI.
 
 ## Estado por fases
@@ -40,8 +41,8 @@ La referencia sigue siendo el prompt maestro completo (54 secciones) y el requis
 | 2 · IA                       | Adaptador y flujo completos en código, con pruebas simuladas | Generación real autorizada, validación visual y conciliación del consumo                                                              |
 | 3 · Producción masiva        | Funcional parcial                                            | Selección granular de subproductos, métricas de rendimiento y pruebas de carga reales                                                 |
 | 4 · Edición y calidad        | Funcional parcial                                            | QA en navegador, detección de superposiciones, dirección creativa y fidelidad de fotos/logos con IA real                              |
-| 5 · Productividad            | Funcional parcial                                            | Identidades de marca, adjuntos reutilizables en presets y descargas transversales por proyecto/categoría                              |
-| 6 · Administración           | Funcional parcial                                            | Recuperación de contraseña, gestión avanzada, conciliación tarifaria, estadísticas y retención separada de miniaturas administrativas |
+| 5 · Productividad            | Funcional parcial                                            | Adjuntos reutilizables en presets y descargas transversales por proyecto/categoría                              |
+| 6 · Administración           | Funcional parcial                                            | Recuperación automática por correo y emergencia del único OWNER, gestión avanzada, conciliación tarifaria, estadísticas y retención separada de miniaturas administrativas |
 | 7 · Producción               | Preparada parcialmente                                       | Construcción Docker, VPS privado, HTTPS, backups ensayados, revisión de seguridad y monitorización                                    |
 
 El flujo comercial de 120 afiches reales con logos y revisiones visuales no se considera validado hasta efectuar la prueba externa autorizada. La entrega sigue en borrador y no se ha habilitado para trabajadores.
@@ -50,4 +51,12 @@ El flujo comercial de 120 afiches reales con logos y revisiones visuales no se c
 
 Se añadió una pantalla de instalación pendiente cuando la base no está configurada, no responde o faltan sus tablas, evitando presentar un ingreso aparentemente listo. El estado comprueba disponibilidad real y no crea usuarios públicos. Se documenta PostgreSQL externo y la portabilidad en docs/VERCEL_TRIAL.md, y el migrador admite DIRECT_DATABASE_URL para conexiones de migración separadas.
 
-Verificación: compilación correcta, regresión de 33 escenarios HTTP/PostgreSQL aprobada y prueba independiente de despliegue sin base aprobada. Todavía no se ha creado ni conectado una base externa ni una cuenta en el despliegue Vercel del usuario; falta acceso autorizado a los servicios. Los archivos persistentes y el worker requieren adaptación o alojamiento separado antes de generar imágenes allí.
+Verificación: compilación correcta, regresión de 33 escenarios HTTP/PostgreSQL aprobada y prueba independiente de despliegue sin base aprobada. Todavía no se ha creado ni conectado una base externa ni una cuenta en el despliegue Vercel del usuario; falta conectar técnicamente los servicios. Los archivos persistentes y el worker requieren adaptación o alojamiento separado antes de generar imágenes allí.
+
+## Continuación · identidad y seguridad de cuentas
+
+Migración aditiva `202610160003_brand_kits`: BrandKit, BrandLogo y PasswordReset. Los logos tienen referencias de base de datos que impiden borrarlos mientras formen parte de una identidad. No se introducen claves ni cuentas públicas. La creación de una sesión revalida la contraseña vigente bajo bloqueo para impedir que un login concurrente con una contraseña antigua sobreviva al cambio. La emisión de recuperación vuelve a comprobar el rol y las credenciales del OWNER dentro de la transacción.
+
+La recuperación implementada es asistida desde Usuarios: el OWNER confirma su contraseña y entrega el enlace por un canal privado. No hay envío automático de correo y no se presenta como enviado. La recuperación de emergencia del único OWNER sin otra sesión o segundo OWNER sigue pendiente de un procedimiento de instalación seguro. Los accesos a Vercel y la base externa quedan para una etapa posterior, por indicación del usuario.
+
+Recorrido local en Chromium aprobado para guardar la marca y recuperar/cambiar contraseña desde los formularios reales, con PostgreSQL real y sin errores JavaScript. Pantalla de marca inspeccionada en escritorio y móvil. Regresión final: 40 escenarios aprobados. Esto no valida el despliegue Vercel ni la generación externa real, que siguen pendientes.

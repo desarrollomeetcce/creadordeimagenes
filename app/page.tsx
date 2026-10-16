@@ -1,6 +1,12 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
 import { VariationEditor } from "./components/variation-editor";
+import { BrandKit } from "./components/brand-kit";
+import {
+  AccountSecurity,
+  RecoveryIssuer,
+  ResetPasswordForm,
+} from "./components/account-security";
 import {
   Library,
   Presets,
@@ -111,6 +117,7 @@ export default function Home() {
   const [loading, setLoading] = useState(true);
   const [setup, setSetup] = useState(false);
   const [installationError, setInstallationError] = useState("");
+  const [resetToken, setResetToken] = useState("");
   const [view, setView] = useState("projects");
   const [project, setProject] = useState<Project | null>(null);
   const [category, setCategory] = useState<Category | null>(null);
@@ -137,6 +144,10 @@ export default function Home() {
     }
   }, []);
   useEffect(() => {
+    if (window.location.hash.startsWith("#recuperar=")) {
+      setResetToken(window.location.hash.slice("#recuperar=".length));
+      window.history.replaceState(null, "", window.location.pathname);
+    }
     void reloadUser();
   }, [reloadUser]);
   const openProject = async (id: string) => {
@@ -151,6 +162,20 @@ export default function Home() {
   };
   if (loading)
     return <div className="login-form">Cargando tu espacio de trabajo…</div>;
+  if (resetToken)
+    return (
+      <ResetPasswordForm
+        token={resetToken}
+        onDone={async () => {
+          setResetToken("");
+          await reloadUser();
+        }}
+        onCancel={() => {
+          setResetToken("");
+          void reloadUser();
+        }}
+      />
+    );
   if (!user && installationError)
     return (
       <div className="login">
@@ -197,6 +222,7 @@ export default function Home() {
     usage: "Consumo de IA",
     trash: "Papelera",
     jobs: "Generaciones",
+    account: "Mi cuenta",
   };
   const navigate = (v: string) => {
     setView(v);
@@ -231,6 +257,7 @@ export default function Home() {
             ["history", "◷", "Historial"],
             ["trash", "⌫", "Papelera"],
             ["usage", "↗", "Consumo de IA"],
+            ["account", "♙", "Mi cuenta"],
             ...(user.role !== "USER" ? [["users", "♙", "Usuarios"]] : []),
             ...(user.role === "OWNER"
               ? [["ai", "⚙", "Configuración de IA"]]
@@ -267,14 +294,16 @@ export default function Home() {
           <span className="badge">Producción publicitaria</span>
         </header>
         <main>
-          {view === "library" ? (
+          {view === "account" ? (
+            <AccountSecurity onChanged={reloadUser} />
+          ) : view === "library" ? (
             <Library />
           ) : view === "presets" ? (
             <Presets />
           ) : view === "ai" ? (
             <AISettings />
           ) : view === "users" ? (
-            <Users />
+            <Users isOwner={user.role === "OWNER"} />
           ) : view === "history" ? (
             <History />
           ) : view === "usage" ? (
@@ -409,6 +438,12 @@ function Login({
           >
             {mode === "login" ? "Solicitar una cuenta" : "Volver al ingreso"}
           </button>
+        )}
+        {!setup && mode === "login" && (
+          <p className="muted">
+            ¿Olvidaste tu contraseña? Solicita al OWNER un enlace temporal de
+            recuperación y ábrelo para elegir una nueva contraseña.
+          </p>
         )}
         {t.notice}
       </section>
@@ -742,6 +777,7 @@ function ProjectEditor({
           <Uploads scope="project" id={p.id} />
         </div>
       </details>
+      <BrandKit key={p.id} projectId={p.id} />
       <div className="row" style={{ margin: "18px 0" }}>
         <button onClick={() => setShare(!share)}>Compartir proyecto</button>
         <button
@@ -2077,7 +2113,7 @@ function Gallery({ sub, back }: { sub: Item; back: () => void }) {
     </>
   );
 }
-function Users() {
+function Users({ isOwner }: { isOwner: boolean }) {
   const [users, setUsers] = useState<any[]>([]);
   const t = useTask();
   const refresh = useCallback(async () => setUsers(await api("users")), []);
@@ -2165,6 +2201,7 @@ function Users() {
                   >
                     Guardar
                   </button>
+                  {isOwner && <RecoveryIssuer userId={u.id} name={u.name} />}
                 </td>
               </tr>
             ))}

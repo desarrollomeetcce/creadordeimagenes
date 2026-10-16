@@ -158,9 +158,17 @@ export async function variationRoutes(
             mode: snapshot.mode ?? "Imagen + Texto",
             index: 0,
             format: snapshot.format ?? "1:1",
-            attachmentIds: attachments
-              .filter((a) => a.mime.startsWith("image/"))
-              .map((a) => a.id),
+            brand: snapshot.brand ?? null,
+            attachmentIds: [
+              ...new Set([
+                ...(Array.isArray(snapshot.attachmentIds)
+                  ? (snapshot.attachmentIds as string[])
+                  : []),
+                ...attachments
+                  .filter((a) => a.mime.startsWith("image/"))
+                  .map((a) => a.id),
+              ]),
+            ],
             ...(action === "edit-ai"
               ? {
                   editVariationId: id,

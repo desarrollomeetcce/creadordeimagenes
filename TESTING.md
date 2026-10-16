@@ -32,7 +32,7 @@ Los resultados simulados prueban contratos, persistencia, permisos y descargas; 
 
 ## Pendientes
 
-QA visual/responsive con navegador, accesibilidad, cargas de 120 imágenes contra un proveedor real, expiración a 48 horas en reloj controlado, restauración de backups, fidelidad de logos, exclusiones visuales, seguridad avanzada de parsers, reintentos/cancelación, recuperación de contraseña, QA visual del editor y prueba de generación externa explícitamente autorizada.
+QA visual/responsive con navegador, accesibilidad, cargas de 120 imágenes contra un proveedor real, expiración a 48 horas en reloj controlado, restauración de backups, fidelidad de logos, exclusiones visuales, seguridad avanzada de parsers, recuperación automática por correo, recuperación del único OWNER, QA visual del editor y prueba de generación externa explícitamente autorizada.
 
 ## Continuación: edición y productividad
 
@@ -42,4 +42,14 @@ La corrección de una consulta de conteo de variaciones se verificó repitiendo 
 
 ## Instalación incompleta en un alojamiento web
 
-`npm run test:installation` inicia una compilación de producción sin DATABASE_URL y comprueba que `/api/auth/status` responde 503 con un mensaje de instalación pendiente, sin indicar que existen usuarios ni exponer nombres de variables o credenciales. Prueba aprobada. La regresión de 33 escenarios con PostgreSQL real también se repitió y aprobó después de la mejora. No se ha verificado aún el despliegue externo del usuario por falta de acceso autorizado a Vercel y al proveedor PostgreSQL.
+`npm run test:installation` inicia una compilación de producción sin DATABASE_URL y comprueba que `/api/auth/status` responde 503 con un mensaje de instalación pendiente, sin indicar que existen usuarios ni exponer nombres de variables o credenciales. Prueba aprobada. La regresión de 33 escenarios con PostgreSQL real también se repitió y aprobó después de la mejora. No se ha verificado aún el despliegue externo del usuario porque todavía no se han conectado Vercel y el proveedor PostgreSQL.
+
+## Identidad de marca y seguridad de cuentas
+
+Regresión ampliada: **40 escenarios HTTP/PostgreSQL aprobados (41 resultados contando el contenedor)**. Se prueban aislamiento de marca entre proyectos, permisos de consulta/edición, revisión concurrente, paletas válidas, selección de logos propios, rechazo de logos de otro nivel, protección contra borrado, herencia y conservación de snapshots tras modificar una identidad.
+
+Cuentas: emisión solo OWNER y con reautenticación, hash sin token en base/auditoría, invalidación del enlace anterior, consumo único incluso concurrente, vencimiento, suspensión y aprobación posterior sin revivir enlaces, cambio de contraseña con comprobación de la actual, cierre de todas las sesiones e invalidación de recuperaciones pendientes.
+
+La compilación de producción, TypeScript, 15 unitarias y la prueba de instalación sin base están aprobados. Ninguna prueba realizó llamadas facturables ni envió correos externos.
+
+Prueba de navegador local con Chromium sobre la compilación de producción y datos sintéticos: ingreso OWNER → abrir proyecto → guardar identidad → generar enlace desde Usuarios → abrir enlace en una sesión independiente → comprobar que se retira el fragmento de la dirección → recuperar contraseña → ingresar con la nueva → cambiarla desde Mi cuenta → volver al ingreso. Recorrido aprobado, sin errores JavaScript. Se revisó la pantalla de marca en escritorio (1365 px) y móvil (390 px). La primera espera del script buscaba una etiqueta con distinto uso de mayúsculas; se corrigió el selector y se repitió el recorrido completo satisfactoriamente. No se ha extendido esta QA al editor ni a toda la plataforma.

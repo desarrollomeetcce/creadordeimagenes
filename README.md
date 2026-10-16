@@ -1,6 +1,6 @@
 # Creador de Imágenes · Estudio AI
 
-Aplicación web en español para producción publicitaria multiproyecto. Implementación funcional con persistencia PostgreSQL, autenticación, proyectos, categorías, subproductos, instrucciones heredadas, administración cifrada de IA exclusiva del OWNER, composición editable, historial de versiones, biblioteca y límites por usuario/proyecto.
+Aplicación web en español para producción publicitaria multiproyecto. Implementación funcional con persistencia PostgreSQL, autenticación, proyectos, categorías, subproductos, instrucciones heredadas, administración cifrada de IA exclusiva del OWNER, composición editable, historial de versiones, biblioteca, identidad de marca por proyecto, recuperación asistida de cuentas y límites por usuario/proyecto.
 
 **Estado:** desarrollo por fases; no es todavía la totalidad del prompt maestro ni una aplicación certificada para producción. Véanse [PROGRESS.md](PROGRESS.md) y [TESTING.md](TESTING.md). No se ha verificado una generación externa real: faltan credenciales del proveedor. Las pruebas simuladas están identificadas como tales.
 
@@ -40,3 +40,9 @@ No se contratan servicios ni se realizan llamadas de IA automáticamente al crea
 La generación editable conserva textos y logos independientes. En la galería, **Ajustar / Editar con IA** abre el editor: los ajustes manuales no consumen IA y crean versiones nuevas. Restaurar conserva el historial; editar fondo con IA mantiene las capas, mientras editar la imagen completa produce una versión aplanada. Toda operación facturable exige autorización explícita. Se añadieron biblioteca con carpetas, configuraciones guardadas, aprobación/rechazo, duplicación, regeneración selectiva y controles de cola.
 
 La instalación de VPS está preparada en [docs/VPS_INSTALLATION.md](docs/VPS_INSTALLATION.md); todavía no se ha realizado ni probado su construcción Docker.
+
+## Identidad y cuentas
+
+Dentro del proyecto, **Identidad de marca** permite guardar instrucciones, colores, tipografía y logos. Primero cargar los logos en los adjuntos del proyecto, actualizar la identidad y seleccionarlos. Las instrucciones específicas de categorías/subproductos tienen prioridad; los trabajos existentes conservan su configuración.
+
+**Mi cuenta** permite cambiar la contraseña y cerrar todas las sesiones. En **Usuarios**, el OWNER puede generar un enlace temporal de recuperación tras confirmar su contraseña. El enlace debe entregarse de forma privada al titular; no se envía un correo automáticamente. Los enlaces caducan a los 30 minutos y solo funcionan una vez. La recuperación del único OWNER que haya perdido todos sus accesos todavía requiere completar un procedimiento seguro.

@@ -24,11 +24,22 @@ export async function actor() {
   );
   return s.user;
 }
-export async function session(userId: string) {
+export async function session(userId: string, expectedPasswordHash: string) {
   const raw = randomBytes(32).toString("base64url");
   const expires = new Date(Date.now() + 8 * 3600000);
-  await db.session.create({
-    data: { id: tokenHash(raw), userId, expiresAt: expires },
+  await db.$transaction(async (tx) => {
+    const users = await tx.$queryRaw<
+      { passwordHash: string; status: string }[]
+    >`SELECT "passwordHash", "status" FROM "User" WHERE "id" = ${userId} FOR UPDATE`;
+    demand(
+      users[0]?.passwordHash === expectedPasswordHash &&
+        users[0]?.status === "APPROVED",
+      "La cuenta cambió. Inicia sesión con la contraseña vigente.",
+      401,
+    );
+    await tx.session.create({
+      data: { id: tokenHash(raw), userId, expiresAt: expires },
+    });
   });
   (await cookies()).set("session", raw, {
     httpOnly: true,
