@@ -29,7 +29,7 @@ La referencia sigue siendo el prompt maestro completo (54 secciones) y el requis
 - Cliente Prisma generado y migración aditiva aplicada correctamente en PostgreSQL temporal.
 - TypeScript y compilación de producción aprobados.
 - 15 pruebas unitarias aprobadas: incluyen cifrado, herencia, contratos de IA simulados, documentos, proporciones, edición gráfica, logos y SVG.
-- Suite de integración ampliada contra HTTP/PostgreSQL reales: edición/versiones, concurrencia, IA simulada, revisión, duplicación, cancelación, biblioteca, presets, límites particulares, regeneración selectiva y limpieza. Resultado actual: 58 escenarios aprobados (59 resultados contando el contenedor de la suite).
+- Suite de integración ampliada contra HTTP/PostgreSQL reales: edición/versiones, concurrencia, IA simulada, revisión, duplicación, cancelación, biblioteca, presets, límites particulares, regeneración selectiva y limpieza. Resultado actual: 59 escenarios aprobados (60 resultados contando el contenedor de la suite).
 - No se han utilizado credenciales reales de IA ni efectuado llamadas facturables. Las pruebas de proveedor usan transporte simulado explícito; no establecen conectividad real con OpenAI.
 
 ## Estado por fases
@@ -42,7 +42,7 @@ La referencia sigue siendo el prompt maestro completo (54 secciones) y el requis
 | 3 · Producción masiva        | Funcional parcial                                            | Validación externa del ejecutor administrado, métricas de rendimiento y pruebas de carga reales                                                 |
 | 4 · Edición y calidad        | Funcional parcial                                            | QA en navegador, detección de superposiciones, dirección creativa y fidelidad de fotos/logos con IA real                              |
 | 5 · Productividad            | Funcional parcial                                            | Persistencia de filtros/selecciones y ampliación de herramientas de productividad                              |
-| 6 · Administración           | Funcional parcial                                            | Recuperación automática por correo y emergencia del único OWNER, gestión avanzada, conciliación tarifaria, estadísticas y retención separada de miniaturas administrativas |
+| 6 · Administración           | Funcional parcial                                            | Recuperación automática por correo y emergencia del único OWNER, gestión avanzada, conciliación tarifaria y retención separada de miniaturas administrativas |
 | 7 · Producción               | Preparada parcialmente                                       | Construcción Docker, VPS privado, HTTPS, backups ensayados, revisión de seguridad y monitorización                                    |
 
 El flujo comercial de 120 afiches reales con logos y revisiones visuales no se considera validado hasta efectuar la prueba externa autorizada. La entrega sigue en borrador y no se ha habilitado para trabajadores.
@@ -128,3 +128,11 @@ Categoría separa aplicar prompt general y aplicar cantidad/distribución/format
 Verificación: 58 escenarios HTTP/PostgreSQL (59 resultados contando el contenedor), 15 unitarias, TypeScript, build e instalación sin base aprobados. Chromium verificó creación por OWNER/ADMIN, cambio de contraseña por OWNER, emisión por ADMIN, compartir solo por correo, ocultación de parámetros, guardado inline con prompt actual/opciones, eje temático y ruta clickeable completa. Cuenta Observador independiente sin acciones de edición y con lectura de una configuración compartida explícitamente. Inspección en escritorio y móvil, sin errores JavaScript. Sin llamadas facturables ni correos enviados.
 
 La migración 006 se aplicó primero en la copia de Neon y después en la base conectada, con historial/checksum y transacción. Se verificaron el rol nuevo y ambos controles de categoría en la copia. No se crearon cuentas de prueba externas ni se cambiaron contraseñas, claves de IA o sesiones reales.
+
+## Continuación · estadísticas globales del OWNER
+
+Añadido el menú Estadísticas y su API exclusiva del OWNER, con períodos de 7, 30 y 90 días y límites de fecha en hora de Perú. Muestra inventario actual, estados de generaciones del período, reservas no liberadas, costes confirmados, importes desconocidos y cargos inciertos. Desglosa por día, mes, usuario, proyecto, categoría, subproducto y modelo. Los agregados se calculan en PostgreSQL sobre todo el período, sin sumar únicamente las 200 filas del listado de consumo. Los nombres iguales conservan grupos separados por ID; se indican recursos no disponibles. Los desgloses por recurso muestran los 20 grupos con más operaciones y avisan del recorte, manteniendo los totales completos.
+
+No se deducen tarifas ni se convierte un coste desconocido en cero. Los promedios usan únicamente afiches con importe real registrado, distinguiendo aprobados; el estado de revisión es el actual. Las reservas siguen siendo estimaciones y la factura del proveedor requiere conciliación independiente. El panel no invoca IA, no devuelve secretos/snapshots/rutas y no necesita nuevas tablas ni variables de entorno.
+
+Verificación: 59 escenarios HTTP/PostgreSQL aprobados (60 resultados contando el contenedor), 15 unitarias, TypeScript/build e instalación sin base aprobados. La regresión comprueba historial vacío, 207 operaciones en el período más dos fuera de él, cero confirmado frente a valor desconocido, reservas liberadas/cargos inciertos, nombres duplicados, fechas de Perú y denegación a ADMIN/USER/OBSERVER/anónimo. Chromium verificó los siete desgloses, períodos, actualización al recargar y permisos en sesiones independientes. Inspección de escritorio y móvil, sin errores JavaScript ni desbordamiento de página tras corregir el ancho del panel. El selector inicial del script buscaba un nombre de ADMIN distinto al de la fixture; se corrigió el script. No se alteraron cuentas externas ni se realizaron llamadas facturables.

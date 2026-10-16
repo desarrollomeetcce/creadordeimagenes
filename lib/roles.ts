@@ -10,6 +10,7 @@ export const roleAbilities: Record<string, string[]> = {
     "Crear cuentas de cualquier rol, aprobarlas, suspenderlas y cambiar contraseñas.",
     "Generar, editar, descargar, compartir y administrar todas las configuraciones guardadas.",
     "Administrar exclusivamente claves de IA, modelos, presupuestos y mantenimiento.",
+    "Consultar estadísticas globales de actividad, reservas y costes confirmados por usuario, proyecto, categoría, subproducto y modelo.",
   ],
   ADMIN: [
     "Ver y descargar todos los proyectos y sus afiches.",

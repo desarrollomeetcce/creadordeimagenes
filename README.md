@@ -62,3 +62,9 @@ Los enlaces conservan el proyecto, la categoría o la galería al recargar y per
 Usuarios permite crear cuentas aprobadas: OWNER administra todos los roles y contraseñas; Administrador administra Usuarios/Observadores y enlaces de recuperación. El Administrador consulta todos los proyectos y genera/edita los propios o asignados. Compartir usa solo correo; Usuario edita/genera en lo propio o asignado y Observador únicamente ve/descarga lo compartido. La guía del rol aparece en todas las vistas. Las claves de IA siguen siendo exclusivas del OWNER.
 
 La ruta Proyecto → Categoría → Subproducto es clickeable. En categoría puedes activar separadamente el prompt general y los parámetros comunes; al desactivar estos, se definen en cada subproducto. El tema es el nombre del subproducto y se conserva en sus instrucciones finales. Bajo Guardar instrucciones/configuración se puede desplegar el guardado con nombre CONFIGURACION y buscar configuraciones de otros proyectos; la zona lateral permite compartirlas con cuentas concretas y eliminarlas.
+
+## Estadísticas del OWNER
+
+El menú **Estadísticas** permite consultar los últimos 7, 30 o 90 días, por día/mes, usuario, proyecto, categoría, subproducto y modelo. Calcula todo el período en PostgreSQL, sin limitar los totales a las 200 operaciones del listado de consumo. Los días se delimitan en hora de Perú. El inventario muestra el estado actual de proyectos/cuentas; los estados de cola corresponden al período.
+
+Distingue reservas no liberadas, costes confirmados registrados y costes desconocidos. Un importe desconocido nunca se presenta como coste cero; los promedios solo incluyen afiches con importe confirmado. No realiza llamadas de IA ni consulta automáticamente la factura del proveedor. Los desgloses de recursos muestran los 20 grupos con más operaciones y advierten cuando hay más; los totales no se recortan. Solo OWNER accede al panel y a su API.

@@ -292,6 +292,10 @@ async function handle(
     }
     if (route === "capabilities" && method === "GET")
       return send({ maxUploadBytes: maxUploadBytes() });
+    if (route === "system/statistics" && method === "GET") {
+      const { statistics } = await import("@/lib/statistics");
+      return send(await statistics(user, req.nextUrl.searchParams.get("days")));
+    }
     if (route === "system/cleanup" && method === "POST") {
       ownerOnly(user);
       const { cleanupExpired, recoverInterrupted } =

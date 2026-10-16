@@ -615,3 +615,26 @@ a {
 .role-guide summary { cursor:pointer; font-weight:600; }
 .role-guide ul { margin:12px 0 0; padding-left:20px; line-height:1.8; }
 [hidden] { display:none !important; }
+
+.statistics-panel,
+.statistics-panel .stack {
+  min-width: 0;
+  grid-template-columns: minmax(0, 1fr);
+}
+.statistics-panel .metrics {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 200px), 1fr));
+  gap: 16px;
+  margin-bottom: 0;
+}
+.statistics-panel .metrics > div {
+  padding: 18px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: white;
+}
+.statistics-panel .metrics strong {
+  font-size: 22px;
+  overflow-wrap: anywhere;
+  margin-bottom: 8px;
+}

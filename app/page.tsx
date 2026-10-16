@@ -9,6 +9,7 @@ import { ProjectSharing } from "./components/project-sharing";
 import { BackgroundBatches } from "./components/background-batches";
 import { BrandKit } from "./components/brand-kit";
 import { StorageUsage } from "./components/storage-usage";
+import { StatisticsPanel } from "./components/statistics-panel";
 import {
   CollectionGallery,
   downloadArchive,
@@ -209,7 +210,7 @@ export default function Home() {
           "account",
           "collection",
           ...(managesUsers(user.role) ? ["users"] : []),
-          ...(user.role === "OWNER" ? ["ai"] : []),
+          ...(user.role === "OWNER" ? ["ai", "statistics"] : []),
         ];
         const nextView =
           allowed.includes(requested) &&
@@ -338,6 +339,7 @@ export default function Home() {
     history: "Historial",
     users: "Usuarios",
     usage: "Consumo de IA",
+    statistics: "Estadísticas",
     trash: "Papelera",
     jobs: "Generaciones",
     account: "Mi cuenta",
@@ -375,7 +377,10 @@ export default function Home() {
               ["account", "♙", "Mi cuenta"],
               ...(managesUsers(user.role) ? [["users", "♙", "Usuarios"]] : []),
               ...(user.role === "OWNER"
-                ? [["ai", "⚙", "Configuración de IA"]]
+                ? [
+                    ["statistics", "▥", "Estadísticas"],
+                    ["ai", "⚙", "Configuración de IA"],
+                  ]
                 : []),
             ]
               .filter(
@@ -466,6 +471,8 @@ export default function Home() {
               <History />
             ) : view === "usage" ? (
               <Usage />
+            ) : view === "statistics" && user.role === "OWNER" ? (
+              <StatisticsPanel />
             ) : view === "jobs" ? (
               <Jobs />
             ) : view === "trash" ? (

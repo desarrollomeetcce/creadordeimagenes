@@ -68,6 +68,16 @@ test("Integración HTTP + PostgreSQL (base exclusiva de pruebas, sin llamadas ex
         const detail = await owner.call("projects/" + p.body[0].id);
         assert(detail.body.prompt.includes("6.10. Calidad final"));
         assert(detail.body.prompt.includes("No inventes precios"));
+        const empty = await owner.call("system/statistics");
+        assert.equal(empty.status, 200);
+        assert.equal(empty.body.total.operations, 0);
+        assert.equal(empty.body.total.knownCosts, 0);
+        assert.equal(empty.body.total.knownActualMicros, "0");
+        assert(
+          Object.values(empty.body.groups).every(
+            (g: any) => g.rows.length === 0,
+          ),
+        );
       },
     );
     await t.test(
@@ -3182,6 +3192,154 @@ test("Integración HTTP + PostgreSQL (base exclusiva de pruebas, sin llamadas ex
           (await user.call("projects/" + pid + "/restore", "POST")).status,
           200,
         );
+      },
+    );
+    await t.test(
+      "estadísticas OWNER agregan más de 200 operaciones sin inventar costes y respetan fechas de Perú",
+      async () => {
+        for (const client of [user, admin, observer])
+          assert.equal((await client.call("system/statistics")).status, 403);
+        assert.equal((await anonymous.call("system/statistics")).status, 401);
+        assert.equal(
+          (await owner.call("system/statistics?days=999")).status,
+          400,
+        );
+        assert.equal(
+          (await owner.call("system/statistics?days=30%3BSELECT")).status,
+          400,
+        );
+        const baseline = await owner.call("system/statistics?days=7");
+        assert.equal(baseline.status, 200);
+        assert.equal(baseline.body.period.timeZone, "America/Lima");
+        assert.equal(new Date(baseline.body.period.start).getUTCHours(), 5);
+        const projectIds = [randomUUID(), randomUUID()],
+          model = `statistics-${tag}`;
+        const jobIds = Array.from({ length: 209 }, () => randomUUID());
+        const start = new Date(baseline.body.period.start);
+        const recent = new Date(Date.now() - 1000);
+        try {
+          await db.project.createMany({
+            data: projectIds.map((id) => ({
+              id,
+              ownerId: uid,
+              name: "Mismo nombre de estadísticas",
+            })),
+          });
+          await db.generationJob.createMany({
+            data: jobIds.map((id, i) => ({
+              id,
+              actorId: uid,
+              projectId: projectIds[i === 1 ? 1 : 0],
+              idempotencyKey: id,
+              snapshot: { secret: "must-not-leak" },
+              reservedMicros: 1000n,
+              status: i === 206 ? "UNCERTAIN" : "COMPLETED",
+              createdAt:
+                i === 207
+                  ? new Date(start.getTime() - 1)
+                  : i === 208
+                    ? new Date(Date.now() + 86400000)
+                    : i === 2
+                      ? new Date(start.getTime() + 3600000)
+                      : recent,
+            })),
+          });
+          await db.usageLedger.createMany({
+            data: jobIds.map((jobId, i) => ({
+              jobId,
+              actorId: uid,
+              projectId: projectIds[i === 1 ? 1 : 0],
+              model,
+              reservedMicros: i === 206 ? 2000n : 1000n,
+              actualMicros: i === 0 ? 1000000n : i === 1 ? 0n : null,
+              status:
+                i === 205
+                  ? "RELEASED"
+                  : i === 206
+                    ? "UNCERTAIN"
+                    : "CONSUMED_ESTIMATE",
+              createdAt:
+                i === 207
+                  ? new Date(start.getTime() - 1)
+                  : i === 208
+                    ? new Date(Date.now() + 86400000)
+                    : i === 2
+                      ? new Date(start.getTime() + 3600000)
+                      : recent,
+            })),
+          });
+          await db.variation.createMany({
+            data: jobIds.slice(0, 2).map((jobId) => ({
+              jobId,
+              path: "unused-test-path",
+              model,
+              reviewStatus: "APPROVED",
+              expiresAt: recent,
+            })),
+          });
+          const report = await owner.call("system/statistics?days=7");
+          assert.equal(report.status, 200);
+          const total = report.body.total;
+          assert.equal(total.operations - baseline.body.total.operations, 207);
+          assert.equal(
+            BigInt(total.reservedMicros) -
+              BigInt(baseline.body.total.reservedMicros),
+            207000n,
+          );
+          assert.equal(
+            BigInt(total.knownActualMicros) -
+              BigInt(baseline.body.total.knownActualMicros),
+            1000000n,
+          );
+          const group = report.body.groups.model.rows.find(
+            (r: any) => r.id === model,
+          );
+          assert.equal(group.operations, 207);
+          assert.equal(group.knownCosts, 2);
+          assert.equal(group.unknownCosts, 204);
+          assert.equal(group.uncertain, 1);
+          assert.equal(group.images, 2);
+          assert.equal(group.approved, 2);
+          assert.equal(group.pricedImages, 2);
+          assert.equal(group.pricedApproved, 2);
+          assert.equal(group.pricedApprovedMicros, "1000000");
+          assert.equal(
+            report.body.groups.project.rows.filter((r: any) =>
+              projectIds.includes(r.id),
+            ).length,
+            2,
+          );
+          const day = new Intl.DateTimeFormat("en-CA", {
+            timeZone: "America/Lima",
+            year: "numeric",
+            month: "2-digit",
+            day: "2-digit",
+          }).format(new Date(start.getTime() + 3600000));
+          const before =
+            baseline.body.groups.day.rows.find((r: any) => r.id === day)
+              ?.operations ?? 0;
+          const after =
+            report.body.groups.day.rows.find((r: any) => r.id === day)
+              ?.operations ?? 0;
+          assert.equal(after - before, 1);
+          for (const text of [
+            "must-not-leak",
+            "unused-test-path",
+            "passwordHash",
+            "encryptedKey",
+            config.apiKey,
+          ])
+            assert(!JSON.stringify(report.body).includes(text));
+          assert.equal(
+            (await owner.call("system/statistics?days=90")).status,
+            200,
+          );
+        } finally {
+          await db.variation.deleteMany({ where: { jobId: { in: jobIds } } });
+          await db.usageLedger.deleteMany({ where: { jobId: { in: jobIds } } });
+          await db.generationJob.deleteMany({ where: { id: { in: jobIds } } });
+          await db.project.deleteMany({ where: { id: { in: projectIds } } });
+        }
       },
     );
     await t.test("cierre de sesión invalida el token", async () => {
