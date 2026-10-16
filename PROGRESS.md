@@ -60,3 +60,11 @@ Migración aditiva `202610160003_brand_kits`: BrandKit, BrandLogo y PasswordRese
 La recuperación implementada es asistida desde Usuarios: el OWNER confirma su contraseña y entrega el enlace por un canal privado. No hay envío automático de correo y no se presenta como enviado. La recuperación de emergencia del único OWNER sin otra sesión o segundo OWNER sigue pendiente de un procedimiento de instalación seguro. Los accesos a Vercel y la base externa quedan para una etapa posterior, por indicación del usuario.
 
 Recorrido local en Chromium aprobado para guardar la marca y recuperar/cambiar contraseña desde los formularios reales, con PostgreSQL real y sin errores JavaScript. Pantalla de marca inspeccionada en escritorio y móvil. Regresión final: 40 escenarios aprobados. Esto no valida el despliegue Vercel ni la generación externa real, que siguen pendientes.
+
+## Instalación externa · Neon (16 de octubre de 2026)
+
+La base creada por el usuario mediante Vercel Marketplace se localizó en la organización Vercel: TALENTUM. Se aplicaron las tres migraciones versionadas primero en una copia temporal y después en la rama principal conectada a la aplicación, con transacción, bloqueo, comprobación de esquema public vacío y registro de checksums compatible con el migrador del repositorio. Resultado verificado en la base principal: 23 tablas public y tres migraciones registradas; cero usuarios. El esquema neon_auth preexistente se conservó sin modificaciones y no sustituye la autenticación propia de la aplicación.
+
+La copia temporal de comprobación tiene caducidad automática de 24 horas. Un intento inicial de ajustar el intervalo de suspensión fue rechazado por el plan y no creó recursos; se creó la copia con los valores predeterminados. La conexión SQL principal requirió especificar el rol propietario, tras lo cual la ejecución y las comprobaciones fueron satisfactorias. No se registraron ni publicaron credenciales.
+
+La base externa ya está preparada. Falta comprobar las variables del proyecto Vercel, establecer la clave maestra y el token inicial de instalación y crear OWNER. El conector Vercel devuelve 403 al consultar la configuración del equipo; no se ha confirmado que el despliegue pueda acceder a la base ni que permita iniciar sesión. No se efectuaron llamadas facturables de IA.
