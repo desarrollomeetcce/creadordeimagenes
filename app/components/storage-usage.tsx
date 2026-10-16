@@ -1,4 +1,5 @@
 "use client";
+import { MaintenancePanel } from "./maintenance-panel";
 import { useEffect, useState } from "react";
 type Status = {
   usedBytes: number | null;
@@ -8,8 +9,6 @@ type Status = {
 export function StorageUsage() {
   const [status, setStatus] = useState<Status | null>(null),
     [error, setError] = useState("");
-  const [busy, setBusy] = useState(false),
-    [message, setMessage] = useState("");
   useEffect(() => {
     let active = true;
     void fetch("/api/system/storage")
@@ -57,40 +56,18 @@ export function StorageUsage() {
           Adjuntos de hasta {status.maxUploadBytes / 1000000} MB por archivo.
         </p>
       )}
-      <button
-        disabled={busy}
-        onClick={() => {
-          setBusy(true);
-          setError("");
-          setMessage("");
-          void (async () => {
-            const r = await fetch("/api/system/cleanup", { method: "POST" });
-            const b = await r.json();
-            if (!r.ok)
-              throw new Error(
-                b.error || "No se pudo limpiar el almacenamiento.",
-              );
-            const info = await fetch("/api/system/storage");
-            if (!info.ok)
-              throw new Error(
-                "La limpieza terminó, pero no se pudo actualizar el espacio disponible.",
-              );
-            setStatus(await info.json());
-            setMessage(
-              `${b.expired} afiches temporales caducados procesados. ${b.interrupted} trabajos interrumpidos enviados a revisión.`,
+      <MaintenancePanel
+        onCleaned={async () => {
+          const response = await fetch("/api/system/storage", {
+            cache: "no-store",
+          });
+          if (!response.ok)
+            throw new Error(
+              "La limpieza terminó, pero no se pudo actualizar el espacio disponible.",
             );
-          })()
-            .catch((e: Error) => setError(e.message))
-            .finally(() => setBusy(false));
+          setStatus(await response.json());
         }}
-      >
-        Limpiar temporales caducados
-      </button>
-      {message && (
-        <p role="status" className="notice">
-          {message}
-        </p>
-      )}
+      />
       {error && (
         <p role="status" className="notice error">
           {error}

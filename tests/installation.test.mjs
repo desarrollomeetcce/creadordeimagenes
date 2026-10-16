@@ -28,6 +28,7 @@ test("despliegue sin base devuelve instalación pendiente y no finge cuentas cre
         DATABASE_URL: "",
         DIRECT_DATABASE_URL: "",
         BOOTSTRAP_TOKEN: "",
+        CRON_SECRET: "",
         APP_ORIGIN: `http://127.0.0.1:${port}`,
       },
       stdio: "ignore",
@@ -47,6 +48,9 @@ test("despliegue sin base devuelve instalación pendiente y no finge cuentas cre
     assert.equal(response.status, 503);
     const body = await response.json();
     assert(body.error.includes("base de datos"));
+    const cron = await fetch(`http://127.0.0.1:${port}/api/cron/maintenance`);
+    assert.equal(cron.status, 503);
+    assert(!(await cron.text()).includes("Bearer"));
     assert(!("needsSetup" in body));
     assert(!JSON.stringify(body).includes("DATABASE_URL"));
   } finally {

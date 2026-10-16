@@ -65,3 +65,8 @@ Se conservan prompt, settings, relaciones, versiones y miembros directos; las cu
 La migración aditiva 008 añade OwnerRecovery, una fila por cuenta: userId como PK/FK, tokenHash único, createdAt/expiresAt. El código aleatorio de 256 bits se devuelve una vez, con prefijo OWNER-, y se persiste SHA-256 con separación de propósito. No se descifra ni se obtiene desde GET; estado devuelve solo fechas/activación. Cambios de contraseña, rol/estado y recuperación ordinaria borran la fila.
 
 Generar/revocar requiere OWNER aprobado, contraseña actual y revalidación de hash/rol bajo bloqueo de la cuenta. El consumo público exige correo OWNER aprobado, hash vigente y fecha; se bloquea la cuenta, se consume la fila y se cambian contraseña/sesiones/enlaces en una transacción. Errores genéricos y límites globales/por cuenta; dos usos concurrentes producen un único éxito. No cambia claves de IA ni su clave maestra.
+
+
+## Migración 012 · mantenimiento
+
+Variation.filesQueuedAt marca encolado duradero de todos sus archivos tras caducar; la operación bloquea la fila y excluye permanentes. AssetDeletion conserva únicamente rutas privadas, intentos y próxima fecha; un borrado solo retira la fila después de confirmar archivo ausente. No se expone su contenido en APIs. MaintenanceRun registra ejecuciones acotadas, fuente, estado, conteos y error saneado. Las dos tablas comienzan vacías; migrar no limpia imágenes ni cambia conservación o credenciales. Índices para pendientes/caducidad/fecha.

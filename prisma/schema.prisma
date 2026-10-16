@@ -211,7 +211,9 @@ model Variation {
   libraryItems LibraryItem[]
   expiresAt DateTime
   expired Boolean @default(false)
+  filesQueuedAt DateTime?
   createdAt DateTime @default(now())
+  @@index([permanent,filesQueuedAt,expiresAt], map: "Variation_expiry_cleanup_idx")
 }
 model UsageLedger {
   id String @id @default(cuid())
@@ -380,4 +382,22 @@ model AuditThumbnail {
   removedAt DateTime?
   @@index([createdAt,id])
   @@index([expiresAt,status])
+}
+
+model AssetDeletion {
+  path String @id
+  createdAt DateTime @default(now())
+  nextAttemptAt DateTime @default(now())
+  attempts Int @default(0)
+  @@index([nextAttemptAt])
+}
+model MaintenanceRun {
+  id String @id @default(cuid())
+  source String
+  status String @default("RUNNING")
+  startedAt DateTime @default(now())
+  finishedAt DateTime?
+  result Json @default("{}")
+  error String?
+  @@index([startedAt])
 }

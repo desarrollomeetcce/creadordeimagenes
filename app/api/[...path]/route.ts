@@ -369,14 +369,15 @@ async function handle(
       const { statistics } = await import("@/lib/statistics");
       return send(await statistics(user, req.nextUrl.searchParams.get("days")));
     }
+    if (route === "system/maintenance" && method === "GET") {
+      ownerOnly(user);
+      const { maintenanceStatus } = await import("@/lib/maintenance");
+      return send(await maintenanceStatus());
+    }
     if (route === "system/cleanup" && method === "POST") {
       ownerOnly(user);
-      const { cleanupExpired, recoverInterrupted } =
-        await import("@/scripts/worker");
-      return send({
-        expired: await cleanupExpired(),
-        interrupted: await recoverInterrupted(),
-      });
+      const { runMaintenance } = await import("@/lib/maintenance");
+      return send(await runMaintenance("MANUAL", user.id));
     }
     if (route === "system/storage" && method === "GET") {
       ownerOnly(user);

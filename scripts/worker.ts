@@ -1,3 +1,4 @@
+import { cleanupStorage } from "../lib/cleanup";
 import { recordActivity } from "../lib/activity";
 import { db } from "../lib/db";
 import { configured } from "../lib/ai";
@@ -7,7 +8,6 @@ import { store, remove, load, requireStorageSpace } from "../lib/storage";
 import {
   prepareAuditThumbnail,
   captureAuditThumbnail,
-  cleanupAuditThumbnails,
   requireAuditSpace,
 } from "../lib/visual-audit";
 import { adaptImage } from "../lib/render";
@@ -326,34 +326,7 @@ export async function runOne(filter?: {
   return true;
 }
 export async function cleanupExpired(now = new Date()) {
-  await cleanupAuditThumbnails(now);
-  const expired = await db.variation.findMany({
-    where: { permanent: false, expired: false, expiresAt: { lt: now } },
-    include: { versions: true },
-    take: 25,
-  });
-  for (const v of expired) {
-    // Claim expiry against a concurrent save-to-library before removing any file.
-    const claim = await db.variation.updateMany({
-      where: {
-        id: v.id,
-        permanent: false,
-        expired: false,
-        expiresAt: { lt: now },
-      },
-      data: { expired: true },
-    });
-    if (!claim.count) continue;
-    for (const p of new Set([
-      v.path,
-      ...v.versions.flatMap((x) => [
-        x.path,
-        ...(x.backgroundPath ? [x.backgroundPath] : []),
-      ]),
-    ]))
-      await remove(p).catch(() => {});
-  }
-  return expired.length;
+  return (await cleanupStorage(now)).expired;
 }
 export async function recoverInterrupted(now = new Date()) {
   return db.$transaction(async (tx) => {
@@ -363,6 +336,7 @@ export async function recoverInterrupted(now = new Date()) {
         startedAt: { lt: new Date(now.getTime() - 15 * 60000) },
       },
     });
+    let count = 0;
     for (const j of stale) {
       const updated = await tx.generationJob.updateMany({
         where: { id: j.id, status: "RUNNING" },
@@ -372,20 +346,27 @@ export async function recoverInterrupted(now = new Date()) {
             "Operación interrumpida. Revisa el consumo del proveedor antes de volver a generar.",
         },
       });
-      if (updated.count)
+      if (updated.count) {
+        count += updated.count;
         await tx.usageLedger.updateMany({
           where: { jobId: j.id },
           data: { status: "UNCERTAIN" },
         });
+      }
     }
-    return stale.length;
+    return count;
   });
 }
 async function main() {
+  let lastMaintenance = 0;
   while (true) {
     await recoverInterrupted();
+    if (Date.now() - lastMaintenance >= 300000) {
+      const { runMaintenance } = await import("../lib/maintenance");
+      await runMaintenance("WORKER").catch(() => {});
+      lastMaintenance = Date.now();
+    }
     await runOne();
-    await cleanupExpired();
     await new Promise((r) => setTimeout(r, 1500));
   }
 }

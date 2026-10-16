@@ -1,5 +1,15 @@
 # Pruebas y evidencia
 
+## Continuación: mantenimiento y reintentos de borrado
+
+68 escenarios de integración HTTP/PostgreSQL aprobados (69 resultados incluyendo el contenedor), cuatro escenarios SMTP adicionales, 15 unitarias, TypeScript/build e instalación sin base. El caso nuevo provoca un error real de DELETE sobre un StoredAsset sintético con un trigger temporal, verifica estado PARTIAL y AssetDeletion con attempts=1/espera de cinco minutos, ausencia de mensaje técnico/rutas/secreto en DTO e historial, caducidad y encolado atómicos, fondo retirado, versiones conservadas y archivo permanente intacto. Retirado el trigger, la siguiente pasada confirma el borrado y elimina su entrada pendiente. Se comprueban OWNER, ADMIN/USER/OBSERVER 403, anónimo 401, cron sin Bearer/incorrecto 401, ejecución autorizada, mantenimiento activo 409, recuperación de marca obsoleta y trabajo/ledger UNCERTAIN sin liberar reserva ni regenerar.
+
+Una prueba inicial detectó nextAttemptAt posterior al instante de selección por milisegundos; se fijó al instante recibido por la pasada. Toda la integración se repitió con base sintética limpia. La instalación sin base añade comprobación de cron sin secreto 503, sin revelar cabecera. La migración se verificó también aplicando las doce desde cero en otra base local vacía, manteniendo su orden versionado.
+
+Chromium: OWNER Mi cuenta, ejecución recibida, limpieza manual y resultado, historial, rechazo concurrente, actualización, ADMIN sin sección/API y 390 px sin desbordamiento/errores JS. Se corrigió el helper pg del guion de navegador; el recorrido completo pasó. Backup restaurado en otra base local con conteos de 17 tablas, doce migraciones y hashes de archivos/miniaturas idénticos. Migración 012 aditiva en copia Neon antes de rama conectada; cero entradas de mantenimiento/cola externas tras aplicar. Ninguna limpieza real, IA facturable ni correo externo. La programación Vercel externa sigue pendiente de CRON_SECRET y recepción real.
+
+La tarea independiente `npm run maintenance` completó una pasada local con salida de conteos y sin iniciar generaciones. La compilación final y la instalación sin base volvieron a pasar tras adelantar el mantenimiento al procesamiento del worker, de modo que libera vencidos antes de comprobar espacio para el siguiente trabajo.
+
 ## Continuación: filas de configuraciones guardadas
 
 Comprobación pertinente a interfaz: TypeScript, compilación de producción y las 15 pruebas unitarias. Chromium usa PostgreSQL local sintético y las rutas reales de configuraciones: búsqueda sin tildes, filtros/limpieza, edición de nombre/instrucciones y parámetros, distribución inválida rechazada antes de guardar, persistencia tras recargar, expansión de detalles, duplicación, cancelación/confirmación de borrado, y acciones según permisos de USER/ADMIN/OWNER. La API y sus políticas permanecen intactas; esta etapa no introduce migraciones ni llamadas de IA. Los avisos de guardado se mantienen en el panel aunque renombrar o cambiar visibilidad retire la fila del filtro activo.

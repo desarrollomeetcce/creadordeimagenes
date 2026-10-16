@@ -301,7 +301,11 @@ export async function recordActivity(
         ...detail,
         _activity: {
           v: 1,
-          actorName: actor?.name ?? "Cuenta no disponible",
+          actorName:
+            actor?.name ??
+            (event.actorId === "system:maintenance"
+              ? "Mantenimiento automático"
+              : "Cuenta no disponible"),
           contexts,
           search: summary(event.action, contexts, detail),
         },
@@ -311,6 +315,8 @@ export async function recordActivity(
 }
 
 const verbs: Record<string, string> = {
+  MANTENIMIENTO_COMPLETADO:
+    "Ejecutó la limpieza de archivos caducados y revisó trabajos interrumpidos",
   INICIO_SESION: "Inició sesión",
   INSTALACION_INICIAL: "Completó la instalación inicial",
   PROYECTO_CREADO: "Creó el proyecto",
@@ -427,6 +433,11 @@ const detailLabels: Record<string, string> = {
   version: "Versión del afiche",
   cancelled: "Trabajos pendientes cancelados",
   attachmentsCopied: "Adjuntos copiados",
+  expired: "Afiches caducados procesados",
+  thumbnails: "Miniaturas retiradas",
+  deletedFiles: "Archivos retirados",
+  failedFiles: "Borrados por reintentar",
+  interrupted: "Trabajos enviados a revisión",
   format: "Formato de descarga",
   role: "Rol asignado",
   status: "Estado asignado",

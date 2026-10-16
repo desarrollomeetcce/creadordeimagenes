@@ -85,3 +85,8 @@ La recuperación de subproductos usa lib/subproduct-recovery.ts y un panel despl
 lib/owner-recovery.ts gestiona un código OWNER preparado, de 256 bits, propósito separado, hash único y caducidad anual. Endpoints privados GET/POST/DELETE auth/owner-recovery y público POST auth/emergency-recovery con Origin, límites y transacción de un uso. No hay recuperación por código si no se guardó previamente. La interfaz descarga la copia privada solo por clic y no conserva el código en local/sessionStorage ni URL. Las operaciones de credenciales/roles invalidan el código.
 
 Las galerías agrupadas conservan filtros, página, formato y hasta 200 IDs seleccionados en sessionStorage, con versión y clave por usuario/ámbito/recurso. Se validan tipo/longitud y se ignora almacenamiento malformado o no disponible. No se guardan imágenes, prompts ni credenciales. Cerrar sesión borra esas entradas; las selecciones siguen sujetas a permisos y disponibilidad del servidor al descargar. Se incorporó salida visible en móvil.
+
+
+## Mantenimiento
+
+lib/cleanup.ts separa reclamación transaccional de afiches caducados y cola persistente de borrado, procesada con FOR UPDATE SKIP LOCKED y reintento idempotente. lib/maintenance.ts coordina pasadas, recupera marcas abandonadas y devuelve una proyección OWNER de conteos/resultados. app/api/cron/maintenance usa autorización Bearer independiente, solo producción Vercel, sin invocar IA; vercel.json programa una solicitud diaria. El worker y scripts/maintenance.ts comparten el mismo ejecutor para VPS. Configuración del secreto y recepción externa se verifican aparte: existencia de código/configuración no acredita ejecución por calendario.

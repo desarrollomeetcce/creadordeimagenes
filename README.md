@@ -92,3 +92,8 @@ En cada producto editable, **Subproductos eliminados · restaurar espacios** per
 En **Mi cuenta → Recuperación de emergencia del OWNER**, confirma tu contraseña, genera el código y descárgalo a un lugar privado. Solo se muestra en esa respuesta. Vence al año, funciona una vez y generar otro invalida el anterior. Cambiar/recuperar la contraseña o modificar el rol/estado invalida el código. El servidor guarda únicamente su hash; no necesita correo ni editar variables.
 
 Si olvidas tu contraseña, en el ingreso elige **Recuperar OWNER con código de emergencia**, introduce tu correo/código y una contraseña nueva. Se cierran todas las sesiones y se invalidan enlaces de recuperación. No recupera una clave maestra de cifrado perdida. Si no preparaste y conservaste el código, este mecanismo no puede sustituirlo.
+
+
+### Mantenimiento
+
+El OWNER puede consultar y ejecutar la limpieza desde Mi cuenta. Los borrados fallidos quedan en cola para reintentarse sin perder el registro; la biblioteca permanente y los adjuntos se conservan. Incluye programación diaria protegida para Vercel (necesita CRON_SECRET una vez y verificación externa) y tarea independiente `npm run maintenance` para VPS. Instrucciones y límites en [docs/MAINTENANCE.md](docs/MAINTENANCE.md).

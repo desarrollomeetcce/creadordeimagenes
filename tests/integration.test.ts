@@ -5143,6 +5143,207 @@ test("Integración HTTP + PostgreSQL (base exclusiva de pruebas, sin llamadas ex
         });
       },
     );
+    await t.test(
+      "mantenimiento: cola persistente, reintentos, permisos y programación autenticada sin IA",
+      async () => {
+        const { store, load } = await import("../lib/storage");
+        const original = await store(
+          Buffer.from("archivo temporal de mantenimiento"),
+        );
+        const background = await store(Buffer.from("fondo de mantenimiento"));
+        const permanentPath = await store(
+          Buffer.from("archivo permanente protegido"),
+        );
+        const make = async (path: string, permanent = false) => {
+          const job = await db.generationJob.create({
+            data: {
+              actorId: uid,
+              projectId: pid,
+              subproductId: sid,
+              idempotencyKey: randomUUID(),
+              status: "COMPLETED",
+              snapshot: {},
+              reservedMicros: 0n,
+            },
+          });
+          return db.variation.create({
+            data: {
+              jobId: job.id,
+              subproductId: sid,
+              path,
+              model: "synthetic-maintenance",
+              permanent,
+              expiresAt: new Date(0),
+            },
+          });
+        };
+        const temporal = await make(original),
+          permanent = await make(permanentPath, true);
+        await db.imageVersion.create({
+          data: {
+            variationId: temporal.id,
+            number: 1,
+            path: original,
+            backgroundPath: background,
+            actorId: uid,
+          },
+        });
+        for (const client of [user, admin, observer]) {
+          assert.equal((await client.call("system/maintenance")).status, 403);
+          assert.equal(
+            (await client.call("system/cleanup", "POST")).status,
+            403,
+          );
+        }
+        assert.equal((await anonymous.call("system/maintenance")).status, 401);
+        const before = await owner.call("system/maintenance");
+        assert.equal(before.status, 200);
+        assert(before.body.pending.variations >= 1);
+        const cron = (token?: string) =>
+          fetch(root + "/api/cron/maintenance", {
+            headers: token ? { Authorization: "Bearer " + token } : {},
+          });
+        assert.equal((await cron()).status, 401);
+        assert.equal((await cron("incorrecto")).status, 401);
+        // A real storage delete fails once; its private error never reaches the response or audit.
+        const assetId = original.slice(3);
+        await db.$executeRawUnsafe(
+          `CREATE OR REPLACE FUNCTION test_maintenance_delete_failure() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF OLD.id = '${assetId}' THEN RAISE EXCEPTION 'fallo-sintetico-no-publicar'; END IF; RETURN OLD; END $$`,
+        );
+        await db.$executeRawUnsafe(
+          'CREATE TRIGGER test_maintenance_delete_failure BEFORE DELETE ON "StoredAsset" FOR EACH ROW EXECUTE FUNCTION test_maintenance_delete_failure()',
+        );
+        try {
+          const partial = await owner.call("system/cleanup", "POST");
+          assert.equal(partial.status, 200);
+          assert.equal(partial.body.status, "PARTIAL");
+          assert(partial.body.expired >= 1);
+          assert.equal(partial.body.failedFiles, 1);
+          assert(!JSON.stringify(partial.body).includes("fallo-sintetico"));
+          const queue = await db.assetDeletion.findUniqueOrThrow({
+            where: { path: original },
+          });
+          assert.equal(queue.attempts, 1);
+          assert(queue.nextAttemptAt > new Date());
+          const expired = await db.variation.findUniqueOrThrow({
+            where: { id: temporal.id },
+          });
+          assert(expired.expired && expired.filesQueuedAt);
+          assert.equal(
+            (
+              await db.variation.findUniqueOrThrow({
+                where: { id: permanent.id },
+              })
+            ).expired,
+            false,
+          );
+          assert.deepEqual(
+            await load(permanentPath),
+            Buffer.from("archivo permanente protegido"),
+          );
+          await assert.rejects(load(background));
+          assert.equal(
+            await db.imageVersion.count({
+              where: { variationId: temporal.id },
+            }),
+            1,
+          );
+          const status = (await owner.call("system/maintenance")).body;
+          assert(status.pending.queuedFiles >= 1);
+          assert.equal(status.runs[0].status, "PARTIAL");
+          assert(!JSON.stringify(status).includes(original));
+          assert(!JSON.stringify(status).includes("fallo-sintetico"));
+        } finally {
+          await db.$executeRawUnsafe(
+            'DROP TRIGGER test_maintenance_delete_failure ON "StoredAsset"',
+          );
+          await db.$executeRawUnsafe(
+            "DROP FUNCTION test_maintenance_delete_failure()",
+          );
+        }
+        await db.assetDeletion.update({
+          where: { path: original },
+          data: { nextAttemptAt: new Date(0) },
+        });
+        const recovered = await owner.call("system/cleanup", "POST");
+        assert.equal(recovered.status, 200);
+        assert.equal(recovered.body.failedFiles, 0);
+        assert.equal(
+          await db.assetDeletion.count({ where: { path: original } }),
+          0,
+        );
+        await assert.rejects(load(original));
+        assert.equal(
+          (
+            await db.variation.findUniqueOrThrow({
+              where: { id: permanent.id },
+            })
+          ).expired,
+          false,
+        );
+        // Existing leases block concurrent runs and stale leases are recoverable.
+        const active = await db.maintenanceRun.create({
+          data: { source: "MANUAL" },
+        });
+        assert.equal((await owner.call("system/cleanup", "POST")).status, 409);
+        await db.maintenanceRun.update({
+          where: { id: active.id },
+          data: { startedAt: new Date(Date.now() - 20 * 60000) },
+        });
+        const job = await db.generationJob.create({
+          data: {
+            actorId: uid,
+            projectId: pid,
+            idempotencyKey: randomUUID(),
+            status: "RUNNING",
+            startedAt: new Date(0),
+            snapshot: {},
+            reservedMicros: 1n,
+          },
+        });
+        await db.usageLedger.create({
+          data: {
+            jobId: job.id,
+            actorId: uid,
+            projectId: pid,
+            model: "synthetic",
+            reservedMicros: 1n,
+          },
+        });
+        assert(process.env.CRON_SECRET && process.env.CRON_SECRET.length >= 32);
+        const automatic = await cron(process.env.CRON_SECRET);
+        assert.equal(automatic.status, 200);
+        assert.equal((await automatic.json()).interrupted, 1);
+        assert.equal(
+          (
+            await db.maintenanceRun.findUniqueOrThrow({
+              where: { id: active.id },
+            })
+          ).status,
+          "INTERRUPTED",
+        );
+        assert.equal(
+          (await db.generationJob.findUniqueOrThrow({ where: { id: job.id } }))
+            .status,
+          "UNCERTAIN",
+        );
+        assert.equal(
+          (await db.usageLedger.findUniqueOrThrow({ where: { jobId: job.id } }))
+            .status,
+          "UNCERTAIN",
+        );
+        const status = (await owner.call("system/maintenance")).body;
+        assert(status.lastAutomaticAt);
+        assert.equal(status.runs[0].source, "CRON");
+        const audit = await db.auditEvent.findMany({
+          where: { action: "MANTENIMIENTO_COMPLETADO" },
+        });
+        assert(audit.length >= 3);
+        assert(!JSON.stringify(audit).includes("fallo-sintetico"));
+        assert(!JSON.stringify(audit).includes(original));
+        assert(!JSON.stringify(audit).includes(process.env.CRON_SECRET));
+      },
+    );
     await t.test("cierre de sesión invalida el token", async () => {
       assert.equal((await user.call("auth/logout", "POST")).status, 200);
       assert.equal((await user.call("projects")).status, 401);
