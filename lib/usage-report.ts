@@ -101,12 +101,39 @@ async function rowsWithNames(
     })),
     user,
   );
+  const confirmations = rows.length
+    ? await db.$queryRaw<
+        {
+          id: string;
+          resourceId: string;
+          createdAt: Date;
+          reference: string | null;
+        }[]
+      >(Prisma.sql`
+    SELECT DISTINCT ON ("resourceId") id,"resourceId","createdAt",detail->>'reference' AS reference FROM "AuditEvent"
+    WHERE action='COSTE_IA_CONCILIADO' AND "resourceId" IN (${Prisma.join(rows.map((r) => r.id))})
+    ORDER BY "resourceId","createdAt" DESC,id DESC
+  `)
+    : [];
+  const byLedger = new Map(confirmations.map((c) => [c.resourceId, c]));
   return rows.map((r) => ({
     ...r,
     actorName: names.get(r.actorId) ?? "Cuenta no disponible",
     reservedMicros: String(r.reservedMicros),
     actualMicros: r.actualMicros === null ? null : String(r.actualMicros),
     contexts: contexts.get(r.id) ?? [],
+    costConfirmation: byLedger.has(r.id)
+      ? {
+          confirmedAt: byLedger.get(r.id)!.createdAt,
+          source: "Confirmación manual del OWNER",
+          ...(user.role === "OWNER"
+            ? {
+                id: byLedger.get(r.id)!.id,
+                reference: byLedger.get(r.id)!.reference,
+              }
+            : {}),
+        }
+      : null,
   }));
 }
 export async function usageReport(user: Actor, params: URLSearchParams) {
@@ -145,6 +172,7 @@ export async function usageReport(user: Actor, params: URLSearchParams) {
   return {
     rows: await rowsWithNames(user, rows),
     total,
+    canReconcile: user.role === "OWNER",
     page: b.page,
     pages: Math.max(1, Math.ceil(total / 50)),
     start,
@@ -189,6 +217,8 @@ export async function usageCsv(user: Actor, params: URLSearchParams) {
       "Estado",
       "Reserva local USD",
       "Coste real informado USD",
+      "Origen de confirmación del coste",
+      "Fecha de confirmación Lima",
     ],
     lines = [header.map(csvCell).join(",")];
   for (const row of data) {
@@ -205,6 +235,13 @@ export async function usageCsv(user: Actor, params: URLSearchParams) {
         labels[row.status] ?? row.status,
         usdMicros(row.reservedMicros),
         usdMicros(row.actualMicros),
+        row.costConfirmation?.source ??
+          (row.actualMicros === null ? "No informado" : "Importe registrado"),
+        row.costConfirmation
+          ? row.costConfirmation.confirmedAt.toLocaleString("es-PE", {
+              timeZone: "America/Lima",
+            })
+          : "",
       ]
         .map(csvCell)
         .join(","),

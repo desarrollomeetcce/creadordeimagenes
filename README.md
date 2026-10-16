@@ -16,6 +16,8 @@ Los adjuntos incluyen vistas previas privadas de imágenes y **Reemplazar**. Cad
 
 **Generaciones** permite eliminar trabajos del listado y restaurarlos desde la vista de retiradas, conservando imágenes, historial y consumo. Los trabajos en curso no se retiran. En **Inteligencia Artificial**, el estado se actualiza cada diez segundos, distingue catálogo consultado de prueba realmente completada y revisa también límites particulares. Estos límites se pueden editar o eliminar por fila; eliminar una restricción no añade saldo a OpenAI ni borra el consumo anterior.
 
+**Costes comprobados:** el OWNER puede registrar y corregir el importe verificado de una operación desde Consumo de IA. Guarda referencia y auditoría; el informe distingue confirmación manual de coste desconocido. No altera reservas ni resuelve automáticamente un resultado incierto, y no consulta la factura de OpenAI.
+
 ## Inicio local
 
 Requisitos: Node.js 24, npm y PostgreSQL 16 o superior.

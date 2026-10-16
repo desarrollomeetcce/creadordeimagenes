@@ -6472,6 +6472,166 @@ test("Integración HTTP + PostgreSQL (base exclusiva de pruebas, sin llamadas ex
         }
       },
     );
+    await t.test(
+      "conciliación manual OWNER: coste exacto, cero, auditoría, CSV, permisos y concurrencia sin liberar reserva incierta",
+      async () => {
+        const project = (
+          await user.call("projects", "POST", {
+            name: "Coste comprobado " + tag,
+          })
+        ).body;
+        const job = await db.generationJob.create({
+          data: {
+            actorId: uid,
+            projectId: project.id,
+            status: "UNCERTAIN",
+            idempotencyKey: randomUUID(),
+            snapshot: {},
+            reservedMicros: 2000000n,
+          },
+        });
+        const ledger = await db.usageLedger.create({
+          data: {
+            jobId: job.id,
+            actorId: uid,
+            projectId: project.id,
+            model: "conciliacion-" + tag,
+            reservedMicros: 2000000n,
+            status: "UNCERTAIN",
+          },
+        });
+        const call = (data: unknown, client = owner) =>
+          client.call(`usage/${ledger.id}/reconcile`, "POST", data);
+        const input = {
+          amountUsd: "0",
+          reference: "Comprobante privado de prueba",
+          confirmed: true,
+          expectedActualMicros: null,
+          expectedConfirmationId: null,
+        };
+        for (const c of [user, admin, observer])
+          assert.equal((await call(input, c)).status, 403);
+        assert.equal((await call(input, anonymous)).status, 401);
+        assert.equal((await call({ ...input, confirmed: false })).status, 400);
+        assert.equal((await call({ ...input, amountUsd: "1e3" })).status, 400);
+        assert.equal(
+          (
+            await call({
+              ...input,
+              reference: "sk-synthetic-secret-123456789012345",
+            })
+          ).status,
+          400,
+        );
+        assert.equal(
+          (await owner.call("usage/no-existe/reconcile", "POST", input)).status,
+          404,
+        );
+        const zero = await call(input);
+        assert.equal(zero.status, 200);
+        assert.equal(zero.body.actualMicros, "0");
+        const normal = (await user.call("usage/list?q=conciliacion-" + tag))
+          .body;
+        assert.equal(normal.canReconcile, false);
+        assert.equal(normal.summary.unknownCosts, 0);
+        assert.equal(
+          normal.rows[0].costConfirmation.source,
+          "Confirmación manual del OWNER",
+        );
+        assert(!JSON.stringify(normal).includes(input.reference));
+        assert(!normal.rows[0].costConfirmation.id);
+        const ownerReport = (
+          await owner.call("usage/list?q=conciliacion-" + tag)
+        ).body;
+        assert.equal(
+          ownerReport.rows[0].costConfirmation.reference,
+          input.reference,
+        );
+        const races = await Promise.all(
+          ["1.234567", "2,345678"].map((amountUsd) =>
+            call({
+              ...input,
+              amountUsd,
+              expectedActualMicros: "0",
+              expectedConfirmationId: zero.body.confirmationId,
+            }),
+          ),
+        );
+        assert.deepEqual(races.map((r) => r.status).sort(), [200, 409]);
+        const winner = races.find((r) => r.status === 200)!;
+        assert(["1234567", "2345678"].includes(winner.body.actualMicros));
+        const back = await call({
+          ...input,
+          expectedActualMicros: winner.body.actualMicros,
+          expectedConfirmationId: winner.body.confirmationId,
+        });
+        assert.equal(back.status, 200);
+        assert.equal(
+          (
+            await call({
+              ...input,
+              amountUsd: "3",
+              expectedActualMicros: "0",
+              expectedConfirmationId: zero.body.confirmationId,
+            })
+          ).status,
+          409,
+        );
+        const unchanged = await db.usageLedger.findUniqueOrThrow({
+          where: { id: ledger.id },
+        });
+        assert.equal(unchanged.status, "UNCERTAIN");
+        assert.equal(unchanged.reservedMicros, 2000000n);
+        assert.equal(unchanged.actualMicros, 0n);
+        assert.equal(
+          (await db.generationJob.findUniqueOrThrow({ where: { id: job.id } }))
+            .status,
+          "UNCERTAIN",
+        );
+        assert.equal(
+          await db.auditEvent.count({
+            where: { action: "COSTE_IA_CONCILIADO", resourceId: ledger.id },
+          }),
+          3,
+        );
+        const history = (await owner.call("audit/history?q=Coste%20comprobado"))
+          .body;
+        assert(
+          history.rows.some(
+            (r: any) => r.action === "Registró un coste de IA comprobado",
+          ),
+        );
+        const csv = await fetch(
+          root + "/api/usage/export?q=conciliacion-" + tag,
+          { headers: { Cookie: user.cookie } },
+        );
+        assert.equal(csv.status, 200);
+        const text = await csv.text();
+        assert(text.includes("Confirmación manual del OWNER"));
+        assert(text.includes('"0.000000"'));
+        assert(!text.includes(input.reference));
+        for (const status of ["PENDING", "RUNNING"]) {
+          await db.generationJob.update({
+            where: { id: job.id },
+            data: { status },
+          });
+          assert.equal(
+            (
+              await call({
+                ...input,
+                expectedActualMicros: "0",
+                expectedConfirmationId: back.body.confirmationId,
+              })
+            ).status,
+            409,
+          );
+        }
+        await db.generationJob.update({
+          where: { id: job.id },
+          data: { status: "UNCERTAIN" },
+        });
+      },
+    );
     await t.test("cierre de sesión invalida el token", async () => {
       assert.equal((await user.call("auth/logout", "POST")).status, 200);
       assert.equal((await user.call("projects")).status, 401);

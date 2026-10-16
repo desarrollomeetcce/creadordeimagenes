@@ -74,3 +74,5 @@ Variation.filesQueuedAt marca encolado duradero de todos sus archivos tras caduc
 ## Migración 013 · retirada del listado de generaciones
 
 GenerationJob.archivedAt nullable e índice por archivedAt/createdAt. No elimina trabajos, resultados, reservas ni historial. Listados de Generaciones actuales excluyen retirados y ofrecen vista explícita de retiradas; informes de consumo, cuotas y mantenimiento siguen incluyendo esos registros. Escritura transaccional bajo bloqueo 728291, solo estados terminales y acceso vigente. Restaurar no reencola ni llama al proveedor. Migración aditiva aplicada con checksum en local y copia antes de rama conectada.
+
+Conciliación manual de costes: sin migración adicional. UsageLedger.actualMicros se actualiza con control de concurrencia y cada cambio añade AuditEvent COSTE_IA_CONCILIADO (resourceId = ledger, importes anterior/nuevo como cadenas microUSD, referencia y jobIds para contexto). Último evento proporciona token de concurrencia y procedencia manual; eventos anteriores son inmutables. No modifica status ni reservedMicros y no expone referencias por consultas de usuarios normales.

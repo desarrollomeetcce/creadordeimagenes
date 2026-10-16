@@ -321,6 +321,7 @@ const verbs: Record<string, string> = {
   TRABAJO_RETIRADO_LISTADO: "Retiró una generación del listado",
   TRABAJO_RESTAURADO_LISTADO: "Restauró una generación en el listado",
   PRESUPUESTO_PARTICULAR_ELIMINADO: "Eliminó un límite particular de consumo",
+  COSTE_IA_CONCILIADO: "Registró un coste de IA comprobado",
   INFORME_CONSUMO_PREPARADO: "Preparó un informe de consumo de IA",
   TRABAJOS_CANCELADOS: "Canceló trabajos pendientes y liberó sus reservas",
   LOTE_PENDIENTES_CANCELADOS:
@@ -445,6 +446,9 @@ function summary(
   return `${verb}${location}${paths.length > 1 ? ` y ${paths.length - 1} ${more} más` : ""}${quantity}.`;
 }
 const detailLabels: Record<string, string> = {
+  previousActualMicros: "Coste anterior en microUSD",
+  actualMicros: "Coste registrado en microUSD",
+  reference: "Referencia de comprobación",
   count: "Cantidad registrada",
   version: "Versión del afiche",
   cancelled: "Trabajos pendientes cancelados",

@@ -727,3 +727,8 @@ a {
   .usage-panel td::before { content:attr(data-label); display:block; font-weight:700; margin-bottom:4px; }
   .usage-panel caption { display:block; }
 }
+
+.usage-panel .cost-editor {white-space:normal;min-width:min(300px,65vw);max-width:420px;margin-top:12px;padding:12px;border:1px solid var(--line);border-radius:8px;background:var(--bg)}
+.usage-panel .cost-editor .hint,.usage-panel td:last-child p {white-space:normal;overflow-wrap:anywhere}
+.usage-panel .cost-editor input[type=checkbox] {width:auto}
+@media(max-width:620px){.usage-panel .cost-editor{min-width:0;max-width:100%}}

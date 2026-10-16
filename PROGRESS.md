@@ -1,5 +1,15 @@
 # Avance por fases · continuación del desarrollo
 
+## Continuación · costes comprobados y conciliación manual
+
+Consumo de IA permite al OWNER registrar y corregir un coste comprobado por operación terminada, con referencia y confirmación explícita de que no es una estimación. Importes en USD con hasta seis decimales, punto o coma decimal, convertidos con BigInt sin redondeos de Number; se distingue desconocido de cero comprobado. No se deducen precios de tokens ni se distribuye una factura agregada como coste exacto por afiche.
+
+Escritura exclusiva OWNER activo/aprobado, bajo bloqueo compartido con worker. PENDING/RUNNING y reservas todavía activas rechazan conciliación. Control de concurrencia compara tanto importe como última confirmación: una pestaña obsoleta no sobrescribe ni siquiera tras cambiar el importe y devolverlo al valor anterior. Auditoría conserva importes anterior/nuevo, referencia, actor y contexto del proyecto, sin modificar eventos previos. Las referencias se muestran solo al OWNER; otros roles ven origen manual/fecha e importe de sus propias operaciones. No se aceptan claves API evidentes en la referencia.
+
+Registrar el coste mantiene intactos reservas, presupuestos, estados inciertos, trabajos y factura del proveedor; no supone devolución, reintento ni verificación automática. CSV añade origen de confirmación y fecha Lima, sin referencias privadas. Formulario inline, validación, consentimiento, cancelación, errores y resultado de guardado persistente aunque cambie el filtro. No hay migración ni cambios de credenciales o datos externos.
+
+Validación final: 76 escenarios HTTP/PostgreSQL (77 resultados con contenedor), 18 unitarias, tipos, build e instalación sin base aprobados. Chromium verificó importe con coma decimal exacto, formato ambiguo rechazado antes del envío, persistencia, conflicto entre sesiones sin pérdida del texto editado, cancelación, móvil de 390 px sin desbordamiento/errores y USER sin edición ni referencia privada. Copia PostgreSQL restaurada en base local independiente: 19 tablas, trece migraciones, todos los importes/estados de ledger y muestras de hashes de archivos/miniaturas comparados. Sin llamadas de IA ni cambios externos. Las primeras ejecuciones del nuevo guion de historial usaron ruta/código de acción en vez de la ruta audit/history y etiqueta humana existentes; se corrigió el guion y toda la suite pasó sin cambiar esa API.
+
 ## Continuación · generaciones retirables, límites administrables y estado comprobado
 
 Generaciones ofrece Eliminar del listado para trabajos terminados, fallidos, cancelados o inciertos; conserva trabajo, afiche/versiones, ledger y auditoría. Vista Retiradas del listado con Restaurar; los retirados no ofrecen reintento hasta restaurarse. Pendientes requieren cancelación previa y RUNNING no se retira. Servidor valida autoría/OWNER, acceso vigente y serializa con worker mediante bloqueo 728291; no libera reservas ni borra cargos inciertos. Migración 013 aditiva: archivedAt nullable e índice, sin modificar datos existentes.

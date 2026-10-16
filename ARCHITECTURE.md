@@ -99,3 +99,7 @@ lib/job-management.ts lista la cola completa con proyección paginada, totales g
 ## Informes de consumo
 
 `lib/usage-report.ts` proyecta solo metadatos de UsageLedger y resuelve nombres con acceso vigente. OWNER consulta globalmente y los demás roles autorizados por actorId. El listado y sus agregados usan RepeatableRead; paginación estable de 50 y períodos de Lima. `lib/usage-format.ts` transforma microUSD con BigInt sin redondear a Number. CSV privado limita a 2000 filas y cuatro MB, protege fórmulas y diferencia nulo de cero; auditoría conserva solo cantidad. El cliente importa únicamente el formateador puro. No altera ledger ni inicia generaciones.
+
+## Conciliación manual de costes
+
+POST usage/:id/reconcile valida OWNER aprobado en transacción, importe decimal exacto y consentimiento; exige trabajo terminado y ledger conciliable. Serializa con worker mediante 728291 y compara actualMicros más último AuditEvent de confirmación para impedir sobrescritura y cambios de ida/vuelta obsoletos. Actualiza únicamente actualMicros y añade evento COSTE_IA_CONCILIADO con importes, referencia y contexto, sin reescribir reservas/estado. GET de informe y CSV resuelven última confirmación con DISTINCT ON; referencias e identificador de confirmación se proyectan solo para OWNER. El cliente conserva el dato esperado al abrir el editor. No hay catálogo tarifario supuesto ni llamada a proveedor o migración nueva.

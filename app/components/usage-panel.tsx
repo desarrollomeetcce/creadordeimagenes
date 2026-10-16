@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
-import { usdMicros } from "../../lib/usage-format";
+import { parseUsdMicros, usdMicros } from "../../lib/usage-format";
 type Row = {
   id: string;
   jobId: string;
@@ -10,6 +10,12 @@ type Row = {
   status: string;
   reservedMicros: string;
   actualMicros: string | null;
+  costConfirmation: {
+    id?: string;
+    source: string;
+    confirmedAt: string;
+    reference?: string;
+  } | null;
   contexts: {
     projectName: string;
     productName?: string;
@@ -19,6 +25,7 @@ type Row = {
 type Report = {
   rows: Row[];
   total: number;
+  canReconcile: boolean;
   page: number;
   pages: number;
   summary: {
@@ -35,6 +42,170 @@ const labels: Record<string, string> = {
   UNCERTAIN: "Cargo incierto",
   CONSUMED_ESTIMATE: "Procesado con reserva estimada",
 };
+function CostEditor({
+  row,
+  close,
+  saved,
+}: {
+  row: Row;
+  close: () => void;
+  saved: () => void;
+}) {
+  const [amount, setAmount] = useState(
+    row.actualMicros === null ? "" : usdMicros(row.actualMicros),
+  );
+  const [reference, setReference] = useState(
+    row.costConfirmation?.reference ?? "",
+  );
+  const [expected] = useState({
+    expectedActualMicros: row.actualMicros,
+    expectedConfirmationId: row.costConfirmation?.id ?? null,
+  });
+  const [confirmed, setConfirmed] = useState(false),
+    [saving, setSaving] = useState(false),
+    [error, setError] = useState("");
+  return (
+    <form
+      className="stack cost-editor"
+      onSubmit={(event) => {
+        event.preventDefault();
+        if (parseUsdMicros(amount) === null) {
+          setError(
+            "Introduce USD sin separador de miles y con hasta seis decimales.",
+          );
+          return;
+        }
+        setSaving(true);
+        setError("");
+        void fetch(`/api/usage/${row.id}/reconcile`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            amountUsd: amount,
+            reference,
+            confirmed,
+            ...expected,
+          }),
+        })
+          .then(async (response) => {
+            const result = await response.json();
+            if (!response.ok)
+              throw Error(result.error ?? "No se pudo registrar el coste.");
+            saved();
+          })
+          .catch((e) =>
+            setError(
+              e instanceof Error ? e.message : "No se pudo registrar el coste.",
+            ),
+          )
+          .finally(() => setSaving(false));
+      }}
+    >
+      <label>
+        Importe comprobado · USD
+        <input
+          type="text"
+          inputMode="decimal"
+          maxLength={16}
+          value={amount}
+          onChange={(e) => setAmount(e.target.value)}
+          required
+          disabled={saving}
+        />
+        <span className="hint">
+          Introduce el coste comprobado de esta operación, incluidos los modelos
+          que se utilizaron. Usa punto o coma decimal, hasta seis decimales.
+          Cero solo si confirmaste que no hubo cargo. No distribuyas una factura
+          agregada como si fuera un coste exacto.
+        </span>
+      </label>
+      <label>
+        Referencia de comprobación
+        <input
+          type="text"
+          minLength={3}
+          maxLength={120}
+          value={reference}
+          onChange={(e) => setReference(e.target.value)}
+          required
+          disabled={saving}
+        />
+        <span className="hint">
+          Por ejemplo: identificador de operación o comprobante y fecha. Visible
+          únicamente al OWNER. No pegues claves API ni datos de tarjeta.
+        </span>
+      </label>
+      <label className="row">
+        <input
+          type="checkbox"
+          checked={confirmed}
+          onChange={(e) => setConfirmed(e.target.checked)}
+          disabled={saving}
+        />
+        Confirmo que revisé este importe en el proveedor; no es una estimación.
+      </label>
+      <p className="hint">
+        Registrar el coste no modifica reservas, estado incierto, presupuestos
+        ni factura del proveedor. Las correcciones quedan en Historial.
+      </p>
+      {error && (
+        <p className="notice error" role="alert">
+          {error}
+        </p>
+      )}
+      <div className="row">
+        <button type="submit" disabled={saving || !confirmed}>
+          Guardar coste comprobado
+        </button>
+        <button type="button" disabled={saving} onClick={close}>
+          Cancelar registro
+        </button>
+      </div>
+    </form>
+  );
+}
+function CostCell({
+  row,
+  canReconcile,
+  saved,
+}: {
+  row: Row;
+  canReconcile: boolean;
+  saved: () => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  return (
+    <>
+      <span>{usdMicros(row.actualMicros)}</span>
+      {row.costConfirmation && (
+        <p className="hint">
+          {row.costConfirmation.source} ·{" "}
+          {new Date(row.costConfirmation.confirmedAt).toLocaleString("es-PE", {
+            timeZone: "America/Lima",
+          })}
+        </p>
+      )}
+      {canReconcile &&
+        ["CONSUMED_ESTIMATE", "UNCERTAIN", "RELEASED"].includes(row.status) &&
+        (editing ? (
+          <CostEditor
+            row={row}
+            close={() => setEditing(false)}
+            saved={() => {
+              setEditing(false);
+              saved();
+            }}
+          />
+        ) : (
+          <button type="button" onClick={() => setEditing(true)}>
+            {row.actualMicros === null
+              ? "Registrar coste comprobado"
+              : "Corregir coste comprobado"}
+          </button>
+        ))}
+    </>
+  );
+}
 export function UsagePanel() {
   const [data, setData] = useState<Report | null>(null),
     [days, setDays] = useState("30"),
@@ -45,7 +216,8 @@ export function UsagePanel() {
     [version, setVersion] = useState(0),
     [busy, setBusy] = useState(false),
     [exporting, setExporting] = useState(false),
-    [error, setError] = useState("");
+    [error, setError] = useState(""),
+    [message, setMessage] = useState("");
   const params = new URLSearchParams({
     days,
     status,
@@ -200,6 +372,11 @@ export function UsagePanel() {
         operaciones; no solo la página visible. Puedes abrirlo en Excel. Los
         períodos usan días de Lima.
       </p>
+      {message && (
+        <p className="notice" role="status">
+          {message}
+        </p>
+      )}
       {error && (
         <p className="notice error" role="alert">
           {error}
@@ -278,7 +455,16 @@ export function UsagePanel() {
                       {usdMicros(row.reservedMicros)}
                     </td>
                     <td data-label="Coste real USD">
-                      {usdMicros(row.actualMicros)}
+                      <CostCell
+                        row={row}
+                        canReconcile={data.canReconcile}
+                        saved={() => {
+                          setMessage(
+                            "Coste comprobado registrado. El historial conserva las correcciones y las reservas no cambian.",
+                          );
+                          setVersion((v) => v + 1);
+                        }}
+                      />
                     </td>
                   </tr>
                 ))}

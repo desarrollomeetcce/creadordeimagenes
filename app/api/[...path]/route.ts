@@ -359,6 +359,16 @@ async function handle(
       );
     }
 
+    if (
+      parts[0] === "usage" &&
+      parts.length === 3 &&
+      parts[2] === "reconcile" &&
+      method === "POST"
+    ) {
+      ownerOnly(user);
+      const { reconcileCost } = await import("@/lib/cost-reconciliation");
+      return send(await reconcileCost(user, parts[1], await body(req)));
+    }
     if (route === "jobs/list" && method === "GET") {
       const { listJobs } = await import("@/lib/job-management");
       return send(await listJobs(user, req.nextUrl.searchParams));

@@ -278,3 +278,23 @@ test("OpenAI 429 diferencia cuota y límite temporal sin exponer la respuesta de
     globalThis.fetch = prior;
   }
 });
+
+test("importes de conciliación: decimales exactos y rechazo de formatos ambiguos", async () => {
+  const { parseUsdMicros } = await import("../lib/usage-format");
+  assert.equal(parseUsdMicros("0"), 0n);
+  assert.equal(parseUsdMicros("0.000001"), 1n);
+  assert.equal(parseUsdMicros("1,234567"), 1234567n);
+  assert.equal(parseUsdMicros("999999999.999999"), 999999999999999n);
+  for (const value of [
+    "",
+    "1e3",
+    "-1",
+    "+1",
+    "1.0000001",
+    "1,000.00",
+    "01",
+    "NaN",
+    "1000000000",
+  ])
+    assert.equal(parseUsdMicros(value), null, value);
+});

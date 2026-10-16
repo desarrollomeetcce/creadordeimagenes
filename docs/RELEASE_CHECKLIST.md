@@ -16,18 +16,19 @@ La estimación actual de 85–90% corresponde al desarrollo funcional; no certif
 - Restauración de espacios, filtros/selección por sesión y salida móvil.
 - Mantenimiento con cola persistente de borrado, reintentos, resultados OWNER y ruta de programación autenticada; recepción real de Vercel pendiente.
 - Cola completa paginada, selección/cancelación de hasta 200 pendientes y cancelación de pendientes de lote con reservas/cargos inciertos protegidos. Lote de 200 completado con adaptador simulado; no acredita proveedor real.
+- Registro manual de costes comprobados exclusivo OWNER, con auditoría, precisión decimal, conflicto entre sesiones y referencia privada. No acredita conciliación automática con la factura.
 - Consumo paginado con totales completos, filtros y CSV privado de hasta 2000 operaciones; importes exactos y costes desconocidos explícitos. ZIP de 200 PNG y 200 JPG validado con archivos locales simulados.
-- 75 escenarios de integración, cuatro de correo previamente verificados, 17 unitarias, compilación, instalación y recorridos Chromium locales.
+- 76 escenarios de integración, cuatro de correo previamente verificados, 18 unitarias, compilación, instalación y recorridos Chromium locales.
 - Imagen Docker construida/arrancada como usuario no root con autenticación, fuentes y archivos verificados.
-- Copia PostgreSQL local restaurada en base independiente: doce migraciones, 17 tablas y hashes de archivos/miniaturas BYTEA comparados.
+- Copia PostgreSQL local restaurada en base independiente: trece migraciones, 19 tablas, importes/estados de consumo y muestras de hashes de archivos/miniaturas BYTEA comparados.
 
 ## Pendientes que impiden declarar terminado
 
 | Pendiente | Condición de cierre |
 | --- | --- |
-| IA real | OWNER configura su proveedor desde la interfaz, verifica modelos y autoriza una prueba que puede generar cargo. Comprobar imagen, referencias, texto/logos, edición y descarga reales. La revisión del 16/10/2026 encontró clave guardada y modelos seleccionados, configuración UNVERIFIED después del guardado y límites inicialmente cero. Una revisión posterior confirmó reserva por afiche/operación USD 3 y límites diario/mensual USD 10, pendientes de nueva verificación; no se leyó ni descifró la clave. |
+| IA real | Conexión y modelos consultados por OWNER. El intento real registrado por el usuario no produjo imagen confirmada y recibió error 429; se detectó también límite particular insuficiente. Falta comprobar generación, referencias, texto/logos, edición y descarga reales con disponibilidad del proveedor. El usuario confirma que la web funciona; esto no sustituye la prueba de IA. |
 | Correo real | Panel SMTP y envío de recuperación implementados y probados con transporte simulado. OWNER debe introducir su buzón Hostinger en Configuración de correo, verificar TLS/autenticación y comprobar recepción mediante envío explícito. No se ha enviado correo externo. La entrega manual y emergencia siguen disponibles. |
 | Carga y consumo | Validar un lote grande con proveedor real, rendimiento, recuperación de infraestructura y conciliación de costes que informe el proveedor. |
 | Producción elegida | Validar HTTPS, ejecutor externo, almacenamiento y cuota, monitorización, configuración de CRON_SECRET y recepción real de la limpieza diaria con el alojamiento inactivo y restauración conjunta de base/archivos/clave maestra en el servidor elegido. Las comprobaciones locales no sustituyen las del VPS o Vercel externos. |
 
-No se han realizado llamadas facturables de IA ni enviado correos externos durante el desarrollo. Los secretos se introducen en sus interfaces o canales de instalación seguros, nunca en este documento.
+Las suites automatizadas descritas no hacen llamadas facturables de IA ni envían correos externos. Las pruebas reales iniciadas por el usuario se distinguen de esas suites. Los secretos se introducen en sus interfaces o canales de instalación seguros, nunca en este documento.

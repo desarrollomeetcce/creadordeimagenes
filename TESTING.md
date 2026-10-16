@@ -1,5 +1,13 @@
 # Pruebas y evidencia
 
+## Continuación: registro de costes comprobados
+
+La nueva prueba HTTP usa PostgreSQL sintético y registro UNCERTAIN: permisos OWNER frente a USER/ADMIN/OBSERVER/anónimo, consentimiento obligatorio, formato inválido y referencia con apariencia de clave rechazados, coste cero frente a desconocido, importe con seis decimales y coma, dos correcciones simultáneas con un único ganador y rechazo de pestaña obsoleta aunque el importe vuelva a cero. Conserva ledger/reserva/estado y audita tres correcciones; reportes/CSV de USER no exponen la referencia privada y muestran origen manual del OWNER. PENDING/RUNNING rechazan. La primera ejecución usó la ruta de historial legado en el guion nuevo; se corrigió a audit/history y se repitió toda la suite, sin cambiar el producto.
+
+Unitarias amplían conversión monetaria exacta: cero, un microUSD, coma decimal y máximo admitido; rechazan exponentes, negativos, separación ambigua, exceso de decimales y límites. No se llama a IA ni se modifica facturación externa.
+
+Validación final: 76 escenarios HTTP/PostgreSQL (77 resultados con contenedor), 18 unitarias, tipos, build e instalación sin base aprobados. Chromium verificó importe con coma decimal exacto, formato ambiguo rechazado antes del envío, persistencia, conflicto entre sesiones sin pérdida del texto editado, cancelación, móvil de 390 px sin desbordamiento/errores y USER sin edición ni referencia privada. Copia PostgreSQL restaurada en base local independiente: 19 tablas, trece migraciones, todos los importes/estados de ledger y muestras de hashes de archivos/miniaturas comparados. Sin llamadas de IA ni cambios externos. Las primeras ejecuciones del nuevo guion de historial usaron ruta/código de acción en vez de la ruta audit/history y etiqueta humana existentes; se corrigió el guion y toda la suite pasó sin cambiar esa API.
+
 ## Continuación: retirada, límites, sondeo y errores OpenAI
 
 75 escenarios HTTP/PostgreSQL aprobados (76 resultados con contenedor), 17 unitarias, tipos/build e instalación sin base. Retirar/restaurar conserva ledger exacto UNCERTAIN, afiche descargable y auditoría; listas por rol y legado excluyen retirados, y el reintento requiere restaurar. PENDING/RUNNING 409 y accesos ajenos/Observador/anónimo rechazados. CRUD de límites particulares conserva configuración global y consumo; eliminar fila inexistente 404. Validador compartido con reservas reproduce conflicto USD 2 por afiche y USD 1 diario particular, muestra bloqueo y permite al retirar la restricción. La precomprobación no reserva ni llama al proveedor.
