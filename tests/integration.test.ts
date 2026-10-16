@@ -356,9 +356,9 @@ test("Integración HTTP + PostgreSQL (base exclusiva de pruebas, sin llamadas ex
         );
         assert.equal(
           (await admin.call("projects/" + privateProject.body.id)).status,
-          200,
+          404,
         );
-        assert.equal((await admin.call("projects/" + pid)).status, 200);
+        assert.equal((await admin.call("projects/" + pid)).status, 404);
       },
     );
     await t.test("categorías, 12 subproductos y herencia", async () => {
@@ -489,7 +489,7 @@ test("Integración HTTP + PostgreSQL (base exclusiva de pruebas, sin llamadas ex
         assert.equal(initial.status, 200);
         assert.equal(initial.body.kit, null);
         assert.equal(initial.body.canEdit, true);
-        assert.equal((await admin.call(path)).body.canEdit, false);
+        assert.equal((await admin.call(path)).status, 404);
         const values = {
           expectedRevision: 0,
           name: "Tienda de prueba",
@@ -498,7 +498,7 @@ test("Integración HTTP + PostgreSQL (base exclusiva de pruebas, sin llamadas ex
           font: "DejaVu Serif",
           logoAttachmentIds: [],
         };
-        assert.equal((await admin.call(path, "PUT", values)).status, 403);
+        assert.equal((await admin.call(path, "PUT", values)).status, 404);
         const saved = await user.call(path, "PUT", values);
         assert.equal(saved.status, 200);
         assert.equal(saved.body.revision, 1);
@@ -1048,7 +1048,7 @@ test("Integración HTTP + PostgreSQL (base exclusiva de pruebas, sin llamadas ex
               document,
             })
           ).status,
-          403,
+          404,
         );
       },
     );
@@ -1510,7 +1510,7 @@ test("Integración HTTP + PostgreSQL (base exclusiva de pruebas, sin llamadas ex
         });
         const path = `projects/${p.body.id}/members`;
         assert.equal((await user.call(`projects/${p.body.id}`)).status, 404);
-        assert.equal((await admin.call(`projects/${p.body.id}`)).status, 200);
+        assert.equal((await admin.call(`projects/${p.body.id}`)).status, 404);
         assert.equal(
           (
             await admin.call(`projects/${p.body.id}`, "PATCH", {
@@ -1518,7 +1518,7 @@ test("Integración HTTP + PostgreSQL (base exclusiva de pruebas, sin llamadas ex
               prompt: "",
             })
           ).status,
-          403,
+          404,
         );
         const actualUser = await db.user.findUniqueOrThrow({
           where: { id: uid },
@@ -1546,7 +1546,7 @@ test("Integración HTTP + PostgreSQL (base exclusiva de pruebas, sin llamadas ex
           "status",
         ]);
         assert.equal((await user.call(path)).status, 403);
-        assert.equal((await admin.call(path)).status, 403);
+        assert.equal((await admin.call(path)).status, 404);
         assert.equal(
           (
             await user.call(`projects/${p.body.id}`, "PATCH", {
@@ -1679,7 +1679,7 @@ test("Integración HTTP + PostgreSQL (base exclusiva de pruebas, sin llamadas ex
               sourceCategoryId: privateCategory.body.id,
             })
           ).status,
-          403,
+          404,
         );
         assert.equal(
           (await user.call(`attachments/${source.id}`, "DELETE")).status,
@@ -2556,8 +2556,8 @@ test("Integración HTTP + PostgreSQL (base exclusiva de pruebas, sin llamadas ex
         assert.equal(first.body.resource.canEdit, true);
         assert.equal(
           (await admin.call(`gallery?scope=project&id=${collectionProject}`))
-            .body.resource.canEdit,
-          false,
+            .status,
+          404,
         );
         const second = await user.call(
           `gallery?scope=project&id=${collectionProject}&page=2`,
@@ -2623,7 +2623,7 @@ test("Integración HTTP + PostgreSQL (base exclusiva de pruebas, sin llamadas ex
               `gallery?scope=project&id=${privateProject.body.id}`,
             )
           ).status,
-          200,
+          404,
         );
         assert.equal(
           (
@@ -3340,6 +3340,383 @@ test("Integración HTTP + PostgreSQL (base exclusiva de pruebas, sin llamadas ex
           await db.generationJob.deleteMany({ where: { id: { in: jobIds } } });
           await db.project.deleteMany({ where: { id: { in: projectIds } } });
         }
+      },
+    );
+    await t.test(
+      "accesos por producto y subproducto aíslan hermanos, archivos, galerías y administradores",
+      async () => {
+        const p = await owner.call("projects", "POST", {
+          name: "Proyecto granular",
+          prompt: "PROMPT_PRIVADO_PROYECTO",
+        });
+        const projectId = p.body.id;
+        const a = await owner.call(`projects/${projectId}/categories`, "POST", {
+          name: "Producto A",
+          prompt: "PROMPT_PRIVADO_A",
+        });
+        const b = await owner.call(`projects/${projectId}/categories`, "POST", {
+          name: "Producto B",
+          prompt: "PROMPT_PRIVADO_B",
+        });
+        const aSubs = (
+          await owner.call(`categories/${a.body.id}/subproducts`, "POST", {
+            names: ["Tema A1", "Tema A2"],
+          })
+        ).body;
+        const bSubs = (
+          await owner.call(`categories/${b.body.id}/subproducts`, "POST", {
+            names: ["Tema B1", "Tema B2"],
+          })
+        ).body;
+        const account = await db.user.findUniqueOrThrow({ where: { id: uid } });
+        const watching = await db.user.findUniqueOrThrow({
+          where: { id: oid },
+        });
+        const group = `projects/${projectId}/members`;
+        assert.equal((await admin.call(`projects/${projectId}`)).status, 404);
+        assert.equal(
+          (await user.call(group, "PATCH", { allAdministrators: true })).status,
+          404,
+        );
+        assert.equal(
+          (await owner.call(group, "PATCH", { allAdministrators: true }))
+            .status,
+          200,
+        );
+        assert.equal(
+          (await admin.call(`projects/${projectId}`)).body.canEdit,
+          true,
+        );
+        assert.equal(
+          (await admin.call(group, "PATCH", { allAdministrators: false }))
+            .status,
+          403,
+        );
+        assert.equal(
+          (
+            await admin.call(`categories/${a.body.id}`, "PATCH", {
+              name: "Producto A",
+              prompt: "PROMPT_PRIVADO_A",
+              settings: {},
+            })
+          ).status,
+          200,
+        );
+        assert.equal(
+          (await owner.call(group, "PATCH", { allAdministrators: false }))
+            .status,
+          200,
+        );
+        assert.equal((await admin.call(`categories/${a.body.id}`)).status, 404);
+        const directory = await owner.call(
+          group + "/directory?q=" + encodeURIComponent(account.email),
+        );
+        assert.equal(directory.status, 200);
+        assert.equal(directory.body.users.length, 1);
+        assert.deepEqual(Object.keys(directory.body.users[0]).sort(), [
+          "email",
+          "id",
+          "name",
+          "role",
+        ]);
+        assert.equal((await user.call(group + "/directory")).status, 404);
+        assert.equal(
+          (await owner.call(group + "/directory?q=noexiste@example.test")).body
+            .users.length,
+          0,
+        );
+        assert.equal(
+          (
+            await owner.call(`categories/${a.body.id}/members`, "POST", {
+              email: account.email,
+            })
+          ).status,
+          200,
+        );
+        let visible = await user.call(`projects/${projectId}`);
+        assert.equal(visible.body.prompt, "");
+        assert.equal(visible.body.canEdit, false);
+        assert.deepEqual(
+          visible.body.categories.map((c: any) => c.id),
+          [a.body.id],
+        );
+        assert.equal(
+          (await user.call(`categories/${a.body.id}`)).body.canEdit,
+          true,
+        );
+        assert.equal((await user.call(`categories/${b.body.id}`)).status, 404);
+        assert.equal(
+          (await user.call(`subproducts/${aSubs[1].id}`)).status,
+          200,
+        );
+        assert.equal(
+          (await user.call(`attachments?scope=project&id=${projectId}`)).status,
+          404,
+        );
+        assert.equal(
+          (await owner.call(`categories/${a.body.id}/members/${uid}`, "DELETE"))
+            .status,
+          200,
+        );
+        assert.equal(
+          (
+            await owner.call(`subproducts/${bSubs[0].id}/members`, "POST", {
+              email: account.email,
+            })
+          ).status,
+          200,
+        );
+        assert.equal(
+          (
+            await owner.call(`subproducts/${bSubs[0].id}/members`, "POST", {
+              email: watching.email,
+            })
+          ).status,
+          200,
+        );
+        visible = await user.call(`categories/${b.body.id}`);
+        assert.equal(visible.body.prompt, "");
+        assert.equal(visible.body.canEdit, false);
+        assert.deepEqual(
+          visible.body.subproducts.map((s: any) => s.id),
+          [bSubs[0].id],
+        );
+        assert.equal(visible.body.subproducts[0].canEdit, true);
+        assert.equal(
+          (await user.call(`subproducts/${bSubs[1].id}`)).status,
+          404,
+        );
+        assert.equal(
+          (await observer.call(`subproducts/${bSubs[0].id}`)).body.canEdit,
+          false,
+        );
+        assert.equal(
+          (
+            await observer.call(`subproducts/${bSubs[0].id}`, "PATCH", {
+              name: "No",
+              prompt: "",
+              settings: {},
+            })
+          ).status,
+          403,
+        );
+        assert.equal(
+          (
+            await user.call(`subproducts/${bSubs[0].id}`, "PATCH", {
+              name: "Tema B1",
+              prompt: "Personalizado",
+              settings: {},
+            })
+          ).status,
+          200,
+        );
+        const { store } = await import("../lib/storage");
+        const png = await (
+          await import("sharp")
+        )
+          .default({
+            create: {
+              width: 30,
+              height: 30,
+              channels: 3,
+              background: "#123456",
+            },
+          })
+          .png()
+          .toBuffer();
+        const image = async (subproductId: string) => {
+          const job = await db.generationJob.create({
+            data: {
+              actorId: uid,
+              projectId,
+              subproductId,
+              idempotencyKey: randomUUID(),
+              snapshot: {},
+              reservedMicros: 0n,
+              status: "COMPLETED",
+            },
+          });
+          return db.variation.create({
+            data: {
+              jobId: job.id,
+              subproductId,
+              path: await store(png),
+              model: "synthetic",
+              expiresAt: new Date(Date.now() + 3600000),
+            },
+          });
+        };
+        const allowed = await image(bSubs[0].id),
+          denied = await image(bSubs[1].id);
+        for (const who of [user, observer]) {
+          const gallery = await who.call(
+            `gallery?scope=project&id=${projectId}`,
+          );
+          assert.equal(gallery.status, 200);
+          assert.deepEqual(
+            gallery.body.items.map((v: any) => v.id),
+            [allowed.id],
+          );
+          const direct = await fetch(root + `/api/variations/${allowed.id}`, {
+            headers: { Cookie: who.cookie },
+          });
+          assert.equal(direct.status, 200);
+          const forbidden = await fetch(root + `/api/variations/${denied.id}`, {
+            headers: { Cookie: who.cookie },
+          });
+          assert.equal(forbidden.status, 404);
+          const zip = await fetch(root + "/api/exports", {
+            method: "POST",
+            headers: {
+              Cookie: who.cookie,
+              Origin: root,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ scope: "project", id: projectId }),
+          });
+          assert.equal(zip.status, 200);
+          const mixed = await who.call("exports", "POST", {
+            ids: [allowed.id, denied.id],
+          });
+          assert.equal(mixed.status, 404);
+        }
+        const pending = await db.generationJob.create({
+          data: {
+            actorId: uid,
+            projectId,
+            subproductId: bSubs[1].id,
+            idempotencyKey: randomUUID(),
+            snapshot: {},
+            reservedMicros: 10n,
+          },
+        });
+        assert.equal(
+          (await user.call(`jobs/${pending.id}/process`, "POST", {})).status,
+          404,
+        );
+        assert.equal(
+          (
+            await owner.call(
+              `subproducts/${bSubs[0].id}/members/${uid}`,
+              "DELETE",
+            )
+          ).status,
+          200,
+        );
+        assert.equal(
+          (await user.call(`subproducts/${bSubs[0].id}`)).status,
+          404,
+        );
+        assert.equal((await user.call(`projects/${projectId}`)).status, 404);
+      },
+    );
+    await t.test(
+      "agregar suma espacios y eliminar subproductos retira lotes, cancela pendientes y conserva historial",
+      async () => {
+        const p = await user.call("projects", "POST", {
+          name: "Espacios eliminables",
+        });
+        const product = await user.call(
+          `projects/${p.body.id}/categories`,
+          "POST",
+          { name: "Producto de espacios" },
+        );
+        const id = product.body.id;
+        const first = await user.call(`categories/${id}/subproducts`, "POST", {
+          names: ["Uno", "Dos", "Tres"],
+        });
+        const more = await user.call(`categories/${id}/subproducts`, "POST", {
+          names: ["Cuatro", "Cinco", "Seis", "Siete"],
+        });
+        assert.equal(
+          (await user.call(`categories/${id}`)).body.subproducts.length,
+          7,
+        );
+        const target = first.body[0].id;
+        const job = await db.generationJob.create({
+          data: {
+            actorId: uid,
+            projectId: p.body.id,
+            subproductId: target,
+            idempotencyKey: randomUUID(),
+            snapshot: {},
+            reservedMicros: 123n,
+          },
+        });
+        await db.usageLedger.create({
+          data: {
+            jobId: job.id,
+            actorId: uid,
+            projectId: p.body.id,
+            model: "synthetic",
+            reservedMicros: 123n,
+          },
+        });
+        const removed = await user.call(`subproducts/${target}`, "DELETE");
+        assert.equal(removed.status, 200);
+        assert.equal(removed.body.cancelled, 1);
+        assert.equal(
+          (await db.generationJob.findUniqueOrThrow({ where: { id: job.id } }))
+            .status,
+          "CANCELLED",
+        );
+        assert.equal(
+          (await db.usageLedger.findUniqueOrThrow({ where: { jobId: job.id } }))
+            .status,
+          "RELEASED",
+        );
+        assert(
+          (await db.subproduct.findUniqueOrThrow({ where: { id: target } }))
+            .deletedAt,
+        );
+        assert.equal(
+          (await user.call(`categories/${id}`)).body.subproducts.length,
+          6,
+        );
+        assert.equal((await user.call(`subproducts/${target}`)).status, 404);
+        const bad = await user.call("subproducts/bulk-delete", "POST", {
+          ids: [first.body[1].id, "does-not-exist"],
+        });
+        assert.equal(bad.status, 404);
+        assert.equal(
+          (await user.call(`categories/${id}`)).body.subproducts.length,
+          6,
+        );
+        const running = await db.generationJob.create({
+          data: {
+            actorId: uid,
+            projectId: p.body.id,
+            subproductId: first.body[1].id,
+            idempotencyKey: randomUUID(),
+            snapshot: {},
+            reservedMicros: 0n,
+            status: "RUNNING",
+          },
+        });
+        assert.equal(
+          (await user.call(`subproducts/${first.body[1].id}`, "DELETE")).status,
+          409,
+        );
+        await db.generationJob.update({
+          where: { id: running.id },
+          data: { status: "FAILED" },
+        });
+        assert.equal(
+          (
+            await user.call("subproducts/bulk-delete", "POST", {
+              ids: [first.body[1].id, more.body[0].id],
+            })
+          ).body.removed,
+          2,
+        );
+        const previews = await user.call(`categories/${id}/preview`);
+        assert.equal(previews.status, 200);
+        assert.equal(previews.body.length, 4);
+        assert(
+          !(await user.call(`projects/${p.body.id}`)).body.categories.some(
+            (c: any) => c._count.subproducts !== 4,
+          ),
+        );
       },
     );
     await t.test("cierre de sesión invalida el token", async () => {

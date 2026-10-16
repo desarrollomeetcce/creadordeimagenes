@@ -148,21 +148,21 @@ export function CollectionGallery({
         />
       )}
       <button onClick={back}>
-        Volver {scope === "project" ? "al proyecto" : "a la categoría"}
+        Volver {scope === "project" ? "al proyecto" : "al producto"}
       </button>
       <h1>
         Afiches de{" "}
         {data?.resource.name ??
-          (scope === "project" ? "proyecto" : "categoría")}
+          (scope === "project" ? "proyecto" : "producto")}
       </h1>
       <p className="muted">
         {data?.total ?? 0} afiches disponibles. Cada resultado se descarga como
-        un archivo independiente, organizado por categoría y subproducto.
+        un archivo independiente, organizado por producto y subproducto.
       </p>
       <div className="panel stack">
         <div className="fields">
           <label>
-            Buscar por subproducto o categoría
+            Buscar por subproducto o producto
             <input
               value={q}
               maxLength={200}

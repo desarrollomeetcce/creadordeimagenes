@@ -1,3 +1,4 @@
+import { resourceAccess } from "./auth";
 import { db } from "./db";
 import { demand } from "./errors";
 import { configured, reserveJobs } from "./ai";
@@ -17,7 +18,7 @@ export async function previewSubproduct(id: string) {
     { name: "Identidad de marca", prompt: brandInstructions(brand) },
     { name: "Proyecto", prompt: s.category.project.prompt },
     {
-      name: "Categoría",
+      name: "Producto",
       prompt: s.category.applyPromptToAll ? s.category.prompt : "",
     },
     { name: "Subproducto", prompt: s.prompt },
@@ -44,7 +45,7 @@ export async function previewSubproduct(id: string) {
     Object.keys(s.settings as object).length === 0;
   if (needsSettings)
     instructions.warnings.push(
-      "Define la cantidad, distribución, formato y estilo de este subproducto; la categoría no aplica parámetros comunes.",
+      "Define la cantidad, distribución, formato y estilo de este subproducto; la producto no aplica parámetros comunes.",
     );
   return {
     sub: s,
@@ -68,7 +69,7 @@ export async function generateBatch(
   const c = await configured();
   const category = await db.category.findUniqueOrThrow({
     where: { id: categoryId },
-    include: { subproducts: true },
+    include: { subproducts: { where: { deletedAt: null } } },
   });
   const subs = category.subproducts.filter(
     (s) => !selected || selected.includes(s.id),
@@ -76,17 +77,20 @@ export async function generateBatch(
   if (selected)
     demand(
       subs.length === new Set(selected).size,
-      "La selección incluye subproductos que ya no están en esta categoría. Actualiza el lote.",
+      "La selección incluye subproductos que ya no están en este producto. Actualiza el lote.",
     );
   demand(subs.length > 0, "Agrega o selecciona al menos un subproducto.");
+  const actor = await db.user.findUniqueOrThrow({ where: { id: actorId } });
+  demand(actor.status === "APPROVED", "La cuenta ya no está aprobada.", 403);
   const items = [];
   for (const sub of subs) {
+    await resourceAccess(actor, "subproduct", sub.id, "GENERATE");
     const p = await previewSubproduct(sub.id),
       s = p.settings;
     validateDistribution(s);
     demand(
       !p.needsSettings,
-      `${sub.name}: define su cantidad, distribución y estilo antes de generar; esta categoría no aplica parámetros comunes.`,
+      `${sub.name}: define su cantidad, distribución y estilo antes de generar; este producto no aplica parámetros comunes.`,
     );
     demand(
       !p.instructions.warnings.length,

@@ -1,5 +1,5 @@
 import { db } from "./db";
-import { projectAccess } from "./auth";
+import { projectAccess, jobResourceAccess } from "./auth";
 import { demand, AppError } from "./errors";
 import { configured } from "./ai";
 import { processJob } from "./jobs";
@@ -73,9 +73,9 @@ export async function prepareBackground(
     if (job.projectId === "connection-test")
       demand(user.role === "OWNER", "Operación exclusiva del OWNER.", 403);
     else
-      await projectAccess(
+      await jobResourceAccess(
         user,
-        job.projectId,
+        job,
         typeof (job.snapshot as Record<string, unknown>).editVariationId ===
           "string"
           ? "EDIT"

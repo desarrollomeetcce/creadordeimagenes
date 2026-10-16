@@ -20,7 +20,7 @@ export function HierarchyBreadcrumbs({
     ...(category
       ? [
           {
-            label: "Categoría: " + category.name,
+            label: "Producto: " + category.name,
             values: { view: "projects", category: category.id },
           },
         ]

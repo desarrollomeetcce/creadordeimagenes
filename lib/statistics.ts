@@ -69,7 +69,7 @@ export async function statistics(
         where: { project: { deletedAt: null } },
       });
       const subproducts = await tx.subproduct.count({
-        where: { category: { project: { deletedAt: null } } },
+        where: { deletedAt: null, category: { project: { deletedAt: null } } },
       });
       const accounts = await tx.user.count();
       const pendingAccounts = await tx.user.count({
@@ -110,7 +110,7 @@ export async function statistics(
           ('month', to_char(l."createdAt" AT TIME ZONE 'UTC' AT TIME ZONE 'America/Lima', 'YYYY-MM'), to_char(l."createdAt" AT TIME ZONE 'UTC' AT TIME ZONE 'America/Lima', 'YYYY-MM')),
           ('user', l."actorId", coalesce(u.name, 'Cuenta no disponible')),
           ('project', l."projectId", coalesce(p.name, 'Proyecto no disponible')),
-          ('category', coalesce(c.id, 'unassigned'), coalesce(p.name || ' / ' || c.name, 'Sin categoría')),
+          ('category', coalesce(c.id, 'unassigned'), coalesce(p.name || ' / ' || c.name, 'Sin producto')),
           ('subproduct', coalesce(s.id, 'unassigned'), coalesce(p.name || ' / ' || c.name || ' / ' || s.name, 'Sin subproducto')),
           ('model', l.model, l.model)
         ) d(dimension, id, label)

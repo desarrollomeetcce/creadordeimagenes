@@ -1,7 +1,14 @@
 import { z } from "zod";
 import type { Prisma } from "@prisma/client";
 import { db } from "./db";
-import { projectAccess, ownerOnly } from "./auth";
+import {
+  projectAccess,
+  ownerOnly,
+  resourceAccess,
+  subproductFilter,
+  accessFlags,
+  jobResourceAccess,
+} from "./auth";
 import { demand } from "./errors";
 import { fileStream, load } from "./storage";
 import JSZip from "jszip";
@@ -25,12 +32,12 @@ type Scope = z.infer<typeof scopeSchema>;
 export async function collectionContext(user: User, input: Scope) {
   let projectId: string, name: string;
   if (input.scope === "project") {
-    const project = await projectAccess(user, input.id);
+    const project = await projectAccess(user, input.id, "NAVIGATE");
     projectId = project.id;
     name = project.name;
   } else if (input.scope === "category") {
     const category = await db.category.findUnique({ where: { id: input.id } });
-    demand(category, "Categoría no encontrada.", 404);
+    demand(category, "Producto no encontrado.", 404);
     projectId = category.projectId;
     name = category.name;
   } else {
@@ -42,13 +49,22 @@ export async function collectionContext(user: User, input: Scope) {
     projectId = sub.category.projectId;
     name = sub.name;
   }
-  const project = await projectAccess(user, projectId);
-  const canEdit =
-    user.role !== "OBSERVER" &&
-    (user.role === "OWNER" ||
-      project.ownerId === user.id ||
-      project.members.some((m) => m.userId === user.id));
-  return { ...input, name, projectId, projectName: project.name, canEdit };
+  const project = await projectAccess(user, projectId, "NAVIGATE");
+  await resourceAccess(user, input.scope, input.id, "NAVIGATE");
+  const { canEdit, fullAccess } = await accessFlags(
+    user,
+    input.scope,
+    input.id,
+    projectId,
+  );
+  return {
+    ...input,
+    name,
+    projectId,
+    projectName: project.name,
+    canEdit,
+    fullAccess,
+  };
 }
 export function collectionWhere(
   input: Scope,
@@ -114,6 +130,16 @@ export async function collectionGallery(user: User, params: URLSearchParams) {
     limit = 24;
   const resource = await collectionContext(user, input),
     where = collectionWhere(input, filters);
+  if (!resource.fullAccess)
+    where.AND = [
+      ...(where.AND as Prisma.VariationWhereInput[]),
+      { subproduct: subproductFilter(user) },
+    ];
+  else
+    where.AND = [
+      ...(where.AND as Prisma.VariationWhereInput[]),
+      { OR: [{ subproductId: null }, { subproduct: { deletedAt: null } }] },
+    ];
   const [total, items] = await db.$transaction(
     [
       db.variation.count({ where }),
@@ -182,11 +208,19 @@ export const safeFilename = (name: string) =>
 export async function exportCollection(user: User, input: unknown) {
   const b = exportSchema.parse(input);
   const context = "scope" in b ? await collectionContext(user, b) : null;
+  const scopedWhere = "scope" in b ? collectionWhere(b, b.filters) : null;
+  if (scopedWhere && context && !context.fullAccess)
+    scopedWhere.AND = [
+      ...(scopedWhere.AND as Prisma.VariationWhereInput[]),
+      { subproduct: subproductFilter(user) },
+    ];
+  if (scopedWhere && context?.fullAccess)
+    scopedWhere.AND = [
+      ...(scopedWhere.AND as Prisma.VariationWhereInput[]),
+      { OR: [{ subproductId: null }, { subproduct: { deletedAt: null } }] },
+    ];
   const rows = await db.variation.findMany({
-    where:
-      "ids" in b
-        ? { id: { in: [...new Set(b.ids)] } }
-        : collectionWhere(b, b.filters),
+    where: "ids" in b ? { id: { in: [...new Set(b.ids)] } } : scopedWhere!,
     take: 201,
     orderBy: [{ createdAt: "asc" }, { id: "asc" }],
     include: {
@@ -214,11 +248,18 @@ export async function exportCollection(user: User, input: unknown) {
     if (row.job.projectId === "connection-test") {
       ownerOnly(user);
       projects.set("connection-test", "Prueba_IA");
-    } else if (!projects.has(row.job.projectId))
-      projects.set(
-        row.job.projectId,
-        (await projectAccess(user, row.job.projectId)).name,
-      );
+    } else {
+      await jobResourceAccess(user, {
+        ...row.job,
+        subproductId: row.subproductId,
+      });
+      if (!projects.has(row.job.projectId))
+        projects.set(
+          row.job.projectId,
+          (await projectAccess(user, row.job.projectId, "NAVIGATE")).name,
+        );
+    }
+
     demand(
       !row.deletedAt &&
         !row.expired &&

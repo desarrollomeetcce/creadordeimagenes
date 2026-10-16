@@ -73,10 +73,10 @@ export async function runOne(filter?: {
     const u = await db.user.findUnique({ where: { id: candidate.actorId } });
     demand(u?.status === "APPROVED", "La cuenta ya no está aprobada.");
     if (candidate.projectId !== "connection-test") {
-      const { projectAccess } = await import("../lib/auth");
-      await projectAccess(
+      const { jobResourceAccess } = await import("../lib/auth");
+      await jobResourceAccess(
         u,
-        candidate.projectId,
+        candidate,
         s.editVariationId ? "EDIT" : "GENERATE",
       );
     }

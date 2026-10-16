@@ -28,6 +28,8 @@ model User {
   sessions Session[]
   projects Project[]
   memberships ProjectMember[]
+  categoryMemberships CategoryMember[]
+  subproductMemberships SubproductMember[]
   passwordResets PasswordReset[]
 }
 model PasswordReset {
@@ -60,6 +62,7 @@ model Project {
   categories Category[]
   members ProjectMember[]
   brandKit BrandKit?
+  allAdministrators Boolean @default(false)
 }
 model ProjectMember {
   projectId String
@@ -79,6 +82,7 @@ model Category {
   applyPromptToAll Boolean @default(true)
   applySettingsToAll Boolean @default(true)
   subproducts Subproduct[]
+  members CategoryMember[]
   @@index([projectId])
 }
 model Subproduct {
@@ -88,8 +92,11 @@ model Subproduct {
   categoryId String
   category Category @relation(fields:[categoryId],references:[id])
   settings Json @default("{}")
+  deletedAt DateTime?
+  members SubproductMember[]
   variations Variation[]
   @@index([categoryId])
+  @@index([categoryId,deletedAt])
 }
 model PromptVersion {
   id String @id @default(cuid())
@@ -298,4 +305,21 @@ model StoredAsset {
   data Bytes
   size Int
   createdAt DateTime @default(now())
+}
+
+model CategoryMember {
+  categoryId String
+  userId String
+  category Category @relation(fields:[categoryId],references:[id],onDelete:Cascade)
+  user User @relation(fields:[userId],references:[id],onDelete:Cascade)
+  @@id([categoryId,userId])
+  @@index([userId])
+}
+model SubproductMember {
+  subproductId String
+  userId String
+  subproduct Subproduct @relation(fields:[subproductId],references:[id],onDelete:Cascade)
+  user User @relation(fields:[userId],references:[id],onDelete:Cascade)
+  @@id([subproductId,userId])
+  @@index([userId])
 }

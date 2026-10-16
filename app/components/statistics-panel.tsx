@@ -10,7 +10,7 @@ const dimensions: Record<string, string> = {
   month: "Mes",
   user: "Usuario",
   project: "Proyecto",
-  category: "Categoría",
+  category: "Producto",
   subproduct: "Subproducto",
   model: "Modelo",
 };
@@ -115,7 +115,7 @@ export function StatisticsPanel() {
               <strong>
                 {data.inventory.categories} / {data.inventory.subproducts}
               </strong>
-              <span>Categorías / subproductos activos</span>
+              <span>Productos / subproductos activos</span>
             </div>
             <div>
               <strong>{data.inventory.accounts}</strong>

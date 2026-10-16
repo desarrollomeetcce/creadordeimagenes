@@ -638,3 +638,16 @@ a {
   overflow-wrap: anywhere;
   margin-bottom: 8px;
 }
+
+.search-select { position:relative; min-width:0; }
+.search-select-input { display:flex; align-items:stretch; }
+.search-select-input input { min-width:0; flex:1; border-radius:7px 0 0 7px; }
+.search-select-input > button { border-radius:0 7px 7px 0; min-width:44px; }
+.search-select-options { position:absolute; top:100%; left:0; right:0; z-index:30; max-height:330px; overflow:auto; background:white; border:1px solid var(--line); border-radius:8px; box-shadow:0 8px 24px #122b2020; padding:8px; }
+.search-select-options p { padding:8px; margin:0; }
+.search-select-options button { width:100%; text-align:left; border:0; padding:10px; background:white; }
+.search-select-options button:hover, .search-select-option[aria-selected="true"] { background:var(--soft); }
+.search-select-option.indented { padding-left:28px; }
+.search-select-option strong, .search-select-option small { display:block; overflow-wrap:anywhere; }
+.search-select-group { font-weight:700; }
+.subproduct-space { margin-top:18px; }

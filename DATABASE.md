@@ -10,7 +10,7 @@ Eliminación de proyecto = `deletedAt`, con metadatos y relaciones conservados. 
 
 Migraciones: `npm run db:deploy`. El migrador obtiene un advisory lock, verifica SHA-256 de cada SQL y aplica cada migración en una transacción. Se registra en `schema_migrations`. No usar simultáneamente el historial de migraciones de la CLI de Prisma.
 
-Tras la continuación se incorporan carpetas de biblioteca, versiones de diseño, presets oficiales, aprobaciones de variación y límites por usuario/proyecto. Siguen pendientes favoritos compartidos, shares granulares y miniaturas administrativas. No se crean tablas vacías para simular funcionalidades inexistentes.
+Tras la continuación se incorporan carpetas de biblioteca, versiones de diseño, presets oficiales, aprobaciones de variación y límites por usuario/proyecto. Siguen pendientes favoritos compartidos y miniaturas administrativas. No se crean tablas vacías para simular funcionalidades inexistentes.
 
 ## Migración de la continuación
 
@@ -37,3 +37,11 @@ Las galerías agrupadas y los ZIP reutilizan Variation, GenerationJob, Subproduc
 Migración 005: BackgroundBatch registra iniciador, clave de solicitud idempotente, lista JSON de IDs de trabajos autorizados, ID interno de ejecución, estado, error comprensible y fechas. No almacena claves ni prompts. El SQL incluye un índice único parcial por actorId para estados STARTING/ACTIVE/PAUSING/DISPATCH_UNCERTAIN, mantenido por el migrador versionado; requestKey es único. La migración no altera datos existentes ni neon_auth.
 
 Migración 006: nuevo valor OBSERVER en Role; applyPromptToAll/applySettingsToAll con valor inicial true en Category y SavedPreset; PresetShare con clave compuesta y referencias que se eliminan en cascada. Las asignaciones ProjectMember pasan a ROLE; los valores históricos VIEW/GENERATE/EDIT/MANAGE ya no determinan permisos. Los datos existentes conservan prompts, parámetros y opciones activas; una SHARED requiere destinatarios explícitos para las cuentas normales. OWNER/ADMIN conservan lectura global de configuraciones.
+
+## Productos y accesos por nivel
+
+La interfaz denomina Producto al nivel persistido como Category. Se conservan IDs, rutas y datos anteriores para compatibilidad. La migración aditiva 202610160007_scoped_access añade Project.allAdministrators (false por defecto, incluso en proyectos existentes), CategoryMember, SubproductMember y Subproduct.deletedAt. Los miembros directos heredan acceso a descendientes según su rol. La propiedad y los accesos individuales se conservan al desactivar el grupo ADMIN. OWNER conserva acceso global; ADMIN ya no obtiene lectura global implícita de proyectos.
+
+Una asignación a un descendiente solo habilita metadatos mínimos de ancestros para navegar y filtra hermanos en listados, conteos, galerías y exportaciones. Las autorizaciones de adjuntos y variaciones se validan por su ámbito, y el worker revalida el subproducto antes de consumir IA. Las operaciones ya autorizadas conservan su contexto heredado; ello no concede descarga general de adjuntos del ancestro. La biblioteca vuelve a filtrar permisos vigentes al listar.
+
+Eliminar subproductos establece deletedAt, conserva relaciones, variaciones, versiones y auditoría, y los excluye de nuevos lotes/listados/descargas. Bajo el bloqueo de reclamación del worker, se rechaza RUNNING y se cancelan PENDING liberando sus reservas. Se vuelve a comprobar cuenta y asignación dentro de la transacción. No se destruyen archivos ni se ofrece aún restauración de estos espacios desde la interfaz; la retención temporal de archivos sigue su política habitual.

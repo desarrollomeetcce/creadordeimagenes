@@ -1,6 +1,6 @@
 import type { Prisma } from "@prisma/client";
 import { db } from "./db";
-import { projectAccess, ownerOnly } from "./auth";
+import { projectAccess, jobResourceAccess, ownerOnly } from "./auth";
 import { demand } from "./errors";
 import {
   designSchema,
@@ -21,7 +21,7 @@ export async function accessibleVariation(
   });
   demand(v && (!v.deletedAt || deleted), "Afiche no encontrado.", 404);
   if (v.job.projectId === "connection-test") ownerOnly(user);
-  else await projectAccess(user, v.job.projectId, permission);
+  else await jobResourceAccess(user, v.job, permission);
   demand(
     !v.expired && (v.permanent || v.expiresAt > new Date()),
     "Los archivos de este afiche ya caducaron.",

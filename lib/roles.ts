@@ -6,15 +6,15 @@ export const roleLabels: Record<string, string> = {
 };
 export const roleAbilities: Record<string, string[]> = {
   OWNER: [
-    "Ver y administrar todos los proyectos, categorías, subproductos y afiches.",
+    "Ver y administrar todos los proyectos, productos, subproductos y afiches.",
     "Crear cuentas de cualquier rol, aprobarlas, suspenderlas y cambiar contraseñas.",
     "Generar, editar, descargar, compartir y administrar todas las configuraciones guardadas.",
     "Administrar exclusivamente claves de IA, modelos, presupuestos y mantenimiento.",
-    "Consultar estadísticas globales de actividad, reservas y costes confirmados por usuario, proyecto, categoría, subproducto y modelo.",
+    "Consultar estadísticas globales de actividad, reservas y costes confirmados por usuario, proyecto, producto, subproducto y modelo.",
   ],
   ADMIN: [
-    "Ver y descargar todos los proyectos y sus afiches.",
-    "Crear proyectos y generar, editar y compartir los propios; generar y editar los que te asignen.",
+    "Ver los proyectos propios, asignados o habilitados por OWNER para todos los administradores; descargar sus afiches.",
+    "Crear proyectos y compartir los propios; editar y generar en los asignados o habilitados para todos los administradores.",
     "Crear y administrar cuentas de Usuarios y Observadores; generar enlaces de recuperación para ellas.",
     "Consultar todas las configuraciones guardadas y administrar las propias.",
     "Las claves de IA y la administración de cuentas OWNER/Administrador son exclusivas del OWNER.",

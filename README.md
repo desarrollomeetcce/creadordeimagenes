@@ -68,3 +68,11 @@ La ruta Proyecto → Categoría → Subproducto es clickeable. En categoría pue
 El menú **Estadísticas** permite consultar los últimos 7, 30 o 90 días, por día/mes, usuario, proyecto, categoría, subproducto y modelo. Calcula todo el período en PostgreSQL, sin limitar los totales a las 200 operaciones del listado de consumo. Los días se delimitan en hora de Perú. El inventario muestra el estado actual de proyectos/cuentas; los estados de cola corresponden al período.
 
 Distingue reservas no liberadas, costes confirmados registrados y costes desconocidos. Un importe desconocido nunca se presenta como coste cero; los promedios solo incluyen afiches con importe confirmado. No realiza llamadas de IA ni consulta automáticamente la factura del proveedor. Los desgloses de recursos muestran los 20 grupos con más operaciones y advierten cuando hay más; los totales no se recortan. Solo OWNER accede al panel y a su API.
+
+## Productos, espacios y accesos
+
+Jerarquía visible: **Proyecto → Producto → Subproducto → Variaciones**. Las direcciones antiguas continúan funcionando. **+ Agregar subproductos** añade de 1 a 20 por operación a los existentes. Cada espacio permite eliminarse; las casillas permiten eliminar varios juntos. Se cancelan sus trabajos pendientes y se conserva el historial; una generación en curso impide eliminar ese espacio hasta que termine.
+
+**Compartir proyecto/producto/subproducto** permite desplegar cuentas agrupadas por rol o escribir nombre/correo en el mismo selector. Una asignación al proyecto incluye todo su contenido; una asignación a un producto/subproducto permite solo esa zona y la ruta mínima para llegar. Los permisos heredados se revocan en el nivel donde fueron concedidos. OWNER puede marcar **Acceso a todos los administradores** por proyecto; por defecto está desactivado. Desactivarlo conserva la propiedad y las asignaciones individuales.
+
+**Guardar configuración ▾** abre directamente el nombre, inicialmente CONFIGURACION más el nombre del espacio. Guardar captura el prompt y los parámetros actuales. El selector para aplicar una configuración permite escribir su nombre o desplegar opciones, desde productos y subproductos.

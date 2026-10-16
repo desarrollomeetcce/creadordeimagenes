@@ -71,18 +71,89 @@ export async function rateLimit(key: string, max = 10) {
 export function ownerOnly(u: { role: string }) {
   demand(u.role === "OWNER", "Esta sección es exclusiva del OWNER.", 403);
 }
-export function projectFilter(u: { id: string; role: string }) {
-  return ["OWNER", "ADMIN"].includes(u.role)
-    ? {}
-    : {
-        OR: [
-          ...(u.role !== "OBSERVER" ? [{ ownerId: u.id }] : []),
-          { members: { some: { userId: u.id } } },
-        ],
-      };
+type AccessActor = { id: string; role: string };
+export function fullProjectFilter(
+  u: AccessActor,
+): import("@prisma/client").Prisma.ProjectWhereInput {
+  if (u.role === "OWNER") return {};
+  return {
+    OR: [
+      ...(u.role !== "OBSERVER" ? [{ ownerId: u.id }] : []),
+      { members: { some: { userId: u.id } } },
+      ...(u.role === "ADMIN" ? [{ allAdministrators: true }] : []),
+    ],
+  };
+}
+export function categoryFullFilter(
+  u: AccessActor,
+): import("@prisma/client").Prisma.CategoryWhereInput {
+  if (u.role === "OWNER") return {};
+  return {
+    OR: [
+      { project: fullProjectFilter(u) },
+      { members: { some: { userId: u.id } } },
+    ],
+  };
+}
+export function categoryFilter(
+  u: AccessActor,
+): import("@prisma/client").Prisma.CategoryWhereInput {
+  if (u.role === "OWNER") return { project: { deletedAt: null } };
+  return {
+    project: { deletedAt: null },
+    OR: [
+      categoryFullFilter(u),
+      {
+        subproducts: {
+          some: { deletedAt: null, members: { some: { userId: u.id } } },
+        },
+      },
+    ],
+  };
+}
+export function subproductFilter(
+  u: AccessActor,
+): import("@prisma/client").Prisma.SubproductWhereInput {
+  if (u.role === "OWNER")
+    return { deletedAt: null, category: { project: { deletedAt: null } } };
+  return {
+    deletedAt: null,
+    category: { project: { deletedAt: null } },
+    OR: [
+      { category: categoryFullFilter(u) },
+      { members: { some: { userId: u.id } } },
+    ],
+  };
+}
+export function projectFilter(
+  u: AccessActor,
+): import("@prisma/client").Prisma.ProjectWhereInput {
+  if (u.role === "OWNER") return {};
+  return {
+    OR: [
+      fullProjectFilter(u),
+      {
+        categories: {
+          some: {
+            OR: [
+              { members: { some: { userId: u.id } } },
+              {
+                subproducts: {
+                  some: {
+                    deletedAt: null,
+                    members: { some: { userId: u.id } },
+                  },
+                },
+              },
+            ],
+          },
+        },
+      },
+    ],
+  };
 }
 export async function projectAccess(
-  u: { id: string; role: string },
+  u: AccessActor,
   id: string,
   permission = "VIEW",
   allowDeleted = false,
@@ -90,25 +161,21 @@ export async function projectAccess(
   const p = await db.project.findFirst({
     where: {
       id,
-      ...projectFilter(u),
+      ...(permission === "NAVIGATE" ? projectFilter(u) : fullProjectFilter(u)),
       ...(allowDeleted ? {} : { deletedAt: null }),
     },
     include: { members: true },
   });
   demand(p, "No tienes acceso a este proyecto.", 404);
   demand(
-    permission === "VIEW" || u.role !== "OBSERVER",
+    ["VIEW", "NAVIGATE"].includes(permission) || u.role !== "OBSERVER",
     "El rol Observador solo permite ver y descargar.",
     403,
   );
-  if (permission !== "VIEW" && u.role !== "OWNER" && p.ownerId !== u.id) {
-    const member = p.members.find((m) => m.userId === u.id);
-    demand(member, "No tienes permiso para esta operación.", 403);
-  }
   return p;
 }
 export async function resourceAccess(
-  u: { id: string; role: string },
+  u: AccessActor,
   scope: string,
   id: string,
   permission = "VIEW",
@@ -122,20 +189,66 @@ export async function resourceAccess(
     return accessibleVariation(u, id, permission);
   }
   if (scope === "project") return projectAccess(u, id, permission);
+  demand(
+    ["VIEW", "NAVIGATE"].includes(permission) || u.role !== "OBSERVER",
+    "El rol Observador solo permite ver y descargar.",
+    403,
+  );
   if (scope === "category") {
-    const c = await db.category.findUnique({ where: { id } });
-    demand(c, "Categoría no encontrada.", 404);
-    await projectAccess(u, c.projectId, permission);
+    const c = await db.category.findFirst({
+      where: {
+        id,
+        ...(permission === "NAVIGATE"
+          ? categoryFilter(u)
+          : categoryFullFilter(u)),
+        project: { deletedAt: null },
+      },
+    });
+    demand(c, "No tienes acceso a este producto.", 404);
     return c;
   }
   if (scope === "subproduct") {
-    const s = await db.subproduct.findUnique({
-      where: { id },
+    const s = await db.subproduct.findFirst({
+      where: { id, ...subproductFilter(u) },
       include: { category: true },
     });
-    demand(s, "Subproducto no encontrado.", 404);
-    await projectAccess(u, s.category.projectId, permission);
+    demand(s, "No tienes acceso a este subproducto.", 404);
     return s;
   }
   throw new Error("Ámbito inválido");
+}
+export async function jobResourceAccess(
+  u: AccessActor,
+  job: { projectId: string; subproductId?: string | null },
+  permission = "VIEW",
+) {
+  if (job.projectId === "connection-test") {
+    ownerOnly(u);
+    return;
+  }
+  if (job.subproductId)
+    return resourceAccess(u, "subproduct", job.subproductId, permission);
+  return projectAccess(u, job.projectId, permission);
+}
+export async function accessFlags(
+  u: AccessActor,
+  scope: string,
+  id: string,
+  projectId: string,
+) {
+  const project = await db.project.findUniqueOrThrow({
+    where: { id: projectId },
+  });
+  let fullAccess = true;
+  try {
+    await resourceAccess(u, scope, id);
+  } catch {
+    fullAccess = false;
+  }
+  return {
+    fullAccess,
+    canEdit: fullAccess && u.role !== "OBSERVER",
+    canManageAccess:
+      u.role === "OWNER" || (u.role !== "OBSERVER" && project.ownerId === u.id),
+  };
 }

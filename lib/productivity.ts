@@ -1,7 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { db } from "./db";
-import { ownerOnly, projectFilter } from "./auth";
+import {
+  ownerOnly,
+  projectFilter,
+  fullProjectFilter,
+  subproductFilter,
+} from "./auth";
 import { demand } from "./errors";
 import { accessibleVariation } from "./versions";
 export async function retainVariation(
@@ -124,7 +129,7 @@ export async function productivityRoutes(
     }
     if (method === "GET" && parts.length === 1) {
       const projects = await db.project.findMany({
-        where: { ...projectFilter(user), deletedAt: null },
+        where: { ...fullProjectFilter(user), deletedAt: null },
         select: { id: true },
       });
       const folder = req.nextUrl.searchParams.get("folder");
@@ -136,7 +141,13 @@ export async function productivityRoutes(
             variation: {
               deletedAt: null,
               expired: false,
-              job: { projectId: { in: projects.map((x) => x.id) } },
+              OR: [
+                { subproduct: subproductFilter(user) },
+                {
+                  subproductId: null,
+                  job: { projectId: { in: projects.map((x) => x.id) } },
+                },
+              ],
             },
           },
           include: {

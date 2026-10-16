@@ -1,4 +1,5 @@
 "use client";
+import { SearchSelect } from "./search-select";
 import { useCanEdit } from "./role-guide";
 import { useEffect, useState } from "react";
 async function api(path: string, method = "GET", data?: unknown) {
@@ -238,7 +239,7 @@ export function PresetTools({
 }) {
   const [items, setItems] = useState<any[]>([]),
     [selected, setSelected] = useState(""),
-    [name, setName] = useState("CONFIGURACION "),
+    [name, setName] = useState("CONFIGURACION " + category.name),
     [visibility, setVisibility] = useState("PERSONAL"),
     [includeAttachments, setIncludeAttachments] = useState(false),
     [applyAttachments, setApplyAttachments] = useState(true);
@@ -251,19 +252,19 @@ export function PresetTools({
   }, [opened]);
   return (
     <details onToggle={(e) => setOpened(e.currentTarget.open)}>
-      <summary>Guardar o aplicar una configuración reutilizable</summary>
+      <summary>Guardar configuración ▾</summary>
       <div className="inside stack">
         <p className="hint">
-          Se guardan las instrucciones y los parámetros ya guardados de esta
-          espacio. Puedes incluir copias de sus adjuntos directos; los archivos
-          heredados de otros niveles no se copian automáticamente. Una
+          Se guardan las instrucciones y los parámetros actuales de este
+          formulario. Puedes incluir copias de sus adjuntos directos; los
+          archivos heredados de otros niveles no se copian automáticamente. Una
           configuración compartida permite descargar sus adjuntos solo a las
           cuentas con las que la compartas. Las oficiales están disponibles para
           todas las cuentas aprobadas.
         </p>
-        <details>
-          <summary>Guardar esta configuración con un nombre</summary>
-          <div className="inside stack">
+        <div className="stack">
+          <h3>Guardar esta configuración con un nombre</h3>
+          <div className="stack">
             <div className="fields">
               <label>
                 Nombre de la configuración
@@ -320,29 +321,25 @@ export function PresetTools({
               Guardar configuración actual
             </button>
           </div>
-        </details>
-        <label>
-          Buscar configuración guardada en cualquier proyecto
-          <input
-            aria-label="Buscar configuración guardada"
-            placeholder="Escribe el nombre…"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-          />
-          <select
-            value={selected}
-            onChange={(e) => setSelected(e.target.value)}
-          >
-            <option value="">Selecciona una configuración</option>
-            {items
-              .filter((i) => i.name.toLowerCase().includes(query.toLowerCase()))
-              .map((i) => (
-                <option key={i.id} value={i.id}>
-                  {i.name} · {i.visibility} · {i.attachmentCount ?? 0} adjuntos
-                </option>
-              ))}
-          </select>
-        </label>
+        </div>
+        <SearchSelect
+          label="Buscar o seleccionar una configuración guardada"
+          value={query}
+          onChange={(value) => {
+            setQuery(value);
+            setSelected("");
+          }}
+          onSelect={(option) => {
+            setSelected(option.id);
+            setQuery(option.label);
+          }}
+          disabled={t.busy}
+          options={items.map((i) => ({
+            id: i.id,
+            label: i.name,
+            detail: `${i.visibility === "PERSONAL" ? "Personal" : i.visibility === "OFFICIAL" ? "Oficial" : "Compartida"} · ${i.attachmentCount ?? 0} adjuntos`,
+          }))}
+        />
         <label className="row">
           <input
             type="checkbox"
@@ -543,7 +540,7 @@ function PresetDetails({
             <p className="hint">
               Compartir permite a las cuentas seleccionadas consultar, duplicar
               y aplicar esta configuración, incluidos sus archivos. Para cambiar
-              los adjuntos, guarda una nueva configuración desde una categoría.
+              los adjuntos, guarda una nueva configuración desde un producto.
             </p>
             <button disabled={t.busy}>Actualizar configuración</button>
           </form>
@@ -567,8 +564,7 @@ export function Presets() {
     <>
       <h1>Configuraciones guardadas</h1>
       <p className="muted">
-        Guarda configuraciones desde una categoría y aplícalas a nuevas
-        campañas.
+        Guarda configuraciones desde un producto y aplícalas a nuevas campañas.
       </p>
       <input
         aria-label="Buscar configuraciones"
@@ -606,7 +602,7 @@ export function Presets() {
                     onClick={() => {
                       if (
                         confirm(
-                          "¿Eliminar esta configuración y sus adjuntos? Las copias aplicadas a categorías se conservan.",
+                          "¿Eliminar esta configuración y sus adjuntos? Las copias aplicadas a productos se conservan.",
                         )
                       )
                         void t.run(async () => {

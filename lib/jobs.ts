@@ -1,7 +1,7 @@
 import { db } from "./db";
 import { demand } from "./errors";
 import { configured, reserveJobs } from "./ai";
-import { projectAccess, ownerOnly } from "./auth";
+import { projectAccess, jobResourceAccess, ownerOnly } from "./auth";
 export async function cancelJob(
   user: { id: string; role: string },
   id: string,
@@ -9,7 +9,7 @@ export async function cancelJob(
   const job = await db.generationJob.findUnique({ where: { id } });
   demand(job, "Trabajo no encontrado.", 404);
   if (job.projectId === "connection-test") ownerOnly(user);
-  else await projectAccess(user, job.projectId, "GENERATE");
+  else await jobResourceAccess(user, job, "GENERATE");
   demand(
     user.role === "OWNER" || job.actorId === user.id,
     "Solo puedes cancelar tus propios trabajos.",
@@ -49,9 +49,9 @@ export async function processJob(
   );
   if (job.projectId === "connection-test") ownerOnly(user);
   else
-    await projectAccess(
+    await jobResourceAccess(
       user,
-      job.projectId,
+      job,
       typeof (job.snapshot as Record<string, unknown>).editVariationId ===
         "string"
         ? "EDIT"
@@ -87,7 +87,7 @@ export async function retryJob(
   const job = await db.generationJob.findUnique({ where: { id } });
   demand(job, "Trabajo no encontrado.", 404);
   if (job.projectId === "connection-test") ownerOnly(user);
-  else await projectAccess(user, job.projectId, "GENERATE");
+  else await jobResourceAccess(user, job, "GENERATE");
   demand(
     user.role === "OWNER" || job.actorId === user.id,
     "Solo puedes reintentar tus propios trabajos.",
@@ -104,7 +104,7 @@ export async function retryJob(
   const c = await configured();
   const snapshot = job.snapshot as Record<string, unknown>;
   if (typeof snapshot.editVariationId === "string")
-    await projectAccess(user, job.projectId, "EDIT");
+    await jobResourceAccess(user, job, "EDIT");
   return reserveJobs(
     user.id,
     job.projectId,

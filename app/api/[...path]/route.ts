@@ -14,6 +14,11 @@ import {
   projectAccess,
   projectFilter,
   resourceAccess,
+  categoryFilter,
+  subproductFilter,
+  fullProjectFilter,
+  accessFlags,
+  jobResourceAccess,
 } from "@/lib/auth";
 import { encryptKey, maskKey } from "@/lib/crypto";
 import {
@@ -344,6 +349,7 @@ async function handle(
             user.role !== "OBSERVER" &&
             (user.role === "OWNER" ||
               project.ownerId === user.id ||
+              (user.role === "ADMIN" && project.allAdministrators) ||
               project.members.some((m) => m.userId === user.id)),
         });
       if (method === "PUT")
@@ -522,9 +528,14 @@ async function handle(
                 ? { not: null }
                 : null,
           },
-          include: {
-            _count: { select: { categories: true } },
+          select: {
+            id: true,
+            name: true,
+            ownerId: true,
+            deletedAt: true,
+            updatedAt: true,
             owner: { select: { name: true } },
+            _count: { select: { categories: { where: categoryFilter(user) } } },
           },
           orderBy: { updatedAt: "desc" },
         }),
@@ -553,19 +564,39 @@ async function handle(
         demand(parts.length <= 4, "Ruta no encontrada.", 404);
         return await projectMembers(req, id, parts[3], user, () => body(req));
       }
-      await projectAccess(user, id, method === "GET" ? "VIEW" : "EDIT");
-      if (parts.length === 2 && method === "GET")
-        return send(
-          await db.project.findUnique({
-            where: { id },
-            include: {
-              categories: {
-                include: { _count: { select: { subproducts: true } } },
+      await projectAccess(user, id, method === "GET" ? "NAVIGATE" : "EDIT");
+      if (parts.length === 2 && method === "GET") {
+        const flags = await accessFlags(user, "project", id, id);
+        const p = await db.project.findUniqueOrThrow({
+          where: { id },
+          include: {
+            categories: {
+              where: categoryFilter(user),
+              include: {
+                _count: {
+                  select: { subproducts: { where: subproductFilter(user) } },
+                },
               },
-              members: { select: { userId: true } },
             },
-          }),
-        );
+          },
+        });
+        return send({
+          ...p,
+          ...flags,
+          prompt: flags.fullAccess ? p.prompt : "",
+          description: flags.fullAccess ? p.description : "",
+          categories: await Promise.all(
+            p.categories.map(async (c) => ({
+              id: c.id,
+              name: c.name,
+              _count: c._count,
+              prompt: (await accessFlags(user, "category", c.id, id)).fullAccess
+                ? c.prompt
+                : "",
+            })),
+          ),
+        });
+      }
       if (parts.length === 2 && method === "PATCH") {
         const b = content.parse(await body(req));
         await db.$transaction([
@@ -605,22 +636,48 @@ async function handle(
         );
       }
     }
+    if (
+      ["categories", "subproducts"].includes(parts[0]) &&
+      parts[1] &&
+      parts[2] === "members" &&
+      parts.length <= 4
+    ) {
+      const { scopedMembers } = await import("@/lib/project-members");
+      return await scopedMembers(
+        req,
+        parts[0] === "categories" ? "category" : "subproduct",
+        parts[1],
+        parts[3],
+        user,
+        () => body(req),
+      );
+    }
+    if (route === "subproducts/bulk-delete" && method === "POST") {
+      const b = z
+        .object({ ids: z.array(z.string().min(1).max(100)).min(1).max(200) })
+        .strict()
+        .parse(await body(req));
+      const { removeSubproducts } = await import("@/lib/subproduct-removal");
+      return send(await removeSubproducts(user, b.ids));
+    }
     if (parts[0] === "categories" && parts[1]) {
       const id = parts[1];
       await resourceAccess(
         user,
         "category",
         id,
-        method === "GET"
-          ? "VIEW"
-          : parts[2] === "generate"
-            ? "GENERATE"
-            : "EDIT",
+        method === "GET" && parts.length === 2
+          ? "NAVIGATE"
+          : method === "GET"
+            ? "VIEW"
+            : parts[2] === "generate"
+              ? "GENERATE"
+              : "EDIT",
       );
       if (parts[2] === "preview" && method === "GET") {
         const { previewSubproduct } = await import("@/lib/generation");
         const subs = await db.subproduct.findMany({
-          where: { categoryId: id },
+          where: { categoryId: id, ...subproductFilter(user) },
         });
         const previews = [];
         for (const sub of subs) {
@@ -654,22 +711,41 @@ async function handle(
         await audit(user.id, "GENERACION_MASIVA_AUTORIZADA", id);
         return send({ jobs: jobs.map((j) => j.id) }, 202);
       }
-      if (parts.length === 2 && method === "GET")
-        return send(
-          await db.category.findUnique({
-            where: { id },
-            include: {
-              project: { select: { id: true, name: true } },
-              subproducts: {
-                include: {
-                  _count: {
-                    select: { variations: { where: { deletedAt: null } } },
-                  },
+      if (parts.length === 2 && method === "GET") {
+        const c = await db.category.findUniqueOrThrow({
+          where: { id },
+          include: {
+            project: { select: { id: true, name: true } },
+            subproducts: {
+              where: subproductFilter(user),
+              include: {
+                _count: {
+                  select: { variations: { where: { deletedAt: null } } },
                 },
               },
             },
-          }),
-        );
+          },
+        });
+        const flags = await accessFlags(user, "category", id, c.projectId);
+        return send({
+          ...c,
+          ...flags,
+          prompt: flags.fullAccess ? c.prompt : "",
+          settings: flags.fullAccess ? c.settings : {},
+          subproducts: await Promise.all(
+            c.subproducts.map(async (sub) => ({
+              ...sub,
+              inheritedSettings: effectiveSettings(
+                c.settings,
+                {},
+                c.applySettingsToAll,
+              ),
+              forceOwn: !c.applySettingsToAll,
+              ...(await accessFlags(user, "subproduct", sub.id, c.projectId)),
+            })),
+          ),
+        });
+      }
       if (parts.length === 2 && method === "PATCH") {
         const b = z
           .object({
@@ -745,15 +821,28 @@ async function handle(
           },
         },
       });
+      if (parts.length === 2 && method === "DELETE") {
+        const { removeSubproducts } = await import("@/lib/subproduct-removal");
+        return send(await removeSubproducts(user, [id]));
+      }
       if (parts.length === 2 && method === "GET") {
-        const project = await projectAccess(user, sub.category.projectId);
         return send({
           ...sub,
-          canEdit:
-            user.role !== "OBSERVER" &&
-            (user.role === "OWNER" ||
-              project.ownerId === user.id ||
-              project.members.some((m) => m.userId === user.id)),
+          ...(await accessFlags(
+            user,
+            "subproduct",
+            id,
+            sub.category.projectId,
+          )),
+          category: {
+            id: sub.category.id,
+            name: sub.category.name,
+            projectId: sub.category.projectId,
+            project: {
+              id: sub.category.project.id,
+              name: sub.category.project.name,
+            },
+          },
         });
       }
       if (parts.length === 2 && method === "PATCH") {
@@ -918,7 +1007,7 @@ async function handle(
         await resourceAccess(user, a.scope, a.resourceId, "EDIT");
         demand(
           a.scope !== "preset",
-          "Actualiza los adjuntos guardando otra configuración desde la categoría.",
+          "Actualiza los adjuntos guardando otra configuración desdel producto.",
           409,
         );
         demand(
@@ -1042,9 +1131,9 @@ async function handle(
       demand(v, "Imagen no encontrada.", 404);
       if (v.job.projectId === "connection-test") ownerOnly(user);
       else
-        await projectAccess(
+        await jobResourceAccess(
           user,
-          v.job.projectId,
+          v.job,
           method === "GET" ? "VIEW" : "EDIT",
         );
       if (method === "GET" && parts.length === 2) {

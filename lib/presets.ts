@@ -72,7 +72,7 @@ export async function presetRoutes(
     const sourceScope = b.sourceCategoryId ? "category" : "subproduct";
     demand(
       !b.includeAttachments || !!sourceId,
-      "Selecciona la categoría de origen.",
+      "Selecciona la producto de origen.",
     );
     if (sourceId) await resourceAccess(user, sourceScope, sourceId, "EDIT");
     const result = await withAttachmentCopies(
@@ -178,7 +178,7 @@ export async function presetRoutes(
       .parse(await body());
     demand(
       !!b.categoryId !== !!b.subproductId,
-      "Selecciona una categoría o un subproducto.",
+      "Selecciona un producto o un subproducto.",
     );
     const targetId = (b.categoryId ?? b.subproductId)!;
     const scope = b.categoryId ? "category" : "subproduct";

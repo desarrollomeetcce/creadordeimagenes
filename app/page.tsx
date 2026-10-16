@@ -44,7 +44,11 @@ type Item = {
   settings?: Partial<Settings>;
   applyPromptToAll?: boolean;
   applySettingsToAll?: boolean;
+  inheritedSettings?: Partial<Settings>;
+  forceOwn?: boolean;
   canEdit?: boolean;
+  canManageAccess?: boolean;
+  fullAccess?: boolean;
   _count?: { categories?: number; subproducts?: number; variations?: number };
   owner?: { name: string };
 };
@@ -484,15 +488,13 @@ export default function Home() {
                 back={() => void openCategory(category!.id)}
               />
             ) : category &&
-              (user.role === "OBSERVER" ||
-                (user.role === "ADMIN" &&
-                  project?.ownerId !== user.id &&
-                  !project?.members?.some((m) => m.userId === user.id))) ? (
+              !category.canEdit &&
+              !category.subproducts.some((sub) => sub.canEdit) ? (
               <section className="stack">
                 <h1>{category.name}</h1>
                 <p>{category.prompt}</p>
                 <button onClick={() => openCollection("category", category.id)}>
-                  Ver afiches de la categoría
+                  Ver afiches del producto
                 </button>
                 {category.subproducts.map((sub) => (
                   <article className="card" key={sub.id}>
@@ -505,6 +507,7 @@ export default function Home() {
               </section>
             ) : category ? (
               <CategoryEditor
+                key={category.id}
                 category={category}
                 refresh={async () => {
                   const next = await api("categories/" + category.id);
@@ -514,11 +517,7 @@ export default function Home() {
                 openGallery={openGallery}
                 openCollection={() => openCollection("category", category.id)}
               />
-            ) : project &&
-              (user.role === "OBSERVER" ||
-                (user.role === "ADMIN" &&
-                  project.ownerId !== user.id &&
-                  !project.members?.some((m) => m.userId === user.id))) ? (
+            ) : project && !project.canEdit ? (
               <section className="stack">
                 <h1>{project.name}</h1>
                 <p>{project.description}</p>
@@ -529,7 +528,7 @@ export default function Home() {
                   <article className="card" key={c.id}>
                     <h3>{c.name}</h3>
                     <button onClick={() => void openCategory(c.id)}>
-                      Abrir categoría
+                      Abrir producto
                     </button>
                   </article>
                 ))}
@@ -819,11 +818,11 @@ function Projects({
             <strong>Una configuración. Muchas posibilidades.</strong>
             <p className="muted">
               Define las instrucciones del proyecto y reutilízalas en cada
-              categoría y subproducto.
+              producto y subproducto.
             </p>
           </div>
           <span className="badge" style={{ alignSelf: "center" }}>
-            Proyecto → Categoría → Subproducto → Variaciones
+            Proyecto → Producto → Subproducto → Variaciones
           </span>
         </div>
       )}
@@ -878,7 +877,7 @@ function Projects({
               </p>
               <div className="bottom">
                 <small>
-                  {p._count?.categories ?? 0} categorías · {p.owner?.name}
+                  {p._count?.categories ?? 0} productos · {p.owner?.name}
                 </small>
                 <button
                   onClick={() =>
@@ -955,7 +954,7 @@ function PromptForm({
       )}
       <label>
         {configuration
-          ? "Instrucciones generales de la categoría"
+          ? "Instrucciones generales del producto"
           : "Instrucciones del proyecto"}
         <textarea
           name="prompt"
@@ -1011,7 +1010,7 @@ function ProjectEditor({
           <p className="muted">{p.description}</p>
         </div>
         <button className="primary" onClick={() => setCreate(!create)}>
-          ＋ Nueva categoría
+          ＋ Nuevo producto
         </button>
       </div>
       <details>
@@ -1031,9 +1030,12 @@ function ProjectEditor({
       <BrandKit key={p.id} projectId={p.id} />
       <div className="row" style={{ margin: "18px 0" }}>
         <button onClick={openCollection}>Ver afiches del proyecto</button>
-        <button onClick={() => setShare(!share)}>Compartir proyecto</button>
+        {p.canManageAccess && (
+          <button onClick={() => setShare(!share)}>Compartir proyecto</button>
+        )}
         <button
           className="danger"
+          hidden={!p.canManageAccess}
           onClick={() => {
             if (
               confirm(
@@ -1049,7 +1051,9 @@ function ProjectEditor({
           Enviar a papelera
         </button>
       </div>
-      {share && <ProjectSharing key={p.id} projectId={p.id} />}
+      {share && p.canManageAccess && (
+        <ProjectSharing key={p.id} projectId={p.id} />
+      )}
       {create && (
         <form
           className="panel stack"
@@ -1065,11 +1069,11 @@ function ProjectEditor({
               setCreate(false);
               await refresh();
               await openCategory(c.id);
-            }, "Categoría creada");
+            }, "Producto creado");
           }}
         >
           <label>
-            Nombre de categoría
+            Nombre de producto
             <input name="name" required maxLength={200} />
           </label>
           <label>
@@ -1077,12 +1081,12 @@ function ProjectEditor({
             <textarea name="prompt" />
           </label>
           <button className="primary" disabled={t.busy}>
-            Crear categoría
+            Crear producto
           </button>
         </form>
       )}
       <h2 style={{ marginTop: 28 }}>
-        Categorías <span className="muted">· {p.categories.length}</span>
+        Productos <span className="muted">· {p.categories.length}</span>
       </h2>
       <div className="grid">
         {p.categories.map((c) => (
@@ -1104,7 +1108,7 @@ function ProjectEditor({
       </div>
       {!p.categories.length && (
         <div className="empty">
-          Las categorías agrupan productos con instrucciones comunes. Crea una
+          Los productos agrupan productos con instrucciones comunes. Crea una
           para comenzar.
         </div>
       )}
@@ -1220,6 +1224,8 @@ function CategoryEditor({
   openGallery: (s: Item) => void;
   openCollection: () => void;
 }) {
+  const [sharing, setSharing] = useState(false);
+  const [selectedSubs, setSelectedSubs] = useState<string[]>([]);
   const [promptAll, setPromptAll] = useState(c.applyPromptToAll ?? true);
   const [settingsAll, setSettingsAll] = useState(c.applySettingsToAll ?? true);
   const [s, setS] = useState<Settings>({ ...base, ...c.settings });
@@ -1232,21 +1238,31 @@ function CategoryEditor({
     <>
       <div className="heading">
         <div>
-          <div className="eyebrow">Categoría</div>
+          <div className="eyebrow">Producto</div>
           <h1>{c.name}</h1>
           <p className="muted">
             Instrucciones compartidas, resultados individuales.
           </p>
         </div>
-        <button className="primary" onClick={() => setBulk(!bulk)}>
-          ＋ Agregar varios subproductos
-        </button>
+        {c.canEdit && (
+          <button className="primary" onClick={() => setBulk(!bulk)}>
+            + Agregar subproductos
+          </button>
+        )}
       </div>
       <button onClick={openCollection} style={{ marginBottom: 18 }}>
-        Ver afiches de la categoría
+        Ver afiches del producto
       </button>
-      <details>
-        <summary>Instrucciones y configuración de categoría</summary>
+      {c.canManageAccess && (
+        <>
+          <button type="button" onClick={() => setSharing(!sharing)}>
+            Compartir producto
+          </button>
+          {sharing && <ProjectSharing projectId={c.id} scope="category" />}
+        </>
+      )}
+      <details hidden={!c.canEdit}>
+        <summary>Instrucciones y configuración de producto</summary>
         <div className="inside stack">
           <PromptForm
             item={c}
@@ -1302,6 +1318,10 @@ function CategoryEditor({
       {bulk && (
         <section className="panel stack">
           <h2>Agregar subproductos</h2>
+          <p>
+            Los nuevos espacios se sumarán a los {c.subproducts.length}{" "}
+            existentes; no los reemplazan.
+          </p>
           <div className="row">
             <label>
               Cantidad de espacios
@@ -1394,26 +1414,87 @@ function CategoryEditor({
       )}
       <div className="row spread" style={{ margin: "28px 0 18px" }}>
         <h2 style={{ margin: 0 }}>Subproductos · {c.subproducts.length}</h2>
-        <BatchGeneration categoryId={c.id} count={c.subproducts.length} />
+        {c.canEdit && (
+          <BatchGeneration categoryId={c.id} count={c.subproducts.length} />
+        )}
         <span className="badge">Herencia automática</span>
       </div>
-      {c.subproducts.map((sub, i) => (
-        <SubproductRow
-          key={sub.id}
-          sub={sub}
-          index={i}
-          inherited={{
-            ...base,
-            ...(c.applySettingsToAll !== false ? c.settings : {}),
+      <div className="row">
+        <label className="row">
+          <input
+            type="checkbox"
+            checked={
+              !!c.subproducts.length &&
+              selectedSubs.length === c.subproducts.length
+            }
+            onChange={(e) =>
+              setSelectedSubs(
+                e.target.checked ? c.subproducts.map((sub) => sub.id) : [],
+              )
+            }
+          />
+          Seleccionar todos los subproductos
+        </label>
+        <button
+          type="button"
+          className="danger"
+          disabled={!selectedSubs.length || t.busy}
+          onClick={() => {
+            if (
+              confirm(
+                `¿Eliminar ${selectedSubs.length} subproductos? Se retirarán de los lotes nuevos y se cancelarán sus trabajos pendientes. El historial se conserva.`,
+              )
+            )
+              void t.run(async () => {
+                await api("subproducts/bulk-delete", "POST", {
+                  ids: selectedSubs,
+                });
+                setSelectedSubs([]);
+                await refresh();
+              }, "Subproductos eliminados");
           }}
-          forceOwn={c.applySettingsToAll === false}
-          openGallery={() => openGallery(sub)}
-        />
+        >
+          Eliminar seleccionados ({selectedSubs.length})
+        </button>
+      </div>
+      {c.subproducts.map((sub, i) => (
+        <div key={sub.id} className="stack subproduct-space">
+          <label className="row">
+            <input
+              type="checkbox"
+              checked={selectedSubs.includes(sub.id)}
+              onChange={(e) =>
+                setSelectedSubs((ids) =>
+                  e.target.checked
+                    ? [...ids, sub.id]
+                    : ids.filter((id) => id !== sub.id),
+                )
+              }
+            />
+            Seleccionar {sub.name}
+          </label>
+          <SubproductRow
+            key={sub.id}
+            sub={sub}
+            index={i}
+            inherited={{
+              ...base,
+              ...(sub.inheritedSettings ??
+                (c.applySettingsToAll !== false ? c.settings : {})),
+            }}
+            forceOwn={sub.forceOwn ?? c.applySettingsToAll === false}
+            openGallery={() => openGallery(sub)}
+            removed={async () => {
+              setSelectedSubs((ids) => ids.filter((id) => id !== sub.id));
+              await refresh();
+            }}
+          />
+        </div>
       ))}
       {!c.subproducts.length && (
         <div className="empty">
           Agrega de 1 a 20 temas por operación. Todos heredarán las
-          instrucciones de esta categoría.
+          instrucciones de este producto.
         </div>
       )}
       {t.notice}
@@ -1546,13 +1627,16 @@ function SubproductRow({
   inherited,
   forceOwn,
   openGallery,
+  removed,
 }: {
   sub: Item;
   index: number;
   inherited: Settings;
   forceOwn: boolean;
   openGallery: () => void;
+  removed: () => Promise<void>;
 }) {
+  const [sharing, setSharing] = useState(false);
   const [name, setName] = useState(sub.name);
   const [prompt, setPrompt] = useState(sub.prompt);
   const [custom, setCustom] = useState(
@@ -1636,8 +1720,36 @@ function SubproductRow({
           />
         )}
         <button disabled={t.busy} onClick={() => void t.run(save)}>
-          Guardar configuración
+          Guardar cambios del subproducto
         </button>
+        <div className="row">
+          {sub.canManageAccess && (
+            <button type="button" onClick={() => setSharing(!sharing)}>
+              Compartir subproducto
+            </button>
+          )}
+          <button
+            type="button"
+            className="danger"
+            disabled={t.busy}
+            onClick={() => {
+              if (
+                confirm(
+                  `¿Eliminar el espacio ${name}? Se cancelarán sus trabajos pendientes. El historial se conserva.`,
+                )
+              )
+                void t.run(async () => {
+                  await api("subproducts/" + sub.id, "DELETE");
+                  await removed();
+                }, "Subproducto eliminado");
+            }}
+          >
+            Eliminar subproducto
+          </button>
+        </div>
+        {sharing && sub.canManageAccess && (
+          <ProjectSharing projectId={sub.id} scope="subproduct" />
+        )}
         <PresetTools
           category={{
             ...sub,

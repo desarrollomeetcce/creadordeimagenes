@@ -107,7 +107,7 @@ export function BrandKit({ projectId }: { projectId: string }) {
         }}
       >
         <p className="muted">
-          Se utiliza en las categorías y subproductos de este proyecto. Las
+          Se utiliza en los productos y subproductos de este proyecto. Las
           instrucciones específicas de cada nivel tienen prioridad. Los afiches
           existentes conservan su configuración original.
         </p>
@@ -190,7 +190,7 @@ export function BrandKit({ projectId }: { projectId: string }) {
             y pulsa «Actualizar logos». Al guardar la identidad, solo los logos
             del proyecto seleccionados estarán disponibles para las nuevas
             generaciones; se conservarán las referencias y logos adicionales de
-            cada categoría o subproducto.
+            cada producto o subproducto.
           </p>
           <div className="grid">
             {logos.map((logo) => (
