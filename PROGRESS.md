@@ -29,7 +29,7 @@ La referencia sigue siendo el prompt maestro completo (54 secciones) y el requis
 - Cliente Prisma generado y migración aditiva aplicada correctamente en PostgreSQL temporal.
 - TypeScript y compilación de producción aprobados.
 - 15 pruebas unitarias aprobadas: incluyen cifrado, herencia, contratos de IA simulados, documentos, proporciones, edición gráfica, logos y SVG.
-- Suite de integración ampliada contra HTTP/PostgreSQL reales: edición/versiones, concurrencia, IA simulada, revisión, duplicación, cancelación, biblioteca, presets, límites particulares, regeneración selectiva y limpieza. Resultado actual: 48 escenarios aprobados (49 resultados contando el contenedor de la suite).
+- Suite de integración ampliada contra HTTP/PostgreSQL reales: edición/versiones, concurrencia, IA simulada, revisión, duplicación, cancelación, biblioteca, presets, límites particulares, regeneración selectiva y limpieza. Resultado actual: 51 escenarios aprobados (52 resultados contando el contenedor de la suite).
 - No se han utilizado credenciales reales de IA ni efectuado llamadas facturables. Las pruebas de proveedor usan transporte simulado explícito; no establecen conectividad real con OpenAI.
 
 ## Estado por fases
@@ -41,7 +41,7 @@ La referencia sigue siendo el prompt maestro completo (54 secciones) y el requis
 | 2 · IA                       | Adaptador y flujo completos en código, con pruebas simuladas | Generación real autorizada, validación visual y conciliación del consumo                                                              |
 | 3 · Producción masiva        | Funcional parcial                                            | Métricas de rendimiento, ejecución duradera administrada y pruebas de carga reales                                                 |
 | 4 · Edición y calidad        | Funcional parcial                                            | QA en navegador, detección de superposiciones, dirección creativa y fidelidad de fotos/logos con IA real                              |
-| 5 · Productividad            | Funcional parcial                                            | Adjuntos reutilizables en presets y ampliación de herramientas de productividad                              |
+| 5 · Productividad            | Funcional parcial                                            | Persistencia de filtros/selecciones y ampliación de herramientas de productividad                              |
 | 6 · Administración           | Funcional parcial                                            | Recuperación automática por correo y emergencia del único OWNER, gestión avanzada, conciliación tarifaria, estadísticas y retención separada de miniaturas administrativas |
 | 7 · Producción               | Preparada parcialmente                                       | Construcción Docker, VPS privado, HTTPS, backups ensayados, revisión de seguridad y monitorización                                    |
 
@@ -90,3 +90,15 @@ Descarga de selección, subproducto, categoría o proyecto en PNG/JPG dentro de 
 La navegación usa enlaces de la aplicación y restaura proyectos, categorías, galerías individuales y agrupadas al recargar. Atrás/Adelante funciona con controles del navegador. Las solicitudes de navegación obsoletas se descartan; un enlace sin permiso muestra error sin conservar el recurso anterior. Filtros, página y selección de la galería agrupada se mantienen durante la sesión del componente, no al recargar. La recuperación de cuenta sigue usando un fragmento que se retira antes de navegar.
 
 Validación: TypeScript y build, 15 unitarias, 48 escenarios HTTP/PostgreSQL (49 resultados contando el contenedor), instalación sin base y Chromium aprobados. Se descargaron realmente 28 JPG en un ZIP desde el navegador, se probó comparación, selección entre páginas, recargas, Atrás/Adelante y rechazo de enlace privado. La regresión contempla errores de exportación 404/413, filtros, caducidad, miniaturas y límites. No hubo migraciones ni modificaciones de credenciales o cuentas externas en esta entrega. No se ejecutaron llamadas facturables de IA.
+
+## Continuación · configuraciones con archivos y administración de accesos
+
+Las configuraciones guardadas pueden incluir los adjuntos directos de una categoría, con opción explícita al guardar. Duplicar conserva los archivos en una copia personal; aplicar permite elegir si se copian, reemplaza instrucciones/parámetros y añade archivos sin eliminar los que ya tenía la categoría. Las copias tienen bytes y metadatos independientes: borrar el original o la configuración no elimina sus copias. Volver a aplicar con adjuntos añade otra copia y consume espacio, advertido en la interfaz. No se incluyen silenciosamente recursos del proyecto ni de los subproductos.
+
+Listado y descarga de adjuntos protegidos por la visibilidad del preset. Las configuraciones personales son privadas; las compartidas/oficiales permiten lectura, duplicación y aplicación a cuentas aprobadas. Solo autor u OWNER modifican una personal/compartida; las oficiales requieren OWNER incluso si su autor cambió de rol. La pantalla permite actualizar nombre, instrucciones y visibilidad. Cambiar los archivos requiere guardar una nueva configuración desde la categoría. Copias limitadas a 50 archivos y 24 MB, además de la cuota global; los archivos preparados se eliminan si falla la transacción de metadatos. La aplicación y duplicación revalidan la visibilidad y detectan modificaciones concurrentes antes de publicar.
+
+Compartir proyecto incorpora listado de colaboradores, cambio de permisos y revocación con auditoría. Acceso administrativo solo para creador u OWNER; respuestas limitadas a nombre, correo, estado, rol y permiso, sin contraseñas ni credenciales. El creador conserva el acceso por propiedad. Revocar una colaboración no anula accesos propios del rol OWNER o la consulta administrativa de proyectos USER, explicado en la pantalla. Los permisos de los trabajos se comprueban nuevamente antes del consumo de IA. La compartición granular avanzada y los grupos globales siguen pendientes.
+
+Esta entrega utiliza las tablas existentes y no requiere migraciones ni cambios en claves, usuarios o variables externas. La plataforma sigue en desarrollo; no acredita generación real ni está terminada para producción.
+
+Verificación de esta etapa: 51 escenarios HTTP/PostgreSQL (52 resultados contando el contenedor), 15 unitarias, TypeScript, build e instalación sin base aprobados. Recorrido Chromium completo con dos sesiones, controles de acceso, carga/guardado/actualización/duplicación/aplicación/borrado de configuración, archivos reales conservados y sin errores JavaScript. No se realizaron llamadas facturables de IA.

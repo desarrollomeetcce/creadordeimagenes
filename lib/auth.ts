@@ -116,6 +116,10 @@ export async function resourceAccess(
   id: string,
   permission = "VIEW",
 ) {
+  if (scope === "preset") {
+    const { presetAccess } = await import("./preset-access");
+    return presetAccess(u, id, permission !== "VIEW");
+  }
   if (scope === "variation") {
     const { accessibleVariation } = await import("./versions");
     return accessibleVariation(u, id, permission);

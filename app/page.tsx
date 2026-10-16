@@ -1,6 +1,7 @@
 "use client";
 import { useCallback, useEffect, useState, useRef } from "react";
 import { VariationEditor } from "./components/variation-editor";
+import { ProjectSharing } from "./components/project-sharing";
 import { BrandKit } from "./components/brand-kit";
 import { StorageUsage } from "./components/storage-usage";
 import {
@@ -941,33 +942,7 @@ function ProjectEditor({
           Enviar a papelera
         </button>
       </div>
-      {share && (
-        <form
-          className="panel fields"
-          onSubmit={(e) => {
-            e.preventDefault();
-            const data = Object.fromEntries(new FormData(e.currentTarget));
-            void t.run(
-              () => api("projects/" + p.id + "/members", "POST", data),
-              "Acceso concedido",
-            );
-          }}
-        >
-          <label>
-            Correo del usuario aprobado
-            <input name="email" type="email" required />
-          </label>
-          <label>
-            Permiso
-            <select name="permission">
-              <option value="VIEW">Ver y descargar</option>
-              <option value="GENERATE">Generar</option>
-              <option value="EDIT">Editar</option>
-            </select>
-          </label>
-          <button>Compartir</button>
-        </form>
-      )}
+      {share && <ProjectSharing key={p.id} projectId={p.id} />}
       {create && (
         <form
           className="panel stack"

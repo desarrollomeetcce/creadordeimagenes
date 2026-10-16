@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { db } from "./db";
-import { ownerOnly, projectAccess, projectFilter } from "./auth";
+import { ownerOnly, projectFilter } from "./auth";
 import { demand } from "./errors";
 import { accessibleVariation } from "./versions";
 export async function retainVariation(
@@ -156,106 +156,8 @@ export async function productivityRoutes(
     }
   }
   if (route === "presets") {
-    if (method === "GET" && parts.length === 1)
-      return send(
-        await db.savedPreset.findMany({
-          where: {
-            OR: [
-              { userId: user.id },
-              { visibility: { in: ["SHARED", "OFFICIAL"] } },
-            ],
-          },
-          orderBy: { updatedAt: "desc" },
-        }),
-      );
-    const schema = z.object({
-      name: z.string().trim().min(1).max(150),
-      prompt: z.string().max(30000),
-      settings: z.record(z.string(), z.unknown()),
-      visibility: z
-        .enum(["PERSONAL", "SHARED", "OFFICIAL"])
-        .default("PERSONAL"),
-    });
-    if (method === "POST" && parts.length === 1) {
-      const b = schema.parse(await body());
-      if (b.visibility === "OFFICIAL") ownerOnly(user);
-      return send(
-        await db.savedPreset.create({
-          data: {
-            ...b,
-            settings: JSON.parse(JSON.stringify(b.settings)),
-            userId: user.id,
-          },
-        }),
-        201,
-      );
-    }
-    if (parts[1]) {
-      const preset = await db.savedPreset.findUnique({
-        where: { id: parts[1] },
-      });
-      demand(
-        preset &&
-          (preset.userId === user.id ||
-            preset.visibility !== "PERSONAL" ||
-            user.role === "OWNER"),
-        "Configuración no encontrada.",
-        404,
-      );
-      if (parts[2] === "apply" && method === "POST") {
-        const b = z.object({ categoryId: z.string() }).parse(await body());
-        const category = await db.category.findUnique({
-          where: { id: b.categoryId },
-        });
-        demand(category, "Categoría no encontrada.", 404);
-        await projectAccess(user, category.projectId, "EDIT");
-        const { effectiveSettings, validateDistribution } =
-          await import("./inheritance");
-        validateDistribution(effectiveSettings(preset.settings, {}));
-        await db.$transaction([
-          db.category.update({
-            where: { id: category.id },
-            data: { prompt: preset.prompt, settings: preset.settings! },
-          }),
-          db.promptVersion.create({
-            data: {
-              scope: "category",
-              resourceId: category.id,
-              prompt: preset.prompt,
-              actorId: user.id,
-            },
-          }),
-          db.auditEvent.create({
-            data: {
-              actorId: user.id,
-              action: "CONFIGURACION_APLICADA",
-              resourceId: category.id,
-            },
-          }),
-        ]);
-        return send({ ok: true });
-      }
-      demand(
-        preset.userId === user.id || user.role === "OWNER",
-        "Solo el autor o el OWNER pueden modificar esta configuración.",
-        403,
-      );
-      if (method === "DELETE") {
-        if (preset.visibility === "OFFICIAL") ownerOnly(user);
-        await db.savedPreset.delete({ where: { id: preset.id } });
-        return send({ ok: true });
-      }
-      if (method === "PATCH") {
-        const b = schema.parse(await body());
-        if (preset.visibility === "OFFICIAL" || b.visibility === "OFFICIAL")
-          ownerOnly(user);
-        await db.savedPreset.update({
-          where: { id: preset.id },
-          data: { ...b, settings: JSON.parse(JSON.stringify(b.settings)) },
-        });
-        return send({ ok: true });
-      }
-    }
+    const { presetRoutes } = await import("./presets");
+    return await presetRoutes(req, parts, user, body);
   }
   if (route === "budgets") {
     ownerOnly(user);

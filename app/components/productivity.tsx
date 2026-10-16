@@ -220,7 +220,9 @@ export function PresetTools({
   const [items, setItems] = useState<any[]>([]),
     [selected, setSelected] = useState(""),
     [name, setName] = useState(""),
-    [visibility, setVisibility] = useState("PERSONAL");
+    [visibility, setVisibility] = useState("PERSONAL"),
+    [includeAttachments, setIncludeAttachments] = useState(false),
+    [applyAttachments, setApplyAttachments] = useState(true);
   const t = useAction();
   useEffect(() => {
     void t.run(async () => setItems(await api("presets")), "");
@@ -231,7 +233,10 @@ export function PresetTools({
       <div className="inside stack">
         <p className="hint">
           Se guardan las instrucciones y los parámetros ya guardados de esta
-          categoría. Los adjuntos del proyecto se administran por separado.
+          categoría. Puedes incluir copias de sus adjuntos directos. Los
+          archivos del proyecto y de los subproductos se administran por
+          separado. Una configuración compartida permite descargar sus adjuntos
+          a los usuarios aprobados.
         </p>
         <div className="fields">
           <label>
@@ -254,6 +259,14 @@ export function PresetTools({
             </select>
           </label>
         </div>
+        <label className="row">
+          <input
+            type="checkbox"
+            checked={includeAttachments}
+            onChange={(e) => setIncludeAttachments(e.target.checked)}
+          />
+          Incluir los adjuntos de esta categoría
+        </label>
         <button
           disabled={!name || t.busy}
           onClick={() =>
@@ -263,6 +276,8 @@ export function PresetTools({
                 prompt: category.prompt,
                 settings: category.settings ?? {},
                 visibility,
+                sourceCategoryId: category.id,
+                includeAttachments,
               });
               setItems(await api("presets"));
             }, "Configuración guardada")
@@ -272,25 +287,37 @@ export function PresetTools({
         </button>
         <label>
           Buscar configuración
-          <input
-            list={"presets-" + category.id}
+          <select
             value={selected}
             onChange={(e) => setSelected(e.target.value)}
-          />
-          <datalist id={"presets-" + category.id}>
+          >
+            <option value="">Selecciona una configuración</option>
             {items.map((i) => (
-              <option key={i.id} value={i.name}>
-                {i.name} · {i.visibility}
+              <option key={i.id} value={i.id}>
+                {i.name} · {i.visibility} · {i.attachmentCount ?? 0} adjuntos
               </option>
             ))}
-          </datalist>
+          </select>
         </label>
+        <label className="row">
+          <input
+            type="checkbox"
+            checked={applyAttachments}
+            onChange={(e) => setApplyAttachments(e.target.checked)}
+          />
+          Copiar también los adjuntos de la configuración
+        </label>
+        <p className="hint">
+          Al aplicar se sustituyen instrucciones y parámetros. Los adjuntos se
+          añaden como copias; no se eliminan los existentes. Aplicar nuevamente
+          con adjuntos añade otra copia y consume espacio.
+        </p>
         <button
           disabled={!selected || t.busy}
           onClick={() => {
             if (
               confirm(
-                "¿Reemplazar las instrucciones y parámetros de esta categoría? Sus versiones anteriores quedarán en el historial.",
+                "¿Reemplazar las instrucciones y parámetros de esta categoría y copiar los adjuntos seleccionados? Sus versiones anteriores quedarán en el historial.",
               )
             )
               void t.run(async () => {
@@ -301,6 +328,7 @@ export function PresetTools({
                   throw new Error("Selecciona una configuración existente.");
                 await api("presets/" + preset.id + "/apply", "POST", {
                   categoryId: category.id,
+                  includeAttachments: applyAttachments,
                 });
                 window.location.reload();
               });
@@ -310,6 +338,109 @@ export function PresetTools({
         </button>
       </div>
       {t.notice}
+    </details>
+  );
+}
+function PresetDetails({
+  preset,
+  refresh,
+}: {
+  preset: {
+    id: string;
+    name: string;
+    prompt: string;
+    settings: unknown;
+    visibility: string;
+    attachmentCount: number;
+    canEdit: boolean;
+  };
+  refresh: () => Promise<void>;
+}) {
+  const [open, setOpen] = useState(false);
+  const [files, setFiles] = useState<
+    { id: string; name: string; size: number; purpose: string }[]
+  >([]);
+  const t = useAction();
+  useEffect(() => {
+    if (!open) return;
+    let active = true;
+    void t.run(async () => {
+      const data = await api(
+        `attachments?scope=preset&id=${encodeURIComponent(preset.id)}`,
+      );
+      if (active) setFiles(data);
+    }, "");
+    return () => {
+      active = false;
+    };
+  }, [open, preset.id]);
+  return (
+    <details onToggle={(e) => setOpen(e.currentTarget.open)}>
+      <summary>Detalles y adjuntos · {preset.attachmentCount ?? 0}</summary>
+      <div className="inside stack">
+        {files.map((f) => (
+          <a
+            key={f.id}
+            href={"/api/attachments/" + f.id}
+            target="_blank"
+            rel="noreferrer"
+          >
+            {f.name} · {f.purpose} · {Math.ceil(f.size / 1024)} KB
+          </a>
+        ))}
+        {!files.length && <p className="hint">Sin adjuntos reutilizables.</p>}
+        {preset.canEdit && (
+          <form
+            key={preset.name + preset.prompt + preset.visibility}
+            className="stack"
+            onSubmit={(e) => {
+              e.preventDefault();
+              const data = Object.fromEntries(new FormData(e.currentTarget));
+              void t.run(async () => {
+                await api("presets/" + preset.id, "PATCH", {
+                  ...data,
+                  settings: preset.settings,
+                });
+                await refresh();
+              });
+            }}
+          >
+            <label>
+              Nombre de la configuración
+              <input
+                name="name"
+                defaultValue={preset.name}
+                required
+                maxLength={150}
+              />
+            </label>
+            <label>
+              Instrucciones guardadas
+              <textarea
+                name="prompt"
+                defaultValue={preset.prompt}
+                maxLength={30000}
+                rows={6}
+              />
+            </label>
+            <label>
+              Visibilidad de la configuración
+              <select name="visibility" defaultValue={preset.visibility}>
+                <option value="PERSONAL">Personal</option>
+                <option value="SHARED">Compartida</option>
+                <option value="OFFICIAL">Oficial · solo OWNER</option>
+              </select>
+            </label>
+            <p className="hint">
+              Compartir permite a las cuentas aprobadas consultar, duplicar y
+              aplicar esta configuración, incluidos sus archivos. Para cambiar
+              los adjuntos, guarda una nueva configuración desde una categoría.
+            </p>
+            <button disabled={t.busy}>Actualizar configuración</button>
+          </form>
+        )}
+        {t.notice}
+      </div>
     </details>
   );
 }
@@ -343,33 +474,38 @@ export function Presets() {
               <h3>{i.name}</h3>
               <span className="badge">{i.visibility}</span>
               <p>{i.prompt.slice(0, 200)}</p>
+              <PresetDetails preset={i} refresh={refresh} />
               <div className="row">
                 <button
+                  disabled={t.busy}
                   onClick={() =>
                     void t.run(async () => {
-                      await api("presets", "POST", {
-                        name: i.name + " · copia",
-                        prompt: i.prompt,
-                        settings: i.settings,
-                        visibility: "PERSONAL",
-                      });
+                      await api("presets/" + i.id + "/duplicate", "POST", {});
                       await refresh();
                     }, "Copia personal creada")
                   }
                 >
                   Duplicar
                 </button>
-                <button
-                  className="danger"
-                  onClick={() =>
-                    void t.run(async () => {
-                      await api("presets/" + i.id, "DELETE");
-                      await refresh();
-                    })
-                  }
-                >
-                  Eliminar
-                </button>
+                {i.canEdit && (
+                  <button
+                    disabled={t.busy}
+                    className="danger"
+                    onClick={() => {
+                      if (
+                        confirm(
+                          "¿Eliminar esta configuración y sus adjuntos? Las copias aplicadas a categorías se conservan.",
+                        )
+                      )
+                        void t.run(async () => {
+                          await api("presets/" + i.id, "DELETE");
+                          await refresh();
+                        });
+                    }}
+                  >
+                    Eliminar
+                  </button>
+                )}
               </div>
             </article>
           ))}

@@ -535,6 +535,11 @@ async function handle(
         await audit(user.id, "PROYECTO_RESTAURADO", id);
         return send({ ok: true });
       }
+      if (parts[2] === "members") {
+        const { projectMembers } = await import("@/lib/project-members");
+        demand(parts.length <= 4, "Ruta no encontrada.", 404);
+        return await projectMembers(req, id, parts[3], user, () => body(req));
+      }
       await projectAccess(user, id, method === "GET" ? "VIEW" : "EDIT");
       if (parts.length === 2 && method === "GET")
         return send(
@@ -584,38 +589,6 @@ async function handle(
           }),
           201,
         );
-      }
-      if (parts[2] === "members" && method === "POST") {
-        const p = await db.project.findUniqueOrThrow({ where: { id } });
-        demand(
-          user.role === "OWNER" || p.ownerId === user.id,
-          "Solo el creador o el owner pueden compartir.",
-          403,
-        );
-        const b = z
-          .object({
-            email: z.email(),
-            permission: z.enum(["VIEW", "GENERATE", "EDIT", "MANAGE"]),
-          })
-          .parse(await body(req));
-        const target = await db.user.findUnique({
-          where: { email: b.email.toLowerCase() },
-        });
-        demand(
-          target?.status === "APPROVED",
-          "Usuario aprobado no encontrado.",
-        );
-        await db.projectMember.upsert({
-          where: { projectId_userId: { projectId: id, userId: target.id } },
-          create: {
-            projectId: id,
-            userId: target.id,
-            permission: b.permission,
-          },
-          update: { permission: b.permission },
-        });
-        await audit(user.id, "PROYECTO_COMPARTIDO", id);
-        return send({ ok: true });
       }
     }
     if (parts[0] === "categories" && parts[1]) {
@@ -824,7 +797,7 @@ async function handle(
     if (parts[0] === "attachments") {
       if (parts.length === 1 && method === "GET") {
         const scope = z
-            .enum(["project", "category", "subproduct", "variation"])
+            .enum(["project", "category", "subproduct", "variation", "preset"])
             .parse(req.nextUrl.searchParams.get("scope")),
           id = req.nextUrl.searchParams.get("id") ?? "";
         await resourceAccess(user, scope, id);
@@ -902,6 +875,11 @@ async function handle(
         const a = await db.attachment.findUnique({ where: { id: parts[1] } });
         demand(a, "Adjunto no encontrado.", 404);
         await resourceAccess(user, a.scope, a.resourceId, "EDIT");
+        demand(
+          a.scope !== "preset",
+          "Actualiza los adjuntos guardando otra configuración desde la categoría.",
+          409,
+        );
         demand(
           !(await db.brandLogo.findFirst({ where: { attachmentId: a.id } })),
           "Este logo forma parte de la identidad de marca. Retíralo de la identidad antes de eliminarlo.",

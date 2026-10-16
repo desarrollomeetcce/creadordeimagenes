@@ -47,3 +47,7 @@ ImageVersion conserva el documento de capas, PNG y fondo de cada revisión. Vari
 El worker ahora cancela mediante transición condicional de PENDING y libera su reserva; los reintentos crean trabajos nuevos con autorización y vínculo histórico. La recuperación periódica marca ejecuciones antiguas como inciertas. Todavía falta un lease con heartbeat para despliegues con procesos de duración imprevisible.
 
 Los SVG simples se analizan con lista permitida y se rasterizan; nunca se sirven como SVG activo. Los adjuntos usados por versiones vigentes no se pueden eliminar para impedir romper logos históricos.
+
+Las configuraciones reutilizables almacenan copias de Attachment con scope=preset y resourceId=SavedPreset.id. El acceso se resuelve mediante presetAccess y la visibilidad vigente. Guardar desde categoría, duplicar y aplicar crean bytes nuevos con los adaptadores de almacenamiento existentes; una compensación elimina los archivos preparados si falla la transacción de metadatos. La identidad de marca del proyecto no se copia automáticamente. No hay rutas públicas de archivos ni referencias de almacenamiento entregadas al navegador.
+
+La administración de colaboradores de proyecto se concentra en project-members.ts: creador/OWNER, bloqueo del proyecto para mutaciones, selección explícita de datos de cuenta y auditoría. MANAGE permite administrar contenido; conceder o revocar accesos permanece reservado al creador/OWNER. Los accesos implícitos de los roles se conservan conforme a projectFilter.

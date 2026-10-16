@@ -1357,6 +1357,324 @@ test("Integración HTTP + PostgreSQL (base exclusiva de pruebas, sin llamadas ex
       },
     );
     await t.test(
+      "accesos compartidos: listar, cambiar, revocar y proteger al creador",
+      async () => {
+        const p = await owner.call("projects", "POST", {
+          name: "Privado para compartir",
+          prompt: "",
+        });
+        const path = `projects/${p.body.id}/members`;
+        const email = `user-${tag}@example.test`;
+        const actualUser = await db.user.findUniqueOrThrow({
+          where: { id: uid },
+        });
+        assert.equal((await user.call(`projects/${p.body.id}`)).status, 404);
+        assert.equal(
+          (
+            await owner.call(path, "POST", {
+              email: actualUser.email,
+              permission: "VIEW",
+            })
+          ).status,
+          200,
+        );
+        const list = await owner.call(path);
+        assert.equal(list.status, 200);
+        assert.equal(list.body.members.length, 1);
+        assert.deepEqual(Object.keys(list.body.members[0].user).sort(), [
+          "email",
+          "name",
+          "role",
+          "status",
+        ]);
+        assert.equal((await user.call(path)).status, 403);
+        assert.equal((await admin.call(path)).status, 404);
+        assert.equal(
+          (
+            await user.call(`projects/${p.body.id}`, "PATCH", {
+              name: "Prohibido",
+            })
+          ).status,
+          403,
+        );
+        assert.equal(
+          (await owner.call(`${path}/${uid}`, "PATCH", { permission: "EDIT" }))
+            .status,
+          200,
+        );
+        assert.equal(
+          (
+            await user.call(`projects/${p.body.id}`, "PATCH", {
+              name: "Editado",
+              prompt: "",
+            })
+          ).status,
+          200,
+        );
+        assert.equal(
+          (await user.call(path, "POST", { email, permission: "EDIT" })).status,
+          403,
+        );
+        const me = await db.user.findFirstOrThrow({
+          where: { email: `owner-${tag}@example.test` },
+        });
+        assert.equal(
+          (
+            await owner.call(path, "POST", {
+              email: me.email,
+              permission: "VIEW",
+            })
+          ).status,
+          409,
+        );
+        assert.equal(
+          (await owner.call(`${path}/${me.id}`, "DELETE")).status,
+          409,
+        );
+        assert.equal(
+          (
+            await owner.call(`${path}/${uid}`, "PATCH", {
+              permission: "GENERATE",
+            })
+          ).status,
+          200,
+        );
+        assert.equal(
+          (
+            await user.call(`projects/${p.body.id}`, "PATCH", {
+              name: "Prohibido",
+            })
+          ).status,
+          403,
+        );
+        assert.equal(
+          (await owner.call(`${path}/${uid}`, "DELETE")).status,
+          200,
+        );
+        assert.equal((await user.call(`projects/${p.body.id}`)).status, 404);
+        assert.equal((await owner.call(path)).body.members.length, 0);
+        assert.equal(
+          (await owner.call(`${path}/${uid}`, "DELETE")).status,
+          404,
+        );
+      },
+    );
+    await t.test(
+      "presets con adjuntos: privacidad, copias independientes, actualización y eliminación",
+      async () => {
+        const form = new FormData();
+        form.set("scope", "category");
+        form.set("resourceId", cid);
+        form.set("purpose", "Material de contexto");
+        form.set(
+          "file",
+          new File(["Contenido reutilizable de campaña."], "reutilizable.txt", {
+            type: "text/plain",
+          }),
+        );
+        const uploaded = await fetch(root + "/api/attachments", {
+          method: "POST",
+          headers: { Cookie: user.cookie, Origin: root },
+          body: form,
+        });
+        assert.equal(uploaded.status, 201);
+        const source = await uploaded.json();
+        const payload = {
+          name: "Recursos reutilizables",
+          prompt: "Campaña clara",
+          settings: {},
+          visibility: "PERSONAL",
+          sourceCategoryId: cid,
+          includeAttachments: true,
+        };
+        const saved = await user.call("presets", "POST", payload);
+        assert.equal(saved.status, 201);
+        const presetId = saved.body.id;
+        const path = `attachments?scope=preset&id=${presetId}`;
+        const files = (await user.call(path)).body;
+        const savedFile = files.find(
+          (f: { name: string }) => f.name === "reutilizable.txt",
+        );
+        assert(savedFile);
+        assert.equal((await admin.call(path)).status, 404);
+        assert.equal(
+          (await admin.call(`presets/${presetId}/duplicate`, "POST", {}))
+            .status,
+          404,
+        );
+        const privateProject = await owner.call("projects", "POST", {
+          name: "Recursos privados OWNER",
+        });
+        const privateCategory = await owner.call(
+          `projects/${privateProject.body.id}/categories`,
+          "POST",
+          { name: "Adjuntos privados" },
+        );
+        assert.equal(
+          (
+            await admin.call("presets", "POST", {
+              ...payload,
+              sourceCategoryId: privateCategory.body.id,
+            })
+          ).status,
+          404,
+        );
+        assert.equal(
+          (await user.call(`attachments/${source.id}`, "DELETE")).status,
+          200,
+        );
+        const read = await fetch(root + "/api/attachments/" + savedFile.id, {
+          headers: { Cookie: user.cookie },
+        });
+        assert.equal(read.status, 200);
+        assert.equal(await read.text(), "Contenido reutilizable de campaña.");
+        const copied = await user.call(
+          `presets/${presetId}/duplicate`,
+          "POST",
+          {},
+        );
+        assert.equal(copied.status, 201);
+        const duplicatedFiles = (
+          await user.call(`attachments?scope=preset&id=${copied.body.id}`)
+        ).body;
+        assert.equal(duplicatedFiles.length, files.length);
+        assert.notEqual(
+          duplicatedFiles.find(
+            (f: { name: string }) => f.name === "reutilizable.txt",
+          ).id,
+          savedFile.id,
+        );
+        const target = await user.call(`projects/${pid}/categories`, "POST", {
+          name: "Destino reutilizable",
+        });
+        const without = await user.call(`presets/${presetId}/apply`, "POST", {
+          categoryId: target.body.id,
+          includeAttachments: false,
+        });
+        assert.equal(without.status, 200);
+        assert.equal(without.body.attachmentsCopied, 0);
+        const applied = await user.call(`presets/${presetId}/apply`, "POST", {
+          categoryId: target.body.id,
+        });
+        assert.equal(applied.status, 200);
+        assert.equal(applied.body.attachmentsCopied, files.length);
+        const targetFiles = (
+          await user.call(`attachments?scope=category&id=${target.body.id}`)
+        ).body;
+        const finalFile = targetFiles.find(
+          (f: { name: string }) => f.name === "reutilizable.txt",
+        );
+        assert(finalFile);
+        const raw = await db.attachment.findMany({
+          where: { id: { in: [savedFile.id, finalFile.id] } },
+        });
+        assert.equal(new Set(raw.map((f) => f.path)).size, 2);
+        assert.equal(
+          (
+            await user.call(`presets/${presetId}`, "PATCH", {
+              ...payload,
+              name: "Compartida con recursos",
+              visibility: "SHARED",
+            })
+          ).status,
+          200,
+        );
+        assert.equal((await admin.call(path)).status, 200);
+        assert.equal(
+          (await admin.call(`presets/${presetId}`, "PATCH", payload)).status,
+          403,
+        );
+        assert.equal(
+          (await admin.call(`presets/${presetId}/duplicate`, "POST", {}))
+            .status,
+          201,
+        );
+        assert.equal(
+          (await user.call(`presets/${presetId}`, "DELETE")).status,
+          200,
+        );
+        assert.equal(
+          await db.attachment.count({
+            where: { scope: "preset", resourceId: presetId },
+          }),
+          0,
+        );
+        assert.equal(
+          (await user.call(`attachments/${savedFile.id}`)).status,
+          404,
+        );
+        const kept = await fetch(root + "/api/attachments/" + finalFile.id, {
+          headers: { Cookie: user.cookie },
+        });
+        assert.equal(kept.status, 200);
+        assert.equal(await kept.text(), "Contenido reutilizable de campaña.");
+        assert.equal(
+          (await user.call(`attachments?scope=preset&id=${copied.body.id}`))
+            .body.length,
+          files.length,
+        );
+      },
+    );
+    await t.test(
+      "una copia fallida revierte archivos almacenados y no publica adjuntos incompletos",
+      async () => {
+        const { withAttachmentCopies } =
+          await import("../lib/attachment-copies");
+        const sample = await db.savedPreset.findFirstOrThrow({
+          where: { name: "Recursos reutilizables · copia" },
+        });
+        const before = await db.storedAsset.count();
+        await assert.rejects(
+          withAttachmentCopies(
+            { scope: "preset", resourceId: sample.id },
+            async () => {
+              throw new Error("Fallo controlado de la transacción");
+            },
+          ),
+          /Fallo controlado/,
+        );
+        assert.equal(await db.storedAsset.count(), before);
+        // Processed graphics can be larger than the original upload metadata.
+        const { store, remove } = await import("../lib/storage");
+        const largePaths: string[] = [];
+        try {
+          for (let i = 0; i < 2; i++) {
+            const path = await store(Buffer.alloc(13000000, i + 1));
+            largePaths.push(path);
+            await db.attachment.create({
+              data: {
+                scope: "preset",
+                resourceId: sample.id,
+                name: `procesado-${i}.txt`,
+                mime: "text/plain",
+                purpose: "Material de contexto",
+                path,
+                size: 1,
+              },
+            });
+          }
+          await assert.rejects(
+            withAttachmentCopies(
+              { scope: "preset", resourceId: sample.id },
+              async () => {
+                assert.fail(
+                  "Una copia que supera el tamaño real no debe publicar metadatos",
+                );
+              },
+            ),
+            /procesados superan 24 MB/,
+          );
+          assert.equal(await db.storedAsset.count(), before + 2);
+        } finally {
+          await db.attachment.deleteMany({
+            where: { path: { in: largePaths } },
+          });
+          await Promise.all(largePaths.map(remove));
+        }
+        assert.equal(await db.storedAsset.count(), before);
+      },
+    );
+    await t.test(
       "presupuesto individual se aplica antes de crear trabajos y solo OWNER puede modificarlo",
       async () => {
         const payload = {
