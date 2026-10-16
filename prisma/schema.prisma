@@ -178,10 +178,13 @@ model GenerationJob {
   archivedAt DateTime?
   error String?
   startedAt DateTime?
+  leaseToken String?
+  heartbeatAt DateTime?
   completedAt DateTime?
   createdAt DateTime @default(now())
   variation Variation?
   @@index([status,createdAt])
+  @@index([status,heartbeatAt], map: "GenerationJob_heartbeat_idx")
   @@index([archivedAt,createdAt], map: "GenerationJob_archive_idx")
 }
 model BackgroundBatch {
@@ -402,4 +405,11 @@ model MaintenanceRun {
   result Json @default("{}")
   error String?
   @@index([startedAt])
+}
+
+model ProviderBillingCredential {
+  provider String @id
+  encryptedKey String
+  maskedKey String
+  updatedAt DateTime @updatedAt
 }

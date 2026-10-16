@@ -1,3 +1,4 @@
+import { interruptedJobWhere } from "./job-lease";
 import { db } from "./db";
 import { cleanupStorage } from "./cleanup";
 import { recoverInterrupted } from "../scripts/worker";
@@ -38,7 +39,7 @@ export async function maintenanceStatus() {
         where: { status: "AVAILABLE", expiresAt: { lte: now } },
       }),
       db.generationJob.count({
-        where: { status: "RUNNING", startedAt: { lt: staleBefore(now) } },
+        where: interruptedJobWhere(now),
       }),
       db.maintenanceRun.findFirst({
         where: { source: "CRON", status: { in: ["COMPLETED", "PARTIAL"] } },

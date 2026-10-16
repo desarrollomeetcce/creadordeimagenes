@@ -64,5 +64,20 @@
     "tsx": "^4.23.15",
     "typescript": "^7.0.2"
   },
-  "private": true
+  "private": true,
+  "overrides": {
+    "@workflow/core": {
+      "nanoid": "5.1.16"
+    },
+    "@prisma/dev": {
+      "@hono/node-server": "1.19.15",
+      "valibot": "1.5.0"
+    },
+    "prisma": {
+      "mysql2": "3.24.6"
+    },
+    "@prisma/config": {
+      "deepmerge-ts": "8.0.2"
+    }
+  }
 }

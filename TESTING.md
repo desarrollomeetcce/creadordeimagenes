@@ -1,5 +1,16 @@
 # Pruebas y evidencia
 
+## Continuación: actividad de ejecutores y credencial de gastos
+
+82 escenarios HTTP/PostgreSQL (83 resultados incluido contenedor),19 unitarias, tipos/build e instalación sin base aprobados. La suite prueba renovación periódica, detención del timer, token incorrecto/expirado sin renovación, compatibilidad con RUNNING antiguos incluso sin startedAt, dos recuperaciones concurrentes con una auditoría por trabajo, conservación exacta de reserva y costo desconocido/confirmado. Transporte simulado bloqueado durante recuperación confirma que no se inicia imagen adicional y que una imagen tardía no crea versiones ni deja bytes sin referencia. Otra simulación lanza error después de un COMMIT real: se conserva imagen descargable, versión, estado COMPLETED y ledger, sin nuevo cargo.
+
+Credencial financiera HTTP: OWNER exclusivo, otros roles/anónimo rechazados en todos los métodos, validación de proveedor/clave, cifrado distinto del contexto de generación, máscara sin plaintext/ciphertext, reemplazo y eliminación, rol degradado rechazado dentro de transacción, conservación de configuración de generación y auditoría limpia. La lectura real de credencial se verifica con adaptador explícitamente simulado; no se consultó una cuenta externa.
+
+Chromium sobre build final: navegación jerárquica, selección/ZIP/retirada/restauración y fechas, formulario de gastos de tipo password, guardado local cifrado, máscara, vacío después de guardar y recargar, eliminación rechazada/aceptada y costo diario con respuesta/permiso denegado interceptados. Móvil390px sin desbordamiento/errores. Contenedor UID1000 construido desde npm ci con lockfile corregido, con login PostgreSQL/Argon2 y autorizaciones. Copia restaurada de34 tablas y15 migraciones con comparaciones de consumo, actividad y hashes de bytes. Las primeras pruebas de Docker encontraron solo el directorio buildx de actividad no escribible; se corrigió la ubicación de trabajo sin alterar credenciales/red.
+
+npm audit completo y omit=dev:0 altos/críticos,3 moderados del árbol CLI Mammoth sin parche disponible; análisis y alcance en docs/SECURITY_REVIEW.md. No equivale a certificación del servidor externo. Migraciones014/015 probadas en copia Neon antes de rama conectada; cero datos de credenciales financieras creados allí. Sin llamadas facturables ni SMTP externo.
+
+
 ## Continuación: jerarquía, calendario, selección de imágenes y gasto diario
 
 78 escenarios HTTP/PostgreSQL (79 resultados incluido contenedor), 19 unitarias, tipos/build e instalación sin base. Caso de jerarquía valida permisos mínimos en opciones y datos, selección solo de ancestros autorizados, hijos ajenos rechazados, fecha Lima en el límite UTC05, fechas inválidas y rango invertido, 105 trabajos con página de 100, COMPLETED compartidos visibles sin gestión, rechazo atómico de selección con RUNNING, cancelar/liberar al retirar 100 y restaurar sin reencolar. Los resúmenes no devuelven filas y conservan desconocidos; revocar asignación cierra acceso a costos e imágenes compartidas también sin filtro.

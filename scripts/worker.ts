@@ -1,3 +1,9 @@
+import { randomUUID } from "node:crypto";
+import {
+  startJobHeartbeat,
+  leaseCutoff,
+  interruptedJobWhere,
+} from "../lib/job-lease";
 import { cleanupStorage } from "../lib/cleanup";
 import { recordActivity } from "../lib/activity";
 import { db } from "../lib/db";
@@ -52,6 +58,7 @@ export async function runOne(filter?: {
     orderBy: { createdAt: "asc" },
   });
   if (!candidate) return false;
+  const leaseToken = randomUUID();
   const claim = await db.$transaction(async (tx) => {
     await tx.$executeRaw`SELECT pg_advisory_xact_lock(728291)`;
     const active = await tx.generationJob.count({
@@ -60,13 +67,22 @@ export async function runOne(filter?: {
     if (active) return { count: 0 };
     return tx.generationJob.updateMany({
       where: { id: candidate.id, status: "PENDING" },
-      data: { status: "RUNNING", startedAt: new Date() },
+      data: {
+        status: "RUNNING",
+        startedAt: new Date(),
+        leaseToken,
+        heartbeatAt: new Date(),
+      },
     });
   });
   if (!claim.count) return false;
+  const heartbeat = startJobHeartbeat(candidate.id, leaseToken);
   const signal = filter?.deadlineMs
-    ? AbortSignal.timeout(filter.deadlineMs)
-    : undefined;
+    ? AbortSignal.any([
+        heartbeat.signal,
+        AbortSignal.timeout(filter.deadlineMs),
+      ])
+    : heartbeat.signal;
   let called = false;
   const written: string[] = [];
   try {
@@ -133,6 +149,7 @@ export async function runOne(filter?: {
       const input = inputPath
         ? { bytes: await load(inputPath), mime: "image/png" }
         : null;
+      await heartbeat.check();
       called = true;
       const result = await provider.generate(key, {
         signal,
@@ -156,6 +173,7 @@ export async function runOne(filter?: {
       } else output = await adaptImage(result.bytes, s.format);
     } else {
       const brief = `${s.prompt}\nModalidad: ${s.mode}. Propuesta ${s.index + 1}: composición distinta. Formato ${s.format}. Si es Texto, sin fotografías temáticas.`;
+      await heartbeat.check();
       called = true;
       const plan = await provider.direct(
         key,
@@ -194,6 +212,7 @@ export async function runOne(filter?: {
           refs.filter((a) => /logo/i.test(a.purpose)).map((a) => a.id),
         );
         if (s.mode !== "Texto") {
+          await heartbeat.check();
           const result = await provider.generate(key, {
             signal,
             model: c.imageModel!,
@@ -216,6 +235,7 @@ export async function runOne(filter?: {
           await logoBytes(document),
         );
       } else {
+        await heartbeat.check();
         const result = await provider.generate(key, {
           signal,
           model: c.imageModel!,
@@ -232,12 +252,19 @@ export async function runOne(filter?: {
     written.push(path);
     const auditThumbnail = await prepareAuditThumbnail(output);
     await db.$transaction(async (tx) => {
-      const active = await tx.generationJob.findUnique({
-        where: { id: candidate.id },
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(728291)`;
+      const active = await tx.generationJob.updateMany({
+        where: {
+          id: candidate.id,
+          status: "RUNNING",
+          leaseToken,
+          heartbeatAt: { gte: leaseCutoff() },
+        },
+        data: { heartbeatAt: new Date() },
       });
       demand(
-        active?.status === "RUNNING",
-        "El trabajo ya no está activo. Su resultado requiere revisión.",
+        active.count,
+        "El trabajo perdió su confirmación de actividad. Su resultado requiere revisión.",
         409,
       );
       if (s.editVariationId)
@@ -281,6 +308,8 @@ export async function runOne(filter?: {
         where: { id: candidate.id },
         data: {
           status: "COMPLETED",
+          leaseToken: null,
+          heartbeatAt: null,
           completedAt: new Date(),
           snapshot: { ...s, creativePlan },
         },
@@ -303,26 +332,39 @@ export async function runOne(filter?: {
       });
     });
   } catch (e) {
+    // A lost COMMIT acknowledgement must never delete an already published image.
+    // If the database is unavailable, preserve bytes until its state can be reviewed.
+    const published = await db.imageVersion.count({
+      where: { sourceJobId: candidate.id },
+    });
+    if (published) return true;
     for (const path of written) await remove(path).catch(() => {});
     const error =
       e instanceof AppError
         ? e.message
         : "No se pudo completar la generación. Revisa el estado del servidor.";
-    await db.$transaction([
-      db.generationJob.update({
-        where: { id: candidate.id },
+    await db.$transaction(async (tx) => {
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(728291)`;
+      const changed = await tx.generationJob.updateMany({
+        where: { id: candidate.id, status: "RUNNING", leaseToken },
         data: {
           status: called ? "UNCERTAIN" : "FAILED",
           error,
           completedAt: new Date(),
+          leaseToken: null,
+          heartbeatAt: null,
         },
-      }),
-      db.usageLedger.update({
-        where: { jobId: candidate.id },
-        data: { status: called ? "UNCERTAIN" : "RELEASED" },
-      }),
-    ]);
+      });
+      if (changed.count)
+        await tx.usageLedger.updateMany({
+          where: { jobId: candidate.id, status: "RESERVED" },
+          data: { status: called ? "UNCERTAIN" : "RELEASED" },
+        });
+    });
+  } finally {
+    await heartbeat.stop();
   }
+
   return true;
 }
 export async function cleanupExpired(now = new Date()) {
@@ -330,18 +372,23 @@ export async function cleanupExpired(now = new Date()) {
 }
 export async function recoverInterrupted(now = new Date()) {
   return db.$transaction(async (tx) => {
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(728291)`;
+    const where = interruptedJobWhere(now);
     const stale = await tx.generationJob.findMany({
-      where: {
-        status: "RUNNING",
-        startedAt: { lt: new Date(now.getTime() - 15 * 60000) },
-      },
+      where,
+      select: { id: true, actorId: true },
+      take: 100,
+      orderBy: { createdAt: "asc" },
     });
     let count = 0;
-    for (const j of stale) {
+    for (const job of stale) {
       const updated = await tx.generationJob.updateMany({
-        where: { id: j.id, status: "RUNNING" },
+        where: { AND: [{ id: job.id }, where] },
         data: {
           status: "UNCERTAIN",
+          leaseToken: null,
+          heartbeatAt: null,
+          completedAt: now,
           error:
             "Operación interrumpida. Revisa el consumo del proveedor antes de volver a generar.",
         },
@@ -349,14 +396,22 @@ export async function recoverInterrupted(now = new Date()) {
       if (updated.count) {
         count += updated.count;
         await tx.usageLedger.updateMany({
-          where: { jobId: j.id },
+          where: { jobId: job.id, status: "RESERVED" },
           data: { status: "UNCERTAIN" },
+        });
+        await recordActivity(tx, {
+          data: {
+            actorId: job.actorId,
+            action: "TRABAJO_INTERRUMPIDO",
+            resourceId: job.id,
+          },
         });
       }
     }
     return count;
   });
 }
+
 async function main() {
   let lastMaintenance = 0;
   while (true) {

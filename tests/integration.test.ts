@@ -7002,6 +7002,635 @@ test("Integración HTTP + PostgreSQL (base exclusiva de pruebas, sin llamadas ex
         }
       },
     );
+    await t.test(
+      "recuperación con actividad: no interrumpe ejecutores vivos, conserva cargos y registra abandonados",
+      async () => {
+        const { recoverInterrupted } = await import("../scripts/worker");
+        const { startJobHeartbeat, JOB_LEASE_MS } =
+          await import("../lib/job-lease");
+        const project = (
+          await user.call("projects", "POST", { name: "Recuperación " + tag })
+        ).body;
+        const now = new Date(),
+          old = new Date(now.getTime() - JOB_LEASE_MS - 1000);
+        const make = async (values: object) => {
+          const job = await db.generationJob.create({
+            data: {
+              actorId: uid,
+              projectId: project.id,
+              idempotencyKey: randomUUID(),
+              status: "RUNNING",
+              snapshot: {},
+              reservedMicros: 17n,
+              startedAt: old,
+              createdAt: old,
+              ...values,
+            },
+          });
+          await db.usageLedger.create({
+            data: {
+              jobId: job.id,
+              actorId: uid,
+              projectId: project.id,
+              model: "synthetic-lease",
+              reservedMicros: 17n,
+            },
+          });
+          return job;
+        };
+        const live = await make({ leaseToken: randomUUID(), heartbeatAt: now });
+        const dead = await make({ leaseToken: randomUUID(), heartbeatAt: old });
+        const legacy = await make({ leaseToken: null, heartbeatAt: null });
+        const missingStart = await make({
+          leaseToken: null,
+          heartbeatAt: null,
+          startedAt: null,
+        });
+        const heart = startJobHeartbeat(live.id, live.leaseToken!, 10);
+        try {
+          const before = (
+            await db.generationJob.findUniqueOrThrow({ where: { id: live.id } })
+          ).heartbeatAt!;
+          await new Promise((resolve) => setTimeout(resolve, 45));
+          const renewed = await db.generationJob.findUniqueOrThrow({
+            where: { id: live.id },
+          });
+          assert(renewed.heartbeatAt! > before);
+          const recovered = await Promise.all([
+            recoverInterrupted(now),
+            recoverInterrupted(now),
+          ]);
+          assert(recovered.reduce((a, b) => a + b, 0) >= 3);
+          assert.equal(
+            (
+              await db.generationJob.findUniqueOrThrow({
+                where: { id: live.id },
+              })
+            ).status,
+            "RUNNING",
+          );
+          for (const job of [dead, legacy, missingStart]) {
+            const row = await db.generationJob.findUniqueOrThrow({
+              where: { id: job.id },
+            });
+            assert.equal(row.status, "UNCERTAIN");
+            assert.equal(row.leaseToken, null);
+            assert.equal(row.heartbeatAt, null);
+            assert(row.completedAt);
+            const ledger = await db.usageLedger.findUniqueOrThrow({
+              where: { jobId: job.id },
+            });
+            assert.equal(ledger.status, "UNCERTAIN");
+            assert.equal(ledger.reservedMicros, 17n);
+            assert.equal(ledger.actualMicros, null);
+            assert.equal(
+              await db.auditEvent.count({
+                where: { resourceId: job.id, action: "TRABAJO_INTERRUMPIDO" },
+              }),
+              1,
+            );
+          }
+          const response = await user.call(
+            "jobs/list?status=RUNNING&project=" + project.id,
+          );
+          assert.equal(response.body.total, 1);
+          assert(!JSON.stringify(response.body).includes(live.leaseToken!));
+          assert(!JSON.stringify(response.body).includes("heartbeatAt"));
+          const wrong = startJobHeartbeat(live.id, "wrong-token", 60000);
+          await assert.rejects(wrong.check(), /actividad/);
+          assert.equal(wrong.signal.aborted, true);
+          await wrong.stop();
+        } finally {
+          await heart.stop();
+        }
+        const stopped = await db.generationJob.findUniqueOrThrow({
+          where: { id: live.id },
+        });
+        await new Promise((resolve) => setTimeout(resolve, 35));
+        assert.equal(
+          (
+            await db.generationJob.findUniqueOrThrow({ where: { id: live.id } })
+          ).heartbeatAt!.getTime(),
+          stopped.heartbeatAt!.getTime(),
+        );
+        await db.generationJob.update({
+          where: { id: live.id },
+          data: { heartbeatAt: old },
+        });
+        const expired = startJobHeartbeat(live.id, live.leaseToken!, 60000);
+        await assert.rejects(expired.check(), /actividad/);
+        await expired.stop();
+        await recoverInterrupted(now);
+        assert.equal(
+          (await db.generationJob.findUniqueOrThrow({ where: { id: live.id } }))
+            .status,
+          "UNCERTAIN",
+        );
+      },
+    );
+    await t.test(
+      "un ejecutor tardío no publica ni pisa una recuperación o confirmación posterior",
+      async () => {
+        const { recoverInterrupted } = await import("../scripts/worker");
+        const { JOB_LEASE_MS } = await import("../lib/job-lease");
+        const { adapter, compatibleModels } = await import("../lib/providers");
+        const { encryptKey } = await import("../lib/crypto");
+        const project = (
+          await user.call("projects", "POST", {
+            name: "Ejecución tardía " + tag,
+          })
+        ).body;
+        const product = (
+          await user.call(`projects/${project.id}/categories`, "POST", {
+            name: "Producto de prueba",
+          })
+        ).body;
+        const sub = (
+          await user.call(`categories/${product.id}/subproducts`, "POST", {
+            names: ["Tema de prueba"],
+          })
+        ).body[0];
+        const previous = await db.providerConfiguration.findUniqueOrThrow({
+            where: { id: "global" },
+          }),
+          provider = adapter("openai"),
+          originalDirect = provider.direct,
+          originalGenerate = provider.generate;
+        let resume: () => void = () => {},
+          started: () => void = () => {};
+        const blocked = new Promise<void>((resolve) => (resume = resolve)),
+          entered = new Promise<void>((resolve) => (started = resolve));
+        let calls = 0,
+          imageCalls = 0,
+          executing: Promise<boolean> | undefined;
+        try {
+          const config = await db.providerConfiguration.update({
+            where: { id: "global" },
+            data: {
+              encryptedKey: encryptKey("sk-synthetic-not-real"),
+              status: "VERIFIED",
+              verifiedAt: new Date(),
+              verifiedRevision: previous.revision,
+              imageModel: "gpt-image-1",
+              creativeModel: "gpt-4.1-mini",
+              quality: "low",
+              resolution: "1024x1024",
+              imageReserveMicros: 1n,
+              models: compatibleModels(["gpt-image-1", "gpt-4.1-mini"]),
+            },
+          });
+          provider.direct = async () => {
+            calls++;
+            started();
+            await blocked;
+            return {
+              text: JSON.stringify({
+                backgroundPrompt: "No ejecutar",
+                backgroundColor: "#ffffff",
+                texts: [],
+                logos: [],
+              }),
+              usage: null,
+            };
+          };
+          provider.generate = async () => {
+            imageCalls++;
+            throw Error("No debe generar tras perder el permiso");
+          };
+          const job = await db.generationJob.create({
+            data: {
+              actorId: uid,
+              projectId: project.id,
+              subproductId: sub.id,
+              idempotencyKey: randomUUID(),
+              reservedMicros: 3n,
+              snapshot: {
+                prompt: "Prueba sintética",
+                mode: "Imagen + Texto",
+                index: 0,
+                format: "1:1",
+                renderMode: "editable",
+                configRevision: config.revision,
+              },
+            },
+          });
+          await db.usageLedger.create({
+            data: {
+              jobId: job.id,
+              actorId: uid,
+              projectId: project.id,
+              model: "synthetic-lease",
+              reservedMicros: 3n,
+            },
+          });
+          executing = runOne({ id: job.id });
+          await Promise.race([
+            entered,
+            new Promise((_, reject) =>
+              setTimeout(
+                () => reject(Error("No inició el transporte sintético")),
+                3000,
+              ),
+            ),
+          ]);
+          const running = await db.generationJob.findUniqueOrThrow({
+            where: { id: job.id },
+          });
+          assert(running.leaseToken);
+          assert(running.heartbeatAt);
+          await db.generationJob.update({
+            where: { id: job.id },
+            data: { heartbeatAt: new Date(Date.now() - JOB_LEASE_MS - 1000) },
+          });
+          await recoverInterrupted();
+          await db.usageLedger.update({
+            where: { jobId: job.id },
+            data: { actualMicros: 7n },
+          });
+          resume();
+          await executing;
+          assert.equal(calls, 1);
+          assert.equal(imageCalls, 0);
+          const finished = await db.generationJob.findUniqueOrThrow({
+            where: { id: job.id },
+          });
+          assert.equal(finished.status, "UNCERTAIN");
+          assert(finished.error!.includes("interrumpida"));
+          assert.equal(finished.leaseToken, null);
+          assert.equal(
+            await db.variation.count({ where: { jobId: job.id } }),
+            0,
+          );
+          const ledger = await db.usageLedger.findUniqueOrThrow({
+            where: { jobId: job.id },
+          });
+          assert.equal(ledger.status, "UNCERTAIN");
+          assert.equal(ledger.actualMicros, 7n);
+          assert.equal(ledger.reservedMicros, 3n);
+        } finally {
+          resume();
+          await executing;
+          provider.direct = originalDirect;
+          provider.generate = originalGenerate;
+          await db.providerConfiguration.update({
+            where: { id: "global" },
+            data: {
+              ...previous,
+              models: previous.models as any,
+              alternatives: previous.alternatives as any,
+            },
+          });
+        }
+      },
+    );
+    await t.test(
+      "respuesta tardía y COMMIT incierto: no publica imágenes abandonadas ni elimina resultados ya confirmados",
+      async () => {
+        const { recoverInterrupted } = await import("../scripts/worker"),
+          { JOB_LEASE_MS } = await import("../lib/job-lease");
+        const { adapter, compatibleModels } = await import("../lib/providers"),
+          { encryptKey } = await import("../lib/crypto");
+        const project = (
+          await user.call("projects", "POST", {
+            name: "Imagen interrumpida " + tag,
+          })
+        ).body;
+        const previous = await db.providerConfiguration.findUniqueOrThrow({
+            where: { id: "global" },
+          }),
+          provider = adapter("openai"),
+          originalDirect = provider.direct,
+          originalGenerate = provider.generate;
+        const png = await (
+          await import("sharp")
+        )
+          .default({
+            create: {
+              width: 64,
+              height: 64,
+              channels: 3,
+              background: "#123456",
+            },
+          })
+          .png()
+          .toBuffer();
+        let resume: () => void = () => {},
+          started: () => void = () => {};
+        const blocked = new Promise<void>((resolve) => (resume = resolve)),
+          entered = new Promise<void>((resolve) => (started = resolve));
+        let calls = 0,
+          executing: Promise<boolean> | undefined;
+        try {
+          const config = await db.providerConfiguration.update({
+            where: { id: "global" },
+            data: {
+              encryptedKey: encryptKey("sk-synthetic-not-real"),
+              status: "VERIFIED",
+              verifiedAt: new Date(),
+              verifiedRevision: previous.revision,
+              imageModel: "gpt-image-1",
+              creativeModel: "gpt-4.1-mini",
+              quality: "low",
+              resolution: "1024x1024",
+              imageReserveMicros: 1n,
+              models: compatibleModels(["gpt-image-1", "gpt-4.1-mini"]),
+            },
+          });
+          provider.direct = async () => ({
+            text: "Prompt sintético",
+            usage: null,
+          });
+          provider.generate = async () => {
+            calls++;
+            started();
+            await blocked;
+            return { bytes: png, usage: null };
+          };
+          const job = await db.generationJob.create({
+            data: {
+              actorId: uid,
+              projectId: project.id,
+              idempotencyKey: randomUUID(),
+              reservedMicros: 3n,
+              snapshot: {
+                prompt: "Prueba sintética",
+                mode: "Imagen",
+                index: 0,
+                format: "1:1",
+                configRevision: config.revision,
+              },
+            },
+          });
+          await db.usageLedger.create({
+            data: {
+              jobId: job.id,
+              actorId: uid,
+              projectId: project.id,
+              model: "synthetic-lease",
+              reservedMicros: 3n,
+            },
+          });
+          const files = await db.storedAsset.count();
+          executing = runOne({ id: job.id });
+          await Promise.race([
+            entered,
+            new Promise((_, reject) =>
+              setTimeout(
+                () => reject(Error("No inició imagen sintética")),
+                3000,
+              ),
+            ),
+          ]);
+          await db.generationJob.update({
+            where: { id: job.id },
+            data: { heartbeatAt: new Date(Date.now() - JOB_LEASE_MS - 1000) },
+          });
+          await recoverInterrupted();
+          resume();
+          await executing;
+          assert.equal(calls, 1);
+          assert.equal(
+            await db.variation.count({ where: { jobId: job.id } }),
+            0,
+          );
+          assert.equal(
+            await db.imageVersion.count({ where: { sourceJobId: job.id } }),
+            0,
+          );
+          assert.equal(await db.storedAsset.count(), files);
+          assert.equal(
+            (
+              await db.generationJob.findUniqueOrThrow({
+                where: { id: job.id },
+              })
+            ).status,
+            "UNCERTAIN",
+          );
+          assert.equal(
+            (
+              await db.usageLedger.findUniqueOrThrow({
+                where: { jobId: job.id },
+              })
+            ).status,
+            "UNCERTAIN",
+          );
+          // Simulate a committed transaction whose acknowledgement is lost.
+          const committed = await db.generationJob.create({
+            data: {
+              actorId: uid,
+              projectId: project.id,
+              idempotencyKey: randomUUID(),
+              reservedMicros: 3n,
+              snapshot: job.snapshot as any,
+            },
+          });
+          await db.usageLedger.create({
+            data: {
+              jobId: committed.id,
+              actorId: uid,
+              projectId: project.id,
+              model: "synthetic-lease",
+              reservedMicros: 3n,
+            },
+          });
+          const originalTransaction = db.$transaction.bind(db);
+          let acknowledgementLost = false;
+          try {
+            (db as any).$transaction = async (...args: any[]) => {
+              const result = await (originalTransaction as any)(...args);
+              if (
+                !acknowledgementLost &&
+                (await db.imageVersion.count({
+                  where: { sourceJobId: committed.id },
+                }))
+              ) {
+                acknowledgementLost = true;
+                throw Error("Acknowledgement lost after COMMIT · synthetic");
+              }
+              return result;
+            };
+            assert.equal(await runOne({ id: committed.id }), true);
+          } finally {
+            (db as any).$transaction = originalTransaction;
+          }
+          assert.equal(acknowledgementLost, true);
+          const image = await db.variation.findUniqueOrThrow({
+            where: { jobId: committed.id },
+          });
+          assert(
+            (await (await import("../lib/storage")).load(image.path)).length >
+              0,
+          );
+          assert.equal(
+            (
+              await db.generationJob.findUniqueOrThrow({
+                where: { id: committed.id },
+              })
+            ).status,
+            "COMPLETED",
+          );
+          assert.equal(
+            (
+              await db.usageLedger.findUniqueOrThrow({
+                where: { jobId: committed.id },
+              })
+            ).status,
+            "CONSUMED_ESTIMATE",
+          );
+          assert.equal(calls, 2);
+        } finally {
+          resume();
+          await executing;
+          provider.direct = originalDirect;
+          provider.generate = originalGenerate;
+          await db.providerConfiguration.update({
+            where: { id: "global" },
+            data: {
+              ...previous,
+              models: previous.models as any,
+              alternatives: previous.alternatives as any,
+            },
+          });
+        }
+      },
+    );
+    await t.test(
+      "credencial de gastos separada: OWNER, cifrado contextual, máscara, reemplazo y eliminación sin alterar generación",
+      async () => {
+        const { decryptKey } = await import("../lib/crypto"),
+          { readDailyCosts, saveBillingCredential } =
+            await import("../lib/billing-credentials");
+        const { adapter } = await import("../lib/providers");
+        const account = await db.user.findFirstOrThrow({
+            where: { role: "OWNER", status: "APPROVED" },
+          }),
+          actor = { id: account.id, role: "OWNER" };
+        const before = await db.providerConfiguration.findUniqueOrThrow({
+            where: { id: "global" },
+          }),
+          key = "sk-synthetic-billing-secret-1234",
+          replacement = "sk-synthetic-billing-replacement-5678";
+        const path = "ai/billing-key?provider=openai";
+        for (const client of [user, admin, observer, anonymous]) {
+          const expected = client === anonymous ? 401 : 403;
+          assert.equal((await client.call(path)).status, expected);
+          assert.equal(
+            (
+              await client.call(path, "PUT", {
+                provider: "openai",
+                apiKey: key,
+              })
+            ).status,
+            expected,
+          );
+          assert.equal((await client.call(path, "DELETE")).status, expected);
+        }
+        assert.equal(
+          (
+            await owner.call(path, "PUT", {
+              provider: "openai",
+              apiKey: "corta",
+            })
+          ).status,
+          400,
+        );
+        assert.equal(
+          (await owner.call(path, "PUT", { provider: "unknown", apiKey: key }))
+            .status,
+          400,
+        );
+        const saved = await owner.call(path, "PUT", {
+          provider: "openai",
+          apiKey: key,
+        });
+        assert.equal(saved.status, 200);
+        assert.equal(saved.body.maskedKey, "••••••••1234");
+        assert.equal(saved.body.configured, true);
+        assert(!JSON.stringify(saved.body).includes(key));
+        assert(!JSON.stringify(saved.body).includes("encryptedKey"));
+        const stored = await db.providerBillingCredential.findUniqueOrThrow({
+          where: { provider: "openai" },
+        });
+        assert.notEqual(stored.encryptedKey, key);
+        assert.equal(
+          decryptKey(stored.encryptedKey, "billing:openai:api-key"),
+          key,
+        );
+        assert.throws(() => decryptKey(stored.encryptedKey));
+        assert.deepEqual((await owner.call(path)).body, saved.body);
+        await assert.rejects(
+          saveBillingCredential(
+            { id: uid, role: "OWNER" },
+            { provider: "openai", apiKey: key },
+          ),
+          /cuenta cambió/,
+        );
+        const engine = adapter("openai"),
+          original = engine.dailyCosts;
+        let calls = 0;
+        try {
+          engine.dailyCosts = async (received) => {
+            calls++;
+            assert.equal(received, key);
+            return {
+              rows: [{ day: "2026-01-01", micros: "123" }],
+              totalMicros: "123",
+              rounded: false,
+              fetchedAt: new Date().toISOString(),
+            };
+          };
+          assert.equal(
+            (await readDailyCosts(actor, "openai", "2026-01-01", "2026-01-01"))
+              .totalMicros,
+            "123",
+          );
+          assert.equal(calls, 1);
+          assert.equal(
+            (
+              await owner.call(path, "PUT", {
+                provider: "openai",
+                apiKey: replacement,
+              })
+            ).body.maskedKey,
+            "••••••••5678",
+          );
+          assert.equal(
+            decryptKey(
+              (
+                await db.providerBillingCredential.findUniqueOrThrow({
+                  where: { provider: "openai" },
+                })
+              ).encryptedKey,
+              "billing:openai:api-key",
+            ),
+            replacement,
+          );
+          assert.equal((await owner.call(path, "DELETE")).status, 200);
+          assert.equal((await owner.call(path)).body.configured, false);
+          await assert.rejects(
+            readDailyCosts(actor, "openai", "2026-01-01", "2026-01-01"),
+            /credencial/,
+          );
+          assert.equal(calls, 1);
+        } finally {
+          engine.dailyCosts = original;
+        }
+        const after = await db.providerConfiguration.findUniqueOrThrow({
+          where: { id: "global" },
+        });
+        assert.equal(after.encryptedKey, before.encryptedKey);
+        assert.equal(after.revision, before.revision);
+        assert.equal(after.status, before.status);
+        const audit = JSON.stringify(
+          await db.auditEvent.findMany({
+            where: { action: { startsWith: "CREDENCIAL_GASTOS_" } },
+          }),
+        );
+        assert(!audit.includes(key));
+        assert(!audit.includes(replacement));
+        assert(!audit.includes(stored.encryptedKey));
+      },
+    );
     await t.test("cierre de sesión invalida el token", async () => {
       assert.equal((await user.call("auth/logout", "POST")).status, 200);
       assert.equal((await user.call("projects")).status, 401);

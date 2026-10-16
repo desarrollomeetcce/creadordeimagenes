@@ -12,7 +12,7 @@ Los adjuntos incluyen vistas previas privadas de imágenes y **Reemplazar**. Cad
 
 **Historial** muestra resúmenes con nombres de personas, proyectos, productos y subproductos, detalles desplegables, búsqueda y paginación. Las operaciones nuevas conservan los nombres de su momento; los registros antiguos indican cuando solo se conocen los nombres actuales o faltan detalles. No muestra claves, prompts ni códigos internos como descripción principal.
 
-**Costos de IA** incluye filtros por proyecto/producto/subproducto y fechas Lima, paginación y totales de todas las coincidencias, con reservas separadas del coste real informado. Permite descargar CSV de hasta 2000 operaciones; un coste desconocido nunca se presenta como cero. OWNER consulta todas las cuentas; ADMIN/USER sus operaciones y generaciones terminadas compartidas. Consulta opcional del gasto diario de OpenAI exclusiva OWNER (UTC, hasta31 días): depende de permisos administrativos de facturación, puede incluir otras aplicaciones y no se atribuye a cada imagen.
+**Costos de IA** incluye filtros por proyecto/producto/subproducto y fechas Lima, paginación y totales de todas las coincidencias, con reservas separadas del coste real informado. Permite descargar CSV de hasta 2000 operaciones; un coste desconocido nunca se presenta como cero. OWNER consulta todas las cuentas; ADMIN/USER sus operaciones y generaciones terminadas compartidas. Consulta opcional del gasto diario de OpenAI exclusiva OWNER (UTC, hasta31 días): permite guardar una credencial administrativa de gastos separada, cifrada y administrable desde el panel; depende de sus permisos de facturación, puede incluir otras aplicaciones y no se atribuye a cada imagen.
 
 **Generaciones** permite filtrar por jerarquía/acceso, buscar, elegir fechas, mostrar hasta100 imágenes y tres tamaños; seleccionar entre páginas para descargar PNG/JPG ZIP y retirar/restaurar. Cada tarjeta muestra ruta y costo informado o desconocido, separado de la reserva. Permite eliminar trabajos del listado y restaurarlos desde la vista de retiradas, conservando imágenes, historial y consumo. Los trabajos en curso no se retiran. En **Inteligencia Artificial**, el estado se actualiza cada diez segundos, distingue catálogo consultado de prueba realmente completada y revisa también límites particulares. Estos límites se pueden editar o eliminar por fila; eliminar una restricción no añade saldo a OpenAI ni borra el consumo anterior.
 
@@ -106,3 +106,6 @@ El OWNER puede consultar y ejecutar la limpieza desde Mi cuenta. Los borrados fa
 
 
 Generaciones permite filtrar y recorrer toda la cola, seleccionar hasta 200 pendientes entre páginas y cancelarlos juntos. También puede cancelar únicamente los pendientes de un lote, conservando el afiche en curso y cualquier cargo incierto. Las reservas liberadas son locales y no son reembolsos del proveedor.
+
+
+Recuperación de ejecución con confirmación periódica, token interno y protección frente a respuestas tardías o acuse perdido de COMMIT. Revisión técnica en [SECURITY_REVIEW.md](docs/SECURITY_REVIEW.md); no sustituye las comprobaciones del alojamiento real.

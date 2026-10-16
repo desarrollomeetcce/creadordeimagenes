@@ -13,3 +13,5 @@
 - Pruebas pertinentes: npm test, npm run typecheck, npm run build; integración contra base exclusiva cuando se modifiquen rutas o persistencia.
 
 - Generaciones incluye trabajos propios y COMPLETED compartidos accesibles; gestionar solo autor/OWNER. Costos compartidos respetan el mismo ámbito, nunca referencias privadas de conciliación. Observador sin costos. Gastos diarios del proveedor solo OWNER, separados de ledger y sin repartir agregados entre imágenes.
+
+- Cada ejecutor mantiene leaseToken interno y heartbeatAt. No exponer el token ni recuperar por startedAt si hay actividad vigente. Conservar resultados publicados ante fallo de acuse de COMMIT. Credenciales financieras separadas, con contexto de cifrado propio; nunca sustituir automáticamente la clave de generación.

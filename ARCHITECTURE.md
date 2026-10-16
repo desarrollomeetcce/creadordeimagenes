@@ -36,9 +36,9 @@ Las instrucciones revisadas y la configuración efectiva quedan en un snapshot d
 
 Los importes son reservas configuradas por OWNER en microdólares enteros. **No son precios inventados ni un límite garantizado de la factura externa.** Se guarda `usage` del proveedor; `actualMicros` permanece null hasta conciliación. Las operaciones inciertas retienen su reserva. Se recomienda límite adicional en la cuenta del proveedor. La continuación incorpora límites particulares por usuario/proyecto; la conciliación tarifaria sigue pendiente.
 
-El worker invoca dirección creativa y generación, conserva PNG individuales y adapta formatos por contain con márgenes, sin deformación ni recorte. No promete edición de objetos en imágenes aplanadas. No hay reintentos automáticos de llamadas inciertas. Al arrancar se marcan trabajos RUNNING de más de 15 minutos como inciertos; la recuperación completa de leases y cancelación está pendiente.
+El worker invoca dirección creativa y generación, conserva PNG individuales y adapta formatos por contain con márgenes, sin deformación ni recorte. No promete edición de objetos en imágenes aplanadas. No hay reintentos automáticos de llamadas inciertas. La actividad se renueva cada30 segundos y antes de cada llamada; RUNNING sin confirmación durante15 minutos se clasifica incierto, conservando reservas. Token interno y publicación condicional impiden efectos de procesos tardíos.
 
-Los originales expiran a las 48 horas salvo conservación explícita. La limpieza se ejecuta en el worker. Metadatos, consumos y auditoría permanecen. Las descargas PNG/JPG y ZIP se autorizan en backend. El ZIP admite hasta 200 imágenes y 100 MB de originales por operación. Faltan S3 y retención separada de miniaturas administrativas. La continuación incorpora biblioteca con carpetas y versiones.
+Los originales expiran a las 48 horas salvo conservación explícita. La limpieza se ejecuta en el worker. Metadatos, consumos y auditoría permanecen. Las descargas PNG/JPG y ZIP se autorizan en backend. El ZIP admite hasta 200 imágenes y 100 MB de originales por operación. S3 sigue opcional; la retención separada de miniaturas está incorporada. La continuación incorpora biblioteca con carpetas y versiones.
 
 ## Continuación: composición, versiones y productividad
 
@@ -50,7 +50,7 @@ ImageVersion conserva el documento de capas, PNG y fondo de cada revisión. Vari
 
 `SavedPreset` conserva prompts y parámetros con visibilidad PERSONAL/SHARED/OFFICIAL. `BudgetLimit` agrega límites USER/PROJECT a los globales bajo el mismo bloqueo transaccional. Las reservas tienen siempre origen administrativo, jamás se extraen de documentos ni de prompts.
 
-El worker ahora cancela mediante transición condicional de PENDING y libera su reserva; los reintentos crean trabajos nuevos con autorización y vínculo histórico. La recuperación periódica marca ejecuciones antiguas como inciertas. Todavía falta un lease con heartbeat para despliegues con procesos de duración imprevisible.
+El worker ahora cancela mediante transición condicional de PENDING y libera su reserva; los reintentos crean trabajos nuevos con autorización y vínculo histórico. La recuperación periódica marca ejecuciones antiguas como inciertas. Lease con heartbeat y token de propiedad incorporado: recuperación y publicación revalidan la confirmación vigente bajo728291.
 
 Los SVG simples se analizan con lista permitida y se rasterizan; nunca se sirven como SVG activo. Los adjuntos usados por versiones vigentes no se pueden eliminar para impedir romper logos históricos.
 
@@ -110,3 +110,10 @@ POST usage/:id/reconcile valida OWNER aprobado en transacción, importe decimal 
 lib/hierarchy-filters.ts centraliza validación de padres, opciones mínimas, ámbitos autorizados y fechas Lima. Jobs y Usage comparten esas reglas: trabajos propios o COMPLETED accesibles, gestión solo autor/OWNER. Resúmenes agregados se calculan sobre todo el filtro; no sobre la página ni sobre los200 seleccionables. Retirada múltiple es atómica, conserva ledger/archivos y cancela únicamente pendientes bajo728291.
 
 ProviderAdapter.dailyCosts es opcional. OpenAI usa organization/costs únicamente en consulta OWNER explícita y credencial descifrada en servidor; no registra respuesta cruda ni devuelve claves/IDs de organización. Ventana UTC31 días, páginas acotadas, validación de moneda y fechas, importes BigInt redondeados a microUSD y sin rellenar vacíos con cero. Totales externos de organización pueden incluir otras apps; no se escriben en UsageLedger ni se distribuyen por imagen. Una clave de generación sin permisos administrativos produce error comprensible/enlace al proveedor; no se afirma disponibilidad sin consultar.
+
+
+## Credencial financiera independiente
+
+ProviderBillingCredential almacena un registro por adaptador, con ciphertext AES-GCM ligado al contexto billing:<provider>:api-key, máscara y fecha. APIs ai/billing-key y ai/costs exclusivas OWNER; escrituras revalidan cuenta bajo bloqueo728291. No se reutiliza el secreto de generación para organization/costs. Cliente consulta únicamente máscara/estado y vacía el campo después de guardar. No hay llamadas facturables automáticas ni pérdida de verificación de generación al cambiar el acceso financiero.
+
+Migraciones014/015 son aditivas: dos campos de control e índice en GenerationJob y tabla financiera vacía. Versiones publicadas se comprueban antes de limpiar bytes en caso de fallo del acuse de COMMIT. Revisión de dependencias y límites de alcance en docs/SECURITY_REVIEW.md.

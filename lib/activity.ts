@@ -79,6 +79,7 @@ const scopeOf = (event: Event) => {
       "GENERACION_COMPLETADA",
       "PRUEBA_IA_AUTORIZADA",
       "TRABAJO_CANCELADO",
+      "TRABAJO_INTERRUMPIDO",
       "TRABAJO_RETIRADO_LISTADO",
       "TRABAJO_RESTAURADO_LISTADO",
     ].includes(a)
@@ -359,6 +360,12 @@ const verbs: Record<string, string> = {
   AFICHE_PENDING: "Dejó un afiche pendiente de revisión",
   AFICHE_ACTUALIZADO: "Actualizó un afiche",
   IDENTIDAD_MARCA_ACTUALIZADA: "Actualizó la identidad de marca",
+  CREDENCIAL_GASTOS_GUARDADA:
+    "Guardó la credencial para consultar gastos del proveedor",
+  CREDENCIAL_GASTOS_ELIMINADA:
+    "Eliminó la credencial para consultar gastos del proveedor",
+  TRABAJO_INTERRUMPIDO:
+    "El servidor detectó una generación interrumpida; requiere revisar el consumo",
   TRABAJO_CANCELADO: "Canceló una generación pendiente",
   DESCARGA_ZIP: "Descargó afiches en ZIP",
   LOTE_SEGUNDO_PLANO_AUTORIZADO: "Programó un lote en segundo plano",

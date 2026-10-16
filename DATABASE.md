@@ -76,3 +76,10 @@ Variation.filesQueuedAt marca encolado duradero de todos sus archivos tras caduc
 GenerationJob.archivedAt nullable e índice por archivedAt/createdAt. No elimina trabajos, resultados, reservas ni historial. Listados de Generaciones actuales excluyen retirados y ofrecen vista explícita de retiradas; informes de consumo, cuotas y mantenimiento siguen incluyendo esos registros. Escritura transaccional bajo bloqueo 728291, solo estados terminales y acceso vigente. Restaurar no reencola ni llama al proveedor. Migración aditiva aplicada con checksum en local y copia antes de rama conectada.
 
 Conciliación manual de costes: sin migración adicional. UsageLedger.actualMicros se actualiza con control de concurrencia y cada cambio añade AuditEvent COSTE_IA_CONCILIADO (resourceId = ledger, importes anterior/nuevo como cadenas microUSD, referencia y jobIds para contexto). Último evento proporciona token de concurrencia y procedencia manual; eventos anteriores son inmutables. No modifica status ni reservedMicros y no expone referencias por consultas de usuarios normales.
+
+
+## Actividad de ejecución y acceso financiero
+
+202610160014_job_lease añade GenerationJob.leaseToken y heartbeatAt opcionales e índice status/heartbeatAt. startedAt conserva el inicio original. Nuevos trabajos reclamados usan token único, heartbeat cada30s, expiración15min y publicación condicionada; anteriores permanecen compatibles.
+
+202610160015_billing_credentials añade ProviderBillingCredential por proveedor: encryptedKey, maskedKey y updatedAt. Cifrado contextual separado de generación, sin migración de secretos existentes. Ambas son aditivas y se aplican con scripts/migrate.mjs/checksum/bloqueo; no editar migraciones aplicadas.

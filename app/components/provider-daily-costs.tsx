@@ -1,5 +1,6 @@
 "use client";
 import { useContext, useState } from "react";
+import { BillingKeyForm } from "./billing-key-form";
 import { CurrentRole } from "./role-guide";
 import type { DailyCosts } from "../../lib/provider-costs";
 import { usdMicros } from "../../lib/usage-format";
@@ -11,22 +12,30 @@ export function ProviderDailyCosts() {
   const [to, setTo] = useState(() => new Date().toISOString().slice(0, 10));
   const [data, setData] = useState<DailyCosts | null>(null),
     [error, setError] = useState(""),
-    [busy, setBusy] = useState(false);
+    [busy, setBusy] = useState(false),
+    [keyBusy, setKeyBusy] = useState(false);
   if (role !== "OWNER") return null;
   return (
     <details className="panel stack">
       <summary>Gasto diario reportado por el proveedor · OWNER</summary>
       <p>
         Consulta de solo lectura, hasta 31 días UTC. No genera imágenes. OpenAI
-        requiere permisos administrativos de facturación; la clave de generación
-        guardada puede no tenerlos. No reemplaces esa clave por una
-        administrativa.
+        requiere una credencial administrativa de facturación. Puedes guardarla
+        en el apartado opcional siguiente sin cambiar tu clave de generación.
       </p>
       <p className="muted">
         Este informe puede incluir otras aplicaciones de tu organización y tener
         retraso. No se suma al consumo local ni se reparte entre imágenes. Los
         filtros de proyectos de abajo no afectan esta consulta.
       </p>
+      <BillingKeyForm
+        disabled={busy}
+        busyChanged={setKeyBusy}
+        changed={() => {
+          setData(null);
+          setError("");
+        }}
+      />
       <div className="fields">
         <label>
           Desde · UTC
@@ -55,7 +64,7 @@ export function ProviderDailyCosts() {
       </div>
       <button
         type="button"
-        disabled={busy || !from || !to}
+        disabled={busy || keyBusy || !from || !to}
         onClick={async () => {
           setBusy(true);
           setData(null);

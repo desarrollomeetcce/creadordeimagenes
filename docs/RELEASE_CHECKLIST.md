@@ -12,6 +12,9 @@ La estimación actual de 85–90% corresponde al desarrollo funcional; no certif
 - Generación/edición y cola con contratos simulados, presupuestos, idempotencia, cancelación y cargos inciertos sin reintento automático.
 - Generaciones retirables/restaurables sin borrar consumo; límites particulares editables/eliminables y precomprobación de presupuesto compartida con reservas. Estado de IA actualizado sin presentar catálogo como garantía de generación.
 - Configuración IA cifrada, modelos consultables realmente, lista de pasos de preparación y generación bloqueada sin verificación. Prueba opcional verificada de extremo a extremo con adaptador simulado, sin certificar proveedor externo.
+- Actividad periódica de ejecución, token de propiedad, recuperación de abandonados y protección de resultados confirmados si se pierde el acuse de COMMIT.
+- Credencial de gastos administrativa separada, cifrada y visual exclusiva OWNER; no altera generación. Consulta real financiera pendiente.
+- Revisión técnica/dependencias: cero avisos altos/críticos; tres moderados del árbol CLI Mammoth documentados sin ocultarlos.
 - Recuperación asistida y emergencia OWNER con código preparado de un uso.
 - Restauración de espacios, filtros/selección por sesión y salida móvil.
 - Mantenimiento con cola persistente de borrado, reintentos, resultados OWNER y ruta de programación autenticada; recepción real de Vercel pendiente.
@@ -19,9 +22,9 @@ La estimación actual de 85–90% corresponde al desarrollo funcional; no certif
 - Generaciones con jerarquía/acceso/fechas, 100 por página, tamaños, ruta/costos y selección/ZIP/retirada múltiple. Costos por ámbito y consulta diaria opcional OpenAI (contrato simulado, requiere permisos de facturación; acceso real pendiente).
 - Registro manual de costes comprobados exclusivo OWNER, con auditoría, precisión decimal, conflicto entre sesiones y referencia privada. No acredita conciliación automática con la factura.
 - Consumo paginado con totales completos, filtros y CSV privado de hasta 2000 operaciones; importes exactos y costes desconocidos explícitos. ZIP de 200 PNG y 200 JPG validado con archivos locales simulados.
-- 78 escenarios de integración, cuatro de correo previamente verificados, 19 unitarias, compilación, instalación y recorridos Chromium locales.
+- 82 escenarios de integración, cuatro de correo previamente verificados, 19 unitarias, compilación, instalación y recorridos Chromium locales.
 - Imagen Docker construida/arrancada como usuario no root con autenticación, fuentes y archivos verificados.
-- Copia PostgreSQL local restaurada en base independiente: trece migraciones, 19 tablas, importes/estados de consumo y muestras de hashes de archivos/miniaturas BYTEA comparados.
+- Copia PostgreSQL local restaurada en base independiente: quince migraciones, 34 tablas, importes/estados de consumo y muestras de hashes de archivos/miniaturas BYTEA comparados.
 
 ## Pendientes que impiden declarar terminado
 
@@ -33,3 +36,6 @@ La estimación actual de 85–90% corresponde al desarrollo funcional; no certif
 | Producción elegida | Validar HTTPS, ejecutor externo, almacenamiento y cuota, monitorización, configuración de CRON_SECRET y recepción real de la limpieza diaria con el alojamiento inactivo y restauración conjunta de base/archivos/clave maestra en el servidor elegido. Las comprobaciones locales no sustituyen las del VPS o Vercel externos. |
 
 Las suites automatizadas descritas no hacen llamadas facturables de IA ni envían correos externos. Las pruebas reales iniciadas por el usuario se distinguen de esas suites. Los secretos se introducen en sus interfaces o canales de instalación seguros, nunca en este documento.
+
+
+Ampliación solicitada en curso: Google Gemini/AI Studio, fal.ai y Replicate, con Nano Banana/FLUX disponibles compatibles consultados realmente. La publicación de recuperación y facturación separada no acredita todavía esos adaptadores.

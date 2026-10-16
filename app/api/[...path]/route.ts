@@ -21,7 +21,7 @@ import {
   accessFlags,
   jobResourceAccess,
 } from "@/lib/auth";
-import { encryptKey, maskKey, decryptKey } from "@/lib/crypto";
+import { encryptKey, maskKey } from "@/lib/crypto";
 import {
   safeConfiguration,
   connectionCheck,
@@ -489,28 +489,28 @@ async function handle(
     }
     if (parts[0] === "ai") {
       ownerOnly(user);
+      if (route === "ai/billing-key") {
+        const billing = await import("@/lib/billing-credentials");
+        const provider = req.nextUrl.searchParams.get("provider") ?? "openai";
+        if (method === "GET")
+          return send(await billing.billingCredentialStatus(user, provider));
+        if (method === "PUT")
+          return send(
+            await billing.saveBillingCredential(user, await body(req)),
+          );
+        if (method === "DELETE")
+          return send(await billing.deleteBillingCredential(user, provider));
+      }
       if (route === "ai/costs" && method === "GET") {
-        const { billingRange } = await import("@/lib/provider-costs");
-        const from = req.nextUrl.searchParams.get("from") ?? "",
-          to = req.nextUrl.searchParams.get("to") ?? "";
-        billingRange(from, to);
+        const { readDailyCosts } = await import("@/lib/billing-credentials");
         await rateLimit("billing:" + user.id, 15);
-        const config = await db.providerConfiguration.findUnique({
-          where: { id: "global" },
-        });
-        demand(
-          config?.encryptedKey,
-          "Guarda primero las credenciales del proveedor de IA.",
-          409,
-        );
-        const provider = adapter(config.provider);
-        demand(
-          provider.dailyCosts,
-          "Este proveedor no permite consultar el gasto diario desde la plataforma.",
-          409,
-        );
         return send(
-          await provider.dailyCosts(decryptKey(config.encryptedKey), from, to),
+          await readDailyCosts(
+            user,
+            req.nextUrl.searchParams.get("provider") ?? "openai",
+            req.nextUrl.searchParams.get("from") ?? "",
+            req.nextUrl.searchParams.get("to") ?? "",
+          ),
         );
       }
       if (route === "ai/config" && method === "GET")

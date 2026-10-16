@@ -6,7 +6,7 @@ Cada pasada procesa hasta 25 afiches temporales vencidos, 200 miniaturas de audi
 
 Un fallo conserva el elemento en AssetDeletion, aumenta sus intentos y retrasa la siguiente comprobación cinco minutos. No se guarda el mensaje técnico de la excepción. Un archivo ya ausente se considera retirado correctamente: el contador de archivos incluye esos casos idempotentes. La limpieza conserva metadatos del afiche, versiones e historial, y excluye afiches permanentes y adjuntos. También recoge archivos de afiches caducados por versiones anteriores de la aplicación cuando aún no tienen filesQueuedAt. No recupera archivos ya retirados ni cambia plazos de conservación.
 
-Las ejecuciones simultáneas se rechazan con 409. Un registro RUNNING sin confirmación durante 15 minutos queda INTERRUPTED al iniciar otra pasada; se revisan de nuevo las operaciones de almacenamiento idempotentes. Los trabajos de IA interrumpidos se clasifican UNCERTAIN y conservan su reserva para revisión del consumo. El mantenimiento no genera ni reintenta afiches, no llama al proveedor de IA y no envía correo.
+Las ejecuciones simultáneas se rechazan con 409. Un registro RUNNING sin confirmación durante 15 minutos queda INTERRUPTED al iniciar otra pasada; se revisan de nuevo las operaciones de almacenamiento idempotentes. Los trabajos de IA renuevan actividad cada30 segundos y antes de llamadas. Al faltar confirmación durante15 minutos, hasta100 por pasada se clasifican UNCERTAIN y conservan su reserva para revisión del consumo; los ejecutores vivos no se recuperan por su antigüedad de inicio. La recuperación genera historial y evita publicar resultados tardíos. El mantenimiento no genera ni reintenta afiches, no llama al proveedor de IA y no envía correo.
 
 ## Vercel
 
