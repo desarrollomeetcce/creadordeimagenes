@@ -1,3 +1,4 @@
+import { recordActivity } from "./activity";
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { db } from "./db";
@@ -216,7 +217,7 @@ export async function variationRoutes(
       ],
       config.revision,
     );
-    await db.auditEvent.create({
+    await recordActivity(db, {
       data: {
         actorId: user.id,
         action:
@@ -272,7 +273,7 @@ export async function variationRoutes(
           },
         });
         await captureAuditThumbnail(tx, copyVersion.id, auditThumbnail);
-        await tx.auditEvent.create({
+        await recordActivity(tx, {
           data: {
             actorId: user.id,
             action: "AFICHE_DUPLICADO",
@@ -294,7 +295,7 @@ export async function variationRoutes(
       "La restauración operativa está disponible durante 24 horas.",
     );
     await db.variation.update({ where: { id }, data: { deletedAt: null } });
-    await db.auditEvent.create({
+    await recordActivity(db, {
       data: { actorId: user.id, action: "AFICHE_RESTAURADO", resourceId: id },
     });
     return send({ ok: true });
@@ -304,7 +305,7 @@ export async function variationRoutes(
       where: { id },
       data: { deletedAt: new Date() },
     });
-    await db.auditEvent.create({
+    await recordActivity(db, {
       data: { actorId: user.id, action: "AFICHE_PAPELERA", resourceId: id },
     });
     return send({ ok: true });

@@ -1,3 +1,4 @@
+import { recordActivity } from "./activity";
 import type { Prisma } from "@prisma/client";
 import { db } from "./db";
 import { projectAccess, jobResourceAccess, ownerOnly } from "./auth";
@@ -95,7 +96,7 @@ export async function publishVersion(
     },
   });
   await captureAuditThumbnail(tx, version.id, args.auditThumbnail);
-  await tx.auditEvent.create({
+  await recordActivity(tx, {
     data: {
       actorId: args.actorId,
       action: args.action,

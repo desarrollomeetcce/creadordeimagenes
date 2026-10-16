@@ -1,3 +1,4 @@
+import { recordActivity } from "./activity";
 import { randomUUID } from "node:crypto";
 import argon2 from "argon2";
 import { z } from "zod";
@@ -127,7 +128,7 @@ export async function saveMail(actor: Actor, input: unknown) {
       create: data,
       update: data,
     });
-    await tx.auditEvent.create({
+    await recordActivity(tx, {
       data: { actorId: actor.id, action: "CORREO_CONFIGURADO" },
     });
   });
@@ -148,7 +149,7 @@ export async function deleteMail(actor: Actor, input: unknown) {
     );
     await tx.$executeRaw`SELECT pg_advisory_xact_lock(740191)`;
     await tx.mailConfiguration.deleteMany({});
-    await tx.auditEvent.create({
+    await recordActivity(tx, {
       data: { actorId: actor.id, action: "CORREO_ELIMINADO" },
     });
   });
@@ -213,7 +214,7 @@ export async function verifyMail(
     "La configuración cambió durante la prueba. Vuelve a verificarla.",
     409,
   );
-  await db.auditEvent.create({
+  await recordActivity(db, {
     data: { actorId: actor.id, action: "CORREO_CONEXION_VERIFICADA" },
   });
   return {
@@ -243,7 +244,7 @@ export async function testMail(
   } catch (error) {
     throw new AppError(await failure(c, error), 502);
   }
-  await db.auditEvent.create({
+  await recordActivity(db, {
     data: { actorId: actor.id, action: "CORREO_PRUEBA_ACEPTADA" },
   });
   return {
@@ -301,7 +302,7 @@ export async function emailPasswordReset(
       502,
     );
   }
-  await db.auditEvent.create({
+  await recordActivity(db, {
     data: {
       actorId: actor.id,
       action: "RECUPERACION_CORREO_ACEPTADA",

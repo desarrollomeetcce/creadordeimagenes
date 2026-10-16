@@ -1,3 +1,4 @@
+import { recordActivity } from "./activity";
 import { z } from "zod";
 import type { Prisma } from "@prisma/client";
 import { db } from "./db";
@@ -301,13 +302,14 @@ export async function exportCollection(user: User, input: unknown) {
       bytes,
     );
   }
-  await db.auditEvent.create({
+  await recordActivity(db, {
     data: {
       actorId: user.id,
       action: "DESCARGA_ZIP",
       resourceId: context?.id,
       detail: {
         count: rows.length,
+        variationIds: rows.map((row) => row.id),
         format: b.format,
         scope: context?.scope ?? "selection",
       },

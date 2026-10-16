@@ -1,3 +1,4 @@
+import { recordActivity } from "./activity";
 import { z } from "zod";
 import { db } from "./db";
 import { resourceAccess, categoryFullFilter } from "./auth";
@@ -87,7 +88,7 @@ export async function restoreSubproduct(actor: Actor, id: string) {
       "El espacio cambió o ya fue restaurado. Actualiza la lista.",
       409,
     );
-    await tx.auditEvent.create({
+    await recordActivity(tx, {
       data: {
         actorId: actor.id,
         action: "SUBPRODUCTO_RESTAURADO",

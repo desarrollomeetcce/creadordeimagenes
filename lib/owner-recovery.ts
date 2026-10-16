@@ -1,3 +1,4 @@
+import { recordActivity } from "./activity";
 import { randomBytes } from "node:crypto";
 import argon2 from "argon2";
 import { z } from "zod";
@@ -53,7 +54,7 @@ export async function manageOwnerRecovery(
       await tx.ownerRecovery.create({
         data: { userId: user.id, tokenHash: hashCode(code), expiresAt },
       });
-    await tx.auditEvent.create({
+    await recordActivity(tx, {
       data: {
         actorId: user.id,
         action: revoke
@@ -120,7 +121,7 @@ export async function recoverOwner(input: unknown) {
     await tx.user.update({ where: { id: account.id }, data: { passwordHash } });
     await tx.session.deleteMany({ where: { userId: account.id } });
     await tx.passwordReset.deleteMany({ where: { userId: account.id } });
-    await tx.auditEvent.create({
+    await recordActivity(tx, {
       data: { actorId: account.id, action: "OWNER_RECUPERADO_EMERGENCIA" },
     });
   });

@@ -1,3 +1,4 @@
+import { recordActivity } from "./activity";
 import { NextRequest, NextResponse } from "next/server";
 import argon2 from "argon2";
 import { z } from "zod";
@@ -83,7 +84,7 @@ export async function userManagement(
         },
         select,
       });
-      await tx.auditEvent.create({
+      await recordActivity(tx, {
         data: {
           actorId: actor.id,
           action: "USUARIO_CREADO",
@@ -147,7 +148,7 @@ export async function userManagement(
       await tx.session.deleteMany({ where: { userId: parts[1] } });
       await tx.passwordReset.deleteMany({ where: { userId: parts[1] } });
       await tx.ownerRecovery.deleteMany({ where: { userId: parts[1] } });
-      await tx.auditEvent.create({
+      await recordActivity(tx, {
         data: {
           actorId: actor.id,
           action: "CONTRASENA_CAMBIADA_POR_OWNER",
@@ -191,7 +192,7 @@ export async function userManagement(
       await tx.session.deleteMany({ where: { userId: target.id } });
       await tx.passwordReset.deleteMany({ where: { userId: target.id } });
       await tx.ownerRecovery.deleteMany({ where: { userId: target.id } });
-      await tx.auditEvent.create({
+      await recordActivity(tx, {
         data: {
           actorId: actor.id,
           action: "USUARIO_ACTUALIZADO",

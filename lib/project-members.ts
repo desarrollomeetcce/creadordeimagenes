@@ -1,3 +1,4 @@
+import { recordActivity } from "./activity";
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { db } from "./db";
@@ -125,7 +126,7 @@ export async function scopedMembers(
         403,
       );
       await tx.project.update({ where: { id: projectId }, data: value });
-      await tx.auditEvent.create({
+      await recordActivity(tx, {
         data: {
           actorId: user.id,
           action: value.allAdministrators
@@ -242,7 +243,7 @@ export async function scopedMembers(
           404,
         );
     }
-    await tx.auditEvent.create({
+    await recordActivity(tx, {
       data: {
         actorId: user.id,
         action: `ACCESO_${scope.toUpperCase()}_${req.method === "DELETE" ? "REVOCADO" : "ACTUALIZADO"}`,

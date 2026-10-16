@@ -5,6 +5,7 @@ import { roleLabels, managesUsers } from "../lib/roles";
 import { HierarchyBreadcrumbs } from "./components/breadcrumbs";
 import { Attachments } from "./components/attachments";
 import { UsersPanel } from "./components/users-panel";
+import { HistoryPanel } from "./components/history";
 import { MailSettings } from "./components/mail-settings";
 import { VisualAuditPanel, VisualAuditNotice } from "./components/visual-audit";
 import { VariationEditor } from "./components/variation-editor";
@@ -2644,59 +2645,9 @@ function Gallery({ sub, back }: { sub: Item; back: () => void }) {
 }
 
 function History() {
-  const [rows, setRows] = useState<any[]>([]);
-  const [query, setQuery] = useState("");
-  const t = useTask();
-  useEffect(() => {
-    void t.run(async () => setRows(await api("audit")), "");
-  }, []);
-  return (
-    <>
-      <h1>Historial</h1>
-      <p className="muted">
-        Registro persistente de operaciones. Las claves API nunca se incluyen.
-      </p>
-      <input
-        aria-label="Filtrar historial"
-        placeholder="Buscar operación o recurso…"
-        value={query}
-        onChange={(e) => setQuery(e.target.value)}
-        style={{ maxWidth: 400, marginBottom: 20 }}
-      />
-      <div className="panel table-wrap">
-        <table>
-          <thead>
-            <tr>
-              <th>Fecha · Lima</th>
-              <th>Operación</th>
-              <th>Recurso</th>
-              <th>Usuario</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows
-              .filter((r) =>
-                JSON.stringify(r).toLowerCase().includes(query.toLowerCase()),
-              )
-              .map((r) => (
-                <tr key={r.id}>
-                  <td>
-                    {new Date(r.createdAt).toLocaleString("es-PE", {
-                      timeZone: "America/Lima",
-                    })}
-                  </td>
-                  <td>{r.action.replaceAll("_", " ")}</td>
-                  <td>{r.resourceId ?? "—"}</td>
-                  <td>{r.actorId}</td>
-                </tr>
-              ))}
-          </tbody>
-        </table>
-      </div>
-      {t.notice}
-    </>
-  );
+  return <HistoryPanel />;
 }
+
 function Usage() {
   const [rows, setRows] = useState<any[]>([]);
   const t = useTask();

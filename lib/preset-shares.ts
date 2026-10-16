@@ -1,3 +1,4 @@
+import { recordActivity } from "./activity";
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { db } from "./db";
@@ -47,7 +48,7 @@ export async function presetShares(
           where: { id: preset.id },
           data: { visibility: "SHARED" },
         });
-      await tx.auditEvent.create({
+      await recordActivity(tx, {
         data: {
           actorId: user.id,
           action: "CONFIGURACION_COMPARTIDA",

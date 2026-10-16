@@ -1,3 +1,4 @@
+import { recordActivity } from "./activity";
 import { z } from "zod";
 import { db } from "./db";
 import { demand } from "./errors";
@@ -83,7 +84,7 @@ export async function saveBrand(
       await tx.brandLogo.createMany({
         data: ids.map((attachmentId) => ({ projectId, attachmentId })),
       });
-    await tx.auditEvent.create({
+    await recordActivity(tx, {
       data: {
         actorId: user.id,
         action: "IDENTIDAD_MARCA_ACTUALIZADA",

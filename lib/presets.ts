@@ -1,3 +1,4 @@
+import { recordActivity } from "./activity";
 import type { Prisma } from "@prisma/client";
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
@@ -100,7 +101,7 @@ export async function presetRoutes(
               resourceId: preset.id,
             })),
           });
-        await tx.auditEvent.create({
+        await recordActivity(tx, {
           data: {
             actorId: user.id,
             action: "CONFIGURACION_GUARDADA",
@@ -156,7 +157,7 @@ export async function presetRoutes(
               resourceId: item.id,
             })),
           });
-        await tx.auditEvent.create({
+        await recordActivity(tx, {
           data: {
             actorId: user.id,
             action: "CONFIGURACION_DUPLICADA",
@@ -223,12 +224,16 @@ export async function presetRoutes(
             actorId: user.id,
           },
         });
-        await tx.auditEvent.create({
+        await recordActivity(tx, {
           data: {
             actorId: user.id,
             action: "CONFIGURACION_APLICADA",
             resourceId: targetId,
-            detail: { presetId: preset.id, attachmentsCopied: copies.length },
+            detail: {
+              presetId: preset.id,
+              attachmentsCopied: copies.length,
+              scope,
+            },
           },
         });
         return copies.length;
@@ -248,7 +253,7 @@ export async function presetRoutes(
         where: { scope: "preset", resourceId: preset.id },
       });
       await tx.savedPreset.delete({ where: { id: preset.id } });
-      await tx.auditEvent.create({
+      await recordActivity(tx, {
         data: {
           actorId: user.id,
           action: "CONFIGURACION_ELIMINADA",
@@ -269,7 +274,7 @@ export async function presetRoutes(
         where: { id: preset.id },
         data: { ...b, settings: JSON.parse(JSON.stringify(b.settings)) },
       });
-      await tx.auditEvent.create({
+      await recordActivity(tx, {
         data: {
           actorId: user.id,
           action: "CONFIGURACION_ACTUALIZADA",

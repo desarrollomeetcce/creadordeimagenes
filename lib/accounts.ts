@@ -1,3 +1,4 @@
+import { recordActivity } from "./activity";
 import { randomBytes } from "node:crypto";
 import argon2 from "argon2";
 import { z } from "zod";
@@ -43,7 +44,7 @@ export async function changePassword(user: { id: string }, input: unknown) {
     await tx.session.deleteMany({ where: { userId: user.id } });
     await tx.passwordReset.deleteMany({ where: { userId: user.id } });
     await tx.ownerRecovery.deleteMany({ where: { userId: user.id } });
-    await tx.auditEvent.create({
+    await recordActivity(tx, {
       data: { actorId: user.id, action: "CONTRASENA_CAMBIADA" },
     });
   });
@@ -109,7 +110,7 @@ export async function issuePasswordReset(
     await tx.passwordReset.create({
       data: { tokenHash: tokenHash(token), userId: targetId, expiresAt },
     });
-    await tx.auditEvent.create({
+    await recordActivity(tx, {
       data: {
         actorId: user.id,
         action: "RECUPERACION_EMITIDA",
@@ -167,7 +168,7 @@ export async function resetPassword(input: unknown) {
     await tx.session.deleteMany({ where: { userId: reset.userId } });
     await tx.passwordReset.deleteMany({ where: { userId: reset.userId } });
     await tx.ownerRecovery.deleteMany({ where: { userId: reset.userId } });
-    await tx.auditEvent.create({
+    await recordActivity(tx, {
       data: { actorId: reset.userId, action: "CONTRASENA_RECUPERADA" },
     });
   });

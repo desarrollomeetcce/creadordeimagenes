@@ -1,3 +1,4 @@
+import { recordActivity } from "./activity";
 import { db } from "./db";
 import { accessibleVariation } from "./versions";
 import { demand } from "./errors";
@@ -58,12 +59,12 @@ export async function regenerateSelected(
   }
   demand(projectId, "Selecciona al menos un afiche.");
   const jobs = await reserveJobs(user.id, projectId, items, config.revision);
-  await db.auditEvent.create({
+  await recordActivity(db, {
     data: {
       actorId: user.id,
       action: "REGENERACION_SELECTIVA_AUTORIZADA",
       resourceId: projectId,
-      detail: { count: items.length },
+      detail: { count: items.length, jobIds: jobs.map((j) => j.id) },
     },
   });
   return jobs.map((j) => j.id);

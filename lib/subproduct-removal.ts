@@ -1,3 +1,4 @@
+import { recordActivity } from "./activity";
 import { db } from "./db";
 import { resourceAccess, subproductFilter } from "./auth";
 import { demand } from "./errors";
@@ -48,11 +49,11 @@ export async function removeSubproducts(
       where: { id: { in: unique }, deletedAt: null },
       data: { deletedAt: new Date() },
     });
-    await tx.auditEvent.create({
+    await recordActivity(tx, {
       data: {
         actorId: actor.id,
         action: "SUBPRODUCTOS_ELIMINADOS",
-        detail: { ids: unique, cancelled: pending.length },
+        detail: { ids: unique, count: result.count, cancelled: pending.length },
       },
     });
     return { removed: result.count, cancelled: pending.length };

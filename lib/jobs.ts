@@ -1,3 +1,4 @@
+import { recordActivity } from "./activity";
 import { db } from "./db";
 import { demand } from "./errors";
 import { configured, reserveJobs } from "./ai";
@@ -30,7 +31,7 @@ export async function cancelJob(
       where: { jobId: id },
       data: { status: "RELEASED" },
     });
-    await tx.auditEvent.create({
+    await recordActivity(tx, {
       data: { actorId: user.id, action: "TRABAJO_CANCELADO", resourceId: id },
     });
     return { ok: true };

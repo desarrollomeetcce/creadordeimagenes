@@ -1,3 +1,4 @@
+import { recordActivity } from "./activity";
 import { z } from "zod";
 import argon2 from "argon2";
 import type { Prisma } from "@prisma/client";
@@ -124,7 +125,7 @@ export async function captureAuditThumbnail(
     },
   });
   if (!fits)
-    await tx.auditEvent.create({
+    await recordActivity(tx, {
       data: {
         actorId: version.actorId,
         action: "MINIATURA_AUDITORIA_SIN_ESPACIO",
@@ -266,7 +267,7 @@ export async function saveAuditPolicy(actor: Actor, input: unknown) {
     if (b.applyToExisting)
       adjusted =
         await tx.$executeRaw`UPDATE "AuditThumbnail" SET "expiresAt"="createdAt" + ${b.retentionDays} * INTERVAL '1 day' WHERE status='AVAILABLE' AND "expiresAt">CURRENT_TIMESTAMP`;
-    await tx.auditEvent.create({
+    await recordActivity(tx, {
       data: {
         actorId: actor.id,
         action: "POLITICA_AUDITORIA_VISUAL_GUARDADA",
@@ -390,7 +391,7 @@ export async function removeAuditThumbnail(
       data: { data: null, size: 0, status: "REMOVED", removedAt: new Date() },
     });
     demand(changed.count === 1, "La miniatura ya no está disponible.", 409);
-    await tx.auditEvent.create({
+    await recordActivity(tx, {
       data: {
         actorId: actor.id,
         action: "MINIATURA_AUDITORIA_ELIMINADA",

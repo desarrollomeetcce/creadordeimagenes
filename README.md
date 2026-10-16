@@ -10,6 +10,8 @@ Los adjuntos incluyen vistas previas privadas de imágenes y **Reemplazar**. Cad
 
 **Auditoría visual** permite al OWNER consultar miniaturas de nuevas versiones y configurar su conservación, inicialmente 30 días. Las miniaturas siguen disponibles aunque caduque el original o se envíe el proyecto a la papelera. Los demás roles solo ven el aviso de privacidad. El panel informa espacio, versiones sin miniatura y limpieza de caducadas; no procesa imágenes anteriores automáticamente. Para eliminación física periódica cuando el alojamiento está inactivo debe configurarse su planificador, como parte de la puesta en producción.
 
+**Historial** muestra resúmenes con nombres de personas, proyectos, productos y subproductos, detalles desplegables, búsqueda y paginación. Las operaciones nuevas conservan los nombres de su momento; los registros antiguos indican cuando solo se conocen los nombres actuales o faltan detalles. No muestra claves, prompts ni códigos internos como descripción principal.
+
 ## Inicio local
 
 Requisitos: Node.js 24, npm y PostgreSQL 16 o superior.

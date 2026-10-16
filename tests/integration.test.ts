@@ -4911,6 +4911,238 @@ test("Integración HTTP + PostgreSQL (base exclusiva de pruebas, sin llamadas ex
         assert(!auditText.includes(password));
       },
     );
+    await t.test(
+      "historial: resumen humano, contexto exacto, nombres conservados, registros antiguos y permisos",
+      async () => {
+        const { recordActivity } = await import("../lib/activity");
+        const project = (
+          await user.call("projects", "POST", {
+            name: `Historial Cursos ${tag}`,
+          })
+        ).body;
+        const product = (
+          await user.call(`projects/${project.id}/categories`, "POST", {
+            name: "HIST PERU",
+          })
+        ).body;
+        const subs = (
+          await user.call(`categories/${product.id}/subproducts`, "POST", {
+            names: ["HIST MONITOREO", "HIST AGUA"],
+          })
+        ).body;
+        const find = async (client: Client, q: string, page = 1) =>
+          client.call(`audit/history?q=${encodeURIComponent(q)}&page=${page}`);
+        const initial = await find(user, `Historial Cursos ${tag}`);
+        assert.equal(initial.status, 200);
+        const created = initial.body.rows.find(
+          (r: any) => r.action === "Creó subproductos",
+        );
+        assert(created);
+        assert.equal(created.contextSource, "recorded");
+        assert.equal(created.actorName, "Usuario prueba");
+        assert.deepEqual(
+          created.contexts.map((c: any) => c.subproductName).sort(),
+          ["HIST AGUA", "HIST MONITOREO"],
+        );
+        assert(
+          created.contexts.every(
+            (c: any) =>
+              c.projectName === `Historial Cursos ${tag}` &&
+              c.productName === "HIST PERU",
+          ),
+        );
+        assert(created.summary.includes("2 subproductos"));
+        const immutable = await db.auditEvent.findUniqueOrThrow({
+          where: { id: created.id },
+        });
+        assert.equal(
+          (
+            await user.call(`projects/${project.id}`, "PATCH", {
+              name: `Historial Nuevo ${tag}`,
+              prompt: "Texto privado que no se registra en actividad",
+            })
+          ).status,
+          200,
+        );
+        assert.equal(
+          (
+            await user.call(`categories/${product.id}`, "PATCH", {
+              name: "HIST PERU NUEVO",
+              prompt: "Prompt privado de producto",
+              settings: {},
+            })
+          ).status,
+          200,
+        );
+        assert.equal(
+          (
+            await user.call(`subproducts/${subs[0].id}`, "PATCH", {
+              name: "HIST MONITOREO NUEVO",
+              prompt: "Prompt privado de subproducto",
+              settings: {},
+            })
+          ).status,
+          200,
+        );
+        const unchanged = (
+          await find(user, `Historial Cursos ${tag}`)
+        ).body.rows.find((r: any) => r.id === created.id);
+        assert(unchanged);
+        assert(
+          unchanged.contexts.some(
+            (c: any) => c.subproductName === "HIST MONITOREO",
+          ),
+        );
+        assert.deepEqual(
+          await db.auditEvent.findUniqueOrThrow({ where: { id: created.id } }),
+          immutable,
+          "leer no reescribe auditoría",
+        );
+        const jobs = await Promise.all(
+          subs.map((s: any) =>
+            db.generationJob.create({
+              data: {
+                actorId: uid,
+                projectId: project.id,
+                subproductId: s.id,
+                idempotencyKey: `history-${tag}-${s.id}`,
+                reservedMicros: 0n,
+                snapshot: { prompt: "NO DEBE SALIR EN HISTORIAL" },
+              },
+            }),
+          ),
+        );
+        const requested = await recordActivity(db, {
+          data: {
+            actorId: uid,
+            action: "GENERACION_MASIVA_AUTORIZADA",
+            resourceId: product.id,
+            detail: { count: jobs.length, jobIds: jobs.map((j) => j.id) },
+          },
+        });
+        const exact = (
+          await find(user, `Historial Nuevo ${tag}`)
+        ).body.rows.find((r: any) => r.id === requested.id);
+        assert(exact.summary.includes("Solicitó"));
+        assert(!exact.summary.includes("Generó"));
+        assert.equal(exact.contexts.length, 2);
+        assert(
+          exact.contexts.some(
+            (c: any) => c.subproductName === "HIST MONITOREO NUEVO",
+          ),
+        );
+        const secret = "synthetic-history-secret-must-not-appear";
+        const legacy = await db.auditEvent.create({
+          data: {
+            actorId: uid,
+            action: "SUBPRODUCTOS_CREADOS",
+            resourceId: product.id,
+            createdAt: new Date("2020-01-01T12:00:00Z"),
+            detail: {
+              apiKey: secret,
+              password,
+              prompt: "NO DEBE SALIR EN HISTORIAL",
+              token: secret,
+            },
+          },
+        });
+        await db.auditEvent.createMany({
+          data: Array.from({ length: 230 }, (_, n) => ({
+            actorId: uid,
+            action: "INICIO_SESION",
+            createdAt: new Date(1600000000000 + n * 1000),
+          })),
+        });
+        const old = (await find(user, `Historial Nuevo ${tag}`)).body.rows.find(
+          (r: any) => r.id === legacy.id,
+        );
+        assert(old);
+        assert.equal(old.contextSource, "current");
+        assert(old.note.includes("no detalla"));
+        assert(old.contexts.every((c: any) => !c.subproductName));
+        const serialized = JSON.stringify(
+          (await find(owner, "Historial")).body,
+        );
+        assert(!serialized.includes(secret));
+        assert(!serialized.includes(password));
+        assert(!serialized.includes("NO DEBE SALIR EN HISTORIAL"));
+        assert(!serialized.includes("Prompt privado"));
+        const privateProject = await db.project.create({
+          data: {
+            name: `Historia privada ${tag}`,
+            ownerId: (
+              await db.user.findFirstOrThrow({
+                where: { role: "OWNER", name: "Owner prueba" },
+              })
+            ).id,
+          },
+        });
+        const privateOwnerEvent = await db.auditEvent.create({
+          data: {
+            actorId: privateProject.ownerId,
+            action: "PROYECTO_CREADO",
+            resourceId: privateProject.id,
+          },
+        });
+        assert(
+          (await find(owner, privateProject.name)).body.rows.some(
+            (r: any) => r.id === privateOwnerEvent.id,
+          ),
+        );
+        assert.equal((await find(user, privateProject.name)).body.total, 0);
+        assert.equal((await find(admin, privateProject.name)).body.total, 0);
+        const revoked = await db.auditEvent.create({
+          data: {
+            actorId: uid,
+            action: "PROYECTO_ACTUALIZADO",
+            resourceId: privateProject.id,
+          },
+        });
+        const own = await user.call("audit/history");
+        const revokedRow = own.body.rows.find((r: any) => r.id === revoked.id);
+        assert(revokedRow);
+        assert.deepEqual(revokedRow.contexts, []);
+        assert.equal(
+          (await find(user, privateProject.name)).body.total,
+          0,
+          "búsqueda no revela nombres privados actuales",
+        );
+        assert.equal((await observer.call("audit/history")).status, 403);
+        assert.equal((await anonymous.call("audit/history")).status, 401);
+        const page1 = (await find(user, "Usuario prueba")).body,
+          page2 = (await find(user, "Usuario prueba", 2)).body;
+        assert(page1.total > 230);
+        assert.equal(page1.rows.length, 25);
+        assert.equal(page2.rows.length, 25);
+        assert(
+          !page1.rows.some((a: any) =>
+            page2.rows.some((b: any) => a.id === b.id),
+          ),
+        );
+        assert(page1.rows.every((r: any) => r.actorName === "Usuario prueba"));
+        assert.equal((await user.call("audit/history?page=0")).status, 400);
+        assert.equal((await find(user, "x".repeat(201))).status, 400);
+        assert.equal((await find(user, "\\")).status, 200);
+        assert.equal((await find(user, "' OR TRUE --")).body.total, 0);
+        const literal = (
+          await user.call("projects", "POST", {
+            name: `Historial 100% literal ${tag}`,
+          })
+        ).body;
+        const percent = await find(user, "100% literal");
+        assert.equal(percent.status, 200);
+        assert.equal(percent.body.total, 1);
+        assert(percent.body.rows[0].summary.includes(literal.name));
+        const updated = (await find(user, "HIST MONITOREO NUEVO")).body;
+        assert(
+          updated.rows.some((r: any) => r.action === "Editó el subproducto"),
+        );
+        await db.generationJob.updateMany({
+          where: { id: { in: jobs.map((j) => j.id) } },
+          data: { status: "CANCELLED" },
+        });
+      },
+    );
     await t.test("cierre de sesión invalida el token", async () => {
       assert.equal((await user.call("auth/logout", "POST")).status, 200);
       assert.equal((await user.call("projects")).status, 401);

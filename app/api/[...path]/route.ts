@@ -1,3 +1,4 @@
+import { recordActivity } from "@/lib/activity";
 import { NextRequest, NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { z } from "zod";
@@ -121,8 +122,13 @@ async function body(req: NextRequest) {
     throw new AppError("La solicitud JSON no es válida.");
   }
 }
-async function audit(actorId: string, action: string, resourceId?: string) {
-  await db.auditEvent.create({ data: { actorId, action, resourceId } });
+async function audit(
+  actorId: string,
+  action: string,
+  resourceId?: string,
+  detail: Record<string, string | number | string[]> = {},
+) {
+  await recordActivity(db, { data: { actorId, action, resourceId, detail } });
 }
 async function handle(
   req: NextRequest,
@@ -661,17 +667,24 @@ async function handle(
       }
       if (parts.length === 2 && method === "PATCH") {
         const b = content.parse(await body(req));
-        await db.$transaction([
-          db.project.update({ where: { id }, data: b }),
-          db.promptVersion.create({
+        await db.$transaction(async (tx) => {
+          await tx.project.update({ where: { id }, data: b });
+          await tx.promptVersion.create({
             data: {
               scope: "project",
               resourceId: id,
               prompt: b.prompt,
               actorId: user.id,
             },
-          }),
-        ]);
+          });
+          await recordActivity(tx, {
+            data: {
+              actorId: user.id,
+              action: "PROYECTO_ACTUALIZADO",
+              resourceId: id,
+            },
+          });
+        });
         return send({ ok: true });
       }
       if (parts.length === 2 && method === "DELETE") {
@@ -690,12 +703,20 @@ async function handle(
       }
       if (parts[2] === "categories" && method === "POST") {
         const b = content.parse(await body(req));
-        return send(
-          await db.category.create({
+        const created = await db.$transaction(async (tx) => {
+          const product = await tx.category.create({
             data: { name: b.name, prompt: b.prompt, projectId: id },
-          }),
-          201,
-        );
+          });
+          await recordActivity(tx, {
+            data: {
+              actorId: user.id,
+              action: "PRODUCTO_CREADO",
+              resourceId: product.id,
+            },
+          });
+          return product;
+        });
+        return send(created, 201);
       }
     }
     if (
@@ -782,7 +803,10 @@ async function handle(
           .parse(await body(req));
         const { generateBatch } = await import("@/lib/generation");
         const jobs = await generateBatch(user.id, id, b.requestId, b.selected);
-        await audit(user.id, "GENERACION_MASIVA_AUTORIZADA", id);
+        await audit(user.id, "GENERACION_MASIVA_AUTORIZADA", id, {
+          jobIds: jobs.map((j) => j.id),
+          count: jobs.length,
+        });
         return send({ jobs: jobs.map((j) => j.id) }, 202);
       }
       if (parts.length === 2 && method === "GET") {
@@ -832,20 +856,27 @@ async function handle(
           .parse(await body(req));
         const s = effectiveSettings(b.settings, {});
         validateDistribution(s);
-        await db.$transaction([
-          db.category.update({
+        await db.$transaction(async (tx) => {
+          await tx.category.update({
             where: { id },
             data: { ...b, settings: b.settings },
-          }),
-          db.promptVersion.create({
+          });
+          await tx.promptVersion.create({
             data: {
               scope: "category",
               resourceId: id,
               prompt: b.prompt,
               actorId: user.id,
             },
-          }),
-        ]);
+          });
+          await recordActivity(tx, {
+            data: {
+              actorId: user.id,
+              action: "PRODUCTO_ACTUALIZADO",
+              resourceId: id,
+            },
+          });
+        });
         return send({ ok: true });
       }
       if (parts[2] === "subproducts" && method === "POST") {
@@ -854,12 +885,25 @@ async function handle(
             names: z.array(z.string().trim().min(1).max(200)).min(1).max(20),
           })
           .parse(await body(req));
-        const rows = await db.$transaction(
-          b.names.map((name) =>
-            db.subproduct.create({ data: { name, categoryId: id } }),
-          ),
-        );
-        await audit(user.id, "SUBPRODUCTOS_CREADOS", id);
+        const rows = await db.$transaction(async (tx) => {
+          const rows = [];
+          for (const name of b.names)
+            rows.push(
+              await tx.subproduct.create({ data: { name, categoryId: id } }),
+            );
+          await recordActivity(tx, {
+            data: {
+              actorId: user.id,
+              action: "SUBPRODUCTOS_CREADOS",
+              resourceId: id,
+              detail: {
+                subproductIds: rows.map((s) => s.id),
+                count: rows.length,
+              },
+            },
+          });
+          return rows;
+        });
         return send(rows, 201);
       }
     }
@@ -938,20 +982,27 @@ async function handle(
             sub.category.applySettingsToAll,
           ),
         );
-        await db.$transaction([
-          db.subproduct.update({
+        await db.$transaction(async (tx) => {
+          await tx.subproduct.update({
             where: { id },
             data: { ...b, settings: b.settings },
-          }),
-          db.promptVersion.create({
+          });
+          await tx.promptVersion.create({
             data: {
               scope: "subproduct",
               resourceId: id,
               prompt: b.prompt,
               actorId: user.id,
             },
-          }),
-        ]);
+          });
+          await recordActivity(tx, {
+            data: {
+              actorId: user.id,
+              action: "SUBPRODUCTO_ACTUALIZADO",
+              resourceId: id,
+            },
+          });
+        });
         return send({ ok: true });
       }
       if (parts[2] === "instructions" && method === "GET") {
@@ -998,7 +1049,10 @@ async function handle(
         const jobs = await generateBatch(user.id, sub.categoryId, b.requestId, [
           id,
         ]);
-        await audit(user.id, "GENERACION_AUTORIZADA", id);
+        await audit(user.id, "GENERACION_AUTORIZADA", id, {
+          jobIds: jobs.map((j) => j.id),
+          count: jobs.length,
+        });
         return send({ jobs: jobs.map((j) => j.id) }, 202);
       }
     }
@@ -1265,10 +1319,21 @@ async function handle(
         return send({ ok: true });
       }
     }
+    if (route === "audit/history" && method === "GET") {
+      const { activityHistory } = await import("@/lib/activity");
+      return send(await activityHistory(user, req.nextUrl.searchParams));
+    }
     if (route === "audit" && method === "GET")
       return send(
         await db.auditEvent.findMany({
           where: user.role === "OWNER" ? {} : { actorId: user.id },
+          select: {
+            id: true,
+            actorId: true,
+            action: true,
+            resourceId: true,
+            createdAt: true,
+          },
           orderBy: { createdAt: "desc" },
           take: 200,
         }),

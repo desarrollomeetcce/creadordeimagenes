@@ -1,6 +1,6 @@
 # Criterios para cerrar la plataforma
 
-La estimación comunicada de ~80% corresponde al desarrollo funcional; no certifica producción ni se calcula a partir del número de pruebas. Este listado impide marcar 100% por tener una interfaz o un despliegue que compila.
+La estimación actual de 85–90% corresponde al desarrollo funcional; no certifica producción ni se calcula a partir del número de pruebas. El esfuerzo restante depende también de la validación real del proveedor y del alojamiento. Este listado impide marcar 100% por tener una interfaz o un despliegue que compila.
 
 ## Verificados
 
@@ -8,11 +8,12 @@ La estimación comunicada de ~80% corresponde al desarrollo funcional; no certif
 - Prompts heredados, configuraciones reutilizables, adjuntos, marca, galerías y descargas privadas.
 - Miniaturas privadas de adjuntos y reemplazos que conservan referencias anteriores; historial y borrado protegido.
 - Auditoría visual de nuevas versiones exclusiva OWNER, plazo/cuota configurables, aviso a todos los roles y limpieza independiente.
+- Historial legible con nombres, resúmenes, detalles desplegables, búsqueda completa paginada y nombres conservados en operaciones nuevas.
 - Generación/edición y cola con contratos simulados, presupuestos, idempotencia, cancelación y cargos inciertos sin reintento automático.
 - Configuración IA cifrada, modelos consultables realmente y generación bloqueada sin verificación.
 - Recuperación asistida y emergencia OWNER con código preparado de un uso.
 - Restauración de espacios, filtros/selección por sesión y salida móvil.
-- 66 escenarios de integración, cuatro de correo, 15 unitarias, compilación, instalación y recorridos Chromium locales.
+- 67 escenarios de integración, cuatro de correo, 15 unitarias, compilación, instalación y recorridos Chromium locales.
 - Imagen Docker construida/arrancada como usuario no root con autenticación, fuentes y archivos verificados.
 - Copia PostgreSQL local restaurada en base independiente: once migraciones, 15 tablas y hashes de archivos/miniaturas BYTEA comparados.
 

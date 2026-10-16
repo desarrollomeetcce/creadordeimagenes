@@ -1,3 +1,4 @@
+import { recordActivity } from "./activity";
 import { NextResponse } from "next/server";
 import { db } from "./db";
 import { resourceAccess, rateLimit } from "./auth";
@@ -91,7 +92,7 @@ export async function saveAttachment(
             replacesId: replacesId ?? null,
           },
         });
-        await tx.auditEvent.create({
+        await recordActivity(tx, {
           data: {
             actorId: actor.id,
             action: replacesId ? "ADJUNTO_REEMPLAZADO" : "ADJUNTO_CARGADO",
@@ -192,8 +193,13 @@ export async function deleteAttachment(actor: Actor, id: string) {
     );
     const changed = await tx.attachment.deleteMany({ where: { id } });
     demand(changed.count === 1, "El adjunto ya cambió. Recarga la lista.", 409);
-    await tx.auditEvent.create({
-      data: { actorId: actor.id, action: "ADJUNTO_ELIMINADO", resourceId: id },
+    await recordActivity(tx, {
+      data: {
+        actorId: actor.id,
+        action: "ADJUNTO_ELIMINADO",
+        resourceId: id,
+        detail: { contextScope: a.scope, contextResourceId: a.resourceId },
+      },
     });
   });
   // Never remove bytes before a successful metadata transaction (brand/version failures preserve them).

@@ -1,3 +1,4 @@
+import { recordActivity } from "./activity";
 import { db } from "./db";
 import { projectAccess, jobResourceAccess } from "./auth";
 import { demand, AppError } from "./errors";
@@ -106,7 +107,7 @@ export async function prepareBackground(
     const batch = await tx.backgroundBatch.create({
       data: { actorId: user.id, requestKey, jobIds },
     });
-    await tx.auditEvent.create({
+    await recordActivity(tx, {
       data: {
         actorId: user.id,
         action: "LOTE_SEGUNDO_PLANO_AUTORIZADO",
@@ -129,7 +130,7 @@ export async function pauseBackground(
       return { status: batch.status };
     const status = batch.runId ? "PAUSING" : "PAUSED";
     await tx.backgroundBatch.update({ where: { id }, data: { status } });
-    await tx.auditEvent.create({
+    await recordActivity(tx, {
       data: {
         actorId: user.id,
         action: "LOTE_PAUSA_SOLICITADA",

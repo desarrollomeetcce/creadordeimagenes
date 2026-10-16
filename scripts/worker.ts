@@ -1,3 +1,4 @@
+import { recordActivity } from "../lib/activity";
 import { db } from "../lib/db";
 import { configured } from "../lib/ai";
 import { decryptKey } from "../lib/crypto";
@@ -293,7 +294,7 @@ export async function runOne(filter?: {
           ),
         },
       });
-      await tx.auditEvent.create({
+      await recordActivity(tx, {
         data: {
           actorId: candidate.actorId,
           action: "GENERACION_COMPLETADA",

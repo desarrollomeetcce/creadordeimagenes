@@ -1,3 +1,4 @@
+import { recordActivity } from "./activity";
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { db } from "./db";
@@ -45,7 +46,7 @@ export async function retainVariation(
       where: { id },
       data: { permanent: count > 0 },
     });
-    await tx.auditEvent.create({
+    await recordActivity(tx, {
       data: {
         actorId: user.id,
         action: permanent ? "BIBLIOTECA_GUARDAR" : "BIBLIOTECA_RETIRAR",
@@ -207,7 +208,7 @@ export async function productivityRoutes(
         create: data,
         update: data,
       });
-      await db.auditEvent.create({
+      await recordActivity(db, {
         data: {
           actorId: user.id,
           action: "PRESUPUESTO_PARTICULAR_GUARDADO",

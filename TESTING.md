@@ -1,5 +1,13 @@
 # Pruebas y evidencia
 
+## Continuación: historial con contexto y detalles
+
+67 escenarios HTTP/PostgreSQL aprobados (68 resultados con contenedor), 15 unitarias, TypeScript y compilación. El caso nuevo cubre nombres de persona/proyecto/producto/subproducto, dos subproductos exactos creados, eventos nuevos de edición, snapshot de nombres tras renombrar, lectura sin reescritura de AuditEvent y distinción solicitud/completado. La búsqueda encuentra una actividad antigua tras añadir 230 registros, pagina 25 sin repetir, trata porcentajes y barras como literales y parametriza intentos de inyección. Se prueban registro antiguo sin IDs de hijos, falta de acceso actual sin revelación por búsqueda, OWNER global, ADMIN/USER solo operaciones propias, OBSERVER 403, sin sesión 401, campos/límites inválidos y proyección sin claves, contraseña, tokens o prompts de un registro sintético malformado.
+
+Las nuevas capturas usan metadatos en la misma conexión de la transacción; no cargan snapshots de prompts ni contenido de adjuntos. Operaciones de producto/instrucciones agregan eventos atómicos. No hay migración ni cambios de datos externos existentes: el enriquecimiento de registros antiguos ocurre solo durante lectura.
+
+Chromium aprobó resumen con persona/nombres, expansión del evento con dos subproductos concretos, búsqueda sin resultados, limpieza mediante teclado, paginación siguiente/anterior, aislamiento USER y pantalla de 390 px sin desbordamientos ni errores JavaScript. La suite SMTP adicional pasó sus cuatro escenarios (cinco resultados con contenedor) y la instalación sin base devolvió el estado pendiente correcto. Sin llamadas reales de IA ni envíos externos de correo.
+
 ## Continuación: auditoría visual independiente
 
 66 escenarios HTTP/PostgreSQL aprobados (67 resultados contando la suite), cuatro escenarios de correo, 15 unitarias, TypeScript/build e instalación sin base. Se comprueba captura automática de generación/edición/restauración/duplicado, tamaño ≤64 KiB y dimensión ≤384, WebP decodificable, API exclusiva OWNER en todos los métodos, política sin imágenes para los otros roles, respuestas paginadas sin bytes, 200/409 concurrente de política y borrado con contraseña, plazo por versión, opción de aplicar a existentes sin resucitar caducadas, captura desactivada y metadatos persistentes. Caducar originales o borrar proyecto no impide leer una miniatura vigente; caducar miniatura devuelve 410 antes de limpiar, y la limpieza elimina BYTEA sin borrar su registro ni el afiche. Cuota sintética comprueba bloqueo antes de IA, NO_SPACE con afiche conservado y aviso, inclusión en cuota global y auditoría sin contraseña.

@@ -1,5 +1,15 @@
 # Avance por fases · continuación del desarrollo
 
+## Continuación · historial legible por proyecto, producto y subproducto
+
+Historial de actividad reemplaza la tabla de códigos internos por resúmenes en español con persona, fecha/hora de Lima y contexto; cada operación se amplía mediante desplegable para ver los proyectos/productos/subproductos concretos y cantidades/versiones registradas. Distingue solicitudes autorizadas de generaciones completadas. Búsqueda en servidor por actividad/persona/nombres y páginas de 25; no limita la búsqueda a los 200 registros recientes. OWNER consulta todas las personas; ADMIN/USER solo sus propias actividades y OBSERVER no accede, conservando la política anterior.
+
+Las nuevas escrituras de auditoría agregan un snapshot de nombre de persona y ruta de recursos en detail._activity, seleccionando únicamente metadatos. Se incluyen los IDs exactos de subproductos creados y trabajos/variaciones seleccionados para lotes/descargas, sin inferir todos los hijos actuales de un producto. Cambiar nombres después no reescribe la operación. Se agregaron eventos de creación/edición de productos, edición de proyectos/subproductos, en la misma transacción que el cambio. La API de historial devuelve una proyección explícita, sin prompts, claves, tokens, JSON bruto ni rutas de archivos. La API anterior conserva datos básicos de compatibilidad y deja de devolver detail sin filtrar.
+
+Los eventos antiguos se enriquecen al leerlos con los nombres actuales solo si los recursos son identificables y autorizados. Se indica su origen y, cuando falta el listado histórico de subproductos creados, se advierte que no se conoce cuáles fueron: no se atribuyen los añadidos después. Búsqueda y lectura no revelan nombres privados actuales a cuentas que ya no tienen acceso. No se modifican eventos históricos ni se requiere migración SQL, nuevas variables o configuración del usuario.
+
+Validación final: 67 escenarios de integración HTTP/PostgreSQL (68 resultados con contenedor), cuatro escenarios SMTP adicionales, 15 unitarias, instalación sin base, TypeScript y compilación aprobados. Chromium comprobó resumen con persona/nombres, desplegable con los dos subproductos exactos, búsqueda sin resultados, paginación, aislamiento USER y móvil de 390 px sin desbordamiento ni errores JavaScript. No hubo llamadas reales de IA ni correos externos.
+
 ## Continuación · auditoría visual y conservación independiente
 
 Cada versión nueva generada, editada manualmente o con IA, restaurada o duplicada prepara una miniatura WebP de hasta 384×384 y 64 KiB sin ampliar ni deformar. Se conserva dentro de PostgreSQL en la misma transacción que la versión, con datos de autor/proyecto/producto/subproducto/modelo y fecha de creación; no guarda prompts ni credenciales. Para versiones con trabajo de origen usa el modelo registrado en su ledger. No se procesan retroactivamente afiches anteriores. No depende del archivo original ni de que el proyecto siga visible.
