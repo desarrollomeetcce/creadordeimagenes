@@ -53,7 +53,12 @@ export async function saveBrand(
     );
     const ids = [...new Set(b.logoAttachmentIds)];
     const logos = await tx.attachment.findMany({
-      where: { id: { in: ids }, scope: "project", resourceId: projectId },
+      where: {
+        id: { in: ids },
+        scope: "project",
+        resourceId: projectId,
+        archivedAt: null,
+      },
     });
     demand(
       logos.length === ids.length &&

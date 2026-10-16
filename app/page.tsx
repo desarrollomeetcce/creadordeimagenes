@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState, useRef } from "react";
 import { CurrentRole, RoleGuide, useCanEdit } from "./components/role-guide";
 import { roleLabels, managesUsers } from "../lib/roles";
 import { HierarchyBreadcrumbs } from "./components/breadcrumbs";
+import { Attachments } from "./components/attachments";
 import { UsersPanel } from "./components/users-panel";
 import { MailSettings } from "./components/mail-settings";
 import { VariationEditor } from "./components/variation-editor";
@@ -732,103 +733,9 @@ function Login({
   );
 }
 function Uploads({ scope, id }: { scope: string; id: string }) {
-  const [files, setFiles] = useState<
-    { id: string; name: string; size: number }[]
-  >([]);
-  const [purpose, setPurpose] = useState("Material de contexto");
-  const [uploadLimit, setUploadLimit] = useState(3000000);
-  const t = useTask();
-  const refresh = useCallback(async () => {
-    const [files, caps] = await Promise.all([
-      api(`attachments?scope=${scope}&id=${id}`),
-      api("capabilities"),
-    ]);
-    setFiles(files);
-    setUploadLimit(caps.maxUploadBytes);
-  }, [scope, id]);
-  useEffect(() => {
-    void t.run(refresh, "");
-  }, [refresh]);
-  const upload = (file?: File) => {
-    if (!file) return;
-    void t.run(async () => {
-      if (file.size > uploadLimit)
-        throw new Error(`El archivo supera ${uploadLimit / 1000000} MB.`);
-      const form = new FormData();
-      form.set("file", file);
-      form.set("scope", scope);
-      form.set("resourceId", id);
-      form.set("purpose", purpose);
-      await api("attachments", "POST", form);
-      await refresh();
-    }, "Archivo guardado.");
-  };
-  return (
-    <div
-      className="upload"
-      onDragOver={(e) => e.preventDefault()}
-      onDrop={(e) => {
-        e.preventDefault();
-        upload(e.dataTransfer.files[0]);
-      }}
-    >
-      <div className="fields">
-        <label>
-          Adjuntos · arrastra un archivo
-          <input
-            aria-label="Adjuntar archivo"
-            type="file"
-            accept=".txt,.csv,.pdf,.docx,.jpg,.jpeg,.png,.webp,.svg"
-            disabled={t.busy}
-            onChange={(e) => {
-              upload(e.target.files?.[0]);
-              e.target.value = "";
-            }}
-          />
-        </label>
-        <label>
-          Uso del archivo
-          <select value={purpose} onChange={(e) => setPurpose(e.target.value)}>
-            {[
-              "Material de contexto",
-              "Logo institucional",
-              "Referencia visual",
-              "Fotografía obligatoria",
-              "Información comercial",
-              "Manual de marca",
-            ].map((x) => (
-              <option key={x}>{x}</option>
-            ))}
-          </select>
-        </label>
-      </div>
-      <div className="upload-list">
-        {files.map((f) => (
-          <span key={f.id}>
-            {f.name} · {Math.ceil(f.size / 1024)} KB{" "}
-            <button
-              aria-label={"Eliminar " + f.name}
-              onClick={() =>
-                void t.run(async () => {
-                  await api("attachments/" + f.id, "DELETE");
-                  await refresh();
-                })
-              }
-            >
-              ×
-            </button>
-          </span>
-        ))}
-      </div>
-      <p className="hint">
-        Hasta {uploadLimit / 1000000} MB. Extraemos texto de TXT, CSV, PDF y
-        DOCX sin consumir IA. Las imágenes se envían como referencias visuales;
-        revisa su uso antes de generar.
-      </p>
-      {t.notice}
-    </div>
-  );
+  return <Attachments scope={scope} id={id} />;
 }
+
 function Projects({
   open,
   trash = false,

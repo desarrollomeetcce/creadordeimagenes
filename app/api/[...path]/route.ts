@@ -981,18 +981,30 @@ async function handle(
         await resourceAccess(user, scope, id);
         return send(
           await db.attachment.findMany({
-            where: { scope, resourceId: id },
+            where: {
+              scope,
+              resourceId: id,
+              ...(req.nextUrl.searchParams.get("includeArchived") === "true"
+                ? {}
+                : { archivedAt: null }),
+            },
+            orderBy: { createdAt: "desc" },
             select: {
               id: true,
               name: true,
               mime: true,
               purpose: true,
               size: true,
+              archivedAt: true,
+              replacesId: true,
             },
           }),
         );
       }
-      if (parts.length === 1 && method === "POST") {
+      if (
+        method === "POST" &&
+        (parts.length === 1 || (parts.length === 3 && parts[2] === "replace"))
+      ) {
         demand(
           Number(req.headers.get("content-length") ?? 0) <=
             maxUploadBytes() + 500000,
@@ -1015,26 +1027,21 @@ async function handle(
             file.size <= maxUploadBytes(),
           `Selecciona un archivo de hasta ${maxUploadBytes() / 1000000} MB.`,
         );
-        const purpose = z.string().min(1).max(100).parse(form.get("purpose"));
-        const { validateUpload } = await import("@/lib/uploads");
-        const checked = await validateUpload(file);
-        const path = await store(checked.bytes);
-        const item = await db.attachment.create({
-          data: {
-            scope,
-            resourceId: id,
-            name: file.name.slice(0, 200),
-            mime: checked.mime,
-            purpose,
-            path,
-            text: checked.text,
-            size: file.size,
-          },
+        const { saveAttachment } = await import("@/lib/attachments");
+        const item = await saveAttachment(user, {
+          scope,
+          resourceId: id,
+          file,
+          purpose: form.get("purpose"),
+          ...(parts[1] ? { replacesId: parts[1] } : {}),
         });
-        await audit(user.id, "ADJUNTO_CARGADO", item.id);
-        return send({ id: item.id, name: item.name }, 201);
+        return send(item, 201);
       }
-      if (parts[1] && method === "GET") {
+      if (parts.length === 3 && parts[2] === "thumbnail" && method === "GET") {
+        const { attachmentThumbnail } = await import("@/lib/attachments");
+        return await attachmentThumbnail(user, parts[1]);
+      }
+      if (parts.length === 2 && method === "GET") {
         const a = await db.attachment.findUnique({ where: { id: parts[1] } });
         demand(a, "Archivo no encontrado.", 404);
         await resourceAccess(user, a.scope, a.resourceId);
@@ -1049,37 +1056,9 @@ async function handle(
           },
         });
       }
-      if (parts[1] && method === "DELETE") {
-        const a = await db.attachment.findUnique({ where: { id: parts[1] } });
-        demand(a, "Adjunto no encontrado.", 404);
-        await resourceAccess(user, a.scope, a.resourceId, "EDIT");
-        demand(
-          a.scope !== "preset",
-          "Actualiza los adjuntos guardando otra configuración desdel producto.",
-          409,
-        );
-        demand(
-          !(await db.brandLogo.findFirst({ where: { attachmentId: a.id } })),
-          "Este logo forma parte de la identidad de marca. Retíralo de la identidad antes de eliminarlo.",
-          409,
-        );
-        const used = await db.imageVersion.findFirst({
-          where: {
-            document: {
-              path: ["layers"],
-              array_contains: [{ type: "logo", attachmentId: a.id }],
-            },
-            variation: { expired: false },
-          },
-        });
-        demand(
-          !used,
-          "Este logo está en uso por un afiche o sus versiones. Conserva el recurso mientras exista ese historial.",
-          409,
-        );
-        await remove(a.path);
-        await db.attachment.delete({ where: { id: a.id } });
-        return send({ ok: true });
+      if (parts.length === 2 && method === "DELETE") {
+        const { deleteAttachment } = await import("@/lib/attachments");
+        return send(await deleteAttachment(user, parts[1]));
       }
     }
     if (route === "jobs" && method === "GET") {

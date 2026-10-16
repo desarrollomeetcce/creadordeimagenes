@@ -6,6 +6,8 @@ Aplicación web en español para producción publicitaria multiproyecto. Impleme
 
 OWNER puede conectar su buzón en **Configuración de correo** para enviar enlaces de recuperación desde Usuarios. [Guía de Hostinger](docs/HOSTINGER_EMAIL.md): configuración cifrada, verificación TLS y prueba de envío explícita; no requiere nuevas variables de entorno. La recepción real debe comprobarse con el buzón del titular.
 
+Los adjuntos incluyen vistas previas privadas de imágenes y **Reemplazar**. Cada reemplazo conserva el archivo anterior para trabajos y afiches existentes; los próximos usan el nuevo. Los anteriores se consultan en **Adjuntos anteriores conservados** y se pueden eliminar cuando no estén en uso. Los logos seleccionados en Identidad de marca deben retirarse de esa selección antes de reemplazarlos.
+
 ## Inicio local
 
 Requisitos: Node.js 24, npm y PostgreSQL 16 o superior.

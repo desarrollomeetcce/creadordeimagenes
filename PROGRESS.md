@@ -1,5 +1,17 @@
 # Avance por fases · continuación del desarrollo
 
+## Continuación · vistas previas y reemplazo de adjuntos
+
+Los adjuntos de proyecto, producto, subproducto y variación tienen tarjetas con miniaturas privadas WebP de hasta 320×240, proporción conservada, carga diferida y apertura del original autorizado. Los documentos conservan acceso de descarga sin incrustar contenido activo. La autorización se comprueba antes de cargar bytes, incluso para miniaturas. No consume IA.
+
+Reemplazar crea un ID y archivo independientes y archiva el anterior sin sobrescribirlo. Próximas generaciones/ediciones y nuevas copias de configuraciones usan los adjuntos activos; los snapshots de trabajos ya autorizados y logos de versiones existentes siguen leyendo el ID y bytes originales. Se muestran Adjuntos anteriores conservados, con aviso de almacenamiento y eliminación cuando no estén en uso. Un logo seleccionado en Identidad de marca debe retirarse de esa selección antes de reemplazarlo; no se modifica silenciosamente la marca. Control transaccional de doble reemplazo y limpieza del archivo nuevo si falla la operación.
+
+Eliminar protege marca, logos en versiones no caducadas y referencias de trabajos PENDING/RUNNING. La metadata se confirma antes de retirar bytes, para que un rechazo no rompa un archivo existente. La carga ahora registra tamaño de bytes procesados (incluido SVG rasterizado) y limpia el archivo ante rollback.
+
+Validación: 65 escenarios HTTP/PostgreSQL (66 resultados con contenedor), 15 unitarias, TypeScript/build, instalación sin base y cuatro escenarios de correo aprobados. El nuevo escenario verifica permisos, dimensiones/cabeceras de miniatura, aislamiento de roles, reemplazos concurrentes 201/409 y un solo archivo/auditoría, originales intactos, filtro de herencia, copias independientes solo activas, logo histórico accesible, protección de versiones/trabajos, eliminación tras cancelación, documentos sin miniatura, rechazo de archivo falso/ámbito incorrecto y rollback sin huérfanos. Chromium completó carga/miniatura, reemplazo, historial, apertura anterior, recarga y móvil sin desbordamientos ni errores JS. Se corrigió la ruta de Sharp en el script de navegador para la versión instalada. Sin llamadas de IA ni correos externos.
+
+Migración aditiva 010 añade archivedAt/replacesId a Attachment. Aplicada localmente y en copia Neon antes de la base conectada, con historial/checksum y transacción; el adaptador SQL de Neon exigió enviar las dos instrucciones ALTER por separado dentro de la misma transacción. No se reemplazaron ni borraron adjuntos reales del usuario. Las miniaturas administrativas y su política de retención independiente siguen pendientes.
+
 ## Continuación · correo SMTP de Hostinger
 
 Configuración → Correo exclusiva del OWNER, con servidor editable, puertos TLS 465 o STARTTLS obligatorio 587, buzón/remitente y contraseña protegida. La contraseña se cifra AES-256-GCM con contexto separado y la clave maestra existente fuera de la base; las respuestas usan proyección explícita y máscara sin contraseña/ciphertext. Reautenticación para guardar, reemplazar, eliminar, verificar y probar. Cada guardado invalida la verificación. Adaptador SMTP independiente, TLS/certificado obligatorio, conexión fijada a IPv4 pública validada para impedir destinos internos o cambio de DNS, tiempos de espera y errores españoles saneados sin cuerpos ni secretos en auditoría.

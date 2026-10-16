@@ -16,6 +16,8 @@ El motor convencional aplica prioridades Proyecto → Categoría → Subproducto
 
 Adjuntos privados con nombres de almacenamiento aleatorios; validación de formato, tamaño y límite de píxeles. PDF/DOCX se procesan convencionalmente para texto, sin IA ni OCR de pago. El contenido es contexto no confiable y jamás controla roles o presupuestos. Se envían referencias visuales al endpoint de edición de imágenes; se indica su propósito. Falta validar fidelidad gráfica de logos y exclusiones con un proveedor real.
 
+El reemplazo crea un nuevo Attachment con replacesId y archiva el anterior mediante archivedAt, sin modificar sus bytes. Herencia y nuevas copias solo toman activos; workers y composiciones resuelven los IDs originales. Selección de marca se serializa con el proyecto y no admite archivos archivados. Doble reemplazo usa comparación condicional; rollback limpia bytes nuevos. Borrado rechaza marca/versiones vigentes/trabajos activos y retira bytes después del commit de metadata. Miniaturas de adjuntos WebP limitadas a 320×240, sin ampliación, sin metadata original, generadas bajo autorización y sin caché compartida; no son miniaturas administrativas ni implementan su retención.
+
 ## Configuración de IA
 
 `ProviderAdapter` define descubrimiento, dirección creativa e imágenes. Primer adaptador: OpenAI, con destino fijo `api.openai.com`; no hay URL arbitraria susceptible de SSRF. Para agregar un proveedor, implementar y registrar un adaptador independiente. No se muestran proveedores sin adaptador.

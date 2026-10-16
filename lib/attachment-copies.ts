@@ -13,7 +13,10 @@ export async function withAttachmentCopies<T>(
   ) => Promise<T>,
 ) {
   const files = source
-    ? await db.attachment.findMany({ where: source, orderBy: { id: "asc" } })
+    ? await db.attachment.findMany({
+        where: { ...source, archivedAt: null },
+        orderBy: { id: "asc" },
+      })
     : [];
   demand(
     files.length <= 50 && files.reduce((n, f) => n + f.size, 0) <= 24000000,

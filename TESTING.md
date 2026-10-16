@@ -1,5 +1,11 @@
 # Pruebas y evidencia
 
+## Continuación: adjuntos con historial
+
+65 escenarios HTTP/PostgreSQL aprobados (66 resultados con contenedor), 15 unitarias, TypeScript, build, instalación sin base y suite de correo. El caso nuevo prueba miniatura WebP de 1280×640 a 320×160 sin deformación, no-store/nosniff, 401 sin sesión, 404 sin ámbito y lectura OBSERVER compartida sin edición; dos reemplazos paralelos devuelven 201/409 con un solo archivo nuevo y auditoría; bytes e ID anteriores intactos; metadatos sin paths; herencia/copias de presets excluyen archivados; logos de versiones existentes usan bytes anteriores; rechazo de borrado con versiones o trabajo activo y aceptación después de cancelar; TXT sin miniatura 415; PNG falso y ámbito incorrecto conservan metadata/almacenamiento. La base es local y sintética; ningún proveedor de IA participa.
+
+Chromium verificó cargar una imagen, miniatura realmente decodificada, elegir reemplazo, archivo nuevo visible, historial anterior expandible, original accesible, persistencia al recargar y ancho móvil de 390 px sin desbordamientos ni errores JS. El script se ajustó al punto de entrada instalado de Sharp, sin cambios de producto. Migración 010 local/copia Neon/base conectada con checksum; la herramienta remota requirió separar los dos ALTER dentro de una misma transacción.
+
 ## Continuación: correo SMTP
 
 15 unitarias y las 64 situaciones HTTP/PostgreSQL anteriores (65 resultados con contenedor) aprobadas. Cuatro escenarios nuevos en `npm run test:mail` (5 resultados con contenedor) usan base local sintética y adaptador SMTP explícitamente simulado, sin red de correo: exclusividad OWNER en todos los métodos, contraseña actual, puertos, AES/AAD, GET sin secreto/ciphertext, guardar sin nueva contraseña, invalidación de verificación, revisión concurrente, fallo de autenticación saneado, envío de prueba al correo de acceso, destino de recuperación fijado a la cuenta, rechazo de recuperación elevada por ADMIN, hash/caducidad/un uso, token ausente de respuesta y auditoría, invalidación tras fallo incierto, borrado protegido y rechazo de IPv4 privadas/reservadas/IPv6. TypeScript y compilación aprobados. El primer intento detectó el orden de validación del rol frente a APP_ORIGIN en producción local; se corrigió y la suite SMTP completa pasó.

@@ -26,6 +26,7 @@ export async function previewSubproduct(id: string) {
   instructions.text += `\nEJE TEMÁTICO OBLIGATORIO DEL SUBPRODUCTO: ${JSON.stringify(s.name)}. Todas las variaciones deben tratar exclusivamente de este tema y mencionar su nombre. Las instrucciones particulares amplían las instrucciones heredadas activas; no sustituyen el eje temático ni eliminan indicaciones generales compatibles.`;
   const inheritedAttachments = await db.attachment.findMany({
     where: {
+      archivedAt: null,
       OR: [
         { scope: "project", resourceId: s.category.projectId },
         { scope: "category", resourceId: s.categoryId },

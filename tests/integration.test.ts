@@ -4263,6 +4263,295 @@ test("Integración HTTP + PostgreSQL (base exclusiva de pruebas, sin llamadas ex
         );
       },
     );
+    await t.test(
+      "adjuntos: miniaturas privadas, reemplazo inmutable, concurrencia e historial protegido",
+      async () => {
+        const sharp = (await import("sharp")).default;
+        const image = await sharp({
+          create: {
+            width: 1280,
+            height: 640,
+            channels: 3,
+            background: "#234567",
+          },
+        })
+          .png()
+          .toBuffer();
+        const changedImage = await sharp({
+          create: {
+            width: 640,
+            height: 1280,
+            channels: 3,
+            background: "#abcdef",
+          },
+        })
+          .png()
+          .toBuffer();
+        const project = await db.project.create({
+          data: { name: "Adjuntos reemplazables", ownerId: uid },
+        });
+        const product = await db.category.create({
+          data: { name: "Producto adjuntos", projectId: project.id },
+        });
+        const sub = await db.subproduct.create({
+          data: { name: "Tema adjuntos", categoryId: product.id },
+        });
+        const upload = async (
+          client: Client,
+          file: File,
+          previous?: string,
+          resourceId = product.id,
+        ) => {
+          const form = new FormData();
+          form.set("scope", "category");
+          form.set("resourceId", resourceId);
+          form.set("purpose", "Referencia visual");
+          form.set("file", file);
+          const response = await fetch(
+            root +
+              "/api/attachments" +
+              (previous ? `/${previous}/replace` : ""),
+            {
+              method: "POST",
+              headers: { Cookie: client.cookie, Origin: root },
+              body: form,
+            },
+          );
+          return { status: response.status, body: await response.json() };
+        };
+        const png = (bytes: Buffer, name = "referencia.png") =>
+          new File([new Uint8Array(bytes)], name, { type: "image/png" });
+        const original = await upload(user, png(image));
+        assert.equal(original.status, 201);
+        const oldId = original.body.id,
+          old = await db.attachment.findUniqueOrThrow({ where: { id: oldId } });
+        assert.equal(old.size, image.length);
+        const thumbnail = await fetch(
+          `${root}/api/attachments/${oldId}/thumbnail`,
+          { headers: { Cookie: user.cookie } },
+        );
+        assert.equal(thumbnail.status, 200);
+        assert.equal(thumbnail.headers.get("content-type"), "image/webp");
+        assert.equal(
+          thumbnail.headers.get("cache-control"),
+          "private, no-store",
+        );
+        const meta = await sharp(
+          Buffer.from(await thumbnail.arrayBuffer()),
+        ).metadata();
+        assert.equal(meta.width, 320);
+        assert.equal(meta.height, 160);
+        assert.equal(
+          (await fetch(`${root}/api/attachments/${oldId}/thumbnail`)).status,
+          401,
+        );
+        assert.equal(
+          (
+            await fetch(`${root}/api/attachments/${oldId}/thumbnail`, {
+              headers: { Cookie: observer.cookie },
+            })
+          ).status,
+          404,
+        );
+        assert.equal(
+          (
+            await fetch(`${root}/api/attachments/${oldId}/thumbnail`, {
+              headers: { Cookie: admin.cookie },
+            })
+          ).status,
+          404,
+        );
+        await db.projectMember.create({
+          data: { projectId: project.id, userId: oid },
+        });
+        assert.equal(
+          (
+            await fetch(`${root}/api/attachments/${oldId}/thumbnail`, {
+              headers: { Cookie: observer.cookie },
+            })
+          ).status,
+          200,
+        );
+        assert.equal(
+          (await upload(observer, png(changedImage), oldId)).status,
+          403,
+        );
+        const initialCount = await db.storedAsset.count();
+        const concurrent = await Promise.all([
+          upload(user, png(changedImage, "nueva.png"), oldId),
+          upload(owner, png(changedImage, "otra.png"), oldId),
+        ]);
+        assert.deepEqual(concurrent.map((r) => r.status).sort(), [201, 409]);
+        assert.equal(
+          await db.storedAsset.count(),
+          initialCount + 1,
+          "el intento rechazado no deja un archivo huérfano",
+        );
+        const newId = concurrent.find((r) => r.status === 201)!.body.id;
+        const active = await user.call(
+          `attachments?scope=category&id=${product.id}`,
+        );
+        assert.deepEqual(
+          active.body.map((a: any) => a.id),
+          [newId],
+        );
+        assert.equal(active.body[0].replacesId, oldId);
+        assert(!JSON.stringify(active.body).includes(old.path));
+        const history = await user.call(
+          `attachments?scope=category&id=${product.id}&includeArchived=true`,
+        );
+        assert.equal(history.body.length, 2);
+        assert(history.body.find((a: any) => a.id === oldId).archivedAt);
+        const { load, store } = await import("../lib/storage");
+        assert.deepEqual(await load(old.path), image);
+        const { previewSubproduct } = await import("../lib/generation");
+        assert.deepEqual(
+          (await previewSubproduct(sub.id)).attachments.map((a) => a.id),
+          [newId],
+        );
+        const preset = await user.call("presets", "POST", {
+          name: "CONFIGURACION ADJUNTOS",
+          prompt: "",
+          settings: {},
+          visibility: "PERSONAL",
+          sourceCategoryId: product.id,
+          includeAttachments: true,
+        });
+        assert.equal(preset.status, 201);
+        const copies = (
+          await user.call(`attachments?scope=preset&id=${preset.body.id}`)
+        ).body;
+        assert.equal(copies.length, 1);
+        assert.equal(copies[0].name, active.body[0].name);
+        const saved = await db.attachment.findUniqueOrThrow({
+          where: { id: copies[0].id },
+        });
+        assert.notEqual(saved.path, old.path);
+        assert.deepEqual(await load(saved.path), changedImage);
+        const versionPath = await store(image);
+        const job = await db.generationJob.create({
+          data: {
+            actorId: uid,
+            projectId: project.id,
+            subproductId: sub.id,
+            idempotencyKey: `attachment-version-${tag}`,
+            status: "SUCCEEDED",
+            reservedMicros: 0n,
+            snapshot: { attachmentIds: [oldId] },
+          },
+        });
+        const variation = await db.variation.create({
+          data: {
+            subproductId: sub.id,
+            jobId: job.id,
+            path: versionPath,
+            model: "synthetic-only",
+            expiresAt: new Date(Date.now() + 3600000),
+          },
+        });
+        await db.imageVersion.create({
+          data: {
+            variationId: variation.id,
+            number: 1,
+            path: versionPath,
+            actorId: uid,
+            document: { layers: [{ type: "logo", attachmentId: oldId }] },
+          },
+        });
+        const historicLogo = await fetch(
+          `${root}/api/variations/${variation.id}/logos/${oldId}`,
+          { headers: { Cookie: user.cookie } },
+        );
+        assert.equal(historicLogo.status, 200);
+        assert.deepEqual(Buffer.from(await historicLogo.arrayBuffer()), image);
+        assert.equal(
+          (await user.call(`attachments/${oldId}`, "DELETE")).status,
+          409,
+        );
+        assert.deepEqual(await load(old.path), image);
+        const pending = await db.generationJob.create({
+          data: {
+            actorId: uid,
+            projectId: project.id,
+            subproductId: sub.id,
+            idempotencyKey: `attachment-pending-${tag}`,
+            reservedMicros: 0n,
+            snapshot: { attachmentIds: [newId] },
+          },
+        });
+        const newer = await upload(user, png(image, "tercera.png"), newId);
+        assert.equal(newer.status, 201);
+        assert.equal(
+          (await user.call(`attachments/${newId}`, "DELETE")).status,
+          409,
+        );
+        const existingSnapshot = await db.generationJob.findUniqueOrThrow({
+          where: { id: pending.id },
+        });
+        assert.deepEqual((existingSnapshot.snapshot as any).attachmentIds, [
+          newId,
+        ]);
+        await db.generationJob.update({
+          where: { id: pending.id },
+          data: { status: "CANCELLED" },
+        });
+        const replaced = await db.attachment.findUniqueOrThrow({
+          where: { id: newId },
+        });
+        assert.equal(
+          (await user.call(`attachments/${newId}`, "DELETE")).status,
+          200,
+        );
+        await assert.rejects(load(replaced.path));
+        const text = await upload(
+          user,
+          new File(["Texto para instrucciones"], "documento.txt"),
+        );
+        assert.equal(text.status, 201);
+        assert.equal(
+          (
+            await fetch(`${root}/api/attachments/${text.body.id}/thumbnail`, {
+              headers: { Cookie: user.cookie },
+            })
+          ).status,
+          415,
+        );
+        const beforeInvalid = await db.storedAsset.count();
+        assert.equal(
+          (
+            await upload(
+              user,
+              new File(["ejecutable"], "falso.png"),
+              text.body.id,
+            )
+          ).status,
+          400,
+        );
+        assert.equal(await db.storedAsset.count(), beforeInvalid);
+        assert.equal(
+          (
+            await db.attachment.findUniqueOrThrow({
+              where: { id: text.body.id },
+            })
+          ).archivedAt,
+          null,
+        );
+        assert.equal(
+          (await upload(user, png(image), text.body.id, cid)).status,
+          404,
+        );
+        assert.equal(await db.storedAsset.count(), beforeInvalid);
+        assert.equal(
+          await db.auditEvent.count({
+            where: {
+              action: "ADJUNTO_REEMPLAZADO",
+              detail: { path: ["replacesId"], equals: oldId },
+            },
+          }),
+          1,
+        );
+      },
+    );
     await t.test("cierre de sesión invalida el token", async () => {
       assert.equal((await user.call("auth/logout", "POST")).status, 200);
       assert.equal((await user.call("projects")).status, 401);

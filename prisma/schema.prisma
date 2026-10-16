@@ -119,6 +119,8 @@ model Attachment {
   text String @default("")
   size Int
   createdAt DateTime @default(now())
+  archivedAt DateTime?
+  replacesId String?
   brandLogos BrandLogo[]
   @@index([scope,resourceId])
 }

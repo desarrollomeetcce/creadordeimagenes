@@ -640,6 +640,13 @@ a {
 }
 
 .search-select { position:relative; min-width:0; }
+.attachment-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,280px),1fr)); gap:12px; }
+.attachment-card { display:flex; align-items:flex-start; gap:12px; border:1px solid var(--line,#d5e0dc); border-radius:8px; padding:12px; min-width:0; }
+.attachment-card img { display:block; width:100px; height:90px; object-fit:contain; background:#f4f7f6; border-radius:6px; }
+.attachment-info { min-width:0; overflow-wrap:anywhere; }
+.attachment-info .row { flex-wrap:wrap; }
+.attachment-info button { white-space:normal; overflow-wrap:anywhere; }
+.attachment-document { font-size:32px; padding:12px; }
 .search-select-input { display:flex; align-items:stretch; }
 .search-select-input input { min-width:0; flex:1; border-radius:7px 0 0 7px; }
 .search-select-input > button { border-radius:0 7px 7px 0; min-width:44px; }

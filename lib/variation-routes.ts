@@ -154,7 +154,7 @@ export async function variationRoutes(
     const config = await configured(),
       snapshot = v.job.snapshot as Record<string, unknown>;
     const attachments = await db.attachment.findMany({
-      where: { scope: "variation", resourceId: id },
+      where: { scope: "variation", resourceId: id, archivedAt: null },
     });
     demand(
       attachments.every((a) => a.text || a.mime.startsWith("image/")),
