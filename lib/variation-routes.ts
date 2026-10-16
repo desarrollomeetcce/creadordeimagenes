@@ -27,6 +27,40 @@ export async function variationRoutes(
     method === "GET" ? "VIEW" : action === "regenerate" ? "GENERATE" : "EDIT",
     action === "restore",
   );
+  if (action === "logos" && method === "GET" && parts.length === 4) {
+    const version = await db.imageVersion.findUnique({
+      where: { variationId_number: { variationId: id, number: v.revision } },
+      select: { document: true },
+    });
+    const document = version?.document as {
+      layers?: { type?: unknown; attachmentId?: unknown }[];
+    } | null;
+    demand(
+      Array.isArray(document?.layers) &&
+        document.layers.some(
+          (layer) => layer.type === "logo" && layer.attachmentId === parts[3],
+        ),
+      "Este logo no pertenece a la composición actual.",
+      404,
+    );
+    const attachment = await db.attachment.findUnique({
+      where: { id: parts[3] },
+      select: { mime: true, path: true },
+    });
+    demand(
+      attachment &&
+        ["image/png", "image/jpeg", "image/webp"].includes(attachment.mime),
+      "Logo no encontrado.",
+      404,
+    );
+    return new NextResponse(fileStream(await load(attachment.path)), {
+      headers: {
+        "Content-Type": attachment.mime,
+        "Cache-Control": "private, no-store",
+        "X-Content-Type-Options": "nosniff",
+      },
+    });
+  }
   if (action === "design" && method === "GET") {
     const versions = await db.imageVersion.findMany({
       where: { variationId: id },

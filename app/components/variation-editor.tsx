@@ -208,7 +208,7 @@ export function VariationEditor({
                   l.text
                 ) : (
                   <img
-                    src={"/api/attachments/" + l.attachmentId}
+                    src={`/api/variations/${id}/logos/${l.attachmentId}`}
                     alt="Logo autorizado"
                     draggable={false}
                   />

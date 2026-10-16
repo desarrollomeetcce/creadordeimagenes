@@ -3548,6 +3548,78 @@ test("Integración HTTP + PostgreSQL (base exclusiva de pruebas, sin llamadas ex
         };
         const allowed = await image(bSubs[0].id),
           denied = await image(bSubs[1].id);
+        const inheritedLogo = await db.attachment.create({
+          data: {
+            scope: "project",
+            resourceId: projectId,
+            name: "logo.png",
+            mime: "image/png",
+            purpose: "LOGO",
+            path: await store(png),
+            size: png.length,
+          },
+        });
+        const unusedLogo = await db.attachment.create({
+          data: {
+            scope: "project",
+            resourceId: projectId,
+            name: "privado.png",
+            mime: "image/png",
+            purpose: "LOGO",
+            path: await store(png),
+            size: png.length,
+          },
+        });
+        await db.imageVersion.create({
+          data: {
+            variationId: allowed.id,
+            number: 1,
+            path: allowed.path,
+            actorId: uid,
+            document: {
+              layers: [{ type: "logo", attachmentId: inheritedLogo.id }],
+            },
+          },
+        });
+        for (const who of [user, observer]) {
+          const headers = { Cookie: who.cookie };
+          assert.equal(
+            (
+              await fetch(root + `/api/attachments/${inheritedLogo.id}`, {
+                headers,
+              })
+            ).status,
+            404,
+          );
+          assert.equal(
+            (
+              await fetch(
+                root +
+                  `/api/variations/${allowed.id}/logos/${inheritedLogo.id}`,
+                { headers },
+              )
+            ).status,
+            200,
+          );
+          assert.equal(
+            (
+              await fetch(
+                root + `/api/variations/${allowed.id}/logos/${unusedLogo.id}`,
+                { headers },
+              )
+            ).status,
+            404,
+          );
+          assert.equal(
+            (
+              await fetch(
+                root + `/api/variations/${denied.id}/logos/${inheritedLogo.id}`,
+                { headers },
+              )
+            ).status,
+            404,
+          );
+        }
         for (const who of [user, observer]) {
           const gallery = await who.call(
             `gallery?scope=project&id=${projectId}`,
