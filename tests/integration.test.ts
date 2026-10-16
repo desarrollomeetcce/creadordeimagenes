@@ -878,8 +878,9 @@ test("Integración HTTP + PostgreSQL (base exclusiva de pruebas, sin llamadas ex
           assert.equal(zip.headers.get("content-type"), "application/zip");
           const output = (await import("jszip")).default;
           assert.equal(
-            Object.keys((await output.loadAsync(await zip.arrayBuffer())).files)
-              .length,
+            Object.values(
+              (await output.loadAsync(await zip.arrayBuffer())).files,
+            ).filter((entry) => !entry.dir).length,
             1,
           );
         } finally {
@@ -1730,6 +1731,360 @@ test("Integración HTTP + PostgreSQL (base exclusiva de pruebas, sin llamadas ex
         const logs = JSON.stringify((await owner.call("audit")).body);
         assert(!logs.includes(recoveredPassword));
         assert(!logs.includes(reset.body.token));
+      },
+    );
+    let collectionProject = "",
+      collectionCategory = "",
+      collectionSub = "",
+      collectionSecond = "",
+      privateImage = "";
+    let collectionA = "",
+      collectionB = "";
+    await t.test(
+      "galerías de proyecto y categoría: permisos, filtros y paginación sin rutas privadas",
+      async () => {
+        const p = await user.call("projects", "POST", {
+          name: "Proyecto ../ Galerías",
+          prompt: "",
+        });
+        collectionProject = p.body.id;
+        const c = await user.call(
+          `projects/${collectionProject}/categories`,
+          "POST",
+          { name: "Categoría ../ uno", prompt: "" },
+        );
+        collectionCategory = c.body.id;
+        const c2 = await user.call(
+          `projects/${collectionProject}/categories`,
+          "POST",
+          { name: "Otra categoría", prompt: "" },
+        );
+        const a = await db.subproduct.create({
+          data: { name: "Producto Azul", categoryId: collectionCategory },
+        });
+        collectionSub = a.id;
+        const b = await db.subproduct.create({
+          data: { name: "Producto Verde", categoryId: collectionCategory },
+        });
+        collectionSecond = b.id;
+        const other = await db.subproduct.create({
+          data: { name: "Otro producto", categoryId: c2.body.id },
+        });
+        const { store } = await import("../lib/storage"),
+          sharp = (await import("sharp")).default;
+        const png = await sharp({
+          create: {
+            width: 1200,
+            height: 800,
+            channels: 3,
+            background: "#123456",
+          },
+        })
+          .png()
+          .toBuffer();
+        const create = async (
+          projectId: string,
+          subproductId: string | null,
+          extras: Record<string, unknown> = {},
+        ) => {
+          const job = await db.generationJob.create({
+            data: {
+              actorId: uid,
+              projectId,
+              subproductId,
+              idempotencyKey: randomUUID(),
+              status: "COMPLETED",
+              snapshot: {},
+              reservedMicros: 0n,
+            },
+          });
+          const path = await store(png);
+          const v = await db.variation.create({
+            data: {
+              jobId: job.id,
+              subproductId,
+              path,
+              model: "synthetic",
+              expiresAt: new Date(Date.now() + 3600000),
+              ...extras,
+            },
+          });
+          await db.imageVersion.create({
+            data: {
+              variationId: v.id,
+              number: 1,
+              path,
+              actorId: uid,
+              sourceJobId: job.id,
+            },
+          });
+          return v.id;
+        };
+        collectionA = await create(collectionProject, a.id, {
+          favorite: true,
+          reviewStatus: "APPROVED",
+        });
+        collectionB = await create(collectionProject, b.id, {
+          permanent: true,
+          expiresAt: new Date(0),
+        });
+        await create(collectionProject, b.id, { expiresAt: new Date(0) });
+        await create(collectionProject, a.id, { deletedAt: new Date() });
+        await create(collectionProject, b.id, { expired: true });
+        await create(collectionProject, other.id);
+        for (let i = 0; i < 25; i++) await create(collectionProject, a.id);
+        const privateProject = await owner.call("projects", "POST", {
+          name: "Privado de galería",
+        });
+        privateImage = await create(privateProject.body.id, null);
+        const first = await user.call(
+          `gallery?scope=project&id=${collectionProject}`,
+        );
+        assert.equal(first.status, 200);
+        assert.equal(first.body.total, 28);
+        assert.equal(first.body.items.length, 24);
+        assert.equal(first.body.pages, 2);
+        assert.equal(first.body.resource.canEdit, true);
+        assert.equal(
+          (await admin.call(`gallery?scope=project&id=${collectionProject}`))
+            .body.resource.canEdit,
+          false,
+        );
+        const second = await user.call(
+          `gallery?scope=project&id=${collectionProject}&page=2`,
+        );
+        assert.equal(second.body.items.length, 4);
+        assert(
+          !second.body.items.some((v: any) =>
+            first.body.items.some((x: any) => x.id === v.id),
+          ),
+        );
+        assert.equal(
+          (await user.call(`gallery?scope=category&id=${collectionCategory}`))
+            .body.total,
+          27,
+        );
+        assert.equal(
+          (await user.call(`gallery?scope=subproduct&id=${a.id}`)).body.total,
+          26,
+        );
+        assert.equal(
+          (
+            await user.call(
+              `gallery?scope=project&id=${collectionProject}&favorite=true`,
+            )
+          ).body.total,
+          1,
+        );
+        assert.equal(
+          (
+            await user.call(
+              `gallery?scope=project&id=${collectionProject}&review=APPROVED`,
+            )
+          ).body.items[0].id,
+          collectionA,
+        );
+        assert.equal(
+          (
+            await user.call(
+              `gallery?scope=project&id=${collectionProject}&saved=true`,
+            )
+          ).body.items[0].id,
+          collectionB,
+        );
+        assert.equal(
+          (
+            await user.call(
+              `gallery?scope=project&id=${collectionProject}&q=Verde`,
+            )
+          ).body.total,
+          1,
+        );
+        assert.equal(
+          (
+            await user.call(
+              `gallery?scope=project&id=${privateProject.body.id}`,
+            )
+          ).status,
+          404,
+        );
+        assert.equal(
+          (
+            await admin.call(
+              `gallery?scope=project&id=${privateProject.body.id}`,
+            )
+          ).status,
+          404,
+        );
+        assert.equal(
+          (
+            await user.call(
+              `gallery?scope=project&id=${collectionProject}&page=0`,
+            )
+          ).status,
+          400,
+        );
+        assert.equal(
+          (
+            await user.call(
+              `gallery?scope=project&id=${collectionProject}&review=INVENTADO`,
+            )
+          ).status,
+          400,
+        );
+        const serialized = JSON.stringify(first.body);
+        assert(!serialized.includes("pg:"));
+        assert(!serialized.includes("passwordHash"));
+        assert(!serialized.includes("encryptedKey"));
+        const thumb = await fetch(
+          root + `/api/variations/${collectionA}?thumbnail=true`,
+          { headers: { Cookie: user.cookie } },
+        );
+        assert.equal(thumb.status, 200);
+        const dimensions = await sharp(
+          Buffer.from(await thumb.arrayBuffer()),
+        ).metadata();
+        assert.equal(dimensions.width, 640);
+        assert(dimensions.height! <= 640);
+      },
+    );
+    await t.test(
+      "ZIP completo y filtrado: carpetas seguras y archivos PNG/JPG independientes",
+      async () => {
+        const zipRequest = async (client: Client, body: unknown) =>
+          fetch(root + "/api/exports", {
+            method: "POST",
+            headers: {
+              Cookie: client.cookie,
+              Origin: root,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify(body),
+          });
+        const JSZip = (await import("jszip")).default;
+        const project = await zipRequest(user, {
+          scope: "project",
+          id: collectionProject,
+          format: "png",
+        });
+        assert.equal(project.status, 200);
+        const archive = await JSZip.loadAsync(await project.arrayBuffer()),
+          files = Object.values(archive.files).filter((f) => !f.dir);
+        assert.equal(files.length, 28);
+        assert(
+          files.every(
+            (file) =>
+              file.name.split("/").length === 4 &&
+              file.name.endsWith(".png") &&
+              !file.name.includes(".."),
+          ),
+        );
+        const category = await zipRequest(user, {
+          scope: "category",
+          id: collectionCategory,
+        });
+        assert.equal(
+          Object.values(
+            (await JSZip.loadAsync(await category.arrayBuffer())).files,
+          ).filter((f) => !f.dir).length,
+          27,
+        );
+        const sub = await zipRequest(user, {
+          scope: "subproduct",
+          id: collectionSub,
+        });
+        assert.equal(
+          Object.values(
+            (await JSZip.loadAsync(await sub.arrayBuffer())).files,
+          ).filter((f) => !f.dir).length,
+          26,
+        );
+        const jpg = await zipRequest(user, {
+          scope: "project",
+          id: collectionProject,
+          format: "jpg",
+          filters: { favorite: true },
+        });
+        assert.equal(jpg.status, 200);
+        const jpgFiles = Object.values(
+          (await JSZip.loadAsync(await jpg.arrayBuffer())).files,
+        ).filter((f) => !f.dir);
+        assert.equal(jpgFiles.length, 1);
+        assert(jpgFiles[0].name.endsWith(".jpg"));
+        const bytes = await jpgFiles[0].async("nodebuffer");
+        assert.equal(bytes[0], 255);
+        assert.equal(bytes[1], 216);
+        const mixed = await zipRequest(user, {
+          ids: [collectionA, privateImage],
+        });
+        assert.equal(mixed.status, 404);
+        assert(
+          (mixed.headers.get("content-type") ?? "").includes(
+            "application/json",
+          ),
+        );
+        assert.equal(
+          (await zipRequest(owner, { ids: [collectionA, privateImage] }))
+            .status,
+          200,
+        );
+        assert.equal(
+          (
+            await zipRequest(user, {
+              scope: "project",
+              id: collectionProject,
+              filters: { q: "Sin coincidencias" },
+            })
+          ).status,
+          404,
+        );
+      },
+    );
+    await t.test(
+      "exportación masiva rechaza más de 200 imágenes antes de leer archivos",
+      async () => {
+        const ids = Array.from({ length: 201 }, () => randomUUID());
+        await db.generationJob.createMany({
+          data: ids.map((id) => ({
+            id,
+            actorId: uid,
+            projectId: collectionProject,
+            subproductId: collectionSecond,
+            idempotencyKey: id,
+            status: "COMPLETED",
+            snapshot: {},
+            reservedMicros: 0n,
+          })),
+        });
+        const variationIds = ids.map(() => randomUUID());
+        await db.variation.createMany({
+          data: ids.map((jobId, i) => ({
+            id: variationIds[i],
+            jobId,
+            subproductId: collectionSecond,
+            path: randomUUID(),
+            model: "synthetic",
+            expiresAt: new Date(Date.now() + 3600000),
+          })),
+        });
+        try {
+          const result = await fetch(root + "/api/exports", {
+            method: "POST",
+            headers: {
+              Cookie: user.cookie,
+              Origin: root,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ scope: "project", id: collectionProject }),
+          });
+          assert.equal(result.status, 413);
+          assert((await result.json()).error.includes("200"));
+        } finally {
+          await db.variation.deleteMany({
+            where: { id: { in: variationIds } },
+          });
+          await db.generationJob.deleteMany({ where: { id: { in: ids } } });
+        }
       },
     );
     await t.test(

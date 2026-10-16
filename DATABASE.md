@@ -29,3 +29,7 @@ Consumir un enlace y eliminar los demás enlaces/sesiones del usuario ocurre en 
 `202610160004_stored_assets` agrega StoredAsset con UUID, BYTEA privado, tamaño validado por CHECK y fecha de creación. La suma de tamaños se comprueba bajo advisory lock transaccional antes de guardar. La aplicación conserva referencias `pg:<uuid>`; nunca expone un endpoint de lectura sin autorización del proyecto. Los recursos locales existentes conservan su lectura por UUID sin prefijo. No hay migración automática de archivos de un mecanismo a otro.
 
 Las limpiezas de temporales y versiones liberan también los BYTEA; las copias independientes usan recursos distintos. Una cuota de 128 MiB limita los archivos de la prueba, no toda la base ni sus costes. Para escala de producción se mantiene pendiente un adaptador de almacenamiento de objetos.
+
+## Consulta de colecciones
+
+Las galerías agrupadas y los ZIP reutilizan Variation, GenerationJob, Subproduct y Category; no añaden tablas. Paginación estable por createdAt/id, conteo y página bajo RepeatableRead, proyección de metadatos sin rutas y autorización del recurso padre. Se comprueba expiración por fecha junto con permanent, expired y deletedAt. El límite de exportación se comprueba antes de leer archivos; el esquema no se modifica. La evaluación de índices y cargas a escala queda para la fase de rendimiento.

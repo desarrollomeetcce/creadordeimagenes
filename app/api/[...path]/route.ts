@@ -966,60 +966,13 @@ async function handle(
         }),
       );
     }
+    if (route === "gallery" && method === "GET") {
+      const { collectionGallery } = await import("@/lib/collections");
+      return send(await collectionGallery(user, req.nextUrl.searchParams));
+    }
     if (route === "exports" && method === "POST") {
-      const b = z
-        .object({
-          ids: z.array(z.string()).min(1).max(200),
-          format: z.enum(["png", "jpg"]).default("png"),
-        })
-        .parse(await body(req));
-      const JSZip = (await import("jszip")).default;
-      const zip = new JSZip();
-      let total = 0;
-      for (const id of [...new Set(b.ids)]) {
-        const v = await db.variation.findUnique({
-          where: { id },
-          include: { job: true, subproduct: { select: { name: true } } },
-        });
-        demand(v, "Una imagen no existe.", 404);
-        if (v.job.projectId === "connection-test") ownerOnly(user);
-        else await projectAccess(user, v.job.projectId);
-        demand(
-          !v.deletedAt &&
-            !v.expired &&
-            (v.permanent || v.expiresAt > new Date()),
-          "Una imagen temporal ya caducó.",
-          410,
-        );
-        let bytes = await load(v.path);
-        total += bytes.length;
-        demand(
-          total <= 100000000,
-          "La descarga supera 100 MB. Selecciona menos imágenes.",
-          413,
-        );
-        if (b.format === "jpg")
-          bytes = await (await import("@/lib/render")).jpeg(bytes);
-        const name = (v.subproduct?.name ?? "Prueba")
-          .normalize("NFD")
-          .replace(/[\u0300-\u036f]/g, "")
-          .replace(/[^a-zA-Z0-9_-]/g, "_")
-          .slice(0, 80);
-        zip.file(`${name}_${v.id}.${b.format}`, bytes);
-      }
-      await audit(user.id, "DESCARGA_ZIP");
-      return new NextResponse(
-        fileStream(
-          await zip.generateAsync({ type: "nodebuffer", compression: "STORE" }),
-        ),
-        {
-          headers: {
-            "Content-Type": "application/zip",
-            "Content-Disposition": 'attachment; filename="afiches.zip"',
-            "Cache-Control": "private, no-store",
-          },
-        },
-      );
+      const { exportCollection } = await import("@/lib/collections");
+      return await exportCollection(user, await body(req));
     }
     if (route === "variations/bulk-regenerate" && method === "POST") {
       const b = z
@@ -1085,7 +1038,20 @@ async function handle(
           410,
         );
         const jpg = req.nextUrl.searchParams.get("format") === "jpg";
-        const bytes = await load(v.path);
+        let bytes = await load(v.path);
+        if (req.nextUrl.searchParams.get("thumbnail") === "true")
+          bytes = await (
+            await import("sharp")
+          )
+            .default(bytes, { limitInputPixels: 20000000 })
+            .resize({
+              width: 640,
+              height: 640,
+              fit: "inside",
+              withoutEnlargement: true,
+            })
+            .png()
+            .toBuffer();
         const output = jpg
           ? await (await import("@/lib/render")).jpeg(bytes)
           : bytes;

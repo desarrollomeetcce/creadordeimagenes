@@ -4,6 +4,10 @@ import { VariationEditor } from "./components/variation-editor";
 import { BrandKit } from "./components/brand-kit";
 import { StorageUsage } from "./components/storage-usage";
 import {
+  CollectionGallery,
+  downloadArchive,
+} from "./components/collection-gallery";
+import {
   AccountSecurity,
   RecoveryIssuer,
   ResetPasswordForm,
@@ -120,6 +124,13 @@ export default function Home() {
   const [installationError, setInstallationError] = useState("");
   const [resetToken, setResetToken] = useState("");
   const [view, setView] = useState("projects");
+  const [location, setLocation] = useState("");
+  const [routeBusy, setRouteBusy] = useState(false);
+  const [routeError, setRouteError] = useState("");
+  const [collection, setCollection] = useState<{
+    scope: "project" | "category";
+    id: string;
+  } | null>(null);
   const [project, setProject] = useState<Project | null>(null);
   const [category, setCategory] = useState<Category | null>(null);
   const [gallery, setGallery] = useState<Item | null>(null);
@@ -149,18 +160,104 @@ export default function Home() {
       setResetToken(window.location.hash.slice("#recuperar=".length));
       window.history.replaceState(null, "", window.location.pathname);
     }
+    setLocation(window.location.search);
+    const pop = () => setLocation(window.location.search);
+    window.addEventListener("popstate", pop);
     void reloadUser();
+    return () => window.removeEventListener("popstate", pop);
   }, [reloadUser]);
-  const openProject = async (id: string) => {
-    setProject(await api("projects/" + id));
-    setCategory(null);
-    setGallery(null);
-    setView("projects");
+  const changeAddress = (values: Record<string, string>) => {
+    const search = "?" + new URLSearchParams(values).toString();
+    if (window.location.search !== search)
+      window.history.pushState(null, "", window.location.pathname + search);
+    setLocation(search);
   };
-  const openCategory = async (id: string) => {
-    setCategory(await api("categories/" + id));
-    setGallery(null);
-  };
+  useEffect(() => {
+    if (!user) return;
+    let active = true;
+    const restore = async () => {
+      setRouteBusy(true);
+      setRouteError("");
+      setProject(null);
+      setCategory(null);
+      setGallery(null);
+      setCollection(null);
+      try {
+        const params = new URLSearchParams(location);
+        const requested = params.get("view") ?? "projects";
+        const allowed = [
+          "projects",
+          "library",
+          "presets",
+          "history",
+          "usage",
+          "trash",
+          "jobs",
+          "account",
+          "collection",
+          ...(user.role !== "USER" ? ["users"] : []),
+          ...(user.role === "OWNER" ? ["ai"] : []),
+        ];
+        const nextView = allowed.includes(requested) ? requested : "projects";
+        if (active) setView(nextView);
+        if (nextView === "collection") {
+          const scope = params.get("scope"),
+            id = params.get("id");
+          if (!id || !["project", "category"].includes(scope ?? ""))
+            throw new Error("El enlace de galería no es válido.");
+          if (active)
+            setCollection({ scope: scope as "project" | "category", id });
+        } else if (nextView === "projects") {
+          const galleryId = params.get("gallery"),
+            categoryId = params.get("category"),
+            projectId = params.get("project");
+          if (galleryId) {
+            const sub = await api(
+              "subproducts/" + encodeURIComponent(galleryId),
+            );
+            const [c, p] = await Promise.all([
+              api("categories/" + sub.categoryId),
+              api("projects/" + sub.category.projectId),
+            ]);
+            if (active) {
+              setProject(p);
+              setCategory(c);
+              setGallery(sub);
+            }
+          } else if (categoryId) {
+            const c = await api("categories/" + encodeURIComponent(categoryId));
+            const p = await api("projects/" + c.projectId);
+            if (active) {
+              setProject(p);
+              setCategory(c);
+            }
+          } else if (projectId) {
+            const p = await api("projects/" + encodeURIComponent(projectId));
+            if (active) setProject(p);
+          }
+        }
+      } catch (e) {
+        if (active)
+          setRouteError(
+            e instanceof Error ? e.message : "No se pudo abrir el enlace.",
+          );
+      } finally {
+        if (active) setRouteBusy(false);
+      }
+    };
+    void restore();
+    return () => {
+      active = false;
+    };
+  }, [location, user?.id, user?.role]);
+  const openProject = async (id: string) =>
+    changeAddress({ view: "projects", project: id });
+  const openCategory = async (id: string) =>
+    changeAddress({ view: "projects", category: id });
+  const openGallery = (sub: Item) =>
+    changeAddress({ view: "projects", gallery: sub.id });
+  const openCollection = (scope: "project" | "category", id: string) =>
+    changeAddress({ view: "collection", scope, id });
   if (loading)
     return <div className="login-form">Cargando tu espacio de trabajo…</div>;
   if (resetToken)
@@ -224,13 +321,9 @@ export default function Home() {
     trash: "Papelera",
     jobs: "Generaciones",
     account: "Mi cuenta",
+    collection: "Galería de afiches",
   };
-  const navigate = (v: string) => {
-    setView(v);
-    setProject(null);
-    setCategory(null);
-    setGallery(null);
-  };
+  const navigate = (v: string) => changeAddress({ view: v });
   return (
     <div className="shell">
       <aside className="sidebar">
@@ -295,7 +388,32 @@ export default function Home() {
           <span className="badge">Producción publicitaria</span>
         </header>
         <main>
-          {view === "account" ? (
+          {routeBusy ? (
+            <p role="status">Abriendo tu espacio…</p>
+          ) : routeError ? (
+            <section className="panel stack">
+              <p className="notice error" role="alert">
+                {routeError}
+              </p>
+              <button onClick={() => navigate("projects")}>
+                Volver a proyectos
+              </button>
+            </section>
+          ) : collection ? (
+            <CollectionGallery
+              key={`${collection.scope}:${collection.id}`}
+              scope={collection.scope}
+              id={collection.id}
+              back={() =>
+                void (collection.scope === "project"
+                  ? openProject(collection.id)
+                  : openCategory(collection.id))
+              }
+              openSubproduct={(id) =>
+                openGallery({ id, name: "Afiches", prompt: "" })
+              }
+            />
+          ) : view === "account" ? (
             <>
               <AccountSecurity onChanged={reloadUser} />
               {user.role === "OWNER" && <StorageUsage />}
@@ -317,20 +435,32 @@ export default function Home() {
           ) : view === "trash" ? (
             <Projects trash open={openProject} />
           ) : gallery ? (
-            <Gallery sub={gallery} back={() => setGallery(null)} />
+            <Gallery
+              key={gallery.id}
+              sub={gallery}
+              back={() => void openCategory(category!.id)}
+            />
           ) : category ? (
             <CategoryEditor
               category={category}
-              refresh={() => openCategory(category.id)}
-              back={() => setCategory(null)}
-              openGallery={setGallery}
+              refresh={async () => {
+                const next = await api("categories/" + category.id);
+                if (window.location.search === location) setCategory(next);
+              }}
+              back={() => void openProject(category.project.id)}
+              openGallery={openGallery}
+              openCollection={() => openCollection("category", category.id)}
             />
           ) : project ? (
             <ProjectEditor
               project={project}
-              refresh={() => openProject(project.id)}
-              back={() => setProject(null)}
+              refresh={async () => {
+                const next = await api("projects/" + project.id);
+                if (window.location.search === location) setProject(next);
+              }}
+              back={() => navigate("projects")}
               openCategory={openCategory}
+              openCollection={() => openCollection("project", project.id)}
             />
           ) : (
             <Projects open={openProject} />
@@ -750,11 +880,13 @@ function ProjectEditor({
   refresh,
   back,
   openCategory,
+  openCollection,
 }: {
   project: Project;
   refresh: () => Promise<void>;
   back: () => void;
   openCategory: (id: string) => Promise<void>;
+  openCollection: () => void;
 }) {
   const [create, setCreate] = useState(false);
   const [share, setShare] = useState(false);
@@ -790,6 +922,7 @@ function ProjectEditor({
       </details>
       <BrandKit key={p.id} projectId={p.id} />
       <div className="row" style={{ margin: "18px 0" }}>
+        <button onClick={openCollection}>Ver afiches del proyecto</button>
         <button onClick={() => setShare(!share)}>Compartir proyecto</button>
         <button
           className="danger"
@@ -997,11 +1130,13 @@ function CategoryEditor({
   refresh,
   back,
   openGallery,
+  openCollection,
 }: {
   category: Category;
   refresh: () => Promise<void>;
   back: () => void;
   openGallery: (s: Item) => void;
+  openCollection: () => void;
 }) {
   const [s, setS] = useState<Settings>({ ...base, ...c.settings });
   const [bulk, setBulk] = useState(false);
@@ -1026,6 +1161,9 @@ function CategoryEditor({
           ＋ Agregar varios subproductos
         </button>
       </div>
+      <button onClick={openCollection} style={{ marginBottom: 18 }}>
+        Ver afiches de la categoría
+      </button>
       <details>
         <summary>Instrucciones y configuración de categoría</summary>
         <div className="inside stack">
@@ -1985,12 +2123,20 @@ const statusLabel = (s: string) =>
   })[s] ?? s;
 function Gallery({ sub, back }: { sub: Item; back: () => void }) {
   const [selected, setSelected] = useState<string[]>([]);
+  const [downloadFormat, setDownloadFormat] = useState("png");
   const [editing, setEditing] = useState<string | null>(null);
   const [variations, setVariations] = useState<any[]>([]);
   const t = useTask();
   const refresh = useCallback(async () => {
     const r = await api("subproducts/" + sub.id);
-    setVariations(r.variations);
+    setVariations(
+      r.variations.map((v: any) => ({
+        ...v,
+        expired:
+          v.expired ||
+          (!v.permanent && new Date(v.expiresAt).getTime() <= Date.now()),
+      })),
+    );
   }, [sub.id]);
   useEffect(() => {
     void t.run(refresh, "");
@@ -2020,6 +2166,32 @@ function Gallery({ sub, back }: { sub: Item; back: () => void }) {
         />
       )}
       <div className="row" style={{ marginBottom: 20 }}>
+        <label>
+          Formato del ZIP
+          <select
+            value={downloadFormat}
+            onChange={(e) => setDownloadFormat(e.target.value)}
+          >
+            <option value="png">PNG</option>
+            <option value="jpg">JPG</option>
+          </select>
+        </label>
+        <button
+          disabled={t.busy || !variations.some((v) => !v.expired)}
+          onClick={() =>
+            void t.run(
+              () =>
+                downloadArchive({
+                  scope: "subproduct",
+                  id: sub.id,
+                  format: downloadFormat,
+                }),
+              "Descarga preparada",
+            )
+          }
+        >
+          Descargar todo el subproducto
+        </button>
         <button
           onClick={() =>
             setSelected(variations.filter((v) => !v.expired).map((v) => v.id))
@@ -2031,18 +2203,7 @@ function Gallery({ sub, back }: { sub: Item; back: () => void }) {
           disabled={!selected.length || t.busy}
           onClick={() =>
             void t.run(async () => {
-              const response = await fetch("/api/exports", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ ids: selected, format: "png" }),
-              });
-              if (!response.ok) throw new Error((await response.json()).error);
-              const url = URL.createObjectURL(await response.blob());
-              const a = document.createElement("a");
-              a.href = url;
-              a.download = "afiches.zip";
-              a.click();
-              setTimeout(() => URL.revokeObjectURL(url), 1000);
+              await downloadArchive({ ids: selected, format: downloadFormat });
             }, "Descarga preparada")
           }
         >

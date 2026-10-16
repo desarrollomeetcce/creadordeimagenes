@@ -35,3 +35,9 @@ PostgreSQL es portable. Para pasar a otro servidor se exportan/restauran los dat
 La base Neon externa está preparada. El usuario confirmó que ya pudo ingresar; también se verificó que hay un OWNER aprobado en esa base. El conector Vercel sigue sin autorización para consultar la configuración del equipo. Los cambios de código se integran en main; el resultado de su despliegue externo debe comprobarse por separado. Los límites y condiciones de cualquier plan se revisan antes de contratar o activar consumo facturable.
 
 Documentación oficial consultada: https://vercel.com/docs/postgres y https://vercel.com/docs/builds/configure-a-build.
+
+## Galería y navegación
+
+Después del despliegue de esta entrega, usar **Ver afiches del proyecto** o **Ver afiches de la categoría**. Los filtros se aplican también a **Descargar todos los resultados**. **Seleccionar página** acumula hasta 200 seleccionados entre páginas; cambiar filtros limpia la selección. La comparación requiere exactamente dos seleccionados. Las miniaturas se preparan bajo autorización y no se conservan separadamente del original.
+
+Se conservan en la dirección la sección y los identificadores del recurso para recarga y Atrás/Adelante. No se incorporan prompts, contraseñas, claves o tokens a esos enlaces. Los enlaces a recursos ajenos se rechazan en servidor. La selección, los filtros y la página se reinician al recargar.

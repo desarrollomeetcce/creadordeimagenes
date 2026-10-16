@@ -29,7 +29,7 @@ La referencia sigue siendo el prompt maestro completo (54 secciones) y el requis
 - Cliente Prisma generado y migración aditiva aplicada correctamente en PostgreSQL temporal.
 - TypeScript y compilación de producción aprobados.
 - 15 pruebas unitarias aprobadas: incluyen cifrado, herencia, contratos de IA simulados, documentos, proporciones, edición gráfica, logos y SVG.
-- Suite de integración ampliada contra HTTP/PostgreSQL reales: edición/versiones, concurrencia, IA simulada, revisión, duplicación, cancelación, biblioteca, presets, límites particulares, regeneración selectiva y limpieza. Resultado actual: 45 escenarios aprobados (46 resultados contando el contenedor de la suite).
+- Suite de integración ampliada contra HTTP/PostgreSQL reales: edición/versiones, concurrencia, IA simulada, revisión, duplicación, cancelación, biblioteca, presets, límites particulares, regeneración selectiva y limpieza. Resultado actual: 48 escenarios aprobados (49 resultados contando el contenedor de la suite).
 - No se han utilizado credenciales reales de IA ni efectuado llamadas facturables. Las pruebas de proveedor usan transporte simulado explícito; no establecen conectividad real con OpenAI.
 
 ## Estado por fases
@@ -41,7 +41,7 @@ La referencia sigue siendo el prompt maestro completo (54 secciones) y el requis
 | 2 · IA                       | Adaptador y flujo completos en código, con pruebas simuladas | Generación real autorizada, validación visual y conciliación del consumo                                                              |
 | 3 · Producción masiva        | Funcional parcial                                            | Métricas de rendimiento, ejecución duradera administrada y pruebas de carga reales                                                 |
 | 4 · Edición y calidad        | Funcional parcial                                            | QA en navegador, detección de superposiciones, dirección creativa y fidelidad de fotos/logos con IA real                              |
-| 5 · Productividad            | Funcional parcial                                            | Adjuntos reutilizables en presets y descargas transversales por proyecto/categoría                              |
+| 5 · Productividad            | Funcional parcial                                            | Adjuntos reutilizables en presets y ampliación de herramientas de productividad                              |
 | 6 · Administración           | Funcional parcial                                            | Recuperación automática por correo y emergencia del único OWNER, gestión avanzada, conciliación tarifaria, estadísticas y retención separada de miniaturas administrativas |
 | 7 · Producción               | Preparada parcialmente                                       | Construcción Docker, VPS privado, HTTPS, backups ensayados, revisión de seguridad y monitorización                                    |
 
@@ -80,3 +80,13 @@ Generaciones incorpora procesamiento secuencial de trabajos ya autorizados, paus
 Lotes: selección granular de subproductos, total actualizado, revisión y consentimiento restablecidos al cambiar la selección; rechazo de IDs ajenos antes de reservar. Mi cuenta muestra uso de archivos al OWNER y permite limpiar hasta 25 temporales caducados y revisar operaciones antiguas interrumpidas.
 
 Validación final: 15 unitarias, TypeScript y build, 45 escenarios HTTP/PostgreSQL (46 resultados contando el contenedor), instalación sin base y recorrido local en Chromium. Se verificó que las tres tipografías están en el archivo de trazado del servidor. En navegador: espacio, limpieza, adjunto persistente tras recarga, selección parcial y pantalla de cola sin errores JavaScript. No se ha verificado una generación facturable ni la ejecución de estas funciones en el despliegue Vercel externo.
+
+## Continuación · galerías agrupadas, descargas y navegación
+
+Implementadas galerías de proyecto y categoría con paginación de 24 resultados, búsqueda por nombre de categoría/subproducto, filtros de revisión/favoritos/conservación y permisos calculados en servidor. Solo incluyen archivos todavía disponibles; los temporales vencidos se excluyen por fecha aunque no haya corrido la limpieza. Incluyen miniaturas de hasta 640 px, vista ampliada, navegación en la página, comparación de dos seleccionados y acceso al subproducto individual sin mezclar sus resultados.
+
+Descarga de selección, subproducto, categoría o proyecto en PNG/JPG dentro de ZIP organizado por proyecto/categoría/subproducto. Se validan todos los permisos antes de leer archivos; límite de 200 imágenes y 100 MB de preparación, con rechazo explícito y sin recortes silenciosos. Los nombres se normalizan para evitar rutas inseguras y colisiones. La comparación visual nunca convierte la entrega en un collage.
+
+La navegación usa enlaces de la aplicación y restaura proyectos, categorías, galerías individuales y agrupadas al recargar. Atrás/Adelante funciona con controles del navegador. Las solicitudes de navegación obsoletas se descartan; un enlace sin permiso muestra error sin conservar el recurso anterior. Filtros, página y selección de la galería agrupada se mantienen durante la sesión del componente, no al recargar. La recuperación de cuenta sigue usando un fragmento que se retira antes de navegar.
+
+Validación: TypeScript y build, 15 unitarias, 48 escenarios HTTP/PostgreSQL (49 resultados contando el contenedor), instalación sin base y Chromium aprobados. Se descargaron realmente 28 JPG en un ZIP desde el navegador, se probó comparación, selección entre páginas, recargas, Atrás/Adelante y rechazo de enlace privado. La regresión contempla errores de exportación 404/413, filtros, caducidad, miniaturas y límites. No hubo migraciones ni modificaciones de credenciales o cuentas externas en esta entrega. No se ejecutaron llamadas facturables de IA.

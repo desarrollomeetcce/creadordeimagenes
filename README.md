@@ -50,3 +50,9 @@ Dentro del proyecto, **Identidad de marca** permite guardar instrucciones, color
 ## Pruebas en Vercel
 
 El usuario ya pudo ingresar a la instalación conectada a Neon. En Vercel los archivos se conservan en PostgreSQL con una cuota inicial de 128 MiB y adjuntos de hasta 3 MB. Después de autorizar un lote, **Generaciones → Procesar pendientes** permite avanzar secuencialmente manteniendo abierta la pantalla. **Mi cuenta**, para OWNER, permite consultar espacio y limpiar temporales caducados. Los lotes permiten elegir subproductos concretos. La configuración de IA debe estar realmente verificada y los cargos autorizados antes de generar. Detalles y límites: [docs/VERCEL_TRIAL.md](docs/VERCEL_TRIAL.md).
+
+## Galerías y descargas agrupadas
+
+En cada proyecto o categoría, **Ver afiches** abre la galería agrupada: filtros, miniaturas, vista ampliada y comparación de dos resultados. Se pueden descargar seleccionados o todos los resultados filtrados en PNG/JPG dentro de ZIP, con carpetas por categoría y subproducto. La galería individual añade **Descargar todo el subproducto**. Límite de 200 archivos y 100 MB por preparación; para grupos mayores, usar filtros o selecciones menores.
+
+Los enlaces conservan el proyecto, la categoría o la galería al recargar y permiten usar Atrás/Adelante. Se comprueban nuevamente los permisos al abrirlos. Los filtros y la selección no se conservan al recargar.
