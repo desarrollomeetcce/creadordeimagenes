@@ -1,0 +1,62 @@
+{
+  "name": "creadordeimagenes",
+  "version": "1.0.0",
+  "description": "Sistema de generación automática de afiches publicitarios mediante inteligencia artificial.",
+  "main": "index.js",
+  "directories": {
+    "doc": "docs",
+    "lib": "lib",
+    "test": "tests"
+  },
+  "scripts": {
+    "dev": "next dev --hostname 0.0.0.0",
+    "build": "next build --webpack",
+    "start": "next start --hostname 0.0.0.0",
+    "typecheck": "tsc --noEmit",
+    "test": "tsx --test tests/core.test.ts tests/design.test.ts",
+    "worker": "tsx scripts/worker.ts",
+    "db:generate": "node scripts/generate.mjs",
+    "db:deploy": "node scripts/migrate.mjs",
+    "postinstall": "node scripts/generate.mjs",
+    "test:integration": "tsx --test tests/integration.test.ts"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/desarrollomeetcce/creadordeimagenes.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "module",
+  "bugs": {
+    "url": "https://github.com/desarrollomeetcce/creadordeimagenes/issues"
+  },
+  "homepage": "https://github.com/desarrollomeetcce/creadordeimagenes#readme",
+  "dependencies": {
+    "@prisma/adapter-pg": "^7.6.0",
+    "@prisma/client": "^7.6.0",
+    "@xmldom/xmldom": "^0.8.15",
+    "argon2": "^0.45.1",
+    "jszip": "^3.10.2",
+    "mammoth": "^1.13.0",
+    "next": "^16.4.2",
+    "pdf-parse": "^2.4.5",
+    "pg": "^8.23.1",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "sharp": "^0.35.5",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.5",
+    "@types/pdf-parse": "^1.1.5",
+    "@types/pg": "^8.23.1",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "prettier": "^3.9.10",
+    "prisma": "^7.6.0",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2"
+  },
+  "private": true
+}

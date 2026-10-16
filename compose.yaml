@@ -1,0 +1,54 @@
+name: creador-afiches
+x-runtime: &runtime
+  DATABASE_URL: postgresql://afiches:${POSTGRES_PASSWORD:?Configurar contraseña hexadecimal}@db:5432/afiches
+  APP_ORIGIN: ${APP_ORIGIN:?Configurar URL HTTPS de la plataforma}
+  AI_MASTER_KEY: ${AI_MASTER_KEY:?Configurar clave maestra base64 de 32 bytes}
+  BOOTSTRAP_TOKEN: ${BOOTSTRAP_TOKEN:-}
+  STORAGE_PATH: /app/data/assets
+services:
+  db:
+    image: postgres:16-bookworm
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: afiches
+      POSTGRES_USER: afiches
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Configurar contraseña hexadecimal}
+    volumes:
+      - postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: [CMD-SHELL, pg_isready -U afiches -d afiches]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+  migrate:
+    image: afiches-app:local
+    build: .
+    environment: *runtime
+    command: [npm, run, db:deploy]
+    depends_on:
+      db:
+        condition: service_healthy
+  web:
+    image: afiches-app:local
+    restart: unless-stopped
+    environment: *runtime
+    ports:
+      - 127.0.0.1:3000:3000
+    volumes:
+      - assets:/app/data
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+  worker:
+    image: afiches-app:local
+    restart: unless-stopped
+    environment: *runtime
+    command: [npm, run, worker]
+    volumes:
+      - assets:/app/data
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+volumes:
+  postgres:
+  assets:

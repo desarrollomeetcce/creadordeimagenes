@@ -1,0 +1,241 @@
+generator client {
+  provider = "prisma-client-js"
+  engineType = "client"
+}
+datasource db {
+  provider = "postgresql"
+}
+enum Role {
+  OWNER
+  ADMIN
+  USER
+}
+enum AccountStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  SUSPENDED
+}
+model User {
+  id String @id @default(cuid())
+  email String @unique
+  name String
+  passwordHash String
+  role Role @default(USER)
+  status AccountStatus @default(PENDING)
+  createdAt DateTime @default(now())
+  sessions Session[]
+  projects Project[]
+  memberships ProjectMember[]
+}
+model Session {
+  id String @id
+  userId String
+  user User @relation(fields:[userId],references:[id])
+  expiresAt DateTime
+  @@index([expiresAt])
+}
+model Project {
+  id String @id @default(cuid())
+  seedKey String? @unique
+  name String
+  description String @default("")
+  prompt String @default("")
+  ownerId String
+  owner User @relation(fields:[ownerId],references:[id])
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  deletedAt DateTime?
+  categories Category[]
+  members ProjectMember[]
+}
+model ProjectMember {
+  projectId String
+  userId String
+  permission String @default("VIEW")
+  project Project @relation(fields:[projectId],references:[id])
+  user User @relation(fields:[userId],references:[id])
+  @@id([projectId,userId])
+}
+model Category {
+  id String @id @default(cuid())
+  name String
+  prompt String @default("")
+  projectId String
+  project Project @relation(fields:[projectId],references:[id])
+  settings Json @default("{}")
+  subproducts Subproduct[]
+  @@index([projectId])
+}
+model Subproduct {
+  id String @id @default(cuid())
+  name String
+  prompt String @default("")
+  categoryId String
+  category Category @relation(fields:[categoryId],references:[id])
+  settings Json @default("{}")
+  variations Variation[]
+  @@index([categoryId])
+}
+model PromptVersion {
+  id String @id @default(cuid())
+  scope String
+  resourceId String
+  prompt String
+  actorId String
+  createdAt DateTime @default(now())
+  @@index([resourceId,createdAt])
+}
+model Attachment {
+  id String @id @default(cuid())
+  scope String
+  resourceId String
+  name String
+  mime String
+  purpose String
+  path String
+  text String @default("")
+  size Int
+  createdAt DateTime @default(now())
+  @@index([scope,resourceId])
+}
+model ProviderConfiguration {
+  id String @id @default("global")
+  provider String @default("openai")
+  encryptedKey String?
+  maskedKey String?
+  revision Int @default(1)
+  verifiedRevision Int?
+  verifiedAt DateTime?
+  status String @default("NOT_CONFIGURED")
+  error String?
+  models Json @default("[]")
+  imageModel String?
+  creativeModel String?
+  alternatives Json @default("[]")
+  quality String @default("low")
+  resolution String @default("1024x1024")
+  monthlyLimitMicros BigInt @default(0)
+  dailyLimitMicros BigInt @default(0)
+  operationLimitMicros BigInt @default(0)
+  imageReserveMicros BigInt @default(0)
+  maxGenerations Int @default(100)
+  updatedAt DateTime @updatedAt
+}
+model GenerationJob {
+  id String @id @default(cuid())
+  actorId String
+  projectId String
+  subproductId String?
+  idempotencyKey String @unique
+  status String @default("PENDING")
+  snapshot Json
+  reservedMicros BigInt
+  error String?
+  startedAt DateTime?
+  completedAt DateTime?
+  createdAt DateTime @default(now())
+  variation Variation?
+  @@index([status,createdAt])
+}
+model Variation {
+  id String @id @default(cuid())
+  subproductId String?
+  subproduct Subproduct? @relation(fields:[subproductId],references:[id])
+  jobId String @unique
+  job GenerationJob @relation(fields:[jobId],references:[id])
+  path String
+  model String
+  permanent Boolean @default(false)
+  favorite Boolean @default(false)
+  reviewStatus String @default("PENDING")
+  revision Int @default(1)
+  deletedAt DateTime?
+  versions ImageVersion[]
+  libraryItems LibraryItem[]
+  expiresAt DateTime
+  expired Boolean @default(false)
+  createdAt DateTime @default(now())
+}
+model UsageLedger {
+  id String @id @default(cuid())
+  jobId String @unique
+  actorId String
+  projectId String
+  model String
+  reservedMicros BigInt
+  actualMicros BigInt?
+  usage Json?
+  status String @default("RESERVED")
+  createdAt DateTime @default(now())
+  @@index([createdAt,status])
+}
+model AuditEvent {
+  id String @id @default(cuid())
+  actorId String
+  action String
+  resourceId String?
+  detail Json @default("{}")
+  createdAt DateTime @default(now())
+  @@index([actorId,createdAt])
+}
+model RateLimit {
+  key String @id
+  count Int
+  expiresAt DateTime
+}
+
+model ImageVersion {
+  id String @id @default(cuid())
+  variationId String
+  variation Variation @relation(fields:[variationId],references:[id])
+  number Int
+  path String
+  backgroundPath String?
+  document Json?
+  actorId String
+  sourceJobId String? @unique
+  createdAt DateTime @default(now())
+  @@unique([variationId,number])
+}
+
+model LibraryFolder {
+  id String @id @default(cuid())
+  userId String
+  name String
+  parentId String?
+  parent LibraryFolder? @relation("FolderTree",fields:[parentId],references:[id])
+  children LibraryFolder[] @relation("FolderTree")
+  items LibraryItem[]
+  createdAt DateTime @default(now())
+  @@index([userId,parentId])
+}
+model LibraryItem {
+  id String @id @default(cuid())
+  userId String
+  variationId String
+  variation Variation @relation(fields:[variationId],references:[id])
+  folderId String?
+  folder LibraryFolder? @relation(fields:[folderId],references:[id])
+  createdAt DateTime @default(now())
+  @@unique([userId,variationId])
+}
+model SavedPreset {
+  id String @id @default(cuid())
+  userId String
+  name String
+  prompt String
+  settings Json
+  visibility String @default("PERSONAL")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+model BudgetLimit {
+  id String @id @default(cuid())
+  scope String
+  targetId String
+  monthlyMicros BigInt
+  dailyMicros BigInt
+  maxJobsPerDay Int
+  @@unique([scope,targetId])
+}
