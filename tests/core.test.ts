@@ -298,3 +298,99 @@ test("importes de conciliación: decimales exactos y rechazo de formatos ambiguo
   ])
     assert.equal(parseUsdMicros(value), null, value);
 });
+
+test("gasto diario del proveedor: fechas UTC, importes, paginación y rechazo sin datos inventados", async () => {
+  const { billingRange, reportedMicros, openaiDailyCosts } =
+    await import("../lib/provider-costs");
+  assert.throws(() => billingRange("2026-02-30", "2026-03-01"));
+  assert.throws(() => billingRange("2026-01-01", "2026-02-01"));
+  assert.equal(reportedMicros("1.2345678").micros, 1234568n);
+  assert.equal(reportedMicros("-0.0000005").micros, -1n);
+  assert.equal(reportedMicros(1e-7).rounded, true);
+  assert.throws(() => reportedMicros(null));
+  const { start } = billingRange("2026-01-01", "2026-01-03");
+  let calls = 0;
+  const transport: typeof fetch = async (url, options) => {
+    assert.equal(options?.method, undefined);
+    assert.equal(options?.cache, "no-store");
+    assert.equal(
+      new Headers(options?.headers).get("Authorization"),
+      "Bearer synthetic-key",
+    );
+    const query = new URL(String(url));
+    assert.equal(query.pathname, "/v1/organization/costs");
+    assert.equal(query.searchParams.get("bucket_width"), "1d");
+    calls++;
+    if (calls === 1)
+      return Response.json({
+        data: [
+          {
+            start_time: start,
+            results: [{ amount: { currency: "usd", value: "0.1234567" } }],
+          },
+        ],
+        has_more: true,
+        next_page: "next",
+      });
+    assert.equal(query.searchParams.get("page"), "next");
+    return Response.json({
+      data: [{ start_time: start + 86400, results: [] }],
+      has_more: false,
+      next_page: null,
+    });
+  };
+  const report = await openaiDailyCosts(
+    "synthetic-key",
+    "2026-01-01",
+    "2026-01-03",
+    transport,
+  );
+  assert.equal(calls, 2);
+  assert.equal(report.totalMicros, "123457");
+  assert.equal(report.rounded, true);
+  assert.deepEqual(report.rows, [
+    { day: "2026-01-01", micros: "123457" },
+    { day: "2026-01-02", micros: null },
+  ]);
+  assert(!JSON.stringify(report).includes("synthetic-key"));
+  await assert.rejects(
+    openaiDailyCosts(
+      "x",
+      "2026-01-01",
+      "2026-01-01",
+      async () => new Response("private body", { status: 403 }),
+    ),
+    /administrativa/,
+  );
+  await assert.rejects(
+    openaiDailyCosts("x", "2026-01-01", "2026-01-01", async () =>
+      Response.json({
+        data: [
+          {
+            start_time: start,
+            results: [{ amount: { currency: "eur", value: 1 } }],
+          },
+        ],
+      }),
+    ),
+    /moneda/,
+  );
+  const empty = await openaiDailyCosts(
+    "x",
+    "2026-01-01",
+    "2026-01-01",
+    async () => Response.json({ data: [] }),
+  );
+  assert.equal(empty.totalMicros, null);
+  await assert.rejects(
+    openaiDailyCosts("x", "2026-01-01", "2026-01-01", async () =>
+      Response.json({
+        data: [
+          { start_time: start, results: [] },
+          { start_time: start, results: [] },
+        ],
+      }),
+    ),
+    /repitió/,
+  );
+});

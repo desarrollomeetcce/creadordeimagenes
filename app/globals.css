@@ -732,3 +732,14 @@ a {
 .usage-panel .cost-editor .hint,.usage-panel td:last-child p {white-space:normal;overflow-wrap:anywhere}
 .usage-panel .cost-editor input[type=checkbox] {width:auto}
 @media(max-width:620px){.usage-panel .cost-editor{min-width:0;max-width:100%}}
+.jobs-grid.size-small {grid-template-columns:repeat(auto-fill,minmax(min(100%,170px),1fr))}
+.jobs-grid.size-medium {grid-template-columns:repeat(auto-fill,minmax(min(100%,260px),1fr))}
+.jobs-grid.size-large {grid-template-columns:repeat(auto-fill,minmax(min(100%,440px),1fr))}
+.jobs-grid .card {min-width:0;overflow-wrap:anywhere}
+.jobs-grid .card img {width:100%;object-fit:contain}
+.jobs-grid.size-small .card img {max-height:170px}
+.jobs-grid.size-medium .card img {max-height:300px}
+.jobs-grid.size-large .card img {max-height:600px}
+.job-path {font-size:12px;line-height:1.6}
+.selection-toolbar {padding:12px;border:1px solid var(--line);border-radius:8px;background:white}
+.hierarchy-filters {padding:16px;border:1px solid var(--line);border-radius:8px;background:white}

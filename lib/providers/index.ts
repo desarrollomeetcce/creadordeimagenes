@@ -10,6 +10,11 @@ export type ImageResult = { bytes: Buffer; usage: unknown };
 export interface ProviderAdapter {
   id: string;
   name: string;
+  dailyCosts?(
+    key: string,
+    from: string,
+    to: string,
+  ): Promise<import("../provider-costs").DailyCosts>;
   listModels(key: string): Promise<ModelCapability[]>;
   generate(
     key: string,
@@ -124,6 +129,9 @@ class OpenAIAdapter implements ProviderAdapter {
     } catch {
       throw new AppError("El proveedor devolvió una respuesta ilegible.", 502);
     }
+  }
+  async dailyCosts(key: string, from: string, to: string) {
+    return (await import("../provider-costs")).openaiDailyCosts(key, from, to);
   }
   async listModels(key: string) {
     const data = await this.request(key, "models");

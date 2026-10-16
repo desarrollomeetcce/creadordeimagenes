@@ -4,6 +4,7 @@ import { db } from "./db";
 import { demand } from "./errors";
 import { recordActivity, resolveActivityContexts } from "./activity";
 type Actor = { id: string; role: string };
+import { dateRange, visibleJobWhere } from "./hierarchy-filters";
 import { usdMicros } from "./usage-format";
 export function csvCell(value: string) {
   const safe = /^\s*[=+\-@]|^[\t\r\n]/.test(value) ? "'" + value : value;
@@ -19,7 +20,7 @@ const fields = {
   actualMicros: true,
   createdAt: true,
 } as const;
-function filters(user: Actor, params: URLSearchParams) {
+async function filters(user: Actor, params: URLSearchParams) {
   demand(
     user.role !== "OBSERVER",
     "Esta sección no está disponible para Observador.",
@@ -46,6 +47,17 @@ function filters(user: Actor, params: URLSearchParams) {
       cost: params.get("cost") ?? "all",
       page: params.get("page") ?? 1,
     });
+  const range = dateRange(params);
+  const scoped = ["project", "product", "subproduct"].some(
+    (k) => !!params.get(k),
+  );
+  const jobIds =
+    scoped || user.role !== "OWNER"
+      ? await db.generationJob.findMany({
+          where: (await visibleJobWhere(user, params)).where,
+          select: { id: true },
+        })
+      : null;
   const end = new Date(),
     local = new Date(end.getTime() - 5 * 3600000),
     start =
@@ -60,7 +72,16 @@ function filters(user: Actor, params: URLSearchParams) {
             ),
           );
   const where: Prisma.UsageLedgerWhereInput = {
-    ...(user.role === "OWNER" ? {} : { actorId: user.id }),
+    ...(scoped && jobIds
+      ? { jobId: { in: jobIds.map((j) => j.id) } }
+      : user.role === "OWNER"
+        ? {}
+        : {
+            OR: [
+              { actorId: user.id },
+              { jobId: { in: (jobIds ?? []).map((j) => j.id) } },
+            ],
+          }),
     ...(b.status ? { status: b.status } : {}),
     ...(b.q
       ? {
@@ -75,7 +96,9 @@ function filters(user: Actor, params: URLSearchParams) {
       : b.cost === "unknown"
         ? { actualMicros: null, status: b.status || { not: "RELEASED" } }
         : {}),
-    createdAt: { ...(start ? { gte: start } : {}), lte: end },
+    createdAt: Object.keys(range).length
+      ? { ...range, lte: end }
+      : { ...(start ? { gte: start } : {}), lte: end },
   };
   if (b.cost === "unknown" && b.status === "RELEASED")
     where.AND = [{ status: { not: "RELEASED" } }];
@@ -136,8 +159,12 @@ async function rowsWithNames(
       : null,
   }));
 }
-export async function usageReport(user: Actor, params: URLSearchParams) {
-  const { b, where, start, end } = filters(user, params);
+export async function usageReport(
+  user: Actor,
+  params: URLSearchParams,
+  summaryOnly = false,
+) {
+  const { b, where, start, end } = await filters(user, params);
   const [rows, total, unreleased, known, unknown, uncertain] =
     await db.$transaction(
       [
@@ -145,7 +172,7 @@ export async function usageReport(user: Actor, params: URLSearchParams) {
           where,
           orderBy: [{ createdAt: "desc" }, { id: "desc" }],
           skip: (b.page - 1) * 50,
-          take: 50,
+          take: summaryOnly ? 0 : 50,
           select: fields,
         }),
         db.usageLedger.count({ where }),
@@ -187,7 +214,7 @@ export async function usageReport(user: Actor, params: URLSearchParams) {
   };
 }
 export async function usageCsv(user: Actor, params: URLSearchParams) {
-  const { where } = filters(user, params);
+  const { where } = await filters(user, params);
   const rows = await db.usageLedger.findMany({
     where,
     orderBy: [{ createdAt: "desc" }, { id: "desc" }],

@@ -1,3 +1,4 @@
+import { dateRange, jobSearch, visibleJobWhere } from "./hierarchy-filters";
 import type { Prisma } from "@prisma/client";
 import { z } from "zod";
 import { db } from "./db";
@@ -88,17 +89,24 @@ export async function listJobs(user: Actor, params: URLSearchParams) {
       status: z.enum([...states, ""]),
       order: z.enum(["newest", "oldest"]),
       archived: z.enum(["false", "true"]),
+      size: z.enum(["25", "50", "100"]),
+      q: z.string().trim().max(100),
     })
     .parse({
       page: params.get("page") ?? 1,
       status: params.get("status") ?? "",
       order: params.get("order") ?? "newest",
       archived: params.get("archived") ?? "false",
+      size: params.get("size") ?? "25",
+      q: params.get("q") ?? "",
     });
-  const base = {
-    ...(user.role === "OWNER" ? {} : { actorId: user.id }),
+  const visible = await visibleJobWhere(user, params);
+  const base: Prisma.GenerationJobWhereInput = {
+    AND: [visible.where, await jobSearch(user, b.q)],
+    createdAt: dateRange(params),
     archivedAt: b.archived === "true" ? { not: null } : null,
   };
+  const limit = Number(b.size);
   const where = { ...base, ...(b.status ? { status: b.status } : {}) };
   const [jobs, total, groups] = await db.$transaction(
     [
@@ -108,8 +116,8 @@ export async function listJobs(user: Actor, params: URLSearchParams) {
           { createdAt: b.order === "newest" ? "desc" : "asc" },
           { id: b.order === "newest" ? "desc" : "asc" },
         ],
-        skip: (b.page - 1) * 25,
-        take: 25,
+        skip: (b.page - 1) * limit,
+        take: limit,
         select: jobSelect,
       }),
       db.generationJob.count({ where }),
@@ -117,7 +125,7 @@ export async function listJobs(user: Actor, params: URLSearchParams) {
     ],
     { isolationLevel: "RepeatableRead" },
   );
-  const [edited, actors] = await Promise.all([
+  const [edited, actors, costs] = await Promise.all([
     db.imageVersion.findMany({
       where: { sourceJobId: { in: jobs.map((j) => j.id) } },
       select: {
@@ -128,6 +136,10 @@ export async function listJobs(user: Actor, params: URLSearchParams) {
     db.user.findMany({
       where: { id: { in: [...new Set(jobs.map((j) => j.actorId))] } },
       select: { id: true, name: true },
+    }),
+    db.usageLedger.findMany({
+      where: { jobId: { in: jobs.map((j) => j.id) } },
+      select: { jobId: true, actualMicros: true },
     }),
   ]);
   const access = await accessibleJobs(db, user, jobs);
@@ -146,8 +158,9 @@ export async function listJobs(user: Actor, params: URLSearchParams) {
     names = new Map(actors.map((a) => [a.id, a.name]));
   return {
     total,
+    limit,
     page: b.page,
-    pages: Math.max(1, Math.ceil(total / 25)),
+    pages: Math.max(1, Math.ceil(total / limit)),
     counts: Object.fromEntries(groups.map((g) => [g.status, g._count])),
     rows: jobs.map((j) => {
       const v = j.variation ?? versions.get(j.id),
@@ -156,6 +169,8 @@ export async function listJobs(user: Actor, params: URLSearchParams) {
       return {
         ...j,
         reservedMicros: String(j.reservedMicros),
+        actualMicros:
+          costs.find((c) => c.jobId === j.id)?.actualMicros?.toString() ?? null,
         actorName: names.get(j.actorId) ?? "Cuenta no disponible",
         contexts: contexts.get(j.id) ?? [],
         canManage: manage,
@@ -343,4 +358,87 @@ export async function archiveJob(user: Actor, id: string, restore: boolean) {
     });
     return { ok: true };
   });
+}
+
+export async function archiveSelectedJobs(
+  user: Actor,
+  ids: string[],
+  restore: boolean,
+) {
+  const unique = [...new Set(ids)];
+  demand(
+    user.role !== "OBSERVER",
+    "Observador no puede administrar generaciones.",
+    403,
+  );
+  demand(
+    unique.length > 0 && unique.length <= 200,
+    "Selecciona entre 1 y 200 trabajos.",
+  );
+  return db.$transaction(
+    async (tx) => {
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(728291)`;
+      const account = await tx.user.findUnique({
+        where: { id: user.id },
+        select: { role: true, status: true },
+      });
+      demand(
+        account?.status === "APPROVED" && account.role === user.role,
+        "Tu cuenta o rol cambió.",
+        403,
+      );
+      const rows = await tx.generationJob.findMany({
+        where: {
+          id: { in: unique },
+          ...(user.role === "OWNER" ? {} : { actorId: user.id }),
+        },
+      });
+      demand(
+        rows.length === unique.length,
+        "Hay trabajos no disponibles para tu cuenta.",
+        404,
+      );
+      demand(
+        rows.every((j) => j.status !== "RUNNING"),
+        "Hay un trabajo en curso. Espera a que termine antes de retirar la selección.",
+        409,
+      );
+      demand(
+        rows.every((j) => (restore ? !!j.archivedAt : !j.archivedAt)),
+        "El listado cambió. Actualiza la selección.",
+        409,
+      );
+      const access = await accessibleJobs(tx, user, rows);
+      demand(
+        rows.every((j) => access.has(j.id)),
+        "Ya no tienes acceso a todos los recursos seleccionados.",
+        403,
+      );
+      const pending = rows
+        .filter((j) => j.status === "PENDING")
+        .map((j) => j.id);
+      demand(
+        !restore || !pending.length,
+        "No se restauran trabajos pendientes retirados.",
+        409,
+      );
+      if (pending.length)
+        await releasePending(tx, user, pending, "TRABAJOS_CANCELADOS");
+      await tx.generationJob.updateMany({
+        where: { id: { in: unique } },
+        data: { archivedAt: restore ? null : new Date() },
+      });
+      await recordActivity(tx, {
+        data: {
+          actorId: user.id,
+          action: restore
+            ? "TRABAJOS_RESTAURADOS_LISTADO"
+            : "TRABAJOS_RETIRADOS_LISTADO",
+          detail: { jobIds: unique, count: unique.length },
+        },
+      });
+      return { changed: unique.length };
+    },
+    { timeout: 20000 },
+  );
 }

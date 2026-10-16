@@ -6632,6 +6632,376 @@ test("Integración HTTP + PostgreSQL (base exclusiva de pruebas, sin llamadas ex
         });
       },
     );
+    await t.test(
+      "jerarquía y calendario en Generaciones/Costos, imágenes compartidas, 100 por página y retirada atómica",
+      async () => {
+        const project = (
+          await owner.call("projects", "POST", {
+            name: "Filtros jerárquicos " + tag,
+            prompt: "INSTRUCCIONES PRIVADAS DE FILTROS",
+          })
+        ).body;
+        const productA = (
+          await owner.call(`projects/${project.id}/categories`, "POST", {
+            name: "Producto A",
+          })
+        ).body;
+        const productB = (
+          await owner.call(`projects/${project.id}/categories`, "POST", {
+            name: "Producto B oculto",
+          })
+        ).body;
+        const subsA = (
+          await owner.call(`categories/${productA.id}/subproducts`, "POST", {
+            names: ["Tema compartido", "Tema privado"],
+          })
+        ).body;
+        const subsB = (
+          await owner.call(`categories/${productB.id}/subproducts`, "POST", {
+            names: ["Tema B privado"],
+          })
+        ).body;
+        for (const id of [uid, oid])
+          assert.equal(
+            (
+              await owner.call(`subproducts/${subsA[0].id}/members`, "POST", {
+                email: (
+                  await db.user.findUniqueOrThrow({
+                    where: { id },
+                    select: { email: true },
+                  })
+                ).email,
+              })
+            ).status,
+            200,
+          );
+        const ownerId = (await owner.call("auth/me")).body.id;
+        const { store } = await import("../lib/storage");
+        const sharp = (await import("sharp")).default;
+        const bytes = await sharp({
+          create: { width: 32, height: 32, channels: 3, background: "#145544" },
+        })
+          .png()
+          .toBuffer();
+        const images = [];
+        for (const [sub, createdAt, actual] of [
+          [subsA[0].id, "2026-02-01T04:59:59.999Z", 1000000n],
+          [subsA[0].id, "2026-02-01T05:00:00.000Z", null],
+          [subsA[1].id, "2026-02-01T12:00:00.000Z", 2000000n],
+          [subsB[0].id, "2026-02-01T12:00:00.000Z", 3000000n],
+        ] as const) {
+          const job = await db.generationJob.create({
+            data: {
+              actorId: ownerId,
+              projectId: project.id,
+              subproductId: sub,
+              status: "COMPLETED",
+              snapshot: { prompt: "NO EXPONER PROMPT" },
+              idempotencyKey: randomUUID(),
+              reservedMicros: 100000n,
+              createdAt: new Date(createdAt),
+            },
+          });
+          await db.usageLedger.create({
+            data: {
+              jobId: job.id,
+              actorId: ownerId,
+              projectId: project.id,
+              model: "filtros-" + tag,
+              reservedMicros: 100000n,
+              actualMicros: actual,
+              status: "CONSUMED_ESTIMATE",
+              createdAt: new Date(createdAt),
+            },
+          });
+          images.push(
+            await db.variation.create({
+              data: {
+                jobId: job.id,
+                subproductId: sub,
+                path: await store(bytes),
+                model: "sintético",
+                expiresAt: new Date(Date.now() + 86400000),
+                createdAt: new Date(createdAt),
+              },
+            }),
+          );
+        }
+        const opt = await user.call(
+          `hierarchy/options?project=${project.id}&product=${productA.id}`,
+        );
+        assert.equal(opt.status, 200);
+        assert(opt.body.projects.some((p: any) => p.id === project.id));
+        assert.deepEqual(
+          opt.body.products.map((p: any) => p.id),
+          [productA.id],
+        );
+        assert.deepEqual(
+          opt.body.subproducts.map((p: any) => p.id),
+          [subsA[0].id],
+        );
+        assert(!JSON.stringify(opt.body).includes("INSTRUCCIONES"));
+        assert.equal(
+          (
+            await observer.call(
+              `hierarchy/options?project=${project.id}&product=${productA.id}`,
+            )
+          ).status,
+          200,
+        );
+        assert.equal((await user.call("jobs/list?project=none")).status, 403);
+        assert.equal(
+          (
+            await owner.call(
+              `jobs/list?project=${project.id}&product=${productB.id}&subproduct=${subsA[0].id}`,
+            )
+          ).status,
+          404,
+        );
+        assert.equal(
+          (
+            await user.call(
+              `jobs/list?project=${project.id}&product=${productB.id}`,
+            )
+          ).status,
+          404,
+        );
+        const shared = (await user.call(`jobs/list?project=${project.id}`))
+          .body;
+        assert.equal(shared.total, 2);
+        assert(shared.rows.every((j: any) => j.variation && !j.canManage));
+        assert(!JSON.stringify(shared).includes("NO EXPONER"));
+        assert.equal(
+          (await owner.call(`jobs/list?project=${project.id}`)).body.total,
+          4,
+        );
+        const day = (
+          await user.call(
+            `jobs/list?project=${project.id}&from=2026-02-01&to=2026-02-01`,
+          )
+        ).body;
+        assert.equal(day.total, 1);
+        assert.equal(day.counts.COMPLETED, 1);
+        assert.equal(
+          (
+            await user.call(
+              `jobs/list?project=${project.id}&from=2026-01-31&to=2026-01-31`,
+            )
+          ).body.total,
+          1,
+        );
+        assert.equal(
+          (await user.call("jobs/list?from=2026-02-30")).status,
+          400,
+        );
+        assert.equal(
+          (await owner.call("jobs/list?from=2026-03-01&to=2026-02-01")).status,
+          400,
+        );
+        assert.equal((await owner.call("jobs/list?size=101")).status, 400);
+        const cost = (
+          await user.call(`usage/list?days=all&project=${project.id}`)
+        ).body;
+        assert.equal(cost.total, 2);
+        assert.equal(cost.summary.knownActualMicros, "1000000");
+        assert.equal(cost.summary.unknownCosts, 1);
+        assert.equal(
+          (await user.call(`usage/list?days=all&q=filtros-${tag}`)).body.total,
+          2,
+        );
+        const subtotal = (
+          await owner.call(
+            `usage/summary?days=all&project=${project.id}&product=${productA.id}`,
+          )
+        ).body;
+        assert.equal(subtotal.summary.knownActualMicros, "3000000");
+        assert.equal(subtotal.rows.length, 0);
+        assert.equal(
+          (await owner.call(`usage/summary?days=all&project=${project.id}`))
+            .body.summary.knownActualMicros,
+          "6000000",
+        );
+        assert.equal(
+          (
+            await user.call(
+              `usage/list?days=all&project=${project.id}&from=2026-02-01&to=2026-02-01`,
+            )
+          ).body.summary.knownCosts,
+          0,
+        );
+        assert.equal(
+          (
+            await user.call(`jobs/archive-many`, "POST", {
+              ids: [shared.rows[0].id],
+              restore: false,
+            })
+          ).status,
+          404,
+        );
+        const jobs = Array.from({ length: 105 }, () => ({
+          id: randomUUID(),
+          actorId: ownerId,
+          projectId: project.id,
+          subproductId: subsA[0].id,
+          status: "PENDING",
+          snapshot: {},
+          idempotencyKey: randomUUID(),
+          reservedMicros: 1000n,
+        }));
+        await db.generationJob.createMany({ data: jobs });
+        await db.usageLedger.createMany({
+          data: jobs.map((j) => ({
+            jobId: j.id,
+            actorId: ownerId,
+            projectId: project.id,
+            model: "paginación",
+            reservedMicros: 1000n,
+            status: "RESERVED",
+          })),
+        });
+        const first = (
+            await owner.call(
+              `jobs/list?project=${project.id}&status=PENDING&size=100`,
+            )
+          ).body,
+          second = (
+            await owner.call(
+              `jobs/list?project=${project.id}&status=PENDING&size=100&page=2`,
+            )
+          ).body;
+        assert.equal(first.total, 105);
+        assert.equal(first.rows.length, 100);
+        assert.equal(second.rows.length, 5);
+        assert.equal(
+          new Set([...first.rows, ...second.rows].map((r: any) => r.id)).size,
+          105,
+        );
+        assert.equal(
+          (await user.call(`jobs/list?project=${project.id}&status=PENDING`))
+            .body.total,
+          0,
+        );
+        const target = first.rows.map((j: any) => j.id);
+        await db.generationJob.update({
+          where: { id: target[0] },
+          data: { status: "RUNNING" },
+        });
+        assert.equal(
+          (
+            await owner.call("jobs/archive-many", "POST", {
+              ids: target,
+              restore: false,
+            })
+          ).status,
+          409,
+        );
+        assert.equal(
+          await db.generationJob.count({
+            where: { id: { in: target }, archivedAt: { not: null } },
+          }),
+          0,
+        );
+        await db.generationJob.update({
+          where: { id: target[0] },
+          data: { status: "PENDING" },
+        });
+        assert.equal(
+          (
+            await owner.call("jobs/archive-many", "POST", {
+              ids: target,
+              restore: false,
+            })
+          ).body.changed,
+          100,
+        );
+        assert.equal(
+          await db.usageLedger.count({
+            where: { jobId: { in: target }, status: "RELEASED" },
+          }),
+          100,
+        );
+        assert.equal(
+          (
+            await owner.call("jobs/archive-many", "POST", {
+              ids: target,
+              restore: true,
+            })
+          ).body.changed,
+          100,
+        );
+        assert.equal(
+          await db.generationJob.count({
+            where: {
+              id: { in: target },
+              status: "CANCELLED",
+              archivedAt: null,
+            },
+          }),
+          100,
+        );
+        await db.generationJob.updateMany({
+          where: { id: { in: jobs.map((j) => j.id) }, status: "PENDING" },
+          data: { status: "CANCELLED" },
+        });
+        await db.usageLedger.updateMany({
+          where: { jobId: { in: jobs.map((j) => j.id) }, status: "RESERVED" },
+          data: { status: "RELEASED" },
+        });
+        assert.equal(
+          (
+            await owner.call(
+              `subproducts/${subsA[0].id}/members/${uid}`,
+              "DELETE",
+            )
+          ).status,
+          200,
+        );
+        assert.equal(
+          (await user.call(`hierarchy/options?project=${project.id}`)).status,
+          404,
+        );
+        assert.equal(
+          (await user.call(`usage/list?project=${project.id}`)).status,
+          404,
+        );
+        assert.equal(
+          (await user.call(`usage/list?days=all&q=filtros-${tag}`)).body.total,
+          0,
+        );
+      },
+    );
+    await t.test(
+      "gasto diario: solo OWNER, fechas limitadas y credenciales ausentes sin contactar proveedor",
+      async () => {
+        const path = "ai/costs?from=2026-01-01&to=2026-01-02";
+        assert.equal((await anonymous.call(path)).status, 401);
+        for (const account of [user, admin, observer])
+          assert.equal((await account.call(path)).status, 403);
+        assert.equal(
+          (await owner.call("ai/costs?from=2026-02-30&to=2026-03-01")).status,
+          400,
+        );
+        assert.equal(
+          (await owner.call("ai/costs?from=2026-01-01&to=2026-02-01")).status,
+          400,
+        );
+        const previous = await db.providerConfiguration.findUniqueOrThrow({
+          where: { id: "global" },
+        });
+        try {
+          await db.providerConfiguration.update({
+            where: { id: "global" },
+            data: { encryptedKey: null },
+          });
+          assert.equal((await owner.call(path)).status, 409);
+        } finally {
+          await db.providerConfiguration.update({
+            where: { id: "global" },
+            data: { encryptedKey: previous.encryptedKey },
+          });
+        }
+      },
+    );
     await t.test("cierre de sesión invalida el token", async () => {
       assert.equal((await user.call("auth/logout", "POST")).status, 200);
       assert.equal((await user.call("projects")).status, 401);

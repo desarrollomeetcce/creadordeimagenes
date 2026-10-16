@@ -21,7 +21,7 @@ import {
   accessFlags,
   jobResourceAccess,
 } from "@/lib/auth";
-import { encryptKey, maskKey } from "@/lib/crypto";
+import { encryptKey, maskKey, decryptKey } from "@/lib/crypto";
 import {
   safeConfiguration,
   connectionCheck,
@@ -369,6 +369,21 @@ async function handle(
       const { reconcileCost } = await import("@/lib/cost-reconciliation");
       return send(await reconcileCost(user, parts[1], await body(req)));
     }
+    if (route === "hierarchy/options" && method === "GET") {
+      const { hierarchyOptions } = await import("@/lib/hierarchy-filters");
+      return send(await hierarchyOptions(user, req.nextUrl.searchParams));
+    }
+    if (route === "jobs/archive-many" && method === "POST") {
+      const b = z
+        .object({
+          ids: z.array(z.string().min(1).max(100)).min(1).max(200),
+          restore: z.boolean().default(false),
+        })
+        .strict()
+        .parse(await body(req));
+      const { archiveSelectedJobs } = await import("@/lib/job-management");
+      return send(await archiveSelectedJobs(user, b.ids, b.restore));
+    }
     if (route === "jobs/list" && method === "GET") {
       const { listJobs } = await import("@/lib/job-management");
       return send(await listJobs(user, req.nextUrl.searchParams));
@@ -474,6 +489,30 @@ async function handle(
     }
     if (parts[0] === "ai") {
       ownerOnly(user);
+      if (route === "ai/costs" && method === "GET") {
+        const { billingRange } = await import("@/lib/provider-costs");
+        const from = req.nextUrl.searchParams.get("from") ?? "",
+          to = req.nextUrl.searchParams.get("to") ?? "";
+        billingRange(from, to);
+        await rateLimit("billing:" + user.id, 15);
+        const config = await db.providerConfiguration.findUnique({
+          where: { id: "global" },
+        });
+        demand(
+          config?.encryptedKey,
+          "Guarda primero las credenciales del proveedor de IA.",
+          409,
+        );
+        const provider = adapter(config.provider);
+        demand(
+          provider.dailyCosts,
+          "Este proveedor no permite consultar el gasto diario desde la plataforma.",
+          409,
+        );
+        return send(
+          await provider.dailyCosts(decryptKey(config.encryptedKey), from, to),
+        );
+      }
       if (route === "ai/config" && method === "GET")
         return send({
           configuration: safeConfiguration(
@@ -1390,11 +1429,20 @@ async function handle(
           take: 200,
         }),
       );
-    if (["usage/list", "usage/export"].includes(route) && method === "GET") {
+    if (
+      ["usage/list", "usage/export", "usage/summary"].includes(route) &&
+      method === "GET"
+    ) {
       const { usageReport, usageCsv } = await import("@/lib/usage-report");
       return route === "usage/export"
         ? await usageCsv(user, req.nextUrl.searchParams)
-        : send(await usageReport(user, req.nextUrl.searchParams));
+        : send(
+            await usageReport(
+              user,
+              req.nextUrl.searchParams,
+              route === "usage/summary",
+            ),
+          );
     }
     if (route === "usage" && method === "GET") {
       const rows = await db.usageLedger.findMany({

@@ -1,5 +1,16 @@
 # Pruebas y evidencia
 
+## Continuación: jerarquía, calendario, selección de imágenes y gasto diario
+
+78 escenarios HTTP/PostgreSQL (79 resultados incluido contenedor), 19 unitarias, tipos/build e instalación sin base. Caso de jerarquía valida permisos mínimos en opciones y datos, selección solo de ancestros autorizados, hijos ajenos rechazados, fecha Lima en el límite UTC05, fechas inválidas y rango invertido, 105 trabajos con página de 100, COMPLETED compartidos visibles sin gestión, rechazo atómico de selección con RUNNING, cancelar/liberar al retirar 100 y restaurar sin reencolar. Los resúmenes no devuelven filas y conservan desconocidos; revocar asignación cierra acceso a costos e imágenes compartidas también sin filtro.
+
+Consulta de gasto diario: anónimo401 y USER/ADMIN/OBSERVER403; OWNER rechaza fechas inválidas y más de31 días antes de contactar; clave ausente409. Transporte unitario explícito verifica URL oficial de solo lectura, autorización solo en servidor, paginación, redondeo/creditos con aritmética entera, cero frente a vacío desconocido, moneda diferente, fecha duplicada y error403 sin filtrar cuerpo privado. Referencia de contrato: OpenAI Cookbook examples/completions_usage_api.ipynb. No acredita permisos reales de facturación.
+
+Chromium contra servidor y base locales: filtros dependientes, ausencia de Sin proyecto para USER y presencia OWNER, 100 tarjetas/tres tamaños, selección2+1 entre páginas, ZIP real de3PNG, retirar con confirmación rechazada/aceptada y restaurar con ledger conservado, fechas sin resultados y Hoy, enlace contextual a costos con totales de padres, restablecer dependientes, móvil390px sin desbordamiento/errores. Panel diario usa solo respuesta HTTP interceptada: USD con seis decimales, desconocido, aviso UTC y redondeo, denegación que limpia resultado previo. Cero llamadas de generación/reintento/proceso. Primera repetición de integración tenía almacenamiento local en pruebas y PostgreSQL en servidor; se alineó STORAGE_BACKEND y repitió toda la suite.
+
+Evidencia externa separada: metadatos de producción confirman prueba COMPLETED con imagen gpt-image-1 el16/10/2026, costo real aún null. Sin solicitudes facturables nuevas ni inspección de secretos. Referencias/logos/edición/lotes reales y consulta de facturación quedan pendientes.
+
+
 ## Continuación: registro de costes comprobados
 
 La nueva prueba HTTP usa PostgreSQL sintético y registro UNCERTAIN: permisos OWNER frente a USER/ADMIN/OBSERVER/anónimo, consentimiento obligatorio, formato inválido y referencia con apariencia de clave rechazados, coste cero frente a desconocido, importe con seis decimales y coma, dos correcciones simultáneas con un único ganador y rechazo de pestaña obsoleta aunque el importe vuelva a cero. Conserva ledger/reserva/estado y audita tres correcciones; reportes/CSV de USER no exponen la referencia privada y muestran origen manual del OWNER. PENDING/RUNNING rechazan. La primera ejecución usó la ruta de historial legado en el guion nuevo; se corrigió a audit/history y se repitió toda la suite, sin cambiar el producto.

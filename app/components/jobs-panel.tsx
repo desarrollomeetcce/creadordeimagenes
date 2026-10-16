@@ -1,6 +1,13 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { BackgroundBatches } from "./background-batches";
+import {
+  HierarchyFilters,
+  hierarchyFromLocation,
+  costLink,
+  type HierarchyValue,
+} from "./hierarchy-filters";
+import { usdMicros } from "../../lib/usage-format";
 type Job = {
   id: string;
   actorName: string;
@@ -11,16 +18,21 @@ type Job = {
   projectId: string;
   canManage: boolean;
   reservedMicros: string;
+  actualMicros: string | null;
   variation: { id: string; expired: boolean } | null;
   contexts: {
     projectName: string;
+    projectId?: string;
     productName?: string;
+    productId?: string;
     subproductName?: string;
+    subproductId?: string;
   }[];
 };
 type Data = {
   rows: Job[];
   total: number;
+  limit: number;
   page: number;
   pages: number;
   counts: Record<string, number>;
@@ -52,10 +64,15 @@ async function request(
 }
 export function JobsPanel() {
   const [data, setData] = useState<Data | null>(null),
+    [hierarchy, setHierarchy] = useState<HierarchyValue>(hierarchyFromLocation),
     [page, setPage] = useState(1),
     [status, setStatus] = useState(""),
     [order, setOrder] = useState("newest"),
     [archived, setArchived] = useState(false),
+    [size, setSize] = useState("25"),
+    [thumbnail, setThumbnail] = useState("medium"),
+    [q, setQ] = useState(""),
+    [format, setFormat] = useState("png"),
     [selected, setSelected] = useState<string[]>([]);
   const [loading, setLoading] = useState(false),
     [busy, setBusy] = useState(false),
@@ -65,18 +82,27 @@ export function JobsPanel() {
     [message, setMessage] = useState("");
   const sequence = useRef(0),
     pause = useRef(false),
-    alive = useRef(true);
-  const queryKey = `${page}:${status}:${order}:${archived}`;
-  const currentQuery = useRef(queryKey);
-  currentQuery.current = queryKey;
+    alive = useRef(true),
+    selectionRows = useRef(new Map<string, Job>());
+  const params = new URLSearchParams({
+    page: String(page),
+    status,
+    order,
+    archived: String(archived),
+    size,
+    q,
+    ...hierarchy,
+  }).toString();
+  const currentQuery = useRef(params);
+  currentQuery.current = params;
   const refresh = useCallback(
     async (signal?: AbortSignal) => {
-      if (currentQuery.current !== queryKey) return;
+      if (currentQuery.current !== params) return;
       const seq = ++sequence.current;
       setLoading(true);
       try {
         const result: Data = await request(
-          `jobs/list?page=${page}&status=${status}&order=${order}&archived=${archived}`,
+          "jobs/list?" + params,
           "GET",
           undefined,
           signal,
@@ -84,14 +110,15 @@ export function JobsPanel() {
         if (
           seq === sequence.current &&
           alive.current &&
-          currentQuery.current === queryKey
+          currentQuery.current === params
         ) {
           setData(result);
           setLoadError("");
           if (page > result.pages) setPage(result.pages);
+          for (const row of result.rows) selectionRows.current.set(row.id, row);
           const unavailable = new Set(
             result.rows
-              .filter((j) => j.status !== "PENDING" || !j.canManage)
+              .filter((j) => !j.canManage && !j.variation)
               .map((j) => j.id),
           );
           setSelected((ids) => ids.filter((id) => !unavailable.has(id)));
@@ -101,22 +128,24 @@ export function JobsPanel() {
           !signal?.aborted &&
           seq === sequence.current &&
           alive.current &&
-          currentQuery.current === queryKey
-        )
+          currentQuery.current === params
+        ) {
+          setData(null);
           setLoadError(
-            e instanceof Error ? e.message : "No se pudo consultar la cola.",
+            e instanceof Error ? e.message : "No se pudo consultar el listado.",
           );
+        }
         throw e;
       } finally {
         if (
           seq === sequence.current &&
           alive.current &&
-          currentQuery.current === queryKey
+          currentQuery.current === params
         )
           setLoading(false);
       }
     },
-    [page, status, order, archived, queryKey],
+    [params, page],
   );
   const refreshJobs = useCallback(async () => {
     await refresh();
@@ -142,20 +171,36 @@ export function JobsPanel() {
         fetching = false;
       }
     };
-    void load();
+    const debounce = setTimeout(() => void load(), 180);
     const timer = setInterval(() => {
       if (document.visibilityState === "visible") void load();
     }, 5000);
     return () => {
       controller.abort();
+      clearTimeout(debounce);
       clearInterval(timer);
       sequence.current++;
     };
   }, [refresh]);
   const visiblePending = (data?.rows ?? [])
-      .filter((j) => j.status === "PENDING" && j.canManage)
-      .map((j) => j.id),
-    pending = selected.length ? selected : visiblePending;
+    .filter((j) => j.status === "PENDING" && j.canManage)
+    .map((j) => j.id);
+  const selectedRows = selected.flatMap((id) =>
+    selectionRows.current.has(id) ? [selectionRows.current.get(id)!] : [],
+  );
+  const pending = selected.length
+    ? selectedRows
+        .filter((j) => j.status === "PENDING" && j.canManage)
+        .map((j) => j.id)
+    : visiblePending;
+  const downloadable = [
+    ...new Set(
+      selectedRows.flatMap((j) => (j.variation ? [j.variation.id] : [])),
+    ),
+  ];
+  const manageable =
+    selectedRows.length > 0 &&
+    selectedRows.every((j) => j.canManage && j.status !== "RUNNING");
   const action = async (fn: () => Promise<unknown>, success: string) => {
     setBusy(true);
     setError("");
@@ -173,10 +218,18 @@ export function JobsPanel() {
       if (alive.current) setBusy(false);
     }
   };
+  const toggle = (job: Job, checked: boolean) => {
+    selectionRows.current.set(job.id, job);
+    setSelected((ids) =>
+      checked
+        ? [...new Set([...ids, job.id])].slice(0, 200)
+        : ids.filter((id) => id !== job.id),
+    );
+  };
   const cancel = (ids: string[]) => {
     if (
       !confirm(
-        `¿Cancelar ${ids.length} trabajos pendientes y liberar sus reservas locales? Los afiches en curso y los cargos inciertos se conservan.`,
+        `¿Cancelar ${ids.length} pendientes y liberar sus reservas locales? Los cargos inciertos se conservan.`,
       )
     )
       return;
@@ -189,7 +242,7 @@ export function JobsPanel() {
     const ids = [...pending];
     if (
       !confirm(
-        `¿Procesar estos ${ids.length} trabajos ya autorizados usando sus reservas? Mantén esta pantalla abierta o usa segundo plano.`,
+        `¿Procesar estos ${ids.length} trabajos ya autorizados? Mantén esta pantalla abierta o usa segundo plano.`,
       )
     )
       return;
@@ -215,23 +268,54 @@ export function JobsPanel() {
       }
     }, "Procesamiento detenido o finalizado. Los trabajos sin iniciar permanecen en cola.");
   };
+  const archive = (ids: string[], restore: boolean) => {
+    if (
+      !confirm(
+        restore
+          ? "¿Restaurar la selección en el listado?"
+          : "¿Eliminar del listado? Los pendientes se cancelan y liberan su reserva local. Se conservan afiches, historial y cargos inciertos. No representa un reembolso.",
+      )
+    )
+      return;
+    void action(
+      async () => {
+        await request("jobs/archive-many", "POST", { ids, restore });
+        setSelected((current) => current.filter((id) => !ids.includes(id)));
+      },
+      restore
+        ? "Selección restaurada."
+        : "Selección retirada del listado; historial y consumo conservados.",
+    );
+  };
   return (
     <section className="stack jobs-panel">
       <div>
         <div className="eyebrow">Producción en servidor</div>
         <h1>Generaciones</h1>
         <p className="muted">
-          Consulta toda tu cola, filtra por estado y selecciona hasta 200
-          pendientes entre páginas. OWNER consulta todas las cuentas; las demás
-          ven sus propios trabajos.
+          Consulta tus trabajos y las imágenes terminadas de espacios
+          disponibles para tu cuenta. Solo el autor u OWNER administra cada
+          trabajo.
         </p>
       </div>
+      <HierarchyFilters
+        value={hierarchy}
+        disabled={busy}
+        onChange={(value) => {
+          setHierarchy(value);
+          setPage(1);
+        }}
+      />
+      <p className="hint">
+        Conteos de trabajos creados en el ámbito y período seleccionados. El
+        filtro de estado se aplica al listado.
+      </p>
       <div className="metrics">
         <div>
           <strong>
-            {Object.values(data?.counts ?? {}).reduce((a, b) => a + b, 0)}
+            {Object.values(data?.counts ?? {}).reduce((n, v) => n + v, 0)}
           </strong>
-          <span>Trabajos registrados</span>
+          <span>Trabajos del período</span>
         </div>
         <div>
           <strong>{data?.counts.COMPLETED ?? 0}</strong>
@@ -248,6 +332,20 @@ export function JobsPanel() {
       </div>
       <div className="fields">
         <label>
+          Buscar recurso o código
+          <input
+            type="search"
+            maxLength={100}
+            value={q}
+            disabled={busy}
+            onChange={(e) => {
+              setQ(e.target.value);
+              setPage(1);
+            }}
+            placeholder="Proyecto, producto, subproducto o código…"
+          />
+        </label>
+        <label>
           Filtrar generaciones por estado
           <select
             disabled={busy}
@@ -258,8 +356,8 @@ export function JobsPanel() {
             }}
           >
             <option value="">Todos los estados</option>
-            {Object.entries(labels).map(([key, label]) => (
-              <option key={key} value={key}>
+            {Object.entries(labels).map(([id, label]) => (
+              <option key={id} value={id}>
                 {label}
               </option>
             ))}
@@ -282,8 +380,8 @@ export function JobsPanel() {
         <label>
           Mostrar
           <select
-            value={archived ? "archived" : "active"}
             disabled={busy}
+            value={archived ? "archived" : "active"}
             onChange={(e) => {
               setArchived(e.target.value === "archived");
               setSelected([]);
@@ -294,6 +392,32 @@ export function JobsPanel() {
             <option value="archived">Retiradas del listado</option>
           </select>
         </label>
+        <label>
+          Resultados por página
+          <select
+            disabled={busy}
+            value={size}
+            onChange={(e) => {
+              setSize(e.target.value);
+              setPage(1);
+            }}
+          >
+            <option value="25">25</option>
+            <option value="50">50</option>
+            <option value="100">100</option>
+          </select>
+        </label>
+        <label>
+          Tamaño de miniaturas
+          <select
+            value={thumbnail}
+            onChange={(e) => setThumbnail(e.target.value)}
+          >
+            <option value="small">Pequeño</option>
+            <option value="medium">Mediano</option>
+            <option value="large">Muy grande</option>
+          </select>
+        </label>
         <button
           type="button"
           disabled={busy || loading}
@@ -302,43 +426,82 @@ export function JobsPanel() {
           Actualizar estado
         </button>
       </div>
-      <div className="panel stack">
-        <p>{selected.length} pendientes seleccionados · máximo 200</p>
-        <div className="row">
-          <button
-            type="button"
-            disabled={busy || !visiblePending.length || selected.length >= 200}
-            onClick={() =>
-              setSelected((ids) =>
-                [...new Set([...ids, ...visiblePending])].slice(0, 200),
-              )
-            }
+      <div
+        className="row selection-toolbar"
+        aria-label="Acciones de la selección"
+      >
+        <span>{selected.length} seleccionados · máximo 200</span>
+        <button
+          type="button"
+          disabled={busy || !data?.rows.length || selected.length >= 200}
+          onClick={() =>
+            setSelected((ids) =>
+              [
+                ...new Set([
+                  ...ids,
+                  ...(data?.rows ?? [])
+                    .filter((j) => j.canManage || j.variation)
+                    .map((j) => j.id),
+                ]),
+              ].slice(0, 200),
+            )
+          }
+        >
+          Seleccionar esta página
+        </button>
+        <button
+          type="button"
+          disabled={busy || !selected.length}
+          onClick={() => setSelected([])}
+        >
+          Limpiar selección
+        </button>
+        <label>
+          Formato de descarga
+          <select
+            disabled={busy}
+            value={format}
+            onChange={(e) => setFormat(e.target.value)}
           >
-            Seleccionar pendientes de esta página
-          </button>
-          <button
-            type="button"
-            disabled={busy || !selected.length}
-            onClick={() => setSelected([])}
-          >
-            Limpiar selección
-          </button>
-          <button
-            type="button"
-            className="danger"
-            disabled={busy || !selected.length}
-            onClick={() => cancel([...selected])}
-          >
-            Cancelar seleccionados ({selected.length})
-          </button>
-        </div>
-        <p className="hint">
-          La selección se conserva al cambiar de página o filtro. Sin selección,
-          el procesamiento utiliza solo los pendientes accesibles de la página
-          actual. Cancelar libera reservas locales; no representa un reembolso
-          del proveedor.
-        </p>
+            <option value="png">PNG</option>
+            <option value="jpg">JPG</option>
+          </select>
+        </label>
+        <button
+          type="button"
+          disabled={busy || !downloadable.length}
+          onClick={() =>
+            void action(async () => {
+              await (
+                await import("./collection-gallery")
+              ).downloadArchive({ ids: downloadable, format });
+            }, "Descarga preparada para las imágenes disponibles.")
+          }
+        >
+          Descargar seleccionadas ({downloadable.length})
+        </button>
+        <button
+          type="button"
+          className="danger"
+          disabled={busy || !manageable}
+          onClick={() => archive([...selected], archived)}
+        >
+          {archived ? "Restaurar seleccionados" : "Eliminar del listado"}
+        </button>
+        <button
+          type="button"
+          disabled={busy || !selected.length || !pending.length}
+          onClick={() => cancel([...pending])}
+        >
+          Cancelar pendientes de la selección (
+          {selected.length ? pending.length : 0})
+        </button>
       </div>
+      <p className="hint">
+        Marca las casillas de las tarjetas. La selección se conserva entre
+        páginas y filtros. La descarga incluye solo imágenes disponibles; los
+        trabajos en curso no se eliminan.
+      </p>
       {message && (
         <p role="status" className="notice">
           {message}
@@ -369,7 +532,7 @@ export function JobsPanel() {
             onClick={() => {
               pause.current = true;
               setMessage(
-                "Pausa solicitada. El afiche en curso termina; los siguientes permanecen pendientes.",
+                "Pausa solicitada. El trabajo en curso termina; los siguientes permanecen pendientes.",
               );
             }}
           >
@@ -380,31 +543,88 @@ export function JobsPanel() {
       {loading && !data && <p role="status">Consultando generaciones…</p>}
       {data && (
         <>
-          <p className="hint">
-            {data.total} coincidencias · página {data.page} de {data.pages} · 25
-            por página
+          <p>
+            {data.total} coincidencias · página {data.page} de {data.pages} ·{" "}
+            {data.limit} por página
           </p>
-          <div className="grid">
+          <div className={"grid jobs-grid size-" + thumbnail}>
             {data.rows.map((j) => {
               const context = j.contexts[0];
               return (
                 <article className="card gallery" key={j.id} data-job-id={j.id}>
+                  {(j.canManage || j.variation) && (
+                    <label className="row">
+                      <input
+                        type="checkbox"
+                        aria-label={"Seleccionar trabajo " + j.id}
+                        checked={selected.includes(j.id)}
+                        disabled={
+                          busy ||
+                          (!selected.includes(j.id) && selected.length >= 200)
+                        }
+                        onChange={(e) => toggle(j, e.target.checked)}
+                      />
+                      Seleccionar
+                    </label>
+                  )}
                   <strong>
                     {context?.subproductName ??
                       context?.productName ??
                       context?.projectName ??
                       (j.projectId === "connection-test"
-                        ? "Prueba de conexión"
+                        ? "Prueba de conexión de IA"
                         : "Recurso no disponible")}
                   </strong>
                   {context && (
-                    <p className="hint">
-                      Proyecto: {context.projectName}
+                    <p className="hint job-path">
+                      {context.projectId ? (
+                        <a
+                          href={
+                            "?" +
+                            new URLSearchParams({
+                              view: "projects",
+                              project: context.projectId,
+                            })
+                          }
+                        >
+                          Proyecto: {context.projectName}
+                        </a>
+                      ) : (
+                        <>Sin proyecto · prueba de IA</>
+                      )}
                       {context.productName && (
-                        <> / Producto: {context.productName}</>
+                        <>
+                          {" "}
+                          /{" "}
+                          <a
+                            href={
+                              "?" +
+                              new URLSearchParams({
+                                view: "projects",
+                                category: context.productId ?? "",
+                              })
+                            }
+                          >
+                            Producto: {context.productName}
+                          </a>
+                        </>
                       )}
                       {context.subproductName && (
-                        <> / Subproducto: {context.subproductName}</>
+                        <>
+                          {" "}
+                          /{" "}
+                          <a
+                            href={
+                              "?" +
+                              new URLSearchParams({
+                                view: "projects",
+                                gallery: context.subproductId ?? "",
+                              })
+                            }
+                          >
+                            Subproducto: {context.subproductName}
+                          </a>
+                        </>
                       )}
                     </p>
                   )}
@@ -418,53 +638,54 @@ export function JobsPanel() {
                     <img
                       loading="lazy"
                       src={"/api/variations/" + j.variation.id}
-                      alt="Afiche generado"
+                      alt={
+                        "Variación de " +
+                        (context?.subproductName ??
+                          context?.projectName ??
+                          "prueba de IA")
+                      }
                     />
                   ) : (
                     <div className="empty">
                       {j.status === "PENDING"
                         ? "En cola · pendiente de procesar"
-                        : j.status === "RUNNING"
-                          ? "Generando…"
-                          : j.status === "COMPLETED"
-                            ? "Archivo no disponible o caducado"
-                            : "Sin resultado disponible"}
+                        : "Sin resultado disponible"}
                     </div>
                   )}
-                  <p>
-                    <span className="badge">
-                      {labels[j.status] ?? j.status}
-                    </span>
+                  <span className="badge">{labels[j.status] ?? j.status}</span>
+                  <p className="hint">
+                    Coste informado:{" "}
+                    {j.actualMicros === null
+                      ? "No informado"
+                      : "USD " + usdMicros(j.actualMicros)}
+                    <br />
+                    Reserva inicial: USD {usdMicros(j.reservedMicros)}
                   </p>
-                  {j.status === "PENDING" && j.canManage && (
-                    <>
-                      <label className="row">
-                        <input
-                          type="checkbox"
-                          aria-label={"Seleccionar pendiente " + j.id}
-                          disabled={
-                            busy ||
-                            (!selected.includes(j.id) && selected.length >= 200)
-                          }
-                          checked={selected.includes(j.id)}
-                          onChange={(e) =>
-                            setSelected((ids) =>
-                              e.target.checked
-                                ? [...new Set([...ids, j.id])].slice(0, 200)
-                                : ids.filter((id) => id !== j.id),
-                            )
-                          }
-                        />
-                        Seleccionar pendiente
-                      </label>
-                      <button
-                        type="button"
-                        disabled={busy}
-                        onClick={() => cancel([j.id])}
-                      >
-                        Cancelar pendiente
-                      </button>
-                    </>
+                  {(context?.projectId ||
+                    j.projectId === "connection-test") && (
+                    <a
+                      href={costLink({
+                        project:
+                          j.projectId === "connection-test"
+                            ? "none"
+                            : (context?.projectId ?? ""),
+                        product: context?.productId ?? "",
+                        subproduct: context?.subproductId ?? "",
+                        from: hierarchy.from,
+                        to: hierarchy.to,
+                      })}
+                    >
+                      Ver costos de este ámbito →
+                    </a>
+                  )}
+                  {j.canManage && j.status === "PENDING" && (
+                    <button
+                      type="button"
+                      disabled={busy}
+                      onClick={() => cancel([j.id])}
+                    >
+                      Cancelar pendiente
+                    </button>
                   )}
                   {j.canManage &&
                     !j.archivedAt &&
@@ -480,48 +701,31 @@ export function JobsPanel() {
                                 : "¿Autorizas un nuevo intento con posible cargo de API?",
                             )
                           )
-                            void action(async () => {
-                              await request(`jobs/${j.id}/retry`, "POST", {
-                                requestId: crypto.randomUUID(),
-                                confirmCharge: true,
-                                confirmUncertain: j.status === "UNCERTAIN",
-                              });
-                            }, "Nuevo intento encolado.");
+                            void action(
+                              () =>
+                                request(`jobs/${j.id}/retry`, "POST", {
+                                  requestId: crypto.randomUUID(),
+                                  confirmCharge: true,
+                                  confirmUncertain: j.status === "UNCERTAIN",
+                                }),
+                              "Nuevo intento encolado.",
+                            );
                         }}
                       >
                         Reintentar con autorización
                       </button>
                     )}
-                  {j.canManage &&
-                    !["PENDING", "RUNNING"].includes(j.status) && (
-                      <button
-                        type="button"
-                        disabled={busy}
-                        onClick={() => {
-                          if (
-                            !confirm(
-                              j.archivedAt
-                                ? "¿Restaurar este trabajo en el listado?"
-                                : "¿Eliminar del listado? Se conservarán el afiche, el historial y el consumo, incluidos posibles cargos inciertos. No genera otra imagen ni devuelve saldo.",
-                            )
-                          )
-                            return;
-                          void action(
-                            () =>
-                              request(`jobs/${j.id}/archive`, "POST", {
-                                restore: !!j.archivedAt,
-                              }),
-                            j.archivedAt
-                              ? "Trabajo restaurado en el listado."
-                              : "Trabajo retirado. Su consumo e historial se conservan.",
-                          );
-                        }}
-                      >
-                        {j.archivedAt
-                          ? "Restaurar en el listado"
-                          : "Eliminar del listado"}
-                      </button>
-                    )}
+                  {j.canManage && j.status !== "RUNNING" && (
+                    <button
+                      type="button"
+                      disabled={busy}
+                      onClick={() => archive([j.id], !!j.archivedAt)}
+                    >
+                      {j.archivedAt
+                        ? "Restaurar en el listado"
+                        : "Eliminar del listado"}
+                    </button>
+                  )}
                   {j.error && <p className="notice error">{j.error}</p>}
                   {j.variation && (
                     <a href={"/api/variations/" + j.variation.id + "?download"}>

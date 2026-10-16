@@ -347,7 +347,7 @@ export default function Home() {
     "visual-audit": "Auditoría visual y conservación",
     history: "Historial",
     users: "Usuarios",
-    usage: "Consumo de IA",
+    usage: "Costos de IA",
     statistics: "Estadísticas",
     trash: "Papelera",
     jobs: "Generaciones",
@@ -382,7 +382,7 @@ export default function Home() {
               ["presets", "≡", "Configuraciones guardadas"],
               ["history", "◷", "Historial"],
               ["trash", "⌫", "Papelera"],
-              ["usage", "↗", "Consumo de IA"],
+              ["usage", "↗", "Costos de IA"],
               ["account", "♙", "Mi cuenta"],
               ...(managesUsers(user.role) ? [["users", "♙", "Usuarios"]] : []),
               ...(user.role === "OWNER"
@@ -1447,6 +1447,11 @@ function CategoryEditor({
           <SubproductRow
             key={sub.id}
             sub={sub}
+            costScope={{
+              project: c.project.id,
+              product: c.id,
+              subproduct: sub.id,
+            }}
             index={i}
             inherited={{
               ...base,
@@ -1594,6 +1599,7 @@ function BatchGeneration({
 }
 function SubproductRow({
   sub,
+  costScope,
   index,
   inherited,
   forceOwn,
@@ -1601,12 +1607,14 @@ function SubproductRow({
   removed,
 }: {
   sub: Item;
+  costScope: { project: string; product: string; subproduct: string };
   index: number;
   inherited: Settings;
   forceOwn: boolean;
   openGallery: () => void;
   removed: () => Promise<void>;
 }) {
+  const canSeeCosts = useCanEdit();
   const [sharing, setSharing] = useState(false);
   const [name, setName] = useState(sub.name);
   const [prompt, setPrompt] = useState(sub.prompt);
@@ -1757,6 +1765,14 @@ function SubproductRow({
           <button onClick={openGallery}>
             Ver variaciones ({sub._count?.variations ?? 0}) →
           </button>
+          {canSeeCosts && (
+            <a
+              className="button"
+              href={"?" + new URLSearchParams({ view: "usage", ...costScope })}
+            >
+              Ver costos de este subproducto →
+            </a>
+          )}
         </div>
         {preview && (
           <div className="panel">

@@ -103,3 +103,10 @@ lib/job-management.ts lista la cola completa con proyección paginada, totales g
 ## Conciliación manual de costes
 
 POST usage/:id/reconcile valida OWNER aprobado en transacción, importe decimal exacto y consentimiento; exige trabajo terminado y ledger conciliable. Serializa con worker mediante 728291 y compara actualMicros más último AuditEvent de confirmación para impedir sobrescritura y cambios de ida/vuelta obsoletos. Actualiza únicamente actualMicros y añade evento COSTE_IA_CONCILIADO con importes, referencia y contexto, sin reescribir reservas/estado. GET de informe y CSV resuelven última confirmación con DISTINCT ON; referencias e identificador de confirmación se proyectan solo para OWNER. El cliente conserva el dato esperado al abrir el editor. No hay catálogo tarifario supuesto ni llamada a proveedor o migración nueva.
+
+
+## Filtros y costos de generaciones
+
+lib/hierarchy-filters.ts centraliza validación de padres, opciones mínimas, ámbitos autorizados y fechas Lima. Jobs y Usage comparten esas reglas: trabajos propios o COMPLETED accesibles, gestión solo autor/OWNER. Resúmenes agregados se calculan sobre todo el filtro; no sobre la página ni sobre los200 seleccionables. Retirada múltiple es atómica, conserva ledger/archivos y cancela únicamente pendientes bajo728291.
+
+ProviderAdapter.dailyCosts es opcional. OpenAI usa organization/costs únicamente en consulta OWNER explícita y credencial descifrada en servidor; no registra respuesta cruda ni devuelve claves/IDs de organización. Ventana UTC31 días, páginas acotadas, validación de moneda y fechas, importes BigInt redondeados a microUSD y sin rellenar vacíos con cero. Totales externos de organización pueden incluir otras apps; no se escriben en UsageLedger ni se distribuyen por imagen. Una clave de generación sin permisos administrativos produce error comprensible/enlace al proveedor; no se afirma disponibilidad sin consultar.

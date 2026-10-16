@@ -321,6 +321,8 @@ const verbs: Record<string, string> = {
   TRABAJO_RETIRADO_LISTADO: "Retiró una generación del listado",
   TRABAJO_RESTAURADO_LISTADO: "Restauró una generación en el listado",
   PRESUPUESTO_PARTICULAR_ELIMINADO: "Eliminó un límite particular de consumo",
+  TRABAJOS_RETIRADOS_LISTADO: "Retiró generaciones del listado",
+  TRABAJOS_RESTAURADOS_LISTADO: "Restauró generaciones en el listado",
   COSTE_IA_CONCILIADO: "Registró un coste de IA comprobado",
   INFORME_CONSUMO_PREPARADO: "Preparó un informe de consumo de IA",
   TRABAJOS_CANCELADOS: "Canceló trabajos pendientes y liberó sus reservas",
@@ -432,7 +434,8 @@ function summary(
       ? "operaciones"
       : action.startsWith("SUBPRODUCTOS_")
         ? "subproductos"
-        : ["TRABAJOS_CANCELADOS", "LOTE_PENDIENTES_CANCELADOS"].includes(action)
+        : action.startsWith("TRABAJOS_") ||
+            action === "LOTE_PENDIENTES_CANCELADOS"
           ? "trabajos"
           : "afiches";
   if (count === 1) unit = unit.slice(0, -1);

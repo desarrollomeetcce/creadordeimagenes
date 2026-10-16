@@ -11,3 +11,5 @@
 - Mantener PROGRESS.md y TESTING.md con evidencia; no marcar completa una fase por existir una interfaz.
 - Cambios en datos: migración SQL versionada y actualización de prisma/schema.prisma. No modificar migraciones aplicadas.
 - Pruebas pertinentes: npm test, npm run typecheck, npm run build; integración contra base exclusiva cuando se modifiquen rutas o persistencia.
+
+- Generaciones incluye trabajos propios y COMPLETED compartidos accesibles; gestionar solo autor/OWNER. Costos compartidos respetan el mismo ámbito, nunca referencias privadas de conciliación. Observador sin costos. Gastos diarios del proveedor solo OWNER, separados de ledger y sin repartir agregados entre imágenes.

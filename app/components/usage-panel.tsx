@@ -1,5 +1,11 @@
 "use client";
+import { ProviderDailyCosts } from "./provider-daily-costs";
 import { useEffect, useState } from "react";
+import {
+  HierarchyFilters,
+  hierarchyFromLocation,
+  type HierarchyValue,
+} from "./hierarchy-filters";
 import { parseUsdMicros, usdMicros } from "../../lib/usage-format";
 type Row = {
   id: string;
@@ -207,6 +213,13 @@ function CostCell({
   );
 }
 export function UsagePanel() {
+  const [hierarchy, setHierarchy] = useState<HierarchyValue>(
+    hierarchyFromLocation,
+  );
+  const [ancestors, setAncestors] = useState<
+    { label: string; summary: Report["summary"] }[]
+  >([]);
+  const [ancestorError, setAncestorError] = useState("");
   const [data, setData] = useState<Report | null>(null),
     [days, setDays] = useState("30"),
     [status, setStatus] = useState(""),
@@ -224,6 +237,7 @@ export function UsagePanel() {
     cost,
     q: query,
     page: String(page),
+    ...hierarchy,
   }).toString();
   useEffect(() => {
     const controller = new AbortController();
@@ -245,7 +259,10 @@ export function UsagePanel() {
           }
         })
         .catch((e) => {
-          if (active && !controller.signal.aborted) setError(e.message);
+          if (active && !controller.signal.aborted) {
+            setData(null);
+            setError(e.message);
+          }
         })
         .finally(() => {
           if (active) setBusy(false);
@@ -257,6 +274,73 @@ export function UsagePanel() {
       clearTimeout(timer);
     };
   }, [params, version, page]);
+  useEffect(() => {
+    const controller = new AbortController();
+    let active = true;
+    if (!hierarchy.project) {
+      setAncestors([]);
+      setAncestorError("");
+      return;
+    }
+    const levels = [
+      {
+        label:
+          hierarchy.project === "none" ? "Sin proyecto · pruebas" : "Proyecto",
+        product: "",
+        subproduct: "",
+      },
+      ...(hierarchy.product
+        ? [{ label: "Producto", product: hierarchy.product, subproduct: "" }]
+        : []),
+      ...(hierarchy.subproduct
+        ? [
+            {
+              label: "Subproducto",
+              product: hierarchy.product,
+              subproduct: hierarchy.subproduct,
+            },
+          ]
+        : []),
+    ];
+    void Promise.all(
+      levels.map(async (level) => {
+        const p = new URLSearchParams(params);
+        p.set("product", level.product);
+        p.set("subproduct", level.subproduct);
+        p.set("page", "1");
+        const r = await fetch("/api/usage/summary?" + p, {
+          cache: "no-store",
+          signal: controller.signal,
+        });
+        const b = await r.json();
+        if (!r.ok)
+          throw Error(b.error ?? "No se pudo consultar el total del ámbito.");
+        return { label: level.label, summary: b.summary };
+      }),
+    )
+      .then((rows) => {
+        if (active) {
+          setAncestors(rows);
+          setAncestorError("");
+        }
+      })
+      .catch((e) => {
+        if (active && !controller.signal.aborted) {
+          setAncestors([]);
+          setAncestorError(e.message);
+        }
+      });
+    return () => {
+      active = false;
+      controller.abort();
+    };
+  }, [
+    params,
+    version,
+    hierarchy.project,
+    hierarchy.product,
+    hierarchy.subproduct,
+  ]);
   async function download() {
     setExporting(true);
     setError("");
@@ -284,12 +368,24 @@ export function UsagePanel() {
   }
   return (
     <section className="stack usage-panel">
-      <h1>Consumo de IA</h1>
+      <h1>Costos y consumo de IA</h1>
       <p className="muted">
         Reservas locales y costes reales informados, separados. Una reserva no
         es una factura; un coste no informado permanece desconocido. OWNER ve
-        todas las cuentas; las demás consultan sus propias operaciones.
+        todas las cuentas; las demás ven sus operaciones y las generaciones
+        terminadas de espacios disponibles para su cuenta.
       </p>
+      <ProviderDailyCosts />
+      <HierarchyFilters
+        onAllDates={() => setDays("all")}
+        value={hierarchy}
+        onChange={(v) => {
+          if (v.from !== hierarchy.from || v.to !== hierarchy.to)
+            setDays("all");
+          setHierarchy(v);
+          setPage(1);
+        }}
+      />
       <div className="fields">
         <label>
           Período del consumo
@@ -297,6 +393,7 @@ export function UsagePanel() {
             value={days}
             onChange={(e) => {
               setDays(e.target.value);
+              setHierarchy((v) => ({ ...v, from: "", to: "" }));
               setPage(1);
             }}
           >
@@ -383,6 +480,36 @@ export function UsagePanel() {
         </p>
       )}
       {busy && !data && <p role="status">Consultando consumo…</p>}
+      {ancestorError && (
+        <p className="notice error" role="alert">
+          {ancestorError}
+        </p>
+      )}
+      {ancestors.length > 0 && (
+        <section className="panel stack">
+          <h2>Totales por ámbito disponible</h2>
+          <p className="hint">
+            Se calculan con los mismos filtros de fecha, estado, modelo y coste.
+            Un importe parcial no incluye los costes todavía desconocidos.
+          </p>
+          <div className="metrics">
+            {ancestors.map((a) => (
+              <div key={a.label}>
+                <strong>
+                  {a.summary.knownCosts
+                    ? "USD " + usdMicros(a.summary.knownActualMicros)
+                    : "No informado"}
+                </strong>
+                <span>{a.label} · coste comprobado/informado</span>
+                <span>
+                  {a.summary.unknownCosts} costes no informados · reserva USD{" "}
+                  {usdMicros(a.summary.reservedMicros)}
+                </span>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
       {data && (
         <>
           <div className="metrics">
