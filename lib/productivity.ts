@@ -181,6 +181,26 @@ export async function productivityRoutes(
           dailyMicros: String(b.dailyMicros),
         })),
       );
+    if (method === "DELETE") {
+      const b = z
+        .object({ id: z.string().min(1).max(100) })
+        .parse(await body());
+      const limit = await db.budgetLimit.findUnique({ where: { id: b.id } });
+      demand(limit, "El límite ya no existe. Actualiza el listado.", 404);
+      await db.$transaction(async (tx) => {
+        await tx.$executeRaw`SELECT pg_advisory_xact_lock(728291)`;
+        await tx.budgetLimit.delete({ where: { id: b.id } });
+        await recordActivity(tx, {
+          data: {
+            actorId: user.id,
+            action: "PRESUPUESTO_PARTICULAR_ELIMINADO",
+            resourceId: limit.targetId,
+            detail: { scope: limit.scope },
+          },
+        });
+      });
+      return send({ ok: true });
+    }
     if (method === "PUT") {
       const b = z
         .object({

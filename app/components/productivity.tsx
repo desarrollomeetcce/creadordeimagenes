@@ -1049,11 +1049,14 @@ export function BudgetSettings() {
   }, []);
   return (
     <section className="panel stack">
-      <h2>Presupuestos particulares · OWNER</h2>
+      <h2>Límites particulares opcionales</h2>
       <p className="hint">
-        Si existe un límite particular se aplica además del global. Cero bloquea
-        nuevas reservas. Los importes son reservas en USD y no garantizan la
-        factura final del proveedor.
+        Solo el OWNER administra esta sección; no significa que todos los
+        límites se apliquen al OWNER. Cada fila afecta únicamente al
+        destinatario indicado. Si no necesitas una restricción adicional, no
+        crees una fila o elimina la existente. Si existe un límite particular se
+        aplica además del global. Cero bloquea nuevas reservas. Los importes son
+        reservas en USD y no garantizan la factura final del proveedor.
       </p>
       <form
         className="stack"
@@ -1106,6 +1109,10 @@ export function BudgetSettings() {
                 </option>
               ))}
             </datalist>
+            <span className="hint">
+              Busca y selecciona una cuenta o proyecto existente. Incluye al
+              OWNER solo si quieres limitar también esa cuenta.
+            </span>
           </label>
           <label>
             Máximo mensual · USD
@@ -1117,6 +1124,10 @@ export function BudgetSettings() {
               value={monthly}
               onChange={(e) => setMonthly(e.target.value)}
             />
+            <span className="hint">
+              Máximo adicional de reservas mensuales para este destinatario, en
+              USD. Cero bloquea.
+            </span>
           </label>
           <label>
             Máximo diario · USD
@@ -1128,6 +1139,10 @@ export function BudgetSettings() {
               value={daily}
               onChange={(e) => setDaily(e.target.value)}
             />
+            <span className="hint">
+              Máximo adicional diario en USD. Debe alcanzar la reserva por
+              afiche para permitir al menos uno.
+            </span>
           </label>
           <label>
             Máximo diario de afiches
@@ -1138,6 +1153,10 @@ export function BudgetSettings() {
               value={max}
               onChange={(e) => setMax(Number(e.target.value))}
             />
+            <span className="hint">
+              Número máximo de trabajos nuevos al día. Cero bloquea nuevas
+              reservas.
+            </span>
           </label>
         </div>
         <button className="primary" disabled={t.busy}>
@@ -1153,6 +1172,7 @@ export function BudgetSettings() {
               <th>Mes USD</th>
               <th>Día USD</th>
               <th>Afiches/día</th>
+              <th>Acciones</th>
             </tr>
           </thead>
           <tbody>
@@ -1167,6 +1187,50 @@ export function BudgetSettings() {
                 <td>{Number(l.monthlyMicros) / 1000000}</td>
                 <td>{Number(l.dailyMicros) / 1000000}</td>
                 <td>{l.maxJobsPerDay}</td>
+                <td>
+                  <div className="row">
+                    <button
+                      type="button"
+                      disabled={t.busy}
+                      onClick={() => {
+                        const entity = (
+                          l.scope === "USER" ? users : projects
+                        ).find((x) => x.id === l.targetId);
+                        setScope(l.scope);
+                        setTarget(
+                          entity
+                            ? entity.name +
+                                (entity.email ? " · " + entity.email : "")
+                            : "",
+                        );
+                        setMonthly(String(Number(l.monthlyMicros) / 1000000));
+                        setDaily(String(Number(l.dailyMicros) / 1000000));
+                        setMax(l.maxJobsPerDay);
+                      }}
+                    >
+                      Editar límite
+                    </button>
+                    <button
+                      type="button"
+                      className="danger"
+                      disabled={t.busy}
+                      onClick={() => {
+                        if (
+                          !confirm(
+                            "¿Eliminar este límite particular? Se aplicarán los límites globales y los demás límites que correspondan. El consumo anterior se conserva.",
+                          )
+                        )
+                          return;
+                        void t.run(async () => {
+                          await api("budgets", "DELETE", { id: l.id });
+                          await refresh();
+                        }, "Límite particular eliminado. Los límites globales continúan vigentes.");
+                      }}
+                    >
+                      Eliminar límite
+                    </button>
+                  </div>
+                </td>
               </tr>
             ))}
           </tbody>

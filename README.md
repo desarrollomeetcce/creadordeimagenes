@@ -14,6 +14,8 @@ Los adjuntos incluyen vistas previas privadas de imágenes y **Reemplazar**. Cad
 
 **Consumo de IA** incluye filtros, paginación y totales de todas las coincidencias, con reservas separadas del coste real informado. Permite descargar CSV de hasta 2000 operaciones; un coste desconocido nunca se presenta como cero. OWNER consulta todas las cuentas y ADMIN/USER sus propias operaciones.
 
+**Generaciones** permite eliminar trabajos del listado y restaurarlos desde la vista de retiradas, conservando imágenes, historial y consumo. Los trabajos en curso no se retiran. En **Inteligencia Artificial**, el estado se actualiza cada diez segundos, distingue catálogo consultado de prueba realmente completada y revisa también límites particulares. Estos límites se pueden editar o eliminar por fila; eliminar una restricción no añade saldo a OpenAI ni borra el consumo anterior.
+
 ## Inicio local
 
 Requisitos: Node.js 24, npm y PostgreSQL 16 o superior.

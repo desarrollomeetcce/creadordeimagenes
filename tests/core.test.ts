@@ -251,3 +251,30 @@ test("importes en microUSD conservan seis decimales y precisión fuera del rango
   assert.equal(usdMicros("9007199254740993"), "9007199254.740993");
   assert.equal(usdMicros(-1n), "-0.000001");
 });
+
+test("OpenAI 429 diferencia cuota y límite temporal sin exponer la respuesta del proveedor", async () => {
+  const { adapter } = await import("../lib/providers");
+  const prior = globalThis.fetch;
+  try {
+    for (const [code, expected] of [
+      ["insufficient_quota", /no tiene cuota o saldo/],
+      ["rate_limit_exceeded", /límite temporal/],
+      ["other", /límite de uso o saldo/],
+    ] as const) {
+      globalThis.fetch = async () =>
+        new Response(
+          JSON.stringify({ error: { code, message: "NO MOSTRAR secreto" } }),
+          { status: 429 },
+        );
+      await assert.rejects(
+        adapter("openai").listModels("clave-sintetica"),
+        (error) =>
+          error instanceof Error &&
+          expected.test(error.message) &&
+          !error.message.includes("NO MOSTRAR"),
+      );
+    }
+  } finally {
+    globalThis.fetch = prior;
+  }
+});

@@ -23,6 +23,7 @@ const jobSelect = {
   actorId: true,
   status: true,
   error: true,
+  archivedAt: true,
   subproductId: true,
   projectId: true,
   createdAt: true,
@@ -86,13 +87,18 @@ export async function listJobs(user: Actor, params: URLSearchParams) {
       page: z.coerce.number().int().min(1).max(100000),
       status: z.enum([...states, ""]),
       order: z.enum(["newest", "oldest"]),
+      archived: z.enum(["false", "true"]),
     })
     .parse({
       page: params.get("page") ?? 1,
       status: params.get("status") ?? "",
       order: params.get("order") ?? "newest",
+      archived: params.get("archived") ?? "false",
     });
-  const base = user.role === "OWNER" ? {} : { actorId: user.id };
+  const base = {
+    ...(user.role === "OWNER" ? {} : { actorId: user.id }),
+    archivedAt: b.archived === "true" ? { not: null } : null,
+  };
   const where = { ...base, ...(b.status ? { status: b.status } : {}) };
   const [jobs, total, groups] = await db.$transaction(
     [
@@ -294,4 +300,47 @@ export async function cancelBatchPending(user: Actor, id: string) {
     },
     { timeout: 20000 },
   );
+}
+
+export async function archiveJob(user: Actor, id: string, restore: boolean) {
+  demand(
+    user.role !== "OBSERVER",
+    "Observador no puede retirar trabajos.",
+    403,
+  );
+  return db.$transaction(async (tx) => {
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(728291)`;
+    const job = await tx.generationJob.findUnique({ where: { id } });
+    demand(
+      job && (user.role === "OWNER" || job.actorId === user.id),
+      "Trabajo no disponible.",
+      404,
+    );
+    demand(
+      !["PENDING", "RUNNING"].includes(job.status),
+      "Primero cancela el trabajo pendiente o espera a que termine. No se puede retirar un trabajo en curso.",
+      409,
+    );
+    const access = await accessibleJobs(tx, user, [job]);
+    demand(access.has(id), "Ya no tienes acceso al recurso.", 403);
+    demand(
+      restore ? !!job.archivedAt : !job.archivedAt,
+      "El estado del listado cambió. Actualízalo.",
+      409,
+    );
+    await tx.generationJob.update({
+      where: { id },
+      data: { archivedAt: restore ? null : new Date() },
+    });
+    await recordActivity(tx, {
+      data: {
+        actorId: user.id,
+        action: restore
+          ? "TRABAJO_RESTAURADO_LISTADO"
+          : "TRABAJO_RETIRADO_LISTADO",
+        resourceId: id,
+      },
+    });
+    return { ok: true };
+  });
 }

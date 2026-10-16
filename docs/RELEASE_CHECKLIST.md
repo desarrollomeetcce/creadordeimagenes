@@ -10,13 +10,14 @@ La estimación actual de 85–90% corresponde al desarrollo funcional; no certif
 - Auditoría visual de nuevas versiones exclusiva OWNER, plazo/cuota configurables, aviso a todos los roles y limpieza independiente.
 - Historial legible con nombres, resúmenes, detalles desplegables, búsqueda completa paginada y nombres conservados en operaciones nuevas.
 - Generación/edición y cola con contratos simulados, presupuestos, idempotencia, cancelación y cargos inciertos sin reintento automático.
+- Generaciones retirables/restaurables sin borrar consumo; límites particulares editables/eliminables y precomprobación de presupuesto compartida con reservas. Estado de IA actualizado sin presentar catálogo como garantía de generación.
 - Configuración IA cifrada, modelos consultables realmente, lista de pasos de preparación y generación bloqueada sin verificación. Prueba opcional verificada de extremo a extremo con adaptador simulado, sin certificar proveedor externo.
 - Recuperación asistida y emergencia OWNER con código preparado de un uso.
 - Restauración de espacios, filtros/selección por sesión y salida móvil.
 - Mantenimiento con cola persistente de borrado, reintentos, resultados OWNER y ruta de programación autenticada; recepción real de Vercel pendiente.
 - Cola completa paginada, selección/cancelación de hasta 200 pendientes y cancelación de pendientes de lote con reservas/cargos inciertos protegidos. Lote de 200 completado con adaptador simulado; no acredita proveedor real.
 - Consumo paginado con totales completos, filtros y CSV privado de hasta 2000 operaciones; importes exactos y costes desconocidos explícitos. ZIP de 200 PNG y 200 JPG validado con archivos locales simulados.
-- 73 escenarios de integración, cuatro de correo, 16 unitarias, compilación, instalación y recorridos Chromium locales.
+- 75 escenarios de integración, cuatro de correo previamente verificados, 17 unitarias, compilación, instalación y recorridos Chromium locales.
 - Imagen Docker construida/arrancada como usuario no root con autenticación, fuentes y archivos verificados.
 - Copia PostgreSQL local restaurada en base independiente: doce migraciones, 17 tablas y hashes de archivos/miniaturas BYTEA comparados.
 

@@ -57,7 +57,11 @@ export function compatibleModels(ids: string[]): ModelCapability[] {
         : [],
   );
 }
-export function providerError(status: number) {
+export function providerError(status: number, code?: string) {
+  if (status === 429 && code === "insufficient_quota")
+    return "La API de OpenAI no tiene cuota o saldo disponible. Revisa la facturación de API y sus límites en OpenAI. Los presupuestos de esta plataforma no añaden saldo.";
+  if (status === 429 && code === "rate_limit_exceeded")
+    return "OpenAI alcanzó su límite temporal de solicitudes o tokens. Espera antes de autorizar otro intento; no se repetirá automáticamente.";
   if (status === 401) return "La clave API no es válida o ha sido revocada.";
   if (status === 403)
     return "El proveedor denegó el acceso. Comprueba permisos, organización y verificación de la cuenta.";
@@ -107,7 +111,14 @@ class OpenAIAdapter implements ProviderAdapter {
         502,
       );
     }
-    if (!r.ok) throw new AppError(providerError(r.status), 502);
+    if (!r.ok) {
+      let code: string | undefined;
+      try {
+        const failure = await r.json();
+        if (typeof failure?.error?.code === "string") code = failure.error.code;
+      } catch {}
+      throw new AppError(providerError(r.status, code), 502);
+    }
     try {
       return await r.json();
     } catch {

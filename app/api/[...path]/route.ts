@@ -363,6 +363,18 @@ async function handle(
       const { listJobs } = await import("@/lib/job-management");
       return send(await listJobs(user, req.nextUrl.searchParams));
     }
+    if (
+      parts[0] === "jobs" &&
+      parts[2] === "archive" &&
+      parts.length === 3 &&
+      method === "POST"
+    ) {
+      const b = z
+        .object({ restore: z.boolean().default(false) })
+        .parse(await body(req));
+      const { archiveJob } = await import("@/lib/job-management");
+      return send(await archiveJob(user, parts[1], b.restore));
+    }
     if (route === "jobs/cancel-many" && method === "POST") {
       const b = z
         .object({ ids: z.array(z.string().min(1)).min(1).max(200) })
@@ -460,6 +472,19 @@ async function handle(
             }),
           ),
           providers,
+          testBudget: await (
+            await import("@/lib/reservation-budget")
+          ).testBudgetStatus(user.id),
+          latestTest: await db.generationJob.findFirst({
+            where: { projectId: "connection-test" },
+            orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+            select: {
+              status: true,
+              error: true,
+              createdAt: true,
+              completedAt: true,
+            },
+          }),
         });
       if (route === "ai/config" && method === "PUT") {
         const b = configSchema.parse(await body(req));
@@ -1161,7 +1186,10 @@ async function handle(
     }
     if (route === "jobs" && method === "GET") {
       const jobs = await db.generationJob.findMany({
-        where: user.role === "OWNER" ? {} : { actorId: user.id },
+        where: {
+          ...(user.role === "OWNER" ? {} : { actorId: user.id }),
+          archivedAt: null,
+        },
         orderBy: { createdAt: "desc" },
         take: 200,
         select: {

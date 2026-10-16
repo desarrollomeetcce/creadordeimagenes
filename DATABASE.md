@@ -70,3 +70,7 @@ Generar/revocar requiere OWNER aprobado, contraseña actual y revalidación de h
 ## Migración 012 · mantenimiento
 
 Variation.filesQueuedAt marca encolado duradero de todos sus archivos tras caducar; la operación bloquea la fila y excluye permanentes. AssetDeletion conserva únicamente rutas privadas, intentos y próxima fecha; un borrado solo retira la fila después de confirmar archivo ausente. No se expone su contenido en APIs. MaintenanceRun registra ejecuciones acotadas, fuente, estado, conteos y error saneado. Las dos tablas comienzan vacías; migrar no limpia imágenes ni cambia conservación o credenciales. Índices para pendientes/caducidad/fecha.
+
+## Migración 013 · retirada del listado de generaciones
+
+GenerationJob.archivedAt nullable e índice por archivedAt/createdAt. No elimina trabajos, resultados, reservas ni historial. Listados de Generaciones actuales excluyen retirados y ofrecen vista explícita de retiradas; informes de consumo, cuotas y mantenimiento siguen incluyendo esos registros. Escritura transaccional bajo bloqueo 728291, solo estados terminales y acceso vigente. Restaurar no reencola ni llama al proveedor. Migración aditiva aplicada con checksum en local y copia antes de rama conectada.

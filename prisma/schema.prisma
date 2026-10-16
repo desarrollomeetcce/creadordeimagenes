@@ -175,12 +175,14 @@ model GenerationJob {
   status String @default("PENDING")
   snapshot Json
   reservedMicros BigInt
+  archivedAt DateTime?
   error String?
   startedAt DateTime?
   completedAt DateTime?
   createdAt DateTime @default(now())
   variation Variation?
   @@index([status,createdAt])
+  @@index([archivedAt,createdAt], map: "GenerationJob_archive_idx")
 }
 model BackgroundBatch {
   id String @id @default(cuid())

@@ -1,5 +1,15 @@
 # Pruebas y evidencia
 
+## Continuación: retirada, límites, sondeo y errores OpenAI
+
+75 escenarios HTTP/PostgreSQL aprobados (76 resultados con contenedor), 17 unitarias, tipos/build e instalación sin base. Retirar/restaurar conserva ledger exacto UNCERTAIN, afiche descargable y auditoría; listas por rol y legado excluyen retirados, y el reintento requiere restaurar. PENDING/RUNNING 409 y accesos ajenos/Observador/anónimo rechazados. CRUD de límites particulares conserva configuración global y consumo; eliminar fila inexistente 404. Validador compartido con reservas reproduce conflicto USD 2 por afiche y USD 1 diario particular, muestra bloqueo y permite al retirar la restricción. La precomprobación no reserva ni llama al proveedor.
+
+Chromium local con servidor/PG reales y credenciales sintéticas: límite de cuenta bloquea botón, edición carga valores, borrado cancelado no cambia fila, borrado confirmado la elimina, sondeo detecta disponibilidad y último error sin pisar un modelo editado. Retirada cancelada/aceptada, vista de retiradas y restauración conservan consumo incierto; no se envía POST de generación, verificación, proceso o reintento. Inspección móvil de 390 px sin desbordamiento/errores JS. Unitarias de transporte simulan insufficient_quota, rate_limit_exceeded y código desconocido, comprobando mensajes diferenciados sin cuerpo privado.
+
+Migración 013 (columna nullable e índice) aplicada localmente y sobre copia Neon antes de rama conectada con checksum/advisory/transacción; cero filas externas retiradas. No se tocaron importes o registros externos del usuario ni se hizo llamada de IA facturable. El intento externo anterior sigue sin imagen y con error 429; una consulta de modelos verificada no certifica generación ni saldo.
+
+Chromium final verificó ese botón con respuestas HTTP explícitamente simuladas: una creación y un procesamiento, error visible y consentimiento restablecido sin repetir solicitudes. No representa una prueba externa exitosa. El botón de prueba opcional ahora encola e inicia ese único trabajo directamente, sin requerir navegación a Generaciones. Se conserva autorización explícita y ausencia de reintento automático; el resultado no COMPLETED muestra error, restablece consentimiento y actualiza metadatos. Si se interrumpe, se indica revisar Generaciones antes de volver a autorizar.
+
 ## Continuación: preparación y generación opcional de prueba
 
 73 escenarios HTTP/PostgreSQL aprobados (74 resultados con contenedor), 16 unitarias, tipos, build e instalación sin base. Nuevo caso a través de POST ai/test: rechaza ausencia de consentimiento antes de crear trabajos; dos solicitudes con igual requestId devuelven el mismo trabajo y una única reserva. Snapshot explícito Imagen + Texto / flat. Adaptador simulado exige modelos/parámetros guardados, cuenta una dirección y una imagen, publica PNG y segunda ejecución no vuelve a llamar. Coste real permanece nulo; descarga privada PNG validada por firma.

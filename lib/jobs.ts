@@ -87,6 +87,11 @@ export async function retryJob(
 ) {
   const job = await db.generationJob.findUnique({ where: { id } });
   demand(job, "Trabajo no encontrado.", 404);
+  demand(
+    !job.archivedAt,
+    "Restaura el trabajo en el listado antes de reintentarlo.",
+    409,
+  );
   if (job.projectId === "connection-test") ownerOnly(user);
   else await jobResourceAccess(user, job, "GENERATE");
   demand(

@@ -6,6 +6,7 @@ type Job = {
   actorName: string;
   status: string;
   error: string | null;
+  archivedAt: string | null;
   createdAt: string;
   projectId: string;
   canManage: boolean;
@@ -54,6 +55,7 @@ export function JobsPanel() {
     [page, setPage] = useState(1),
     [status, setStatus] = useState(""),
     [order, setOrder] = useState("newest"),
+    [archived, setArchived] = useState(false),
     [selected, setSelected] = useState<string[]>([]);
   const [loading, setLoading] = useState(false),
     [busy, setBusy] = useState(false),
@@ -64,7 +66,7 @@ export function JobsPanel() {
   const sequence = useRef(0),
     pause = useRef(false),
     alive = useRef(true);
-  const queryKey = `${page}:${status}:${order}`;
+  const queryKey = `${page}:${status}:${order}:${archived}`;
   const currentQuery = useRef(queryKey);
   currentQuery.current = queryKey;
   const refresh = useCallback(
@@ -74,7 +76,7 @@ export function JobsPanel() {
       setLoading(true);
       try {
         const result: Data = await request(
-          `jobs/list?page=${page}&status=${status}&order=${order}`,
+          `jobs/list?page=${page}&status=${status}&order=${order}&archived=${archived}`,
           "GET",
           undefined,
           signal,
@@ -114,7 +116,7 @@ export function JobsPanel() {
           setLoading(false);
       }
     },
-    [page, status, order, queryKey],
+    [page, status, order, archived, queryKey],
   );
   const refreshJobs = useCallback(async () => {
     await refresh();
@@ -275,6 +277,21 @@ export function JobsPanel() {
           >
             <option value="newest">Más recientes primero</option>
             <option value="oldest">Más antiguas primero</option>
+          </select>
+        </label>
+        <label>
+          Mostrar
+          <select
+            value={archived ? "archived" : "active"}
+            disabled={busy}
+            onChange={(e) => {
+              setArchived(e.target.value === "archived");
+              setSelected([]);
+              setPage(1);
+            }}
+          >
+            <option value="active">Generaciones actuales</option>
+            <option value="archived">Retiradas del listado</option>
           </select>
         </label>
         <button
@@ -450,6 +467,7 @@ export function JobsPanel() {
                     </>
                   )}
                   {j.canManage &&
+                    !j.archivedAt &&
                     ["FAILED", "UNCERTAIN", "CANCELLED"].includes(j.status) && (
                       <button
                         type="button"
@@ -472,6 +490,36 @@ export function JobsPanel() {
                         }}
                       >
                         Reintentar con autorización
+                      </button>
+                    )}
+                  {j.canManage &&
+                    !["PENDING", "RUNNING"].includes(j.status) && (
+                      <button
+                        type="button"
+                        disabled={busy}
+                        onClick={() => {
+                          if (
+                            !confirm(
+                              j.archivedAt
+                                ? "¿Restaurar este trabajo en el listado?"
+                                : "¿Eliminar del listado? Se conservarán el afiche, el historial y el consumo, incluidos posibles cargos inciertos. No genera otra imagen ni devuelve saldo.",
+                            )
+                          )
+                            return;
+                          void action(
+                            () =>
+                              request(`jobs/${j.id}/archive`, "POST", {
+                                restore: !!j.archivedAt,
+                              }),
+                            j.archivedAt
+                              ? "Trabajo restaurado en el listado."
+                              : "Trabajo retirado. Su consumo e historial se conservan.",
+                          );
+                        }}
+                      >
+                        {j.archivedAt
+                          ? "Restaurar en el listado"
+                          : "Eliminar del listado"}
                       </button>
                     )}
                   {j.error && <p className="notice error">{j.error}</p>}

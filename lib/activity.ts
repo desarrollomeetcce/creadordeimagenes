@@ -79,6 +79,8 @@ const scopeOf = (event: Event) => {
       "GENERACION_COMPLETADA",
       "PRUEBA_IA_AUTORIZADA",
       "TRABAJO_CANCELADO",
+      "TRABAJO_RETIRADO_LISTADO",
+      "TRABAJO_RESTAURADO_LISTADO",
     ].includes(a)
   )
     return "job";
@@ -316,6 +318,9 @@ export async function recordActivity(
 }
 
 const verbs: Record<string, string> = {
+  TRABAJO_RETIRADO_LISTADO: "Retiró una generación del listado",
+  TRABAJO_RESTAURADO_LISTADO: "Restauró una generación en el listado",
+  PRESUPUESTO_PARTICULAR_ELIMINADO: "Eliminó un límite particular de consumo",
   INFORME_CONSUMO_PREPARADO: "Preparó un informe de consumo de IA",
   TRABAJOS_CANCELADOS: "Canceló trabajos pendientes y liberó sus reservas",
   LOTE_PENDIENTES_CANCELADOS:

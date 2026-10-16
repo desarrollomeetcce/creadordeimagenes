@@ -3,6 +3,7 @@ import { db } from "./db";
 import { decryptKey } from "./crypto";
 import { adapter, type ModelCapability } from "./providers";
 import { demand } from "./errors";
+import { checkReservationBudget } from "./reservation-budget";
 export function safeConfiguration(c: ProviderConfiguration | null) {
   if (!c)
     return {
@@ -102,68 +103,7 @@ export async function reserveJobs(
         (i) => !known.some((j) => j.idempotencyKey === i.key),
       ).length;
       if (pendingCount === 0) return known;
-      const total = c.imageReserveMicros * BigInt(pendingCount);
-      demand(
-        total > 0n && total <= c.operationLimitMicros,
-        "La operación supera el presupuesto por operación.",
-      );
-      const now = new Date(),
-        month = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)),
-        day = new Date(
-          Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()),
-        );
-      for (const [since, limit, label] of [
-        [month, c.monthlyLimitMicros, "mensual"],
-        [day, c.dailyLimitMicros, "diario"],
-      ] as const) {
-        const usage = await tx.usageLedger.aggregate({
-          where: { createdAt: { gte: since }, status: { not: "RELEASED" } },
-          _sum: { reservedMicros: true },
-        });
-        demand(
-          (usage._sum.reservedMicros ?? 0n) + total <= limit,
-          `Se supera el límite ${label} de reservas de consumo.`,
-        );
-      }
-      const scoped = await tx.budgetLimit.findMany({
-        where: {
-          OR: [
-            { scope: "USER", targetId: actorId },
-            { scope: "PROJECT", targetId: projectId },
-          ],
-        },
-      });
-      for (const limit of scoped) {
-        const filter = limit.scope === "USER" ? { actorId } : { projectId };
-        for (const [since, max] of [
-          [month, limit.monthlyMicros],
-          [day, limit.dailyMicros],
-        ] as const) {
-          const usage = await tx.usageLedger.aggregate({
-            where: {
-              ...filter,
-              createdAt: { gte: since },
-              status: { not: "RELEASED" },
-            },
-            _sum: { reservedMicros: true },
-          });
-          demand(
-            (usage._sum.reservedMicros ?? 0n) + total <= max,
-            "La operación supera el presupuesto particular del usuario o proyecto.",
-          );
-        }
-        const count = await tx.usageLedger.count({
-          where: {
-            ...filter,
-            createdAt: { gte: day },
-            status: { not: "RELEASED" },
-          },
-        });
-        demand(
-          count + pendingCount <= limit.maxJobsPerDay,
-          "Se supera el máximo diario de generaciones del usuario o proyecto.",
-        );
-      }
+      await checkReservationBudget(tx, c, actorId, projectId, pendingCount);
       for (const item of items) {
         const snapshot = item.snapshot as Record<string, unknown>;
         if (typeof snapshot.editVariationId === "string") {

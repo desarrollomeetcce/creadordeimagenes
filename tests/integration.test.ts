@@ -6179,6 +6179,299 @@ test("Integración HTTP + PostgreSQL (base exclusiva de pruebas, sin llamadas ex
         }
       },
     );
+    await t.test(
+      "retirar generaciones conserva ledger, resultados e historial, permite restaurar y protege trabajos activos",
+      async () => {
+        const project = (
+          await user.call("projects", "POST", { name: "Retirada " + tag })
+        ).body;
+        const make = async (status: string, actorId = uid) => {
+          const job = await db.generationJob.create({
+            data: {
+              actorId,
+              projectId: project.id,
+              status,
+              snapshot: {},
+              idempotencyKey: randomUUID(),
+              reservedMicros: 73n,
+            },
+          });
+          await db.usageLedger.create({
+            data: {
+              jobId: job.id,
+              actorId,
+              projectId: project.id,
+              model: "sintético",
+              status:
+                status === "UNCERTAIN"
+                  ? "UNCERTAIN"
+                  : status === "CANCELLED"
+                    ? "RELEASED"
+                    : "RESERVED",
+              reservedMicros: 73n,
+            },
+          });
+          return job;
+        };
+        const uncertain = await make("UNCERTAIN"),
+          failed = await make("FAILED"),
+          pending = await make("PENDING"),
+          running = await make("RUNNING");
+        for (const c of [admin, observer, anonymous])
+          assert(
+            [401, 403, 404].includes(
+              (await c.call(`jobs/${uncertain.id}/archive`, "POST", {})).status,
+            ),
+          );
+        assert.equal(
+          (await user.call(`jobs/${pending.id}/archive`, "POST", {})).status,
+          409,
+        );
+        assert.equal(
+          (await user.call(`jobs/${running.id}/archive`, "POST", {})).status,
+          409,
+        );
+        const before = await db.usageLedger.findUniqueOrThrow({
+          where: { jobId: uncertain.id },
+        });
+        assert.equal(
+          (await user.call(`jobs/${uncertain.id}/archive`, "POST", {})).status,
+          200,
+        );
+        assert(
+          !(await user.call("jobs/list")).body.rows.some(
+            (j: any) => j.id === uncertain.id,
+          ),
+        );
+        assert(
+          (await user.call("jobs/list?archived=true")).body.rows.some(
+            (j: any) => j.id === uncertain.id,
+          ),
+        );
+        assert(
+          !(await user.call("jobs")).body.some(
+            (j: any) => j.id === uncertain.id,
+          ),
+        );
+        assert.deepEqual(
+          await db.usageLedger.findUniqueOrThrow({
+            where: { jobId: uncertain.id },
+          }),
+          before,
+        );
+        assert.equal(
+          (
+            await user.call(`jobs/${uncertain.id}/retry`, "POST", {
+              requestId: randomUUID(),
+              confirmCharge: true,
+              confirmUncertain: true,
+            })
+          ).status,
+          409,
+        );
+        assert.equal(
+          (await user.call(`jobs/${uncertain.id}/archive`, "POST", {})).status,
+          409,
+        );
+        assert.equal(
+          (await owner.call(`jobs/${failed.id}/archive`, "POST", {})).status,
+          200,
+        );
+        assert.equal(
+          (
+            await user.call(`jobs/${uncertain.id}/archive`, "POST", {
+              restore: true,
+            })
+          ).status,
+          200,
+        );
+        assert.equal(
+          (
+            await db.generationJob.findUniqueOrThrow({
+              where: { id: uncertain.id },
+            })
+          ).archivedAt,
+          null,
+        );
+        const completed = await db.generationJob.findFirstOrThrow({
+          where: { projectId: "connection-test", status: "COMPLETED" },
+          orderBy: { createdAt: "desc" },
+          include: { variation: true },
+        });
+        assert(completed.variation);
+        assert.equal(
+          (await owner.call(`jobs/${completed.id}/archive`, "POST", {})).status,
+          200,
+        );
+        const file = await fetch(
+          root + `/api/variations/${completed.variation.id}?download`,
+          { headers: { Cookie: owner.cookie } },
+        );
+        assert.equal(file.status, 200);
+        await file.arrayBuffer();
+        assert.equal(
+          (
+            await owner.call(`jobs/${completed.id}/archive`, "POST", {
+              restore: true,
+            })
+          ).status,
+          200,
+        );
+        assert.equal(
+          await db.auditEvent.count({
+            where: {
+              action: "TRABAJO_RETIRADO_LISTADO",
+              resourceId: uncertain.id,
+            },
+          }),
+          1,
+        );
+        await db.generationJob.updateMany({
+          where: { id: { in: [pending.id, running.id] } },
+          data: { status: "CANCELLED" },
+        });
+        await db.usageLedger.updateMany({
+          where: { jobId: { in: [pending.id, running.id] } },
+          data: { status: "RELEASED" },
+        });
+      },
+    );
+    await t.test(
+      "límites particulares: actualizar y eliminar como OWNER conserva consumo y presupuestos globales",
+      async () => {
+        const project = (
+          await owner.call("projects", "POST", {
+            name: "Presupuesto eliminable " + tag,
+          })
+        ).body;
+        const body = {
+          scope: "PROJECT",
+          targetId: project.id,
+          monthlyMicros: "0",
+          dailyMicros: "0",
+          maxJobsPerDay: 0,
+        };
+        assert.equal((await owner.call("budgets", "PUT", body)).status, 200);
+        const limit = (await owner.call("budgets")).body.find(
+          (l: any) => l.targetId === project.id,
+        );
+        assert(limit);
+        const global = await db.providerConfiguration.findUniqueOrThrow({
+            where: { id: "global" },
+          }),
+          ledgerCount = await db.usageLedger.count();
+        for (const c of [user, admin, observer])
+          assert.equal(
+            (await c.call("budgets", "DELETE", { id: limit.id })).status,
+            403,
+          );
+        assert.equal(
+          (await anonymous.call("budgets", "DELETE", { id: limit.id })).status,
+          401,
+        );
+        assert.equal(
+          (
+            await owner.call("budgets", "PUT", {
+              ...body,
+              monthlyMicros: "10000000",
+              dailyMicros: "5000000",
+              maxJobsPerDay: 2,
+            })
+          ).status,
+          200,
+        );
+        assert.equal(
+          (await db.budgetLimit.findUniqueOrThrow({ where: { id: limit.id } }))
+            .maxJobsPerDay,
+          2,
+        );
+        assert.equal(
+          (await owner.call("budgets", "DELETE", { id: limit.id })).status,
+          200,
+        );
+        assert.equal(
+          await db.budgetLimit.findUnique({ where: { id: limit.id } }),
+          null,
+        );
+        assert.equal(
+          (await owner.call("budgets", "DELETE", { id: limit.id })).status,
+          404,
+        );
+        assert.deepEqual(
+          await db.providerConfiguration.findUniqueOrThrow({
+            where: { id: "global" },
+          }),
+          global,
+        );
+        assert.equal(await db.usageLedger.count(), ledgerCount);
+        const configResponse = await owner.call("ai/config");
+        assert.equal(configResponse.status, 200);
+        assert(configResponse.body.latestTest);
+        assert(
+          !JSON.stringify(configResponse.body.latestTest).includes("prompt"),
+        );
+        const ownerId = (await owner.call("auth/me")).body.id;
+        const oldLimit = await db.budgetLimit.findUnique({
+          where: { scope_targetId: { scope: "USER", targetId: ownerId } },
+        });
+        try {
+          await db.providerConfiguration.update({
+            where: { id: "global" },
+            data: {
+              imageReserveMicros: 2000000n,
+              operationLimitMicros: 5000000n,
+              monthlyLimitMicros: 100000000000000n,
+              dailyLimitMicros: 100000000000000n,
+            },
+          });
+          await db.budgetLimit.upsert({
+            where: { scope_targetId: { scope: "USER", targetId: ownerId } },
+            create: {
+              scope: "USER",
+              targetId: ownerId,
+              monthlyMicros: 100000000000000n,
+              dailyMicros: 1000000n,
+              maxJobsPerDay: 100000,
+            },
+            update: {
+              monthlyMicros: 100000000000000n,
+              dailyMicros: 1000000n,
+              maxJobsPerDay: 100000,
+            },
+          });
+          const blocked = (await owner.call("ai/config")).body.testBudget;
+          assert.equal(blocked.allowed, false);
+          assert.match(blocked.error, /presupuesto particular de tu cuenta/);
+          const row = await db.budgetLimit.findUniqueOrThrow({
+            where: { scope_targetId: { scope: "USER", targetId: ownerId } },
+          });
+          assert.equal(
+            (await owner.call("budgets", "DELETE", { id: row.id })).status,
+            200,
+          );
+          assert.equal(
+            (await owner.call("ai/config")).body.testBudget.allowed,
+            true,
+          );
+          assert.equal(await db.usageLedger.count(), ledgerCount);
+        } finally {
+          await db.providerConfiguration.update({
+            where: { id: "global" },
+            data: {
+              ...global,
+              models: JSON.parse(JSON.stringify(global.models)),
+              alternatives: JSON.parse(JSON.stringify(global.alternatives)),
+            },
+          });
+          if (oldLimit)
+            await db.budgetLimit.upsert({
+              where: { scope_targetId: { scope: "USER", targetId: ownerId } },
+              create: oldLimit,
+              update: oldLimit,
+            });
+        }
+      },
+    );
     await t.test("cierre de sesión invalida el token", async () => {
       assert.equal((await user.call("auth/logout", "POST")).status, 200);
       assert.equal((await user.call("projects")).status, 401);

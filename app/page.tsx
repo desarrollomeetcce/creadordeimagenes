@@ -1820,6 +1820,12 @@ function SubproductRow({
 }
 function AISettings() {
   const [c, setC] = useState<any>(null);
+  const [latestTest, setLatestTest] = useState<any>(null);
+  const [testBudget, setTestBudget] = useState<any>(null);
+  const [checkedAt, setCheckedAt] = useState<string | null>(null);
+  const [liveError, setLiveError] = useState("");
+  const [now, setNow] = useState(Date.now());
+  const editing = useRef(false);
   const [key, setKey] = useState("");
   const [available, setAvailable] = useState<{ id: string; name: string }[]>(
     [],
@@ -1830,6 +1836,11 @@ function AISettings() {
   const refresh = useCallback(async () => {
     const r = await api("ai/config");
     setC(r.configuration);
+    setLatestTest(r.latestTest);
+    setTestBudget(r.testBudget);
+    setCheckedAt(new Date().toISOString());
+    setLiveError("");
+    editing.current = false;
     setDirty(false);
     setCharge(false);
     setAvailable(r.providers);
@@ -1837,9 +1848,45 @@ function AISettings() {
   useEffect(() => {
     void t.run(refresh, "");
   }, [refresh]);
+  useEffect(() => {
+    let active = true,
+      fetching = false;
+    const poll = async () => {
+      if (fetching || document.visibilityState !== "visible") return;
+      fetching = true;
+      try {
+        const r = await api("ai/config");
+        if (active) {
+          setLatestTest(r.latestTest);
+          setTestBudget(r.testBudget);
+          setCheckedAt(new Date().toISOString());
+          setLiveError("");
+          if (!editing.current) setC(r.configuration);
+        }
+      } catch {
+        if (active)
+          setLiveError(
+            "No se pudo actualizar el estado. La información mostrada puede estar desactualizada.",
+          );
+      } finally {
+        fetching = false;
+      }
+    };
+    const timer = setInterval(() => void poll(), 10000);
+    const clock = setInterval(() => setNow(Date.now()), 10000);
+    const focus = () => void poll();
+    window.addEventListener("focus", focus);
+    return () => {
+      active = false;
+      clearInterval(timer);
+      clearInterval(clock);
+      window.removeEventListener("focus", focus);
+    };
+  }, []);
   if (!c) return <p>Cargando configuración segura…{t.notice}</p>;
   const update = (k: string, v: unknown) => {
     setC({ ...c, [k]: v });
+    editing.current = true;
     setDirty(true);
     setCharge(false);
   };
@@ -1848,13 +1895,13 @@ function AISettings() {
     c.status === "VERIFIED" &&
     c.verifiedRevision === c.revision &&
     c.verifiedAt &&
-    Date.now() - new Date(c.verifiedAt).getTime() < 86400000;
+    now - new Date(c.verifiedAt).getTime() < 86400000;
   const reserve = Number(c.imageReserveMicros);
   const checks = [
     { label: "Clave guardada en el servidor", ok: !!c.maskedKey },
     { label: "Cambios guardados", ok: !dirty && !key },
     {
-      label: "Conexión verificada durante las últimas 24 horas",
+      label: "Consulta de modelos verificada durante las últimas 24 horas",
       ok: !!verified,
     },
     {
@@ -1883,7 +1930,16 @@ function AISettings() {
         ].every((v: string) => Number(v) >= reserve),
     },
   ];
-  const ready = checks.every((check) => check.ok);
+  checks.push({
+    label:
+      "Presupuesto disponible para una prueba, incluidos tus límites particulares y reservas anteriores",
+    ok:
+      !!testBudget?.allowed &&
+      testBudget.revision === c.revision &&
+      !dirty &&
+      !key,
+  });
+  const ready = checks.every((check) => check.ok) && !liveError;
   const save = async () => {
     await api("ai/config", "PUT", {
       provider: c.provider,
@@ -1905,7 +1961,7 @@ function AISettings() {
   const state: Record<string, string> = {
     NOT_CONFIGURED: "Sin configurar",
     UNVERIFIED: "Sin verificar",
-    VERIFIED: "Conexión verificada",
+    VERIFIED: "Consulta de modelos verificada",
     ERROR: "Error de conexión",
     EXPIRED: "Verificación caducada",
   };
@@ -1931,10 +1987,65 @@ function AISettings() {
       </div>
       <section className="panel stack" aria-label="Estado de preparación de IA">
         <h2>Antes de generar</h2>
+        <p className="hint">
+          Este resumen comprueba la configuración guardada. El estado se
+          actualiza cada 10 segundos y al volver a la ventana; no consulta saldo
+          ni genera imágenes automáticamente. Una consulta de modelos exitosa no
+          acredita que la cuenta pueda generar.
+        </p>
+        {checkedAt && (
+          <p className="hint">
+            Estado consultado:{" "}
+            {new Date(checkedAt).toLocaleString("es-PE", {
+              timeZone: "America/Lima",
+            })}{" "}
+            · Lima.
+          </p>
+        )}
+        {testBudget && !testBudget.allowed && (
+          <p className="notice error">
+            {testBudget.error} Esta comprobación no crea reservas ni consulta
+            saldo de OpenAI. Los cargos inciertos siguen ocupando su reserva
+            local.
+          </p>
+        )}
+        {liveError && (
+          <p className="notice error" role="alert">
+            {liveError}
+          </p>
+        )}
+        <div className="notice">
+          <strong>Última prueba real: </strong>
+          {!latestTest
+            ? "Todavía no realizada."
+            : ((
+                {
+                  PENDING: "Pendiente de procesar.",
+                  RUNNING: "En proceso.",
+                  COMPLETED: "Imagen generada y guardada.",
+                  FAILED: "No completada.",
+                  CANCELLED: "Cancelada.",
+                  UNCERTAIN:
+                    "Resultado incierto; no hay una imagen confirmada para esta prueba.",
+                } as Record<string, string>
+              )[latestTest.status] ?? "Sin resultado confirmado.")}
+          {latestTest?.error && <p>{latestTest.error}</p>}
+          {latestTest && (
+            <p className="hint">
+              Prueba creada:{" "}
+              {new Date(latestTest.createdAt).toLocaleString("es-PE", {
+                timeZone: "America/Lima",
+              })}
+              . El consumo registrado se consulta en Consumo de IA.
+            </p>
+          )}
+        </div>
+
         <ul>
           {checks.map((check) => (
             <li key={check.label}>
-              <strong>{check.ok ? "Listo" : "Pendiente"}:</strong> {check.label}
+              <strong>{check.ok ? "Completo" : "Pendiente"}:</strong>{" "}
+              {check.label}
             </li>
           ))}
         </ul>
@@ -1965,6 +2076,10 @@ function AISettings() {
                 </option>
               ))}
             </select>
+            <span className="hint">
+              Selecciona la empresa que emitió tu clave de API. Una suscripción
+              de chat no sustituye la facturación de su API.
+            </span>
           </label>
           <label>
             {c.maskedKey ? "Reemplazar clave API" : "Clave API"}
@@ -1980,6 +2095,11 @@ function AISettings() {
               spellCheck={false}
               maxLength={1000}
             />
+            <span className="hint">
+              Pega la clave secreta creada en la cuenta del proveedor. Déjalo
+              vacío para conservar la clave guardada. Nunca la compartas por
+              chat.
+            </span>
           </label>
         </div>
         <p className="hint">
@@ -2009,8 +2129,11 @@ function AISettings() {
             disabled={t.busy || dirty || !!key || !c.maskedKey}
             onClick={() =>
               void t.run(async () => {
-                await api("ai/verify", "POST");
-                await refresh();
+                try {
+                  await api("ai/verify", "POST");
+                } finally {
+                  await refresh();
+                }
               }, "OpenAI respondió a la consulta de modelos. La generación todavía requiere su propia prueba.")
             }
           >
@@ -2082,6 +2205,10 @@ function AISettings() {
                       <option key={m.id}>{m.id}</option>
                     ))}
                 </datalist>
+                <span className="hint">
+                  El modelo que generará el fondo o la imagen. Selecciona uno de
+                  la lista consultada con tu clave.
+                </span>
               </label>
               <label>
                 Modelo de dirección creativa
@@ -2097,6 +2224,10 @@ function AISettings() {
                       <option key={m.id}>{m.id}</option>
                     ))}
                 </datalist>
+                <span className="hint">
+                  Interpreta las instrucciones y prepara la composición. Es un
+                  modelo de texto y también puede consumir API.
+                </span>
               </label>
               <label>
                 Calidad
@@ -2108,6 +2239,10 @@ function AISettings() {
                     <option key={x}>{x}</option>
                   ))}
                 </select>
+                <span className="hint">
+                  low: menor detalle; medium: intermedia; high: mayor detalle.
+                  Las opciones dependen del modelo y pueden cambiar el coste.
+                </span>
               </label>
               <label>
                 Resolución
@@ -2119,6 +2254,10 @@ function AISettings() {
                     <option key={x}>{x}</option>
                   ))}
                 </select>
+                <span className="hint">
+                  Ancho × alto de la imagen que solicita la API, en píxeles.
+                  Después se adapta al formato del afiche.
+                </span>
               </label>
             </div>
             <label>Modelos alternativos · selecciona los autorizados</label>
@@ -2184,6 +2323,22 @@ function AISettings() {
                   )
                 }
               />
+              <span className="hint">
+                {
+                  (
+                    {
+                      monthlyLimitMicros:
+                        "Máximo de reservas de todos los usuarios en el mes, en USD. Cero bloquea nuevas generaciones.",
+                      dailyLimitMicros:
+                        "Máximo de reservas de todos los usuarios en el día, en USD. Cero bloquea.",
+                      operationLimitMicros:
+                        "Máximo para un lote o solicitud: cantidad de afiches × reserva por afiche. Debe permitir al menos un afiche.",
+                      imageReserveMicros:
+                        "Importe que apartará la aplicación por cada afiche, incluida dirección creativa. Lo defines tú: no es una tarifa confirmada de OpenAI ni añade saldo.",
+                    } as Record<string, string>
+                  )[k]
+                }
+              </span>
             </label>
           ))}
           <label>
@@ -2195,6 +2350,10 @@ function AISettings() {
               value={c.maxGenerations}
               onChange={(e) => update("maxGenerations", Number(e.target.value))}
             />
+            <span className="hint">
+              Tope de cantidad por solicitud. También se aplican los
+              presupuestos; para probar basta con un afiche.
+            </span>
           </label>
         </div>
         <button
@@ -2211,7 +2370,10 @@ function AISettings() {
         <p>
           La prueba crea un afiche e invoca dirección creativa e imágenes.{" "}
           <strong>Puede producir cargos de API.</strong> Se aplican los
-          presupuestos y el registro de consumo.
+          presupuestos y el registro de consumo. El botón inicia una sola prueba
+          aquí; mantén esta pantalla abierta hasta conocer el resultado. Si se
+          interrumpe, consulta Generaciones antes de volver a autorizar otra. No
+          se reintenta automáticamente.
         </p>
         <label className="row">
           <input
@@ -2225,12 +2387,25 @@ function AISettings() {
           disabled={!charge || t.busy || !ready}
           onClick={() =>
             void t.run(async () => {
-              await api("ai/test", "POST", {
-                confirmCharge: true,
-                requestId: crypto.randomUUID(),
-              });
-              setCharge(false);
-            }, "Prueba encolada. Revisa su resultado en Generaciones.")
+              try {
+                const queued = await api("ai/test", "POST", {
+                  confirmCharge: true,
+                  requestId: crypto.randomUUID(),
+                });
+                const result = await api(
+                  `jobs/${queued.jobs[0]}/process`,
+                  "POST",
+                );
+                if (result.status !== "COMPLETED")
+                  throw new Error(
+                    result.error ??
+                      "La prueba no terminó. Consulta Generaciones antes de autorizar otra.",
+                  );
+              } finally {
+                setCharge(false);
+                await refresh();
+              }
+            }, "Prueba generada y guardada. Puedes descargarla desde Generaciones.")
           }
         >
           Generar prueba con posible cargo
