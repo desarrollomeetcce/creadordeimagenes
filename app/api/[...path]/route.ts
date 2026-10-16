@@ -276,6 +276,22 @@ async function handle(
       return send(result);
     }
     const user = await actor();
+    if (parts[0] === "mail") {
+      ownerOnly(user);
+      const { mailStatus, saveMail, deleteMail, verifyMail, testMail } =
+        await import("@/lib/mail");
+      if (route === "mail" && method === "GET")
+        return send(await mailStatus(user));
+      if (route === "mail" && method === "PUT")
+        return send(await saveMail(user, await body(req)));
+      if (route === "mail" && method === "DELETE")
+        return send(await deleteMail(user, await body(req)));
+      if (route === "mail/verify" && method === "POST")
+        return send(await verifyMail(user, await body(req)));
+      if (route === "mail/test" && method === "POST")
+        return send(await testMail(user, await body(req)));
+      throw new AppError("Ruta de correo no disponible.", 404);
+    }
     if (route === "auth/owner-recovery") {
       ownerOnly(user);
       const { ownerRecoveryStatus, manageOwnerRecovery } =

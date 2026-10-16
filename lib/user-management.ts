@@ -97,6 +97,14 @@ export async function userManagement(
   }
   if (parts.length === 3 && parts[2] === "recovery" && req.method === "POST")
     return send(await issuePasswordReset(actor, parts[1], await body()), 201);
+  if (
+    parts.length === 3 &&
+    parts[2] === "recovery-email" &&
+    req.method === "POST"
+  ) {
+    const { emailPasswordReset } = await import("./mail");
+    return send(await emailPasswordReset(actor, parts[1], await body()));
+  }
   if (parts.length === 3 && parts[2] === "password" && req.method === "POST") {
     demand(
       actor.role === "OWNER",

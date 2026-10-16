@@ -74,11 +74,17 @@ export async function issuePasswordReset(
   );
   const token = randomBytes(32).toString("base64url"),
     expiresAt = new Date(Date.now() + 30 * 60000);
-  await db.$transaction(async (tx) => {
+  const email = await db.$transaction(async (tx) => {
     // Lock both accounts in a stable order and recheck the privileged issuer credentials.
     const rows = await tx.$queryRaw<
-      { id: string; role: string; status: string; passwordHash: string }[]
-    >`SELECT "id", "role", "status", "passwordHash" FROM "User" WHERE "id" IN (${user.id}, ${targetId}) ORDER BY "id" FOR UPDATE`;
+      {
+        id: string;
+        role: string;
+        status: string;
+        passwordHash: string;
+        email: string;
+      }[]
+    >`SELECT "id", "role", "status", "passwordHash", "email" FROM "User" WHERE "id" IN (${user.id}, ${targetId}) ORDER BY "id" FOR UPDATE`;
     const issuer = rows.find((row) => row.id === user.id);
     demand(
       issuer?.role === user.role &&
@@ -110,8 +116,9 @@ export async function issuePasswordReset(
         resourceId: targetId,
       },
     });
+    return target.email;
   });
-  return { token, expiresAt };
+  return { token, expiresAt, email };
 }
 
 export async function resetPassword(input: unknown) {

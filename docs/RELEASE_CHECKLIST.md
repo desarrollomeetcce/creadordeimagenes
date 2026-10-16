@@ -19,7 +19,7 @@ La estimación comunicada de ~80% corresponde al desarrollo funcional; no certif
 | Pendiente | Condición de cierre |
 | --- | --- |
 | IA real | OWNER configura su proveedor desde la interfaz, verifica modelos y autoriza una prueba que puede generar cargo. Comprobar imagen, referencias, texto/logos, edición y descarga reales. La instalación consultada aún no tiene ProviderConfiguration. |
-| Correo automático | Completar la integración con un buzón/servicio elegido y comprobar entrega. Actualmente los enlaces se entregan manualmente y la emergencia usa código privado. |
+| Correo real | Panel SMTP y envío de recuperación implementados y probados con transporte simulado. OWNER debe introducir su buzón Hostinger en Configuración de correo, verificar TLS/autenticación y comprobar recepción mediante envío explícito. No se ha enviado correo externo. La entrega manual y emergencia siguen disponibles. |
 | Adjuntos y retención administrativa | Completar reemplazo/miniaturas de adjuntos y miniaturas/retención administrativa configurables. |
 | Carga y consumo | Validar un lote grande con proveedor real, rendimiento, recuperación de infraestructura y conciliación de costes que informe el proveedor. |
 | Producción elegida | Validar HTTPS, ejecutor externo, almacenamiento y cuota, monitorización y restauración conjunta de base/archivos/clave maestra en el servidor elegido. Las comprobaciones locales no sustituyen las del VPS o Vercel externos. |

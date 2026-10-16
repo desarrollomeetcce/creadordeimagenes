@@ -4,6 +4,7 @@ import { CurrentRole, RoleGuide, useCanEdit } from "./components/role-guide";
 import { roleLabels, managesUsers } from "../lib/roles";
 import { HierarchyBreadcrumbs } from "./components/breadcrumbs";
 import { UsersPanel } from "./components/users-panel";
+import { MailSettings } from "./components/mail-settings";
 import { VariationEditor } from "./components/variation-editor";
 import { ProjectSharing } from "./components/project-sharing";
 import { BackgroundBatches } from "./components/background-batches";
@@ -220,7 +221,7 @@ export default function Home() {
           "account",
           "collection",
           ...(managesUsers(user.role) ? ["users"] : []),
-          ...(user.role === "OWNER" ? ["ai", "statistics"] : []),
+          ...(user.role === "OWNER" ? ["ai", "mail", "statistics"] : []),
         ];
         const nextView =
           allowed.includes(requested) &&
@@ -346,6 +347,7 @@ export default function Home() {
     library: "Biblioteca",
     presets: "Configuraciones guardadas",
     ai: "Configuración → Inteligencia Artificial",
+    mail: "Configuración → Correo",
     history: "Historial",
     users: "Usuarios",
     usage: "Consumo de IA",
@@ -390,6 +392,7 @@ export default function Home() {
                 ? [
                     ["statistics", "▥", "Estadísticas"],
                     ["ai", "⚙", "Configuración de IA"],
+                    ["mail", "✉", "Configuración de correo"],
                   ]
                 : []),
             ]
@@ -498,6 +501,8 @@ export default function Home() {
               <Presets />
             ) : view === "ai" ? (
               <AISettings />
+            ) : view === "mail" && user.role === "OWNER" ? (
+              <MailSettings />
             ) : view === "users" ? (
               <UsersPanel isOwner={user.role === "OWNER"} />
             ) : view === "history" ? (

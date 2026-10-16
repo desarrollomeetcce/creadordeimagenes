@@ -332,3 +332,17 @@ model OwnerRecovery {
   createdAt DateTime @default(now())
   expiresAt DateTime
 }
+
+model MailConfiguration {
+  id String @id @default("global")
+  host String
+  port Int
+  username String
+  senderName String
+  encryptedPassword String
+  revision String
+  verifiedRevision String?
+  verifiedAt DateTime?
+  lastError String?
+  updatedAt DateTime @updatedAt
+}

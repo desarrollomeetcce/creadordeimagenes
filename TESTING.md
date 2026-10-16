@@ -1,5 +1,13 @@
 # Pruebas y evidencia
 
+## Continuación: correo SMTP
+
+15 unitarias y las 64 situaciones HTTP/PostgreSQL anteriores (65 resultados con contenedor) aprobadas. Cuatro escenarios nuevos en `npm run test:mail` (5 resultados con contenedor) usan base local sintética y adaptador SMTP explícitamente simulado, sin red de correo: exclusividad OWNER en todos los métodos, contraseña actual, puertos, AES/AAD, GET sin secreto/ciphertext, guardar sin nueva contraseña, invalidación de verificación, revisión concurrente, fallo de autenticación saneado, envío de prueba al correo de acceso, destino de recuperación fijado a la cuenta, rechazo de recuperación elevada por ADMIN, hash/caducidad/un uso, token ausente de respuesta y auditoría, invalidación tras fallo incierto, borrado protegido y rechazo de IPv4 privadas/reservadas/IPv6. TypeScript y compilación aprobados. El primer intento detectó el orden de validación del rol frente a APP_ORIGIN en producción local; se corrigió y la suite SMTP completa pasó.
+
+Ejecutar `npm run test:mail` después de la integración, con el mismo servidor y variables sintéticas. Este archivo exige el socket exclusivo `/workspace/work/pgdata`, crea cuentas de prueba y modifica/elimina la configuración global de correo: nunca ejecutarlo contra Neon o la instalación del usuario. Los estados SMTP simulados solo existen en esa base. No acredita conectividad ni entrega en Hostinger real.
+
+Chromium: panel OWNER, guardar y recargar con contraseña vacía/máscara, respuestas sin secreto ni ciphertext, verificación con contraseña incorrecta rechazada antes de SMTP, eliminación, menú no visible para ADMIN y vista móvil de 390 px sin desbordamientos ni errores JavaScript. Se corrigió la espera del script de ingreso que navegaba antes de completar autenticación. Migración 009 verificada local/copia Neon y aplicada en la base conectada; nueve migraciones y cero configuraciones externas de correo. No se enviaron correos ni usaron credenciales reales.
+
 Fecha: 15 de octubre de 2026. Entorno: Node.js 24, Next.js 16, Prisma ORM 7.6, PostgreSQL local temporal. No se usa una cuenta de IA real.
 
 ## Ejecutadas

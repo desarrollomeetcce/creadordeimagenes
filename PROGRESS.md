@@ -1,5 +1,15 @@
 # Avance por fases · continuación del desarrollo
 
+## Continuación · correo SMTP de Hostinger
+
+Configuración → Correo exclusiva del OWNER, con servidor editable, puertos TLS 465 o STARTTLS obligatorio 587, buzón/remitente y contraseña protegida. La contraseña se cifra AES-256-GCM con contexto separado y la clave maestra existente fuera de la base; las respuestas usan proyección explícita y máscara sin contraseña/ciphertext. Reautenticación para guardar, reemplazar, eliminar, verificar y probar. Cada guardado invalida la verificación. Adaptador SMTP independiente, TLS/certificado obligatorio, conexión fijada a IPv4 pública validada para impedir destinos internos o cambio de DNS, tiempos de espera y errores españoles saneados sin cuerpos ni secretos en auditoría.
+
+OWNER/Administrador pueden enviar desde Usuarios un enlace de recuperación al correo registrado del destinatario; se mantienen las restricciones de cuentas elevadas, contraseña actual, rate limit, hash, caducidad de 30 minutos y un solo uso. El token no se devuelve al navegador en la modalidad correo. Fallos de envío invalidan el enlace y la verificación, sin reintento automático. Se conserva entrega manual. La prueba de conexión autentica sin enviar; la prueba de correo requiere acción explícita y se dirige al correo de acceso del OWNER, avisando de límites del proveedor. La interfaz distingue aceptación SMTP de entrega efectiva.
+
+Migración aditiva 009 para MailConfiguration. Instrucciones del usuario en docs/HOSTINGER_EMAIL.md. No se obtuvieron ni configuraron credenciales reales ni se enviaron correos externos. La conexión y recepción reales en Hostinger quedan pendientes de que OWNER introduzca el buzón desde el panel y solicite las pruebas.
+
+Validación completada: 64 escenarios de integración anteriores, 4 escenarios SMTP adicionales, 15 unitarias, instalación sin base, TypeScript y compilación. Chromium verificó guardado, máscara sin secreto/ciphertext en respuesta ni campo tras recargar, prueba rechazada por contraseña incorrecta antes de abrir SMTP, eliminación protegida, menú oculto para ADMIN y móvil sin desbordamientos ni errores JavaScript. El script se corrigió para esperar la navegación autenticada antes de abrir la configuración. Migración 009 aplicada primero en PostgreSQL local y copia Neon; después en la base conectada con checksum/transacción. Configuración de correo externa vacía: no cambia usuarios ni credenciales existentes.
+
 ## Alcance
 
 La referencia sigue siendo el prompt maestro completo (54 secciones) y el requisito obligatorio de administración visual de IA. Se conservan en docs/MASTER_SPEC.md y docs/MASTER_SPEC_PDF.txt. Esta continuación añade comportamiento real a la primera entrega y se integra en la rama main, como solicitó el OWNER. La plataforma sigue incompleta. El usuario ya confirmó el ingreso a la instalación web de prueba; la generación externa real sigue sin validarse.

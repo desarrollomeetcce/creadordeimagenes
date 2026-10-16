@@ -124,18 +124,28 @@ export function RecoveryIssuer({
           onSubmit={(e) => {
             e.preventDefault();
             const form = e.currentTarget,
-              currentPassword = new FormData(form).get("currentPassword");
+              currentPassword = new FormData(form).get("currentPassword"),
+              email =
+                (e.nativeEvent as SubmitEvent).submitter?.getAttribute(
+                  "value",
+                ) === "email";
             setBusy(true);
             setMessage("");
             setLink("");
-            void post(`users/${userId}/recovery`, { currentPassword })
+            void post(
+              `users/${userId}/${email ? "recovery-email" : "recovery"}`,
+              { currentPassword },
+            )
               .then((result) => {
-                setLink(
-                  `${window.location.origin}/#recuperar=${encodeURIComponent(result.token)}`,
-                );
-                setMessage(
-                  `Válido hasta ${new Date(result.expiresAt).toLocaleTimeString()}. El enlace anterior ya no funciona. No se envió ningún correo.`,
-                );
+                if (email) setMessage(result.message);
+                else {
+                  setLink(
+                    `${window.location.origin}/#recuperar=${encodeURIComponent(result.token)}`,
+                  );
+                  setMessage(
+                    `Válido hasta ${new Date(result.expiresAt).toLocaleTimeString()}. El enlace anterior ya no funciona. No se envió ningún correo.`,
+                  );
+                }
                 form.reset();
               })
               .catch((error: Error) => setMessage(error.message))
@@ -144,7 +154,8 @@ export function RecoveryIssuer({
         >
           <p>
             Genera un enlace de un solo uso para {name}. Caduca en 30 minutos.
-            Entrégalo de forma privada a la persona titular.
+            Puedes enviarlo al correo registrado si el OWNER configuró y
+            verificó el correo, o entregarlo de forma privada.
           </p>
           <label>
             Tu contraseña actual de OWNER o Administrador
@@ -157,7 +168,12 @@ export function RecoveryIssuer({
               autoComplete="current-password"
             />
           </label>
-          <button disabled={busy}>Generar enlace temporal</button>
+          <button className="primary" value="email" disabled={busy}>
+            Enviar enlace por correo
+          </button>
+          <button value="manual" disabled={busy}>
+            Generar enlace para copiar
+          </button>
         </form>
       )}
       {link && (

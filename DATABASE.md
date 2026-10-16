@@ -1,5 +1,7 @@
 # Base de datos
 
+Migración 009: MailConfiguration singleton conserva host/puerto/buzón/nombre, contraseña cifrada AES-GCM, revisión UUID y revisión/fecha de verificación, error saneado y updatedAt. Sin contraseña en claro, mensajes ni enlaces. La clave maestra se mantiene fuera de la base y el AAD de correo es distinto al de IA. Las respuestas OWNER seleccionan campos seguros sin ciphertext; otros roles no consultan la tabla por API. Cambiar configuración invalida la verificación; borrarla no altera cuentas. PasswordReset sigue almacenando solo hash y fecha de caducidad.
+
 Esquema: `prisma/schema.prisma`. Migración inicial: `prisma/migrations/202610150001_initial/migration.sql`.
 
 Entidades implementadas: User (rol y aprobación), Session, Project, ProjectMember, Category, Subproduct, PromptVersion, Attachment, ProviderConfiguration, GenerationJob, Variation, UsageLedger, AuditEvent y RateLimit.

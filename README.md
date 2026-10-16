@@ -4,6 +4,8 @@ Aplicación web en español para producción publicitaria multiproyecto. Impleme
 
 **Estado:** desarrollo por fases; no es todavía la totalidad del prompt maestro ni una aplicación certificada para producción. Véanse [PROGRESS.md](PROGRESS.md) y [TESTING.md](TESTING.md). No se ha verificado una generación externa real: faltan credenciales del proveedor. Las pruebas simuladas están identificadas como tales.
 
+OWNER puede conectar su buzón en **Configuración de correo** para enviar enlaces de recuperación desde Usuarios. [Guía de Hostinger](docs/HOSTINGER_EMAIL.md): configuración cifrada, verificación TLS y prueba de envío explícita; no requiere nuevas variables de entorno. La recepción real debe comprobarse con el buzón del titular.
+
 ## Inicio local
 
 Requisitos: Node.js 24, npm y PostgreSQL 16 o superior.
