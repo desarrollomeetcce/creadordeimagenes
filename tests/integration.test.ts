@@ -3965,6 +3965,304 @@ test("Integración HTTP + PostgreSQL (base exclusiva de pruebas, sin llamadas ex
         );
       },
     );
+    await t.test(
+      "código de emergencia OWNER: hash, rotación, caducidad, uso único y cierre de sesiones",
+      async () => {
+        for (const client of [user, admin, observer])
+          for (const method of ["GET", "POST", "DELETE"])
+            assert.equal(
+              (
+                await client.call("auth/owner-recovery", method, {
+                  currentPassword: password,
+                })
+              ).status,
+              403,
+            );
+        assert.equal((await anonymous.call("auth/owner-recovery")).status, 401);
+        assert.equal(
+          (
+            await owner.call("auth/owner-recovery", "POST", {
+              currentPassword: "Incorrecta-0123456789",
+            })
+          ).status,
+          403,
+        );
+        const created = await owner.call("users", "POST", {
+          name: "OWNER emergencia A",
+          email: `emergency-a-${tag}@example.test`,
+          password,
+          role: "OWNER",
+        });
+        assert.equal(created.status, 201);
+        const a = new Client(),
+          otherSession = new Client(),
+          email = created.body.email,
+          id = created.body.id;
+        await a.call("auth/login", "POST", { email, password });
+        await otherSession.call("auth/login", "POST", { email, password });
+        const first = await a.call("auth/owner-recovery", "POST", {
+          currentPassword: password,
+        });
+        assert.equal(first.status, 200);
+        assert.match(first.body.code, /^OWNER-[A-Za-z0-9_-]{43}$/);
+        const record = await db.ownerRecovery.findUniqueOrThrow({
+          where: { userId: id },
+        });
+        assert(!JSON.stringify(record).includes(first.body.code));
+        assert.equal(record.tokenHash.length, 64);
+        const status = await a.call("auth/owner-recovery");
+        assert.deepEqual(Object.keys(status.body).sort(), [
+          "createdAt",
+          "enabled",
+          "expiresAt",
+        ]);
+        assert.equal(status.body.enabled, true);
+        assert(
+          !JSON.stringify((await owner.call("audit")).body).includes(
+            first.body.code,
+          ),
+        );
+        const next = await a.call("auth/owner-recovery", "POST", {
+          currentPassword: password,
+        });
+        assert.equal(next.status, 200);
+        assert.notEqual(first.body.code, next.body.code);
+        assert.equal(
+          (
+            await anonymous.call("auth/emergency-recovery", "POST", {
+              email,
+              code: first.body.code,
+              newPassword: "Emergencia-nueva-0123456789",
+            })
+          ).status,
+          400,
+        );
+        await db.ownerRecovery.update({
+          where: { userId: id },
+          data: { expiresAt: new Date(0) },
+        });
+        assert.equal((await a.call("auth/owner-recovery")).body.enabled, false);
+        assert.equal(
+          (
+            await anonymous.call("auth/emergency-recovery", "POST", {
+              email,
+              code: next.body.code,
+              newPassword: "Emergencia-nueva-0123456789",
+            })
+          ).status,
+          400,
+        );
+        const fresh = await a.call("auth/owner-recovery", "POST", {
+          currentPassword: password,
+        });
+        assert.equal(fresh.status, 200);
+        await db.passwordReset.create({
+          data: {
+            tokenHash: randomUUID(),
+            userId: id,
+            expiresAt: new Date(Date.now() + 60000),
+          },
+        });
+        const payload = {
+          email: email.toUpperCase(),
+          code: fresh.body.code,
+          newPassword: "Emergencia-nueva-0123456789",
+        };
+        const results = await Promise.all([
+          new Client().call("auth/emergency-recovery", "POST", payload),
+          new Client().call("auth/emergency-recovery", "POST", payload),
+        ]);
+        assert.deepEqual(results.map((r) => r.status).sort(), [200, 400]);
+        assert.equal((await a.call("projects")).status, 401);
+        assert.equal((await otherSession.call("projects")).status, 401);
+        assert.equal(
+          await db.ownerRecovery.count({ where: { userId: id } }),
+          0,
+        );
+        assert.equal(
+          await db.passwordReset.count({ where: { userId: id } }),
+          0,
+        );
+        assert.equal(
+          (await anonymous.call("auth/emergency-recovery", "POST", payload))
+            .status,
+          400,
+        );
+        assert.equal(
+          (
+            await a.call("auth/login", "POST", {
+              email,
+              password: payload.newPassword,
+            })
+          ).status,
+          200,
+        );
+        assert.equal(
+          await db.auditEvent.count({
+            where: { actorId: id, action: "OWNER_RECUPERADO_EMERGENCIA" },
+          }),
+          1,
+        );
+        const logs = JSON.stringify((await owner.call("audit")).body);
+        assert(!logs.includes(fresh.body.code));
+        assert(!logs.includes(payload.newPassword));
+      },
+    );
+    await t.test(
+      "contraseñas, roles, suspensión y revocación invalidan el código de emergencia",
+      async () => {
+        const created = await owner.call("users", "POST", {
+          name: "OWNER emergencia B",
+          email: `emergency-b-${tag}@example.test`,
+          password,
+          role: "OWNER",
+        });
+        assert.equal(created.status, 201);
+        const account = new Client(),
+          email = created.body.email,
+          id = created.body.id;
+        await account.call("auth/login", "POST", { email, password });
+        let code = (
+          await account.call("auth/owner-recovery", "POST", {
+            currentPassword: password,
+          })
+        ).body.code;
+        assert.equal(
+          (
+            await account.call("auth/change-password", "POST", {
+              currentPassword: password,
+              newPassword: "Cambio-emergencia-0123456789",
+            })
+          ).status,
+          200,
+        );
+        assert.equal(
+          await db.ownerRecovery.count({ where: { userId: id } }),
+          0,
+        );
+        assert.equal(
+          (
+            await anonymous.call("auth/emergency-recovery", "POST", {
+              email,
+              code,
+              newPassword: password,
+            })
+          ).status,
+          400,
+        );
+        const currentPassword = "Cambio-emergencia-0123456789";
+        await account.call("auth/login", "POST", {
+          email,
+          password: currentPassword,
+        });
+        code = (
+          await account.call("auth/owner-recovery", "POST", { currentPassword })
+        ).body.code;
+        assert.equal(
+          (
+            await owner.call("users/" + id, "PATCH", {
+              role: "ADMIN",
+              status: "APPROVED",
+            })
+          ).status,
+          200,
+        );
+        assert.equal(
+          await db.ownerRecovery.count({ where: { userId: id } }),
+          0,
+        );
+        assert.equal(
+          (
+            await anonymous.call("auth/emergency-recovery", "POST", {
+              email,
+              code,
+              newPassword: password,
+            })
+          ).status,
+          400,
+        );
+        await owner.call("users/" + id, "PATCH", {
+          role: "OWNER",
+          status: "APPROVED",
+        });
+        await account.call("auth/login", "POST", {
+          email,
+          password: currentPassword,
+        });
+        code = (
+          await account.call("auth/owner-recovery", "POST", { currentPassword })
+        ).body.code;
+        await owner.call("users/" + id, "PATCH", {
+          role: "OWNER",
+          status: "SUSPENDED",
+        });
+        assert.equal(
+          await db.ownerRecovery.count({ where: { userId: id } }),
+          0,
+        );
+        assert.equal(
+          (
+            await anonymous.call("auth/emergency-recovery", "POST", {
+              email,
+              code,
+              newPassword: password,
+            })
+          ).status,
+          400,
+        );
+        await owner.call("users/" + id, "PATCH", {
+          role: "OWNER",
+          status: "APPROVED",
+        });
+        await account.call("auth/login", "POST", {
+          email,
+          password: currentPassword,
+        });
+        await account.call("auth/owner-recovery", "POST", { currentPassword });
+        assert.equal(
+          (
+            await account.call("auth/owner-recovery", "DELETE", {
+              currentPassword,
+            })
+          ).status,
+          200,
+        );
+        assert.equal(
+          (await account.call("auth/owner-recovery")).body.enabled,
+          false,
+        );
+        code = (
+          await account.call("auth/owner-recovery", "POST", { currentPassword })
+        ).body.code;
+        const reset = await owner.call(`users/${id}/recovery`, "POST", {
+          currentPassword: password,
+        });
+        assert.equal(reset.status, 201);
+        assert.equal(
+          (
+            await anonymous.call("auth/reset-password", "POST", {
+              token: reset.body.token,
+              newPassword: password,
+            })
+          ).status,
+          200,
+        );
+        assert.equal(
+          await db.ownerRecovery.count({ where: { userId: id } }),
+          0,
+        );
+        assert.equal(
+          (
+            await anonymous.call("auth/emergency-recovery", "POST", {
+              email,
+              code,
+              newPassword: currentPassword,
+            })
+          ).status,
+          400,
+        );
+      },
+    );
     await t.test("cierre de sesión invalida el token", async () => {
       assert.equal((await user.call("auth/logout", "POST")).status, 200);
       assert.equal((await user.call("projects")).status, 401);

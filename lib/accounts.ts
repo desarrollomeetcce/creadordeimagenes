@@ -42,6 +42,7 @@ export async function changePassword(user: { id: string }, input: unknown) {
     );
     await tx.session.deleteMany({ where: { userId: user.id } });
     await tx.passwordReset.deleteMany({ where: { userId: user.id } });
+    await tx.ownerRecovery.deleteMany({ where: { userId: user.id } });
     await tx.auditEvent.create({
       data: { actorId: user.id, action: "CONTRASENA_CAMBIADA" },
     });
@@ -158,6 +159,7 @@ export async function resetPassword(input: unknown) {
     });
     await tx.session.deleteMany({ where: { userId: reset.userId } });
     await tx.passwordReset.deleteMany({ where: { userId: reset.userId } });
+    await tx.ownerRecovery.deleteMany({ where: { userId: reset.userId } });
     await tx.auditEvent.create({
       data: { actorId: reset.userId, action: "CONTRASENA_RECUPERADA" },
     });

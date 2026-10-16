@@ -11,3 +11,7 @@ work
 .workflow-data
 app/.well-known/workflow
 .swc
+
+backups/
+*.dump
+recuperacion-owner*.txt

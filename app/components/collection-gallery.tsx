@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
+import { galleryKey, readGallery, saveGallery } from "./gallery-session";
 import { HierarchyBreadcrumbs } from "./breadcrumbs";
 import { VariationEditor } from "./variation-editor";
 type Scope = "project" | "category";
@@ -47,24 +48,28 @@ export async function downloadArchive(
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 export function CollectionGallery({
+  userId,
   scope,
   id,
   back,
   openSubproduct,
 }: {
+  userId: string;
   scope: Scope;
   id: string;
   back: () => void;
   openSubproduct: (id: string) => void;
 }) {
+  const storageKey = galleryKey(userId, scope, id);
+  const [initial] = useState(() => readGallery(storageKey));
   const [data, setData] = useState<Data | null>(null),
-    [q, setQ] = useState(""),
-    [review, setReview] = useState("ALL"),
-    [favorite, setFavorite] = useState(false),
-    [saved, setSaved] = useState(false),
-    [page, setPage] = useState(1),
-    [selected, setSelected] = useState<string[]>([]),
-    [format, setFormat] = useState("png"),
+    [q, setQ] = useState(initial.q),
+    [review, setReview] = useState(initial.review),
+    [favorite, setFavorite] = useState(initial.favorite),
+    [saved, setSaved] = useState(initial.saved),
+    [page, setPage] = useState(initial.page),
+    [selected, setSelected] = useState<string[]>(initial.selected),
+    [format, setFormat] = useState(initial.format),
     [message, setMessage] = useState(""),
     [busy, setBusy] = useState(false),
     [loading, setLoading] = useState(true),
@@ -72,6 +77,17 @@ export function CollectionGallery({
     [editing, setEditing] = useState<string | null>(null),
     [preview, setPreview] = useState<string | null>(null),
     [compare, setCompare] = useState(false);
+  useEffect(() => {
+    saveGallery(storageKey, {
+      q,
+      review,
+      favorite,
+      saved,
+      page,
+      selected,
+      format,
+    });
+  }, [storageKey, q, review, favorite, saved, page, selected, format]);
   useEffect(() => {
     let active = true;
     setLoading(true);
@@ -152,8 +168,7 @@ export function CollectionGallery({
       </button>
       <h1>
         Afiches de{" "}
-        {data?.resource.name ??
-          (scope === "project" ? "proyecto" : "producto")}
+        {data?.resource.name ?? (scope === "project" ? "proyecto" : "producto")}
       </h1>
       <p className="muted">
         {data?.total ?? 0} afiches disponibles. Cada resultado se descarga como

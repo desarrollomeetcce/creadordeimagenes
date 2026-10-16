@@ -651,3 +651,9 @@ a {
 .search-select-option strong, .search-select-option small { display:block; overflow-wrap:anywhere; }
 .search-select-group { font-weight:700; }
 .subproduct-space { margin-top:18px; }
+
+.mobile-signout { display:none; }
+@media (max-width:620px) {
+  .mobile-signout { display:inline-flex; padding:8px 10px; font-size:12px; }
+  .topbar .badge { display:none; }
+}

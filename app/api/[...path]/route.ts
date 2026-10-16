@@ -269,7 +269,23 @@ async function handle(
       const { resetPassword } = await import("@/lib/accounts");
       return send(await resetPassword(await body(req)));
     }
+    if (route === "auth/emergency-recovery" && method === "POST") {
+      const { recoverOwner } = await import("@/lib/owner-recovery");
+      const result = await recoverOwner(await body(req));
+      (await cookies()).delete("session");
+      return send(result);
+    }
     const user = await actor();
+    if (route === "auth/owner-recovery") {
+      ownerOnly(user);
+      const { ownerRecoveryStatus, manageOwnerRecovery } =
+        await import("@/lib/owner-recovery");
+      if (method === "GET") return send(await ownerRecoveryStatus(user));
+      if (method === "POST" || method === "DELETE")
+        return send(
+          await manageOwnerRecovery(user, await body(req), method === "DELETE"),
+        );
+    }
     if (parts[0] === "users") {
       const { userManagement } = await import("@/lib/user-management");
       return await userManagement(req, parts, user, () => body(req));

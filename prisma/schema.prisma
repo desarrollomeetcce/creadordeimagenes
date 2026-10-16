@@ -31,6 +31,7 @@ model User {
   categoryMemberships CategoryMember[]
   subproductMemberships SubproductMember[]
   passwordResets PasswordReset[]
+  ownerRecovery OwnerRecovery?
 }
 model PasswordReset {
   tokenHash String @id
@@ -322,4 +323,12 @@ model SubproductMember {
   user User @relation(fields:[userId],references:[id],onDelete:Cascade)
   @@id([subproductId,userId])
   @@index([userId])
+}
+
+model OwnerRecovery {
+  userId String @id
+  user User @relation(fields:[userId],references:[id],onDelete:Cascade)
+  tokenHash String @unique
+  createdAt DateTime @default(now())
+  expiresAt DateTime
 }

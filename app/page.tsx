@@ -8,6 +8,11 @@ import { VariationEditor } from "./components/variation-editor";
 import { ProjectSharing } from "./components/project-sharing";
 import { BackgroundBatches } from "./components/background-batches";
 import { BrandKit } from "./components/brand-kit";
+import {
+  OwnerEmergencyKit,
+  EmergencyOwnerForm,
+} from "./components/owner-emergency";
+import { clearGallerySession } from "./components/gallery-session";
 import { SubproductTrash } from "./components/subproduct-trash";
 import { StorageUsage } from "./components/storage-usage";
 import { StatisticsPanel } from "./components/statistics-panel";
@@ -413,7 +418,12 @@ export default function Home() {
             </div>
             <button
               style={{ marginTop: 16, width: "100%" }}
-              onClick={() => void api("auth/logout", "POST").then(reloadUser)}
+              onClick={() =>
+                void api("auth/logout", "POST").then(() => {
+                  clearGallerySession();
+                  return reloadUser();
+                })
+              }
             >
               Cerrar sesión
             </button>
@@ -423,6 +433,18 @@ export default function Home() {
           <header className="topbar">
             <span className="muted">{titles[view]}</span>
             <span className="badge">Producción publicitaria</span>
+            <button
+              type="button"
+              className="mobile-signout"
+              onClick={() =>
+                void api("auth/logout", "POST").then(() => {
+                  clearGallerySession();
+                  return reloadUser();
+                })
+              }
+            >
+              Cerrar sesión
+            </button>
           </header>
           <main>
             <RoleGuide name={user.name} role={user.role} />
@@ -447,7 +469,8 @@ export default function Home() {
               </section>
             ) : collection ? (
               <CollectionGallery
-                key={`${collection.scope}:${collection.id}`}
+                key={`${user.id}:${collection.scope}:${collection.id}`}
+                userId={user.id}
                 scope={collection.scope}
                 id={collection.id}
                 back={() =>
@@ -462,7 +485,12 @@ export default function Home() {
             ) : view === "account" ? (
               <>
                 <AccountSecurity onChanged={reloadUser} />
-                {user.role === "OWNER" && <StorageUsage />}
+                {user.role === "OWNER" && (
+                  <>
+                    <OwnerEmergencyKit email={user.email} />
+                    <StorageUsage />
+                  </>
+                )}
               </>
             ) : view === "library" ? (
               <Library />
@@ -561,6 +589,7 @@ function Login({
   setup: boolean;
   onLogin: () => Promise<void>;
 }) {
+  const [emergency, setEmergency] = useState(false);
   const [mode, setMode] = useState(setup ? "setup" : "login");
   const t = useTask();
   const submit = (e: FormEvent<HTMLFormElement>) => {
@@ -599,72 +628,100 @@ function Login({
         <div className="brand" style={{ marginBottom: 35 }}>
           ✳ estudio AI
         </div>
-        <h1>
-          {mode === "setup"
-            ? "Configura tu espacio"
-            : mode === "register"
-              ? "Solicita una cuenta"
-              : "Bienvenido de nuevo"}
-        </h1>
-        <p className="muted">
-          {mode === "setup"
-            ? "Crea la cuenta OWNER inicial con el token de instalación del servidor."
-            : "Ingresa para continuar con tus proyectos."}
-        </p>
-        <form onSubmit={submit} className="stack">
-          {mode !== "login" && (
-            <label>
-              Nombre
-              <input name="name" required autoComplete="name" maxLength={100} />
-            </label>
-          )}
-          <label>
-            Correo electrónico
-            <input type="email" name="email" required autoComplete="email" />
-          </label>
-          <label>
-            Contraseña · mínimo 12 caracteres
-            <input
-              type="password"
-              name="password"
-              required
-              minLength={12}
-              maxLength={128}
-              autoComplete={
-                mode === "login" ? "current-password" : "new-password"
-              }
-            />
-          </label>
-          {mode === "setup" && (
-            <label>
-              Token de instalación
-              <input name="token" type="password" required autoComplete="off" />
-            </label>
-          )}
-          <button className="primary" disabled={t.busy}>
-            {mode === "setup"
-              ? "Crear OWNER e iniciar"
-              : mode === "register"
-                ? "Solicitar aprobación"
-                : "Ingresar"}
-          </button>
-        </form>
-        {!setup && (
-          <button
-            style={{ marginTop: 20 }}
-            onClick={() => setMode(mode === "login" ? "register" : "login")}
-          >
-            {mode === "login" ? "Solicitar una cuenta" : "Volver al ingreso"}
-          </button>
+        {emergency ? (
+          <EmergencyOwnerForm onBack={() => setEmergency(false)} />
+        ) : (
+          <>
+            <h1>
+              {mode === "setup"
+                ? "Configura tu espacio"
+                : mode === "register"
+                  ? "Solicita una cuenta"
+                  : "Bienvenido de nuevo"}
+            </h1>
+            <p className="muted">
+              {mode === "setup"
+                ? "Crea la cuenta OWNER inicial con el token de instalación del servidor."
+                : "Ingresa para continuar con tus proyectos."}
+            </p>
+            <form onSubmit={submit} className="stack">
+              {mode !== "login" && (
+                <label>
+                  Nombre
+                  <input
+                    name="name"
+                    required
+                    autoComplete="name"
+                    maxLength={100}
+                  />
+                </label>
+              )}
+              <label>
+                Correo electrónico
+                <input
+                  type="email"
+                  name="email"
+                  required
+                  autoComplete="email"
+                />
+              </label>
+              <label>
+                Contraseña · mínimo 12 caracteres
+                <input
+                  type="password"
+                  name="password"
+                  required
+                  minLength={12}
+                  maxLength={128}
+                  autoComplete={
+                    mode === "login" ? "current-password" : "new-password"
+                  }
+                />
+              </label>
+              {mode === "setup" && (
+                <label>
+                  Token de instalación
+                  <input
+                    name="token"
+                    type="password"
+                    required
+                    autoComplete="off"
+                  />
+                </label>
+              )}
+              <button className="primary" disabled={t.busy}>
+                {mode === "setup"
+                  ? "Crear OWNER e iniciar"
+                  : mode === "register"
+                    ? "Solicitar aprobación"
+                    : "Ingresar"}
+              </button>
+            </form>
+            {!setup && (
+              <button
+                style={{ marginTop: 20 }}
+                onClick={() => setMode(mode === "login" ? "register" : "login")}
+              >
+                {mode === "login"
+                  ? "Solicitar una cuenta"
+                  : "Volver al ingreso"}
+              </button>
+            )}
+            {!setup && mode === "login" && (
+              <p className="muted">
+                ¿Olvidaste tu contraseña? Solicita al OWNER o a un Administrador
+                autorizado un enlace temporal de recuperación y ábrelo para
+                elegir una nueva contraseña.
+              </p>
+            )}
+            {!setup && mode === "login" && (
+              <button type="button" onClick={() => setEmergency(true)}>
+                Recuperar OWNER con código de emergencia
+              </button>
+            )}
+            {t.notice}
+          </>
         )}
-        {!setup && mode === "login" && (
-          <p className="muted">
-            ¿Olvidaste tu contraseña? Solicita al OWNER o a un Administrador
-            autorizado un enlace temporal de recuperación y ábrelo para elegir
-            una nueva contraseña.
-          </p>
-        )}
-        {t.notice}
       </section>
     </div>
   );

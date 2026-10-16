@@ -23,10 +23,16 @@ El primer OWNER se crea con token de instalación secreto. Eliminar el token del
 - Rotación de clave maestra pendiente de herramienta automática: requiere volver a cifrar credenciales con la clave anterior antes de retirar esta. El OWNER puede reemplazar credenciales individuales desde UI.
 - Aislar permisos de DB: en producción usar un rol migrador y un rol de aplicación con mínimo privilegio. Reforzar AuditEvent como append-only para el rol de aplicación.
 
-Antes de producción faltan QA visual, recuperación de contraseña, pruebas de carga, revisión de parsers, políticas de retención administrativas, observabilidad y prueba real autorizada de OpenAI.
+Antes de producción faltan validación visual con IA real, pruebas de carga, revisión avanzada de parsers, políticas de retención administrativas, observabilidad y prueba externa autorizada. La recuperación asistida y de emergencia está implementada; el correo automático sigue pendiente.
 
 ## Instalación aislada con Docker Compose
 
-Se añadieron Dockerfile, compose.yaml y docs/VPS_INSTALLATION.md. Contemplan web y worker con almacenamiento compartido, PostgreSQL privado y migración previa al arranque. El contenedor incluye DejaVu para renderización de textos. El puerto web se liga a 127.0.0.1:3000 para usar el proxy HTTPS del VPS. La construcción Docker y el despliegue no se han probado todavía; no se han utilizado servidores del usuario.
+Se añadieron Dockerfile, compose.yaml y docs/VPS_INSTALLATION.md. Contemplan web y worker con almacenamiento compartido, PostgreSQL privado y migración previa al arranque. El contenedor incluye DejaVu para renderización de textos. El puerto web se liga a 127.0.0.1:3000 para usar el proxy HTTPS del VPS. La construcción y el arranque Docker están verificados localmente como usuario node, con PostgreSQL, login, roles, fuentes y escritura. El despliegue externo no se ha probado; no se han utilizado servidores del usuario.
 
 En Vercel, Workflow SDK genera el ejecutor administrado durante el build. Requiere las variables de sistema del despliegue habilitadas, especialmente VERCEL_DEPLOYMENT_ID; no usa claves de IA en el historial del runtime. Sin ese requisito, el procesamiento en segundo plano se deshabilita y se conserva el interactivo. Los pasos de IA no reintentan automáticamente. El backend local de Workflow es exclusivo de pruebas con almacenamiento persistente explícito; no reemplaza el worker supervisado de VPS. Consultar docs/VERCEL_TRIAL.md para pausa, estados y límites.
+
+## Copias y recuperación de acceso
+
+Se ensayó una copia custom de PostgreSQL con snapshot consistente y restauración en otra base local: ocho migraciones, conteos de 11 tablas y hashes de archivos BYTEA idénticos. Esto valida el procedimiento con datos sintéticos; no acredita restauración del VPS externo ni de archivos locales o claves maestras. Las copias reales deben cifrarse, mantenerse fuera de Git y probarse junto con archivos/secretos. Se excluyen backups y códigos de emergencia de Git/contexto Docker como protección adicional.
+
+OWNER puede preparar un código de emergencia desde Mi cuenta y guardarlo fuera de la plataforma. Cambios de contraseña/rol/estado lo revocan; debe generar otro después de recuperar la cuenta. El código no sustituye el backup de AI_MASTER_KEY.

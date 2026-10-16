@@ -39,13 +39,13 @@ No se contratan servicios ni se realizan llamadas de IA automáticamente al crea
 
 La generación editable conserva textos y logos independientes. En la galería, **Ajustar / Editar con IA** abre el editor: los ajustes manuales no consumen IA y crean versiones nuevas. Restaurar conserva el historial; editar fondo con IA mantiene las capas, mientras editar la imagen completa produce una versión aplanada. Toda operación facturable exige autorización explícita. Se añadieron biblioteca con carpetas, configuraciones guardadas, aprobación/rechazo, duplicación, regeneración selectiva y controles de cola.
 
-La instalación de VPS está preparada en [docs/VPS_INSTALLATION.md](docs/VPS_INSTALLATION.md); todavía no se ha realizado ni probado su construcción Docker.
+La instalación de VPS está preparada en [docs/VPS_INSTALLATION.md](docs/VPS_INSTALLATION.md); la construcción y las pruebas básicas de contenedor están verificadas localmente; el despliegue externo en VPS sigue pendiente.
 
 ## Identidad y cuentas
 
 Dentro del proyecto, **Identidad de marca** permite guardar instrucciones, colores, tipografía y logos. Primero cargar los logos en los adjuntos del proyecto, actualizar la identidad y seleccionarlos. Las instrucciones específicas de categorías/subproductos tienen prioridad; los trabajos existentes conservan su configuración.
 
-**Mi cuenta** permite cambiar la contraseña y cerrar todas las sesiones. En **Usuarios**, el OWNER puede generar un enlace temporal de recuperación tras confirmar su contraseña. El enlace debe entregarse de forma privada al titular; no se envía un correo automáticamente. Los enlaces caducan a los 30 minutos y solo funcionan una vez. La recuperación del único OWNER que haya perdido todos sus accesos todavía requiere completar un procedimiento seguro.
+**Mi cuenta** permite cambiar la contraseña y cerrar todas las sesiones. En **Usuarios**, el OWNER puede generar un enlace temporal de recuperación tras confirmar su contraseña. El enlace debe entregarse de forma privada al titular; no se envía un correo automáticamente. Los enlaces caducan a los 30 minutos y solo funcionan una vez. El OWNER puede preparar un código de emergencia de un solo uso desde Mi cuenta; debe guardarlo antes de perder acceso.
 
 ## Pruebas en Vercel
 
@@ -55,7 +55,7 @@ El usuario ya pudo ingresar a la instalación conectada a Neon. En Vercel los ar
 
 En cada proyecto o categoría, **Ver afiches** abre la galería agrupada: filtros, miniaturas, vista ampliada y comparación de dos resultados. Se pueden descargar seleccionados o todos los resultados filtrados en PNG/JPG dentro de ZIP, con carpetas por categoría y subproducto. La galería individual añade **Descargar todo el subproducto**. Límite de 200 archivos y 100 MB por preparación; para grupos mayores, usar filtros o selecciones menores.
 
-Los enlaces conservan el proyecto, la categoría o la galería al recargar y permiten usar Atrás/Adelante. Se comprueban nuevamente los permisos al abrirlos. Los filtros y la selección no se conservan al recargar.
+Los enlaces conservan el proyecto, la categoría o la galería al recargar y permiten usar Atrás/Adelante. Se comprueban nuevamente los permisos al abrirlos. Los filtros, página, formato y selección se conservan por cuenta/recurso en la sesión de esa pestaña; se limpian al cerrar sesión.
 
 ## Roles y configuración por nivel
 
@@ -78,3 +78,9 @@ Jerarquía visible: **Proyecto → Producto → Subproducto → Variaciones**. L
 **Guardar configuración ▾** abre directamente el nombre, inicialmente CONFIGURACION más el nombre del espacio. Guardar captura el prompt y los parámetros actuales. El selector para aplicar una configuración permite escribir su nombre o desplegar opciones, desde productos y subproductos.
 
 En cada producto editable, **Subproductos eliminados · restaurar espacios** permite buscar y recuperar espacios borrados por error. Se conservan instrucciones, parámetros, historial y asignaciones. No reactiva generaciones canceladas ni recupera archivos temporales ya caducados. Restaurar no consume IA; solo está disponible para quienes pueden editar el producto.
+
+## Emergencia del OWNER
+
+En **Mi cuenta → Recuperación de emergencia del OWNER**, confirma tu contraseña, genera el código y descárgalo a un lugar privado. Solo se muestra en esa respuesta. Vence al año, funciona una vez y generar otro invalida el anterior. Cambiar/recuperar la contraseña o modificar el rol/estado invalida el código. El servidor guarda únicamente su hash; no necesita correo ni editar variables.
+
+Si olvidas tu contraseña, en el ingreso elige **Recuperar OWNER con código de emergencia**, introduce tu correo/código y una contraseña nueva. Se cierran todas las sesiones y se invalidan enlaces de recuperación. No recupera una clave maestra de cifrado perdida. Si no preparaste y conservaste el código, este mecanismo no puede sustituirlo.

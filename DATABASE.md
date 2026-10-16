@@ -51,3 +51,9 @@ Eliminar subproductos establece deletedAt, conserva relaciones, variaciones, ver
 La restauración de subproductos reutiliza deletedAt y no necesita una migración. GET /api/categories/:id/subproducts/trash exige edición del producto; devuelve nombres, fecha y conteos, con búsqueda y paginación de 20. POST /api/subproducts/:id/restore exige ese mismo permiso, revalida cuenta y asignación dentro de la transacción, usa el bloqueo de reclamación de trabajos y compara la fecha eliminada antes de cambiarla a null. Restauraciones concurrentes generan una sola actualización/auditoría y la otra responde 409. El proyecto debe estar activo.
 
 Se conservan prompt, settings, relaciones, versiones y miembros directos; las cuentas recuperan únicamente los permisos que su rol y asignaciones vigentes permiten. No se recrean archivos caducados, no se crean trabajos/ledgers y no se reactivan trabajos cancelados ni reservas liberadas. Un usuario asignado únicamente al subproducto, sin edición del producto padre, no administra la papelera.
+
+## Código de emergencia OWNER
+
+La migración aditiva 008 añade OwnerRecovery, una fila por cuenta: userId como PK/FK, tokenHash único, createdAt/expiresAt. El código aleatorio de 256 bits se devuelve una vez, con prefijo OWNER-, y se persiste SHA-256 con separación de propósito. No se descifra ni se obtiene desde GET; estado devuelve solo fechas/activación. Cambios de contraseña, rol/estado y recuperación ordinaria borran la fila.
+
+Generar/revocar requiere OWNER aprobado, contraseña actual y revalidación de hash/rol bajo bloqueo de la cuenta. El consumo público exige correo OWNER aprobado, hash vigente y fecha; se bloquea la cuenta, se consume la fila y se cambian contraseña/sesiones/enlaces en una transacción. Errores genéricos y límites globales/por cuenta; dos usos concurrentes producen un único éxito. No cambia claves de IA ni su clave maestra.

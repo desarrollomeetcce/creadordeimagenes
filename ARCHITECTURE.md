@@ -73,3 +73,9 @@ Compartir se administra por creador del proyecto u OWNER, con directorio acotado
 Los logos del editor se leen por GET /api/variations/:id/logos/:attachmentId. Requiere acceso al afiche y presencia del ID como capa logo en su versión actual. No habilita lectura general de adjuntos del proyecto/producto ancestro. Solo PNG/JPEG/WebP, sin caché compartida y con nosniff.
 
 La recuperación de subproductos usa lib/subproduct-recovery.ts y un panel desplegable en productos editables. Consulta paginada con proyección de metadatos, búsqueda y control de edición del producto; restauración con revalidación transaccional, comparación de deletedAt y auditoría única. Mantiene cancelaciones/reservas y no invoca proveedor ni recrea archivos caducados. No introduce tablas nuevas.
+
+## Emergencia y estado de galerías
+
+lib/owner-recovery.ts gestiona un código OWNER preparado, de 256 bits, propósito separado, hash único y caducidad anual. Endpoints privados GET/POST/DELETE auth/owner-recovery y público POST auth/emergency-recovery con Origin, límites y transacción de un uso. No hay recuperación por código si no se guardó previamente. La interfaz descarga la copia privada solo por clic y no conserva el código en local/sessionStorage ni URL. Las operaciones de credenciales/roles invalidan el código.
+
+Las galerías agrupadas conservan filtros, página, formato y hasta 200 IDs seleccionados en sessionStorage, con versión y clave por usuario/ámbito/recurso. Se validan tipo/longitud y se ignora almacenamiento malformado o no disponible. No se guardan imágenes, prompts ni credenciales. Cerrar sesión borra esas entradas; las selecciones siguen sujetas a permisos y disponibilidad del servidor al descargar. Se incorporó salida visible en móvil.

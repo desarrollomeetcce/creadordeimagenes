@@ -24,7 +24,7 @@ export function AccountSecurity({
       <h2>Cambiar contraseña</h2>
       <p className="muted">
         Al cambiarla se cerrarán todas tus sesiones y se invalidarán los enlaces
-        de recuperación anteriores.
+        de recuperación y el código de emergencia anteriores.
       </p>
       <form
         className="stack"

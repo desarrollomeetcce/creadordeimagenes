@@ -138,6 +138,7 @@ export async function userManagement(
       });
       await tx.session.deleteMany({ where: { userId: parts[1] } });
       await tx.passwordReset.deleteMany({ where: { userId: parts[1] } });
+      await tx.ownerRecovery.deleteMany({ where: { userId: parts[1] } });
       await tx.auditEvent.create({
         data: {
           actorId: actor.id,
@@ -181,6 +182,7 @@ export async function userManagement(
       await tx.user.update({ where: { id: target.id }, data: b });
       await tx.session.deleteMany({ where: { userId: target.id } });
       await tx.passwordReset.deleteMany({ where: { userId: target.id } });
+      await tx.ownerRecovery.deleteMany({ where: { userId: target.id } });
       await tx.auditEvent.create({
         data: {
           actorId: actor.id,

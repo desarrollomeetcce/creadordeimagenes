@@ -29,7 +29,7 @@ La referencia sigue siendo el prompt maestro completo (54 secciones) y el requis
 - Cliente Prisma generado y migración aditiva aplicada correctamente en PostgreSQL temporal.
 - TypeScript y compilación de producción aprobados.
 - 15 pruebas unitarias aprobadas: incluyen cifrado, herencia, contratos de IA simulados, documentos, proporciones, edición gráfica, logos y SVG.
-- Suite de integración ampliada contra HTTP/PostgreSQL reales: edición/versiones, concurrencia, IA simulada, revisión, duplicación, cancelación, biblioteca, presets, límites particulares, regeneración selectiva y limpieza. Resultado actual: 62 escenarios aprobados (63 resultados contando el contenedor de la suite).
+- Suite de integración ampliada contra HTTP/PostgreSQL reales: edición/versiones, concurrencia, IA simulada, revisión, duplicación, cancelación, biblioteca, presets, límites particulares, regeneración selectiva y limpieza. Resultado actual: 64 escenarios aprobados (65 resultados contando el contenedor de la suite).
 - No se han utilizado credenciales reales de IA ni efectuado llamadas facturables. Las pruebas de proveedor usan transporte simulado explícito; no establecen conectividad real con OpenAI.
 
 ## Estado por fases
@@ -41,9 +41,9 @@ La referencia sigue siendo el prompt maestro completo (54 secciones) y el requis
 | 2 · IA                       | Adaptador y flujo completos en código, con pruebas simuladas | Generación real autorizada, validación visual y conciliación del consumo                                                              |
 | 3 · Producción masiva        | Funcional parcial                                            | Validación externa del ejecutor administrado, métricas de rendimiento y pruebas de carga reales                                                 |
 | 4 · Edición y calidad        | Funcional parcial                                            | QA en navegador, detección de superposiciones, dirección creativa y fidelidad de fotos/logos con IA real                              |
-| 5 · Productividad            | Funcional parcial                                            | Persistencia de filtros/selecciones y ampliación de herramientas de productividad                              |
-| 6 · Administración           | Funcional parcial                                            | Recuperación automática por correo y emergencia del único OWNER, gestión avanzada, conciliación tarifaria y retención separada de miniaturas administrativas |
-| 7 · Producción               | Preparada parcialmente                                       | Construcción Docker, VPS privado, HTTPS, backups ensayados, revisión de seguridad y monitorización                                    |
+| 5 · Productividad            | Funcional parcial                                            | Ampliación de herramientas de productividad y pruebas de carga                              |
+| 6 · Administración           | Funcional parcial                                            | Recuperación automática por correo, gestión avanzada, conciliación tarifaria y retención separada de miniaturas administrativas |
+| 7 · Producción               | Preparada parcialmente                                       | VPS privado, HTTPS, restauración conjunta de volúmenes/secretos, revisión de seguridad y monitorización                                    |
 
 El flujo comercial de 120 afiches reales con logos y revisiones visuales no se considera validado hasta efectuar la prueba externa autorizada. La entrega sigue en borrador y no se ha habilitado para trabajadores.
 
@@ -160,3 +160,21 @@ Cada producto editable incorpora Subproductos eliminados · restaurar espacios, 
 La papelera requiere edición del producto completo, incluido para ADMIN habilitado por OWNER; OBSERVER no la consulta ni restaura. Una asignación solo al subproducto no concede administración de la papelera. El servidor revalida el usuario y su permiso en la transacción y rechaza restaurar mientras el proyecto esté eliminado. Comparación de deletedAt y bloqueo de trabajos evitan doble actualización; el segundo intento concurrente devuelve 409 y se registra una sola auditoría. Reutiliza las tablas existentes: sin migraciones ni cambios en variables, claves, cuentas o datos externos.
 
 Validación: 62 escenarios HTTP/PostgreSQL aprobados (63 resultados contando el contenedor), 15 unitarias, TypeScript/build e instalación sin base. Caso nuevo con 25 eliminados: paginación 20+5 sin repetición, búsqueda, metadatos sin prompt privado, roles, permisos heredados, restauración concurrente, conservación de configuración y miembros, cola/ledger sin cambios y bloqueo del proyecto eliminado. Chromium verificó búsqueda/restauración/recarga y ausencia de papelera/API 403 para Observador; inspección de escritorio y móvil, sin desbordamientos ni errores JavaScript. Sin llamadas facturables.
+
+## Continuación · emergencia OWNER y galerías persistentes
+
+Recuperación autónoma del OWNER con código aleatorio de 256 bits preparado desde Mi cuenta tras confirmar contraseña. Se muestra una vez y se descarga solo por acción del titular; el servidor almacena únicamente hash con separación de propósito y caducidad anual. Generar otro/revocar lo invalida. El ingreso ofrece recuperación con correo/código y contraseña nueva, sin depender de otro OWNER ni de correo automático. Consumo transaccional de un solo uso, cierre de sesiones, revocación de enlaces y auditoría sin código/contraseña. Cambiar contraseña, recuperación ordinaria o cambios de rol/estado invalidan el código. No recupera una clave maestra de cifrado perdida ni sustituye un código no preparado.
+
+Migración aditiva 008 verificada en PostgreSQL local y copia Neon y aplicada en la rama conectada con historial/checksum y transacción. La tabla de recuperación externa quedó vacía: no se crean códigos, cambian contraseñas ni accede a credenciales reales del usuario.
+
+Galerías agrupadas conservan filtros, revisión, página, PNG/JPG y selección de hasta 200 IDs por cuenta/ámbito/recurso en sessionStorage. No guarda credenciales ni archivos; validación de datos y fallo opcional si el navegador no permite almacenamiento. Cerrar sesión limpia esas preferencias; permisos y caducidad se revalidan en servidor al descargar. Se corrigió el cierre de sesión móvil, que antes quedaba oculto junto con el pie lateral.
+
+Validación funcional: 64 escenarios HTTP/PostgreSQL (65 resultados contando el contenedor), 15 unitarias, TypeScript, build e instalación sin base aprobados. Dos casos nuevos comprueban prueba de contraseña, roles, hash, estado sin secretos, rotación, caducidad, consumo concurrente único, cierre de sesiones, revocación ante contraseña/rol/suspensión y recuperación ordinaria. Chromium completó emisión, descarga, ocultación, recuperación pública e ingreso OWNER; persistencia de filtros/página/selección/JPG al recargar, limpieza al salir y pantalla móvil. El script se ajustó para esperar a que terminara el cierre de sesión antes de comprobar sessionStorage. Ninguna prueba usó un proveedor de IA real ni produjo cargos.
+
+## Validación de portabilidad y restauración
+
+Imagen Docker construida y ejecutada localmente. La prueba encontró archivos de origen con permisos que impedían leer package.json al usuario node: se corrigió construir como node y usar COPY --chown. Se completaron fontconfig y su caché privada. Imagen final como UID 1000: arranque Next, conexión PostgreSQL sintética, login Argon2/sesiones, proyectos, bloqueo de sección OWNER y logout aprobados. Sharp renderizó PNG de texto con la fuente incluida y se comprobó escritura en assets sin root. No se publicó la imagen ni se usó un VPS del usuario. Se mantuvo proxy/TLS; la resolución interna del proxy y el espacio de cachés se corrigieron en el entorno de prueba.
+
+Ensayo de backup custom PostgreSQL con snapshot consistente, restaurado en una base local independiente y después retirada: ocho migraciones, conteos de 11 tablas y hashes de BYTEA idénticos. No modifica Neon ni acredita restauración de volúmenes externos/clave maestra. Las copias de prueba son privadas y quedan fuera del repositorio. Se añadieron exclusiones de backups/dumps/códigos de emergencia en Git y Docker.
+
+El estado de cierre se documenta en docs/RELEASE_CHECKLIST.md. La consulta de ProviderConfiguration en la instalación conectada no devolvió configuración: la prueba real requiere que OWNER conecte su proveedor y autorice un posible cargo. Correo automático, miniaturas/retención administrativa, ampliación de adjuntos, cargas reales y validación externa de producción siguen pendientes. La estimación de ~80% es funcional y aproximada, no certificación ni porcentaje calculado por pruebas.
