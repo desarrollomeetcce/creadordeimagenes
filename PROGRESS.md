@@ -29,7 +29,7 @@ La referencia sigue siendo el prompt maestro completo (54 secciones) y el requis
 - Cliente Prisma generado y migración aditiva aplicada correctamente en PostgreSQL temporal.
 - TypeScript y compilación de producción aprobados.
 - 15 pruebas unitarias aprobadas: incluyen cifrado, herencia, contratos de IA simulados, documentos, proporciones, edición gráfica, logos y SVG.
-- Suite de integración ampliada contra HTTP/PostgreSQL reales: edición/versiones, concurrencia, IA simulada, revisión, duplicación, cancelación, biblioteca, presets, límites particulares, regeneración selectiva y limpieza. Resultado actual: 61 escenarios aprobados (62 resultados contando el contenedor de la suite).
+- Suite de integración ampliada contra HTTP/PostgreSQL reales: edición/versiones, concurrencia, IA simulada, revisión, duplicación, cancelación, biblioteca, presets, límites particulares, regeneración selectiva y limpieza. Resultado actual: 62 escenarios aprobados (63 resultados contando el contenedor de la suite).
 - No se han utilizado credenciales reales de IA ni efectuado llamadas facturables. Las pruebas de proveedor usan transporte simulado explícito; no establecen conectividad real con OpenAI.
 
 ## Estado por fases
@@ -152,3 +152,11 @@ Verificación: 61 escenarios HTTP/PostgreSQL aprobados (62 resultados contando e
 Chromium verificó selector de cuatro roles, escritura de correo y No existe, grupo ADMIN, guardado del prompt actual desde producto y subproducto, selector único de presets, suma 2+4=6, borrado individual y múltiple, compartir subproducto, ruta Productos y pantalla móvil sin desbordamiento ni errores JavaScript. Se corrigieron en el script la escritura directa al DOM que no notificaba a React y el selector de un botón en un panel cerrado, y se comprobó el POST de preset del subproducto con respuesta 201. Ninguna prueba utilizó un proveedor real ni produjo cargos de IA.
 
 Revisión final del acceso granular: el editor obtiene logos heredados mediante el afiche autorizado y únicamente si el ID aparece como logo en su composición actual. Esto permite visualizar el logo sin habilitar la lista/descarga general de archivos del proyecto. Se agregaron comprobaciones USER/OBSERVER de logo utilizado 200, archivo directo del ancestro 404, logo vecino 404 y afiche ajeno 404. No se añadieron tablas ni cambios de credenciales para este ajuste.
+
+## Continuación · recuperación de subproductos eliminados
+
+Cada producto editable incorpora Subproductos eliminados · restaurar espacios, con búsqueda, conteo y páginas de 20. Restaurar devuelve el espacio activo con el mismo ID, instrucciones, parámetros, historial y asignaciones. No reactiva trabajos cancelados ni sus reservas, no recupera archivos temporales caducados y no invoca IA. Se advierte que conserva las asignaciones directas y los accesos heredados vigentes.
+
+La papelera requiere edición del producto completo, incluido para ADMIN habilitado por OWNER; OBSERVER no la consulta ni restaura. Una asignación solo al subproducto no concede administración de la papelera. El servidor revalida el usuario y su permiso en la transacción y rechaza restaurar mientras el proyecto esté eliminado. Comparación de deletedAt y bloqueo de trabajos evitan doble actualización; el segundo intento concurrente devuelve 409 y se registra una sola auditoría. Reutiliza las tablas existentes: sin migraciones ni cambios en variables, claves, cuentas o datos externos.
+
+Validación: 62 escenarios HTTP/PostgreSQL aprobados (63 resultados contando el contenedor), 15 unitarias, TypeScript/build e instalación sin base. Caso nuevo con 25 eliminados: paginación 20+5 sin repetición, búsqueda, metadatos sin prompt privado, roles, permisos heredados, restauración concurrente, conservación de configuración y miembros, cola/ledger sin cambios y bloqueo del proyecto eliminado. Chromium verificó búsqueda/restauración/recarga y ausencia de papelera/API 403 para Observador; inspección de escritorio y móvil, sin desbordamientos ni errores JavaScript. Sin llamadas facturables.

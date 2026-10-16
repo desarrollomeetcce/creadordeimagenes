@@ -8,6 +8,7 @@ import { VariationEditor } from "./components/variation-editor";
 import { ProjectSharing } from "./components/project-sharing";
 import { BackgroundBatches } from "./components/background-batches";
 import { BrandKit } from "./components/brand-kit";
+import { SubproductTrash } from "./components/subproduct-trash";
 import { StorageUsage } from "./components/storage-usage";
 import { StatisticsPanel } from "./components/statistics-panel";
 import {
@@ -1412,6 +1413,7 @@ function CategoryEditor({
           </button>
         </section>
       )}
+      {c.canEdit && <SubproductTrash categoryId={c.id} onRestored={refresh} />}
       <div className="row spread" style={{ margin: "28px 0 18px" }}>
         <h2 style={{ margin: 0 }}>Subproductos · {c.subproducts.length}</h2>
         {c.canEdit && (

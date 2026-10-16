@@ -674,6 +674,18 @@ async function handle(
               ? "GENERATE"
               : "EDIT",
       );
+      if (
+        parts.length === 4 &&
+        parts[2] === "subproducts" &&
+        parts[3] === "trash" &&
+        method === "GET"
+      ) {
+        const { deletedSubproducts } =
+          await import("@/lib/subproduct-recovery");
+        return send(
+          await deletedSubproducts(user, id, req.nextUrl.searchParams),
+        );
+      }
       if (parts[2] === "preview" && method === "GET") {
         const { previewSubproduct } = await import("@/lib/generation");
         const subs = await db.subproduct.findMany({
@@ -791,6 +803,10 @@ async function handle(
     }
     if (parts[0] === "subproducts" && parts[1]) {
       const id = parts[1];
+      if (parts.length === 3 && parts[2] === "restore" && method === "POST") {
+        const { restoreSubproduct } = await import("@/lib/subproduct-recovery");
+        return send(await restoreSubproduct(user, id));
+      }
       await resourceAccess(
         user,
         "subproduct",

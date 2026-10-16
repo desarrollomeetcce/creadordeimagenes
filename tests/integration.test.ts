@@ -3791,6 +3791,180 @@ test("Integración HTTP + PostgreSQL (base exclusiva de pruebas, sin llamadas ex
         );
       },
     );
+    await t.test(
+      "recuperar espacios conserva contenido y permisos sin reactivar cargos; papelera paginada y protegida",
+      async () => {
+        const p = await user.call("projects", "POST", {
+          name: "Proyecto recuperación",
+        });
+        const c = await user.call(`projects/${p.body.id}/categories`, "POST", {
+          name: "Producto recuperación",
+        });
+        const categoryId = c.body.id;
+        const sub = await user.call(
+          `categories/${categoryId}/subproducts`,
+          "POST",
+          { names: ["Tema recuperable", "Tema administrador"] },
+        );
+        const target = sub.body[0].id;
+        await user.call(`subproducts/${target}`, "PATCH", {
+          name: "Tema recuperable",
+          prompt: "INSTRUCCIONES_CONSERVADAS",
+          settings: {
+            count: 2,
+            textCount: 0,
+            imageTextCount: 2,
+            imageCount: 0,
+          },
+        });
+        const watching = await db.user.findUniqueOrThrow({
+          where: { id: oid },
+        });
+        const manager = await db.user.findUniqueOrThrow({ where: { id: aid } });
+        await user.call(`subproducts/${target}/members`, "POST", {
+          email: watching.email,
+        });
+        await user.call(`subproducts/${target}/members`, "POST", {
+          email: manager.email,
+        });
+        await user.call(`projects/${p.body.id}/members`, "POST", {
+          email: watching.email,
+        });
+        const job = await db.generationJob.create({
+          data: {
+            actorId: uid,
+            projectId: p.body.id,
+            subproductId: target,
+            idempotencyKey: randomUUID(),
+            snapshot: {},
+            reservedMicros: 321n,
+          },
+        });
+        await db.usageLedger.create({
+          data: {
+            jobId: job.id,
+            actorId: uid,
+            projectId: p.body.id,
+            model: "synthetic",
+            reservedMicros: 321n,
+          },
+        });
+        assert.equal(
+          (
+            await user.call("subproducts/bulk-delete", "POST", {
+              ids: sub.body.map((s: any) => s.id),
+            })
+          ).status,
+          200,
+        );
+        await db.subproduct.createMany({
+          data: Array.from({ length: 23 }, (_, i) => ({
+            name: `Espacio antiguo ${i}`,
+            categoryId,
+            deletedAt: new Date(Date.now() - 86400000),
+          })),
+        });
+        const endpoint = `categories/${categoryId}/subproducts/trash`;
+        for (const [client, status] of [
+          [anonymous, 401],
+          [observer, 403],
+          [admin, 404],
+        ] as const)
+          assert.equal((await client.call(endpoint)).status, status);
+        assert.equal(
+          (await admin.call(`subproducts/${target}/restore`, "POST")).status,
+          404,
+        );
+        assert.equal(
+          (await observer.call(`subproducts/${target}/restore`, "POST")).status,
+          403,
+        );
+        assert.equal((await user.call(endpoint + "?page=0")).status, 400);
+        const first = await user.call(endpoint),
+          second = await user.call(endpoint + "?page=2");
+        assert.equal(first.status, 200);
+        assert.equal(first.body.total, 25);
+        assert.equal(first.body.items.length, 20);
+        assert.equal(second.body.items.length, 5);
+        assert(
+          !first.body.items.some((s: any) =>
+            second.body.items.some((other: any) => s.id === other.id),
+          ),
+        );
+        assert.equal(
+          (await user.call(endpoint + "?q=recuperable")).body.total,
+          1,
+        );
+        assert.equal((await user.call(endpoint + "?q=noexiste")).body.total, 0);
+        assert(
+          !JSON.stringify(first.body).includes("INSTRUCCIONES_CONSERVADAS"),
+        );
+        const beforeJobs = await db.generationJob.count(),
+          beforeLedgers = await db.usageLedger.count();
+        const attempts = await Promise.all([
+          user.call(`subproducts/${target}/restore`, "POST"),
+          user.call(`subproducts/${target}/restore`, "POST"),
+        ]);
+        assert.deepEqual(attempts.map((r) => r.status).sort(), [200, 409]);
+        const restored = await user.call(`subproducts/${target}`);
+        assert.equal(restored.status, 200);
+        assert.equal(restored.body.prompt, "INSTRUCCIONES_CONSERVADAS");
+        assert.equal(restored.body.settings.count, 2);
+        assert.equal(
+          (await observer.call(`subproducts/${target}`)).status,
+          200,
+        );
+        assert.equal((await admin.call(`subproducts/${target}`)).status, 200);
+        assert.equal((await admin.call(endpoint)).status, 404);
+        assert.equal(
+          (await db.generationJob.findUniqueOrThrow({ where: { id: job.id } }))
+            .status,
+          "CANCELLED",
+        );
+        assert.equal(
+          (await db.usageLedger.findUniqueOrThrow({ where: { jobId: job.id } }))
+            .status,
+          "RELEASED",
+        );
+        assert.equal(await db.generationJob.count(), beforeJobs);
+        assert.equal(await db.usageLedger.count(), beforeLedgers);
+        assert.equal(
+          await db.auditEvent.count({
+            where: { action: "SUBPRODUCTO_RESTAURADO", resourceId: target },
+          }),
+          1,
+        );
+        assert.equal((await user.call(endpoint)).body.total, 24);
+        assert.equal(
+          (
+            await owner.call(`projects/${p.body.id}/members`, "PATCH", {
+              allAdministrators: true,
+            })
+          ).status,
+          200,
+        );
+        assert.equal((await admin.call(endpoint)).status, 200);
+        assert.equal(
+          (await admin.call(`subproducts/${sub.body[1].id}/restore`, "POST"))
+            .status,
+          200,
+        );
+        const other = second.body.items[0].id;
+        assert.equal(
+          (await user.call(`projects/${p.body.id}`, "DELETE")).status,
+          200,
+        );
+        assert.equal(
+          (await owner.call(`subproducts/${other}/restore`, "POST")).status,
+          404,
+        );
+        await owner.call(`projects/${p.body.id}/restore`, "POST");
+        assert.equal(
+          (await owner.call(`subproducts/${other}/restore`, "POST")).status,
+          200,
+        );
+      },
+    );
     await t.test("cierre de sesión invalida el token", async () => {
       assert.equal((await user.call("auth/logout", "POST")).status, 200);
       assert.equal((await user.call("projects")).status, 401);
