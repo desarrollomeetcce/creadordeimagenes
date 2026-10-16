@@ -10,6 +10,7 @@ import { MailSettings } from "./components/mail-settings";
 import { VisualAuditPanel, VisualAuditNotice } from "./components/visual-audit";
 import { VariationEditor } from "./components/variation-editor";
 import { ProjectSharing } from "./components/project-sharing";
+import { UsagePanel } from "./components/usage-panel";
 import { JobsPanel } from "./components/jobs-panel";
 import { BrandKit } from "./components/brand-kit";
 import {
@@ -2440,60 +2441,5 @@ function History() {
 }
 
 function Usage() {
-  const [rows, setRows] = useState<any[]>([]);
-  const t = useTask();
-  useEffect(() => {
-    void t.run(async () => setRows(await api("usage")), "");
-  }, []);
-  const reserve = rows
-    .filter((r) => r.status !== "RELEASED")
-    .reduce((a, b) => a + Number(b.reservedMicros) / 1000000, 0);
-  return (
-    <>
-      <h1>Consumo de IA</h1>
-      <p className="muted">
-        Reservas locales y datos de uso recibidos. Los importes reales no
-        informados permanecen desconocidos.
-      </p>
-      <div className="metrics">
-        <div>
-          <strong>USD {reserve.toFixed(4)}</strong>
-          <span>Reservas de las últimas {rows.length} operaciones</span>
-        </div>
-      </div>
-      <div className="panel table-wrap">
-        <table>
-          <thead>
-            <tr>
-              <th>Fecha</th>
-              <th>Modelo</th>
-              <th>Estado</th>
-              <th>Reserva USD</th>
-              <th>Costo real USD</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((r) => (
-              <tr key={r.id}>
-                <td>
-                  {new Date(r.createdAt).toLocaleDateString("es-PE", {
-                    timeZone: "America/Lima",
-                  })}
-                </td>
-                <td>{r.model}</td>
-                <td>{r.status}</td>
-                <td>{(Number(r.reservedMicros) / 1000000).toFixed(4)}</td>
-                <td>
-                  {r.actualMicros === null
-                    ? "No informado"
-                    : (Number(r.actualMicros) / 1000000).toFixed(4)}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-      {t.notice}
-    </>
-  );
+  return <UsagePanel />;
 }

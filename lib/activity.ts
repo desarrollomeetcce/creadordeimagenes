@@ -316,6 +316,7 @@ export async function recordActivity(
 }
 
 const verbs: Record<string, string> = {
+  INFORME_CONSUMO_PREPARADO: "Preparó un informe de consumo de IA",
   TRABAJOS_CANCELADOS: "Canceló trabajos pendientes y liberó sus reservas",
   LOTE_PENDIENTES_CANCELADOS:
     "Canceló los pendientes del lote y liberó sus reservas",
@@ -420,11 +421,14 @@ function summary(
       .join(" / ");
     return `Creó ${count} ${count === 1 ? "subproducto" : "subproductos"}: ${preview}${names.length > 2 ? ` y ${names.length - 2} más` : ""}${parentName ? ` (${parentName})` : ""}.`;
   }
-  let unit = action.startsWith("SUBPRODUCTOS_")
-    ? "subproductos"
-    : ["TRABAJOS_CANCELADOS", "LOTE_PENDIENTES_CANCELADOS"].includes(action)
-      ? "trabajos"
-      : "afiches";
+  let unit =
+    action === "INFORME_CONSUMO_PREPARADO"
+      ? "operaciones"
+      : action.startsWith("SUBPRODUCTOS_")
+        ? "subproductos"
+        : ["TRABAJOS_CANCELADOS", "LOTE_PENDIENTES_CANCELADOS"].includes(action)
+          ? "trabajos"
+          : "afiches";
   if (count === 1) unit = unit.slice(0, -1);
   const quantity = count !== undefined ? ` · ${count} ${unit}` : "";
   let more = paths.every((p) => p.subproductName)

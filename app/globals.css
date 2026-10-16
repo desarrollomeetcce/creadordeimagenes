@@ -712,3 +712,18 @@ a {
 .jobs-panel { min-width:0; }
 .jobs-panel .card { min-width:0; overflow-wrap:anywhere; }
 .jobs-panel .card button { white-space:normal; }
+.usage-panel { min-width:0; }
+.usage-panel .metrics strong { font-size:20px; overflow-wrap:anywhere; }
+.usage-panel td { overflow-wrap:anywhere; }
+.usage-panel .metrics { display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,300px),1fr)); gap:16px; margin-bottom:0; }
+.usage-panel .metrics > div { min-width:0; padding:16px; border:1px solid var(--line); border-radius:8px; background:white; }
+.usage-panel .metrics strong { white-space:nowrap; overflow-wrap:normal; overflow-x:auto; }
+.usage-panel td:nth-last-child(-n+2) { white-space:nowrap; overflow-wrap:normal; }
+@media (max-width:620px) {
+  .usage-panel table, .usage-panel tbody, .usage-panel tr, .usage-panel td { display:block; width:100%; }
+  .usage-panel thead { position:absolute; width:1px; height:1px; overflow:hidden; clip-path:inset(50%); }
+  .usage-panel tbody tr { border:1px solid var(--line); border-radius:8px; background:white; margin:12px 0; }
+  .usage-panel td { border:0; padding:8px 12px; }
+  .usage-panel td::before { content:attr(data-label); display:block; font-weight:700; margin-bottom:4px; }
+  .usage-panel caption { display:block; }
+}

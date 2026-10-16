@@ -2,7 +2,7 @@
 
 Aplicación web en español para producción publicitaria multiproyecto. Implementación funcional con persistencia PostgreSQL, autenticación, proyectos, categorías, subproductos, instrucciones heredadas, administración cifrada de IA exclusiva del OWNER, composición editable, historial de versiones, biblioteca, identidad de marca por proyecto, recuperación asistida de cuentas, procesamiento interactivo o en segundo plano de cola y límites por usuario/proyecto.
 
-**Estado:** desarrollo por fases; no es todavía la totalidad del prompt maestro ni una aplicación certificada para producción. Véanse [PROGRESS.md](PROGRESS.md) y [TESTING.md](TESTING.md). No se ha verificado una generación externa real: faltan credenciales del proveedor. Las pruebas simuladas están identificadas como tales.
+**Estado:** desarrollo por fases; no es todavía la totalidad del prompt maestro ni una aplicación certificada para producción. Véanse [PROGRESS.md](PROGRESS.md) y [TESTING.md](TESTING.md). No se ha verificado una generación externa real: falta completar la verificación de conexión, modelos y prueba autorizada del proveedor. Las pruebas simuladas están identificadas como tales.
 
 OWNER puede conectar su buzón en **Configuración de correo** para enviar enlaces de recuperación desde Usuarios. [Guía de Hostinger](docs/HOSTINGER_EMAIL.md): configuración cifrada, verificación TLS y prueba de envío explícita; no requiere nuevas variables de entorno. La recepción real debe comprobarse con el buzón del titular.
 
@@ -11,6 +11,8 @@ Los adjuntos incluyen vistas previas privadas de imágenes y **Reemplazar**. Cad
 **Auditoría visual** permite al OWNER consultar miniaturas de nuevas versiones y configurar su conservación, inicialmente 30 días. Las miniaturas siguen disponibles aunque caduque el original o se envíe el proyecto a la papelera. Los demás roles solo ven el aviso de privacidad. El panel informa espacio, versiones sin miniatura y limpieza de caducadas; no procesa imágenes anteriores automáticamente. Para eliminación física periódica cuando el alojamiento está inactivo debe configurarse su planificador, como parte de la puesta en producción.
 
 **Historial** muestra resúmenes con nombres de personas, proyectos, productos y subproductos, detalles desplegables, búsqueda y paginación. Las operaciones nuevas conservan los nombres de su momento; los registros antiguos indican cuando solo se conocen los nombres actuales o faltan detalles. No muestra claves, prompts ni códigos internos como descripción principal.
+
+**Consumo de IA** incluye filtros, paginación y totales de todas las coincidencias, con reservas separadas del coste real informado. Permite descargar CSV de hasta 2000 operaciones; un coste desconocido nunca se presenta como cero. OWNER consulta todas las cuentas y ADMIN/USER sus propias operaciones.
 
 ## Inicio local
 

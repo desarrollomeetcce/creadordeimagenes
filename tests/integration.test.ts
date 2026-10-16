@@ -5823,6 +5823,234 @@ test("Integración HTTP + PostgreSQL (base exclusiva de pruebas, sin llamadas ex
         }
       },
     );
+    await t.test(
+      "consumo completo y CSV: filtros, sumas exactas, cero frente a desconocido, permisos y fórmulas",
+      async () => {
+        const prefix = "informe-" + tag,
+          project = (
+            await user.call("projects", "POST", {
+              name: "Informe de consumo " + tag,
+            })
+          ).body;
+        const rows = await db.$transaction(
+          async (tx) => {
+            const result = [];
+            for (let i = 0; i < 230; i++) {
+              const job = await tx.generationJob.create({
+                data: {
+                  actorId: uid,
+                  projectId: project.id,
+                  idempotencyKey: randomUUID(),
+                  snapshot: { prompt: "PROMPT PRIVADO NO EXPORTAR" },
+                  reservedMicros: 1234567n,
+                  status: "COMPLETED",
+                },
+              });
+              result.push(
+                await tx.usageLedger.create({
+                  data: {
+                    jobId: job.id,
+                    actorId: uid,
+                    projectId: project.id,
+                    model: i === 0 ? "=2+2_" + prefix : prefix,
+                    status:
+                      i === 2
+                        ? "RELEASED"
+                        : i === 3
+                          ? "UNCERTAIN"
+                          : i < 2
+                            ? "CONSUMED_ESTIMATE"
+                            : "RESERVED",
+                    reservedMicros: 1234567n,
+                    actualMicros:
+                      i === 0 ? 0n : i === 1 ? 9007199254740993n : null,
+                    usage: { secret: "NO EXPORTAR JSON DE USO" },
+                  },
+                }),
+              );
+            }
+            return result;
+          },
+          { timeout: 20000 },
+        );
+        const query = "days=all&q=" + prefix,
+          report = await user.call("usage/list?" + query);
+        assert.equal(report.status, 200);
+        assert.equal(report.body.total, 230);
+        assert.equal(report.body.rows.length, 50);
+        assert.equal(report.body.pages, 5);
+        assert.equal(
+          report.body.summary.reservedMicros,
+          String(229n * 1234567n),
+        );
+        assert.equal(report.body.summary.knownCosts, 2);
+        assert.equal(report.body.summary.knownActualMicros, "9007199254740993");
+        assert.equal(report.body.summary.unknownCosts, 227);
+        assert.equal(report.body.summary.uncertain, 1);
+        const all: any[] = [];
+        for (let page = 1; page <= 5; page++)
+          all.push(
+            ...(await user.call(`usage/list?${query}&page=${page}`)).body.rows,
+          );
+        assert.equal(new Set(all.map((r) => r.id)).size, 230);
+        assert.equal(all.find((r) => r.id === rows[0].id).actualMicros, "0");
+        assert.equal(
+          all.find((r) => r.id === rows[1].id).actualMicros,
+          "9007199254740993",
+        );
+        assert(!JSON.stringify(report.body).includes("NO EXPORTAR"));
+        assert(!JSON.stringify(report.body).includes("PROMPT PRIVADO"));
+        assert.equal(all[0].contexts[0].projectName, project.name);
+        assert.equal(
+          (await user.call("usage/list?" + query + "&cost=known")).body.total,
+          2,
+        );
+        assert.equal(
+          (await user.call("usage/list?" + query + "&cost=unknown")).body.total,
+          227,
+        );
+        assert.equal(
+          (
+            await user.call(
+              "usage/list?" + query + "&status=RELEASED&cost=unknown",
+            )
+          ).body.total,
+          0,
+        );
+        const ownerId = (
+          await db.user.findFirstOrThrow({
+            where: { name: "Owner prueba", role: "OWNER" },
+          })
+        ).id;
+        await db.usageLedger.create({
+          data: {
+            actorId: ownerId,
+            projectId: project.id,
+            jobId: randomUUID(),
+            model: prefix,
+            reservedMicros: 1n,
+          },
+        });
+        assert.equal((await owner.call("usage/list?" + query)).body.total, 231);
+        assert.equal((await admin.call("usage/list?" + query)).body.total, 0);
+        for (const client of [observer, anonymous])
+          for (const path of ["usage/list?" + query, "usage/export?" + query])
+            assert.equal(
+              (await client.call(path)).status,
+              client === observer ? 403 : 401,
+            );
+        const response = await fetch(root + "/api/usage/export?" + query, {
+          headers: { Cookie: user.cookie },
+        });
+        assert.equal(response.status, 200);
+        assert.equal(
+          response.headers.get("content-type"),
+          "text/csv; charset=utf-8",
+        );
+        assert(response.headers.get("cache-control")?.includes("no-store"));
+        const csv = Buffer.from(await response.arrayBuffer()).toString("utf8");
+        assert.equal(csv.split("\r\n").filter(Boolean).length, 231);
+        assert(csv.includes("\"'=2+2_" + prefix + '"'));
+        assert(csv.includes('"9007199254.740993"'));
+        assert(csv.includes('"0.000000"'));
+        assert(csv.includes('"No informado"'));
+        assert(!csv.includes("PROMPT PRIVADO"));
+        assert(!csv.includes("NO EXPORTAR"));
+        for (const invalid of [
+          "days=1",
+          "page=0",
+          "status=INVALID",
+          "cost=INVALID",
+        ])
+          assert.equal((await user.call("usage/list?" + invalid)).status, 400);
+        const literal = await db.usageLedger.create({
+          data: {
+            actorId: uid,
+            projectId: project.id,
+            jobId: randomUUID(),
+            model: "literal100%" + tag,
+            reservedMicros: 1n,
+          },
+        });
+        assert.equal(
+          (
+            await user.call(
+              "usage/list?days=all&q=" + encodeURIComponent("100%" + tag),
+            )
+          ).body.total,
+          1,
+        );
+        const limitModel = "limite-csv-" + tag;
+        try {
+          await db.usageLedger.createMany({
+            data: Array.from({ length: 2001 }, (_, i) => ({
+              actorId: uid,
+              projectId: project.id,
+              jobId: `csv-limit-${tag}-${i}`,
+              model: limitModel,
+              reservedMicros: 1n,
+            })),
+          });
+          assert.equal(
+            (await user.call("usage/export?days=all&q=" + limitModel)).status,
+            413,
+          );
+        } finally {
+          await db.usageLedger.deleteMany({
+            where: { model: limitModel, actorId: uid },
+          });
+        }
+        await db.usageLedger.delete({ where: { id: literal.id } });
+      },
+    );
+    await t.test(
+      "descarga de 200 afiches locales en ZIP PNG y JPG sin generar ni alterar consumo",
+      async () => {
+        const JSZip = (await import("jszip")).default;
+        const project = await db.project.findFirstOrThrow({
+            where: { name: "Lote 200 " + tag },
+          }),
+          images = await db.variation.findMany({
+            where: { job: { projectId: project.id, status: "COMPLETED" } },
+            orderBy: { createdAt: "desc" },
+            take: 200,
+            select: { id: true },
+          });
+        assert.equal(images.length, 200);
+        const before = await db.usageLedger.count();
+        for (const format of ["png", "jpg"]) {
+          const response = await fetch(root + "/api/exports", {
+            method: "POST",
+            headers: {
+              Cookie: user.cookie,
+              Origin: root,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ ids: images.map((i) => i.id), format }),
+          });
+          assert.equal(response.status, 200);
+          const zip = await JSZip.loadAsync(await response.arrayBuffer()),
+            files = Object.values(zip.files).filter((f) => !f.dir);
+          assert.equal(files.length, 200);
+          assert(
+            files.every(
+              (f) => f.name.endsWith("." + format) && !f.name.includes(".."),
+            ),
+          );
+          for (const file of files) {
+            const bytes = await file.async("nodebuffer");
+            assert(
+              format === "png"
+                ? bytes
+                    .subarray(0, 8)
+                    .equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]))
+                : bytes[0] === 255 && bytes[1] === 216,
+            );
+          }
+        }
+        assert.equal(await db.usageLedger.count(), before);
+      },
+    );
     await t.test("cierre de sesión invalida el token", async () => {
       assert.equal((await user.call("auth/logout", "POST")).status, 200);
       assert.equal((await user.call("projects")).status, 401);

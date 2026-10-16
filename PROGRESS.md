@@ -1,5 +1,13 @@
 # Avance por fases · continuación del desarrollo
 
+## Continuación · consumo completo e informes descargables
+
+Consumo de IA consulta todas las operaciones autorizadas con paginación de 50 y filtros por período en días de Lima, estado, modelo y coste informado/desconocido. OWNER ve todas las cuentas; ADMIN/USER sus propias operaciones y OBSERVER no accede. Los totales corresponden a todo el filtro, distinguen reservas locales, costes realmente informados, valores cero y cargos inciertos. La precisión usa enteros microUSD y seis decimales, incluso por encima del límite seguro de Number. Los nombres de recursos se resuelven según acceso vigente, sin snapshots, prompts ni credenciales.
+
+CSV incluye todas las coincidencias hasta 2000 operaciones y rechaza excesos en vez de truncarlos. Contiene fecha Lima, persona, jerarquía, modelo, estado e importes exactos; marca explícitamente los costes desconocidos, protege fórmulas de hoja de cálculo y no se almacena en caché. La auditoría registra solo el número de operaciones del informe. En móvil los resúmenes y filas se apilan con etiquetas e importes legibles.
+
+Validación final: 72 escenarios HTTP/PostgreSQL (73 resultados con contenedor), cuatro escenarios SMTP adicionales, 16 unitarias, tipos, build e instalación sin base aprobados. Nuevos casos recorren 230 operaciones, verifican sumas exactas, cero/desconocido, filtros literales, roles, CSV y rechazo de más de 2000 filas. Dos ZIP con 200 afiches locales cada uno se abren y validan como PNG/JPG, sin generar ni alterar consumo. Chromium aprobó paginación, filtros combinados, descarga real de CSV con 230 filas, aislamiento ADMIN y móvil sin desbordamiento ni errores JS. La inspección móvil detectó inicialmente importes partidos y se corrigió antes de repetir el recorrido completo. Sin migraciones, cambios de credenciales externas, cargos de IA ni correo externo. Sigue pendiente verificar el proveedor real configurado por OWNER y una generación con autorización expresa de cargo.
+
 ## Continuación · cola completa y lotes grandes
 
 Generaciones ahora usa listado paginado de 25 sobre toda la cola, filtro por estado y orden reciente/antiguo. Los totales se calculan en servidor sobre todos los trabajos autorizados, sin limitarse a los 200 más recientes. Muestra persona y ruta de proyecto/producto/subproducto mediante selección de metadatos autorizados; no devuelve snapshots, prompts, archivos o credenciales. ADMIN/USER conservan consulta de sus propios trabajos y OWNER global; recursos ya inaccesibles no revelan sus nombres ni permiten acciones/descarga. La ruta GET jobs anterior se conserva para compatibilidad.

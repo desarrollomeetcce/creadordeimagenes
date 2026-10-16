@@ -1,5 +1,13 @@
 # Pruebas y evidencia
 
+## Continuación: consumo paginado, CSV y ZIP de 200 afiches
+
+72 escenarios HTTP/PostgreSQL aprobados (73 resultados con contenedor), cuatro escenarios SMTP adicionales, 16 unitarias, TypeScript, build e instalación sin base. La nueva prueba de consumo prepara 230 operaciones y comprueba páginas sin repeticiones, totales completos, un coste cero y otro superior al entero seguro de Number, reservas liberadas excluidas y cargos inciertos separados. Comprueba búsqueda literal, filtros combinados y errores de validación; OWNER global, ADMIN/USER propios, OBSERVER 403 y anónimo 401. Ninguna respuesta contiene usage privado ni prompts.
+
+CSV descargable con BOM, CRLF, columnas de contexto autorizado y seis decimales exactos. Se verifican fórmulas neutralizadas, No informado frente a cero, cabeceras privadas sin caché, límite de 2000 operaciones con rechazo explícito y ausencia de secretos. La auditoría del informe no captura IDs de trabajos ni sus nombres históricos. Prueba ZIP abre dos archivos con 200 afiches sintéticos cada uno, comprueba las firmas de todos los PNG/JPG y confirma que el ledger no cambia. No se invoca proveedor para descargar.
+
+Chromium aprobó totales, navegación, filtros, coste cero/desconocido, CSV realmente descargado con 230 filas, ADMIN aislado y móvil de 390 px sin desbordamiento/errores JS. Inspección visual posterior a la corrección de tarjetas e importes: filas apiladas y valores completos legibles. No hay migraciones ni operaciones de IA facturables o correo externo. Las pruebas del lote previo usan adaptador simulado y no acreditan costes ni rendimiento del proveedor real.
+
 ## Continuación: cola completa, cancelación y carga sintética
 
 70 escenarios de integración HTTP/PostgreSQL aprobados (71 resultados contando el contenedor), cuatro escenarios SMTP adicionales, 15 unitarias, TypeScript/build e instalación sin base. El listado nuevo devuelve 25 por página con orden estable por fecha/ID y totales completos; se recorren 230 pendientes sin repetir ni perder los anteriores al límite antiguo de 200. Se comprueban filtro, límites inválidos, OWNER/ADMIN/USER/OBSERVER/anónimo, nombres autorizados sin snapshot/prompt y recursos inaccesibles sin ruta ni acciones.

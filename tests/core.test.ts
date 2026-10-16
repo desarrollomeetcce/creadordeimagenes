@@ -242,3 +242,12 @@ test("documentos PDF y DOCX se extraen convencionalmente sin IA", async () => {
   );
   assert(docx.text.includes("USD 40"));
 });
+
+test("importes en microUSD conservan seis decimales y precisión fuera del rango Number", async () => {
+  const { usdMicros } = await import("../lib/usage-format");
+  assert.equal(usdMicros(null), "No informado");
+  assert.equal(usdMicros("0"), "0.000000");
+  assert.equal(usdMicros("1"), "0.000001");
+  assert.equal(usdMicros("9007199254740993"), "9007199254.740993");
+  assert.equal(usdMicros(-1n), "-0.000001");
+});

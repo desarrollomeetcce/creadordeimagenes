@@ -95,3 +95,7 @@ lib/cleanup.ts separa reclamación transaccional de afiches caducados y cola per
 ## Administración de cola
 
 lib/job-management.ts lista la cola completa con proyección paginada, totales globales autorizados y contexto de metadatos. Coordina cancelación seleccionada y de pendientes de lote con el mismo bloqueo 728291 que usa la reclamación del worker; solo libera ledger RESERVED de trabajos PENDING tras revalidar autorización. El afiche RUNNING y los cargos inciertos se conservan. El cliente jobs-panel mantiene selección acotada por IDs entre páginas, evita respuestas obsoletas entre filtros y conserva el consentimiento explícito de reintentos. GET jobs anterior mantiene compatibilidad; la interfaz usa GET jobs/list.
+
+## Informes de consumo
+
+`lib/usage-report.ts` proyecta solo metadatos de UsageLedger y resuelve nombres con acceso vigente. OWNER consulta globalmente y los demás roles autorizados por actorId. El listado y sus agregados usan RepeatableRead; paginación estable de 50 y períodos de Lima. `lib/usage-format.ts` transforma microUSD con BigInt sin redondear a Number. CSV privado limita a 2000 filas y cuatro MB, protege fórmulas y diferencia nulo de cero; auditoría conserva solo cantidad. El cliente importa únicamente el formateador puro. No altera ledger ni inicia generaciones.

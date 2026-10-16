@@ -1351,6 +1351,12 @@ async function handle(
           take: 200,
         }),
       );
+    if (["usage/list", "usage/export"].includes(route) && method === "GET") {
+      const { usageReport, usageCsv } = await import("@/lib/usage-report");
+      return route === "usage/export"
+        ? await usageCsv(user, req.nextUrl.searchParams)
+        : send(await usageReport(user, req.nextUrl.searchParams));
+    }
     if (route === "usage" && method === "GET") {
       const rows = await db.usageLedger.findMany({
         where: user.role === "OWNER" ? {} : { actorId: user.id },
