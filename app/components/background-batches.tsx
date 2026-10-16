@@ -8,6 +8,9 @@ type Batch = {
   completed: number;
   pending: number;
   running: number;
+  cancelled: number;
+  uncertain: number;
+  failed: number;
 };
 const active = ["STARTING", "ACTIVE", "PAUSING", "DISPATCH_UNCERTAIN"];
 const labels: Record<string, string> = {
@@ -32,8 +35,10 @@ async function request(path: string, data?: unknown) {
 export function BackgroundBatches({
   pending,
   refreshJobs,
+  disabled = false,
 }: {
   pending: string[];
+  disabled?: boolean;
   refreshJobs: () => Promise<void>;
 }) {
   const [batches, setBatches] = useState<Batch[]>([]),
@@ -93,8 +98,9 @@ export function BackgroundBatches({
       <h2>Generación en segundo plano</h2>
       <p>
         Los trabajos que ya autorizaste pueden seguir aunque cierres esta
-        pantalla. Se envían hasta 200 pendientes actuales; los nuevos no se
-        añaden a ese lote.
+        pantalla. Se envían los pendientes seleccionados (hasta 200) o, sin
+        selección, los accesibles de la página actual. Los nuevos no se añaden
+        al lote.
       </p>
       {!available && (
         <p className="hint">
@@ -105,6 +111,7 @@ export function BackgroundBatches({
       <button
         className="primary"
         disabled={
+          disabled ||
           !available ||
           busy ||
           hasActive ||
@@ -147,19 +154,41 @@ export function BackgroundBatches({
           <strong>{labels[b.status] ?? "Estado desconocido"}</strong>
           <span>
             {b.completed} de {b.total} completados · {b.pending} pendientes ·{" "}
-            {b.running} en curso
+            {b.running} en curso · {b.cancelled ?? 0} cancelados ·{" "}
+            {b.uncertain ?? 0} inciertos · {b.failed ?? 0} fallidos
           </span>
           {b.error && <p role="status">{b.error}</p>}
+          {b.pending > 0 && (
+            <button
+              className="danger"
+              disabled={disabled || busy}
+              onClick={() => {
+                if (
+                  confirm(
+                    `¿Cancelar los ${b.pending} trabajos que aún no empezaron en este lote y liberar sus reservas locales? El afiche en curso termina; los cargos inciertos se conservan.`,
+                  )
+                )
+                  void action(async () => {
+                    const result = await request(`/${b.id}/cancel-pending`, {});
+                    setMessage(
+                      `${result.cancelled} pendientes cancelados; ${result.running} en curso conservados.`,
+                    );
+                  });
+              }}
+            >
+              Cancelar pendientes de este lote
+            </button>
+          )}
           {active.includes(b.status) && (
             <div className="row">
               <button
-                disabled={busy || b.status === "PAUSING"}
+                disabled={disabled || busy || b.status === "PAUSING"}
                 onClick={() => void action(() => request(`/${b.id}/pause`, {}))}
               >
                 Detener después del actual
               </button>
               <button
-                disabled={busy}
+                disabled={disabled || busy}
                 onClick={() =>
                   void action(async () => {
                     const result = await request(`/${b.id}/check`, {});

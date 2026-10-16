@@ -48,6 +48,9 @@ export async function backgroundRoutes(
           completed: statuses.filter((s) => s === "COMPLETED").length,
           pending: statuses.filter((s) => s === "PENDING").length,
           running: statuses.filter((s) => s === "RUNNING").length,
+          cancelled: statuses.filter((s) => s === "CANCELLED").length,
+          uncertain: statuses.filter((s) => s === "UNCERTAIN").length,
+          failed: statuses.filter((s) => s === "FAILED").length,
         };
       }),
     });
@@ -87,6 +90,10 @@ export async function backgroundRoutes(
     return send({ id: current.id, status: current.status }, 202);
   }
   if (parts[2] && parts.length === 4 && req.method === "POST") {
+    if (parts[3] === "cancel-pending") {
+      const { cancelBatchPending } = await import("./job-management");
+      return send(await cancelBatchPending(user, parts[2]));
+    }
     if (parts[3] === "pause")
       return send(await pauseBackground(user, parts[2]));
     if (parts[3] === "check") {

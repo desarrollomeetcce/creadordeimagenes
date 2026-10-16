@@ -97,3 +97,6 @@ Si olvidas tu contraseña, en el ingreso elige **Recuperar OWNER con código de 
 ### Mantenimiento
 
 El OWNER puede consultar y ejecutar la limpieza desde Mi cuenta. Los borrados fallidos quedan en cola para reintentarse sin perder el registro; la biblioteca permanente y los adjuntos se conservan. Incluye programación diaria protegida para Vercel (necesita CRON_SECRET una vez y verificación externa) y tarea independiente `npm run maintenance` para VPS. Instrucciones y límites en [docs/MAINTENANCE.md](docs/MAINTENANCE.md).
+
+
+Generaciones permite filtrar y recorrer toda la cola, seleccionar hasta 200 pendientes entre páginas y cancelarlos juntos. También puede cancelar únicamente los pendientes de un lote, conservando el afiche en curso y cualquier cargo incierto. Las reservas liberadas son locales y no son reembolsos del proveedor.

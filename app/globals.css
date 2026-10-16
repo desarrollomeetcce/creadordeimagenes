@@ -708,3 +708,7 @@ a {
   .mobile-signout { display:inline-flex; padding:8px 10px; font-size:12px; }
   .topbar .badge { display:none; }
 }
+
+.jobs-panel { min-width:0; }
+.jobs-panel .card { min-width:0; overflow-wrap:anywhere; }
+.jobs-panel .card button { white-space:normal; }

@@ -82,6 +82,7 @@ const scopeOf = (event: Event) => {
     ].includes(a)
   )
     return "job";
+  if (a === "LOTE_PENDIENTES_CANCELADOS") return "none";
   if (a.startsWith("LOTE_")) return "batch";
   if (a.startsWith("ADJUNTO_")) return "attachment";
   if (a === "CONFIGURACION_APLICADA")
@@ -315,6 +316,9 @@ export async function recordActivity(
 }
 
 const verbs: Record<string, string> = {
+  TRABAJOS_CANCELADOS: "Canceló trabajos pendientes y liberó sus reservas",
+  LOTE_PENDIENTES_CANCELADOS:
+    "Canceló los pendientes del lote y liberó sus reservas",
   MANTENIMIENTO_COMPLETADO:
     "Ejecutó la limpieza de archivos caducados y revisó trabajos interrumpidos",
   INICIO_SESION: "Inició sesión",
@@ -416,10 +420,13 @@ function summary(
       .join(" / ");
     return `Creó ${count} ${count === 1 ? "subproducto" : "subproductos"}: ${preview}${names.length > 2 ? ` y ${names.length - 2} más` : ""}${parentName ? ` (${parentName})` : ""}.`;
   }
-  const quantity =
-    count !== undefined
-      ? ` · ${count} ${action.startsWith("SUBPRODUCTOS_") ? "subproductos" : "afiches"}`
-      : "";
+  let unit = action.startsWith("SUBPRODUCTOS_")
+    ? "subproductos"
+    : ["TRABAJOS_CANCELADOS", "LOTE_PENDIENTES_CANCELADOS"].includes(action)
+      ? "trabajos"
+      : "afiches";
+  if (count === 1) unit = unit.slice(0, -1);
+  const quantity = count !== undefined ? ` · ${count} ${unit}` : "";
   let more = paths.every((p) => p.subproductName)
     ? "subproductos"
     : paths.every((p) => p.productName)

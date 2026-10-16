@@ -10,7 +10,7 @@ import { MailSettings } from "./components/mail-settings";
 import { VisualAuditPanel, VisualAuditNotice } from "./components/visual-audit";
 import { VariationEditor } from "./components/variation-editor";
 import { ProjectSharing } from "./components/project-sharing";
-import { BackgroundBatches } from "./components/background-batches";
+import { JobsPanel } from "./components/jobs-panel";
 import { BrandKit } from "./components/brand-kit";
 import {
   OwnerEmergencyKit,
@@ -70,16 +70,6 @@ type Project = Item & {
 type Category = Item & {
   subproducts: Item[];
   project: { id: string; name: string };
-};
-type Job = {
-  id: string;
-  status: string;
-  error: string | null;
-  subproductId: string | null;
-  projectId: string;
-  reservedMicros: string;
-  createdAt: string;
-  variation: { id: string; expired: boolean } | null;
 };
 const base: Settings = {
   count: 1,
@@ -2171,207 +2161,8 @@ function AISettings() {
   );
 }
 function Jobs() {
-  const [jobs, setJobs] = useState<Job[]>([]);
-  const t = useTask();
-  const pause = useRef(false);
-  const [processing, setProcessing] = useState(false);
-  const refreshJobs = async () => setJobs(await api<Job[]>("jobs"));
-  useEffect(
-    () => () => {
-      pause.current = true;
-    },
-    [],
-  );
-  const processPending = () => {
-    pause.current = false;
-    setProcessing(true);
-    void t.run(async () => {
-      try {
-        const pending = (await api<Job[]>("jobs")).filter(
-          (j) => j.status === "PENDING",
-        );
-        for (const job of pending) {
-          if (pause.current) break;
-          const result = await api(`jobs/${job.id}/process`, "POST");
-          if (!pause.current) await refreshJobs();
-          if (result.status !== "COMPLETED")
-            throw new Error(
-              result.error ||
-                "El trabajo necesita revisión antes de continuar.",
-            );
-        }
-      } finally {
-        setProcessing(false);
-        if (!pause.current) await refreshJobs();
-      }
-    }, "Procesamiento finalizado. Los trabajos sin iniciar permanecen en cola.");
-  };
-  useEffect(() => {
-    let stopped = false;
-    const refresh = async () => {
-      try {
-        const r = await api<Job[]>("jobs");
-        if (!stopped) setJobs(r);
-      } catch {}
-    };
-    void refresh();
-    const timer = setInterval(refresh, 5000);
-    return () => {
-      stopped = true;
-      clearInterval(timer);
-    };
-  }, []);
-  const done = jobs.filter((j) => j.status === "COMPLETED").length;
-  return (
-    <>
-      <div className="heading">
-        <div>
-          <div className="eyebrow">Producción en servidor</div>
-          <h1>Generaciones</h1>
-          <p className="muted">
-            Procesa trabajos ya autorizados en segundo plano o utiliza el modo
-            interactivo manteniendo esta pantalla abierta.
-          </p>
-        </div>
-      </div>
-      <BackgroundBatches
-        pending={jobs.filter((j) => j.status === "PENDING").map((j) => j.id)}
-        refreshJobs={refreshJobs}
-      />
-      <div className="row" style={{ marginBottom: 20 }}>
-        <button
-          className="primary"
-          disabled={t.busy || !jobs.some((j) => j.status === "PENDING")}
-          onClick={processPending}
-        >
-          Procesar pendientes en esta pantalla
-        </button>
-        {processing && (
-          <button
-            onClick={() => {
-              pause.current = true;
-            }}
-          >
-            Pausar después del actual
-          </button>
-        )}
-        <button disabled={t.busy} onClick={() => void t.run(refreshJobs, "")}>
-          Actualizar estado
-        </button>
-      </div>
-      <div className="metrics">
-        <div>
-          <strong>{jobs.length}</strong>
-          <span>Trabajos recientes</span>
-        </div>
-        <div>
-          <strong>{done}</strong>
-          <span>Completados</span>
-        </div>
-        <div>
-          <strong>
-            {
-              jobs.filter(
-                (j) => j.status === "PENDING" || j.status === "RUNNING",
-              ).length
-            }
-          </strong>
-          <span>En proceso</span>
-        </div>
-      </div>
-      <div className="grid">
-        {jobs.map((j) => (
-          <article className="card gallery" key={j.id}>
-            {j.variation && !j.variation.expired ? (
-              <img
-                src={"/api/variations/" + j.variation.id}
-                alt="Afiche generado"
-              />
-            ) : (
-              <div className="empty">
-                {j.status === "PENDING"
-                  ? "En cola · pendiente de procesar"
-                  : j.status === "RUNNING"
-                    ? "Generando…"
-                    : j.status === "COMPLETED"
-                      ? "Archivo caducado"
-                      : "Sin resultado disponible"}
-              </div>
-            )}
-            <div className="row spread" style={{ marginTop: 12 }}>
-              <span className="badge">{statusLabel(j.status)}</span>
-              <small>
-                {new Date(j.createdAt).toLocaleString("es-PE", {
-                  timeZone: "America/Lima",
-                })}
-              </small>
-            </div>
-            {j.status === "PENDING" && (
-              <button
-                disabled={t.busy}
-                onClick={() =>
-                  void t.run(
-                    () => api("jobs/" + j.id + "/cancel", "POST"),
-                    "Trabajo cancelado y reserva liberada.",
-                  )
-                }
-              >
-                Cancelar pendiente
-              </button>
-            )}
-            {["FAILED", "UNCERTAIN", "CANCELLED"].includes(j.status) && (
-              <button
-                disabled={t.busy}
-                onClick={() => {
-                  if (
-                    confirm(
-                      j.status === "UNCERTAIN"
-                        ? "La solicitud anterior pudo producir un cargo. ¿Autorizas otro intento con posible cargo adicional?"
-                        : "¿Autorizas un nuevo intento con posible cargo de API?",
-                    )
-                  )
-                    void t.run(
-                      () =>
-                        api("jobs/" + j.id + "/retry", "POST", {
-                          requestId: crypto.randomUUID(),
-                          confirmCharge: true,
-                          confirmUncertain: j.status === "UNCERTAIN",
-                        }),
-                      "Nuevo intento encolado.",
-                    );
-                }}
-              >
-                Reintentar con autorización
-              </button>
-            )}
-            {j.error && <p className="notice error">{j.error}</p>}
-            {j.variation && !j.variation.expired && (
-              <a href={"/api/variations/" + j.variation.id + "?download"}>
-                Descargar PNG →
-              </a>
-            )}
-          </article>
-        ))}
-      </div>
-      {!jobs.length && (
-        <div className="empty">
-          Todavía no hay trabajos. Puedes iniciar una prueba desde la
-          configuración de IA.
-        </div>
-      )}
-      {t.notice}
-    </>
-  );
+  return <JobsPanel />;
 }
-const statusLabel = (s: string) =>
-  ({
-    PENDING: "Pendiente",
-    RUNNING: "Procesando",
-    COMPLETED: "Completada",
-    FAILED: "Fallida",
-    UNCERTAIN: "Resultado incierto",
-    CANCELLED: "Cancelada",
-  })[s] ?? s;
 function Gallery({ sub, back }: { sub: Item; back: () => void }) {
   const roleCanEdit = useCanEdit();
   const canEdit = roleCanEdit && sub.canEdit !== false;

@@ -14,7 +14,8 @@ La estimación actual de 85–90% corresponde al desarrollo funcional; no certif
 - Recuperación asistida y emergencia OWNER con código preparado de un uso.
 - Restauración de espacios, filtros/selección por sesión y salida móvil.
 - Mantenimiento con cola persistente de borrado, reintentos, resultados OWNER y ruta de programación autenticada; recepción real de Vercel pendiente.
-- 68 escenarios de integración, cuatro de correo, 15 unitarias, compilación, instalación y recorridos Chromium locales.
+- Cola completa paginada, selección/cancelación de hasta 200 pendientes y cancelación de pendientes de lote con reservas/cargos inciertos protegidos. Lote de 200 completado con adaptador simulado; no acredita proveedor real.
+- 70 escenarios de integración, cuatro de correo, 15 unitarias, compilación, instalación y recorridos Chromium locales.
 - Imagen Docker construida/arrancada como usuario no root con autenticación, fuentes y archivos verificados.
 - Copia PostgreSQL local restaurada en base independiente: doce migraciones, 17 tablas y hashes de archivos/miniaturas BYTEA comparados.
 

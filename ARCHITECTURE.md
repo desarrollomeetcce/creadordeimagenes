@@ -90,3 +90,8 @@ Las galerías agrupadas conservan filtros, página, formato y hasta 200 IDs sele
 ## Mantenimiento
 
 lib/cleanup.ts separa reclamación transaccional de afiches caducados y cola persistente de borrado, procesada con FOR UPDATE SKIP LOCKED y reintento idempotente. lib/maintenance.ts coordina pasadas, recupera marcas abandonadas y devuelve una proyección OWNER de conteos/resultados. app/api/cron/maintenance usa autorización Bearer independiente, solo producción Vercel, sin invocar IA; vercel.json programa una solicitud diaria. El worker y scripts/maintenance.ts comparten el mismo ejecutor para VPS. Configuración del secreto y recepción externa se verifican aparte: existencia de código/configuración no acredita ejecución por calendario.
+
+
+## Administración de cola
+
+lib/job-management.ts lista la cola completa con proyección paginada, totales globales autorizados y contexto de metadatos. Coordina cancelación seleccionada y de pendientes de lote con el mismo bloqueo 728291 que usa la reclamación del worker; solo libera ledger RESERVED de trabajos PENDING tras revalidar autorización. El afiche RUNNING y los cargos inciertos se conservan. El cliente jobs-panel mantiene selección acotada por IDs entre páginas, evita respuestas obsoletas entre filtros y conserva el consentimiento explícito de reintentos. GET jobs anterior mantiene compatibilidad; la interfaz usa GET jobs/list.

@@ -5344,6 +5344,485 @@ test("Integración HTTP + PostgreSQL (base exclusiva de pruebas, sin llamadas ex
         assert(!JSON.stringify(audit).includes(process.env.CRON_SECRET));
       },
     );
+    await t.test(
+      "cola completa y cancelación múltiple: más de 200 trabajos, permisos, reservas y atomicidad",
+      async () => {
+        const project = (
+          await user.call("projects", "POST", { name: "Cola masiva " + tag })
+        ).body;
+        const category = (
+          await user.call(`projects/${project.id}/categories`, "POST", {
+            name: "Producto masivo",
+          })
+        ).body;
+        const sub = (
+          await user.call(`categories/${category.id}/subproducts`, "POST", {
+            names: ["Subproducto masivo"],
+          })
+        ).body[0];
+        const jobs = await db.$transaction(
+          async (tx) => {
+            const result = [];
+            for (let i = 0; i < 230; i++) {
+              const job = await tx.generationJob.create({
+                data: {
+                  actorId: uid,
+                  projectId: project.id,
+                  subproductId: sub.id,
+                  idempotencyKey: randomUUID(),
+                  snapshot: { prompt: "NO ENVIAR PROMPT AL NAVEGADOR" },
+                  reservedMicros: 1000n,
+                  createdAt: new Date(Date.now() - 86400000 + i),
+                },
+              });
+              await tx.usageLedger.create({
+                data: {
+                  jobId: job.id,
+                  actorId: uid,
+                  projectId: project.id,
+                  model: "synthetic",
+                  reservedMicros: 1000n,
+                },
+              });
+              result.push(job);
+            }
+            return result;
+          },
+          { timeout: 20000 },
+        );
+        const list = await user.call("jobs/list?status=PENDING&order=oldest");
+        assert.equal(list.status, 200);
+        assert.equal(list.body.rows.length, 25);
+        assert(list.body.total >= 230);
+        assert(list.body.counts.PENDING >= 230);
+        const pages: any[] = [];
+        for (let page = 1; page <= Math.ceil(list.body.total / 25); page++)
+          pages.push(
+            ...(
+              await user.call(
+                `jobs/list?status=PENDING&order=oldest&page=${page}`,
+              )
+            ).body.rows,
+          );
+        assert.equal(new Set(pages.map((j) => j.id)).size, pages.length);
+        assert(jobs.every((j) => pages.some((row) => row.id === j.id)));
+        const sample = pages.find((j: any) => j.id === jobs[0].id);
+        assert.equal(sample.contexts[0].projectName, project.name);
+        assert.equal(sample.contexts[0].productName, category.name);
+        assert.equal(sample.contexts[0].subproductName, sub.name);
+        assert(sample.canManage);
+        assert(!("snapshot" in sample));
+        assert(!JSON.stringify(list.body).includes("NO ENVIAR PROMPT"));
+        assert(
+          !(await admin.call("jobs/list?status=PENDING")).body.rows.some(
+            (j: any) => j.id === jobs[0].id,
+          ),
+        );
+        for (const client of [admin, observer])
+          assert.equal(
+            (
+              await client.call("jobs/cancel-many", "POST", {
+                ids: [jobs[0].id],
+              })
+            ).status,
+            client === observer ? 403 : 404,
+          );
+        assert.equal((await observer.call("jobs/list")).status, 403);
+        assert.equal((await anonymous.call("jobs/list")).status, 401);
+        for (const suffix of ["page=0", "status=INVALID", "order=INVALID"])
+          assert.equal((await user.call("jobs/list?" + suffix)).status, 400);
+        assert.equal(
+          (
+            await user.call("jobs/cancel-many", "POST", {
+              ids: jobs.slice(0, 201).map((j) => j.id),
+            })
+          ).status,
+          400,
+        );
+        assert.equal(
+          (
+            await user.call("jobs/cancel-many", "POST", {
+              ids: [jobs[0].id, "no-existe"],
+            })
+          ).status,
+          404,
+        );
+        await db.generationJob.update({
+          where: { id: jobs[1].id },
+          data: { status: "RUNNING", startedAt: new Date() },
+        });
+        assert.equal(
+          (
+            await user.call("jobs/cancel-many", "POST", {
+              ids: [jobs[0].id, jobs[1].id],
+            })
+          ).status,
+          409,
+        );
+        assert.equal(
+          (
+            await db.generationJob.findUniqueOrThrow({
+              where: { id: jobs[0].id },
+            })
+          ).status,
+          "PENDING",
+        );
+        await db.generationJob.update({
+          where: { id: jobs[1].id },
+          data: { status: "PENDING", startedAt: null },
+        });
+        await db.usageLedger.update({
+          where: { jobId: jobs[1].id },
+          data: { status: "UNCERTAIN" },
+        });
+        assert.equal(
+          (
+            await user.call("jobs/cancel-many", "POST", {
+              ids: [jobs[0].id, jobs[1].id],
+            })
+          ).status,
+          409,
+        );
+        assert.equal(
+          (
+            await db.usageLedger.findUniqueOrThrow({
+              where: { jobId: jobs[0].id },
+            })
+          ).status,
+          "RESERVED",
+        );
+        await db.usageLedger.update({
+          where: { jobId: jobs[1].id },
+          data: { status: "RESERVED" },
+        });
+        const cancelled = await user.call("jobs/cancel-many", "POST", {
+          ids: jobs.slice(0, 200).map((j) => j.id),
+        });
+        assert.equal(cancelled.status, 200);
+        assert.equal(cancelled.body.cancelled, 200);
+        assert.equal(cancelled.body.releasedMicros, "200000");
+        assert.equal(
+          await db.generationJob.count({
+            where: {
+              id: { in: jobs.slice(0, 200).map((j) => j.id) },
+              status: "CANCELLED",
+            },
+          }),
+          200,
+        );
+        assert.equal(
+          await db.usageLedger.count({
+            where: {
+              jobId: { in: jobs.slice(0, 200).map((j) => j.id) },
+              status: "RELEASED",
+            },
+          }),
+          200,
+        );
+        assert.equal(
+          (await user.call("jobs/cancel-many", "POST", { ids: [jobs[0].id] }))
+            .status,
+          409,
+        );
+        const audit = await db.auditEvent.findFirstOrThrow({
+          where: { actorId: uid, action: "TRABAJOS_CANCELADOS" },
+          orderBy: { createdAt: "desc" },
+        });
+        assert.equal((audit.detail as any).count, 200);
+        assert.equal(
+          (audit.detail as any)._activity.contexts[0].projectName,
+          project.name,
+        );
+        await db.projectMember.deleteMany({
+          where: { projectId: project.id, userId: aid },
+        });
+        const remaining = await owner.call("jobs/cancel-many", "POST", {
+          ids: jobs.slice(200).map((j) => j.id),
+        });
+        assert.equal(remaining.status, 200);
+        assert.equal(remaining.body.cancelled, 30);
+        const hidden = await db.generationJob.create({
+          data: {
+            actorId: uid,
+            projectId: "private-unavailable",
+            idempotencyKey: randomUUID(),
+            snapshot: { prompt: "instrucción privada" },
+            status: "UNCERTAIN",
+            reservedMicros: 0n,
+          },
+        });
+        const invisible = (
+          await user.call("jobs/list?status=UNCERTAIN")
+        ).body.rows.find((j: any) => j.id === hidden.id);
+        assert(invisible);
+        assert.equal(invisible.canManage, false);
+        assert.deepEqual(invisible.contexts, []);
+      },
+    );
+    await t.test(
+      "lotes de 200: ejecución simulada completa y cancelación concurrente sin repetir cargos inciertos",
+      async () => {
+        const { prepareBackground, backgroundTick } =
+          await import("../lib/background");
+        const { adapter, compatibleModels } = await import("../lib/providers");
+        const { encryptKey } = await import("../lib/crypto");
+        const project = (
+          await user.call("projects", "POST", { name: "Lote 200 " + tag })
+        ).body;
+        const category = (
+          await user.call(`projects/${project.id}/categories`, "POST", {
+            name: "Producto de carga",
+          })
+        ).body;
+        const sub = (
+          await user.call(`categories/${category.id}/subproducts`, "POST", {
+            names: ["Tema de carga"],
+          })
+        ).body[0];
+        const prior = await db.providerConfiguration.findUniqueOrThrow({
+          where: { id: "global" },
+        });
+        await db.providerConfiguration.update({
+          where: { id: "global" },
+          data: {
+            encryptedKey: encryptKey(config.apiKey),
+            provider: "openai",
+            status: "VERIFIED",
+            verifiedAt: new Date(),
+            verifiedRevision: prior.revision,
+            imageModel: "gpt-image-1",
+            creativeModel: "gpt-4.1-mini",
+            quality: "low",
+            resolution: "1024x1024",
+            models: compatibleModels(["gpt-image-1", "gpt-4.1-mini"]),
+            maxGenerations: 1000,
+            imageReserveMicros: 1000n,
+            monthlyLimitMicros: 1000000000000n,
+            dailyLimitMicros: 1000000000000n,
+            operationLimitMicros: 1000000000000n,
+          },
+        });
+        const provider = adapter("openai"),
+          oldDirect = provider.direct,
+          oldGenerate = provider.generate;
+        let calls = 0,
+          release: (() => void) | undefined,
+          block = false;
+        provider.direct = async () => {
+          calls++;
+          if (block) {
+            block = false;
+            await new Promise<void>((resolve) => {
+              release = resolve;
+            });
+          }
+          return {
+            text: JSON.stringify({
+              backgroundPrompt: "",
+              backgroundColor: "#ffffff",
+              texts: [],
+              logos: [],
+            }),
+            usage: null,
+          };
+        };
+        provider.generate = async () => {
+          throw new Error(
+            "No se debe pedir imagen en la prueba Texto editable",
+          );
+        };
+        const jobsFor = async () =>
+          reserveJobs(
+            uid,
+            project.id,
+            Array.from({ length: 200 }, (_, index) => ({
+              subproductId: sub.id,
+              key: randomUUID(),
+              snapshot: {
+                prompt: "Prueba sintética de carga",
+                mode: "Texto",
+                format: "1:1",
+                index,
+                renderMode: "editable",
+              },
+            })),
+            prior.revision,
+          );
+        const cleanupIds: string[] = [];
+        try {
+          const interrupted = await jobsFor();
+          cleanupIds.push(...interrupted.map((j) => j.id));
+          const batch = (
+            await prepareBackground(
+              { id: uid, role: "USER" },
+              interrupted.map((j) => j.id),
+              randomUUID(),
+            )
+          ).batch;
+          assert.equal(
+            (
+              await admin.call(
+                `jobs/background/${batch.id}/cancel-pending`,
+                "POST",
+                {},
+              )
+            ).status,
+            404,
+          );
+          block = true;
+          const first = backgroundTick(batch.id, "synthetic-cancel-200");
+          for (let i = 0; i < 500 && !release; i++)
+            await new Promise((r) => setTimeout(r, 5));
+          assert(release);
+          assert.equal(calls, 1);
+          const cancel = await user.call(
+            `jobs/background/${batch.id}/cancel-pending`,
+            "POST",
+            {},
+          );
+          assert.equal(cancel.status, 200);
+          assert.equal(cancel.body.cancelled, 199);
+          assert.equal(cancel.body.running, 1);
+          assert.equal(cancel.body.status, "PAUSING");
+          assert.equal(
+            await db.usageLedger.count({
+              where: {
+                jobId: { in: interrupted.map((j) => j.id) },
+                status: "RELEASED",
+              },
+            }),
+            199,
+          );
+          release();
+          await first;
+          assert.equal(
+            await backgroundTick(batch.id, "synthetic-cancel-200"),
+            "STOP",
+          );
+          assert.equal(calls, 1);
+          assert.equal(
+            (
+              await db.backgroundBatch.findUniqueOrThrow({
+                where: { id: batch.id },
+              })
+            ).status,
+            "PAUSED",
+          );
+          const complete = await jobsFor();
+          cleanupIds.push(...complete.map((j) => j.id));
+          const next = (
+            await prepareBackground(
+              { id: uid, role: "USER" },
+              complete.map((j) => j.id),
+              randomUUID(),
+            )
+          ).batch;
+          for (let i = 0; i < 200; i++)
+            assert.equal(
+              await backgroundTick(next.id, "synthetic-complete-200"),
+              "CONTINUE",
+            );
+          assert.equal(
+            await backgroundTick(next.id, "synthetic-complete-200"),
+            "STOP",
+          );
+          assert.equal(await backgroundTick(next.id, "duplicate-run"), "STOP");
+          assert.equal(calls, 201);
+          assert.equal(
+            await db.generationJob.count({
+              where: {
+                id: { in: complete.map((j) => j.id) },
+                status: "COMPLETED",
+              },
+            }),
+            200,
+          );
+          assert.equal(
+            await db.variation.count({
+              where: { jobId: { in: complete.map((j) => j.id) } },
+            }),
+            200,
+          );
+          assert.equal(
+            await db.usageLedger.count({
+              where: {
+                jobId: { in: complete.map((j) => j.id) },
+                status: "CONSUMED_ESTIMATE",
+                actualMicros: null,
+              },
+            }),
+            200,
+          );
+          const state = (await user.call("jobs/background")).body.batches.find(
+            (b: any) => b.id === batch.id,
+          );
+          assert.equal(state.cancelled, 199);
+          assert.equal(state.completed, 1);
+          const uncertain = await db.generationJob.create({
+            data: {
+              actorId: uid,
+              projectId: project.id,
+              subproductId: sub.id,
+              idempotencyKey: randomUUID(),
+              snapshot: {},
+              status: "UNCERTAIN",
+              reservedMicros: 1000n,
+            },
+          });
+          await db.usageLedger.create({
+            data: {
+              jobId: uncertain.id,
+              actorId: uid,
+              projectId: project.id,
+              model: "synthetic",
+              status: "UNCERTAIN",
+              reservedMicros: 1000n,
+            },
+          });
+          const review = await db.backgroundBatch.create({
+            data: {
+              actorId: uid,
+              requestKey: randomUUID(),
+              jobIds: [uncertain.id],
+              status: "NEEDS_REVIEW",
+            },
+          });
+          const noRetry = await user.call(
+            `jobs/background/${review.id}/cancel-pending`,
+            "POST",
+            {},
+          );
+          assert.equal(noRetry.status, 200);
+          assert.equal(noRetry.body.cancelled, 0);
+          assert.equal(noRetry.body.status, "NEEDS_REVIEW");
+          assert.equal(calls, 201);
+          assert.equal(
+            (
+              await db.usageLedger.findUniqueOrThrow({
+                where: { jobId: uncertain.id },
+              })
+            ).status,
+            "UNCERTAIN",
+          );
+        } finally {
+          release?.();
+          provider.direct = oldDirect;
+          provider.generate = oldGenerate;
+          await db.generationJob.updateMany({
+            where: { id: { in: cleanupIds }, status: "PENDING" },
+            data: { status: "CANCELLED" },
+          });
+          await db.providerConfiguration.update({
+            where: { id: "global" },
+            data: {
+              ...prior,
+              models: JSON.parse(JSON.stringify(prior.models)),
+              alternatives: JSON.parse(JSON.stringify(prior.alternatives)),
+            },
+          });
+        }
+      },
+    );
     await t.test("cierre de sesión invalida el token", async () => {
       assert.equal((await user.call("auth/logout", "POST")).status, 200);
       assert.equal((await user.call("projects")).status, 401);

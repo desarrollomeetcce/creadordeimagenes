@@ -359,6 +359,18 @@ async function handle(
       );
     }
 
+    if (route === "jobs/list" && method === "GET") {
+      const { listJobs } = await import("@/lib/job-management");
+      return send(await listJobs(user, req.nextUrl.searchParams));
+    }
+    if (route === "jobs/cancel-many" && method === "POST") {
+      const b = z
+        .object({ ids: z.array(z.string().min(1)).min(1).max(200) })
+        .strict()
+        .parse(await body(req));
+      const { cancelSelectedJobs } = await import("@/lib/job-management");
+      return send(await cancelSelectedJobs(user, b.ids));
+    }
     if (parts[0] === "jobs" && parts[1] === "background") {
       const { backgroundRoutes } = await import("@/lib/background-routes");
       return await backgroundRoutes(req, parts, user, () => body(req));
