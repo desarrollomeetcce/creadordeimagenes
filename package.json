@@ -18,7 +18,8 @@
     "db:generate": "node scripts/generate.mjs",
     "db:deploy": "node scripts/migrate.mjs",
     "postinstall": "node scripts/generate.mjs",
-    "test:integration": "tsx --test tests/integration.test.ts"
+    "test:integration": "tsx --test tests/integration.test.ts",
+    "test:installation": "node --test tests/installation.test.mjs"
   },
   "repository": {
     "type": "git",

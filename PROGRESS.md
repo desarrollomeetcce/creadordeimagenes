@@ -45,3 +45,9 @@ La referencia sigue siendo el prompt maestro completo (54 secciones) y el requis
 | 7 · Producción               | Preparada parcialmente                                       | Construcción Docker, VPS privado, HTTPS, backups ensayados, revisión de seguridad y monitorización                                    |
 
 El flujo comercial de 120 afiches reales con logos y revisiones visuales no se considera validado hasta efectuar la prueba externa autorizada. La entrega sigue en borrador y no se ha habilitado para trabajadores.
+
+## Prueba en Vercel: preparación de acceso
+
+Se añadió una pantalla de instalación pendiente cuando la base no está configurada, no responde o faltan sus tablas, evitando presentar un ingreso aparentemente listo. El estado comprueba disponibilidad real y no crea usuarios públicos. Se documenta PostgreSQL externo y la portabilidad en docs/VERCEL_TRIAL.md, y el migrador admite DIRECT_DATABASE_URL para conexiones de migración separadas.
+
+Verificación: compilación correcta, regresión de 33 escenarios HTTP/PostgreSQL aprobada y prueba independiente de despliegue sin base aprobada. Todavía no se ha creado ni conectado una base externa ni una cuenta en el despliegue Vercel del usuario; falta acceso autorizado a los servicios. Los archivos persistentes y el worker requieren adaptación o alojamiento separado antes de generar imágenes allí.

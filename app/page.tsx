@@ -110,6 +110,7 @@ export default function Home() {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   const [setup, setSetup] = useState(false);
+  const [installationError, setInstallationError] = useState("");
   const [view, setView] = useState("projects");
   const [project, setProject] = useState<Project | null>(null);
   const [category, setCategory] = useState<Category | null>(null);
@@ -119,10 +120,18 @@ export default function Home() {
       setUser(await api("auth/me"));
     } catch {
       setUser(null);
-      const s = await api<{ needsSetup: boolean }>("auth/status").catch(() => ({
-        needsSetup: false,
-      }));
-      setSetup(s.needsSetup);
+      try {
+        const s = await api<{ needsSetup: boolean }>("auth/status");
+        setSetup(s.needsSetup);
+        setInstallationError("");
+      } catch (e) {
+        setSetup(false);
+        setInstallationError(
+          e instanceof Error
+            ? e.message
+            : "La instalación aún no está lista. Inténtalo nuevamente más tarde.",
+        );
+      }
     } finally {
       setLoading(false);
     }
@@ -142,6 +151,41 @@ export default function Home() {
   };
   if (loading)
     return <div className="login-form">Cargando tu espacio de trabajo…</div>;
+  if (!user && installationError)
+    return (
+      <div className="login">
+        <section className="login-aside">
+          <div className="eyebrow" style={{ color: "#94bdac" }}>
+            ESTUDIO / PRODUCCIÓN CREATIVA
+          </div>
+          <h1>Tu espacio está en preparación.</h1>
+          <p>
+            Estamos conectando los datos para que puedas empezar con tus
+            proyectos.
+          </p>
+        </section>
+        <section className="login-form">
+          <div className="brand">✳ estudio AI</div>
+          <h1>Instalación pendiente</h1>
+          <p role="status" className="notice">
+            {installationError}
+          </p>
+          <p className="muted">
+            Todavía no necesitas ingresar un usuario o contraseña. Tu cuenta se
+            creará durante la instalación segura.
+          </p>
+          <button
+            className="primary"
+            onClick={() => {
+              setLoading(true);
+              void reloadUser();
+            }}
+          >
+            Volver a comprobar
+          </button>
+        </section>
+      </div>
+    );
   if (!user) return <Login setup={setup} onLogin={reloadUser} />;
   const titles: Record<string, string> = {
     projects: "Proyectos",

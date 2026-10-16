@@ -132,8 +132,40 @@ async function handle(
         status,
         headers: { "Cache-Control": "no-store" },
       });
-    if (route === "auth/status" && method === "GET")
-      return send({ needsSetup: (await db.user.count()) === 0 });
+    if (route === "auth/status" && method === "GET") {
+      if (!process.env.DATABASE_URL)
+        return send(
+          {
+            error:
+              "La plataforma está publicada, pero todavía falta conectar su base de datos. No hay una cuenta de prueba creada en esta instalación.",
+          },
+          503,
+        );
+      try {
+        const needsSetup = (await db.user.count()) === 0;
+        if (
+          needsSetup &&
+          (!process.env.BOOTSTRAP_TOKEN ||
+            process.env.BOOTSTRAP_TOKEN.length < 32)
+        )
+          return send(
+            {
+              error:
+                "La base de datos está conectada. Falta completar la instalación segura antes de crear tu cuenta OWNER.",
+            },
+            503,
+          );
+        return send({ needsSetup });
+      } catch {
+        return send(
+          {
+            error:
+              "No se pudo acceder a los datos de la plataforma. Falta conectar la base de datos o preparar sus tablas; vuelve a intentar cuando termine la instalación.",
+          },
+          503,
+        );
+      }
+    }
     if (
       ["auth/setup", "auth/register", "auth/login"].includes(route) &&
       method === "POST"

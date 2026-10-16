@@ -1,7 +1,9 @@
 import { Client } from "pg";
 import { readdir, readFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
-const client = new Client({ connectionString: process.env.DATABASE_URL });
+const client = new Client({
+  connectionString: process.env.DIRECT_DATABASE_URL ?? process.env.DATABASE_URL,
+});
 await client.connect();
 try {
   await client.query("SELECT pg_advisory_lock(200815)");
