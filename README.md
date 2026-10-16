@@ -1,6 +1,6 @@
 # Creador de Imágenes · Estudio AI
 
-Aplicación web en español para producción publicitaria multiproyecto. Implementación funcional con persistencia PostgreSQL, autenticación, proyectos, categorías, subproductos, instrucciones heredadas, administración cifrada de IA exclusiva del OWNER, composición editable, historial de versiones, biblioteca, identidad de marca por proyecto, recuperación asistida de cuentas, procesamiento interactivo de cola y límites por usuario/proyecto.
+Aplicación web en español para producción publicitaria multiproyecto. Implementación funcional con persistencia PostgreSQL, autenticación, proyectos, categorías, subproductos, instrucciones heredadas, administración cifrada de IA exclusiva del OWNER, composición editable, historial de versiones, biblioteca, identidad de marca por proyecto, recuperación asistida de cuentas, procesamiento interactivo o en segundo plano de cola y límites por usuario/proyecto.
 
 **Estado:** desarrollo por fases; no es todavía la totalidad del prompt maestro ni una aplicación certificada para producción. Véanse [PROGRESS.md](PROGRESS.md) y [TESTING.md](TESTING.md). No se ha verificado una generación externa real: faltan credenciales del proveedor. Las pruebas simuladas están identificadas como tales.
 
@@ -49,7 +49,7 @@ Dentro del proyecto, **Identidad de marca** permite guardar instrucciones, color
 
 ## Pruebas en Vercel
 
-El usuario ya pudo ingresar a la instalación conectada a Neon. En Vercel los archivos se conservan en PostgreSQL con una cuota inicial de 128 MiB y adjuntos de hasta 3 MB. Después de autorizar un lote, **Generaciones → Procesar pendientes** permite avanzar secuencialmente manteniendo abierta la pantalla. **Mi cuenta**, para OWNER, permite consultar espacio y limpiar temporales caducados. Los lotes permiten elegir subproductos concretos. La configuración de IA debe estar realmente verificada y los cargos autorizados antes de generar. Detalles y límites: [docs/VERCEL_TRIAL.md](docs/VERCEL_TRIAL.md).
+El usuario ya pudo ingresar a la instalación conectada a Neon. En Vercel los archivos se conservan en PostgreSQL con una cuota inicial de 128 MiB y adjuntos de hasta 3 MB. Después de autorizar un lote, **Generaciones → Procesar pendientes en segundo plano** programa trabajos ya autorizados con Workflow cuando el ejecutor de Vercel está disponible. Puedes cerrar el navegador y consultar el estado al volver. El modo **Procesar pendientes en esta pantalla** requiere mantenerla abierta. **Mi cuenta**, para OWNER, permite consultar espacio y limpiar temporales caducados. Los lotes permiten elegir subproductos concretos. La configuración de IA debe estar realmente verificada y los cargos autorizados antes de generar. Detalles y límites: [docs/VERCEL_TRIAL.md](docs/VERCEL_TRIAL.md).
 
 ## Galerías y descargas agrupadas
 

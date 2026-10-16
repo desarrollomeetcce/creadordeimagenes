@@ -1,4 +1,5 @@
 import type { NextConfig } from "next";
+import { withWorkflow } from "workflow/next";
 const config: NextConfig = {
   outputFileTracingIncludes: { "/*": ["./assets/fonts/*"] },
   serverExternalPackages: [
@@ -27,4 +28,4 @@ const config: NextConfig = {
     ];
   },
 };
-export default config;
+export default withWorkflow(config);

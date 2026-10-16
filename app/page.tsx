@@ -2,6 +2,7 @@
 import { useCallback, useEffect, useState, useRef } from "react";
 import { VariationEditor } from "./components/variation-editor";
 import { ProjectSharing } from "./components/project-sharing";
+import { BackgroundBatches } from "./components/background-batches";
 import { BrandKit } from "./components/brand-kit";
 import { StorageUsage } from "./components/storage-usage";
 import {
@@ -1956,19 +1957,22 @@ function Jobs() {
           <div className="eyebrow">Producción en servidor</div>
           <h1>Generaciones</h1>
           <p className="muted">
-            Puedes procesar los trabajos que ya autorizaste. Mantén esta
-            pantalla abierta para avanzar por la cola; los trabajos sin iniciar
-            permanecen pendientes.
+            Procesa trabajos ya autorizados en segundo plano o utiliza el modo
+            interactivo manteniendo esta pantalla abierta.
           </p>
         </div>
       </div>
+      <BackgroundBatches
+        pending={jobs.filter((j) => j.status === "PENDING").map((j) => j.id)}
+        refreshJobs={refreshJobs}
+      />
       <div className="row" style={{ marginBottom: 20 }}>
         <button
           className="primary"
           disabled={t.busy || !jobs.some((j) => j.status === "PENDING")}
           onClick={processPending}
         >
-          Procesar pendientes
+          Procesar pendientes en esta pantalla
         </button>
         {processing && (
           <button

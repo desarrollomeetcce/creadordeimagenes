@@ -33,3 +33,5 @@ Las limpiezas de temporales y versiones liberan también los BYTEA; las copias i
 ## Consulta de colecciones
 
 Las galerías agrupadas y los ZIP reutilizan Variation, GenerationJob, Subproduct y Category; no añaden tablas. Paginación estable por createdAt/id, conteo y página bajo RepeatableRead, proyección de metadatos sin rutas y autorización del recurso padre. Se comprueba expiración por fecha junto con permanent, expired y deletedAt. El límite de exportación se comprueba antes de leer archivos; el esquema no se modifica. La evaluación de índices y cargas a escala queda para la fase de rendimiento.
+
+Migración 005: BackgroundBatch registra iniciador, clave de solicitud idempotente, lista JSON de IDs de trabajos autorizados, ID interno de ejecución, estado, error comprensible y fechas. No almacena claves ni prompts. El SQL incluye un índice único parcial por actorId para estados STARTING/ACTIVE/PAUSING/DISPATCH_UNCERTAIN, mantenido por el migrador versionado; requestKey es único. La migración no altera datos existentes ni neon_auth.

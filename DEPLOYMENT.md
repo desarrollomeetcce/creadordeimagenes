@@ -1,6 +1,6 @@
 # Despliegue
 
-Usar un servidor Node.js 24 o plataforma compatible con procesos persistentes, PostgreSQL administrado y un worker siempre activo. No depende del computador del usuario. No se ha contratado ni desplegado infraestructura.
+Usar un servidor Node.js 24 o plataforma compatible con procesos persistentes, PostgreSQL administrado y un worker siempre activo. No depende del computador del usuario. El usuario ya desplegó una instalación de pruebas con Vercel y Neon; todavía no se ha desplegado ni validado el VPS.
 
 ## Instalación
 
@@ -28,3 +28,5 @@ Antes de producción faltan QA visual, recuperación de contraseña, pruebas de 
 ## Instalación aislada con Docker Compose
 
 Se añadieron Dockerfile, compose.yaml y docs/VPS_INSTALLATION.md. Contemplan web y worker con almacenamiento compartido, PostgreSQL privado y migración previa al arranque. El contenedor incluye DejaVu para renderización de textos. El puerto web se liga a 127.0.0.1:3000 para usar el proxy HTTPS del VPS. La construcción Docker y el despliegue no se han probado todavía; no se han utilizado servidores del usuario.
+
+En Vercel, Workflow SDK genera el ejecutor administrado durante el build. Requiere las variables de sistema del despliegue habilitadas, especialmente VERCEL_DEPLOYMENT_ID; no usa claves de IA en el historial del runtime. Sin ese requisito, el procesamiento en segundo plano se deshabilita y se conserva el interactivo. Los pasos de IA no reintentan automáticamente. El backend local de Workflow es exclusivo de pruebas con almacenamiento persistente explícito; no reemplaza el worker supervisado de VPS. Consultar docs/VERCEL_TRIAL.md para pausa, estados y límites.

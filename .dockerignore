@@ -8,3 +8,6 @@ data
 work
 *.log
 *.tsbuildinfo
+.workflow-data
+app/.well-known/workflow
+.swc

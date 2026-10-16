@@ -2406,6 +2406,306 @@ test("Integración HTTP + PostgreSQL (base exclusiva de pruebas, sin llamadas ex
       },
     );
     await t.test(
+      "lotes en segundo plano: idempotencia, permisos y pausa después del afiche actual",
+      async () => {
+        const { prepareBackground, pauseBackground, backgroundTick } =
+          await import("../lib/background");
+        const { adapter } = await import("../lib/providers");
+        const c = await db.providerConfiguration.findUniqueOrThrow({
+          where: { id: "global" },
+        });
+        const jobs = await reserveJobs(
+          uid,
+          pid,
+          [0, 1].map((index) => ({
+            subproductId: sid,
+            key: randomUUID(),
+            snapshot: {
+              prompt: "Prueba de lote",
+              mode: "Texto",
+              format: "1:1",
+              index,
+              renderMode: "editable",
+            },
+          })),
+          c.revision,
+        );
+        const ids = jobs.map((j) => j.id),
+          me = { id: uid, role: "USER" },
+          key = randomUUID();
+        assert.equal(
+          (
+            await admin.call("jobs/background", "POST", {
+              ids,
+              requestId: randomUUID(),
+            })
+          ).status,
+          403,
+        );
+        const prepared = await Promise.all([
+          prepareBackground(me, ids, key),
+          prepareBackground(me, ids, key),
+        ]);
+        assert.equal(new Set(prepared.map((p) => p.batch.id)).size, 1);
+        assert.equal(prepared.filter((p) => p.created).length, 1);
+        await assert.rejects(
+          prepareBackground(me, [ids[0]], key),
+          /otros trabajos/,
+        );
+        const batch = prepared[0].batch;
+        assert.equal(
+          (await admin.call(`jobs/background/${batch.id}/pause`, "POST", {}))
+            .status,
+          404,
+        );
+        await pauseBackground(me, batch.id);
+        assert.equal(await backgroundTick(batch.id, "late-dispatch"), "STOP");
+        assert.equal(
+          (
+            await db.backgroundBatch.findUniqueOrThrow({
+              where: { id: batch.id },
+            })
+          ).status,
+          "PAUSED",
+        );
+        const resumed = await prepareBackground(me, ids, randomUUID());
+        const provider = adapter("openai"),
+          old = provider.direct;
+        let calls = 0,
+          release: (() => void) | undefined;
+        provider.direct = async () => {
+          calls++;
+          if (calls === 1)
+            await new Promise<void>((resolve) => {
+              release = resolve;
+            });
+          return {
+            text: JSON.stringify({
+              backgroundPrompt: "",
+              backgroundColor: "#ffffff",
+              texts: [],
+              logos: [],
+            }),
+            usage: null,
+          };
+        };
+        try {
+          const first = backgroundTick(resumed.batch.id, "run-pause");
+          for (let i = 0; i < 200 && !release; i++)
+            await new Promise((r) => setTimeout(r, 5));
+          assert.equal(calls, 1);
+          assert(release);
+          assert.equal(
+            await backgroundTick(resumed.batch.id, "duplicate-run"),
+            "STOP",
+          );
+          await pauseBackground(me, resumed.batch.id);
+          release();
+          assert.equal(await first, "CONTINUE");
+          assert.equal(
+            await backgroundTick(resumed.batch.id, "run-pause"),
+            "STOP",
+          );
+          assert.equal(
+            (
+              await db.backgroundBatch.findUniqueOrThrow({
+                where: { id: resumed.batch.id },
+              })
+            ).status,
+            "PAUSED",
+          );
+          const remaining = await db.generationJob.findMany({
+            where: { id: { in: ids }, status: "PENDING" },
+          });
+          assert.equal(remaining.length, 1);
+          const last = await prepareBackground(
+            me,
+            remaining.map((j) => j.id),
+            randomUUID(),
+          );
+          assert.equal(
+            await backgroundTick(last.batch.id, "run-complete"),
+            "CONTINUE",
+          );
+          assert.equal(
+            await backgroundTick(last.batch.id, "run-complete"),
+            "STOP",
+          );
+          assert.equal(
+            await backgroundTick(last.batch.id, "duplicate-run"),
+            "STOP",
+          );
+          assert.equal(calls, 2);
+          assert.equal(
+            (
+              await db.backgroundBatch.findUniqueOrThrow({
+                where: { id: last.batch.id },
+              })
+            ).status,
+            "COMPLETED",
+          );
+        } finally {
+          release?.();
+          provider.direct = old;
+        }
+      },
+    );
+    await t.test(
+      "un cargo incierto detiene el lote sin reintentos ni avance al siguiente afiche",
+      async () => {
+        const { prepareBackground, backgroundTick } =
+          await import("../lib/background");
+        const { adapter } = await import("../lib/providers");
+        const c = await db.providerConfiguration.findUniqueOrThrow({
+          where: { id: "global" },
+        });
+        const jobs = await reserveJobs(
+          uid,
+          pid,
+          [0, 1].map((index) => ({
+            subproductId: sid,
+            key: randomUUID(),
+            snapshot: {
+              prompt: "Prueba incierta",
+              mode: "Texto",
+              format: "1:1",
+              index,
+              renderMode: "editable",
+            },
+          })),
+          c.revision,
+        );
+        const batch = (
+          await prepareBackground(
+            { id: uid, role: "USER" },
+            jobs.map((j) => j.id),
+            randomUUID(),
+          )
+        ).batch;
+        const provider = adapter("openai"),
+          old = provider.direct;
+        let calls = 0;
+        provider.direct = async () => {
+          calls++;
+          throw new Error("Fallo de transporte sintético");
+        };
+        try {
+          assert.equal(await backgroundTick(batch.id, "uncertain-run"), "STOP");
+          assert.equal(await backgroundTick(batch.id, "uncertain-run"), "STOP");
+          assert.equal(calls, 1);
+          assert.equal(
+            (
+              await db.backgroundBatch.findUniqueOrThrow({
+                where: { id: batch.id },
+              })
+            ).status,
+            "NEEDS_REVIEW",
+          );
+          const states = await db.generationJob.findMany({
+            where: { id: { in: jobs.map((j) => j.id) } },
+          });
+          const uncertain = states.find((j) => j.status === "UNCERTAIN"),
+            pending = states.find((j) => j.status === "PENDING");
+          assert(uncertain);
+          assert(pending);
+          assert.equal(
+            (
+              await user.call("jobs/background", "POST", {
+                ids: [uncertain.id],
+                requestId: randomUUID(),
+              })
+            ).status,
+            409,
+          );
+          assert.equal(
+            (await user.call(`jobs/${pending.id}/cancel`, "POST", {})).status,
+            200,
+          );
+        } finally {
+          provider.direct = old;
+        }
+      },
+    );
+    await t.test(
+      "Workflow real local ejecuta sin navegador y bloquea una configuración obsoleta antes de llamar al proveedor",
+      async () => {
+        const c = await db.providerConfiguration.findUniqueOrThrow({
+          where: { id: "global" },
+        });
+        const [job] = await reserveJobs(
+          uid,
+          pid,
+          [
+            {
+              subproductId: sid,
+              key: randomUUID(),
+              snapshot: {
+                prompt: "No debe llamar al proveedor",
+                mode: "Texto",
+                format: "1:1",
+                index: 0,
+                renderMode: "editable",
+              },
+            },
+          ],
+          c.revision,
+        );
+        await db.generationJob.update({
+          where: { id: job.id },
+          data: {
+            snapshot: { ...(job.snapshot as object), configRevision: -1 },
+          },
+        });
+        const requestId = randomUUID();
+        const result = await user.call("jobs/background", "POST", {
+          ids: [job.id],
+          requestId,
+        });
+        assert.equal(result.status, 202);
+        const duplicate = await user.call("jobs/background", "POST", {
+          ids: [job.id],
+          requestId,
+        });
+        assert.equal(duplicate.status, 200);
+        assert.equal(duplicate.body.id, result.body.id);
+        let state = "";
+        for (let i = 0; i < 200; i++) {
+          state = (
+            await db.backgroundBatch.findUniqueOrThrow({
+              where: { id: result.body.id },
+            })
+          ).status;
+          if (state === "NEEDS_REVIEW") break;
+          await new Promise((r) => setTimeout(r, 100));
+        }
+        assert.equal(state, "NEEDS_REVIEW");
+        assert.equal(
+          (await db.generationJob.findUniqueOrThrow({ where: { id: job.id } }))
+            .status,
+          "FAILED",
+        );
+        assert.equal(
+          (await db.usageLedger.findUniqueOrThrow({ where: { jobId: job.id } }))
+            .status,
+          "RELEASED",
+        );
+        assert.equal(
+          (
+            await user.call(
+              `jobs/background/${result.body.id}/check`,
+              "POST",
+              {},
+            )
+          ).status,
+          200,
+        );
+        const list = await user.call("jobs/background");
+        assert.equal(list.status, 200);
+        assert.equal(list.body.available, true);
+        assert(!JSON.stringify(list.body).includes("encryptedKey"));
+      },
+    );
+    await t.test(
       "eliminar clave revoca verificación y no filtra secretos en auditoría",
       async () => {
         assert.equal((await owner.call("ai/config", "DELETE")).status, 200);

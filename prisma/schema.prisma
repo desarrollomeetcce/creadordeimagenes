@@ -169,6 +169,18 @@ model GenerationJob {
   variation Variation?
   @@index([status,createdAt])
 }
+model BackgroundBatch {
+  id String @id @default(cuid())
+  actorId String
+  requestKey String @unique
+  jobIds Json
+  status String @default("STARTING")
+  runId String?
+  error String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@index([actorId,createdAt])
+}
 model Variation {
   id String @id @default(cuid())
   subproductId String?

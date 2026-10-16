@@ -265,6 +265,10 @@ async function handle(
       return send(await resetPassword(await body(req)));
     }
     const user = await actor();
+    if (parts[0] === "jobs" && parts[1] === "background") {
+      const { backgroundRoutes } = await import("@/lib/background-routes");
+      return await backgroundRoutes(req, parts, user, () => body(req));
+    }
     if (route === "capabilities" && method === "GET")
       return send({ maxUploadBytes: maxUploadBytes() });
     if (route === "system/cleanup" && method === "POST") {

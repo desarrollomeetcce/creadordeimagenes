@@ -29,7 +29,7 @@ La referencia sigue siendo el prompt maestro completo (54 secciones) y el requis
 - Cliente Prisma generado y migración aditiva aplicada correctamente en PostgreSQL temporal.
 - TypeScript y compilación de producción aprobados.
 - 15 pruebas unitarias aprobadas: incluyen cifrado, herencia, contratos de IA simulados, documentos, proporciones, edición gráfica, logos y SVG.
-- Suite de integración ampliada contra HTTP/PostgreSQL reales: edición/versiones, concurrencia, IA simulada, revisión, duplicación, cancelación, biblioteca, presets, límites particulares, regeneración selectiva y limpieza. Resultado actual: 51 escenarios aprobados (52 resultados contando el contenedor de la suite).
+- Suite de integración ampliada contra HTTP/PostgreSQL reales: edición/versiones, concurrencia, IA simulada, revisión, duplicación, cancelación, biblioteca, presets, límites particulares, regeneración selectiva y limpieza. Resultado actual: 54 escenarios aprobados (55 resultados contando el contenedor de la suite).
 - No se han utilizado credenciales reales de IA ni efectuado llamadas facturables. Las pruebas de proveedor usan transporte simulado explícito; no establecen conectividad real con OpenAI.
 
 ## Estado por fases
@@ -39,7 +39,7 @@ La referencia sigue siendo el prompt maestro completo (54 secciones) y el requis
 | 1 · Base                     | Funcional con pruebas                                        | Mejora semántica de herencia, acciones secundarias y reemplazo/miniaturas de adjuntos                                                 |
 | Configuración IA obligatoria | Implementada                                                 | Validación externa con credencial real en instalación privada                                                                         |
 | 2 · IA                       | Adaptador y flujo completos en código, con pruebas simuladas | Generación real autorizada, validación visual y conciliación del consumo                                                              |
-| 3 · Producción masiva        | Funcional parcial                                            | Métricas de rendimiento, ejecución duradera administrada y pruebas de carga reales                                                 |
+| 3 · Producción masiva        | Funcional parcial                                            | Validación externa del ejecutor administrado, métricas de rendimiento y pruebas de carga reales                                                 |
 | 4 · Edición y calidad        | Funcional parcial                                            | QA en navegador, detección de superposiciones, dirección creativa y fidelidad de fotos/logos con IA real                              |
 | 5 · Productividad            | Funcional parcial                                            | Persistencia de filtros/selecciones y ampliación de herramientas de productividad                              |
 | 6 · Administración           | Funcional parcial                                            | Recuperación automática por correo y emergencia del único OWNER, gestión avanzada, conciliación tarifaria, estadísticas y retención separada de miniaturas administrativas |
@@ -102,3 +102,15 @@ Compartir proyecto incorpora listado de colaboradores, cambio de permisos y revo
 Esta entrega utiliza las tablas existentes y no requiere migraciones ni cambios en claves, usuarios o variables externas. La plataforma sigue en desarrollo; no acredita generación real ni está terminada para producción.
 
 Verificación de esta etapa: 51 escenarios HTTP/PostgreSQL (52 resultados contando el contenedor), 15 unitarias, TypeScript, build e instalación sin base aprobados. Recorrido Chromium completo con dos sesiones, controles de acceso, carga/guardado/actualización/duplicación/aplicación/borrado de configuración, archivos reales conservados y sin errores JavaScript. No se realizaron llamadas facturables de IA.
+
+## Continuación · lotes duraderos en segundo plano
+
+Incorporado Workflow SDK 5.2.2 con integración de compilación Next.js. Generaciones permite enviar hasta 200 trabajos pendientes ya autorizados, consultar progreso, comprobar el ejecutor y detener después del afiche actual. El lote conserva una lista inmutable de trabajos; no añade generaciones nuevas ni vuelve a reservar presupuesto. Una solicitud repetida utiliza el mismo registro persistente. Un índice parcial impide más de un lote activo por iniciador; el worker conserva el bloqueo que permite un único trabajo RUNNING por autor.
+
+Migración aditiva 005 BackgroundBatch aplicada en PostgreSQL local, primero en la copia de Neon y después en la base conectada, con comprobación del historial y transacción. No se modifican cuentas, claves ni la configuración externa de IA. Se registra el iniciador, la solicitud, los trabajos, la ejecución y su estado. Cada paso revalida cuenta/permisos y la configuración del trabajo. Los argumentos del ejecutor contienen únicamente el ID de lote; no se envían claves ni prompts a su historial.
+
+Los pasos que pueden ejecutar llamadas de IA tienen maxRetries=0. Los trabajos UNCERTAIN/FAILED detienen el lote para revisión; no se generan nuevos intentos ni se liberan reservas inciertas automáticamente. Las esperas por otro trabajo activo usan suspensión duradera de 15 segundos, con un máximo de 2000 avances/esperas antes de detener para revisión. Los despachos sin confirmación no se repiten automáticamente. Detener deja los pendientes y sus reservas en cola; cancelarlos individualmente libera la reserva. Tras la pausa se puede programar explícitamente otro lote con los pendientes restantes.
+
+El backend Vercel se activa únicamente si están disponibles las variables de sistema del despliegue y el World predeterminado. En otros servidores la prueba local requiere activación explícita; para VPS se conserva el worker persistente. Nunca se usa silenciosamente almacenamiento local de Workflow en Vercel. Si el despliegue no tiene ejecutor disponible, se muestra ese estado y se conserva el modo interactivo. La integración con el ejecutor Vercel y sus cargos/límites requieren validación externa; las pruebas locales no acreditan una generación real.
+
+Validación: 54 escenarios HTTP/PostgreSQL (55 resultados contando el contenedor), 15 unitarias, TypeScript, build e instalación sin base aprobados. Chromium confirmó una espera y reanudación reales de Workflow después de cerrar la única página, estado persistente al regresar y bloqueo previo a cualquier llamada al proveedor. Sin errores JavaScript. No hubo generación facturable.
