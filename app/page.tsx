@@ -1,5 +1,9 @@
 "use client";
 import { useCallback, useEffect, useState, useRef } from "react";
+import { CurrentRole, RoleGuide, useCanEdit } from "./components/role-guide";
+import { roleLabels, managesUsers } from "../lib/roles";
+import { HierarchyBreadcrumbs } from "./components/breadcrumbs";
+import { UsersPanel } from "./components/users-panel";
 import { VariationEditor } from "./components/variation-editor";
 import { ProjectSharing } from "./components/project-sharing";
 import { BackgroundBatches } from "./components/background-batches";
@@ -37,10 +41,17 @@ type Item = {
   prompt: string;
   description?: string;
   settings?: Partial<Settings>;
+  applyPromptToAll?: boolean;
+  applySettingsToAll?: boolean;
+  canEdit?: boolean;
   _count?: { categories?: number; subproducts?: number; variations?: number };
   owner?: { name: string };
 };
-type Project = Item & { categories: Item[] };
+type Project = Item & {
+  categories: Item[];
+  ownerId: string;
+  members: { userId: string }[];
+};
 type Category = Item & {
   subproducts: Item[];
   project: { id: string; name: string };
@@ -197,10 +208,17 @@ export default function Home() {
           "jobs",
           "account",
           "collection",
-          ...(user.role !== "USER" ? ["users"] : []),
+          ...(managesUsers(user.role) ? ["users"] : []),
           ...(user.role === "OWNER" ? ["ai"] : []),
         ];
-        const nextView = allowed.includes(requested) ? requested : "projects";
+        const nextView =
+          allowed.includes(requested) &&
+          (user.role !== "OBSERVER" ||
+            ["projects", "presets", "account", "collection"].includes(
+              requested,
+            ))
+            ? requested
+            : "projects";
         if (active) setView(nextView);
         if (nextView === "collection") {
           const scope = params.get("scope"),
@@ -327,149 +345,206 @@ export default function Home() {
   };
   const navigate = (v: string) => changeAddress({ view: v });
   return (
-    <div className="shell">
-      <aside className="sidebar">
-        <div className="brand">
-          <span>✳</span>estudio
-          <span
-            style={{
-              background: "none",
-              color: "#8b9b94",
-              fontSize: 12,
-              width: 20,
-              margin: 0,
-            }}
-          >
-            AI
-          </span>
-        </div>
-        <div className="eyebrow">Espacio de trabajo</div>
-        <nav>
-          {[
-            ["projects", "▦", "Proyectos"],
-            ["jobs", "◉", "Generaciones"],
-            ["library", "▧", "Biblioteca"],
-            ["presets", "≡", "Configuraciones guardadas"],
-            ["history", "◷", "Historial"],
-            ["trash", "⌫", "Papelera"],
-            ["usage", "↗", "Consumo de IA"],
-            ["account", "♙", "Mi cuenta"],
-            ...(user.role !== "USER" ? [["users", "♙", "Usuarios"]] : []),
-            ...(user.role === "OWNER"
-              ? [["ai", "⚙", "Configuración de IA"]]
-              : []),
-          ].map(([v, icon, label]) => (
-            <button
-              key={v}
-              className={view === v ? "active" : ""}
-              onClick={() => navigate(v)}
+    <CurrentRole.Provider value={user.role}>
+      <div className="shell">
+        <aside className="sidebar">
+          <div className="brand">
+            <span>✳</span>estudio
+            <span
+              style={{
+                background: "none",
+                color: "#8b9b94",
+                fontSize: 12,
+                width: 20,
+                margin: 0,
+              }}
             >
-              {icon}　{label}
-            </button>
-          ))}
-        </nav>
-        <footer>
-          <div className="row">
-            <span className="avatar">{user.name[0].toUpperCase()}</span>
-            <div>
-              <strong>{user.name}</strong>
-              <div className="eyebrow">{user.role}</div>
-            </div>
+              AI
+            </span>
           </div>
-          <button
-            style={{ marginTop: 16, width: "100%" }}
-            onClick={() => void api("auth/logout", "POST").then(reloadUser)}
-          >
-            Cerrar sesión
-          </button>
-        </footer>
-      </aside>
-      <div className="workspace">
-        <header className="topbar">
-          <span className="muted">{titles[view]}</span>
-          <span className="badge">Producción publicitaria</span>
-        </header>
-        <main>
-          {routeBusy ? (
-            <p role="status">Abriendo tu espacio…</p>
-          ) : routeError ? (
-            <section className="panel stack">
-              <p className="notice error" role="alert">
-                {routeError}
-              </p>
-              <button onClick={() => navigate("projects")}>
-                Volver a proyectos
-              </button>
-            </section>
-          ) : collection ? (
-            <CollectionGallery
-              key={`${collection.scope}:${collection.id}`}
-              scope={collection.scope}
-              id={collection.id}
-              back={() =>
-                void (collection.scope === "project"
-                  ? openProject(collection.id)
-                  : openCategory(collection.id))
-              }
-              openSubproduct={(id) =>
-                openGallery({ id, name: "Afiches", prompt: "" })
-              }
-            />
-          ) : view === "account" ? (
-            <>
-              <AccountSecurity onChanged={reloadUser} />
-              {user.role === "OWNER" && <StorageUsage />}
-            </>
-          ) : view === "library" ? (
-            <Library />
-          ) : view === "presets" ? (
-            <Presets />
-          ) : view === "ai" ? (
-            <AISettings />
-          ) : view === "users" ? (
-            <Users isOwner={user.role === "OWNER"} />
-          ) : view === "history" ? (
-            <History />
-          ) : view === "usage" ? (
-            <Usage />
-          ) : view === "jobs" ? (
-            <Jobs />
-          ) : view === "trash" ? (
-            <Projects trash open={openProject} />
-          ) : gallery ? (
-            <Gallery
-              key={gallery.id}
-              sub={gallery}
-              back={() => void openCategory(category!.id)}
-            />
-          ) : category ? (
-            <CategoryEditor
-              category={category}
-              refresh={async () => {
-                const next = await api("categories/" + category.id);
-                if (window.location.search === location) setCategory(next);
-              }}
-              back={() => void openProject(category.project.id)}
-              openGallery={openGallery}
-              openCollection={() => openCollection("category", category.id)}
-            />
-          ) : project ? (
-            <ProjectEditor
-              project={project}
-              refresh={async () => {
-                const next = await api("projects/" + project.id);
-                if (window.location.search === location) setProject(next);
-              }}
-              back={() => navigate("projects")}
-              openCategory={openCategory}
-              openCollection={() => openCollection("project", project.id)}
-            />
-          ) : (
-            <Projects open={openProject} />
-          )}
-        </main>
+          <div className="eyebrow">Espacio de trabajo</div>
+          <nav>
+            {[
+              ["projects", "▦", "Proyectos"],
+              ["jobs", "◉", "Generaciones"],
+              ["library", "▧", "Biblioteca"],
+              ["presets", "≡", "Configuraciones guardadas"],
+              ["history", "◷", "Historial"],
+              ["trash", "⌫", "Papelera"],
+              ["usage", "↗", "Consumo de IA"],
+              ["account", "♙", "Mi cuenta"],
+              ...(managesUsers(user.role) ? [["users", "♙", "Usuarios"]] : []),
+              ...(user.role === "OWNER"
+                ? [["ai", "⚙", "Configuración de IA"]]
+                : []),
+            ]
+              .filter(
+                ([v]) =>
+                  user.role !== "OBSERVER" ||
+                  ["projects", "presets", "account"].includes(v),
+              )
+              .map(([v, icon, label]) => (
+                <button
+                  key={v}
+                  className={view === v ? "active" : ""}
+                  onClick={() => navigate(v)}
+                >
+                  {icon}　{label}
+                </button>
+              ))}
+          </nav>
+          <footer>
+            <div className="row">
+              <span className="avatar">{user.name[0].toUpperCase()}</span>
+              <div>
+                <strong>{user.name}</strong>
+                <div className="eyebrow">{roleLabels[user.role]}</div>
+              </div>
+            </div>
+            <button
+              style={{ marginTop: 16, width: "100%" }}
+              onClick={() => void api("auth/logout", "POST").then(reloadUser)}
+            >
+              Cerrar sesión
+            </button>
+          </footer>
+        </aside>
+        <div className="workspace">
+          <header className="topbar">
+            <span className="muted">{titles[view]}</span>
+            <span className="badge">Producción publicitaria</span>
+          </header>
+          <main>
+            <RoleGuide name={user.name} role={user.role} />
+            {project && view === "projects" && (
+              <HierarchyBreadcrumbs
+                project={project}
+                category={category}
+                subproduct={gallery}
+                navigate={changeAddress}
+              />
+            )}
+            {routeBusy ? (
+              <p role="status">Abriendo tu espacio…</p>
+            ) : routeError ? (
+              <section className="panel stack">
+                <p className="notice error" role="alert">
+                  {routeError}
+                </p>
+                <button onClick={() => navigate("projects")}>
+                  Volver a proyectos
+                </button>
+              </section>
+            ) : collection ? (
+              <CollectionGallery
+                key={`${collection.scope}:${collection.id}`}
+                scope={collection.scope}
+                id={collection.id}
+                back={() =>
+                  void (collection.scope === "project"
+                    ? openProject(collection.id)
+                    : openCategory(collection.id))
+                }
+                openSubproduct={(id) =>
+                  openGallery({ id, name: "Afiches", prompt: "" })
+                }
+              />
+            ) : view === "account" ? (
+              <>
+                <AccountSecurity onChanged={reloadUser} />
+                {user.role === "OWNER" && <StorageUsage />}
+              </>
+            ) : view === "library" ? (
+              <Library />
+            ) : view === "presets" ? (
+              <Presets />
+            ) : view === "ai" ? (
+              <AISettings />
+            ) : view === "users" ? (
+              <UsersPanel isOwner={user.role === "OWNER"} />
+            ) : view === "history" ? (
+              <History />
+            ) : view === "usage" ? (
+              <Usage />
+            ) : view === "jobs" ? (
+              <Jobs />
+            ) : view === "trash" ? (
+              <Projects trash open={openProject} />
+            ) : gallery ? (
+              <Gallery
+                key={gallery.id}
+                sub={gallery}
+                back={() => void openCategory(category!.id)}
+              />
+            ) : category &&
+              (user.role === "OBSERVER" ||
+                (user.role === "ADMIN" &&
+                  project?.ownerId !== user.id &&
+                  !project?.members?.some((m) => m.userId === user.id))) ? (
+              <section className="stack">
+                <h1>{category.name}</h1>
+                <p>{category.prompt}</p>
+                <button onClick={() => openCollection("category", category.id)}>
+                  Ver afiches de la categoría
+                </button>
+                {category.subproducts.map((sub) => (
+                  <article className="card" key={sub.id}>
+                    <h3>{sub.name}</h3>
+                    <button onClick={() => openGallery(sub)}>
+                      Ver variaciones
+                    </button>
+                  </article>
+                ))}
+              </section>
+            ) : category ? (
+              <CategoryEditor
+                category={category}
+                refresh={async () => {
+                  const next = await api("categories/" + category.id);
+                  if (window.location.search === location) setCategory(next);
+                }}
+                back={() => void openProject(category.project.id)}
+                openGallery={openGallery}
+                openCollection={() => openCollection("category", category.id)}
+              />
+            ) : project &&
+              (user.role === "OBSERVER" ||
+                (user.role === "ADMIN" &&
+                  project.ownerId !== user.id &&
+                  !project.members?.some((m) => m.userId === user.id))) ? (
+              <section className="stack">
+                <h1>{project.name}</h1>
+                <p>{project.description}</p>
+                <button onClick={() => openCollection("project", project.id)}>
+                  Ver afiches del proyecto
+                </button>
+                {project.categories.map((c) => (
+                  <article className="card" key={c.id}>
+                    <h3>{c.name}</h3>
+                    <button onClick={() => void openCategory(c.id)}>
+                      Abrir categoría
+                    </button>
+                  </article>
+                ))}
+              </section>
+            ) : project ? (
+              <ProjectEditor
+                project={project}
+                refresh={async () => {
+                  const next = await api("projects/" + project.id);
+                  if (window.location.search === location) setProject(next);
+                }}
+                back={() => navigate("projects")}
+                openCategory={openCategory}
+                openCollection={() => openCollection("project", project.id)}
+              />
+            ) : (
+              <Projects open={openProject} />
+            )}
+          </main>
+        </div>
       </div>
-    </div>
+    </CurrentRole.Provider>
   );
 }
 function Login({
@@ -577,8 +652,9 @@ function Login({
         )}
         {!setup && mode === "login" && (
           <p className="muted">
-            ¿Olvidaste tu contraseña? Solicita al OWNER un enlace temporal de
-            recuperación y ábrelo para elegir una nueva contraseña.
+            ¿Olvidaste tu contraseña? Solicita al OWNER o a un Administrador
+            autorizado un enlace temporal de recuperación y ábrelo para elegir
+            una nueva contraseña.
           </p>
         )}
         {t.notice}
@@ -691,6 +767,7 @@ function Projects({
   open: (id: string) => Promise<void>;
   trash?: boolean;
 }) {
+  const canEdit = useCanEdit();
   const [items, setItems] = useState<Item[]>([]);
   const [create, setCreate] = useState(false);
   const [query, setQuery] = useState("");
@@ -723,7 +800,7 @@ function Projects({
               : "Organiza tus campañas y convierte tus ideas en publicidad."}
           </p>
         </div>
-        {!trash && (
+        {!trash && canEdit && (
           <button className="primary" onClick={() => setCreate(!create)}>
             ＋ Nuevo proyecto
           </button>
@@ -830,14 +907,23 @@ function PromptForm({
   item,
   save,
   children,
+  configuration,
 }: {
   item: Item;
   save: (data: any) => Promise<void>;
   children?: React.ReactNode;
+  configuration?: {
+    settings: unknown;
+    applyPromptToAll: boolean;
+    applySettingsToAll: boolean;
+  };
 }) {
+  const formRef = useRef<HTMLFormElement>(null);
   const t = useTask();
   return (
     <form
+      ref={formRef}
+      aria-label={"Instrucciones de " + item.name}
       className="stack"
       onSubmit={(e) => {
         e.preventDefault();
@@ -861,7 +947,9 @@ function PromptForm({
         </label>
       )}
       <label>
-        Instrucciones
+        {configuration
+          ? "Instrucciones generales de la categoría"
+          : "Instrucciones del proyecto"}
         <textarea
           name="prompt"
           defaultValue={item.prompt}
@@ -873,6 +961,20 @@ function PromptForm({
       <button disabled={t.busy} className="primary">
         Guardar instrucciones
       </button>
+      {configuration && (
+        <PresetTools
+          category={item}
+          saveCurrent={async () => {
+            const current = {
+              ...item,
+              ...Object.fromEntries(new FormData(formRef.current!)),
+              ...configuration,
+            };
+            await save(current);
+            return current;
+          }}
+        />
+      )}
       {t.notice}
     </form>
   );
@@ -895,9 +997,6 @@ function ProjectEditor({
   const t = useTask();
   return (
     <>
-      <div className="crumb">
-        <button onClick={back}>Proyectos</button> / {p.name}
-      </div>
       <div className="heading">
         <div>
           <div className="eyebrow">Proyecto</div>
@@ -1114,6 +1213,8 @@ function CategoryEditor({
   openGallery: (s: Item) => void;
   openCollection: () => void;
 }) {
+  const [promptAll, setPromptAll] = useState(c.applyPromptToAll ?? true);
+  const [settingsAll, setSettingsAll] = useState(c.applySettingsToAll ?? true);
   const [s, setS] = useState<Settings>({ ...base, ...c.settings });
   const [bulk, setBulk] = useState(false);
   const [names, setNames] = useState<string[]>([""]);
@@ -1122,9 +1223,6 @@ function CategoryEditor({
   const t = useTask();
   return (
     <>
-      <div className="crumb">
-        <button onClick={back}>{c.project.name}</button> / {c.name}
-      </div>
       <div className="heading">
         <div>
           <div className="eyebrow">Categoría</div>
@@ -1145,17 +1243,55 @@ function CategoryEditor({
         <div className="inside stack">
           <PromptForm
             item={c}
+            configuration={{
+              settings: s,
+              applyPromptToAll: promptAll,
+              applySettingsToAll: settingsAll,
+            }}
             save={async (b) => {
-              await api("categories/" + c.id, "PATCH", { ...b, settings: s });
+              await api("categories/" + c.id, "PATCH", {
+                ...b,
+                settings: s,
+                applyPromptToAll: promptAll,
+                applySettingsToAll: settingsAll,
+              });
               await refresh();
             }}
           >
-            <SettingsFields value={s} onChange={setS} />
+            <label className="row">
+              <input
+                type="checkbox"
+                checked={promptAll}
+                onChange={(e) => setPromptAll(e.target.checked)}
+              />
+              Aplicar las instrucciones generales a todos los subproductos
+            </label>
+            <p className="hint">
+              Las instrucciones particulares se suman a este prompt y al del
+              proyecto. Un prompt vacío no añade indicaciones. Cada subproducto
+              conserva su tema obligatorio.
+            </p>
+            <label className="row">
+              <input
+                type="checkbox"
+                checked={settingsAll}
+                onChange={(e) => setSettingsAll(e.target.checked)}
+              />
+              Aplicar cantidad, distribución, formato y estilo a todos los
+              anuncios
+            </label>
+            {settingsAll ? (
+              <SettingsFields value={s} onChange={setS} />
+            ) : (
+              <p className="notice">
+                Define esos parámetros en cada subproducto. Los valores comunes
+                quedan guardados, pero no se aplicarán.
+              </p>
+            )}
           </PromptForm>
           <Uploads scope="category" id={c.id} />
         </div>
       </details>
-      <PresetTools category={c} />
       {bulk && (
         <section className="panel stack">
           <h2>Agregar subproductos</h2>
@@ -1259,7 +1395,11 @@ function CategoryEditor({
           key={sub.id}
           sub={sub}
           index={i}
-          inherited={{ ...base, ...c.settings }}
+          inherited={{
+            ...base,
+            ...(c.applySettingsToAll !== false ? c.settings : {}),
+          }}
+          forceOwn={c.applySettingsToAll === false}
           openGallery={() => openGallery(sub)}
         />
       ))}
@@ -1397,19 +1537,27 @@ function SubproductRow({
   sub,
   index,
   inherited,
+  forceOwn,
   openGallery,
 }: {
   sub: Item;
   index: number;
   inherited: Settings;
+  forceOwn: boolean;
   openGallery: () => void;
 }) {
   const [name, setName] = useState(sub.name);
   const [prompt, setPrompt] = useState(sub.prompt);
   const [custom, setCustom] = useState(
-    Object.keys(sub.settings ?? {}).length > 0,
+    forceOwn || Object.keys(sub.settings ?? {}).length > 0,
   );
   const [s, setS] = useState<Settings>({ ...inherited, ...sub.settings });
+  useEffect(() => {
+    if (forceOwn && Object.keys(sub.settings ?? {}).length === 0) {
+      setCustom(true);
+      setS({ ...base });
+    }
+  }, [forceOwn, sub.id]);
   const [preview, setPreview] = useState<any>(null);
   const [review, setReview] = useState(false);
   const [charge, setCharge] = useState(false);
@@ -1418,26 +1566,33 @@ function SubproductRow({
     await api("subproducts/" + sub.id, "PATCH", {
       name,
       prompt,
-      settings: custom ? s : {},
+      settings: custom || forceOwn ? s : {},
     });
   };
   return (
-    <details>
+    <details aria-label={"Subproducto " + sub.id}>
       <summary>
         <span className="sub-num">{String(index + 1).padStart(2, "0")}</span>
         <strong>{name}</strong>
         <small>
-          {(custom ? s : inherited).count} variaciones ·{" "}
-          {custom || prompt ? "Personalizada" : "Configuración heredada"}
+          {(custom || forceOwn ? s : inherited).count} variaciones ·{" "}
+          {custom || forceOwn || prompt
+            ? "Personalizada"
+            : "Configuración heredada"}
         </small>
       </summary>
       <div className="inside stack">
+        <p className="notice">
+          Eje temático: <strong>{name || sub.name}</strong>. Todas las
+          variaciones tratarán de este tema y deben mencionar su nombre. Las
+          instrucciones particulares añaden detalles a las instrucciones
+          generales activas.
+        </p>
         <label style={{ marginTop: 18 }}>
-          Nombre
+          Tema / nombre del subproducto
           <input
             value={name}
             onChange={(e) => setName(e.target.value)}
-            onBlur={() => void t.run(save, "")}
             maxLength={200}
           />
         </label>
@@ -1449,14 +1604,14 @@ function SubproductRow({
               setPrompt(e.target.value);
               setReview(false);
             }}
-            onBlur={() => void t.run(save, "")}
             placeholder="Escribe solo las excepciones o indicaciones adicionales."
           />
         </label>
         <label className="row">
           <input
             type="checkbox"
-            checked={custom}
+            checked={custom || forceOwn}
+            disabled={forceOwn}
             onChange={(e) => {
               setCustom(e.target.checked);
               setReview(false);
@@ -1464,7 +1619,7 @@ function SubproductRow({
           />
           Personalizar cantidad, distribución y estilo
         </label>
-        {custom && (
+        {(custom || forceOwn) && (
           <SettingsFields
             value={s}
             onChange={(x) => {
@@ -1476,6 +1631,24 @@ function SubproductRow({
         <button disabled={t.busy} onClick={() => void t.run(save)}>
           Guardar configuración
         </button>
+        <PresetTools
+          category={{
+            ...sub,
+            name,
+            prompt,
+            settings: custom || forceOwn ? s : inherited,
+          }}
+          scope="subproduct"
+          saveCurrent={async () => {
+            await save();
+            return {
+              ...sub,
+              name,
+              prompt,
+              settings: custom || forceOwn ? s : inherited,
+            };
+          }}
+        />
         <Uploads scope="subproduct" id={sub.id} />
         <div className="row">
           <button
@@ -2101,6 +2274,8 @@ const statusLabel = (s: string) =>
     CANCELLED: "Cancelada",
   })[s] ?? s;
 function Gallery({ sub, back }: { sub: Item; back: () => void }) {
+  const roleCanEdit = useCanEdit();
+  const canEdit = roleCanEdit && sub.canEdit !== false;
   const [selected, setSelected] = useState<string[]>([]);
   const [downloadFormat, setDownloadFormat] = useState("png");
   const [editing, setEditing] = useState<string | null>(null);
@@ -2122,17 +2297,14 @@ function Gallery({ sub, back }: { sub: Item; back: () => void }) {
   }, [refresh]);
   return (
     <>
-      <div className="crumb">
-        <button onClick={back}>Subproductos</button> / {sub.name}
-      </div>
       <h1>{sub.name}</h1>
       <p className="muted">
         Variaciones independientes · originales temporales durante 48 horas.
       </p>
       <div className="notice">
-        Abre Ajustar para mover textos y logos cuando existan capas
-        independientes. La edición con IA y la regeneración requieren
-        autorización de cargo y conservan el original.
+        {canEdit
+          ? "Abre Ajustar para mover textos y logos cuando existan capas independientes. La edición con IA y la regeneración requieren autorización de cargo y conservan el original."
+          : "Este espacio tiene acceso de consulta. Puedes ver y descargar sus afiches; la edición y la generación no están habilitadas para tu acceso actual."}
       </div>
       {editing && (
         <VariationEditor
@@ -2189,6 +2361,7 @@ function Gallery({ sub, back }: { sub: Item; back: () => void }) {
           Descargar ZIP ({selected.length})
         </button>
         <button
+          hidden={!canEdit}
           disabled={!selected.length || t.busy}
           onClick={() => {
             const instruction = prompt(
@@ -2216,6 +2389,7 @@ function Gallery({ sub, back }: { sub: Item; back: () => void }) {
           Regenerar seleccionadas
         </button>
         <button
+          hidden={!canEdit}
           disabled={!selected.length || t.busy}
           onClick={() =>
             void t.run(async () => {
@@ -2228,6 +2402,7 @@ function Gallery({ sub, back }: { sub: Item; back: () => void }) {
           Guardar seleccionadas
         </button>
         <button
+          hidden={!canEdit}
           disabled={!selected.length || t.busy}
           onClick={() => {
             if (confirm("¿Enviar los afiches seleccionados a la papelera?"))
@@ -2273,14 +2448,14 @@ function Gallery({ sub, back }: { sub: Item; back: () => void }) {
             </small>
             {!v.expired && (
               <div className="row" style={{ marginTop: 15 }}>
-                <button onClick={() => setEditing(v.id)}>
+                <button hidden={!canEdit} onClick={() => setEditing(v.id)}>
                   Ajustar / Editar con IA
                 </button>
-                <details>
+                <details hidden={!canEdit}>
                   <summary>Adjuntos para editar esta variación</summary>
                   <Uploads scope="variation" id={v.id} />
                 </details>
-                <label>
+                <label hidden={!canEdit}>
                   Revisión
                   <select
                     value={v.reviewStatus ?? "PENDING"}
@@ -2309,6 +2484,7 @@ function Gallery({ sub, back }: { sub: Item; back: () => void }) {
                   Duplicar
                 </button>
                 <button
+                  hidden={!canEdit}
                   className="danger"
                   onClick={() => {
                     if (confirm("¿Enviar este afiche a la papelera?"))
@@ -2327,6 +2503,7 @@ function Gallery({ sub, back }: { sub: Item; back: () => void }) {
                   JPG
                 </a>
                 <button
+                  hidden={!canEdit}
                   onClick={() =>
                     void t.run(async () => {
                       await api("library/items/" + v.id, "POST", {
@@ -2339,6 +2516,7 @@ function Gallery({ sub, back }: { sub: Item; back: () => void }) {
                   {v.permanent ? "Volver a temporal" : "Conservar"}
                 </button>
                 <button
+                  hidden={!canEdit}
                   onClick={() =>
                     void t.run(async () => {
                       await api("variations/" + v.id, "PATCH", {
@@ -2357,113 +2535,16 @@ function Gallery({ sub, back }: { sub: Item; back: () => void }) {
       </div>
       {!variations.length && (
         <div className="empty">
-          Este subproducto todavía no tiene afiches. Revisa las instrucciones e
-          inicia una generación.
+          {canEdit
+            ? "Este subproducto todavía no tiene afiches. Revisa las instrucciones e inicia una generación."
+            : "Este subproducto todavía no tiene afiches disponibles para consultar o descargar."}
         </div>
       )}
       {t.notice}
     </>
   );
 }
-function Users({ isOwner }: { isOwner: boolean }) {
-  const [users, setUsers] = useState<any[]>([]);
-  const t = useTask();
-  const refresh = useCallback(async () => setUsers(await api("users")), []);
-  useEffect(() => {
-    void t.run(refresh, "");
-  }, [refresh]);
-  return (
-    <>
-      <h1>Usuarios</h1>
-      <p className="muted">
-        Los registros nuevos requieren aprobación. Solo el OWNER puede
-        administrar roles elevados.
-      </p>
-      <div className="panel table-wrap">
-        <table>
-          <thead>
-            <tr>
-              <th>Usuario</th>
-              <th>Rol</th>
-              <th>Estado</th>
-              <th>Acción</th>
-            </tr>
-          </thead>
-          <tbody>
-            {users.map((u) => (
-              <tr key={u.id}>
-                <td>
-                  {u.name}
-                  <br />
-                  <small>{u.email}</small>
-                </td>
-                <td>
-                  <select
-                    aria-label={"Rol de " + u.name}
-                    value={u.role}
-                    onChange={(e) =>
-                      setUsers(
-                        users.map((x) =>
-                          x.id === u.id ? { ...x, role: e.target.value } : x,
-                        ),
-                      )
-                    }
-                  >
-                    {["USER", "ADMIN", "OWNER"].map((r) => (
-                      <option key={r}>{r}</option>
-                    ))}
-                  </select>
-                </td>
-                <td>
-                  <select
-                    aria-label={"Estado de " + u.name}
-                    value={u.status}
-                    onChange={(e) =>
-                      setUsers(
-                        users.map((x) =>
-                          x.id === u.id ? { ...x, status: e.target.value } : x,
-                        ),
-                      )
-                    }
-                  >
-                    {[
-                      ["PENDING", "Pendiente"],
-                      ["APPROVED", "Aprobado"],
-                      ["REJECTED", "Rechazado"],
-                      ["SUSPENDED", "Suspendido"],
-                    ].map(([v, l]) => (
-                      <option key={v} value={v}>
-                        {l}
-                      </option>
-                    ))}
-                  </select>
-                </td>
-                <td>
-                  <button
-                    disabled={t.busy}
-                    onClick={() =>
-                      void t.run(async () => {
-                        await api("users/" + u.id, "PATCH", {
-                          role: u.role,
-                          status: u.status,
-                        });
-                        await refresh();
-                      })
-                    }
-                  >
-                    Guardar
-                  </button>
-                  {isOwner && <RecoveryIssuer userId={u.id} name={u.name} />}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-      {t.notice}
-    </>
-  );
-}
+
 function History() {
   const [rows, setRows] = useState<any[]>([]);
   const [query, setQuery] = useState("");

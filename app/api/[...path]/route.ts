@@ -265,6 +265,27 @@ async function handle(
       return send(await resetPassword(await body(req)));
     }
     const user = await actor();
+    if (parts[0] === "users") {
+      const { userManagement } = await import("@/lib/user-management");
+      return await userManagement(req, parts, user, () => body(req));
+    }
+    if (user.role === "OBSERVER") {
+      demand(
+        method === "GET" ||
+          route === "exports" ||
+          ["auth/logout", "auth/change-password"].includes(route),
+        "El rol Observador solo permite ver y descargar.",
+        403,
+      );
+      demand(
+        !["jobs", "audit", "usage", "system", "ai", "budgets"].includes(
+          parts[0],
+        ),
+        "Esta sección no está disponible para Observador.",
+        403,
+      );
+    }
+
     if (parts[0] === "jobs" && parts[1] === "background") {
       const { backgroundRoutes } = await import("@/lib/background-routes");
       return await backgroundRoutes(req, parts, user, () => body(req));
@@ -301,19 +322,6 @@ async function handle(
       return send(result);
     }
     if (
-      parts[0] === "users" &&
-      parts[1] &&
-      parts[2] === "recovery" &&
-      parts.length === 3 &&
-      method === "POST"
-    ) {
-      const { issuePasswordReset } = await import("@/lib/accounts");
-      return send(
-        await issuePasswordReset(user, parts[1], await body(req)),
-        201,
-      );
-    }
-    if (
       parts[0] === "projects" &&
       parts[1] &&
       parts[2] === "brand" &&
@@ -329,13 +337,10 @@ async function handle(
         return send({
           kit: await readBrand(project.id),
           canEdit:
-            user.role === "OWNER" ||
-            project.ownerId === user.id ||
-            project.members.some(
-              (m) =>
-                m.userId === user.id &&
-                ["EDIT", "MANAGE"].includes(m.permission),
-            ),
+            user.role !== "OBSERVER" &&
+            (user.role === "OWNER" ||
+              project.ownerId === user.id ||
+              project.members.some((m) => m.userId === user.id)),
         });
       if (method === "PUT")
         return send(await saveBrand(user, project.id, await body(req)));
@@ -553,6 +558,7 @@ async function handle(
               categories: {
                 include: { _count: { select: { subproducts: true } } },
               },
+              members: { select: { userId: true } },
             },
           }),
         );
@@ -621,6 +627,7 @@ async function handle(
             text: p.instructions.text,
             warnings: p.instructions.warnings,
             settings: p.settings,
+            needsSettings: p.needsSettings,
           });
         }
         return send(previews);
@@ -665,6 +672,8 @@ async function handle(
             name: z.string().trim().min(1).max(200),
             prompt: z.string().max(30000),
             settings,
+            applyPromptToAll: z.boolean().optional(),
+            applySettingsToAll: z.boolean().optional(),
           })
           .parse(await body(req));
         const s = effectiveSettings(b.settings, {});
@@ -732,7 +741,17 @@ async function handle(
           },
         },
       });
-      if (parts.length === 2 && method === "GET") return send(sub);
+      if (parts.length === 2 && method === "GET") {
+        const project = await projectAccess(user, sub.category.projectId);
+        return send({
+          ...sub,
+          canEdit:
+            user.role !== "OBSERVER" &&
+            (user.role === "OWNER" ||
+              project.ownerId === user.id ||
+              project.members.some((m) => m.userId === user.id)),
+        });
+      }
       if (parts.length === 2 && method === "PATCH") {
         const b = z
           .object({
@@ -742,7 +761,11 @@ async function handle(
           })
           .parse(await body(req));
         validateDistribution(
-          effectiveSettings(sub.category.settings, b.settings),
+          effectiveSettings(
+            sub.category.settings,
+            b.settings,
+            sub.category.applySettingsToAll,
+          ),
         );
         await db.$transaction([
           db.subproduct.update({
@@ -766,6 +789,7 @@ async function handle(
         return send({
           ...preview.instructions,
           settings: preview.settings,
+          needsSettings: preview.needsSettings,
           brand: preview.brand,
           attachments: preview.attachments.map(
             ({ id, name, purpose, text, mime }) => ({
@@ -788,7 +812,16 @@ async function handle(
           })
           .parse(await body(req));
         const c = await configured();
-        const s = effectiveSettings(sub.category.settings, sub.settings);
+        const s = effectiveSettings(
+          sub.category.settings,
+          sub.settings,
+          sub.category.applySettingsToAll,
+        );
+        demand(
+          sub.category.applySettingsToAll ||
+            Object.keys(sub.settings as object).length > 0,
+          "Define la configuración particular de este subproducto antes de generar.",
+        );
         validateDistribution(s);
         const { generateBatch } = await import("@/lib/generation");
         const jobs = await generateBatch(user.id, sub.categoryId, b.requestId, [
@@ -1081,58 +1114,6 @@ async function handle(
         );
         return send({ ok: true });
       }
-    }
-    if (route === "users" && method === "GET") {
-      demand(user.role !== "USER", "Acceso restringido.", 403);
-      return send(
-        await db.user.findMany({
-          where: user.role === "ADMIN" ? { role: "USER" } : {},
-          select: {
-            id: true,
-            name: true,
-            email: true,
-            role: true,
-            status: true,
-          },
-        }),
-      );
-    }
-    if (parts[0] === "users" && parts[1] && method === "PATCH") {
-      demand(user.role !== "USER", "Acceso restringido.", 403);
-      const b = z
-        .object({
-          role: z.enum(["OWNER", "ADMIN", "USER"]),
-          status: z.enum(["PENDING", "APPROVED", "REJECTED", "SUSPENDED"]),
-        })
-        .parse(await body(req));
-      await db.$transaction(async (tx) => {
-        await tx.$executeRaw`SELECT pg_advisory_xact_lock(891234)`;
-        const target = await tx.user.findUniqueOrThrow({
-          where: { id: parts[1] },
-        });
-        demand(
-          user.role === "OWNER" ||
-            (target.role === "USER" && b.role === "USER"),
-          "Solo el OWNER puede administrar roles elevados.",
-          403,
-        );
-        if (
-          target.role === "OWNER" &&
-          target.status === "APPROVED" &&
-          (b.role !== "OWNER" || b.status !== "APPROVED")
-        )
-          demand(
-            (await tx.user.count({
-              where: { role: "OWNER", status: "APPROVED" },
-            })) > 1,
-            "No puedes desactivar al último OWNER activo.",
-          );
-        await tx.user.update({ where: { id: target.id }, data: b });
-        await tx.session.deleteMany({ where: { userId: target.id } });
-        await tx.passwordReset.deleteMany({ where: { userId: target.id } });
-      });
-      await audit(user.id, "USUARIO_ACTUALIZADO", parts[1]);
-      return send({ ok: true });
     }
     if (route === "audit" && method === "GET")
       return send(

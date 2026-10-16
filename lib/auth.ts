@@ -72,13 +72,12 @@ export function ownerOnly(u: { role: string }) {
   demand(u.role === "OWNER", "Esta sección es exclusiva del OWNER.", 403);
 }
 export function projectFilter(u: { id: string; role: string }) {
-  return u.role === "OWNER"
+  return ["OWNER", "ADMIN"].includes(u.role)
     ? {}
     : {
         OR: [
-          { ownerId: u.id },
+          ...(u.role !== "OBSERVER" ? [{ ownerId: u.id }] : []),
           { members: { some: { userId: u.id } } },
-          ...(u.role === "ADMIN" ? [{ owner: { role: "USER" as const } }] : []),
         ],
       };
 }
@@ -97,16 +96,14 @@ export async function projectAccess(
     include: { members: true },
   });
   demand(p, "No tienes acceso a este proyecto.", 404);
+  demand(
+    permission === "VIEW" || u.role !== "OBSERVER",
+    "El rol Observador solo permite ver y descargar.",
+    403,
+  );
   if (permission !== "VIEW" && u.role !== "OWNER" && p.ownerId !== u.id) {
     const member = p.members.find((m) => m.userId === u.id);
-    demand(
-      member &&
-        (member.permission === "MANAGE" ||
-          member.permission === "EDIT" ||
-          (permission === "GENERATE" && member.permission === "GENERATE")),
-      "No tienes permiso para esta operación.",
-      403,
-    );
+    demand(member, "No tienes permiso para esta operación.", 403);
   }
   return p;
 }

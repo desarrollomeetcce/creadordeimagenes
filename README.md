@@ -56,3 +56,9 @@ El usuario ya pudo ingresar a la instalación conectada a Neon. En Vercel los ar
 En cada proyecto o categoría, **Ver afiches** abre la galería agrupada: filtros, miniaturas, vista ampliada y comparación de dos resultados. Se pueden descargar seleccionados o todos los resultados filtrados en PNG/JPG dentro de ZIP, con carpetas por categoría y subproducto. La galería individual añade **Descargar todo el subproducto**. Límite de 200 archivos y 100 MB por preparación; para grupos mayores, usar filtros o selecciones menores.
 
 Los enlaces conservan el proyecto, la categoría o la galería al recargar y permiten usar Atrás/Adelante. Se comprueban nuevamente los permisos al abrirlos. Los filtros y la selección no se conservan al recargar.
+
+## Roles y configuración por nivel
+
+Usuarios permite crear cuentas aprobadas: OWNER administra todos los roles y contraseñas; Administrador administra Usuarios/Observadores y enlaces de recuperación. El Administrador consulta todos los proyectos y genera/edita los propios o asignados. Compartir usa solo correo; Usuario edita/genera en lo propio o asignado y Observador únicamente ve/descarga lo compartido. La guía del rol aparece en todas las vistas. Las claves de IA siguen siendo exclusivas del OWNER.
+
+La ruta Proyecto → Categoría → Subproducto es clickeable. En categoría puedes activar separadamente el prompt general y los parámetros comunes; al desactivar estos, se definen en cada subproducto. El tema es el nombre del subproducto y se conserva en sus instrucciones finales. Bajo Guardar instrucciones/configuración se puede desplegar el guardado con nombre CONFIGURACION y buscar configuraciones de otros proyectos; la zona lateral permite compartirlas con cuentas concretas y eliminarlas.

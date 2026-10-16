@@ -44,11 +44,10 @@ export async function collectionContext(user: User, input: Scope) {
   }
   const project = await projectAccess(user, projectId);
   const canEdit =
-    user.role === "OWNER" ||
-    project.ownerId === user.id ||
-    project.members.some(
-      (m) => m.userId === user.id && ["EDIT", "MANAGE"].includes(m.permission),
-    );
+    user.role !== "OBSERVER" &&
+    (user.role === "OWNER" ||
+      project.ownerId === user.id ||
+      project.members.some((m) => m.userId === user.id));
   return { ...input, name, projectId, projectName: project.name, canEdit };
 }
 export function collectionWhere(

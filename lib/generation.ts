@@ -16,9 +16,13 @@ export async function previewSubproduct(id: string) {
   const instructions = resolveInstructions([
     { name: "Identidad de marca", prompt: brandInstructions(brand) },
     { name: "Proyecto", prompt: s.category.project.prompt },
-    { name: "Categoría", prompt: s.category.prompt },
+    {
+      name: "Categoría",
+      prompt: s.category.applyPromptToAll ? s.category.prompt : "",
+    },
     { name: "Subproducto", prompt: s.prompt },
   ]);
+  instructions.text += `\nEJE TEMÁTICO OBLIGATORIO DEL SUBPRODUCTO: ${JSON.stringify(s.name)}. Todas las variaciones deben tratar exclusivamente de este tema y mencionar su nombre. Las instrucciones particulares amplían las instrucciones heredadas activas; no sustituyen el eje temático ni eliminan indicaciones generales compatibles.`;
   const inheritedAttachments = await db.attachment.findMany({
     where: {
       OR: [
@@ -35,12 +39,24 @@ export async function previewSubproduct(id: string) {
       !/logo/i.test(a.purpose) ||
       brand.logoAttachmentIds.includes(a.id),
   );
+  const needsSettings =
+    !s.category.applySettingsToAll &&
+    Object.keys(s.settings as object).length === 0;
+  if (needsSettings)
+    instructions.warnings.push(
+      "Define la cantidad, distribución, formato y estilo de este subproducto; la categoría no aplica parámetros comunes.",
+    );
   return {
     sub: s,
     instructions,
     attachments,
     brand,
-    settings: effectiveSettings(s.category.settings, s.settings),
+    settings: effectiveSettings(
+      s.category.settings,
+      s.settings,
+      s.category.applySettingsToAll,
+    ),
+    needsSettings,
   };
 }
 export async function generateBatch(
@@ -69,6 +85,10 @@ export async function generateBatch(
       s = p.settings;
     validateDistribution(s);
     demand(
+      !p.needsSettings,
+      `${sub.name}: define su cantidad, distribución y estilo antes de generar; esta categoría no aplica parámetros comunes.`,
+    );
+    demand(
       !p.instructions.warnings.length,
       `${sub.name}: ${p.instructions.warnings.join(" ")}`,
     );
@@ -94,6 +114,7 @@ export async function generateBatch(
         key: `${actorId}:${requestId}:${sub.id}:${index}`,
         snapshot: {
           prompt,
+          subjectName: sub.name,
           mode,
           index,
           format: s.format,

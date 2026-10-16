@@ -4,15 +4,24 @@ import { z } from "zod";
 import { db } from "./db";
 import { ownerOnly, projectAccess, resourceAccess } from "./auth";
 import { demand } from "./errors";
-import { presetAccess } from "./preset-access";
+import { presetAccess, presetFilter, canEditPreset } from "./preset-access";
 import { withAttachmentCopies } from "./attachment-copies";
 import { remove } from "./storage";
 import { effectiveSettings, validateDistribution } from "./inheritance";
 
 const schema = z.object({
-  name: z.string().trim().min(1).max(150),
+  name: z
+    .string()
+    .trim()
+    .min(1)
+    .max(150)
+    .transform((v) =>
+      /^configuraci[oó]n\b/i.test(v) ? v : "CONFIGURACION " + v,
+    ),
   prompt: z.string().max(30000),
   settings: z.record(z.string(), z.unknown()),
+  applyPromptToAll: z.boolean().default(true),
+  applySettingsToAll: z.boolean().default(true),
   visibility: z.enum(["PERSONAL", "SHARED", "OFFICIAL"]).default("PERSONAL"),
 });
 const send = (value: unknown, status = 200) =>
@@ -29,12 +38,7 @@ export async function presetRoutes(
   const method = req.method;
   if (method === "GET" && parts.length === 1) {
     const items = await db.savedPreset.findMany({
-      where: {
-        OR: [
-          { userId: user.id },
-          { visibility: { in: ["SHARED", "OFFICIAL"] } },
-        ],
-      },
+      where: await presetFilter(user),
       orderBy: { updatedAt: "desc" },
     });
     const counts = await db.attachment.groupBy({
@@ -47,9 +51,7 @@ export async function presetRoutes(
       items.map((i) => ({
         ...i,
         attachmentCount: countsById.get(i.id) ?? 0,
-        canEdit:
-          (i.userId === user.id || user.role === "OWNER") &&
-          (i.visibility !== "OFFICIAL" || user.role === "OWNER"),
+        canEdit: canEditPreset(user, i),
       })),
     );
   }
@@ -57,36 +59,36 @@ export async function presetRoutes(
     const b = schema
       .extend({
         sourceCategoryId: z.string().optional(),
+        sourceSubproductId: z.string().optional(),
         includeAttachments: z.boolean().default(false),
       })
       .parse(await body());
     if (b.visibility === "OFFICIAL") ownerOnly(user);
     demand(
-      !b.includeAttachments || !!b.sourceCategoryId,
+      !(b.sourceCategoryId && b.sourceSubproductId),
+      "Selecciona un solo origen.",
+    );
+    const sourceId = b.sourceCategoryId ?? b.sourceSubproductId;
+    const sourceScope = b.sourceCategoryId ? "category" : "subproduct";
+    demand(
+      !b.includeAttachments || !!sourceId,
       "Selecciona la categoría de origen.",
     );
-    if (b.sourceCategoryId)
-      await resourceAccess(user, "category", b.sourceCategoryId, "EDIT");
+    if (sourceId) await resourceAccess(user, sourceScope, sourceId, "EDIT");
     const result = await withAttachmentCopies(
       b.includeAttachments
-        ? { scope: "category", resourceId: b.sourceCategoryId! }
+        ? { scope: sourceScope, resourceId: sourceId! }
         : null,
       async (tx, copies) => {
-        if (b.sourceCategoryId) {
-          await resourceAccess(user, "category", b.sourceCategoryId, "EDIT");
-          await tx.$queryRaw`SELECT id FROM "Category" WHERE id=${b.sourceCategoryId} FOR UPDATE`;
-          demand(
-            await tx.category.findUnique({ where: { id: b.sourceCategoryId } }),
-            "Categoría no encontrada.",
-            404,
-          );
-        }
+        if (sourceId) await resourceAccess(user, sourceScope, sourceId, "EDIT");
         const preset = await tx.savedPreset.create({
           data: {
             name: b.name,
             prompt: b.prompt,
             settings: JSON.parse(JSON.stringify(b.settings)),
             visibility: b.visibility,
+            applyPromptToAll: b.applyPromptToAll,
+            applySettingsToAll: b.applySettingsToAll,
             userId: user.id,
           },
         });
@@ -111,20 +113,18 @@ export async function presetRoutes(
     return send(result, 201);
   }
   if (!parts[1]) return null;
+  if (parts[2] === "shares") {
+    const { presetShares } = await import("./preset-shares");
+    return await presetShares(req, parts, user, body);
+  }
   const preset = await presetAccess(user, parts[1]);
   async function currentPreset(tx: Prisma.TransactionClient) {
     await tx.$queryRaw`SELECT id FROM "SavedPreset" WHERE id=${preset.id} FOR UPDATE`;
     const current = await tx.savedPreset.findUnique({
       where: { id: preset.id },
     });
-    demand(
-      current &&
-        (current.userId === user.id ||
-          user.role === "OWNER" ||
-          current.visibility !== "PERSONAL"),
-      "Configuración no encontrada.",
-      404,
-    );
+    demand(current, "Configuración no encontrada.", 404);
+    await presetAccess(user, preset.id);
     demand(
       current.updatedAt.getTime() === preset.updatedAt.getTime(),
       "La configuración cambió. Actualiza la página y vuelve a intentarlo.",
@@ -143,6 +143,8 @@ export async function presetRoutes(
             prompt: preset.prompt,
             settings: preset.settings!,
             visibility: "PERSONAL",
+            applyPromptToAll: preset.applyPromptToAll,
+            applySettingsToAll: preset.applySettingsToAll,
             userId: user.id,
           },
         });
@@ -169,38 +171,54 @@ export async function presetRoutes(
   if (parts[2] === "apply" && method === "POST" && parts.length === 3) {
     const b = z
       .object({
-        categoryId: z.string(),
+        categoryId: z.string().optional(),
+        subproductId: z.string().optional(),
         includeAttachments: z.boolean().default(true),
       })
       .parse(await body());
-    const category = await db.category.findUnique({
-      where: { id: b.categoryId },
-    });
-    demand(category, "Categoría no encontrada.", 404);
-    await projectAccess(user, category.projectId, "EDIT");
+    demand(
+      !!b.categoryId !== !!b.subproductId,
+      "Selecciona una categoría o un subproducto.",
+    );
+    const targetId = (b.categoryId ?? b.subproductId)!;
+    const scope = b.categoryId ? "category" : "subproduct";
+    await resourceAccess(user, scope, targetId, "EDIT");
     validateDistribution(effectiveSettings(preset.settings, {}));
     const count = await withAttachmentCopies(
       b.includeAttachments ? { scope: "preset", resourceId: preset.id } : null,
       async (tx, copies) => {
         await currentPreset(tx);
-        await projectAccess(user, category.projectId, "EDIT");
-        await tx.$queryRaw`SELECT id FROM "Category" WHERE id=${category.id} FOR UPDATE`;
-        await tx.category.update({
-          where: { id: category.id },
-          data: { prompt: preset.prompt, settings: preset.settings! },
-        });
+        await resourceAccess(user, scope, targetId, "EDIT");
+        if (scope === "category") {
+          await tx.$queryRaw`SELECT id FROM "Category" WHERE id=${targetId} FOR UPDATE`;
+          await tx.category.update({
+            where: { id: targetId },
+            data: {
+              prompt: preset.prompt,
+              settings: preset.settings!,
+              applyPromptToAll: preset.applyPromptToAll,
+              applySettingsToAll: preset.applySettingsToAll,
+            },
+          });
+        } else {
+          await tx.$queryRaw`SELECT id FROM "Subproduct" WHERE id=${targetId} FOR UPDATE`;
+          await tx.subproduct.update({
+            where: { id: targetId },
+            data: { prompt: preset.prompt, settings: preset.settings! },
+          });
+        }
         if (copies.length)
           await tx.attachment.createMany({
             data: copies.map((c) => ({
               ...c,
-              scope: "category",
-              resourceId: category.id,
+              scope,
+              resourceId: targetId,
             })),
           });
         await tx.promptVersion.create({
           data: {
-            scope: "category",
-            resourceId: category.id,
+            scope,
+            resourceId: targetId,
             prompt: preset.prompt,
             actorId: user.id,
           },
@@ -209,7 +227,7 @@ export async function presetRoutes(
           data: {
             actorId: user.id,
             action: "CONFIGURACION_APLICADA",
-            resourceId: category.id,
+            resourceId: targetId,
             detail: { presetId: preset.id, attachmentsCopied: copies.length },
           },
         });

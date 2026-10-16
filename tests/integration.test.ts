@@ -26,11 +26,13 @@ class Client {
 const owner = new Client(),
   user = new Client(),
   admin = new Client(),
+  observer = new Client(),
   anonymous = new Client();
 const password = "Prueba-segura-0123456789";
 const tag = randomUUID().slice(0, 8);
 let uid = "",
   aid = "",
+  oid = "",
   pid = "",
   cid = "",
   sid = "";
@@ -344,7 +346,7 @@ test("Integración HTTP + PostgreSQL (base exclusiva de pruebas, sin llamadas ex
         );
         assert.equal(
           (await admin.call("projects/" + privateProject.body.id)).status,
-          404,
+          200,
         );
         assert.equal((await admin.call("projects/" + pid)).status, 200);
       },
@@ -1334,7 +1336,7 @@ test("Integración HTTP + PostgreSQL (base exclusiva de pruebas, sin llamadas ex
         );
         assert.equal(
           (await admin.call("presets/" + preset.body.id, "DELETE")).status,
-          404,
+          403,
         );
       },
     );
@@ -1357,18 +1359,160 @@ test("Integración HTTP + PostgreSQL (base exclusiva de pruebas, sin llamadas ex
       },
     );
     await t.test(
-      "accesos compartidos: listar, cambiar, revocar y proteger al creador",
+      "crear cuentas, administrar roles y contraseñas sin exponerlas",
+      async () => {
+        const elevated = await owner.call("users", "POST", {
+          name: "Administrador creado",
+          email: `newadmin-${tag}@example.test`,
+          password,
+          role: "ADMIN",
+        });
+        assert.equal(elevated.status, 201);
+        assert(!("passwordHash" in elevated.body));
+        assert(!("password" in elevated.body));
+        assert.equal(
+          (
+            await admin.call("users", "POST", {
+              name: "No permitido",
+              email: `bad-admin-${tag}@example.test`,
+              password,
+              role: "ADMIN",
+            })
+          ).status,
+          403,
+        );
+        assert.equal(
+          (
+            await user.call("users", "POST", {
+              name: "No permitido",
+              email: `bad-user-${tag}@example.test`,
+              password,
+              role: "USER",
+            })
+          ).status,
+          403,
+        );
+        const account = await admin.call("users", "POST", {
+          name: "Usuario creado por admin",
+          email: `managed-${tag}@example.test`,
+          password,
+          role: "USER",
+        });
+        assert.equal(account.status, 201);
+        assert.equal(account.body.status, "APPROVED");
+        const created = new Client();
+        assert.equal(
+          (
+            await created.call("auth/login", "POST", {
+              email: account.body.email,
+              password,
+            })
+          ).status,
+          200,
+        );
+        assert.equal(
+          (
+            await owner.call(`users/${account.body.id}/password`, "POST", {
+              currentPassword: "Incorrecta-0123456789",
+              newPassword: "Nueva-creada-0123456789",
+            })
+          ).status,
+          403,
+        );
+        assert.equal(
+          (
+            await admin.call(`users/${account.body.id}/password`, "POST", {
+              currentPassword: password,
+              newPassword: "Nueva-creada-0123456789",
+            })
+          ).status,
+          403,
+        );
+        assert.equal(
+          (
+            await owner.call(`users/${account.body.id}/password`, "POST", {
+              currentPassword: password,
+              newPassword: "Nueva-creada-0123456789",
+            })
+          ).status,
+          200,
+        );
+        assert.equal((await created.call("auth/me")).status, 401);
+        assert.equal(
+          (
+            await created.call("auth/login", "POST", {
+              email: account.body.email,
+              password,
+            })
+          ).status,
+          401,
+        );
+        assert.equal(
+          (
+            await created.call("auth/login", "POST", {
+              email: account.body.email,
+              password: "Nueva-creada-0123456789",
+            })
+          ).status,
+          200,
+        );
+        assert.equal(
+          (
+            await admin.call(`users/${elevated.body.id}/recovery`, "POST", {
+              currentPassword: password,
+            })
+          ).status,
+          403,
+        );
+        const watching = await admin.call("users", "POST", {
+          name: "Observador de prueba",
+          email: `observer-${tag}@example.test`,
+          password,
+          role: "OBSERVER",
+        });
+        assert.equal(watching.status, 201);
+        oid = watching.body.id;
+        assert.equal(
+          (
+            await observer.call("auth/login", "POST", {
+              email: watching.body.email,
+              password,
+            })
+          ).status,
+          200,
+        );
+        assert.equal(
+          (
+            await admin.call(`users/${oid}/recovery`, "POST", {
+              currentPassword: password,
+            })
+          ).status,
+          201,
+        );
+      },
+    );
+    await t.test(
+      "compartir por correo deriva permisos del rol; Observador solo ve y descarga",
       async () => {
         const p = await owner.call("projects", "POST", {
           name: "Privado para compartir",
           prompt: "",
         });
         const path = `projects/${p.body.id}/members`;
-        const email = `user-${tag}@example.test`;
+        assert.equal((await user.call(`projects/${p.body.id}`)).status, 404);
+        assert.equal((await admin.call(`projects/${p.body.id}`)).status, 200);
+        assert.equal(
+          (
+            await admin.call(`projects/${p.body.id}`, "PATCH", {
+              name: "No asignado",
+              prompt: "",
+            })
+          ).status,
+          403,
+        );
         const actualUser = await db.user.findUniqueOrThrow({
           where: { id: uid },
         });
-        assert.equal((await user.call(`projects/${p.body.id}`)).status, 404);
         assert.equal(
           (
             await owner.call(path, "POST", {
@@ -1376,6 +1520,10 @@ test("Integración HTTP + PostgreSQL (base exclusiva de pruebas, sin llamadas ex
               permission: "VIEW",
             })
           ).status,
+          400,
+        );
+        assert.equal(
+          (await owner.call(path, "POST", { email: actualUser.email })).status,
           200,
         );
         const list = await owner.call(path);
@@ -1388,20 +1536,7 @@ test("Integración HTTP + PostgreSQL (base exclusiva de pruebas, sin llamadas ex
           "status",
         ]);
         assert.equal((await user.call(path)).status, 403);
-        assert.equal((await admin.call(path)).status, 404);
-        assert.equal(
-          (
-            await user.call(`projects/${p.body.id}`, "PATCH", {
-              name: "Prohibido",
-            })
-          ).status,
-          403,
-        );
-        assert.equal(
-          (await owner.call(`${path}/${uid}`, "PATCH", { permission: "EDIT" }))
-            .status,
-          200,
-        );
+        assert.equal((await admin.call(path)).status, 403);
         assert.equal(
           (
             await user.call(`projects/${p.body.id}`, "PATCH", {
@@ -1412,19 +1547,15 @@ test("Integración HTTP + PostgreSQL (base exclusiva de pruebas, sin llamadas ex
           200,
         );
         assert.equal(
-          (await user.call(path, "POST", { email, permission: "EDIT" })).status,
-          403,
+          (await owner.call(`${path}/${uid}`, "PATCH", { permission: "VIEW" }))
+            .status,
+          405,
         );
         const me = await db.user.findFirstOrThrow({
           where: { email: `owner-${tag}@example.test` },
         });
         assert.equal(
-          (
-            await owner.call(path, "POST", {
-              email: me.email,
-              permission: "VIEW",
-            })
-          ).status,
+          (await owner.call(path, "POST", { email: me.email })).status,
           409,
         );
         assert.equal(
@@ -1432,29 +1563,50 @@ test("Integración HTTP + PostgreSQL (base exclusiva de pruebas, sin llamadas ex
           409,
         );
         assert.equal(
+          (await observer.call(`projects/${p.body.id}`)).status,
+          404,
+        );
+        assert.equal(
           (
-            await owner.call(`${path}/${uid}`, "PATCH", {
-              permission: "GENERATE",
+            await owner.call(path, "POST", {
+              email: `observer-${tag}@example.test`,
             })
           ).status,
           200,
         );
         assert.equal(
+          (await observer.call(`projects/${p.body.id}`)).status,
+          200,
+        );
+        assert.equal(
           (
-            await user.call(`projects/${p.body.id}`, "PATCH", {
+            await observer.call(`projects/${p.body.id}`, "PATCH", {
               name: "Prohibido",
+              prompt: "",
             })
           ).status,
           403,
         );
+        for (const endpoint of [
+          "projects",
+          "presets",
+          "library/folders",
+          "jobs/background",
+          "users",
+        ])
+          assert.equal((await observer.call(endpoint, "POST", {})).status, 403);
+        assert.equal((await observer.call("ai/config")).status, 403);
         assert.equal(
           (await owner.call(`${path}/${uid}`, "DELETE")).status,
           200,
         );
         assert.equal((await user.call(`projects/${p.body.id}`)).status, 404);
-        assert.equal((await owner.call(path)).body.members.length, 0);
         assert.equal(
-          (await owner.call(`${path}/${uid}`, "DELETE")).status,
+          (await owner.call(`${path}/${oid}`, "DELETE")).status,
+          200,
+        );
+        assert.equal(
+          (await observer.call(`projects/${p.body.id}`)).status,
           404,
         );
       },
@@ -1496,11 +1648,11 @@ test("Integración HTTP + PostgreSQL (base exclusiva de pruebas, sin llamadas ex
           (f: { name: string }) => f.name === "reutilizable.txt",
         );
         assert(savedFile);
-        assert.equal((await admin.call(path)).status, 404);
+        assert.equal((await admin.call(path)).status, 200);
         assert.equal(
           (await admin.call(`presets/${presetId}/duplicate`, "POST", {}))
             .status,
-          404,
+          201,
         );
         const privateProject = await owner.call("projects", "POST", {
           name: "Recursos privados OWNER",
@@ -1517,7 +1669,7 @@ test("Integración HTTP + PostgreSQL (base exclusiva de pruebas, sin llamadas ex
               sourceCategoryId: privateCategory.body.id,
             })
           ).status,
-          404,
+          403,
         );
         assert.equal(
           (await user.call(`attachments/${source.id}`, "DELETE")).status,
@@ -1616,12 +1768,241 @@ test("Integración HTTP + PostgreSQL (base exclusiva de pruebas, sin llamadas ex
       },
     );
     await t.test(
+      "herencia independiente de prompt y parámetros; el tema del subproducto permanece obligatorio",
+      async () => {
+        const original = (await user.call(`categories/${cid}`)).body,
+          sub = (await user.call(`subproducts/${sid}`)).body;
+        const categoryData = {
+          name: original.name,
+          prompt: "Mensualidades Gratis grande y precio pequeño.",
+          settings: original.settings,
+          applyPromptToAll: true,
+          applySettingsToAll: true,
+        };
+        assert.equal(
+          (await user.call(`categories/${cid}`, "PATCH", categoryData)).status,
+          200,
+        );
+        assert.equal(
+          (
+            await user.call(`subproducts/${sid}`, "PATCH", {
+              name: "MONITOREO",
+              prompt: "Añadir detalles particulares del diplomado.",
+              settings: {},
+            })
+          ).status,
+          200,
+        );
+        let preview = (await user.call(`subproducts/${sid}/instructions`)).body;
+        assert(preview.text.includes("Mensualidades Gratis"));
+        assert(preview.text.includes("detalles particulares"));
+        assert(preview.text.includes("MONITOREO"));
+        assert(preview.text.includes("EJE TEMÁTICO OBLIGATORIO"));
+        assert.equal(
+          (
+            await user.call(`categories/${cid}`, "PATCH", {
+              ...categoryData,
+              applyPromptToAll: false,
+              applySettingsToAll: false,
+            })
+          ).status,
+          200,
+        );
+        preview = (await user.call(`subproducts/${sid}/instructions`)).body;
+        assert(!preview.text.includes("Mensualidades Gratis"));
+        assert(preview.text.includes("detalles particulares"));
+        assert.equal(preview.needsSettings, true);
+        const before = await db.generationJob.count();
+        assert.equal(
+          (
+            await user.call(`categories/${cid}/generate`, "POST", {
+              confirmCharge: true,
+              reviewedInstructions: true,
+              requestId: randomUUID(),
+              selected: [sid],
+            })
+          ).status,
+          400,
+        );
+        assert.equal(await db.generationJob.count(), before);
+        const own = {
+          count: 2,
+          textCount: 2,
+          imageTextCount: 0,
+          imageCount: 0,
+          format: "4:5",
+          style: "Minimalista",
+          editable: true,
+        };
+        assert.equal(
+          (
+            await user.call(`subproducts/${sid}`, "PATCH", {
+              name: "MONITOREO",
+              prompt: "Detalle particular de monitoreo.",
+              settings: own,
+            })
+          ).status,
+          200,
+        );
+        preview = (await user.call(`subproducts/${sid}/instructions`)).body;
+        assert.equal(preview.settings.count, 2);
+        assert.equal(preview.settings.format, "4:5");
+        assert.equal(preview.needsSettings, false);
+        await user.call(`categories/${cid}`, "PATCH", {
+          ...categoryData,
+          applySettingsToAll: false,
+        });
+        preview = (await user.call(`subproducts/${sid}/instructions`)).body;
+        assert(preview.text.includes("Mensualidades Gratis"));
+        assert(preview.text.includes("Detalle particular"));
+        assert.equal(preview.settings.count, 2);
+        const saved = await user.call("presets", "POST", {
+          name: "MONITOREO",
+          prompt: "Detalle particular de monitoreo.",
+          settings: own,
+          sourceSubproductId: sid,
+        });
+        assert.equal(saved.status, 201);
+        assert.equal(saved.body.name, "CONFIGURACION MONITOREO");
+        const [other] = (
+          await user.call(`categories/${cid}/subproducts`, "POST", {
+            names: ["Otro tema"],
+          })
+        ).body;
+        assert.equal(
+          (
+            await user.call(`presets/${saved.body.id}/apply`, "POST", {
+              subproductId: other.id,
+            })
+          ).status,
+          200,
+        );
+        const copied = (await user.call(`subproducts/${other.id}/instructions`))
+          .body;
+        assert.equal(copied.settings.count, 2);
+        assert(copied.text.includes('"Otro tema"'));
+        await db.subproduct.delete({ where: { id: other.id } });
+        await user.call(`categories/${cid}`, "PATCH", {
+          name: original.name,
+          prompt: original.prompt,
+          settings: original.settings,
+          applyPromptToAll: true,
+          applySettingsToAll: true,
+        });
+        await user.call(`subproducts/${sid}`, "PATCH", {
+          name: sub.name,
+          prompt: sub.prompt,
+          settings: sub.settings,
+        });
+      },
+    );
+    await t.test(
+      "configuraciones visibles por rol y compartidas únicamente con cuentas seleccionadas",
+      async () => {
+        const created = await admin.call("users", "POST", {
+          name: "Usuario externo",
+          email: `outside-${tag}@example.test`,
+          password,
+          role: "USER",
+        });
+        const outside = new Client();
+        await outside.call("auth/login", "POST", {
+          email: created.body.email,
+          password,
+        });
+        const preset = await user.call("presets", "POST", {
+          name: "Privada del usuario",
+          prompt: "Instrucciones compartibles.",
+          settings: {},
+          visibility: "PERSONAL",
+        });
+        const id = preset.body.id;
+        assert.equal(
+          (await outside.call(`attachments?scope=preset&id=${id}`)).status,
+          404,
+        );
+        assert.equal(
+          (await observer.call(`attachments?scope=preset&id=${id}`)).status,
+          404,
+        );
+        assert(
+          (await admin.call("presets")).body.some(
+            (p: { id: string }) => p.id === id,
+          ),
+        );
+        assert(
+          (await owner.call("presets")).body.some(
+            (p: { id: string }) => p.id === id,
+          ),
+        );
+        assert.equal(
+          (
+            await user.call(`presets/${id}/shares`, "POST", {
+              email: `observer-${tag}@example.test`,
+            })
+          ).status,
+          200,
+        );
+        assert.equal(
+          (await observer.call(`attachments?scope=preset&id=${id}`)).status,
+          200,
+        );
+        assert.equal(
+          (
+            await observer.call(`presets/${id}/apply`, "POST", {
+              categoryId: cid,
+            })
+          ).status,
+          403,
+        );
+        assert.equal(
+          (await outside.call(`attachments?scope=preset&id=${id}`)).status,
+          404,
+        );
+        assert.equal(
+          (
+            await user.call(`presets/${id}/shares`, "POST", {
+              email: created.body.email,
+            })
+          ).status,
+          200,
+        );
+        assert.equal(
+          (await outside.call(`attachments?scope=preset&id=${id}`)).status,
+          200,
+        );
+        assert.equal(
+          (
+            await outside.call(`presets/${id}`, "PATCH", {
+              name: "No permitido",
+              prompt: "",
+              settings: {},
+            })
+          ).status,
+          403,
+        );
+        assert.equal(
+          (await outside.call(`presets/${id}/duplicate`, "POST", {})).status,
+          201,
+        );
+        assert.equal(
+          (await user.call(`presets/${id}/shares/${created.body.id}`, "DELETE"))
+            .status,
+          200,
+        );
+        assert.equal(
+          (await outside.call(`attachments?scope=preset&id=${id}`)).status,
+          404,
+        );
+      },
+    );
+    await t.test(
       "una copia fallida revierte archivos almacenados y no publica adjuntos incompletos",
       async () => {
         const { withAttachmentCopies } =
           await import("../lib/attachment-copies");
         const sample = await db.savedPreset.findFirstOrThrow({
-          where: { name: "Recursos reutilizables · copia" },
+          where: { name: "CONFIGURACION Recursos reutilizables · copia" },
         });
         const before = await db.storedAsset.count();
         await assert.rejects(
@@ -1855,7 +2236,7 @@ test("Integración HTTP + PostgreSQL (base exclusiva de pruebas, sin llamadas ex
         assert.equal(
           (await admin.call(endpoint, "POST", { currentPassword: password }))
             .status,
-          403,
+          201,
         );
         assert.equal(
           (
@@ -2232,7 +2613,7 @@ test("Integración HTTP + PostgreSQL (base exclusiva de pruebas, sin llamadas ex
               `gallery?scope=project&id=${privateProject.body.id}`,
             )
           ).status,
-          404,
+          200,
         );
         assert.equal(
           (
@@ -2264,6 +2645,66 @@ test("Integración HTTP + PostgreSQL (base exclusiva de pruebas, sin llamadas ex
         ).metadata();
         assert.equal(dimensions.width, 640);
         assert(dimensions.height! <= 640);
+      },
+    );
+    await t.test(
+      "Observador descarga afiches compartidos sin editar ni acceder a recursos privados",
+      async () => {
+        assert.equal(
+          (
+            await owner.call(`projects/${collectionProject}/members`, "POST", {
+              email: `observer-${tag}@example.test`,
+            })
+          ).status,
+          200,
+        );
+        const gallery = await observer.call(
+          `gallery?scope=project&id=${collectionProject}`,
+        );
+        assert.equal(gallery.status, 200);
+        assert.equal(gallery.body.resource.canEdit, false);
+        assert.equal(
+          (
+            await observer.call(`variations/${collectionA}`, "PATCH", {
+              favorite: true,
+            })
+          ).status,
+          403,
+        );
+        const file = await fetch(
+          root + `/api/variations/${collectionA}?download`,
+          { headers: { Cookie: observer.cookie } },
+        );
+        assert.equal(file.status, 200);
+        assert.equal(file.headers.get("content-type"), "image/png");
+        assert.equal(
+          (
+            await fetch(root + `/api/variations/${privateImage}`, {
+              headers: { Cookie: observer.cookie },
+            })
+          ).status,
+          404,
+        );
+        const zip = await fetch(root + "/api/exports", {
+          method: "POST",
+          headers: {
+            Cookie: observer.cookie,
+            Origin: root,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ ids: [collectionA], format: "png" }),
+        });
+        assert.equal(zip.status, 200);
+        assert.equal(
+          (
+            await observer.call(
+              `projects/${collectionProject}/members`,
+              "POST",
+              { email: `user-${tag}@example.test` },
+            )
+          ).status,
+          403,
+        );
       },
     );
     await t.test(

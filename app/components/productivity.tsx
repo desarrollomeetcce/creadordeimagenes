@@ -1,4 +1,5 @@
 "use client";
+import { useCanEdit } from "./role-guide";
 import { useEffect, useState } from "react";
 async function api(path: string, method = "GET", data?: unknown) {
   const r = await fetch("/api/" + path, {
@@ -214,89 +215,132 @@ export function Library() {
 }
 export function PresetTools({
   category,
+  scope = "category",
+  saveCurrent,
 }: {
-  category: { id: string; name: string; prompt: string; settings?: unknown };
+  category: {
+    id: string;
+    name: string;
+    prompt: string;
+    settings?: unknown;
+    applyPromptToAll?: boolean;
+    applySettingsToAll?: boolean;
+  };
+  scope?: "category" | "subproduct";
+  saveCurrent?: () => Promise<{
+    id: string;
+    name: string;
+    prompt: string;
+    settings?: unknown;
+    applyPromptToAll?: boolean;
+    applySettingsToAll?: boolean;
+  }>;
 }) {
   const [items, setItems] = useState<any[]>([]),
     [selected, setSelected] = useState(""),
-    [name, setName] = useState(""),
+    [name, setName] = useState("CONFIGURACION "),
     [visibility, setVisibility] = useState("PERSONAL"),
     [includeAttachments, setIncludeAttachments] = useState(false),
     [applyAttachments, setApplyAttachments] = useState(true);
+  const [opened, setOpened] = useState(false);
+  const [query, setQuery] = useState("");
   const t = useAction();
   useEffect(() => {
+    if (!opened) return;
     void t.run(async () => setItems(await api("presets")), "");
-  }, []);
+  }, [opened]);
   return (
-    <details>
+    <details onToggle={(e) => setOpened(e.currentTarget.open)}>
       <summary>Guardar o aplicar una configuración reutilizable</summary>
       <div className="inside stack">
         <p className="hint">
           Se guardan las instrucciones y los parámetros ya guardados de esta
-          categoría. Puedes incluir copias de sus adjuntos directos. Los
-          archivos del proyecto y de los subproductos se administran por
-          separado. Una configuración compartida permite descargar sus adjuntos
-          a los usuarios aprobados.
+          espacio. Puedes incluir copias de sus adjuntos directos; los archivos
+          heredados de otros niveles no se copian automáticamente. Una
+          configuración compartida permite descargar sus adjuntos solo a las
+          cuentas con las que la compartas. Las oficiales están disponibles para
+          todas las cuentas aprobadas.
         </p>
-        <div className="fields">
-          <label>
-            Nombre
-            <input
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              maxLength={150}
-            />
-          </label>
-          <label>
-            Visibilidad
-            <select
-              value={visibility}
-              onChange={(e) => setVisibility(e.target.value)}
+        <details>
+          <summary>Guardar esta configuración con un nombre</summary>
+          <div className="inside stack">
+            <div className="fields">
+              <label>
+                Nombre de la configuración
+                <input
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  maxLength={150}
+                />
+              </label>
+              <label>
+                Visibilidad
+                <select
+                  value={visibility}
+                  onChange={(e) => setVisibility(e.target.value)}
+                >
+                  <option value="PERSONAL">Personal</option>
+                  <option value="SHARED">Compartida</option>
+                  <option value="OFFICIAL">Oficial · solo OWNER</option>
+                </select>
+              </label>
+            </div>
+            <label className="row">
+              <input
+                type="checkbox"
+                checked={includeAttachments}
+                onChange={(e) => setIncludeAttachments(e.target.checked)}
+              />
+              Incluir los adjuntos directos de este espacio
+            </label>
+            <button
+              type="button"
+              disabled={
+                !name.replace(/^configuraci[oó]n\s*/i, "").trim() || t.busy
+              }
+              onClick={() =>
+                void t.run(async () => {
+                  const current = saveCurrent ? await saveCurrent() : category;
+                  await api("presets", "POST", {
+                    name,
+                    prompt: current.prompt,
+                    settings: current.settings ?? {},
+                    applyPromptToAll: current.applyPromptToAll ?? true,
+                    applySettingsToAll: current.applySettingsToAll ?? true,
+                    visibility,
+                    ...(scope === "category"
+                      ? { sourceCategoryId: category.id }
+                      : { sourceSubproductId: category.id }),
+                    includeAttachments,
+                  });
+                  setItems(await api("presets"));
+                }, "Configuración guardada")
+              }
             >
-              <option value="PERSONAL">Personal</option>
-              <option value="SHARED">Compartida</option>
-              <option value="OFFICIAL">Oficial · solo OWNER</option>
-            </select>
-          </label>
-        </div>
-        <label className="row">
-          <input
-            type="checkbox"
-            checked={includeAttachments}
-            onChange={(e) => setIncludeAttachments(e.target.checked)}
-          />
-          Incluir los adjuntos de esta categoría
-        </label>
-        <button
-          disabled={!name || t.busy}
-          onClick={() =>
-            void t.run(async () => {
-              await api("presets", "POST", {
-                name,
-                prompt: category.prompt,
-                settings: category.settings ?? {},
-                visibility,
-                sourceCategoryId: category.id,
-                includeAttachments,
-              });
-              setItems(await api("presets"));
-            }, "Configuración guardada")
-          }
-        >
-          Guardar configuración actual
-        </button>
+              Guardar configuración actual
+            </button>
+          </div>
+        </details>
         <label>
-          Buscar configuración
+          Buscar configuración guardada en cualquier proyecto
+          <input
+            aria-label="Buscar configuración guardada"
+            placeholder="Escribe el nombre…"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+          />
           <select
             value={selected}
             onChange={(e) => setSelected(e.target.value)}
           >
             <option value="">Selecciona una configuración</option>
-            {items.map((i) => (
-              <option key={i.id} value={i.id}>
-                {i.name} · {i.visibility} · {i.attachmentCount ?? 0} adjuntos
-              </option>
-            ))}
+            {items
+              .filter((i) => i.name.toLowerCase().includes(query.toLowerCase()))
+              .map((i) => (
+                <option key={i.id} value={i.id}>
+                  {i.name} · {i.visibility} · {i.attachmentCount ?? 0} adjuntos
+                </option>
+              ))}
           </select>
         </label>
         <label className="row">
@@ -313,11 +357,12 @@ export function PresetTools({
           con adjuntos añade otra copia y consume espacio.
         </p>
         <button
+          type="button"
           disabled={!selected || t.busy}
           onClick={() => {
             if (
               confirm(
-                "¿Reemplazar las instrucciones y parámetros de esta categoría y copiar los adjuntos seleccionados? Sus versiones anteriores quedarán en el historial.",
+                "¿Aplicar las instrucciones y parámetros guardados a este espacio y añadir sus adjuntos seleccionados? Las versiones anteriores quedarán en el historial.",
               )
             )
               void t.run(async () => {
@@ -327,7 +372,9 @@ export function PresetTools({
                 if (!preset)
                   throw new Error("Selecciona una configuración existente.");
                 await api("presets/" + preset.id + "/apply", "POST", {
-                  categoryId: category.id,
+                  ...(scope === "category"
+                    ? { categoryId: category.id }
+                    : { subproductId: category.id }),
                   includeAttachments: applyAttachments,
                 });
                 window.location.reload();
@@ -338,6 +385,64 @@ export function PresetTools({
         </button>
       </div>
       {t.notice}
+    </details>
+  );
+}
+function PresetSharing({ id }: { id: string }) {
+  const [shares, setShares] = useState<
+    { id: string; name: string; email: string; role: string }[]
+  >([]);
+  const t = useAction();
+  const refresh = async () => setShares(await api(`presets/${id}/shares`));
+  useEffect(() => {
+    void t.run(refresh, "");
+  }, [id]);
+  return (
+    <details>
+      <summary>Compartir configuración por correo</summary>
+      <div className="inside stack">
+        <p className="hint">
+          OWNER y Administrador ven todas las configuraciones. Un Usuario solo
+          ve las propias, las oficiales y las compartidas expresamente con él.
+          El rol Observador no puede aplicarlas ni modificarlas.
+        </p>
+        <form
+          className="fields"
+          onSubmit={(e) => {
+            e.preventDefault();
+            const data = Object.fromEntries(new FormData(e.currentTarget));
+            void t.run(async () => {
+              await api(`presets/${id}/shares`, "POST", data);
+              await refresh();
+            });
+          }}
+        >
+          <label>
+            Correo de la cuenta aprobada
+            <input type="email" name="email" required />
+          </label>
+          <button disabled={t.busy}>Compartir configuración</button>
+        </form>
+        {shares.map((s) => (
+          <div className="row" key={s.id}>
+            <span>
+              {s.name} · {s.email}
+            </span>
+            <button
+              disabled={t.busy}
+              onClick={() =>
+                void t.run(async () => {
+                  await api(`presets/${id}/shares/${s.id}`, "DELETE");
+                  await refresh();
+                })
+              }
+            >
+              Retirar acceso
+            </button>
+          </div>
+        ))}
+        {t.notice}
+      </div>
     </details>
   );
 }
@@ -353,6 +458,8 @@ function PresetDetails({
     visibility: string;
     attachmentCount: number;
     canEdit: boolean;
+    applyPromptToAll: boolean;
+    applySettingsToAll: boolean;
   };
   refresh: () => Promise<void>;
 }) {
@@ -400,6 +507,8 @@ function PresetDetails({
                 await api("presets/" + preset.id, "PATCH", {
                   ...data,
                   settings: preset.settings,
+                  applyPromptToAll: preset.applyPromptToAll,
+                  applySettingsToAll: preset.applySettingsToAll,
                 });
                 await refresh();
               });
@@ -432,19 +541,21 @@ function PresetDetails({
               </select>
             </label>
             <p className="hint">
-              Compartir permite a las cuentas aprobadas consultar, duplicar y
-              aplicar esta configuración, incluidos sus archivos. Para cambiar
+              Compartir permite a las cuentas seleccionadas consultar, duplicar
+              y aplicar esta configuración, incluidos sus archivos. Para cambiar
               los adjuntos, guarda una nueva configuración desde una categoría.
             </p>
             <button disabled={t.busy}>Actualizar configuración</button>
           </form>
         )}
+        {preset.canEdit && open && <PresetSharing id={preset.id} />}
         {t.notice}
       </div>
     </details>
   );
 }
 export function Presets() {
+  const canWrite = useCanEdit();
   const [items, setItems] = useState<any[]>([]),
     [query, setQuery] = useState("");
   const t = useAction();
@@ -477,6 +588,7 @@ export function Presets() {
               <PresetDetails preset={i} refresh={refresh} />
               <div className="row">
                 <button
+                  hidden={!canWrite}
                   disabled={t.busy}
                   onClick={() =>
                     void t.run(async () => {

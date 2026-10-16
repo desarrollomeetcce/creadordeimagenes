@@ -29,7 +29,7 @@ La referencia sigue siendo el prompt maestro completo (54 secciones) y el requis
 - Cliente Prisma generado y migración aditiva aplicada correctamente en PostgreSQL temporal.
 - TypeScript y compilación de producción aprobados.
 - 15 pruebas unitarias aprobadas: incluyen cifrado, herencia, contratos de IA simulados, documentos, proporciones, edición gráfica, logos y SVG.
-- Suite de integración ampliada contra HTTP/PostgreSQL reales: edición/versiones, concurrencia, IA simulada, revisión, duplicación, cancelación, biblioteca, presets, límites particulares, regeneración selectiva y limpieza. Resultado actual: 54 escenarios aprobados (55 resultados contando el contenedor de la suite).
+- Suite de integración ampliada contra HTTP/PostgreSQL reales: edición/versiones, concurrencia, IA simulada, revisión, duplicación, cancelación, biblioteca, presets, límites particulares, regeneración selectiva y limpieza. Resultado actual: 58 escenarios aprobados (59 resultados contando el contenedor de la suite).
 - No se han utilizado credenciales reales de IA ni efectuado llamadas facturables. Las pruebas de proveedor usan transporte simulado explícito; no establecen conectividad real con OpenAI.
 
 ## Estado por fases
@@ -114,3 +114,17 @@ Los pasos que pueden ejecutar llamadas de IA tienen maxRetries=0. Los trabajos U
 El backend Vercel se activa únicamente si están disponibles las variables de sistema del despliegue y el World predeterminado. En otros servidores la prueba local requiere activación explícita; para VPS se conserva el worker persistente. Nunca se usa silenciosamente almacenamiento local de Workflow en Vercel. Si el despliegue no tiene ejecutor disponible, se muestra ese estado y se conserva el modo interactivo. La integración con el ejecutor Vercel y sus cargos/límites requieren validación externa; las pruebas locales no acreditan una generación real.
 
 Validación: 54 escenarios HTTP/PostgreSQL (55 resultados contando el contenedor), 15 unitarias, TypeScript, build e instalación sin base aprobados. Chromium confirmó una espera y reanudación reales de Workflow después de cerrar la única página, estado persistente al regresar y bloqueo previo a cualquier llamada al proveedor. Sin errores JavaScript. No hubo generación facturable.
+
+## Cambios solicitados · navegación, cuatro roles y herencia configurable
+
+Ruta completa enlazada Proyectos → Proyecto → Categoría → Subproducto en galerías individuales y acceso a ancestros desde galerías agrupadas; respeta las direcciones existentes y recarga/Atrás/Adelante. Guía visible del rol y capacidades en todas las vistas autenticadas, etiquetas españolas y controles de consulta sin botones de modificación para Observador.
+
+Migración aditiva 006 añade OBSERVER, opciones de herencia en Category/SavedPreset y PresetShare. La instrucción actual del usuario sustituye la política anterior que excluía proyectos OWNER/ADMIN de la consulta administrativa: ADMIN ahora ve todos; escritura y generación requieren propiedad/asignación. OWNER conserva control total. ADMIN crea/administra USER y OBSERVER, emite recuperación para ellas y no puede elevar cuentas ni cambiar contraseñas ajenas directamente. OWNER crea cualquier rol y puede establecer contraseñas tras reautenticarse, revocando sesiones/enlaces anteriores. El último OWNER activo sigue protegido.
+
+Compartir proyecto requiere solo correo; las acciones dependen del rol actual de la cuenta, sin permisos adicionales en ese formulario. USER asignado puede ver/editar/generar/descargar; OBSERVER asignado ve/descarga. Cambiar un rol revoca sesiones y cambia el acceso sin reconfigurar asignaciones. La recuperación entrega un enlace privado copiable: no se afirma haber enviado correo.
+
+Categoría separa aplicar prompt general y aplicar cantidad/distribución/formato/estilo. Desactivar parámetros oculta sus cuadros en categoría y exige configuración por subproducto; el prompt particular conserva las instrucciones generales activas y el tema obligatorio. Las personalizaciones explícitas conservan prioridad. Se puede guardar configuración desde el formulario actual de categoría o subproducto, con nombre inicial CONFIGURACION, búsqueda por nombre y aplicación entre proyectos. Se conservan opciones de herencia y adjuntos directos. La pantalla lateral permite actualizar, duplicar, compartir por cuenta y eliminar; los roles normales ya no ven indiscriminadamente todas las SHARED.
+
+Verificación: 58 escenarios HTTP/PostgreSQL (59 resultados contando el contenedor), 15 unitarias, TypeScript, build e instalación sin base aprobados. Chromium verificó creación por OWNER/ADMIN, cambio de contraseña por OWNER, emisión por ADMIN, compartir solo por correo, ocultación de parámetros, guardado inline con prompt actual/opciones, eje temático y ruta clickeable completa. Cuenta Observador independiente sin acciones de edición y con lectura de una configuración compartida explícitamente. Inspección en escritorio y móvil, sin errores JavaScript. Sin llamadas facturables ni correos enviados.
+
+La migración 006 se aplicó primero en la copia de Neon y después en la base conectada, con historial/checksum y transacción. Se verificaron el rol nuevo y ambos controles de categoría en la copia. No se crearon cuentas de prueba externas ni se cambiaron contraseñas, claves de IA o sesiones reales.

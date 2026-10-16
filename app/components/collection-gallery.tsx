@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
+import { HierarchyBreadcrumbs } from "./breadcrumbs";
 import { VariationEditor } from "./variation-editor";
 type Scope = "project" | "category";
 type Item = {
@@ -15,7 +16,12 @@ type Item = {
   } | null;
 };
 type Data = {
-  resource: { name: string; projectName: string; canEdit: boolean };
+  resource: {
+    name: string;
+    projectName: string;
+    projectId: string;
+    canEdit: boolean;
+  };
   total: number;
   pages: number;
   items: Item[];
@@ -130,12 +136,20 @@ export function CollectionGallery({
   const current = data?.items.findIndex((item) => item.id === preview) ?? -1;
   return (
     <>
-      <div className="crumb">
-        <button onClick={back}>
-          Volver {scope === "project" ? "al proyecto" : "a la categoría"}
-        </button>{" "}
-        / Galería
-      </div>
+      {data && (
+        <HierarchyBreadcrumbs
+          project={{
+            id: data.resource.projectId,
+            name: data.resource.projectName,
+          }}
+          category={
+            scope === "category" ? { id, name: data.resource.name } : null
+          }
+        />
+      )}
+      <button onClick={back}>
+        Volver {scope === "project" ? "al proyecto" : "a la categoría"}
+      </button>
       <h1>
         Afiches de{" "}
         {data?.resource.name ??

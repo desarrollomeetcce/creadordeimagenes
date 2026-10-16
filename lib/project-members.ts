@@ -4,7 +4,6 @@ import { db } from "./db";
 import { projectAccess } from "./auth";
 import { demand } from "./errors";
 
-const permission = z.enum(["VIEW", "GENERATE", "EDIT", "MANAGE"]);
 export async function projectMembers(
   req: NextRequest,
   projectId: string,
@@ -34,7 +33,7 @@ export async function projectMembers(
     );
   }
   demand(
-    ["POST", "PATCH", "DELETE"].includes(req.method),
+    ["POST", "DELETE"].includes(req.method),
     "Operación no disponible.",
     405,
   );
@@ -44,15 +43,17 @@ export async function projectMembers(
     404,
   );
   const payload =
-    req.method === "DELETE"
-      ? null
-      : (req.method === "POST"
-          ? z.object({
-              email: z.email().transform((v) => v.toLowerCase()),
-              permission,
-            })
-          : z.object({ permission })
-        ).parse(await body());
+    req.method === "POST"
+      ? z
+          .object({
+            email: z
+              .email()
+              .max(200)
+              .transform((v) => v.toLowerCase()),
+          })
+          .strict()
+          .parse(await body())
+      : null;
   await db.$transaction(async (tx) => {
     await tx.$queryRaw`SELECT id FROM "Project" WHERE id=${projectId} FOR UPDATE`;
     const current = await tx.project.findUnique({ where: { id: projectId } });
@@ -66,7 +67,7 @@ export async function projectMembers(
       req.method === "POST"
         ? await tx.user.findUnique({
             where: {
-              email: payload && "email" in payload ? String(payload.email) : "",
+              email: payload?.email ?? "",
             },
           })
         : await tx.user.findUnique({ where: { id: memberId! } });
@@ -86,19 +87,13 @@ export async function projectMembers(
         create: {
           projectId,
           userId: target.id,
-          permission: payload!.permission,
+          permission: "ROLE",
         },
-        update: { permission: payload!.permission },
+        update: { permission: "ROLE" },
       });
     else {
       const where = { projectId, userId: target.id };
-      const changed =
-        req.method === "DELETE"
-          ? await tx.projectMember.deleteMany({ where })
-          : await tx.projectMember.updateMany({
-              where,
-              data: { permission: payload!.permission },
-            });
+      const changed = await tx.projectMember.deleteMany({ where });
       demand(changed.count, "Colaborador no encontrado.", 404);
     }
     await tx.auditEvent.create({
@@ -111,7 +106,6 @@ export async function projectMembers(
         resourceId: projectId,
         detail: {
           userId: target.id,
-          ...(payload ? { permission: payload.permission } : {}),
         },
       },
     });

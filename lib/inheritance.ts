@@ -74,8 +74,16 @@ export const defaults = {
   style: "Profesional",
   editable: true,
 };
-export function effectiveSettings(category: unknown, subproduct: unknown) {
-  return { ...defaults, ...(category as object), ...(subproduct as object) };
+export function effectiveSettings(
+  category: unknown,
+  subproduct: unknown,
+  inherit = true,
+) {
+  return {
+    ...defaults,
+    ...(inherit ? (category as object) : {}),
+    ...(subproduct as object),
+  };
 }
 export function validateDistribution(s: typeof defaults) {
   if (!Number.isInteger(s.count) || s.count < 1 || s.count > 12)

@@ -2,7 +2,8 @@ import { randomBytes } from "node:crypto";
 import argon2 from "argon2";
 import { z } from "zod";
 import { db } from "./db";
-import { ownerOnly, rateLimit, tokenHash } from "./auth";
+import { rateLimit, tokenHash } from "./auth";
+import { canManageAccount, managesUsers } from "./roles";
 import { demand } from "./errors";
 
 const password = z.string().min(12).max(128);
@@ -57,29 +58,40 @@ export async function issuePasswordReset(
   targetId: string,
   input: unknown,
 ) {
-  ownerOnly(user);
+  demand(
+    managesUsers(user.role),
+    "Solo OWNER o Administrador pueden recuperar cuentas autorizadas.",
+    403,
+  );
   const b = z.object({ currentPassword: password }).strict().parse(input);
   await rateLimit(`recovery-issue:${user.id}`, 8);
   const account = await db.user.findUniqueOrThrow({ where: { id: user.id } });
   demand(
     await argon2.verify(account.passwordHash, b.currentPassword),
-    "La contraseña actual del OWNER no es correcta.",
+    "Tu contraseña actual no es correcta.",
     403,
   );
   const token = randomBytes(32).toString("base64url"),
     expiresAt = new Date(Date.now() + 30 * 60000);
   await db.$transaction(async (tx) => {
-    // Lock both accounts in a stable order and recheck the OWNER credentials.
+    // Lock both accounts in a stable order and recheck the privileged issuer credentials.
     const rows = await tx.$queryRaw<
       { id: string; role: string; status: string; passwordHash: string }[]
     >`SELECT "id", "role", "status", "passwordHash" FROM "User" WHERE "id" IN (${user.id}, ${targetId}) ORDER BY "id" FOR UPDATE`;
     const issuer = rows.find((row) => row.id === user.id);
     demand(
-      issuer?.role === "OWNER" &&
+      issuer?.role === user.role &&
+        managesUsers(issuer.role) &&
         issuer.status === "APPROVED" &&
         issuer.passwordHash === account.passwordHash,
-      "La cuenta OWNER cambió. Inicia sesión nuevamente.",
+      "La cuenta que administra cambió. Inicia sesión nuevamente.",
       409,
+    );
+    const target = rows.find((row) => row.id === targetId);
+    demand(
+      target && canManageAccount(issuer.role, target.role),
+      "Solo el OWNER puede recuperar cuentas elevadas.",
+      403,
     );
     demand(
       rows.find((row) => row.id === targetId)?.status === "APPROVED",

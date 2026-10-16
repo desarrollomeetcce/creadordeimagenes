@@ -147,7 +147,7 @@ export function RecoveryIssuer({
             Entrégalo de forma privada a la persona titular.
           </p>
           <label>
-            Tu contraseña actual de OWNER
+            Tu contraseña actual de OWNER o Administrador
             <input
               type="password"
               name="currentPassword"
@@ -161,15 +161,42 @@ export function RecoveryIssuer({
         </form>
       )}
       {link && (
-        <label>
-          Enlace de recuperación · visible solo ahora
-          <textarea
-            readOnly
-            value={link}
-            rows={3}
-            onFocus={(e) => e.currentTarget.select()}
-          />
-        </label>
+        <div className="stack">
+          <label>
+            Enlace de recuperación · visible solo ahora
+            <textarea
+              readOnly
+              value={link}
+              rows={3}
+              onFocus={(e) => e.currentTarget.select()}
+            />
+          </label>
+          <button
+            type="button"
+            onClick={() => {
+              if (!navigator.clipboard) {
+                setMessage(
+                  "Selecciona y copia el enlace del cuadro para entregarlo por un canal privado.",
+                );
+                return;
+              }
+              void navigator.clipboard
+                .writeText(link)
+                .then(() =>
+                  setMessage(
+                    "Enlace copiado. Entrégalo por un canal privado; caduca a los 30 minutos de su creación.",
+                  ),
+                )
+                .catch(() =>
+                  setMessage(
+                    "Selecciona y copia el enlace del cuadro para entregarlo por un canal privado.",
+                  ),
+                );
+            }}
+          >
+            Copiar enlace de recuperación
+          </button>
+        </div>
       )}
       {message && (
         <div role="status" className="notice">

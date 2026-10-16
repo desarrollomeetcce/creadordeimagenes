@@ -9,6 +9,7 @@ enum Role {
   OWNER
   ADMIN
   USER
+  OBSERVER
 }
 enum AccountStatus {
   PENDING
@@ -75,6 +76,8 @@ model Category {
   projectId String
   project Project @relation(fields:[projectId],references:[id])
   settings Json @default("{}")
+  applyPromptToAll Boolean @default(true)
+  applySettingsToAll Boolean @default(true)
   subproducts Subproduct[]
   @@index([projectId])
 }
@@ -270,8 +273,15 @@ model SavedPreset {
   prompt String
   settings Json
   visibility String @default("PERSONAL")
+  applyPromptToAll Boolean @default(true)
+  applySettingsToAll Boolean @default(true)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+model PresetShare {
+  presetId String
+  userId String
+  @@id([presetId,userId])
 }
 model BudgetLimit {
   id String @id @default(cuid())
