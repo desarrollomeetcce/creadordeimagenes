@@ -36,6 +36,48 @@ export async function cancelJob(
     return { ok: true };
   });
 }
+export async function processJob(
+  user: { id: string; role: string },
+  id: string,
+) {
+  const job = await db.generationJob.findUnique({ where: { id } });
+  demand(job, "Trabajo no encontrado.", 404);
+  demand(
+    user.role === "OWNER" || job.actorId === user.id,
+    "Solo puedes procesar tus propios trabajos.",
+    403,
+  );
+  if (job.projectId === "connection-test") ownerOnly(user);
+  else
+    await projectAccess(
+      user,
+      job.projectId,
+      typeof (job.snapshot as Record<string, unknown>).editVariationId ===
+        "string"
+        ? "EDIT"
+        : "GENERATE",
+    );
+  demand(
+    job.status === "PENDING",
+    "El trabajo ya fue procesado o está en curso. Actualiza su estado.",
+    409,
+  );
+  await configured();
+  const { runOne, recoverInterrupted } = await import("../scripts/worker");
+  await recoverInterrupted();
+  const processed = await runOne({
+    id,
+    actorId: job.actorId,
+    deadlineMs: 240000,
+  });
+  demand(
+    processed,
+    "Ya hay un trabajo en curso para esta cuenta. Espera a que termine.",
+    409,
+  );
+  const result = await db.generationJob.findUniqueOrThrow({ where: { id } });
+  return { id, status: result.status, error: result.error };
+}
 export async function retryJob(
   user: { id: string; role: string },
   id: string,

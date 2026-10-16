@@ -2,6 +2,12 @@ import { z } from "zod";
 import sharp, { type OverlayOptions } from "sharp";
 import { demand } from "./errors";
 import { ratios } from "./render";
+import { join } from "node:path";
+const fontFiles = {
+  "DejaVu Sans": "DejaVuSans.ttf",
+  "DejaVu Serif": "DejaVuSerif.ttf",
+  "DejaVu Sans Mono": "DejaVuSansMono.ttf",
+};
 const box = {
   id: z.string().min(1).max(80),
   x: z.number().int().min(0).max(4096),
@@ -133,6 +139,12 @@ export async function renderDesign(
         text: {
           text: `<span foreground="${layer.color}">${escapeMarkup(layer.text)}</span>`,
           font: `${layer.font} ${layer.fontSize}`,
+          fontfile: join(
+            process.cwd(),
+            "assets",
+            "fonts",
+            fontFiles[layer.font],
+          ),
           width: layer.width,
           align: layer.align,
           rgba: true,

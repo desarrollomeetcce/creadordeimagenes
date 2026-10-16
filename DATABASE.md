@@ -23,3 +23,9 @@ ImageVersion es inmutable desde los endpoints; restaurar genera una revisión nu
 `202610160003_brand_kits` incorpora BrandKit (uno por proyecto, con revisión), BrandLogo (solo adjuntos de imagen del mismo proyecto autorizados como logos) y PasswordReset (token aleatorio de 256 bits almacenado exclusivamente como SHA-256, caducidad de 30 minutos). Las claves foráneas protegen los archivos seleccionados. Los afiches guardan una copia JSON de su identidad en el snapshot del trabajo.
 
 Consumir un enlace y eliminar los demás enlaces/sesiones del usuario ocurre en una sola transacción bajo bloqueo de la cuenta. Cambiar contraseña, rol o estado también revoca los enlaces pendientes. Ni los hashes de contraseña ni los tokens de recuperación se incorporan a la auditoría. El enlace usa un fragmento URL eliminado al abrirse; el token se envía solamente en el cuerpo de la solicitud de restablecimiento.
+
+## Archivos de prueba en PostgreSQL
+
+`202610160004_stored_assets` agrega StoredAsset con UUID, BYTEA privado, tamaño validado por CHECK y fecha de creación. La suma de tamaños se comprueba bajo advisory lock transaccional antes de guardar. La aplicación conserva referencias `pg:<uuid>`; nunca expone un endpoint de lectura sin autorización del proyecto. Los recursos locales existentes conservan su lectura por UUID sin prefijo. No hay migración automática de archivos de un mecanismo a otro.
+
+Las limpiezas de temporales y versiones liberan también los BYTEA; las copias independientes usan recursos distintos. Una cuota de 128 MiB limita los archivos de la prueba, no toda la base ni sus costes. Para escala de producción se mantiene pendiente un adaptador de almacenamiento de objetos.

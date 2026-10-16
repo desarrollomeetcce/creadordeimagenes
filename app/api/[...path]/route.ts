@@ -30,8 +30,16 @@ import {
   validateDistribution,
 } from "@/lib/inheritance";
 import { seedPrompt } from "@/lib/seed-prompt";
-import { store, load, remove } from "@/lib/storage";
+import {
+  store,
+  load,
+  remove,
+  fileStream,
+  maxUploadBytes,
+  storageStatus,
+} from "@/lib/storage";
 export const runtime = "nodejs";
+export const maxDuration = 300;
 export const dynamic = "force-dynamic";
 const credentials = z.object({
   email: z
@@ -257,6 +265,31 @@ async function handle(
       return send(await resetPassword(await body(req)));
     }
     const user = await actor();
+    if (route === "capabilities" && method === "GET")
+      return send({ maxUploadBytes: maxUploadBytes() });
+    if (route === "system/cleanup" && method === "POST") {
+      ownerOnly(user);
+      const { cleanupExpired, recoverInterrupted } =
+        await import("@/scripts/worker");
+      return send({
+        expired: await cleanupExpired(),
+        interrupted: await recoverInterrupted(),
+      });
+    }
+    if (route === "system/storage" && method === "GET") {
+      ownerOnly(user);
+      return send(await storageStatus());
+    }
+    if (
+      parts[0] === "jobs" &&
+      parts[1] &&
+      parts[2] === "process" &&
+      parts.length === 3 &&
+      method === "POST"
+    ) {
+      const { processJob } = await import("@/lib/jobs");
+      return send(await processJob(user, parts[1]));
+    }
     if (route === "auth/change-password" && method === "POST") {
       const { changePassword } = await import("@/lib/accounts");
       const result = await changePassword(user, await body(req));
@@ -621,10 +654,15 @@ async function handle(
             confirmCharge: z.literal(true),
             reviewedInstructions: z.literal(true),
             requestId: z.uuid(),
+            selected: z
+              .array(z.string().min(1).max(100))
+              .min(1)
+              .max(200)
+              .optional(),
           })
           .parse(await body(req));
         const { generateBatch } = await import("@/lib/generation");
-        const jobs = await generateBatch(user.id, id, b.requestId);
+        const jobs = await generateBatch(user.id, id, b.requestId, b.selected);
         await audit(user.id, "GENERACION_MASIVA_AUTORIZADA", id);
         return send({ jobs: jobs.map((j) => j.id) }, 202);
       }
@@ -805,11 +843,12 @@ async function handle(
       }
       if (parts.length === 1 && method === "POST") {
         demand(
-          Number(req.headers.get("content-length") ?? 0) <= 11000000,
-          "El archivo supera 10 MB.",
+          Number(req.headers.get("content-length") ?? 0) <=
+            maxUploadBytes() + 500000,
+          `El archivo supera ${maxUploadBytes() / 1000000} MB.`,
           413,
         );
-        const multipart = await bounded(req, 11000000);
+        const multipart = await bounded(req, maxUploadBytes() + 500000);
         const form = await new Response(new Uint8Array(multipart), {
           headers: { "Content-Type": req.headers.get("content-type") ?? "" },
         }).formData();
@@ -820,8 +859,10 @@ async function handle(
         await resourceAccess(user, scope, id, "EDIT");
         const file = form.get("file");
         demand(
-          file instanceof File && file.size > 0 && file.size <= 10000000,
-          "Selecciona un archivo de hasta 10 MB.",
+          file instanceof File &&
+            file.size > 0 &&
+            file.size <= maxUploadBytes(),
+          `Selecciona un archivo de hasta ${maxUploadBytes() / 1000000} MB.`,
         );
         const purpose = z.string().min(1).max(100).parse(form.get("purpose"));
         const { validateUpload } = await import("@/lib/uploads");
@@ -846,7 +887,7 @@ async function handle(
         const a = await db.attachment.findUnique({ where: { id: parts[1] } });
         demand(a, "Archivo no encontrado.", 404);
         await resourceAccess(user, a.scope, a.resourceId);
-        return new NextResponse(new Uint8Array(await load(a.path)), {
+        return new NextResponse(fileStream(await load(a.path)), {
           headers: {
             "Content-Type": a.mime,
             "Content-Disposition": a.mime.startsWith("image/")
@@ -968,7 +1009,7 @@ async function handle(
       }
       await audit(user.id, "DESCARGA_ZIP");
       return new NextResponse(
-        new Uint8Array(
+        fileStream(
           await zip.generateAsync({ type: "nodebuffer", compression: "STORE" }),
         ),
         {
@@ -1048,7 +1089,7 @@ async function handle(
         const output = jpg
           ? await (await import("@/lib/render")).jpeg(bytes)
           : bytes;
-        return new NextResponse(new Uint8Array(output), {
+        return new NextResponse(fileStream(output), {
           headers: {
             "Content-Type": jpg ? "image/jpeg" : "image/png",
             "Content-Disposition": `${req.nextUrl.searchParams.has("download") ? "attachment" : "inline"}; filename="afiche_${v.id}.${jpg ? "jpg" : "png"}"`,

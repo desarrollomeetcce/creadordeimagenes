@@ -4,7 +4,7 @@ import { db } from "./db";
 import { accessibleVariation, saveManual, restoreVersion } from "./versions";
 import { demand } from "./errors";
 import { designSchema } from "./design";
-import { load, store, remove } from "./storage";
+import { load, store, remove, fileStream } from "./storage";
 import { configured, reserveJobs } from "./ai";
 import { resolveInstructions } from "./inheritance";
 export async function variationRoutes(
@@ -62,15 +62,12 @@ export async function variationRoutes(
     });
     demand(version, "Versión no encontrada.", 404);
     if (!version.backgroundPath) return new NextResponse(null, { status: 204 });
-    return new NextResponse(
-      new Uint8Array(await load(version.backgroundPath)),
-      {
-        headers: {
-          "Content-Type": "image/png",
-          "Cache-Control": "private, no-store",
-        },
+    return new NextResponse(fileStream(await load(version.backgroundPath)), {
+      headers: {
+        "Content-Type": "image/png",
+        "Cache-Control": "private, no-store",
       },
-    );
+    });
   }
   if (action === "versions" && parts[3] && method === "GET") {
     const ver = await db.imageVersion.findUnique({
@@ -79,7 +76,7 @@ export async function variationRoutes(
       },
     });
     demand(ver, "Versión no encontrada.", 404);
-    return new NextResponse(new Uint8Array(await load(ver.path)), {
+    return new NextResponse(fileStream(await load(ver.path)), {
       headers: {
         "Content-Type": "image/png",
         "Cache-Control": "private, no-store",

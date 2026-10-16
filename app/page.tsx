@@ -1,7 +1,8 @@
 "use client";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, useRef } from "react";
 import { VariationEditor } from "./components/variation-editor";
 import { BrandKit } from "./components/brand-kit";
+import { StorageUsage } from "./components/storage-usage";
 import {
   AccountSecurity,
   RecoveryIssuer,
@@ -295,7 +296,10 @@ export default function Home() {
         </header>
         <main>
           {view === "account" ? (
-            <AccountSecurity onChanged={reloadUser} />
+            <>
+              <AccountSecurity onChanged={reloadUser} />
+              {user.role === "OWNER" && <StorageUsage />}
+            </>
           ) : view === "library" ? (
             <Library />
           ) : view === "presets" ? (
@@ -455,17 +459,24 @@ function Uploads({ scope, id }: { scope: string; id: string }) {
     { id: string; name: string; size: number }[]
   >([]);
   const [purpose, setPurpose] = useState("Material de contexto");
+  const [uploadLimit, setUploadLimit] = useState(3000000);
   const t = useTask();
-  const refresh = useCallback(
-    async () => setFiles(await api(`attachments?scope=${scope}&id=${id}`)),
-    [scope, id],
-  );
+  const refresh = useCallback(async () => {
+    const [files, caps] = await Promise.all([
+      api(`attachments?scope=${scope}&id=${id}`),
+      api("capabilities"),
+    ]);
+    setFiles(files);
+    setUploadLimit(caps.maxUploadBytes);
+  }, [scope, id]);
   useEffect(() => {
     void t.run(refresh, "");
   }, [refresh]);
   const upload = (file?: File) => {
     if (!file) return;
     void t.run(async () => {
+      if (file.size > uploadLimit)
+        throw new Error(`El archivo supera ${uploadLimit / 1000000} MB.`);
       const form = new FormData();
       form.set("file", file);
       form.set("scope", scope);
@@ -533,9 +544,9 @@ function Uploads({ scope, id }: { scope: string; id: string }) {
         ))}
       </div>
       <p className="hint">
-        Hasta 10 MB. Extraemos texto de TXT, CSV, PDF y DOCX sin consumir IA.
-        Las imágenes se envían como referencias visuales; revisa su uso antes de
-        generar.
+        Hasta {uploadLimit / 1000000} MB. Extraemos texto de TXT, CSV, PDF y
+        DOCX sin consumir IA. Las imágenes se envían como referencias visuales;
+        revisa su uso antes de generar.
       </p>
       {t.notice}
     </div>
@@ -1157,6 +1168,7 @@ function BatchGeneration({
 }) {
   const [preview, setPreview] = useState<any[] | null>(null);
   const [consent, setConsent] = useState(false);
+  const [selected, setSelected] = useState<string[]>([]);
   const t = useTask();
   return (
     <div>
@@ -1164,31 +1176,70 @@ function BatchGeneration({
         disabled={!count || t.busy}
         onClick={() =>
           void t.run(async () => {
-            setPreview(await api("categories/" + categoryId + "/preview"));
+            const result = await api("categories/" + categoryId + "/preview");
+            setPreview(result);
+            setSelected(result.map((p: any) => p.id));
             setConsent(false);
           }, "")
         }
       >
-        Revisar y generar toda la categoría
+        Revisar y seleccionar subproductos
       </button>
       {preview && (
         <div className="panel" style={{ marginTop: 15 }}>
           <h3>
-            {preview.reduce((n, p) => n + p.settings.count, 0)} afiches en este
-            lote
+            {preview
+              .filter((p) => selected.includes(p.id))
+              .reduce((n, p) => n + p.settings.count, 0)}{" "}
+            afiches en este lote
           </h3>
+          <div className="row">
+            <button
+              onClick={() => {
+                setSelected(preview.map((p) => p.id));
+                setConsent(false);
+              }}
+            >
+              Seleccionar todos
+            </button>
+            <button
+              onClick={() => {
+                setSelected([]);
+                setConsent(false);
+              }}
+            >
+              Quitar selección
+            </button>
+          </div>
           {preview.map((p) => (
-            <details key={p.id}>
-              <summary>
-                {p.name} · {p.settings.count} variaciones
-              </summary>
-              <pre>{p.text}</pre>
-              {p.warnings.map((w: string, i: number) => (
-                <div className="notice" key={i}>
-                  {w}
-                </div>
-              ))}
-            </details>
+            <div key={p.id} className="stack" style={{ margin: "16px 0" }}>
+              <label className="row">
+                <input
+                  type="checkbox"
+                  checked={selected.includes(p.id)}
+                  onChange={(e) => {
+                    setSelected(
+                      e.target.checked
+                        ? [...selected, p.id]
+                        : selected.filter((id) => id !== p.id),
+                    );
+                    setConsent(false);
+                  }}
+                />
+                Incluir {p.name}
+              </label>
+              <details>
+                <summary>
+                  {p.name} · {p.settings.count} variaciones
+                </summary>
+                <pre>{p.text}</pre>
+                {p.warnings.map((w: string, i: number) => (
+                  <div className="notice" key={i}>
+                    {w}
+                  </div>
+                ))}
+              </details>
+            </div>
           ))}
           <label className="row">
             <input
@@ -1196,24 +1247,30 @@ function BatchGeneration({
               checked={consent}
               onChange={(e) => setConsent(e.target.checked)}
             />
-            He revisado las instrucciones de todos los subproductos y autorizo
-            el cargo de API de este lote.
+            He revisado las instrucciones de los subproductos seleccionados y
+            autorizo el cargo de API de este lote.
           </label>
           <button
             className="primary"
-            disabled={!consent || t.busy}
+            disabled={
+              !consent ||
+              !selected.length ||
+              t.busy ||
+              preview.some((p) => selected.includes(p.id) && p.warnings.length)
+            }
             onClick={() =>
               void t.run(async () => {
                 await api("categories/" + categoryId + "/generate", "POST", {
                   confirmCharge: true,
                   reviewedInstructions: true,
                   requestId: crypto.randomUUID(),
+                  selected,
                 });
                 setPreview(null);
               }, "Lote encolado. Sigue el progreso en Generaciones.")
             }
           >
-            Generar todas las variaciones
+            Generar selección
           </button>
           <button onClick={() => setPreview(null)}>Cerrar</button>
         </div>
@@ -1730,6 +1787,39 @@ function AISettings() {
 function Jobs() {
   const [jobs, setJobs] = useState<Job[]>([]);
   const t = useTask();
+  const pause = useRef(false);
+  const [processing, setProcessing] = useState(false);
+  const refreshJobs = async () => setJobs(await api<Job[]>("jobs"));
+  useEffect(
+    () => () => {
+      pause.current = true;
+    },
+    [],
+  );
+  const processPending = () => {
+    pause.current = false;
+    setProcessing(true);
+    void t.run(async () => {
+      try {
+        const pending = (await api<Job[]>("jobs")).filter(
+          (j) => j.status === "PENDING",
+        );
+        for (const job of pending) {
+          if (pause.current) break;
+          const result = await api(`jobs/${job.id}/process`, "POST");
+          if (!pause.current) await refreshJobs();
+          if (result.status !== "COMPLETED")
+            throw new Error(
+              result.error ||
+                "El trabajo necesita revisión antes de continuar.",
+            );
+        }
+      } finally {
+        setProcessing(false);
+        if (!pause.current) await refreshJobs();
+      }
+    }, "Procesamiento finalizado. Los trabajos sin iniciar permanecen en cola.");
+  };
   useEffect(() => {
     let stopped = false;
     const refresh = async () => {
@@ -1753,10 +1843,32 @@ function Jobs() {
           <div className="eyebrow">Producción en servidor</div>
           <h1>Generaciones</h1>
           <p className="muted">
-            Los trabajos continúan al cerrar el navegador si el worker está
-            activo.
+            Puedes procesar los trabajos que ya autorizaste. Mantén esta
+            pantalla abierta para avanzar por la cola; los trabajos sin iniciar
+            permanecen pendientes.
           </p>
         </div>
+      </div>
+      <div className="row" style={{ marginBottom: 20 }}>
+        <button
+          className="primary"
+          disabled={t.busy || !jobs.some((j) => j.status === "PENDING")}
+          onClick={processPending}
+        >
+          Procesar pendientes
+        </button>
+        {processing && (
+          <button
+            onClick={() => {
+              pause.current = true;
+            }}
+          >
+            Pausar después del actual
+          </button>
+        )}
+        <button disabled={t.busy} onClick={() => void t.run(refreshJobs, "")}>
+          Actualizar estado
+        </button>
       </div>
       <div className="metrics">
         <div>
@@ -1789,7 +1901,7 @@ function Jobs() {
             ) : (
               <div className="empty">
                 {j.status === "PENDING"
-                  ? "En cola · esperando worker"
+                  ? "En cola · pendiente de procesar"
                   : j.status === "RUNNING"
                     ? "Generando…"
                     : j.status === "COMPLETED"

@@ -68,6 +68,58 @@ test("Integración HTTP + PostgreSQL (base exclusiva de pruebas, sin llamadas ex
         assert(detail.body.prompt.includes("No inventes precios"));
       },
     );
+    await t.test(
+      "archivos persistentes: límites concurrentes y lectura desde otra conexión",
+      async () => {
+        const { store, load, remove, fileStream, storageBackend } =
+          await import("../lib/storage");
+        const previousBackend = process.env.STORAGE_BACKEND,
+          previousLimit = process.env.STORAGE_LIMIT_MB;
+        process.env.STORAGE_BACKEND = "postgres";
+        process.env.STORAGE_LIMIT_MB = "16";
+        let names: string[] = [];
+        try {
+          assert.equal(storageBackend(), "postgres");
+          const results = await Promise.allSettled([
+            store(Buffer.alloc(9 * 1048576, 7)),
+            store(Buffer.alloc(9 * 1048576, 8)),
+          ]);
+          names = results.flatMap((r) =>
+            r.status === "fulfilled" ? [r.value] : [],
+          );
+          assert.equal(names.length, 1);
+          assert.match(names[0], /^pg:/);
+          const pg = await import("pg"),
+            client = new pg.Client({
+              connectionString: process.env.DATABASE_URL,
+            });
+          await client.connect();
+          try {
+            const result = await client.query(
+              'SELECT octet_length(data)::int AS size FROM "StoredAsset" WHERE id=$1',
+              [names[0].slice(3)],
+            );
+            assert.equal(result.rows[0].size, 9 * 1048576);
+          } finally {
+            await client.end();
+          }
+          const bytes = await load(names[0]);
+          assert.equal(bytes.length, 9 * 1048576);
+          assert.deepEqual(
+            Buffer.from(await new Response(fileStream(bytes)).arrayBuffer()),
+            bytes,
+          );
+          await assert.rejects(load("pg:../../secreto"), /válido/);
+          await assert.rejects(store(Buffer.alloc(16 * 1048576 + 1)), /16 MB/);
+        } finally {
+          for (const name of names) await remove(name);
+          if (previousBackend === undefined) delete process.env.STORAGE_BACKEND;
+          else process.env.STORAGE_BACKEND = previousBackend;
+          if (previousLimit === undefined) delete process.env.STORAGE_LIMIT_MB;
+          else process.env.STORAGE_LIMIT_MB = previousLimit;
+        }
+      },
+    );
     await t.test("bootstrap no se repite ni duplica proyecto", async () => {
       const r = await owner.call("auth/setup", "POST", {
         email: `otro-${tag}@example.test`,
@@ -197,6 +249,41 @@ test("Integración HTTP + PostgreSQL (base exclusiva de pruebas, sin llamadas ex
         }
         assert.equal((await admin.call("ai/config", "DELETE")).status, 403);
         assert.equal((await user.call("ai/config", "PUT", config)).status, 403);
+      },
+    );
+    await t.test(
+      "mantenimiento y almacenamiento son exclusivos OWNER; procesar sin autorizar no llama a IA",
+      async () => {
+        assert.equal((await owner.call("system/storage")).status, 200);
+        assert.equal((await user.call("system/storage")).status, 403);
+        assert.equal((await admin.call("system/cleanup", "POST")).status, 403);
+        const job = await db.generationJob.create({
+          data: {
+            actorId: uid,
+            projectId: "connection-test",
+            idempotencyKey: randomUUID(),
+            snapshot: {},
+            reservedMicros: 0n,
+          },
+        });
+        assert.equal(
+          (await anonymous.call(`jobs/${job.id}/process`, "POST")).status,
+          401,
+        );
+        assert.equal(
+          (await admin.call(`jobs/${job.id}/process`, "POST")).status,
+          403,
+        );
+        assert.equal(
+          (await owner.call(`jobs/${job.id}/process`, "POST")).status,
+          409,
+        );
+        assert.equal(
+          (await db.generationJob.findUniqueOrThrow({ where: { id: job.id } }))
+            .status,
+          "PENDING",
+        );
+        await db.generationJob.delete({ where: { id: job.id } });
       },
     );
     await t.test("clave cifrada, máscara y estado sin verificar", async () => {
@@ -590,6 +677,140 @@ test("Integración HTTP + PostgreSQL (base exclusiva de pruebas, sin llamadas ex
       });
       assert.equal(ledger._sum.reservedMicros, 1000000n);
     });
+    await t.test(
+      "procesamiento interactivo: una sola llamada ante doble clic y resultado persistente",
+      async () => {
+        const { adapter } = await import("../lib/providers"),
+          { processJob } = await import("../lib/jobs");
+        const c = await db.providerConfiguration.update({
+          where: { id: "global" },
+          data: { monthlyLimitMicros: 10000000n, dailyLimitMicros: 10000000n },
+        });
+        const [job] = await reserveJobs(
+          uid,
+          pid,
+          [
+            {
+              subproductId: sid,
+              key: randomUUID(),
+              snapshot: {
+                prompt: "Prueba interactiva",
+                mode: "Texto",
+                index: 0,
+                format: "1:1",
+                renderMode: "editable",
+              },
+            },
+          ],
+          c.revision,
+        );
+        const provider = adapter("openai"),
+          old = provider.direct;
+        let calls = 0,
+          finish: (() => void) | undefined;
+        const pending = new Promise<void>((resolve) => {
+          finish = resolve;
+        });
+        provider.direct = async () => {
+          calls++;
+          await pending;
+          return {
+            text: JSON.stringify({
+              backgroundPrompt: "",
+              backgroundColor: "#ffffff",
+              texts: [],
+              logos: [],
+            }),
+            usage: null,
+          };
+        };
+        try {
+          const userInfo = { id: uid, role: "USER" };
+          const first = processJob(userInfo, job.id);
+          for (let n = 0; n < 100 && calls === 0; n++)
+            await new Promise((r) => setTimeout(r, 5));
+          assert.equal(calls, 1);
+          const again = processJob(userInfo, job.id);
+          await assert.rejects(again, /curso|procesado/);
+          finish!();
+          const result = await first;
+          assert.equal(result.status, "COMPLETED");
+          assert.equal(calls, 1);
+          await assert.rejects(processJob(userInfo, job.id), /procesado/);
+          const variation = await db.variation.findUniqueOrThrow({
+            where: { jobId: job.id },
+          });
+          if (process.env.STORAGE_BACKEND === "postgres")
+            assert(variation.path.startsWith("pg:"));
+          // Keep the original suite's one-job assumptions intact, deleting only this synthetic fixture.
+          const { remove } = await import("../lib/storage");
+          await remove(variation.path);
+          await db.imageVersion.deleteMany({
+            where: { variationId: variation.id },
+          });
+          await db.variation.delete({ where: { id: variation.id } });
+          await db.usageLedger.delete({ where: { jobId: job.id } });
+          await db.generationJob.delete({ where: { id: job.id } });
+        } finally {
+          finish?.();
+          provider.direct = old;
+        }
+      },
+    );
+    await t.test(
+      "endpoint de procesamiento vuelve a comprobar la cuenta antes de cualquier cargo",
+      async () => {
+        const c = await db.providerConfiguration.findUniqueOrThrow({
+          where: { id: "global" },
+        });
+        const [job] = await reserveJobs(
+          aid,
+          pid,
+          [
+            {
+              subproductId: sid,
+              key: randomUUID(),
+              snapshot: {
+                prompt: "No llamar a IA",
+                mode: "Texto",
+                index: 0,
+                format: "1:1",
+              },
+            },
+          ],
+          c.revision,
+        );
+        try {
+          await db.user.update({
+            where: { id: aid },
+            data: { status: "SUSPENDED" },
+          });
+          const result = await owner.call(`jobs/${job.id}/process`, "POST");
+          assert.equal(result.status, 200);
+          assert.equal(result.body.status, "FAILED");
+          assert.match(result.body.error, /cuenta/);
+          assert.equal(
+            (
+              await db.usageLedger.findUniqueOrThrow({
+                where: { jobId: job.id },
+              })
+            ).status,
+            "RELEASED",
+          );
+          assert.equal(
+            (await owner.call(`jobs/${job.id}/process`, "POST")).status,
+            409,
+          );
+        } finally {
+          await db.user.update({
+            where: { id: aid },
+            data: { status: "APPROVED" },
+          });
+          await db.usageLedger.delete({ where: { jobId: job.id } });
+          await db.generationJob.delete({ where: { id: job.id } });
+        }
+      },
+    );
     await t.test(
       "worker genera y guarda usando un proveedor simulado, nunca una llamada externa",
       async () => {
@@ -1213,6 +1434,40 @@ test("Integración HTTP + PostgreSQL (base exclusiva de pruebas, sin llamadas ex
         });
         assert.equal(response.status, 200);
         assert.equal((await user.call(`variations/${id}/design`)).status, 410);
+      },
+    );
+    await t.test(
+      "lote parcial crea solo los subproductos elegidos y rechaza selecciones ajenas",
+      async () => {
+        const before = await db.generationJob.count();
+        const invalid = await user.call(`categories/${cid}/generate`, "POST", {
+          confirmCharge: true,
+          reviewedInstructions: true,
+          requestId: randomUUID(),
+          selected: [sid, "ajeno"],
+        });
+        assert.equal(invalid.status, 400);
+        assert.equal(await db.generationJob.count(), before);
+        const empty = await user.call(`categories/${cid}/generate`, "POST", {
+          confirmCharge: true,
+          reviewedInstructions: true,
+          requestId: randomUUID(),
+          selected: [],
+        });
+        assert.equal(empty.status, 400);
+        const result = await user.call(`categories/${cid}/generate`, "POST", {
+          confirmCharge: true,
+          reviewedInstructions: true,
+          requestId: randomUUID(),
+          selected: [sid],
+        });
+        assert.equal(result.status, 202);
+        const jobs = await db.generationJob.findMany({
+          where: { id: { in: result.body.jobs } },
+        });
+        assert(jobs.length > 0 && jobs.every((j) => j.subproductId === sid));
+        for (const job of jobs)
+          await user.call(`jobs/${job.id}/cancel`, "POST");
       },
     );
     await t.test(

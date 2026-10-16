@@ -2,7 +2,7 @@
 
 ## Alcance
 
-La referencia sigue siendo el prompt maestro completo (54 secciones) y el requisito obligatorio de administración visual de IA. Se conservan en docs/MASTER_SPEC.md y docs/MASTER_SPEC_PDF.txt. Esta continuación añade comportamiento real a la primera entrega y se integra en la rama main, como solicitó el OWNER. La plataforma completa todavía no se declara terminada ni desplegada.
+La referencia sigue siendo el prompt maestro completo (54 secciones) y el requisito obligatorio de administración visual de IA. Se conservan en docs/MASTER_SPEC.md y docs/MASTER_SPEC_PDF.txt. Esta continuación añade comportamiento real a la primera entrega y se integra en la rama main, como solicitó el OWNER. La plataforma sigue incompleta. El usuario ya confirmó el ingreso a la instalación web de prueba; la generación externa real sigue sin validarse.
 
 ## Funciones implementadas
 
@@ -29,7 +29,7 @@ La referencia sigue siendo el prompt maestro completo (54 secciones) y el requis
 - Cliente Prisma generado y migración aditiva aplicada correctamente en PostgreSQL temporal.
 - TypeScript y compilación de producción aprobados.
 - 15 pruebas unitarias aprobadas: incluyen cifrado, herencia, contratos de IA simulados, documentos, proporciones, edición gráfica, logos y SVG.
-- Suite de integración ampliada contra HTTP/PostgreSQL reales: edición/versiones, concurrencia, IA simulada, revisión, duplicación, cancelación, biblioteca, presets, límites particulares, regeneración selectiva y limpieza. Resultado: 40 escenarios aprobados (41 resultados contando el contenedor de la suite).
+- Suite de integración ampliada contra HTTP/PostgreSQL reales: edición/versiones, concurrencia, IA simulada, revisión, duplicación, cancelación, biblioteca, presets, límites particulares, regeneración selectiva y limpieza. Resultado actual: 45 escenarios aprobados (46 resultados contando el contenedor de la suite).
 - No se han utilizado credenciales reales de IA ni efectuado llamadas facturables. Las pruebas de proveedor usan transporte simulado explícito; no establecen conectividad real con OpenAI.
 
 ## Estado por fases
@@ -39,7 +39,7 @@ La referencia sigue siendo el prompt maestro completo (54 secciones) y el requis
 | 1 · Base                     | Funcional con pruebas                                        | Mejora semántica de herencia, acciones secundarias y reemplazo/miniaturas de adjuntos                                                 |
 | Configuración IA obligatoria | Implementada                                                 | Validación externa con credencial real en instalación privada                                                                         |
 | 2 · IA                       | Adaptador y flujo completos en código, con pruebas simuladas | Generación real autorizada, validación visual y conciliación del consumo                                                              |
-| 3 · Producción masiva        | Funcional parcial                                            | Selección granular de subproductos, métricas de rendimiento y pruebas de carga reales                                                 |
+| 3 · Producción masiva        | Funcional parcial                                            | Métricas de rendimiento, ejecución duradera administrada y pruebas de carga reales                                                 |
 | 4 · Edición y calidad        | Funcional parcial                                            | QA en navegador, detección de superposiciones, dirección creativa y fidelidad de fotos/logos con IA real                              |
 | 5 · Productividad            | Funcional parcial                                            | Adjuntos reutilizables en presets y descargas transversales por proyecto/categoría                              |
 | 6 · Administración           | Funcional parcial                                            | Recuperación automática por correo y emergencia del único OWNER, gestión avanzada, conciliación tarifaria, estadísticas y retención separada de miniaturas administrativas |
@@ -68,3 +68,15 @@ La base creada por el usuario mediante Vercel Marketplace se localizó en la org
 La copia temporal de comprobación tiene caducidad automática de 24 horas. Un intento inicial de ajustar el intervalo de suspensión fue rechazado por el plan y no creó recursos; se creó la copia con los valores predeterminados. La conexión SQL principal requirió especificar el rol propietario, tras lo cual la ejecución y las comprobaciones fueron satisfactorias. No se registraron ni publicaron credenciales.
 
 La base externa ya está preparada. Falta comprobar las variables del proyecto Vercel, establecer la clave maestra y el token inicial de instalación y crear OWNER. El conector Vercel devuelve 403 al consultar la configuración del equipo; no se ha confirmado que el despliegue pueda acceder a la base ni que permita iniciar sesión. No se efectuaron llamadas facturables de IA.
+
+## Continuación · archivos persistentes y prueba interactiva en Vercel
+
+El usuario confirmó que pudo ingresar. Se verificó un OWNER aprobado en la base externa, sin consultar ni modificar su contraseña o credenciales de IA. El almacenamiento selecciona PostgreSQL automáticamente en Vercel y conserva el modo local para VPS. Migración aditiva 004 aplicada primero en la copia de comprobación y después en la base conectada, sin modificar cuentas existentes. StoredAsset no tiene acceso público directo: las descargas pasan por la autorización del recurso.
+
+La cuota de archivos es 128 MiB por defecto, con comprobación transaccional ante cargas simultáneas, máximo de 16 MiB por recurso y límite de adjuntos de 3 MB en Vercel. Es un adaptador de prueba con la base existente; producción masiva requiere almacenamiento de objetos y validación de cargas. La cuota no representa la factura total ni la capacidad global de Neon. Descargas autenticadas en fragmentos y fuentes DejaVu incluidas con licencia en el paquete del servidor.
+
+Generaciones incorpora procesamiento secuencial de trabajos ya autorizados, pausa después del actual y actualización de estado. Endpoint con sesión y Origin; acceso solo para autor u OWNER, revalidación del autor original, bloqueo de doble procesamiento y máximo de un trabajo activo por cuenta. Plazo compartido de 240 segundos para llamadas de una ejecución interactiva, dentro de una función de 300 segundos. No se reintentan automáticamente cargos inciertos. El procesamiento completo de un lote requiere mantener abierta la pantalla o usar un worker persistente; la ejecución duradera administrada queda pendiente.
+
+Lotes: selección granular de subproductos, total actualizado, revisión y consentimiento restablecidos al cambiar la selección; rechazo de IDs ajenos antes de reservar. Mi cuenta muestra uso de archivos al OWNER y permite limpiar hasta 25 temporales caducados y revisar operaciones antiguas interrumpidas.
+
+Validación final: 15 unitarias, TypeScript y build, 45 escenarios HTTP/PostgreSQL (46 resultados contando el contenedor), instalación sin base y recorrido local en Chromium. Se verificó que las tres tipografías están en el archivo de trazado del servidor. En navegador: espacio, limpieza, adjunto persistente tras recarga, selección parcial y pantalla de cola sin errores JavaScript. No se ha verificado una generación facturable ni la ejecución de estas funciones en el despliegue Vercel externo.

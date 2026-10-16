@@ -2,7 +2,7 @@ import { db } from "../lib/db";
 import { configured } from "../lib/ai";
 import { decryptKey } from "../lib/crypto";
 import { adapter } from "../lib/providers";
-import { store, remove, load } from "../lib/storage";
+import { store, remove, load, requireStorageSpace } from "../lib/storage";
 import { adaptImage } from "../lib/render";
 import { AppError, demand } from "../lib/errors";
 import {
@@ -31,20 +31,39 @@ type Snapshot = {
   editKind?: "background" | "full";
   sourceVariationId?: string;
 };
-export async function runOne() {
+export async function runOne(filter?: {
+  id?: string;
+  actorId?: string;
+  deadlineMs?: number;
+}) {
   const candidate = await db.generationJob.findFirst({
-    where: { status: "PENDING" },
+    where: {
+      status: "PENDING",
+      ...(filter?.id ? { id: filter.id } : {}),
+      ...(filter?.actorId ? { actorId: filter.actorId } : {}),
+    },
     orderBy: { createdAt: "asc" },
   });
   if (!candidate) return false;
-  const claim = await db.generationJob.updateMany({
-    where: { id: candidate.id, status: "PENDING" },
-    data: { status: "RUNNING", startedAt: new Date() },
+  const claim = await db.$transaction(async (tx) => {
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(728291)`;
+    const active = await tx.generationJob.count({
+      where: { actorId: candidate.actorId, status: "RUNNING" },
+    });
+    if (active) return { count: 0 };
+    return tx.generationJob.updateMany({
+      where: { id: candidate.id, status: "PENDING" },
+      data: { status: "RUNNING", startedAt: new Date() },
+    });
   });
-  if (!claim.count) return true;
+  if (!claim.count) return false;
+  const signal = filter?.deadlineMs
+    ? AbortSignal.timeout(filter.deadlineMs)
+    : undefined;
   let called = false;
   const written: string[] = [];
   try {
+    await requireStorageSpace();
     const c = await configured(),
       s = candidate.snapshot as unknown as Snapshot;
     demand(
@@ -108,6 +127,7 @@ export async function runOne() {
         : null;
       called = true;
       const result = await provider.generate(key, {
+        signal,
         model: c.imageModel!,
         prompt: preserve
           ? `${s.prompt}\nEditar solo el fondo o fotografía. Sin textos, letras ni logos: estos se mantienen como capas independientes.`
@@ -142,6 +162,7 @@ export async function runOne() {
             )
           : brief,
         s.renderMode === "editable",
+        signal,
       );
       creativePlan = plan.text;
       creativeUsage = plan.usage;
@@ -166,6 +187,7 @@ export async function runOne() {
         );
         if (s.mode !== "Texto") {
           const result = await provider.generate(key, {
+            signal,
             model: c.imageModel!,
             prompt:
               parsed.data.backgroundPrompt +
@@ -187,6 +209,7 @@ export async function runOne() {
         );
       } else {
         const result = await provider.generate(key, {
+          signal,
           model: c.imageModel!,
           prompt: plan.text,
           quality: c.quality,
@@ -200,6 +223,14 @@ export async function runOne() {
     const path = await store(output);
     written.push(path);
     await db.$transaction(async (tx) => {
+      const active = await tx.generationJob.findUnique({
+        where: { id: candidate.id },
+      });
+      demand(
+        active?.status === "RUNNING",
+        "El trabajo ya no está activo. Su resultado requiere revisión.",
+        409,
+      );
       if (s.editVariationId)
         await publishVersion(tx, {
           variationId: s.editVariationId,

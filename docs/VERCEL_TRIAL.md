@@ -12,16 +12,26 @@ Publicar la interfaz no crea automáticamente una base de datos ni usuarios. La 
 
 No se incluyen cuentas públicas predeterminadas. Un usuario o contraseña de ejemplo no permite entrar: primero debe existir realmente la cuenta en la base conectada a ese despliegue.
 
-## Antes de generar afiches
+## Archivos y procesamiento en esta etapa
 
-La versión actual guarda archivos en disco y ejecuta un worker Node persistente. Publicar Next.js en Vercel no arranca ese worker ni proporciona un volumen privado compartido para los archivos. Para generar, adjuntar y conservar afiches hace falta configurar almacenamiento persistente y ejecución de trabajos compatible con el despliegue. No solucionar esto usando /tmp como biblioteca: los archivos no quedarían garantizados entre ejecuciones.
+En Vercel (`VERCEL=1`) el almacenamiento se selecciona automáticamente como PostgreSQL y utiliza la tabla privada StoredAsset. La migración `202610160004_stored_assets` debe estar aplicada antes de cargar archivos. No se utiliza el disco efímero de la función como biblioteca. En VPS continúa el almacenamiento local por defecto; `STORAGE_BACKEND=postgres` permite conservar todos los archivos en PostgreSQL también allí. Las referencias antiguas locales y las nuevas con prefijo pg: conservan su mecanismo de lectura correspondiente. No existe un endpoint público para leer StoredAsset directamente.
 
-La primera prueba en Vercel puede limitarse a cuentas y organización de proyectos mientras se completa esta adaptación. El VPS preparado en compose.yaml ejecuta web, worker y almacenamiento compartido de forma conjunta. Una alternativa es alojar el backend/worker en un VPS y usar Vercel para la web, con integración y autenticación configuradas expresamente.
+Este adaptador es para la prueba inicial: límite predeterminado de 128 MiB de archivos, ajustable mediante STORAGE_LIMIT_MB (16–1024), con cuota comprobada bajo bloqueo transaccional; máximo 16 MiB por recurso procesado. El límite de archivos no incluye índices, tablas, historial de Neon, copias ni otros conceptos de facturación, y no garantiza un techo de factura. Para producción masiva sigue pendiente incorporar almacenamiento de objetos y ensayar cargas.
+
+Los adjuntos en Vercel se limitan a 3 MB por archivo y el cuerpo multipart a 3,5 MB para quedar dentro del límite de solicitud del alojamiento. En VPS se mantienen los 10 MB. Las descargas autenticadas se sirven en fragmentos; todavía falta confirmar estos límites en el despliegue Vercel real.
+
+En **Generaciones → Procesar pendientes** se ejecutan secuencialmente trabajos que ya fueron autorizados. La pantalla debe permanecer abierta para iniciar los siguientes; pausar detiene el avance después del actual. El servidor reclama cada trabajo atómicamente y admite uno en curso por cuenta. Comprueba permisos, vigencia de configuración y espacio antes de la llamada. Una operación de IA interrumpida no se repite automáticamente. Los presupuestos y el consentimiento previo siguen siendo obligatorios.
+
+El endpoint exige sesión y Origin correctos; solo el autor o OWNER pueden procesar un trabajo y se vuelven a comprobar los permisos del autor original. La función tiene maxDuration=300 y las llamadas de una ejecución interactiva comparten un plazo de 240 segundos. Un corte forzoso del servidor puede dejar RUNNING hasta que se ejecute mantenimiento después de 15 minutos; queda UNCERTAIN y conserva su reserva. No hay garantía de continuar todo el lote con el navegador cerrado. Para ello sigue disponible el worker persistente en VPS y queda pendiente una solución de ejecución duradera administrada.
+
+**Mi cuenta**, para OWNER, muestra espacio utilizado y permite limpiar hasta 25 afiches temporales caducados por ejecución. La limpieza conserva los permanentes y los archivos de otras copias. También reconoce trabajos antiguos interrumpidos; no los reintenta. Las tres fuentes DejaVu admitidas se incluyen con su licencia y se incorporan al paquete del servidor para renderizar textos sin depender de fuentes del sistema.
+
+Antes de una prueba facturable, OWNER debe configurar la IA en la interfaz, consultar modelos reales, guardar parámetros y presupuestos y verificar de nuevo. Ninguna prueba de desarrollo habilita ni valida una credencial de producción.
 
 ## Portabilidad
 
 PostgreSQL es portable. Para pasar a otro servidor se exportan/restauran los datos, se trasladan los archivos de imágenes y adjuntos, se conserva de forma segura la misma clave maestra o se realiza una rotación controlada, y se actualizan las conexiones y el dominio. Vercel no obliga a alojar allí la plataforma permanentemente.
 
-No se ha creado una base externa, una cuenta de acceso ni configurado el proyecto Vercel desde este entorno. Se necesita acceso autorizado a los servicios. Los límites y condiciones de cualquier plan se revisan antes de contratar o activar consumo facturable.
+La base Neon externa está preparada. El usuario confirmó que ya pudo ingresar; también se verificó que hay un OWNER aprobado en esa base. El conector Vercel sigue sin autorización para consultar la configuración del equipo. Los cambios de código se integran en main; el resultado de su despliegue externo debe comprobarse por separado. Los límites y condiciones de cualquier plan se revisan antes de contratar o activar consumo facturable.
 
 Documentación oficial consultada: https://vercel.com/docs/postgres y https://vercel.com/docs/builds/configure-a-build.

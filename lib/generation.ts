@@ -57,6 +57,11 @@ export async function generateBatch(
   const subs = category.subproducts.filter(
     (s) => !selected || selected.includes(s.id),
   );
+  if (selected)
+    demand(
+      subs.length === new Set(selected).size,
+      "La selección incluye subproductos que ya no están en esta categoría. Actualiza el lote.",
+    );
   demand(subs.length > 0, "Agrega o selecciona al menos un subproducto.");
   const items = [];
   for (const sub of subs) {

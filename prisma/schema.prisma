@@ -270,3 +270,10 @@ model BudgetLimit {
   maxJobsPerDay Int
   @@unique([scope,targetId])
 }
+
+model StoredAsset {
+  id String @id
+  data Bytes
+  size Int
+  createdAt DateTime @default(now())
+}
