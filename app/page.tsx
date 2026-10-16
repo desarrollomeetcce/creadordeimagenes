@@ -1,5 +1,12 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
+import { VariationEditor } from "./components/variation-editor";
+import {
+  Library,
+  Presets,
+  PresetTools,
+  BudgetSettings,
+} from "./components/productivity";
 import type { FormEvent } from "react";
 type User = { id: string; name: string; email: string; role: string };
 type Settings = {
@@ -9,6 +16,7 @@ type Settings = {
   imageCount: number;
   format: string;
   style: string;
+  editable: boolean;
 };
 type Item = {
   id: string;
@@ -41,6 +49,7 @@ const base: Settings = {
   imageCount: 0,
   format: "1:1",
   style: "Profesional",
+  editable: true,
 };
 async function api<T = any>(
   path: string,
@@ -136,6 +145,8 @@ export default function Home() {
   if (!user) return <Login setup={setup} onLogin={reloadUser} />;
   const titles: Record<string, string> = {
     projects: "Proyectos",
+    library: "Biblioteca",
+    presets: "Configuraciones guardadas",
     ai: "Configuración → Inteligencia Artificial",
     history: "Historial",
     users: "Usuarios",
@@ -171,6 +182,8 @@ export default function Home() {
           {[
             ["projects", "▦", "Proyectos"],
             ["jobs", "◉", "Generaciones"],
+            ["library", "▧", "Biblioteca"],
+            ["presets", "≡", "Configuraciones guardadas"],
             ["history", "◷", "Historial"],
             ["trash", "⌫", "Papelera"],
             ["usage", "↗", "Consumo de IA"],
@@ -210,7 +223,11 @@ export default function Home() {
           <span className="badge">Producción publicitaria</span>
         </header>
         <main>
-          {view === "ai" ? (
+          {view === "library" ? (
+            <Library />
+          ) : view === "presets" ? (
+            <Presets />
+          ) : view === "ai" ? (
             <AISettings />
           ) : view === "users" ? (
             <Users />
@@ -394,7 +411,7 @@ function Uploads({ scope, id }: { scope: string; id: string }) {
           <input
             aria-label="Adjuntar archivo"
             type="file"
-            accept=".txt,.csv,.pdf,.docx,.jpg,.jpeg,.png,.webp"
+            accept=".txt,.csv,.pdf,.docx,.jpg,.jpeg,.png,.webp,.svg"
             disabled={t.busy}
             onChange={(e) => {
               upload(e.target.files?.[0]);
@@ -817,7 +834,7 @@ function SettingsFields({
               type="number"
               min={min}
               max={max}
-              value={s[k as keyof Settings]}
+              value={String(s[k as keyof Settings])}
               onChange={(e) => change(k as keyof Settings, e.target.value)}
               required
             />
@@ -869,6 +886,14 @@ function SettingsFields({
           </datalist>
         </label>
       </div>
+      <label className="row">
+        <input
+          type="checkbox"
+          checked={s.editable}
+          onChange={(e) => onChange({ ...s, editable: e.target.checked })}
+        />
+        Conservar títulos, textos y logos como elementos editables
+      </label>
       <small>
         {s.textCount + s.imageTextCount + s.imageCount} de {s.count}{" "}
         configuradas. La suma debe coincidir.
@@ -925,6 +950,7 @@ function CategoryEditor({
           <Uploads scope="category" id={c.id} />
         </div>
       </details>
+      <PresetTools category={c} />
       {bulk && (
         <section className="panel stack">
           <h2>Agregar subproductos</h2>
@@ -1586,6 +1612,7 @@ function AISettings() {
           Guardar modelos y límites
         </button>
       </section>
+      <BudgetSettings />
       <section className="panel stack">
         <h2>04　Prueba real de generación · opcional</h2>
         <p>
@@ -1698,6 +1725,44 @@ function Jobs() {
                 })}
               </small>
             </div>
+            {j.status === "PENDING" && (
+              <button
+                disabled={t.busy}
+                onClick={() =>
+                  void t.run(
+                    () => api("jobs/" + j.id + "/cancel", "POST"),
+                    "Trabajo cancelado y reserva liberada.",
+                  )
+                }
+              >
+                Cancelar pendiente
+              </button>
+            )}
+            {["FAILED", "UNCERTAIN", "CANCELLED"].includes(j.status) && (
+              <button
+                disabled={t.busy}
+                onClick={() => {
+                  if (
+                    confirm(
+                      j.status === "UNCERTAIN"
+                        ? "La solicitud anterior pudo producir un cargo. ¿Autorizas otro intento con posible cargo adicional?"
+                        : "¿Autorizas un nuevo intento con posible cargo de API?",
+                    )
+                  )
+                    void t.run(
+                      () =>
+                        api("jobs/" + j.id + "/retry", "POST", {
+                          requestId: crypto.randomUUID(),
+                          confirmCharge: true,
+                          confirmUncertain: j.status === "UNCERTAIN",
+                        }),
+                      "Nuevo intento encolado.",
+                    );
+                }}
+              >
+                Reintentar con autorización
+              </button>
+            )}
             {j.error && <p className="notice error">{j.error}</p>}
             {j.variation && !j.variation.expired && (
               <a href={"/api/variations/" + j.variation.id + "?download"}>
@@ -1728,6 +1793,7 @@ const statusLabel = (s: string) =>
   })[s] ?? s;
 function Gallery({ sub, back }: { sub: Item; back: () => void }) {
   const [selected, setSelected] = useState<string[]>([]);
+  const [editing, setEditing] = useState<string | null>(null);
   const [variations, setVariations] = useState<any[]>([]);
   const t = useTask();
   const refresh = useCallback(async () => {
@@ -1747,9 +1813,20 @@ function Gallery({ sub, back }: { sub: Item; back: () => void }) {
         Variaciones independientes · originales temporales durante 48 horas.
       </p>
       <div className="notice">
-        Las imágenes de este primer modo son composiciones aplanadas. La edición
-        por capas y la edición creativa con IA siguen pendientes en este modo.
+        Abre Ajustar para mover textos y logos cuando existan capas
+        independientes. La edición con IA y la regeneración requieren
+        autorización de cargo y conservan el original.
       </div>
+      {editing && (
+        <VariationEditor
+          key={editing}
+          id={editing}
+          onClose={() => {
+            setEditing(null);
+            void t.run(refresh, "");
+          }}
+        />
+      )}
       <div className="row" style={{ marginBottom: 20 }}>
         <button
           onClick={() =>
@@ -1778,6 +1855,59 @@ function Gallery({ sub, back }: { sub: Item; back: () => void }) {
           }
         >
           Descargar ZIP ({selected.length})
+        </button>
+        <button
+          disabled={!selected.length || t.busy}
+          onClick={() => {
+            const instruction = prompt(
+              "Instrucciones para las alternativas (opcional)",
+            );
+            if (instruction === null) return;
+            if (
+              confirm(
+                `¿Autorizas regenerar ${selected.length} afiches con posible cargo de API? Se conservarán los originales.`,
+              )
+            )
+              void t.run(
+                () =>
+                  api("variations/bulk-regenerate", "POST", {
+                    ids: selected,
+                    prompt: instruction,
+                    requestId: crypto.randomUUID(),
+                    confirmCharge: true,
+                    reviewedInstructions: true,
+                  }),
+                "Alternativas encoladas. Consulta Generaciones.",
+              );
+          }}
+        >
+          Regenerar seleccionadas
+        </button>
+        <button
+          disabled={!selected.length || t.busy}
+          onClick={() =>
+            void t.run(async () => {
+              for (const id of selected)
+                await api("library/items/" + id, "POST", { permanent: true });
+              await refresh();
+            }, "Afiches guardados en tu biblioteca.")
+          }
+        >
+          Guardar seleccionadas
+        </button>
+        <button
+          disabled={!selected.length || t.busy}
+          onClick={() => {
+            if (confirm("¿Enviar los afiches seleccionados a la papelera?"))
+              void t.run(async () => {
+                for (const id of selected)
+                  await api("variations/" + id, "DELETE");
+                setSelected([]);
+                await refresh();
+              });
+          }}
+        >
+          Eliminar seleccionadas
         </button>
       </div>
       <div className="grid">
@@ -1811,6 +1941,53 @@ function Gallery({ sub, back }: { sub: Item; back: () => void }) {
             </small>
             {!v.expired && (
               <div className="row" style={{ marginTop: 15 }}>
+                <button onClick={() => setEditing(v.id)}>
+                  Ajustar / Editar con IA
+                </button>
+                <details>
+                  <summary>Adjuntos para editar esta variación</summary>
+                  <Uploads scope="variation" id={v.id} />
+                </details>
+                <label>
+                  Revisión
+                  <select
+                    value={v.reviewStatus ?? "PENDING"}
+                    onChange={(e) =>
+                      void t.run(async () => {
+                        await api("variations/" + v.id, "PATCH", {
+                          reviewStatus: e.target.value,
+                        });
+                        await refresh();
+                      })
+                    }
+                  >
+                    <option value="PENDING">Sin revisar</option>
+                    <option value="APPROVED">Aprobado</option>
+                    <option value="REJECTED">Rechazado</option>
+                  </select>
+                </label>
+                <button
+                  onClick={() =>
+                    void t.run(async () => {
+                      await api("variations/" + v.id + "/duplicate", "POST");
+                      await refresh();
+                    }, "Copia creada sin IA.")
+                  }
+                >
+                  Duplicar
+                </button>
+                <button
+                  className="danger"
+                  onClick={() => {
+                    if (confirm("¿Enviar este afiche a la papelera?"))
+                      void t.run(async () => {
+                        await api("variations/" + v.id, "DELETE");
+                        await refresh();
+                      });
+                  }}
+                >
+                  Eliminar
+                </button>
                 <a href={"/api/variations/" + v.id + "?download"}>
                   Descargar PNG
                 </a>
@@ -1820,7 +1997,7 @@ function Gallery({ sub, back }: { sub: Item; back: () => void }) {
                 <button
                   onClick={() =>
                     void t.run(async () => {
-                      await api("variations/" + v.id, "PATCH", {
+                      await api("library/items/" + v.id, "POST", {
                         permanent: !v.permanent,
                       });
                       await refresh();

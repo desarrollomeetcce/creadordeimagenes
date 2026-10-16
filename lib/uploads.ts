@@ -1,6 +1,6 @@
 import { demand } from "./errors";
 export async function validateUpload(file: File) {
-  const bytes = Buffer.from(await file.arrayBuffer());
+  let bytes = Buffer.from(await file.arrayBuffer());
   const ext = file.name.split(".").pop()?.toLowerCase();
   let mime = "",
     text = "";
@@ -43,6 +43,10 @@ export async function validateUpload(file: File) {
         : ext === "webp"
           ? "image/webp"
           : "image/jpeg";
+  } else if (ext === "svg") {
+    const { rasterizeSafeSvg } = await import("./svg");
+    bytes = await rasterizeSafeSvg(bytes);
+    mime = "image/png";
   } else if (ext === "pdf") {
     demand(bytes.toString("ascii", 0, 5) === "%PDF-", "PDF no válido.");
     mime = "application/pdf";
@@ -84,7 +88,7 @@ export async function validateUpload(file: File) {
   } else {
     demand(
       false,
-      "Formato no admitido. Usa TXT, CSV, PDF, DOCX, PNG, JPG o WebP. Los SVG deben convertirse a PNG antes de subirlos.",
+      "Formato no admitido. Usa TXT, CSV, PDF, DOCX, PNG, JPG, WebP o SVG simple sin contenido activo.",
     );
   }
   return { bytes, mime, text };

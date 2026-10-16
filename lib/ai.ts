@@ -125,6 +125,64 @@ export async function reserveJobs(
           `Se supera el límite ${label} de reservas de consumo.`,
         );
       }
+      const scoped = await tx.budgetLimit.findMany({
+        where: {
+          OR: [
+            { scope: "USER", targetId: actorId },
+            { scope: "PROJECT", targetId: projectId },
+          ],
+        },
+      });
+      for (const limit of scoped) {
+        const filter = limit.scope === "USER" ? { actorId } : { projectId };
+        for (const [since, max] of [
+          [month, limit.monthlyMicros],
+          [day, limit.dailyMicros],
+        ] as const) {
+          const usage = await tx.usageLedger.aggregate({
+            where: {
+              ...filter,
+              createdAt: { gte: since },
+              status: { not: "RELEASED" },
+            },
+            _sum: { reservedMicros: true },
+          });
+          demand(
+            (usage._sum.reservedMicros ?? 0n) + total <= max,
+            "La operación supera el presupuesto particular del usuario o proyecto.",
+          );
+        }
+        const count = await tx.usageLedger.count({
+          where: {
+            ...filter,
+            createdAt: { gte: day },
+            status: { not: "RELEASED" },
+          },
+        });
+        demand(
+          count + pendingCount <= limit.maxJobsPerDay,
+          "Se supera el máximo diario de generaciones del usuario o proyecto.",
+        );
+      }
+      for (const item of items) {
+        const snapshot = item.snapshot as Record<string, unknown>;
+        if (typeof snapshot.editVariationId === "string") {
+          const active = await tx.generationJob.findFirst({
+            where: {
+              status: { in: ["PENDING", "RUNNING"] },
+              snapshot: {
+                path: ["editVariationId"],
+                equals: snapshot.editVariationId,
+              },
+            },
+          });
+          demand(
+            !active,
+            "Este afiche ya tiene una edición de IA en curso. Espera su resultado antes de otra.",
+            409,
+          );
+        }
+      }
       const jobs = [];
       for (const item of items) {
         const existing = await tx.generationJob.findUnique({

@@ -542,6 +542,554 @@ test("Integración HTTP + PostgreSQL (base exclusiva de pruebas, sin llamadas ex
         }
       },
     );
+    let editableId = "",
+      editableRevision = 1;
+    await t.test(
+      "composición editable automática conserva texto exacto sin generar fotografías en modalidad Texto",
+      async () => {
+        await db.providerConfiguration.update({
+          where: { id: "global" },
+          data: {
+            monthlyLimitMicros: 100000000n,
+            dailyLimitMicros: 100000000n,
+            operationLimitMicros: 100000000n,
+          },
+        });
+        const { adapter } = await import("../lib/providers");
+        const p = adapter("openai"),
+          oldDirect = p.direct,
+          oldGenerate = p.generate;
+        let images = 0;
+        try {
+          p.direct = async () => ({
+            text: JSON.stringify({
+              backgroundPrompt: "Fondo institucional sin letras",
+              backgroundColor: "#ffffff",
+              texts: [
+                {
+                  id: "title",
+                  text: "Tratamiento de Aguas",
+                  x: 60,
+                  y: 70,
+                  width: 950,
+                  fontSize: 62,
+                  color: "#163c32",
+                  font: "DejaVu Sans",
+                  align: "left",
+                },
+                {
+                  id: "price",
+                  text: "USD 40",
+                  x: 60,
+                  y: 900,
+                  width: 300,
+                  fontSize: 24,
+                  color: "#163c32",
+                  font: "DejaVu Sans",
+                  align: "left",
+                },
+              ],
+              logos: [],
+            }),
+            usage: { input_tokens: 10, output_tokens: 10 },
+          });
+          p.generate = async () => {
+            images++;
+            throw new Error("No debe solicitar fotografía");
+          };
+          const jobs = await reserveJobs(
+            uid,
+            pid,
+            [
+              {
+                subproductId: sid,
+                key: randomUUID(),
+                snapshot: {
+                  prompt: "Tratamiento de Aguas. Precio USD 40.",
+                  mode: "Texto",
+                  format: "1:1",
+                  index: 0,
+                  renderMode: "editable",
+                },
+              },
+            ],
+            1,
+          );
+          await runOne();
+          const j = await db.generationJob.findUniqueOrThrow({
+            where: { id: jobs[0].id },
+            include: { variation: true },
+          });
+          assert.equal(j.status, "COMPLETED", j.error ?? "");
+          assert.equal(images, 0);
+          editableId = j.variation!.id;
+          const r = await user.call(`variations/${editableId}/design`);
+          assert.equal(r.status, 200);
+          assert.equal(r.body.document.layers[1].text, "USD 40");
+          assert.equal(r.body.versions.length, 1);
+          assert(!JSON.stringify(r.body).includes("backgroundPath"));
+        } finally {
+          p.direct = oldDirect;
+          p.generate = oldGenerate;
+        }
+      },
+    );
+    await t.test(
+      "guardar ajuste manual, conflicto de versión y restauración sin destruir el original",
+      async () => {
+        const r = await user.call(`variations/${editableId}/design`);
+        const document = structuredClone(r.body.document);
+        document.layers[1].fontSize = 18;
+        document.layers[1].x = 200;
+        assert.equal(
+          (
+            await user.call(`variations/${editableId}/manual`, "POST", {
+              expectedRevision: 1,
+              document,
+            })
+          ).status,
+          200,
+        );
+        assert.equal(
+          (
+            await user.call(`variations/${editableId}/manual`, "POST", {
+              expectedRevision: 1,
+              document,
+            })
+          ).status,
+          409,
+        );
+        const next = await user.call(`variations/${editableId}/design`);
+        assert.equal(next.body.revision, 2);
+        assert.equal(next.body.document.layers[1].fontSize, 18);
+        assert.equal(next.body.versions.length, 2);
+        assert.equal(
+          (
+            await user.call(
+              `variations/${editableId}/restore-version`,
+              "POST",
+              { expectedRevision: 2, number: 1 },
+            )
+          ).status,
+          200,
+        );
+        const restored = await user.call(`variations/${editableId}/design`);
+        assert.equal(restored.body.revision, 3);
+        assert.equal(restored.body.document.layers[1].fontSize, 24);
+        editableRevision = 3;
+        const original = await fetch(
+          root + `/api/variations/${editableId}/versions/1`,
+          { headers: { Cookie: user.cookie } },
+        );
+        assert.equal(original.status, 200);
+        assert.equal(
+          (
+            await admin.call(`variations/${editableId}/manual`, "POST", {
+              expectedRevision: 3,
+              document,
+            })
+          ).status,
+          403,
+        );
+      },
+    );
+    await t.test(
+      "editor rechaza recursos gráficos ajenos y capas fuera del lienzo",
+      async () => {
+        const d = (await user.call(`variations/${editableId}/design`)).body
+          .document;
+        const bad = structuredClone(d);
+        bad.layers.push({
+          id: "malicioso",
+          type: "logo",
+          attachmentId: "ajeno",
+          x: 0,
+          y: 0,
+          width: 100,
+          height: 50,
+        });
+        assert.equal(
+          (
+            await user.call(`variations/${editableId}/manual`, "POST", {
+              expectedRevision: 3,
+              document: bad,
+            })
+          ).status,
+          400,
+        );
+        bad.layers = d.layers;
+        bad.layers[0].x = 1070;
+        assert.equal(
+          (
+            await user.call(`variations/${editableId}/manual`, "POST", {
+              expectedRevision: 3,
+              document: bad,
+            })
+          ).status,
+          400,
+        );
+      },
+    );
+    await t.test(
+      "edición IA conserva capas, requiere consentimiento y bloquea solicitudes duplicadas en curso",
+      async () => {
+        const payload = {
+          prompt: "Cambiar el fondo por un laboratorio",
+          confirmCharge: true,
+          reviewedInstructions: true,
+          requestId: randomUUID(),
+          expectedRevision: 3,
+          editKind: "background",
+        };
+        assert.equal(
+          (
+            await user.call(`variations/${editableId}/edit-ai`, "POST", {
+              ...payload,
+              confirmCharge: false,
+            })
+          ).status,
+          400,
+        );
+        const r = await user.call(
+          `variations/${editableId}/edit-ai`,
+          "POST",
+          payload,
+        );
+        assert.equal(r.status, 202);
+        assert.equal(
+          (
+            await user.call(`variations/${editableId}/edit-ai`, "POST", {
+              ...payload,
+              requestId: randomUUID(),
+            })
+          ).status,
+          409,
+        );
+        const { adapter } = await import("../lib/providers");
+        const p = adapter("openai"),
+          old = p.generate;
+        try {
+          p.generate = async () => ({
+            bytes: await (
+              await import("sharp")
+            )
+              .default({
+                create: {
+                  width: 100,
+                  height: 100,
+                  channels: 3,
+                  background: "#d9eeec",
+                },
+              })
+              .png()
+              .toBuffer(),
+            usage: { output_tokens: 3 },
+          });
+          await runOne();
+          const job = await db.generationJob.findUniqueOrThrow({
+            where: { id: r.body.jobs[0] },
+          });
+          assert.equal(job.status, "COMPLETED", job.error ?? "");
+          const d = (await user.call(`variations/${editableId}/design`)).body;
+          assert.equal(d.revision, 4);
+          assert.equal(d.document.layers[1].text, "USD 40");
+          assert(d.hasBackground);
+          editableRevision = 4;
+        } finally {
+          p.generate = old;
+        }
+      },
+    );
+    await t.test(
+      "duplicación independiente, revisión y papelera de afiches",
+      async () => {
+        assert.equal(
+          (
+            await user.call(`variations/${editableId}`, "PATCH", {
+              reviewStatus: "APPROVED",
+            })
+          ).status,
+          200,
+        );
+        const clone = await user.call(
+          `variations/${editableId}/duplicate`,
+          "POST",
+        );
+        assert.equal(clone.status, 201);
+        const original = await db.variation.findUniqueOrThrow({
+            where: { id: editableId },
+          }),
+          copy = await db.variation.findUniqueOrThrow({
+            where: { id: clone.body.id },
+          });
+        assert.notEqual(original.path, copy.path);
+        assert.equal(
+          (await user.call(`variations/${clone.body.id}`, "DELETE")).status,
+          200,
+        );
+        assert.equal(
+          (await user.call(`variations/${clone.body.id}/design`)).status,
+          404,
+        );
+        assert.equal(
+          (await user.call(`variations/${clone.body.id}/restore`, "POST"))
+            .status,
+          200,
+        );
+      },
+    );
+    await t.test(
+      "cancelación libera reserva y el reintento requiere una nueva autorización",
+      async () => {
+        const jobs = await reserveJobs(
+          uid,
+          pid,
+          [
+            {
+              subproductId: sid,
+              key: randomUUID(),
+              snapshot: {
+                prompt: "Prueba",
+                mode: "Texto",
+                index: 0,
+                format: "1:1",
+              },
+            },
+          ],
+          1,
+        );
+        assert.equal(
+          (await user.call(`jobs/${jobs[0].id}/cancel`, "POST")).status,
+          200,
+        );
+        assert.equal(
+          (
+            await db.usageLedger.findUniqueOrThrow({
+              where: { jobId: jobs[0].id },
+            })
+          ).status,
+          "RELEASED",
+        );
+        assert.equal(
+          (
+            await user.call(`jobs/${jobs[0].id}/retry`, "POST", {
+              requestId: randomUUID(),
+            })
+          ).status,
+          400,
+        );
+        const retry = await user.call(`jobs/${jobs[0].id}/retry`, "POST", {
+          requestId: randomUUID(),
+          confirmCharge: true,
+        });
+        assert.equal(retry.status, 202);
+        await user.call(`jobs/${retry.body.jobs[0]}/cancel`, "POST");
+      },
+    );
+    await t.test(
+      "carpetas y subcarpetas conservan afiches con permisos y retención por usuario",
+      async () => {
+        const folder = await user.call("library/folders", "POST", {
+          name: "Campaña Octubre",
+        });
+        assert.equal(folder.status, 201);
+        const sub = await user.call("library/folders", "POST", {
+          name: "Aprobados",
+          parentId: folder.body.id,
+        });
+        assert.equal(sub.status, 201);
+        assert.equal(
+          (
+            await user.call(`library/items/${editableId}`, "POST", {
+              permanent: true,
+              folderId: sub.body.id,
+            })
+          ).status,
+          200,
+        );
+        const list = await user.call("library");
+        assert(list.body.some((x: any) => x.variationId === editableId));
+        assert.equal(
+          (
+            await admin.call("library/folders", "POST", {
+              name: "No permitido",
+              parentId: folder.body.id,
+            })
+          ).status,
+          404,
+        );
+        assert.equal(
+          (await user.call(`library/folders/${sub.body.id}`, "DELETE")).status,
+          400,
+        );
+        assert.equal(
+          (
+            await user.call(`library/items/${editableId}`, "POST", {
+              permanent: false,
+            })
+          ).status,
+          200,
+        );
+        assert.equal(
+          (await db.variation.findUniqueOrThrow({ where: { id: editableId } }))
+            .permanent,
+          false,
+        );
+      },
+    );
+    await t.test(
+      "configuraciones personales y oficiales se guardan y aplican con autorización",
+      async () => {
+        const payload = {
+          name: "Diplomados institucionales",
+          prompt: "Diseños institucionales con textos claros.",
+          settings: {
+            count: 1,
+            textCount: 1,
+            imageTextCount: 0,
+            imageCount: 0,
+            editable: true,
+            format: "1:1",
+          },
+          visibility: "PERSONAL",
+        };
+        const preset = await user.call("presets", "POST", payload);
+        assert.equal(preset.status, 201);
+        assert.equal(
+          (
+            await user.call("presets/" + preset.body.id + "/apply", "POST", {
+              categoryId: cid,
+            })
+          ).status,
+          200,
+        );
+        assert.equal(
+          (await user.call("categories/" + cid)).body.prompt,
+          payload.prompt,
+        );
+        assert.equal(
+          (
+            await user.call("presets", "POST", {
+              ...payload,
+              visibility: "OFFICIAL",
+            })
+          ).status,
+          403,
+        );
+        assert.equal(
+          (
+            await owner.call("presets", "POST", {
+              ...payload,
+              visibility: "OFFICIAL",
+            })
+          ).status,
+          201,
+        );
+        assert.equal(
+          (await admin.call("presets/" + preset.body.id, "DELETE")).status,
+          404,
+        );
+      },
+    );
+    await t.test(
+      "una cuenta degradada no puede eliminar una configuración oficial aunque sea su autora",
+      async () => {
+        const preset = await db.savedPreset.create({
+          data: {
+            userId: uid,
+            name: "Oficial de prueba",
+            prompt: "Publicidad autorizada",
+            settings: {},
+            visibility: "OFFICIAL",
+          },
+        });
+        assert.equal(
+          (await user.call("presets/" + preset.id, "DELETE")).status,
+          403,
+        );
+      },
+    );
+    await t.test(
+      "presupuesto individual se aplica antes de crear trabajos y solo OWNER puede modificarlo",
+      async () => {
+        const payload = {
+          scope: "USER",
+          targetId: uid,
+          monthlyMicros: "0",
+          dailyMicros: "0",
+          maxJobsPerDay: 0,
+        };
+        assert.equal((await user.call("budgets", "PUT", payload)).status, 403);
+        assert.equal((await owner.call("budgets", "PUT", payload)).status, 200);
+        const before = await db.generationJob.count();
+        await assert.rejects(
+          reserveJobs(
+            uid,
+            pid,
+            [
+              {
+                subproductId: sid,
+                key: randomUUID(),
+                snapshot: { prompt: "No debe ejecutarse" },
+              },
+            ],
+            1,
+          ),
+        );
+        assert.equal(await db.generationJob.count(), before);
+        await owner.call("budgets", "PUT", {
+          ...payload,
+          monthlyMicros: "100000000",
+          dailyMicros: "100000000",
+          maxJobsPerDay: 1000,
+        });
+      },
+    );
+    await t.test(
+      "regeneración selectiva reserva todo el lote y conserva los originales",
+      async () => {
+        const before = await db.variation.count();
+        const r = await user.call("variations/bulk-regenerate", "POST", {
+          ids: [editableId],
+          prompt: "Mantener el texto y variar el fondo.",
+          confirmCharge: true,
+          reviewedInstructions: true,
+          requestId: randomUUID(),
+        });
+        assert.equal(r.status, 202);
+        assert.equal(r.body.jobs.length, 1);
+        const job = await db.generationJob.findUniqueOrThrow({
+          where: { id: r.body.jobs[0] },
+        });
+        assert.equal((job.snapshot as any).sourceVariationId, editableId);
+        assert.equal(await db.variation.count(), before);
+        await user.call("jobs/" + job.id + "/cancel", "POST");
+      },
+    );
+    await t.test(
+      "limpieza elimina todas las versiones temporales sin tocar el original de otra variación",
+      async () => {
+        const clone = await user.call(
+          `variations/${editableId}/duplicate`,
+          "POST",
+        );
+        const id = clone.body.id;
+        await db.variation.update({
+          where: { id },
+          data: { expiresAt: new Date(0) },
+        });
+        const { cleanupExpired } = await import("../scripts/worker");
+        await cleanupExpired();
+        assert(
+          (await db.variation.findUniqueOrThrow({ where: { id } })).expired,
+        );
+        const response = await fetch(root + `/api/variations/${editableId}`, {
+          headers: { Cookie: user.cookie },
+        });
+        assert.equal(response.status, 200);
+        assert.equal((await user.call(`variations/${id}/design`)).status, 410);
+      },
+    );
     await t.test(
       "eliminar clave revoca verificación y no filtra secretos en auditoría",
       async () => {

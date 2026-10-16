@@ -10,4 +10,10 @@ Eliminación de proyecto = `deletedAt`, con metadatos y relaciones conservados. 
 
 Migraciones: `npm run db:deploy`. El migrador obtiene un advisory lock, verifica SHA-256 de cada SQL y aplica cada migración en una transacción. Se registra en `schema_migrations`. No usar simultáneamente el historial de migraciones de la CLI de Prisma.
 
-Pendientes del modelo maestro: bibliotecas con carpetas, versiones de imagen/diseño, planes estructurados completos, brand kits, presets oficiales, favoritos compartidos, aprobaciones de variación, shares granulares, miniaturas administrativas y límites por usuario/proyecto. No se crean tablas vacías para simular funcionalidades inexistentes.
+Tras la continuación se incorporan carpetas de biblioteca, versiones de diseño, presets oficiales, aprobaciones de variación y límites por usuario/proyecto. Siguen pendientes brand kits, favoritos compartidos, shares granulares y miniaturas administrativas. No se crean tablas vacías para simular funcionalidades inexistentes.
+
+## Migración de la continuación
+
+`202610150002_design_versions` agrega ImageVersion y materializa los originales preexistentes como versión 1. Variation incorpora revision, reviewStatus y deletedAt. Se añaden LibraryFolder, LibraryItem, SavedPreset y BudgetLimit. La conservación previa se migra a LibraryItem del creador. Esta es una migración aditiva: la migración inicial no se modifica.
+
+ImageVersion es inmutable desde los endpoints; restaurar genera una revisión nueva. SourceJobId vincula las versiones creadas por IA con la operación y su ledger. Las carpetas son privadas por usuario; las imágenes siguen sujetas a autorización del proyecto. Los límites particulares son exclusivos del OWNER.

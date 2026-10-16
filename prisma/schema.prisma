@@ -148,6 +148,11 @@ model Variation {
   model String
   permanent Boolean @default(false)
   favorite Boolean @default(false)
+  reviewStatus String @default("PENDING")
+  revision Int @default(1)
+  deletedAt DateTime?
+  versions ImageVersion[]
+  libraryItems LibraryItem[]
   expiresAt DateTime
   expired Boolean @default(false)
   createdAt DateTime @default(now())
@@ -178,4 +183,59 @@ model RateLimit {
   key String @id
   count Int
   expiresAt DateTime
+}
+
+model ImageVersion {
+  id String @id @default(cuid())
+  variationId String
+  variation Variation @relation(fields:[variationId],references:[id])
+  number Int
+  path String
+  backgroundPath String?
+  document Json?
+  actorId String
+  sourceJobId String? @unique
+  createdAt DateTime @default(now())
+  @@unique([variationId,number])
+}
+
+model LibraryFolder {
+  id String @id @default(cuid())
+  userId String
+  name String
+  parentId String?
+  parent LibraryFolder? @relation("FolderTree",fields:[parentId],references:[id])
+  children LibraryFolder[] @relation("FolderTree")
+  items LibraryItem[]
+  createdAt DateTime @default(now())
+  @@index([userId,parentId])
+}
+model LibraryItem {
+  id String @id @default(cuid())
+  userId String
+  variationId String
+  variation Variation @relation(fields:[variationId],references:[id])
+  folderId String?
+  folder LibraryFolder? @relation(fields:[folderId],references:[id])
+  createdAt DateTime @default(now())
+  @@unique([userId,variationId])
+}
+model SavedPreset {
+  id String @id @default(cuid())
+  userId String
+  name String
+  prompt String
+  settings Json
+  visibility String @default("PERSONAL")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+model BudgetLimit {
+  id String @id @default(cuid())
+  scope String
+  targetId String
+  monthlyMicros BigInt
+  dailyMicros BigInt
+  maxJobsPerDay Int
+  @@unique([scope,targetId])
 }

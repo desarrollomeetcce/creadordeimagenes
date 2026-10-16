@@ -24,3 +24,7 @@ El primer OWNER se crea con token de instalación secreto. Eliminar el token del
 - Aislar permisos de DB: en producción usar un rol migrador y un rol de aplicación con mínimo privilegio. Reforzar AuditEvent como append-only para el rol de aplicación.
 
 Antes de producción faltan QA visual, recuperación de contraseña, pruebas de carga, revisión de parsers, políticas de retención administrativas, observabilidad y prueba real autorizada de OpenAI.
+
+## Instalación aislada con Docker Compose
+
+Se añadieron Dockerfile, compose.yaml y docs/VPS_INSTALLATION.md. Contemplan web y worker con almacenamiento compartido, PostgreSQL privado y migración previa al arranque. El contenedor incluye DejaVu para renderización de textos. El puerto web se liga a 127.0.0.1:3000 para usar el proxy HTTPS del VPS. La construcción Docker y el despliegue no se han probado todavía; no se han utilizado servidores del usuario.

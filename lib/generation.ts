@@ -77,6 +77,7 @@ export async function generateBatch(
           mode,
           index,
           format: s.format,
+          renderMode: s.editable ? "editable" : "flat",
           attachmentIds: p.attachments
             .filter((a) => a.mime.startsWith("image/"))
             .map((a) => a.id),

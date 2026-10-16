@@ -57,6 +57,7 @@ const settings = z
       .enum(["1:1", "4:3", "3:4", "4:5", "5:4", "16:9", "9:16"])
       .optional(),
     style: z.string().max(300).optional(),
+    editable: z.boolean().optional(),
   })
   .strict();
 const micros = z
@@ -376,6 +377,13 @@ async function handle(
         return send({ jobs: jobs.map((j) => j.id) }, 202);
       }
     }
+    if (["library", "presets", "budgets"].includes(parts[0])) {
+      const { productivityRoutes } = await import("@/lib/productivity");
+      const response = await productivityRoutes(req, parts, user, () =>
+        body(req),
+      );
+      if (response) return response;
+    }
     if (route === "projects" && method === "GET")
       return send(
         await db.project.findMany({
@@ -545,7 +553,11 @@ async function handle(
             include: {
               project: { select: { id: true, name: true } },
               subproducts: {
-                include: { _count: { select: { variations: true } } },
+                include: {
+                  _count: {
+                    select: { variations: { where: { deletedAt: null } } },
+                  },
+                },
               },
             },
           }),
@@ -605,7 +617,23 @@ async function handle(
       );
       const sub = await db.subproduct.findUniqueOrThrow({
         where: { id },
-        include: { category: { include: { project: true } }, variations: true },
+        include: {
+          category: { include: { project: true } },
+          variations: {
+            where: { deletedAt: null },
+            orderBy: { createdAt: "asc" },
+            select: {
+              id: true,
+              model: true,
+              permanent: true,
+              favorite: true,
+              expired: true,
+              expiresAt: true,
+              revision: true,
+              reviewStatus: true,
+            },
+          },
+        },
       });
       if (parts.length === 2 && method === "GET") return send(sub);
       if (parts.length === 2 && method === "PATCH") {
@@ -685,7 +713,7 @@ async function handle(
     if (parts[0] === "attachments") {
       if (parts.length === 1 && method === "GET") {
         const scope = z
-            .enum(["project", "category", "subproduct"])
+            .enum(["project", "category", "subproduct", "variation"])
             .parse(req.nextUrl.searchParams.get("scope")),
           id = req.nextUrl.searchParams.get("id") ?? "";
         await resourceAccess(user, scope, id);
@@ -713,7 +741,7 @@ async function handle(
           headers: { "Content-Type": req.headers.get("content-type") ?? "" },
         }).formData();
         const scope = z
-            .enum(["project", "category", "subproduct"])
+            .enum(["project", "category", "subproduct", "variation"])
             .parse(form.get("scope")),
           id = String(form.get("resourceId") ?? "");
         await resourceAccess(user, scope, id, "EDIT");
@@ -741,10 +769,39 @@ async function handle(
         await audit(user.id, "ADJUNTO_CARGADO", item.id);
         return send({ id: item.id, name: item.name }, 201);
       }
+      if (parts[1] && method === "GET") {
+        const a = await db.attachment.findUnique({ where: { id: parts[1] } });
+        demand(a, "Archivo no encontrado.", 404);
+        await resourceAccess(user, a.scope, a.resourceId);
+        return new NextResponse(new Uint8Array(await load(a.path)), {
+          headers: {
+            "Content-Type": a.mime,
+            "Content-Disposition": a.mime.startsWith("image/")
+              ? "inline"
+              : "attachment",
+            "Cache-Control": "private, no-store",
+            "X-Content-Type-Options": "nosniff",
+          },
+        });
+      }
       if (parts[1] && method === "DELETE") {
         const a = await db.attachment.findUnique({ where: { id: parts[1] } });
         demand(a, "Adjunto no encontrado.", 404);
         await resourceAccess(user, a.scope, a.resourceId, "EDIT");
+        const used = await db.imageVersion.findFirst({
+          where: {
+            document: {
+              path: ["layers"],
+              array_contains: [{ type: "logo", attachmentId: a.id }],
+            },
+            variation: { expired: false },
+          },
+        });
+        demand(
+          !used,
+          "Este logo está en uso por un afiche o sus versiones. Conserva el recurso mientras exista ese historial.",
+          409,
+        );
         await remove(a.path);
         await db.attachment.delete({ where: { id: a.id } });
         return send({ ok: true });
@@ -766,8 +823,28 @@ async function handle(
           variation: { select: { id: true, expired: true } },
         },
       });
+      const edited = await db.imageVersion.findMany({
+        where: { sourceJobId: { in: jobs.map((j) => j.id) } },
+        select: {
+          sourceJobId: true,
+          variation: { select: { id: true, expired: true, deletedAt: true } },
+        },
+      });
       return send(
-        jobs.map((j) => ({ ...j, reservedMicros: String(j.reservedMicros) })),
+        jobs.map((j) => {
+          const result =
+            j.variation ??
+            edited.find((v) => v.sourceJobId === j.id)?.variation ??
+            null;
+          return {
+            ...j,
+            variation:
+              result && !("deletedAt" in result && result.deletedAt)
+                ? { id: result.id, expired: result.expired }
+                : null,
+            reservedMicros: String(j.reservedMicros),
+          };
+        }),
       );
     }
     if (route === "exports" && method === "POST") {
@@ -789,7 +866,9 @@ async function handle(
         if (v.job.projectId === "connection-test") ownerOnly(user);
         else await projectAccess(user, v.job.projectId);
         demand(
-          !v.expired && (v.permanent || v.expiresAt > new Date()),
+          !v.deletedAt &&
+            !v.expired &&
+            (v.permanent || v.expiresAt > new Date()),
           "Una imagen temporal ya caducó.",
           410,
         );
@@ -823,6 +902,47 @@ async function handle(
         },
       );
     }
+    if (route === "variations/bulk-regenerate" && method === "POST") {
+      const b = z
+        .object({
+          ids: z.array(z.string()).min(1).max(200),
+          prompt: z.string().max(12000).default(""),
+          requestId: z.uuid(),
+          confirmCharge: z.literal(true),
+          reviewedInstructions: z.literal(true),
+        })
+        .parse(await body(req));
+      const { regenerateSelected } = await import("@/lib/bulk-variations");
+      return send(
+        { jobs: await regenerateSelected(user, b.ids, b.requestId, b.prompt) },
+        202,
+      );
+    }
+    if (parts[0] === "variations" && parts[1]) {
+      const { variationRoutes } = await import("@/lib/variation-routes");
+      const response = await variationRoutes(req, parts, user, () => body(req));
+      if (response) return response;
+    }
+    if (parts[0] === "jobs" && parts[1] && method === "POST") {
+      const { cancelJob, retryJob } = await import("@/lib/jobs");
+      if (parts[2] === "cancel") return send(await cancelJob(user, parts[1]));
+      if (parts[2] === "retry") {
+        const b = z
+          .object({
+            requestId: z.uuid(),
+            confirmCharge: z.literal(true),
+            confirmUncertain: z.boolean().default(false),
+          })
+          .parse(await body(req));
+        const jobs = await retryJob(
+          user,
+          parts[1],
+          b.requestId,
+          b.confirmUncertain,
+        );
+        return send({ jobs: jobs.map((j) => j.id) }, 202);
+      }
+    }
     if (parts[0] === "variations" && parts[1]) {
       const v = await db.variation.findUnique({
         where: { id: parts[1] },
@@ -836,9 +956,12 @@ async function handle(
           v.job.projectId,
           method === "GET" ? "VIEW" : "EDIT",
         );
-      if (method === "GET") {
+      if (method === "GET" && parts.length === 2) {
         demand(
-          !v.expired && (v.permanent || v.expiresAt > new Date()),
+          !v.deletedAt &&
+            !v.deletedAt &&
+            !v.expired &&
+            (v.permanent || v.expiresAt > new Date()),
           "El archivo temporal ya caducó.",
           410,
         );
@@ -856,20 +979,39 @@ async function handle(
           },
         });
       }
-      if (method === "PATCH") {
+      if (method === "PATCH" && parts.length === 2) {
         const b = z
           .object({
             permanent: z.boolean().optional(),
             favorite: z.boolean().optional(),
+            reviewStatus: z
+              .enum(["PENDING", "APPROVED", "REJECTED"])
+              .optional(),
           })
           .strict()
           .parse(await body(req));
         demand(
-          !v.expired && (v.permanent || v.expiresAt > new Date()),
+          !v.deletedAt &&
+            !v.expired &&
+            (v.permanent || v.expiresAt > new Date()),
           "La imagen ya caducó.",
           410,
         );
-        await db.variation.update({ where: { id: v.id }, data: b });
+        if (b.permanent !== undefined) {
+          const { retainVariation } = await import("@/lib/productivity");
+          await retainVariation(user, v.id, b.permanent);
+        }
+        const { permanent: _permanent, ...metadata } = b;
+        const changed = await db.variation.updateMany({
+          where: { id: v.id, deletedAt: null, expired: false },
+          data: metadata,
+        });
+        demand(changed.count, "El afiche ya no está disponible.", 409);
+        await audit(
+          user.id,
+          b.reviewStatus ? "AFICHE_" + b.reviewStatus : "AFICHE_ACTUALIZADO",
+          v.id,
+        );
         return send({ ok: true });
       }
     }

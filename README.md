@@ -1,6 +1,6 @@
 # Creador de Imágenes · Estudio AI
 
-Aplicación web en español para producción publicitaria multiproyecto. Implementación inicial funcional con persistencia PostgreSQL, autenticación, proyectos, categorías, subproductos, instrucciones heredadas y administración cifrada de proveedores de IA exclusiva del OWNER.
+Aplicación web en español para producción publicitaria multiproyecto. Implementación funcional con persistencia PostgreSQL, autenticación, proyectos, categorías, subproductos, instrucciones heredadas, administración cifrada de IA exclusiva del OWNER, composición editable, historial de versiones, biblioteca y límites por usuario/proyecto.
 
 **Estado:** desarrollo por fases; no es todavía la totalidad del prompt maestro ni una aplicación certificada para producción. Véanse [PROGRESS.md](PROGRESS.md) y [TESTING.md](TESTING.md). No se ha verificado una generación externa real: faltan credenciales del proveedor. Las pruebas simuladas están identificadas como tales.
 
@@ -34,3 +34,9 @@ Next.js App Router / React / TypeScript; API con Zod; Prisma ORM 7.6 con adaptad
 Se usan CSS y controles accesibles nativos para reducir dependencias iniciales. PostgreSQL implementa la primera cola durable mediante reclamación atómica; Redis/BullMQ y una biblioteca de componentes no son necesarios para esta primera versión. Son decisiones de implementación, no sustitutos de la generación real.
 
 No se contratan servicios ni se realizan llamadas de IA automáticamente al crear proyectos, guardar prompts, adjuntar documentos o iniciar la aplicación.
+
+## Continuación del flujo creativo
+
+La generación editable conserva textos y logos independientes. En la galería, **Ajustar / Editar con IA** abre el editor: los ajustes manuales no consumen IA y crean versiones nuevas. Restaurar conserva el historial; editar fondo con IA mantiene las capas, mientras editar la imagen completa produce una versión aplanada. Toda operación facturable exige autorización explícita. Se añadieron biblioteca con carpetas, configuraciones guardadas, aprobación/rechazo, duplicación, regeneración selectiva y controles de cola.
+
+La instalación de VPS está preparada en [docs/VPS_INSTALLATION.md](docs/VPS_INSTALLATION.md); todavía no se ha realizado ni probado su construcción Docker.

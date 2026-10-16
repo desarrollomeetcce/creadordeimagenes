@@ -1,0 +1,78 @@
+import { db } from "./db";
+import { demand } from "./errors";
+import { configured, reserveJobs } from "./ai";
+import { projectAccess, ownerOnly } from "./auth";
+export async function cancelJob(
+  user: { id: string; role: string },
+  id: string,
+) {
+  const job = await db.generationJob.findUnique({ where: { id } });
+  demand(job, "Trabajo no encontrado.", 404);
+  if (job.projectId === "connection-test") ownerOnly(user);
+  else await projectAccess(user, job.projectId, "GENERATE");
+  demand(
+    user.role === "OWNER" || job.actorId === user.id,
+    "Solo puedes cancelar tus propios trabajos.",
+    403,
+  );
+  return db.$transaction(async (tx) => {
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(728291)`;
+    const changed = await tx.generationJob.updateMany({
+      where: { id, status: "PENDING" },
+      data: { status: "CANCELLED", completedAt: new Date() },
+    });
+    demand(
+      changed.count,
+      "Solo se pueden cancelar trabajos que aún están pendientes.",
+      409,
+    );
+    await tx.usageLedger.update({
+      where: { jobId: id },
+      data: { status: "RELEASED" },
+    });
+    await tx.auditEvent.create({
+      data: { actorId: user.id, action: "TRABAJO_CANCELADO", resourceId: id },
+    });
+    return { ok: true };
+  });
+}
+export async function retryJob(
+  user: { id: string; role: string },
+  id: string,
+  requestId: string,
+  confirmUncertain: boolean,
+) {
+  const job = await db.generationJob.findUnique({ where: { id } });
+  demand(job, "Trabajo no encontrado.", 404);
+  if (job.projectId === "connection-test") ownerOnly(user);
+  else await projectAccess(user, job.projectId, "GENERATE");
+  demand(
+    user.role === "OWNER" || job.actorId === user.id,
+    "Solo puedes reintentar tus propios trabajos.",
+    403,
+  );
+  demand(
+    ["FAILED", "UNCERTAIN", "CANCELLED"].includes(job.status),
+    "Este trabajo no admite un nuevo intento.",
+  );
+  demand(
+    job.status !== "UNCERTAIN" || confirmUncertain,
+    "La llamada anterior pudo producir un cargo. Debes reconocer ese riesgo antes de otro intento.",
+  );
+  const c = await configured();
+  const snapshot = job.snapshot as Record<string, unknown>;
+  if (typeof snapshot.editVariationId === "string")
+    await projectAccess(user, job.projectId, "EDIT");
+  return reserveJobs(
+    user.id,
+    job.projectId,
+    [
+      {
+        subproductId: job.subproductId ?? undefined,
+        key: `retry:${user.id}:${id}:${requestId}`,
+        snapshot: { ...snapshot, retryOf: id },
+      },
+    ],
+    c.revision,
+  );
+}

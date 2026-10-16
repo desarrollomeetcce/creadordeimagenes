@@ -105,6 +105,10 @@ export async function resourceAccess(
   id: string,
   permission = "VIEW",
 ) {
+  if (scope === "variation") {
+    const { accessibleVariation } = await import("./versions");
+    return accessibleVariation(u, id, permission);
+  }
   if (scope === "project") return projectAccess(u, id, permission);
   if (scope === "category") {
     const c = await db.category.findUnique({ where: { id } });

@@ -72,6 +72,7 @@ export const defaults = {
   imageCount: 0,
   format: "1:1",
   style: "Profesional",
+  editable: true,
 };
 export function effectiveSettings(category: unknown, subproduct: unknown) {
   return { ...defaults, ...(category as object), ...(subproduct as object) };
