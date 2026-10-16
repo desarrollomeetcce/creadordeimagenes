@@ -3,6 +3,12 @@ import { configured } from "../lib/ai";
 import { decryptKey } from "../lib/crypto";
 import { adapter } from "../lib/providers";
 import { store, remove, load, requireStorageSpace } from "../lib/storage";
+import {
+  prepareAuditThumbnail,
+  captureAuditThumbnail,
+  cleanupAuditThumbnails,
+  requireAuditSpace,
+} from "../lib/visual-audit";
 import { adaptImage } from "../lib/render";
 import { AppError, demand } from "../lib/errors";
 import {
@@ -63,6 +69,7 @@ export async function runOne(filter?: {
   let called = false;
   const written: string[] = [];
   try {
+    await requireAuditSpace();
     await requireStorageSpace();
     const c = await configured(),
       s = candidate.snapshot as unknown as Snapshot;
@@ -222,6 +229,7 @@ export async function runOne(filter?: {
     }
     const path = await store(output);
     written.push(path);
+    const auditThumbnail = await prepareAuditThumbnail(output);
     await db.$transaction(async (tx) => {
       const active = await tx.generationJob.findUnique({
         where: { id: candidate.id },
@@ -241,6 +249,7 @@ export async function runOne(filter?: {
           document,
           sourceJobId: candidate.id,
           action: "EDICION_IA",
+          auditThumbnail,
         });
       else {
         const v = await tx.variation.create({
@@ -252,7 +261,7 @@ export async function runOne(filter?: {
             expiresAt: new Date(Date.now() + 48 * 3600000),
           },
         });
-        await tx.imageVersion.create({
+        const version = await tx.imageVersion.create({
           data: {
             variationId: v.id,
             number: 1,
@@ -265,6 +274,7 @@ export async function runOne(filter?: {
             sourceJobId: candidate.id,
           },
         });
+        await captureAuditThumbnail(tx, version.id, auditThumbnail);
       }
       await tx.generationJob.update({
         where: { id: candidate.id },
@@ -315,6 +325,7 @@ export async function runOne(filter?: {
   return true;
 }
 export async function cleanupExpired(now = new Date()) {
+  await cleanupAuditThumbnails(now);
   const expired = await db.variation.findMany({
     where: { permanent: false, expired: false, expiresAt: { lt: now } },
     include: { versions: true },

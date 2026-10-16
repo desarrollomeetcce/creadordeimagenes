@@ -43,8 +43,10 @@ export function StorageUsage() {
               style={{ width: "100%" }}
             />
             <p className="muted">
-              Los adjuntos y las versiones guardadas ocupan espacio. Los afiches
-              temporales caducados se eliminan al ejecutar la limpieza.
+              Los adjuntos, las versiones guardadas y las miniaturas de
+              auditoría ocupan espacio. Los afiches temporales y las miniaturas
+              caducadas se eliminan al ejecutar la limpieza, cada uno según su
+              plazo.
             </p>
           </>
         ) : (

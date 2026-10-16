@@ -4552,6 +4552,365 @@ test("Integración HTTP + PostgreSQL (base exclusiva de pruebas, sin llamadas ex
         );
       },
     );
+    await t.test(
+      "auditoría visual: versiones, privacidad, conservación independiente, políticas, cuotas y limpieza",
+      async () => {
+        const { cleanupAuditThumbnails, requireAuditSpace } =
+          await import("../lib/visual-audit");
+        const policyPath = "visual-audit/policy";
+        const created = await db.auditThumbnail.findMany({
+          where: { variationId: editableId },
+          orderBy: { versionNumber: "asc" },
+        });
+        assert(
+          created.length >= 4,
+          "generación, edición y restauración capturan nuevas versiones",
+        );
+        assert.equal(
+          created.length,
+          await db.imageVersion.count({ where: { variationId: editableId } }),
+        );
+        const original = created[0];
+        assert(original.size > 0 && original.size <= 65536);
+        assert(original.width <= 384 && original.height <= 384);
+        const sharp = (await import("sharp")).default;
+        assert.equal(
+          (await sharp(Buffer.from(original.data!)).metadata()).format,
+          "webp",
+        );
+        for (const client of [user, admin, observer]) {
+          assert.equal((await client.call("visual-audit")).status, 403);
+          assert.equal((await client.call(policyPath)).status, 403);
+          assert.equal((await client.call(policyPath, "PUT", {})).status, 403);
+          assert.equal(
+            (await client.call("visual-audit/cleanup", "POST")).status,
+            403,
+          );
+          assert.equal(
+            (await client.call(`visual-audit/${original.id}/image`)).status,
+            403,
+          );
+          assert.equal(
+            (
+              await client.call(`visual-audit/${original.id}`, "DELETE", {
+                currentPassword: password,
+              })
+            ).status,
+            403,
+          );
+          assert.deepEqual((await client.call("privacy/visual-audit")).body, {
+            enabled: true,
+            retentionDays: 30,
+          });
+        }
+        assert.equal((await anonymous.call("visual-audit")).status, 401);
+        const page1 = await owner.call("visual-audit?page=1"),
+          page2 = await owner.call("visual-audit?page=2");
+        assert.equal(page1.status, 200);
+        assert(page1.body.total >= created.length);
+        assert(page1.body.rows.length <= 20);
+        assert(!JSON.stringify(page1.body).includes('"data"'));
+        assert(
+          !page1.body.rows.some((a: any) =>
+            page2.body.rows.some((b: any) => a.id === b.id),
+          ),
+        );
+        const img = await fetch(
+          `${root}/api/visual-audit/${original.id}/image`,
+          { headers: { Cookie: owner.cookie } },
+        );
+        assert.equal(img.status, 200);
+        assert.equal(img.headers.get("content-type"), "image/webp");
+        assert.equal(img.headers.get("cache-control"), "private, no-store");
+        const state = (await owner.call(policyPath)).body;
+        const payload = {
+          enabled: true,
+          retentionDays: 90,
+          limitMb: 32,
+          expectedRevision: state.revision,
+          applyToExisting: false,
+          currentPassword: password,
+        };
+        assert.equal(
+          (
+            await owner.call(policyPath, "PUT", {
+              ...payload,
+              currentPassword: "Incorrecta-0123456789",
+            })
+          ).status,
+          403,
+        );
+        assert.equal(
+          (
+            await owner.call(policyPath, "PUT", {
+              ...payload,
+              retentionDays: 0,
+            })
+          ).status,
+          400,
+        );
+        const race = await Promise.all([
+          owner.call(policyPath, "PUT", payload),
+          owner.call(policyPath, "PUT", payload),
+        ]);
+        assert.deepEqual(race.map((r) => r.status).sort(), [200, 409]);
+        assert.equal(
+          (
+            await db.auditThumbnail.findUniqueOrThrow({
+              where: { id: original.id },
+            })
+          ).expiresAt.getTime(),
+          original.expiresAt.getTime(),
+        );
+        const duplicate = await user.call(
+          `variations/${editableId}/duplicate`,
+          "POST",
+        );
+        assert.equal(duplicate.status, 201);
+        const copied = await db.auditThumbnail.findFirstOrThrow({
+          where: { variationId: duplicate.body.id },
+        });
+        assert.equal(
+          copied.expiresAt.getTime() - copied.createdAt.getTime(),
+          90 * 86400000,
+        );
+        const variation = await db.variation.findUniqueOrThrow({
+          where: { id: duplicate.body.id },
+        });
+        const { cleanupExpired } = await import("../scripts/worker");
+        await db.variation.update({
+          where: { id: variation.id },
+          data: { expiresAt: new Date(0), permanent: false },
+        });
+        await cleanupExpired();
+        assert.equal(
+          (await user.call(`variations/${variation.id}/design`)).status,
+          410,
+        );
+        assert.equal(
+          (
+            await fetch(`${root}/api/visual-audit/${copied.id}/image`, {
+              headers: { Cookie: owner.cookie },
+            })
+          ).status,
+          200,
+        );
+        await db.project.update({
+          where: { id: copied.projectId },
+          data: { deletedAt: new Date() },
+        });
+        assert.equal(
+          (
+            await fetch(`${root}/api/visual-audit/${copied.id}/image`, {
+              headers: { Cookie: owner.cookie },
+            })
+          ).status,
+          200,
+        );
+        await db.project.update({
+          where: { id: copied.projectId },
+          data: { deletedAt: null },
+        });
+        const savePolicy = async (values: {
+          enabled?: boolean;
+          retentionDays?: number;
+          limitMb?: number;
+          applyToExisting?: boolean;
+        }) => {
+          const previous = (await owner.call(policyPath)).body;
+          const result = await owner.call(policyPath, "PUT", {
+            enabled: previous.enabled,
+            retentionDays: previous.retentionDays,
+            limitMb: previous.limitMb,
+            expectedRevision: previous.revision,
+            applyToExisting: false,
+            currentPassword: password,
+            ...values,
+          });
+          assert.equal(result.status, 200);
+          return result;
+        };
+        await savePolicy({ enabled: false });
+        const disabled = await user.call(
+          `variations/${editableId}/duplicate`,
+          "POST",
+        );
+        assert.equal(disabled.status, 201);
+        assert.equal(
+          await db.auditThumbnail.count({
+            where: { variationId: disabled.body.id },
+          }),
+          0,
+        );
+        assert.deepEqual((await observer.call("privacy/visual-audit")).body, {
+          enabled: false,
+          retentionDays: 90,
+        });
+        await savePolicy({ enabled: true, retentionDays: 1 });
+        assert.equal(
+          (
+            await db.auditThumbnail.findUniqueOrThrow({
+              where: { id: copied.id },
+            })
+          ).expiresAt.getTime(),
+          copied.expiresAt.getTime(),
+        );
+        await db.auditThumbnail.update({
+          where: { id: copied.id },
+          data: { createdAt: new Date(Date.now() - 2 * 86400000) },
+        });
+        await savePolicy({ applyToExisting: true });
+        assert.equal(
+          (
+            await fetch(`${root}/api/visual-audit/${copied.id}/image`, {
+              headers: { Cookie: owner.cookie },
+            })
+          ).status,
+          410,
+        );
+        const clean = await owner.call("visual-audit/cleanup", "POST");
+        assert.equal(clean.status, 200);
+        assert(clean.body.removed >= 1);
+        const gone = await db.auditThumbnail.findUniqueOrThrow({
+          where: { id: copied.id },
+        });
+        assert.equal(gone.data, null);
+        assert.equal(gone.size, 0);
+        assert.equal(gone.status, "EXPIRED");
+        assert(gone.removedAt);
+        await savePolicy({ retentionDays: 90, applyToExisting: true });
+        assert.equal(
+          (
+            await db.auditThumbnail.findUniqueOrThrow({
+              where: { id: copied.id },
+            })
+          ).status,
+          "EXPIRED",
+        );
+        assert.equal(
+          (
+            await fetch(`${root}/api/visual-audit/${copied.id}/image`, {
+              headers: { Cookie: owner.cookie },
+            })
+          ).status,
+          410,
+        );
+        assert.equal(
+          (
+            await owner.call(`visual-audit/${original.id}`, "DELETE", {
+              currentPassword: "Incorrecta-0123456789",
+            })
+          ).status,
+          403,
+        );
+        const removeRace = await Promise.all([
+          owner.call(`visual-audit/${original.id}`, "DELETE", {
+            currentPassword: password,
+          }),
+          owner.call(`visual-audit/${original.id}`, "DELETE", {
+            currentPassword: password,
+          }),
+        ]);
+        assert.deepEqual(removeRace.map((r) => r.status).sort(), [200, 409]);
+        assert.equal(
+          (
+            await db.auditThumbnail.findUniqueOrThrow({
+              where: { id: original.id },
+            })
+          ).status,
+          "REMOVED",
+        );
+        assert.equal(
+          (await user.call(`variations/${editableId}/design`)).status,
+          200,
+        );
+        assert.equal(
+          await db.auditEvent.count({
+            where: {
+              action: "MINIATURA_AUDITORIA_ELIMINADA",
+              resourceId: original.id,
+            },
+          }),
+          1,
+        );
+        await savePolicy({ limitMb: 1 });
+        const fillerIds: string[] = [];
+        try {
+          const used =
+            (await db.auditThumbnail.aggregate({ _sum: { size: true } }))._sum
+              .size ?? 0;
+          const count = Math.ceil((1048576 - used) / 65536);
+          for (let n = 0; n < count; n++) {
+            const row = await db.auditThumbnail.create({
+              data: {
+                versionId: `quota-${tag}-${n}`,
+                variationId: editableId,
+                versionNumber: 1000 + n,
+                actorId: uid,
+                actorName: "Cuota sintética",
+                projectId: pid,
+                projectName: `Cuota sintética ${tag}`,
+                productName: "",
+                subproductName: "",
+                model: "synthetic-only",
+                data: new Uint8Array(Buffer.alloc(65536)),
+                size: 65536,
+                width: 1,
+                height: 1,
+                expiresAt: new Date(Date.now() + 86400000),
+              },
+            });
+            fillerIds.push(row.id);
+          }
+          await assert.rejects(requireAuditSpace(), /No hay espacio/);
+          const result = await user.call(
+            `variations/${editableId}/duplicate`,
+            "POST",
+          );
+          assert.equal(
+            result.status,
+            201,
+            "un fallo de cuota no pierde el afiche",
+          );
+          const gap = await db.auditThumbnail.findFirstOrThrow({
+            where: { variationId: result.body.id },
+          });
+          assert.equal(gap.status, "NO_SPACE");
+          assert.equal(gap.data, null);
+          assert.equal(gap.size, 0);
+          assert.equal(
+            (await user.call(`variations/${result.body.id}/design`)).status,
+            200,
+          );
+          assert((await owner.call(policyPath)).body.missing >= 1);
+          assert.equal(
+            await db.auditEvent.count({
+              where: {
+                action: "MINIATURA_AUDITORIA_SIN_ESPACIO",
+                resourceId: result.body.id,
+              },
+            }),
+            1,
+          );
+          const { storageStatus } = await import("../lib/storage");
+          const bytes =
+            (await db.storedAsset.aggregate({ _sum: { size: true } }))._sum
+              .size ?? 0;
+          const auditBytes =
+            (await db.auditThumbnail.aggregate({ _sum: { size: true } }))._sum
+              .size ?? 0;
+          assert.equal((await storageStatus()).usedBytes, bytes + auditBytes);
+        } finally {
+          await db.auditThumbnail.deleteMany({
+            where: { id: { in: fillerIds } },
+          });
+          await savePolicy({ limitMb: 32, retentionDays: 30 });
+        }
+        assert.equal(await cleanupAuditThumbnails(), 0);
+        const auditText = JSON.stringify(await db.auditEvent.findMany());
+        assert(!auditText.includes(password));
+      },
+    );
     await t.test("cierre de sesión invalida el token", async () => {
       assert.equal((await user.call("auth/logout", "POST")).status, 200);
       assert.equal((await user.call("projects")).status, 401);

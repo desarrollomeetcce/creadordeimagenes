@@ -7,6 +7,7 @@ import { designSchema } from "./design";
 import { load, store, remove, fileStream } from "./storage";
 import { configured, reserveJobs } from "./ai";
 import { resolveInstructions } from "./inheritance";
+import { prepareAuditThumbnail, captureAuditThumbnail } from "./visual-audit";
 export async function variationRoutes(
   req: NextRequest,
   parts: string[],
@@ -236,6 +237,7 @@ export async function variationRoutes(
         ? await store(await load(version.backgroundPath))
         : null;
     try {
+      const auditThumbnail = await prepareAuditThumbnail(await load(path));
       const clone = await db.$transaction(async (tx) => {
         const job = await tx.generationJob.create({
           data: {
@@ -258,7 +260,7 @@ export async function variationRoutes(
             expiresAt: new Date(Date.now() + 48 * 3600000),
           },
         });
-        await tx.imageVersion.create({
+        const copyVersion = await tx.imageVersion.create({
           data: {
             variationId: variation.id,
             number: 1,
@@ -269,6 +271,7 @@ export async function variationRoutes(
             sourceJobId: job.id,
           },
         });
+        await captureAuditThumbnail(tx, copyVersion.id, auditThumbnail);
         await tx.auditEvent.create({
           data: {
             actorId: user.id,

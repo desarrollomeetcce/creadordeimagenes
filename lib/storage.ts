@@ -20,7 +20,7 @@ export function storageBackend() {
   );
   return value;
 }
-function databaseLimit() {
+export function storageByteLimit() {
   const value = Number(process.env.STORAGE_LIMIT_MB ?? 128);
   demand(
     Number.isInteger(value) && value >= 16 && value <= 1024,
@@ -40,10 +40,11 @@ export async function storageStatus() {
       maxUploadBytes: maxUploadBytes(),
     };
   const sum = await db.storedAsset.aggregate({ _sum: { size: true } });
+  const audit = await db.auditThumbnail.aggregate({ _sum: { size: true } });
   return {
     backend,
-    usedBytes: sum._sum.size ?? 0,
-    limitBytes: databaseLimit(),
+    usedBytes: (sum._sum.size ?? 0) + (audit._sum.size ?? 0),
+    limitBytes: storageByteLimit(),
     maxUploadBytes: maxUploadBytes(),
   };
 }
@@ -67,8 +68,10 @@ export async function store(bytes: Buffer) {
     await db.$transaction(async (tx) => {
       await tx.$executeRaw`SELECT pg_advisory_xact_lock(440819)`;
       const sum = await tx.storedAsset.aggregate({ _sum: { size: true } });
+      const audit = await tx.auditThumbnail.aggregate({ _sum: { size: true } });
       demand(
-        (sum._sum.size ?? 0) + bytes.length <= databaseLimit(),
+        (sum._sum.size ?? 0) + (audit._sum.size ?? 0) + bytes.length <=
+          storageByteLimit(),
         "El almacenamiento está lleno. Libera archivos temporales o amplía la capacidad.",
         413,
       );

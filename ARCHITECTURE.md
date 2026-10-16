@@ -20,6 +20,8 @@ El reemplazo crea un nuevo Attachment con replacesId y archiva el anterior media
 
 ## Configuración de IA
 
+La auditoría visual se captura al publicar versiones mediante lib/visual-audit.ts. La compresión ocurre antes de la transacción; la miniatura y su metadata se confirman junto con ImageVersion. Las variantes iniciales y duplicadas usan el mismo capturador. Su plazo y bytes son independientes del original. Solo OWNER consulta la API de imágenes/listado/configuración; otras cuentas reciben únicamente la política pública autenticada. El borrado de miniatura no expone operaciones sobre imágenes ni elimina eventos. Falta de cuota se informa como NO_SPACE sin perder un afiche ya producido ni reintentar cargos. La expiración se exige en cada lectura; la limpieza física depende de actividad/worker/acción OWNER y debe programarse en el alojamiento para garantizar plazos con el servidor inactivo.
+
 `ProviderAdapter` define descubrimiento, dirección creativa e imágenes. Primer adaptador: OpenAI, con destino fijo `api.openai.com`; no hay URL arbitraria susceptible de SSRF. Para agregar un proveedor, implementar y registrar un adaptador independiente. No se muestran proveedores sin adaptador.
 
 AES-256-GCM usa nonce aleatorio de 12 bytes, etiqueta de autenticación y contexto AAD. La clave maestra de 32 bytes vive fuera de PostgreSQL. El cifrado es versionado; la API devuelve una proyección explícita sin ciphertext, con máscara final. Solo OWNER puede leer o modificar configuración, comprobar conexión o autorizar prueba.

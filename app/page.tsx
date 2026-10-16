@@ -6,6 +6,7 @@ import { HierarchyBreadcrumbs } from "./components/breadcrumbs";
 import { Attachments } from "./components/attachments";
 import { UsersPanel } from "./components/users-panel";
 import { MailSettings } from "./components/mail-settings";
+import { VisualAuditPanel, VisualAuditNotice } from "./components/visual-audit";
 import { VariationEditor } from "./components/variation-editor";
 import { ProjectSharing } from "./components/project-sharing";
 import { BackgroundBatches } from "./components/background-batches";
@@ -222,7 +223,9 @@ export default function Home() {
           "account",
           "collection",
           ...(managesUsers(user.role) ? ["users"] : []),
-          ...(user.role === "OWNER" ? ["ai", "mail", "statistics"] : []),
+          ...(user.role === "OWNER"
+            ? ["ai", "mail", "statistics", "visual-audit"]
+            : []),
         ];
         const nextView =
           allowed.includes(requested) &&
@@ -349,6 +352,7 @@ export default function Home() {
     presets: "Configuraciones guardadas",
     ai: "Configuración → Inteligencia Artificial",
     mail: "Configuración → Correo",
+    "visual-audit": "Auditoría visual y conservación",
     history: "Historial",
     users: "Usuarios",
     usage: "Consumo de IA",
@@ -394,6 +398,7 @@ export default function Home() {
                     ["statistics", "▥", "Estadísticas"],
                     ["ai", "⚙", "Configuración de IA"],
                     ["mail", "✉", "Configuración de correo"],
+                    ["visual-audit", "▧", "Auditoría visual"],
                   ]
                 : []),
             ]
@@ -452,6 +457,7 @@ export default function Home() {
           </header>
           <main>
             <RoleGuide name={user.name} role={user.role} />
+            <VisualAuditNotice key={user.id} />
             {project && view === "projects" && (
               <HierarchyBreadcrumbs
                 project={project}
@@ -504,6 +510,8 @@ export default function Home() {
               <AISettings />
             ) : view === "mail" && user.role === "OWNER" ? (
               <MailSettings />
+            ) : view === "visual-audit" && user.role === "OWNER" ? (
+              <VisualAuditPanel />
             ) : view === "users" ? (
               <UsersPanel isOwner={user.role === "OWNER"} />
             ) : view === "history" ? (

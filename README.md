@@ -8,6 +8,8 @@ OWNER puede conectar su buzón en **Configuración de correo** para enviar enlac
 
 Los adjuntos incluyen vistas previas privadas de imágenes y **Reemplazar**. Cada reemplazo conserva el archivo anterior para trabajos y afiches existentes; los próximos usan el nuevo. Los anteriores se consultan en **Adjuntos anteriores conservados** y se pueden eliminar cuando no estén en uso. Los logos seleccionados en Identidad de marca deben retirarse de esa selección antes de reemplazarlos.
 
+**Auditoría visual** permite al OWNER consultar miniaturas de nuevas versiones y configurar su conservación, inicialmente 30 días. Las miniaturas siguen disponibles aunque caduque el original o se envíe el proyecto a la papelera. Los demás roles solo ven el aviso de privacidad. El panel informa espacio, versiones sin miniatura y limpieza de caducadas; no procesa imágenes anteriores automáticamente. Para eliminación física periódica cuando el alojamiento está inactivo debe configurarse su planificador, como parte de la puesta en producción.
+
 ## Inicio local
 
 Requisitos: Node.js 24, npm y PostgreSQL 16 o superior.

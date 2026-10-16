@@ -276,6 +276,36 @@ async function handle(
       return send(result);
     }
     const user = await actor();
+    if (route === "privacy/visual-audit" && method === "GET") {
+      const { visualAuditNotice } = await import("@/lib/visual-audit");
+      return send(await visualAuditNotice());
+    }
+    if (parts[0] === "visual-audit") {
+      ownerOnly(user);
+      const {
+        auditPolicy,
+        saveAuditPolicy,
+        listAuditThumbnails,
+        auditThumbnailImage,
+        removeAuditThumbnail,
+        cleanupAuditThumbnails,
+      } = await import("@/lib/visual-audit");
+      if (route === "visual-audit/policy" && method === "GET")
+        return send(await auditPolicy(user));
+      if (route === "visual-audit/policy" && method === "PUT")
+        return send(await saveAuditPolicy(user, await body(req)));
+      if (route === "visual-audit" && method === "GET")
+        return send(await listAuditThumbnails(user, req.nextUrl.searchParams));
+      if (route === "visual-audit/cleanup" && method === "POST")
+        return send({ removed: await cleanupAuditThumbnails() });
+      if (parts.length === 3 && parts[2] === "image" && method === "GET")
+        return await auditThumbnailImage(user, parts[1]);
+      if (parts.length === 2 && method === "DELETE")
+        return send(
+          await removeAuditThumbnail(user, parts[1], await body(req)),
+        );
+      throw new AppError("Ruta de auditoría visual no disponible.", 404);
+    }
     if (parts[0] === "mail") {
       ownerOnly(user);
       const { mailStatus, saveMail, deleteMail, verifyMail, testMail } =

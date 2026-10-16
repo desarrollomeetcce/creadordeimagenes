@@ -9,6 +9,11 @@ import {
   type Design,
 } from "./design";
 import { load, store, remove } from "./storage";
+import {
+  captureAuditThumbnail,
+  prepareAuditThumbnail,
+  type PreparedThumbnail,
+} from "./visual-audit";
 export async function accessibleVariation(
   user: { id: string; role: string },
   id: string,
@@ -55,6 +60,7 @@ export async function publishVersion(
     document?: Design | null;
     sourceJobId?: string;
     action: string;
+    auditThumbnail: PreparedThumbnail;
   },
 ) {
   const changed = await tx.variation.updateMany({
@@ -75,7 +81,7 @@ export async function publishVersion(
     "El afiche cambió mientras trabajabas. Recarga antes de guardar para no sobrescribir otra edición.",
     409,
   );
-  await tx.imageVersion.create({
+  const version = await tx.imageVersion.create({
     data: {
       variationId: args.variationId,
       number: args.expectedRevision + 1,
@@ -88,6 +94,7 @@ export async function publishVersion(
       sourceJobId: args.sourceJobId,
     },
   });
+  await captureAuditThumbnail(tx, version.id, args.auditThumbnail);
   await tx.auditEvent.create({
     data: {
       actorId: args.actorId,
@@ -126,6 +133,7 @@ export async function saveManual(
   );
   const path = await store(bytes);
   try {
+    const auditThumbnail = await prepareAuditThumbnail(bytes);
     await db.$transaction((tx) =>
       publishVersion(tx, {
         variationId: id,
@@ -135,6 +143,7 @@ export async function saveManual(
         backgroundPath: current.backgroundPath,
         document: next,
         action: "EDICION_MANUAL",
+        auditThumbnail,
       }),
     );
   } catch (e) {
@@ -155,7 +164,7 @@ export async function restoreVersion(
     where: { variationId_number: { variationId: id, number } },
   });
   demand(version, "Versión no encontrada.", 404);
-  await load(version.path);
+  const auditThumbnail = await prepareAuditThumbnail(await load(version.path));
   await db.$transaction((tx) =>
     publishVersion(tx, {
       variationId: id,
@@ -165,6 +174,7 @@ export async function restoreVersion(
       backgroundPath: version.backgroundPath,
       document: version.document ? designSchema.parse(version.document) : null,
       action: "VERSION_RESTAURADA",
+      auditThumbnail,
     }),
   );
   return { revision: expected + 1 };

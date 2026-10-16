@@ -348,3 +348,36 @@ model MailConfiguration {
   lastError String?
   updatedAt DateTime @updatedAt
 }
+
+model VisualAuditPolicy {
+  id String @id @default("global")
+  enabled Boolean @default(true)
+  retentionDays Int @default(30)
+  limitMb Int @default(32)
+  revision Int @default(1)
+  updatedAt DateTime @updatedAt
+}
+
+model AuditThumbnail {
+  id String @id @default(cuid())
+  versionId String @unique
+  variationId String
+  versionNumber Int
+  actorId String
+  actorName String
+  projectId String
+  projectName String
+  productName String
+  subproductName String
+  model String
+  data Bytes?
+  size Int
+  width Int
+  height Int
+  status String @default("AVAILABLE")
+  createdAt DateTime @default(now())
+  expiresAt DateTime
+  removedAt DateTime?
+  @@index([createdAt,id])
+  @@index([expiresAt,status])
+}
