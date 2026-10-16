@@ -1,7 +1,8 @@
 "use client";
 import { SearchSelect } from "./search-select";
-import { useCanEdit } from "./role-guide";
-import { useEffect, useState } from "react";
+import { CurrentRole, useCanEdit } from "./role-guide";
+import { Fragment, useContext, useEffect, useRef, useState } from "react";
+import { effectiveSettings, validateDistribution } from "../../lib/inheritance";
 async function api(path: string, method = "GET", data?: unknown) {
   const r = await fetch("/api/" + path, {
     method,
@@ -443,46 +444,254 @@ function PresetSharing({ id }: { id: string }) {
     </details>
   );
 }
+type SavedPreset = {
+  id: string;
+  name: string;
+  prompt: string;
+  settings: Record<string, unknown>;
+  visibility: string;
+  attachmentCount: number;
+  canEdit: boolean;
+  applyPromptToAll: boolean;
+  applySettingsToAll: boolean;
+  updatedAt: string;
+};
+const visibilityLabels: Record<string, string> = {
+  PERSONAL: "Personal",
+  SHARED: "Compartida",
+  OFFICIAL: "Oficial",
+};
+const normalizeSearch = (value: string) =>
+  value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLocaleLowerCase("es");
 function PresetDetails({
   preset,
+  edit,
   refresh,
+  close,
+  run,
+  busy,
 }: {
-  preset: {
-    id: string;
-    name: string;
-    prompt: string;
-    settings: unknown;
-    visibility: string;
-    attachmentCount: number;
-    canEdit: boolean;
-    applyPromptToAll: boolean;
-    applySettingsToAll: boolean;
-  };
+  preset: SavedPreset;
+  edit: boolean;
   refresh: () => Promise<void>;
+  close: () => void;
+  run: (fn: () => Promise<unknown>, success?: string) => Promise<void>;
+  busy: boolean;
 }) {
-  const [open, setOpen] = useState(false);
+  const role = useContext(CurrentRole);
   const [files, setFiles] = useState<
     { id: string; name: string; size: number; purpose: string }[]
   >([]);
-  const t = useAction();
+  const [filesLoading, setFilesLoading] = useState(true);
+  const [filesError, setFilesError] = useState("");
+  const [settings, setSettings] = useState(() =>
+    effectiveSettings(preset.settings, {}),
+  );
+  const [applyPrompt, setApplyPrompt] = useState(preset.applyPromptToAll);
+  const [applySettings, setApplySettings] = useState(preset.applySettingsToAll);
   useEffect(() => {
-    if (!open) return;
     let active = true;
-    void t.run(async () => {
-      const data = await api(
-        `attachments?scope=preset&id=${encodeURIComponent(preset.id)}`,
-      );
-      if (active) setFiles(data);
-    }, "");
+    api(`attachments?scope=preset&id=${encodeURIComponent(preset.id)}`)
+      .then((data) => {
+        if (active) setFiles(data);
+      })
+      .catch((error) => {
+        if (active)
+          setFilesError(
+            error instanceof Error
+              ? error.message
+              : "No se pudieron cargar los adjuntos.",
+          );
+      })
+      .finally(() => {
+        if (active) setFilesLoading(false);
+      });
     return () => {
       active = false;
     };
-  }, [open, preset.id]);
+  }, [preset.id]);
   return (
-    <details onToggle={(e) => setOpen(e.currentTarget.open)}>
-      <summary>Detalles y adjuntos · {preset.attachmentCount ?? 0}</summary>
-      <div className="inside stack">
-        {files.map((f) => (
+    <section
+      className="stack preset-details"
+      aria-label={(edit ? "Editar " : "Detalles de ") + preset.name}
+    >
+      <h3>{edit ? "Editar configuración" : "Detalles de la configuración"}</h3>
+      {edit && preset.canEdit ? (
+        <form
+          className="stack"
+          onSubmit={(e) => {
+            e.preventDefault();
+            const data = Object.fromEntries(new FormData(e.currentTarget));
+            void run(async () => {
+              validateDistribution(settings);
+              await api("presets/" + preset.id, "PATCH", {
+                name: data.name,
+                prompt: data.prompt,
+                visibility: data.visibility,
+                settings: { ...preset.settings, ...settings },
+                applyPromptToAll: applyPrompt,
+                applySettingsToAll: applySettings,
+              });
+              await refresh();
+            }, "Configuración actualizada");
+          }}
+        >
+          <div className="fields">
+            <label>
+              Nombre de la configuración
+              <input
+                autoFocus
+                name="name"
+                defaultValue={preset.name}
+                required
+                maxLength={150}
+              />
+            </label>
+            <label>
+              Visibilidad
+              <select name="visibility" defaultValue={preset.visibility}>
+                <option value="PERSONAL">Personal</option>
+                <option value="SHARED">Compartida</option>
+                {role === "OWNER" && <option value="OFFICIAL">Oficial</option>}
+              </select>
+            </label>
+          </div>
+          <label>
+            Instrucciones guardadas
+            <textarea
+              name="prompt"
+              defaultValue={preset.prompt}
+              maxLength={30000}
+              rows={6}
+            />
+          </label>
+          <label className="row">
+            <input
+              type="checkbox"
+              checked={applyPrompt}
+              onChange={(e) => setApplyPrompt(e.target.checked)}
+            />
+            Aplicar instrucciones generales a todos los subproductos
+          </label>
+          <label className="row">
+            <input
+              type="checkbox"
+              checked={applySettings}
+              onChange={(e) => setApplySettings(e.target.checked)}
+            />
+            Aplicar parámetros comunes a todos los subproductos
+          </label>
+          <p className="hint">
+            Los parámetros se guardan para reutilizarlos. Si desactivas su
+            aplicación común, cada subproducto define su configuración.
+          </p>
+          <div className="fields">
+            {(
+              [
+                ["count", "Variaciones", 1],
+                ["textCount", "Texto", 0],
+                ["imageTextCount", "Imagen + Texto", 0],
+                ["imageCount", "Imagen", 0],
+              ] as const
+            ).map(([key, label, min]) => (
+              <label key={key}>
+                {label}
+                <input
+                  type="number"
+                  min={min}
+                  max={12}
+                  required
+                  value={settings[key]}
+                  onChange={(e) =>
+                    setSettings((s) => ({
+                      ...s,
+                      [key]: Number(e.target.value),
+                    }))
+                  }
+                />
+              </label>
+            ))}
+            <label>
+              Formato
+              <select
+                value={settings.format}
+                onChange={(e) =>
+                  setSettings((s) => ({ ...s, format: e.target.value }))
+                }
+              >
+                {["1:1", "4:3", "3:4", "4:5", "5:4", "16:9", "9:16"].map(
+                  (f) => (
+                    <option key={f}>{f}</option>
+                  ),
+                )}
+              </select>
+            </label>
+            <label>
+              Estilo
+              <input
+                value={settings.style}
+                maxLength={150}
+                onChange={(e) =>
+                  setSettings((s) => ({ ...s, style: e.target.value }))
+                }
+              />
+            </label>
+          </div>
+          <label className="row">
+            <input
+              type="checkbox"
+              checked={settings.editable}
+              onChange={(e) =>
+                setSettings((s) => ({ ...s, editable: e.target.checked }))
+              }
+            />
+            Conservar títulos, textos y logos como elementos editables
+          </label>
+          <p className="hint">
+            Editar esta configuración no cambia los productos o subproductos
+            donde ya se aplicó. Para cambiar sus adjuntos, guarda una nueva
+            configuración desde el espacio de origen.
+          </p>
+          <div className="row">
+            <button className="primary" disabled={busy}>
+              Guardar cambios
+            </button>
+            <button type="button" disabled={busy} onClick={close}>
+              Cerrar edición
+            </button>
+          </div>
+        </form>
+      ) : (
+        <>
+          <p className="preset-prompt">
+            {preset.prompt || "Sin instrucciones guardadas."}
+          </p>
+          <p>
+            Instrucciones generales:{" "}
+            {preset.applyPromptToAll
+              ? "se aplican a todos los subproductos"
+              : "no se aplican de forma común"}
+            . Parámetros comunes:{" "}
+            {preset.applySettingsToAll ? "activados" : "desactivados"}.
+          </p>
+          <p>
+            {settings.count} variaciones · Texto: {settings.textCount} · Imagen
+            + Texto: {settings.imageTextCount} · Imagen: {settings.imageCount} ·{" "}
+            {settings.format} · {settings.style} ·{" "}
+            {settings.editable ? "Elementos editables" : "Imagen aplanada"}
+          </p>
+        </>
+      )}
+      <h4>Adjuntos reutilizables · {preset.attachmentCount ?? 0}</h4>
+      {filesLoading ? (
+        <p role="status">Cargando adjuntos…</p>
+      ) : filesError ? (
+        <p role="alert">{filesError}</p>
+      ) : files.length ? (
+        files.map((f) => (
           <a
             key={f.id}
             href={"/api/attachments/" + f.id}
@@ -491,135 +700,333 @@ function PresetDetails({
           >
             {f.name} · {f.purpose} · {Math.ceil(f.size / 1024)} KB
           </a>
-        ))}
-        {!files.length && <p className="hint">Sin adjuntos reutilizables.</p>}
-        {preset.canEdit && (
-          <form
-            key={preset.name + preset.prompt + preset.visibility}
-            className="stack"
-            onSubmit={(e) => {
-              e.preventDefault();
-              const data = Object.fromEntries(new FormData(e.currentTarget));
-              void t.run(async () => {
-                await api("presets/" + preset.id, "PATCH", {
-                  ...data,
-                  settings: preset.settings,
-                  applyPromptToAll: preset.applyPromptToAll,
-                  applySettingsToAll: preset.applySettingsToAll,
-                });
-                await refresh();
-              });
-            }}
-          >
-            <label>
-              Nombre de la configuración
-              <input
-                name="name"
-                defaultValue={preset.name}
-                required
-                maxLength={150}
-              />
-            </label>
-            <label>
-              Instrucciones guardadas
-              <textarea
-                name="prompt"
-                defaultValue={preset.prompt}
-                maxLength={30000}
-                rows={6}
-              />
-            </label>
-            <label>
-              Visibilidad de la configuración
-              <select name="visibility" defaultValue={preset.visibility}>
-                <option value="PERSONAL">Personal</option>
-                <option value="SHARED">Compartida</option>
-                <option value="OFFICIAL">Oficial · solo OWNER</option>
-              </select>
-            </label>
-            <p className="hint">
-              Compartir permite a las cuentas seleccionadas consultar, duplicar
-              y aplicar esta configuración, incluidos sus archivos. Para cambiar
-              los adjuntos, guarda una nueva configuración desde un producto.
-            </p>
-            <button disabled={t.busy}>Actualizar configuración</button>
-          </form>
-        )}
-        {preset.canEdit && open && <PresetSharing id={preset.id} />}
-        {t.notice}
-      </div>
-    </details>
+        ))
+      ) : (
+        <p className="hint">Sin adjuntos reutilizables.</p>
+      )}
+      {preset.canEdit && <PresetSharing id={preset.id} />}
+    </section>
+  );
+}
+function PresetRow({
+  preset,
+  refresh,
+  busy,
+  run,
+}: {
+  preset: SavedPreset;
+  refresh: () => Promise<void>;
+  busy: boolean;
+  run: (fn: () => Promise<unknown>, success?: string) => Promise<void>;
+}) {
+  const canWrite = useCanEdit();
+  const [mode, setMode] = useState<"view" | "edit" | null>(null);
+  const editButton = useRef<HTMLButtonElement>(null);
+  const detailId = "preset-details-" + preset.id;
+  const s = effectiveSettings(preset.settings, {});
+  return (
+    <Fragment>
+      <tr className="preset-row" data-preset-id={preset.id}>
+        <th scope="row">
+          <strong>{preset.name}</strong>
+          <p className="hint">
+            {preset.prompt.slice(0, 110) || "Sin instrucciones"}
+            {preset.prompt.length > 110 ? "…" : ""}
+          </p>
+        </th>
+        <td data-label="Visibilidad">
+          <span className="badge">
+            {visibilityLabels[preset.visibility] ?? preset.visibility}
+          </span>
+        </td>
+        <td data-label="Parámetros">
+          {s.count} variaciones · {s.format}
+          <br />
+          <span className="hint">
+            {s.style} · {preset.attachmentCount ?? 0} adjuntos
+          </span>
+        </td>
+        <td data-label="Actualizada · Lima">
+          <time dateTime={preset.updatedAt}>
+            {new Date(preset.updatedAt).toLocaleString("es-PE", {
+              timeZone: "America/Lima",
+              dateStyle: "short",
+              timeStyle: "short",
+            })}
+          </time>
+        </td>
+        <td data-label="Acciones">
+          <div className="preset-actions">
+            <button
+              type="button"
+              disabled={busy}
+              aria-expanded={mode === "view"}
+              aria-controls={detailId}
+              onClick={() => setMode(mode === "view" ? null : "view")}
+            >
+              {mode === "view" ? "Cerrar detalles" : "Ver detalles"}
+            </button>
+            {preset.canEdit && (
+              <button
+                ref={editButton}
+                type="button"
+                disabled={busy}
+                aria-expanded={mode === "edit"}
+                aria-controls={detailId}
+                onClick={() => setMode(mode === "edit" ? null : "edit")}
+              >
+                Editar
+              </button>
+            )}
+            {canWrite && (
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() =>
+                  void run(async () => {
+                    await api(
+                      "presets/" + preset.id + "/duplicate",
+                      "POST",
+                      {},
+                    );
+                    await refresh();
+                  }, "Copia personal creada")
+                }
+              >
+                Duplicar
+              </button>
+            )}
+            {preset.canEdit && (
+              <button
+                type="button"
+                disabled={busy}
+                className="danger"
+                onClick={() => {
+                  if (
+                    confirm(
+                      `¿Eliminar «${preset.name}» y sus adjuntos? Las copias aplicadas a productos y subproductos se conservan.`,
+                    )
+                  )
+                    void run(async () => {
+                      await api("presets/" + preset.id, "DELETE");
+                      await refresh();
+                    }, "Configuración eliminada");
+                }}
+              >
+                Eliminar
+              </button>
+            )}
+          </div>
+          {!preset.canEdit && (
+            <small className="hint">
+              Solo el autor o el OWNER pueden editar y eliminar.
+            </small>
+          )}
+        </td>
+      </tr>
+      {mode && (
+        <tr id={detailId} className="preset-detail-row">
+          <td colSpan={5}>
+            <PresetDetails
+              key={preset.id + mode}
+              preset={preset}
+              edit={mode === "edit"}
+              run={run}
+              busy={busy}
+              refresh={refresh}
+              close={() => {
+                setMode(null);
+                editButton.current?.focus();
+              }}
+            />
+          </td>
+        </tr>
+      )}
+    </Fragment>
   );
 }
 export function Presets() {
-  const canWrite = useCanEdit();
-  const [items, setItems] = useState<any[]>([]),
-    [query, setQuery] = useState("");
+  const [items, setItems] = useState<SavedPreset[]>([]);
+  const [query, setQuery] = useState("");
+  const [visibility, setVisibility] = useState("");
+  const [order, setOrder] = useState("recent");
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
   const t = useAction();
   const refresh = async () => setItems(await api("presets"));
   useEffect(() => {
-    void t.run(refresh, "");
+    let active = true;
+    api("presets")
+      .then((data) => {
+        if (active) {
+          setItems(data);
+          setLoadError("");
+        }
+      })
+      .catch((error) => {
+        if (active)
+          setLoadError(
+            error instanceof Error
+              ? error.message
+              : "No se pudieron cargar las configuraciones.",
+          );
+      })
+      .finally(() => {
+        if (active) setLoading(false);
+      });
+    return () => {
+      active = false;
+    };
   }, []);
+  const search = normalizeSearch(query.trim());
+  const filtered = items
+    .filter(
+      (i) =>
+        (!visibility || i.visibility === visibility) &&
+        normalizeSearch(
+          i.name +
+            " " +
+            i.prompt +
+            " " +
+            (visibilityLabels[i.visibility] ?? i.visibility),
+        ).includes(search),
+    )
+    .sort((a, b) =>
+      order === "name"
+        ? a.name.localeCompare(b.name, "es", {
+            numeric: true,
+            sensitivity: "base",
+          })
+        : order === "old"
+          ? Date.parse(a.updatedAt) - Date.parse(b.updatedAt)
+          : Date.parse(b.updatedAt) - Date.parse(a.updatedAt),
+    );
   return (
-    <>
+    <section
+      className="preset-list stack"
+      aria-label="Configuraciones guardadas"
+    >
       <h1>Configuraciones guardadas</h1>
       <p className="muted">
-        Guarda configuraciones desde un producto y aplícalas a nuevas campañas.
+        Consulta, edita y elimina tus configuraciones reutilizables. Guarda
+        nuevas configuraciones desde un producto o subproducto.
       </p>
-      <input
-        aria-label="Buscar configuraciones"
-        placeholder="Buscar…"
-        value={query}
-        onChange={(e) => setQuery(e.target.value)}
-        style={{ marginBottom: 20 }}
-      />
-      <div className="grid">
-        {items
-          .filter((i) => i.name.toLowerCase().includes(query.toLowerCase()))
-          .map((i) => (
-            <article className="card" key={i.id}>
-              <h3>{i.name}</h3>
-              <span className="badge">{i.visibility}</span>
-              <p>{i.prompt.slice(0, 200)}</p>
-              <PresetDetails preset={i} refresh={refresh} />
-              <div className="row">
-                <button
-                  hidden={!canWrite}
-                  disabled={t.busy}
-                  onClick={() =>
-                    void t.run(async () => {
-                      await api("presets/" + i.id + "/duplicate", "POST", {});
-                      await refresh();
-                    }, "Copia personal creada")
-                  }
-                >
-                  Duplicar
-                </button>
-                {i.canEdit && (
-                  <button
-                    disabled={t.busy}
-                    className="danger"
-                    onClick={() => {
-                      if (
-                        confirm(
-                          "¿Eliminar esta configuración y sus adjuntos? Las copias aplicadas a productos se conservan.",
-                        )
-                      )
-                        void t.run(async () => {
-                          await api("presets/" + i.id, "DELETE");
-                          await refresh();
-                        });
-                    }}
-                  >
-                    Eliminar
-                  </button>
-                )}
-              </div>
-            </article>
-          ))}
+      <div className="fields">
+        <label>
+          Buscar configuraciones
+          <input
+            type="search"
+            placeholder="Nombre o instrucciones…"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+          />
+        </label>
+        <label>
+          Filtrar por visibilidad
+          <select
+            value={visibility}
+            onChange={(e) => setVisibility(e.target.value)}
+          >
+            <option value="">Todas</option>
+            {Object.entries(visibilityLabels).map(([key, label]) => (
+              <option key={key} value={key}>
+                {label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label>
+          Ordenar por
+          <select value={order} onChange={(e) => setOrder(e.target.value)}>
+            <option value="recent">Actualizadas recientemente</option>
+            <option value="old">Actualizadas hace más tiempo</option>
+            <option value="name">Nombre · A–Z</option>
+          </select>
+        </label>
+        <button
+          type="button"
+          disabled={loading || t.busy}
+          onClick={() =>
+            void t.run(async () => {
+              await refresh();
+              setLoadError("");
+            }, "Listado actualizado")
+          }
+        >
+          Actualizar listado
+        </button>
       </div>
+      {(query || visibility) && (
+        <button
+          type="button"
+          className="preset-clear"
+          onClick={() => {
+            setQuery("");
+            setVisibility("");
+          }}
+        >
+          Limpiar filtros
+        </button>
+      )}
       {t.notice}
-    </>
+      {loadError && (
+        <p role="alert" className="notice error">
+          {loadError}
+        </p>
+      )}
+      {loading ? (
+        <p role="status">Cargando configuraciones…</p>
+      ) : (
+        !loadError && (
+          <>
+            <p role="status" className="hint">
+              {filtered.length} de {items.length} configuraciones
+            </p>
+            {filtered.length ? (
+              <div
+                className="table-wrap preset-table-wrap"
+                role="region"
+                aria-label="Listado de configuraciones"
+                tabIndex={0}
+              >
+                <table className="preset-table">
+                  <caption className="sr-only">
+                    Configuraciones guardadas disponibles para tu cuenta. Fechas
+                    en hora de Lima.
+                  </caption>
+                  <thead>
+                    <tr>
+                      <th scope="col">Nombre e instrucciones</th>
+                      <th scope="col">Visibilidad</th>
+                      <th scope="col">Parámetros</th>
+                      <th scope="col">Actualizada · Lima</th>
+                      <th scope="col">Acciones</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filtered.map((i) => (
+                      <PresetRow
+                        key={i.id}
+                        preset={i}
+                        refresh={refresh}
+                        busy={t.busy}
+                        run={t.run}
+                      />
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <div className="empty">
+                {items.length
+                  ? "No hay configuraciones que coincidan con estos filtros."
+                  : "Todavía no hay configuraciones disponibles para tu cuenta. Guarda una desde un producto o subproducto para verla aquí."}
+              </div>
+            )}
+          </>
+        )
+      )}
+    </section>
   );
 }
 export function BudgetSettings() {

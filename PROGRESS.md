@@ -1,5 +1,13 @@
 # Avance por fases · continuación del desarrollo
 
+## Continuación · configuraciones guardadas en filas
+
+El panel lateral de configuraciones guardadas organiza cada configuración en una fila con nombre/instrucciones resumidas, visibilidad en español, cantidad/formato/estilo, adjuntos, fecha de actualización en Lima y acciones directas Ver detalles, Editar, Duplicar y Eliminar. Los detalles o el editor se despliegan debajo de su fila. Búsqueda por nombre/instrucciones/visibilidad sin distinguir mayúsculas ni tildes, filtro por visibilidad, ordenación por nombre o actualización, contador, limpieza de filtros y actualización del listado. Se distinguen carga, error, listado vacío y búsqueda sin coincidencias.
+
+La edición permite cambiar nombre, instrucciones, visibilidad autorizada, opciones de herencia, cantidad/distribución, formato, estilo y elementos editables; valida la distribución antes de enviar. Mantiene los parámetros adicionales y usa las rutas existentes. Las configuraciones ya aplicadas no cambian al editar el original. Borrar pide confirmación con el nombre y conserva las copias previamente aplicadas. Los permisos del servidor no cambian: OWNER modifica todas; autor modifica sus personales/compartidas; ADMIN consulta todas sin editar las ajenas y OBSERVER solo consulta las disponibles. La visibilidad oficial se ofrece solo a OWNER. Sin migraciones ni cambios en credenciales o datos externos durante las pruebas.
+
+Validación: 15 unitarias, TypeScript, compilación e instalación sin base aprobados. Chromium completó edición y persistencia al recargar, búsqueda sin tildes, filtros, detalles, duplicado, borrado cancelado/confirmado y permisos USER/ADMIN/OWNER. La revisión móvil a 390 px usa etiquetas por columna y acciones visibles sin desplazamiento horizontal. Se mantuvieron los avisos de guardado fuera de las filas para que renombrar una fila filtrada no oculte el resultado. Sin errores JavaScript ni cargos de IA.
+
 ## Continuación · historial legible por proyecto, producto y subproducto
 
 Historial de actividad reemplaza la tabla de códigos internos por resúmenes en español con persona, fecha/hora de Lima y contexto; cada operación se amplía mediante desplegable para ver los proyectos/productos/subproductos concretos y cantidades/versiones registradas. Distingue solicitudes autorizadas de generaciones completadas. Búsqueda en servidor por actividad/persona/nombres y páginas de 25; no limita la búsqueda a los 200 registros recientes. OWNER consulta todas las personas; ADMIN/USER solo sus propias actividades y OBSERVER no accede, conservando la política anterior.

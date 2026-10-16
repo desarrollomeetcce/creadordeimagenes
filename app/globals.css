@@ -646,6 +646,34 @@ a {
 .visual-audit-card img { display:block; max-width:100%; height:192px; object-fit:contain; background:#f1f5f3; border-radius:6px; }
 .visual-audit-notice { margin:12px 0 24px; font-size:13px; }
 .history-entry { margin:0; min-width:0; overflow-wrap:anywhere; }
+.preset-list { min-width:0; }
+.preset-list > h1, .preset-list > p { margin:0; }
+.preset-list .fields { align-items:end; }
+.preset-table-wrap { max-width:100%; border:1px solid var(--line); border-radius:10px; background:white; }
+.preset-table { min-width:780px; }
+.preset-table th, .preset-table td { vertical-align:top; }
+.preset-row > th { width:30%; font-weight:400; overflow-wrap:anywhere; }
+.preset-row > th strong { font-size:14px; }
+.preset-row > th p { margin:8px 0 0; font-weight:400; }
+.preset-table td { overflow-wrap:anywhere; }
+.preset-actions { display:flex; flex-wrap:wrap; gap:6px; min-width:175px; margin-bottom:8px; }
+.preset-actions button { padding:8px 10px; font-size:12px; }
+.preset-details { padding:10px; max-width:100%; }
+.preset-prompt { white-space:pre-wrap; overflow-wrap:anywhere; max-height:280px; overflow:auto; }
+.preset-clear { justify-self:start; }
+.preset-table .badge { white-space:nowrap; }
+@media (max-width:620px) {
+  .preset-table { min-width:0; display:block; }
+  .preset-table thead { position:absolute; width:1px; height:1px; overflow:hidden; clip-path:inset(50%); }
+  .preset-table tbody, .preset-table tr, .preset-table td, .preset-table th { display:block; width:100%; }
+  .preset-row > th { width:100%; }
+  .preset-row td { border-bottom:0; padding-top:6px; padding-bottom:6px; }
+  .preset-row td::before { content:attr(data-label); display:block; font-weight:700; margin-bottom:6px; }
+  .preset-row { border-bottom:1px solid var(--line); padding-bottom:10px; }
+  .preset-details { padding:0; }
+  .preset-detail-row > td { padding:16px 12px; }
+}
+.sr-only { position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap; border:0; }
 .history-entry > summary { display:flex; gap:12px; align-items:flex-start; cursor:pointer; }
 .history-entry > summary::before { content:'▸'; flex:0 0 auto; }
 .history-entry[open] > summary::before { content:'▾'; }

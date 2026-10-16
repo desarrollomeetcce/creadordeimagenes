@@ -1,5 +1,11 @@
 # Pruebas y evidencia
 
+## Continuación: filas de configuraciones guardadas
+
+Comprobación pertinente a interfaz: TypeScript, compilación de producción y las 15 pruebas unitarias. Chromium usa PostgreSQL local sintético y las rutas reales de configuraciones: búsqueda sin tildes, filtros/limpieza, edición de nombre/instrucciones y parámetros, distribución inválida rechazada antes de guardar, persistencia tras recargar, expansión de detalles, duplicación, cancelación/confirmación de borrado, y acciones según permisos de USER/ADMIN/OWNER. La API y sus políticas permanecen intactas; esta etapa no introduce migraciones ni llamadas de IA. Los avisos de guardado se mantienen en el panel aunque renombrar o cambiar visibilidad retire la fila del filtro activo.
+
+Resultado final aprobado, incluida instalación sin base. En móvil de 390 px las columnas se presentan con sus etiquetas en cada registro, con todos los botones y detalles legibles sin desbordamiento horizontal de página. Sin errores JavaScript. Se repitió el recorrido tras centralizar los avisos y adaptar la tabla a móvil; el script también usa entradas controladas reales al corregir la distribución numérica.
+
 ## Continuación: historial con contexto y detalles
 
 67 escenarios HTTP/PostgreSQL aprobados (68 resultados con contenedor), 15 unitarias, TypeScript y compilación. El caso nuevo cubre nombres de persona/proyecto/producto/subproducto, dos subproductos exactos creados, eventos nuevos de edición, snapshot de nombres tras renombrar, lectura sin reescritura de AuditEvent y distinción solicitud/completado. La búsqueda encuentra una actividad antigua tras añadir 230 registros, pagina 25 sin repetir, trata porcentajes y barras como literales y parametriza intentos de inyección. Se prueban registro antiguo sin IDs de hijos, falta de acceso actual sin revelación por búsqueda, OWNER global, ADMIN/USER solo operaciones propias, OBSERVER 403, sin sesión 401, campos/límites inválidos y proyección sin claves, contraseña, tokens o prompts de un registro sintético malformado.
