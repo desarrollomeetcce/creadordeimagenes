@@ -1,5 +1,7 @@
 "use client";
 import { useCallback, useEffect, useState, useRef } from "react";
+import { ProviderConnections } from "./components/provider-connections";
+import { SearchSelect } from "./components/search-select";
 import { CurrentRole, RoleGuide, useCanEdit } from "./components/role-guide";
 import { roleLabels, managesUsers } from "../lib/roles";
 import { HierarchyBreadcrumbs } from "./components/breadcrumbs";
@@ -1842,7 +1844,12 @@ function AISettings() {
   const [liveError, setLiveError] = useState("");
   const [now, setNow] = useState(Date.now());
   const editing = useRef(false);
+  const providerSequence = useRef(0),
+    creativeSequence = useRef(0);
   const [key, setKey] = useState("");
+  const [alternativeQuery, setAlternativeQuery] = useState("");
+  const configurationRef = useRef<any>(null);
+  configurationRef.current = c;
   const [available, setAvailable] = useState<{ id: string; name: string }[]>(
     [],
   );
@@ -1871,13 +1878,22 @@ function AISettings() {
       if (fetching || document.visibilityState !== "visible") return;
       fetching = true;
       try {
-        const r = await api("ai/config");
+        const r = await api("ai/config?meta=1");
+        const previous = configurationRef.current;
+        const catalogChanged =
+          !previous ||
+          ["provider", "revision", "verifiedAt", "creativeVerifiedAt"].some(
+            (field) => previous[field] !== r.configuration[field],
+          );
+        if (!editing.current && catalogChanged)
+          r.configuration = (await api("ai/config")).configuration;
         if (active) {
           setLatestTest(r.latestTest);
           setTestBudget(r.testBudget);
           setCheckedAt(new Date().toISOString());
           setLiveError("");
-          if (!editing.current) setC(r.configuration);
+          if (!editing.current)
+            setC((old: any) => ({ ...old, ...r.configuration }));
         }
       } catch {
         if (active)
@@ -1906,7 +1922,118 @@ function AISettings() {
     setDirty(true);
     setCharge(false);
   };
-  const image = c.models.find((m: any) => m.id === c.imageModel);
+  const changeImageProvider = async (provider: string) => {
+    const sequence = ++providerSequence.current;
+    editing.current = true;
+    setDirty(true);
+    setCharge(false);
+    setKey("");
+    setC((old: any) => ({
+      ...old,
+      provider,
+      models: [],
+      imageModel: null,
+      alternatives: [],
+      maskedKey: null,
+      status: "UNVERIFIED",
+      quality: "default",
+      resolution: "default",
+      creativeProvider: old.creativeProvider ?? old.provider,
+    }));
+    try {
+      const profile = await api(
+        "ai/connections?provider=" + encodeURIComponent(provider),
+      );
+      if (sequence === providerSequence.current)
+        setC((old: any) =>
+          old.provider === provider
+            ? { ...old, models: profile.models, maskedKey: profile.maskedKey }
+            : old,
+        );
+    } catch (e) {
+      if (sequence === providerSequence.current)
+        setLiveError(
+          e instanceof Error ? e.message : "No se pudo consultar la conexión.",
+        );
+    }
+  };
+  const changeCreativeProvider = async (provider: string) => {
+    const sequence = ++creativeSequence.current;
+    editing.current = true;
+    setDirty(true);
+    setCharge(false);
+    setC((old: any) => ({
+      ...old,
+      creativeProvider: provider,
+      creativeModel: null,
+      creativeModels: [],
+      creativeStatus: "NOT_CONFIGURED",
+    }));
+    try {
+      const profile = await api(
+        "ai/connections?provider=" + encodeURIComponent(provider),
+      );
+      if (sequence === creativeSequence.current)
+        setC((old: any) =>
+          old.creativeProvider === provider
+            ? {
+                ...old,
+                creativeModels: profile.models.filter(
+                  (m: any) => m.kind === "creative",
+                ),
+                creativeStatus: profile.status,
+              }
+            : old,
+        );
+    } catch (e) {
+      if (sequence === creativeSequence.current)
+        setLiveError(
+          e instanceof Error
+            ? e.message
+            : "No se pudo consultar la conexión creativa.",
+        );
+    }
+  };
+  const selectImage = (id: string) => {
+    const model = c.models.find((m: any) => m.kind === "image" && m.id === id);
+    setC({
+      ...c,
+      imageModel: id,
+      ...(model
+        ? {
+            quality: model.qualities.includes(c.quality)
+              ? c.quality
+              : model.qualities[0],
+            resolution: model.resolutions.includes(c.resolution)
+              ? c.resolution
+              : model.resolutions[0],
+          }
+        : {}),
+    });
+    editing.current = true;
+    setDirty(true);
+    setCharge(false);
+  };
+  const creativeModels =
+    c.creativeModels ?? c.models.filter((m: any) => m.kind === "creative");
+  const modelOptions = (models: any[]) =>
+    models.map((m: any) => ({
+      id: m.id,
+      label: m.label ?? m.id,
+      detail: m.id,
+      group: /flux/i.test(m.id)
+        ? "FLUX"
+        : /image|nano-banana/i.test(m.id) && /gemini|banana/i.test(m.id)
+          ? "Nano Banana"
+          : /imagen/i.test(m.id)
+            ? "Imagen"
+            : "Otros modelos",
+      search: m.id,
+    }));
+  const image = c.models.find(
+    (m: any) => m.id === c.imageModel && m.kind === "image",
+  );
+
   const verified =
     c.status === "VERIFIED" &&
     c.verifiedRevision === c.revision &&
@@ -1925,9 +2052,8 @@ function AISettings() {
       ok:
         !!image &&
         image.kind === "image" &&
-        c.models.some(
-          (m: any) => m.id === c.creativeModel && m.kind === "creative",
-        ),
+        creativeModels.some((m: any) => m.id === c.creativeModel) &&
+        (c.creativeStatus === "VERIFIED" || (!c.creativeProvider && verified)),
     },
     {
       label: "Calidad y resolución compatibles",
@@ -1962,6 +2088,7 @@ function AISettings() {
       ...(key ? { apiKey: key } : {}),
       imageModel: c.imageModel ?? null,
       creativeModel: c.creativeModel ?? null,
+      creativeProvider: c.creativeProvider ?? c.provider,
       alternatives: c.alternatives ?? [],
       quality: c.quality,
       resolution: c.resolution,
@@ -2021,7 +2148,7 @@ function AISettings() {
         {testBudget && !testBudget.allowed && (
           <p className="notice error">
             {testBudget.error} Esta comprobación no crea reservas ni consulta
-            saldo de OpenAI. Los cargos inciertos siguen ocupando su reserva
+            saldo del proveedor. Los cargos inciertos siguen ocupando su reserva
             local.
           </p>
         )}
@@ -2048,6 +2175,9 @@ function AISettings() {
           {latestTest?.error && <p>{latestTest.error}</p>}
           {latestTest && (
             <p className="hint">
+              Proveedor: {latestTest.provider}
+              {latestTest.model ? ` · Modelo: ${latestTest.model}` : ""}. Una
+              prueba anterior no verifica cambios de proveedor o configuración.
               Prueba creada:{" "}
               {new Date(latestTest.createdAt).toLocaleString("es-PE", {
                 timeZone: "America/Lima",
@@ -2077,14 +2207,24 @@ function AISettings() {
           </div>
         )}
       </section>
+      <ProviderConnections
+        providers={available}
+        changed={async () => {
+          if (!editing.current) await refresh();
+          else
+            setLiveError(
+              "Cambió una conexión. Se conservaron tus campos sin guardar; revisa, guarda y verifica la configuración antes de generar.",
+            );
+        }}
+      />
       <section className="panel stack">
-        <h2>01　Proveedor y credenciales</h2>
+        <h2>01　Proveedor de imágenes y credenciales</h2>
         <div className="fields">
           <label>
             Proveedor
             <select
               value={c.provider}
-              onChange={(e) => update("provider", e.target.value)}
+              onChange={(e) => void changeImageProvider(e.target.value)}
             >
               {available.map((p) => (
                 <option value={p.id} key={p.id}>
@@ -2150,7 +2290,7 @@ function AISettings() {
                 } finally {
                   await refresh();
                 }
-              }, "OpenAI respondió a la consulta de modelos. La generación todavía requiere su propia prueba.")
+              }, "El proveedor respondió a la consulta de modelos. La generación todavía requiere su propia prueba.")
             }
           >
             Verificar conexión y consultar modelos
@@ -2206,45 +2346,57 @@ function AISettings() {
               Consultar modelos no confirma saldo ni generación.
             </p>
             <div className="fields">
-              <label>
-                Modelo de imágenes
-                <input
-                  list="image-models"
+              <div>
+                <SearchSelect
+                  browseOnToggle
+                  label="Modelo de imágenes"
                   value={c.imageModel ?? ""}
-                  onChange={(e) => update("imageModel", e.target.value)}
-                  placeholder="Busca en modelos consultados"
+                  onChange={(id) => selectImage(id)}
+                  onSelect={(option) => selectImage(option.id)}
+                  options={modelOptions(
+                    c.models.filter((m: any) => m.kind === "image"),
+                  )}
                 />
-                <datalist id="image-models">
-                  {c.models
-                    .filter((m: any) => m.kind === "image")
-                    .map((m: any) => (
-                      <option key={m.id}>{m.id}</option>
-                    ))}
-                </datalist>
-                <span className="hint">
-                  El modelo que generará el fondo o la imagen. Selecciona uno de
-                  la lista consultada con tu clave.
-                </span>
-              </label>
+                <p className="hint">
+                  Busca por nombre, Nano Banana, FLUX o identificador. Solo
+                  modelos consultados y compatibles.
+                </p>
+              </div>
               <label>
-                Modelo de dirección creativa
-                <input
-                  list="creative-models"
-                  value={c.creativeModel ?? ""}
-                  onChange={(e) => update("creativeModel", e.target.value)}
-                />
-                <datalist id="creative-models">
-                  {c.models
-                    .filter((m: any) => m.kind === "creative")
-                    .map((m: any) => (
-                      <option key={m.id}>{m.id}</option>
-                    ))}
-                </datalist>
+                Proveedor de dirección creativa
+                <select
+                  value={c.creativeProvider ?? c.provider}
+                  onChange={(e) => void changeCreativeProvider(e.target.value)}
+                >
+                  {available.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.name}
+                    </option>
+                  ))}
+                </select>
                 <span className="hint">
-                  Interpreta las instrucciones y prepara la composición. Es un
-                  modelo de texto y también puede consumir API.
+                  Google u OpenAI pueden preparar las instrucciones aunque las
+                  imágenes se generen en fal.ai o Replicate. Conecta y verifica
+                  esa cuenta primero.
                 </span>
               </label>
+              <div>
+                <SearchSelect
+                  browseOnToggle
+                  label="Modelo de dirección creativa"
+                  value={c.creativeModel ?? ""}
+                  onChange={(id) => update("creativeModel", id)}
+                  onSelect={(option) => update("creativeModel", option.id)}
+                  options={modelOptions(creativeModels)}
+                />
+                <p className="hint">
+                  Es un modelo de texto y también puede consumir API. Estado:{" "}
+                  {state[c.creativeStatus] ??
+                    c.creativeStatus ??
+                    "Sin verificar"}
+                  .
+                </p>
+              </div>
               <label>
                 Calidad
                 <select
@@ -2252,12 +2404,15 @@ function AISettings() {
                   onChange={(e) => update("quality", e.target.value)}
                 >
                   {(image?.qualities ?? ["low"]).map((x: string) => (
-                    <option key={x}>{x}</option>
+                    <option key={x} value={x}>
+                      {x === "default" ? "Automática del proveedor" : x}
+                    </option>
                   ))}
                 </select>
                 <span className="hint">
-                  low: menor detalle; medium: intermedia; high: mayor detalle.
-                  Las opciones dependen del modelo y pueden cambiar el coste.
+                  Opciones admitidas por el modelo consultado. Automática usa
+                  los valores nativos del proveedor; cambiar la calidad puede
+                  cambiar el costo.
                 </span>
               </label>
               <label>
@@ -2267,37 +2422,64 @@ function AISettings() {
                   onChange={(e) => update("resolution", e.target.value)}
                 >
                   {(image?.resolutions ?? ["1024x1024"]).map((x: string) => (
-                    <option key={x}>{x}</option>
+                    <option key={x} value={x}>
+                      {x === "default" ? "Automática del proveedor" : x}
+                    </option>
                   ))}
                 </select>
                 <span className="hint">
-                  Ancho × alto de la imagen que solicita la API, en píxeles.
-                  Después se adapta al formato del afiche.
+                  Tamaño o formato nativo admitido por la API (píxeles, relación
+                  de aspecto o escala). Después se adapta al afiche.
                 </span>
               </label>
             </div>
-            <label>Modelos alternativos · selecciona los autorizados</label>
-            <div className="row">
-              {c.models
-                .filter((m: any) => m.kind === "image" && m.id !== c.imageModel)
-                .map((m: any) => (
-                  <label className="row" key={m.id}>
-                    <input
-                      type="checkbox"
-                      checked={c.alternatives.includes(m.id)}
-                      onChange={(e) =>
-                        update(
-                          "alternatives",
-                          e.target.checked
-                            ? [...c.alternatives, m.id]
-                            : c.alternatives.filter((x: string) => x !== m.id),
-                        )
-                      }
-                    />
-                    {m.id}
-                  </label>
-                ))}
-            </div>
+            <details className="stack">
+              <summary>
+                Modelos alternativos · {c.alternatives.length} de 5
+              </summary>
+              <SearchSelect
+                browseOnToggle
+                label="Agregar modelo alternativo"
+                value={alternativeQuery}
+                onChange={setAlternativeQuery}
+                disabled={c.alternatives.length >= 5}
+                options={modelOptions(
+                  c.models.filter(
+                    (m: any) =>
+                      m.kind === "image" &&
+                      m.id !== c.imageModel &&
+                      !c.alternatives.includes(m.id),
+                  ),
+                )}
+                onSelect={(option) => {
+                  if (c.alternatives.length < 5)
+                    update("alternatives", [...c.alternatives, option.id]);
+                  setAlternativeQuery("");
+                }}
+              />
+              {c.alternatives.map((id: string) => (
+                <div className="row" key={id}>
+                  <span>
+                    {c.models.find((m: any) => m.id === id)?.label ?? id}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      update(
+                        "alternatives",
+                        c.alternatives.filter((model: string) => model !== id),
+                      )
+                    }
+                  >
+                    Quitar alternativa
+                  </button>
+                </div>
+              ))}
+              <p className="hint">
+                Hasta cinco modelos consultados. Seleccionarlos no genera
+                imágenes ni autoriza reintentos automáticos.
+              </p>
+            </details>
             <p className="hint">
               Las alternativas se guardan para selección del OWNER. No se
               reintentan llamadas con posible cargo automáticamente. Los

@@ -7631,6 +7631,642 @@ test("Integración HTTP + PostgreSQL (base exclusiva de pruebas, sin llamadas ex
         assert(!audit.includes(stored.encryptedKey));
       },
     );
+    await t.test(
+      "conexiones múltiples: OWNER exclusivo, cifrado, claves separadas, revocación y metadatos sin catálogos",
+      async () => {
+        const previous = await db.providerConfiguration.findUniqueOrThrow({
+            where: { id: "global" },
+          }),
+          profiles = await db.providerConnection.findMany();
+        const { decryptKey } = await import("../lib/crypto"),
+          { saveConnection } = await import("../lib/provider-connections");
+        const secrets = [
+          "synthetic-google-provider-key-9876",
+          "synthetic-fal-provider-key-5432",
+          "synthetic-replicate-provider-key-1098",
+        ];
+        try {
+          for (const client of [user, admin, observer, anonymous]) {
+            const status = client === anonymous ? 401 : 403;
+            for (const path of [
+              "ai/connections",
+              "ai/connections?provider=google",
+            ])
+              assert.equal((await client.call(path)).status, status);
+            assert.equal(
+              (
+                await client.call("ai/connections", "PUT", {
+                  provider: "google",
+                  apiKey: secrets[0],
+                })
+              ).status,
+              status,
+            );
+            assert.equal(
+              (await client.call("ai/connections/google", "DELETE")).status,
+              status,
+            );
+            assert.equal(
+              (await client.call("ai/connections/google/verify", "POST", {}))
+                .status,
+              status,
+            );
+          }
+          assert.equal(
+            (
+              await owner.call("ai/connections", "PUT", {
+                provider: "unknown",
+                apiKey: secrets[0],
+              })
+            ).status,
+            400,
+          );
+          for (const [i, provider] of [
+            "google",
+            "fal",
+            "replicate",
+          ].entries()) {
+            const response = await owner.call("ai/connections", "PUT", {
+              provider,
+              apiKey: secrets[i],
+            });
+            assert.equal(response.status, 200);
+            assert.equal(response.body.status, "UNVERIFIED");
+            assert.deepEqual(response.body.models, []);
+            assert(response.body.maskedKey.endsWith(secrets[i].slice(-4)));
+            assert(!JSON.stringify(response.body).includes(secrets[i]));
+            assert(!("encryptedKey" in response.body));
+            const row = await db.providerConnection.findUniqueOrThrow({
+              where: { provider },
+            });
+            assert.equal(decryptKey(row.encryptedKey!), secrets[i]);
+            assert.notEqual(row.encryptedKey, secrets[i]);
+          }
+          const rows = (await owner.call("ai/connections")).body;
+          assert.equal(rows.length, 4);
+          assert(rows.some((p: any) => p.id === "google"));
+          assert(
+            rows.every((p: any) => !("encryptedKey" in p) && !("models" in p)),
+          );
+          const unchanged = await db.providerConfiguration.findUniqueOrThrow({
+            where: { id: "global" },
+          });
+          assert.equal(unchanged.encryptedKey, previous.encryptedKey);
+          assert.equal(unchanged.revision, previous.revision);
+          assert.equal(
+            (
+              await owner.call("ai/connections/google/verify", "POST", {
+                query: "sk-" + "secret".repeat(5),
+              })
+            ).status,
+            400,
+          );
+          await assert.rejects(
+            saveConnection(
+              { id: uid, role: "OWNER" },
+              { provider: "google", apiKey: secrets[1] },
+            ),
+            /cuenta cambió/,
+          );
+          assert.equal(
+            (await owner.call("ai/connections/fal", "DELETE")).status,
+            200,
+          );
+          assert.equal(
+            (await owner.call("ai/connections?provider=fal")).body.configured,
+            false,
+          );
+          assert.equal(
+            (await owner.call("ai/connections?provider=google")).body
+              .configured,
+            true,
+          );
+          assert.equal(
+            (await owner.call("ai/connections/fal/verify", "POST", {})).status,
+            409,
+          );
+          const meta = (await owner.call("ai/config?meta=1")).body
+            .configuration;
+          assert(!("models" in meta));
+          assert(!("creativeModels" in meta));
+          assert(!("encryptedKey" in meta));
+          assert.equal(typeof meta.dailyLimitMicros, "string");
+          const audit = JSON.stringify(
+            await db.auditEvent.findMany({
+              where: { action: { startsWith: "PROVEEDOR_IA_" } },
+            }),
+          );
+          for (const key of secrets) assert(!audit.includes(key));
+          assert.equal(
+            (
+              await owner.call("ai/connections", "PUT", {
+                provider: previous.provider,
+                apiKey: "synthetic-active-replacement-5678",
+              })
+            ).status,
+            200,
+          );
+          const revoked = await db.providerConfiguration.findUniqueOrThrow({
+            where: { id: "global" },
+          });
+          assert.equal(revoked.status, "UNVERIFIED");
+          assert.equal(revoked.imageModel, null);
+          assert(revoked.revision > previous.revision);
+        } finally {
+          await db.$transaction(async (tx) => {
+            await tx.providerConfiguration.update({
+              where: { id: "global" },
+              data: {
+                ...previous,
+                models: previous.models as any,
+                alternatives: previous.alternatives as any,
+              },
+            });
+            await tx.providerConnection.deleteMany();
+            if (profiles.length)
+              await tx.providerConnection.createMany({
+                data: profiles.map((p) => ({ ...p, models: p.models as any })),
+              });
+          });
+        }
+      },
+    );
+    await t.test(
+      "catálogo de conexión: consulta simulada real en servidor, conflicto de credenciales y errores sin secretos",
+      async () => {
+        const previous = await db.providerConfiguration.findUniqueOrThrow({
+            where: { id: "global" },
+          }),
+          profiles = await db.providerConnection.findMany();
+        const { adapter } = await import("../lib/providers"),
+          { verifyConnection } = await import("../lib/provider-connections");
+        const ownerAccount = await db.user.findFirstOrThrow({
+            where: { role: "OWNER", status: "APPROVED" },
+          }),
+          actor = { id: ownerAccount.id, role: "OWNER" };
+        const engine = adapter("google"),
+          old = engine.listModels;
+        const key = "synthetic-google-catalogue-secret-1234";
+        const models: any[] = [
+          {
+            id: "gemini-nano-banana-2.1",
+            label: "Nano Banana 2.1",
+            kind: "image",
+            qualities: ["default"],
+            resolutions: ["1K"],
+            supportsReferences: true,
+          },
+          {
+            id: "gemini-2.5-flash",
+            kind: "creative",
+            qualities: [],
+            resolutions: [],
+          },
+        ];
+        let release: () => void = () => {};
+        try {
+          assert.equal(
+            (
+              await owner.call("ai/connections", "PUT", {
+                provider: "google",
+                apiKey: key,
+              })
+            ).status,
+            200,
+          );
+          engine.listModels = async (received) => {
+            assert.equal(received, key);
+            return models;
+          };
+          const verified = await verifyConnection(actor, "google");
+          assert.equal(verified.status, "VERIFIED");
+          assert.deepEqual(verified.models, models);
+          assert(!JSON.stringify(verified).includes(key));
+          let entered: () => void = () => {};
+          const started = new Promise<void>((r) => (entered = r)),
+            blocked = new Promise<void>((r) => (release = r));
+          engine.listModels = async () => {
+            entered();
+            await blocked;
+            return models;
+          };
+          const pending = verifyConnection(actor, "google");
+          const rejected = assert.rejects(pending, /cambió/);
+          await started;
+          assert.equal(
+            (
+              await owner.call("ai/connections", "PUT", {
+                provider: "google",
+                apiKey: "synthetic-new-catalogue-key-5678",
+              })
+            ).status,
+            200,
+          );
+          release();
+          await rejected;
+          const current = await db.providerConnection.findUniqueOrThrow({
+            where: { provider: "google" },
+          });
+          assert.equal(current.status, "UNVERIFIED");
+          assert(current.maskedKey!.endsWith("5678"));
+          assert.deepEqual(current.models, []);
+          engine.listModels = async () => {
+            throw Error(key);
+          };
+          await assert.rejects(
+            verifyConnection(actor, "google"),
+            (e) =>
+              e instanceof Error &&
+              !e.message.includes(key) &&
+              /consultar/.test(e.message),
+          );
+          const failed = (await owner.call("ai/connections?provider=google"))
+            .body;
+          assert.equal(failed.status, "ERROR");
+          assert(!JSON.stringify(failed).includes(key));
+        } finally {
+          release();
+          engine.listModels = old;
+          await db.$transaction(async (tx) => {
+            await tx.providerConfiguration.update({
+              where: { id: "global" },
+              data: {
+                ...previous,
+                models: previous.models as any,
+                alternatives: previous.alternatives as any,
+              },
+            });
+            await tx.providerConnection.deleteMany();
+            if (profiles.length)
+              await tx.providerConnection.createMany({
+                data: profiles.map((p) => ({ ...p, models: p.models as any })),
+              });
+          });
+        }
+      },
+    );
+    await t.test(
+      "generación multiproveedor: Google dirige, fal.ai o Replicate generan, claves/catálogos cambiados no se cobran",
+      async () => {
+        const previous = await db.providerConfiguration.findUniqueOrThrow({
+            where: { id: "global" },
+          }),
+          profiles = await db.providerConnection.findMany();
+        const { adapter } = await import("../lib/providers"),
+          { verifyConnection } = await import("../lib/provider-connections"),
+          { imageCapability } = await import("../lib/providers/schema");
+        const ownerAccount = await db.user.findFirstOrThrow({
+            where: { role: "OWNER", status: "APPROVED" },
+          }),
+          actor = { id: ownerAccount.id, role: "OWNER" };
+        const google = adapter("google"),
+          fal = adapter("fal"),
+          replicate = adapter("replicate"),
+          openai = adapter("openai");
+        const methods = [
+          {
+            engine: google,
+            list: google.listModels,
+            direct: google.direct,
+            generate: google.generate,
+          },
+          {
+            engine: fal,
+            list: fal.listModels,
+            direct: fal.direct,
+            generate: fal.generate,
+          },
+          {
+            engine: replicate,
+            list: replicate.listModels,
+            direct: replicate.direct,
+            generate: replicate.generate,
+          },
+          {
+            engine: openai,
+            list: openai.listModels,
+            direct: openai.direct,
+            generate: openai.generate,
+          },
+        ];
+        const googleKey = "synthetic-director-google-key-1234",
+          imageKeys = {
+            fal: "synthetic-image-fal-key-4567",
+            replicate: "synthetic-image-replicate-key-8901",
+          };
+        const creative: any = {
+          id: "gemini-2.5-flash",
+          kind: "creative",
+          qualities: [],
+          resolutions: [],
+        };
+        const schema = {
+          components: {
+            schemas: {
+              Input: {
+                type: "object",
+                required: ["prompt"],
+                properties: {
+                  prompt: { type: "string" },
+                  aspect_ratio: { type: "string", enum: ["1:1", "16:9"] },
+                  num_outputs: { type: "integer", minimum: 1, maximum: 4 },
+                },
+              },
+            },
+          },
+        };
+        const caps = {
+          fal: imageCapability("fal-ai/flux/dev", "FLUX dev", schema)!,
+          replicate: imageCapability(
+            "black-forest-labs/flux-schnell",
+            "FLUX schnell",
+            schema,
+            "a".repeat(64),
+          )!,
+        };
+        const bytes = await (
+          await import("sharp")
+        )
+          .default({
+            create: {
+              width: 64,
+              height: 64,
+              channels: 3,
+              background: "#123456",
+            },
+          })
+          .png()
+          .toBuffer();
+        let directions = 0,
+          images = 0;
+        try {
+          const created = await owner.call("users", "POST", {
+            name: "Usuario de proveedores",
+            email: `providers-${tag}@example.test`,
+            password,
+            role: "USER",
+          });
+          assert.equal(created.status, 201);
+          const account = created.body;
+          const client = new Client();
+          assert.equal(
+            (
+              await client.call("auth/login", "POST", {
+                email: account.email,
+                password,
+              })
+            ).status,
+            200,
+          );
+          const project = (
+            await client.call("projects", "POST", {
+              name: "Multiproveedor " + tag,
+            })
+          ).body;
+          const product = (
+            await client.call(`projects/${project.id}/categories`, "POST", {
+              name: "Producto FLUX",
+            })
+          ).body;
+          const sub = (
+            await client.call(`categories/${product.id}/subproducts`, "POST", {
+              names: ["Tema de imágenes"],
+            })
+          ).body[0];
+          assert.equal(
+            (
+              await owner.call("ai/connections", "PUT", {
+                provider: "google",
+                apiKey: googleKey,
+              })
+            ).status,
+            200,
+          );
+          google.listModels = async () => [creative];
+          google.direct = async (received) => {
+            assert.equal(received, googleKey);
+            directions++;
+            return {
+              text: JSON.stringify({
+                backgroundPrompt: "Fondo de prueba",
+                backgroundColor: "#ffffff",
+                texts: [],
+                logos: [],
+              }),
+              usage: { tokens: 42 },
+            };
+          };
+          await verifyConnection(actor, "google");
+          openai.direct = async () => {
+            throw Error("No debe utilizar OpenAI");
+          };
+          openai.generate = async () => {
+            throw Error("No debe utilizar OpenAI");
+          };
+          const readyJobs: any[] = [];
+          for (const provider of ["fal", "replicate"] as const) {
+            const engine = adapter(provider),
+              cap = caps[provider];
+            assert.equal(
+              (
+                await owner.call("ai/connections", "PUT", {
+                  provider,
+                  apiKey: imageKeys[provider],
+                })
+              ).status,
+              200,
+            );
+            engine.listModels = async () => [cap];
+            engine.generate = async (received, args) => {
+              assert.equal(received, imageKeys[provider]);
+              assert.equal(args.model, cap.id);
+              assert.equal(args.capability?.id, cap.id);
+              images++;
+              return { bytes, usage: { requestId: "synthetic" } };
+            };
+            await verifyConnection(actor, provider);
+            const { apiKey: _unused, ...base } = config;
+            const saved = await owner.call("ai/config", "PUT", {
+              ...base,
+              provider,
+              creativeProvider: "google",
+              imageModel: cap.id,
+              creativeModel: creative.id,
+              quality: "default",
+              resolution: "1:1",
+              imageReserveMicros: "1000",
+              monthlyLimitMicros: "999999999999999",
+              dailyLimitMicros: "999999999999999",
+              operationLimitMicros: "999999999999999",
+            });
+            assert.equal(saved.status, 200, saved.body.error);
+            await connectionCheck();
+            const c = await db.providerConfiguration.findUniqueOrThrow({
+              where: { id: "global" },
+            });
+            const [job] = await reserveJobs(
+              account.id,
+              project.id,
+              [
+                {
+                  subproductId: sub.id,
+                  key: randomUUID(),
+                  snapshot: {
+                    prompt: "Tema de imágenes",
+                    mode: "Imagen + Texto",
+                    renderMode: "editable",
+                    format: "1:1",
+                    index: 0,
+                  },
+                },
+              ],
+              c.revision,
+            );
+            assert.equal((job.snapshot as any).imageProvider, provider);
+            assert.equal((job.snapshot as any).creativeProvider, "google");
+            assert((job.snapshot as any).imageCapabilityFingerprint);
+            assert.equal(await runOne({ id: job.id }), true);
+            const result = await db.generationJob.findUniqueOrThrow({
+              where: { id: job.id },
+            });
+            assert.equal(result.status, "COMPLETED");
+            assert.equal(result.leaseToken, null);
+            const ledger = await db.usageLedger.findUniqueOrThrow({
+              where: { jobId: job.id },
+            });
+            assert.equal(ledger.actualMicros, null);
+            assert.equal(ledger.model, cap.id);
+            const variation = await db.variation.findUniqueOrThrow({
+              where: { jobId: job.id },
+            });
+            assert(
+              (await (await import("../lib/storage")).load(variation.path))
+                .length > 0,
+            );
+            readyJobs.push(job);
+          }
+          assert.equal(directions, 2);
+          assert.equal(images, 2);
+          const view = (await client.call("jobs/list?project=" + project.id))
+            .body;
+          assert.equal(view.total, 2);
+          assert(
+            view.rows.every(
+              (j: any) => j.status === "COMPLETED" && j.actualMicros === null,
+            ),
+          );
+          const c = await db.providerConfiguration.findUniqueOrThrow({
+            where: { id: "global" },
+          });
+          const item = () => ({
+            subproductId: sub.id,
+            key: randomUUID(),
+            snapshot: {
+              prompt: "Tema de imágenes",
+              mode: "Imagen + Texto",
+              renderMode: "editable",
+              format: "1:1",
+              index: 0,
+            },
+          });
+          const [oldCredentialJob] = await reserveJobs(
+            account.id,
+            project.id,
+            [item()],
+            c.revision,
+          );
+          assert.equal(
+            (
+              await owner.call("ai/connections", "PUT", {
+                provider: "google",
+                apiKey: "synthetic-new-director-key-5678",
+              })
+            ).status,
+            200,
+          );
+          await verifyConnection(actor, "google");
+          await runOne({ id: oldCredentialJob.id });
+          assert.equal(
+            (
+              await db.generationJob.findUniqueOrThrow({
+                where: { id: oldCredentialJob.id },
+              })
+            ).status,
+            "FAILED",
+          );
+          assert.equal(
+            (
+              await db.usageLedger.findUniqueOrThrow({
+                where: { jobId: oldCredentialJob.id },
+              })
+            ).status,
+            "RELEASED",
+          );
+          assert.equal(directions, 2);
+          assert.equal(images, 2);
+          const [oldModelJob] = await reserveJobs(
+            account.id,
+            project.id,
+            [item()],
+            c.revision,
+          );
+          await db.providerConfiguration.update({
+            where: { id: "global" },
+            data: {
+              models: [
+                {
+                  ...caps.replicate,
+                  binding: {
+                    ...caps.replicate.binding,
+                    version: "b".repeat(64),
+                  },
+                },
+              ],
+            },
+          });
+          await runOne({ id: oldModelJob.id });
+          assert.equal(
+            (
+              await db.generationJob.findUniqueOrThrow({
+                where: { id: oldModelJob.id },
+              })
+            ).status,
+            "FAILED",
+          );
+          assert.equal(
+            (
+              await db.usageLedger.findUniqueOrThrow({
+                where: { jobId: oldModelJob.id },
+              })
+            ).status,
+            "RELEASED",
+          );
+          assert.equal(images, 2);
+          assert.equal(directions, 2);
+        } finally {
+          for (const method of methods) {
+            method.engine.listModels = method.list;
+            method.engine.direct = method.direct;
+            method.engine.generate = method.generate;
+          }
+          await db.$transaction(async (tx) => {
+            await tx.providerConfiguration.update({
+              where: { id: "global" },
+              data: {
+                ...previous,
+                models: previous.models as any,
+                alternatives: previous.alternatives as any,
+              },
+            });
+            await tx.providerConnection.deleteMany();
+            if (profiles.length)
+              await tx.providerConnection.createMany({
+                data: profiles.map((p) => ({ ...p, models: p.models as any })),
+              });
+          });
+        }
+      },
+    );
     await t.test("cierre de sesión invalida el token", async () => {
       assert.equal((await user.call("auth/logout", "POST")).status, 200);
       assert.equal((await user.call("projects")).status, 401);

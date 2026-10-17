@@ -1,6 +1,13 @@
+import { FalAdapter } from "./fal";
+import { ReplicateAdapter } from "./replicate";
+import { GeminiAdapter } from "./gemini";
 import { AppError, demand } from "../errors";
 export type ModelCapability = {
   id: string;
+  label?: string;
+  discoveryQuery?: string;
+  supportsReferences?: boolean;
+  binding?: Record<string, string | number | boolean>;
   kind: "image" | "creative";
   qualities: string[];
   resolutions: string[];
@@ -15,7 +22,7 @@ export interface ProviderAdapter {
     from: string,
     to: string,
   ): Promise<import("../provider-costs").DailyCosts>;
-  listModels(key: string): Promise<ModelCapability[]>;
+  listModels(key: string, query?: string): Promise<ModelCapability[]>;
   generate(
     key: string,
     args: {
@@ -25,6 +32,7 @@ export interface ProviderAdapter {
       size: string;
       images?: ImageInput[];
       signal?: AbortSignal;
+      capability?: ModelCapability;
     },
   ): Promise<ImageResult>;
   direct(
@@ -151,9 +159,10 @@ class OpenAIAdapter implements ProviderAdapter {
       size: string;
       images?: ImageInput[];
       signal?: AbortSignal;
+      capability?: ModelCapability;
     },
   ) {
-    const { images, signal, ...options } = args;
+    const { images, signal, capability: _capability, ...options } = args;
     let result;
     if (images?.length) {
       const form = new FormData();
@@ -230,7 +239,12 @@ class OpenAIAdapter implements ProviderAdapter {
     return { text, usage: result.usage ?? null };
   }
 }
-const adapters: ProviderAdapter[] = [new OpenAIAdapter()];
+const adapters: ProviderAdapter[] = [
+  new OpenAIAdapter(),
+  new GeminiAdapter(),
+  new FalAdapter(),
+  new ReplicateAdapter(),
+];
 export const providers = adapters.map(({ id, name }) => ({ id, name }));
 export function adapter(id: string) {
   const item = adapters.find((x) => x.id === id);

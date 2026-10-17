@@ -1,3 +1,7 @@
+import {
+  creativeConnection,
+  capabilityFingerprint,
+} from "./provider-connections";
 import type { ProviderConfiguration } from "@prisma/client";
 import { db } from "./db";
 import { decryptKey } from "./crypto";
@@ -50,11 +54,11 @@ export async function configured() {
   const models = c.models as ModelCapability[];
   const image = models.find((m) => m.id === c.imageModel && m.kind === "image");
   demand(
-    image &&
-      models.some((m) => m.id === c.creativeModel && m.kind === "creative"),
+    image,
     "Selecciona modelos disponibles de imagen y dirección creativa.",
     409,
   );
+  await creativeConnection(c);
   demand(
     image.qualities.includes(c.quality) &&
       image.resolutions.includes(c.resolution),
@@ -103,6 +107,38 @@ export async function reserveJobs(
         (i) => !known.some((j) => j.idempotencyKey === i.key),
       ).length;
       if (pendingCount === 0) return known;
+      const capabilities = c.models as ModelCapability[];
+      const imageCapability = capabilities.find(
+        (m) => m.kind === "image" && m.id === c.imageModel,
+      );
+      const creative =
+        c.creativeProvider && c.creativeProvider !== c.provider
+          ? await creativeConnection(c, tx)
+          : null;
+      const creativeCapability =
+        creative?.model ??
+        capabilities.find(
+          (m) => m.kind === "creative" && m.id === c.creativeModel,
+        );
+      const providerSnapshot = {
+        ...(imageCapability
+          ? {
+              imageCapabilityFingerprint:
+                capabilityFingerprint(imageCapability),
+            }
+          : {}),
+        ...(creativeCapability
+          ? {
+              creativeCapabilityFingerprint:
+                capabilityFingerprint(creativeCapability),
+            }
+          : {}),
+        imageProvider: c.provider,
+        imageModel: c.imageModel,
+        creativeModel: c.creativeModel,
+        creativeProvider: c.creativeProvider ?? c.provider,
+        creativeConnectionRevision: creative?.revision ?? c.revision,
+      };
       await checkReservationBudget(tx, c, actorId, projectId, pendingCount);
       for (const item of items) {
         const snapshot = item.snapshot as Record<string, unknown>;
@@ -139,7 +175,11 @@ export async function reserveJobs(
             projectId,
             subproductId: item.subproductId,
             idempotencyKey: item.key,
-            snapshot: { ...item.snapshot, configRevision: revision },
+            snapshot: {
+              ...item.snapshot,
+              ...providerSnapshot,
+              configRevision: revision,
+            },
             reservedMicros: c.imageReserveMicros,
           },
         });
@@ -167,6 +207,7 @@ export async function connectionCheck() {
   try {
     const models = await adapter(c.provider).listModels(
       decryptKey(c.encryptedKey),
+      (c.models as ModelCapability[])[0]?.discoveryQuery,
     );
     const result = await db.providerConfiguration.updateMany({
       where: { id: "global", revision: c.revision },
@@ -183,11 +224,49 @@ export async function connectionCheck() {
       "La clave cambió durante la verificación. Repite la comprobación.",
       409,
     );
+    await db.$transaction(async (tx) => {
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(728291)`;
+      const current = await tx.providerConfiguration.findUnique({
+        where: { id: "global" },
+      });
+      if (
+        current?.revision !== c.revision ||
+        current.encryptedKey !== c.encryptedKey ||
+        current.status !== "VERIFIED"
+      )
+        return;
+      const profile = await tx.providerConnection.findUnique({
+        where: { provider: c.provider },
+      });
+      if (profile && profile.encryptedKey !== c.encryptedKey) return;
+      await tx.providerConnection.upsert({
+        where: { provider: c.provider },
+        create: {
+          provider: c.provider,
+          encryptedKey: c.encryptedKey,
+          maskedKey: c.maskedKey,
+          models,
+          status: "VERIFIED",
+          verifiedAt: current.verifiedAt,
+          verifiedRevision: 1,
+        },
+        update: {
+          models,
+          status: "VERIFIED",
+          verifiedAt: current.verifiedAt,
+          verifiedRevision: profile?.revision ?? 1,
+          error: null,
+        },
+      });
+    });
     return safeConfiguration(
       await db.providerConfiguration.findUnique({ where: { id: "global" } }),
     );
   } catch (e) {
-    const message = e instanceof Error ? e.message : "Error de conexión.";
+    const message =
+      e instanceof (await import("./errors")).AppError
+        ? e.message
+        : "No se pudo consultar el catálogo del proveedor.";
     await db.providerConfiguration.updateMany({
       where: { id: "global", revision: c.revision },
       data: {

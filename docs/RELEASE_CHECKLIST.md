@@ -4,6 +4,8 @@ La estimación actual de 85–90% corresponde al desarrollo funcional; no certif
 
 ## Verificados
 
+- Adaptadores Google Gemini/AI Studio, fal.ai y Replicate, conexiones OWNER independientes, selección mixta y parámetros desde catálogos/esquemas. Pruebas de contrato y generación simuladas; acceso real de cada cuenta pendiente.
+
 - Acceso OWNER, cuentas y cuatro roles; permisos por proyecto/producto/subproducto en servidor.
 - Prompts heredados, configuraciones reutilizables, adjuntos, marca, galerías y descargas privadas.
 - Miniaturas privadas de adjuntos y reemplazos que conservan referencias anteriores; historial y borrado protegido.
@@ -22,14 +24,15 @@ La estimación actual de 85–90% corresponde al desarrollo funcional; no certif
 - Generaciones con jerarquía/acceso/fechas, 100 por página, tamaños, ruta/costos y selección/ZIP/retirada múltiple. Costos por ámbito y consulta diaria opcional OpenAI (contrato simulado, requiere permisos de facturación; acceso real pendiente).
 - Registro manual de costes comprobados exclusivo OWNER, con auditoría, precisión decimal, conflicto entre sesiones y referencia privada. No acredita conciliación automática con la factura.
 - Consumo paginado con totales completos, filtros y CSV privado de hasta 2000 operaciones; importes exactos y costes desconocidos explícitos. ZIP de 200 PNG y 200 JPG validado con archivos locales simulados.
-- 82 escenarios de integración, cuatro de correo previamente verificados, 19 unitarias, compilación, instalación y recorridos Chromium locales.
+- 85 escenarios de integración, cuatro de correo previamente verificados, 30 unitarias, compilación, instalación y recorridos Chromium locales.
 - Imagen Docker construida/arrancada como usuario no root con autenticación, fuentes y archivos verificados.
-- Copia PostgreSQL local restaurada en base independiente: quince migraciones, 34 tablas, importes/estados de consumo y muestras de hashes de archivos/miniaturas BYTEA comparados.
+- Copia PostgreSQL local restaurada en base independiente: dieciséis migraciones, 35 tablas, importes/estados de consumo y muestras de hashes de archivos/miniaturas BYTEA comparados.
 
 ## Pendientes que impiden declarar terminado
 
 | Pendiente | Condición de cierre |
 | --- | --- |
+| Nuevos proveedores reales | OWNER debe conectar y consultar cada cuenta; realizar prueba opcional con cargo para Google/fal.ai/Replicate y comprobar referencias/descargas. Las pruebas internas usan dobles explícitos y no certifican acceso, saldo ni gratuidad. |
 | IA real | Prueba real COMPLETED confirmada por metadatos de producción el16/10/2026 con gpt-image-1 e imagen guardada; importe no informado. Falta comprobar referencias, texto/logos, edición, descarga y lotes reales con disponibilidad del proveedor. El usuario confirma que la web funciona; esto no sustituye la prueba de IA. |
 | Correo real | Panel SMTP y envío de recuperación implementados y probados con transporte simulado. OWNER debe introducir su buzón Hostinger en Configuración de correo, verificar TLS/autenticación y comprobar recepción mediante envío explícito. No se ha enviado correo externo. La entrega manual y emergencia siguen disponibles. |
 | Carga y consumo | Validar un lote grande con proveedor real, rendimiento, recuperación de infraestructura y conciliación de costes que informe el proveedor. |

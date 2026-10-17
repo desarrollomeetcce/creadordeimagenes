@@ -117,3 +117,9 @@ ProviderAdapter.dailyCosts es opcional. OpenAI usa organization/costs únicament
 ProviderBillingCredential almacena un registro por adaptador, con ciphertext AES-GCM ligado al contexto billing:<provider>:api-key, máscara y fecha. APIs ai/billing-key y ai/costs exclusivas OWNER; escrituras revalidan cuenta bajo bloqueo728291. No se reutiliza el secreto de generación para organization/costs. Cliente consulta únicamente máscara/estado y vacía el campo después de guardar. No hay llamadas facturables automáticas ni pérdida de verificación de generación al cambiar el acceso financiero.
 
 Migraciones014/015 son aditivas: dos campos de control e índice en GenerationJob y tabla financiera vacía. Versiones publicadas se comprueban antes de limpiar bytes en caso de fallo del acuse de COMMIT. Revisión de dependencias y límites de alcance en docs/SECURITY_REVIEW.md.
+
+## Proveedores de IA independientes
+
+lib/providers implementa OpenAI, Google, fal.ai y Replicate con descubrimiento autenticado y contratos separados. lib/provider-connections administra credenciales OWNER y caducidad de verificación; lib/provider-settings compone la configuración global sin devolver secretos. Dirección creativa puede usar un proveedor distinto del de imágenes. Las conexiones se cifran en servidor y los endpoints no devuelven claves completas.
+
+Los trabajos fijan proveedor/modelos y huellas SHA256 de capacidades, parámetros y versiones. Cambios incompatibles invalidan pendientes antes de llamar a IA. Fal/Replicate utilizan cola/predicción con un POST y seguimiento de estado, sin retry facturable automático; solo CDN oficiales sin autorización reenviada, respuestas acotadas y PNG normalizado. Los costes no informados siguen desconocidos; no hay APIs financieras nuevas inventadas. Consulte docs/AI_PROVIDERS.md para límites y configuración.

@@ -1,5 +1,18 @@
 # Avance por fases · continuación del desarrollo
 
+## Continuación · Google, fal.ai y Replicate
+
+Cuatro adaptadores independientes: OpenAI, Google Gemini/AI Studio (una misma API), fal.ai y Replicate. Conexiones visuales exclusivas OWNER, claves independientes cifradas en servidor, máscara, reemplazo/eliminación y consulta explícita de modelos reales. Se puede dirigir con Google/OpenAI y generar imágenes con otro proveedor. No se añaden modelos de demostración ni se promete gratuidad. Gemini1.5 Flash e Imagen3 fueron retirados por Google; se usan identificadores vigentes devueltos por la cuenta.
+
+Google pagina su catálogo y distingue generación nativa Gemini/Nano Banana, Imagen y modelos de texto. fal.ai consulta modelos activos y sus esquemas OpenAPI; Replicate consulta su colección de imágenes, búsqueda hasta50 resultados o identificador exacto. Solo se muestran modelos con contrato compatible. FLUX, Nano Banana, Imagen, Seedream, Ideogram, Stable Diffusion y Qwen Image pueden aparecer si la API los devuelve y su esquema es compatible. Una búsqueda sustituye el catálogo de esa conexión; no significa consultar todos los modelos públicos ni garantizar saldo/acceso a inferencia.
+
+Parámetros derivados del catálogo/esquema, una imagen por operación, referencias admitidas y límites comprobados antes de consumir dirección creativa. Fal/Replicate envían una sola solicitud de generación y consultan su estado; sin reintentos POST ni cambios de proveedor automáticos. Descargas de imágenes limitadas a CDN oficiales, sin reenviar claves, con tamaños máximos, validación y conversión PNG. Snapshots inmutables de proveedor, modelos, revisión y huellas de capacidades/versiones: cambios posteriores bloquean trabajos pendientes antes de cobrar. La última prueba muestra su proveedor/modelo para no certificar una configuración distinta. Lecturas periódicas de estado omiten catálogos y secretos.
+
+Migración016 aditiva aplicada primero en local/copia Neon y luego en producción. Conserva la configuración global y copia internamente su credencial cifrada al perfil del proveedor, sin exponerla. Verificación externa:16 migraciones, tres trabajos, OpenAI VERIFIED, claves y modelos idénticos tras la migración. No se modificaron presupuestos, usuarios ni imágenes reales.
+
+Validación:85 escenarios HTTP/PostgreSQL (86 resultados),30 unitarias, tipos/build, instalación sin base y restauración de35 tablas/16 migraciones aprobados. Contratos Google/Fal/Replicate y ejecución combinada con respuestas explícitamente simuladas; no acreditan conexión ni generación real con las cuentas nuevas. Chromium valida guardado/reemplazo y eliminación de claves, máscaras y campos vacíos tras recarga, selectores FLUX y Google, guardado de parámetros, metadatos sin secretos y móvil. Los ajustes al guion corrigieron esperas asíncronas y una credencial sintética ausente; no se relajó la validación del producto. No hubo llamadas externas ni facturables. Quedan las verificaciones externas de producción indicadas en docs/RELEASE_CHECKLIST.md.
+
+
 ## Continuación · recuperación de ejecución, facturación separada y revisión técnica
 
 Generaciones renueva una confirmación de actividad cada30 segundos y antes de cada llamada al proveedor. Token interno por ejecución, plazo15 minutos y publicación condicionada a propiedad/actividad. Recuperación limitada a100 abandonados por pasada, compatible con trabajos anteriores sin campos nuevos; registra historial con contexto y conserva reservas/cargos inciertos. Los tokens no se envían en APIs. Un ejecutor tardío no genera otra imagen, no publica el resultado ni sobrescribe un costo confirmado. Si se pierde la confirmación de COMMIT, se consulta la publicación antes de limpiar archivos para no borrar una imagen ya confirmada.
@@ -10,7 +23,7 @@ Migraciones014 y015 aditivas, versionadas y comprobadas en base local y copia ai
 
 Validación:82 escenarios HTTP/PostgreSQL (83 resultados con contenedor),19 unitarias, tipos/build, instalación sin base y Chromium aprobados. Casos nuevos prueban heartbeat periódico, token incorrecto, lease expirado, proceso detenido, recuperación concurrente/legada, no publicación de imagen tardía, ausencia de archivos sueltos, COMMIT confirmado con acuse perdido y costo posterior preservado. Credencial financiera: permisos, revalidación, cifrado contextual, máscara, reemplazo/eliminación, auditoría sin secreto y transporte simulado. Chromium comprueba formulario vacío tras recarga y borrado cancelado/confirmado; consulta externa simulada explícitamente. Contenedor construido y ejecutado con UID1000: PostgreSQL, login Argon2, sesión, permisos y logout. Backup restaurado en base local independiente:34 tablas,15 migraciones, estados de actividad, consumos y hashes de archivos comparados. El primer intento de build Docker necesitó directorio de actividad buildx escribible; se usó una ruta de trabajo sin cambiar autenticación/proxy.
 
-No se declara100% de producción: permanecen validaciones externas identificadas en docs/RELEASE_CHECKLIST.md. Petición nueva en curso: proveedores Google Gemini/AI Studio, fal.ai y Replicate; modelos Nano Banana y FLUX, con descubrimiento real y parámetros compatibles. No se presentan como implementados en esta entrega de recuperación.
+No se declara100% de producción: permanecen validaciones externas identificadas en docs/RELEASE_CHECKLIST.md. La ampliación posterior de proveedores se documenta en la fase más reciente.
 
 
 ## Continuación · Generaciones por jerarquía y costos consultables

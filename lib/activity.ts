@@ -360,6 +360,9 @@ const verbs: Record<string, string> = {
   AFICHE_PENDING: "Dejó un afiche pendiente de revisión",
   AFICHE_ACTUALIZADO: "Actualizó un afiche",
   IDENTIDAD_MARCA_ACTUALIZADA: "Actualizó la identidad de marca",
+  PROVEEDOR_IA_GUARDADO: "Guardó la credencial de IA de",
+  PROVEEDOR_IA_ELIMINADO: "Eliminó la credencial de IA de",
+  CATALOGO_IA_CONSULTADO: "Consultó los modelos de",
   CREDENCIAL_GASTOS_GUARDADA:
     "Guardó la credencial para consultar gastos del proveedor",
   CREDENCIAL_GASTOS_ELIMINADA:
@@ -419,6 +422,25 @@ function summary(
   const location = name ? ` «${name}»${parent ? ` (${parent})` : ""}` : "";
   const verb = actionLabel(action),
     count = typeof detail.count === "number" ? detail.count : undefined;
+  if (
+    [
+      "PROVEEDOR_IA_GUARDADO",
+      "PROVEEDOR_IA_ELIMINADO",
+      "CATALOGO_IA_CONSULTADO",
+    ].includes(action)
+  ) {
+    const names: Record<string, string> = {
+      openai: "OpenAI",
+      google: "Google Gemini / AI Studio",
+      fal: "fal.ai",
+      replicate: "Replicate",
+    };
+    const provider =
+      typeof detail.provider === "string"
+        ? (names[detail.provider] ?? "un proveedor")
+        : "un proveedor";
+    return `${verb} ${provider}${count !== undefined ? ` · ${count} modelos compatibles` : ""}.`;
+  }
   if (
     action === "SUBPRODUCTOS_CREADOS" &&
     count !== undefined &&

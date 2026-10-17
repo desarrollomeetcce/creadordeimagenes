@@ -18,6 +18,7 @@ export function SearchSelect({
   disabled,
   loading,
   hasMore,
+  browseOnToggle = false,
 }: {
   label: string;
   value: string;
@@ -29,15 +30,18 @@ export function SearchSelect({
   disabled?: boolean;
   loading?: boolean;
   hasMore?: boolean;
+  browseOnToggle?: boolean;
 }) {
   const id = useId(),
     input = useRef<HTMLInputElement>(null);
   const [open, setOpen] = useState(false),
+    [browsing, setBrowsing] = useState(false),
     [active, setActive] = useState(-1),
     [collapsed, setCollapsed] = useState<string[]>([]);
-  const normalized = value.trim().toLocaleLowerCase();
+  const normalized =
+    browsing && browseOnToggle ? "" : value.trim().toLocaleLowerCase();
   const filtered = options.filter((o) =>
-    `${o.label} ${o.detail ?? ""} ${o.search ?? ""}`
+    `${o.label} ${o.detail ?? ""} ${o.group ?? ""} ${o.search ?? ""}`
       .toLocaleLowerCase()
       .includes(normalized),
   );
@@ -48,6 +52,7 @@ export function SearchSelect({
   const choose = (option: SearchOption) => {
     onSelect(option);
     setOpen(false);
+    setBrowsing(false);
     setActive(-1);
     input.current?.focus();
   };
@@ -78,6 +83,7 @@ export function SearchSelect({
               : undefined
           }
           onChange={(e) => {
+            setBrowsing(false);
             onChange(e.target.value);
             setOpen(true);
             setActive(-1);
@@ -113,6 +119,7 @@ export function SearchSelect({
           aria-expanded={open}
           onClick={() => {
             input.current?.focus();
+            setBrowsing(!open);
             setOpen(!open);
             setActive(-1);
           }}

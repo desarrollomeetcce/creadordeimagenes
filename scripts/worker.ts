@@ -1,3 +1,9 @@
+import {
+  creativeConnection,
+  capabilityFingerprint,
+} from "../lib/provider-connections";
+import { imageArguments } from "../lib/providers/schema";
+import type { ModelCapability } from "../lib/providers";
 import { randomUUID } from "node:crypto";
 import {
   startJobHeartbeat,
@@ -36,6 +42,10 @@ type Snapshot = {
   mode: string;
   index: number;
   configRevision: number;
+  creativeProvider?: string;
+  creativeConnectionRevision?: number;
+  imageCapabilityFingerprint?: string;
+  creativeCapabilityFingerprint?: string;
   format: string;
   attachmentIds?: string[];
   renderMode?: "editable" | "flat";
@@ -94,6 +104,48 @@ export async function runOne(filter?: {
       c.revision === s.configRevision,
       "La configuración cambió: vuelve a autorizar esta generación.",
     );
+    const creative = await creativeConnection(c);
+    const imageCapability = (c.models as ModelCapability[]).find(
+      (m) => m.kind === "image" && m.id === c.imageModel,
+    )!;
+    demand(
+      !s.creativeProvider || s.creativeProvider === creative.provider,
+      "El proveedor creativo cambió. Vuelve a autorizar la generación.",
+      409,
+    );
+    demand(
+      !s.creativeConnectionRevision ||
+        s.creativeConnectionRevision === creative.revision,
+      "La credencial creativa cambió. Vuelve a autorizar la generación.",
+      409,
+    );
+    demand(
+      !s.imageCapabilityFingerprint ||
+        s.imageCapabilityFingerprint === capabilityFingerprint(imageCapability),
+      "Las capacidades del modelo de imágenes cambiaron. Vuelve a revisar y autorizar la generación.",
+      409,
+    );
+    demand(
+      !s.creativeCapabilityFingerprint ||
+        s.creativeCapabilityFingerprint ===
+          capabilityFingerprint(creative.model),
+      "El modelo creativo cambió. Vuelve a revisar y autorizar la generación.",
+      409,
+    );
+    const checkReferences = (references: typeof images) => {
+      demand(
+        !references.length || imageCapability.supportsReferences !== false,
+        "Este modelo no admite las referencias seleccionadas. Elige un modelo compatible.",
+      );
+      if (imageCapability.binding)
+        imageArguments({
+          prompt: s.prompt,
+          quality: c.quality,
+          size: c.resolution,
+          images: references,
+          capability: imageCapability,
+        });
+    };
     const u = await db.user.findUnique({ where: { id: candidate.actorId } });
     demand(u?.status === "APPROVED", "La cuenta ya no está aprobada.");
     if (candidate.projectId !== "connection-test") {
@@ -149,9 +201,11 @@ export async function runOne(filter?: {
       const input = inputPath
         ? { bytes: await load(inputPath), mime: "image/png" }
         : null;
+      checkReferences([...(input ? [input] : []), ...images]);
       await heartbeat.check();
       called = true;
       const result = await provider.generate(key, {
+        capability: imageCapability,
         signal,
         model: c.imageModel!,
         prompt: preserve
@@ -173,10 +227,16 @@ export async function runOne(filter?: {
       } else output = await adaptImage(result.bytes, s.format);
     } else {
       const brief = `${s.prompt}\nModalidad: ${s.mode}. Propuesta ${s.index + 1}: composición distinta. Formato ${s.format}. Si es Texto, sin fotografías temáticas.`;
+      if (s.mode !== "Texto")
+        checkReferences(
+          s.renderMode === "editable"
+            ? images.filter((_, i) => !/logo/i.test(refs[i].purpose))
+            : images,
+        );
       await heartbeat.check();
       called = true;
-      const plan = await provider.direct(
-        key,
+      const plan = await adapter(creative.provider).direct(
+        decryptKey(creative.encryptedKey),
         c.creativeModel!,
         s.renderMode === "editable"
           ? creativeBrief(
@@ -214,6 +274,7 @@ export async function runOne(filter?: {
         if (s.mode !== "Texto") {
           await heartbeat.check();
           const result = await provider.generate(key, {
+            capability: imageCapability,
             signal,
             model: c.imageModel!,
             prompt:
@@ -237,6 +298,7 @@ export async function runOne(filter?: {
       } else {
         await heartbeat.check();
         const result = await provider.generate(key, {
+          capability: imageCapability,
           signal,
           model: c.imageModel!,
           prompt: plan.text,

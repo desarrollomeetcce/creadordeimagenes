@@ -109,3 +109,7 @@ Generaciones permite filtrar y recorrer toda la cola, seleccionar hasta 200 pend
 
 
 Recuperación de ejecución con confirmación periódica, token interno y protección frente a respuestas tardías o acuse perdido de COMMIT. Revisión técnica en [SECURITY_REVIEW.md](docs/SECURITY_REVIEW.md); no sustituye las comprobaciones del alojamiento real.
+
+## Google, fal.ai y Replicate
+
+En Configuración de IA → Conexiones de IA, OWNER puede conectar OpenAI, Google Gemini/AI Studio, fal.ai y Replicate, consultar sus modelos y elegir proveedores separados para imágenes y dirección creativa. Nano Banana/FLUX y otras familias se muestran únicamente si la consulta real y su esquema son compatibles. Guía: [proveedores de IA](docs/AI_PROVIDERS.md). Las suscripciones de chat no garantizan API gratuita; modelos retirados no se presentan como disponibles.

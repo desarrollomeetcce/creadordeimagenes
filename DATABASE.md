@@ -83,3 +83,7 @@ Conciliación manual de costes: sin migración adicional. UsageLedger.actualMicr
 202610160014_job_lease añade GenerationJob.leaseToken y heartbeatAt opcionales e índice status/heartbeatAt. startedAt conserva el inicio original. Nuevos trabajos reclamados usan token único, heartbeat cada30s, expiración15min y publicación condicionada; anteriores permanecen compatibles.
 
 202610160015_billing_credentials añade ProviderBillingCredential por proveedor: encryptedKey, maskedKey y updatedAt. Cifrado contextual separado de generación, sin migración de secretos existentes. Ambas son aditivas y se aplican con scripts/migrate.mjs/checksum/bloqueo; no editar migraciones aplicadas.
+
+## Migración016 · conexiones independientes
+
+202610170016_provider_connections añade creativeProvider nullable a ProviderConfiguration y ProviderConnection por proveedor con encryptedKey/maskedKey, revision/verifiedRevision, verifiedAt, status/error y catálogo JSON. El backfill conserva cifrado y estado del proveedor global; no descifra credenciales ni crea claves de otros proveedores. Scripts versionados con checksum; aplicada en local/copia y rama conectada, verificando igualdad interna de clave cifrada/modelos sin devolver sus valores.

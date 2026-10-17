@@ -13,7 +13,7 @@
     "build": "next build --webpack",
     "start": "next start --hostname 0.0.0.0",
     "typecheck": "tsc --noEmit",
-    "test": "tsx --test tests/core.test.ts tests/design.test.ts",
+    "test": "tsx --test tests/core.test.ts tests/design.test.ts tests/providers.test.ts",
     "worker": "tsx scripts/worker.ts",
     "maintenance": "tsx scripts/maintenance.ts",
     "db:generate": "node scripts/generate.mjs",

@@ -156,6 +156,7 @@ model ProviderConfiguration {
   models Json @default("[]")
   imageModel String?
   creativeModel String?
+  creativeProvider String?
   alternatives Json @default("[]")
   quality String @default("low")
   resolution String @default("1024x1024")
@@ -411,5 +412,18 @@ model ProviderBillingCredential {
   provider String @id
   encryptedKey String
   maskedKey String
+  updatedAt DateTime @updatedAt
+}
+
+model ProviderConnection {
+  provider String @id
+  encryptedKey String?
+  maskedKey String?
+  revision Int @default(1)
+  verifiedRevision Int?
+  verifiedAt DateTime?
+  status String @default("NOT_CONFIGURED")
+  error String?
+  models Json @default("[]")
   updatedAt DateTime @updatedAt
 }

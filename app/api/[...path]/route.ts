@@ -80,9 +80,10 @@ const micros = z
   .transform(BigInt);
 const configSchema = z.object({
   provider: z.string().max(80),
-  apiKey: z.string().min(10).max(1000).optional(),
+  apiKey: z.string().trim().min(10).max(1000).optional(),
   imageModel: z.string().max(100).nullable().optional(),
   creativeModel: z.string().max(100).nullable().optional(),
+  creativeProvider: z.string().max(80).nullable().optional(),
   alternatives: z.array(z.string().max(100)).max(5).default([]),
   quality: z.string().max(30),
   resolution: z.string().max(30),
@@ -513,124 +514,75 @@ async function handle(
           ),
         );
       }
+      if (route === "ai/connections" && method === "GET")
+        return send(
+          await (
+            await import("@/lib/provider-connections")
+          ).connections(
+            user,
+            req.nextUrl.searchParams.get("provider") ?? undefined,
+          ),
+        );
+      if (route === "ai/connections" && method === "PUT")
+        return send(
+          await (
+            await import("@/lib/provider-connections")
+          ).saveConnection(user, await body(req)),
+        );
+      if (
+        parts[1] === "connections" &&
+        parts.length === 3 &&
+        method === "DELETE"
+      )
+        return send(
+          await (
+            await import("@/lib/provider-connections")
+          ).deleteConnection(user, parts[2]),
+        );
+      if (
+        parts[1] === "connections" &&
+        parts.length === 4 &&
+        parts[3] === "verify" &&
+        method === "POST"
+      ) {
+        await rateLimit("verify-provider:" + user.id, 15);
+        const query = z
+          .object({ query: z.string().trim().max(100).optional() })
+          .strict()
+          .parse(await body(req));
+        return send(
+          await (
+            await import("@/lib/provider-connections")
+          ).verifyConnection(user, parts[2], query.query),
+        );
+      }
       if (route === "ai/config" && method === "GET")
         return send({
-          configuration: safeConfiguration(
-            await db.providerConfiguration.findUnique({
-              where: { id: "global" },
-            }),
-          ),
+          configuration: await (
+            await import("@/lib/provider-settings")
+          ).aiConfigurationView(req.nextUrl.searchParams.get("meta") === "1"),
           providers,
           testBudget: await (
             await import("@/lib/reservation-budget")
           ).testBudgetStatus(user.id),
-          latestTest: await db.generationJob.findFirst({
-            where: { projectId: "connection-test" },
-            orderBy: [{ createdAt: "desc" }, { id: "desc" }],
-            select: {
-              status: true,
-              error: true,
-              createdAt: true,
-              completedAt: true,
-            },
-          }),
+          latestTest: await (
+            await import("@/lib/provider-settings")
+          ).latestConnectionTest(),
         });
-      if (route === "ai/config" && method === "PUT") {
-        const b = configSchema.parse(await body(req));
-        adapter(b.provider);
-        const old = await db.providerConfiguration.findUnique({
-          where: { id: "global" },
-        });
-        const changed = Boolean(b.apiKey) || old?.provider !== b.provider;
-        const { apiKey, ...data } = b;
-        demand(
-          !changed || apiKey,
-          "Introduce una clave API para configurar este proveedor.",
-        );
-        demand(
-          !old || old.provider === b.provider || apiKey,
-          "Introduce la clave del nuevo proveedor.",
-        );
-        if (!changed && old?.status === "VERIFIED") {
-          const models = old.models as ModelCapability[];
-          const image = models.find(
-            (m) => m.id === b.imageModel && m.kind === "image",
-          );
-          if (b.imageModel)
-            demand(
-              image &&
-                image.qualities.includes(b.quality) &&
-                image.resolutions.includes(b.resolution),
-              "Modelo o parámetros de imagen incompatibles.",
-            );
-          if (b.creativeModel)
-            demand(
-              models.some(
-                (m) => m.id === b.creativeModel && m.kind === "creative",
-              ),
-              "El modelo creativo no está disponible.",
-            );
-          demand(
-            b.alternatives.every((id) =>
-              models.some((m) => m.id === id && m.kind === "image"),
-            ),
-            "Un modelo alternativo no está disponible.",
-          );
-        }
-        const reset = changed
-          ? {
-              encryptedKey: encryptKey(apiKey!),
-              maskedKey: maskKey(apiKey!),
-              status: "UNVERIFIED",
-              verifiedAt: null,
-              verifiedRevision: null,
-              models: [],
-              imageModel: null,
-              creativeModel: null,
-              alternatives: [],
-            }
-          : {};
-        await db.$transaction(async (tx) => {
-          await tx.$executeRaw`SELECT pg_advisory_xact_lock(728291)`;
-          await tx.providerConfiguration.upsert({
-            where: { id: "global" },
-            create: { ...data, ...reset },
-            update: {
-              ...data,
-              ...reset,
-              revision: { increment: 1 },
-              status: "UNVERIFIED",
-              verifiedAt: null,
-              verifiedRevision: null,
-            },
-          });
-        });
-        await audit(user.id, "CONFIGURACION_IA_GUARDADA");
+      if (route === "ai/config" && method === "PUT")
         return send(
-          safeConfiguration(
-            await db.providerConfiguration.findUnique({
-              where: { id: "global" },
-            }),
-          ),
+          await (
+            await import("@/lib/provider-settings")
+          ).saveAIConfiguration(user, configSchema.parse(await body(req))),
         );
-      }
       if (route === "ai/config" && method === "DELETE") {
-        await db.providerConfiguration.update({
+        const current = await db.providerConfiguration.findUnique({
           where: { id: "global" },
-          data: {
-            encryptedKey: null,
-            maskedKey: null,
-            models: [],
-            imageModel: null,
-            creativeModel: null,
-            alternatives: [],
-            status: "NOT_CONFIGURED",
-            error: null,
-            verifiedAt: null,
-            verifiedRevision: null,
-            revision: { increment: 1 },
-          },
         });
+        if (current)
+          await (
+            await import("@/lib/provider-connections")
+          ).deleteConnection(user, current.provider);
         await audit(user.id, "CLAVE_IA_ELIMINADA");
         return send({ ok: true });
       }
