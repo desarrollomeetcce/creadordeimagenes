@@ -1,5 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
+import { SearchSelect } from "./search-select";
+import { roleLabels } from "../../lib/roles";
 import { planLabel } from "../../lib/plan-label";
 import { PlanCheckout } from "./payment-settings";
 type Plan = {
@@ -163,6 +165,27 @@ export function MyPlan({ canPurchase = true }: { canPurchase?: boolean }) {
   );
 }
 export function PlanSettings() {
+  const [accounts, setAccounts] = useState<
+    { email: string; name: string; role: string; status: string }[]
+  >([]);
+  const [accountsLoading, setAccountsLoading] = useState(true);
+  const [accountsError, setAccountsError] = useState("");
+  useEffect(() => {
+    let active = true;
+    void api("users")
+      .then((rows) => {
+        if (active) setAccounts(rows);
+      })
+      .catch((e) => {
+        if (active) setAccountsError(e.message);
+      })
+      .finally(() => {
+        if (active) setAccountsLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
   const [plans, setPlans] = useState<Plan[]>([]),
     [busy, setBusy] = useState(false),
     [message, setMessage] = useState("");
@@ -446,18 +469,38 @@ export function PlanSettings() {
               }
             />
           </label>
-          <label>
-            Correo del usuario
-            <input
+          <div className="custom-plan-recipient">
+            <SearchSelect
+              label="Correo del usuario"
               name="customPlanEmail"
-              type="email"
-              required
-              maxLength={200}
               value={custom.email}
+              required
               disabled={busy}
-              onChange={(e) => setCustom({ ...custom, email: e.target.value })}
+              loading={accountsLoading}
+              browseOnToggle
+              onChange={(email) => setCustom({ ...custom, email })}
+              onSelect={(option) => setCustom({ ...custom, email: option.id })}
+              options={["OWNER", "ADMIN", "USER"].flatMap((role) =>
+                accounts
+                  .filter(
+                    (account) =>
+                      account.role === role && account.status === "APPROVED",
+                  )
+                  .map((account) => ({
+                    id: account.email,
+                    label: account.email,
+                    detail: account.name,
+                    group: roleLabels[role],
+                  })),
+              )}
             />
-          </label>
+            {accountsError && (
+              <span role="alert" className="hint">
+                No se pudieron cargar las cuentas. Puedes escribir el correo
+                directamente.
+              </span>
+            )}
+          </div>
           <button disabled={busy} title="Crear y asignar al usuario">
             Crear y asignar
           </button>

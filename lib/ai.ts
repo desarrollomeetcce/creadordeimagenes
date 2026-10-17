@@ -65,11 +65,6 @@ export async function configured() {
     "La calidad o resolución no es compatible.",
     409,
   );
-  demand(
-    c.imageReserveMicros > 0n,
-    "Configura una reserva de costo por afiche, incluyendo dirección creativa.",
-    409,
-  );
   return c;
 }
 export async function reserveJobs(
@@ -92,7 +87,7 @@ export async function reserveJobs(
         409,
       );
       demand(
-        items.length > 0 && items.length <= c.maxGenerations,
+        items.length > 0 && items.length <= 1000,
         "La operación supera el máximo de generaciones.",
       );
       const known = await tx.generationJob.findMany({
@@ -139,7 +134,13 @@ export async function reserveJobs(
         creativeProvider: c.creativeProvider ?? c.provider,
         creativeConnectionRevision: creative?.revision ?? c.revision,
       };
-      await checkReservationBudget(tx, c, actorId, projectId, pendingCount);
+      const reserve = await checkReservationBudget(
+        tx,
+        c,
+        actorId,
+        projectId,
+        pendingCount,
+      );
       for (const item of items) {
         const snapshot = item.snapshot as Record<string, unknown>;
         if (typeof snapshot.editVariationId === "string") {
@@ -180,7 +181,7 @@ export async function reserveJobs(
               ...providerSnapshot,
               configRevision: revision,
             },
-            reservedMicros: c.imageReserveMicros,
+            reservedMicros: reserve,
           },
         });
         await tx.usageLedger.create({
@@ -189,7 +190,7 @@ export async function reserveJobs(
             actorId,
             projectId,
             model: c.imageModel!,
-            reservedMicros: c.imageReserveMicros,
+            reservedMicros: reserve,
           },
         });
         jobs.push(job);

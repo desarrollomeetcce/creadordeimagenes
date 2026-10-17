@@ -1,5 +1,7 @@
 # Creador de Imágenes · Estudio AI
 
+**Cuotas de generación:** se administran mediante los planes asignados; se retiró el apartado redundante «Presupuesto y límites». Los límites globales y particulares anteriores ya no bloquean nuevas generaciones. OWNER no tiene límite comercial. Se conserva el historial y los costes desconocidos no se muestran como cero.
+
 Aplicación web en español para producción publicitaria multiproyecto. Implementación funcional con persistencia PostgreSQL, autenticación, proyectos, productos, subproductos, instrucciones heredadas, administración cifrada de IA exclusiva del OWNER, composición editable, historial de versiones, biblioteca, identidad de marca por proyecto, recuperación asistida de cuentas, procesamiento interactivo o en segundo plano de cola y límites por usuario/proyecto.
 
 **Estado:** desarrollo por fases; no es todavía la totalidad del prompt maestro ni una aplicación certificada para producción. Véanse [PROGRESS.md](PROGRESS.md) y [TESTING.md](TESTING.md). Se confirmó en producción una prueba completada con imagen gpt-image-1; falta validar referencias, logos, edición y lotes reales. El importe facturado de esa prueba sigue sin informar. Las pruebas simuladas están identificadas como tales.

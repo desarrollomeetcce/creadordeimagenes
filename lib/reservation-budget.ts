@@ -1,98 +1,50 @@
 import type { Prisma, ProviderConfiguration } from "@prisma/client";
 import { db } from "./db";
-import { demand, AppError } from "./errors";
-type Budget = Pick<
-  ProviderConfiguration,
-  | "imageReserveMicros"
-  | "operationLimitMicros"
-  | "monthlyLimitMicros"
-  | "dailyLimitMicros"
->;
+import { AppError } from "./errors";
+import { checkPlanAllowance } from "./membership-plans";
+
+/** Legacy configuration arguments are retained for compatibility, never enforced.
+ * Plan allocation is accounting, not a provider price or confirmed API balance.
+ * Call under advisory lock 728291 when creating jobs.
+ */
 export async function checkReservationBudget(
   tx: Prisma.TransactionClient,
-  c: Budget,
+  _configuration: Pick<
+    ProviderConfiguration,
+    | "imageReserveMicros"
+    | "operationLimitMicros"
+    | "monthlyLimitMicros"
+    | "dailyLimitMicros"
+  >,
   actorId: string,
-  projectId: string,
+  _projectId: string,
   pendingCount: number,
 ) {
-  const total = c.imageReserveMicros * BigInt(pendingCount);
-  await (
-    await import("./membership-plans")
-  ).checkPlanAllowance(tx, actorId, pendingCount, total);
-  demand(
-    total > 0n && total <= c.operationLimitMicros,
-    "La operación supera el presupuesto por operación.",
-  );
-  const now = new Date(),
-    month = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)),
-    day = new Date(
-      Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()),
-    );
-  for (const [since, limit, label] of [
-    [month, c.monthlyLimitMicros, "mensual"],
-    [day, c.dailyLimitMicros, "diario"],
-  ] as const) {
-    const usage = await tx.usageLedger.aggregate({
-      where: { createdAt: { gte: since }, status: { not: "RELEASED" } },
-      _sum: { reservedMicros: true },
-    });
-    demand(
-      (usage._sum.reservedMicros ?? 0n) + total <= limit,
-      `Se supera el límite ${label} de reservas de consumo.`,
-    );
-  }
-  const scoped = await tx.budgetLimit.findMany({
-    where: {
-      OR: [
-        { scope: "USER", targetId: actorId },
-        { scope: "PROJECT", targetId: projectId },
-      ],
-    },
+  const user = await tx.user.findUnique({
+    where: { id: actorId },
+    include: { plan: true },
   });
-  for (const limit of scoped) {
-    const filter = limit.scope === "USER" ? { actorId } : { projectId };
-    for (const [since, max] of [
-      [month, limit.monthlyMicros],
-      [day, limit.dailyMicros],
-    ] as const) {
-      const usage = await tx.usageLedger.aggregate({
-        where: {
-          ...filter,
-          createdAt: { gte: since },
-          status: { not: "RELEASED" },
-        },
-        _sum: { reservedMicros: true },
-      });
-      demand(
-        (usage._sum.reservedMicros ?? 0n) + total <= max,
-        `La operación supera el presupuesto particular ${limit.scope === "USER" ? "de tu cuenta" : "del proyecto"}. Edita o elimina ese límite si no corresponde.`,
-      );
-    }
-    const count = await tx.usageLedger.count({
-      where: {
-        ...filter,
-        createdAt: { gte: day },
-        status: { not: "RELEASED" },
-      },
-    });
-    demand(
-      count + pendingCount <= limit.maxJobsPerDay,
-      "Se supera el máximo diario de generaciones del usuario o proyecto.",
-    );
-  }
+  const plan = user?.plan;
+  const reserve =
+    user?.role !== "OWNER" &&
+    plan?.monthlyAIMicros != null &&
+    plan.monthlyImages != null &&
+    plan.monthlyImages > 0
+      ? plan.monthlyAIMicros / BigInt(plan.monthlyImages)
+      : 0n;
+  await checkPlanAllowance(
+    tx,
+    actorId,
+    pendingCount,
+    reserve * BigInt(pendingCount),
+  );
+  return reserve;
 }
 export async function testBudgetStatus(actorId: string) {
   return db.$transaction(
     async (tx) => {
       const c = await tx.providerConfiguration.findUnique({
         where: { id: "global" },
-        select: {
-          revision: true,
-          imageReserveMicros: true,
-          operationLimitMicros: true,
-          monthlyLimitMicros: true,
-          dailyLimitMicros: true,
-        },
       });
       const checkedAt = new Date().toISOString();
       if (!c)

@@ -35,12 +35,7 @@ import {
   RecoveryIssuer,
   ResetPasswordForm,
 } from "./components/account-security";
-import {
-  Library,
-  Presets,
-  PresetTools,
-  BudgetSettings,
-} from "./components/productivity";
+import { Library, Presets, PresetTools } from "./components/productivity";
 import type { FormEvent } from "react";
 type User = { id: string; name: string; email: string; role: string };
 type Settings = {
@@ -1861,8 +1856,6 @@ function SubproductRow({
 }
 function AISettings() {
   const [c, setC] = useState<any>(null);
-  const [budget, setBudget] = useState<any>(null);
-  const budgetEditing = useRef(false);
   const [latestTest, setLatestTest] = useState<any>(null);
   const [testBudget, setTestBudget] = useState<any>(null);
   const [checkedAt, setCheckedAt] = useState<string | null>(null);
@@ -1884,7 +1877,6 @@ function AISettings() {
   const refresh = useCallback(async () => {
     const r = await api("ai/config");
     setC(r.configuration);
-    if (!budgetEditing.current) setBudget(r.configuration);
     setLatestTest(r.latestTest);
     setTestBudget(r.testBudget);
     setCheckedAt(new Date().toISOString());
@@ -1942,11 +1934,6 @@ function AISettings() {
     };
   }, []);
   if (!c) return <p>Cargando configuración segura…{t.notice}</p>;
-  const updateBudget = (k: string, v: unknown) => {
-    budgetEditing.current = true;
-    setBudget((old: any) => ({ ...old, [k]: v }));
-    setCharge(false);
-  };
   const update = (k: string, v: unknown) => {
     setC({ ...c, [k]: v });
     editing.current = true;
@@ -2070,7 +2057,6 @@ function AISettings() {
     c.verifiedRevision === c.revision &&
     c.verifiedAt &&
     now - new Date(c.verifiedAt).getTime() < 86400000;
-  const reserve = Number(c.imageReserveMicros);
   const checks = [
     {
       label: "Clave guardada en el servidor",
@@ -2103,22 +2089,10 @@ function AISettings() {
         !!image?.qualities.includes(c.quality) &&
         !!image?.resolutions.includes(c.resolution),
     },
-    {
-      label: "Reserva por afiche mayor que cero y límites suficientes",
-      target: "ai-budgets",
-      ok:
-        reserve > 0 &&
-        [
-          c.monthlyLimitMicros,
-          c.dailyLimitMicros,
-          c.operationLimitMicros,
-        ].every((v: string) => Number(v) >= reserve),
-    },
   ];
   checks.push({
-    target: "ai-budgets",
-    label:
-      "Presupuesto disponible para una prueba, incluidos tus límites particulares y reservas anteriores",
+    target: "ai-plans",
+    label: "Cuota del plan disponible (OWNER sin límite de plan)",
     ok:
       !!testBudget?.allowed &&
       testBudget.revision === c.revision &&
@@ -2169,8 +2143,8 @@ function AISettings() {
       </div>
       <div className="notice">
         La generación requiere una conexión verificada, modelos compatibles y
-        presupuesto configurado. Una suscripción a ChatGPT no cubre el consumo
-        de API.
+        cuota disponible según el plan asignado (OWNER exento). Una suscripción
+        a ChatGPT no cubre el consumo de API.
       </div>
       <section className="panel stack" aria-label="Estado de preparación de IA">
         <h2>Antes de generar</h2>
@@ -2261,7 +2235,7 @@ function AISettings() {
         <p className="hint">
           {ready
             ? "Configuración preparada para solicitar una prueba. Todavía no demuestra que una imagen se genere correctamente ni confirma saldo."
-            : "Completa los pasos pendientes. Después de guardar modelos o límites, vuelve a verificar la conexión."}
+            : "Completa los pasos pendientes. Después de cambiar modelos o credenciales, guarda y verifica la conexión."}
         </p>
         {(dirty || key) && (
           <div className="notice">
@@ -2587,148 +2561,29 @@ function AISettings() {
           onClick={() =>
             void t.run(
               save,
-              "Modelos guardados. Verifica la conexión; los límites se conservaron.",
+              "Modelos guardados. Verifica la conexión para generar.",
             )
           }
         >
           Guardar modelos y parámetros
         </button>
       </section>
-      <section
-        id="ai-budgets"
-        className={
-          "panel stack ai-section" +
-          (checks.some((x) => x.target === "ai-budgets" && !x.ok)
-            ? " needs-attention"
-            : "")
-        }
-      >
-        <h2>03　Presupuesto y límites</h2>
+      <section id="ai-plans" className="stack ai-section">
         <p className="hint">
-          Importes en USD. Son límites de reservas locales, no tarifas del
-          proveedor ni un tope garantizado de su factura. Configura también
-          límites en la cuenta del proveedor. El importe real queda como
-          desconocido hasta conciliación.
+          La generación se controla con el plan asignado a cada usuario. OWNER
+          no tiene límite de plan. La reserva se calcula a partir del
+          presupuesto y las imágenes del plan; no representa el precio real del
+          proveedor. Los límites globales y particulares anteriores ya no
+          bloquean la generación.
         </p>
-        {budgetEditing.current && (
-          <p className="notice warning">
-            Tienes límites sin guardar. Pulsa «Guardar límites globales» para
-            aplicarlos; los modelos no se modificarán.
-          </p>
-        )}
-        <div className="fields">
-          {[
-            ["monthlyLimitMicros", "Presupuesto mensual"],
-            ["dailyLimitMicros", "Presupuesto diario"],
-            ["operationLimitMicros", "Máximo por operación"],
-            [
-              "imageReserveMicros",
-              "Reserva por afiche (incluye dirección creativa)",
-            ],
-          ].map(([k, label]) => (
-            <label
-              key={k}
-              className={
-                Number(budget?.[k] ?? c[k]) <= 0 ? "field-invalid" : ""
-              }
-            >
-              {label} · USD
-              <input
-                type="number"
-                min="0"
-                max="1000000"
-                step="0.000001"
-                value={Number(budget?.[k] ?? c[k]) / 1000000}
-                onChange={(e) =>
-                  updateBudget(
-                    k,
-                    String(Math.round(Number(e.target.value) * 1000000)),
-                  )
-                }
-              />
-              <span className="hint">
-                {
-                  (
-                    {
-                      monthlyLimitMicros:
-                        "Máximo de reservas de todos los usuarios en el mes, en USD. Cero bloquea nuevas generaciones.",
-                      dailyLimitMicros:
-                        "Máximo de reservas de todos los usuarios en el día, en USD. Cero bloquea.",
-                      operationLimitMicros:
-                        "Máximo para un lote o solicitud: cantidad de afiches × reserva por afiche. Debe permitir al menos un afiche.",
-                      imageReserveMicros:
-                        "Importe que apartará la aplicación por cada afiche, incluida dirección creativa. Lo defines tú: no es una tarifa confirmada del proveedor ni añade saldo.",
-                    } as Record<string, string>
-                  )[k]
-                }
-              </span>
-            </label>
-          ))}
-          <label>
-            Máximo de afiches por operación
-            <input
-              type="number"
-              min={1}
-              max={1000}
-              value={budget?.maxGenerations ?? c.maxGenerations}
-              onChange={(e) =>
-                updateBudget("maxGenerations", Number(e.target.value))
-              }
-            />
-            <span className="hint">
-              Tope de cantidad por solicitud. También se aplican los
-              presupuestos; para probar basta con un afiche.
-            </span>
-          </label>
-        </div>
-        <button
-          className="primary"
-          disabled={t.busy}
-          onClick={() =>
-            void t.run(async () => {
-              const source = budget ?? c;
-              await api("ai/budgets", "PUT", {
-                monthlyLimitMicros: source.monthlyLimitMicros,
-                dailyLimitMicros: source.dailyLimitMicros,
-                operationLimitMicros: source.operationLimitMicros,
-                imageReserveMicros: source.imageReserveMicros,
-                maxGenerations: Number(source.maxGenerations),
-              });
-              budgetEditing.current = false;
-              const r = await api("ai/config");
-              setBudget(r.configuration);
-              setC((old: any) => ({
-                ...old,
-                ...Object.fromEntries(
-                  [
-                    "monthlyLimitMicros",
-                    "dailyLimitMicros",
-                    "operationLimitMicros",
-                    "imageReserveMicros",
-                    "maxGenerations",
-                  ].map((k) => [k, r.configuration[k]]),
-                ),
-              }));
-              setTestBudget(r.testBudget);
-            }, "Límites guardados. Los modelos y su verificación se conservaron.")
-          }
-        >
-          Guardar límites globales
-        </button>
+        <PlanSettings />
       </section>
-      <PlanSettings />
-      <details className="panel">
-        <summary>
-          Restricciones adicionales por usuario o proyecto · opcional
-        </summary>
-        <BudgetSettings />
-      </details>
       <section className="panel stack">
-        <h2>04　Prueba real de generación · opcional</h2>
+        <h2>03　Prueba real de generación · opcional</h2>
         <p>
           La prueba crea un afiche e invoca dirección creativa e imágenes.{" "}
-          <strong>Puede producir cargos de API.</strong> Se aplican los
-          presupuestos y el registro de consumo. El botón inicia una sola prueba
+          <strong>Puede producir cargos de API.</strong> Se aplican las cuotas
+          del plan y el registro de consumo. El botón inicia una sola prueba
           aquí; mantén esta pantalla abierta hasta conocer el resultado. Si se
           interrumpe, consulta Generaciones antes de volver a autorizar otra. No
           se reintenta automáticamente.

@@ -637,58 +637,80 @@ test("Integración HTTP + PostgreSQL (base exclusiva de pruebas, sin llamadas ex
         }
       },
     );
-    await t.test("reserva concurrente no supera el presupuesto", async () => {
-      const c = await db.providerConfiguration.update({
-        where: { id: "global" },
-        data: {
-          status: "VERIFIED",
-          verifiedAt: new Date(),
-          verifiedRevision: 1,
-          revision: 1,
-          imageModel: "gpt-image-1",
-          creativeModel: "gpt-4.1-mini",
-          models: [
-            {
-              id: "gpt-image-1",
-              kind: "image",
-              qualities: ["low"],
-              resolutions: ["1024x1024"],
-            },
-            {
-              id: "gpt-4.1-mini",
-              kind: "creative",
-              qualities: [],
-              resolutions: [],
-            },
-          ],
-        },
-      });
-      const requests = Array.from({ length: 3 }, () =>
-        reserveJobs(
-          uid,
-          pid,
-          [
-            {
-              subproductId: sid,
-              key: randomUUID(),
-              snapshot: {
-                prompt: "Prueba",
-                mode: "Texto",
-                index: 0,
-                format: "1:1",
+    await t.test(
+      "reserva concurrente respeta el plan e ignora límites globales heredados",
+      async () => {
+        const oldPlan = await db.membershipPlan.findUniqueOrThrow({
+          where: { id: "INICIO" },
+        });
+        await db.membershipPlan.update({
+          where: { id: "INICIO" },
+          data: { monthlyImages: 1, monthlyAIMicros: 1000000n },
+        });
+        await db.user.update({
+          where: { id: uid },
+          data: { planId: "INICIO" },
+        });
+        const c = await db.providerConfiguration.update({
+          where: { id: "global" },
+          data: {
+            status: "VERIFIED",
+            verifiedAt: new Date(),
+            verifiedRevision: 1,
+            revision: 1,
+            imageModel: "gpt-image-1",
+            creativeModel: "gpt-4.1-mini",
+            models: [
+              {
+                id: "gpt-image-1",
+                kind: "image",
+                qualities: ["low"],
+                resolutions: ["1024x1024"],
               },
-            },
-          ],
-          c.revision,
-        ),
-      );
-      const results = await Promise.allSettled(requests);
-      assert.equal(results.filter((r) => r.status === "fulfilled").length, 1);
-      const ledger = await db.usageLedger.aggregate({
-        _sum: { reservedMicros: true },
-      });
-      assert.equal(ledger._sum.reservedMicros, 1000000n);
-    });
+              {
+                id: "gpt-4.1-mini",
+                kind: "creative",
+                qualities: [],
+                resolutions: [],
+              },
+            ],
+          },
+        });
+        const requests = Array.from({ length: 3 }, () =>
+          reserveJobs(
+            uid,
+            pid,
+            [
+              {
+                subproductId: sid,
+                key: randomUUID(),
+                snapshot: {
+                  prompt: "Prueba",
+                  mode: "Texto",
+                  index: 0,
+                  format: "1:1",
+                },
+              },
+            ],
+            c.revision,
+          ),
+        );
+        const results = await Promise.allSettled(requests);
+        assert.equal(results.filter((r) => r.status === "fulfilled").length, 1);
+        const ledger = await db.usageLedger.aggregate({
+          _sum: { reservedMicros: true },
+        });
+        assert.equal(ledger._sum.reservedMicros, 1000000n);
+        await db.user.update({ where: { id: uid }, data: { planId: null } });
+        await db.membershipPlan.update({
+          where: { id: "INICIO" },
+          data: {
+            monthlyImages: oldPlan.monthlyImages,
+            monthlyAIMicros: oldPlan.monthlyAIMicros,
+          },
+        });
+      },
+    );
     await t.test(
       "procesamiento interactivo: una sola llamada ante doble clic y resultado persistente",
       async () => {
@@ -2066,7 +2088,7 @@ test("Integración HTTP + PostgreSQL (base exclusiva de pruebas, sin llamadas ex
       },
     );
     await t.test(
-      "presupuesto individual se aplica antes de crear trabajos y solo OWNER puede modificarlo",
+      "restricciones heredadas no bloquean nuevas generaciones y solo OWNER puede administrarlas",
       async () => {
         const payload = {
           scope: "USER",
@@ -2078,21 +2100,21 @@ test("Integración HTTP + PostgreSQL (base exclusiva de pruebas, sin llamadas ex
         assert.equal((await user.call("budgets", "PUT", payload)).status, 403);
         assert.equal((await owner.call("budgets", "PUT", payload)).status, 200);
         const before = await db.generationJob.count();
-        await assert.rejects(
-          reserveJobs(
-            uid,
-            pid,
-            [
-              {
-                subproductId: sid,
-                key: randomUUID(),
-                snapshot: { prompt: "No debe ejecutarse" },
-              },
-            ],
-            1,
-          ),
+        const jobs = await reserveJobs(
+          uid,
+          pid,
+          [
+            {
+              subproductId: sid,
+              key: randomUUID(),
+              snapshot: { prompt: "Acceso según plan" },
+            },
+          ],
+          1,
         );
-        assert.equal(await db.generationJob.count(), before);
+        assert.equal(await db.generationJob.count(), before + 1);
+        assert.equal(jobs[0].reservedMicros, 0n);
+        await user.call("jobs/" + jobs[0].id + "/cancel", "POST");
         await owner.call("budgets", "PUT", {
           ...payload,
           monthlyMicros: "100000000",
@@ -6440,8 +6462,8 @@ test("Integración HTTP + PostgreSQL (base exclusiva de pruebas, sin llamadas ex
             },
           });
           const blocked = (await owner.call("ai/config")).body.testBudget;
-          assert.equal(blocked.allowed, false);
-          assert.match(blocked.error, /presupuesto particular de tu cuenta/);
+          assert.equal(blocked.allowed, true);
+          assert.equal(blocked.error, null);
           const row = await db.budgetLimit.findUniqueOrThrow({
             where: { scope_targetId: { scope: "USER", targetId: ownerId } },
           });
@@ -8263,6 +8285,160 @@ test("Integración HTTP + PostgreSQL (base exclusiva de pruebas, sin llamadas ex
               await tx.providerConnection.createMany({
                 data: profiles.map((p) => ({ ...p, models: p.models as any })),
               });
+          });
+        }
+      },
+    );
+    await t.test(
+      "solo planes: OWNER e Ilimitado ignoran ceros heredados, reserva automática, idempotencia y saldo desconocido",
+      async () => {
+        const old = await db.providerConfiguration.findUniqueOrThrow({
+          where: { id: "global" },
+        });
+        const account = await db.user.findUniqueOrThrow({ where: { id: uid } });
+        const ownerId = (await owner.call("auth/me")).body.id;
+        const plan = await db.membershipPlan.findUniqueOrThrow({
+          where: { id: "INICIO" },
+        });
+        const jobIds: string[] = [];
+        try {
+          const c = await db.providerConfiguration.update({
+            where: { id: "global" },
+            data: {
+              provider: "openai",
+              creativeProvider: "openai",
+              encryptedKey: (await import("../lib/crypto")).encryptKey(
+                "synthetic-plan-test-not-real-1234",
+              ),
+              imageModel: "gpt-image-1",
+              creativeModel: "gpt-4.1-mini",
+              quality: "low",
+              resolution: "1024x1024",
+              models: [
+                {
+                  id: "gpt-image-1",
+                  kind: "image",
+                  qualities: ["low"],
+                  resolutions: ["1024x1024"],
+                },
+                {
+                  id: "gpt-4.1-mini",
+                  kind: "creative",
+                  qualities: [],
+                  resolutions: [],
+                },
+              ],
+              monthlyLimitMicros: 0n,
+              dailyLimitMicros: 0n,
+              operationLimitMicros: 0n,
+              imageReserveMicros: 10000000n,
+              maxGenerations: 1,
+              status: "VERIFIED",
+              verifiedAt: new Date(),
+              verifiedRevision: old.revision,
+            },
+          });
+          const payload = () => ({
+            key: randomUUID(),
+            snapshot: { prompt: "Sin doble presupuesto" },
+          });
+          const items = [payload(), payload()];
+          const jobs = await reserveJobs(ownerId, pid, items, c.revision);
+          jobIds.push(...jobs.map((j) => j.id));
+          assert(jobs.every((j) => j.reservedMicros === 0n));
+          assert.deepEqual(
+            (await reserveJobs(ownerId, pid, items, c.revision)).map(
+              (j) => j.id,
+            ),
+            jobs.map((j) => j.id),
+          );
+          assert.equal(
+            (await owner.call("ai/config")).body.testBudget.allowed,
+            true,
+          );
+          await db.providerConfiguration.update({
+            where: { id: "global" },
+            data: { imageReserveMicros: 0n },
+          });
+          const { configured } = await import("../lib/ai");
+          await configured();
+          await db.user.update({
+            where: { id: uid },
+            data: { planId: "ILIMITADO", planValidUntil: null },
+          });
+          const unlimited = await reserveJobs(
+            uid,
+            pid,
+            [payload(), payload()],
+            c.revision,
+          );
+          jobIds.push(...unlimited.map((j) => j.id));
+          assert(unlimited.every((j) => j.reservedMicros === 0n));
+          await db.membershipPlan.update({
+            where: { id: "INICIO" },
+            data: { monthlyImages: 20, monthlyAIMicros: 10000000n },
+          });
+          // Cuenta nueva para comprobar una cuota sin consumos de escenarios previos.
+          const fresh = await db.user.create({
+            data: {
+              name: "Solo plan",
+              email: "plan-only-" + randomUUID() + "@example.test",
+              passwordHash: account.passwordHash,
+              status: "APPROVED",
+              role: "USER",
+              planId: "INICIO",
+            },
+          });
+          try {
+            const allocated = await reserveJobs(
+              fresh.id,
+              pid,
+              [payload()],
+              c.revision,
+            );
+            jobIds.push(...allocated.map((j) => j.id));
+            assert.equal(allocated[0].reservedMicros, 500000n);
+            const ledger = await db.usageLedger.findUniqueOrThrow({
+              where: { jobId: allocated[0].id },
+            });
+            assert.equal(ledger.actualMicros, null);
+            await db.user.update({
+              where: { id: fresh.id },
+              data: { planValidUntil: new Date(Date.now() - 1000) },
+            });
+            await assert.rejects(
+              reserveJobs(fresh.id, pid, [payload()], c.revision),
+              /vencido/,
+            );
+          } finally {
+            await db.usageLedger.deleteMany({ where: { actorId: fresh.id } });
+            await db.generationJob.deleteMany({ where: { actorId: fresh.id } });
+            await db.user.delete({ where: { id: fresh.id } });
+          }
+        } finally {
+          await db.usageLedger.deleteMany({ where: { jobId: { in: jobIds } } });
+          await db.generationJob.deleteMany({ where: { id: { in: jobIds } } });
+          await db.user.update({
+            where: { id: uid },
+            data: {
+              planId: account.planId,
+              planValidUntil: account.planValidUntil,
+            },
+          });
+          await db.membershipPlan.update({
+            where: { id: plan.id },
+            data: {
+              monthlyImages: plan.monthlyImages,
+              monthlyAIMicros: plan.monthlyAIMicros,
+            },
+          });
+          await db.providerConfiguration.update({
+            where: { id: "global" },
+            data: {
+              ...old,
+              models: old.models as any,
+              alternatives: old.alternatives as any,
+            },
           });
         }
       },
