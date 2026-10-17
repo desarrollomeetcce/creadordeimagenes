@@ -101,7 +101,7 @@ export function brandInstructions(kit: Awaited<ReturnType<typeof readBrand>>) {
     kit.name ? `Identidad de marca: ${kit.name}.` : "",
     kit.colors.length
       ? `Paleta de marca preferida: ${kit.colors.join(", ")}.`
-      : "",
+      : "Paleta libre: elige colores armónicos adecuados para esta marca y el tema del subproducto; no hay colores obligatorios de marca.",
     kit.font ? `Tipografía de marca preferida: ${kit.font}.` : "",
     kit.prompt,
   ]

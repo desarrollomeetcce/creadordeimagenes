@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
-import { roleLabels } from "../../lib/roles";
+import { roleLabels, managesUsers } from "../../lib/roles";
 export function SidebarAccount({ user, view, navigate, logout }: {
   user: { name: string; role: keyof typeof roleLabels };
   view: string;
@@ -48,6 +48,7 @@ export function SidebarAccount({ user, view, navigate, logout }: {
             {options.map(([id, icon, label]) => item(id, icon, label))}
           </nav>}
         </div>}
+        {managesUsers(user.role) && item("users", "♙", "Usuarios")}
         {item("account", "♙", "Mi cuenta")}
         {user.role !== "OBSERVER" && item("plans", "◇", "Mi plan")}
         <button type="button" className="sidebar-logout" onClick={logout}><span aria-hidden="true">↪</span><span>Cerrar sesión</span></button>

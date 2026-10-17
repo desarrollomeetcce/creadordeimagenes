@@ -1,5 +1,8 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+
+import { Attachments, type AttachmentsHandle } from "./attachments";
+import { ExpandablePanel } from "./expandable-panel";
 
 type Kit = {
   name: string;
@@ -30,6 +33,7 @@ async function api(path: string, data?: unknown) {
   return result;
 }
 export function BrandKit({ projectId }: { projectId: string }) {
+  const attachmentRef = useRef<AttachmentsHandle>(null), customColors = useRef<string[]>([]);
   const [kit, setKit] = useState<Kit>(empty),
     [logos, setLogos] = useState<Logo[]>([]),
     [canEdit, setCanEdit] = useState(false),
@@ -78,24 +82,22 @@ export function BrandKit({ projectId }: { projectId: string }) {
     };
   }, [projectId]);
   return (
-    <details>
-      <summary>Identidad de marca</summary>
+    <ExpandablePanel title="Identidad de marca">
       <form
         className="inside stack"
         onSubmit={(e) => {
           e.preventDefault();
           setBusy(true);
           setMessage("");
-          const { revision, name, prompt, colors, font, logoAttachmentIds } =
-            kit;
-          void api(`projects/${projectId}/brand`, {
-            name,
-            prompt,
-            colors,
-            font,
-            logoAttachmentIds,
-            expectedRevision: revision,
-          })
+          void (async () => {
+            const uploaded = await attachmentRef.current?.flush() ?? [];
+            const logoAttachmentIds = [...new Set([...kit.logoAttachmentIds, ...uploaded.filter(file => /logo/i.test(file.purpose) && file.mime.startsWith("image/")).map(file => file.id)])];
+            setKit(current => ({ ...current, logoAttachmentIds }));
+            const files = await api(`attachments?scope=project&id=${projectId}`);
+            setLogos(files.filter((file: Logo) => file.mime.startsWith("image/") && /logo/i.test(file.purpose)));
+            const { revision, name, prompt, colors, font } = kit;
+            return api(`projects/${projectId}/brand`, { name, prompt, colors, font, logoAttachmentIds, expectedRevision: revision });
+          })()
             .then((saved) => {
               setKit(saved);
               setMessage(
@@ -130,7 +132,13 @@ export function BrandKit({ projectId }: { projectId: string }) {
               onChange={(e) => setKit({ ...kit, prompt: e.target.value })}
             />
           </label>
-          <div className="row">
+          <fieldset className="brand-color-mode">
+            <legend>Colores de la marca</legend>
+            <label className="row"><input type="radio" name="brand-color-mode" checked={!kit.colors.length} onChange={() => { customColors.current = kit.colors; setKit({ ...kit, colors:[] }); }} />Que la IA elija los colores</label>
+            <label className="row"><input type="radio" name="brand-color-mode" checked={kit.colors.length > 0} onChange={() => setKit({ ...kit, colors:customColors.current.length ? customColors.current : ["#176b58"] })} />Usar mis colores</label>
+            <p className="hint">La opción automática deja que la IA elija una paleta al generar; seleccionarla no consume IA. Tus logos y referencias siguen aplicándose.</p>
+          </fieldset>
+          {kit.colors.length > 0 && <div className="row">
             <strong>Colores preferidos</strong>
             {kit.colors.map((color, i) => (
               <div className="row" key={i}>
@@ -171,7 +179,7 @@ export function BrandKit({ projectId }: { projectId: string }) {
             >
               ＋ Color
             </button>
-          </div>
+          </div>}
           <label>
             Tipografía preferida disponible
             <select
@@ -186,8 +194,8 @@ export function BrandKit({ projectId }: { projectId: string }) {
           </label>
           <strong>Logos autorizados de la marca</strong>
           <p className="muted">
-            Carga los archivos con finalidad «Logo» en los adjuntos del proyecto
-            y pulsa «Actualizar logos». Al guardar la identidad, solo los logos
+            Puedes subir logos, imágenes y documentos aquí, con un uso para cada archivo.
+            Los logos nuevos se seleccionan al guardar. Solo los logos
             del proyecto seleccionados estarán disponibles para las nuevas
             generaciones; se conservarán las referencias y logos adicionales de
             cada producto o subproducto.
@@ -221,6 +229,7 @@ export function BrandKit({ projectId }: { projectId: string }) {
               </label>
             ))}
           </div>
+          <Attachments ref={attachmentRef} scope="project" id={projectId} deferred addLabel="＋ Subir otro archivo" />
           <button type="submit" className="primary">
             Guardar identidad
           </button>
@@ -239,7 +248,7 @@ export function BrandKit({ projectId }: { projectId: string }) {
             void read()
               .then(() =>
                 setMessage(
-                  "Identidad y logos actualizados. Se descartaron los cambios sin guardar.",
+                  "Identidad y logos actualizados desde el servidor. Los archivos pendientes todavía no se han subido.",
                 ),
               )
               .catch((e: Error) => setMessage(e.message))
@@ -254,6 +263,6 @@ export function BrandKit({ projectId }: { projectId: string }) {
           </div>
         )}
       </form>
-    </details>
+    </ExpandablePanel>
   );
 }

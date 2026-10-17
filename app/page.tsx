@@ -12,7 +12,7 @@ import { SearchSelect } from "./components/search-select";
 import { CurrentRole, RoleGuide, useCanEdit } from "./components/role-guide";
 import { roleLabels, managesUsers } from "../lib/roles";
 import { HierarchyBreadcrumbs } from "./components/breadcrumbs";
-import { Attachments } from "./components/attachments";
+import { Attachments, type AttachmentsHandle } from "./components/attachments";
 import { UsersPanel } from "./components/users-panel";
 import { HistoryPanel } from "./components/history";
 import { MailSettings } from "./components/mail-settings";
@@ -437,7 +437,6 @@ export default function Home() {
               ["presets", "≡", "Configuraciones guardadas"],
               ["history", "◷", "Historial"],
               ["trash", "⌫", "Papelera"],
-              ...(managesUsers(user.role) ? [["users", "♙", "Usuarios"]] : []),
               ...(user.role === "OWNER"
                 ? [
                     ["statistics", "▥", "Estadísticas"],
@@ -915,10 +914,12 @@ function PromptForm({
   save,
   children,
   configuration,
+  attachments,
 }: {
   item: Item;
   save: (data: any) => Promise<void>;
   children?: React.ReactNode;
+  attachments?: { scope: string; id: string };
   configuration?: {
     settings: unknown;
     applyPromptToAll: boolean;
@@ -926,6 +927,7 @@ function PromptForm({
   };
 }) {
   const formRef = useRef<HTMLFormElement>(null);
+  const attachmentRef = useRef<AttachmentsHandle>(null);
   const t = useTask();
   return (
     <form
@@ -934,9 +936,12 @@ function PromptForm({
       className="stack"
       onSubmit={(e) => {
         e.preventDefault();
-        void t.run(() =>
-          save(Object.fromEntries(new FormData(e.currentTarget))),
-        );
+        const data = Object.fromEntries(new FormData(e.currentTarget));
+        void t.run(async () => {
+          const uploaded = await attachmentRef.current?.flush();
+          try { await save(data); }
+          catch (error) { throw Error((error instanceof Error ? error.message : "No se guardaron las instrucciones.") + (uploaded?.length ? " Los documentos ya subidos se conservan; revisa y vuelve a guardar las instrucciones." : "")); }
+        }, "Instrucciones y documentos guardados");
       }}
     >
       <label>
@@ -964,6 +969,7 @@ function PromptForm({
         placeholder="Escribe instrucciones en lenguaje natural…"
       />
       {children}
+      {attachments && <Attachments key={attachments.id} ref={attachmentRef} {...attachments} deferred />}
       <button disabled={t.busy} className="primary">
         Guardar instrucciones
       </button>
@@ -976,6 +982,7 @@ function PromptForm({
               ...Object.fromEntries(new FormData(formRef.current!)),
               ...configuration,
             };
+            await attachmentRef.current?.flush();
             await save(current);
             return current;
           }}
@@ -1000,57 +1007,30 @@ function ProjectEditor({
 }) {
   const [create, setCreate] = useState(false);
   const [share, setShare] = useState(false);
+  const [brandOpen, setBrandOpen] = useState(false);
   const t = useTask();
   return (
     <>
-      <div className="heading">
-        <div>
-          <div className="eyebrow">Proyecto</div>
-          <h1>{p.name}</h1>
-          <p className="muted">{p.description}</p>
-        </div>
-        <button className="primary" onClick={() => setCreate(!create)}>
-          ＋ Nuevo producto
-        </button>
+      <div className="heading project-heading">
+        <div><div className="eyebrow">Proyecto</div><h1>{p.name}</h1><p className="muted">{p.description}</p></div>
       </div>
+      <div className="project-action-bar" aria-label="Acciones del proyecto">
+        {p.canEdit !== false && <button type="button" className="primary" aria-expanded={create} onClick={() => setCreate(!create)}>＋ Nuevo producto</button>}
+        <button type="button" aria-expanded={brandOpen} aria-controls="project-brand" onClick={() => setBrandOpen(!brandOpen)}>Identidad de marca</button>
+        <button type="button" onClick={openCollection}>Ver afiches del proyecto</button>
+        {p.canManageAccess && <button type="button" aria-expanded={share} onClick={() => setShare(!share)}>Compartir proyecto</button>}
+        {p.canManageAccess && <button type="button" className="danger" onClick={() => {
+          if (confirm("¿Enviar este proyecto a la papelera? Su auditoría se conservará.")) void t.run(async () => { await api("projects/" + p.id, "DELETE"); back(); });
+        }}>Eliminar proyecto</button>}
+      </div>
+      <div id="project-brand" hidden={!brandOpen}><BrandKit key={p.id} projectId={p.id} /></div>
       <details>
         <summary>Instrucciones del proyecto y adjuntos</summary>
         <div className="inside stack">
-          <PromptForm
-            key={p.id}
-            item={p}
-            save={async (b) => {
-              await api("projects/" + p.id, "PATCH", b);
-              await refresh();
-            }}
-          />
-          <Uploads scope="project" id={p.id} />
+          <PromptForm key={p.id} item={p} attachments={p.canEdit !== false ? { scope:"project", id:p.id } : undefined}
+            save={async b => { await api("projects/" + p.id, "PATCH", b); await refresh(); }} />
         </div>
       </details>
-      <BrandKit key={p.id} projectId={p.id} />
-      <div className="row" style={{ margin: "18px 0" }}>
-        <button onClick={openCollection}>Ver afiches del proyecto</button>
-        {p.canManageAccess && (
-          <button onClick={() => setShare(!share)}>Compartir proyecto</button>
-        )}
-        <button
-          className="danger"
-          hidden={!p.canManageAccess}
-          onClick={() => {
-            if (
-              confirm(
-                "¿Enviar este proyecto a la papelera? Su auditoría se conservará.",
-              )
-            )
-              void t.run(async () => {
-                await api("projects/" + p.id, "DELETE");
-                back();
-              });
-          }}
-        >
-          Enviar a papelera
-        </button>
-      </div>
       {share && p.canManageAccess && (
         <ProjectSharing key={p.id} projectId={p.id} />
       )}
@@ -1263,6 +1243,7 @@ function CategoryEditor({
         <div className="inside stack">
           <PromptForm
             item={c}
+            attachments={{ scope:"category", id:c.id }}
             configuration={{
               settings: s,
               applyPromptToAll: promptAll,
@@ -1309,7 +1290,6 @@ function CategoryEditor({
               </p>
             )}
           </PromptForm>
-          <Uploads scope="category" id={c.id} />
         </div>
       </details>
       {bulk && (

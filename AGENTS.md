@@ -29,3 +29,5 @@
 
 - GenerationOrder es independiente de BackgroundBatch heredado. Pausa/detención/claim se serializan bajo728291 y estado/runId de la orden. Los modos se eligen en producto/subproducto/prueba/editor; aprobar continúa con ese modo explícito. GET/poll no generan IA. Subproductos plegados no consultan progreso continuamente.
 - Aplanadas: añadir textos/formas manuales como capas sobre el archivo original reutilizado; no prometer extraer objetos rasterizados. Aprobación no duplica bytes ni consume IA; eliminar conserva auditoría/ledger.
+
+- Adjuntos: seleccionar archivos no los sube; proyecto/producto guardan pendientes antes del texto y otras zonas usan Guardar archivos. Conservar filas ya subidas al fallar otra; informar el guardado parcial, sin prometer transacción única. Marca con colores vacíos deja paleta libre a la IA en nuevas generaciones; nunca genera por elegir ese modo. El diálogo de marca reutiliza el mismo formulario para preservar archivos preparados.

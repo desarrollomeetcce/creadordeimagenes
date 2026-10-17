@@ -465,3 +465,14 @@ Menú principal conserva proyectos, Biblioteca, configuraciones guardadas, histo
 Validación: 34 unitarias, TypeScript y build aprobados. Chromium comprueba persistencia tras recarga/ingreso, dos temas, navegación y menús OWNER/USER/OBSERVER, móvil y página pública sin desbordamiento, Escape, cierre al navegar y almacenamiento bloqueado. Sin cambios en base de datos ni llamadas de IA, pagos o correo.
 
 La etiqueta del menú inferior es Ajustes (correo, IA, costos y pago); Configuraciones guardadas conserva su nombre y ubicación. Los títulos de correo/IA/pago coinciden con la nueva nomenclatura.
+
+
+## Proyecto, marca y documentos múltiples · 17/10/2026
+
+Barra alineada Nuevo producto / Identidad de marca / Ver afiches del proyecto / Compartir proyecto / Eliminar proyecto, con capacidades existentes. Eliminar sigue enviando a papelera con confirmación. Identidad abre en la página y se amplía como diálogo nativo sin duplicar el formulario ni perder texto o archivos preparados. Escape vuelve a la página.
+
+Proyecto y producto muestran los archivos antes de Guardar instrucciones. Cada fila elige archivo y uso; añadir más filas permanece disponible. La selección es local hasta guardar; al guardar se suben los pendientes y después se actualizan instrucciones. Si falla una fila, las instrucciones no se actualizan y las filas ya subidas se conservan para no repetirlas al corregir/reintentar. No es una transacción única entre archivos y texto: los errores informan de la conservación parcial y, si falla el guardado del texto, de los documentos ya subidos. Sustitución/borrado, permisos y versiones de adjuntos se conservan. Otros ámbitos disponen del guardado explícito de archivos.
+
+Marca: paleta automática o colores propios, logos y referencias/documentos cargables desde el mismo panel con uso individual y botón Subir otro archivo. Paleta vacía significa que la IA elige colores armónicos al generar, sin inventar colores almacenados ni hacer llamadas por seleccionar esa opción. Logos nuevos de imagen se incorporan a la selección de marca al guardar y se validan en servidor. Se reutilizan adjuntos del proyecto, sin crear una segunda copia para identidad. Usuarios se mueve debajo de Ajustes en el pie para OWNER/ADMIN; menú con peso de letra reforzado.
+
+Validación: 35 unitarias, TypeScript/build y 102 resultados de integración aprobados; Chromium verifica acciones alineadas, modal persistente, paleta heredada, guardado de dos documentos, fallo/corrección sin duplicación, guardado de producto, menú inferior, móvil/Escape y Observador sin edición. Pruebas con archivos y cuentas sintéticos, sin IA externa. No requiere migración ni altera las órdenes existentes.
