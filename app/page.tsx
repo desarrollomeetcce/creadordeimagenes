@@ -1,5 +1,7 @@
 "use client";
 import { useCallback, useEffect, useState, useRef } from "react";
+import {useSubproductStatuses,SubproductStatus} from "./components/subproduct-status";
+import type {OrderProgress} from "./components/order-progress";
 import { ReviewInstructions } from "./components/review-instructions";
 import { ProductTrash } from "./components/product-trash";
 import { InstructionPolicyControls } from "./components/instruction-policy-controls";
@@ -1215,6 +1217,7 @@ function CategoryEditor({
   openGallery: (s: Item) => void;
   openCollection: () => void;
 }) {
+  const statusBySubproduct=useSubproductStatuses(c.project.id,c.id);
   const [sharing, setSharing] = useState(false);
   const [trashOpen,setTrashOpen]=useState(false);
   const [selectedSubs, setSelectedSubs] = useState<string[]>([]);
@@ -1306,11 +1309,6 @@ function CategoryEditor({
         <h2>Subproductos · {c.subproducts.length}</h2>
         {c.canEdit&&<button type="button" className="primary" aria-expanded={bulk} onClick={()=>setBulk(!bulk)}>＋ Añadir subproducto / Inicio rápido</button>}
         {c.canEdit&&<BatchGeneration categoryId={c.id} projectId={c.project.id} count={c.subproducts.length} selectedIds={selectedSubs} />}
-      </div>
-      <p className="quick-start-guide">Genera de manera rápida las variaciones de las imágenes que quieras. Añade un tema, elige las herencias y revisa antes de generar.</p>
-      <div className="row subproducts-selection">
-        <label className="row"><input type="checkbox" checked={!!c.subproducts.length&&selectedSubs.length===c.subproducts.length} onChange={e=>setSelectedSubs(e.target.checked?c.subproducts.map(sub=>sub.id):[])} />Seleccionar todos</label>
-        <span className="hint">{selectedSubs.length} seleccionados</span>
         <button
           type="button"
           className="danger"
@@ -1333,6 +1331,12 @@ function CategoryEditor({
           Eliminar ({selectedSubs.length})
         </button>
         {c.canEdit&&<button type="button" aria-expanded={trashOpen} onClick={()=>setTrashOpen(!trashOpen)}>Buscar subproductos eliminados</button>}
+
+      </div>
+      <p className="quick-start-guide">Genera de manera rápida las variaciones de las imágenes que quieras. Añade un tema, elige las herencias y revisa antes de generar.</p>
+      <div className="row subproducts-selection">
+        <label className="row"><input type="checkbox" checked={!!c.subproducts.length&&selectedSubs.length===c.subproducts.length} onChange={e=>setSelectedSubs(e.target.checked?c.subproducts.map(sub=>sub.id):[])} />Seleccionar todos</label>
+        <span className="hint">{selectedSubs.length} seleccionados</span>
       </div>
       {selectedSubs.length>0&&<p className="hint selected-inheritance">Herencias de {selectedSubs.length} seleccionados · Proyecto: <strong>{c.project.name}</strong> · Producto: <strong>{c.name}</strong>. Cada subproducto aplica sus casillas de herencia.</p>}
       {trashOpen&&c.canEdit&&<SubproductTrash categoryId={c.id} onRestored={refresh} initialOpen />}
@@ -1438,6 +1442,7 @@ function CategoryEditor({
           <SubproductRow
             key={sub.id}
             sub={sub}
+            orderStatus={statusBySubproduct[sub.id]}
             selected={selectedSubs.includes(sub.id)}
             onSelected={checked=>setSelectedSubs(ids=>checked?[...new Set([...ids,sub.id])]:ids.filter(id=>id!==sub.id))}
             ancestry={{project:c.project.name,product:c.name}}
@@ -1494,7 +1499,7 @@ function BatchGeneration({
   const production = useProductionController(undefined, {
     project: projectId,
     product: categoryId,
-  });
+  },!!preview||queued);
   const [selected, setSelected] = useState<string[]>([]);
   const t = useTask();
   return (
@@ -1656,7 +1661,7 @@ function BatchGeneration({
   );
 }
 function SubproductRow({
-  sub, selected, onSelected, ancestry, initiallyOpen=false,
+  sub, selected, onSelected, ancestry, initiallyOpen=false,orderStatus,
   costScope,
   index,
   inherited,
@@ -1667,6 +1672,7 @@ function SubproductRow({
 }: {
   sub: Item;
   selected:boolean;
+  orderStatus?:OrderProgress;
   onSelected:(checked:boolean)=>void;
   ancestry:{project:string;product:string};
   initiallyOpen?:boolean;
@@ -1682,6 +1688,7 @@ function SubproductRow({
   const [sharing, setSharing] = useState(false);
   const [policy,setPolicy]=useState<InstructionPolicy>(sub.instructionPolicy??{});
   const [reviewOpen,setReviewOpen]=useState(false),[reviewDirty,setReviewDirty]=useState(false),[sourceDirty,setSourceDirty]=useState(false),[reviewVersion,setReviewVersion]=useState(0);
+  const [configOpen,setConfigOpen]=useState(initiallyOpen);
   const uploadRef=useRef<AttachmentsHandle>(null);
   const [expanded, setExpanded] = useState(initiallyOpen);
   const detailsRef=useRef<HTMLDetailsElement>(null);
@@ -1722,6 +1729,7 @@ function SubproductRow({
   };
   const configuration=()=>({...sub,name,prompt,instructionPolicy:policy,settings:custom||forceOwn?s:inherited});
   const templates=useReusableConfiguration({scope:"subproduct",current:configuration(),enabled:expanded,saveCurrent:async()=>{await save();return configuration();},onApplied:async()=>{const loaded=await api("subproducts/"+sub.id);setName(loaded.name);setPrompt(loaded.prompt);setPolicy(loaded.instructionPolicy??{});setS({...inherited,...loaded.settings});setCustom(true);setPreview(null);setReviewOpen(false);setReview(false);setCharge(false);setSourceDirty(false);}});
+  const latestOrder=[orderStatus,...production.orders].filter((order):order is OrderProgress=>!!order).sort((a,b)=>b.createdAt.localeCompare(a.createdAt))[0];
   const loadReview=()=>void t.run(async()=>{await save();setPreview(await api("subproducts/"+sub.id+"/instructions"));setReview(false);setCharge(false);setReviewDirty(false);setSourceDirty(false);setReviewVersion(v=>v+1);},"");
   return (
     <>
@@ -1733,7 +1741,7 @@ function SubproductRow({
       <summary className="subproduct-header">
         <label className="subproduct-check" onClick={e=>e.stopPropagation()}><input type="checkbox" aria-label={"Seleccionar "+name} checked={selected} onChange={e=>onSelected(e.target.checked)} /></label>
         <span aria-hidden="true">{expanded?"▾":"▸"}</span><span className="subproduct-title"><span className="sub-num">{String(index+1).padStart(2,"0")}</span><strong>{name}</strong></span>
-        <small>{(custom||forceOwn?s:inherited).count} variaciones</small>
+        <SubproductStatus order={latestOrder} />
         <span className="row subproduct-header-actions" onClick={e=>e.stopPropagation()}>
           {sub.canManageAccess&&<button type="button" aria-expanded={sharing} onClick={()=>setSharing(!sharing)}>Compartir subproducto</button>}
           <button type="button" onClick={openGallery}>Ver variaciones ({sub._count?.variations??0}) ↗</button>
@@ -1742,6 +1750,7 @@ function SubproductRow({
         </span>
       </summary>
       <div className="inside stack">
+        <details className="subproduct-configuration" open={configOpen} onToggle={event=>setConfigOpen(event.currentTarget.open)}><summary>Configuración</summary><div className="inside stack">
         {templates.picker}
         <InstructionPolicyControls scope="subproduct" value={policy} onChange={value=>{setPolicy(value);setReview(false);setSourceDirty(true);setPreview(null);setReviewOpen(false);}} />
         <p className="hint subproduct-inheritance">Herencias: {policy.includeProject!==false?<>Proyecto: <strong>{ancestry.project}</strong></>:"Proyecto: no incluida"} · {policy.includeProduct!==false?<>Producto: <strong>{ancestry.product}</strong></>:"Producto: no incluida"}. Las exclusiones del origen también se respetan.</p>
@@ -1792,17 +1801,19 @@ function SubproductRow({
           />
         )}
         </div>
-        <Attachments ref={uploadRef} scope="subproduct" id={sub.id} deferred />
-        <button type="button" disabled={t.busy} onClick={()=>void t.run(save)}>Guardar cambios y documentos del subproducto</button>
+        <div onChangeCapture={()=>{setSourceDirty(true);setReview(false);setCharge(false);}}><Attachments ref={uploadRef} scope="subproduct" id={sub.id} deferred /></div>
         {templates.saver}
+        <div className="row compact-review-actions"><button type="button" className="primary" disabled={t.busy} onClick={()=>void t.run(async()=>{await save();setSourceDirty(true);setReview(false);setCharge(false);},"Cambios y documentos guardados. Actualiza la revisión antes de generar.")}>Guardar cambios y documentos del subproducto</button><button type="button" onClick={()=>setConfigOpen(false)}>Minimizar</button></div>
+        </div></details>
         <details className="subproduct-review" open={reviewOpen} onToggle={event=>{const open=event.currentTarget.open;setReviewOpen(open);if(open&&!preview&&!t.busy)loadReview();}}>
           <summary>Revisar y generar</summary>
           {!preview&&<p role="status">Preparando la revisión…</p>}
           {preview && <div className="inside panel">
             <h3>Revisa antes de generar · {name}</h3>
             {sourceDirty&&<p className="notice">Hay cambios en el formulario. <button type="button" disabled={t.busy} onClick={loadReview}>Actualizar revisión</button></p>}
-            <ReviewInstructions key={reviewVersion} id={sub.id} onDirty={()=>{setReviewDirty(true);setReview(false);setCharge(false);}} onSaved={async data=>{const own=data.layers.find(layer=>layer.scope==="subproduct");if(own?.prompt!==null&&own){setPrompt(own.prompt);setPolicy(own.policy);}setPreview(await api("subproducts/"+sub.id+"/instructions"));setReviewDirty(false);setSourceDirty(false);setReview(false);setCharge(false);await onReviewSaved?.();}} />
+            <ReviewInstructions key={reviewVersion} id={sub.id} beforeReload={save} onDirty={()=>{setReviewDirty(true);setReview(false);setCharge(false);}} onSaved={async data=>{const own=data.layers.find(layer=>layer.scope==="subproduct");if(own?.prompt!==null&&own){setPrompt(own.prompt);setPolicy(own.policy);}setPreview(await api("subproducts/"+sub.id+"/instructions"));setReviewDirty(false);setSourceDirty(false);setReview(false);setCharge(false);await onReviewSaved?.();}} />
             <pre>{preview.text}</pre>
+            <details className="review-references"><summary>Documentos y referencias utilizados ({preview.attachments?.length??0})</summary><div className="inside"><p className="hint">El texto extraído de documentos se incorpora al contexto del prompt. Las imágenes se envían como referencias visuales. Solo se usan las herencias activas; las referencias privadas autorizadas se procesan en servidor sin revelar su contenido aquí.</p>{preview.attachments?.length?<ul>{preview.attachments.map((file:any)=><li key={file.id}><strong>{file.name}</strong> · {file.purpose} · {file.mime.startsWith("image/")?"Referencia visual":"Texto extraído"}</li>)}</ul>:<p className="muted">No hay adjuntos visibles en esta revisión.</p>}</div></details>
             {preview.overrides.map((w: string, i: number) => (
               <p key={i} className="hint">
                 {w}
@@ -1819,14 +1830,6 @@ function SubproductRow({
               El análisis convencional detecta conflictos básicos; confirma el
               contenido comercial antes de enviarlo.
             </p>
-            <label className="row">
-              <input
-                type="checkbox"
-                checked={review}
-                onChange={(e) => setReview(e.target.checked)}
-              />
-              He revisado y autorizado las instrucciones finales.
-            </label>
             <label className="row">
               <input
                 type="checkbox"
@@ -1848,9 +1851,16 @@ function SubproductRow({
               onChange={setExecutionMode}
               disabled={t.busy || production.dispatching}
             />
+            <div className="row compact-review-actions"><button type="button" className={review?"primary approved-review":"primary"} aria-pressed={review} disabled={t.busy||reviewDirty||sourceDirty||preview.warnings.length>0} onClick={()=>setReview(!review)}>{review?"Ya aprobado":"¿Lo apruebas?"}</button><button type="button" onClick={()=>setReviewOpen(false)}>Minimizar</button></div>
+
+          </div>}
+        </details>
+      </div>
+    </details>
+    <div className="row subproduct-generation-actions">
             <button
               className="primary"
-              style={{ marginTop: 15 }}
+              type="button"
               disabled={
                 t.busy ||
                 production.uncertainDispatch ||
@@ -1858,7 +1868,7 @@ function SubproductRow({
                 !review ||
                 reviewDirty || sourceDirty ||
                 !charge ||
-                preview.warnings.length > 0
+                !preview || preview.warnings.length > 0
               }
               onClick={() =>
                 void t.run(async () => {
@@ -1887,24 +1897,13 @@ function SubproductRow({
                 }, "Lote registrado. El modo elegido controla su ejecución. Revisa la muestra en Biblioteca.")
               }
             >
-              Generar {(custom ? s : inherited).count} variaciones
+              Generar variaciones · {(custom||forceOwn?s:inherited).count}{latestOrder&&latestOrder.pending>0?` · ${latestOrder.completed}/${latestOrder.target}`:""}
             </button>
-          </div>}
-        </details>
-        <ProductionControls controller={production} />
-        {queued && (
-          <a
-            className="button"
-            target="_blank"
-            rel="noopener"
-            href={"?" + new URLSearchParams({ view: "jobs", ...costScope })}
-          >
-            Abrir carpeta de este subproducto ↗
-          </a>
-        )}
-        {t.notice}
-      </div>
-    </details>
+      <button type="button" onClick={openGallery}>Ver variaciones ↗</button>
+      {!review&&<small className="hint">Revisa y aprueba las instrucciones antes de generar.</small>}
+    </div>
+    <ProductionControls controller={{...production,orders:latestOrder?[latestOrder]:production.orders}} />
+    {t.notice}
     {sharing&&sub.canManageAccess&&<ProjectSharing projectId={sub.id} scope="subproduct" />}
     </>
   );

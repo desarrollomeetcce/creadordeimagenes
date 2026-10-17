@@ -1,4 +1,4 @@
-import { instructionUse } from "./instruction-policy";
+import { instructionUse,reviewedPrompt } from "./instruction-policy";
 import { resourceAccess,accessFlags } from "./auth";
 import { db } from "./db";
 import { demand } from "./errors";
@@ -18,10 +18,10 @@ export async function previewSubproduct(id: string) {
   const brand = use.project ? await readBrand(s.category.projectId) : null;
   const instructions = resolveInstructions([
     { name: "Identidad de marca", prompt: brandInstructions(brand) },
-    { name: "Proyecto", prompt: use.project ? s.category.project.prompt : "" },
+    { name: "Proyecto", prompt: use.project ? reviewedPrompt("project",s.category.project,s.instructionPolicy) : "" },
     {
       name: "Producto",
-      prompt: use.product ? s.category.prompt : "",
+      prompt: use.product ? reviewedPrompt("category",s.category,s.instructionPolicy) : "",
     },
     { name: "Subproducto", prompt: use.subproduct ? s.prompt : "" },
   ]);
@@ -71,7 +71,7 @@ export async function clientSubproductPreview(actor:{id:string;role:string},id:s
  const [project,product]=await Promise.all([accessFlags(actor,"project",sub.category.projectId,sub.category.projectId),accessFlags(actor,"category",sub.categoryId,sub.category.projectId)]);
  if(project.fullAccess&&product.fullAccess)return preview;
  const use=instructionUse(sub.category.project.instructionPolicy,sub.category.instructionPolicy,sub.instructionPolicy,sub.category.applyPromptToAll);
- const visible=resolveInstructions([{name:"Identidad de marca",prompt:project.fullAccess?brandInstructions(preview.brand):""},{name:"Proyecto",prompt:project.fullAccess&&use.project?sub.category.project.prompt:""},{name:"Producto",prompt:product.fullAccess&&use.product?sub.category.prompt:""},{name:"Subproducto",prompt:use.subproduct?sub.prompt:""}]);
+ const visible=resolveInstructions([{name:"Identidad de marca",prompt:project.fullAccess?brandInstructions(preview.brand):""},{name:"Proyecto",prompt:project.fullAccess&&use.project?reviewedPrompt("project",sub.category.project,sub.instructionPolicy):""},{name:"Producto",prompt:product.fullAccess&&use.product?reviewedPrompt("category",sub.category,sub.instructionPolicy):""},{name:"Subproducto",prompt:use.subproduct?sub.prompt:""}]);
  return {...preview,brand:project.fullAccess?preview.brand:null,attachments:preview.attachments.filter(a=>a.scope==="subproduct"||(a.scope==="category"&&product.fullAccess)||(a.scope==="project"&&project.fullAccess)),instructions:{...preview.instructions,text:visible.text+`\nEJE TEMÁTICO OBLIGATORIO: ${JSON.stringify(sub.name)}.\nLas instrucciones heredadas privadas activas se aplican en servidor sin exponer su texto.`}};
 }
 export async function generateBatch(

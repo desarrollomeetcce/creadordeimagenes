@@ -1,4 +1,4 @@
-import { instructionPolicySchema,instructionFlags } from "@/lib/instruction-policy";
+import { instructionPolicySchema,instructionFlags,publicInstructionPolicy } from "@/lib/instruction-policy";
 import { recordActivity } from "@/lib/activity";
 import { NextRequest, NextResponse } from "next/server";
 import { cookies } from "next/headers";
@@ -1060,6 +1060,7 @@ async function handle(
           subproducts: await Promise.all(
             c.subproducts.map(async (sub) => ({
               ...sub,
+              instructionPolicy:publicInstructionPolicy(sub.instructionPolicy),
               inheritedSettings: effectiveSettings(
                 c.settings,
                 {},
@@ -1176,6 +1177,7 @@ async function handle(
       if (parts.length === 2 && method === "GET") {
         return send({
           ...sub,
+          instructionPolicy:publicInstructionPolicy(sub.instructionPolicy),
           ...(await accessFlags(
             user,
             "subproduct",
