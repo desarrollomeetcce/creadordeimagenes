@@ -1,4 +1,5 @@
 "use client";
+import { PasswordInput } from "./password-input";
 import { useEffect, useState } from "react";
 async function api(path: string, method = "GET", data?: unknown) {
   const r = await fetch("/api/payments/" + path, {
@@ -157,9 +158,8 @@ export function PaymentSettings() {
             {fields.map(([k, label]) => (
               <label key={k}>
                 {label}
-                <input
+                <PasswordInput
                   name={"payment-" + k}
-                  type="password"
                   autoComplete="new-password"
                   maxLength={1000}
                   value={keys[k] ?? ""}

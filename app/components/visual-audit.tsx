@@ -1,4 +1,5 @@
 "use client";
+import { PasswordInput } from "./password-input";
 import { useEffect, useState } from "react";
 type Policy = {
   enabled: boolean;
@@ -167,7 +168,7 @@ export function VisualAuditPanel() {
     } finally {
       if (form)
         for (const input of form.querySelectorAll<HTMLInputElement>(
-          'input[type="password"]',
+          'input[data-secret-input]',
         ))
           input.value = "";
       setBusy(false);
@@ -279,8 +280,7 @@ export function VisualAuditPanel() {
               </p>
               <label>
                 Tu contraseña actual de OWNER
-                <input
-                  type="password"
+                <PasswordInput
                   name="currentPassword"
                   autoComplete="current-password"
                   minLength={12}
@@ -400,8 +400,7 @@ export function VisualAuditPanel() {
                       >
                         <label>
                           Tu contraseña actual de OWNER
-                          <input
-                            type="password"
+                          <PasswordInput
                             name="currentPassword"
                             autoComplete="current-password"
                             minLength={12}

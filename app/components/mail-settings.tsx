@@ -1,4 +1,5 @@
 "use client";
+import { PasswordInput } from "./password-input";
 import { useEffect, useState } from "react";
 
 type Status = {
@@ -132,7 +133,7 @@ export function MailSettings() {
                 })
                 .finally(() => {
                   for (const field of form.querySelectorAll<HTMLInputElement>(
-                    'input[type="password"]',
+                    'input[data-secret-input]',
                   ))
                     field.value = "";
                   setBusy(false);
@@ -182,8 +183,7 @@ export function MailSettings() {
                 {status.configured
                   ? `Contraseña guardada: ${status.passwordMask}. Nueva contraseña (dejar vacía para conservar)`
                   : "Contraseña del correo de Hostinger"}
-                <input
-                  type="password"
+                <PasswordInput
                   name="password"
                   maxLength={1000}
                   autoComplete="new-password"
@@ -197,8 +197,7 @@ export function MailSettings() {
               </p>
               <label>
                 Tu contraseña actual de OWNER
-                <input
-                  type="password"
+                <PasswordInput
                   name="currentPassword"
                   required
                   minLength={12}

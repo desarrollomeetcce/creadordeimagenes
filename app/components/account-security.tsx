@@ -1,4 +1,5 @@
 "use client";
+import { PasswordInput } from "./password-input";
 import { useState } from "react";
 async function post(path: string, data: unknown) {
   const r = await fetch("/api/" + path, {
@@ -52,8 +53,7 @@ export function AccountSecurity({
       >
         <label>
           Contraseña actual
-          <input
-            type="password"
+          <PasswordInput
             name="currentPassword"
             autoComplete="current-password"
             required
@@ -63,8 +63,7 @@ export function AccountSecurity({
         </label>
         <label>
           Nueva contraseña · mínimo 12 caracteres
-          <input
-            type="password"
+          <PasswordInput
             name="newPassword"
             autoComplete="new-password"
             required
@@ -74,8 +73,7 @@ export function AccountSecurity({
         </label>
         <label>
           Repite la nueva contraseña
-          <input
-            type="password"
+          <PasswordInput
             name="confirmPassword"
             autoComplete="new-password"
             required
@@ -159,8 +157,7 @@ export function RecoveryIssuer({
           </p>
           <label>
             Tu contraseña actual de OWNER o Administrador
-            <input
-              type="password"
+            <PasswordInput
               name="currentPassword"
               required
               minLength={12}
@@ -276,8 +273,7 @@ export function ResetPasswordForm({
           >
             <label>
               Nueva contraseña · mínimo 12 caracteres
-              <input
-                type="password"
+              <PasswordInput
                 name="newPassword"
                 autoComplete="new-password"
                 required
@@ -287,8 +283,7 @@ export function ResetPasswordForm({
             </label>
             <label>
               Repite la contraseña
-              <input
-                type="password"
+              <PasswordInput
                 name="confirmPassword"
                 autoComplete="new-password"
                 required

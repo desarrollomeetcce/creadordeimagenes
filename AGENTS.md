@@ -37,3 +37,5 @@
 - Producto en papelera: deletedAt oculta toda su jerarquía; eliminar cancela solo PENDING y libera esas reservas, conservando RUNNING, resultados y ledger histórico. Restaurar no reinicia trabajos. Directorio de marcas solo expone proyectos con acceso completo y copia referencias autorizadas al elegirlas, nunca por listar.
 
 - Cabeceras de subproductos usan consulta agrupada de órdenes con progreso por orden, no históricos acumulados. Refrescar solo con pestaña visible, actividad o eventos explícitos; las consultas de estado nunca generan IA. Aprobar revisión no genera ni concede aprobación a futuras modificaciones; minimizar conserva borradores y deja visibles generar/ver variaciones y controles de orden.
+
+- Campos secretos: usar PasswordInput para contraseña/token/clave, ocultos por defecto, control accesible independiente que no envía formularios y vuelve a ocultar al enviar/reiniciar. No persistir visibilidad ni valores. Al limpiar campos secretos seleccionar data-secret-input, incluso cuando el usuario cambió el tipo a text.

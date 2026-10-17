@@ -1,4 +1,5 @@
 "use client";
+import { PasswordInput } from "./components/password-input";
 import { useCallback, useEffect, useState, useRef } from "react";
 import {useSubproductStatuses,SubproductStatus} from "./components/subproduct-status";
 import type {OrderProgress} from "./components/order-progress";
@@ -715,8 +716,7 @@ function Login({
               </label>
               <label>
                 Contraseña · mínimo 12 caracteres
-                <input
-                  type="password"
+                <PasswordInput
                   name="password"
                   required
                   minLength={12}
@@ -729,9 +729,8 @@ function Login({
               {mode === "setup" && (
                 <label>
                   Token de instalación
-                  <input
+                  <PasswordInput
                     name="token"
-                    type="password"
                     required
                     autoComplete="off"
                   />
@@ -2340,8 +2339,7 @@ function AISettings() {
           </label>
           <label>
             {c.maskedKey ? "Reemplazar clave API" : "Clave API"}
-            <input
-              type="password"
+            <PasswordInput
               value={key}
               onChange={(e) => {
                 setKey(e.target.value);

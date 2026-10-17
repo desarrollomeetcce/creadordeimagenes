@@ -1,4 +1,5 @@
 "use client";
+import { PasswordInput } from "./password-input";
 import { useCallback, useEffect, useState } from "react";
 import { RecoveryIssuer } from "./account-security";
 import { planLabel } from "../../lib/plan-label";
@@ -92,9 +93,8 @@ export function UsersPanel({ isOwner }: { isOwner: boolean }) {
           </label>
           <label>
             Contraseña inicial · mínimo 12 caracteres
-            <input
+            <PasswordInput
               name="password"
-              type="password"
               required
               minLength={12}
               maxLength={128}
@@ -286,9 +286,8 @@ export function UsersPanel({ isOwner }: { isOwner: boolean }) {
               >
                 <label>
                   Tu contraseña actual de OWNER
-                  <input
+                  <PasswordInput
                     name="currentPassword"
-                    type="password"
                     autoComplete="current-password"
                     required
                     minLength={12}
@@ -296,9 +295,8 @@ export function UsersPanel({ isOwner }: { isOwner: boolean }) {
                 </label>
                 <label>
                   Nueva contraseña para {u.name}
-                  <input
+                  <PasswordInput
                     name="newPassword"
-                    type="password"
                     autoComplete="new-password"
                     required
                     minLength={12}

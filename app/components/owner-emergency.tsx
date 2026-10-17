@@ -1,4 +1,5 @@
 "use client";
+import { PasswordInput } from "./password-input";
 import { useEffect, useState } from "react";
 type Status = {
   enabled: boolean;
@@ -94,9 +95,8 @@ export function OwnerEmergencyKit({ email }: { email: string }) {
       >
         <label>
           Tu contraseña actual
-          <input
+          <PasswordInput
             name="currentPassword"
-            type="password"
             autoComplete="current-password"
             required
             minLength={12}
@@ -225,9 +225,8 @@ export function EmergencyOwnerForm({ onBack }: { onBack: () => void }) {
           </label>
           <label>
             Código de emergencia
-            <input
+            <PasswordInput
               name="code"
-              type="password"
               autoComplete="off"
               required
               pattern="OWNER-[A-Za-z0-9_-]{43}"
@@ -236,9 +235,8 @@ export function EmergencyOwnerForm({ onBack }: { onBack: () => void }) {
           </label>
           <label>
             Nueva contraseña · mínimo 12 caracteres
-            <input
+            <PasswordInput
               name="newPassword"
-              type="password"
               autoComplete="new-password"
               required
               minLength={12}
@@ -247,9 +245,8 @@ export function EmergencyOwnerForm({ onBack }: { onBack: () => void }) {
           </label>
           <label>
             Repite la nueva contraseña
-            <input
+            <PasswordInput
               name="confirmPassword"
-              type="password"
               autoComplete="new-password"
               required
               minLength={12}

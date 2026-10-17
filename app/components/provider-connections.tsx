@@ -1,4 +1,5 @@
 "use client";
+import { PasswordInput } from "./password-input";
 import { useEffect, useState } from "react";
 type Connection = {
   id: string;
@@ -193,8 +194,7 @@ export function ProviderConnections({
           {selected?.configured
             ? "Reemplazar clave de esta cuenta"
             : "Clave API de esta cuenta"}
-          <input
-            type="password"
+          <PasswordInput
             name="connectionApiKey"
             autoComplete="new-password"
             spellCheck={false}

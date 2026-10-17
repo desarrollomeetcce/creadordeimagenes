@@ -1,4 +1,5 @@
 "use client";
+import { PasswordInput } from "./password-input";
 import { useEffect, useState } from "react";
 type Status = { configured: boolean; maskedKey: string | null };
 export function BillingKeyForm({
@@ -118,8 +119,7 @@ export function BillingKeyForm({
           {status?.configured
             ? "Reemplazar clave de gastos"
             : "Clave de gastos de OpenAI"}
-          <input
-            type="password"
+          <PasswordInput
             name="billingApiKey"
             value={key}
             autoComplete="new-password"
