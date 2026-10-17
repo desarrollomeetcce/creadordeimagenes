@@ -83,7 +83,7 @@ export function PaymentSettings() {
         ];
   return (
     <section className="stack">
-      <h1>Configuración de pagos</h1>
+      <h1>Ajustes de pago</h1>
       <p>
         Conecta Mercado Pago o PayPal. Las claves se cifran en el servidor y
         nunca se devuelven completas. Los cobros van a tu cuenta de la pasarela;

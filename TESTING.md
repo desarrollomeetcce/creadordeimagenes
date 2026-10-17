@@ -373,3 +373,14 @@ Respaldo final restaurado en PostgreSQL sintético independiente: 42 tablas y 24
 ## Selección y contador junto al calendario · 17/10/2026
 
 Resaltado violeta distinto del verde de marca para navegación activa, carpetas, menús desplegados, opciones elegidas, calendario y tarjetas marcadas; foco visible de teclado y pulsación de botones. La Biblioteca muestra junto a la fecha flyers generados, pendientes y en curso con el período/ámbito y aclaración de accesos y todas las páginas. Reutiliza counts del endpoint existente, sin consultas adicionales ni IA. TypeScript/build y 34 unitarias aprobados; Chromium comprueba colores calculados, fecha Hoy/todas, conteos contrastados con API para OWNER/USER y móvil sin desbordamiento. Sin cambios de esquema, llamadas IA, cobros ni correo.
+
+
+## Apariencia y menú inferior · 17/10/2026
+
+Botón claro/oscuro en la esquina superior derecha, también en ingreso y página pública. Preferencia local no sensible, inicializada antes de pintar para evitar destellos y sincronizada entre pestañas. Sin acceso al almacenamiento el cambio visual sigue funcionando. Paleta oscura con superficies, formularios, avisos, editor, calendario y selección violeta legibles; no se recolorean los afiches.
+
+Menú principal conserva proyectos, Biblioteca, configuraciones guardadas, historial, papelera, usuarios/estadísticas/página web/auditoría según rol. Zona inferior con identidad, Ajustes, Mi cuenta, Mi plan y Cerrar sesión. Ajustes agrupa correo/IA/pagos solo OWNER y costos para quienes ya tenían acceso. Observador conserva cuenta y salida; sin nuevas capacidades ni endpoints. Desplegable con cierre exterior/Escape y al navegar; disponible en móvil, donde el pie anterior estaba oculto.
+
+Validación: 34 unitarias, TypeScript y build aprobados. Chromium comprueba persistencia tras recarga/ingreso, dos temas, navegación y menús OWNER/USER/OBSERVER, móvil y página pública sin desbordamiento, Escape, cierre al navegar y almacenamiento bloqueado. Sin cambios en base de datos ni llamadas de IA, pagos o correo.
+
+La etiqueta del menú inferior es Ajustes (correo, IA, costos y pago); Configuraciones guardadas conserva su nombre y ubicación. Los títulos de correo/IA/pago coinciden con la nueva nomenclatura.

@@ -1,5 +1,6 @@
 "use client";
 import { useCallback, useEffect, useState, useRef } from "react";
+import { SidebarAccount } from "./components/sidebar-account";
 import { SiteEditor } from "./components/site-editor";
 import { PaymentSettings } from "./components/payment-settings";
 import { PlanSettings, MyPlan } from "./components/membership-plans";
@@ -394,8 +395,8 @@ export default function Home() {
     projects: "Proyectos",
     library: "Biblioteca",
     presets: "Configuraciones guardadas",
-    ai: "Configuración → Inteligencia Artificial",
-    mail: "Configuración → Correo",
+    ai: "Ajustes de IA",
+    mail: "Ajustes de correo",
     "visual-audit": "Auditoría visual y conservación",
     history: "Historial",
     users: "Usuarios",
@@ -405,7 +406,7 @@ export default function Home() {
     jobs: "Biblioteca",
     account: "Mi cuenta",
     plans: "Mi plan",
-    payments: "Configuración de pagos",
+    payments: "Ajustes de pago",
     website: "Página web",
     collection: "Galería de afiches",
   };
@@ -429,23 +430,17 @@ export default function Home() {
             </span>
           </div>
           <div className="eyebrow">Espacio de trabajo</div>
-          <nav>
+          <nav aria-label="Menú principal">
             {[
               ["projects", "▦", "Proyectos"],
               ["library", "▧", "Biblioteca"],
               ["presets", "≡", "Configuraciones guardadas"],
               ["history", "◷", "Historial"],
               ["trash", "⌫", "Papelera"],
-              ["usage", "↗", "Costos de IA"],
-              ["account", "♙", "Mi cuenta"],
-              ["plans", "◇", "Mi plan"],
               ...(managesUsers(user.role) ? [["users", "♙", "Usuarios"]] : []),
               ...(user.role === "OWNER"
                 ? [
                     ["statistics", "▥", "Estadísticas"],
-                    ["ai", "⚙", "Configuración de IA"],
-                    ["mail", "✉", "Configuración de correo"],
-                    ["payments", "◇", "Configuración de pagos"],
                     ["website", "◈", "Página web"],
                     ["visual-audit", "▧", "Auditoría visual"],
                   ]
@@ -470,43 +465,15 @@ export default function Home() {
                 </button>
               ))}
           </nav>
-          <footer>
-            <div className="row">
-              <span className="avatar">{user.name[0].toUpperCase()}</span>
-              <div>
-                <strong>{user.name}</strong>
-                <div className="eyebrow">{roleLabels[user.role]}</div>
-              </div>
-            </div>
-            <button
-              style={{ marginTop: 16, width: "100%" }}
-              onClick={() =>
-                void api("auth/logout", "POST").then(() => {
-                  clearGallerySession();
-                  return reloadUser();
-                })
-              }
-            >
-              Cerrar sesión
-            </button>
-          </footer>
+          <SidebarAccount user={user} view={view} navigate={navigate} logout={() => {
+            void api("auth/logout", "POST").then(() => { clearGallerySession(); return reloadUser(); });
+          }} />
         </aside>
         <div className="workspace">
           <header className="topbar">
             <span className="muted">{titles[view]}</span>
             <span className="badge">Producción publicitaria</span>
-            <button
-              type="button"
-              className="mobile-signout"
-              onClick={() =>
-                void api("auth/logout", "POST").then(() => {
-                  clearGallerySession();
-                  return reloadUser();
-                })
-              }
-            >
-              Cerrar sesión
-            </button>
+
           </header>
           <main>
             <RoleGuide name={user.name} role={user.role} />
@@ -2292,8 +2259,8 @@ function AISettings() {
     <>
       <div className="heading">
         <div>
-          <div className="eyebrow">Configuración / Exclusivo del OWNER</div>
-          <h1>Inteligencia Artificial</h1>
+          <div className="eyebrow">Ajustes / Exclusivo del OWNER</div>
+          <h1>Ajustes de IA</h1>
           <p className="muted">
             Conecta tu proveedor y establece las reglas de generación de tu
             equipo.

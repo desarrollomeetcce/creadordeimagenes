@@ -45,7 +45,7 @@ export function MailSettings() {
   }, []);
   return (
     <section className="panel stack">
-      <h1>Configuración → Correo</h1>
+      <h1>Ajustes de correo</h1>
       <p>
         Solo OWNER administra estas credenciales. El correo se utiliza para
         enviar enlaces de recuperación solicitados desde Usuarios.
