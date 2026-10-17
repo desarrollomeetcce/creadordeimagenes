@@ -7,7 +7,14 @@ import {
   hierarchyFolder,
   type FolderNode,
 } from "./folder-navigation";
+import { VariationEditor } from "./variation-editor";
 import { BackgroundBatches } from "./background-batches";
+import {
+  ExecutionChoice,
+  ProductionControls,
+  useProductionController,
+  type ExecutionMode,
+} from "./production-controls";
 import {
   HierarchyFilters,
   hierarchyFromLocation,
@@ -72,6 +79,7 @@ async function request(
   return b;
 }
 export function JobsPanel() {
+  const [editing, setEditing] = useState<string | null>(null);
   const [backgroundOpen, setBackgroundOpen] = useState(false);
   const [folders, setFolders] = useState<FolderNode[]>([]);
   const latestData = useRef<Data | null>(null);
@@ -95,12 +103,10 @@ export function JobsPanel() {
     [selected, setSelected] = useState<string[]>([]);
   const [loading, setLoading] = useState(false),
     [busy, setBusy] = useState(false),
-    [processing, setProcessing] = useState(false),
     [error, setError] = useState(""),
     [loadError, setLoadError] = useState(""),
     [message, setMessage] = useState("");
   const sequence = useRef(0),
-    pause = useRef(false),
     alive = useRef(true),
     selectionRows = useRef(new Map<string, Job>());
   latestData.current = data;
@@ -113,6 +119,17 @@ export function JobsPanel() {
     q,
     ...hierarchy,
   }).toString();
+  useEffect(() => {
+    const url = new URLSearchParams(window.location.search);
+    url.set("view", "library");
+    url.set("tab", "production");
+    url.delete("folder");
+    for (const [key, value] of Object.entries(hierarchy)) {
+      if (value) url.set(key, value);
+      else url.delete(key);
+    }
+    history.replaceState(null, "", "?" + url);
+  }, [hierarchy]);
   const currentQuery = useRef(params);
   currentQuery.current = params;
   const refresh = useCallback(
@@ -170,11 +187,15 @@ export function JobsPanel() {
   const refreshJobs = useCallback(async () => {
     await refresh();
   }, [refresh]);
+  const production = useProductionController(refreshJobs);
+  const [focusedJob, setFocusedJob] = useState<string | null>(null);
+  const [approvalMode, setApprovalMode] = useState<
+    Record<string, ExecutionMode>
+  >({});
   useEffect(() => {
     alive.current = true;
     return () => {
       alive.current = false;
-      pause.current = true;
       sequence.current++;
     };
   }, []);
@@ -240,8 +261,11 @@ export function JobsPanel() {
     setError("");
     setMessage("");
     try {
-      await fn();
-      await refreshJobs();
+      try {
+        await fn();
+      } finally {
+        await refreshJobs();
+      }
       if (alive.current) setMessage(success);
     } catch (e) {
       if (alive.current)
@@ -273,34 +297,19 @@ export function JobsPanel() {
     }, "Pendientes cancelados y reservas locales liberadas.");
   };
   const process = () => {
-    const ids = [...pending];
     if (
       !confirm(
-        `¿Procesar estos ${ids.length} trabajos ya autorizados? Mantén esta pantalla abierta o usa segundo plano.`,
+        `¿Generar ${pending.length} trabajos ya autorizados en esta pantalla? Mantén abierta esta vista.`,
       )
     )
       return;
-    pause.current = false;
-    setProcessing(true);
-    void action(async () => {
-      try {
-        for (const id of ids) {
-          if (pause.current) break;
-          const result = await request(`jobs/${id}/process`, "POST");
-          if (alive.current) {
-            setSelected((current) => current.filter((value) => value !== id));
-            await refreshJobs();
-          }
-          if (result.status !== "COMPLETED")
-            throw Error(
-              result.error ??
-                "El trabajo requiere revisión antes de continuar.",
-            );
-        }
-      } finally {
-        if (alive.current) setProcessing(false);
-      }
-    }, "Procesamiento detenido o finalizado. Los trabajos sin iniciar permanecen en cola.");
+    const allIds = (selected.length ? selectedRows : (data?.rows ?? []))
+      .filter((j) => j.status === "PENDING" && j.canManage)
+      .map((j) => j.id);
+    void action(
+      () => production.start(pending, "here", allIds),
+      "Procesamiento iniciado. Usa Pausar o Detener junto a la vista previa.",
+    );
   };
   const archive = (ids: string[], restore: boolean) => {
     if (
@@ -321,11 +330,32 @@ export function JobsPanel() {
         : "Selección retirada del listado; historial y consumo conservados.",
     );
   };
+  if (editing)
+    return (
+      <section className="stack">
+        <button
+          type="button"
+          onClick={() => {
+            setEditing(null);
+            void refreshJobs().catch(() => {});
+          }}
+        >
+          ← Volver a Producción
+        </button>
+        <VariationEditor
+          id={editing}
+          onClose={() => {
+            setEditing(null);
+            void refreshJobs().catch(() => {});
+          }}
+        />
+      </section>
+    );
   return (
     <section className="stack jobs-panel">
       <div>
         <div className="eyebrow">Producción en servidor</div>
-        <h1>Generaciones</h1>
+        <h2>Producción y revisión</h2>
         <p className="muted">
           Consulta tus trabajos y las imágenes terminadas de espacios
           disponibles para tu cuenta. Solo el autor u OWNER administra cada
@@ -346,7 +376,7 @@ export function JobsPanel() {
           <FolderBreadcrumbs
             nodes={folders}
             current={hierarchyFolder(hierarchy)}
-            root="Generaciones"
+            root="Biblioteca · Producción"
             onOpen={(key) => {
               setHierarchy(folderScope(folders, key, hierarchy));
               setPage(1);
@@ -387,10 +417,75 @@ export function JobsPanel() {
           {loading && !data && <p role="status">Consultando generaciones…</p>}
           {data && (
             <>
+              {(production.active ||
+                production.last ||
+                production.batchId ||
+                production.error) && (
+                <div className="production-dock panel">
+                  {(() => {
+                    const current = data.rows.find(
+                      (j) => j.id === production.current,
+                    );
+                    const job = current?.variation
+                      ? current
+                      : data.rows.find(
+                          (j) => j.id === (production.last ?? focusedJob),
+                        );
+                    return job?.variation ? (
+                      <img
+                        src={`/api/variations/${job.variation.id}?thumbnail=true`}
+                        alt="Última imagen del lote"
+                      />
+                    ) : (
+                      <div className="empty">
+                        {production.current
+                          ? "Generando la siguiente imagen…"
+                          : "Control del lote"}
+                      </div>
+                    );
+                  })()}
+                  <ProductionControls controller={production} />
+                </div>
+              )}
               <div
                 className="row selection-toolbar"
                 aria-label="Acciones de la selección"
               >
+                <details className="queue-menu">
+                  <summary className="primary">
+                    Generar / cola · {data?.counts.PENDING ?? 0}
+                  </summary>
+                  <div className="toolbar-popover stack">
+                    <details
+                      onToggle={(e) => setBackgroundOpen(e.currentTarget.open)}
+                    >
+                      <summary>
+                        Generar en segundo plano · {pending.length} en cola
+                      </summary>
+                      {backgroundOpen && (
+                        <BackgroundBatches
+                          pending={pending}
+                          refreshJobs={refreshJobs}
+                          disabled={busy}
+                        />
+                      )}
+                    </details>
+                    <button
+                      type="button"
+                      className="primary"
+                      disabled={
+                        busy ||
+                        production.active ||
+                        production.dispatching ||
+                        !pending.length
+                      }
+                      onClick={process}
+                    >
+                      Generar ahora ({pending.length})
+                    </button>
+                    <span>{data?.counts.RUNNING ?? 0} generándose</span>
+                  </div>
+                </details>
                 <details className="other-filters">
                   <summary>Otros filtros</summary>
                   <div className="toolbar-popover stack">
@@ -477,48 +572,6 @@ export function JobsPanel() {
                   </select>
                 </label>
 
-                <details className="queue-menu">
-                  <summary>
-                    Generar / cola · {data?.counts.PENDING ?? 0}
-                  </summary>
-                  <div className="toolbar-popover stack">
-                    <details
-                      onToggle={(e) => setBackgroundOpen(e.currentTarget.open)}
-                    >
-                      <summary>
-                        Generar en segundo plano · {pending.length} en cola
-                      </summary>
-                      {backgroundOpen && (
-                        <BackgroundBatches
-                          pending={pending}
-                          refreshJobs={refreshJobs}
-                          disabled={busy}
-                        />
-                      )}
-                    </details>
-                    <button
-                      type="button"
-                      className="primary"
-                      disabled={busy || !pending.length}
-                      onClick={process}
-                    >
-                      Generar ahora ({pending.length})
-                    </button>
-                    <button
-                      type="button"
-                      disabled={!processing}
-                      onClick={() => {
-                        pause.current = true;
-                        setMessage(
-                          "Se detendrá al terminar la imagen en curso.",
-                        );
-                      }}
-                    >
-                      Parar cola
-                    </button>
-                    <span>{data?.counts.RUNNING ?? 0} generándose</span>
-                  </div>
-                </details>
                 <details>
                   <summary>Acciones · {selected.length} seleccionados</summary>
                   <div className="toolbar-popover stack">
@@ -765,6 +818,17 @@ export function JobsPanel() {
                           Ver costos de este ámbito →
                         </a>
                       )}
+                      {j.canManage && j.variation && !j.variation.expired && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            production.pause();
+                            setEditing(j.variation!.id);
+                          }}
+                        >
+                          Editar imagen
+                        </button>
+                      )}
                       {j.waitingApproval && (
                         <p className="notice">
                           En espera de que apruebes la primera muestra. No se
@@ -777,53 +841,52 @@ export function JobsPanel() {
                       {j.canManage &&
                         j.variation &&
                         j.variation.reviewStatus !== "APPROVED" && (
-                          <button
-                            className="primary"
-                            disabled={busy}
-                            onClick={() =>
-                              void action(async () => {
-                                const result = await request(
-                                  `jobs/${j.id}/approve`,
-                                  "POST",
-                                );
-                                const channel = new BroadcastChannel(
-                                  "studio-updates",
-                                );
-                                channel.postMessage("approved");
-                                channel.close();
-                                if (result.pending.length) {
-                                  const runner =
-                                    await request("jobs/background");
-                                  if (runner.available) {
-                                    await request("jobs/background", "POST", {
-                                      ids: result.pending,
-                                      requestId: crypto.randomUUID(),
-                                    });
-                                  } else {
-                                    setProcessing(true);
-                                    pause.current = false;
-                                    try {
-                                      for (const id of result.pending) {
-                                        if (pause.current || !alive.current)
-                                          break;
-                                        await request(
-                                          `jobs/${id}/process`,
-                                          "POST",
-                                        );
-                                        await refreshJobs();
-                                      }
-                                    } finally {
-                                      setProcessing(false);
-                                    }
-                                  }
+                          <div className="stack sample-approval">
+                            {j.isPreview && (
+                              <ExecutionChoice
+                                label="Después de aprobar"
+                                value={approvalMode[j.id] ?? "queue"}
+                                disabled={busy || production.active}
+                                onChange={(mode) =>
+                                  setApprovalMode((current) => ({
+                                    ...current,
+                                    [j.id]: mode,
+                                  }))
                                 }
-                              }, "Muestra aprobada y conservada en Biblioteca. Revisa el avance del resto del lote.")
-                            }
-                          >
-                            {j.isPreview
-                              ? "Aprobar muestra y continuar"
-                              : "Aprobar y guardar en Biblioteca"}
-                          </button>
+                              />
+                            )}
+                            <button
+                              type="button"
+                              className="primary"
+                              disabled={
+                                busy ||
+                                production.active ||
+                                production.dispatching
+                              }
+                              onClick={() =>
+                                void action(async () => {
+                                  setFocusedJob(j.id);
+                                  const result = await request(
+                                    `jobs/${j.id}/approve`,
+                                    "POST",
+                                  );
+                                  const channel = new BroadcastChannel(
+                                    "studio-updates",
+                                  );
+                                  channel.postMessage("approved");
+                                  channel.close();
+                                  await production.start(
+                                    result.pending,
+                                    approvalMode[j.id] ?? "queue",
+                                  );
+                                }, "Imagen aprobada en Biblioteca. La continuación depende del modo elegido.")
+                              }
+                            >
+                              {j.isPreview
+                                ? "Aprobar muestra"
+                                : "Aprobar y guardar en Biblioteca"}
+                            </button>
+                          </div>
                         )}
                       {j.variation?.reviewStatus === "APPROVED" && (
                         <a

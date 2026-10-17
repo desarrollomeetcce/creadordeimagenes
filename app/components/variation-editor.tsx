@@ -1,5 +1,11 @@
 "use client";
 import { useEffect, useState, useRef } from "react";
+import {
+  ExecutionChoice,
+  ProductionControls,
+  useProductionController,
+  type ExecutionMode,
+} from "./production-controls";
 import type { Design } from "@/lib/design";
 type EditorData = {
   revision: number;
@@ -46,6 +52,9 @@ export function VariationEditor({
     setSelected(r.document?.layers[0]?.id ?? "");
     setCharge(false);
   };
+  const [executionMode, setExecutionMode] = useState<ExecutionMode>("queue");
+  const [queued, setQueued] = useState(false);
+  const production = useProductionController(load);
   const run = async (
     fn: () => Promise<unknown>,
     success = "Cambios guardados",
@@ -431,9 +440,11 @@ export function VariationEditor({
                   setCharge(false);
                 }}
               >
-                <option value="edit-ai">Editar esta variación</option>
+                <option value="edit-ai">
+                  Editar esta imagen con un prompt
+                </option>
                 <option value="regenerate">
-                  Generar una alternativa independiente
+                  Otra variación · mantener instrucciones originales
                 </option>
               </select>
             </label>
@@ -459,8 +470,15 @@ export function VariationEditor({
               </label>
             )}
           </div>
+          <p className="notice">
+            {action === "regenerate"
+              ? "La nueva variación conserva las instrucciones originales. Puedes dejar el campo vacío o añadir una especificación; el original se conserva."
+              : "Describe qué cambiar en esta imagen. Se conservan el contexto original y las versiones anteriores."}
+          </p>
           <label>
-            Instrucciones
+            {action === "regenerate"
+              ? "Indicaciones adicionales · opcional"
+              : "Qué deseas cambiar · prompt"}
             <textarea
               value={prompt}
               maxLength={12000}
@@ -468,7 +486,11 @@ export function VariationEditor({
                 setPrompt(e.target.value);
                 setCharge(false);
               }}
-              placeholder="Ejemplo: cambia el fondo por un laboratorio de control alimentario."
+              placeholder={
+                action === "regenerate"
+                  ? "Opcional: otra composición, con fondo claro y los mismos textos."
+                  : "Ejemplo: cambia solo el fondo por un laboratorio; conserva el resto."
+              }
             />
           </label>
           <p className="hint">
@@ -484,12 +506,24 @@ export function VariationEditor({
             He revisado mis instrucciones y autorizo el posible cargo de API.
             Para conservar ajustes manuales, guárdalos antes de generar.
           </label>
+          <ExecutionChoice
+            value={executionMode}
+            onChange={setExecutionMode}
+            disabled={busy || production.active || production.dispatching}
+          />
           <button
-            disabled={busy || !charge || !prompt.trim()}
+            disabled={
+              busy ||
+              production.active ||
+              production.dispatching ||
+              production.uncertainDispatch ||
+              !charge ||
+              (action === "edit-ai" && !prompt.trim())
+            }
             className="primary"
             onClick={() =>
               void run(async () => {
-                await api(`variations/${id}/${action}`, "POST", {
+                const result = await api(`variations/${id}/${action}`, "POST", {
                   expectedRevision: data.revision,
                   prompt,
                   confirmCharge: true,
@@ -498,13 +532,32 @@ export function VariationEditor({
                   editKind: draft ? kind : "full",
                 });
                 setCharge(false);
-              }, "Operación encolada. Consulta Generaciones y recarga el editor al finalizar.")
+                setQueued(true);
+                await production.start(result.jobs, executionMode);
+              }, "Operación registrada solo para esta imagen. Revisa el resultado en Biblioteca → Producción.")
             }
           >
-            Autorizar operación de IA
+            Autorizar IA solo para esta imagen
           </button>
         </div>
       </details>
+      <ProductionControls controller={production} />
+      {queued && (
+        <a
+          className="button"
+          target="_blank"
+          rel="noopener"
+          href={(() => {
+            const p = new URLSearchParams(window.location.search);
+            p.set("view", "library");
+            p.set("tab", "production");
+            p.delete("folder");
+            return "?" + p;
+          })()}
+        >
+          Revisar resultado en Producción ↗
+        </a>
+      )}
       <div className="row">
         <button
           disabled={busy}

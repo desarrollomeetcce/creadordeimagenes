@@ -58,6 +58,7 @@ export async function runOne(filter?: {
   id?: string;
   actorId?: string;
   deadlineMs?: number;
+  background?: { batchId: string; runId: string };
 }) {
   let candidate = await db.generationJob.findFirst({
     where: {
@@ -84,6 +85,21 @@ export async function runOne(filter?: {
   const leaseToken = randomUUID();
   const claim = await db.$transaction(async (tx) => {
     await tx.$executeRaw`SELECT pg_advisory_xact_lock(728291)`;
+    if (filter?.background) {
+      const { batchId, runId } = filter.background;
+      // Serialize claim with pause. A pause acknowledged first prevents this dispatch.
+      await tx.$queryRaw`SELECT id FROM "BackgroundBatch" WHERE id=${batchId} FOR UPDATE`;
+      const batch = await tx.backgroundBatch.findUnique({
+        where: { id: batchId },
+      });
+      if (
+        !batch ||
+        batch.status !== "ACTIVE" ||
+        batch.runId !== runId ||
+        !(batch.jobIds as string[]).includes(candidate.id)
+      )
+        return { count: 0 };
+    }
     const active = await tx.generationJob.count({
       where: { actorId: candidate.actorId, status: "RUNNING" },
     });

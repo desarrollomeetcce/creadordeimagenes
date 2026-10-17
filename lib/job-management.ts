@@ -298,6 +298,48 @@ export async function cancelSelectedJobs(user: Actor, ids: string[]) {
     { timeout: 20000 },
   );
 }
+/** Stop is tolerant of progress made since the UI snapshot; ordinary selection cancellation stays strict. */
+export async function stopSelectedJobs(user: Actor, ids: string[]) {
+  demand(
+    user.role !== "OBSERVER",
+    "Observador solo puede ver y descargar.",
+    403,
+  );
+  const unique = [...new Set(ids)];
+  demand(
+    unique.length > 0 && unique.length <= 200,
+    "Selecciona entre 1 y 200 trabajos.",
+  );
+  return db.$transaction(
+    async (tx) => {
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(728291)`;
+      const jobs = await tx.generationJob.findMany({
+        where: {
+          id: { in: unique },
+          ...(user.role === "OWNER" ? {} : { actorId: user.id }),
+        },
+        select: { id: true, status: true },
+      });
+      demand(
+        jobs.length === unique.length,
+        "Hay trabajos no disponibles para tu cuenta.",
+        404,
+      );
+      const result = await releasePending(
+        tx,
+        user,
+        jobs.filter((j) => j.status === "PENDING").map((j) => j.id),
+        "LOTE_DETENIDO",
+      );
+      return {
+        ...result,
+        running: jobs.filter((j) => j.status === "RUNNING").length,
+        preserved: jobs.filter((j) => j.status !== "PENDING").length,
+      };
+    },
+    { timeout: 20000 },
+  );
+}
 export async function cancelBatchPending(user: Actor, id: string) {
   return db.$transaction(
     async (tx) => {

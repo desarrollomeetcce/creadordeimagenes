@@ -50,3 +50,7 @@ Las suites automatizadas descritas no hacen llamadas facturables de IA ni envía
 
 
 Ampliación solicitada en curso: Google Gemini/AI Studio, fal.ai y Replicate, con Nano Banana/FLUX disponibles compatibles consultados realmente. La publicación de recuperación y facturación separada no acredita todavía esos adaptadores.
+
+### Actualización 17/10/2026: Biblioteca y producción
+
+Biblioteca unificada con Afiches/Producción, controles compactos, elección explícita de ejecutor, aprobar sin continuación automática, pausa/reanudar/detener, enlaces de afiches en pestaña nueva y edición/regeneración individual con instrucciones originales. Validación local: 97 resultados de integración, 33 unitarias, build/tipos/instalación y Chromium con dobles explícitos. No requiere migración ni copia de imágenes. Pausa no revoca una solicitud ya enviada al proveedor; detener cancela pendientes y conserva resultados e importes previos. Las pruebas locales no acreditan cobros, SMTP ni generación externa real.

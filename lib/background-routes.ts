@@ -47,6 +47,9 @@ export async function backgroundRoutes(
           total: statuses.length,
           completed: statuses.filter((s) => s === "COMPLETED").length,
           pending: statuses.filter((s) => s === "PENDING").length,
+          pendingIds: (b.jobIds as string[]).filter(
+            (id) => states.get(id) === "PENDING",
+          ),
           running: statuses.filter((s) => s === "RUNNING").length,
           cancelled: statuses.filter((s) => s === "CANCELLED").length,
           uncertain: statuses.filter((s) => s === "UNCERTAIN").length,

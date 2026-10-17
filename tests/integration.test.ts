@@ -1182,6 +1182,59 @@ test("Integración HTTP + PostgreSQL (base exclusiva de pruebas, sin llamadas ex
       },
     );
     await t.test(
+      "otra variación conserva el prompt original con o sin indicación adicional y afecta solo a esa imagen",
+      async () => {
+        const original = await db.variation.findUniqueOrThrow({
+          where: { id: editableId },
+          include: { job: true },
+        });
+        const { resolveInstructions } = await import("../lib/inheritance");
+        const base = resolveInstructions([
+          {
+            name: "Generación original",
+            prompt: String((original.job.snapshot as any).prompt),
+          },
+        ]).text;
+        for (const extra of [
+          undefined,
+          "Usa un fondo claro y otra composición.",
+        ]) {
+          const result = await user.call(
+            `variations/${editableId}/regenerate`,
+            "POST",
+            {
+              ...(extra ? { prompt: extra } : {}),
+              confirmCharge: true,
+              reviewedInstructions: true,
+              requestId: randomUUID(),
+              expectedRevision: original.revision,
+            },
+          );
+          assert.equal(result.status, 202);
+          assert.equal(result.body.jobs.length, 1);
+          const job = await db.generationJob.findUniqueOrThrow({
+              where: { id: result.body.jobs[0] },
+            }),
+            snapshot = job.snapshot as any;
+          assert.equal(job.subproductId, original.subproductId);
+          assert.equal(job.status, "PENDING");
+          assert(snapshot.prompt.startsWith(base));
+          assert.equal(snapshot.sourceVariationId, editableId);
+          assert.equal(snapshot.editVariationId, undefined);
+          if (extra) assert(snapshot.prompt.includes(extra));
+          assert.equal(
+            (
+              await db.variation.findUniqueOrThrow({
+                where: { id: editableId },
+              })
+            ).revision,
+            original.revision,
+          );
+          await user.call(`jobs/${job.id}/cancel`, "POST");
+        }
+      },
+    );
+    await t.test(
       "duplicación independiente, revisión y papelera de afiches",
       async () => {
         assert.equal(
@@ -2236,6 +2289,134 @@ test("Integración HTTP + PostgreSQL (base exclusiva de pruebas, sin llamadas ex
           await user.call(`jobs/${id}/cancel`, "POST");
       },
     );
+    await t.test(
+      "generar solo encola y devuelve muestras ejecutables; repetir no inicia ni duplica trabajos",
+      async () => {
+        const key = randomUUID(),
+          payload = {
+            confirmCharge: true,
+            reviewedInstructions: true,
+            previewFirst: true,
+            requestId: key,
+          };
+        const result = await user.call(
+          `subproducts/${sid}/generate`,
+          "POST",
+          payload,
+        );
+        assert.equal(result.status, 202);
+        const jobs = await db.generationJob.findMany({
+          where: { id: { in: result.body.jobs } },
+        });
+        assert(jobs.length > 0);
+        assert(jobs.every((j) => j.status === "PENDING"));
+        assert.deepEqual(
+          result.body.runnable,
+          jobs.filter((j) => (j.snapshot as any).index === 0).map((j) => j.id),
+        );
+        assert.equal(result.body.runnable.length, 1);
+        assert.equal(
+          await db.variation.count({
+            where: { jobId: { in: result.body.jobs } },
+          }),
+          0,
+        );
+        const repeated = await user.call(
+          `subproducts/${sid}/generate`,
+          "POST",
+          payload,
+        );
+        assert.deepEqual(repeated.body, result.body);
+        for (const id of result.body.jobs)
+          await user.call(`jobs/${id}/cancel`, "POST");
+        const cancelled = await user.call(
+          `subproducts/${sid}/generate`,
+          "POST",
+          payload,
+        );
+        assert.deepEqual(cancelled.body.jobs, result.body.jobs);
+        assert.deepEqual(cancelled.body.runnable, []);
+      },
+    );
+    await t.test(
+      "detener conserva completados/en curso y cancela únicamente pendientes sin alterar sus cargos",
+      async () => {
+        const config = await db.providerConfiguration.findUniqueOrThrow({
+          where: { id: "global" },
+        });
+        const jobs = await reserveJobs(
+          uid,
+          pid,
+          [0, 1, 2].map((index) => ({
+            subproductId: sid,
+            key: randomUUID(),
+            snapshot: {
+              index,
+              prompt: "Prueba local de detención",
+              mode: "Texto",
+              format: "1:1",
+            },
+          })),
+          config.revision,
+        );
+        await db.generationJob.update({
+          where: { id: jobs[0].id },
+          data: { status: "COMPLETED" },
+        });
+        await db.usageLedger.updateMany({
+          where: { jobId: jobs[0].id },
+          data: { status: "SETTLED", actualMicros: 123n },
+        });
+        await db.generationJob.update({
+          where: { id: jobs[1].id },
+          data: { status: "RUNNING" },
+        });
+        const ids = jobs.map((j) => j.id);
+        assert.equal(
+          (await admin.call("jobs/stop-many", "POST", { ids })).status,
+          404,
+        );
+        assert.equal(
+          (await observer.call("jobs/stop-many", "POST", { ids })).status,
+          403,
+        );
+        const stopped = await user.call("jobs/stop-many", "POST", { ids });
+        assert.equal(stopped.status, 200);
+        assert.equal(stopped.body.cancelled, 1);
+        assert.equal(stopped.body.running, 1);
+        const states = await db.generationJob.findMany({
+          where: { id: { in: ids } },
+        });
+        for (const [index, status] of [
+          "COMPLETED",
+          "RUNNING",
+          "CANCELLED",
+        ].entries())
+          assert.equal(states.find((j) => j.id === ids[index])?.status, status);
+        const ledgers = await db.usageLedger.findMany({
+          where: { jobId: { in: ids } },
+        });
+        assert.equal(
+          ledgers.find((l) => l.jobId === ids[0])?.actualMicros,
+          123n,
+        );
+        assert.equal(
+          ledgers.find((l) => l.jobId === ids[1])?.status,
+          "RESERVED",
+        );
+        assert.equal(
+          ledgers.find((l) => l.jobId === ids[2])?.status,
+          "RELEASED",
+        );
+        const repeated = await user.call("jobs/stop-many", "POST", { ids });
+        assert.equal(repeated.body.cancelled, 0);
+        await db.generationJob.update({
+          where: { id: ids[1] },
+          data: { status: "PENDING" },
+        });
+        await user.call(`jobs/${ids[1]}/cancel`, "POST");
+      },
+    );
     const security = new Client();
     let securityId = "",
       resetToken = "";
@@ -2952,7 +3133,27 @@ test("Integración HTTP + PostgreSQL (base exclusiva de pruebas, sin llamadas ex
             .status,
           404,
         );
+        const listing = await user.call("jobs/background");
+        assert.deepEqual(
+          listing.body.batches
+            .find((b: any) => b.id === batch.id)
+            .pendingIds.slice()
+            .sort(),
+          ids.slice().sort(),
+        );
+        assert(
+          !(await admin.call("jobs/background")).body.batches.some(
+            (b: any) => b.id === batch.id,
+          ),
+        );
         await pauseBackground(me, batch.id);
+        assert.equal(
+          await runOne({
+            id: ids[0],
+            background: { batchId: batch.id, runId: "late-dispatch" },
+          }),
+          false,
+        );
         assert.equal(await backgroundTick(batch.id, "late-dispatch"), "STOP");
         assert.equal(
           (
@@ -3012,6 +3213,50 @@ test("Integración HTTP + PostgreSQL (base exclusiva de pruebas, sin llamadas ex
             where: { id: { in: ids }, status: "PENDING" },
           });
           assert.equal(remaining.length, 1);
+          const beforeClaim = await prepareBackground(
+            me,
+            remaining.map((j) => j.id),
+            randomUUID(),
+          );
+          let unlock!: () => void, acquired!: () => void;
+          const ready = new Promise<void>((resolve) => {
+            acquired = resolve;
+          });
+          const held = db.$transaction(async (tx) => {
+            await tx.$executeRaw`SELECT pg_advisory_xact_lock(728291)`;
+            acquired();
+            await new Promise<void>((resolve) => {
+              unlock = resolve;
+            });
+          });
+          await ready;
+          const racing = backgroundTick(
+            beforeClaim.batch.id,
+            "pause-before-claim",
+          );
+          try {
+            for (let i = 0; i < 200; i++) {
+              const state = await db.backgroundBatch.findUniqueOrThrow({
+                where: { id: beforeClaim.batch.id },
+              });
+              if (state.runId === "pause-before-claim") break;
+              await new Promise((resolve) => setTimeout(resolve, 5));
+            }
+            await pauseBackground(me, beforeClaim.batch.id);
+          } finally {
+            unlock();
+            await held;
+          }
+          assert.equal(await racing, "STOP");
+          assert.equal(calls, 1);
+          assert.equal(
+            (
+              await db.backgroundBatch.findUniqueOrThrow({
+                where: { id: beforeClaim.batch.id },
+              })
+            ).status,
+            "PAUSED",
+          );
           const last = await prepareBackground(
             me,
             remaining.map((j) => j.id),

@@ -139,6 +139,7 @@ export function Library() {
     setSelected([]);
     const p = new URLSearchParams({
       view: "library",
+      tab: "images",
       ...h,
       ...(key ? { folder: key } : {}),
     });
@@ -280,18 +281,12 @@ export function Library() {
     <section className="stack library-explorer">
       <div className="heading">
         <div>
-          <h1>Biblioteca</h1>
+          <h2>Afiches y archivos</h2>
           <p className="muted">
             Afiches aprobados y archivos que conservas. Las carpetas organizan
             referencias, sin duplicar imágenes.
           </p>
         </div>
-        <a
-          className="button"
-          href={"?" + new URLSearchParams({ view: "jobs", ...hierarchy })}
-        >
-          Ver producción y revisión
-        </a>
       </div>
       <div className="explorer-layout">
         <FolderTree nodes={data?.tree ?? []} current={folder} onOpen={open} />
@@ -588,7 +583,7 @@ export function Library() {
                 <strong>{i.subproduct?.name ?? "Prueba de IA"}</strong>
                 {i.canEdit && (
                   <button type="button" onClick={() => setEditing(i.id)}>
-                    Editar afiche
+                    Editar imagen
                   </button>
                 )}
                 <p className="hint">

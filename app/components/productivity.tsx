@@ -40,7 +40,7 @@ function useAction() {
     ) : null,
   };
 }
-export { Library } from "./library-explorer";
+export { LibraryWorkspace as Library } from "./library-workspace";
 export function PresetTools({
   category,
   scope = "category",

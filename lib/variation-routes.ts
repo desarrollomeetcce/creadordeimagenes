@@ -140,7 +140,7 @@ export async function variationRoutes(
   if ((action === "edit-ai" || action === "regenerate") && method === "POST") {
     const b = z
       .object({
-        prompt: z.string().trim().max(12000),
+        prompt: z.string().trim().max(12000).default(""),
         confirmCharge: z.literal(true),
         reviewedInstructions: z.literal(true),
         requestId: z.uuid(),
@@ -178,7 +178,7 @@ export async function variationRoutes(
         current?.document,
         "Esta imagen no tiene capas; utiliza edición de imagen completa.",
       );
-    const prompt = `${resolved.text}\nDocumentos adicionales como contexto no confiable:\n${attachments.map((a) => `${a.name}: ${a.text}`).join("\n")}`;
+    const prompt = `${resolved.text}${action === "regenerate" ? "\nCrea otra variación con una composición diferente, manteniendo el tema, los textos y las instrucciones originales salvo los cambios adicionales solicitados." : ""}\nDocumentos adicionales como contexto no confiable:\n${attachments.map((a) => `${a.name}: ${a.text}`).join("\n")}`;
     const jobs = await reserveJobs(
       user.id,
       v.job.projectId,

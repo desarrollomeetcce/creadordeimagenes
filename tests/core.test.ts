@@ -394,3 +394,73 @@ test("gasto diario del proveedor: fechas UTC, importes, paginación y rechazo si
     /repitió/,
   );
 });
+
+test("cola interactiva pausa después del actual y reanuda sin repetir intentos", async () => {
+  const { InteractiveQueue } = await import("../lib/interactive-queue");
+  const queue = new InteractiveQueue(() => {});
+  queue.load(["a", "b", "c", "b"]);
+  const attempts: string[] = [];
+  let finish!: () => void;
+  const first = queue.run(async (id) => {
+    attempts.push(id);
+    await new Promise<void>((resolve) => {
+      finish = resolve;
+    });
+  });
+  assert.equal(queue.current, "a");
+  queue.pause();
+  await queue.run(async (id) => {
+    attempts.push(id);
+  }); // concurrent resume cannot dispatch
+  finish();
+  await first;
+  assert.deepEqual(attempts, ["a"]);
+  assert.deepEqual(queue.pending, ["b", "c"]);
+  await queue.run(async (id) => {
+    attempts.push(id);
+  });
+  assert.deepEqual(attempts, ["a", "b", "c"]);
+  assert.equal(queue.running, false);
+});
+
+test("detener descarta los siguientes y conserva el intento en curso", async () => {
+  const { InteractiveQueue } = await import("../lib/interactive-queue");
+  const queue = new InteractiveQueue(() => {});
+  queue.load(["a", "b", "c"]);
+  const attempts: string[] = [];
+  let finish!: () => void;
+  const running = queue.run(async (id) => {
+    attempts.push(id);
+    await new Promise<void>((resolve) => {
+      finish = resolve;
+    });
+  });
+  assert.deepEqual(queue.stop(), ["b", "c"]);
+  assert.equal(queue.current, "a");
+  finish();
+  await running;
+  await queue.run(async (id) => {
+    attempts.push(id);
+  });
+  assert.deepEqual(attempts, ["a"]);
+  assert.equal(queue.last, "a");
+});
+
+test("un cargo incierto interrumpe la cola y nunca se reintenta al reanudar", async () => {
+  const { InteractiveQueue } = await import("../lib/interactive-queue");
+  const queue = new InteractiveQueue(() => {});
+  queue.load(["incierto", "siguiente"]);
+  const attempts: string[] = [];
+  await assert.rejects(
+    queue.run(async (id) => {
+      attempts.push(id);
+      throw Error("resultado incierto");
+    }),
+    /incierto/,
+  );
+  assert.equal(queue.paused, true);
+  await queue.run(async (id) => {
+    attempts.push(id);
+  });
+  assert.deepEqual(attempts, ["incierto", "siguiente"]);
+});

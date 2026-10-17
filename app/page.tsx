@@ -19,7 +19,13 @@ import { VisualAuditPanel, VisualAuditNotice } from "./components/visual-audit";
 import { VariationEditor } from "./components/variation-editor";
 import { ProjectSharing } from "./components/project-sharing";
 import { UsagePanel } from "./components/usage-panel";
-import { JobsPanel } from "./components/jobs-panel";
+import { LibraryWorkspace } from "./components/library-workspace";
+import {
+  ExecutionChoice,
+  ProductionControls,
+  useProductionController,
+  type ExecutionMode,
+} from "./components/production-controls";
 import { BrandKit } from "./components/brand-kit";
 import {
   OwnerEmergencyKit,
@@ -299,12 +305,28 @@ export default function Home() {
   const openCategory = async (id: string) =>
     changeAddress({ view: "projects", category: id });
   const openLibraryFolder = async (key: string) => {
-    const nodes = await api("library/tree");
-    changeAddress({
-      view: "library",
-      ...folderScope(nodes, key, emptyHierarchy),
-      folder: key,
-    });
+    // Open synchronously from the click so browsers do not block an awaited popup.
+    const tab = window.open("about:blank", "_blank");
+    if (!tab) throw Error("Permite abrir otra pestaña para ver los afiches.");
+    tab.opener = null;
+    try {
+      const nodes = await api("library/tree");
+      tab.location.replace(
+        new URL(
+          "?" +
+            new URLSearchParams({
+              view: "library",
+              tab: "images",
+              ...folderScope(nodes, key, emptyHierarchy),
+              folder: key,
+            }),
+          window.location.href,
+        ).href,
+      );
+    } catch (error) {
+      tab.close();
+      throw error;
+    }
   };
   const openGallery = (sub: Item) => {
     void openLibraryFolder("subproduct:" + sub.id).catch((e) =>
@@ -380,7 +402,7 @@ export default function Home() {
     usage: "Costos de IA",
     statistics: "Estadísticas",
     trash: "Papelera",
-    jobs: "Generaciones",
+    jobs: "Biblioteca · Producción",
     account: "Mi cuenta",
     plans: "Mi plan",
     payments: "Configuración de pagos",
@@ -410,7 +432,6 @@ export default function Home() {
           <nav>
             {[
               ["projects", "▦", "Proyectos"],
-              ["jobs", "◉", "Generaciones"],
               ["library", "▧", "Biblioteca"],
               ["presets", "≡", "Configuraciones guardadas"],
               ["history", "◷", "Historial"],
@@ -438,7 +459,11 @@ export default function Home() {
               .map(([v, icon, label]) => (
                 <button
                   key={v}
-                  className={view === v ? "active" : ""}
+                  className={
+                    view === v || (v === "library" && view === "jobs")
+                      ? "active"
+                      : ""
+                  }
                   onClick={() => navigate(v)}
                 >
                   {icon}　{label}
@@ -1529,6 +1554,8 @@ function BatchGeneration({
   const [consent, setConsent] = useState(false);
   const [previewFirst, setPreviewFirst] = useState(true);
   const [queued, setQueued] = useState(false);
+  const [executionMode, setExecutionMode] = useState<ExecutionMode>("queue");
+  const production = useProductionController();
   const [selected, setSelected] = useState<string[]>([]);
   const t = useTask();
   return (
@@ -1620,9 +1647,17 @@ function BatchGeneration({
             He revisado las instrucciones de los subproductos seleccionados y
             autorizo el cargo de API de este lote.
           </label>
+          <ExecutionChoice
+            value={executionMode}
+            onChange={setExecutionMode}
+            disabled={t.busy || production.active}
+          />
           <button
             className="primary"
             disabled={
+              production.active ||
+              production.uncertainDispatch ||
+              production.dispatching ||
               !consent ||
               !selected.length ||
               t.busy ||
@@ -1630,19 +1665,28 @@ function BatchGeneration({
             }
             onClick={() =>
               void t.run(async () => {
-                await api("categories/" + categoryId + "/generate", "POST", {
-                  confirmCharge: true,
-                  reviewedInstructions: true,
-                  requestId: crypto.randomUUID(),
-                  selected,
-                  previewFirst,
-                });
+                const result = await api(
+                  "categories/" + categoryId + "/generate",
+                  "POST",
+                  {
+                    confirmCharge: true,
+                    reviewedInstructions: true,
+                    requestId: crypto.randomUUID(),
+                    selected,
+                    previewFirst,
+                  },
+                );
                 setQueued(true);
+                await production.start(
+                  result.runnable,
+                  executionMode,
+                  result.jobs,
+                );
                 const ch = new BroadcastChannel("studio-updates");
                 ch.postMessage("queued");
                 ch.close();
                 setPreview(null);
-              }, "Lote encolado. Sigue el progreso en Generaciones.")
+              }, "Lote registrado. Revisa la muestra en Biblioteca → Producción.")
             }
           >
             Generar selección
@@ -1650,6 +1694,7 @@ function BatchGeneration({
           <button onClick={() => setPreview(null)}>Cerrar</button>
         </div>
       )}
+      <ProductionControls controller={production} />
       {queued && (
         <a
           className="button"
@@ -1664,7 +1709,7 @@ function BatchGeneration({
             })
           }
         >
-          Abrir Generaciones en otra pestaña ↗
+          Abrir producción en Biblioteca ↗
         </a>
       )}
       {t.notice}
@@ -1692,6 +1737,8 @@ function SubproductRow({
   const [sharing, setSharing] = useState(false);
   const [previewFirst, setPreviewFirst] = useState(true);
   const [queued, setQueued] = useState(false);
+  const [executionMode, setExecutionMode] = useState<ExecutionMode>("queue");
+  const production = useProductionController();
   const [name, setName] = useState(sub.name);
   const [prompt, setPrompt] = useState(sub.prompt);
   const [custom, setCustom] = useState(
@@ -1890,32 +1937,53 @@ function SubproductRow({
               />
               Autorizo las llamadas de IA y su posible cargo de API.
             </label>
+            <ExecutionChoice
+              value={executionMode}
+              onChange={setExecutionMode}
+              disabled={t.busy || production.active}
+            />
             <button
               className="primary"
               style={{ marginTop: 15 }}
               disabled={
-                t.busy || !review || !charge || preview.warnings.length > 0
+                t.busy ||
+                production.active ||
+                production.uncertainDispatch ||
+                production.dispatching ||
+                !review ||
+                !charge ||
+                preview.warnings.length > 0
               }
               onClick={() =>
                 void t.run(async () => {
                   await save();
-                  await api("subproducts/" + sub.id + "/generate", "POST", {
-                    confirmCharge: true,
-                    reviewedInstructions: true,
-                    previewFirst,
-                    requestId: crypto.randomUUID(),
-                  });
+                  const result = await api(
+                    "subproducts/" + sub.id + "/generate",
+                    "POST",
+                    {
+                      confirmCharge: true,
+                      reviewedInstructions: true,
+                      previewFirst,
+                      requestId: crypto.randomUUID(),
+                    },
+                  );
                   setQueued(true);
+                  await production.start(
+                    result.runnable,
+                    executionMode,
+                    result.jobs,
+                  );
                   const channel = new BroadcastChannel("studio-updates");
                   channel.postMessage("queued");
                   channel.close();
-                }, "Generación encolada. Consulta Generaciones para seguir el progreso.")
+                }, "Lote registrado. El modo elegido controla su ejecución. Revisa la muestra en Biblioteca → Producción.")
               }
             >
               Generar {(custom ? s : inherited).count} variaciones
             </button>
           </div>
         )}
+        <ProductionControls controller={production} />
         {queued && (
           <a
             className="button"
@@ -1923,7 +1991,7 @@ function SubproductRow({
             rel="noopener"
             href={"?" + new URLSearchParams({ view: "jobs", ...costScope })}
           >
-            Ir a Generaciones de este subproducto ↗
+            Revisar este subproducto en Biblioteca ↗
           </a>
         )}
         {t.notice}
@@ -2663,15 +2731,15 @@ function AISettings() {
           rel="noopener"
           href="?view=jobs&project=none"
         >
-          Abrir carpeta Pruebas en Generaciones ↗
+          Abrir Pruebas en Biblioteca · Producción ↗
         </a>
         <p>
           La prueba crea un afiche e invoca dirección creativa e imágenes.{" "}
           <strong>Puede producir cargos de API.</strong> Se aplican las cuotas
           del plan y el registro de consumo. El botón inicia una sola prueba
           aquí; mantén esta pantalla abierta hasta conocer el resultado. Si se
-          interrumpe, consulta Generaciones antes de volver a autorizar otra. No
-          se reintenta automáticamente.
+          interrumpe, consulta Biblioteca → Producción antes de volver a
+          autorizar otra. No se reintenta automáticamente.
         </p>
         <label className="row">
           <input
@@ -2697,13 +2765,13 @@ function AISettings() {
                 if (result.status !== "COMPLETED")
                   throw new Error(
                     result.error ??
-                      "La prueba no terminó. Consulta Generaciones antes de autorizar otra.",
+                      "La prueba no terminó. Consulta Biblioteca → Producción antes de autorizar otra.",
                   );
               } finally {
                 setCharge(false);
                 await refresh();
               }
-            }, "Prueba generada y guardada. Puedes descargarla desde Generaciones.")
+            }, "Prueba generada y guardada. Puedes descargarla desde Biblioteca → Producción.")
           }
         >
           Generar prueba con posible cargo
@@ -2714,7 +2782,7 @@ function AISettings() {
   );
 }
 function Jobs() {
-  return <JobsPanel />;
+  return <LibraryWorkspace production />;
 }
 function Gallery({ sub, back }: { sub: Item; back: () => void }) {
   const roleCanEdit = useCanEdit();
@@ -2825,7 +2893,7 @@ function Gallery({ sub, back }: { sub: Item; back: () => void }) {
                     confirmCharge: true,
                     reviewedInstructions: true,
                   }),
-                "Alternativas encoladas. Consulta Generaciones.",
+                "Alternativas encoladas. Consulta Biblioteca → Producción.",
               );
           }}
         >

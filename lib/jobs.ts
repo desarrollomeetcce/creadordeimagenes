@@ -40,6 +40,7 @@ export async function cancelJob(
 export async function processJob(
   user: { id: string; role: string },
   id: string,
+  background?: { batchId: string; runId: string },
 ) {
   const job = await db.generationJob.findUnique({ where: { id } });
   demand(job, "Trabajo no encontrado.", 404);
@@ -75,6 +76,7 @@ export async function processJob(
     id,
     actorId: job.actorId,
     deadlineMs: 240000,
+    background,
   });
   demand(
     processed,

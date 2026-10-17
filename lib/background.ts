@@ -203,7 +203,7 @@ export async function backgroundTick(
       return "STOP";
     }
     // processJob rechecks the initiator and original actor before the only paid attempt.
-    const result = await processJob(user, pending.id);
+    const result = await processJob(user, pending.id, { batchId, runId });
     demand(
       result.status === "COMPLETED",
       result.error || "El trabajo requiere revisión antes de continuar.",
@@ -211,6 +211,17 @@ export async function backgroundTick(
     );
     return "CONTINUE";
   } catch (error) {
+    const current = await db.backgroundBatch.findUnique({
+      where: { id: batchId },
+    });
+    if (current?.status === "PAUSING" && current.runId === runId) {
+      await db.backgroundBatch.updateMany({
+        where: { id: batchId, runId, status: "PAUSING" },
+        data: { status: "PAUSED" },
+      });
+      return "STOP";
+    }
+    if (!current || !activeBatchStates.includes(current.status)) return "STOP";
     // Another processor can win the job claim. Waiting never creates a new attempt.
     if (error instanceof AppError && error.status === 409) {
       const jobs = await db.generationJob.findMany({

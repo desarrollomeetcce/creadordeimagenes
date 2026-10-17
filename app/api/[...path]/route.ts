@@ -511,6 +511,13 @@ async function handle(
       const { archiveJob } = await import("@/lib/job-management");
       return send(await archiveJob(user, parts[1], b.restore));
     }
+    if (route === "jobs/stop-many" && method === "POST") {
+      const b = z
+        .object({ ids: z.array(z.string().min(1)).min(1).max(200) })
+        .parse(await body(req));
+      const { stopSelectedJobs } = await import("@/lib/job-management");
+      return send(await stopSelectedJobs(user, b.ids));
+    }
     if (route === "jobs/cancel-many" && method === "POST") {
       const b = z
         .object({ ids: z.array(z.string().min(1)).min(1).max(200) })
@@ -991,7 +998,21 @@ async function handle(
           jobIds: jobs.map((j) => j.id),
           count: jobs.length,
         });
-        return send({ jobs: jobs.map((j) => j.id) }, 202);
+        return send(
+          {
+            jobs: jobs.map((j) => j.id),
+            runnable: jobs
+              .filter((j) => {
+                const snapshot = j.snapshot as Record<string, unknown>;
+                return (
+                  j.status === "PENDING" &&
+                  (snapshot.previewFirst !== true || snapshot.index === 0)
+                );
+              })
+              .map((j) => j.id),
+          },
+          202,
+        );
       }
       if (parts.length === 2 && method === "GET") {
         const c = await db.category.findUniqueOrThrow({
@@ -1242,7 +1263,21 @@ async function handle(
           jobIds: jobs.map((j) => j.id),
           count: jobs.length,
         });
-        return send({ jobs: jobs.map((j) => j.id) }, 202);
+        return send(
+          {
+            jobs: jobs.map((j) => j.id),
+            runnable: jobs
+              .filter((j) => {
+                const snapshot = j.snapshot as Record<string, unknown>;
+                return (
+                  j.status === "PENDING" &&
+                  (snapshot.previewFirst !== true || snapshot.index === 0)
+                );
+              })
+              .map((j) => j.id),
+          },
+          202,
+        );
       }
     }
     if (parts[0] === "attachments") {
