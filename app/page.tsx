@@ -4,6 +4,7 @@ import { SiteEditor } from "./components/site-editor";
 import { PaymentSettings } from "./components/payment-settings";
 import { PlanSettings, MyPlan } from "./components/membership-plans";
 import { ProviderConnections } from "./components/provider-connections";
+import { InstructionEditor } from "./components/instruction-editor";
 import { SearchSelect } from "./components/search-select";
 import { CurrentRole, RoleGuide, useCanEdit } from "./components/role-guide";
 import { roleLabels, managesUsers } from "../lib/roles";
@@ -827,14 +828,11 @@ function Projects({
             Descripción
             <input name="description" maxLength={2000} />
           </label>
-          <label>
-            Instrucciones generales
-            <textarea
-              name="prompt"
-              maxLength={30000}
-              placeholder="Describe qué quieres crear. Los detalles comerciales son opcionales."
-            />
-          </label>
+          <InstructionEditor
+            label="Instrucciones generales"
+            name="prompt"
+            placeholder="Describe qué quieres crear. Los detalles comerciales son opcionales."
+          />
           <button disabled={t.busy} className="primary">
             Crear proyecto
           </button>
@@ -942,17 +940,16 @@ function PromptForm({
           />
         </label>
       )}
-      <label>
-        {configuration
-          ? "Instrucciones generales del producto"
-          : "Instrucciones del proyecto"}
-        <textarea
-          name="prompt"
-          defaultValue={item.prompt}
-          maxLength={30000}
-          placeholder="Escribe instrucciones en lenguaje natural…"
-        />
-      </label>
+      <InstructionEditor
+        label={
+          configuration
+            ? "Instrucciones generales del producto"
+            : "Instrucciones del proyecto"
+        }
+        name="prompt"
+        defaultValue={item.prompt}
+        placeholder="Escribe instrucciones en lenguaje natural…"
+      />
       {children}
       <button disabled={t.busy} className="primary">
         Guardar instrucciones
@@ -1066,10 +1063,7 @@ function ProjectEditor({
             Nombre de producto
             <input name="name" required maxLength={200} />
           </label>
-          <label>
-            Instrucciones opcionales
-            <textarea name="prompt" />
-          </label>
+          <InstructionEditor label="Instrucciones opcionales" name="prompt" />
           <button className="primary" disabled={t.busy}>
             Crear producto
           </button>
@@ -1686,17 +1680,15 @@ function SubproductRow({
             maxLength={200}
           />
         </label>
-        <label>
-          Instrucciones particulares · opcional
-          <textarea
-            value={prompt}
-            onChange={(e) => {
-              setPrompt(e.target.value);
-              setReview(false);
-            }}
-            placeholder="Escribe solo las excepciones o indicaciones adicionales."
-          />
-        </label>
+        <InstructionEditor
+          label="Instrucciones particulares · opcional"
+          value={prompt}
+          onValueChange={(value) => {
+            setPrompt(value);
+            setReview(false);
+          }}
+          placeholder="Escribe solo las excepciones o indicaciones adicionales."
+        />
         <label className="row">
           <input
             type="checkbox"

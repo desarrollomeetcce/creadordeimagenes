@@ -1,5 +1,15 @@
 # Pruebas y evidencia
 
+## Actualización · instrucciones ampliables
+
+Instrucciones de proyecto, producto y subproducto incluyen «Ampliar en la página»/«Reducir en la página» y «Abrir ventana amplia». Componente compartido también en creación de proyectos y productos. Ambas vistas editan el mismo borrador; cerrar con Escape o «Cerrar y continuar» conserva el texto, sin guardar ni generar automáticamente. Se mantiene un único campo prompt en FormData; el editor emergente no duplica el envío. Guardado y permisos existentes siguen en el servidor, y las instrucciones particulares siguen invalidando la revisión final al cambiar.
+
+Ventana modal nativa con título, ayuda de guardado explícito, foco de edición y confinamiento de teclado, bloqueo temporal de desplazamiento de fondo y restauración al cerrar/desmontar. Controles con type=button no envían formularios. Diseño adaptable a escritorio/móvil y límite de30000 caracteres en instrucciones.
+
+
+Validación:30 pruebas unitarias, TypeScript y build aprobados. Chromium con servidor local/HTTP/PostgreSQL comprueba expansión/reducción, edición de un mismo borrador desde ambas vistas, foco inicial y recorrido Tab, cierre Escape/botón, restauración del desplazamiento de fondo, ausencia de guardado automático, guardado explícito del proyecto/producto/subproducto y persistencia tras recargar, además de móvil sin desbordamiento. Sin llamadas de IA ni cargos. No se modificaron rutas, permisos ni esquema de base de datos.
+
+
 ## Actualización · generación controlada por planes
 
 Los planes personalizados incorporan selector combinado de correo: escritura por nombre/correo o flecha para explorar, grupos OWNER/Administrador/Usuario plegables y ordenados, búsqueda sin resultados con «No existe». Solo cuentas aprobadas aptas para generar; Observador no se ofrece y el servidor sigue rechazando destinatarios no válidos. Mantiene correo seleccionado al cerrar/desplegar y permite reemplazarlo. Consulta exclusiva de Usuarios autorizada y error de carga visible con alternativa de escritura directa. Campo completo en móvil y teclado del selector existente.
