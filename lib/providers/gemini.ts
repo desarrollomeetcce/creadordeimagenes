@@ -1,3 +1,4 @@
+import { googleThinking, type ReasoningLevel } from "../creative-level";
 import type { ProviderAdapter, ModelCapability, ImageInput } from "./index";
 import { AppError, demand } from "../errors";
 import { imageBase64, providerJSON, providerSignal } from "./http";
@@ -184,6 +185,7 @@ export class GeminiAdapter implements ProviderAdapter {
     prompt: string,
     structured = false,
     signal?: AbortSignal,
+    level: ReasoningLevel = "medium",
   ) {
     const data = await providerJSON(
       this.name,
@@ -206,14 +208,23 @@ export class GeminiAdapter implements ProviderAdapter {
           },
           contents: [{ role: "user", parts: [{ text: prompt }] }],
           generationConfig: {
-            maxOutputTokens: 8192,
+            ...googleThinking(model, level),
             ...(structured ? { responseMimeType: "application/json" } : {}),
           },
         }),
       },
       2000000,
     );
-    const parts = data.candidates?.[0]?.content?.parts;
+    const candidate = data.candidates?.[0];
+    demand(
+      candidate &&
+        !data.promptFeedback?.blockReason &&
+        (!candidate.finishReason ||
+          ["STOP", "MAX_TOKENS"].includes(candidate.finishReason)),
+      "Google no pudo autorizar la dirección creativa. No se inició la imagen.",
+      502,
+    );
+    const parts = candidate.content?.parts;
     const text = Array.isArray(parts)
       ? parts
           .filter((p: any) => typeof p.text === "string" && !p.thought)
@@ -221,10 +232,14 @@ export class GeminiAdapter implements ProviderAdapter {
           .join("\n")
       : "";
     demand(
-      text && text.length <= 100000,
+      text.length <= 100000,
       "Google no devolvió una dirección creativa utilizable.",
       502,
     );
-    return { text, usage: data.usageMetadata ?? null };
+    return {
+      text,
+      usage: data.usageMetadata ?? null,
+      incomplete: candidate.finishReason === "MAX_TOKENS",
+    };
   }
 }

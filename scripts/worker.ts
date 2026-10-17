@@ -1,3 +1,5 @@
+import { reasoningLevel, type ReasoningLevel } from "../lib/creative-level";
+import { usableLayeredPlan, completePosterPrompt } from "../lib/creative-recovery";
 import { artDirection } from "../lib/art-direction";
 import {
   creativeConnection,
@@ -26,7 +28,6 @@ import {
 import { adaptImage } from "../lib/render";
 import { AppError, demand } from "../lib/errors";
 import {
-  creativeSchema,
   creativeBrief,
   planToDesign,
   renderDesign,
@@ -50,6 +51,7 @@ type Snapshot = {
   format: string;
   attachmentIds?: string[];
   renderMode?: "editable" | "flat";
+  reasoningLevel?: ReasoningLevel;
   editVariationId?: string;
   expectedRevision?: number;
   editKind?: "background" | "full";
@@ -277,6 +279,7 @@ export async function runOne(filter?: {
       creativePlan: string = "",
       creativeUsage: unknown = null,
       imageUsage: unknown = null;
+    let creativeRecovery = false;
     if (s.editVariationId) {
       const original = await accessibleVariation(u, s.editVariationId, "EDIT");
       demand(
@@ -333,8 +336,9 @@ export async function runOne(filter?: {
             : images,
         );
       await heartbeat.check();
-      called = true;
-      const plan = await adapter(creative.provider).direct(
+      const directImage = s.renderMode !== "editable" && reasoningLevel(s.reasoningLevel) === "low";
+      if (!directImage) called = true;
+      const plan = directImage ? {text:"", usage:null, incomplete:false} : await adapter(creative.provider).direct(
         decryptKey(creative.encryptedKey),
         c.creativeModel!,
         s.renderMode === "editable"
@@ -348,28 +352,15 @@ export async function runOne(filter?: {
           : brief,
         s.renderMode === "editable",
         signal,
+        reasoningLevel(s.reasoningLevel),
       );
       creativePlan = plan.text;
       creativeUsage = plan.usage;
-      if (s.renderMode === "editable") {
-        let raw;
-        try {
-          raw = JSON.parse(plan.text);
-        } catch {
-          throw new AppError(
-            "La dirección creativa devolvió un plan ilegible. No se ejecutó una generación adicional de imágenes.",
-          );
-        }
-        const parsed = creativeSchema.safeParse(raw);
-        demand(
-          parsed.success,
-          "La dirección creativa devolvió una composición inválida. Revisa las instrucciones antes de volver a generar.",
-        );
-        document = planToDesign(
-          parsed.data,
-          s.format,
-          refs.filter((a) => /logo/i.test(a.purpose)).map((a) => a.id),
-        );
+      const layeredPlan = s.renderMode === "editable" && !plan.incomplete
+        ? usableLayeredPlan(plan.text, s.format, refs.filter(a => /logo/i.test(a.purpose)).map(a => a.id))
+        : null;
+      if (layeredPlan) {
+        document = planToDesign(layeredPlan, s.format, refs.filter(a => /logo/i.test(a.purpose)).map(a => a.id));
         if (s.mode !== "Texto") {
           await heartbeat.check();
           const result = await provider.generate(key, {
@@ -377,7 +368,7 @@ export async function runOne(filter?: {
             signal,
             model: c.imageModel!,
             prompt:
-              parsed.data.backgroundPrompt +
+              layeredPlan.backgroundPrompt +
               "\nCrear solo el recurso visual de fondo. Sin letras, precios ni logotipos.",
             quality: c.quality,
             size: c.resolution,
@@ -395,12 +386,21 @@ export async function runOne(filter?: {
           await logoBytes(document),
         );
       } else {
+        checkReferences(images);
+        const completed = completePosterPrompt(
+          artDirection(s.prompt,s.mode,s.format,s.index,false),
+          s.renderMode === "editable" ? "" : plan.text,
+          plan.incomplete,
+        );
+        creativePlan = completed.prompt;
+        creativeRecovery = completed.recovered && !directImage;
         await heartbeat.check();
+        called = true;
         const result = await provider.generate(key, {
           capability: imageCapability,
           signal,
           model: c.imageModel!,
-          prompt: plan.text,
+          prompt: completed.prompt,
           quality: c.quality,
           size: c.resolution,
           images,
@@ -486,7 +486,7 @@ export async function runOne(filter?: {
           leaseToken: null,
           heartbeatAt: null,
           completedAt: new Date(),
-          snapshot: { ...s, creativePlan },
+          snapshot: { ...s, creativePlan, ...(creativeRecovery ? {creativeRecovery:"authorized-brief", renderedMode:"flat"} : {}) },
         },
       });
       await tx.usageLedger.update({

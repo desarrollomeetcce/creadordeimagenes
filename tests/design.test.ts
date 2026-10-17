@@ -200,3 +200,17 @@ test("dirección de arte distingue afiche completo, tipografía sin foto y capas
  assert.notEqual(professional,artDirection(prompt,"Imagen + Texto","1:1",1));
  const layered=creativeBrief(artDirection(prompt,"Imagen + Texto","1:1",0,true),"1:1",[]);assert(layered.includes("no copies sus coordenadas ni color"));assert(layered.includes("sin dibujar letras ni logos"));
 });
+
+test("recuperación local conserva brief completo y reconoce JSON rodeado de Markdown sin aceptar capas inválidas",async()=>{
+ const {completePosterPrompt,usableLayeredPlan}=await import("../lib/creative-recovery");
+ const brief="Marca autorizada. TERAPIA INFANTIL. S/40 por tres meses y luego S/20. Documento de referencia: contexto autorizado.";
+ for(const text of [""," \n ",'{"backgroundPrompt":',"```json\n{}\n```"]){const result=completePosterPrompt(brief,text);assert.equal(result.prompt,brief);assert.equal(result.recovered,true);}
+ assert.equal(completePosterPrompt(brief,"Oferta parcial",true).prompt,brief);
+ assert(completePosterPrompt(brief,"Fotografía cálida y titular dominante").prompt.includes(brief));
+ const plan={backgroundPrompt:"Escena familiar",backgroundColor:"#ffffff",texts:[{id:"title",text:"TERAPIA INFANTIL",x:40,y:60,width:900,fontSize:90,color:"#123456",font:"DejaVu Sans",align:"left"}],logos:[]};
+ assert(usableLayeredPlan("```json\n"+JSON.stringify(plan)+"\n```","1:1",[]));
+ assert(usableLayeredPlan("Propuesta:\n"+JSON.stringify(plan),"1:1",[]));
+ assert.equal(usableLayeredPlan(JSON.stringify({...plan,texts:[{...plan.texts[0],x:5000}]}),"1:1",[]),null);
+ assert.equal(usableLayeredPlan(JSON.stringify({...plan,logos:[{id:"logo",attachmentId:"private",x:0,y:0,width:40,height:40}]}),"1:1",[]),null);
+ assert.equal(usableLayeredPlan("{incompleto","1:1",[]),null);
+});

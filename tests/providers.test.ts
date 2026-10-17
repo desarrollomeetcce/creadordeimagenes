@@ -559,3 +559,54 @@ test("huellas de capacidades no dependen de etiqueta/búsqueda, sí de versión 
     }),
   );
 });
+
+test("OpenAI: niveles compatibles, salida vacía/incompleta conserva uso sin reintentar y los rechazos siguen siendo errores",async()=>{
+  let calls=0;
+  await transport(async(_url,init)=>{
+    calls++;
+    const body=JSON.parse(String(init?.body));
+    if(calls<=3){
+      assert.equal(body.reasoning.effort,["low","medium","high"][calls-1]);
+      assert.equal(body.max_output_tokens,[3072,6144,12288][calls-1]);
+      return json({status:"incomplete",incomplete_details:{reason:"max_output_tokens"},output:[{type:"reasoning",summary:[]}],usage:{output_tokens:42}});
+    }
+    assert.equal(body.reasoning,undefined);
+    if(calls===4)return json({status:"completed",output:[{type:"message",content:[{type:"output_text",text:"Afiche profesional"}]}]});
+    if(calls===5)return json({status:"completed",output:[{type:"message",content:[{type:"refusal",refusal:"No autorizado"}]}]});
+    if(calls===6)return json({status:"incomplete",incomplete_details:{reason:"content_filter"},output:[]});
+    if(calls===7)return new Response("",{status:429});
+    return json({status:"failed",error:{code:"server_error"},output:[]});
+  },async()=>{
+    for(const level of ["low","medium","high"] as const){
+      const plan=await adapter("openai").direct(key,"gpt-5-mini","Brief",false,undefined,level);
+      assert.equal(plan.text,"");assert.equal(plan.incomplete,true);assert.deepEqual(plan.usage,{output_tokens:42});
+    }
+    assert.equal((await adapter("openai").direct(key,"gpt-4.1","Brief")).text,"Afiche profesional");
+    await assert.rejects(adapter("openai").direct(key,"gpt-4.1","Brief"),/no pudo autorizar/);
+    await assert.rejects(adapter("openai").direct(key,"gpt-4.1","Brief"),/no pudo autorizar/);
+    await assert.rejects(adapter("openai").direct(key,"gpt-4.1","Brief"),/límite/);
+    await assert.rejects(adapter("openai").direct(key,"gpt-4.1","Brief"),/no pudo autorizar/);
+    assert.equal(calls,8);
+  });
+});
+
+test("Google: pensamiento por familia, sin parámetros incompatibles y respuesta truncada recuperable sin eludir bloqueos",async()=>{
+  let calls=0;
+  await transport(async(_url,init)=>{
+    calls++;const body=JSON.parse(String(init?.body));const config=body.generationConfig;
+    if(calls===1){assert.equal(config.thinkingConfig.thinkingBudget,1536);assert(config.maxOutputTokens>config.thinkingConfig.thinkingBudget);}
+    if(calls===2)assert.equal(config.thinkingConfig.thinkingLevel,"medium");
+    if(calls===3)assert.equal(config.thinkingConfig.thinkingLevel,"low");
+    if(calls===4)assert.equal(config.thinkingConfig,undefined);
+    if(calls===5)return json({promptFeedback:{blockReason:"SAFETY"},candidates:[]});
+    if(calls===6)return json({candidates:[{finishReason:"SAFETY",content:{parts:[]}}]});
+    return json({candidates:[{finishReason:"MAX_TOKENS",content:{parts:[{thought:true,text:"Privado"}]}}],usageMetadata:{totalTokenCount:21}});
+  },async()=>{
+    for(const model of ["gemini-2.5-flash","gemini-3.1-pro-preview","gemini-3-pro-preview","gemini-2.0-flash"]){
+      const result=await adapter("google").direct(key,model,"Brief",false,undefined,"medium");assert.equal(result.text,"");assert.equal(result.incomplete,true);assert.deepEqual(result.usage,{totalTokenCount:21});
+    }
+    await assert.rejects(adapter("google").direct(key,"gemini-2.5-flash","Brief"),/no pudo autorizar/);
+    await assert.rejects(adapter("google").direct(key,"gemini-2.5-flash","Brief"),/no pudo autorizar/);
+    assert.equal(calls,6);
+  });
+});

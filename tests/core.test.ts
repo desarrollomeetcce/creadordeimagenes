@@ -479,3 +479,11 @@ test("acabado profesional por defecto, incluso para el editable heredado; capas 
  assert.equal(effectiveSettings({designMode:"editable"},{designMode:"professional"},true).editable,false);
  assert.equal(effectiveSettings({designMode:"editable"},{},false).designMode,"professional");
 });
+
+test("Medio predeterminado y niveles de razonamiento siguen la herencia sin cambiar el acabado profesional",()=>{
+ for(const level of ["low","medium","high"] as const){const value=effectiveSettings({reasoningLevel:level},null);assert.equal(value.reasoningLevel,level);assert.equal(value.designMode,"professional");}
+ assert.equal(effectiveSettings({},{}).reasoningLevel,"medium");
+ assert.equal(effectiveSettings({reasoningLevel:"high"},{reasoningLevel:"low"}).reasoningLevel,"low");
+ assert.equal(effectiveSettings({reasoningLevel:"high"},{},false).reasoningLevel,"medium");
+ assert.equal(effectiveSettings({reasoningLevel:"invalid"},{}).reasoningLevel,"medium");
+});

@@ -1,3 +1,4 @@
+import { reasoningLevel } from "./creative-level";
 export type Layer = { name: string; prompt: string };
 const price = /(?:S\/\s*|USD\s*|US\$\s*|EUR\s*|\$\s*|€\s*)\d+(?:[.,]\d+)?/gi;
 const countries =
@@ -72,6 +73,7 @@ export const defaults = {
   format: "1:1",
   style: "Profesional",
   editable: false,
+  reasoningLevel: "medium" as "low"|"medium"|"high",
   designMode: "professional" as "professional"|"editable",
 };
 export function effectiveSettings(
@@ -83,6 +85,7 @@ export function effectiveSettings(
   // Old editable=true was a system default, not an explicit choice of finish.
   result.designMode=result.designMode==="editable"?"editable":"professional";
   result.editable=result.designMode==="editable";
+  result.reasoningLevel=reasoningLevel(result.reasoningLevel);
   return result;
 }
 export function validateDistribution(s: typeof defaults) {

@@ -164,6 +164,7 @@ export async function variationRoutes(
         expectedRevision: z.number().int().min(1),
         editKind: z.enum(["background", "full"]).default("full"),
         designMode:z.enum(["professional","editable"]).default("professional"),
+        reasoningLevel:z.enum(["low","medium","high"]).default("medium"),
       })
       .parse(await readBody());
     demand(
@@ -230,6 +231,7 @@ export async function variationRoutes(
                   sourceVariationId: id,
                   renderMode: b.designMode==="editable"?"editable":"flat",
                   designMode:b.designMode,
+                  reasoningLevel:b.reasoningLevel,
                 }),
           },
         },

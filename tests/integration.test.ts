@@ -10590,6 +10590,46 @@ test("Integración HTTP + PostgreSQL (base exclusiva de pruebas, sin llamadas ex
         const typography=await owner.call(`subproducts/${sub.id}/generate`,"POST",{confirmCharge:true,reviewedInstructions:true,requestId:randomUUID()});await runOne({id:typography.body.jobs[0]});assert.equal(directions,3);assert.equal(images,2);assert.equal(structured[2],false);assert(briefs[2].includes("afiche tipográfico de diseño"));
       }finally{provider.direct=oldDirect;provider.generate=oldGenerate;}
     }));
+    await t.test("niveles y recuperación local completan afiches con referencias sin repetir IA; fallos reales conservan incertidumbre",async()=>withOrderProvider(async()=>{
+      const {adapter}=await import("../lib/providers"),{default:sharp}=await import("sharp");
+      const provider=adapter("openai"),oldDirect=provider.direct,oldGenerate=provider.generate;
+      const bytes=await sharp({create:{width:80,height:80,channels:3,background:"#327568"}}).png().toBuffer();
+      let directions=0,images=0,variant="empty";const efforts:string[]=[],outputs:string[]=[];
+      provider.direct=async(_key,_model,_prompt,_structured,_signal,level)=>{
+        directions++;efforts.push(level??"unset");
+        if(variant==="network")throw Error("synthetic unavailable");
+        if(variant==="truncated")return {text:"{\"backgroundPrompt\":\"Oferta incompleta",usage:{output_tokens:33},incomplete:true};
+        if(variant==="invalid")return {text:"```json\n{\"texts\":[]}\n```",usage:{output_tokens:33}};
+        if(variant==="fenced")return {text:"```json\n"+JSON.stringify({backgroundPrompt:"Fondo",backgroundColor:"#ffffff",texts:[{id:"title",text:"TERAPIA INFANTIL",x:40,y:50,width:900,fontSize:90,color:"#123456",font:"DejaVu Sans",align:"left"}],logos:[]})+"\n```",usage:{output_tokens:33}};
+        return {text:"",usage:{output_tokens:33},incomplete:false};
+      };
+      provider.generate=async(_key,options)=>{images++;outputs.push(options.prompt);assert.equal(options.quality,"low");assert.equal(options.size,"1024x1024");assert.equal(options.images?.length,1);assert(options.prompt.includes("S/40"));assert(options.prompt.includes("S/20"));assert(options.prompt.includes("Documento de revisión"));return {bytes,usage:{output_tokens:44}};};
+      try{
+        const {p,c,s:sub}=await hierarchyForReview();await uploadReviewText(p.id);
+        const form=new FormData();form.set("scope","subproduct");form.set("resourceId",sub.id);form.set("purpose","Referencia visual");form.set("file",new File([new Uint8Array(bytes)],"referencia.png",{type:"image/png"}));
+        const uploaded=await fetch(root+"/api/attachments",{method:"POST",headers:{Cookie:owner.cookie,Origin:root},body:form});assert.equal(uploaded.status,201);
+        let beforeImages=0;
+        for(const [level,mode,response] of [["medium","professional","empty"],["low","professional","empty"],["medium","professional","truncated"],["high","editable","invalid"],["medium","editable","fenced"]]){
+          variant=response;
+          const patched=await owner.call(`subproducts/${sub.id}`,"PATCH",{name:sub.name,prompt:"Luego S/20 mensuales. Subproducto propio.",settings:{count:1,textCount:response==="fenced"?1:0,imageTextCount:response==="fenced"?0:1,imageCount:0,designMode:mode,reasoningLevel:level}});assert.equal(patched.status,200);
+          const created=await owner.call(`subproducts/${sub.id}/generate`,"POST",{confirmCharge:true,reviewedInstructions:true,requestId:randomUUID()});assert.equal(created.status,202);
+          const id=created.body.jobs[0];let job=await db.generationJob.findUniqueOrThrow({where:{id}});assert.equal((job.snapshot as Record<string,unknown>).reasoningLevel,level);
+          await runOne({id});job=await db.generationJob.findUniqueOrThrow({where:{id},include:{variation:true}});assert.equal(job.status,"COMPLETED");assert.equal(job.error,null);
+          const ledger=await db.usageLedger.findUniqueOrThrow({where:{jobId:id}});assert.equal(ledger.status,"CONSUMED_ESTIMATE");assert.deepEqual((ledger.usage as any).creative,level==="low"?null:{output_tokens:33});
+          if(response!=="fenced"){assert.equal(images,++beforeImages);assert.equal((job.snapshot as Record<string,unknown>).creativeRecovery,level==="low"?undefined:"authorized-brief");}
+          else assert.equal(images,beforeImages);
+          const variation=await db.variation.findUniqueOrThrow({where:{jobId:id}});const design=(await owner.call(`variations/${variation.id}/design`)).body;assert.equal(!!design.document,response==="fenced");
+          if(response==="empty"&&level==="medium"){
+            const regen=await owner.call(`variations/${variation.id}/regenerate`,"POST",{expectedRevision:1,requestId:randomUUID(),confirmCharge:true,reviewedInstructions:true,reasoningLevel:"low"});assert.equal(regen.status,202);const regenJob=await db.generationJob.findUniqueOrThrow({where:{id:regen.body.jobs[0]}});assert.equal((regenJob.snapshot as Record<string,unknown>).reasoningLevel,"low");await owner.call(`jobs/${regenJob.id}/cancel`,"POST");
+            const bulk=await owner.call("variations/bulk-regenerate","POST",{ids:[variation.id],requestId:randomUUID(),confirmCharge:true,reviewedInstructions:true,reasoningLevel:"medium"});assert.equal(bulk.status,202);const bulkJob=await db.generationJob.findUniqueOrThrow({where:{id:bulk.body.jobs[0]}});assert.equal((bulkJob.snapshot as Record<string,unknown>).reasoningLevel,"medium");await owner.call(`jobs/${bulkJob.id}/cancel`,"POST");
+          }
+        }
+        assert.equal(directions,4);assert.equal(images,4);assert.deepEqual(efforts,["medium","medium","high","medium"]);
+        variant="network";const failed=await owner.call(`subproducts/${sub.id}/generate`,"POST",{confirmCharge:true,reviewedInstructions:true,requestId:randomUUID()});await runOne({id:failed.body.jobs[0]});assert.equal((await db.generationJob.findUniqueOrThrow({where:{id:failed.body.jobs[0]}})).status,"UNCERTAIN");assert.equal(images,4);assert.equal(directions,5);
+        const invalidLevel=await owner.call(`subproducts/${sub.id}`,"PATCH",{name:sub.name,settings:{reasoningLevel:"max"}});assert.equal(invalidLevel.status,400);
+        assert.equal((await owner.call(`projects/${p.id}`)).body.prompt,p.prompt);assert.equal((await owner.call(`categories/${c.id}`)).body.prompt,c.prompt);
+      }finally{provider.direct=oldDirect;provider.generate=oldGenerate;}
+    }));
     await t.test("cierre de sesión invalida el token", async () => {
       assert.equal((await user.call("auth/logout", "POST")).status, 200);
       assert.equal((await user.call("projects")).status, 401);

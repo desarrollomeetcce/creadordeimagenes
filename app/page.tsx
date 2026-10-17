@@ -1,4 +1,6 @@
 "use client";
+import { reasoningLevel } from "../lib/creative-level";
+import { CreativeFinish } from "./components/creative-finish";
 import { PasswordInput } from "./components/password-input";
 import { useCallback, useEffect, useState, useRef } from "react";
 import {useSubproductStatuses,SubproductStatus} from "./components/subproduct-status";
@@ -66,6 +68,7 @@ type Settings = {
   style: string;
   editable: boolean;
   designMode?:"professional"|"editable";
+  reasoningLevel?:"low"|"medium"|"high";
 };
 type Item = {
   id: string;
@@ -102,6 +105,7 @@ const base: Settings = {
   style: "Profesional",
   editable: false,
   designMode:"professional",
+  reasoningLevel:"medium",
 };
 async function api<T = any>(
   path: string,
@@ -1190,8 +1194,7 @@ function SettingsFields({
           </datalist>
         </label>
       </div>
-      <label>Acabado del afiche<select value={s.designMode??"professional"} onChange={event=>onChange({...s,designMode:event.target.value as "professional"|"editable",editable:event.target.value==="editable"})}><option value="professional">Profesional · prioridad visual (recomendado)</option><option value="editable">Editable · textos y logos por separado</option></select></label>
-      <p className="hint">Profesional: la IA diseña el afiche completo; luego puedes editarlo con IA o añadir elementos. Sus textos originales forman parte de la imagen. Editable: fondo y textos en capas para moverlos por separado. Ninguna opción inicia IA al seleccionarla.</p>
+      <CreativeFinish designMode={s.designMode} reasoning={s.reasoningLevel} onChange={(designMode,reasoningLevel)=>onChange({...s,designMode,reasoningLevel,editable:designMode==="editable"})} />
       <small>
         {s.textCount + s.imageTextCount + s.imageCount} de {s.count}{" "}
         configuradas. La suma debe coincidir.
@@ -1805,7 +1808,7 @@ function SubproductRow({
           {!preview&&<p role="status">Preparando la revisión…</p>}
           {preview && <div className="inside panel">
             <h3>Revisa antes de generar · {name}</h3>
-            <p className="quick-start-guide">{preview.settings?.designMode==="editable"?"Acabado editable: fondo visual y textos por separado.":"Acabado profesional: la IA diseña el afiche completo, priorizando la composición visual."}</p>
+            <p className="quick-start-guide">{preview.settings?.designMode==="editable"?"Canva: fondo visual y textos por separado.":`Acabado profesional · ${{low:"Bajo",medium:"Medio",high:"Alto"}[reasoningLevel(preview.settings?.reasoningLevel)]}: la IA diseña el afiche completo según tu prompt.`}</p>
             {sourceDirty&&<p className="notice">Hay cambios en el formulario. <button type="button" disabled={t.busy} onClick={loadReview}>Actualizar revisión</button></p>}
             <ReviewInstructions key={reviewVersion} id={sub.id} beforeReload={save} onDirty={()=>{setReviewDirty(true);setReview(false);setCharge(false);}} onSaved={async data=>{const own=data.layers.find(layer=>layer.scope==="subproduct");if(own?.prompt!==null&&own){setPrompt(own.prompt);setPolicy(own.policy);}setPreview(await api("subproducts/"+sub.id+"/instructions"));setReviewDirty(false);setSourceDirty(false);setReview(false);setCharge(false);await onReviewSaved?.();}} />
             <pre>{preview.text}</pre>
