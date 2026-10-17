@@ -14,8 +14,8 @@ export async function previewSubproduct(id: string) {
     where: { id },
     include: { category: { include: { project: true } } },
   });
-  const brand = await readBrand(s.category.projectId);
   const use = instructionUse(s.category.project.instructionPolicy,s.category.instructionPolicy,s.instructionPolicy,s.category.applyPromptToAll);
+  const brand = use.project ? await readBrand(s.category.projectId) : null;
   const instructions = resolveInstructions([
     { name: "Identidad de marca", prompt: brandInstructions(brand) },
     { name: "Proyecto", prompt: use.project ? s.category.project.prompt : "" },
@@ -30,8 +30,8 @@ export async function previewSubproduct(id: string) {
     where: {
       archivedAt: null,
       OR: [
-        { scope: "project", resourceId: s.category.projectId },
-        { scope: "category", resourceId: s.categoryId },
+        ...(use.project ? [{ scope: "project", resourceId: s.category.projectId }] : []),
+        ...(use.product ? [{ scope: "category", resourceId: s.categoryId }] : []),
         { scope: "subproduct", resourceId: id },
       ],
     },

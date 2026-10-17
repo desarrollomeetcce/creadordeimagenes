@@ -799,6 +799,7 @@ async function handle(
           orderBy: { updatedAt: "desc" },
         }),
       );
+    if(route==="quick-start"&&method==="POST"){const {quickStart}=await import("@/lib/quick-start");return send(await quickStart(user,await body(req)),201);}
     if (route === "projects" && method === "POST") {
       const b = content.parse(await body(req));
       const p = await db.project.create({ data: { ...b, ownerId: user.id } });

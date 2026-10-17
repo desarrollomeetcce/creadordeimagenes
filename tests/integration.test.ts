@@ -10547,6 +10547,26 @@ test("Integración HTTP + PostgreSQL (base exclusiva de pruebas, sin llamadas ex
       assert((await owner.call("categories/trash")).body.some((row:any)=>row.id===c.id));assert.equal((await owner.call(`categories/${c.id}/restore`,"POST",{})).status,200);assert.equal((await owner.call(`subproducts/${s.id}`)).status,200);assert.equal((await db.generationJob.findUniqueOrThrow({where:{id:job.id}})).status,"CANCELLED");assert.equal((await observer.call(`categories/${c.id}`,"DELETE")).status,403);
     });
 
+    await t.test("inicio rápido atómico, propio e idempotente sin generar; herencias excluyen documentos y marca",async()=>{
+      const before=await db.generationJob.count(),requestId=crypto.randomUUID();
+      const payload={requestId,name:"Campaña rápida",prompt:"Oferta específica",count:3};
+      const results=await Promise.all([user.call("quick-start","POST",payload),user.call("quick-start","POST",payload)]);
+      assert(results.every(r=>r.status===201));assert.deepEqual(results[0].body,results[1].body);
+      const ids=results[0].body,sub=(await user.call(`subproducts/${ids.subproductId}`)).body;
+      assert.equal(sub.name,payload.name);assert.equal(sub.prompt,payload.prompt);
+      const project=(await user.call(`projects/${ids.projectId}`)).body;assert.equal(project.ownerId,uid);
+      const preview=(await user.call(`subproducts/${ids.subproductId}/instructions`)).body;assert.equal(preview.settings.count,3);assert.equal(preview.settings.imageTextCount,3);assert(preview.text.includes(payload.prompt));assert.equal(await db.generationJob.count(),before);
+      assert.equal((await observer.call("quick-start","POST",{...payload,requestId:crypto.randomUUID()})).status,403);
+      assert.equal((await owner.call("quick-start","POST",payload)).status,409);
+      assert.equal((await user.call("quick-start","POST",{...payload,requestId:crypto.randomUUID(),count:13})).status,400);
+      const {p,c,s:subproduct}=await hierarchyForReview();const pf=await uploadReviewText(p.id,"proyecto-heredado.txt","project"),cf=await uploadReviewText(c.id,"producto-heredado.txt","category");
+      await owner.call(`projects/${p.id}/brand`,"PUT",{expectedRevision:0,name:"Marca a excluir",prompt:"Marca heredada",colors:[],font:null,logoAttachmentIds:[]});
+      let view=(await owner.call(`subproducts/${subproduct.id}/instructions`)).body;assert(view.attachments.some((a:any)=>a.id===pf));assert(view.attachments.some((a:any)=>a.id===cf));assert(view.text.includes("Marca heredada"));
+      await owner.call(`subproducts/${subproduct.id}`,"PATCH",{name:subproduct.name,prompt:"Luego S/20 mensuales. Subproducto propio.",settings:{},instructionPolicy:{includeProject:false,includeProduct:true,includeSelf:true}});
+      view=(await owner.call(`subproducts/${subproduct.id}/instructions`)).body;assert(!view.attachments.some((a:any)=>a.id===pf));assert(view.attachments.some((a:any)=>a.id===cf));assert.equal(view.brand,null);assert(!view.text.includes("Marca heredada"));assert(!view.text.includes(p.prompt));
+      await owner.call(`subproducts/${subproduct.id}`,"PATCH",{name:subproduct.name,prompt:"Luego S/20 mensuales. Subproducto propio.",settings:{},instructionPolicy:{includeProject:false,includeProduct:false,includeSelf:true}});
+      view=(await owner.call(`subproducts/${subproduct.id}/instructions`)).body;assert.equal(view.attachments.length,0);assert(!view.text.includes("Producto privado"));assert(view.text.includes("Subproducto propio"));assert.equal((await owner.call(`attachments?scope=project&id=${p.id}`)).body.length,1);
+    });
     await t.test("cierre de sesión invalida el token", async () => {
       assert.equal((await user.call("auth/logout", "POST")).status, 200);
       assert.equal((await user.call("projects")).status, 401);

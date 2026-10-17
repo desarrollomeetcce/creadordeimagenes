@@ -32,6 +32,7 @@ import {
   useProductionController,
   type ExecutionMode,
 } from "./components/production-controls";
+import { QuickStart } from "./components/quick-start";
 import { BrandKit } from "./components/brand-kit";
 import {
   OwnerEmergencyKit,
@@ -785,6 +786,7 @@ function Projects({
   const canEdit = useCanEdit();
   const [items, setItems] = useState<Item[]>([]);
   const [create, setCreate] = useState(false);
+  const [quick,setQuick]=useState(false);
   const [query, setQuery] = useState("");
   const t = useTask();
   const refresh = useCallback(
@@ -808,7 +810,7 @@ function Projects({
       <div className="heading">
         <div>
           <div className="eyebrow">Tu espacio creativo</div>
-          <h1>{trash ? "Papelera" : "Mis proyectos"}</h1>
+          <h1>{trash ? "Papelera" : "Inicia"}</h1>
           <p className="muted">
             {trash
               ? "Restaura tus proyectos. El historial administrativo se conserva."
@@ -816,9 +818,7 @@ function Projects({
           </p>
         </div>
         {!trash && canEdit && (
-          <button className="primary" onClick={() => setCreate(!create)}>
-            ＋ Nuevo proyecto
-          </button>
+          <div className="row start-actions"><button className="primary" type="button" aria-expanded={quick} onClick={()=>{setQuick(!quick);setCreate(false);}}>Inicia rápido</button><button type="button" aria-expanded={create} onClick={() => {setCreate(!create);setQuick(false);}}>＋ Añadir proyecto</button></div>
         )}
       </div>
       {!trash && (
@@ -835,6 +835,7 @@ function Projects({
           </span>
         </div>
       )}
+      {!trash&&quick&&<QuickStart />}
       {create && (
         <form className="panel stack" onSubmit={submit}>
           <h2>Nuevo proyecto</h2>
@@ -1215,12 +1216,13 @@ function CategoryEditor({
   openCollection: () => void;
 }) {
   const [sharing, setSharing] = useState(false);
-  const [trashOpen,setTrashOpen]=useState(false),[selectedSharing,setSelectedSharing]=useState<string|null>(null);
+  const [trashOpen,setTrashOpen]=useState(false);
   const [selectedSubs, setSelectedSubs] = useState<string[]>([]);
   const [promptAll, setPromptAll] = useState(c.applyPromptToAll ?? true);
   const [settingsAll, setSettingsAll] = useState(c.applySettingsToAll ?? true);
   const [s, setS] = useState<Settings>({ ...base, ...c.settings });
   const [bulk, setBulk] = useState(false);
+  const [productTrashOpen,setProductTrashOpen]=useState(false);
   const [names, setNames] = useState<string[]>([""]);
   const [count, setCount] = useState(12);
   const [lines, setLines] = useState("");
@@ -1237,14 +1239,13 @@ function CategoryEditor({
         </div>
       </div>
       <div className="project-action-bar" aria-label="Acciones del producto">
-       {c.canEdit&&<button type="button" className="primary" aria-expanded={bulk} onClick={()=>setBulk(!bulk)}>＋ Añadir subproductos</button>}
        <button type="button" onClick={openCollection}>Ver afiches del producto</button>
        {c.canManageAccess&&<button type="button" aria-expanded={sharing} onClick={()=>setSharing(!sharing)}>Compartir producto</button>}
        {c.canManageAccess&&<button type="button" className="danger" onClick={()=>{if(confirm("¿Enviar este producto a la papelera? Sus subproductos e historial se conservarán; solo se cancelan trabajos pendientes."))void t.run(async()=>{await api("categories/"+c.id,"DELETE");back();},"Producto enviado a papelera");}}>Eliminar producto</button>}
-       {c.canEdit&&<button type="button" aria-expanded={trashOpen} onClick={()=>setTrashOpen(!trashOpen)}>Buscar subproductos eliminados</button>}
+       {c.canManageAccess&&<button type="button" aria-expanded={productTrashOpen} onClick={()=>setProductTrashOpen(!productTrashOpen)}>Buscar productos eliminados</button>}
       </div>
       {sharing&&c.canManageAccess&&<ProjectSharing projectId={c.id} scope="category" />}
-      {trashOpen&&c.canEdit&&<SubproductTrash categoryId={c.id} onRestored={refresh} initialOpen />}
+      {productTrashOpen&&<ProductTrash projectId={c.project.id} onRestored={refresh} />}
       <details hidden={!c.canEdit}>
         <summary>Instrucciones y configuración de producto</summary>
         <div className="inside stack">
@@ -1300,9 +1301,44 @@ function CategoryEditor({
           </PromptForm>
         </div>
       </details>
+      <section className="subproducts-section" aria-label="Subproductos">
+      <div className="subproducts-toolbar">
+        <h2>Subproductos · {c.subproducts.length}</h2>
+        {c.canEdit&&<button type="button" className="primary" aria-expanded={bulk} onClick={()=>setBulk(!bulk)}>＋ Añadir subproducto / Inicio rápido</button>}
+        {c.canEdit&&<BatchGeneration categoryId={c.id} projectId={c.project.id} count={c.subproducts.length} selectedIds={selectedSubs} />}
+      </div>
+      <p className="quick-start-guide">Genera de manera rápida las variaciones de las imágenes que quieras. Añade un tema, elige las herencias y revisa antes de generar.</p>
+      <div className="row subproducts-selection">
+        <label className="row"><input type="checkbox" checked={!!c.subproducts.length&&selectedSubs.length===c.subproducts.length} onChange={e=>setSelectedSubs(e.target.checked?c.subproducts.map(sub=>sub.id):[])} />Seleccionar todos</label>
+        <span className="hint">{selectedSubs.length} seleccionados</span>
+        <button
+          type="button"
+          className="danger"
+          disabled={!selectedSubs.length || t.busy}
+          onClick={() => {
+            if (
+              confirm(
+                `¿Eliminar ${selectedSubs.length} subproductos? Se retirarán de los lotes nuevos y se cancelarán sus trabajos pendientes. El historial se conserva.`,
+              )
+            )
+              void t.run(async () => {
+                await api("subproducts/bulk-delete", "POST", {
+                  ids: selectedSubs,
+                });
+                setSelectedSubs([]);
+                await refresh();
+              }, "Subproductos eliminados");
+          }}
+        >
+          Eliminar ({selectedSubs.length})
+        </button>
+        {c.canEdit&&<button type="button" aria-expanded={trashOpen} onClick={()=>setTrashOpen(!trashOpen)}>Buscar subproductos eliminados</button>}
+      </div>
+      {selectedSubs.length>0&&<p className="hint selected-inheritance">Herencias de {selectedSubs.length} seleccionados · Proyecto: <strong>{c.project.name}</strong> · Producto: <strong>{c.name}</strong>. Cada subproducto aplica sus casillas de herencia.</p>}
+      {trashOpen&&c.canEdit&&<SubproductTrash categoryId={c.id} onRestored={refresh} initialOpen />}
       {bulk && (
         <section className="panel stack">
-          <h2>Agregar subproductos</h2>
+          <h3>Añadir subproductos</h3>
           <p>
             Los nuevos espacios se sumarán a los {c.subproducts.length}{" "}
             existentes; no los reemplazan.
@@ -1397,81 +1433,15 @@ function CategoryEditor({
           </button>
         </section>
       )}
-      <div className="row spread" style={{ margin: "28px 0 18px" }}>
-        <h2 style={{ margin: 0 }}>Subproductos · {c.subproducts.length}</h2>
-        {c.canEdit && (
-          <BatchGeneration
-            categoryId={c.id}
-            projectId={c.project.id}
-            count={c.subproducts.length}
-            selectedIds={selectedSubs}
-          />
-        )}
-        <span className="badge">Herencia configurable</span>
-        {selectedSubs.length===1&&<div className="row subproduct-selected-actions">
-         <button type="button" onClick={()=>openGallery(c.subproducts.find(s=>s.id===selectedSubs[0])!)}>Ver variaciones del seleccionado</button>
-         {c.canEdit&&<a className="button" href={"?"+new URLSearchParams({view:"usage",project:c.project.id,product:c.id,subproduct:selectedSubs[0]})}>Costos IA del seleccionado</a>}
-         {c.subproducts.find(s=>s.id===selectedSubs[0])?.canManageAccess&&<button type="button" onClick={()=>setSelectedSharing(selectedSharing?null:selectedSubs[0])}>Compartir subproducto seleccionado</button>}
-        </div>}
-      </div>
-      {selectedSharing&&<ProjectSharing projectId={selectedSharing} scope="subproduct" />}
-      <div className="row">
-        <label className="row">
-          <input
-            type="checkbox"
-            checked={
-              !!c.subproducts.length &&
-              selectedSubs.length === c.subproducts.length
-            }
-            onChange={(e) =>
-              setSelectedSubs(
-                e.target.checked ? c.subproducts.map((sub) => sub.id) : [],
-              )
-            }
-          />
-          Seleccionar todos los subproductos
-        </label>
-        <button
-          type="button"
-          className="danger"
-          disabled={!selectedSubs.length || t.busy}
-          onClick={() => {
-            if (
-              confirm(
-                `¿Eliminar ${selectedSubs.length} subproductos? Se retirarán de los lotes nuevos y se cancelarán sus trabajos pendientes. El historial se conserva.`,
-              )
-            )
-              void t.run(async () => {
-                await api("subproducts/bulk-delete", "POST", {
-                  ids: selectedSubs,
-                });
-                setSelectedSubs([]);
-                await refresh();
-              }, "Subproductos eliminados");
-          }}
-        >
-          Eliminar seleccionados ({selectedSubs.length})
-        </button>
-      </div>
       {c.subproducts.map((sub, i) => (
         <div key={sub.id} className="stack subproduct-space">
-          <label className="row">
-            <input
-              type="checkbox"
-              checked={selectedSubs.includes(sub.id)}
-              onChange={(e) =>
-                setSelectedSubs((ids) =>
-                  e.target.checked
-                    ? [...ids, sub.id]
-                    : ids.filter((id) => id !== sub.id),
-                )
-              }
-            />
-            Seleccionar {sub.name}
-          </label>
           <SubproductRow
             key={sub.id}
             sub={sub}
+            selected={selectedSubs.includes(sub.id)}
+            onSelected={checked=>setSelectedSubs(ids=>checked?[...new Set([...ids,sub.id])]:ids.filter(id=>id!==sub.id))}
+            ancestry={{project:c.project.name,product:c.name}}
+            initiallyOpen={typeof window!=="undefined"&&new URLSearchParams(window.location.search).get("subproduct")===sub.id}
             onReviewSaved={refresh}
             costScope={{
               project: c.project.id,
@@ -1500,6 +1470,7 @@ function CategoryEditor({
         </div>
       )}
       {t.notice}
+      </section>
     </>
   );
 }
@@ -1527,8 +1498,8 @@ function BatchGeneration({
   const [selected, setSelected] = useState<string[]>([]);
   const t = useTask();
   return (
-    <div>
-      <button
+    <div className="batch-generation">
+      <div className="row batch-generation-buttons"><button
         disabled={!count || t.busy}
         onClick={() =>
           void t.run(async () => {
@@ -1541,7 +1512,7 @@ function BatchGeneration({
       >
         Revisar y generar todos
       </button>
-      <button type="button" disabled={!selectedIds.length||t.busy} onClick={()=>void t.run(async()=>{const result=await api("categories/"+categoryId+"/preview");setPreview(result.filter((p:any)=>selectedIds.includes(p.id)));setSelected(selectedIds);setConsent(false);},"")}>Revisar y generar seleccionados</button>
+      <button type="button" disabled={!selectedIds.length||t.busy} onClick={()=>void t.run(async()=>{const result=await api("categories/"+categoryId+"/preview");setPreview(result.filter((p:any)=>selectedIds.includes(p.id)));setSelected(selectedIds);setConsent(false);},"")}>Revisar y generar seleccionados</button></div>
       {preview && (
         <div className="panel" style={{ marginTop: 15 }}>
           <h3>
@@ -1685,7 +1656,7 @@ function BatchGeneration({
   );
 }
 function SubproductRow({
-  sub,
+  sub, selected, onSelected, ancestry, initiallyOpen=false,
   costScope,
   index,
   inherited,
@@ -1695,6 +1666,10 @@ function SubproductRow({
   onReviewSaved,
 }: {
   sub: Item;
+  selected:boolean;
+  onSelected:(checked:boolean)=>void;
+  ancestry:{project:string;product:string};
+  initiallyOpen?:boolean;
   costScope: { project: string; product: string; subproduct: string };
   index: number;
   inherited: Settings;
@@ -1708,7 +1683,9 @@ function SubproductRow({
   const [policy,setPolicy]=useState<InstructionPolicy>(sub.instructionPolicy??{});
   const [reviewOpen,setReviewOpen]=useState(false),[reviewDirty,setReviewDirty]=useState(false),[sourceDirty,setSourceDirty]=useState(false),[reviewVersion,setReviewVersion]=useState(0);
   const uploadRef=useRef<AttachmentsHandle>(null);
-  const [expanded, setExpanded] = useState(false);
+  const [expanded, setExpanded] = useState(initiallyOpen);
+  const detailsRef=useRef<HTMLDetailsElement>(null);
+  useEffect(()=>{if(initiallyOpen){detailsRef.current?.scrollIntoView({block:"start"});detailsRef.current?.querySelector<HTMLInputElement>("input[data-subproduct-name]")?.focus();}},[initiallyOpen]);
   const [previewFirst, setPreviewFirst] = useState(true);
   const [queued, setQueued] = useState(false);
   const [executionMode, setExecutionMode] =
@@ -1748,29 +1725,26 @@ function SubproductRow({
   const loadReview=()=>void t.run(async()=>{await save();setPreview(await api("subproducts/"+sub.id+"/instructions"));setReview(false);setCharge(false);setReviewDirty(false);setSourceDirty(false);setReviewVersion(v=>v+1);},"");
   return (
     <>
-    <div className="row subproduct-quick-actions" aria-label={"Acciones de "+name}>
-      {sub.canManageAccess&&<button type="button" aria-expanded={sharing} onClick={()=>setSharing(!sharing)}>Compartir subproducto</button>}
-      <button type="button" onClick={openGallery}>Ver variaciones ({sub._count?.variations??0}) →</button>
-      {canSeeCosts&&<a className="button" href={"?"+new URLSearchParams({view:"usage",...costScope})}>Costos IA</a>}
-    </div>
-    {sharing&&sub.canManageAccess&&<ProjectSharing projectId={sub.id} scope="subproduct" />}
-    <details
+    <details ref={detailsRef}
       aria-label={"Subproducto " + sub.id}
+      open={expanded}
       onToggle={(e) => setExpanded(e.currentTarget.open)}
     >
-      <summary>
-        <span className="sub-num">{String(index + 1).padStart(2, "0")}</span>
-        <strong>{name}</strong>
-        <small>
-          {(custom || forceOwn ? s : inherited).count} variaciones ·{" "}
-          {custom || forceOwn || prompt
-            ? "Personalizada"
-            : "Configuración heredada"}
-        </small>
+      <summary className="subproduct-header">
+        <label className="subproduct-check" onClick={e=>e.stopPropagation()}><input type="checkbox" aria-label={"Seleccionar "+name} checked={selected} onChange={e=>onSelected(e.target.checked)} /></label>
+        <span aria-hidden="true">{expanded?"▾":"▸"}</span><span className="subproduct-title"><span className="sub-num">{String(index+1).padStart(2,"0")}</span><strong>{name}</strong></span>
+        <small>{(custom||forceOwn?s:inherited).count} variaciones</small>
+        <span className="row subproduct-header-actions" onClick={e=>e.stopPropagation()}>
+          {sub.canManageAccess&&<button type="button" aria-expanded={sharing} onClick={()=>setSharing(!sharing)}>Compartir subproducto</button>}
+          <button type="button" onClick={openGallery}>Ver variaciones ({sub._count?.variations??0}) ↗</button>
+          {canSeeCosts&&<a className="button" href={"?"+new URLSearchParams({view:"usage",...costScope})}>Costos IA</a>}
+          {sub.canEdit&&<button type="button" className="danger" disabled={t.busy} onClick={()=>{if(confirm(`¿Eliminar el subproducto ${name}? Se cancelarán sus pendientes y se conservará el historial.`))void t.run(async()=>{await api("subproducts/"+sub.id,"DELETE");await removed();},"Subproducto eliminado");}}>Eliminar</button>}
+        </span>
       </summary>
       <div className="inside stack">
         {templates.picker}
-        <InstructionPolicyControls scope="subproduct" value={policy} onChange={value=>{setPolicy(value);setReview(false);setSourceDirty(true);}} />
+        <InstructionPolicyControls scope="subproduct" value={policy} onChange={value=>{setPolicy(value);setReview(false);setSourceDirty(true);setPreview(null);setReviewOpen(false);}} />
+        <p className="hint subproduct-inheritance">Herencias: {policy.includeProject!==false?<>Proyecto: <strong>{ancestry.project}</strong></>:"Proyecto: no incluida"} · {policy.includeProduct!==false?<>Producto: <strong>{ancestry.product}</strong></>:"Producto: no incluida"}. Las exclusiones del origen también se respetan.</p>
         <p className="notice">
           Eje temático: <strong>{name || sub.name}</strong>. Todas las
           variaciones tratarán de este tema y deben mencionar su nombre. Las
@@ -1780,12 +1754,13 @@ function SubproductRow({
         <label style={{ marginTop: 18 }}>
           Tema / nombre del subproducto
           <input
+            data-subproduct-name
             value={name}
-            onChange={(e) => setName(e.target.value)}
+            onChange={(e) => {setName(e.target.value);setSourceDirty(true);setReview(false);}}
             maxLength={200}
           />
         </label>
-        <InstructionEditor
+        {policy.includeSelf!==false&&<InstructionEditor
           label="Instrucciones particulares · opcional"
           value={prompt}
           onValueChange={(value) => {
@@ -1793,7 +1768,7 @@ function SubproductRow({
             setReview(false);setSourceDirty(true);
           }}
           placeholder="Escribe solo las excepciones o indicaciones adicionales."
-        />
+        />}
         <div id={"sub-settings-"+sub.id} className={preview?.needsSettings?"field-invalid":""}>
         <label className="row">
           <input
@@ -1817,45 +1792,9 @@ function SubproductRow({
           />
         )}
         </div>
-        <button disabled={t.busy} onClick={() => void t.run(save)}>
-          Guardar cambios del subproducto
-        </button>
-        <div className="row">
-          <button
-            type="button"
-            className="danger"
-            disabled={t.busy}
-            onClick={() => {
-              if (
-                confirm(
-                  `¿Eliminar el espacio ${name}? Se cancelarán sus trabajos pendientes. El historial se conserva.`,
-                )
-              )
-                void t.run(async () => {
-                  await api("subproducts/" + sub.id, "DELETE");
-                  await removed();
-                }, "Subproducto eliminado");
-            }}
-          >
-            Eliminar subproducto
-          </button>
-        </div>
         <Attachments ref={uploadRef} scope="subproduct" id={sub.id} deferred />
         <button type="button" disabled={t.busy} onClick={()=>void t.run(save)}>Guardar cambios y documentos del subproducto</button>
         {templates.saver}
-        <div className="row">
-          <button onClick={openGallery}>
-            Ver variaciones ({sub._count?.variations ?? 0}) →
-          </button>
-          {canSeeCosts && (
-            <a
-              className="button"
-              href={"?" + new URLSearchParams({ view: "usage", ...costScope })}
-            >
-              Ver costos de este subproducto →
-            </a>
-          )}
-        </div>
         <details className="subproduct-review" open={reviewOpen} onToggle={event=>{const open=event.currentTarget.open;setReviewOpen(open);if(open&&!preview&&!t.busy)loadReview();}}>
           <summary>Revisar y generar</summary>
           {!preview&&<p role="status">Preparando la revisión…</p>}
@@ -1965,7 +1904,9 @@ function SubproductRow({
         )}
         {t.notice}
       </div>
-    </details></>
+    </details>
+    {sharing&&sub.canManageAccess&&<ProjectSharing projectId={sub.id} scope="subproduct" />}
+    </>
   );
 }
 function AISettings() {
