@@ -50,11 +50,12 @@ test("herencia: Ecuador y USD 40 reemplazan el precio y mercado heredados", () =
   assert(result.text.includes("No utilizar logos"));
   assert.equal(result.warnings.length, 0);
 });
-test("precios ambiguos bloquean generación y proyectos independientes no heredan educación", () => {
+test("precios múltiples se revisan sin bloqueo y proyectos independientes no heredan educación", () => {
   const result = resolveInstructions([
     { name: "Subproducto", prompt: "Precio USD 40 o S/90." },
   ]);
-  assert.equal(result.warnings.length, 1);
+  assert.equal(result.warnings.length, 0);
+  assert.equal(result.advisories.length, 1);
   assert(
     !resolveInstructions([
       { name: "Proyecto", prompt: "Vender cortinas." },
@@ -464,3 +465,8 @@ test("un cargo incierto interrumpe la cola y nunca se reintenta al reanudar", as
   });
   assert.deepEqual(attempts, ["incierto", "siguiente"]);
 });
+
+
+test("ofertas por etapas conservan promoción y mensualidad sin exigir un precio único",()=>{const result=resolveInstructions([{name:"Proyecto",prompt:"S/40 por los primeros 3 meses."},{name:"Subproducto",prompt:"Luego S/20 por mes. Mostrar ambos períodos."}]);assert(result.text.includes("S/40"));assert(result.text.includes("S/20"));assert.equal(result.warnings.length,0);const same=resolveInstructions([{name:"Subproducto",prompt:"S/40 por tres meses y luego S/20 mensuales."}]);assert.equal(same.warnings.length,0);assert(same.text.includes("S/40"));assert(same.text.includes("S/20"));});
+
+test("políticas de instrucciones respetan desactivaciones sin borrar texto", async()=>{const {instructionUse}=await import("../lib/instruction-policy");assert.deepEqual(instructionUse({},{},{}),{project:true,product:true,subproduct:true});assert.equal(instructionUse({includeSelf:false},{},{includeProject:true}).project,false);assert.equal(instructionUse({},{includeProject:false},{}).project,false);assert.deepEqual(instructionUse({},{},{includeProject:false,includeProduct:false,includeSelf:false}),{project:false,product:false,subproduct:false});assert.equal(instructionUse({},{},{},false).product,false);});

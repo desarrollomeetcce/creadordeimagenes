@@ -52,6 +52,7 @@ const scopeOf = (event: Event) => {
     a.startsWith("PROYECTO_") ||
     a.startsWith("ACCESO_ADMINISTRADORES_") ||
     a === "IDENTIDAD_MARCA_ACTUALIZADA" ||
+    a === "IDENTIDAD_MARCA_CARGADA" ||
     a === "REGENERACION_SELECTIVA_AUTORIZADA"
   )
     return "project";
@@ -61,7 +62,7 @@ const scopeOf = (event: Event) => {
     a === "GENERACION_MASIVA_AUTORIZADA"
   )
     return "category";
-  if (a.startsWith("SUBPRODUCTO_") || a === "GENERACION_AUTORIZADA")
+  if (a.startsWith("SUBPRODUCTO_") || a === "REVISION_INSTRUCCIONES_GUARDADA" || a === "GENERACION_AUTORIZADA")
     return "subproduct";
   if (a.startsWith("ACCESO_PROJECT_")) return "project";
   if (a.startsWith("ACCESO_CATEGORY_")) return "category";
@@ -337,6 +338,10 @@ const verbs: Record<string, string> = {
   PROYECTO_ACTUALIZADO: "Editó el proyecto",
   PROYECTO_PAPELERA: "Envió el proyecto a la papelera",
   PROYECTO_RESTAURADO: "Restauró el proyecto",
+  PRODUCTO_PAPELERA:"Envió el producto a la papelera",
+  PRODUCTO_RESTAURADO:"Restauró el producto",
+  REVISION_INSTRUCCIONES_GUARDADA:"Guardó la revisión de instrucciones",
+  IDENTIDAD_MARCA_CARGADA:"Cargó una identidad de marca",
   PRODUCTO_CREADO: "Creó el producto",
   PRODUCTO_ACTUALIZADO: "Editó las instrucciones o configuración del producto",
   SUBPRODUCTOS_CREADOS: "Creó subproductos",

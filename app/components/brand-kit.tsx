@@ -1,4 +1,6 @@
 "use client";
+import { createPortal } from "react-dom";
+import { useReusableConfiguration } from "./reusable-configuration";
 import { useEffect, useRef, useState } from "react";
 
 import { Attachments, type AttachmentsHandle } from "./attachments";
@@ -11,6 +13,7 @@ type Kit = {
   font: string | null;
   logoAttachmentIds: string[];
   revision: number;
+  sourcePolicy?:Record<string,unknown>;
 };
 type Logo = { id: string; name: string; mime: string; purpose: string };
 const empty: Kit = {
@@ -32,8 +35,10 @@ async function api(path: string, data?: unknown) {
     throw new Error(result.error ?? "No se pudo cargar la identidad de marca.");
   return result;
 }
-export function BrandKit({ projectId }: { projectId: string }) {
+export function BrandKit({ projectId,selectorHost,onOpen }: { projectId: string;selectorHost?:HTMLElement|null;onOpen?:()=>void }) {
   const attachmentRef = useRef<AttachmentsHandle>(null), customColors = useRef<string[]>([]);
+  const [identities,setIdentities]=useState<{projectId:string;name:string;project:{name:string}}[]>([]);
+  useEffect(()=>{let active=true;void api("brands").then(rows=>{if(active)setIdentities(rows);}).catch(()=>{});return()=>{active=false;};},[projectId]);
   const [kit, setKit] = useState<Kit>(empty),
     [logos, setLogos] = useState<Logo[]>([]),
     [canEdit, setCanEdit] = useState(false),
@@ -44,7 +49,7 @@ export function BrandKit({ projectId }: { projectId: string }) {
       api(`projects/${projectId}/brand`),
       api(`attachments?scope=project&id=${projectId}`),
     ]);
-    setKit(brand.kit ?? empty);
+    setKit(brand.kit?{...brand.kit,sourcePolicy:brand.sourcePolicy}:empty);
     setCanEdit(brand.canEdit);
     setLogos(
       files.filter(
@@ -61,7 +66,7 @@ export function BrandKit({ projectId }: { projectId: string }) {
           api(`attachments?scope=project&id=${projectId}`),
         ]);
         if (!active) return;
-        setKit(brand.kit ?? empty);
+        setKit(brand.kit?{...brand.kit,sourcePolicy:brand.sourcePolicy}:empty);
         setCanEdit(brand.canEdit);
         setLogos(
           files.filter(
@@ -81,23 +86,29 @@ export function BrandKit({ projectId }: { projectId: string }) {
       active = false;
     };
   }, [projectId]);
+  const persist = async () => {
+    setBusy(true);
+    try {
+      const uploaded=await attachmentRef.current?.flush()??[];
+      const logoAttachmentIds=[...new Set([...kit.logoAttachmentIds,...uploaded.filter(f=>/logo/i.test(f.purpose)&&f.mime.startsWith("image/")).map(f=>f.id)])];
+      setKit(current=>({...current,logoAttachmentIds}));
+      const files=await api(`attachments?scope=project&id=${projectId}`);
+      setLogos(files.filter((file:Logo)=>file.mime.startsWith("image/")&&/logo/i.test(file.purpose)));
+      const {revision,name,prompt,colors,font}=kit;
+      const saved=await api(`projects/${projectId}/brand`,{name,prompt,colors,font,logoAttachmentIds,expectedRevision:revision});setKit({...saved,sourcePolicy:kit.sourcePolicy});setIdentities(await api("brands").catch(()=>identities));return saved as Kit;
+    } finally {setBusy(false);}
+  };
+  const configuration=(value:Kit)=>({id:projectId,name:value.name||"IDENTIDAD DE MARCA",prompt:value.prompt,settings:{brandName:value.name,colors:value.colors,font:value.font},instructionPolicy:value.sourcePolicy});
+  const templates=useReusableConfiguration({scope:"brand",editCurrent:onOpen,extraOptions:identities.map(identity=>({id:"project-brand:"+identity.projectId,label:identity.name||"Identidad de "+identity.project.name,detail:"Proyecto: "+identity.project.name})),onExtraSelect:async id=>{const source=id.slice("project-brand:".length);if(source!==projectId){const r=await fetch("/api/brands/"+source+"/apply",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({projectId})});const b=await r.json();if(!r.ok)throw Error(b.error);setKit(b.kit);await read();}onOpen?.();},current:configuration(kit),saveCurrent:async()=>configuration(await persist()),onApplied:async()=>{await read();onOpen?.();},createNew:()=>{setKit({...empty,revision:kit.revision});onOpen?.();}});
   return (
-    <ExpandablePanel title="Identidad de marca">
+    <>{selectorHost&&createPortal(templates.picker,selectorHost)}<ExpandablePanel title="Identidad de marca">
       <form
         className="inside stack"
         onSubmit={(e) => {
           e.preventDefault();
           setBusy(true);
           setMessage("");
-          void (async () => {
-            const uploaded = await attachmentRef.current?.flush() ?? [];
-            const logoAttachmentIds = [...new Set([...kit.logoAttachmentIds, ...uploaded.filter(file => /logo/i.test(file.purpose) && file.mime.startsWith("image/")).map(file => file.id)])];
-            setKit(current => ({ ...current, logoAttachmentIds }));
-            const files = await api(`attachments?scope=project&id=${projectId}`);
-            setLogos(files.filter((file: Logo) => file.mime.startsWith("image/") && /logo/i.test(file.purpose)));
-            const { revision, name, prompt, colors, font } = kit;
-            return api(`projects/${projectId}/brand`, { name, prompt, colors, font, logoAttachmentIds, expectedRevision: revision });
-          })()
+          void persist()
             .then((saved) => {
               setKit(saved);
               setMessage(
@@ -229,7 +240,7 @@ export function BrandKit({ projectId }: { projectId: string }) {
               </label>
             ))}
           </div>
-          <Attachments ref={attachmentRef} scope="project" id={projectId} deferred addLabel="＋ Subir otro archivo" />
+          <Attachments ref={attachmentRef} scope="project" id={projectId} deferred addLabel="＋ Subir otro archivo" purposePrefix="Marca · " />
           <button type="submit" className="primary">
             Guardar identidad
           </button>
@@ -257,12 +268,13 @@ export function BrandKit({ projectId }: { projectId: string }) {
         >
           Actualizar identidad y logos
         </button>
+        {canEdit&&templates.saver}
         {message && (
           <div role="status" className="notice">
             {message}
           </div>
         )}
       </form>
-    </ExpandablePanel>
+    </ExpandablePanel></>
   );
 }

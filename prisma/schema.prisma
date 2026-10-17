@@ -68,6 +68,7 @@ model Project {
   members ProjectMember[]
   brandKit BrandKit?
   allAdministrators Boolean @default(false)
+  instructionPolicy Json @default("{}")
 }
 model ProjectMember {
   projectId String
@@ -89,6 +90,9 @@ model Category {
   subproducts Subproduct[]
   members CategoryMember[]
   @@index([projectId])
+  instructionPolicy Json @default("{}")
+  deletedAt DateTime?
+  @@index([projectId,deletedAt])
 }
 model Subproduct {
   id String @id @default(cuid())
@@ -102,6 +106,7 @@ model Subproduct {
   variations Variation[]
   @@index([categoryId])
   @@index([categoryId,deletedAt])
+  instructionPolicy Json @default("{}")
 }
 model PromptVersion {
   id String @id @default(cuid())
@@ -319,6 +324,9 @@ model SavedPreset {
   applySettingsToAll Boolean @default(true)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+  level String @default("legacy")
+  policy Json @default("{}")
+  @@index([level,updatedAt])
 }
 model PresetShare {
   presetId String

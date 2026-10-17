@@ -26,8 +26,8 @@ export type AttachmentUpload = { id: string; name: string; purpose: string; mime
 export type AttachmentsHandle = { flush: () => Promise<AttachmentUpload[]> };
 type Draft = { key: string; file?: File; purpose: string; saved?: AttachmentUpload };
 export const Attachments = forwardRef<AttachmentsHandle, {
-  scope: string; id: string; deferred?: boolean; onUploaded?: () => void; addLabel?: string;
-}>(function Attachments({ scope, id, deferred = false, onUploaded, addLabel = "＋ Subir otro documento" }, ref) {
+  scope: string; id: string; deferred?: boolean; onUploaded?: () => void; addLabel?: string; purposePrefix?:string;
+}>(function Attachments({ scope, id, deferred = false, onUploaded, addLabel = "＋ Subir otro documento", purposePrefix="" }, ref) {
   const [drafts, setDrafts] = useState<Draft[]>([{ key: "first", purpose: "Material de contexto" }]);
   const draftsRef = useRef(drafts), flushing = useRef(false);
   draftsRef.current = drafts;
@@ -80,7 +80,7 @@ export const Attachments = forwardRef<AttachmentsHandle, {
       form.set("file", file);
       form.set("scope", scope);
       form.set("resourceId", id);
-      form.set("purpose", previous?.purpose ?? purpose);
+      form.set("purpose", previous?.purpose ?? purposePrefix+purpose);
       const saved = await request(
         previous ? `attachments/${previous.id}/replace` : "attachments",
         "POST",
@@ -96,7 +96,7 @@ export const Attachments = forwardRef<AttachmentsHandle, {
           ? "Archivo reemplazado para próximas generaciones. El anterior se conserva para el historial y los trabajos ya autorizados."
           : "Archivo guardado.",
       );
-      return { id: saved.id, name: saved.name, purpose: previous?.purpose ?? purpose, mime: file.type };
+      return { id: saved.id, name: saved.name, purpose: previous?.purpose ?? purposePrefix+purpose, mime: file.type };
     } catch (error) {
       setMessage(
         error instanceof Error

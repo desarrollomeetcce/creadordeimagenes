@@ -10477,6 +10477,76 @@ test("Integración HTTP + PostgreSQL (base exclusiva de pruebas, sin llamadas ex
           );
         }),
     );
+    async function hierarchyForReview() {
+      const p=(await owner.call("projects","POST",{name:"Revisión "+randomUUID(),prompt:"Proyecto privado S/40 por los primeros 3 meses."})).body;
+      const c=(await owner.call(`projects/${p.id}/categories`,"POST",{name:"Producto de revisión",prompt:"Producto privado: conservar marca."})).body;
+      const created=await owner.call(`categories/${c.id}/subproducts`,"POST",{names:["Tema de revisión"]});
+      assert.equal(created.status,201);
+      const s=(await owner.call(`categories/${c.id}`)).body.subproducts[0];
+      await owner.call(`subproducts/${s.id}`,"PATCH",{name:s.name,prompt:"Luego S/20 mensuales. Subproducto propio.",settings:{}});
+      return {p,c,s};
+    }
+    async function uploadReviewText(resourceId:string,name="instrucciones.txt",scope="project",purpose="Material de contexto") {
+      const form=new FormData();form.set("scope",scope);form.set("resourceId",resourceId);form.set("purpose",purpose);form.set("file",new File(["Documento de revisión"],name,{type:"text/plain"}));
+      const result=await fetch(root+"/api/attachments",{method:"POST",headers:{Cookie:owner.cookie,Origin:root},body:form});assert.equal(result.status,201);return (await result.json()).id as string;
+    }
+    await t.test("herencia configurable conserva textos y acepta promoción seguida de mensualidad sin precio único",async()=>{
+      const {p,c,s}=await hierarchyForReview();let preview=await owner.call(`subproducts/${s.id}/instructions`);assert.equal(preview.status,200);assert.equal(preview.body.warnings.length,0);assert(preview.body.text.includes("S/40"));assert(preview.body.text.includes("S/20"));
+      assert.equal((await owner.call(`projects/${p.id}`,"PATCH",{name:p.name,prompt:p.prompt,instructionPolicy:{includeSelf:false}})).status,200);
+      preview=await owner.call(`subproducts/${s.id}/instructions`);assert(!preview.body.text.includes("Proyecto privado"));assert.equal((await owner.call(`projects/${p.id}`)).body.prompt,p.prompt);
+      assert.equal((await owner.call(`categories/${c.id}`,"PATCH",{name:c.name,prompt:c.prompt,settings:{},instructionPolicy:{includeProject:false,includeSelf:false}})).status,200);
+      preview=await owner.call(`subproducts/${s.id}/instructions`);assert(!preview.body.text.includes("Producto privado"));assert(preview.body.text.includes("Subproducto propio"));
+      await owner.call(`subproducts/${s.id}`,"PATCH",{name:s.name,prompt:"Conservar texto particular",settings:{},instructionPolicy:{includeSelf:false,includeProject:false,includeProduct:false}});
+      preview=await owner.call(`subproducts/${s.id}/instructions`);assert(!preview.body.text.includes("Conservar texto particular"));assert(preview.body.text.includes(s.name));assert.equal((await owner.call(`subproducts/${s.id}`)).body.prompt,"Conservar texto particular");
+      assert.equal((await owner.call(`projects/${p.id}`,"PATCH",{name:p.name,prompt:p.prompt,instructionPolicy:{includeSelf:"no"}})).status,400);
+    });
+    await t.test("revisión de tres niveles: guardado atómico, conflicto, ámbitos exactos y privacidad de ancestros",async()=>{
+      const {p,c,s}=await hierarchyForReview();const initial=await owner.call(`subproducts/${s.id}/review`);assert.equal(initial.status,200);assert.equal(initial.body.layers.length,3);assert(initial.body.layers.every((l:any)=>l.canEdit));
+      const before=await db.promptVersion.count({where:{resourceId:{in:[p.id,c.id,s.id]}}});const body={layers:initial.body.layers.map((l:any)=>({scope:l.scope,id:l.id,prompt:l.prompt+" Cambio total.",policy:l.policy,revision:l.revision}))};
+      assert.equal((await owner.call(`subproducts/${s.id}/review`,"POST",body)).status,200);assert.equal(await db.promptVersion.count({where:{resourceId:{in:[p.id,c.id,s.id]}}}),before+3);assert.equal((await owner.call(`subproducts/${s.id}/review`,"POST",body)).status,409);
+      const userRow=await db.user.findUniqueOrThrow({where:{id:uid}});await owner.call(`subproducts/${s.id}/members`,"POST",{email:userRow.email});
+      const limited=await user.call(`subproducts/${s.id}/review`);assert.equal(limited.status,200);assert.equal(limited.body.layers[0].prompt,null);assert.equal(limited.body.layers[1].prompt,null);assert.equal(limited.body.layers[2].canEdit,true);
+      const safe=await user.call(`subproducts/${s.id}/instructions`);assert(!safe.body.text.includes("Proyecto privado"));assert(!safe.body.text.includes("Producto privado"));assert(safe.body.text.includes("Subproducto propio"));
+      const fresh=(await owner.call(`subproducts/${s.id}/review`)).body;const own=fresh.layers[2];const ownBefore=(await db.subproduct.findUniqueOrThrow({where:{id:s.id}})).prompt;
+      const denied=await user.call(`subproducts/${s.id}/review`,"POST",{layers:[{...fresh.layers[0],prompt:"No autorizado"},{...own,prompt:"No debe guardarse"}]});assert.equal(denied.status,404);assert.equal((await db.subproduct.findUniqueOrThrow({where:{id:s.id}})).prompt,ownBefore);
+      assert.equal((await user.call(`subproducts/${s.id}/review`,"POST",{layers:[{...limited.body.layers[2],policy:{includeProject:false},prompt:ownBefore}]})).status,200);
+      const observerRow=await db.user.findUniqueOrThrow({where:{id:oid}});await owner.call(`subproducts/${s.id}/members`,"POST",{email:observerRow.email});assert.equal((await observer.call(`subproducts/${s.id}/review`,"POST",{layers:[own]})).status,403);assert.equal((await anonymous.call(`subproducts/${s.id}/review`)).status,401);
+    });
+    await t.test("configuraciones por nivel: proyecto con adjuntos, recarga sin duplicados y sobreescritura protegida",async()=>{
+      const {p,c,s}=await hierarchyForReview(),target=(await owner.call("projects","POST",{name:"Destino de configuración"})).body;await uploadReviewText(p.id);
+      const payload={name:"Proyecto reutilizable",prompt:p.prompt,settings:{},level:"project",policy:{includeSelf:true},sourceProjectId:p.id,includeAttachments:true,visibility:"PERSONAL"};
+      const preset=await owner.call("presets","POST",payload);assert.equal(preset.status,201);assert.equal(preset.body.level,"project");
+      const listed=await owner.call("presets?level=project&summary=1");assert(listed.body.some((r:any)=>r.id===preset.body.id));assert(!JSON.stringify(listed.body).includes(p.prompt));assert(!(await owner.call("presets?level=subproduct")).body.some((r:any)=>r.id===preset.body.id));
+      for(let i=0;i<2;i++)assert.equal((await owner.call(`presets/${preset.body.id}/apply`,"POST",{projectId:target.id,includeAttachments:true})).status,200);
+      assert.equal(await db.attachment.count({where:{scope:"project",resourceId:target.id}}),1);assert.equal((await owner.call(`projects/${target.id}`)).body.prompt,p.prompt);
+      assert.equal((await owner.call(`presets/${preset.body.id}/apply`,"POST",{subproductId:s.id})).status,400);
+      const timestamp=(await db.savedPreset.findUniqueOrThrow({where:{id:preset.body.id}})).updatedAt.toISOString();const update={...payload,prompt:"Instrucciones actualizadas",expectedUpdatedAt:timestamp};assert.equal((await owner.call(`presets/${preset.body.id}`,"PATCH",update)).status,200);assert.equal((await owner.call(`presets/${preset.body.id}`,"PATCH",update)).status,409);
+      assert.equal((await user.call(`presets/${preset.body.id}`,"PATCH",payload)).status,404);const separate=await owner.call("presets","POST",{...payload,name:"Proyecto nuevo nombre"});assert.equal(separate.status,201);assert.notEqual(separate.body.id,preset.body.id);
+      assert.equal((await owner.call(`presets/${preset.body.id}/apply`,"POST",{categoryId:c.id})).status,400);
+    });
+    await t.test("identidad reutilizable conserva colores y logos autorizados del destino sin duplicar adjuntos",async()=>{
+      const {p}=await hierarchyForReview(),target=(await owner.call("projects","POST",{name:"Marca destino"})).body;
+      const sharp=(await import("sharp")).default;const bytes=await sharp({create:{width:30,height:20,channels:3,background:"#123456"}}).png().toBuffer();
+      const upload=async(name:string,purpose:string)=>{const form=new FormData();form.set("scope","project");form.set("resourceId",p.id);form.set("purpose",purpose);form.set("file",new File([new Uint8Array(bytes)],name,{type:"image/png"}));const r=await fetch(root+"/api/attachments",{method:"POST",headers:{Cookie:owner.cookie,Origin:root},body:form});assert.equal(r.status,201);return (await r.json()).id;};
+      const logo=await upload("autorizado.png","Logo institucional");await upload("no-seleccionado.png","Logo institucional");await upload("referencia.png","Referencia visual");
+      assert.equal((await owner.call(`projects/${p.id}/brand`,"PUT",{expectedRevision:0,name:"Marca reutilizable",prompt:"Identidad cálida",colors:["#123456"],font:null,logoAttachmentIds:[logo]})).status,200);
+      const preset=await owner.call("presets","POST",{name:"Marca compartida",level:"brand",sourceProjectId:p.id,includeAttachments:true,prompt:"Identidad cálida",settings:{brandName:"Marca reutilizable",colors:["#123456"],font:null},visibility:"PERSONAL"});assert.equal(preset.status,201);
+      assert.equal(await db.attachment.count({where:{scope:"preset",resourceId:preset.body.id}}),2);
+      for(let i=0;i<2;i++)assert.equal((await owner.call(`presets/${preset.body.id}/apply`,"POST",{projectId:target.id,brand:true,includeAttachments:true})).status,200);
+      const brand=(await owner.call(`projects/${target.id}/brand`)).body.kit;assert.equal(brand.name,"Marca reutilizable");assert.deepEqual(brand.colors,["#123456"]);assert.equal(brand.logoAttachmentIds.length,1);assert.notEqual(brand.logoAttachmentIds[0],logo);assert.equal(await db.attachment.count({where:{scope:"project",resourceId:target.id}}),2);
+      assert.equal((await owner.call(`presets/${preset.body.id}/apply`,"POST",{projectId:target.id,brand:false})).status,400);
+      const directory=await owner.call("brands");assert.equal(directory.status,200);assert(directory.body.some((row:any)=>row.projectId===p.id));assert(!JSON.stringify(directory.body).includes("Identidad cálida"));assert(!(await admin.call("brands")).body.some((row:any)=>row.projectId===p.id));
+      const direct=(await owner.call("projects","POST",{name:"Identidad directa"})).body;
+      for(let i=0;i<2;i++)assert.equal((await owner.call(`brands/${p.id}/apply`,"POST",{projectId:direct.id})).status,200);
+      assert.equal(await db.attachment.count({where:{scope:"project",resourceId:direct.id}}),2);assert.equal((await owner.call(`projects/${direct.id}/brand`)).body.kit.logoAttachmentIds.length,1);assert.equal((await user.call(`brands/${p.id}/apply`,"POST",{projectId:direct.id})).status,404);
+    });
+    await t.test("eliminar producto lo oculta, cancela solo pendientes y permite restaurar sin repetir cargos",async()=>{
+      const {p,c,s}=await hierarchyForReview(),actor=(await db.user.findFirstOrThrow({where:{role:"OWNER",status:"APPROVED"}}));
+      const job=await db.generationJob.create({data:{actorId:actor.id,projectId:p.id,subproductId:s.id,idempotencyKey:randomUUID(),status:"PENDING",snapshot:{prompt:"Sintético"},reservedMicros:100n}});await db.usageLedger.create({data:{jobId:job.id,actorId:actor.id,projectId:p.id,model:"synthetic-review",reservedMicros:100n}});
+      assert.equal((await admin.call(`categories/${c.id}`,"DELETE")).status,403);assert.equal((await owner.call(`categories/${c.id}`,"DELETE")).status,200);assert.equal((await owner.call(`categories/${c.id}`)).status,404);assert.equal((await owner.call(`subproducts/${s.id}`)).status,404);assert.equal((await db.generationJob.findUniqueOrThrow({where:{id:job.id}})).status,"CANCELLED");assert.equal((await db.usageLedger.findUniqueOrThrow({where:{jobId:job.id}})).status,"RELEASED");assert(!(await owner.call(`projects/${p.id}`)).body.categories.some((row:any)=>row.id===c.id));
+      assert((await owner.call("categories/trash")).body.some((row:any)=>row.id===c.id));assert.equal((await owner.call(`categories/${c.id}/restore`,"POST",{})).status,200);assert.equal((await owner.call(`subproducts/${s.id}`)).status,200);assert.equal((await db.generationJob.findUniqueOrThrow({where:{id:job.id}})).status,"CANCELLED");assert.equal((await observer.call(`categories/${c.id}`,"DELETE")).status,403);
+    });
+
     await t.test("cierre de sesión invalida el token", async () => {
       assert.equal((await user.call("auth/logout", "POST")).status, 200);
       assert.equal((await user.call("projects")).status, 401);

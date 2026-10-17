@@ -75,6 +75,7 @@ export async function restoreSubproduct(actor: Actor, id: string) {
         id: sub.categoryId,
         ...categoryFullFilter(current),
         project: { deletedAt: null },
+        deletedAt:null,
       },
       select: { id: true },
     });

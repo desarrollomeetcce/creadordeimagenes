@@ -98,8 +98,9 @@ export function categoryFullFilter(
 export function categoryFilter(
   u: AccessActor,
 ): import("@prisma/client").Prisma.CategoryWhereInput {
-  if (u.role === "OWNER") return { project: { deletedAt: null } };
+  if (u.role === "OWNER") return { deletedAt:null, project: { deletedAt: null } };
   return {
+    deletedAt:null,
     project: { deletedAt: null },
     OR: [
       categoryFullFilter(u),
@@ -115,10 +116,10 @@ export function subproductFilter(
   u: AccessActor,
 ): import("@prisma/client").Prisma.SubproductWhereInput {
   if (u.role === "OWNER")
-    return { deletedAt: null, category: { project: { deletedAt: null } } };
+    return { deletedAt: null, category: { deletedAt:null, project: { deletedAt: null } } };
   return {
     deletedAt: null,
-    category: { project: { deletedAt: null } },
+    category: { deletedAt:null, project: { deletedAt: null } },
     OR: [
       { category: categoryFullFilter(u) },
       { members: { some: { userId: u.id } } },
@@ -135,6 +136,7 @@ export function projectFilter(
       {
         categories: {
           some: {
+            deletedAt:null,
             OR: [
               { members: { some: { userId: u.id } } },
               {
@@ -202,6 +204,7 @@ export async function resourceAccess(
           ? categoryFilter(u)
           : categoryFullFilter(u)),
         project: { deletedAt: null },
+        deletedAt:null,
       },
     });
     demand(c, "No tienes acceso a este producto.", 404);

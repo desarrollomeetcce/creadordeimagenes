@@ -178,7 +178,7 @@ test("formas manuales cubren el fondo sin IA y respetan el orden de capas y los 
 
 test("paleta de marca: elección automática explícita o colores propios sin inventar colores guardados", async () => {
   const { brandInstructions } = await import("../lib/brand");
-  const kit = { projectId:"synthetic-brand", name:"Marca de prueba", prompt:"Usar un estilo editorial.", colors:[] as string[], font:null, revision:1, updatedAt:new Date(0).toISOString(), logoAttachmentIds:[] };
+  const kit = { sourcePolicy:{}, projectId:"synthetic-brand", name:"Marca de prueba", prompt:"Usar un estilo editorial.", colors:[] as string[], font:null, revision:1, updatedAt:new Date(0).toISOString(), logoAttachmentIds:[] };
   const automatic = brandInstructions(kit);
   assert(automatic.includes("Paleta libre"));
   assert(automatic.includes("tema del subproducto"));

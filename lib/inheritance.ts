@@ -6,6 +6,7 @@ const countries =
 export function resolveInstructions(layers: Layer[]) {
   let clauses: { source: string; text: string }[] = [];
   const warnings: string[] = [];
+  const advisories: string[] = [];
   const overrides: string[] = [];
   for (const layer of layers) {
     const parts = layer.prompt
@@ -21,13 +22,10 @@ export function resolveInstructions(layers: Layer[]) {
         (target.match(countries) ?? []).map((x) => x.toLocaleLowerCase()),
       ),
     ];
-    if (ps.length > 1)
-      warnings.push(
-        `${layer.name}: hay varios precios; confirma el importe autorizado.`,
-      );
+    if(ps.length>1)advisories.push(`${layer.name}: la oferta contiene varios importes. Se conservarán sus condiciones completas para que la IA interprete promociones, períodos y mensualidades; revísalas antes de autorizar.`);
     if (cs.length > 1)
       warnings.push(`${layer.name}: hay varios mercados; confirma el destino.`);
-    if (ps.length === 1)
+    if (ps.length === 1 && !clauses.some(p => new RegExp(price.source,"i").test(p.text) && /(?:luego|después|primeros?|durante|mensual|\bmes(?:es)?\b|\bdías?\b|\bsemanas?\b|por \d+ (?:mes|día|semana))/i.test(p.text)))
       clauses = clauses.filter((p) => {
         price.lastIndex = 0;
         const match = price.test(p.text);
@@ -61,6 +59,7 @@ export function resolveInstructions(layers: Layer[]) {
   return {
     text: [...new Set(clauses.map((x) => x.text))].join("\n"),
     warnings,
+    advisories,
     overrides,
     needsReview: true,
   };

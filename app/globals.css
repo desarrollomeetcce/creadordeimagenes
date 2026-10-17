@@ -972,3 +972,30 @@ input[type="checkbox"],input[type="radio"] { accent-color:var(--selection); }
 
 .sidebar>nav button,.sidebar-account-actions button { font-weight:650; }
 .sidebar-account-actions button.active,.sidebar>nav button.active { font-weight:750; }
+.brand-selector-host { flex:0 1 260px; min-width:min(260px,100%); }
+.brand-selector-host .search-select label { font-size:11px; }
+.brand-selector-host .configuration-picker>.notice { position:absolute; z-index:25; max-width:360px; }
+.brand-selector-host .search-select input { height:40px; }
+.configuration-picker { min-width:0; }
+.instruction-policy-controls { border:1px solid var(--line); border-radius:8px; padding:12px; background:var(--paper); }
+.instruction-policy-controls>small { grid-column:1/-1; color:var(--muted); font-size:11px; }
+.project-instruction-section>summary { display:flex; justify-content:space-between; align-items:center; gap:14px; flex-wrap:wrap; }
+.project-instruction-section>summary:before { content:'▸'; }
+.project-instruction-section[open]>summary:before { content:'▾'; }
+.project-instruction-section>summary>span { flex:1; }
+.project-instruction-section>summary label { font-size:11px; }
+.subproduct-quick-actions { justify-content:flex-end; gap:6px; }
+.subproduct-quick-actions button,.subproduct-quick-actions .button,.subproduct-selected-actions button,.subproduct-selected-actions .button { min-height:34px; padding:6px 9px; font-size:11px; }
+.subproduct-review { border:1px solid var(--line); border-radius:10px; }
+.subproduct-review>summary { font-weight:700; padding:12px; }
+.subproduct-review .panel { margin:0; border:0; }
+.review-instructions>details>summary { font-weight:700; }
+.review-instructions .instruction-editor-dialog { z-index:50; }
+.window-close { font-size:23px!important; line-height:1; width:36px!important; min-width:36px; min-height:36px; padding:4px!important; }
+.instruction-editor-dialog { background:var(--surface); color:var(--ink); border-color:var(--line); }
+@media(max-width:620px) { .brand-selector-host { flex-basis:100%; } .subproduct-quick-actions { justify-content:flex-start; } .project-instruction-section>summary label { flex-basis:100%; } }
+.project-action-bar .search-select-options button { width:100%; white-space:normal; min-height:36px; text-align:left; }
+.brand-selector-host .search-select-input>button { width:32px; padding:4px; }
+.brand-collapse { margin-bottom:8px; font-size:12px; }
+
+.embedded-trash>summary { display:none; }

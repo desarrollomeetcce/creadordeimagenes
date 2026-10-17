@@ -14,11 +14,13 @@ type Data = {
 export function SubproductTrash({
   categoryId,
   onRestored,
+  initialOpen=false,
 }: {
+  initialOpen?:boolean;
   categoryId: string;
   onRestored: () => Promise<void>;
 }) {
-  const [open, setOpen] = useState(false),
+  const [open, setOpen] = useState(initialOpen),
     [data, setData] = useState<Data | null>(null),
     [query, setQuery] = useState(""),
     [page, setPage] = useState(1),
@@ -91,7 +93,7 @@ export function SubproductTrash({
     }
   }
   return (
-    <details className="panel" onToggle={(e) => setOpen(e.currentTarget.open)}>
+    <details className={"panel"+(initialOpen?" embedded-trash":"")} open={open} onToggle={(e) => setOpen(e.currentTarget.open)}>
       <summary>Subproductos eliminados · restaurar espacios</summary>
       {open && (
         <div className="inside stack" aria-busy={loading || !!restoring}>

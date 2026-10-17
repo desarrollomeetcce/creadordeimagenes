@@ -1,5 +1,10 @@
 "use client";
 import { useCallback, useEffect, useState, useRef } from "react";
+import { ReviewInstructions } from "./components/review-instructions";
+import { ProductTrash } from "./components/product-trash";
+import { InstructionPolicyControls } from "./components/instruction-policy-controls";
+import { useReusableConfiguration } from "./components/reusable-configuration";
+import type { InstructionPolicy } from "../lib/instruction-policy";
 import { SidebarAccount } from "./components/sidebar-account";
 import { SiteEditor } from "./components/site-editor";
 import { PaymentSettings } from "./components/payment-settings";
@@ -61,6 +66,7 @@ type Item = {
   id: string;
   name: string;
   prompt: string;
+  instructionPolicy?: InstructionPolicy;
   description?: string;
   settings?: Partial<Settings>;
   applyPromptToAll?: boolean;
@@ -905,6 +911,7 @@ function Projects({
             : "Crea tu primer proyecto para comenzar."}
         </div>
       )}
+      {trash&&canEdit&&<ProductTrash />}
       {t.notice}
     </>
   );
@@ -915,8 +922,14 @@ function PromptForm({
   children,
   configuration,
   attachments,
+  policyOverride,
+  onPolicyChange,
+  onApplied,
 }: {
   item: Item;
+  policyOverride?:InstructionPolicy;
+  onPolicyChange?:(policy:InstructionPolicy)=>void;
+  onApplied?:(item:any)=>void|Promise<void>;
   save: (data: any) => Promise<void>;
   children?: React.ReactNode;
   attachments?: { scope: string; id: string };
@@ -928,15 +941,24 @@ function PromptForm({
 }) {
   const formRef = useRef<HTMLFormElement>(null);
   const attachmentRef = useRef<AttachmentsHandle>(null);
+  const [currentItem,setCurrentItem]=useState(item),[formVersion,setFormVersion]=useState(0),[ownPolicy,setOwnPolicy]=useState<InstructionPolicy>(item.instructionPolicy??{});
+  useEffect(()=>{setCurrentItem(item);setOwnPolicy(item.instructionPolicy??{});setFormVersion(v=>v+1);},[item.id,item.prompt,JSON.stringify(item.instructionPolicy??{})]);
+  const policy=policyOverride??ownPolicy;
+  const changePolicy=(value:InstructionPolicy)=>{setOwnPolicy(value);onPolicyChange?.(value);};
+  const scope=configuration?"category":"project";
+  const endpoint=scope==="category"?"categories/":"projects/";
+  const getCurrent=async()=>{const current={...currentItem,...Object.fromEntries(new FormData(formRef.current!)),...configuration,instructionPolicy:policy};await attachmentRef.current?.flush();await save(current);return current;};
+  const templates=useReusableConfiguration({scope,current:{...currentItem,instructionPolicy:policy},saveCurrent:getCurrent,onApplied:async()=>{const loaded=await api(endpoint+item.id);setCurrentItem(loaded);changePolicy(loaded.instructionPolicy??{});await onApplied?.(loaded);setFormVersion(v=>v+1);}});
   const t = useTask();
   return (
     <form
+      key={formVersion}
       ref={formRef}
-      aria-label={"Instrucciones de " + item.name}
+      aria-label={"Instrucciones de " + currentItem.name}
       className="stack"
       onSubmit={(e) => {
         e.preventDefault();
-        const data = Object.fromEntries(new FormData(e.currentTarget));
+        const data = {...Object.fromEntries(new FormData(e.currentTarget)),instructionPolicy:policy};
         void t.run(async () => {
           const uploaded = await attachmentRef.current?.flush();
           try { await save(data); }
@@ -944,16 +966,18 @@ function PromptForm({
         }, "Instrucciones y documentos guardados");
       }}
     >
+      {templates.picker}
+      <InstructionPolicyControls scope={scope} value={policy} onChange={changePolicy} />
       <label>
         Nombre
-        <input name="name" defaultValue={item.name} required maxLength={200} />
+        <input name="name" defaultValue={currentItem.name} required maxLength={200} />
       </label>
       {item.description !== undefined && (
         <label>
           Descripción
           <input
             name="description"
-            defaultValue={item.description}
+            defaultValue={currentItem.description}
             maxLength={2000}
           />
         </label>
@@ -965,7 +989,7 @@ function PromptForm({
             : "Instrucciones del proyecto"
         }
         name="prompt"
-        defaultValue={item.prompt}
+        defaultValue={currentItem.prompt}
         placeholder="Escribe instrucciones en lenguaje natural…"
       />
       {children}
@@ -973,21 +997,7 @@ function PromptForm({
       <button disabled={t.busy} className="primary">
         Guardar instrucciones
       </button>
-      {configuration && (
-        <PresetTools
-          category={item}
-          saveCurrent={async () => {
-            const current = {
-              ...item,
-              ...Object.fromEntries(new FormData(formRef.current!)),
-              ...configuration,
-            };
-            await attachmentRef.current?.flush();
-            await save(current);
-            return current;
-          }}
-        />
-      )}
+      {templates.saver}
       {t.notice}
     </form>
   );
@@ -1008,6 +1018,9 @@ function ProjectEditor({
   const [create, setCreate] = useState(false);
   const [share, setShare] = useState(false);
   const [brandOpen, setBrandOpen] = useState(false);
+  const [brandHost,setBrandHost]=useState<HTMLDivElement|null>(null);
+  const [projectPolicy,setProjectPolicy]=useState<InstructionPolicy>(p.instructionPolicy??{});
+  const projectInstructions=useRef<HTMLDetailsElement>(null);
   const t = useTask();
   return (
     <>
@@ -1015,19 +1028,19 @@ function ProjectEditor({
         <div><div className="eyebrow">Proyecto</div><h1>{p.name}</h1><p className="muted">{p.description}</p></div>
       </div>
       <div className="project-action-bar" aria-label="Acciones del proyecto">
-        {p.canEdit !== false && <button type="button" className="primary" aria-expanded={create} onClick={() => setCreate(!create)}>＋ Nuevo producto</button>}
-        <button type="button" aria-expanded={brandOpen} aria-controls="project-brand" onClick={() => setBrandOpen(!brandOpen)}>Identidad de marca</button>
+        {p.canEdit !== false && <button type="button" className="primary" aria-expanded={create} onClick={() => setCreate(!create)}>＋ Añadir producto</button>}
+        <div className="brand-selector-host" ref={setBrandHost} />
         <button type="button" onClick={openCollection}>Ver afiches del proyecto</button>
         {p.canManageAccess && <button type="button" aria-expanded={share} onClick={() => setShare(!share)}>Compartir proyecto</button>}
         {p.canManageAccess && <button type="button" className="danger" onClick={() => {
           if (confirm("¿Enviar este proyecto a la papelera? Su auditoría se conservará.")) void t.run(async () => { await api("projects/" + p.id, "DELETE"); back(); });
         }}>Eliminar proyecto</button>}
       </div>
-      <div id="project-brand" hidden={!brandOpen}><BrandKit key={p.id} projectId={p.id} /></div>
-      <details>
-        <summary>Instrucciones del proyecto y adjuntos</summary>
+      <div id="project-brand" hidden={!brandOpen}><button type="button" className="brand-collapse" onClick={()=>setBrandOpen(false)}>Reducir identidad de marca</button><BrandKit key={p.id} projectId={p.id} selectorHost={brandHost} onOpen={()=>setBrandOpen(true)} /></div>
+      <details ref={projectInstructions} className="project-instruction-section">
+        <summary><span>Instrucciones del proyecto y adjuntos</span><label className="row" onClick={e=>e.stopPropagation()}><input type="checkbox" checked={projectPolicy.includeSelf===false} onChange={e=>{setProjectPolicy({...projectPolicy,includeSelf:!e.target.checked});if(projectInstructions.current)projectInstructions.current.open=true;}} />No incluir instrucciones</label></summary>
         <div className="inside stack">
-          <PromptForm key={p.id} item={p} attachments={p.canEdit !== false ? { scope:"project", id:p.id } : undefined}
+          <PromptForm key={p.id} item={p} policyOverride={projectPolicy} onPolicyChange={setProjectPolicy} attachments={p.canEdit !== false ? { scope:"project", id:p.id } : undefined}
             save={async b => { await api("projects/" + p.id, "PATCH", b); await refresh(); }} />
         </div>
       </details>
@@ -1202,6 +1215,7 @@ function CategoryEditor({
   openCollection: () => void;
 }) {
   const [sharing, setSharing] = useState(false);
+  const [trashOpen,setTrashOpen]=useState(false),[selectedSharing,setSelectedSharing]=useState<string|null>(null);
   const [selectedSubs, setSelectedSubs] = useState<string[]>([]);
   const [promptAll, setPromptAll] = useState(c.applyPromptToAll ?? true);
   const [settingsAll, setSettingsAll] = useState(c.applySettingsToAll ?? true);
@@ -1221,28 +1235,22 @@ function CategoryEditor({
             Instrucciones compartidas, resultados individuales.
           </p>
         </div>
-        {c.canEdit && (
-          <button className="primary" onClick={() => setBulk(!bulk)}>
-            + Agregar subproductos
-          </button>
-        )}
       </div>
-      <button onClick={openCollection} style={{ marginBottom: 18 }}>
-        Ver afiches del producto
-      </button>
-      {c.canManageAccess && (
-        <>
-          <button type="button" onClick={() => setSharing(!sharing)}>
-            Compartir producto
-          </button>
-          {sharing && <ProjectSharing projectId={c.id} scope="category" />}
-        </>
-      )}
+      <div className="project-action-bar" aria-label="Acciones del producto">
+       {c.canEdit&&<button type="button" className="primary" aria-expanded={bulk} onClick={()=>setBulk(!bulk)}>＋ Añadir subproductos</button>}
+       <button type="button" onClick={openCollection}>Ver afiches del producto</button>
+       {c.canManageAccess&&<button type="button" aria-expanded={sharing} onClick={()=>setSharing(!sharing)}>Compartir producto</button>}
+       {c.canManageAccess&&<button type="button" className="danger" onClick={()=>{if(confirm("¿Enviar este producto a la papelera? Sus subproductos e historial se conservarán; solo se cancelan trabajos pendientes."))void t.run(async()=>{await api("categories/"+c.id,"DELETE");back();},"Producto enviado a papelera");}}>Eliminar producto</button>}
+       {c.canEdit&&<button type="button" aria-expanded={trashOpen} onClick={()=>setTrashOpen(!trashOpen)}>Buscar subproductos eliminados</button>}
+      </div>
+      {sharing&&c.canManageAccess&&<ProjectSharing projectId={c.id} scope="category" />}
+      {trashOpen&&c.canEdit&&<SubproductTrash categoryId={c.id} onRestored={refresh} initialOpen />}
       <details hidden={!c.canEdit}>
         <summary>Instrucciones y configuración de producto</summary>
         <div className="inside stack">
           <PromptForm
             item={c}
+            onApplied={async loaded=>{setS({...base,...loaded.settings});setPromptAll(loaded.applyPromptToAll??true);setSettingsAll(loaded.applySettingsToAll??true);await refresh();}}
             attachments={{ scope:"category", id:c.id }}
             configuration={{
               settings: s,
@@ -1389,7 +1397,6 @@ function CategoryEditor({
           </button>
         </section>
       )}
-      {c.canEdit && <SubproductTrash categoryId={c.id} onRestored={refresh} />}
       <div className="row spread" style={{ margin: "28px 0 18px" }}>
         <h2 style={{ margin: 0 }}>Subproductos · {c.subproducts.length}</h2>
         {c.canEdit && (
@@ -1397,10 +1404,17 @@ function CategoryEditor({
             categoryId={c.id}
             projectId={c.project.id}
             count={c.subproducts.length}
+            selectedIds={selectedSubs}
           />
         )}
-        <span className="badge">Herencia automática</span>
+        <span className="badge">Herencia configurable</span>
+        {selectedSubs.length===1&&<div className="row subproduct-selected-actions">
+         <button type="button" onClick={()=>openGallery(c.subproducts.find(s=>s.id===selectedSubs[0])!)}>Ver variaciones del seleccionado</button>
+         {c.canEdit&&<a className="button" href={"?"+new URLSearchParams({view:"usage",project:c.project.id,product:c.id,subproduct:selectedSubs[0]})}>Costos IA del seleccionado</a>}
+         {c.subproducts.find(s=>s.id===selectedSubs[0])?.canManageAccess&&<button type="button" onClick={()=>setSelectedSharing(selectedSharing?null:selectedSubs[0])}>Compartir subproducto seleccionado</button>}
+        </div>}
       </div>
+      {selectedSharing&&<ProjectSharing projectId={selectedSharing} scope="subproduct" />}
       <div className="row">
         <label className="row">
           <input
@@ -1458,6 +1472,7 @@ function CategoryEditor({
           <SubproductRow
             key={sub.id}
             sub={sub}
+            onReviewSaved={refresh}
             costScope={{
               project: c.project.id,
               product: c.id,
@@ -1492,7 +1507,9 @@ function BatchGeneration({
   projectId,
   categoryId,
   count,
+  selectedIds=[],
 }: {
+  selectedIds?:string[];
   categoryId: string;
   projectId: string;
   count: number;
@@ -1522,8 +1539,9 @@ function BatchGeneration({
           }, "")
         }
       >
-        Revisar y seleccionar subproductos
+        Revisar y generar todos
       </button>
+      <button type="button" disabled={!selectedIds.length||t.busy} onClick={()=>void t.run(async()=>{const result=await api("categories/"+categoryId+"/preview");setPreview(result.filter((p:any)=>selectedIds.includes(p.id)));setSelected(selectedIds);setConsent(false);},"")}>Revisar y generar seleccionados</button>
       {preview && (
         <div className="panel" style={{ marginTop: 15 }}>
           <h3>
@@ -1674,6 +1692,7 @@ function SubproductRow({
   forceOwn,
   openGallery,
   removed,
+  onReviewSaved,
 }: {
   sub: Item;
   costScope: { project: string; product: string; subproduct: string };
@@ -1682,9 +1701,13 @@ function SubproductRow({
   forceOwn: boolean;
   openGallery: () => void;
   removed: () => Promise<void>;
+  onReviewSaved?:()=>Promise<void>;
 }) {
   const canSeeCosts = useCanEdit();
   const [sharing, setSharing] = useState(false);
+  const [policy,setPolicy]=useState<InstructionPolicy>(sub.instructionPolicy??{});
+  const [reviewOpen,setReviewOpen]=useState(false),[reviewDirty,setReviewDirty]=useState(false),[sourceDirty,setSourceDirty]=useState(false),[reviewVersion,setReviewVersion]=useState(0);
+  const uploadRef=useRef<AttachmentsHandle>(null);
   const [expanded, setExpanded] = useState(false);
   const [previewFirst, setPreviewFirst] = useState(true);
   const [queued, setQueued] = useState(false);
@@ -1712,13 +1735,25 @@ function SubproductRow({
   const [charge, setCharge] = useState(false);
   const t = useTask();
   const save = async () => {
+    await uploadRef.current?.flush();
     await api("subproducts/" + sub.id, "PATCH", {
       name,
       prompt,
+      instructionPolicy:policy,
       settings: custom || forceOwn ? s : {},
     });
   };
+  const configuration=()=>({...sub,name,prompt,instructionPolicy:policy,settings:custom||forceOwn?s:inherited});
+  const templates=useReusableConfiguration({scope:"subproduct",current:configuration(),enabled:expanded,saveCurrent:async()=>{await save();return configuration();},onApplied:async()=>{const loaded=await api("subproducts/"+sub.id);setName(loaded.name);setPrompt(loaded.prompt);setPolicy(loaded.instructionPolicy??{});setS({...inherited,...loaded.settings});setCustom(true);setPreview(null);setReviewOpen(false);setReview(false);setCharge(false);setSourceDirty(false);}});
+  const loadReview=()=>void t.run(async()=>{await save();setPreview(await api("subproducts/"+sub.id+"/instructions"));setReview(false);setCharge(false);setReviewDirty(false);setSourceDirty(false);setReviewVersion(v=>v+1);},"");
   return (
+    <>
+    <div className="row subproduct-quick-actions" aria-label={"Acciones de "+name}>
+      {sub.canManageAccess&&<button type="button" aria-expanded={sharing} onClick={()=>setSharing(!sharing)}>Compartir subproducto</button>}
+      <button type="button" onClick={openGallery}>Ver variaciones ({sub._count?.variations??0}) →</button>
+      {canSeeCosts&&<a className="button" href={"?"+new URLSearchParams({view:"usage",...costScope})}>Costos IA</a>}
+    </div>
+    {sharing&&sub.canManageAccess&&<ProjectSharing projectId={sub.id} scope="subproduct" />}
     <details
       aria-label={"Subproducto " + sub.id}
       onToggle={(e) => setExpanded(e.currentTarget.open)}
@@ -1734,6 +1769,8 @@ function SubproductRow({
         </small>
       </summary>
       <div className="inside stack">
+        {templates.picker}
+        <InstructionPolicyControls scope="subproduct" value={policy} onChange={value=>{setPolicy(value);setReview(false);setSourceDirty(true);}} />
         <p className="notice">
           Eje temático: <strong>{name || sub.name}</strong>. Todas las
           variaciones tratarán de este tema y deben mencionar su nombre. Las
@@ -1753,10 +1790,11 @@ function SubproductRow({
           value={prompt}
           onValueChange={(value) => {
             setPrompt(value);
-            setReview(false);
+            setReview(false);setSourceDirty(true);
           }}
           placeholder="Escribe solo las excepciones o indicaciones adicionales."
         />
+        <div id={"sub-settings-"+sub.id} className={preview?.needsSettings?"field-invalid":""}>
         <label className="row">
           <input
             type="checkbox"
@@ -1764,7 +1802,7 @@ function SubproductRow({
             disabled={forceOwn}
             onChange={(e) => {
               setCustom(e.target.checked);
-              setReview(false);
+              setReview(false);setSourceDirty(true);
             }}
           />
           Personalizar cantidad, distribución y estilo
@@ -1774,19 +1812,15 @@ function SubproductRow({
             value={s}
             onChange={(x) => {
               setS(x);
-              setReview(false);
+              setReview(false);setSourceDirty(true);
             }}
           />
         )}
+        </div>
         <button disabled={t.busy} onClick={() => void t.run(save)}>
           Guardar cambios del subproducto
         </button>
         <div className="row">
-          {sub.canManageAccess && (
-            <button type="button" onClick={() => setSharing(!sharing)}>
-              Compartir subproducto
-            </button>
-          )}
           <button
             type="button"
             className="danger"
@@ -1806,42 +1840,10 @@ function SubproductRow({
             Eliminar subproducto
           </button>
         </div>
-        {sharing && sub.canManageAccess && (
-          <ProjectSharing projectId={sub.id} scope="subproduct" />
-        )}
-        <PresetTools
-          category={{
-            ...sub,
-            name,
-            prompt,
-            settings: custom || forceOwn ? s : inherited,
-          }}
-          scope="subproduct"
-          saveCurrent={async () => {
-            await save();
-            return {
-              ...sub,
-              name,
-              prompt,
-              settings: custom || forceOwn ? s : inherited,
-            };
-          }}
-        />
-        <Uploads scope="subproduct" id={sub.id} />
+        <Attachments ref={uploadRef} scope="subproduct" id={sub.id} deferred />
+        <button type="button" disabled={t.busy} onClick={()=>void t.run(save)}>Guardar cambios y documentos del subproducto</button>
+        {templates.saver}
         <div className="row">
-          <button
-            onClick={() =>
-              void t.run(async () => {
-                await save();
-                setPreview(
-                  await api("subproducts/" + sub.id + "/instructions"),
-                );
-                setReview(false);
-              }, "")
-            }
-          >
-            Ver instrucciones finales
-          </button>
           <button onClick={openGallery}>
             Ver variaciones ({sub._count?.variations ?? 0}) →
           </button>
@@ -1854,18 +1856,24 @@ function SubproductRow({
             </a>
           )}
         </div>
-        {preview && (
-          <div className="panel">
-            <h3>Revisa antes de generar</h3>
+        <details className="subproduct-review" open={reviewOpen} onToggle={event=>{const open=event.currentTarget.open;setReviewOpen(open);if(open&&!preview&&!t.busy)loadReview();}}>
+          <summary>Revisar y generar</summary>
+          {!preview&&<p role="status">Preparando la revisión…</p>}
+          {preview && <div className="inside panel">
+            <h3>Revisa antes de generar · {name}</h3>
+            {sourceDirty&&<p className="notice">Hay cambios en el formulario. <button type="button" disabled={t.busy} onClick={loadReview}>Actualizar revisión</button></p>}
+            <ReviewInstructions key={reviewVersion} id={sub.id} onDirty={()=>{setReviewDirty(true);setReview(false);setCharge(false);}} onSaved={async data=>{const own=data.layers.find(layer=>layer.scope==="subproduct");if(own?.prompt!==null&&own){setPrompt(own.prompt);setPolicy(own.policy);}setPreview(await api("subproducts/"+sub.id+"/instructions"));setReviewDirty(false);setSourceDirty(false);setReview(false);setCharge(false);await onReviewSaved?.();}} />
             <pre>{preview.text}</pre>
             {preview.overrides.map((w: string, i: number) => (
               <p key={i} className="hint">
                 {w}
               </p>
             ))}
+            {(preview.advisories??[]).map((text:string,index:number)=><p className="hint" key={"advice-"+index}>{text}</p>)}
             {preview.warnings.map((w: string, i: number) => (
               <div className="notice" key={i}>
                 {w}
+                <button type="button" onClick={()=>{const settings=/(?:cantidad|distribución|variaciones)/i.test(w);const scope=/^Proyecto/.test(w)?"project":/^Producto/.test(w)?"category":"subproduct";const element=document.getElementById(settings?"sub-settings-"+sub.id:"review-"+sub.id+"-"+scope) as HTMLDetailsElement|null;if(element){if(element.tagName==="DETAILS")element.open=true;element.scrollIntoView({block:"center",behavior:"smooth"});element.querySelector<HTMLInputElement|HTMLTextAreaElement>(settings?"input":"textarea")?.focus();}}}>Ir a las instrucciones de este nivel</button>
               </div>
             ))}
             <p className="hint">
@@ -1909,6 +1917,7 @@ function SubproductRow({
                 production.uncertainDispatch ||
                 production.dispatching ||
                 !review ||
+                reviewDirty || sourceDirty ||
                 !charge ||
                 preview.warnings.length > 0
               }
@@ -1941,8 +1950,8 @@ function SubproductRow({
             >
               Generar {(custom ? s : inherited).count} variaciones
             </button>
-          </div>
-        )}
+          </div>}
+        </details>
         <ProductionControls controller={production} />
         {queued && (
           <a
@@ -1956,7 +1965,7 @@ function SubproductRow({
         )}
         {t.notice}
       </div>
-    </details>
+    </details></>
   );
 }
 function AISettings() {

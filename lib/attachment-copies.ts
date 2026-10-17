@@ -6,15 +6,16 @@ import type { Prisma } from "@prisma/client";
 // Each destination owns its bytes: deleting a source never removes its copies.
 // Storage writes precede the metadata transaction and are undone if it fails.
 export async function withAttachmentCopies<T>(
-  source: { scope: string; resourceId: string } | null,
+  source: { scope: string; resourceId: string; attachmentIds?: string[] } | null,
   commit: (
     tx: Prisma.TransactionClient,
     copies: Prisma.AttachmentCreateManyInput[],
+    sourceIds: string[],
   ) => Promise<T>,
 ) {
   const files = source
     ? await db.attachment.findMany({
-        where: { ...source, archivedAt: null },
+        where: { scope:source.scope, resourceId:source.resourceId, archivedAt:null, ...(source.attachmentIds ? { id:{ in:source.attachmentIds } } : {}) },
         orderBy: { id: "asc" },
       })
     : [];
@@ -48,7 +49,7 @@ export async function withAttachmentCopies<T>(
         path,
       });
     }
-    return await db.$transaction(async (tx) => commit(tx, copies), {
+    return await db.$transaction(async (tx) => commit(tx, copies, files.map(f=>f.id)), {
       timeout: 15000,
     });
   } catch (error) {

@@ -1,4 +1,5 @@
-import { resourceAccess } from "./auth";
+import { instructionUse } from "./instruction-policy";
+import { resourceAccess,accessFlags } from "./auth";
 import { db } from "./db";
 import { demand } from "./errors";
 import { configured, reserveJobs } from "./ai";
@@ -14,14 +15,15 @@ export async function previewSubproduct(id: string) {
     include: { category: { include: { project: true } } },
   });
   const brand = await readBrand(s.category.projectId);
+  const use = instructionUse(s.category.project.instructionPolicy,s.category.instructionPolicy,s.instructionPolicy,s.category.applyPromptToAll);
   const instructions = resolveInstructions([
     { name: "Identidad de marca", prompt: brandInstructions(brand) },
-    { name: "Proyecto", prompt: s.category.project.prompt },
+    { name: "Proyecto", prompt: use.project ? s.category.project.prompt : "" },
     {
       name: "Producto",
-      prompt: s.category.applyPromptToAll ? s.category.prompt : "",
+      prompt: use.product ? s.category.prompt : "",
     },
-    { name: "Subproducto", prompt: s.prompt },
+    { name: "Subproducto", prompt: use.subproduct ? s.prompt : "" },
   ]);
   instructions.text += `\nEJE TEMÁTICO OBLIGATORIO DEL SUBPRODUCTO: ${JSON.stringify(s.name)}. Todas las variaciones deben tratar exclusivamente de este tema y mencionar su nombre. Las instrucciones particulares amplían las instrucciones heredadas activas; no sustituyen el eje temático ni eliminan indicaciones generales compatibles.`;
   const inheritedAttachments = await db.attachment.findMany({
@@ -48,6 +50,8 @@ export async function previewSubproduct(id: string) {
     instructions.warnings.push(
       "Define la cantidad, distribución, formato y estilo de este subproducto; la producto no aplica parámetros comunes.",
     );
+  const resolvedSettings=effectiveSettings(s.category.settings,s.settings,s.category.applySettingsToAll);
+  try {validateDistribution(resolvedSettings);}catch(error){instructions.warnings.push("Subproducto: "+(error instanceof Error?error.message:"revisa su distribución de variaciones."));}
   return {
     sub: s,
     instructions,
@@ -60,6 +64,15 @@ export async function previewSubproduct(id: string) {
     ),
     needsSettings,
   };
+}
+
+export async function clientSubproductPreview(actor:{id:string;role:string},id:string){
+ const preview=await previewSubproduct(id),sub=preview.sub;
+ const [project,product]=await Promise.all([accessFlags(actor,"project",sub.category.projectId,sub.category.projectId),accessFlags(actor,"category",sub.categoryId,sub.category.projectId)]);
+ if(project.fullAccess&&product.fullAccess)return preview;
+ const use=instructionUse(sub.category.project.instructionPolicy,sub.category.instructionPolicy,sub.instructionPolicy,sub.category.applyPromptToAll);
+ const visible=resolveInstructions([{name:"Identidad de marca",prompt:project.fullAccess?brandInstructions(preview.brand):""},{name:"Proyecto",prompt:project.fullAccess&&use.project?sub.category.project.prompt:""},{name:"Producto",prompt:product.fullAccess&&use.product?sub.category.prompt:""},{name:"Subproducto",prompt:use.subproduct?sub.prompt:""}]);
+ return {...preview,brand:project.fullAccess?preview.brand:null,attachments:preview.attachments.filter(a=>a.scope==="subproduct"||(a.scope==="category"&&product.fullAccess)||(a.scope==="project"&&project.fullAccess)),instructions:{...preview.instructions,text:visible.text+`\nEJE TEMÁTICO OBLIGATORIO: ${JSON.stringify(sub.name)}.\nLas instrucciones heredadas privadas activas se aplican en servidor sin exponer su texto.`}};
 }
 export async function generateBatch(
   actorId: string,

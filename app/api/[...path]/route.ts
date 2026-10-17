@@ -1,3 +1,4 @@
+import { instructionPolicySchema,instructionFlags } from "@/lib/instruction-policy";
 import { recordActivity } from "@/lib/activity";
 import { NextRequest, NextResponse } from "next/server";
 import { cookies } from "next/headers";
@@ -60,6 +61,7 @@ const content = z.object({
   name: z.string().trim().min(1).max(200),
   prompt: z.string().max(30000).default(""),
   description: z.string().max(2000).default(""),
+  instructionPolicy: instructionPolicySchema.optional(),
 });
 const settings = z
   .object({
@@ -585,6 +587,7 @@ async function handle(
       if (method === "GET")
         return send({
           kit: await readBrand(project.id),
+          sourcePolicy:project.instructionPolicy,
           canEdit:
             user.role !== "OBSERVER" &&
             (user.role === "OWNER" ||
@@ -802,6 +805,16 @@ async function handle(
       await audit(user.id, "PROYECTO_CREADO", p.id);
       return send(p, 201);
     }
+    if(parts[0]==="brands"){const {brandDirectoryRoutes}=await import("@/lib/brand-directory");const result=await brandDirectoryRoutes(req,parts,user,()=>body(req));if(result)return result;}
+    if (parts[0] === "subproducts" && parts[1] && parts[2] === "review" && parts.length === 3) {
+      const {readReview,saveReview}=await import("@/lib/instruction-review");
+      if(method==="GET")return send(await readReview(user,parts[1]));
+      if(method==="POST")return send(await saveReview(user,parts[1],await body(req)));
+    }
+    if (parts[0] === "categories" && (parts[1] === "trash" || parts[2] === "restore" || method === "DELETE")) {
+      const {productTrashRoutes}=await import("@/lib/product-trash");
+      const result=await productTrashRoutes(req,parts,user);if(result)return result;
+    }
     if (parts[0] === "projects" && parts[1]) {
       const id = parts[1];
       if (parts[2] === "restore" && method === "POST") {
@@ -839,6 +852,7 @@ async function handle(
         return send({
           ...p,
           ...flags,
+          instructionPolicy:flags.fullAccess?p.instructionPolicy:{},
           prompt: flags.fullAccess ? p.prompt : "",
           description: flags.fullAccess ? p.description : "",
           categories: await Promise.all(
@@ -856,7 +870,8 @@ async function handle(
       if (parts.length === 2 && method === "PATCH") {
         const b = content.parse(await body(req));
         await db.$transaction(async (tx) => {
-          await tx.project.update({ where: { id }, data: b });
+          const current=await tx.project.findUniqueOrThrow({where:{id}});
+          await tx.project.update({ where: { id }, data: {...b,...(b.instructionPolicy?{instructionPolicy:{...(current.instructionPolicy as object),...instructionFlags(b.instructionPolicy)}}:{})} });
           await tx.promptVersion.create({
             data: {
               scope: "project",
@@ -958,18 +973,19 @@ async function handle(
         );
       }
       if (parts[2] === "preview" && method === "GET") {
-        const { previewSubproduct } = await import("@/lib/generation");
+        const { clientSubproductPreview } = await import("@/lib/generation");
         const subs = await db.subproduct.findMany({
           where: { categoryId: id, ...subproductFilter(user) },
         });
         const previews = [];
         for (const sub of subs) {
-          const p = await previewSubproduct(sub.id);
+          const p = await clientSubproductPreview(user,sub.id);
           previews.push({
             id: sub.id,
             name: sub.name,
             text: p.instructions.text,
             warnings: p.instructions.warnings,
+            advisories:p.instructions.advisories,
             settings: p.settings,
             needsSettings: p.needsSettings,
           });
@@ -1037,6 +1053,7 @@ async function handle(
         return send({
           ...c,
           ...flags,
+          instructionPolicy:flags.fullAccess?c.instructionPolicy:{},
           prompt: flags.fullAccess ? c.prompt : "",
           settings: flags.fullAccess ? c.settings : {},
           subproducts: await Promise.all(
@@ -1061,15 +1078,14 @@ async function handle(
             settings,
             applyPromptToAll: z.boolean().optional(),
             applySettingsToAll: z.boolean().optional(),
+            instructionPolicy: instructionPolicySchema.optional(),
           })
           .parse(await body(req));
         const s = effectiveSettings(b.settings, {});
         validateDistribution(s);
         await db.$transaction(async (tx) => {
-          await tx.category.update({
-            where: { id },
-            data: { ...b, settings: b.settings },
-          });
+          const current=await tx.category.findUniqueOrThrow({where:{id}});
+          await tx.category.update({where:{id},data:{...b,settings:b.settings,...(b.instructionPolicy?{instructionPolicy:{...(current.instructionPolicy as object),...instructionFlags(b.instructionPolicy)}}:{})}});
           await tx.promptVersion.create({
             data: {
               scope: "category",
@@ -1182,6 +1198,7 @@ async function handle(
             name: z.string().trim().min(1).max(200),
             prompt: z.string().max(30000),
             settings,
+            instructionPolicy: instructionPolicySchema.optional(),
           })
           .parse(await body(req));
         validateDistribution(
@@ -1192,10 +1209,8 @@ async function handle(
           ),
         );
         await db.$transaction(async (tx) => {
-          await tx.subproduct.update({
-            where: { id },
-            data: { ...b, settings: b.settings },
-          });
+          const current=await tx.subproduct.findUniqueOrThrow({where:{id}});
+          await tx.subproduct.update({where:{id},data:{...b,settings:b.settings,...(b.instructionPolicy?{instructionPolicy:{...(current.instructionPolicy as object),...instructionFlags(b.instructionPolicy)}}:{})}});
           await tx.promptVersion.create({
             data: {
               scope: "subproduct",
@@ -1215,8 +1230,8 @@ async function handle(
         return send({ ok: true });
       }
       if (parts[2] === "instructions" && method === "GET") {
-        const { previewSubproduct } = await import("@/lib/generation");
-        const preview = await previewSubproduct(id);
+        const { clientSubproductPreview } = await import("@/lib/generation");
+        const preview = await clientSubproductPreview(user,id);
         return send({
           ...preview.instructions,
           settings: preview.settings,

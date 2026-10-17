@@ -10,6 +10,7 @@ export function InstructionEditor({
   onValueChange,
   placeholder,
   maxLength = 30000,
+  readOnly=false,
 }: {
   label: string;
   name?: string;
@@ -18,6 +19,7 @@ export function InstructionEditor({
   onValueChange?: (value: string) => void;
   placeholder?: string;
   maxLength?: number;
+  readOnly?: boolean;
 }) {
   const id = useId();
   const [draft, setDraft] = useState(defaultValue);
@@ -71,6 +73,7 @@ export function InstructionEditor({
         value={text}
         onChange={(event) => update(event.target.value)}
         placeholder={placeholder}
+        readOnly={readOnly}
         maxLength={maxLength}
       />
       <dialog
@@ -98,8 +101,8 @@ export function InstructionEditor({
         <div className="instruction-editor-modal-content">
           <div className="instruction-editor-heading">
             <h2 id={id + "-title"}>{label}</h2>
-            <button type="button" onClick={() => dialog.current?.close()}>
-              Cerrar y continuar
+            <button type="button" className="window-close" aria-label="Cerrar ventana de instrucciones" title="Cerrar y continuar" onClick={() => dialog.current?.close()}>
+              ×
             </button>
           </div>
           <p id={id + "-help"} className="hint">
@@ -115,7 +118,8 @@ export function InstructionEditor({
             value={text}
             onChange={(event) => update(event.target.value)}
             placeholder={placeholder}
-            maxLength={maxLength}
+            readOnly={readOnly}
+        maxLength={maxLength}
           />
         </div>
       </dialog>
