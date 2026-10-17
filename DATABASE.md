@@ -91,3 +91,7 @@ Conciliación manual de costes: sin migración adicional. UsageLedger.actualMicr
 ## Migraciones017/018 · planes y pagos
 
 MembershipPlan con precios en centavos y presupuesto IA en microUSD; null en cuotas significa Ilimitado interno. User.planId/planValidUntil nullable conserva cuentas previas sin asignación. Índice UsageLedger(actorId,createdAt) para cuotas mensuales. PaymentConnection guarda credenciales cifradas por contexto payments:provider:credentials, máscaras, entorno, moneda/tasa, vendedor y revisión/verificación. PlanPurchase fija importe/moneda/plan/proveedor/revisión/entorno, referencias externas únicas, solicitud idempotente y estado/fechas. No contiene secretos de pago. Migraciones versionadas/checksum, aditivas y probadas en copia antes de producción.
+
+## Migración019 · personalizados y contenido público
+
+MembershipPlan.customUserId nullable referencia User, archivedAt nullable e índice compuesto. Restricción CHECK obliga a que un personalizado sea privado. Relación inversa CustomPlanRecipient en Prisma; no hay backfill ni cambio de usuarios/planes existentes. SiteContent(id,content JSONB,revision,updatedAt) guarda las secciones públicas validadas; sin fila se usa el contenido inicial versionado, sin testimonios. Migración aditiva/checksum, probada en copia antes de producción.

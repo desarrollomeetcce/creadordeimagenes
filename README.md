@@ -119,3 +119,9 @@ En Configuración de IA → Conexiones de IA, OWNER puede conectar OpenAI, Googl
 Página pública `/plans`, panel **Mi plan**, asignación OWNER en **Usuarios** y catálogo editable desde Configuración de IA. InicioUS$20/20 imágenes/US$10 IA; CrecimientoUS$49/50/US$25; EmpresaUS$100/100/US$50. Ilimitado solo interno. Cuotas por mes calendario Lima; reservas no son costes reales ni saldo del proveedor.
 
 **Configuración de pagos** exclusiva OWNER permite Mercado Pago/PayPal con claves protegidas desde la interfaz. Compra de30 días sin renovación automática; activación solo por pago verificado e idempotente, Sandbox sin activación real. Guía de campos/webhooks/limitaciones: [planes y pagos](docs/PLANS_PAYMENTS.md). No se ha cobrado ni verificado una cuenta real en estas pruebas.
+
+## Página web y planes personalizados
+
+**Página web** en el menú OWNER permite editar presentación, beneficios, funcionalidades, pasos, testimonios reales, planes, preguntas frecuentes y contacto del sitio público `/plans`. Cada sección se guarda por separado y se refleja al recargar. Testimonios ocultos hasta añadir opiniones reales.
+
+Los planes se editan en filas compactas con ✓ guardar y × retirar. **Planes personalizados** permite crear varios con nombre, precio, cuotas y correo de usuario existente/aprobado; quedan privados y se asignan sin cobrar. Usuarios muestra **Personalizado · nombre**. Retirar un plan no borra compras ni quita las condiciones de cuentas ya asignadas; cambia su plan desde Usuarios cuando corresponda.

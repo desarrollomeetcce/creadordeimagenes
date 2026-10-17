@@ -168,6 +168,8 @@ async function handle(
           await body(req),
         ),
       );
+    if (route === "site/public" && method === "GET")
+      return send(await (await import("@/lib/site-content")).publicSite());
     if (route === "plans/public" && method === "GET")
       return send(
         await (await import("@/lib/membership-plans")).plansCatalog(),
@@ -399,11 +401,27 @@ async function handle(
       )
         return send(await pay.verifyPaymentConnection(user, parts[2]));
     }
+    if (parts[0] === "site") {
+      ownerOnly(user);
+      const site = await import("@/lib/site-content");
+      if (route === "site/admin" && method === "GET")
+        return send(await site.publicSite());
+      if (parts.length === 2 && method === "PUT")
+        return send(
+          await site.saveSiteSection(user, parts[1], await body(req)),
+        );
+    }
     if (parts[0] === "plans") {
       const plans = await import("@/lib/membership-plans");
       if (route === "plans/me" && method === "GET")
         return send(await plans.membershipStatus(user));
+      if (route === "plans/available" && method === "GET")
+        return send(await plans.purchasablePlans(user));
       ownerOnly(user);
+      if (route === "plans/custom" && method === "POST")
+        return send(await plans.createCustomPlan(user, await body(req)), 201);
+      if (parts.length === 2 && method === "DELETE")
+        return send(await plans.archivePlan(user, parts[1]));
       if (route === "plans" && method === "GET")
         return send(await plans.plansCatalog(true));
       if (parts.length === 2 && method === "PUT")

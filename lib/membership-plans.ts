@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import type { Prisma } from "@prisma/client";
 import { z } from "zod";
 import { db } from "./db";
@@ -20,14 +21,24 @@ export function membershipMonth(now = new Date()) {
   const get = (t: string) => parts.find((p) => p.type === t)!.value;
   return new Date(`${get("year")}-${get("month")}-01T05:00:00.000Z`);
 }
-const view = (p: { monthlyAIMicros: bigint | null }) => ({
+const view = <T extends { monthlyAIMicros: bigint | null }>(p: T) => ({
   ...p,
   monthlyAIMicros: p.monthlyAIMicros?.toString() ?? null,
 });
 export async function plansCatalog(internal = false) {
   return (
     await db.membershipPlan.findMany({
-      where: internal ? {} : { isPublic: true, NOT: { id: "ILIMITADO" } },
+      where: internal
+        ? { archivedAt: null }
+        : {
+            isPublic: true,
+            customUserId: null,
+            archivedAt: null,
+            NOT: { id: "ILIMITADO" },
+          },
+      ...(internal
+        ? { include: { customUser: { select: { email: true, name: true } } } }
+        : {}),
       orderBy: { priceCents: "asc" },
     })
   ).map(view);
@@ -113,7 +124,7 @@ export async function assignPlan(actor: Actor, id: string, input: unknown) {
   ownerOnly(actor);
   const b = z
     .object({
-      planId: z.enum(planCodes).nullable(),
+      planId: z.string().min(1).max(100).nullable(),
       validUntil: z.iso.datetime().nullable().optional(),
     })
     .strict()
@@ -126,12 +137,15 @@ export async function assignPlan(actor: Actor, id: string, input: unknown) {
       "Usuario no encontrado.",
       404,
     );
-    if (b.planId)
+    if (b.planId) {
+      const p = await tx.membershipPlan.findUnique({ where: { id: b.planId } });
+      demand(p && !p.archivedAt, "Plan no disponible.", 404);
       demand(
-        await tx.membershipPlan.findUnique({ where: { id: b.planId } }),
-        "Plan no encontrado.",
-        404,
+        !p.customUserId || p.customUserId === id,
+        "Este plan personalizado pertenece a otra cuenta.",
+        403,
       );
+    }
     const old = await tx.user.findUniqueOrThrow({
       where: { id },
       select: { planId: true },
@@ -193,13 +207,119 @@ export async function updatePlan(actor: Actor, id: string, input: unknown) {
       "Plan no encontrado.",
       404,
     );
+    const current = await tx.membershipPlan.findUniqueOrThrow({
+      where: { id },
+    });
+    demand(!current.archivedAt, "El plan fue retirado.", 409);
     await tx.membershipPlan.update({
       where: { id },
-      data: { ...b, isPublic: id !== "ILIMITADO" },
+      data: {
+        ...b,
+        description: current.customUserId ? "" : b.description,
+        isPublic: !current.customUserId && id !== "ILIMITADO",
+      },
     });
     await recordActivity(tx, {
       data: { actorId: actor.id, action: "PLAN_ACTUALIZADO", resourceId: id },
     });
   });
   return { saved: true };
+}
+
+export async function createCustomPlan(actor: Actor, input: unknown) {
+  ownerOnly(actor);
+  const b = z
+    .object({
+      name: z.string().trim().min(1).max(80),
+      email: z
+        .email()
+        .max(200)
+        .transform((v) => v.toLowerCase()),
+      priceCents: z.number().int().min(0).max(10000000),
+      monthlyImages: z.number().int().min(1).max(1000000),
+      monthlyAIMicros: z
+        .string()
+        .regex(/^\d{1,15}$/)
+        .transform(BigInt),
+    })
+    .strict()
+    .parse(input);
+  demand(b.monthlyAIMicros > 0n, "Introduce un presupuesto mayor que cero.");
+  return db.$transaction(async (tx) => {
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(728291)`;
+    await requireOwner(tx, actor);
+    const user = await tx.user.findUnique({
+      where: { email: b.email },
+      select: { id: true, status: true, role: true },
+    });
+    demand(
+      user,
+      "No existe una cuenta con ese correo. Créala primero en Usuarios.",
+      404,
+    );
+    demand(
+      user.status === "APPROVED" && user.role !== "OBSERVER",
+      "Selecciona una cuenta aprobada que pueda generar imágenes.",
+    );
+    const plan = await tx.membershipPlan.create({
+      data: {
+        id: "CUSTOM_" + randomUUID(),
+        name: b.name,
+        description: "",
+        priceCents: b.priceCents,
+        monthlyImages: b.monthlyImages,
+        monthlyAIMicros: b.monthlyAIMicros,
+        isPublic: false,
+        customUserId: user.id,
+      },
+    });
+    await tx.user.update({
+      where: { id: user.id },
+      data: { planId: plan.id, planValidUntil: null },
+    });
+    await recordActivity(tx, {
+      data: {
+        actorId: actor.id,
+        action: "PLAN_PERSONALIZADO_CREADO",
+        resourceId: plan.id,
+        detail: { plan: b.name, recipientId: user.id },
+      },
+    });
+    return { saved: true, id: plan.id };
+  });
+}
+export async function archivePlan(actor: Actor, id: string) {
+  ownerOnly(actor);
+  return db.$transaction(async (tx) => {
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(728291)`;
+    await requireOwner(tx, actor);
+    const plan = await tx.membershipPlan.findUnique({ where: { id } });
+    demand(plan, "Plan no encontrado.", 404);
+    if (plan.archivedAt) return { archived: true };
+    await tx.membershipPlan.update({
+      where: { id },
+      data: { archivedAt: new Date(), isPublic: false },
+    });
+    await recordActivity(tx, {
+      data: {
+        actorId: actor.id,
+        action: "PLAN_RETIRADO",
+        resourceId: id,
+        detail: { plan: plan.name },
+      },
+    });
+    return { archived: true };
+  });
+}
+export async function purchasablePlans(actor: Actor) {
+  const rows = await db.membershipPlan.findMany({
+    where: {
+      archivedAt: null,
+      priceCents: { gt: 0 },
+      NOT: { id: "ILIMITADO" },
+      OR: [{ isPublic: true, customUserId: null }, { customUserId: actor.id }],
+    },
+    orderBy: { priceCents: "asc" },
+  });
+  return rows.map(view);
 }

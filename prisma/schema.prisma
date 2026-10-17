@@ -27,6 +27,7 @@ model User {
   createdAt DateTime @default(now())
   planId String?
   plan MembershipPlan? @relation(fields:[planId],references:[id])
+  customPlans MembershipPlan[] @relation("CustomPlanRecipient")
   planValidUntil DateTime?
   sessions Session[]
   projects Project[]
@@ -440,8 +441,12 @@ model MembershipPlan {
   monthlyImages Int?
   monthlyAIMicros BigInt?
   isPublic Boolean @default(true)
+  customUserId String?
+  customUser User? @relation("CustomPlanRecipient",fields:[customUserId],references:[id])
+  archivedAt DateTime?
   updatedAt DateTime @updatedAt
   users User[]
+  @@index([customUserId,archivedAt], map: "MembershipPlan_customUserId_archivedAt_idx")
 }
 model PaymentConnection {
  provider String @id
@@ -477,4 +482,11 @@ model PlanPurchase {
  createdAt DateTime @default(now())
  paidAt DateTime?
  @@index([userId,createdAt])
+}
+
+model SiteContent {
+ id String @id @default("public")
+ content Json
+ revision Int @default(1)
+ updatedAt DateTime @updatedAt
 }

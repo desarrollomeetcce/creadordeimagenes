@@ -8790,6 +8790,256 @@ test("Integración HTTP + PostgreSQL (base exclusiva de pruebas, sin llamadas ex
       },
     );
 
+    await t.test(
+      "planes personalizados por correo: varios, asignación automática, privacidad y retiro sin perder cuotas",
+      async () => {
+        const old = await db.user.findUniqueOrThrow({ where: { id: uid } }),
+          email = old.email;
+        const ids: string[] = [];
+        const create = {
+          name: "Campaña privada " + tag,
+          email,
+          priceCents: 3500,
+          monthlyImages: 70,
+          monthlyAIMicros: "18000000",
+        };
+        try {
+          for (const client of [user, admin, observer, anonymous])
+            assert(
+              [401, 403].includes(
+                (await client.call("plans/custom", "POST", create)).status,
+              ),
+            );
+          const missing = await owner.call("plans/custom", "POST", {
+            ...create,
+            email: "missing-" + tag + "@example.test",
+          });
+          assert.equal(missing.status, 404);
+          const first = await owner.call("plans/custom", "POST", create);
+          assert.equal(first.status, 201, JSON.stringify(first.body));
+          ids.push(first.body.id);
+          const second = await owner.call("plans/custom", "POST", {
+            ...create,
+            name: "Segundo plan " + tag,
+            priceCents: 4500,
+          });
+          assert.equal(second.status, 201);
+          ids.push(second.body.id);
+          assert.equal(
+            (await db.user.findUniqueOrThrow({ where: { id: uid } })).planId,
+            ids[1],
+          );
+          const list = await owner.call("plans");
+          const custom = list.body.filter((p: any) => ids.includes(p.id));
+          assert.equal(custom.length, 2);
+          assert(
+            custom.every(
+              (p: any) =>
+                p.customUserId === uid &&
+                p.customUser.email === email &&
+                !p.isPublic &&
+                p.description === "",
+            ),
+          );
+          const publicCatalog = await anonymous.call("plans/public");
+          assert(!JSON.stringify(publicCatalog.body).includes(create.name));
+          assert(!JSON.stringify(publicCatalog.body).includes(email));
+          assert(!publicCatalog.body.some((p: any) => ids.includes(p.id)));
+          assert(
+            (await user.call("plans/available")).body.some(
+              (p: any) => p.id === ids[0],
+            ),
+          );
+          assert(
+            !(await admin.call("plans/available")).body.some((p: any) =>
+              ids.includes(p.id),
+            ),
+          );
+          assert.equal(
+            (
+              await owner.call("users/" + aid + "/plan", "PUT", {
+                planId: ids[0],
+              })
+            ).status,
+            403,
+          );
+          const update = await owner.call("plans/" + ids[0], "PUT", {
+            name: "Renombrado " + tag,
+            description: "No debe conservarse",
+            priceCents: 3900,
+            monthlyImages: 80,
+            monthlyAIMicros: "19000000",
+          });
+          assert.equal(update.status, 200);
+          const edited = await db.membershipPlan.findUniqueOrThrow({
+            where: { id: ids[0] },
+          });
+          assert.equal(edited.description, "");
+          assert.equal(edited.isPublic, false);
+          assert.equal(
+            (
+              await owner.call("users/" + uid + "/plan", "PUT", {
+                planId: ids[0],
+              })
+            ).status,
+            200,
+          );
+          assert.equal(
+            (await owner.call("plans/" + ids[0], "DELETE")).status,
+            200,
+          );
+          assert.equal(
+            (await db.user.findUniqueOrThrow({ where: { id: uid } })).planId,
+            ids[0],
+          );
+          assert(
+            (
+              await db.membershipPlan.findUniqueOrThrow({
+                where: { id: ids[0] },
+              })
+            ).archivedAt,
+          );
+          assert(
+            !(await owner.call("plans")).body.some((p: any) => p.id === ids[0]),
+          );
+          assert.equal(
+            (
+              await owner.call("users/" + uid + "/plan", "PUT", {
+                planId: ids[0],
+              })
+            ).status,
+            404,
+          );
+          assert.equal(
+            (
+              await owner.call("plans/" + ids[0], "PUT", {
+                name: "x",
+                description: "",
+                priceCents: 1,
+                monthlyImages: 1,
+                monthlyAIMicros: "1",
+              })
+            ).status,
+            409,
+          );
+          const users = (await owner.call("users")).body;
+          assert.equal(
+            users.find((u: any) => u.id === uid).plan.name,
+            "Renombrado " + tag,
+          );
+          assert.equal(
+            (
+              await user.call("payments/purchases", "POST", {
+                provider: "paypal",
+                planId: ids[0],
+                requestId: randomUUID(),
+              })
+            ).status,
+            404,
+          );
+        } finally {
+          await db.user.update({
+            where: { id: uid },
+            data: { planId: old.planId, planValidUntil: old.planValidUntil },
+          });
+          await db.membershipPlan.deleteMany({ where: { id: { in: ids } } });
+        }
+      },
+    );
+    await t.test(
+      "página pública editable OWNER: secciones persistidas, conflicto entre pestañas y testimonios sin inventar",
+      async () => {
+        const previous = await db.siteContent.findUnique({
+          where: { id: "public" },
+        });
+        try {
+          for (const client of [user, admin, observer, anonymous])
+            assert(
+              [401, 403].includes((await client.call("site/admin")).status),
+            );
+          const original = (await owner.call("site/admin")).body;
+          assert.equal(original.content.testimonials.enabled, false);
+          assert.equal(original.content.testimonials.items.length, 0);
+          for (const client of [user, admin, observer, anonymous])
+            assert(
+              [401, 403].includes(
+                (
+                  await client.call("site/hero", "PUT", {
+                    revision: original.revision,
+                    value: original.content.hero,
+                  })
+                ).status,
+              ),
+            );
+          const title = "Campañas de prueba " + tag;
+          const r = await owner.call("site/hero", "PUT", {
+            revision: original.revision,
+            value: { ...original.content.hero, title },
+          });
+          assert.equal(r.status, 200);
+          assert.equal(r.body.revision, original.revision + 1);
+          assert.equal(
+            (
+              await owner.call("site/hero", "PUT", {
+                revision: original.revision,
+                value: original.content.hero,
+              })
+            ).status,
+            409,
+          );
+          const publicContent = await anonymous.call("site/public");
+          assert.equal(publicContent.body.content.hero.title, title);
+          assert(!JSON.stringify(publicContent.body).includes("encrypted"));
+          assert.equal(
+            (
+              await owner.call("site/testimonials", "PUT", {
+                revision: r.body.revision,
+                value: { enabled: true, title: "Clientes", items: [] },
+              })
+            ).status,
+            400,
+          );
+          assert.equal(
+            (
+              await owner.call("site/hero", "PUT", {
+                revision: r.body.revision,
+                value: {
+                  ...original.content.hero,
+                  title: "",
+                  html: "<script>",
+                },
+              })
+            ).status,
+            400,
+          );
+          assert.equal(
+            (
+              await owner.call("site/__proto__", "PUT", {
+                revision: r.body.revision,
+                value: {},
+              })
+            ).status,
+            404,
+          );
+          const response = await fetch(root + "/plans");
+          assert.equal(response.status, 200);
+          const html = await response.text();
+          assert(html.includes(title));
+          assert(html.includes("Funcionalidades"));
+          assert(!html.includes("Lo que cuentan nuestros clientes"));
+          assert(!html.includes("CUSTOM_"));
+        } finally {
+          if (previous)
+            await db.siteContent.upsert({
+              where: { id: "public" },
+              create: { ...previous, content: previous.content as any },
+              update: { ...previous, content: previous.content as any },
+            });
+          else await db.siteContent.deleteMany({ where: { id: "public" } });
+        }
+      },
+    );
+
     await t.test("cierre de sesión invalida el token", async () => {
       assert.equal((await user.call("auth/logout", "POST")).status, 200);
       assert.equal((await user.call("projects")).status, 401);

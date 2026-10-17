@@ -299,7 +299,7 @@ export function PlanCheckout({ onPaid }: { onPaid: () => void }) {
     [message, setMessage] = useState("");
   async function load() {
     const [p, o, h] = await Promise.all([
-      fetch("/api/plans/public").then((r) => r.json()),
+      fetch("/api/plans/available").then((r) => r.json()),
       api("options"),
       api("purchases"),
     ]);

@@ -4,6 +4,9 @@ La estimación actual de 85–90% corresponde al desarrollo funcional; no certif
 
 ## Verificados
 
+- Personalizados privados por correo, asignación automática, cuotas y retiro lógico; filas compactas en planes y nombre personalizado en Usuarios.
+- Página comercial SSR editable por secciones desde menú OWNER, control de concurrencia, contenido escapado y testimonios vacíos/ocultos al inicio. Sin datos privados en HTML público.
+
 - Generaciones compactas, calendario único con rangos, acciones sobre galería y checklist IA con foco/colores. Guardado independiente de modelos y límites.
 - Planes/cuotas en servidor y página pública; Ilimitado interno, asignación OWNER y controles concurrentes.
 - Mercado Pago/PayPal: credenciales cifradas, checkout, firmas/API autoritativa e idempotencia; verificado con proveedores simulados. Cobro real pendiente.
@@ -28,9 +31,9 @@ La estimación actual de 85–90% corresponde al desarrollo funcional; no certif
 - Generaciones con jerarquía/acceso/fechas, 100 por página, tamaños, ruta/costos y selección/ZIP/retirada múltiple. Costos por ámbito y consulta diaria opcional OpenAI (contrato simulado, requiere permisos de facturación; acceso real pendiente).
 - Registro manual de costes comprobados exclusivo OWNER, con auditoría, precisión decimal, conflicto entre sesiones y referencia privada. No acredita conciliación automática con la factura.
 - Consumo paginado con totales completos, filtros y CSV privado de hasta 2000 operaciones; importes exactos y costes desconocidos explícitos. ZIP de 200 PNG y 200 JPG validado con archivos locales simulados.
-- 88 escenarios de integración, cuatro de correo previamente verificados, 30 unitarias, compilación, instalación y recorridos Chromium locales.
+- 90 escenarios de integración, cuatro de correo previamente verificados, 30 unitarias, compilación, instalación y recorridos Chromium locales.
 - Imagen Docker construida/arrancada como usuario no root con autenticación, fuentes y archivos verificados.
-- Copia PostgreSQL local restaurada en base independiente: dieciocho migraciones, 38 tablas, importes/estados de consumo y muestras de hashes de archivos/miniaturas BYTEA comparados.
+- Copia PostgreSQL local restaurada en base independiente: diecinueve migraciones, 39 tablas, importes/estados de consumo y muestras de hashes de archivos/miniaturas BYTEA comparados.
 
 ## Pendientes que impiden declarar terminado
 

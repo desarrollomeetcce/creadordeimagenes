@@ -1,5 +1,6 @@
 "use client";
 import { useCallback, useEffect, useState, useRef } from "react";
+import { SiteEditor } from "./components/site-editor";
 import { PaymentSettings } from "./components/payment-settings";
 import { PlanSettings, MyPlan } from "./components/membership-plans";
 import { ProviderConnections } from "./components/provider-connections";
@@ -221,7 +222,14 @@ export default function Home() {
           "collection",
           ...(managesUsers(user.role) ? ["users"] : []),
           ...(user.role === "OWNER"
-            ? ["ai", "mail", "payments", "statistics", "visual-audit"]
+            ? [
+                "ai",
+                "mail",
+                "payments",
+                "website",
+                "statistics",
+                "visual-audit",
+              ]
             : []),
         ];
         const nextView =
@@ -359,6 +367,7 @@ export default function Home() {
     account: "Mi cuenta",
     plans: "Mi plan",
     payments: "Configuración de pagos",
+    website: "Página web",
     collection: "Galería de afiches",
   };
   const navigate = (v: string) => changeAddress({ view: v });
@@ -399,6 +408,7 @@ export default function Home() {
                     ["ai", "⚙", "Configuración de IA"],
                     ["mail", "✉", "Configuración de correo"],
                     ["payments", "◇", "Configuración de pagos"],
+                    ["website", "◈", "Página web"],
                     ["visual-audit", "▧", "Auditoría visual"],
                   ]
                 : []),
@@ -507,6 +517,8 @@ export default function Home() {
               <Library />
             ) : view === "presets" ? (
               <Presets />
+            ) : view === "website" && user.role === "OWNER" ? (
+              <SiteEditor />
             ) : view === "payments" && user.role === "OWNER" ? (
               <PaymentSettings />
             ) : view === "plans" ? (

@@ -18,6 +18,7 @@ const select = {
   role: true,
   status: true,
   planId: true,
+  plan: { select: { name: true, customUserId: true, archivedAt: true } },
   planValidUntil: true,
 } as const;
 export async function userManagement(

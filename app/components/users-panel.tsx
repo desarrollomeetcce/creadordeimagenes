@@ -1,6 +1,7 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
 import { RecoveryIssuer } from "./account-security";
+import { planLabel } from "../../lib/plan-label";
 import { roleLabels } from "../../lib/roles";
 type Account = {
   id: string;
@@ -9,6 +10,11 @@ type Account = {
   role: string;
   status: string;
   planId?: string | null;
+  plan?: {
+    name: string;
+    customUserId: string | null;
+    archivedAt: string | null;
+  } | null;
   planValidUntil?: string | null;
 };
 async function api(path: string, method = "GET", data?: unknown) {
@@ -25,7 +31,9 @@ export function UsersPanel({ isOwner }: { isOwner: boolean }) {
   const [users, setUsers] = useState<Account[]>([]),
     [busy, setBusy] = useState(false),
     [message, setMessage] = useState("");
-  const [plans, setPlans] = useState<{ id: string; name: string }[]>([]);
+  const [plans, setPlans] = useState<
+    { id: string; name: string; customUserId?: string | null }[]
+  >([]);
   useEffect(() => {
     if (isOwner)
       void api("plans")
@@ -179,12 +187,19 @@ export function UsersPanel({ isOwner }: { isOwner: boolean }) {
                   }
                 >
                   <option value="">Sin plan asignado · acceso previo</option>
-                  {plans.map((p) => (
-                    <option value={p.id} key={p.id}>
-                      {p.name}
-                      {p.id === "ILIMITADO" ? " · solo interno" : ""}
+                  {u.planId && !plans.some((p) => p.id === u.planId) && (
+                    <option value={u.planId}>
+                      {u.plan ? planLabel(u.plan) : u.planId} · retirado
                     </option>
-                  ))}
+                  )}
+                  {plans
+                    .filter((p) => !p.customUserId || p.customUserId === u.id)
+                    .map((p) => (
+                      <option value={p.id} key={p.id}>
+                        {planLabel(p)}
+                        {p.id === "ILIMITADO" ? " · solo interno" : ""}
+                      </option>
+                    ))}
                 </select>
               </label>
               <label>

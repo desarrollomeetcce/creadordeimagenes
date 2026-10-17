@@ -129,3 +129,9 @@ Los trabajos fijan proveedor/modelos y huellas SHA256 de capacidades, parámetro
 lib/membership-plans.ts comprueba cuotas en la misma transacción de reservas (bloqueo728291), por autor/mes Lima. No implica que el usuario haya recibido saldo API. Asignación/edición exclusiva OWNER; Ilimitado interno no público. Interfaces en membership-plans.tsx, users-panel.tsx y /plans.
 
 lib/plan-payments.ts implementa checkout Mercado Pago/PayPal con credenciales OWNER cifradas fuera del navegador. Única excepción al control de Origin: endpoints exactos POST de webhooks, que requieren firma de proveedor y consulta autoritativa. Importe/moneda/vendedor/referencia/entorno verificados; ID de pago único y transacción compartida para activación idempotente. No se confía en retorno del navegador ni en importes enviados por cliente. PayPal captura solo por autorización explícita; consulta de estado no captura. Sandbox no activa cuotas reales. Pagos reales y reversos requieren validación operativa de la cuenta.
+
+## Página comercial y ofertas privadas
+
+/plans usa renderizado dinámico de servidor con publicSite/plansCatalog en paralelo. Solo catálogo público, vigente y sin destinatario; los personalizados nunca se serializan en ese HTML. /plans/available incluye únicamente ofertas públicas o del destinatario autenticado. La autorización del checkout vuelve a comprobar vigencia, visibilidad y destinatario dentro de la transacción. Retirada lógica preserva cuotas/pagos previos.
+
+SiteEditor exclusivo OWNER valida secciones mediante Zod; revisión optimista + bloqueo728291 al guardar, conservando las otras secciones. No renderiza HTML introducido ni enlaces arbitrarios. La misma interfaz PlanSettings se usa desde Página web y Configuración de IA. Crear un personalizado asigna inmediatamente al usuario aprobado indicado, sin ejecutar cobros.

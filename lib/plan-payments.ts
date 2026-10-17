@@ -373,7 +373,11 @@ export async function createPlanPurchase(a: Actor, input: unknown) {
       where: { id: b.planId },
     });
     demand(
-      plan?.isPublic && plan.id !== "ILIMITADO" && plan.priceCents > 0,
+      plan &&
+        !plan.archivedAt &&
+        ((plan.isPublic && !plan.customUserId) || plan.customUserId === a.id) &&
+        plan.id !== "ILIMITADO" &&
+        plan.priceCents > 0,
       "Plan no disponible.",
       404,
     );

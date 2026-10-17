@@ -30,3 +30,9 @@ Referencias oficiales:
 - https://www.mercadopago.com.pe/developers/en/docs/checkout-pro-orders/resources/notifications/webhooks
 - https://developer.paypal.com/api/rest/integration/orders-api
 - https://developer.paypal.com/api/rest/webhooks/rest/
+
+## Planes personalizados y retirada
+
+OWNER puede crearlos desde Página web o Configuración de IA → Planes personalizados. Requieren nombre, precio, imágenes/mes, presupuesto IA y correo de una cuenta existente aprobada con capacidad de generar. Se asignan inmediatamente sin vencimiento y sin cobro; se reemplaza el plan actual por decisión explícita del OWNER. La vigencia puede ajustarse en Usuarios. El destinatario es fijo: para otro usuario cree un plan nuevo. Pueden existir varias ofertas para un mismo correo y cada nueva creación pasa a ser su plan actual.
+
+Son privados: solo OWNER los administra; cada destinatario ve su plan y sus propias ofertas de pago. No se publican en /plans ni se ofrecen a otras cuentas. Un personalizado sin precio positivo solo se asigna manualmente. La × retira cualquier plan de nuevas ofertas/asignaciones, conservando condiciones y compras previas. Las cuentas con plan retirado conservan sus límites; OWNER debe elegir otro plan si quiere modificarlos. No se cancelan pagos ni suscripciones silenciosamente.
