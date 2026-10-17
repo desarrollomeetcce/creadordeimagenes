@@ -32,6 +32,10 @@ export async function retainVariation(
       410,
     );
     if (permanent)
+      await tx.libraryExclusion.deleteMany({
+        where: { userId: user.id, variationId: id },
+      });
+    if (permanent)
       await tx.libraryItem.upsert({
         where: { userId_variationId: { userId: user.id, variationId: id } },
         create: { userId: user.id, variationId: id, folderId },
@@ -69,6 +73,10 @@ export async function productivityRoutes(
         headers: { "Cache-Control": "no-store" },
       });
   if (route === "library") {
+    const explorer = await (
+      await import("./library-explorer")
+    ).explorerRoutes(req, parts, user, body);
+    if (explorer) return explorer;
     if (parts[1] === "folders" && method === "GET")
       return send(
         await db.libraryFolder.findMany({

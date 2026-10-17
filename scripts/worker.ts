@@ -59,7 +59,7 @@ export async function runOne(filter?: {
   actorId?: string;
   deadlineMs?: number;
 }) {
-  const candidate = await db.generationJob.findFirst({
+  let candidate = await db.generationJob.findFirst({
     where: {
       status: "PENDING",
       ...(filter?.id ? { id: filter.id } : {}),
@@ -67,6 +67,19 @@ export async function runOne(filter?: {
     },
     orderBy: { createdAt: "asc" },
   });
+  if (
+    candidate &&
+    (await (
+      await import("../lib/preview-approval")
+    ).waitingForApproval(db, candidate))
+  ) {
+    const id = await (
+      await import("../lib/preview-approval")
+    ).nextRunnableId(filter);
+    candidate = id
+      ? await db.generationJob.findUnique({ where: { id } })
+      : null;
+  }
   if (!candidate) return false;
   const leaseToken = randomUUID();
   const claim = await db.$transaction(async (tx) => {
@@ -75,6 +88,12 @@ export async function runOne(filter?: {
       where: { actorId: candidate.actorId, status: "RUNNING" },
     });
     if (active) return { count: 0 };
+    if (
+      await (
+        await import("../lib/preview-approval")
+      ).waitingForApproval(tx, candidate)
+    )
+      return { count: 0 };
     return tx.generationJob.updateMany({
       where: { id: candidate.id, status: "PENDING" },
       data: {
@@ -342,15 +361,29 @@ export async function runOne(filter?: {
           auditThumbnail,
         });
       else {
+        const approvedBatch =
+          !!(await import("../lib/preview-approval")).approvalGroup(
+            candidate,
+          ) &&
+          (await (
+            await import("../lib/preview-approval")
+          ).groupApproved(tx, candidate));
         const v = await tx.variation.create({
           data: {
             jobId: candidate.id,
+            ...(approvedBatch
+              ? { reviewStatus: "APPROVED", permanent: true }
+              : {}),
             subproductId: candidate.subproductId,
             path,
             model: c.imageModel!,
             expiresAt: new Date(Date.now() + 48 * 3600000),
           },
         });
+        if (approvedBatch)
+          await tx.libraryItem.create({
+            data: { userId: candidate.actorId, variationId: v.id },
+          });
         const version = await tx.imageVersion.create({
           data: {
             variationId: v.id,

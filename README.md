@@ -1,5 +1,7 @@
 # Creador de Imágenes · Estudio AI
 
+**Biblioteca y revisión:** explorador con carpetas automáticas por jerarquía, carpetas personales anidadas, movimientos, selección y documentos personales. Generaciones permite revisar una primera muestra antes del resto del lote; aprobar conserva el mismo archivo en Biblioteca. Las vistas consultan la misma cola y no duplican llamadas de IA.
+
 **Cuotas de generación:** se administran mediante los planes asignados; se retiró el apartado redundante «Presupuesto y límites». Los límites globales y particulares anteriores ya no bloquean nuevas generaciones. OWNER no tiene límite comercial. Se conserva el historial y los costes desconocidos no se muestran como cero.
 
 Aplicación web en español para producción publicitaria multiproyecto. Implementación funcional con persistencia PostgreSQL, autenticación, proyectos, productos, subproductos, instrucciones heredadas, administración cifrada de IA exclusiva del OWNER, composición editable, historial de versiones, biblioteca, identidad de marca por proyecto, recuperación asistida de cuentas, procesamiento interactivo o en segundo plano de cola y límites por usuario/proyecto.

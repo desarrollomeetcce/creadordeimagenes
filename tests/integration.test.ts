@@ -2677,6 +2677,27 @@ test("Integración HTTP + PostgreSQL (base exclusiva de pruebas, sin llamadas ex
         ).metadata();
         assert.equal(dimensions.width, 640);
         assert(dimensions.height! <= 640);
+        assert.equal(thumb.headers.get("content-type"), "image/webp");
+        const etag = thumb.headers.get("etag");
+        assert(etag);
+        assert.equal(
+          (
+            await fetch(
+              root + `/api/variations/${collectionA}?thumbnail=true`,
+              { headers: { Cookie: user.cookie, "If-None-Match": etag! } },
+            )
+          ).status,
+          304,
+        );
+        assert.equal(
+          (
+            await fetch(
+              root + `/api/variations/${collectionA}?thumbnail=true`,
+              { headers: { "If-None-Match": etag! } },
+            )
+          ).status,
+          401,
+        );
       },
     );
     await t.test(
@@ -9216,6 +9237,407 @@ test("Integración HTTP + PostgreSQL (base exclusiva de pruebas, sin llamadas ex
       },
     );
 
+    await t.test(
+      "explorador: jerarquía según permisos, carpetas anidadas, movimientos atómicos sin ciclos y documentos privados",
+      async () => {
+        const privateProject = (
+          await owner.call("projects", "POST", {
+            name: "Biblioteca privada no compartida " + tag,
+          })
+        ).body;
+        const tree = await user.call("library/tree");
+        assert.equal(tree.status, 200);
+        assert(
+          !tree.body.some((n: any) => n.id === "project:" + privateProject.id),
+        );
+        assert(
+          [403, 404].includes(
+            (await user.call("library/explorer?project=" + privateProject.id))
+              .status,
+          ),
+        );
+        assert(tree.body.some((n: any) => n.id === "project:" + pid));
+        const create = async (
+          name: string,
+          destination: string | null = null,
+        ) =>
+          (
+            await user.call("library/folder-actions", "POST", {
+              action: "create",
+              name,
+              destination,
+            })
+          ).body;
+        const a = await create("Carpeta A"),
+          b = await create("Carpeta B", "folder:" + a.id),
+          c = await create("Carpeta C", "folder:" + b.id),
+          dest = await create("Destino");
+        assert.equal(
+          (
+            await user.call("library/folder-actions", "POST", {
+              action: "move",
+              ids: [a.id],
+              destination: "folder:" + c.id,
+            })
+          ).status,
+          400,
+        );
+        assert.equal(
+          (
+            await admin.call("library/folder-actions", "POST", {
+              action: "move",
+              ids: [a.id],
+              destination: null,
+            })
+          ).status,
+          404,
+        );
+        assert.equal(
+          (
+            await observer.call("library/folder-actions", "POST", {
+              action: "create",
+              name: "No",
+            })
+          ).status,
+          403,
+        );
+        assert.equal(
+          (
+            await user.call("library/folder-actions", "POST", {
+              action: "move",
+              ids: [a.id, b.id],
+              destination: "folder:" + dest.id,
+            })
+          ).status,
+          200,
+        );
+        assert.equal(
+          (await db.libraryFolder.findUniqueOrThrow({ where: { id: b.id } }))
+            .parentId,
+          a.id,
+        );
+        const form = new FormData();
+        form.set(
+          "file",
+          new File(["Documento privado"], "manual.txt", { type: "text/plain" }),
+        );
+        form.set("folderId", c.id);
+        const oversized = new FormData();
+        oversized.set(
+          "file",
+          new File([new Uint8Array(3200000)], "large.txt", {
+            type: "text/plain",
+          }),
+        );
+        assert.equal(
+          (
+            await fetch(root + "/api/library/documents", {
+              method: "POST",
+              headers: { Origin: root, Cookie: user.cookie },
+              body: oversized,
+            })
+          ).status,
+          413,
+        );
+        const uploaded = await fetch(root + "/api/library/documents", {
+          method: "POST",
+          headers: { Origin: root, Cookie: user.cookie },
+          body: form,
+        });
+        assert.equal(uploaded.status, 201);
+        const doc = await uploaded.json();
+        const get = await fetch(root + "/api/library/documents/" + doc.id, {
+          headers: { Cookie: user.cookie },
+        });
+        assert.equal(await get.text(), "Documento privado");
+        assert.equal(
+          (await admin.call("library/documents/" + doc.id)).status,
+          404,
+        );
+        const before = await db.libraryDocument.count();
+        assert.equal(
+          (
+            await user.call("library/folder-actions", "POST", {
+              action: "delete",
+              ids: [dest.id],
+            })
+          ).status,
+          200,
+        );
+        assert.equal(
+          (
+            await db.libraryDocument.findUniqueOrThrow({
+              where: { id: doc.id },
+            })
+          ).folderId,
+          null,
+        );
+        assert.equal(await db.libraryDocument.count(), before);
+        assert.equal(
+          (await user.call("library/documents/" + doc.id, "DELETE")).status,
+          200,
+        );
+        const anchored = await create(
+          "Archivos del proyecto",
+          "project:" + pid,
+        );
+        assert.equal(
+          (
+            await db.libraryFolder.findUniqueOrThrow({
+              where: { id: anchored.id },
+            })
+          ).anchorScope,
+          "project",
+        );
+        const options = await user.call("library/explorer?project=" + pid);
+        assert.equal(options.status, 200);
+        assert(
+          options.body.tree.some(
+            (n: any) =>
+              n.id === "folder:" + anchored.id &&
+              n.parentId === "project:" + pid,
+          ),
+        );
+        await user.call("library/folder-actions", "POST", {
+          action: "delete",
+          ids: [anchored.id],
+        });
+      },
+    );
+    await t.test(
+      "primera muestra: ninguna llamada antes de aprobar, aprobación conserva el mismo archivo y resto del lote pasa a Biblioteca",
+      async () => {
+        const { adapter } = await import("../lib/providers"),
+          { encryptKey } = await import("../lib/crypto"),
+          { processJob } = await import("../lib/jobs");
+        const previous = await db.providerConfiguration.findUniqueOrThrow({
+            where: { id: "global" },
+          }),
+          provider = adapter("openai"),
+          direct = provider.direct;
+        let calls = 0;
+        try {
+          const c = await db.providerConfiguration.update({
+            where: { id: "global" },
+            data: {
+              provider: "openai",
+              creativeProvider: "openai",
+              encryptedKey: encryptKey("synthetic-preview-not-real-1234"),
+              imageModel: "gpt-image-1",
+              creativeModel: "gpt-4.1-mini",
+              quality: "low",
+              resolution: "1024x1024",
+              models: [
+                {
+                  id: "gpt-image-1",
+                  kind: "image",
+                  qualities: ["low"],
+                  resolutions: ["1024x1024"],
+                },
+                {
+                  id: "gpt-4.1-mini",
+                  kind: "creative",
+                  qualities: [],
+                  resolutions: [],
+                },
+              ],
+              status: "VERIFIED",
+              verifiedAt: new Date(),
+              verifiedRevision: previous.revision,
+            },
+          });
+          const group = randomUUID(),
+            jobs = await reserveJobs(
+              uid,
+              pid,
+              [0, 1, 2].map((index) => ({
+                subproductId: sid,
+                key: randomUUID(),
+                snapshot: {
+                  prompt: "Prueba local de muestra",
+                  mode: "Texto",
+                  format: "1:1",
+                  renderMode: "editable",
+                  index,
+                  previewFirst: true,
+                  approvalGroup: group,
+                },
+              })),
+              c.revision,
+            );
+          provider.direct = async () => {
+            calls++;
+            return {
+              text: JSON.stringify({
+                backgroundPrompt: "",
+                backgroundColor: "#ffffff",
+                texts: [],
+                logos: [],
+              }),
+              usage: null,
+            };
+          };
+          assert.equal(await runOne({ id: jobs[1].id }), false);
+          assert.equal(calls, 0);
+          assert.equal(
+            (await user.call("jobs/" + jobs[1].id + "/process", "POST")).status,
+            409,
+          );
+          assert.equal(calls, 0);
+          await processJob({ id: uid, role: "USER" }, jobs[0].id);
+          assert.equal(calls, 1);
+          const first = await db.variation.findUniqueOrThrow({
+              where: { jobId: jobs[0].id },
+            }),
+            path = first.path;
+          assert.equal(
+            (await observer.call("jobs/" + jobs[0].id + "/approve", "POST"))
+              .status,
+            403,
+          );
+          assert.equal(
+            (await admin.call("jobs/" + jobs[0].id + "/approve", "POST"))
+              .status,
+            403,
+          );
+          const approval = await user.call(
+            "jobs/" + jobs[0].id + "/approve",
+            "POST",
+          );
+          assert.equal(approval.status, 200);
+          assert.equal(approval.body.pending.length, 2);
+          assert.equal(calls, 1);
+          assert.equal(
+            (await db.variation.findUniqueOrThrow({ where: { id: first.id } }))
+              .path,
+            path,
+          );
+          assert.equal(
+            (await db.variation.findUniqueOrThrow({ where: { id: first.id } }))
+              .permanent,
+            true,
+          );
+          await processJob({ id: uid, role: "USER" }, jobs[1].id);
+          assert.equal(calls, 2);
+          const second = await db.variation.findUniqueOrThrow({
+            where: { jobId: jobs[1].id },
+          });
+          assert.equal(second.reviewStatus, "APPROVED");
+          assert.equal(second.permanent, true);
+          const folder = (
+            await user.call("library/folder-actions", "POST", {
+              action: "create",
+              name: "Afiches seleccionados",
+            })
+          ).body;
+          const assetCount = await db.storedAsset.count();
+          assert.equal(
+            (
+              await user.call("library/item-actions", "POST", {
+                action: "move",
+                ids: [second.id],
+                folderId: folder.id,
+              })
+            ).status,
+            200,
+          );
+          const moved = await user.call(
+            "library/explorer?folder=folder:" + folder.id,
+          );
+          assert.equal(moved.status, 200);
+          assert(moved.body.items.some((v: any) => v.id === second.id));
+          assert.equal(await db.storedAsset.count(), assetCount);
+          assert.equal(
+            (
+              await admin.call("library/item-actions", "POST", {
+                action: "move",
+                ids: [second.id],
+                folderId: folder.id,
+              })
+            ).status,
+            404,
+          );
+          assert.equal(
+            (await db.variation.findUniqueOrThrow({ where: { id: second.id } }))
+              .path,
+            second.path,
+          );
+
+          const removedProject = (
+            await owner.call("projects", "POST", {
+              name: "Biblioteca de proyecto borrado",
+            })
+          ).body;
+          const removedJob = await db.generationJob.create({
+            data: {
+              actorId: (await owner.call("auth/me")).body.id,
+              projectId: removedProject.id,
+              status: "COMPLETED",
+              snapshot: {},
+              idempotencyKey: randomUUID(),
+              reservedMicros: 0n,
+            },
+          });
+          const removedVariation = await db.variation.create({
+            data: {
+              jobId: removedJob.id,
+              path: second.path,
+              model: "doble-explícito",
+              reviewStatus: "APPROVED",
+              permanent: true,
+              expiresAt: new Date(Date.now() + 86400000),
+            },
+          });
+          await owner.call("projects/" + removedProject.id, "DELETE");
+          assert(
+            !(await owner.call("library/explorer?limit=100")).body.items.some(
+              (v: any) => v.id === removedVariation.id,
+            ),
+          );
+          const explorer = await user.call("library/explorer?project=" + pid);
+          assert.equal(explorer.status, 200);
+          assert(explorer.body.items.some((v: any) => v.id === second.id));
+          const listed = await user.call(
+            "jobs/list?project=" + pid + "&size=100",
+          );
+          assert(
+            !JSON.stringify(listed.body.rows).includes(
+              "Prueba local de muestra",
+            ),
+          );
+          assert.equal(
+            (
+              await user.call("library/item-actions", "POST", {
+                action: "remove",
+                ids: [second.id],
+              })
+            ).status,
+            200,
+          );
+          assert(
+            !(
+              await user.call("library/explorer?project=" + pid)
+            ).body.items.some((v: any) => v.id === second.id),
+          );
+          assert.equal(
+            (await db.variation.findUniqueOrThrow({ where: { id: second.id } }))
+              .path,
+            second.path,
+          );
+          await user.call("jobs/" + jobs[2].id + "/cancel", "POST");
+        } finally {
+          provider.direct = direct;
+          await db.providerConfiguration.update({
+            where: { id: "global" },
+            data: {
+              ...previous,
+              models: previous.models as any,
+              alternatives: previous.alternatives as any,
+            },
+          });
+        }
+      },
+    );
     await t.test("cierre de sesión invalida el token", async () => {
       assert.equal((await user.call("auth/logout", "POST")).status, 200);
       assert.equal((await user.call("projects")).status, 401);

@@ -22,3 +22,6 @@
 
 - Personalizados: customUserId fija destinatario, siempre isPublic=false y descripción vacía. Crear asigna sin cobrar; cuotas y vigencia se administran explícitamente. Catálogo público excluye personalizados/retirados/Ilimitado; checkout revalida destinatario. Retirar con archivedAt conserva cuotas y pagos previos, nunca libera acceso por quitar el plan del catálogo.
 - Página pública: edición exclusiva OWNER, validación de secciones, revisión optimista y textos escapados; no inventar testimonios, clientes ni métricas. El HTML público no incluye correos o planes privados.
+
+- Explorador: nodos automáticos son metadatos de recursos autorizados; no cambiar proyecto/permisos al mover referencias. Carpetas/documentos personales por userId; rechazar ciclos bajo bloqueo428281. Borrar carpetas traslada contenido a raíz. LibraryExclusion oculta solo para una cuenta. Biblioteca admite OBSERVER solo lectura/descarga y respeta permisos actuales de origen.
+- Muestras: previewFirst/approvalGroup/index en snapshot; antes de tomar un trabajo posterior comprobar aprobación de una primera muestra completada del mismo actor/grupo bajo728291. Saltar retenidos al buscar el siguiente trabajo. No reintentar cargos ni generar por recibir mensajes de otra pestaña. Aprobación no copia bytes; continuar el lote sí utiliza API autorizada.

@@ -4,6 +4,8 @@ import { SiteEditor } from "./components/site-editor";
 import { PaymentSettings } from "./components/payment-settings";
 import { PlanSettings, MyPlan } from "./components/membership-plans";
 import { ProviderConnections } from "./components/provider-connections";
+import { folderScope } from "./components/folder-navigation";
+import { emptyHierarchy } from "./components/hierarchy-filters";
 import { InstructionEditor } from "./components/instruction-editor";
 import { SearchSelect } from "./components/search-select";
 import { CurrentRole, RoleGuide, useCanEdit } from "./components/role-guide";
@@ -231,9 +233,14 @@ export default function Home() {
         const nextView =
           allowed.includes(requested) &&
           (user.role !== "OBSERVER" ||
-            ["projects", "presets", "account", "plans", "collection"].includes(
-              requested,
-            ))
+            [
+              "projects",
+              "library",
+              "presets",
+              "account",
+              "plans",
+              "collection",
+            ].includes(requested))
             ? requested
             : "projects";
         if (active) setView(nextView);
@@ -291,10 +298,24 @@ export default function Home() {
     changeAddress({ view: "projects", project: id });
   const openCategory = async (id: string) =>
     changeAddress({ view: "projects", category: id });
-  const openGallery = (sub: Item) =>
-    changeAddress({ view: "projects", gallery: sub.id });
-  const openCollection = (scope: "project" | "category", id: string) =>
-    changeAddress({ view: "collection", scope, id });
+  const openLibraryFolder = async (key: string) => {
+    const nodes = await api("library/tree");
+    changeAddress({
+      view: "library",
+      ...folderScope(nodes, key, emptyHierarchy),
+      folder: key,
+    });
+  };
+  const openGallery = (sub: Item) => {
+    void openLibraryFolder("subproduct:" + sub.id).catch((e) =>
+      setRouteError(e.message),
+    );
+  };
+  const openCollection = (scope: "project" | "category", id: string) => {
+    void openLibraryFolder(
+      (scope === "category" ? "product:" : "project:") + id,
+    ).catch((e) => setRouteError(e.message));
+  };
   if (loading)
     return <div className="login-form">Cargando tu espacio de trabajo…</div>;
   if (resetToken)
@@ -412,7 +433,7 @@ export default function Home() {
               .filter(
                 ([v]) =>
                   user.role !== "OBSERVER" ||
-                  ["projects", "presets", "account"].includes(v),
+                  ["projects", "library", "presets", "account"].includes(v),
               )
               .map(([v, icon, label]) => (
                 <button
@@ -510,7 +531,7 @@ export default function Home() {
                 )}
               </>
             ) : view === "library" ? (
-              <Library />
+              <Library key={location} />
             ) : view === "presets" ? (
               <Presets />
             ) : view === "website" && user.role === "OWNER" ? (
@@ -1400,7 +1421,11 @@ function CategoryEditor({
       <div className="row spread" style={{ margin: "28px 0 18px" }}>
         <h2 style={{ margin: 0 }}>Subproductos · {c.subproducts.length}</h2>
         {c.canEdit && (
-          <BatchGeneration categoryId={c.id} count={c.subproducts.length} />
+          <BatchGeneration
+            categoryId={c.id}
+            projectId={c.project.id}
+            count={c.subproducts.length}
+          />
         )}
         <span className="badge">Herencia automática</span>
       </div>
@@ -1492,14 +1517,18 @@ function CategoryEditor({
   );
 }
 function BatchGeneration({
+  projectId,
   categoryId,
   count,
 }: {
   categoryId: string;
+  projectId: string;
   count: number;
 }) {
   const [preview, setPreview] = useState<any[] | null>(null);
   const [consent, setConsent] = useState(false);
+  const [previewFirst, setPreviewFirst] = useState(true);
+  const [queued, setQueued] = useState(false);
   const [selected, setSelected] = useState<string[]>([]);
   const t = useTask();
   return (
@@ -1576,6 +1605,15 @@ function BatchGeneration({
           <label className="row">
             <input
               type="checkbox"
+              checked={previewFirst}
+              onChange={(e) => setPreviewFirst(e.target.checked)}
+            />
+            Generar primero una muestra por subproducto y esperar aprobación
+            antes del resto.
+          </label>
+          <label className="row">
+            <input
+              type="checkbox"
               checked={consent}
               onChange={(e) => setConsent(e.target.checked)}
             />
@@ -1597,7 +1635,12 @@ function BatchGeneration({
                   reviewedInstructions: true,
                   requestId: crypto.randomUUID(),
                   selected,
+                  previewFirst,
                 });
+                setQueued(true);
+                const ch = new BroadcastChannel("studio-updates");
+                ch.postMessage("queued");
+                ch.close();
                 setPreview(null);
               }, "Lote encolado. Sigue el progreso en Generaciones.")
             }
@@ -1606,6 +1649,23 @@ function BatchGeneration({
           </button>
           <button onClick={() => setPreview(null)}>Cerrar</button>
         </div>
+      )}
+      {queued && (
+        <a
+          className="button"
+          target="_blank"
+          rel="noopener"
+          href={
+            "?" +
+            new URLSearchParams({
+              view: "jobs",
+              project: projectId,
+              product: categoryId,
+            })
+          }
+        >
+          Abrir Generaciones en otra pestaña ↗
+        </a>
       )}
       {t.notice}
     </div>
@@ -1630,6 +1690,8 @@ function SubproductRow({
 }) {
   const canSeeCosts = useCanEdit();
   const [sharing, setSharing] = useState(false);
+  const [previewFirst, setPreviewFirst] = useState(true);
+  const [queued, setQueued] = useState(false);
   const [name, setName] = useState(sub.name);
   const [prompt, setPrompt] = useState(sub.prompt);
   const [custom, setCustom] = useState(
@@ -1815,6 +1877,14 @@ function SubproductRow({
             <label className="row">
               <input
                 type="checkbox"
+                checked={previewFirst}
+                onChange={(e) => setPreviewFirst(e.target.checked)}
+              />
+              Revisar y aprobar la primera muestra antes de generar las demás.
+            </label>
+            <label className="row">
+              <input
+                type="checkbox"
                 checked={charge}
                 onChange={(e) => setCharge(e.target.checked)}
               />
@@ -1832,14 +1902,29 @@ function SubproductRow({
                   await api("subproducts/" + sub.id + "/generate", "POST", {
                     confirmCharge: true,
                     reviewedInstructions: true,
+                    previewFirst,
                     requestId: crypto.randomUUID(),
                   });
+                  setQueued(true);
+                  const channel = new BroadcastChannel("studio-updates");
+                  channel.postMessage("queued");
+                  channel.close();
                 }, "Generación encolada. Consulta Generaciones para seguir el progreso.")
               }
             >
               Generar {(custom ? s : inherited).count} variaciones
             </button>
           </div>
+        )}
+        {queued && (
+          <a
+            className="button"
+            target="_blank"
+            rel="noopener"
+            href={"?" + new URLSearchParams({ view: "jobs", ...costScope })}
+          >
+            Ir a Generaciones de este subproducto ↗
+          </a>
         )}
         {t.notice}
       </div>
@@ -2572,6 +2657,14 @@ function AISettings() {
       </section>
       <section className="panel stack">
         <h2>03　Prueba real de generación · opcional</h2>
+        <a
+          className="button"
+          target="_blank"
+          rel="noopener"
+          href="?view=jobs&project=none"
+        >
+          Abrir carpeta Pruebas en Generaciones ↗
+        </a>
         <p>
           La prueba crea un afiche e invoca dirección creativa e imágenes.{" "}
           <strong>Puede producir cargos de API.</strong> Se aplican las cuotas

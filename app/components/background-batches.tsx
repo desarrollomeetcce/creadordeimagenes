@@ -72,7 +72,9 @@ export function BackgroundBatches({
       }
     };
     void load();
-    const timer = setInterval(load, 5000);
+    const timer = setInterval(() => {
+      if (document.visibilityState === "visible") void load();
+    }, 10000);
     return () => {
       controller.abort();
       clearInterval(timer);

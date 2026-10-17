@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
+import { SearchSelect } from "./search-select";
 import { DateRange } from "./date-range";
 export type HierarchyValue = {
   project: string;
@@ -79,68 +80,41 @@ export function HierarchyFilters({
   return (
     <div className="stack hierarchy-filters">
       <div className="fields">
-        <label>
-          Proyecto
-          <select
-            aria-label="Proyecto"
-            value={value.project}
-            disabled={disabled || loading}
-            onChange={(e) =>
-              onChange({
-                ...value,
-                project: e.target.value,
-                product: "",
-                subproduct: "",
-              })
-            }
-          >
-            <option value="">Todos los proyectos disponibles</option>
-            {options.canSeeTests && (
-              <option value="none">Sin proyecto · pruebas de IA</option>
-            )}
-            {options.projects.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.name}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label>
-          Producto
-          <select
-            aria-label="Producto"
-            value={value.product}
-            disabled={
-              disabled || loading || !value.project || value.project === "none"
-            }
-            onChange={(e) =>
-              onChange({ ...value, product: e.target.value, subproduct: "" })
-            }
-          >
-            <option value="">Todos los productos disponibles</option>
-            {options.products.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.name}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label>
-          Subproducto
-          <select
-            aria-label="Subproducto"
-            value={value.subproduct}
-            disabled={disabled || loading || !value.product}
-            onChange={(e) => onChange({ ...value, subproduct: e.target.value })}
-          >
-            <option value="">Todos los subproductos disponibles</option>
-            {options.subproducts.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.name}
-              </option>
-            ))}
-          </select>
-        </label>
+        <HierarchyPicker
+          label="Proyecto"
+          selected={value.project}
+          options={[
+            { id: "", name: "Todos los proyectos" },
+            ...(options.canSeeTests ? [{ id: "none", name: "Pruebas" }] : []),
+            ...options.projects,
+          ]}
+          disabled={disabled || loading}
+          onSelect={(id) =>
+            onChange({ ...value, project: id, product: "", subproduct: "" })
+          }
+        />
+        <HierarchyPicker
+          label="Producto"
+          selected={value.product}
+          options={[
+            { id: "", name: "Todos los productos" },
+            ...options.products,
+          ]}
+          disabled={
+            disabled || loading || !value.project || value.project === "none"
+          }
+          onSelect={(id) => onChange({ ...value, product: id, subproduct: "" })}
+        />
+        <HierarchyPicker
+          label="Subproducto"
+          selected={value.subproduct}
+          options={[
+            { id: "", name: "Todos los subproductos" },
+            ...options.subproducts,
+          ]}
+          disabled={disabled || loading || !value.product}
+          onSelect={(id) => onChange({ ...value, subproduct: id })}
+        />
       </div>
       <DateRange
         from={value.from}
@@ -157,5 +131,37 @@ export function HierarchyFilters({
         </p>
       )}
     </div>
+  );
+}
+
+function HierarchyPicker({
+  label,
+  selected,
+  options,
+  disabled,
+  onSelect,
+}: {
+  label: string;
+  selected: string;
+  options: { id: string; name: string }[];
+  disabled: boolean;
+  onSelect: (id: string) => void;
+}) {
+  const name = options.find((o) => o.id === selected)?.name ?? "";
+  const [query, setQuery] = useState(name);
+  useEffect(() => setQuery(name), [selected, name]);
+  return (
+    <SearchSelect
+      label={label}
+      value={query}
+      onChange={setQuery}
+      onSelect={(o) => {
+        setQuery(o.label);
+        onSelect(o.id);
+      }}
+      browseOnToggle
+      disabled={disabled}
+      options={options.map((o) => ({ id: o.id, label: o.name }))}
+    />
   );
 }

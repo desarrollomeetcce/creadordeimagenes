@@ -20,6 +20,7 @@ const states = [
   "CANCELLED",
 ] as const;
 const jobSelect = {
+  snapshot: true,
   id: true,
   actorId: true,
   status: true,
@@ -29,7 +30,9 @@ const jobSelect = {
   projectId: true,
   createdAt: true,
   reservedMicros: true,
-  variation: { select: { id: true, expired: true, deletedAt: true } },
+  variation: {
+    select: { id: true, expired: true, deletedAt: true, reviewStatus: true },
+  },
 } as const;
 async function accessibleJobs(
   tx: Prisma.TransactionClient,
@@ -156,6 +159,17 @@ export async function listJobs(user: Actor, params: URLSearchParams) {
   );
   const versions = new Map(edited.map((v) => [v.sourceJobId, v.variation])),
     names = new Map(actors.map((a) => [a.id, a.name]));
+  const approval = await import("./preview-approval");
+  const waiting = new Set<string>();
+  const groupsToCheck = new Map<string, Promise<boolean>>();
+  for (const j of jobs) {
+    const group = approval.approvalGroup(j);
+    if (group && (j.snapshot as any).index !== 0) {
+      if (!groupsToCheck.has(group))
+        groupsToCheck.set(group, approval.groupApproved(db, j));
+      if (!(await groupsToCheck.get(group))) waiting.add(j.id);
+    }
+  }
   return {
     total,
     limit,
@@ -167,7 +181,13 @@ export async function listJobs(user: Actor, params: URLSearchParams) {
         manage =
           (user.role === "OWNER" || j.actorId === user.id) && access.has(j.id);
       return {
-        ...j,
+        ...Object.fromEntries(
+          Object.entries(j).filter(([key]) => key !== "snapshot"),
+        ),
+        waitingApproval: waiting.has(j.id),
+        isPreview:
+          (j.snapshot as any).previewFirst === true &&
+          (j.snapshot as any).index === 0,
         reservedMicros: String(j.reservedMicros),
         actualMicros:
           costs.find((c) => c.jobId === j.id)?.actualMicros?.toString() ?? null,
@@ -176,7 +196,11 @@ export async function listJobs(user: Actor, params: URLSearchParams) {
         canManage: manage,
         variation:
           v && !v.expired && !v.deletedAt && access.has(j.id)
-            ? { id: v.id, expired: false }
+            ? {
+                id: v.id,
+                expired: false,
+                reviewStatus: "reviewStatus" in v ? v.reviewStatus : "PENDING",
+              }
             : null,
       };
     }),

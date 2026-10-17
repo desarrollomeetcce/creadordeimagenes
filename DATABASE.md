@@ -95,3 +95,7 @@ MembershipPlan con precios en centavos y presupuesto IA en microUSD; null en cuo
 ## Migración019 · personalizados y contenido público
 
 MembershipPlan.customUserId nullable referencia User, archivedAt nullable e índice compuesto. Restricción CHECK obliga a que un personalizado sea privado. Relación inversa CustomPlanRecipient en Prisma; no hay backfill ni cambio de usuarios/planes existentes. SiteContent(id,content JSONB,revision,updatedAt) guarda las secciones públicas validadas; sin fila se usa el contenido inicial versionado, sin testimonios. Migración aditiva/checksum, probada en copia antes de producción.
+
+## Explorador y aprobación (020–023)
+
+LibraryDocument guarda metadatos de archivos personales con folderId nullable; sus bytes usan StoredAsset/local con la cuota existente. LibraryFolder añade anchorScope/anchorId nullable para carpetas personales bajo nodos automáticos, con exclusión de parentId por CHECK. LibraryExclusion recuerda imágenes retiradas por cuenta; no borra Variation ni altera bibliotecas ajenas. El índice parcial GenerationJob_preview_group_idx acelera la búsqueda de muestras aprobadas. La coordinación de muestra usa snapshot.previewFirst/approvalGroup/index, el reviewStatus existente de Variation y el bloqueo728291; no introduce una cola ni copias de imagen adicionales.

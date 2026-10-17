@@ -66,6 +66,7 @@ export async function generateBatch(
   categoryId: string,
   requestId: string,
   selected?: string[],
+  previewFirst = false,
 ) {
   const c = await configured();
   const category = await db.category.findUniqueOrThrow({
@@ -120,6 +121,12 @@ export async function generateBatch(
         snapshot: {
           prompt,
           subjectName: sub.name,
+          ...(previewFirst
+            ? {
+                previewFirst: true,
+                approvalGroup: `${actorId}:${requestId}:${sub.id}`,
+              }
+            : {}),
           mode,
           index,
           format: s.format,

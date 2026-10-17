@@ -63,6 +63,11 @@ export async function processJob(
     "El trabajo ya fue procesado o está en curso. Actualiza su estado.",
     409,
   );
+  demand(
+    !(await (await import("./preview-approval")).waitingForApproval(db, job)),
+    "Aprueba la primera muestra antes de generar las demás variaciones.",
+    409,
+  );
   await configured();
   const { runOne, recoverInterrupted } = await import("../scripts/worker");
   await recoverInterrupted();

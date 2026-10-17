@@ -484,6 +484,17 @@ async function handle(
       const { archiveSelectedJobs } = await import("@/lib/job-management");
       return send(await archiveSelectedJobs(user, b.ids, b.restore));
     }
+    if (
+      parts[0] === "jobs" &&
+      parts[2] === "approve" &&
+      parts.length === 3 &&
+      method === "POST"
+    )
+      return send(
+        await (
+          await import("@/lib/preview-approval")
+        ).approveJob(user, parts[1]),
+      );
     if (route === "jobs/list" && method === "GET") {
       const { listJobs } = await import("@/lib/job-management");
       return send(await listJobs(user, req.nextUrl.searchParams));
@@ -960,6 +971,7 @@ async function handle(
             confirmCharge: z.literal(true),
             reviewedInstructions: z.literal(true),
             requestId: z.uuid(),
+            previewFirst: z.boolean().default(false),
             selected: z
               .array(z.string().min(1).max(100))
               .min(1)
@@ -968,7 +980,13 @@ async function handle(
           })
           .parse(await body(req));
         const { generateBatch } = await import("@/lib/generation");
-        const jobs = await generateBatch(user.id, id, b.requestId, b.selected);
+        const jobs = await generateBatch(
+          user.id,
+          id,
+          b.requestId,
+          b.selected,
+          b.previewFirst,
+        );
         await audit(user.id, "GENERACION_MASIVA_AUTORIZADA", id, {
           jobIds: jobs.map((j) => j.id),
           count: jobs.length,
@@ -1197,6 +1215,7 @@ async function handle(
             confirmCharge: z.literal(true),
             reviewedInstructions: z.literal(true),
             requestId: z.uuid(),
+            previewFirst: z.boolean().default(false),
           })
           .parse(await body(req));
         const c = await configured();
@@ -1212,9 +1231,13 @@ async function handle(
         );
         validateDistribution(s);
         const { generateBatch } = await import("@/lib/generation");
-        const jobs = await generateBatch(user.id, sub.categoryId, b.requestId, [
-          id,
-        ]);
+        const jobs = await generateBatch(
+          user.id,
+          sub.categoryId,
+          b.requestId,
+          [id],
+          b.previewFirst,
+        );
         await audit(user.id, "GENERACION_AUTORIZADA", id, {
           jobIds: jobs.map((j) => j.id),
           count: jobs.length,
@@ -1426,6 +1449,16 @@ async function handle(
           410,
         );
         const jpg = req.nextUrl.searchParams.get("format") === "jpg";
+        const thumbnail = req.nextUrl.searchParams.get("thumbnail") === "true";
+        const etag = `"preview-${v.id}-${v.revision}-${jpg ? "jpg" : "webp"}"`;
+        if (thumbnail && req.headers.get("if-none-match") === etag)
+          return new NextResponse(null, {
+            status: 304,
+            headers: {
+              ETag: etag,
+              "Cache-Control": "private, max-age=0, must-revalidate",
+            },
+          });
         let bytes = await load(v.path);
         if (req.nextUrl.searchParams.get("thumbnail") === "true")
           bytes = await (
@@ -1438,16 +1471,23 @@ async function handle(
               fit: "inside",
               withoutEnlargement: true,
             })
-            .png()
+            .webp({ quality: 65 })
             .toBuffer();
         const output = jpg
           ? await (await import("@/lib/render")).jpeg(bytes)
           : bytes;
         return new NextResponse(fileStream(output), {
           headers: {
-            "Content-Type": jpg ? "image/jpeg" : "image/png",
+            "Content-Type": jpg
+              ? "image/jpeg"
+              : thumbnail
+                ? "image/webp"
+                : "image/png",
             "Content-Disposition": `${req.nextUrl.searchParams.has("download") ? "attachment" : "inline"}; filename="afiche_${v.id}.${jpg ? "jpg" : "png"}"`,
-            "Cache-Control": "private, no-store",
+            "Cache-Control": thumbnail
+              ? "private, max-age=0, must-revalidate"
+              : "private, no-store",
+            ...(thumbnail ? { ETag: etag } : {}),
             "X-Content-Type-Options": "nosniff",
           },
         });
