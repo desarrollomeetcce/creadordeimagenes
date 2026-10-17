@@ -2493,8 +2493,8 @@ function AISettings() {
         <p className="hint">
           Importes en USD. Son límites de reservas locales, no tarifas del
           proveedor ni un tope garantizado de su factura. Configura también
-          límites en la cuenta de OpenAI. El importe real queda como desconocido
-          hasta conciliación.
+          límites en la cuenta del proveedor. El importe real queda como
+          desconocido hasta conciliación.
         </p>
         <div className="fields">
           {[
@@ -2532,7 +2532,7 @@ function AISettings() {
                       operationLimitMicros:
                         "Máximo para un lote o solicitud: cantidad de afiches × reserva por afiche. Debe permitir al menos un afiche.",
                       imageReserveMicros:
-                        "Importe que apartará la aplicación por cada afiche, incluida dirección creativa. Lo defines tú: no es una tarifa confirmada de OpenAI ni añade saldo.",
+                        "Importe que apartará la aplicación por cada afiche, incluida dirección creativa. Lo defines tú: no es una tarifa confirmada del proveedor ni añade saldo.",
                     } as Record<string, string>
                   )[k]
                 }
