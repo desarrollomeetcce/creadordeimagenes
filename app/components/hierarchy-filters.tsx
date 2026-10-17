@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { SearchSelect } from "./search-select";
 import { DateRange } from "./date-range";
 export type HierarchyValue = {
@@ -31,11 +31,13 @@ export function HierarchyFilters({
   onChange,
   disabled = false,
   onAllDates,
+  dateSummary,
 }: {
   value: HierarchyValue;
   onChange: (v: HierarchyValue) => void;
   disabled?: boolean;
   onAllDates?: () => void;
+  dateSummary?: ReactNode;
 }) {
   const [options, setOptions] = useState<{
     projects: { id: string; name: string }[];
@@ -116,6 +118,7 @@ export function HierarchyFilters({
           onSelect={(id) => onChange({ ...value, subproduct: id })}
         />
       </div>
+      <div className="date-with-summary">
       <DateRange
         from={value.from}
         to={value.to}
@@ -125,6 +128,8 @@ export function HierarchyFilters({
           if (!from && !to) onAllDates?.();
         }}
       />
+      {dateSummary}
+      </div>
       {error && (
         <p className="notice error" role="alert">
           {error}

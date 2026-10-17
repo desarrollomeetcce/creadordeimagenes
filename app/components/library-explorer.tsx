@@ -87,7 +87,8 @@ export function Library() {
     [kind, setKind] = useState("all"),
     [busy, setBusy] = useState(false),
     [error, setError] = useState(""),
-    [message, setMessage] = useState("");
+    [message, setMessage] = useState(""),
+    [refreshing, setRefreshing] = useState(true);
   const [move, setMove] = useState(false),
     [target, setTarget] = useState("__unselected"),
     [targetQuery, setTargetQuery] = useState(""),
@@ -108,6 +109,7 @@ export function Library() {
   }).toString();
   const refresh = useCallback(async () => {
     const seq = ++revision.current;
+    setRefreshing(true);
     try {
       const result = await api("explorer?" + params);
       if (seq === revision.current) {
@@ -117,6 +119,8 @@ export function Library() {
     } catch (e) {
       if (seq === revision.current)
         setError(e instanceof Error ? e.message : "No se pudo actualizar.");
+    } finally {
+      if (seq === revision.current) setRefreshing(false);
     }
   }, [params]);
   useEffect(() => {
@@ -312,6 +316,16 @@ export function Library() {
           />
           <div className="explorer-tools stack">
             <HierarchyFilters
+              dateSummary={
+                <div className="period-summary" role="status" aria-live="polite" aria-busy={refreshing}>
+                  <div className="period-summary-counts">
+                    <span><strong>{refreshing ? "…" : (data?.counts.COMPLETED ?? 0).toLocaleString("es-PE")}</strong> {data?.counts.COMPLETED === 1 ? "flyer generado" : "flyers generados"}</span>
+                    <span><strong>{refreshing ? "…" : (data?.counts.PENDING ?? 0).toLocaleString("es-PE")}</strong> pendientes</span>
+                    <span><strong>{refreshing ? "…" : (data?.counts.RUNNING ?? 0).toLocaleString("es-PE")}</strong> generando</span>
+                  </div>
+                  <small>{hierarchy.from || hierarchy.to ? "En el período elegido" : "En todas las fechas"} · solo recursos a los que tienes acceso{hierarchy.project || hierarchy.product || hierarchy.subproduct ? " en esta selección" : ""}. Incluye todas las páginas.</small>
+                </div>
+              }
               value={hierarchy}
               onChange={(h) => {
                 setHierarchy(h);

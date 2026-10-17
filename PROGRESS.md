@@ -449,3 +449,8 @@ Migración aditiva 024 GenerationOrder ensayada en PostgreSQL local y copia Neon
 Validación final: 34 unitarias, TypeScript, build, instalación sin base y 102 resultados de integración (101 escenarios más contenedor), todos aprobados. Chromium en escritorio y móvil: galería única, orden 7 aislada de tres registros antiguos, aprobar/pausar4/7/detener3/finalizar4/4, modal ampliado y capas guardadas/aprobadas/eliminadas, enlaces en pestaña nueva y cuatro modos. Tres respuestas de procesamiento simuladas explícitamente; ninguna llamada externa de IA. Los pagos, SMTP y disponibilidad real de cada proveedor mantienen las condiciones externas pendientes documentadas.
 
 Respaldo final restaurado en PostgreSQL sintético independiente: 42 tablas y 24 migraciones; conteos, estados, costes y hashes de archivos/miniaturas coinciden. Regresión añadida para que OWNER vea en la galería las muestras antes de aprobarlas.
+
+
+## Selección y contador junto al calendario · 17/10/2026
+
+Resaltado violeta distinto del verde de marca para navegación activa, carpetas, menús desplegados, opciones elegidas, calendario y tarjetas marcadas; foco visible de teclado y pulsación de botones. La Biblioteca muestra junto a la fecha flyers generados, pendientes y en curso con el período/ámbito y aclaración de accesos y todas las páginas. Reutiliza counts del endpoint existente, sin consultas adicionales ni IA. TypeScript/build y 34 unitarias aprobados; Chromium comprueba colores calculados, fecha Hoy/todas, conteos contrastados con API para OWNER/USER y móvil sin desbordamiento. Sin cambios de esquema, llamadas IA, cobros ni correo.
