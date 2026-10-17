@@ -426,82 +426,6 @@ export function JobsPanel() {
           Actualizar estado
         </button>
       </div>
-      <div
-        className="row selection-toolbar"
-        aria-label="Acciones de la selección"
-      >
-        <span>{selected.length} seleccionados · máximo 200</span>
-        <button
-          type="button"
-          disabled={busy || !data?.rows.length || selected.length >= 200}
-          onClick={() =>
-            setSelected((ids) =>
-              [
-                ...new Set([
-                  ...ids,
-                  ...(data?.rows ?? [])
-                    .filter((j) => j.canManage || j.variation)
-                    .map((j) => j.id),
-                ]),
-              ].slice(0, 200),
-            )
-          }
-        >
-          Seleccionar esta página
-        </button>
-        <button
-          type="button"
-          disabled={busy || !selected.length}
-          onClick={() => setSelected([])}
-        >
-          Limpiar selección
-        </button>
-        <label>
-          Formato de descarga
-          <select
-            disabled={busy}
-            value={format}
-            onChange={(e) => setFormat(e.target.value)}
-          >
-            <option value="png">PNG</option>
-            <option value="jpg">JPG</option>
-          </select>
-        </label>
-        <button
-          type="button"
-          disabled={busy || !downloadable.length}
-          onClick={() =>
-            void action(async () => {
-              await (
-                await import("./collection-gallery")
-              ).downloadArchive({ ids: downloadable, format });
-            }, "Descarga preparada para las imágenes disponibles.")
-          }
-        >
-          Descargar seleccionadas ({downloadable.length})
-        </button>
-        <button
-          type="button"
-          className="danger"
-          disabled={busy || !manageable}
-          onClick={() => archive([...selected], archived)}
-        >
-          {archived ? "Restaurar seleccionados" : "Eliminar del listado"}
-        </button>
-        <button
-          type="button"
-          disabled={busy || !selected.length || !pending.length}
-          onClick={() => cancel([...pending])}
-        >
-          Cancelar pendientes de la selección (
-          {selected.length ? pending.length : 0})
-        </button>
-      </div>
-      <p className="hint">
-        Marca las casillas de las tarjetas. La selección se conserva entre
-        páginas y filtros. La descarga incluye solo imágenes disponibles; los
-        trabajos en curso no se eliminan.
-      </p>
       {message && (
         <p role="status" className="notice">
           {message}
@@ -512,33 +436,35 @@ export function JobsPanel() {
           {error || loadError}
         </p>
       )}
-      <BackgroundBatches
-        pending={pending}
-        refreshJobs={refreshJobs}
-        disabled={busy}
-      />
-      <div className="row">
-        <button
-          type="button"
-          className="primary"
-          disabled={busy || !pending.length}
-          onClick={process}
-        >
-          Procesar {pending.length} pendientes en esta pantalla
-        </button>
-        {processing && (
+      <div className="generation-controls">
+        <BackgroundBatches
+          pending={pending}
+          refreshJobs={refreshJobs}
+          disabled={busy}
+        />
+        <div className="row">
           <button
             type="button"
-            onClick={() => {
-              pause.current = true;
-              setMessage(
-                "Pausa solicitada. El trabajo en curso termina; los siguientes permanecen pendientes.",
-              );
-            }}
+            className="primary"
+            disabled={busy || !pending.length}
+            onClick={process}
           >
-            Pausar después del actual
+            Generar aquí ({pending.length} en cola)
           </button>
-        )}
+          {processing && (
+            <button
+              type="button"
+              onClick={() => {
+                pause.current = true;
+                setMessage(
+                  "Pausa solicitada. El trabajo en curso termina; los siguientes permanecen pendientes.",
+                );
+              }}
+            >
+              Pausar después del actual
+            </button>
+          )}
+        </div>
       </div>
       {loading && !data && <p role="status">Consultando generaciones…</p>}
       {data && (
@@ -546,6 +472,81 @@ export function JobsPanel() {
           <p>
             {data.total} coincidencias · página {data.page} de {data.pages} ·{" "}
             {data.limit} por página
+          </p>
+          <div
+            className="row selection-toolbar"
+            aria-label="Acciones de la selección"
+          >
+            <span>{selected.length} seleccionados · máximo 200</span>
+            <button
+              type="button"
+              disabled={busy || !data?.rows.length || selected.length >= 200}
+              onClick={() =>
+                setSelected((ids) =>
+                  [
+                    ...new Set([
+                      ...ids,
+                      ...(data?.rows ?? [])
+                        .filter((j) => j.canManage || j.variation)
+                        .map((j) => j.id),
+                    ]),
+                  ].slice(0, 200),
+                )
+              }
+            >
+              Seleccionar esta página
+            </button>
+            <button
+              type="button"
+              disabled={busy || !selected.length}
+              onClick={() => setSelected([])}
+            >
+              Limpiar selección
+            </button>
+            <label>
+              Formato de descarga
+              <select
+                disabled={busy}
+                value={format}
+                onChange={(e) => setFormat(e.target.value)}
+              >
+                <option value="png">PNG</option>
+                <option value="jpg">JPG</option>
+              </select>
+            </label>
+            <button
+              type="button"
+              disabled={busy || !downloadable.length}
+              onClick={() =>
+                void action(async () => {
+                  await (
+                    await import("./collection-gallery")
+                  ).downloadArchive({ ids: downloadable, format });
+                }, "Descarga preparada para las imágenes disponibles.")
+              }
+            >
+              Descargar seleccionadas ({downloadable.length})
+            </button>
+            <button
+              type="button"
+              className="danger"
+              disabled={busy || !manageable}
+              onClick={() => archive([...selected], archived)}
+            >
+              {archived ? "Restaurar seleccionados" : "Eliminar del listado"}
+            </button>
+            <button
+              type="button"
+              disabled={busy || !selected.length || !pending.length}
+              onClick={() => cancel([...pending])}
+            >
+              Cancelar en cola ({selected.length ? pending.length : 0})
+            </button>
+          </div>
+          <p className="hint">
+            Marca las casillas de las tarjetas. La selección se conserva entre
+            páginas y filtros. La descarga incluye solo imágenes disponibles;
+            los trabajos en curso no se eliminan.
           </p>
           <div className={"grid jobs-grid size-" + thumbnail}>
             {data.rows.map((j) => {
@@ -652,7 +653,9 @@ export function JobsPanel() {
                         : "Sin resultado disponible"}
                     </div>
                   )}
-                  <span className="badge">{labels[j.status] ?? j.status}</span>
+                  <span className={"badge status-" + j.status.toLowerCase()}>
+                    {labels[j.status] ?? j.status}
+                  </span>
                   <p className="hint">
                     Coste informado:{" "}
                     {j.actualMicros === null

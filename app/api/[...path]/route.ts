@@ -136,7 +136,15 @@ async function handle(
   { params }: { params: Promise<{ path: string[] }> },
 ) {
   try {
-    if (req.method !== "GET") {
+    const parts = (await params).path,
+      route = parts.join("/"),
+      method = req.method;
+    const paymentNotification =
+      method === "POST" &&
+      ["payments/webhook/mercadopago", "payments/webhook/paypal"].includes(
+        route,
+      );
+    if (req.method !== "GET" && !paymentNotification) {
       demand(
         req.headers.get("origin") ===
           (process.env.APP_ORIGIN ?? "http://localhost:3000"),
@@ -144,14 +152,26 @@ async function handle(
         403,
       );
     }
-    const parts = (await params).path,
-      route = parts.join("/"),
-      method = req.method;
     const send = (value: unknown, status = 200) =>
       NextResponse.json(value, {
         status,
         headers: { "Cache-Control": "no-store" },
       });
+    if (paymentNotification)
+      return send(
+        await (
+          await import("@/lib/plan-payments")
+        ).paymentWebhook(
+          parts[2],
+          req.headers,
+          req.nextUrl.searchParams,
+          await body(req),
+        ),
+      );
+    if (route === "plans/public" && method === "GET")
+      return send(
+        await (await import("@/lib/membership-plans")).plansCatalog(),
+      );
     if (route === "auth/status" && method === "GET") {
       if (!process.env.DATABASE_URL)
         return send(
@@ -339,6 +359,67 @@ async function handle(
           await manageOwnerRecovery(user, await body(req), method === "DELETE"),
         );
     }
+    if (parts[0] === "payments") {
+      const pay = await import("@/lib/plan-payments");
+      if (route === "payments/options" && method === "GET")
+        return send(await pay.paymentOptions());
+      if (route === "payments/purchases" && method === "GET")
+        return send(await pay.myPurchases(user));
+      if (route === "payments/purchases" && method === "POST") {
+        await rateLimit("checkout:" + user.id, 10);
+        return send(await pay.createPlanPurchase(user, await body(req)), 201);
+      }
+      if (
+        parts[1] === "purchases" &&
+        parts.length === 4 &&
+        method === "POST" &&
+        ["refresh", "capture"].includes(parts[3])
+      ) {
+        await rateLimit("payment-check:" + user.id, 20);
+        return send(
+          await pay.refreshPurchase(user, parts[2], parts[3] === "capture"),
+        );
+      }
+      ownerOnly(user);
+      if (route === "payments/connections" && method === "GET")
+        return send(await pay.paymentConnections(user));
+      if (route === "payments/connections" && method === "PUT")
+        return send(await pay.savePaymentConnection(user, await body(req)));
+      if (
+        parts[1] === "connections" &&
+        parts.length === 3 &&
+        method === "DELETE"
+      )
+        return send(await pay.deletePaymentConnection(user, parts[2]));
+      if (
+        parts[1] === "connections" &&
+        parts.length === 4 &&
+        parts[3] === "verify" &&
+        method === "POST"
+      )
+        return send(await pay.verifyPaymentConnection(user, parts[2]));
+    }
+    if (parts[0] === "plans") {
+      const plans = await import("@/lib/membership-plans");
+      if (route === "plans/me" && method === "GET")
+        return send(await plans.membershipStatus(user));
+      ownerOnly(user);
+      if (route === "plans" && method === "GET")
+        return send(await plans.plansCatalog(true));
+      if (parts.length === 2 && method === "PUT")
+        return send(await plans.updatePlan(user, parts[1], await body(req)));
+    }
+    if (
+      parts[0] === "users" &&
+      parts.length === 3 &&
+      parts[2] === "plan" &&
+      method === "PUT"
+    )
+      return send(
+        await (
+          await import("@/lib/membership-plans")
+        ).assignPlan(user, parts[1], await body(req)),
+      );
     if (parts[0] === "users") {
       const { userManagement } = await import("@/lib/user-management");
       return await userManagement(req, parts, user, () => body(req));
@@ -569,6 +650,33 @@ async function handle(
             await import("@/lib/provider-settings")
           ).latestConnectionTest(),
         });
+      if (route === "ai/budgets" && method === "PUT") {
+        const b = configSchema
+          .pick({
+            monthlyLimitMicros: true,
+            dailyLimitMicros: true,
+            operationLimitMicros: true,
+            imageReserveMicros: true,
+            maxGenerations: true,
+          })
+          .strict()
+          .parse(await body(req));
+        return send(
+          await (
+            await import("@/lib/provider-settings")
+          ).saveAIBudgets(user, b),
+        );
+      }
+      if (route === "ai/models" && method === "PUT")
+        return send(
+          await (
+            await import("@/lib/provider-settings")
+          ).saveAIConfiguration(
+            user,
+            configSchema.parse(await body(req)),
+            true,
+          ),
+        );
       if (route === "ai/config" && method === "PUT")
         return send(
           await (

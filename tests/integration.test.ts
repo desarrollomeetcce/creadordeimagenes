@@ -8267,6 +8267,529 @@ test("Integración HTTP + PostgreSQL (base exclusiva de pruebas, sin llamadas ex
         }
       },
     );
+    await t.test(
+      "modelos y límites se guardan independientemente sin invalidar la conexión al guardar presupuesto",
+      async () => {
+        const previous = await db.providerConfiguration.findUniqueOrThrow({
+          where: { id: "global" },
+        });
+        try {
+          await owner.call("ai/config", "PUT", config);
+          const row = await db.providerConfiguration.update({
+            where: { id: "global" },
+            data: {
+              status: "VERIFIED",
+              verifiedAt: new Date(),
+              verifiedRevision: {
+                set: (
+                  await db.providerConfiguration.findUniqueOrThrow({
+                    where: { id: "global" },
+                  })
+                ).revision,
+              },
+            },
+          });
+          for (const client of [user, admin, observer, anonymous])
+            assert(
+              [401, 403].includes(
+                (
+                  await client.call("ai/budgets", "PUT", {
+                    monthlyLimitMicros: "999999",
+                    dailyLimitMicros: "999999",
+                    operationLimitMicros: "999999",
+                    imageReserveMicros: "10000",
+                    maxGenerations: 5,
+                  })
+                ).status,
+              ),
+            );
+          assert.equal(
+            (
+              await owner.call("ai/budgets", "PUT", {
+                monthlyLimitMicros: "9000000",
+                dailyLimitMicros: "8000000",
+                operationLimitMicros: "7000000",
+                imageReserveMicros: "10000",
+                maxGenerations: 5,
+              })
+            ).status,
+            200,
+          );
+          const b = await db.providerConfiguration.findUniqueOrThrow({
+            where: { id: "global" },
+          });
+          assert.equal(b.revision, row.revision);
+          assert.equal(b.status, "VERIFIED");
+          assert.equal(b.encryptedKey, row.encryptedKey);
+          assert.equal(b.imageReserveMicros, 10000n);
+          assert.equal(
+            (
+              await owner.call("ai/models", "PUT", {
+                ...config,
+                monthlyLimitMicros: "1",
+                imageReserveMicros: "1",
+              })
+            ).status,
+            200,
+          );
+          const c = await db.providerConfiguration.findUniqueOrThrow({
+            where: { id: "global" },
+          });
+          assert.equal(c.monthlyLimitMicros, 9000000n);
+          assert.equal(c.imageReserveMicros, 10000n);
+          assert.equal(c.status, "UNVERIFIED");
+          assert(c.revision > b.revision);
+        } finally {
+          await db.providerConfiguration.update({
+            where: { id: "global" },
+            data: {
+              ...previous,
+              models: previous.models as any,
+              alternatives: previous.alternatives as any,
+            },
+          });
+        }
+      },
+    );
+    await t.test(
+      "planes públicos, asignación OWNER, vencimiento, cuotas y concurrencia por mes de Lima",
+      async () => {
+        const plans = await import("../lib/membership-plans");
+        const old = await db.user.findUniqueOrThrow({ where: { id: uid } }),
+          p = await db.membershipPlan.findUniqueOrThrow({
+            where: { id: "INICIO" },
+          });
+        const catalog = await anonymous.call("plans/public");
+        assert.equal(catalog.status, 200);
+        assert.equal(catalog.body.length, 3);
+        assert(!JSON.stringify(catalog.body).includes("ILIMITADO"));
+        assert.equal(
+          catalog.body.find((p: any) => p.id === "INICIO").priceCents,
+          2000,
+        );
+        for (const client of [user, admin, observer, anonymous])
+          assert(
+            [401, 403].includes(
+              (
+                await client.call("users/" + uid + "/plan", "PUT", {
+                  planId: "ILIMITADO",
+                })
+              ).status,
+            ),
+          );
+        const ledger: string[] = [];
+        try {
+          assert.equal(
+            (
+              await owner.call("users/" + uid + "/plan", "PUT", {
+                planId: "INICIO",
+              })
+            ).status,
+            200,
+          );
+          await db.membershipPlan.update({
+            where: { id: "INICIO" },
+            data: { monthlyImages: 1, monthlyAIMicros: 1000000n },
+          });
+          // Un usuario nuevo evita que consumos de otras pruebas falseen el cupo.
+          const u = await db.user.create({
+            data: {
+              name: "Cuota planes",
+              email: "quota-" + randomUUID() + "@example.test",
+              passwordHash: old.passwordHash,
+              role: "USER",
+              status: "APPROVED",
+              planId: "INICIO",
+            },
+          });
+          const outcomes = await Promise.allSettled(
+            Array.from({ length: 4 }, () =>
+              db.$transaction(async (tx) => {
+                await tx.$executeRaw`SELECT pg_advisory_xact_lock(728291)`;
+                await plans.checkPlanAllowance(tx, u.id, 1, 100000n);
+                const row = await tx.usageLedger.create({
+                  data: {
+                    jobId: "quota-" + randomUUID(),
+                    actorId: u.id,
+                    projectId: "quota-test",
+                    model: "test",
+                    reservedMicros: 100000n,
+                    status: "RESERVED",
+                  },
+                });
+                ledger.push(row.id);
+              }),
+            ),
+          );
+          assert.equal(
+            outcomes.filter((r) => r.status === "fulfilled").length,
+            1,
+          );
+          await db.usageLedger.update({
+            where: { id: ledger[0] },
+            data: { status: "RELEASED" },
+          });
+          await db.$transaction((tx) =>
+            plans.checkPlanAllowance(tx, u.id, 1, 100000n),
+          );
+          await assert.rejects(
+            db.$transaction((tx) =>
+              plans.checkPlanAllowance(tx, u.id, 1, 2000000n),
+            ),
+            /presupuesto mensual/,
+          );
+          await db.user.update({
+            where: { id: u.id },
+            data: { planId: "ILIMITADO" },
+          });
+          await db.$transaction((tx) =>
+            plans.checkPlanAllowance(tx, u.id, 500000, 999999999999n),
+          );
+          await db.user.update({
+            where: { id: u.id },
+            data: { planValidUntil: new Date(Date.now() - 10000) },
+          });
+          await assert.rejects(
+            db.$transaction((tx) => plans.checkPlanAllowance(tx, u.id, 1, 1n)),
+            /vencido/,
+          );
+          assert.equal(
+            plans
+              .membershipMonth(new Date("2026-11-01T04:59:59Z"))
+              .toISOString(),
+            "2026-10-01T05:00:00.000Z",
+          );
+          assert.equal(
+            plans
+              .membershipMonth(new Date("2026-11-01T05:00:00Z"))
+              .toISOString(),
+            "2026-11-01T05:00:00.000Z",
+          );
+          assert.equal(
+            (
+              await owner.call("plans/INICIO", "PUT", {
+                name: "Inicio",
+                description: "Prueba",
+                priceCents: 2000,
+                monthlyImages: null,
+                monthlyAIMicros: null,
+              })
+            ).status,
+            400,
+          );
+          await db.usageLedger.deleteMany({ where: { actorId: u.id } });
+          await db.user.delete({ where: { id: u.id } });
+        } finally {
+          await db.membershipPlan.update({ where: { id: p.id }, data: p });
+          await db.user.update({
+            where: { id: uid },
+            data: { planId: old.planId, planValidUntil: old.planValidUntil },
+          });
+        }
+      },
+    );
+    await t.test(
+      "pagos Mercado Pago y PayPal: cifrado, vendedor/importe/firma, idempotencia y Sandbox sin acceso real",
+      async () => {
+        const pay = await import("../lib/plan-payments");
+        const { createHmac } = await import("node:crypto");
+        const actor = {
+            id: (await owner.call("auth/me")).body.id,
+            role: "OWNER",
+          },
+          buyer = { id: uid, role: "USER" };
+        const oldUser = await db.user.findUniqueOrThrow({ where: { id: uid } });
+        const originals = await db.paymentConnection.findMany();
+        const fetchOriginal = globalThis.fetch;
+        const ppKeys = {
+            clientId: "synthetic-client-id",
+            clientSecret: "synthetic-client-secret-1234",
+            webhookId: "WEBHOOK12345678",
+          },
+          mpKeys = {
+            accessToken: "synthetic-mercadopago-token-1234",
+            webhookSecret: "synthetic-webhook-secret-1234",
+          };
+        let currentOrder: any = null,
+          wrongAmount = false,
+          postOrders = 0,
+          captures = 0,
+          mpOrder: any = null;
+        try {
+          for (const client of [user, admin, observer, anonymous])
+            assert(
+              [401, 403].includes(
+                (await client.call("payments/connections")).status,
+              ),
+            );
+          assert.equal(
+            (
+              await owner.call("payments/connections", "PUT", {
+                provider: "paypal",
+                mode: "LIVE",
+                currency: "USD",
+                exchangeRateMicros: "1000000",
+                merchantId: "MERCHANT123",
+                enabled: true,
+                credentials: ppKeys,
+              })
+            ).status,
+            200,
+          );
+          assert.equal(
+            (
+              await owner.call("payments/connections", "PUT", {
+                provider: "mercadopago",
+                mode: "SANDBOX",
+                currency: "PEN",
+                exchangeRateMicros: "3800000",
+                merchantId: "123456",
+                enabled: true,
+                credentials: mpKeys,
+              })
+            ).status,
+            200,
+          );
+          const visible = (await owner.call("payments/connections")).body;
+          assert(!JSON.stringify(visible).includes(ppKeys.clientSecret));
+          assert(!JSON.stringify(visible).includes(mpKeys.accessToken));
+          assert(
+            (
+              await db.paymentConnection.findUniqueOrThrow({
+                where: { provider: "paypal" },
+              })
+            ).encryptedCredentials !== ppKeys.clientSecret,
+          );
+          const noSig = await fetchOriginal(
+            root + "/api/payments/webhook/mercadopago?data.id=123",
+            {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ type: "payment" }),
+            },
+          );
+          assert.equal(noSig.status, 401);
+          globalThis.fetch = async (url, init) => {
+            const u = String(url);
+            if (u.startsWith(root)) return fetchOriginal(url, init);
+            const body = init?.body
+              ? JSON.parse(
+                  String(init.body).startsWith("{") ? String(init.body) : "{}",
+                )
+              : {};
+            if (u.endsWith("/v1/oauth2/token"))
+              return Response.json({ access_token: "synthetic-oauth-token" });
+            if (u === "https://api.mercadopago.com/users/me")
+              return Response.json({ id: 123456 });
+            if (u.endsWith("/v2/checkout/orders") && init?.method === "POST") {
+              postOrders++;
+              return Response.json({
+                id: "PAYPALORDER123",
+                links: [
+                  {
+                    rel: "payer-action",
+                    href: "https://www.paypal.com/checkoutnow?token=PAYPALORDER123",
+                  },
+                ],
+              });
+            }
+            if (u.endsWith("/capture")) {
+              captures++;
+              return Response.json({ status: "COMPLETED" });
+            }
+            if (u.endsWith("/verify-webhook-signature"))
+              return Response.json({ verification_status: "SUCCESS" });
+            if (u.includes("/v2/checkout/orders/PAYPALORDER123"))
+              return Response.json({
+                status: "COMPLETED",
+                purchase_units: [
+                  {
+                    custom_id: currentOrder.id,
+                    payee: { merchant_id: "MERCHANT123" },
+                    payments: {
+                      captures: [
+                        {
+                          id: "CAPTURE12345",
+                          status: "COMPLETED",
+                          amount: {
+                            currency_code: "USD",
+                            value: wrongAmount ? "0.01" : "20.00",
+                          },
+                          final_capture: true,
+                        },
+                      ],
+                    },
+                  },
+                ],
+              });
+            if (u.endsWith("/checkout/preferences"))
+              return Response.json({
+                id: "pref-123",
+                sandbox_init_point:
+                  "https://sandbox.mercadopago.com.pe/checkout/v1/redirect?pref_id=pref-123",
+              });
+            if (u.endsWith("/v1/payments/12345678"))
+              return Response.json({
+                external_reference: mpOrder.id,
+                status: "approved",
+                collector_id: 123456,
+                currency_id: "PEN",
+                transaction_amount: 76,
+                live_mode: false,
+                transaction_amount_refunded: 0,
+              });
+            throw Error("Llamada inesperada de prueba: " + new URL(u).pathname);
+          };
+          await pay.verifyPaymentConnection(actor, "paypal");
+          await pay.verifyPaymentConnection(actor, "mercadopago");
+          assert.equal((await pay.paymentOptions()).length, 2);
+          const key = randomUUID();
+          currentOrder = await pay.createPlanPurchase(buyer, {
+            provider: "paypal",
+            planId: "INICIO",
+            requestId: key,
+          });
+          assert.equal(currentOrder.amountCents, 2000);
+          assert.equal(
+            (
+              await pay.createPlanPurchase(buyer, {
+                provider: "paypal",
+                planId: "INICIO",
+                requestId: key,
+              })
+            ).id,
+            currentOrder.id,
+          );
+          assert.equal(postOrders, 1);
+          await assert.rejects(
+            pay.refreshPurchase({ id: aid, role: "ADMIN" }, currentOrder.id),
+            /no encontrada/,
+          );
+          wrongAmount = true;
+          await assert.rejects(
+            pay.refreshPurchase(buyer, currentOrder.id),
+            /no coincide/,
+          );
+          assert.equal(
+            (await db.user.findUniqueOrThrow({ where: { id: uid } })).planId,
+            oldUser.planId,
+          );
+          wrongAmount = false;
+          const result = await pay.refreshPurchase(
+            buyer,
+            currentOrder.id,
+            true,
+          );
+          assert.equal(result.status, "PAID");
+          assert.equal(captures, 1);
+          const active = await db.user.findUniqueOrThrow({
+            where: { id: uid },
+          });
+          assert.equal(active.planId, "INICIO");
+          assert(active.planValidUntil! > new Date());
+          await pay.refreshPurchase(buyer, currentOrder.id, true);
+          assert.equal(captures, 1);
+          assert.equal(
+            (
+              await db.user.findUniqueOrThrow({ where: { id: uid } })
+            ).planValidUntil?.toISOString(),
+            active.planValidUntil?.toISOString(),
+          );
+          const webhook = new Headers({
+            "paypal-auth-algo": "SHA256withRSA",
+            "paypal-cert-url": "https://api.paypal.com/cert",
+            "paypal-transmission-id": "id",
+            "paypal-transmission-sig": "sig",
+            "paypal-transmission-time": new Date().toISOString(),
+          });
+          await pay.paymentWebhook("paypal", webhook, new URLSearchParams(), {
+            event_type: "PAYMENT.CAPTURE.COMPLETED",
+            resource: {
+              supplementary_data: {
+                related_ids: { order_id: "PAYPALORDER123" },
+              },
+            },
+          });
+          assert.equal(
+            (
+              await db.user.findUniqueOrThrow({ where: { id: uid } })
+            ).planValidUntil?.toISOString(),
+            active.planValidUntil?.toISOString(),
+          );
+          mpOrder = await pay.createPlanPurchase(buyer, {
+            provider: "mercadopago",
+            planId: "INICIO",
+            requestId: randomUUID(),
+          });
+          assert.equal(mpOrder.amountCents, 7600);
+          const ts = String(Math.floor(Date.now() / 1000)),
+            requestId = "synthetic-request",
+            signature = createHmac("sha256", mpKeys.webhookSecret)
+              .update(`id:12345678;request-id:${requestId};ts:${ts};`)
+              .digest("hex");
+          await assert.rejects(
+            pay.paymentWebhook(
+              "mercadopago",
+              new Headers({
+                "x-signature": `ts=${ts},v1=${"0".repeat(64)}`,
+                "x-request-id": requestId,
+              }),
+              new URLSearchParams({ "data.id": "12345678" }),
+              { type: "payment" },
+            ),
+            /inválida/,
+          );
+          await pay.paymentWebhook(
+            "mercadopago",
+            new Headers({
+              "x-signature": `ts=${ts},v1=${signature}`,
+              "x-request-id": requestId,
+            }),
+            new URLSearchParams({ "data.id": "12345678" }),
+            { type: "payment" },
+          );
+          assert.equal(
+            (
+              await db.planPurchase.findUniqueOrThrow({
+                where: { id: mpOrder.id },
+              })
+            ).status,
+            "TEST_COMPLETED",
+          );
+          assert.equal(
+            (
+              await db.user.findUniqueOrThrow({ where: { id: uid } })
+            ).planValidUntil?.toISOString(),
+            active.planValidUntil?.toISOString(),
+          );
+          assert.equal(
+            (
+              await db.auditEvent.findMany({
+                where: { action: { startsWith: "PAGO_" } },
+              })
+            ).some((r) =>
+              JSON.stringify(r.detail).includes(mpKeys.accessToken),
+            ),
+            false,
+          );
+        } finally {
+          globalThis.fetch = fetchOriginal;
+          await db.user.update({
+            where: { id: uid },
+            data: {
+              planId: oldUser.planId,
+              planValidUntil: oldUser.planValidUntil,
+            },
+          });
+          await db.paymentConnection.deleteMany();
+          for (const c of originals)
+            await db.paymentConnection.create({
+              data: { ...c, maskedCredentials: c.maskedCredentials as any },
+            });
+        }
+      },
+    );
+
     await t.test("cierre de sesión invalida el token", async () => {
       assert.equal((await user.call("auth/logout", "POST")).status, 200);
       assert.equal((await user.call("projects")).status, 401);

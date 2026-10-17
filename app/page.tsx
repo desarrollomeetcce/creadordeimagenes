@@ -1,5 +1,7 @@
 "use client";
 import { useCallback, useEffect, useState, useRef } from "react";
+import { PaymentSettings } from "./components/payment-settings";
+import { PlanSettings, MyPlan } from "./components/membership-plans";
 import { ProviderConnections } from "./components/provider-connections";
 import { SearchSelect } from "./components/search-select";
 import { CurrentRole, RoleGuide, useCanEdit } from "./components/role-guide";
@@ -215,16 +217,17 @@ export default function Home() {
           "trash",
           "jobs",
           "account",
+          "plans",
           "collection",
           ...(managesUsers(user.role) ? ["users"] : []),
           ...(user.role === "OWNER"
-            ? ["ai", "mail", "statistics", "visual-audit"]
+            ? ["ai", "mail", "payments", "statistics", "visual-audit"]
             : []),
         ];
         const nextView =
           allowed.includes(requested) &&
           (user.role !== "OBSERVER" ||
-            ["projects", "presets", "account", "collection"].includes(
+            ["projects", "presets", "account", "plans", "collection"].includes(
               requested,
             ))
             ? requested
@@ -354,6 +357,8 @@ export default function Home() {
     trash: "Papelera",
     jobs: "Generaciones",
     account: "Mi cuenta",
+    plans: "Mi plan",
+    payments: "Configuración de pagos",
     collection: "Galería de afiches",
   };
   const navigate = (v: string) => changeAddress({ view: v });
@@ -386,12 +391,14 @@ export default function Home() {
               ["trash", "⌫", "Papelera"],
               ["usage", "↗", "Costos de IA"],
               ["account", "♙", "Mi cuenta"],
+              ["plans", "◇", "Mi plan"],
               ...(managesUsers(user.role) ? [["users", "♙", "Usuarios"]] : []),
               ...(user.role === "OWNER"
                 ? [
                     ["statistics", "▥", "Estadísticas"],
                     ["ai", "⚙", "Configuración de IA"],
                     ["mail", "✉", "Configuración de correo"],
+                    ["payments", "◇", "Configuración de pagos"],
                     ["visual-audit", "▧", "Auditoría visual"],
                   ]
                 : []),
@@ -500,6 +507,10 @@ export default function Home() {
               <Library />
             ) : view === "presets" ? (
               <Presets />
+            ) : view === "payments" && user.role === "OWNER" ? (
+              <PaymentSettings />
+            ) : view === "plans" ? (
+              <MyPlan canPurchase={user.role !== "OBSERVER"} />
             ) : view === "ai" ? (
               <AISettings />
             ) : view === "mail" && user.role === "OWNER" ? (
@@ -1838,6 +1849,8 @@ function SubproductRow({
 }
 function AISettings() {
   const [c, setC] = useState<any>(null);
+  const [budget, setBudget] = useState<any>(null);
+  const budgetEditing = useRef(false);
   const [latestTest, setLatestTest] = useState<any>(null);
   const [testBudget, setTestBudget] = useState<any>(null);
   const [checkedAt, setCheckedAt] = useState<string | null>(null);
@@ -1859,6 +1872,7 @@ function AISettings() {
   const refresh = useCallback(async () => {
     const r = await api("ai/config");
     setC(r.configuration);
+    if (!budgetEditing.current) setBudget(r.configuration);
     setLatestTest(r.latestTest);
     setTestBudget(r.testBudget);
     setCheckedAt(new Date().toISOString());
@@ -1916,6 +1930,11 @@ function AISettings() {
     };
   }, []);
   if (!c) return <p>Cargando configuración segura…{t.notice}</p>;
+  const updateBudget = (k: string, v: unknown) => {
+    budgetEditing.current = true;
+    setBudget((old: any) => ({ ...old, [k]: v }));
+    setCharge(false);
+  };
   const update = (k: string, v: unknown) => {
     setC({ ...c, [k]: v });
     editing.current = true;
@@ -2041,14 +2060,24 @@ function AISettings() {
     now - new Date(c.verifiedAt).getTime() < 86400000;
   const reserve = Number(c.imageReserveMicros);
   const checks = [
-    { label: "Clave guardada en el servidor", ok: !!c.maskedKey },
-    { label: "Cambios guardados", ok: !dirty && !key },
+    {
+      label: "Clave guardada en el servidor",
+      target: "ai-connection",
+      ok: !!c.maskedKey,
+    },
+    {
+      label: "Cambios guardados",
+      target: key ? "ai-connection" : "ai-models",
+      ok: !dirty && !key,
+    },
     {
       label: "Consulta de modelos verificada durante las últimas 24 horas",
+      target: "ai-connection",
       ok: !!verified,
     },
     {
       label: "Modelos de imagen y dirección creativa compatibles seleccionados",
+      target: "ai-models",
       ok:
         !!image &&
         image.kind === "image" &&
@@ -2057,12 +2086,14 @@ function AISettings() {
     },
     {
       label: "Calidad y resolución compatibles",
+      target: "ai-models",
       ok:
         !!image?.qualities.includes(c.quality) &&
         !!image?.resolutions.includes(c.resolution),
     },
     {
       label: "Reserva por afiche mayor que cero y límites suficientes",
+      target: "ai-budgets",
       ok:
         reserve > 0 &&
         [
@@ -2073,6 +2104,7 @@ function AISettings() {
     },
   ];
   checks.push({
+    target: "ai-budgets",
     label:
       "Presupuesto disponible para una prueba, incluidos tus límites particulares y reservas anteriores",
     ok:
@@ -2083,7 +2115,7 @@ function AISettings() {
   });
   const ready = checks.every((check) => check.ok) && !liveError;
   const save = async () => {
-    await api("ai/config", "PUT", {
+    await api("ai/models", "PUT", {
       provider: c.provider,
       ...(key ? { apiKey: key } : {}),
       imageModel: c.imageModel ?? null,
@@ -2187,11 +2219,30 @@ function AISettings() {
           )}
         </div>
 
-        <ul>
+        <ul className="ai-checks">
           {checks.map((check) => (
-            <li key={check.label}>
-              <strong>{check.ok ? "Completo" : "Pendiente"}:</strong>{" "}
-              {check.label}
+            <li
+              key={check.label}
+              className={check.ok ? "check-complete" : "check-pending"}
+            >
+              <button
+                type="button"
+                onClick={() => {
+                  const section = document.getElementById(check.target);
+                  section?.scrollIntoView({
+                    behavior: "smooth",
+                    block: "start",
+                  });
+                  const field = section?.querySelector<HTMLElement>(
+                    ".field-invalid input,.field-invalid select,input,select,button",
+                  );
+                  field?.focus({ preventScroll: true });
+                }}
+              >
+                <strong>{check.ok ? "✓ Completo" : "! Pendiente"}:</strong>{" "}
+                {check.label}
+                {!check.ok && " → Revisar"}
+              </button>
             </li>
           ))}
         </ul>
@@ -2217,7 +2268,13 @@ function AISettings() {
             );
         }}
       />
-      <section className="panel stack">
+      <section
+        id="ai-connection"
+        className={
+          "panel stack ai-section" +
+          (!c.maskedKey || !verified || key ? " needs-attention" : "")
+        }
+      >
         <h2>01　Proveedor de imágenes y credenciales</h2>
         <div className="fields">
           <label>
@@ -2328,7 +2385,15 @@ function AISettings() {
         )}
         {c.error && <div className="notice error">{c.error}</div>}
       </section>
-      <section className="panel stack">
+      <section
+        id="ai-models"
+        className={
+          "panel stack ai-section" +
+          (checks.some((x) => x.target === "ai-models" && !x.ok)
+            ? " needs-attention"
+            : "")
+        }
+      >
         <h2>02　Modelos y parámetros</h2>
         {!c.models.length ? (
           <p className="muted">
@@ -2346,7 +2411,7 @@ function AISettings() {
               Consultar modelos no confirma saldo ni generación.
             </p>
             <div className="fields">
-              <div>
+              <div className={!image ? "field-invalid" : ""}>
                 <SearchSelect
                   browseOnToggle
                   label="Modelo de imágenes"
@@ -2380,7 +2445,13 @@ function AISettings() {
                   esa cuenta primero.
                 </span>
               </label>
-              <div>
+              <div
+                className={
+                  !creativeModels.some((m: any) => m.id === c.creativeModel)
+                    ? "field-invalid"
+                    : ""
+                }
+              >
                 <SearchSelect
                   browseOnToggle
                   label="Modelo de dirección creativa"
@@ -2397,7 +2468,11 @@ function AISettings() {
                   .
                 </p>
               </div>
-              <label>
+              <label
+                className={
+                  !image?.qualities.includes(c.quality) ? "field-invalid" : ""
+                }
+              >
                 Calidad
                 <select
                   value={c.quality}
@@ -2415,7 +2490,13 @@ function AISettings() {
                   cambiar el costo.
                 </span>
               </label>
-              <label>
+              <label
+                className={
+                  !image?.resolutions.includes(c.resolution)
+                    ? "field-invalid"
+                    : ""
+                }
+              >
                 Resolución
                 <select
                   value={c.resolution}
@@ -2487,8 +2568,29 @@ function AISettings() {
             </p>
           </>
         )}
+        <button
+          type="button"
+          className="primary"
+          disabled={t.busy}
+          onClick={() =>
+            void t.run(
+              save,
+              "Modelos guardados. Verifica la conexión; los límites se conservaron.",
+            )
+          }
+        >
+          Guardar modelos y parámetros
+        </button>
       </section>
-      <section className="panel stack">
+      <section
+        id="ai-budgets"
+        className={
+          "panel stack ai-section" +
+          (checks.some((x) => x.target === "ai-budgets" && !x.ok)
+            ? " needs-attention"
+            : "")
+        }
+      >
         <h2>03　Presupuesto y límites</h2>
         <p className="hint">
           Importes en USD. Son límites de reservas locales, no tarifas del
@@ -2496,6 +2598,12 @@ function AISettings() {
           límites en la cuenta del proveedor. El importe real queda como
           desconocido hasta conciliación.
         </p>
+        {budgetEditing.current && (
+          <p className="notice warning">
+            Tienes límites sin guardar. Pulsa «Guardar límites globales» para
+            aplicarlos; los modelos no se modificarán.
+          </p>
+        )}
         <div className="fields">
           {[
             ["monthlyLimitMicros", "Presupuesto mensual"],
@@ -2506,16 +2614,21 @@ function AISettings() {
               "Reserva por afiche (incluye dirección creativa)",
             ],
           ].map(([k, label]) => (
-            <label key={k}>
+            <label
+              key={k}
+              className={
+                Number(budget?.[k] ?? c[k]) <= 0 ? "field-invalid" : ""
+              }
+            >
               {label} · USD
               <input
                 type="number"
                 min="0"
                 max="1000000"
                 step="0.000001"
-                value={Number(c[k]) / 1000000}
+                value={Number(budget?.[k] ?? c[k]) / 1000000}
                 onChange={(e) =>
-                  update(
+                  updateBudget(
                     k,
                     String(Math.round(Number(e.target.value) * 1000000)),
                   )
@@ -2545,8 +2658,10 @@ function AISettings() {
               type="number"
               min={1}
               max={1000}
-              value={c.maxGenerations}
-              onChange={(e) => update("maxGenerations", Number(e.target.value))}
+              value={budget?.maxGenerations ?? c.maxGenerations}
+              onChange={(e) =>
+                updateBudget("maxGenerations", Number(e.target.value))
+              }
             />
             <span className="hint">
               Tope de cantidad por solicitud. También se aplican los
@@ -2557,12 +2672,45 @@ function AISettings() {
         <button
           className="primary"
           disabled={t.busy}
-          onClick={() => void t.run(save)}
+          onClick={() =>
+            void t.run(async () => {
+              const source = budget ?? c;
+              await api("ai/budgets", "PUT", {
+                monthlyLimitMicros: source.monthlyLimitMicros,
+                dailyLimitMicros: source.dailyLimitMicros,
+                operationLimitMicros: source.operationLimitMicros,
+                imageReserveMicros: source.imageReserveMicros,
+                maxGenerations: Number(source.maxGenerations),
+              });
+              budgetEditing.current = false;
+              const r = await api("ai/config");
+              setBudget(r.configuration);
+              setC((old: any) => ({
+                ...old,
+                ...Object.fromEntries(
+                  [
+                    "monthlyLimitMicros",
+                    "dailyLimitMicros",
+                    "operationLimitMicros",
+                    "imageReserveMicros",
+                    "maxGenerations",
+                  ].map((k) => [k, r.configuration[k]]),
+                ),
+              }));
+              setTestBudget(r.testBudget);
+            }, "Límites guardados. Los modelos y su verificación se conservaron.")
+          }
         >
-          Guardar modelos y límites
+          Guardar límites globales
         </button>
       </section>
-      <BudgetSettings />
+      <PlanSettings />
+      <details className="panel">
+        <summary>
+          Restricciones adicionales por usuario o proyecto · opcional
+        </summary>
+        <BudgetSettings />
+      </details>
       <section className="panel stack">
         <h2>04　Prueba real de generación · opcional</h2>
         <p>

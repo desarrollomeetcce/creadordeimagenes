@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
+import { DateRange } from "./date-range";
 export type HierarchyValue = {
   project: string;
   product: string;
@@ -141,60 +142,15 @@ export function HierarchyFilters({
           </select>
         </label>
       </div>
-      <div className="fields">
-        <label>
-          Desde · Lima
-          <input
-            type="date"
-            aria-label="Desde"
-            value={value.from}
-            disabled={disabled}
-            onChange={(e) => onChange({ ...value, from: e.target.value })}
-          />
-        </label>
-        <label>
-          Hasta · Lima
-          <input
-            type="date"
-            aria-label="Hasta"
-            value={value.to}
-            disabled={disabled}
-            onChange={(e) => onChange({ ...value, to: e.target.value })}
-          />
-        </label>
-        <button
-          type="button"
-          disabled={disabled}
-          onClick={() => {
-            const parts = new Intl.DateTimeFormat("en-CA", {
-                timeZone: "America/Lima",
-                year: "numeric",
-                month: "2-digit",
-                day: "2-digit",
-              }).formatToParts(new Date()),
-              get = (type: string) => parts.find((p) => p.type === type)!.value,
-              today = `${get("year")}-${get("month")}-${get("day")}`;
-            onChange({ ...value, from: today, to: today });
-          }}
-        >
-          Hoy
-        </button>
-        <button
-          type="button"
-          disabled={disabled}
-          onClick={() => {
-            onAllDates?.();
-            onChange({ ...value, from: "", to: "" });
-          }}
-        >
-          Todas las fechas
-        </button>
-      </div>
-      <p className="hint">
-        Los días completos usan la hora de Lima. «Todos» incluye únicamente
-        recursos que puedes consultar. Para limitar por producto, selecciona
-        antes un proyecto.
-      </p>
+      <DateRange
+        from={value.from}
+        to={value.to}
+        disabled={disabled}
+        onChange={(from, to) => {
+          onChange({ ...value, from, to });
+          if (!from && !to) onAllDates?.();
+        }}
+      />
       {error && (
         <p className="notice error" role="alert">
           {error}

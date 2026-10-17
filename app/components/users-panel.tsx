@@ -8,6 +8,8 @@ type Account = {
   email: string;
   role: string;
   status: string;
+  planId?: string | null;
+  planValidUntil?: string | null;
 };
 async function api(path: string, method = "GET", data?: unknown) {
   const r = await fetch("/api/" + path, {
@@ -23,6 +25,13 @@ export function UsersPanel({ isOwner }: { isOwner: boolean }) {
   const [users, setUsers] = useState<Account[]>([]),
     [busy, setBusy] = useState(false),
     [message, setMessage] = useState("");
+  const [plans, setPlans] = useState<{ id: string; name: string }[]>([]);
+  useEffect(() => {
+    if (isOwner)
+      void api("plans")
+        .then(setPlans)
+        .catch((e) => setMessage(e.message));
+  }, [isOwner]);
   const refresh = useCallback(async () => setUsers(await api("users")), []);
   useEffect(() => {
     void refresh().catch((e) => setMessage(e.message));
@@ -152,6 +161,80 @@ export function UsersPanel({ isOwner }: { isOwner: boolean }) {
               </select>
             </label>
           </div>
+          {isOwner && (
+            <div className="fields">
+              <label>
+                Plan de {u.name}
+                <select
+                  value={u.planId ?? ""}
+                  disabled={busy}
+                  onChange={(e) =>
+                    setUsers((current) =>
+                      current.map((x) =>
+                        x.id === u.id
+                          ? { ...x, planId: e.target.value || null }
+                          : x,
+                      ),
+                    )
+                  }
+                >
+                  <option value="">Sin plan asignado · acceso previo</option>
+                  {plans.map((p) => (
+                    <option value={p.id} key={p.id}>
+                      {p.name}
+                      {p.id === "ILIMITADO" ? " · solo interno" : ""}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                Válido hasta · opcional
+                <input
+                  type="date"
+                  value={
+                    u.planValidUntil
+                      ? new Intl.DateTimeFormat("en-CA", {
+                          timeZone: "America/Lima",
+                          year: "numeric",
+                          month: "2-digit",
+                          day: "2-digit",
+                        }).format(new Date(u.planValidUntil))
+                      : ""
+                  }
+                  onChange={(e) =>
+                    setUsers((current) =>
+                      current.map((x) =>
+                        x.id === u.id
+                          ? {
+                              ...x,
+                              planValidUntil: e.target.value
+                                ? e.target.value + "T23:59:59.000-05:00"
+                                : null,
+                            }
+                          : x,
+                      ),
+                    )
+                  }
+                />
+              </label>
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() =>
+                  void run(() =>
+                    api("users/" + u.id + "/plan", "PUT", {
+                      planId: u.planId ?? null,
+                      validUntil: u.planValidUntil
+                        ? new Date(u.planValidUntil).toISOString()
+                        : null,
+                    }),
+                  )
+                }
+              >
+                Guardar plan
+              </button>
+            </div>
+          )}
           <button
             disabled={busy}
             onClick={() =>

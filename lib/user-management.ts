@@ -17,6 +17,8 @@ const select = {
   email: true,
   role: true,
   status: true,
+  planId: true,
+  planValidUntil: true,
 } as const;
 export async function userManagement(
   req: NextRequest,

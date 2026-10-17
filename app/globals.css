@@ -743,3 +743,55 @@ a {
 .job-path {font-size:12px;line-height:1.6}
 .selection-toolbar {padding:12px;border:1px solid var(--line);border-radius:8px;background:white}
 .hierarchy-filters {padding:16px;border:1px solid var(--line);border-radius:8px;background:white}
+
+/* Controles compactos de producción y calendario unificado. */
+.jobs-panel {gap:14px}
+.jobs-panel h1 {margin-bottom:4px}
+.jobs-panel .hierarchy-filters {display:flex;align-items:end;flex-wrap:wrap;gap:12px;padding:12px}
+.jobs-panel .hierarchy-filters>.fields {flex:1;min-width:min(100%,560px);margin:0;gap:10px}
+.jobs-panel .metrics {gap:22px;margin:0;flex-wrap:wrap}
+.jobs-panel .metrics strong {font-size:24px}
+.jobs-panel .fields {gap:10px}
+.jobs-panel .hint {margin:0}
+.generation-controls {display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:12px;border:1px solid var(--line);border-radius:8px;background:white}
+.background-compact {flex:1;display:flex;gap:10px;align-items:center;flex-wrap:wrap;min-width:0}
+.background-compact>strong {font-size:13px}
+.background-compact>button {width:auto}
+.background-help {width:100%;font-size:12px}
+.background-help .card {margin-top:8px;padding:10px}
+.selection-toolbar {display:flex;align-items:center;gap:8px;flex-wrap:wrap;position:relative}
+.selection-toolbar button {width:auto;padding:9px 12px;min-height:38px;font-size:12px}
+.selection-toolbar label {display:flex;align-items:center;gap:6px;margin:0}
+.selection-toolbar label select {width:80px;margin:0}
+.selection-toolbar>span {font-weight:700;margin-right:auto}
+.badge.status-completed,.check-complete {background:#e5f5eb;color:#176139}
+.badge.status-failed,.badge.status-uncertain {background:#fde9e7;color:#a52d26}
+.date-range {position:relative;max-width:100%}
+.date-range>button {white-space:normal;text-align:left}
+.date-popover {position:absolute;z-index:30;right:0;top:calc(100% + 8px);width:360px;max-width:calc(100vw - 48px);padding:16px;border:1px solid var(--line);border-radius:12px;background:white;box-shadow:0 12px 36px #132b2826;gap:12px}
+.date-presets {display:flex;gap:6px;flex-wrap:wrap}
+.date-presets button {font-size:12px;padding:6px 9px;width:auto}
+.calendar-heading {justify-content:space-between}
+.calendar-heading button {padding:4px 14px;width:auto}
+.calendar-grid {display:grid;grid-template-columns:repeat(7,1fr);gap:3px;text-align:center}
+.calendar-grid button {padding:8px 0;min-width:0;border:0}
+.calendar-grid .in-range {background:#e4f1ed;color:#176856}
+.calendar-grid button[aria-pressed=true] {background:#176856;color:white}
+.date-popover .fields {grid-template-columns:1fr 1fr;display:grid}
+.ai-checks {list-style:none;padding:0;display:grid;gap:8px;grid-template-columns:repeat(auto-fit,minmax(min(100%,280px),1fr))}
+.ai-checks li {margin:0;padding:9px;border-radius:6px;border:1px solid transparent;font-size:12px}
+.ai-checks .check-pending {border-color:#db645b;background:#fff4f2;color:#a02d24}
+.ai-checks button {padding:0;border:0;background:transparent;text-align:left;color:inherit;box-shadow:none;font-size:inherit}
+.ai-section {scroll-margin-top:24px}
+.ai-section.needs-attention {border-color:#cf564b;box-shadow:0 0 0 1px #cf564b33}
+.field-invalid {border:1px solid #cf564b;border-radius:8px;padding:8px;background:#fff9f8}
+.field-invalid input,.field-invalid select,.field-invalid .search-select-input {border-color:#cf564b}
+@media(max-width:640px){.date-popover{position:fixed;left:16px;right:16px;top:12vh;width:auto;max-height:80vh;overflow:auto}.generation-controls>*,.background-compact>button{width:100%}.selection-toolbar>span{width:100%}.jobs-panel .metrics{gap:12px}.jobs-panel .metrics span{font-size:11px}}
+.public-plans {max-width:1160px;margin:0 auto;padding:60px 24px}
+.plan-cards {grid-template-columns:repeat(auto-fit,minmax(min(100%,280px),1fr))}
+.plan-price {font-size:32px;color:var(--green)}
+.plan-price small {font-size:14px;font-weight:400}
+.plan-cards .button {text-align:center;margin-top:auto}
+.selection-toolbar>span {flex-basis:100%;font-weight:700}
+.selection-toolbar>button {flex:1 1 140px;min-height:40px;align-self:stretch}
+.selection-toolbar>label {flex:0 1 190px;align-self:center}

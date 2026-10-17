@@ -16,6 +16,9 @@ export async function checkReservationBudget(
   pendingCount: number,
 ) {
   const total = c.imageReserveMicros * BigInt(pendingCount);
+  await (
+    await import("./membership-plans")
+  ).checkPlanAllowance(tx, actorId, pendingCount, total);
   demand(
     total > 0n && total <= c.operationLimitMicros,
     "La operación supera el presupuesto por operación.",

@@ -113,3 +113,9 @@ Recuperación de ejecución con confirmación periódica, token interno y protec
 ## Google, fal.ai y Replicate
 
 En Configuración de IA → Conexiones de IA, OWNER puede conectar OpenAI, Google Gemini/AI Studio, fal.ai y Replicate, consultar sus modelos y elegir proveedores separados para imágenes y dirección creativa. Nano Banana/FLUX y otras familias se muestran únicamente si la consulta real y su esquema son compatibles. Guía: [proveedores de IA](docs/AI_PROVIDERS.md). Las suscripciones de chat no garantizan API gratuita; modelos retirados no se presentan como disponibles.
+
+## Planes y pagos
+
+Página pública `/plans`, panel **Mi plan**, asignación OWNER en **Usuarios** y catálogo editable desde Configuración de IA. InicioUS$20/20 imágenes/US$10 IA; CrecimientoUS$49/50/US$25; EmpresaUS$100/100/US$50. Ilimitado solo interno. Cuotas por mes calendario Lima; reservas no son costes reales ni saldo del proveedor.
+
+**Configuración de pagos** exclusiva OWNER permite Mercado Pago/PayPal con claves protegidas desde la interfaz. Compra de30 días sin renovación automática; activación solo por pago verificado e idempotente, Sandbox sin activación real. Guía de campos/webhooks/limitaciones: [planes y pagos](docs/PLANS_PAYMENTS.md). No se ha cobrado ni verificado una cuenta real en estas pruebas.

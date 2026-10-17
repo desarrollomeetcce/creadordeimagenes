@@ -123,7 +123,11 @@ export async function aiConfigurationView(meta = false) {
     creativeVerifiedAt: source?.verifiedAt ?? null,
   };
 }
-export async function saveAIConfiguration(user: Actor, b: Input) {
+export async function saveAIConfiguration(
+  user: Actor,
+  b: Input,
+  modelsOnly = false,
+) {
   ownerOnly(user);
   adapter(b.provider);
   if (b.creativeProvider) adapter(b.creativeProvider);
@@ -141,6 +145,15 @@ export async function saveAIConfiguration(user: Actor, b: Input) {
     const old = await tx.providerConfiguration.findUnique({
       where: { id: "global" },
     });
+    if (modelsOnly)
+      b = {
+        ...b,
+        monthlyLimitMicros: old?.monthlyLimitMicros ?? 0n,
+        dailyLimitMicros: old?.dailyLimitMicros ?? 0n,
+        operationLimitMicros: old?.operationLimitMicros ?? 0n,
+        imageReserveMicros: old?.imageReserveMicros ?? 0n,
+        maxGenerations: old?.maxGenerations ?? 10,
+      };
     const profile = await tx.providerConnection.findUnique({
       where: { provider: b.provider },
     });
@@ -267,4 +280,43 @@ export async function latestConnectionTest() {
         : "openai",
     model: typeof snapshot.imageModel === "string" ? snapshot.imageModel : null,
   };
+}
+
+export async function saveAIBudgets(
+  user: Actor,
+  data: Pick<
+    Input,
+    | "monthlyLimitMicros"
+    | "dailyLimitMicros"
+    | "operationLimitMicros"
+    | "imageReserveMicros"
+    | "maxGenerations"
+  >,
+) {
+  ownerOnly(user);
+  await db.$transaction(async (tx) => {
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(728291)`;
+    const actor = await tx.user.findUnique({
+      where: { id: user.id },
+      select: { role: true, status: true },
+    });
+    demand(
+      actor?.role === "OWNER" && actor.status === "APPROVED",
+      "La autorización cambió.",
+      403,
+    );
+    demand(
+      await tx.providerConfiguration.findUnique({
+        where: { id: "global" },
+        select: { id: true },
+      }),
+      "Guarda primero la conexión del proveedor.",
+      409,
+    );
+    await tx.providerConfiguration.update({ where: { id: "global" }, data });
+    await recordActivity(tx, {
+      data: { actorId: user.id, action: "LIMITES_IA_GUARDADOS" },
+    });
+  });
+  return aiConfigurationView();
 }

@@ -94,14 +94,11 @@ export function BackgroundBatches({
   }
   const hasActive = batches.some((b) => active.includes(b.status));
   return (
-    <section className="panel stack" aria-label="Generación en segundo plano">
-      <h2>Generación en segundo plano</h2>
-      <p>
-        Los trabajos que ya autorizaste pueden seguir aunque cierres esta
-        pantalla. Se envían los pendientes seleccionados (hasta 200) o, sin
-        selección, los accesibles de la página actual. Los nuevos no se añaden
-        al lote.
-      </p>
+    <section
+      className="background-compact"
+      aria-label="Generación en segundo plano"
+    >
+      <strong>Generar sin mantener esta pantalla abierta</strong>
       {!available && (
         <p className="hint">
           El ejecutor en segundo plano aún no está habilitado en este servidor.
@@ -142,66 +139,75 @@ export function BackgroundBatches({
       >
         {inFlight.current
           ? "Consultar la misma solicitud"
-          : `Procesar ${pending.length} pendientes en segundo plano`}
+          : `Generar en segundo plano (${pending.length})`}
       </button>
-      <p className="hint">
-        Detener un lote deja sus trabajos sin iniciar en cola y conserva sus
-        reservas. Puedes cancelarlos para liberarlas. Un afiche en curso termina
-        antes de la pausa.
-      </p>
-      {batches.map((b) => (
-        <article className="card stack" key={b.id}>
-          <strong>{labels[b.status] ?? "Estado desconocido"}</strong>
-          <span>
-            {b.completed} de {b.total} completados · {b.pending} pendientes ·{" "}
-            {b.running} en curso · {b.cancelled ?? 0} cancelados ·{" "}
-            {b.uncertain ?? 0} inciertos · {b.failed ?? 0} fallidos
-          </span>
-          {b.error && <p role="status">{b.error}</p>}
-          {b.pending > 0 && (
-            <button
-              className="danger"
-              disabled={disabled || busy}
-              onClick={() => {
-                if (
-                  confirm(
-                    `¿Cancelar los ${b.pending} trabajos que aún no empezaron en este lote y liberar sus reservas locales? El afiche en curso termina; los cargos inciertos se conservan.`,
-                  )
-                )
-                  void action(async () => {
-                    const result = await request(`/${b.id}/cancel-pending`, {});
-                    setMessage(
-                      `${result.cancelled} pendientes cancelados; ${result.running} en curso conservados.`,
-                    );
-                  });
-              }}
-            >
-              Cancelar pendientes de este lote
-            </button>
-          )}
-          {active.includes(b.status) && (
-            <div className="row">
+      <details className="background-help">
+        <summary>Cómo funciona · historial de lotes ({batches.length})</summary>
+        <p className="hint">
+          Procesa solo trabajos en cola ya autorizados: los seleccionados o los
+          de esta página. No añade trabajos nuevos ni repite cargos inciertos.
+          Detener deja los siguientes en cola; «No generar» los cancela y libera
+          su reserva local. No devuelve cargos del proveedor.
+        </p>
+        {batches.map((b) => (
+          <article className="card stack" key={b.id}>
+            <strong>{labels[b.status] ?? "Estado desconocido"}</strong>
+            <span>
+              {b.completed} de {b.total} completados · {b.pending} pendientes ·{" "}
+              {b.running} en curso · {b.cancelled ?? 0} cancelados ·{" "}
+              {b.uncertain ?? 0} inciertos · {b.failed ?? 0} fallidos
+            </span>
+            {b.error && <p role="status">{b.error}</p>}
+            {b.pending > 0 && (
               <button
-                disabled={disabled || busy || b.status === "PAUSING"}
-                onClick={() => void action(() => request(`/${b.id}/pause`, {}))}
-              >
-                Detener después del actual
-              </button>
-              <button
+                className="danger"
                 disabled={disabled || busy}
-                onClick={() =>
-                  void action(async () => {
-                    const result = await request(`/${b.id}/check`, {});
-                    if (result.message) setMessage(result.message);
-                  })
-                }
+                onClick={() => {
+                  if (
+                    confirm(
+                      `¿Cancelar los ${b.pending} trabajos que aún no empezaron en este lote y liberar sus reservas locales? El afiche en curso termina; los cargos inciertos se conservan.`,
+                    )
+                  )
+                    void action(async () => {
+                      const result = await request(
+                        `/${b.id}/cancel-pending`,
+                        {},
+                      );
+                      setMessage(
+                        `${result.cancelled} pendientes cancelados; ${result.running} en curso conservados.`,
+                      );
+                    });
+                }}
               >
-                Comprobar ejecutor
+                No generar los que siguen en cola
               </button>
-            </div>
-          )}
-        </article>
-      ))}
+            )}
+            {active.includes(b.status) && (
+              <div className="row">
+                <button
+                  disabled={disabled || busy || b.status === "PAUSING"}
+                  onClick={() =>
+                    void action(() => request(`/${b.id}/pause`, {}))
+                  }
+                >
+                  Detener después del actual
+                </button>
+                <button
+                  disabled={disabled || busy}
+                  onClick={() =>
+                    void action(async () => {
+                      const result = await request(`/${b.id}/check`, {});
+                      if (result.message) setMessage(result.message);
+                    })
+                  }
+                >
+                  Comprobar ejecutor
+                </button>
+              </div>
+            )}
+          </article>
+        ))}
+      </details>
       {message && <p role="status">{message}</p>}
     </section>
   );

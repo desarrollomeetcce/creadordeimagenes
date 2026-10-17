@@ -82,6 +82,9 @@ export function SearchSelect({
               ? id + "-option-" + visible[active].id
               : undefined
           }
+          onFocus={(e) => {
+            if (browseOnToggle) e.currentTarget.select();
+          }}
           onChange={(e) => {
             setBrowsing(false);
             onChange(e.target.value);

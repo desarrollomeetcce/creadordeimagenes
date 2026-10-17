@@ -25,6 +25,9 @@ model User {
   role Role @default(USER)
   status AccountStatus @default(PENDING)
   createdAt DateTime @default(now())
+  planId String?
+  plan MembershipPlan? @relation(fields:[planId],references:[id])
+  planValidUntil DateTime?
   sessions Session[]
   projects Project[]
   memberships ProjectMember[]
@@ -232,6 +235,7 @@ model UsageLedger {
   usage Json?
   status String @default("RESERVED")
   createdAt DateTime @default(now())
+  @@index([actorId,createdAt], map: "UsageLedger_actorId_createdAt_idx")
   @@index([createdAt,status])
 }
 model AuditEvent {
@@ -426,4 +430,51 @@ model ProviderConnection {
   error String?
   models Json @default("[]")
   updatedAt DateTime @updatedAt
+}
+
+model MembershipPlan {
+  id String @id
+  name String
+  description String @default("")
+  priceCents Int
+  monthlyImages Int?
+  monthlyAIMicros BigInt?
+  isPublic Boolean @default(true)
+  updatedAt DateTime @updatedAt
+  users User[]
+}
+model PaymentConnection {
+ provider String @id
+ encryptedCredentials String
+ maskedCredentials Json
+ merchantId String
+ mode String @default("SANDBOX")
+ currency String @default("USD")
+ exchangeRateMicros BigInt @default(1000000)
+ enabled Boolean @default(false)
+ revision Int @default(1)
+ verifiedRevision Int?
+ verifiedAt DateTime?
+ error String?
+ updatedAt DateTime @updatedAt
+}
+model PlanPurchase {
+ id String @id @default(cuid())
+ userId String
+ planId String
+ planName String
+ provider String
+ connectionRevision Int
+ mode String
+ amountCents Int
+ currency String
+ status String @default("CREATING")
+ externalId String? @unique
+ externalPaymentId String? @unique
+ requestId String @unique
+ checkoutUrl String?
+ error String?
+ createdAt DateTime @default(now())
+ paidAt DateTime?
+ @@index([userId,createdAt])
 }

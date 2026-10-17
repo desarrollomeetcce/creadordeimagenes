@@ -123,3 +123,9 @@ Migraciones014/015 son aditivas: dos campos de control e índice en GenerationJo
 lib/providers implementa OpenAI, Google, fal.ai y Replicate con descubrimiento autenticado y contratos separados. lib/provider-connections administra credenciales OWNER y caducidad de verificación; lib/provider-settings compone la configuración global sin devolver secretos. Dirección creativa puede usar un proveedor distinto del de imágenes. Las conexiones se cifran en servidor y los endpoints no devuelven claves completas.
 
 Los trabajos fijan proveedor/modelos y huellas SHA256 de capacidades, parámetros y versiones. Cambios incompatibles invalidan pendientes antes de llamar a IA. Fal/Replicate utilizan cola/predicción con un POST y seguimiento de estado, sin retry facturable automático; solo CDN oficiales sin autorización reenviada, respuestas acotadas y PNG normalizado. Los costes no informados siguen desconocidos; no hay APIs financieras nuevas inventadas. Consulte docs/AI_PROVIDERS.md para límites y configuración.
+
+## Planes, cuotas y cobro
+
+lib/membership-plans.ts comprueba cuotas en la misma transacción de reservas (bloqueo728291), por autor/mes Lima. No implica que el usuario haya recibido saldo API. Asignación/edición exclusiva OWNER; Ilimitado interno no público. Interfaces en membership-plans.tsx, users-panel.tsx y /plans.
+
+lib/plan-payments.ts implementa checkout Mercado Pago/PayPal con credenciales OWNER cifradas fuera del navegador. Única excepción al control de Origin: endpoints exactos POST de webhooks, que requieren firma de proveedor y consulta autoritativa. Importe/moneda/vendedor/referencia/entorno verificados; ID de pago único y transacción compartida para activación idempotente. No se confía en retorno del navegador ni en importes enviados por cliente. PayPal captura solo por autorización explícita; consulta de estado no captura. Sandbox no activa cuotas reales. Pagos reales y reversos requieren validación operativa de la cuenta.

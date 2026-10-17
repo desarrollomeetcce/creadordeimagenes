@@ -15,3 +15,7 @@
 - Generaciones incluye trabajos propios y COMPLETED compartidos accesibles; gestionar solo autor/OWNER. Costos compartidos respetan el mismo ámbito, nunca referencias privadas de conciliación. Observador sin costos. Gastos diarios del proveedor solo OWNER, separados de ledger y sin repartir agregados entre imágenes.
 
 - Cada ejecutor mantiene leaseToken interno y heartbeatAt. No exponer el token ni recuperar por startedAt si hay actividad vigente. Conservar resultados publicados ante fallo de acuse de COMMIT. Credenciales financieras separadas, con contexto de cifrado propio; nunca sustituir automáticamente la clave de generación.
+
+- Planes: cuotas por autor/mes calendario Lima bajo bloqueo728291. Ilimitado solo interno/OWNER; no aparece ni se compra en catálogo público. Cuentas previas sin plan conservan acceso hasta asignación; no asignar ni cobrar silenciosamente. Reserva/coste desconocido no se presenta como saldo API real.
+- Modelos y límites se guardan independientemente: límites no invalidan credenciales/verificación ni cambian selección. No mezclar ediciones sin guardar.
+- Pagos Mercado Pago/PayPal: credenciales cifradas con contexto separado. Checkout no activa planes por retorno de navegador. Verificar firma/API, importe/moneda/vendedor/referencia/entorno y unicidad del pago antes de activar. Sandbox no concede planes reales. Solo endpoints exactos POST de webhook omiten Origin y exigen autenticación del proveedor. No ejecutar cobros de prueba reales sin autorización específica.

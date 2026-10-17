@@ -87,3 +87,7 @@ Conciliación manual de costes: sin migración adicional. UsageLedger.actualMicr
 ## Migración016 · conexiones independientes
 
 202610170016_provider_connections añade creativeProvider nullable a ProviderConfiguration y ProviderConnection por proveedor con encryptedKey/maskedKey, revision/verifiedRevision, verifiedAt, status/error y catálogo JSON. El backfill conserva cifrado y estado del proveedor global; no descifra credenciales ni crea claves de otros proveedores. Scripts versionados con checksum; aplicada en local/copia y rama conectada, verificando igualdad interna de clave cifrada/modelos sin devolver sus valores.
+
+## Migraciones017/018 · planes y pagos
+
+MembershipPlan con precios en centavos y presupuesto IA en microUSD; null en cuotas significa Ilimitado interno. User.planId/planValidUntil nullable conserva cuentas previas sin asignación. Índice UsageLedger(actorId,createdAt) para cuotas mensuales. PaymentConnection guarda credenciales cifradas por contexto payments:provider:credentials, máscaras, entorno, moneda/tasa, vendedor y revisión/verificación. PlanPurchase fija importe/moneda/plan/proveedor/revisión/entorno, referencias externas únicas, solicitud idempotente y estado/fechas. No contiene secretos de pago. Migraciones versionadas/checksum, aditivas y probadas en copia antes de producción.
