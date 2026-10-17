@@ -163,6 +163,7 @@ export async function variationRoutes(
         requestId: z.uuid(),
         expectedRevision: z.number().int().min(1),
         editKind: z.enum(["background", "full"]).default("full"),
+        designMode:z.enum(["professional","editable"]).default("professional"),
       })
       .parse(await readBody());
     demand(
@@ -227,7 +228,8 @@ export async function variationRoutes(
                 }
               : {
                   sourceVariationId: id,
-                  renderMode: snapshot.renderMode ?? "editable",
+                  renderMode: b.designMode==="editable"?"editable":"flat",
+                  designMode:b.designMode,
                 }),
           },
         },

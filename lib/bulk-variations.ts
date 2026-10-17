@@ -10,6 +10,7 @@ export async function regenerateSelected(
   ids: string[],
   requestId: string,
   prompt: string,
+  designMode:"professional"|"editable"="professional",
 ) {
   const config = await configured(),
     items = [];
@@ -50,7 +51,8 @@ export async function regenerateSelected(
         mode: snapshot.mode ?? "Imagen + Texto",
         index: items.length,
         format: snapshot.format ?? "1:1",
-        renderMode: document ? "editable" : (snapshot.renderMode ?? "flat"),
+        renderMode: designMode==="editable"?"editable":"flat",
+        designMode,
         sourceVariationId: id,
         brand: snapshot.brand ?? null,
         attachmentIds: snapshot.attachmentIds ?? [],

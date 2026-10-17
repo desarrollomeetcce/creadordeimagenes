@@ -74,6 +74,7 @@ const settings = z
       .optional(),
     style: z.string().max(300).optional(),
     editable: z.boolean().optional(),
+    designMode:z.enum(["professional","editable"]).optional(),
   })
   .strict();
 const micros = z
@@ -1447,6 +1448,7 @@ async function handle(
         .object({
           ids: z.array(z.string()).min(1).max(200),
           prompt: z.string().max(12000).default(""),
+          designMode:z.enum(["professional","editable"]).default("professional"),
           requestId: z.uuid(),
           confirmCharge: z.literal(true),
           reviewedInstructions: z.literal(true),
@@ -1454,7 +1456,7 @@ async function handle(
         .parse(await body(req));
       const { regenerateSelected } = await import("@/lib/bulk-variations");
       return send(
-        { jobs: await regenerateSelected(user, b.ids, b.requestId, b.prompt) },
+        { jobs: await regenerateSelected(user, b.ids, b.requestId, b.prompt,b.designMode) },
         202,
       );
     }

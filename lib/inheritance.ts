@@ -71,18 +71,19 @@ export const defaults = {
   imageCount: 0,
   format: "1:1",
   style: "Profesional",
-  editable: true,
+  editable: false,
+  designMode: "professional" as "professional"|"editable",
 };
 export function effectiveSettings(
   category: unknown,
   subproduct: unknown,
   inherit = true,
 ) {
-  return {
-    ...defaults,
-    ...(inherit ? (category as object) : {}),
-    ...(subproduct as object),
-  };
+  const result={...defaults,...(inherit?(category as object):{}),...(subproduct as object)};
+  // Old editable=true was a system default, not an explicit choice of finish.
+  result.designMode=result.designMode==="editable"?"editable":"professional";
+  result.editable=result.designMode==="editable";
+  return result;
 }
 export function validateDistribution(s: typeof defaults) {
   if (!Number.isInteger(s.count) || s.count < 1 || s.count > 12)

@@ -1,3 +1,4 @@
+import { artDirection } from "../lib/art-direction";
 import {
   creativeConnection,
   capabilityFingerprint,
@@ -324,8 +325,8 @@ export async function runOne(filter?: {
         );
       } else output = await adaptImage(result.bytes, s.format);
     } else {
-      const brief = `${s.prompt}\nModalidad: ${s.mode}. Propuesta ${s.index + 1}: composición distinta. Formato ${s.format}. Si es Texto, sin fotografías temáticas.`;
-      if (s.mode !== "Texto")
+      const brief = artDirection(s.prompt,s.mode,s.format,s.index,s.renderMode==="editable");
+      if (s.renderMode !== "editable" || s.mode !== "Texto")
         checkReferences(
           s.renderMode === "editable"
             ? images.filter((_, i) => !/logo/i.test(refs[i].purpose))

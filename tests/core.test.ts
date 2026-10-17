@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { randomBytes } from "node:crypto";
 import { encryptKey, decryptKey, maskKey } from "../lib/crypto";
 import {
+  effectiveSettings,
   resolveInstructions,
   validateDistribution,
   defaults,
@@ -470,3 +471,11 @@ test("un cargo incierto interrumpe la cola y nunca se reintenta al reanudar", as
 test("ofertas por etapas conservan promoción y mensualidad sin exigir un precio único",()=>{const result=resolveInstructions([{name:"Proyecto",prompt:"S/40 por los primeros 3 meses."},{name:"Subproducto",prompt:"Luego S/20 por mes. Mostrar ambos períodos."}]);assert(result.text.includes("S/40"));assert(result.text.includes("S/20"));assert.equal(result.warnings.length,0);const same=resolveInstructions([{name:"Subproducto",prompt:"S/40 por tres meses y luego S/20 mensuales."}]);assert.equal(same.warnings.length,0);assert(same.text.includes("S/40"));assert(same.text.includes("S/20"));});
 
 test("políticas de instrucciones respetan desactivaciones sin borrar texto", async()=>{const {instructionUse}=await import("../lib/instruction-policy");assert.deepEqual(instructionUse({},{},{}),{project:true,product:true,subproduct:true});assert.equal(instructionUse({includeSelf:false},{},{includeProject:true}).project,false);assert.equal(instructionUse({},{includeProject:false},{}).project,false);assert.deepEqual(instructionUse({},{},{includeProject:false,includeProduct:false,includeSelf:false}),{project:false,product:false,subproduct:false});assert.equal(instructionUse({},{},{},false).product,false);});
+
+test("acabado profesional por defecto, incluso para el editable heredado; capas solo al elegirlas",()=>{
+ assert.equal(effectiveSettings({editable:true},{},true).editable,false);
+ assert.equal(effectiveSettings({editable:true},{},true).designMode,"professional");
+ assert.equal(effectiveSettings({designMode:"editable"},{},true).editable,true);
+ assert.equal(effectiveSettings({designMode:"editable"},{designMode:"professional"},true).editable,false);
+ assert.equal(effectiveSettings({designMode:"editable"},{},false).designMode,"professional");
+});

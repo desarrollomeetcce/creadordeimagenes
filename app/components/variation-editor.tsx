@@ -47,6 +47,7 @@ export function VariationEditor({
     [charge, setCharge] = useState(false),
     [kind, setKind] = useState<"background" | "full">("background"),
     [action, setAction] = useState<"edit-ai" | "regenerate">("edit-ai");
+  const [designMode,setDesignMode]=useState<"professional"|"editable">("professional");
   const box = useRef<HTMLDivElement>(null);
   const load = async () => {
     const r = await api("variations/" + id + "/design");
@@ -667,6 +668,7 @@ export function VariationEditor({
               </label>
             )}
           </div>
+          {action==="regenerate"&&<label>Acabado de la nueva variación<select value={designMode} onChange={event=>{setDesignMode(event.target.value as "professional"|"editable");setCharge(false);}}><option value="professional">Profesional · prioridad visual (recomendado)</option><option value="editable">Editable · textos por separado</option></select><small>Profesional crea el afiche completo con IA. Los textos originales forman parte de la imagen; puedes volver a editarla con IA o añadir elementos.</small></label>}
           <p className="notice">
             {action === "regenerate"
               ? "La nueva variación conserva las instrucciones originales. Puedes dejar el campo vacío o añadir una especificación; el original se conserva."
@@ -727,6 +729,7 @@ export function VariationEditor({
                   reviewedInstructions: true,
                   requestId: crypto.randomUUID(),
                   editKind: draft ? kind : "full",
+                  designMode,
                 });
                 setCharge(false);
                 setQueued(true);

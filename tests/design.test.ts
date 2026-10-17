@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import sharp from "sharp";
 import {
+  creativeBrief,
   designSchema,
   planToDesign,
   renderDesign,
@@ -187,4 +188,15 @@ test("paleta de marca: elección automática explícita o colores propios sin in
   assert(custom.includes("Paleta de marca preferida: #123456, #abcdef"));
   assert(!custom.includes("Paleta libre"));
   assert.equal(brandInstructions(null), "");
+});
+
+test("dirección de arte distingue afiche completo, tipografía sin foto y capas sin pedir un fondo genérico",async()=>{
+ const {artDirection}=await import("../lib/art-direction");
+ const prompt="TERAPIA INFANTIL. S/40 por tres meses y luego S/20 mensual.";
+ const professional=artDirection(prompt,"Imagen + Texto","1:1",0);
+ assert(professional.includes(prompt));assert(professional.includes("afiche publicitario terminado"));assert(professional.includes("No generes solamente un fondo"));assert(professional.includes("titulares grandes y contundentes"));assert(professional.includes("columnas o módulos legibles"));assert(professional.includes("No traslades la palabra GRATIS"));
+ const text=artDirection(prompt,"Texto","4:5",1);assert(text.includes("sin fotografías temáticas"));assert(text.includes("afiche tipográfico de diseño"));
+ const image=artDirection(prompt,"Imagen","1:1",2);assert(image.includes("sin titulares, precios ni bloques de texto"));
+ assert.notEqual(professional,artDirection(prompt,"Imagen + Texto","1:1",1));
+ const layered=creativeBrief(artDirection(prompt,"Imagen + Texto","1:1",0,true),"1:1",[]);assert(layered.includes("no copies sus coordenadas ni color"));assert(layered.includes("sin dibujar letras ni logos"));
 });

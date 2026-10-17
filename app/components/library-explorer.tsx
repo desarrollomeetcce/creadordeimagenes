@@ -14,6 +14,7 @@ import {
 } from "./folder-navigation";
 import { SearchSelect } from "./search-select";
 import { useCanEdit } from "./role-guide";
+import { ImagePreviewModal } from "./image-preview-modal";
 import { ImageEditorModal } from "./image-editor-modal";
 import {
   OrderProgressCard,
@@ -68,6 +69,11 @@ async function api(path: string, method = "GET", body?: unknown) {
 }
 export function Library() {
   const [editing, setEditing] = useState<string | null>(null);
+  const [preview, setPreview] = useState<{
+    id: string;
+    name: string;
+    revision: number;
+  } | null>(null);
   const canEdit = useCanEdit(),
     [hierarchy, setHierarchy] = useState<HierarchyValue>(hierarchyFromLocation),
     [folder, setFolder] = useState(() =>
@@ -287,6 +293,14 @@ export function Library() {
   };
   return (
     <section className="stack library-explorer">
+      {preview && (
+        <ImagePreviewModal
+          id={preview.id}
+          name={preview.name}
+          revision={preview.revision}
+          onClose={() => setPreview(null)}
+        />
+      )}
       {editing && (
         <ImageEditorModal
           id={editing}
@@ -317,13 +331,54 @@ export function Library() {
           <div className="explorer-tools stack">
             <HierarchyFilters
               dateSummary={
-                <div className="period-summary" role="status" aria-live="polite" aria-busy={refreshing}>
+                <div
+                  className="period-summary"
+                  role="status"
+                  aria-live="polite"
+                  aria-busy={refreshing}
+                >
                   <div className="period-summary-counts">
-                    <span><strong>{refreshing ? "…" : (data?.counts.COMPLETED ?? 0).toLocaleString("es-PE")}</strong> {data?.counts.COMPLETED === 1 ? "flyer generado" : "flyers generados"}</span>
-                    <span><strong>{refreshing ? "…" : (data?.counts.PENDING ?? 0).toLocaleString("es-PE")}</strong> pendientes</span>
-                    <span><strong>{refreshing ? "…" : (data?.counts.RUNNING ?? 0).toLocaleString("es-PE")}</strong> generando</span>
+                    <span>
+                      <strong>
+                        {refreshing
+                          ? "…"
+                          : (data?.counts.COMPLETED ?? 0).toLocaleString(
+                              "es-PE",
+                            )}
+                      </strong>{" "}
+                      {data?.counts.COMPLETED === 1
+                        ? "flyer generado"
+                        : "flyers generados"}
+                    </span>
+                    <span>
+                      <strong>
+                        {refreshing
+                          ? "…"
+                          : (data?.counts.PENDING ?? 0).toLocaleString("es-PE")}
+                      </strong>{" "}
+                      pendientes
+                    </span>
+                    <span>
+                      <strong>
+                        {refreshing
+                          ? "…"
+                          : (data?.counts.RUNNING ?? 0).toLocaleString("es-PE")}
+                      </strong>{" "}
+                      generando
+                    </span>
                   </div>
-                  <small>{hierarchy.from || hierarchy.to ? "En el período elegido" : "En todas las fechas"} · solo recursos a los que tienes acceso{hierarchy.project || hierarchy.product || hierarchy.subproduct ? " en esta selección" : ""}. Incluye todas las páginas.</small>
+                  <small>
+                    {hierarchy.from || hierarchy.to
+                      ? "En el período elegido"
+                      : "En todas las fechas"}{" "}
+                    · solo recursos a los que tienes acceso
+                    {hierarchy.project ||
+                    hierarchy.product ||
+                    hierarchy.subproduct
+                      ? " en esta selección"
+                      : ""}
+                    . Incluye todas las páginas.
+                  </small>
                 </div>
               }
               value={hierarchy}
@@ -723,16 +778,41 @@ export function Library() {
                   />
                   Seleccionar
                 </label>
-                <img
-                  loading="lazy"
-                  src={
-                    "/api/variations/" +
-                    i.id +
-                    "?thumbnail=true&v=" +
-                    i.revision
+                <button
+                  type="button"
+                  className="image-preview-trigger"
+                  aria-label={`Ampliar imagen · ${i.subproduct?.name ?? "Prueba de IA"}`}
+                  onClick={() =>
+                    setPreview({
+                      id: i.id,
+                      name: i.subproduct?.name ?? "Prueba de IA",
+                      revision: i.revision,
+                    })
                   }
-                  alt={i.subproduct?.name ?? "Prueba de IA"}
-                />
+                >
+                  <img
+                    loading="lazy"
+                    src={
+                      "/api/variations/" +
+                      i.id +
+                      "?thumbnail=true&v=" +
+                      i.revision
+                    }
+                    alt={i.subproduct?.name ?? "Prueba de IA"}
+                  />
+                </button>
+                <button
+                  type="button"
+                  onClick={() =>
+                    setPreview({
+                      id: i.id,
+                      name: i.subproduct?.name ?? "Prueba de IA",
+                      revision: i.revision,
+                    })
+                  }
+                >
+                  Ampliar imagen
+                </button>
                 <strong>{i.subproduct?.name ?? "Prueba de IA"}</strong>
                 {i.canApprove && i.reviewStatus !== "APPROVED" && (
                   <button
@@ -847,8 +927,9 @@ export function Library() {
             !data.items.length &&
             !data.documents.length && (
               <p className="empty">
-                No hay imágenes ni archivos con estos filtros. Revisa las órdenes
-                de esta carpeta o crea una carpeta personal para añadir archivos.
+                No hay imágenes ni archivos con estos filtros. Revisa las
+                órdenes de esta carpeta o crea una carpeta personal para añadir
+                archivos.
               </p>
             )}
           {data && (

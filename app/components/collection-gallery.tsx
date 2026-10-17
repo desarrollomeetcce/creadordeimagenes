@@ -2,6 +2,7 @@
 import { useEffect, useState } from "react";
 import { galleryKey, readGallery, saveGallery } from "./gallery-session";
 import { HierarchyBreadcrumbs } from "./breadcrumbs";
+import { ImagePreviewModal } from "./image-preview-modal";
 import { VariationEditor } from "./variation-editor";
 type Scope = "project" | "category";
 type Item = {
@@ -317,33 +318,21 @@ export function CollectionGallery({
         </section>
       )}
       {preview && current >= 0 && (
-        <section className="panel stack">
-          <h2>
-            Vista ampliada · {data!.items[current].subproduct?.name ?? "Afiche"}
-          </h2>
-          <img
-            src={`/api/variations/${preview}`}
-            alt="Vista ampliada del afiche"
-            style={{ width: "100%", maxHeight: "80vh", objectFit: "contain" }}
-          />
-          <div className="row">
-            <button
-              disabled={current <= 0}
-              onClick={() => setPreview(data!.items[current - 1].id)}
-            >
-              Anterior
-            </button>
-            <button
-              disabled={current >= data!.items.length - 1}
-              onClick={() => setPreview(data!.items[current + 1].id)}
-            >
-              Siguiente
-            </button>
-            <button onClick={() => setPreview(null)}>
-              Cerrar vista ampliada
-            </button>
-          </div>
-        </section>
+        <ImagePreviewModal
+          id={preview}
+          onPrevious={
+            current > 0
+              ? () => setPreview(data!.items[current - 1].id)
+              : undefined
+          }
+          onNext={
+            current < data!.items.length - 1
+              ? () => setPreview(data!.items[current + 1].id)
+              : undefined
+          }
+          name={data!.items[current].subproduct?.name ?? "Afiche"}
+          onClose={() => setPreview(null)}
+        />
       )}
       {loading && <p role="status">Cargando afiches…</p>}
       {message && (

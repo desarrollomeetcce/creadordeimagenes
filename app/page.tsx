@@ -65,6 +65,7 @@ type Settings = {
   format: string;
   style: string;
   editable: boolean;
+  designMode?:"professional"|"editable";
 };
 type Item = {
   id: string;
@@ -99,7 +100,8 @@ const base: Settings = {
   imageCount: 0,
   format: "1:1",
   style: "Profesional",
-  editable: true,
+  editable: false,
+  designMode:"professional",
 };
 async function api<T = any>(
   path: string,
@@ -1126,7 +1128,7 @@ function SettingsFields({
       <div className="fields">
         {[
           ["count", "Variaciones", 1, 12],
-          ["textCount", "Texto", 0, 12],
+          ["textCount", "Texto · sin fotografía", 0, 12],
           ["imageTextCount", "Imagen + Texto", 0, 12],
           ["imageCount", "Imagen", 0, 12],
         ].map(([k, l, min, max]) => (
@@ -1188,14 +1190,8 @@ function SettingsFields({
           </datalist>
         </label>
       </div>
-      <label className="row">
-        <input
-          type="checkbox"
-          checked={s.editable}
-          onChange={(e) => onChange({ ...s, editable: e.target.checked })}
-        />
-        Conservar títulos, textos y logos como elementos editables
-      </label>
+      <label>Acabado del afiche<select value={s.designMode??"professional"} onChange={event=>onChange({...s,designMode:event.target.value as "professional"|"editable",editable:event.target.value==="editable"})}><option value="professional">Profesional · prioridad visual (recomendado)</option><option value="editable">Editable · textos y logos por separado</option></select></label>
+      <p className="hint">Profesional: la IA diseña el afiche completo; luego puedes editarlo con IA o añadir elementos. Sus textos originales forman parte de la imagen. Editable: fondo y textos en capas para moverlos por separado. Ninguna opción inicia IA al seleccionarla.</p>
       <small>
         {s.textCount + s.imageTextCount + s.imageCount} de {s.count}{" "}
         configuradas. La suma debe coincidir.
@@ -1809,6 +1805,7 @@ function SubproductRow({
           {!preview&&<p role="status">Preparando la revisión…</p>}
           {preview && <div className="inside panel">
             <h3>Revisa antes de generar · {name}</h3>
+            <p className="quick-start-guide">{preview.settings?.designMode==="editable"?"Acabado editable: fondo visual y textos por separado.":"Acabado profesional: la IA diseña el afiche completo, priorizando la composición visual."}</p>
             {sourceDirty&&<p className="notice">Hay cambios en el formulario. <button type="button" disabled={t.busy} onClick={loadReview}>Actualizar revisión</button></p>}
             <ReviewInstructions key={reviewVersion} id={sub.id} beforeReload={save} onDirty={()=>{setReviewDirty(true);setReview(false);setCharge(false);}} onSaved={async data=>{const own=data.layers.find(layer=>layer.scope==="subproduct");if(own?.prompt!==null&&own){setPrompt(own.prompt);setPolicy(own.policy);}setPreview(await api("subproducts/"+sub.id+"/instructions"));setReviewDirty(false);setSourceDirty(false);setReview(false);setCharge(false);await onReviewSaved?.();}} />
             <pre>{preview.text}</pre>

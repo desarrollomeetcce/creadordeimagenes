@@ -143,7 +143,8 @@ export async function generateBatch(
           mode,
           index,
           format: s.format,
-          renderMode: s.editable ? "editable" : "flat",
+          renderMode: s.designMode === "editable" ? "editable" : "flat",
+          designMode:s.designMode,
           brand: p.brand,
           attachmentIds: p.attachments
             .filter((a) => a.mime.startsWith("image/"))
