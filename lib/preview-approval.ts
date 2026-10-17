@@ -112,12 +112,14 @@ export async function approveJob(
 export async function nextRunnableId(filter?: {
   id?: string;
   actorId?: string;
+  excludeOrders?: boolean;
 }) {
   const { Prisma } = await import("@prisma/client");
   const rows = await db.$queryRaw<{ id: string }[]>(Prisma.sql`
  SELECT j.id FROM "GenerationJob" j WHERE j.status='PENDING'
  AND (${filter?.id ?? null}::text IS NULL OR j.id=${filter?.id ?? null})
  AND (${filter?.actorId ?? null}::text IS NULL OR j."actorId"=${filter?.actorId ?? null})
+ AND (${filter?.excludeOrders ?? false}=false OR NOT (j.snapshot ? 'orderId'))
  AND (j.snapshot->>'previewFirst' IS DISTINCT FROM 'true' OR j.snapshot->>'index'='0' OR EXISTS (
  SELECT 1 FROM "GenerationJob" f JOIN "Variation" v ON v."jobId"=f.id
  WHERE f."actorId"=j."actorId" AND f.snapshot->>'previewFirst'='true'

@@ -6,8 +6,13 @@ import {
   useProductionController,
   type ExecutionMode,
 } from "./production-controls";
+import { orderRequest, driveOrder } from "./order-progress";
 import type { Design } from "@/lib/design";
 type EditorData = {
+  jobId: string;
+  orderId: string | null;
+  orderMode: string | null;
+  canApprove: boolean;
   revision: number;
   document: Design | null;
   hasBackground: boolean;
@@ -52,9 +57,10 @@ export function VariationEditor({
     setSelected(r.document?.layers[0]?.id ?? "");
     setCharge(false);
   };
-  const [executionMode, setExecutionMode] = useState<ExecutionMode>("queue");
+  const [executionMode, setExecutionMode] =
+    useState<ExecutionMode>("background");
   const [queued, setQueued] = useState(false);
-  const production = useProductionController(load);
+  const production = useProductionController();
   const run = async (
     fn: () => Promise<unknown>,
     success = "Cambios guardados",
@@ -113,7 +119,27 @@ export function VariationEditor({
             anteriores se conservan.
           </p>
         </div>
-        <button onClick={onClose}>Cerrar editor</button>
+        <div className="row">
+          <button
+            type="button"
+            className="danger"
+            disabled={busy}
+            onClick={() => {
+              if (
+                confirm(
+                  "¿Enviar esta imagen a la papelera? Se conserva el historial y no se devuelve el gasto de IA.",
+                )
+              )
+                void run(async () => {
+                  await api(`variations/${id}`, "DELETE");
+                  onClose();
+                }, "Imagen enviada a la papelera.");
+            }}
+          >
+            Eliminar imagen
+          </button>
+          <button onClick={onClose}>Cerrar editor</button>
+        </div>
       </div>
       {draft ? (
         <div className="editor-grid">
@@ -143,7 +169,7 @@ export function VariationEditor({
                   0,
                   Math.min(
                     draft.height -
-                      (active.type === "logo"
+                      (active.type !== "text"
                         ? active.height
                         : active.fontSize),
                     Math.round(
@@ -179,7 +205,9 @@ export function VariationEditor({
                 tabIndex={0}
                 aria-label={"Seleccionar " + l.id}
                 className={
-                  "editor-layer " + (selected === l.id ? "selected" : "")
+                  "editor-layer " +
+                  (l.type === "shape" ? "shape " : "") +
+                  (selected === l.id ? "selected" : "")
                 }
                 style={{
                   left: (l.x / draft.width) * 100 + "%",
@@ -193,7 +221,15 @@ export function VariationEditor({
                         textAlign: l.align,
                         whiteSpace: "pre-wrap",
                       }
-                    : { height: (l.height / draft.height) * 100 + "%" }),
+                    : {
+                        height: (l.height / draft.height) * 100 + "%",
+                        ...(l.type === "shape"
+                          ? {
+                              background: l.color,
+                              borderRadius: l.kind === "ellipse" ? "50%" : "0",
+                            }
+                          : {}),
+                      }),
                 }}
                 onKeyDown={(e) => {
                   if (e.key === "Enter") setSelected(l.id);
@@ -215,17 +251,72 @@ export function VariationEditor({
               >
                 {l.type === "text" ? (
                   l.text
-                ) : (
+                ) : l.type === "logo" ? (
                   <img
                     src={`/api/variations/${id}/logos/${l.attachmentId}`}
                     alt="Logo autorizado"
                     draggable={false}
                   />
-                )}
+                ) : null}
               </div>
             ))}
           </div>
           <div className="stack">
+            <div className="editor-add-actions">
+              <button
+                type="button"
+                disabled={busy || draft.layers.length >= 40}
+                onClick={() => {
+                  const layer = {
+                    id: crypto.randomUUID(),
+                    type: "text" as const,
+                    x: 30,
+                    y: 30,
+                    width: Math.min(600, draft.width - 60),
+                    text: "Nuevo texto",
+                    fontSize: 32,
+                    color: "#123456",
+                    font: "DejaVu Sans" as const,
+                    align: "left" as const,
+                  };
+                  edit({ ...draft, layers: [...draft.layers, layer] });
+                  setSelected(layer.id);
+                }}
+              >
+                ＋ Texto
+              </button>
+              <button
+                type="button"
+                disabled={busy || draft.layers.length >= 40}
+                onClick={() => {
+                  const layer = {
+                    id: crypto.randomUUID(),
+                    type: "shape" as const,
+                    kind: "rectangle" as const,
+                    x: 30,
+                    y: 30,
+                    width: Math.min(240, draft.width - 60),
+                    height: 100,
+                    color: "#ffffff",
+                  };
+                  edit({ ...draft, layers: [...draft.layers, layer] });
+                  setSelected(layer.id);
+                }}
+              >
+                ＋ Forma
+              </button>
+              <button
+                type="button"
+                disabled={busy || !layer}
+                onClick={() => {
+                  const layers = draft.layers.filter((l) => l.id !== selected);
+                  edit({ ...draft, layers });
+                  setSelected(layers[0]?.id ?? "");
+                }}
+              >
+                Eliminar elemento
+              </button>
+            </div>
             <label>
               Elemento
               <select
@@ -324,7 +415,9 @@ export function VariationEditor({
                   </>
                 ) : (
                   <label>
-                    Alto del área del logo
+                    {layer.type === "shape"
+                      ? "Alto de la forma"
+                      : "Alto del área del logo"}
                     <input
                       type="number"
                       min={20}
@@ -337,6 +430,60 @@ export function VariationEditor({
                   </label>
                 )}
               </>
+            )}
+            {layer?.type === "shape" && (
+              <div className="fields">
+                <label>
+                  Color de la forma
+                  <input
+                    type="color"
+                    value={layer.color}
+                    onChange={(e) => change({ color: e.target.value })}
+                  />
+                </label>
+                <label>
+                  Forma
+                  <select
+                    value={layer.kind}
+                    onChange={(e) => change({ kind: e.target.value })}
+                  >
+                    <option value="rectangle">Rectángulo</option>
+                    <option value="ellipse">Elipse</option>
+                  </select>
+                </label>
+              </div>
+            )}
+            {layer && (
+              <div className="editor-add-actions">
+                <button
+                  type="button"
+                  onClick={() =>
+                    edit({
+                      ...draft,
+                      layers: [
+                        ...draft.layers.filter((l) => l.id !== selected),
+                        layer,
+                      ],
+                    })
+                  }
+                >
+                  Traer delante
+                </button>
+                <button
+                  type="button"
+                  onClick={() =>
+                    edit({
+                      ...draft,
+                      layers: [
+                        layer,
+                        ...draft.layers.filter((l) => l.id !== selected),
+                      ],
+                    })
+                  }
+                >
+                  Enviar detrás
+                </button>
+              </div>
             )}
             <div className="row">
               <button
@@ -376,6 +523,33 @@ export function VariationEditor({
               >
                 Guardar versión
               </button>
+              {data.canApprove && (
+                <button
+                  type="button"
+                  className="primary"
+                  disabled={busy}
+                  onClick={() =>
+                    void run(async () => {
+                      await api(`variations/${id}/manual`, "POST", {
+                        expectedRevision: data.revision,
+                        document: draft,
+                      });
+                      if (data.orderId) {
+                        await orderRequest(`/${data.orderId}/approve`, {
+                          jobId: data.jobId,
+                        });
+                        if (data.orderMode === "immediate")
+                          void driveOrder(data.orderId, async () => {}).catch(
+                            (e) => setMessage(e.message),
+                          );
+                      } else await api(`jobs/${data.jobId}/approve`, "POST");
+                      await load();
+                    }, "Cambios guardados e imagen aprobada.")
+                  }
+                >
+                  Guardar y aprobar
+                </button>
+              )}
             </div>
             <p className="hint">
               Arrastra los elementos para moverlos. La vista es orientativa; el
@@ -385,10 +559,33 @@ export function VariationEditor({
           </div>
         </div>
       ) : (
-        <div className="notice">
-          Esta versión es una imagen aplanada. Sus textos no se pueden mover
-          individualmente. Puedes editarla con IA o regenerarla en modo
-          editable.
+        <div className="stack">
+          <img
+            className="flat-image-preview"
+            src={`/api/variations/${id}?thumbnail=true`}
+            alt="Imagen que estás editando"
+          />
+          <p className="notice">
+            Puedes añadir textos y formas editables encima de esta imagen, sin
+            usar IA. Los textos que ya forman parte de la fotografía no son
+            capas separadas; para cambiarlos puedes cubrirlos y añadir texto
+            nuevo, o usar la edición con IA.
+          </p>
+          <button
+            type="button"
+            className="primary"
+            disabled={busy}
+            onClick={() =>
+              void run(async () => {
+                await api(`variations/${id}/enable-layers`, "POST", {
+                  expectedRevision: data.revision,
+                });
+                await load();
+              }, "Editor listo: añade texto o formas encima del original.")
+            }
+          >
+            Añadir textos y objetos · sin IA
+          </button>
         </div>
       )}
       <details>
@@ -534,7 +731,7 @@ export function VariationEditor({
                 setCharge(false);
                 setQueued(true);
                 await production.start(result.jobs, executionMode);
-              }, "Operación registrada solo para esta imagen. Revisa el resultado en Biblioteca → Producción.")
+              }, "Operación registrada solo para esta imagen. Revisa el resultado en Biblioteca.")
             }
           >
             Autorizar IA solo para esta imagen
@@ -555,7 +752,7 @@ export function VariationEditor({
             return "?" + p;
           })()}
         >
-          Revisar resultado en Producción ↗
+          Revisar resultado en Biblioteca ↗
         </a>
       )}
       <div className="row">

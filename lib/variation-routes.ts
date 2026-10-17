@@ -79,6 +79,13 @@ export async function variationRoutes(
     const current = versions.find((x) => x.number === v.revision);
     return send({
       id,
+      jobId: v.job.id,
+      orderId: (v.job.snapshot as Record<string, unknown>).orderId ?? null,
+      orderMode:
+        (v.job.snapshot as Record<string, unknown>).executionMode ?? null,
+      canApprove:
+        user.role !== "OBSERVER" &&
+        (user.role === "OWNER" || v.job.actorId === user.id),
       revision: v.revision,
       reviewStatus: v.reviewStatus,
       document: current?.document ?? null,
@@ -118,6 +125,16 @@ export async function variationRoutes(
         "Cache-Control": "private, no-store",
       },
     });
+  }
+  if (action === "enable-layers" && method === "POST") {
+    const b = z
+      .object({ expectedRevision: z.number().int().min(1) })
+      .parse(await readBody());
+    return send(
+      await (
+        await import("./versions")
+      ).enableOverlay(user, id, b.expectedRevision),
+    );
   }
   if (action === "manual" && method === "POST") {
     const b = z

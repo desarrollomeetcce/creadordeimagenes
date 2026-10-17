@@ -14,21 +14,39 @@ import {
 } from "./folder-navigation";
 import { SearchSelect } from "./search-select";
 import { useCanEdit } from "./role-guide";
-import { VariationEditor } from "./variation-editor";
+import { ImageEditorModal } from "./image-editor-modal";
+import {
+  OrderProgressCard,
+  orderRequest,
+  driveOrder,
+  type OrderProgress,
+} from "./order-progress";
+import { usdMicros } from "../../lib/usage-format";
+import { costLink } from "./hierarchy-filters";
 import { downloadArchive } from "./collection-gallery";
 type Item = {
   canEdit: boolean;
+  canApprove: boolean;
+  actualMicros?: string | null;
+  job: { id: string };
   id: string;
+  revision: number;
   createdAt: string;
   reviewStatus: string;
   model: string;
   subproduct: {
+    id: string;
     name: string;
-    category: { name: string; project: { name: string } };
+    category: {
+      id: string;
+      name: string;
+      project: { id: string; name: string };
+    };
   } | null;
 };
 type Doc = { id: string; name: string; size: number; mime: string };
 type Data = {
+  orders: OrderProgress[];
   tree: FolderNode[];
   items: Item[];
   documents: Doc[];
@@ -63,6 +81,10 @@ export function Library() {
     [page, setPage] = useState(1),
     [limit, setLimit] = useState("25"),
     [size, setSize] = useState("medium"),
+    [format, setFormat] = useState<"png" | "jpg">("png"),
+    [review, setReview] = useState("all"),
+    [sort, setSort] = useState("newest"),
+    [kind, setKind] = useState("all"),
     [busy, setBusy] = useState(false),
     [error, setError] = useState(""),
     [message, setMessage] = useState("");
@@ -80,6 +102,9 @@ export function Library() {
     folder,
     page: String(page),
     limit,
+    review,
+    order: sort,
+    kind,
   }).toString();
   const refresh = useCallback(async () => {
     const seq = ++revision.current;
@@ -106,12 +131,15 @@ export function Library() {
     };
     const timer = setInterval(() => {
       if (
-        (latest.current?.counts.PENDING ?? 0) +
-          (latest.current?.counts.RUNNING ?? 0) >
-        0
+        (latest.current?.orders ?? []).some(
+          (o) =>
+            ["QUEUED", "STARTING", "ACTIVE"].includes(o.status) ||
+            o.running > 0,
+        ) ||
+        (latest.current?.counts.RUNNING ?? 0) > 0
       )
         load();
-    }, 10000);
+    }, 5000);
     window.addEventListener("focus", load);
     const channel = new BroadcastChannel("studio-updates");
     channel.onmessage = load;
@@ -253,38 +281,24 @@ export function Library() {
     const b = await r.json();
     if (!r.ok) throw Error(b.error);
   };
-  const total = Object.values(data?.counts ?? {}).reduce((a, b) => a + b, 0),
-    completed = data?.counts.COMPLETED ?? 0;
-  if (editing)
-    return (
-      <section className="stack">
-        <button
-          type="button"
-          onClick={() => {
-            setEditing(null);
-            void refresh();
-          }}
-        >
-          ← Volver a Biblioteca
-        </button>
-        <VariationEditor
-          key={editing}
+  return (
+    <section className="stack library-explorer">
+      {editing && (
+        <ImageEditorModal
           id={editing}
           onClose={() => {
             setEditing(null);
             void refresh();
           }}
         />
-      </section>
-    );
-  return (
-    <section className="stack library-explorer">
+      )}
       <div className="heading">
         <div>
-          <h2>Afiches y archivos</h2>
+          <h1>Biblioteca</h1>
           <p className="muted">
-            Afiches aprobados y archivos que conservas. Las carpetas organizan
-            referencias, sin duplicar imágenes.
+            Imágenes, revisión y archivos en sus carpetas. Envía las órdenes
+            desde el producto, subproducto o Pruebas; aquí revisas sus
+            resultados y controlas su avance.
           </p>
         </div>
       </div>
@@ -307,13 +321,97 @@ export function Library() {
               }}
             />
             <div className="explorer-toolbar">
+              <details className="other-filters">
+                <summary>Otros filtros</summary>
+                <div className="toolbar-popover stack">
+                  <label>
+                    Estado
+                    <select
+                      value={review}
+                      onChange={(e) => {
+                        setReview(e.target.value);
+                        setPage(1);
+                        setSelected([]);
+                      }}
+                    >
+                      <option value="all">Todos</option>
+                      <option value="approved">Aprobadas</option>
+                      <option value="pending">Por aprobar</option>
+                    </select>
+                  </label>
+                  <label>
+                    Ordenar
+                    <select
+                      value={sort}
+                      onChange={(e) => {
+                        setSort(e.target.value);
+                        setPage(1);
+                      }}
+                    >
+                      <option value="newest">Más recientes primero</option>
+                      <option value="oldest">Más antiguas primero</option>
+                    </select>
+                  </label>
+                  <label>
+                    Mostrar
+                    <select
+                      value={kind}
+                      onChange={(e) => {
+                        setKind(e.target.value);
+                        setPage(1);
+                        setSelected([]);
+                      }}
+                    >
+                      <option value="all">Imágenes y archivos</option>
+                      <option value="images">Solo imágenes</option>
+                      <option value="documents">Solo archivos</option>
+                    </select>
+                  </label>
+                  <button type="button" onClick={() => void refresh()}>
+                    Actualizar
+                  </button>
+                </div>
+              </details>
               <details>
-                <summary>
-                  Filtro de acciones · {selected.length} seleccionados
-                </summary>
+                <summary>Seleccionar · {selected.length} seleccionados</summary>
                 <div className="toolbar-popover stack">
                   <button type="button" onClick={chooseAll}>
                     Seleccionar esta página
+                  </button>
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() =>
+                      void (async () => {
+                        setBusy(true);
+                        setError("");
+                        try {
+                          const all: string[] = [];
+                          for (let page = 1; page <= 2; page++) {
+                            const p = new URLSearchParams(params);
+                            p.set("limit", "100");
+                            p.set("page", String(page));
+                            const batch: Data = await api("explorer?" + p);
+                            all.push(
+                              ...batch.items.map((v) => "v:" + v.id),
+                              ...batch.documents.map((d) => "d:" + d.id),
+                            );
+                            if (page >= batch.pages) break;
+                          }
+                          setSelected([...new Set(all)].slice(0, 200));
+                        } catch (e) {
+                          setError(
+                            e instanceof Error
+                              ? e.message
+                              : "No se pudo seleccionar.",
+                          );
+                        } finally {
+                          setBusy(false);
+                        }
+                      })()
+                    }
+                  >
+                    Seleccionar todo · máximo 200
                   </button>
                   <button type="button" onClick={() => setSelected([])}>
                     Limpiar selección
@@ -336,72 +434,10 @@ export function Library() {
                       </button>
                     </>
                   )}
-                  <button
-                    type="button"
-                    disabled={!chosenImages.length || busy}
-                    onClick={() =>
-                      void action(
-                        () =>
-                          downloadArchive({ ids: chosenImages, format: "png" }),
-                        "Descarga preparada.",
-                      )
-                    }
-                  >
-                    Descargar seleccionados PNG
-                  </button>
-                  <button
-                    type="button"
-                    disabled={!chosenImages.length || busy}
-                    onClick={() =>
-                      void action(
-                        () =>
-                          downloadArchive({ ids: chosenImages, format: "jpg" }),
-                        "Descarga preparada.",
-                      )
-                    }
-                  >
-                    Descargar seleccionados JPG
-                  </button>
                 </div>
               </details>
-              {canEdit && (
-                <button
-                  type="button"
-                  disabled={busy}
-                  onClick={() => {
-                    const name = prompt("Nombre de la nueva carpeta");
-                    if (name)
-                      void action(
-                        () =>
-                          api("folder-actions", "POST", {
-                            action: "create",
-                            name,
-                            destination: folder || null,
-                          }),
-                        "Carpeta creada.",
-                      );
-                  }}
-                >
-                  ＋ Nueva carpeta
-                </button>
-              )}
-              {canEdit && (!folder || folder.startsWith("folder:")) && (
-                <label className="button upload-document">
-                  Añadir archivo
-                  <input
-                    type="file"
-                    accept=".pdf,.txt,.csv,.docx,.png,.jpg,.jpeg,.webp"
-                    disabled={busy}
-                    onChange={(e) => {
-                      const f = e.target.files?.[0];
-                      if (f) void action(() => upload(f), "Archivo guardado.");
-                      e.target.value = "";
-                    }}
-                  />
-                </label>
-              )}
               <label>
-                Por página
+                Ver
                 <select
                   value={limit}
                   onChange={(e) => {
@@ -415,26 +451,104 @@ export function Library() {
                 </select>
               </label>
               <label>
-                Miniaturas
+                Tamaño
                 <select value={size} onChange={(e) => setSize(e.target.value)}>
                   <option value="small">Pequeñas</option>
                   <option value="medium">Medianas</option>
                   <option value="large">Grandes</option>
                 </select>
               </label>
+              <label>
+                Formato
+                <select
+                  value={format}
+                  onChange={(e) => setFormat(e.target.value as "png" | "jpg")}
+                >
+                  <option value="png">PNG</option>
+                  <option value="jpg">JPG</option>
+                </select>
+              </label>
+              <button
+                type="button"
+                disabled={!chosenImages.length || busy}
+                onClick={() =>
+                  void action(
+                    () => downloadArchive({ ids: chosenImages, format }),
+                    "Descarga preparada.",
+                  )
+                }
+              >
+                Descargar ({chosenImages.length})
+              </button>
+              {canEdit && (
+                <button
+                  type="button"
+                  className="danger"
+                  disabled={!selected.length || busy}
+                  onClick={removeSelection}
+                >
+                  Eliminar
+                </button>
+              )}
             </div>
           </div>
-          {!!total && (
-            <p className="production-progress" role="status">
-              Producción de este ámbito:{" "}
-              <strong>
-                {completed} de {total} completadas
-              </strong>{" "}
-              · {data?.counts.RUNNING ?? 0} generándose ·{" "}
-              {data?.counts.PENDING ?? 0} pendientes. Se actualiza con los
-              mismos trabajos de Generaciones.
-            </p>
-          )}
+          <div className="row library-folder-tools">
+            {" "}
+            {canEdit && (
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => {
+                  const name = prompt("Nombre de la nueva carpeta");
+                  if (name)
+                    void action(
+                      () =>
+                        api("folder-actions", "POST", {
+                          action: "create",
+                          name,
+                          destination: folder || null,
+                        }),
+                      "Carpeta creada.",
+                    );
+                }}
+              >
+                ＋ Nueva carpeta
+              </button>
+            )}
+            {canEdit && (!folder || folder.startsWith("folder:")) && (
+              <label className="button upload-document">
+                Añadir archivo
+                <input
+                  type="file"
+                  accept=".pdf,.txt,.csv,.docx,.png,.jpg,.jpeg,.webp"
+                  disabled={busy}
+                  onChange={(e) => {
+                    const f = e.target.files?.[0];
+                    if (f) void action(() => upload(f), "Archivo guardado.");
+                    e.target.value = "";
+                  }}
+                />
+              </label>
+            )}
+          </div>
+          {(data?.orders?.length ?? 0) > 0 &&
+          (folder ||
+            hierarchy.project ||
+            hierarchy.product ||
+            hierarchy.subproduct) ? (
+            <aside
+              className="folder-orders"
+              aria-label="Órdenes de esta carpeta"
+            >
+              {data?.orders.map((order) => (
+                <OrderProgressCard
+                  key={order.id}
+                  order={order}
+                  refresh={refresh}
+                />
+              ))}
+            </aside>
+          ) : null}
           {error && (
             <p role="alert" className="notice error">
               {error}
@@ -528,6 +642,26 @@ export function Library() {
                   <span aria-hidden="true">📁</span>
                   <strong>{f.name}</strong>
                 </button>
+                {(() => {
+                  const order = data?.orders?.find((o) =>
+                    f.kind === "subproduct"
+                      ? o.scope?.subproduct === f.id.slice(11)
+                      : f.kind === "tests" && o.scope?.project === "none",
+                  );
+                  return order ? (
+                    <small className="folder-order-count">
+                      {order.completed}/{order.target} ·{" "}
+                      {order.status === "PAUSED"
+                        ? "Pausada"
+                        : order.status === "STOPPED"
+                          ? "Detenida"
+                          : order.status === "ACCEPTED" ||
+                              order.status === "COMPLETED"
+                            ? "Completada"
+                            : "En curso"}
+                    </small>
+                  ) : null;
+                })()}
                 <small>
                   {f.kind === "folder"
                     ? "Carpeta personal"
@@ -577,10 +711,47 @@ export function Library() {
                 </label>
                 <img
                   loading="lazy"
-                  src={"/api/variations/" + i.id + "?thumbnail=true"}
+                  src={
+                    "/api/variations/" +
+                    i.id +
+                    "?thumbnail=true&v=" +
+                    i.revision
+                  }
                   alt={i.subproduct?.name ?? "Prueba de IA"}
                 />
                 <strong>{i.subproduct?.name ?? "Prueba de IA"}</strong>
+                {i.canApprove && i.reviewStatus !== "APPROVED" && (
+                  <button
+                    type="button"
+                    className="primary"
+                    disabled={busy}
+                    onClick={() =>
+                      void action(async () => {
+                        const order = data?.orders?.find(
+                          (o) => o.sampleJobId === i.job.id,
+                        );
+                        if (order) {
+                          await orderRequest(`/${order.id}/approve`, {
+                            jobId: i.job.id,
+                          });
+                          if (order.mode === "immediate")
+                            void driveOrder(order.id, refresh).catch((e) =>
+                              setError(e.message),
+                            );
+                        } else {
+                          const response = await fetch(
+                            `/api/jobs/${i.job.id}/approve`,
+                            { method: "POST" },
+                          );
+                          const result = await response.json();
+                          if (!response.ok) throw Error(result.error);
+                        }
+                      }, "Imagen aprobada. La orden continúa según el modo que elegiste al enviarla.")
+                    }
+                  >
+                    Aprobar imagen
+                  </button>
+                )}
                 {i.canEdit && (
                   <button type="button" onClick={() => setEditing(i.id)}>
                     Editar imagen
@@ -599,9 +770,36 @@ export function Library() {
                     timeZone: "America/Lima",
                   })}
                 </p>
-                <span className="badge status-completed">
-                  {i.reviewStatus === "APPROVED" ? "Aprobado" : "Conservado"}
+                <span
+                  className={
+                    "badge " +
+                    (i.reviewStatus === "APPROVED"
+                      ? "status-completed"
+                      : "status-pending")
+                  }
+                >
+                  {i.reviewStatus === "APPROVED" ? "Aprobado" : "Por aprobar"}
                 </span>
+                {i.actualMicros !== undefined && (
+                  <p className="hint">
+                    Coste informado:{" "}
+                    {i.actualMicros === null
+                      ? "No informado"
+                      : "USD " + usdMicros(i.actualMicros)}
+                    <br />
+                    <a
+                      href={costLink({
+                        project: i.subproduct?.category.project.id ?? "none",
+                        product: i.subproduct?.category.id ?? "",
+                        subproduct: i.subproduct?.id ?? "",
+                        from: hierarchy.from,
+                        to: hierarchy.to,
+                      })}
+                    >
+                      Ver costos de esta carpeta →
+                    </a>
+                  </p>
+                )}
                 <a href={"/api/variations/" + i.id + "?download"}>
                   Descargar PNG
                 </a>
@@ -635,8 +833,8 @@ export function Library() {
             !data.items.length &&
             !data.documents.length && (
               <p className="empty">
-                Esta carpeta está vacía. Aprueba afiches en Generaciones o crea
-                una carpeta personal para añadir archivos.
+                No hay imágenes ni archivos con estos filtros. Revisa las órdenes
+                de esta carpeta o crea una carpeta personal para añadir archivos.
               </p>
             )}
           {data && (

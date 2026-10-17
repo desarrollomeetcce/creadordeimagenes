@@ -1,27 +1,21 @@
 "use client";
-import { useEffect, useRef, useState } from "react";
-import { InteractiveQueue } from "../../lib/interactive-queue";
-import { BackgroundBatches } from "./background-batches";
-export type ExecutionMode = "queue" | "background" | "here";
-async function request(path: string, body?: unknown) {
-  const r = await fetch("/api/" + path, {
-    method: body === undefined ? "GET" : "POST",
-    headers: body === undefined ? {} : { "Content-Type": "application/json" },
-    body: body === undefined ? undefined : JSON.stringify(body),
-    cache: "no-store",
-  });
-  const b = await r.json();
-  if (!r.ok) throw Error(b.error || "No se pudo completar la operación.");
-  return b;
-}
+import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  OrderProgressCard,
+  driveOrder,
+  orderRequest,
+  type OrderProgress,
+} from "./order-progress";
+export type ExecutionMode =
+  "queue" | "background" | "user-queue" | "system-queue" | "here";
 export function ExecutionChoice({
   value,
   onChange,
   disabled = false,
-  label = "Cómo generar",
+  label = "Opciones de generación",
 }: {
   value: ExecutionMode;
-  onChange: (value: ExecutionMode) => void;
+  onChange: (mode: ExecutionMode) => void;
   disabled?: boolean;
   label?: string;
 }) {
@@ -29,169 +23,219 @@ export function ExecutionChoice({
     <label className="execution-choice">
       {label}
       <select
-        value={value}
+        value={value === "queue" ? "user-queue" : value}
         disabled={disabled}
         onChange={(e) => onChange(e.target.value as ExecutionMode)}
       >
-        <option value="queue">Dejar en cola · iniciar después</option>
-        <option value="background">
-          En segundo plano · puedo cerrar la pestaña
-        </option>
-        <option value="here">En esta pantalla · mantenerla abierta</option>
+        <option value="background">En segundo plano</option>
+        <option value="user-queue">En cola · mis órdenes primero</option>
+        <option value="system-queue">En cola · turno del sistema</option>
+        <option value="here">Ejecución inmediata · en esta pantalla</option>
       </select>
+      <small>
+        Segundo plano permite cerrar la pestaña. Las colas esperan su turno sin
+        iniciar más imágenes a la vez. Inmediata empieza al quedar libre tu
+        generación actual.
+      </small>
     </label>
   );
 }
-export function useProductionController(onUpdate?: () => Promise<void>) {
-  const [, render] = useState(0),
+export function useProductionController(
+  onUpdate?: () => Promise<void>,
+  scope?: { project: string; product?: string; subproduct?: string },
+  enabled = true,
+) {
+  const [orders, setOrders] = useState<OrderProgress[]>([]),
+    [ids, setIds] = useState<string[]>([]),
     [error, setError] = useState(""),
-    [batchId, setBatchId] = useState<string | null>(null),
     [dispatching, setDispatching] = useState(false);
   const mounted = useRef(true),
     update = useRef(onUpdate),
-    allocated = useRef<string[]>([]),
-    sending = useRef(false);
+    latest = useRef(orders),
+    idsRef = useRef(ids),
+    sending = useRef(false),
+    pending = useRef<{ ids: string[]; mode: string; requestId: string } | null>(
+      null,
+    );
+  const enabledRef = useRef(enabled);
+  enabledRef.current = enabled;
+  latest.current = orders;
+  idsRef.current = ids;
   update.current = onUpdate;
-  const queue = useRef<InteractiveQueue | null>(null);
-  if (!queue.current)
-    queue.current = new InteractiveQueue(() => {
-      if (mounted.current) render((n) => n + 1);
-    });
-  const q = queue.current;
-  const backgroundRequest = useRef<{ ids: string[]; requestId: string } | null>(
-    null,
-  );
+  const refresh = useCallback(async () => {
+    if (!idsRef.current.length || !enabledRef.current) return;
+    const r = await fetch(
+      "/api/orders?" + new URLSearchParams({ ids: idsRef.current.join(",") }),
+      { cache: "no-store" },
+    );
+    const b = await r.json();
+    if (!r.ok) throw Error(b.error ?? "No se pudo consultar la orden.");
+    if (mounted.current) setOrders(b);
+    await update.current?.();
+  }, []);
+  const scopeRevision = useRef(0);
+  const scopeQuery = scope ? new URLSearchParams(scope).toString() : "";
+  useEffect(() => {
+    if (!scopeQuery || !enabled) return;
+    const controller = new AbortController();
+    const revision = ++scopeRevision.current;
+    void fetch("/api/orders?" + scopeQuery, {
+      cache: "no-store",
+      signal: controller.signal,
+    })
+      .then(async (r) => {
+        const rows: OrderProgress[] = await r.json();
+        if (!r.ok) throw Error("No se pudieron consultar las órdenes.");
+        if (!controller.signal.aborted && revision === scopeRevision.current) {
+          const visible = rows
+            .filter(
+              (o) =>
+                o.running > 0 ||
+                (o.pending > 0 &&
+                  !["ACCEPTED", "COMPLETED", "STOPPED"].includes(o.status)),
+            )
+            .concat(
+              rows
+                .filter((o) =>
+                  ["ACCEPTED", "COMPLETED", "STOPPED"].includes(o.status),
+                )
+                .slice(0, 1),
+            );
+          setOrders(visible);
+          const next = visible.map((o) => o.id);
+          idsRef.current = next;
+          setIds(next);
+        }
+      })
+      .catch(() => {});
+    return () => controller.abort();
+  }, [scopeQuery, enabled]);
   useEffect(() => {
     mounted.current = true;
-    const leaving = (event: Event) => {
-      if (q.running || q.pending.length) {
-        if (
-          !confirm(
-            "Al cambiar de vista se pausará este procesamiento después de la imagen en curso. Los siguientes quedan en cola. ¿Continuar?",
-          )
-        ) {
-          event.preventDefault();
-          return;
-        }
-        q.pause();
-      }
-    };
-    window.addEventListener("production-leave", leaving);
     return () => {
-      window.removeEventListener("production-leave", leaving);
       mounted.current = false;
-      q.pause();
+      for (const order of latest.current)
+        if (order.mode === "immediate" && order.status === "ACTIVE")
+          void orderRequest(`/${order.id}/pause`).catch(() => {});
     };
-  }, [q]);
-  const run = async () => {
-    setError("");
-    try {
-      await q.run(async (id) => {
-        const result = await request(`jobs/${id}/process`, {});
-        const channel = new BroadcastChannel("studio-updates");
-        channel.postMessage("job-updated");
-        channel.close();
-        // Refresh failure must never repeat an already dispatched paid attempt.
-        if (mounted.current) await update.current?.().catch(() => {});
-        if (result.status !== "COMPLETED")
-          throw Error(
-            result.error || "El trabajo requiere revisión. No se reintentó.",
-          );
-      });
-    } catch (e) {
-      if (mounted.current)
-        setError(e instanceof Error ? e.message : "Generación interrumpida.");
-    }
-  };
-  const start = async (ids: string[], mode: ExecutionMode, allIds = ids) => {
-    if (mode === "queue" || !ids.length) return;
-    if (sending.current || q.running || q.pending.length)
-      throw Error(
-        "Hay un lote en curso o pausado. Reanúdalo o deténlo primero.",
-      );
-    setError("");
-    allocated.current = allIds;
-    if (mode === "here") {
-      q.load(ids);
-      void run();
-      return;
-    }
+  }, []);
+  useEffect(() => {
+    if (!ids.length || !enabled) return;
+    const load = () => {
+      if (document.visibilityState === "visible")
+        void refresh().catch((e) => setError(e.message));
+    };
+    load();
+    const timer = setInterval(() => {
+      if (
+        latest.current.some(
+          (o) =>
+            ["QUEUED", "STARTING", "ACTIVE"].includes(o.status) ||
+            o.running > 0,
+        )
+      )
+        load();
+    }, 5000);
+    const channel = new BroadcastChannel("studio-updates");
+    channel.onmessage = load;
+    window.addEventListener("focus", load);
+    return () => {
+      clearInterval(timer);
+      channel.close();
+      window.removeEventListener("focus", load);
+    };
+  }, [ids, refresh, enabled]);
+  const start = async (
+    _ready: string[],
+    mode: ExecutionMode,
+    allIds = _ready,
+  ) => {
+    if (!allIds.length) return;
+    if (sending.current) throw Error("La orden se está enviando.");
+    scopeRevision.current++;
     sending.current = true;
     setDispatching(true);
+    setError("");
+    const mapped =
+      mode === "here" ? "immediate" : mode === "queue" ? "user-queue" : mode;
     try {
-      const prior = backgroundRequest.current;
-      if (prior && JSON.stringify(prior.ids) !== JSON.stringify(ids))
-        throw Error("Consulta el envío anterior antes de iniciar otro lote.");
-      const payload = prior ?? { ids, requestId: crypto.randomUUID() };
-      backgroundRequest.current = payload;
-      const result = await request("jobs/background", payload);
-      backgroundRequest.current = null;
-      if (mounted.current) setBatchId(result.id);
-      const channel = new BroadcastChannel("studio-updates");
-      channel.postMessage("queued");
-      channel.close();
-      if (result.status === "DISPATCH_UNCERTAIN")
-        throw Error(
-          "Envío sin confirmar. Consulta el lote; no se repetirá automáticamente.",
-        );
+      const request = pending.current ?? {
+        ids: allIds,
+        mode: mapped,
+        requestId: crypto.randomUUID(),
+      };
+      pending.current = request;
+      const result = await orderRequest("", request);
+      pending.current = null;
+      const next = [...new Set([...result.orders, ...idsRef.current])].slice(
+        0,
+        100,
+      );
+      idsRef.current = next;
+      setIds(next);
+      await refresh();
+      if (mapped === "immediate")
+        void (async () => {
+          for (const id of result.orders) {
+            if (!mounted.current) break;
+            await driveOrder(id, refresh, () => mounted.current);
+          }
+        })().catch((e) => {
+          if (mounted.current) setError(e.message);
+        });
     } catch (e) {
-      if (mounted.current)
-        setError(
-          e instanceof Error
-            ? e.message
-            : "Envío sin confirmar. Consulta la misma solicitud.",
-        );
+      setError(e instanceof Error ? e.message : "No se pudo enviar la orden.");
       throw e;
     } finally {
       sending.current = false;
       if (mounted.current) setDispatching(false);
     }
   };
-  const stop = async () => {
-    if (
-      !confirm(
-        "¿Detener este lote y cancelar sus imágenes sin iniciar? La imagen ya enviada puede terminar y generar un cargo.",
-      )
-    )
-      return;
-    q.stop();
-    setError("");
+  const control = async (action: string) => {
     try {
-      // Server cancels PENDING only, never marks the in-flight provider attempt cancelled.
-      await request("jobs/stop-many", { ids: allocated.current });
-      await update.current?.();
+      for (const id of idsRef.current) await orderRequest(`/${id}/${action}`);
+      await refresh();
+      if (action === "resume")
+        for (const order of latest.current)
+          if (order.mode === "immediate")
+            void driveOrder(order.id, refresh, () => mounted.current).catch(
+              (e) => setError(e.message),
+            );
     } catch (e) {
-      if (mounted.current)
-        setError(
-          e instanceof Error
-            ? e.message
-            : "No se pudieron cancelar los pendientes.",
-        );
+      setError(e instanceof Error ? e.message : "No se pudo actualizar.");
     }
   };
   return {
+    orders,
     start,
-    pause: () => q.pause(),
-    resume: () => void run(),
-    stop: () => void stop(),
-    running: q.running,
-    paused: q.paused,
-    remaining: q.pending.length,
-    current: q.current,
-    last: q.last,
+    refresh,
     error,
-    batchId,
     dispatching,
-    uncertainDispatch: !!backgroundRequest.current,
+    uncertainDispatch: !!pending.current,
     resolveDispatch: () => {
-      const prior = backgroundRequest.current;
-      if (prior)
-        void start(prior.ids, "background", allocated.current).catch(() => {});
+      const p = pending.current;
+      if (p)
+        void start(
+          p.ids,
+          (p.mode === "immediate" ? "here" : p.mode) as ExecutionMode,
+          p.ids,
+        ).catch(() => {});
     },
-    active: q.running || q.pending.length > 0,
-    refresh: async () => {
-      await update.current?.();
-    },
+    active: orders.some(
+      (o) =>
+        o.running > 0 ||
+        (o.pending > 0 &&
+          !["ACCEPTED", "COMPLETED", "STOPPED"].includes(o.status)),
+    ),
+    running: orders.some((o) => o.running > 0),
+    paused: orders.some((o) => o.status === "PAUSED"),
+    remaining: orders.reduce((n, o) => n + o.pending, 0),
+    current: null as string | null,
+    last: null as string | null,
+    batchId: ids[0] ?? null,
+    pause: () => void control("pause"),
+    resume: () => void control("resume"),
+    stop: () => void control("stop"),
   };
 }
 export type ProductionController = ReturnType<typeof useProductionController>;
@@ -202,39 +246,15 @@ export function ProductionControls({
 }) {
   return (
     <div className="stack production-controls">
-      {(c.active || c.last) && (
-        <>
-          <div className="row">
-            <strong>
-              {c.running
-                ? c.paused
-                  ? "Pausa solicitada"
-                  : "Generando en esta pantalla"
-                : c.remaining
-                  ? "Pausado"
-                  : "Lote terminado"}
-            </strong>
-            <span>{c.remaining} por iniciar</span>
-          </div>
-          <div className="row">
-            <button
-              type="button"
-              disabled={!c.active || c.dispatching || (c.paused && c.running)}
-              onClick={c.paused ? c.resume : c.pause}
-            >
-              {c.paused ? "Reanudar" : "Pausar"}
-            </button>
-            <button
-              type="button"
-              className="danger"
-              disabled={!c.active}
-              onClick={c.stop}
-            >
-              Detener lote
-            </button>
-          </div>
-        </>
-      )}
+      {c.dispatching && <p role="status">Enviando orden…</p>}
+      {c.orders.map((order) => (
+        <OrderProgressCard
+          key={order.id}
+          order={order}
+          refresh={c.refresh}
+          compact
+        />
+      ))}
       {c.uncertainDispatch && (
         <button
           type="button"
@@ -244,23 +264,8 @@ export function ProductionControls({
           Consultar el mismo envío
         </button>
       )}
-      {c.dispatching && <p role="status">Enviando al ejecutor…</p>}
-      {c.batchId && (
-        <BackgroundBatches
-          pending={[]}
-          batchId={c.batchId}
-          refreshJobs={c.refresh}
-        />
-      )}
-      {(c.active || c.batchId) && (
-        <p className="hint">
-          Pausar impide iniciar las siguientes imágenes. Detener cancela las
-          pendientes. Una solicitud ya enviada al proveedor puede terminar y
-          generar un cargo.
-        </p>
-      )}
       {c.error && (
-        <p className="notice error" role="alert">
+        <p role="alert" className="notice error">
           {c.error}
         </p>
       )}

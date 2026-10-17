@@ -54,3 +54,18 @@ Ampliación solicitada en curso: Google Gemini/AI Studio, fal.ai y Replicate, co
 ### Actualización 17/10/2026: Biblioteca y producción
 
 Biblioteca unificada con Afiches/Producción, controles compactos, elección explícita de ejecutor, aprobar sin continuación automática, pausa/reanudar/detener, enlaces de afiches en pestaña nueva y edición/regeneración individual con instrucciones originales. Validación local: 97 resultados de integración, 33 unitarias, build/tipos/instalación y Chromium con dobles explícitos. No requiere migración ni copia de imágenes. Pausa no revoca una solicitud ya enviada al proveedor; detener cancela pendientes y conserva resultados e importes previos. Las pruebas locales no acreditan cobros, SMTP ni generación externa real.
+
+
+## Cierre 17/10/2026 · galería única y órdenes independientes
+
+Reemplaza la presentación de dos pestañas anterior: Biblioteca es una sola galería, con carpetas, revisión y archivos. Los enlaces de proyecto/producto/subproducto abren su ámbito en otra pestaña. Barra compacta Otros filtros / Seleccionar / Ver / Tamaño / Formato / Descargar / Eliminar. Imágenes pendientes de aprobación visibles para su autor/OWNER; terceros conservan permisos y política de revisión. Aprobar reutiliza referencias, sin copiar originales ni llamar a IA.
+
+GenerationOrder registra cada solicitud por separado. Siete solicitadas y cuatro terminadas muestran 4/7; pausar impide tomar el siguiente trabajo, detener cancela únicamente pendientes y finalizar con cuatro fija 4/4 conservando siete en el historial. Solicitudes ya enviadas pueden finalizar y cobrarse. Controles junto a la muestra, sin agregar históricos al progreso. Modos en producto, subproducto, prueba y edición: segundo plano, cola del usuario, turno del sistema o ejecución inmediata. Aprobación continúa el modo seleccionado; nunca hay generación por GET, cambio de pestaña o consulta de estado. Reclamos serializados, identidad de solicitud estable y sin reintentos automáticos con cargo incierto.
+
+Editor emergente ampliable: guardar/aprobar, eliminar, versiones, textos/formas manuales, movimiento/tamaño/color/orden de capas. Sobre una imagen aplanada se añaden capas reutilizando el fondo original sin IA; el texto rasterizado anterior no se transforma en capas independientes. Edición o regeneración IA conserva instrucciones originales en servidor y acepta indicaciones adicionales con consentimiento. Subproductos plegados no consultan continuamente; consultas activas visibles cada cinco segundos y sin volver a descargar imágenes sin cambio.
+
+Migración aditiva 024 GenerationOrder ensayada en PostgreSQL local y copia Neon temporal; aplicada a producción conservando tres trabajos y una versión de imagen, 24 migraciones y cero órdenes iniciales. No se modificaron migraciones previas ni ledger histórico.
+
+Validación final: 34 unitarias, TypeScript, build, instalación sin base y 102 resultados de integración (101 escenarios más contenedor), todos aprobados. Chromium en escritorio y móvil: galería única, orden 7 aislada de tres registros antiguos, aprobar/pausar4/7/detener3/finalizar4/4, modal ampliado y capas guardadas/aprobadas/eliminadas, enlaces en pestaña nueva y cuatro modos. Tres respuestas de procesamiento simuladas explícitamente; ninguna llamada externa de IA. Los pagos, SMTP y disponibilidad real de cada proveedor mantienen las condiciones externas pendientes documentadas.
+
+Respaldo final restaurado en PostgreSQL sintético independiente: 42 tablas y 24 migraciones; conteos, estados, costes y hashes de archivos/miniaturas coinciden. Regresión añadida para que OWNER vea en la galería las muestras antes de aprobarlas.

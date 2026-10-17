@@ -9883,6 +9883,600 @@ test("Integración HTTP + PostgreSQL (base exclusiva de pruebas, sin llamadas ex
         }
       },
     );
+    async function withOrderProvider(
+      fn: (c: any, calls: () => number) => Promise<void>,
+    ) {
+      const { adapter } = await import("../lib/providers"),
+        { encryptKey } = await import("../lib/crypto");
+      const previous = await db.providerConfiguration.findUniqueOrThrow({
+          where: { id: "global" },
+        }),
+        provider = adapter("openai"),
+        original = provider.direct;
+      let count = 0;
+      try {
+        const c = await db.providerConfiguration.update({
+          where: { id: "global" },
+          data: {
+            provider: "openai",
+            creativeProvider: "openai",
+            encryptedKey: encryptKey("synthetic-order-test-not-real-1234"),
+            imageModel: "gpt-image-1",
+            creativeModel: "gpt-4.1-mini",
+            quality: "low",
+            resolution: "1024x1024",
+            models: [
+              {
+                id: "gpt-image-1",
+                kind: "image",
+                qualities: ["low"],
+                resolutions: ["1024x1024"],
+              },
+              {
+                id: "gpt-4.1-mini",
+                kind: "creative",
+                qualities: [],
+                resolutions: [],
+              },
+            ],
+            status: "VERIFIED",
+            verifiedAt: new Date(),
+            verifiedRevision: previous.revision,
+          },
+        });
+        provider.direct = async () => {
+          count++;
+          return {
+            text: JSON.stringify({
+              backgroundPrompt: "",
+              backgroundColor: "#ffffff",
+              texts: [],
+              logos: [],
+            }),
+            usage: null,
+          };
+        };
+        await fn(c, () => count);
+      } finally {
+        provider.direct = original;
+        await db.providerConfiguration.update({
+          where: { id: "global" },
+          data: previous as any,
+        });
+      }
+    }
+    await t.test(
+      "orden 7: progreso propio, muestra, pausa 4/7, detener y finalizar 4/4 sin cambiar ledger histórico",
+      async () =>
+        withOrderProvider(async (c, calls) => {
+          const { orderTick } = await import("../lib/generation-orders");
+          const group = randomUUID();
+          const jobs = await reserveJobs(
+            uid,
+            pid,
+            Array.from({ length: 7 }, (_, index) => ({
+              subproductId: sid,
+              key: randomUUID(),
+              snapshot: {
+                index,
+                prompt: "Prueba sintética de siete imágenes",
+                mode: "Texto",
+                format: "1:1",
+                renderMode: "editable",
+                previewFirst: true,
+                approvalGroup: group,
+              },
+            })),
+            c.revision,
+          );
+          const payload = {
+            ids: jobs.map((j) => j.id),
+            mode: "immediate",
+            requestId: randomUUID(),
+          };
+          const launched = await user.call("orders", "POST", payload);
+          assert.equal(launched.status, 202);
+          assert.equal(launched.body.orders.length, 1);
+          const id = launched.body.orders[0],
+            record = await db.generationOrder.findUniqueOrThrow({
+              where: { id },
+            }),
+            runId = record.runId!;
+          assert.equal(calls(), 0);
+          assert.equal(
+            (await user.call("orders", "POST", payload)).body.orders[0],
+            id,
+          );
+          assert.equal(
+            (await admin.call(`orders/${id}/pause`, "POST", {})).status,
+            403,
+          );
+          assert.equal(
+            (await observer.call(`orders/${id}/pause`, "POST", {})).status,
+            403,
+          );
+          assert.equal(await runOne({ id: jobs[0].id }), false);
+          assert.equal(
+            (await user.call(`jobs/${jobs[0].id}/process`, "POST", {})).status,
+            409,
+          );
+          assert.equal(await orderTick(id, runId), "CONTINUE");
+          assert.equal(calls(), 1);
+          assert.equal(await orderTick(id, runId), "REVIEW");
+          assert.equal(calls(), 1);
+          let library = await user.call(
+            `library/explorer?project=${pid}&product=${cid}&subproduct=${sid}`,
+          );
+          assert.equal(library.status, 200);
+          let progress = library.body.orders.find((o: any) => o.id === id);
+          assert.equal(progress.completed, 1);
+          assert.equal(progress.target, 7);
+          assert.equal(progress.pending, 6);
+          assert.equal(progress.requested, 7);
+          const first = await db.variation.findUniqueOrThrow({
+            where: { jobId: jobs[0].id },
+          });
+          assert(library.body.items.some((v: any) => v.id === first.id));
+          const ownerPending = await owner.call(
+            `library/explorer?project=${pid}&product=${cid}&subproduct=${sid}`,
+          );
+          assert.equal(ownerPending.status, 200);
+          assert(ownerPending.body.items.some((v: any) => v.id === first.id));
+          assert(
+            !JSON.stringify(progress).includes(
+              "Prueba sintética de siete imágenes",
+            ),
+          );
+          const approved = await user.call(`orders/${id}/approve`, "POST", {
+            jobId: jobs[0].id,
+          });
+          assert.equal(approved.status, 200);
+          assert.equal(calls(), 1);
+          const resumed = await db.generationOrder.findUniqueOrThrow({
+            where: { id },
+          });
+          for (let i = 0; i < 3; i++)
+            assert.equal(await orderTick(id, resumed.runId!), "CONTINUE");
+          assert.equal(calls(), 4);
+          await user.call(`orders/${id}/pause`, "POST", {});
+          assert.equal(await orderTick(id, resumed.runId!), "STOP");
+          assert.equal(calls(), 4);
+          progress = (
+            await user.call(
+              `library/explorer?project=${pid}&product=${cid}&subproduct=${sid}`,
+            )
+          ).body.orders.find((o: any) => o.id === id);
+          assert.equal(progress.completed, 4);
+          assert.equal(progress.target, 7);
+          assert.equal(progress.pending, 3);
+          assert.equal(progress.status, "PAUSED");
+          const before = await db.usageLedger.findMany({
+            where: { jobId: { in: jobs.slice(0, 4).map((j) => j.id) } },
+            orderBy: { jobId: "asc" },
+          });
+          assert.equal(
+            (await user.call(`orders/${id}/stop`, "POST", {})).status,
+            200,
+          );
+          progress = (await user.call(`orders?ids=${id}`)).body[0];
+          assert.equal(progress.cancelled, 3);
+          assert.equal(progress.completed, 4);
+          assert.equal(progress.target, 7);
+          assert.equal(
+            (
+              await user.call(`orders/${id}/finish`, "POST", {
+                expectedCompleted: 3,
+              })
+            ).status,
+            409,
+          );
+          const finished = await user.call(`orders/${id}/finish`, "POST", {
+            expectedCompleted: 4,
+          });
+          assert.equal(finished.status, 200);
+          assert.equal(finished.body.status, "ACCEPTED");
+          assert.equal(finished.body.target, 4);
+          assert.equal(finished.body.requested, 7);
+          assert.equal(finished.body.completed, 4);
+          assert.deepEqual(
+            await db.usageLedger.findMany({
+              where: { jobId: { in: jobs.slice(0, 4).map((j) => j.id) } },
+              orderBy: { jobId: "asc" },
+            }),
+            before,
+          );
+          assert.equal(
+            (await user.call(`orders/${id}/resume`, "POST", {})).status,
+            409,
+          );
+          assert.equal(calls(), 4);
+          const closed = await db.variation.findMany({
+            where: { jobId: { in: jobs.slice(0, 4).map((j) => j.id) } },
+          });
+          assert(
+            closed.every((v) => v.permanent && v.reviewStatus === "APPROVED"),
+          );
+          assert.equal(
+            (await user.call(`orders/${id}/finish`, "POST", {})).status,
+            200,
+          );
+        }),
+    );
+    await t.test(
+      "orden: detener durante la imagen actual no la cancela ni autoriza la siguiente",
+      async () =>
+        withOrderProvider(async (c, calls) => {
+          const { orderTick } = await import("../lib/generation-orders"),
+            { adapter } = await import("../lib/providers");
+          const jobs = await reserveJobs(
+            uid,
+            pid,
+            [0, 1, 2].map((index) => ({
+              subproductId: sid,
+              key: randomUUID(),
+              snapshot: {
+                index,
+                prompt: "Detención sintética",
+                mode: "Texto",
+                format: "1:1",
+                renderMode: "editable",
+              },
+            })),
+            c.revision,
+          );
+          const launched = await user.call("orders", "POST", {
+              ids: jobs.map((j) => j.id),
+              mode: "immediate",
+              requestId: randomUUID(),
+            }),
+            id = launched.body.orders[0],
+            record = await db.generationOrder.findUniqueOrThrow({
+              where: { id },
+            });
+          const provider = adapter("openai"),
+            direct = provider.direct;
+          let release!: () => void;
+          provider.direct = async (...args: Parameters<typeof direct>) => {
+            await new Promise<void>((resolve) => {
+              release = resolve;
+            });
+            return direct(...args);
+          };
+          try {
+            const inFlight = orderTick(id, record.runId!);
+            for (let i = 0; i < 200 && !release; i++)
+              await new Promise((r) => setTimeout(r, 5));
+            assert(release);
+            await user.call(`orders/${id}/stop`, "POST", {});
+            assert.equal(
+              (await user.call(`orders/${id}/finish`, "POST", {})).status,
+              409,
+            );
+            assert.equal(
+              (
+                await db.generationJob.findUniqueOrThrow({
+                  where: { id: jobs[0].id },
+                })
+              ).status,
+              "RUNNING",
+            );
+            assert.equal(
+              await db.generationJob.count({
+                where: {
+                  id: { in: jobs.map((j) => j.id) },
+                  status: "CANCELLED",
+                },
+              }),
+              2,
+            );
+            release();
+            await inFlight;
+            assert.equal(calls(), 1);
+            assert.equal(await orderTick(id, record.runId!), "STOP");
+            const done = await user.call(`orders/${id}/finish`, "POST", {});
+            assert.equal(done.status, 200);
+            assert.equal(done.body.target, 1);
+            assert.equal(done.body.requested, 3);
+          } finally {
+            release?.();
+            provider.direct = direct;
+          }
+        }),
+    );
+    await t.test(
+      "colas: usuario respeta órdenes previas; sistema serializa cuentas y pausa no consume proveedor",
+      async () =>
+        withOrderProvider(async (c, calls) => {
+          const { registerOrders, orderTick, pauseOrder, stopOrder } =
+            await import("../lib/generation-orders");
+          async function create(
+            actorId: string,
+            mode: "user-queue" | "system-queue",
+            name: string,
+          ) {
+            const jobs = await reserveJobs(
+              actorId,
+              pid,
+              [
+                {
+                  subproductId: sid,
+                  key: randomUUID(),
+                  snapshot: {
+                    index: 0,
+                    prompt: name,
+                    mode: "Texto",
+                    format: "1:1",
+                    renderMode: "editable",
+                  },
+                },
+              ],
+              c.revision,
+            );
+            const actor = {
+              id: actorId,
+              role: actorId === uid ? "USER" : "OWNER",
+            };
+            const [id] = await registerOrders(
+              actor,
+              jobs.map((j) => j.id),
+              mode,
+              randomUUID(),
+            );
+            await db.generationOrder.update({
+              where: { id },
+              data: { status: "ACTIVE", runId: id },
+            });
+            return { id, actor, jobs };
+          }
+          const first = await create(
+            uid,
+            "user-queue",
+            "Primera orden usuario",
+          );
+          await new Promise((r) => setTimeout(r, 5));
+          const next = await create(uid, "user-queue", "Segunda orden usuario");
+          assert.equal(await orderTick(next.id, next.id), "WAIT");
+          assert.equal(calls(), 0);
+          await pauseOrder(first.actor, first.id);
+          assert.equal(await orderTick(next.id, next.id), "CONTINUE");
+          assert.equal(calls(), 1);
+          assert.equal(await orderTick(next.id, next.id), "STOP");
+          await stopOrder(first.actor, first.id);
+          const ownerId = (
+            await db.user.findFirstOrThrow({
+              where: { role: "OWNER", name: "Owner prueba" },
+            })
+          ).id;
+          const systemFirst = await create(
+            ownerId,
+            "system-queue",
+            "Primera del sistema",
+          );
+          await new Promise((r) => setTimeout(r, 5));
+          const systemNext = await create(
+            uid,
+            "system-queue",
+            "Segunda del sistema",
+          );
+          assert.equal(await orderTick(systemNext.id, systemNext.id), "WAIT");
+          assert.equal(calls(), 1);
+          assert.equal(
+            await orderTick(systemFirst.id, systemFirst.id),
+            "CONTINUE",
+          );
+          assert.equal(await orderTick(systemFirst.id, systemFirst.id), "STOP");
+          assert.equal(
+            await orderTick(systemNext.id, systemNext.id),
+            "CONTINUE",
+          );
+          assert.equal(await orderTick(systemNext.id, systemNext.id), "STOP");
+          assert.equal(calls(), 3);
+        }),
+    );
+    await t.test(
+      "editor aplanado: original como fondo, texto y formas nuevas, versiones, permisos y eliminación sin IA",
+      async () => {
+        const { store } = await import("../lib/storage"),
+          sharp = (await import("sharp")).default;
+        const bytes = await sharp({
+            create: {
+              width: 1024,
+              height: 1024,
+              channels: 3,
+              background: "#176b59",
+            },
+          })
+            .png()
+            .toBuffer(),
+          path = await store(bytes);
+        const job = await db.generationJob.create({
+          data: {
+            actorId: uid,
+            projectId: pid,
+            subproductId: sid,
+            idempotencyKey: randomUUID(),
+            status: "COMPLETED",
+            snapshot: { prompt: "Texto privado no expuesto", index: 0 },
+            reservedMicros: 0n,
+          },
+        });
+        const image = await db.variation.create({
+          data: {
+            jobId: job.id,
+            subproductId: sid,
+            path,
+            model: "doble-explicito-overlay",
+            expiresAt: new Date(Date.now() + 86400000),
+          },
+        });
+        await db.imageVersion.create({
+          data: {
+            variationId: image.id,
+            number: 1,
+            path,
+            actorId: uid,
+            sourceJobId: job.id,
+          },
+        });
+        const beforeJobs = await db.generationJob.count(),
+          beforeLedger = await db.usageLedger.count();
+        assert.equal(
+          (
+            await observer.call(
+              `variations/${image.id}/enable-layers`,
+              "POST",
+              { expectedRevision: 1 },
+            )
+          ).status,
+          403,
+        );
+        const enabled = await user.call(
+          `variations/${image.id}/enable-layers`,
+          "POST",
+          { expectedRevision: 1 },
+        );
+        assert.equal(enabled.status, 200);
+        const design = (await user.call(`variations/${image.id}/design`)).body;
+        assert.equal(design.hasBackground, true);
+        assert.equal(design.document.layers.length, 0);
+        assert(!JSON.stringify(design).includes("Texto privado"));
+        const layerVersion = await db.imageVersion.findUniqueOrThrow({
+          where: { variationId_number: { variationId: image.id, number: 2 } },
+        });
+        assert.equal(layerVersion.path, path);
+        assert.equal(layerVersion.backgroundPath, path);
+        assert.equal(
+          (
+            await user.call(`variations/${image.id}/enable-layers`, "POST", {
+              expectedRevision: 1,
+            })
+          ).status,
+          409,
+        );
+        const document = {
+          ...design.document,
+          layers: [
+            {
+              id: "cover",
+              type: "shape",
+              kind: "rectangle",
+              x: 80,
+              y: 80,
+              width: 500,
+              height: 130,
+              color: "#ffffff",
+            },
+            {
+              id: "new-title",
+              type: "text",
+              x: 100,
+              y: 100,
+              width: 450,
+              text: "Nuevo texto",
+              fontSize: 42,
+              color: "#123456",
+              font: "DejaVu Sans",
+              align: "left",
+            },
+          ],
+        };
+        assert.equal(
+          (
+            await user.call(`variations/${image.id}/manual`, "POST", {
+              expectedRevision: 2,
+              document,
+            })
+          ).status,
+          200,
+        );
+        const updated = await db.variation.findUniqueOrThrow({
+          where: { id: image.id },
+        });
+        assert.notEqual(updated.path, path);
+        assert.equal(updated.revision, 3);
+        const bad = {
+          ...document,
+          layers: [{ ...document.layers[0], y: 1000 }],
+        };
+        assert.equal(
+          (
+            await user.call(`variations/${image.id}/manual`, "POST", {
+              expectedRevision: 3,
+              document: bad,
+            })
+          ).status,
+          400,
+        );
+        assert.equal(await db.generationJob.count(), beforeJobs);
+        assert.equal(await db.usageLedger.count(), beforeLedger);
+        assert.equal(
+          (await user.call(`variations/${image.id}`, "DELETE")).status,
+          200,
+        );
+        assert.equal(
+          (await user.call(`variations/${image.id}/design`)).status,
+          404,
+        );
+      },
+    );
+    await t.test(
+      "Workflow de orden se detiene ante configuración obsoleta antes de cualquier llamada facturable",
+      async () =>
+        withOrderProvider(async (c, calls) => {
+          const jobs = await reserveJobs(
+            uid,
+            pid,
+            [
+              {
+                subproductId: sid,
+                key: randomUUID(),
+                snapshot: {
+                  index: 0,
+                  prompt: "Configuración obsoleta",
+                  mode: "Texto",
+                  format: "1:1",
+                  renderMode: "editable",
+                },
+              },
+            ],
+            c.revision,
+          );
+          const snapshot = { ...(jobs[0].snapshot as any), configRevision: -1 };
+          await db.generationJob.update({
+            where: { id: jobs[0].id },
+            data: { snapshot },
+          });
+          const result = await user.call("orders", "POST", {
+            ids: jobs.map((j) => j.id),
+            mode: "background",
+            requestId: randomUUID(),
+          });
+          assert.equal(result.status, 202);
+          let row = await db.generationOrder.findUniqueOrThrow({
+            where: { id: result.body.orders[0] },
+          });
+          for (
+            let i = 0;
+            i < 200 && ["STARTING", "ACTIVE", "QUEUED"].includes(row.status);
+            i++
+          ) {
+            await new Promise((r) => setTimeout(r, 50));
+            row = await db.generationOrder.findUniqueOrThrow({
+              where: { id: row.id },
+            });
+          }
+          assert.equal(row.status, "NEEDS_REVIEW", row.error ?? "");
+          assert.equal(calls(), 0);
+          assert.equal(
+            (
+              await db.generationJob.findUniqueOrThrow({
+                where: { id: jobs[0].id },
+              })
+            ).status,
+            "FAILED",
+          );
+        }),
+    );
     await t.test("cierre de sesión invalida el token", async () => {
       assert.equal((await user.call("auth/logout", "POST")).status, 200);
       assert.equal((await user.call("projects")).status, 401);

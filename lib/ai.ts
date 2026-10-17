@@ -101,7 +101,10 @@ export async function reserveJobs(
       const pendingCount = items.filter(
         (i) => !known.some((j) => j.idempotencyKey === i.key),
       ).length;
-      if (pendingCount === 0) return known;
+      if (pendingCount === 0)
+        return items.map((item) =>
+          known.find((job) => job.idempotencyKey === item.key)!,
+        );
       const capabilities = c.models as ModelCapability[];
       const imageCapability = capabilities.find(
         (m) => m.kind === "image" && m.id === c.imageModel,

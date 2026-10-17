@@ -180,3 +180,56 @@ export async function restoreVersion(
   );
   return { revision: expected + 1 };
 }
+
+/** Reuse the flat original as a background. Only new overlay layers become independently editable. */
+export async function enableOverlay(
+  user: { id: string; role: string },
+  id: string,
+  expected: number,
+) {
+  const v = await accessibleVariation(user, id, "EDIT");
+  demand(
+    v.revision === expected,
+    "La imagen cambió. Recarga antes de editar.",
+    409,
+  );
+  const current = await db.imageVersion.findUniqueOrThrow({
+    where: { variationId_number: { variationId: id, number: expected } },
+  });
+  if (current.document) return { revision: v.revision };
+  const bytes = await load(current.path),
+    meta = await (
+      await import("sharp")
+    )
+      .default(bytes, { limitInputPixels: 20000000 })
+      .metadata();
+  demand(
+    meta.width &&
+      meta.height &&
+      meta.width >= 256 &&
+      meta.height >= 256 &&
+      meta.width <= 4096 &&
+      meta.height <= 4096,
+    "Esta imagen necesita dimensiones entre 256 y 4096 píxeles para abrirse en el editor.",
+  );
+  const document = designSchema.parse({
+    width: meta.width,
+    height: meta.height,
+    backgroundColor: "#ffffff",
+    layers: [],
+  });
+  const auditThumbnail = await prepareAuditThumbnail(bytes);
+  await db.$transaction((tx) =>
+    publishVersion(tx, {
+      variationId: id,
+      expectedRevision: expected,
+      actorId: user.id,
+      path: current.path,
+      backgroundPath: current.path,
+      document,
+      action: "CAPAS_ADICIONALES_HABILITADAS",
+      auditThumbnail,
+    }),
+  );
+  return { revision: expected + 1 };
+}

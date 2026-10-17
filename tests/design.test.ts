@@ -135,3 +135,43 @@ test("SVG simple se rasteriza; scripts, entidades y recursos remotos se rechazan
   ])
     await assert.rejects(rasterizeSafeSvg(Buffer.from(unsafe)));
 });
+
+test("formas manuales cubren el fondo sin IA y respetan el orden de capas y los límites", async () => {
+  const d = designSchema.parse({
+    width: 512,
+    height: 512,
+    backgroundColor: "#176b59",
+    layers: [
+      {
+        id: "cover",
+        type: "shape",
+        kind: "rectangle",
+        x: 50,
+        y: 50,
+        width: 200,
+        height: 100,
+        color: "#ffffff",
+      },
+      {
+        id: "dot",
+        type: "shape",
+        kind: "ellipse",
+        x: 100,
+        y: 60,
+        width: 40,
+        height: 40,
+        color: "#ff0000",
+      },
+    ],
+  });
+  const bytes = await renderDesign(d, null, new Map());
+  const pixel = await sharp(bytes).removeAlpha().raw().toBuffer();
+  const rgb = (x: number, y: number) => [
+    ...pixel.subarray((y * 512 + x) * 3, (y * 512 + x) * 3 + 3),
+  ];
+  assert.deepEqual(rgb(0, 0), [23, 107, 89]);
+  assert.deepEqual(rgb(60, 60), [255, 255, 255]);
+  assert.deepEqual(rgb(120, 80), [255, 0, 0]);
+  const invalid = { ...d, layers: [{ ...d.layers[0], y: 500 }] };
+  await assert.rejects(renderDesign(invalid, null, new Map()), /fuera/);
+});

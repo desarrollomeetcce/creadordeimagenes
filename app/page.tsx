@@ -402,7 +402,7 @@ export default function Home() {
     usage: "Costos de IA",
     statistics: "Estadísticas",
     trash: "Papelera",
-    jobs: "Biblioteca · Producción",
+    jobs: "Biblioteca",
     account: "Mi cuenta",
     plans: "Mi plan",
     payments: "Configuración de pagos",
@@ -1554,8 +1554,12 @@ function BatchGeneration({
   const [consent, setConsent] = useState(false);
   const [previewFirst, setPreviewFirst] = useState(true);
   const [queued, setQueued] = useState(false);
-  const [executionMode, setExecutionMode] = useState<ExecutionMode>("queue");
-  const production = useProductionController();
+  const [executionMode, setExecutionMode] =
+    useState<ExecutionMode>("background");
+  const production = useProductionController(undefined, {
+    project: projectId,
+    product: categoryId,
+  });
   const [selected, setSelected] = useState<string[]>([]);
   const t = useTask();
   return (
@@ -1650,12 +1654,11 @@ function BatchGeneration({
           <ExecutionChoice
             value={executionMode}
             onChange={setExecutionMode}
-            disabled={t.busy || production.active}
+            disabled={t.busy || production.dispatching}
           />
           <button
             className="primary"
             disabled={
-              production.active ||
               production.uncertainDispatch ||
               production.dispatching ||
               !consent ||
@@ -1686,7 +1689,7 @@ function BatchGeneration({
                 ch.postMessage("queued");
                 ch.close();
                 setPreview(null);
-              }, "Lote registrado. Revisa la muestra en Biblioteca → Producción.")
+              }, "Lote registrado. Revisa la muestra en Biblioteca.")
             }
           >
             Generar selección
@@ -1735,10 +1738,16 @@ function SubproductRow({
 }) {
   const canSeeCosts = useCanEdit();
   const [sharing, setSharing] = useState(false);
+  const [expanded, setExpanded] = useState(false);
   const [previewFirst, setPreviewFirst] = useState(true);
   const [queued, setQueued] = useState(false);
-  const [executionMode, setExecutionMode] = useState<ExecutionMode>("queue");
-  const production = useProductionController();
+  const [executionMode, setExecutionMode] =
+    useState<ExecutionMode>("background");
+  const production = useProductionController(
+    undefined,
+    expanded ? costScope : undefined,
+    expanded,
+  );
   const [name, setName] = useState(sub.name);
   const [prompt, setPrompt] = useState(sub.prompt);
   const [custom, setCustom] = useState(
@@ -1763,7 +1772,10 @@ function SubproductRow({
     });
   };
   return (
-    <details aria-label={"Subproducto " + sub.id}>
+    <details
+      aria-label={"Subproducto " + sub.id}
+      onToggle={(e) => setExpanded(e.currentTarget.open)}
+    >
       <summary>
         <span className="sub-num">{String(index + 1).padStart(2, "0")}</span>
         <strong>{name}</strong>
@@ -1940,14 +1952,13 @@ function SubproductRow({
             <ExecutionChoice
               value={executionMode}
               onChange={setExecutionMode}
-              disabled={t.busy || production.active}
+              disabled={t.busy || production.dispatching}
             />
             <button
               className="primary"
               style={{ marginTop: 15 }}
               disabled={
                 t.busy ||
-                production.active ||
                 production.uncertainDispatch ||
                 production.dispatching ||
                 !review ||
@@ -1968,6 +1979,8 @@ function SubproductRow({
                     },
                   );
                   setQueued(true);
+                  setCharge(false);
+                  setReview(false);
                   await production.start(
                     result.runnable,
                     executionMode,
@@ -1976,7 +1989,7 @@ function SubproductRow({
                   const channel = new BroadcastChannel("studio-updates");
                   channel.postMessage("queued");
                   channel.close();
-                }, "Lote registrado. El modo elegido controla su ejecución. Revisa la muestra en Biblioteca → Producción.")
+                }, "Lote registrado. El modo elegido controla su ejecución. Revisa la muestra en Biblioteca.")
               }
             >
               Generar {(custom ? s : inherited).count} variaciones
@@ -1991,7 +2004,7 @@ function SubproductRow({
             rel="noopener"
             href={"?" + new URLSearchParams({ view: "jobs", ...costScope })}
           >
-            Revisar este subproducto en Biblioteca ↗
+            Abrir carpeta de este subproducto ↗
           </a>
         )}
         {t.notice}
@@ -2000,6 +2013,10 @@ function SubproductRow({
   );
 }
 function AISettings() {
+  const [testMode, setTestMode] = useState<ExecutionMode>("background");
+  const testProduction = useProductionController(undefined, {
+    project: "none",
+  });
   const [c, setC] = useState<any>(null);
   const [latestTest, setLatestTest] = useState<any>(null);
   const [testBudget, setTestBudget] = useState<any>(null);
@@ -2731,15 +2748,15 @@ function AISettings() {
           rel="noopener"
           href="?view=jobs&project=none"
         >
-          Abrir Pruebas en Biblioteca · Producción ↗
+          Abrir carpeta Pruebas ↗
         </a>
         <p>
           La prueba crea un afiche e invoca dirección creativa e imágenes.{" "}
           <strong>Puede producir cargos de API.</strong> Se aplican las cuotas
-          del plan y el registro de consumo. El botón inicia una sola prueba
-          aquí; mantén esta pantalla abierta hasta conocer el resultado. Si se
-          interrumpe, consulta Biblioteca → Producción antes de volver a
-          autorizar otra. No se reintenta automáticamente.
+          del plan y el registro de consumo. Elige el modo de ejecución y envía
+          una orden de una imagen. El avance corresponde a esa prueba; los
+          intentos anteriores no se suman. Revisa su estado en la carpeta
+          Pruebas antes de autorizar otra. No se reintenta automáticamente.
         </p>
         <label className="row">
           <input
@@ -2749,8 +2766,20 @@ function AISettings() {
           />
           Entiendo el posible cargo y autorizo una generación de prueba.
         </label>
+        <ExecutionChoice
+          value={testMode}
+          onChange={setTestMode}
+          disabled={t.busy || testProduction.dispatching}
+        />
         <button
-          disabled={!charge || t.busy || !ready}
+          className="primary"
+          disabled={
+            !charge ||
+            t.busy ||
+            !ready ||
+            testProduction.dispatching ||
+            testProduction.uncertainDispatch
+          }
           onClick={() =>
             void t.run(async () => {
               try {
@@ -2758,24 +2787,17 @@ function AISettings() {
                   confirmCharge: true,
                   requestId: crypto.randomUUID(),
                 });
-                const result = await api(
-                  `jobs/${queued.jobs[0]}/process`,
-                  "POST",
-                );
-                if (result.status !== "COMPLETED")
-                  throw new Error(
-                    result.error ??
-                      "La prueba no terminó. Consulta Biblioteca → Producción antes de autorizar otra.",
-                  );
+                await testProduction.start(queued.jobs, testMode);
               } finally {
                 setCharge(false);
                 await refresh();
               }
-            }, "Prueba generada y guardada. Puedes descargarla desde Biblioteca → Producción.")
+            }, "Orden de prueba enviada. Revisa y aprueba el resultado en la carpeta Pruebas de Biblioteca.")
           }
         >
           Generar prueba con posible cargo
         </button>
+        <ProductionControls controller={testProduction} />
       </section>
       {t.notice}
     </>
@@ -2893,7 +2915,7 @@ function Gallery({ sub, back }: { sub: Item; back: () => void }) {
                     confirmCharge: true,
                     reviewedInstructions: true,
                   }),
-                "Alternativas encoladas. Consulta Biblioteca → Producción.",
+                "Alternativas encoladas. Consulta Biblioteca.",
               );
           }}
         >

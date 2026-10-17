@@ -58,7 +58,7 @@ export async function runOne(filter?: {
   id?: string;
   actorId?: string;
   deadlineMs?: number;
-  background?: { batchId: string; runId: string };
+  background?: { batchId: string; runId: string; order?: boolean };
 }) {
   let candidate = await db.generationJob.findFirst({
     where: {
@@ -70,13 +70,15 @@ export async function runOne(filter?: {
   });
   if (
     candidate &&
-    (await (
-      await import("../lib/preview-approval")
-    ).waitingForApproval(db, candidate))
+    ((!filter?.background &&
+      !!(candidate.snapshot as Record<string, unknown>).orderId) ||
+      (await (
+        await import("../lib/preview-approval")
+      ).waitingForApproval(db, candidate)))
   ) {
     const id = await (
       await import("../lib/preview-approval")
-    ).nextRunnableId(filter);
+    ).nextRunnableId({ ...filter, excludeOrders: !filter?.background });
     candidate = id
       ? await db.generationJob.findUnique({ where: { id } })
       : null;
@@ -85,13 +87,27 @@ export async function runOne(filter?: {
   const leaseToken = randomUUID();
   const claim = await db.$transaction(async (tx) => {
     await tx.$executeRaw`SELECT pg_advisory_xact_lock(728291)`;
+    const current = await tx.generationJob.findUnique({
+      where: { id: candidate.id },
+      select: { snapshot: true },
+    });
+    const snapshot = current?.snapshot as Record<string, unknown>;
+    if (
+      snapshot?.orderId &&
+      (snapshot.orderId !== filter?.background?.batchId ||
+        filter.background.order !== true)
+    )
+      return { count: 0 };
     if (filter?.background) {
       const { batchId, runId } = filter.background;
       // Serialize claim with pause. A pause acknowledged first prevents this dispatch.
-      await tx.$queryRaw`SELECT id FROM "BackgroundBatch" WHERE id=${batchId} FOR UPDATE`;
-      const batch = await tx.backgroundBatch.findUnique({
-        where: { id: batchId },
-      });
+      if (filter.background.order)
+        await tx.$queryRaw`SELECT id FROM "GenerationOrder" WHERE id=${batchId} FOR UPDATE`;
+      else
+        await tx.$queryRaw`SELECT id FROM "BackgroundBatch" WHERE id=${batchId} FOR UPDATE`;
+      const batch = filter.background.order
+        ? await tx.generationOrder.findUnique({ where: { id: batchId } })
+        : await tx.backgroundBatch.findUnique({ where: { id: batchId } });
       if (
         !batch ||
         batch.status !== "ACTIVE" ||
@@ -100,8 +116,55 @@ export async function runOne(filter?: {
       )
         return { count: 0 };
     }
+    if (
+      snapshot?.orderId &&
+      ["user-queue", "system-queue"].includes(String(snapshot.executionMode))
+    ) {
+      const orders = await tx.generationOrder.findMany({
+        where: {
+          requestKey: { startsWith: "order:" },
+          status: { in: ["STARTING", "ACTIVE"] },
+          ...(snapshot.executionMode === "user-queue"
+            ? {
+                actorId: (
+                  await tx.generationOrder.findUniqueOrThrow({
+                    where: { id: String(snapshot.orderId) },
+                  })
+                ).actorId,
+              }
+            : {}),
+        },
+        orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+        select: { id: true, jobIds: true },
+      });
+      for (const order of orders) {
+        if (order.id === snapshot.orderId) break;
+        const earlier = await tx.generationJob.findMany({
+          where: { id: { in: order.jobIds as string[] }, status: "PENDING" },
+        });
+        for (const job of earlier)
+          if (
+            !(await (
+              await import("../lib/preview-approval")
+            ).waitingForApproval(tx, job))
+          )
+            return { count: 0 };
+      }
+    }
     const active = await tx.generationJob.count({
-      where: { actorId: candidate.actorId, status: "RUNNING" },
+      where: {
+        status: "RUNNING",
+        ...(snapshot?.executionMode === "system-queue"
+          ? {}
+          : {
+              OR: [
+                { actorId: candidate.actorId },
+                {
+                  snapshot: { path: ["executionMode"], equals: "system-queue" },
+                },
+              ],
+            }),
+      },
     });
     if (active) return { count: 0 };
     if (

@@ -40,7 +40,7 @@ export async function cancelJob(
 export async function processJob(
   user: { id: string; role: string },
   id: string,
-  background?: { batchId: string; runId: string },
+  background?: { batchId: string; runId: string; order?: boolean },
 ) {
   const job = await db.generationJob.findUnique({ where: { id } });
   demand(job, "Trabajo no encontrado.", 404);
@@ -67,6 +67,12 @@ export async function processJob(
   demand(
     !(await (await import("./preview-approval")).waitingForApproval(db, job)),
     "Aprueba la primera muestra antes de generar las demás variaciones.",
+    409,
+  );
+  const orderId = (job.snapshot as Record<string, unknown>).orderId;
+  demand(
+    !orderId || (background?.batchId === orderId && background.order === true),
+    "Controla esta generación desde su orden en Biblioteca.",
     409,
   );
   await configured();

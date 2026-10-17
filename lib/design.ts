@@ -34,13 +34,22 @@ export const logoLayer = z
     height: z.number().int().min(20).max(4096),
   })
   .strict();
+export const shapeLayer = z
+  .object({
+    ...box,
+    type: z.literal("shape"),
+    kind: z.enum(["rectangle", "ellipse"]),
+    height: z.number().int().min(20).max(4096),
+    color,
+  })
+  .strict();
 export const designSchema = z
   .object({
     width: z.number().int().min(256).max(4096),
     height: z.number().int().min(256).max(4096),
     backgroundColor: color,
     layers: z
-      .array(z.discriminatedUnion("type", [textLayer, logoLayer]))
+      .array(z.discriminatedUnion("type", [textLayer, logoLayer, shapeLayer]))
       .max(40),
   })
   .strict();
@@ -92,7 +101,7 @@ export function validateBounds(design: Design) {
       l.x + l.width <= design.width && l.y < design.height,
       "Un elemento queda fuera del área de diseño.",
     );
-    if (l.type === "logo")
+    if (l.type !== "text")
       demand(
         l.y + l.height <= design.height,
         "Un logo queda fuera del área de diseño.",
@@ -158,6 +167,19 @@ export async function renderDesign(
         meta.height && meta.width && layer.y + meta.height <= design.height,
         "Un texto se corta o queda fuera de los márgenes. Reduce su tamaño o muévelo.",
       );
+      layers.push({ input: bytes, left: layer.x, top: layer.y });
+    } else if (layer.type === "shape") {
+      const element =
+        layer.kind === "ellipse"
+          ? `<ellipse cx="${layer.width / 2}" cy="${layer.height / 2}" rx="${layer.width / 2}" ry="${layer.height / 2}" fill="${layer.color}"/>`
+          : `<rect width="${layer.width}" height="${layer.height}" fill="${layer.color}"/>`;
+      const bytes = await sharp(
+        Buffer.from(
+          `<svg xmlns="http://www.w3.org/2000/svg" width="${layer.width}" height="${layer.height}">${element}</svg>`,
+        ),
+      )
+        .png()
+        .toBuffer();
       layers.push({ input: bytes, left: layer.x, top: layer.y });
     } else {
       const bytes = logos.get(layer.attachmentId);

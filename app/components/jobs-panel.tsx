@@ -546,7 +546,7 @@ export function JobsPanel() {
                   </div>
                 </details>
                 <label>
-                  Resultados por página
+                  Ver
                   <select
                     disabled={busy}
                     value={size}
@@ -561,7 +561,7 @@ export function JobsPanel() {
                   </select>
                 </label>
                 <label>
-                  Tamaño de miniaturas
+                  Tamaño
                   <select
                     value={thumbnail}
                     onChange={(e) => setThumbnail(e.target.value)}
@@ -573,7 +573,9 @@ export function JobsPanel() {
                 </label>
 
                 <details>
-                  <summary>Acciones · {selected.length} seleccionados</summary>
+                  <summary>
+                    Seleccionar · {selected.length} seleccionados
+                  </summary>
                   <div className="toolbar-popover stack">
                     <button
                       type="button"

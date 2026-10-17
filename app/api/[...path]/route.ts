@@ -495,6 +495,10 @@ async function handle(
           await import("@/lib/preview-approval")
         ).approveJob(user, parts[1]),
       );
+    if (parts[0] === "orders")
+      return await (
+        await import("@/lib/order-routes")
+      ).orderRoutes(req, parts, user, () => body(req));
     if (route === "jobs/list" && method === "GET") {
       const { listJobs } = await import("@/lib/job-management");
       return send(await listJobs(user, req.nextUrl.searchParams));

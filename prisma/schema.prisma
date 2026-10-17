@@ -178,6 +178,7 @@ model GenerationJob {
   subproductId String?
   idempotencyKey String @unique
   status String @default("PENDING")
+  // Versioned SQL also indexes snapshot->>orderId when present (migration 024).
   snapshot Json
   reservedMicros BigInt
   archivedAt DateTime?
@@ -203,6 +204,20 @@ model BackgroundBatch {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   @@index([actorId,createdAt])
+}
+// Per-request progress is independent of historical execution batches.
+model GenerationOrder {
+  id String @id @default(cuid())
+  actorId String
+  requestKey String @unique
+  jobIds Json
+  status String @default("QUEUED")
+  runId String?
+  error String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@index([actorId,createdAt])
+  @@index([status,createdAt,id])
 }
 model Variation {
   id String @id @default(cuid())

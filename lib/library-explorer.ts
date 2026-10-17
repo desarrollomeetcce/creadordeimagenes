@@ -131,8 +131,21 @@ export async function explorerData(user: Actor, params: URLSearchParams) {
       .number()
       .refine((v) => [25, 50, 100].includes(v))
       .parse(params.get("limit") ?? 25);
+  const review = z
+      .enum(["all", "approved", "pending"])
+      .parse(params.get("review") ?? "all"),
+    order = z.enum(["newest", "oldest"]).parse(params.get("order") ?? "newest"),
+    kind = z
+      .enum(["all", "images", "documents"])
+      .parse(params.get("kind") ?? "all");
   const personal = folder.startsWith("folder:") ? folder.slice(7) : null;
   const where: Prisma.VariationWhereInput = {
+    ...(kind === "documents" ? { id: "" } : {}),
+    ...(review === "approved"
+      ? { reviewStatus: "APPROVED" }
+      : review === "pending"
+        ? { reviewStatus: "PENDING" }
+        : {}),
     libraryExclusions: { none: { userId: user.id } },
     deletedAt: null,
     expired: false,
@@ -154,8 +167,13 @@ export async function explorerData(user: Actor, params: URLSearchParams) {
     ...(Object.keys(dates).length ? { createdAt: dates } : {}),
     ...(personal
       ? { libraryItems: { some: { userId: user.id, folderId: personal } } }
-      : {
+      : user.role === "OWNER"
+        ? {}
+        : {
           OR: [
+            ...(user.role !== "OBSERVER"
+              ? [{ job: { actorId: user.id } }]
+              : []),
             { reviewStatus: "APPROVED" },
             { libraryItems: { some: { userId: user.id } } },
           ],
@@ -164,7 +182,7 @@ export async function explorerData(user: Actor, params: URLSearchParams) {
   const documentWhere = {
     userId: user.id,
     folderId: personal,
-    ...(!personal && folder ? { id: "" } : {}),
+    ...((!personal && folder) || kind === "images" ? { id: "" } : {}),
     ...(Object.keys(dates).length ? { createdAt: dates } : {}),
   };
   const [total, items, documents, tree, counts, documentCount] =
@@ -174,9 +192,13 @@ export async function explorerData(user: Actor, params: URLSearchParams) {
         where,
         skip: (page - 1) * limit,
         take: limit,
-        orderBy: [{ createdAt: "desc" }, { id: "asc" }],
+        orderBy: [
+          { createdAt: order === "oldest" ? "asc" : "desc" },
+          { id: "asc" },
+        ],
         select: {
           id: true,
+          revision: true,
           reviewStatus: true,
           createdAt: true,
           model: true,
@@ -211,7 +233,10 @@ export async function explorerData(user: Actor, params: URLSearchParams) {
         },
         take: limit,
         skip: (page - 1) * limit,
-        orderBy: { name: "asc" },
+        orderBy: [
+          { createdAt: order === "oldest" ? "asc" : "desc" },
+          { id: "asc" },
+        ],
       }),
       libraryTree(user),
       db.generationJob.groupBy({
@@ -234,11 +259,46 @@ export async function explorerData(user: Actor, params: URLSearchParams) {
       }),
       db.libraryDocument.count({ where: documentWhere }),
     ]);
+  const costs =
+    user.role === "OBSERVER"
+      ? []
+      : await db.usageLedger.findMany({
+          where: { jobId: { in: items.map((v) => v.job.id) } },
+          select: { jobId: true, actualMicros: true },
+        });
+  const costMap = new Map(
+    costs.map((c) => [c.jobId, c.actualMicros?.toString() ?? null]),
+  );
+  const orders = personal
+    ? []
+    : await (
+        await import("./generation-orders")
+      ).libraryOrders(user, {
+        AND: [
+          scope.where,
+          user.role === "OWNER"
+            ? {
+                OR: [
+                  scope.access ?? { id: "" },
+                  { projectId: "connection-test" },
+                ],
+              }
+            : (scope.access ?? { id: "" }),
+        ],
+        ...(Object.keys(dates).length ? { createdAt: dates } : {}),
+      });
   return {
+    orders,
     tree,
     items: items.map((v) => ({
       ...v,
+      ...(user.role !== "OBSERVER"
+        ? { actualMicros: costMap.get(v.job.id) ?? null }
+        : {}),
       canEdit: user.role !== "OBSERVER",
+      canApprove:
+        user.role !== "OBSERVER" &&
+        (user.role === "OWNER" || v.job.actorId === user.id),
     })),
     documents,
     total,
