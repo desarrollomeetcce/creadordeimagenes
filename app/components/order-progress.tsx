@@ -1,7 +1,11 @@
 "use client";
+import { ErrorNotice } from "./error-notice";
 import { useRef, useState } from "react";
 export type OrderProgress = {
   id: string;
+  viewerId?: string;
+  errorVersion?: string;
+  hiddenFromProduction?: boolean;
   status: string;
   error: string | null;
   createdAt: string;
@@ -224,7 +228,7 @@ export function OrderProgressCard({
                 {o.status === "PAUSED" ? "Reanudar" : "Continuar orden"}
               </button>
             )}
-          {!closed && o.pending > 0 && (
+          {!closed && o.status !== "STOPPED" && (o.pending > 0 || o.running > 0 || o.failed > 0 || o.uncertain > 0 || !!o.error) && (
             <button
               type="button"
               className="danger"
@@ -232,7 +236,7 @@ export function OrderProgressCard({
               onClick={() => {
                 if (
                   confirm(
-                    `¿Detener esta orden? Se cancelarán ${o.pending} imágenes sin iniciar. La imagen ya en curso puede terminar y cobrarse.`,
+                    o.pending > 0 ? `¿Detener esta orden? Se cancelarán ${o.pending} imágenes sin iniciar. La imagen ya en curso puede terminar y cobrarse.` : "¿Detener esta orden? No se repetirán solicitudes y se conservarán el historial y los costos. Si hay una imagen en curso, puede terminar y cobrarse.",
                   )
                 )
                   void perform("stop");
@@ -282,11 +286,7 @@ export function OrderProgressCard({
           )}
         </div>
       )}
-      {(error || o.error) && (
-        <p className="notice error" role="alert">
-          {error || o.error}
-        </p>
-      )}
+      {(error || o.error) && <ErrorNotice message={error || o.error!} acknowledgementKey={!error ? `${o.viewerId??"viewer"}:${o.id}:${o.errorVersion??o.createdAt}` : undefined} onDismiss={()=>setError("")} />}
       {o.running > 0 && (
         <p className="hint">
           La imagen ya en curso puede terminar y cobrarse. Pausar o detener

@@ -1,3 +1,4 @@
+import { emptyStoppedSubproducts } from "./order-visibility";
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import type { Prisma } from "@prisma/client";
@@ -48,6 +49,7 @@ export async function libraryTree(user: Actor): Promise<Node[]> {
       },
     }),
   ]);
+  const hiddenSubs = await emptyStoppedSubproducts(subs.map(sub=>sub.id));
   return [
     ...projects.map((p) => ({
       id: "project:" + p.id,
@@ -61,7 +63,7 @@ export async function libraryTree(user: Actor): Promise<Node[]> {
       parentId: "project:" + p.projectId,
       kind: "product",
     })),
-    ...subs.map((p) => ({
+    ...subs.filter(sub=>!hiddenSubs.has(sub.id)).map((p) => ({
       id: "subproduct:" + p.id,
       name: p.name,
       parentId: "product:" + p.categoryId,

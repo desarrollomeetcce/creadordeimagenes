@@ -13,7 +13,7 @@ export function useSubproductStatuses(project:string,product:string){
 }
 export function SubproductStatus({order}:{order?:OrderProgress}){
  if(!order)return <span className="badge subproduct-status">Sin orden</span>;
- const error=order.failed>0||order.uncertain>0||["NEEDS_REVIEW","DISPATCH_UNCERTAIN"].includes(order.status);
+ const error=order.status!=="STOPPED"&&(order.failed>0||order.uncertain>0||["NEEDS_REVIEW","DISPATCH_UNCERTAIN"].includes(order.status));
  const label=error?"Error · revisar":({QUEUED:"Pendiente · en cola",STARTING:"Pendiente · iniciando",ACTIVE:"En producción",PAUSING:"Pausando",PAUSED:"En pausa",STOPPED:"Detenido",REVIEW:"Pendiente de aprobación",COMPLETED:"Completado",ACCEPTED:"Completado"}[order.status]??order.status);
  return <span role="status" aria-live="polite" className={'badge subproduct-status '+(error?'status-error':['COMPLETED','ACCEPTED'].includes(order.status)?'status-completed':'status-pending')}>{label} · {order.completed}/{order.target}</span>;
 }

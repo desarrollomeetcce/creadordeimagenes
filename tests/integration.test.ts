@@ -10630,6 +10630,40 @@ test("Integración HTTP + PostgreSQL (base exclusiva de pruebas, sin llamadas ex
         assert.equal((await owner.call(`projects/${p.id}`)).body.prompt,p.prompt);assert.equal((await owner.call(`categories/${c.id}`)).body.prompt,c.prompt);
       }finally{provider.direct=oldDirect;provider.generate=oldGenerate;}
     }));
+    await t.test("detener primer intento vacío retira solo carpeta/tarjeta; conserva configuración, historial, costos y carpetas existentes",async()=>withOrderProvider(async(config,calls)=>{
+      const {libraryTree}=await import("../lib/library-explorer");
+      const actor={id:(await db.user.findFirstOrThrow({where:{role:"OWNER"}})).id,role:"OWNER"};
+      const {p,c,s:sub}=await hierarchyForReview();
+      async function orderFor(subproductId:string){
+        const jobs=await reserveJobs(actor.id,p.id,Array.from({length:2},(_,index)=>({subproductId,key:randomUUID(),snapshot:{prompt:"Contenido sintético",mode:"Texto",renderMode:"editable",index,format:"1:1"}})),config.revision);
+        const created=await owner.call("orders","POST",{ids:jobs.map(j=>j.id),mode:"immediate",requestId:randomUUID()});assert.equal(created.status,202);return {id:created.body.orders[0] as string,jobs};
+      }
+      const first=await orderFor(sub.id);
+      assert((await libraryTree(actor)).some(n=>n.id==="subproduct:"+sub.id));
+      await db.generationJob.update({where:{id:first.jobs[0].id},data:{status:"UNCERTAIN",error:"Respuesta creativa vacía"}});
+      await db.usageLedger.update({where:{jobId:first.jobs[0].id},data:{status:"UNCERTAIN",usage:{creative:{output_tokens:1200}}}});
+      const uncertainBefore=await db.usageLedger.findUniqueOrThrow({where:{jobId:first.jobs[0].id}});
+      const stopped=await owner.call(`orders/${first.id}/stop`,"POST",{});assert.equal(stopped.status,200);assert.equal(stopped.body.hiddenFromProduction,true);
+      assert.equal(stopped.body.viewerId,actor.id);assert.equal(stopped.body.uncertain,1);
+      assert(!(await libraryTree(actor)).some(n=>n.id==="subproduct:"+sub.id));
+      const category=(await owner.call(`categories/${c.id}`)).body;assert(category.subproducts.some((row:any)=>row.id===sub.id));assert.equal((await db.subproduct.findUniqueOrThrow({where:{id:sub.id}})).deletedAt,null);
+      assert.equal((await owner.call(`subproducts/${sub.id}/instructions`)).status,200);
+      assert(!(await owner.call(`orders?project=${p.id}&product=${c.id}`)).body.some((row:any)=>row.id===first.id));
+      const explicit=(await owner.call(`orders?ids=${first.id}`)).body[0];assert.equal(explicit.status,"STOPPED");assert.equal(explicit.hiddenFromProduction,true);
+      const uncertainAfter=await db.usageLedger.findUniqueOrThrow({where:{jobId:first.jobs[0].id}});assert.equal(uncertainAfter.status,uncertainBefore.status);assert.deepEqual(uncertainAfter.usage,uncertainBefore.usage);assert.equal(uncertainAfter.reservedMicros,uncertainBefore.reservedMicros);
+      assert.equal((await db.generationJob.findUniqueOrThrow({where:{id:first.jobs[1].id}})).status,"CANCELLED");
+      assert.equal((await owner.call(`orders/${first.id}/stop`,"POST",{})).status,200);
+      const added=await orderFor(sub.id);assert((await libraryTree(actor)).some(n=>n.id==="subproduct:"+sub.id));await owner.call(`orders/${added.id}/stop`,"POST",{});assert((await libraryTree(actor)).some(n=>n.id==="subproduct:"+sub.id));
+      await owner.call(`categories/${c.id}/subproducts`,"POST",{names:["En curso","Con resultados","Con carpeta personal"]});
+      const rows=(await owner.call(`categories/${c.id}`)).body.subproducts;const runningSub=rows.find((row:any)=>row.name==="En curso"),savedSub=rows.find((row:any)=>row.name==="Con resultados"),personalSub=rows.find((row:any)=>row.name==="Con carpeta personal");
+      const running=await orderFor(runningSub.id);await db.generationJob.update({where:{id:running.jobs[0].id},data:{status:"RUNNING",leaseToken:randomUUID(),heartbeatAt:new Date(),startedAt:new Date()}});const runningStop=await owner.call(`orders/${running.id}/stop`,"POST",{});assert.equal(runningStop.body.hiddenFromProduction,false);assert((await libraryTree(actor)).some(n=>n.id==="subproduct:"+runningSub.id));
+      // A late completion remains available; no provider request is executed here.
+      await db.generationJob.update({where:{id:running.jobs[0].id},data:{status:"COMPLETED",leaseToken:null,heartbeatAt:null}});await db.variation.create({data:{jobId:running.jobs[0].id,subproductId:runningSub.id,path:"synthetic-late.png",model:"synthetic",expiresAt:new Date(Date.now()+86400000)}});assert((await libraryTree(actor)).some(n=>n.id==="subproduct:"+runningSub.id));
+      const saved=await orderFor(savedSub.id);await db.generationJob.update({where:{id:saved.jobs[0].id},data:{status:"COMPLETED"}});await db.variation.create({data:{jobId:saved.jobs[0].id,subproductId:savedSub.id,path:"synthetic-saved.png",model:"synthetic",expiresAt:new Date(Date.now()+86400000)}});const savedStop=await owner.call(`orders/${saved.id}/stop`,"POST",{});assert.equal(savedStop.body.hiddenFromProduction,false);assert((await libraryTree(actor)).some(n=>n.id==="subproduct:"+savedSub.id));
+      const personal=await orderFor(personalSub.id);await db.libraryFolder.create({data:{userId:actor.id,name:"Mi carpeta manual",anchorScope:"subproduct",anchorId:personalSub.id}});await owner.call(`orders/${personal.id}/stop`,"POST",{});assert((await libraryTree(actor)).some(n=>n.id==="subproduct:"+personalSub.id));
+      assert.equal((await observer.call(`orders/${first.id}/stop`,"POST",{})).status,403);
+      assert.equal(calls(),0);
+    }));
     await t.test("cierre de sesión invalida el token", async () => {
       assert.equal((await user.call("auth/logout", "POST")).status, 200);
       assert.equal((await user.call("projects")).status, 401);

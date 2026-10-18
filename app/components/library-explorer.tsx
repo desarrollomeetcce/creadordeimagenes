@@ -14,6 +14,7 @@ import {
 } from "./folder-navigation";
 import { SearchSelect } from "./search-select";
 import { useCanEdit } from "./role-guide";
+import { ErrorNotice } from "./error-notice";
 import { ImagePreviewModal } from "./image-preview-modal";
 import { ImageEditorModal } from "./image-editor-modal";
 import {
@@ -618,11 +619,7 @@ export function Library() {
               ))}
             </aside>
           ) : null}
-          {error && (
-            <p role="alert" className="notice error">
-              {error}
-            </p>
-          )}
+          {error && <ErrorNotice message={error} onDismiss={()=>setError("")} />}
           {message && (
             <p role="status" className="notice">
               {message}

@@ -1,4 +1,5 @@
 "use client";
+import { ErrorNotice } from "./error-notice";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   OrderProgressCard,
@@ -70,7 +71,7 @@ export function useProductionController(
     );
     const b = await r.json();
     if (!r.ok) throw Error(b.error ?? "No se pudo consultar la orden.");
-    if (mounted.current) setOrders(b);
+    if (mounted.current) {setOrders(b.filter((order:OrderProgress)=>!order.hiddenFromProduction));setError("");}
     await update.current?.();
   }, []);
   const scopeRevision = useRef(0);
@@ -91,7 +92,7 @@ export function useProductionController(
             .filter(
               (o) =>
                 o.running > 0 ||
-                (o.pending > 0 &&
+                ((o.pending > 0 || o.failed > 0 || o.uncertain > 0 || !!o.error) &&
                   !["ACCEPTED", "COMPLETED", "STOPPED"].includes(o.status)),
             )
             .concat(
@@ -206,6 +207,7 @@ export function useProductionController(
     }
   };
   return {
+    dismissError:()=>setError(""),
     orders,
     start,
     refresh,
@@ -264,11 +266,7 @@ export function ProductionControls({
           Consultar el mismo envío
         </button>
       )}
-      {c.error && (
-        <p role="alert" className="notice error">
-          {c.error}
-        </p>
-      )}
+      {c.error && <ErrorNotice message={c.error} onDismiss={c.dismissError} />}
     </div>
   );
 }
