@@ -114,7 +114,7 @@ export async function orderRoutes(
       };
       return send(
         (
-          await (await import("./generation-orders")).libraryOrders(user, where)
+          await (await import("./generation-orders")).libraryOrders(user, where,{includeClosed:req.nextUrl.searchParams.get("includeClosed")==="true"})
         ).filter((o) => o.canManage),
       );
     }

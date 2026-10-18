@@ -508,6 +508,7 @@ export async function orderTick(
 export async function libraryOrders(
   user: Actor,
   where: Prisma.GenerationJobWhereInput,
+  options: {includeClosed?:boolean} = {},
 ) {
   const visible = await db.generationJob.findMany({
     where: {
@@ -572,6 +573,7 @@ export async function libraryOrders(
     );
     return {
       ...summary,
+      hiddenFromProduction:summary.hiddenFromProduction||dismissed.has(order.id),
       sampleJobId: sample?.id ?? null,
       scope: {
         project:
@@ -590,5 +592,5 @@ export async function libraryOrders(
         reviewStatus: j.reviewStatus,
       })),
     };
-  }).filter(order=>!order.hiddenFromProduction&&!dismissed.has(order.id));
+  }).filter(order=>options.includeClosed||!order.hiddenFromProduction);
 }

@@ -249,7 +249,7 @@ export function ProductionControls({
   return (
     <div className="stack production-controls">
       {c.dispatching && <p role="status">Enviando orden…</p>}
-      {c.orders.map((order) => (
+      {c.orders.filter(order=>!order.hiddenFromProduction).map((order) => (
         <OrderProgressCard
           key={order.id}
           order={order}

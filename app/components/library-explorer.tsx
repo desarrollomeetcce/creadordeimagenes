@@ -115,6 +115,7 @@ export function Library() {
     order: sort,
     kind,
   }).toString();
+  useEffect(()=>{setSelectedOrders([]);},[params]);
   const refresh = useCallback(async () => {
     const seq = ++revision.current;
     setRefreshing(true);
