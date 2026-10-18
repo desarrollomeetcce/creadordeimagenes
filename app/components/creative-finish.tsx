@@ -38,7 +38,7 @@ export function CreativeFinish({
       <small>
         {designMode === "editable"
           ? "Canva: fondo, textos y logos por separado para moverlos y editarlos. Si las capas no son utilizables, se conserva el afiche como imagen completa. No conecta con Canva."
-          : "Bajo y Medio también generan afiches profesionales. Bajo usa directamente tus instrucciones para reducir consumo. Medio es el acabado habitual: la IA diseña el afiche completo según tu prompt. Alto es opcional: dedica más análisis y puede tardar y consumir más. Sus textos originales forman parte de la imagen; puedes editarla con IA o añadir elementos."}{" "}
+          : "Bajo y Medio también generan afiches profesionales. Bajo usa directamente tus instrucciones para reducir consumo. Medio es el acabado habitual: la IA diseña el afiche completo según tu prompt. Alto es opcional: dedica más análisis y puede tardar y consumir más. Si defines título, oferta y precio en bloques, se componen como texto nítido y editable. Otros resultados integran los textos en la imagen y permiten edición con IA o elementos añadidos."}{" "}
         El nivel de razonamiento se aplica cuando el modelo lo admite.
       </small>
     </label>

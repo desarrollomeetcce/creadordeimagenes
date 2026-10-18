@@ -236,7 +236,7 @@ export const Attachments = forwardRef<AttachmentsHandle, {
             {["Material de contexto","Logo institucional","Referencia visual","Fotografía obligatoria","Información comercial","Manual de marca"].map(p => <option key={p}>{p}</option>)}
           </select>
         </label>
-        {drafts.length > 1 && <button type="button" disabled={busy} onClick={() => updateDrafts(draftsRef.current.filter(r => r.key !== draft.key))}>Quitar fila {index + 1}</button>}
+        {(draft.file || drafts.length > 1) && <button type="button" className="danger" disabled={busy} aria-label={draft.file ? `Quitar archivo ${draft.file.name}` : `Quitar fila ${index+1}`} onClick={() => {const next=draftsRef.current.filter(r=>r.key!==draft.key);updateDrafts(next.length?next:[{key:crypto.randomUUID(),purpose:"Material de contexto"}]);setMessage(draft.file?"Archivo pendiente retirado; no se subió.":"");}}>{draft.file?"Quitar archivo":"Quitar fila"}</button>}
       </div>)}
       <div className="row">
         <button type="button" disabled={busy} onClick={() => updateDrafts([...draftsRef.current, { key:crypto.randomUUID(), purpose:"Material de contexto" }])}>{addLabel}</button>

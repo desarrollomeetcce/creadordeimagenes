@@ -214,3 +214,25 @@ test("recuperación local conserva brief completo y reconoce JSON rodeado de Mar
  assert.equal(usableLayeredPlan(JSON.stringify({...plan,logos:[{id:"logo",attachmentId:"private",x:0,y:0,width:40,height:40}]}),"1:1",[]),null);
  assert.equal(usableLayeredPlan("{incompleto","1:1",[]),null);
 });
+
+test("copy literal forense: textos exactos, variantes independientes y render local sin IA",async()=>{
+ const {readFile}=await import("node:fs/promises"),{extractFlyerCopy,oneFlyerBrief}=await import("../lib/flyer-copy"),{exactFlyer}=await import("../lib/exact-flyer");
+ const prompt=await readFile("tests/fixtures/forensic-brief.txt","utf8");
+ const visual=oneFlyerBrief(prompt+"\nEJE TEMÁTICO OBLIGATORIO: Forense.\nDocumento: contexto heredado.","Imagen + Texto",0),typography=oneFlyerBrief(prompt,"Texto",1);
+ assert(!visual.includes("VARIACIÓN 2"));assert(visual.includes("Documento: contexto heredado"));assert(typography.includes("VARIACIÓN 2"));assert(!typography.includes("VARIACIÓN 1"));
+ const copy=extractFlyerCopy(visual)!;assert.equal(copy.title,"DIPLOMADO EN PSICOLOGÍA FORENSE");assert.equal(copy.offer,"MENSUALIDADES GRATIS");assert.equal(copy.price,"Pago único $40 USD");assert.deepEqual(copy.brands,["Cámara Nacional de Negocios","WOSA","ISO 9001","ISO 22001"]);assert(!JSON.stringify(copy).includes("Ministerio"));assert(!JSON.stringify(copy).includes("Perú"));
+ const {design}=await exactFlyer(copy,"1:1","Texto",[],[]);const bytes=await renderDesign(design,null,new Map());const meta=await sharp(bytes).metadata();assert.equal(meta.width,1080);assert.equal(meta.height,1080);assert(design.layers.some(l=>l.type==="text"&&l.text==="Pago único $40 USD"));
+ const bright=await exactFlyer(copy,"1:1","Texto",["#ffff00","#ffffff"],[]);assert(bright.design.layers.some(l=>l.type==="text"&&l.id==="headline"&&l.color==="#102a43"));
+ assert.equal(extractFlyerCopy("Crea un flyer sin datos comerciales explícitos"),null);
+ const updated=extractFlyerCopy(prompt+"\n### PRECIO\n**Pago único $50 USD**")!;assert.equal(updated.price,"Pago único $50 USD");
+});
+
+test("tiradores de edición respetan límites, conservan tipo y cambian ancho/tamaño de texto",async()=>{
+ const {resizeLayer}=await import("../lib/editor-geometry");
+ const shape={id:"s",type:"shape" as const,kind:"rectangle" as const,x:100,y:100,width:200,height:100,color:"#ffffff"};
+ assert.deepEqual(resizeLayer(shape,"se",60,30,{width:1080,height:1080},100),{...shape,width:260,height:130});
+ const bounds=resizeLayer(shape,"nw",-500,-500,{width:1080,height:1080},100);assert.equal(bounds.x,0);assert.equal(bounds.y,0);assert.equal(bounds.width,300);
+ const text={id:"t",type:"text" as const,x:30,y:30,width:300,fontSize:40,font:"DejaVu Sans" as const,color:"#ffffff",align:"left" as const,text:"MENSAJE"};
+ const wider=resizeLayer(text,"e",100,0,{width:1080,height:1080},50);assert.equal(wider.width,400);assert(wider.type==="text"&&wider.fontSize===40);
+ const bigger=resizeLayer(text,"se",100,50,{width:1080,height:1080},50);assert(bigger.type==="text"&&bigger.fontSize===80);
+});

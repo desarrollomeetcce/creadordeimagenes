@@ -1,4 +1,5 @@
 "use client";
+import { resizeLayer, type ResizeHandle } from "../../lib/editor-geometry";
 import { CreativeFinish } from "./creative-finish";
 import { useEffect, useState, useRef } from "react";
 import {
@@ -103,7 +104,18 @@ export function VariationEditor({
     startX: number;
     startY: number;
     id: string;
+    handle?: ResizeHandle;
+    layer: Design["layers"][number];
+    height: number;
   } | null>(null);
+  const [contextMenu,setContextMenu]=useState<{id:string;x:number;y:number}|null>(null);
+  const menuRef=useRef<HTMLDivElement>(null);
+  useEffect(()=>{if(!contextMenu)return;const close=(event:PointerEvent)=>{if(!menuRef.current?.contains(event.target as Node))setContextMenu(null);};const key=(event:KeyboardEvent)=>{if(event.key==="Escape")setContextMenu(null);};window.addEventListener("pointerdown",close);window.addEventListener("keydown",key);return()=>{window.removeEventListener("pointerdown",close);window.removeEventListener("keydown",key);};},[contextMenu]);
+  const reorder=(id:string,direction:"front"|"back"|"up"|"down")=>{
+    if(!draft)return;const layers=[...draft.layers],index=layers.findIndex(l=>l.id===id);if(index<0)return;
+    const next=direction==="front"?layers.length-1:direction==="back"?0:Math.max(0,Math.min(layers.length-1,index+(direction==="up"?1:-1)));
+    if(index!==next){const [item]=layers.splice(index,1);layers.splice(next,0,item);edit({...draft,layers});}setContextMenu(null);
+  };
   if (!data)
     return (
       <section className="panel">
@@ -144,6 +156,7 @@ export function VariationEditor({
           <button onClick={onClose}>Cerrar editor</button>
         </div>
       </div>
+      {contextMenu&&<div ref={menuRef} role="menu" aria-label="Orden de capas" className="editor-context-menu" style={{left:Math.max(4,contextMenu.x),top:Math.max(4,contextMenu.y)}} onKeyDown={e=>{if(["ArrowDown","ArrowUp","Home","End"].includes(e.key)){e.preventDefault();const buttons=[...e.currentTarget.querySelectorAll<HTMLButtonElement>("button")],i=buttons.indexOf(document.activeElement as HTMLButtonElement);buttons[e.key==="Home"?0:e.key==="End"?buttons.length-1:(i+(e.key==="ArrowDown"?1:buttons.length-1))%buttons.length]?.focus();}}}>{([["front","Traer al frente"],["up","Subir una capa"],["down","Bajar una capa"],["back","Enviar al fondo"]] as const).map(([direction,label])=><button type="button" role="menuitem" key={direction} onClick={()=>reorder(contextMenu.id,direction)}>{label}</button>)}</div>}
       {draft ? (
         <div className="editor-grid">
           <div
@@ -159,6 +172,7 @@ export function VariationEditor({
                 d = drag.current;
               const active = draft.layers.find((l) => l.id === d.id);
               if (!active) return;
+              if(d.handle){const changed=resizeLayer(d.layer,d.handle,((e.clientX-d.x)*draft.width)/r.width,((e.clientY-d.y)*draft.height)/r.height,draft,d.height);setDraft({...draft,layers:draft.layers.map(l=>l.id===d.id?changed:l)});return;}
               const x = Math.max(
                   0,
                   Math.min(
@@ -204,7 +218,7 @@ export function VariationEditor({
             {draft.layers.map((l) => (
               <div
                 key={l.id}
-                role="button"
+                role="group"
                 tabIndex={0}
                 aria-label={"Seleccionar " + l.id}
                 className={
@@ -221,6 +235,7 @@ export function VariationEditor({
                         fontSize: `${(l.fontSize / draft.width) * 100}cqw`,
                         color: l.color,
                         fontFamily: l.font,
+                        fontWeight: l.fontWeight??"normal",
                         textAlign: l.align,
                         whiteSpace: "pre-wrap",
                       }
@@ -237,7 +252,9 @@ export function VariationEditor({
                 onKeyDown={(e) => {
                   if (e.key === "Enter") setSelected(l.id);
                 }}
+                onContextMenu={e=>{e.preventDefault();setSelected(l.id);setContextMenu({id:l.id,x:Math.min(e.clientX,innerWidth-210),y:Math.min(e.clientY,innerHeight-190)});}}
                 onPointerDown={(e) => {
+                  if(e.button!==0)return;
                   e.preventDefault();
                   setSelected(l.id);
                   setHistory([...history.slice(-49), draft]);
@@ -248,6 +265,8 @@ export function VariationEditor({
                     startX: l.x,
                     startY: l.y,
                     id: l.id,
+                    layer: {...l},
+                    height: e.currentTarget.getBoundingClientRect().height*draft.height/box.current!.getBoundingClientRect().height,
                   };
                   e.currentTarget.setPointerCapture(e.pointerId);
                 }}
@@ -261,6 +280,7 @@ export function VariationEditor({
                     draggable={false}
                   />
                 ) : null}
+                {selected===l.id && (["nw","n","ne","e","se","s","sw","w"] as ResizeHandle[]).map(handle=><button key={handle} type="button" className={"resize-handle handle-"+handle} aria-label={"Redimensionar "+handle+" "+l.id} onPointerDown={e=>{if(e.button!==0)return;e.preventDefault();e.stopPropagation();setHistory([...history.slice(-49),draft]);setRedo([]);drag.current={x:e.clientX,y:e.clientY,startX:l.x,startY:l.y,id:l.id,layer:{...l},height:e.currentTarget.parentElement!.getBoundingClientRect().height*draft.height/box.current!.getBoundingClientRect().height,handle};e.currentTarget.setPointerCapture(e.pointerId);}} onKeyDown={e=>{const delta=e.shiftKey?10:2;if(!["ArrowLeft","ArrowRight","ArrowUp","ArrowDown"].includes(e.key))return;e.preventDefault();e.stopPropagation();const h=e.currentTarget.parentElement!.getBoundingClientRect().height*draft.height/box.current!.getBoundingClientRect().height;const changed=resizeLayer(l,handle,e.key==="ArrowRight"?delta:e.key==="ArrowLeft"?-delta:0,e.key==="ArrowDown"?delta:e.key==="ArrowUp"?-delta:0,draft,h);edit({...draft,layers:draft.layers.map(item=>item.id===l.id?changed:item)});}} />)}
               </div>
             ))}
           </div>
@@ -460,29 +480,13 @@ export function VariationEditor({
               <div className="editor-add-actions">
                 <button
                   type="button"
-                  onClick={() =>
-                    edit({
-                      ...draft,
-                      layers: [
-                        ...draft.layers.filter((l) => l.id !== selected),
-                        layer,
-                      ],
-                    })
-                  }
+                  onClick={() => reorder(selected,"front")}
                 >
                   Traer delante
                 </button>
                 <button
                   type="button"
-                  onClick={() =>
-                    edit({
-                      ...draft,
-                      layers: [
-                        layer,
-                        ...draft.layers.filter((l) => l.id !== selected),
-                      ],
-                    })
-                  }
+                  onClick={() => reorder(selected,"back")}
                 >
                   Enviar detrás
                 </button>
@@ -555,7 +559,7 @@ export function VariationEditor({
               )}
             </div>
             <p className="hint">
-              Arrastra los elementos para moverlos. La vista es orientativa; el
+              Arrastra los elementos para moverlos y sus tiradores para redimensionarlos. Usa clic derecho para ordenar las capas. La vista es orientativa; el
               servidor valida márgenes y textos cortados al guardar. El logo
               conserva sus proporciones.
             </p>

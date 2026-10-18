@@ -6,6 +6,7 @@ export type OrderProgress = {
   viewerId?: string;
   errorVersion?: string;
   hiddenFromProduction?: boolean;
+  canDismiss?: boolean;
   status: string;
   error: string | null;
   createdAt: string;
@@ -91,10 +92,12 @@ export function OrderProgressCard({
   order: o,
   refresh,
   compact = false,
+  selection,
 }: {
   order: OrderProgress;
   refresh: () => Promise<void>;
   compact?: boolean;
+  selection?: {checked:boolean;onChange:(checked:boolean)=>void};
 }) {
   const [busy, setBusy] = useState(false),
     [error, setError] = useState("");
@@ -105,7 +108,7 @@ export function OrderProgressCard({
     setBusy(true);
     setError("");
     try {
-      await orderRequest(`/${o.id}/${action}`, body);
+      await orderRequest(action==="hide-card"?"/hide":`/${o.id}/${action}`,action==="hide-card"?{ids:[o.id]}:body);
       await refresh();
       if (
         (action === "resume" || action === "approve") &&
@@ -142,6 +145,7 @@ export function OrderProgressCard({
       data-order-id={o.id}
     >
       <div className="order-preview">
+        {selection&&<label className="row"><input type="checkbox" checked={selection.checked} disabled={!o.canDismiss} onChange={e=>selection.onChange(e.target.checked)} aria-label={"Seleccionar carga "+(o.name??o.id)} />Seleccionar</label>}
         {o.sample && !o.sample.deletedAt ? (
           <img
             loading="lazy"
@@ -275,6 +279,7 @@ export function OrderProgressCard({
               Quedarme con {o.completed} · finalizar
             </button>
           )}
+          {o.canDismiss&&<button type="button" className="danger" disabled={busy} onClick={()=>{if(confirm("¿Retirar esta tarjeta de generación? Las imágenes, aprobaciones, historial y costos se conservan."))void perform("hide-card");}}>Eliminar tarjeta</button>}
           {o.status === "DISPATCH_UNCERTAIN" && (
             <button
               type="button"

@@ -1,3 +1,4 @@
+import { dismissedOrders, dismissOrders } from "./order-dismissal";
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { start, getRun } from "workflow/api";
@@ -72,6 +73,10 @@ export async function orderRoutes(
 ) {
   const send = (b: unknown, status = 200) =>
     NextResponse.json(b, { status, headers: { "Cache-Control": "no-store" } });
+  if(parts.length===2&&parts[1]==="hide"&&req.method==="POST"){
+    const b=z.object({ids:z.array(z.string().min(1).max(120)).min(1).max(100)}).strict().parse(await body());
+    await dismissOrders(user,b.ids);return send({ok:true});
+  }
   if (parts.length === 1 && req.method === "POST") {
     const b = z
       .object({
@@ -113,6 +118,7 @@ export async function orderRoutes(
         ).filter((o) => o.canManage),
       );
     }
+    const dismissed=await dismissedOrders(user.id,ids);
     return send(
       await Promise.all(
         ids.map(async (id) => {
@@ -125,6 +131,7 @@ export async function orderRoutes(
             : null;
           return {
             ...orderSummary(order, jobs, user),
+            ...(dismissed.has(id)?{hiddenFromProduction:true}:{}),
             name: sub?.name ?? "Prueba de imagen",
             scope: {
               project:

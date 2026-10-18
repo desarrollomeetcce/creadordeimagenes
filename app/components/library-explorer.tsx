@@ -69,6 +69,7 @@ async function api(path: string, method = "GET", body?: unknown) {
   return b;
 }
 export function Library() {
+  const [selectedOrders,setSelectedOrders]=useState<string[]>([]);
   const [editing, setEditing] = useState<string | null>(null);
   const [preview, setPreview] = useState<{
     id: string;
@@ -610,10 +611,12 @@ export function Library() {
               className="folder-orders"
               aria-label="Órdenes de esta carpeta"
             >
+              <div className="row"><label className="row"><input type="checkbox" aria-label="Seleccionar cargas finalizadas" checked={!!data?.orders.filter(o=>o.canDismiss).length&&data.orders.filter(o=>o.canDismiss).every(o=>selectedOrders.includes(o.id))} onChange={e=>setSelectedOrders(e.target.checked?(data?.orders.filter(o=>o.canDismiss).map(o=>o.id)??[]):[])} />Seleccionar cargas</label><button type="button" className="danger" disabled={busy||!selectedOrders.length} onClick={()=>{if(confirm("¿Retirar las tarjetas seleccionadas? Las imágenes, aprobaciones, historial y costos se conservan."))void action(async()=>{await (await import("./order-progress")).orderRequest("/hide",{ids:selectedOrders});setSelectedOrders([]);},"Tarjetas retiradas.");}}>Eliminar tarjetas ({selectedOrders.length})</button></div>
               {data?.orders.map((order) => (
                 <OrderProgressCard
                   key={order.id}
                   order={order}
+                  selection={{checked:selectedOrders.includes(order.id),onChange:checked=>setSelectedOrders(ids=>checked?[...new Set([...ids,order.id])]:ids.filter(id=>id!==order.id))}}
                   refresh={refresh}
                 />
               ))}

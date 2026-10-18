@@ -1,3 +1,4 @@
+import { dismissedOrders } from "./order-dismissal";
 import { emptyStoppedOrder } from "./order-visibility";
 import type { Prisma } from "@prisma/client";
 import { db } from "./db";
@@ -90,7 +91,9 @@ export function orderSummary(
     id: order.id,
     viewerId: user.id,
     errorVersion: (order.updatedAt ?? order.createdAt).toISOString(),
-    hiddenFromProduction: emptyStoppedOrder(order.status,jobs),
+    hiddenFromProduction: emptyStoppedOrder(order.status,jobs) ||
+      (["COMPLETED","ACCEPTED"].includes(order.status) && !jobs.some(j=>["PENDING","RUNNING"].includes(j.status)) && !jobs.some(j=>j.variation&&!j.variation.deletedAt&&j.variation.reviewStatus!=="APPROVED")),
+    canDismiss: user.role!=="OBSERVER" && (user.id===order.actorId||user.role==="OWNER") && ["COMPLETED","ACCEPTED","STOPPED","NEEDS_REVIEW"].includes(order.status) && !jobs.some(j=>["PENDING","RUNNING"].includes(j.status)),
     status: order.status,
     error: order.error,
     createdAt: order.createdAt,
@@ -527,6 +530,7 @@ export async function libraryOrders(
     }[]
   >`SELECT id,"actorId",status,error,"jobIds","createdAt","updatedAt" FROM "GenerationOrder" WHERE "requestKey" LIKE 'order:%' AND "jobIds" ?| ${visible.map((j) => j.id)}::text[] ORDER BY "createdAt" DESC,id DESC LIMIT 30`;
   if (!records.length) return [];
+  const dismissed = await dismissedOrders(user.id,records.map(o=>o.id));
   const ids = records.flatMap((o) => o.jobIds);
   const jobs = await db.$queryRaw<
     {
@@ -586,5 +590,5 @@ export async function libraryOrders(
         reviewStatus: j.reviewStatus,
       })),
     };
-  }).filter(order=>!order.hiddenFromProduction);
+  }).filter(order=>!order.hiddenFromProduction&&!dismissed.has(order.id));
 }

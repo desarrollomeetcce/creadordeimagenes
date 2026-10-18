@@ -51,6 +51,7 @@ export async function libraryTree(user: Actor): Promise<Node[]> {
   ]);
   const hiddenSubs = await emptyStoppedSubproducts(subs.map(sub=>sub.id));
   return [
+    {id:"loose:root",name:"Archivos sin carpeta",parentId:null,kind:"loose"},
     ...projects.map((p) => ({
       id: "project:" + p.id,
       name: p.name,
@@ -92,7 +93,7 @@ export async function libraryTree(user: Actor): Promise<Node[]> {
   ].sort((a, b) => a.name.localeCompare(b.name, "es"));
 }
 async function destination(user: Actor, key: string | null) {
-  if (!key || key === "root")
+  if (!key || key === "root" || key === "loose:root")
     return { parentId: null, anchorScope: null, anchorId: null };
   const [kind, id] = key.split(":");
   demand(id, "Carpeta no válida.");
@@ -123,6 +124,7 @@ export async function explorerData(user: Actor, params: URLSearchParams) {
     dates = dateRange(params);
   const folder = params.get("folder") ?? "";
   if (folder) await destination(user, folder);
+  const foldersOnly = !folder && !["project","product","subproduct"].some(key=>params.get(key));
   const page = z.coerce
       .number()
       .int()
@@ -181,10 +183,12 @@ export async function explorerData(user: Actor, params: URLSearchParams) {
           ],
         }),
   };
+  if(foldersOnly)where.id="";
+  if(folder==="loose:root")where.libraryItems={some:{userId:user.id,folderId:null}};
   const documentWhere = {
     userId: user.id,
     folderId: personal,
-    ...((!personal && folder) || kind === "images" ? { id: "" } : {}),
+    ...((!personal && folder && folder!=="loose:root") || kind === "images" || foldersOnly ? { id: "" } : {}),
     ...(Object.keys(dates).length ? { createdAt: dates } : {}),
   };
   const [total, items, documents, tree, counts, documentCount] =
@@ -271,7 +275,7 @@ export async function explorerData(user: Actor, params: URLSearchParams) {
   const costMap = new Map(
     costs.map((c) => [c.jobId, c.actualMicros?.toString() ?? null]),
   );
-  const orders = personal
+  const orders = personal || foldersOnly || folder==="loose:root"
     ? []
     : await (
         await import("./generation-orders")
@@ -291,6 +295,7 @@ export async function explorerData(user: Actor, params: URLSearchParams) {
       });
   return {
     orders,
+    foldersOnly,
     tree,
     items: items.map((v) => ({
       ...v,

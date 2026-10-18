@@ -21,6 +21,7 @@ export const textLayer = z
     type: z.literal("text"),
     text: z.string().max(1000),
     fontSize: z.number().int().min(12).max(240),
+    fontWeight: z.enum(["normal","bold"]).optional(),
     color,
     font: z.enum(["DejaVu Sans", "DejaVu Serif", "DejaVu Sans Mono"]),
     align: z.enum(["left", "center", "right"]),
@@ -146,7 +147,7 @@ export async function renderDesign(
       if (!layer.text.trim()) continue;
       const image = sharp({
         text: {
-          text: `<span foreground="${layer.color}">${escapeMarkup(layer.text)}</span>`,
+          text: `<span weight="${layer.fontWeight??"normal"}" foreground="${layer.color}">${escapeMarkup(layer.text)}</span>`,
           font: `${layer.font} ${layer.fontSize}`,
           fontfile: join(
             process.cwd(),
@@ -167,7 +168,8 @@ export async function renderDesign(
         meta.height && meta.width && layer.y + meta.height <= design.height,
         "Un texto se corta o queda fuera de los márgenes. Reduce su tamaño o muévelo.",
       );
-      layers.push({ input: bytes, left: layer.x, top: layer.y });
+      const offset=layer.align==="center"?(layer.width-meta.width!)/2:layer.align==="right"?layer.width-meta.width!:0;
+      layers.push({ input: bytes, left: Math.max(layer.x,Math.round(layer.x+offset)), top: layer.y });
     } else if (layer.type === "shape") {
       const element =
         layer.kind === "ellipse"

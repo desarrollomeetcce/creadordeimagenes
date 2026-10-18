@@ -1,3 +1,5 @@
+import { oneFlyerBrief, extractFlyerCopy } from "../lib/flyer-copy";
+import { exactFlyer } from "../lib/exact-flyer";
 import { reasoningLevel, type ReasoningLevel } from "../lib/creative-level";
 import { usableLayeredPlan, completePosterPrompt } from "../lib/creative-recovery";
 import { artDirection } from "../lib/art-direction";
@@ -41,6 +43,7 @@ import {
 } from "../lib/versions";
 type Snapshot = {
   prompt: string;
+  brand?: {colors?: string[]}|null;
   mode: string;
   index: number;
   configRevision: number;
@@ -280,6 +283,9 @@ export async function runOne(filter?: {
       creativeUsage: unknown = null,
       imageUsage: unknown = null;
     let creativeRecovery = false;
+    const scopedBrief=oneFlyerBrief(s.prompt,s.mode,s.index);
+    const exactCopy=s.mode!=="Imagen"?extractFlyerCopy(scopedBrief,s.index):null;
+    let literalCopy=false;
     if (s.editVariationId) {
       const original = await accessibleVariation(u, s.editVariationId, "EDIT");
       demand(
@@ -327,8 +333,25 @@ export async function runOne(filter?: {
           await logoBytes(document),
         );
       } else output = await adaptImage(result.bytes, s.format);
+    } else if(exactCopy){
+      literalCopy=true;
+      const normal=(value:string)=>value.normalize("NFD").replace(/[\u0300-\u036f]/g,"").toUpperCase().replace(/[^A-Z0-9]/g,"");
+      const logos=refs.filter(a=>/logo/i.test(a.purpose)).flatMap(a=>{
+        const label=exactCopy.brands.find(name=>{const words=name.split(/\s+/).filter(word=>!/^(de|la|el|del|los)$/i.test(word));const acronym=normal(words.map(word=>word[0]).join(""));return normal(a.name).includes(normal(name))||(acronym.length>=3&&a.name.toUpperCase().split(/[^A-Z0-9]+/).includes(acronym));});
+        return exactCopy.brands.length&&!label?[]:[{id:a.id,name:a.name,label}];
+      });
+      const composition=await exactFlyer(exactCopy,s.format,s.mode,s.brand?.colors,logos);
+      document=composition.design;
+      creativePlan=composition.backgroundPrompt;
+      if(s.mode!=="Texto"){
+        const visualImages=images.filter((_,index)=>!/logo/i.test(refs[index].purpose));
+        checkReferences(visualImages);await heartbeat.check();called=true;
+        const result=await provider.generate(key,{capability:imageCapability,signal,model:c.imageModel!,prompt:artDirection(scopedBrief,s.mode,s.format,s.index,true)+"\n\n"+composition.backgroundPrompt,quality:c.quality,size:c.resolution,images:visualImages});
+        imageUsage=result.usage;backgroundPath=await store(await adaptImage(result.bytes,s.format));written.push(backgroundPath);
+      }
+      output=await renderDesign(document,backgroundPath?await load(backgroundPath):null,await logoBytes(document));
     } else {
-      const brief = artDirection(s.prompt,s.mode,s.format,s.index,s.renderMode==="editable");
+      const brief = artDirection(scopedBrief,s.mode,s.format,s.index,s.renderMode==="editable");
       if (s.renderMode !== "editable" || s.mode !== "Texto")
         checkReferences(
           s.renderMode === "editable"
@@ -388,7 +411,7 @@ export async function runOne(filter?: {
       } else {
         checkReferences(images);
         const completed = completePosterPrompt(
-          artDirection(s.prompt,s.mode,s.format,s.index,false),
+          artDirection(scopedBrief,s.mode,s.format,s.index,false),
           s.renderMode === "editable" ? "" : plan.text,
           plan.incomplete,
         );
@@ -486,13 +509,14 @@ export async function runOne(filter?: {
           leaseToken: null,
           heartbeatAt: null,
           completedAt: new Date(),
-          snapshot: { ...s, creativePlan, ...(creativeRecovery ? {creativeRecovery:"authorized-brief", renderedMode:"flat"} : {}) },
+          snapshot: { ...s, creativePlan, ...(literalCopy?{literalCopy:true,renderedMode:"editable"}:{}), ...(creativeRecovery ? {creativeRecovery:"authorized-brief", renderedMode:"flat"} : {}) },
         },
       });
       await tx.usageLedger.update({
         where: { jobId: candidate.id },
         data: {
           status: "CONSUMED_ESTIMATE",
+          ...(!called?{actualMicros:0n}:{}),
           usage: JSON.parse(
             JSON.stringify({ creative: creativeUsage, image: imageUsage }),
           ),

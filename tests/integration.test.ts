@@ -10664,6 +10664,42 @@ test("Integración HTTP + PostgreSQL (base exclusiva de pruebas, sin llamadas ex
       assert.equal((await observer.call(`orders/${first.id}/stop`,"POST",{})).status,403);
       assert.equal(calls(),0);
     }));
+    await t.test("copy exacto en flyers forenses: una imagen independiente por modalidad, logos autorizados y cero llamadas creativas",async()=>withOrderProvider(async()=>{
+      const {readFile}=await import("node:fs/promises"),{adapter}=await import("../lib/providers"),{default:sharp}=await import("sharp");
+      const provider=adapter("openai"),oldDirect=provider.direct,oldGenerate=provider.generate;let directions=0,images=0;
+      const bytes=await sharp({create:{width:80,height:80,channels:3,background:"#327568"}}).png().toBuffer();
+      provider.direct=async()=>{directions++;throw Error("No necesita dirección creativa para copiar texto literal");};
+      provider.generate=async(_key,args)=>{images++;assert(args.prompt.includes("SOLO EL RECURSO VISUAL"));assert(args.prompt.includes("no dibujes letras"));assert(!args.prompt.includes("VARIACIÓN 2"));assert(args.prompt.includes("Documento de revisión"));assert.equal(args.images?.length,1);return {bytes,usage:{output_tokens:44}};};
+      try{
+        const {p,c,s:sub}=await hierarchyForReview();const prompt=await readFile("tests/fixtures/forensic-brief.txt","utf8");
+        await owner.call(`subproducts/${sub.id}`,"PATCH",{name:"PSICOLOGÍA FORENSE",prompt,settings:{count:2,textCount:1,imageTextCount:1,imageCount:0,designMode:"professional",reasoningLevel:"medium"}});await uploadReviewText(p.id);
+        const uploads:string[]=[];
+        for(const [name,purpose] of [["WOSA.png","Logo institucional"],["ministerio.png","Logo institucional"],["referencia.png","Referencia visual"]]){const form=new FormData();form.set("scope","subproduct");form.set("resourceId",sub.id);form.set("purpose",purpose);form.set("file",new File([new Uint8Array(bytes)],name,{type:"image/png"}));const r=await fetch(root+"/api/attachments",{method:"POST",headers:{Cookie:owner.cookie,Origin:root},body:form});assert.equal(r.status,201);uploads.push((await r.json()).id);}
+        const created=await owner.call(`subproducts/${sub.id}/generate`,"POST",{requestId:randomUUID(),reviewedInstructions:true,confirmCharge:true});assert.equal(created.status,202);assert.equal(created.body.jobs.length,2);
+        for(const id of created.body.jobs){await runOne({id});const job=await db.generationJob.findUniqueOrThrow({where:{id},include:{variation:true}});assert.equal(job.status,"COMPLETED");assert.equal((job.snapshot as any).literalCopy,true);
+          const design=(await owner.call(`variations/${job.variation!.id}/design`)).body.document;const text=design.layers.filter((l:any)=>l.type==="text").map((l:any)=>l.text);assert(text.includes("DIPLOMADO EN PSICOLOGÍA FORENSE"));assert(text.includes("MENSUALIDADES GRATIS"));assert(text.includes("Pago único $40 USD"));assert(!text.join(" ").includes("Ministerio"));assert(!text.join(" ").includes("Perú"));assert(design.layers.some((l:any)=>l.type==="logo"&&l.attachmentId===uploads[0]));assert(!design.layers.some((l:any)=>l.attachmentId===uploads[1]));
+          if((job.snapshot as any).mode==="Texto")assert.equal((await db.usageLedger.findUniqueOrThrow({where:{jobId:id}})).actualMicros,0n);
+        }
+        assert.equal(directions,0);assert.equal(images,1);
+      }finally{provider.direct=oldDirect;provider.generate=oldGenerate;}
+    }));
+    await t.test("Biblioteca: raíz solo carpetas, cargas completas aprobadas ocultas y retirada personal sin borrar imágenes ni cargos",async()=>withOrderProvider(async(config)=>{
+      const {p,c,s:sub}=await hierarchyForReview(),actor=(await db.user.findFirstOrThrow({where:{role:"OWNER"}}));
+      const jobs=await reserveJobs(actor.id,p.id,[{subproductId:sub.id,key:randomUUID(),snapshot:{prompt:"Contenido sintético",mode:"Texto",format:"1:1"}}],config.revision);
+      const created=await owner.call("orders","POST",{ids:jobs.map(j=>j.id),mode:"immediate",requestId:randomUUID()});const id=created.body.orders[0];
+      assert.equal((await owner.call("orders/hide","POST",{ids:[id]})).status,409);
+      await db.generationJob.update({where:{id:jobs[0].id},data:{status:"COMPLETED"}});const variation=await db.variation.create({data:{jobId:jobs[0].id,subproductId:sub.id,path:"synthetic-list.png",model:"synthetic",expiresAt:new Date(Date.now()+86400000)}});await db.generationOrder.update({where:{id},data:{status:"COMPLETED"}});
+      const path=`library/explorer?project=${p.id}&product=${c.id}&subproduct=${sub.id}`;
+      assert((await owner.call(path)).body.orders.some((o:any)=>o.id===id));
+      const rootView=(await owner.call("library/explorer")).body;assert.equal(rootView.foldersOnly,true);assert.equal(rootView.items.length,0);assert.equal(rootView.documents.length,0);assert(rootView.tree.some((n:any)=>n.id==="subproduct:"+sub.id));
+      const upload=new FormData();upload.set("file",new File(["Documento suelto"],"sin-carpeta.txt",{type:"text/plain"}));const uploaded=await fetch(root+"/api/library/documents",{method:"POST",headers:{Cookie:owner.cookie,Origin:root},body:upload});assert.equal(uploaded.status,201);const doc=await uploaded.json();assert.equal((await owner.call("library/explorer")).body.documents.length,0);assert((await owner.call("library/explorer?folder=loose:root")).body.documents.some((row:any)=>row.id===doc.id));assert(!(await observer.call("library/explorer?folder=loose:root")).body.documents.some((row:any)=>row.id===doc.id));
+      const before=await db.usageLedger.findUniqueOrThrow({where:{jobId:jobs[0].id}});
+      assert.equal((await user.call("orders/hide","POST",{ids:[id]})).status,403);
+      assert.equal((await observer.call("orders/hide","POST",{ids:[id]})).status,403);
+      const hidden=await owner.call("orders/hide","POST",{ids:[id]});assert.equal(hidden.status,200);assert(!(await owner.call(path)).body.orders.some((o:any)=>o.id===id));assert((await owner.call(path)).body.items.some((v:any)=>v.id===variation.id));assert.equal((await owner.call(`orders?ids=${id}`)).body[0].hiddenFromProduction,true);assert.equal((await db.usageLedger.findUniqueOrThrow({where:{jobId:jobs[0].id}})).status,before.status);assert.equal((await db.variation.findUniqueOrThrow({where:{id:variation.id}})).reviewStatus,"PENDING");
+      // Clearing this presentation event is test setup to isolate automatic completion filtering.
+      await db.auditEvent.deleteMany({where:{actorId:actor.id,action:"ORDEN_RETIRADA_DE_BIBLIOTECA",resourceId:id}});await db.variation.update({where:{id:variation.id},data:{reviewStatus:"APPROVED"}});assert(!(await owner.call(path)).body.orders.some((o:any)=>o.id===id));assert((await owner.call(path)).body.items.some((v:any)=>v.id===variation.id));
+    }));
     await t.test("cierre de sesión invalida el token", async () => {
       assert.equal((await user.call("auth/logout", "POST")).status, 200);
       assert.equal((await user.call("projects")).status, 401);
