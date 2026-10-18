@@ -320,6 +320,7 @@ export function CollectionGallery({
       {preview && current >= 0 && (
         <ImagePreviewModal
           id={preview}
+          subproductHref={data!.items[current].subproduct?"?"+new URLSearchParams({view:"projects",category:data!.items[current].subproduct!.category.id,subproduct:data!.items[current].subproduct!.id}):undefined}
           onPrevious={
             current > 0
               ? () => setPreview(data!.items[current - 1].id)

@@ -7,6 +7,7 @@ export function ImagePreviewModal({
   name,
   revision,
   onClose,
+  subproductHref,
   onPrevious,
   onNext,
 }: {
@@ -14,6 +15,7 @@ export function ImagePreviewModal({
   name: string;
   revision?: number;
   onClose: () => void;
+  subproductHref?:string;
   onPrevious?: () => void;
   onNext?: () => void;
 }) {
@@ -47,6 +49,7 @@ export function ImagePreviewModal({
     >
       <div className="image-preview-bar">
         <strong>{name}</strong>
+        {subproductHref&&<a className="button" href={subproductHref}>Volver al subproducto ↗</a>}
         <button
           type="button"
           onClick={() => setFull(!full)}

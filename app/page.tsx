@@ -1,11 +1,12 @@
 "use client";
 import { reasoningLevel } from "../lib/creative-level";
+import {useGenerationChoices} from "./components/generation-choices";
 import { CreativeFinish } from "./components/creative-finish";
 import { PasswordInput } from "./components/password-input";
 import { useCallback, useEffect, useState, useRef } from "react";
 import {useSubproductStatuses,SubproductStatus} from "./components/subproduct-status";
 import type {OrderProgress} from "./components/order-progress";
-import { ReviewInstructions } from "./components/review-instructions";
+import { ReviewInstructions, type ReviewInstructionsHandle } from "./components/review-instructions";
 import { ProductTrash } from "./components/product-trash";
 import { InstructionPolicyControls } from "./components/instruction-policy-controls";
 import { useReusableConfiguration } from "./components/reusable-configuration";
@@ -19,7 +20,7 @@ import { folderScope } from "./components/folder-navigation";
 import { emptyHierarchy } from "./components/hierarchy-filters";
 import { InstructionEditor } from "./components/instruction-editor";
 import { SearchSelect } from "./components/search-select";
-import { CurrentRole, RoleGuide, useCanEdit } from "./components/role-guide";
+import { CurrentRole, CurrentUserId, RoleGuide, useCanEdit } from "./components/role-guide";
 import { roleLabels, managesUsers } from "../lib/roles";
 import { HierarchyBreadcrumbs } from "./components/breadcrumbs";
 import { Attachments, type AttachmentsHandle } from "./components/attachments";
@@ -428,7 +429,7 @@ export default function Home() {
   };
   const navigate = (v: string) => changeAddress({ view: v });
   return (
-    <CurrentRole.Provider value={user.role}>
+    <CurrentUserId.Provider value={user.id}><CurrentRole.Provider value={user.role}>
       <div className="shell">
         <aside className="sidebar">
           <div className="brand">
@@ -634,7 +635,7 @@ export default function Home() {
           </main>
         </div>
       </div>
-    </CurrentRole.Provider>
+    </CurrentRole.Provider></CurrentUserId.Provider>
   );
 }
 function Login({
@@ -1489,8 +1490,7 @@ function BatchGeneration({
   count: number;
 }) {
   const [preview, setPreview] = useState<any[] | null>(null);
-  const [consent, setConsent] = useState(false);
-  const [previewFirst, setPreviewFirst] = useState(true);
+  const {charge:consent,setCharge:setConsent,previewFirst,setPreviewFirst}=useGenerationChoices("product",categoryId);
   const [queued, setQueued] = useState(false);
   const [executionMode, setExecutionMode] =
     useState<ExecutionMode>("background");
@@ -1509,13 +1509,13 @@ function BatchGeneration({
             const result = await api("categories/" + categoryId + "/preview");
             setPreview(result);
             setSelected(result.map((p: any) => p.id));
-            setConsent(false);
+            
           }, "")
         }
       >
         Revisar y generar todos
       </button>
-      <button type="button" disabled={!selectedIds.length||t.busy} onClick={()=>void t.run(async()=>{const result=await api("categories/"+categoryId+"/preview");setPreview(result.filter((p:any)=>selectedIds.includes(p.id)));setSelected(selectedIds);setConsent(false);},"")}>Revisar y generar seleccionados</button></div>
+      <button type="button" disabled={!selectedIds.length||t.busy} onClick={()=>void t.run(async()=>{const result=await api("categories/"+categoryId+"/preview");setPreview(result.filter((p:any)=>selectedIds.includes(p.id)));setSelected(selectedIds);},"")}>Revisar y generar seleccionados</button></div>
       {preview && (
         <div className="panel" style={{ marginTop: 15 }}>
           <h3>
@@ -1528,7 +1528,7 @@ function BatchGeneration({
             <button
               onClick={() => {
                 setSelected(preview.map((p) => p.id));
-                setConsent(false);
+                
               }}
             >
               Seleccionar todos
@@ -1536,7 +1536,7 @@ function BatchGeneration({
             <button
               onClick={() => {
                 setSelected([]);
-                setConsent(false);
+                
               }}
             >
               Quitar selección
@@ -1554,7 +1554,7 @@ function BatchGeneration({
                         ? [...selected, p.id]
                         : selected.filter((id) => id !== p.id),
                     );
-                    setConsent(false);
+                    
                   }}
                 />
                 Incluir {p.name}
@@ -1688,10 +1688,11 @@ function SubproductRow({
   const [reviewOpen,setReviewOpen]=useState(false),[reviewDirty,setReviewDirty]=useState(false),[sourceDirty,setSourceDirty]=useState(false),[reviewVersion,setReviewVersion]=useState(0);
   const [configOpen,setConfigOpen]=useState(initiallyOpen);
   const uploadRef=useRef<AttachmentsHandle>(null);
+  const reviewRef=useRef<ReviewInstructionsHandle>(null);
   const [expanded, setExpanded] = useState(initiallyOpen);
   const detailsRef=useRef<HTMLDetailsElement>(null);
   useEffect(()=>{if(initiallyOpen){detailsRef.current?.scrollIntoView({block:"start"});detailsRef.current?.querySelector<HTMLInputElement>("input[data-subproduct-name]")?.focus();}},[initiallyOpen]);
-  const [previewFirst, setPreviewFirst] = useState(true);
+  const {charge,setCharge,previewFirst,setPreviewFirst}=useGenerationChoices("subproduct",sub.id);
   const [queued, setQueued] = useState(false);
   const [executionMode, setExecutionMode] =
     useState<ExecutionMode>("background");
@@ -1714,21 +1715,30 @@ function SubproductRow({
   }, [forceOwn, sub.id]);
   const [preview, setPreview] = useState<any>(null);
   const [review, setReview] = useState(false);
-  const [charge, setCharge] = useState(false);
   const t = useTask();
-  const save = async () => {
+  const save = async (reviewed?:{prompt:string;policy:InstructionPolicy}) => {
     await uploadRef.current?.flush();
     await api("subproducts/" + sub.id, "PATCH", {
       name,
-      prompt,
-      instructionPolicy:policy,
+      prompt:reviewed?.prompt??prompt,
+      instructionPolicy:reviewed?.policy??policy,
       settings: custom || forceOwn ? s : {},
     });
   };
   const configuration=()=>({...sub,name,prompt,instructionPolicy:policy,settings:custom||forceOwn?s:inherited});
-  const templates=useReusableConfiguration({scope:"subproduct",current:configuration(),enabled:expanded,saveCurrent:async()=>{await save();return configuration();},onApplied:async()=>{const loaded=await api("subproducts/"+sub.id);setName(loaded.name);setPrompt(loaded.prompt);setPolicy(loaded.instructionPolicy??{});setS({...inherited,...loaded.settings});setCustom(true);setPreview(null);setReviewOpen(false);setReview(false);setCharge(false);setSourceDirty(false);}});
+  const templates=useReusableConfiguration({scope:"subproduct",current:configuration(),enabled:expanded,saveCurrent:async()=>{await save();return configuration();},onApplied:async()=>{const loaded=await api("subproducts/"+sub.id);setName(loaded.name);setPrompt(loaded.prompt);setPolicy(loaded.instructionPolicy??{});setS({...inherited,...loaded.settings});setCustom(true);setPreview(null);setReviewOpen(false);setReview(false);setSourceDirty(false);}});
   const latestOrder=[orderStatus,...production.orders].filter((order):order is OrderProgress=>!!order).sort((a,b)=>b.createdAt.localeCompare(a.createdAt))[0];
-  const loadReview=()=>void t.run(async()=>{await save();setPreview(await api("subproducts/"+sub.id+"/instructions"));setReview(false);setCharge(false);setReviewDirty(false);setSourceDirty(false);setReviewVersion(v=>v+1);},"");
+  const generate=async(quick=false)=>{
+    if(!charge)throw Error("Activa la autorización de IA para generar.");
+    const savedReview=quick?await reviewRef.current?.flush():null;
+    const own=savedReview?.layers.find(layer=>layer.scope==="subproduct");
+    await save(own?.prompt!==null&&own?{prompt:own.prompt,policy:own.policy}:undefined);
+    const result=await api("subproducts/"+sub.id+"/generate","POST",{confirmCharge:true,...(quick?{quickGeneration:true}:{reviewedInstructions:true}),previewFirst,requestId:crypto.randomUUID()});
+    setQueued(true);setReview(false);setSourceDirty(false);setReviewDirty(false);
+    await production.start(result.runnable,executionMode,result.jobs);
+    const channel=new BroadcastChannel("studio-updates");channel.postMessage("queued");channel.close();
+  };
+  const loadReview=()=>void t.run(async()=>{await save();setPreview(await api("subproducts/"+sub.id+"/instructions"));setReview(false);setReviewDirty(false);setSourceDirty(false);setReviewVersion(v=>v+1);},"");
   return (
     <>
     <details ref={detailsRef}
@@ -1799,18 +1809,18 @@ function SubproductRow({
           />
         )}
         </div>
-        <div onChangeCapture={()=>{setSourceDirty(true);setReview(false);setCharge(false);}}><Attachments ref={uploadRef} scope="subproduct" id={sub.id} deferred /></div>
+        <div onChangeCapture={()=>{setSourceDirty(true);setReview(false);}}><Attachments ref={uploadRef} scope="subproduct" id={sub.id} deferred /></div>
         {templates.saver}
-        <div className="row compact-review-actions"><button type="button" className="primary" disabled={t.busy} onClick={()=>void t.run(async()=>{await save();setSourceDirty(true);setReview(false);setCharge(false);},"Cambios y documentos guardados. Actualiza la revisión antes de generar.")}>Guardar cambios y documentos del subproducto</button><button type="button" onClick={()=>setConfigOpen(false)}>Minimizar</button></div>
+        <div className="row compact-review-actions"><button type="button" className="primary" disabled={t.busy} onClick={()=>void t.run(async()=>{await save();setSourceDirty(true);setReview(false);},"Cambios y documentos guardados. Actualiza la revisión antes de generar.")}>Guardar cambios y documentos del subproducto</button><button type="button" onClick={()=>setConfigOpen(false)}>Minimizar</button></div>
         </div></details>
         <details className="subproduct-review" open={reviewOpen} onToggle={event=>{const open=event.currentTarget.open;setReviewOpen(open);if(open&&!preview&&!t.busy)loadReview();}}>
           <summary>Revisar y generar</summary>
           {!preview&&<p role="status">Preparando la revisión…</p>}
           {preview && <div className="inside panel">
             <h3>Revisa antes de generar · {name}</h3>
-            <p className="quick-start-guide">{preview.settings?.designMode==="editable"?"Canva: fondo visual y textos por separado.":`Acabado profesional · ${{low:"Bajo",medium:"Medio",high:"Alto"}[reasoningLevel(preview.settings?.reasoningLevel)]}: la IA diseña el afiche completo según tu prompt.`}</p>
+            <p className="quick-start-guide">{preview.settings?.designMode==="editable"?"Canva: fondo visual y textos por separado.":`Acabado profesional · ${{low:"Bajo",medium:"Medio",high:"Alto"}[reasoningLevel(preview.settings?.reasoningLevel)]}: la composición sigue tu prompt y conserva los textos explícitos como capas nítidas.`}</p>
             {sourceDirty&&<p className="notice">Hay cambios en el formulario. <button type="button" disabled={t.busy} onClick={loadReview}>Actualizar revisión</button></p>}
-            <ReviewInstructions key={reviewVersion} id={sub.id} beforeReload={save} onDirty={()=>{setReviewDirty(true);setReview(false);setCharge(false);}} onSaved={async data=>{const own=data.layers.find(layer=>layer.scope==="subproduct");if(own?.prompt!==null&&own){setPrompt(own.prompt);setPolicy(own.policy);}setPreview(await api("subproducts/"+sub.id+"/instructions"));setReviewDirty(false);setSourceDirty(false);setReview(false);setCharge(false);await onReviewSaved?.();}} />
+            <ReviewInstructions ref={reviewRef} key={reviewVersion} id={sub.id} beforeReload={save} onDirty={()=>{setReviewDirty(true);setReview(false);}} onSaved={async data=>{const own=data.layers.find(layer=>layer.scope==="subproduct");if(own?.prompt!==null&&own){setPrompt(own.prompt);setPolicy(own.policy);}setPreview(await api("subproducts/"+sub.id+"/instructions"));setReviewDirty(false);setSourceDirty(false);setReview(false);await onReviewSaved?.();}} />
             <pre>{preview.text}</pre>
             <details className="review-references"><summary>Documentos y referencias utilizados ({preview.attachments?.length??0})</summary><div className="inside"><p className="hint">El texto extraído de documentos se incorpora al contexto del prompt. Las imágenes se envían como referencias visuales. Solo se usan las herencias activas; las referencias privadas autorizadas se procesan en servidor sin revelar su contenido aquí.</p>{preview.attachments?.length?<ul>{preview.attachments.map((file:any)=><li key={file.id}><strong>{file.name}</strong> · {file.purpose} · {file.mime.startsWith("image/")?"Referencia visual":"Texto extraído"}</li>)}</ul>:<p className="muted">No hay adjuntos visibles en esta revisión.</p>}</div></details>
             {preview.overrides.map((w: string, i: number) => (
@@ -1869,37 +1879,14 @@ function SubproductRow({
                 !charge ||
                 !preview || preview.warnings.length > 0
               }
-              onClick={() =>
-                void t.run(async () => {
-                  await save();
-                  const result = await api(
-                    "subproducts/" + sub.id + "/generate",
-                    "POST",
-                    {
-                      confirmCharge: true,
-                      reviewedInstructions: true,
-                      previewFirst,
-                      requestId: crypto.randomUUID(),
-                    },
-                  );
-                  setQueued(true);
-                  setCharge(false);
-                  setReview(false);
-                  await production.start(
-                    result.runnable,
-                    executionMode,
-                    result.jobs,
-                  );
-                  const channel = new BroadcastChannel("studio-updates");
-                  channel.postMessage("queued");
-                  channel.close();
-                }, "Lote registrado. El modo elegido controla su ejecución. Revisa la muestra en Biblioteca.")
-              }
+              onClick={()=>void t.run(()=>generate(),"Lote registrado. Revisa la muestra en Biblioteca.")}
             >
               Generar variaciones · {(custom||forceOwn?s:inherited).count}{latestOrder&&latestOrder.pending>0?` · ${latestOrder.completed}/${latestOrder.target}`:""}
             </button>
+      <button type="button" className="primary quick-generation" disabled={t.busy||production.uncertainDispatch||production.dispatching||!charge} onClick={()=>void t.run(()=>generate(true),"Generación rápida registrada. Revisa su avance y la muestra en Biblioteca.")}>Generación rápida ({(custom||forceOwn?s:inherited).count})</button>
       <button type="button" onClick={openGallery}>Ver variaciones ↗</button>
-      {!review&&<small className="hint">Revisa y aprueba las instrucciones antes de generar.</small>}
+      <small className="hint">Generación rápida guarda los cambios y autoriza las llamadas de IA sin abrir la revisión. Respeta la primera muestra y el modo elegidos.</small>
+      {!charge&&<label className="row"><input type="checkbox" checked={charge} onChange={e=>setCharge(e.target.checked)} />Autorizo las llamadas de IA y su posible cargo de API.</label>}
     </div>
     <ProductionControls controller={{...production,orders:latestOrder?[latestOrder]:production.orders}} />
     {t.notice}

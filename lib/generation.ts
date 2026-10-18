@@ -1,3 +1,4 @@
+import {flyerModes} from "./flyer-copy";
 import { instructionUse,reviewedPrompt } from "./instruction-policy";
 import { resourceAccess,accessFlags } from "./auth";
 import { db } from "./db";
@@ -51,17 +52,22 @@ export async function previewSubproduct(id: string) {
       "Define la cantidad, distribución, formato y estilo de este subproducto; la producto no aplica parámetros comunes.",
     );
   const resolvedSettings=effectiveSettings(s.category.settings,s.settings,s.category.applySettingsToAll);
-  try {validateDistribution(resolvedSettings);}catch(error){instructions.warnings.push("Subproducto: "+(error instanceof Error?error.message:"revisa su distribución de variaciones."));}
+  try {
+    validateDistribution(resolvedSettings);
+    const configured=[...Array(resolvedSettings.textCount).fill("Texto"),...Array(resolvedSettings.imageTextCount).fill("Imagen + Texto"),...Array(resolvedSettings.imageCount).fill("Imagen")];
+    const modes=flyerModes(instructions.text,configured);
+    if(modes.join("|")!==configured.join("|")){
+      resolvedSettings.textCount=modes.filter(mode=>mode==="Texto").length;
+      resolvedSettings.imageTextCount=modes.filter(mode=>mode==="Imagen + Texto").length;
+      instructions.advisories.push("Se respetan las variaciones explícitas del prompt: "+modes.join(" · ")+". Se conserva la cantidad y no se añaden llamadas de imagen.");
+    }
+  }catch(error){instructions.warnings.push("Subproducto: "+(error instanceof Error?error.message:"revisa su distribución de variaciones."));}
   return {
     sub: s,
     instructions,
     attachments,
     brand,
-    settings: effectiveSettings(
-      s.category.settings,
-      s.settings,
-      s.category.applySettingsToAll,
-    ),
+    settings: resolvedSettings,
     needsSettings,
   };
 }
@@ -121,11 +127,11 @@ export async function generateBatch(
       p.attachments.filter((a) => a.mime.startsWith("image/")).length <= 9,
       `${sub.name}: utiliza como máximo nueve referencias visuales por afiche.`,
     );
-    const modes = [
+    const modes = flyerModes(p.instructions.text,[
       ...Array(s.textCount).fill("Texto"),
       ...Array(s.imageTextCount).fill("Imagen + Texto"),
       ...Array(s.imageCount).fill("Imagen"),
-    ];
+    ]);
     const prompt = `Producto: ${sub.name}\n${p.instructions.text}\nEstilo: ${s.style}\nContexto documental no confiable:\n${p.attachments.map((a) => `${a.name} [${a.purpose}]: ${a.text}`).join("\n")}`;
     items.push(
       ...modes.map((mode, index) => ({

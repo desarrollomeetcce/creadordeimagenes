@@ -10571,6 +10571,37 @@ test("Integración HTTP + PostgreSQL (base exclusiva de pruebas, sin llamadas ex
       await owner.call(`subproducts/${subproduct.id}`,"PATCH",{name:subproduct.name,prompt:"Luego S/20 mensuales. Subproducto propio.",settings:{},instructionPolicy:{includeProject:false,includeProduct:false,includeSelf:true}});
       view=(await owner.call(`subproducts/${subproduct.id}/instructions`)).body;assert.equal(view.attachments.length,0);assert(!view.text.includes("Producto privado"));assert(view.text.includes("Subproducto propio"));assert.equal((await owner.call(`attachments?scope=project&id=${p.id}`)).body.length,1);
     });
+    await t.test("inicio rápido elige proyectos/productos autorizados o crea solo sus nombres, sin modificar ancestros",async()=>{
+      const {p,c,s:old}=await hierarchyForReview(),before=await db.generationJob.count();
+      const beforeProject=await db.project.findUniqueOrThrow({where:{id:p.id}}),beforeProduct=await db.category.findUniqueOrThrow({where:{id:c.id}});
+      const payload={requestId:randomUUID(),name:"Subproducto añadido al final",prompt:"Detalle nuevo",count:2,projectId:p.id,categoryId:c.id};
+      const [a,b]=await Promise.all([owner.call("quick-start","POST",payload),owner.call("quick-start","POST",payload)]);assert.equal(a.status,201);assert.deepEqual(a.body,b.body);assert.equal(a.body.projectId,p.id);assert.equal(a.body.categoryId,c.id);
+      const list=(await owner.call(`categories/${c.id}`)).body.subproducts;assert.equal(list.at(-1).id,a.body.subproductId);assert(list.some((s:any)=>s.id===old.id));
+      assert.deepEqual(await db.project.findUniqueOrThrow({where:{id:p.id}}),beforeProject);assert.deepEqual(await db.category.findUniqueOrThrow({where:{id:c.id}}),beforeProduct);assert.equal(await db.generationJob.count(),before);
+      const view=(await owner.call(`subproducts/${a.body.subproductId}/instructions`)).body;assert.equal(view.settings.count,2);assert(view.text.includes(p.prompt));assert(view.text.includes(c.prompt));
+      const named=await user.call("quick-start","POST",{requestId:randomUUID(),name:"Tema propio",count:1,projectName:"Nombre del proyecto rápido",productName:"Nombre del producto rápido"});assert.equal(named.status,201);assert.equal((await user.call(`projects/${named.body.projectId}`)).body.name,"Nombre del proyecto rápido");assert.equal((await user.call(`categories/${named.body.categoryId}`)).body.name,"Nombre del producto rápido");
+      assert(!(await user.call("quick-start")).body.some((row:any)=>row.id===p.id));
+      assert.equal((await user.call("quick-start","POST",{...payload,requestId:randomUUID()})).status,404);
+      await db.categoryMember.create({data:{categoryId:c.id,userId:uid}});
+      const options=(await user.call("quick-start")).body,option=options.find((row:any)=>row.id===p.id);assert(option);assert.equal(option.canCreateProduct,false);assert.deepEqual(Object.keys(option).sort(),["canCreateProduct","categories","id","name"]);assert.deepEqual(option.categories,[{id:c.id,name:c.name}]);
+      const shared=await user.call("quick-start","POST",{...payload,requestId:randomUUID()});assert.equal(shared.status,201);assert.equal((await user.call(`subproducts/${shared.body.subproductId}`)).status,200);
+      assert.equal((await user.call("quick-start","POST",{requestId:randomUUID(),name:"Sin permiso",count:1,projectId:p.id,productName:"Producto nuevo"})).status,404);
+      assert.equal((await user.call("quick-start","POST",{requestId:randomUUID(),name:"Producto cruzado",count:1,projectId:named.body.projectId,categoryId:c.id})).status,404);
+      assert.equal((await observer.call("quick-start")).status,403);await db.categoryMember.delete({where:{categoryId_userId:{categoryId:c.id,userId:uid}}});
+    });
+    await t.test("generación rápida autoriza sin afirmar revisión y conserva muestras, permisos, cuotas e idempotencia",async()=>withOrderProvider(async(_config,calls)=>{
+      const quick=await owner.call("quick-start","POST",{requestId:randomUUID(),name:"Generación directa",prompt:"Contenido autorizado",count:2,projectName:"Proyecto rápido",productName:"Producto rápido"});assert.equal(quick.status,201);
+      const id=quick.body.subproductId,payload={requestId:randomUUID(),quickGeneration:true,confirmCharge:true};
+      assert.equal((await owner.call(`subproducts/${id}/generate`,"POST",{...payload,confirmCharge:false})).status,400);
+      assert.equal((await owner.call(`subproducts/${id}/generate`,"POST",{...payload,quickGeneration:false})).status,400);
+      assert.equal((await observer.call(`subproducts/${id}/generate`,"POST",payload)).status,403);
+      assert.equal((await user.call(`subproducts/${id}/generate`,"POST",payload)).status,404);
+      const created=await owner.call(`subproducts/${id}/generate`,"POST",payload);assert.equal(created.status,202);assert.equal(created.body.jobs.length,2);assert.equal(created.body.runnable.length,1);
+      const again=await owner.call(`subproducts/${id}/generate`,"POST",payload);assert.deepEqual(again.body,created.body);
+      const jobs=await db.generationJob.findMany({where:{id:{in:created.body.jobs}}});assert(jobs.every(j=>(j.snapshot as any).previewFirst===true));assert(jobs.every(j=>(j.snapshot as any).prompt.includes("Contenido autorizado")));
+      const audit=await db.auditEvent.findFirstOrThrow({where:{action:"GENERACION_AUTORIZADA",resourceId:id},orderBy:{createdAt:"desc"}});assert.equal((audit.detail as any).source,"generacion_rapida");
+      for(const job of jobs)await owner.call(`jobs/${job.id}/cancel`,"POST");assert.equal(calls(),0);
+    }));
     await t.test("acabado profesional nativo por defecto y regeneración; capas opcionales conservan edición sin llamadas extra",async()=>withOrderProvider(async()=>{
       const {adapter}=await import("../lib/providers"),{default:sharp}=await import("sharp");const provider=adapter("openai"),oldDirect=provider.direct,oldGenerate=provider.generate;let directions=0,images=0;const structured:boolean[]=[],briefs:string[]=[];
       const bytes=await sharp({create:{width:80,height:80,channels:3,background:"#327568"}}).png().toBuffer();
@@ -10669,13 +10700,15 @@ test("Integración HTTP + PostgreSQL (base exclusiva de pruebas, sin llamadas ex
       const provider=adapter("openai"),oldDirect=provider.direct,oldGenerate=provider.generate;let directions=0,images=0;
       const bytes=await sharp({create:{width:80,height:80,channels:3,background:"#327568"}}).png().toBuffer();
       provider.direct=async()=>{directions++;throw Error("No necesita dirección creativa para copiar texto literal");};
-      provider.generate=async(_key,args)=>{images++;assert(args.prompt.includes("SOLO EL RECURSO VISUAL"));assert(args.prompt.includes("no dibujes letras"));assert(!args.prompt.includes("VARIACIÓN 2"));assert(args.prompt.includes("Documento de revisión"));assert.equal(args.images?.length,1);return {bytes,usage:{output_tokens:44}};};
+      provider.generate=async(_key,args)=>{images++;assert(args.prompt.includes("SOLO EL RECURSO VISUAL"));assert(args.prompt.includes("no dibujes letras"));assert(!args.prompt.includes("VARIACIÓN 2"));assert(args.prompt.includes("Documento de revisión"));assert(!args.prompt.includes("Modalidad Imagen + Texto: diseña un afiche publicitario terminado"));assert(!args.prompt.includes("MENSUALIDADES GRATIS"));assert.equal(args.images?.length,1);return {bytes,usage:{output_tokens:44}};};
       try{
         const {p,c,s:sub}=await hierarchyForReview();const prompt=await readFile("tests/fixtures/forensic-brief.txt","utf8");
-        await owner.call(`subproducts/${sub.id}`,"PATCH",{name:"PSICOLOGÍA FORENSE",prompt,settings:{count:2,textCount:1,imageTextCount:1,imageCount:0,designMode:"professional",reasoningLevel:"medium"}});await uploadReviewText(p.id);
+        await owner.call(`subproducts/${sub.id}`,"PATCH",{name:"PSICOLOGÍA FORENSE",prompt,settings:{count:2,textCount:0,imageTextCount:2,imageCount:0,designMode:"professional",reasoningLevel:"medium"}});await uploadReviewText(p.id);
+        const resolved=(await owner.call(`subproducts/${sub.id}/instructions`)).body;assert.equal(resolved.settings.textCount,1);assert.equal(resolved.settings.imageTextCount,1);
         const uploads:string[]=[];
         for(const [name,purpose] of [["WOSA.png","Logo institucional"],["ministerio.png","Logo institucional"],["referencia.png","Referencia visual"]]){const form=new FormData();form.set("scope","subproduct");form.set("resourceId",sub.id);form.set("purpose",purpose);form.set("file",new File([new Uint8Array(bytes)],name,{type:"image/png"}));const r=await fetch(root+"/api/attachments",{method:"POST",headers:{Cookie:owner.cookie,Origin:root},body:form});assert.equal(r.status,201);uploads.push((await r.json()).id);}
         const created=await owner.call(`subproducts/${sub.id}/generate`,"POST",{requestId:randomUUID(),reviewedInstructions:true,confirmCharge:true});assert.equal(created.status,202);assert.equal(created.body.jobs.length,2);
+        assert.deepEqual((await db.generationJob.findMany({where:{id:{in:created.body.jobs}},orderBy:{createdAt:"asc"}})).map(j=>(j.snapshot as any).mode),["Imagen + Texto","Texto"]);
         for(const id of created.body.jobs){await runOne({id});const job=await db.generationJob.findUniqueOrThrow({where:{id},include:{variation:true}});assert.equal(job.status,"COMPLETED");assert.equal((job.snapshot as any).literalCopy,true);
           const design=(await owner.call(`variations/${job.variation!.id}/design`)).body.document;const text=design.layers.filter((l:any)=>l.type==="text").map((l:any)=>l.text);assert(text.includes("DIPLOMADO EN PSICOLOGÍA FORENSE"));assert(text.includes("MENSUALIDADES GRATIS"));assert(text.includes("Pago único $40 USD"));assert(!text.join(" ").includes("Ministerio"));assert(!text.join(" ").includes("Perú"));assert(design.layers.some((l:any)=>l.type==="logo"&&l.attachmentId===uploads[0]));assert(!design.layers.some((l:any)=>l.attachmentId===uploads[1]));
           if((job.snapshot as any).mode==="Texto")assert.equal((await db.usageLedger.findUniqueOrThrow({where:{jobId:id}})).actualMicros,0n);

@@ -802,6 +802,7 @@ async function handle(
         }),
       );
     if(route==="quick-start"&&method==="POST"){const {quickStart}=await import("@/lib/quick-start");return send(await quickStart(user,await body(req)),201);}
+    if(route==="quick-start"&&method==="GET"){const {quickStartOptions}=await import("@/lib/quick-start");return send(await quickStartOptions(user));}
     if (route === "projects" && method === "POST") {
       const b = content.parse(await body(req));
       const p = await db.project.create({ data: { ...b, ownerId: user.id } });
@@ -1053,6 +1054,8 @@ async function handle(
           },
         });
         const flags = await accessFlags(user, "category", id, c.projectId);
+        const {subproductsInCreationOrder}=await import("@/lib/subproduct-order");
+        c.subproducts=await subproductsInCreationOrder(id,c.subproducts);
         return send({
           ...c,
           ...flags,
@@ -1255,14 +1258,10 @@ async function handle(
       }
 
       if (parts[2] === "generate" && method === "POST") {
-        const b = z
-          .object({
-            confirmCharge: z.literal(true),
-            reviewedInstructions: z.literal(true),
-            requestId: z.uuid(),
-            previewFirst: z.boolean().default(false),
-          })
-          .parse(await body(req));
+        const b = z.union([
+          z.object({confirmCharge:z.literal(true),reviewedInstructions:z.literal(true),requestId:z.uuid(),previewFirst:z.boolean().default(false)}).strict(),
+          z.object({confirmCharge:z.literal(true),quickGeneration:z.literal(true),requestId:z.uuid(),previewFirst:z.boolean().default(true)}).strict(),
+        ]).parse(await body(req));
         const c = await configured();
         const s = effectiveSettings(
           sub.category.settings,
@@ -1286,6 +1285,7 @@ async function handle(
         await audit(user.id, "GENERACION_AUTORIZADA", id, {
           jobIds: jobs.map((j) => j.id),
           count: jobs.length,
+          source: "quickGeneration" in b ? "generacion_rapida" : "revision",
         });
         return send(
           {

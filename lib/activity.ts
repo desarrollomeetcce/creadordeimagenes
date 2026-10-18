@@ -345,6 +345,7 @@ const verbs: Record<string, string> = {
   PRODUCTO_CREADO: "Creó el producto",
   PRODUCTO_ACTUALIZADO: "Editó las instrucciones o configuración del producto",
   SUBPRODUCTOS_CREADOS: "Creó subproductos",
+  SUBPRODUCTO_INICIO_RAPIDO_CREADO: "Creó un subproducto desde inicio rápido",
   SUBPRODUCTO_ACTUALIZADO: "Editó el subproducto",
   SUBPRODUCTOS_ELIMINADOS: "Eliminó subproductos",
   SUBPRODUCTO_RESTAURADO: "Restauró el subproducto",

@@ -236,3 +236,30 @@ test("tiradores de edición respetan límites, conservan tipo y cambian ancho/ta
  const wider=resizeLayer(text,"e",100,0,{width:1080,height:1080},50);assert.equal(wider.width,400);assert(wider.type==="text"&&wider.fontSize===40);
  const bigger=resizeLayer(text,"se",100,50,{width:1080,height:1080},50);assert(bigger.type==="text"&&bigger.fontSize===80);
 });
+
+
+test("copy explícito admite etiquetas sin Markdown, campos opcionales y aísla documentos del texto comercial",async()=>{
+ const {extractFlyerCopy}=await import("../lib/flyer-copy");
+ const copy=extractFlyerCopy("Título principal: DIPLOMADO EN PSICOLOGÍA FORENSE\nOferta: MENSUALIDADES GRATIS\nPrecio: Pago único $40 USD\nBeneficios:\n- Evaluación forense\n- Informes periciales\nCTA: SOLICITA INFORMACIÓN\nEJE TEMÁTICO OBLIGATORIO: Forense.\nContexto documental no confiable:\n### PRECIO\n**$999**")!;
+ assert.equal(copy.title,"DIPLOMADO EN PSICOLOGÍA FORENSE");assert.equal(copy.offer,"MENSUALIDADES GRATIS");assert.equal(copy.price,"Pago único $40 USD");assert.equal(copy.cta,"SOLICITA INFORMACIÓN");assert.deepEqual(copy.benefits,["Evaluación forense","Informes periciales"]);
+ const free=extractFlyerCopy("**TÍTULO:** Taller de fotografía\nFRASE DE IMPACTO\nAprende a mirar de otra manera")!;assert.equal(free.title,"Taller de fotografía");assert.equal(free.price,"");assert.equal(free.offer,"");
+});
+test("composición literal adapta el área visual por formato y reserva el texto al compositor",async()=>{
+ const {extractFlyerCopy}=await import("../lib/flyer-copy"),{exactFlyer,visualOnlyContext}=await import("../lib/exact-flyer");
+ const brief="Título: PSICOLOGÍA FORENSE\nOferta: MENSUALIDADES GRATIS\nPrecio: Pago único $40 USD\nFotografía profesional de una especialista revisando informes en un estudio legal.\nEl título debe ser grande. Los logos deben ir arriba.\nContexto documental no confiable:\ninforme.txt: Documento de revisión de referencia";
+ const copy=extractFlyerCopy(brief)!;
+ assert(!visualOnlyContext(brief).includes("MENSUALIDADES GRATIS"));assert(!visualOnlyContext(brief).includes("logos deben"));assert(visualOnlyContext(brief).includes("Documento de revisión"));
+ for(const format of ["1:1","4:3","3:4","4:5","5:4","16:9","9:16"]){const composition=await exactFlyer(copy,format,"Imagen + Texto",[],[],{index:1,brief});const png=await renderDesign(composition.design,null,new Map());assert(png.length>1000);assert(!composition.backgroundPrompt.includes("MENSUALIDADES GRATIS"));assert(composition.backgroundPrompt.includes("SOLO EL RECURSO VISUAL"));}
+ const left=await exactFlyer(copy,"1:1","Imagen + Texto",[],[],{index:0,brief}),right=await exactFlyer(copy,"1:1","Imagen + Texto",[],[],{index:1,brief});assert.notEqual(left.design.layers.find(l=>l.id==="copy-panel")!.x,right.design.layers.find(l=>l.id==="copy-panel")!.x);
+});
+
+
+test("variaciones explícitas conservan orden, cantidad y un máximo de llamadas de imagen",async()=>{
+ const {flyerModes,oneFlyerBrief}=await import("../lib/flyer-copy");
+ const prompt="Título: Tema\nVARIACIÓN 1 — CON IMAGEN\nFotografía profesional\nVARIACIÓN 2 — SOLO TEXTO\nFondo blanco";
+ assert.deepEqual(flyerModes(prompt,["Imagen + Texto","Imagen + Texto"]),["Imagen + Texto","Texto"]);
+ assert.deepEqual(flyerModes(prompt,["Texto","Imagen + Texto"]),["Imagen + Texto","Texto"]);
+ assert.deepEqual(flyerModes(prompt,["Texto","Texto"]),["Texto","Texto"]);
+ assert.deepEqual(flyerModes(prompt,["Imagen + Texto"]),["Imagen + Texto"]);
+ assert(!oneFlyerBrief(prompt,"Texto",1).includes("VARIACIÓN 1"));
+});

@@ -340,13 +340,13 @@ export async function runOne(filter?: {
         const label=exactCopy.brands.find(name=>{const words=name.split(/\s+/).filter(word=>!/^(de|la|el|del|los)$/i.test(word));const acronym=normal(words.map(word=>word[0]).join(""));return normal(a.name).includes(normal(name))||(acronym.length>=3&&a.name.toUpperCase().split(/[^A-Z0-9]+/).includes(acronym));});
         return exactCopy.brands.length&&!label?[]:[{id:a.id,name:a.name,label}];
       });
-      const composition=await exactFlyer(exactCopy,s.format,s.mode,s.brand?.colors,logos);
+      const composition=await exactFlyer(exactCopy,s.format,s.mode,s.brand?.colors,logos,{index:s.index,brief:scopedBrief});
       document=composition.design;
       creativePlan=composition.backgroundPrompt;
       if(s.mode!=="Texto"){
         const visualImages=images.filter((_,index)=>!/logo/i.test(refs[index].purpose));
         checkReferences(visualImages);await heartbeat.check();called=true;
-        const result=await provider.generate(key,{capability:imageCapability,signal,model:c.imageModel!,prompt:artDirection(scopedBrief,s.mode,s.format,s.index,true)+"\n\n"+composition.backgroundPrompt,quality:c.quality,size:c.resolution,images:visualImages});
+        const result=await provider.generate(key,{capability:imageCapability,signal,model:c.imageModel!,prompt:composition.backgroundPrompt,quality:c.quality,size:c.resolution,images:visualImages});
         imageUsage=result.usage;backgroundPath=await store(await adaptImage(result.bytes,s.format));written.push(backgroundPath);
       }
       output=await renderDesign(document,backgroundPath?await load(backgroundPath):null,await logoBytes(document));

@@ -1,6 +1,7 @@
 "use client";
 import { createContext, useContext } from "react";
 import { roleLabels, roleAbilities } from "../../lib/roles";
+export const CurrentUserId = createContext("");
 export const CurrentRole = createContext("OBSERVER");
 export const useCanEdit = () => useContext(CurrentRole) !== "OBSERVER";
 export function RoleGuide({ name, role }: { name: string; role: string }) {

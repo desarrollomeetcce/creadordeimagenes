@@ -75,6 +75,7 @@ export function Library() {
     id: string;
     name: string;
     revision: number;
+    subproductHref?:string;
   } | null>(null);
   const canEdit = useCanEdit(),
     [hierarchy, setHierarchy] = useState<HierarchyValue>(hierarchyFromLocation),
@@ -294,6 +295,7 @@ export function Library() {
     const b = await r.json();
     if (!r.ok) throw Error(b.error);
   };
+  const editingSubproduct=data?.items.find(item=>item.id===editing)?.subproduct;
   return (
     <section className="stack library-explorer">
       {preview && (
@@ -301,12 +303,14 @@ export function Library() {
           id={preview.id}
           name={preview.name}
           revision={preview.revision}
+          subproductHref={preview.subproductHref}
           onClose={() => setPreview(null)}
         />
       )}
       {editing && (
         <ImageEditorModal
           id={editing}
+          subproductHref={editingSubproduct ? "?"+new URLSearchParams({view:"projects",category:editingSubproduct.category.id,subproduct:editingSubproduct.id}) : undefined}
           onClose={() => {
             setEditing(null);
             void refresh();
@@ -788,6 +792,7 @@ export function Library() {
                       id: i.id,
                       name: i.subproduct?.name ?? "Prueba de IA",
                       revision: i.revision,
+                      subproductHref:i.subproduct?"?"+new URLSearchParams({view:"projects",category:i.subproduct.category.id,subproduct:i.subproduct.id}):undefined,
                     })
                   }
                 >
@@ -809,12 +814,14 @@ export function Library() {
                       id: i.id,
                       name: i.subproduct?.name ?? "Prueba de IA",
                       revision: i.revision,
+                      subproductHref:i.subproduct?"?"+new URLSearchParams({view:"projects",category:i.subproduct.category.id,subproduct:i.subproduct.id}):undefined,
                     })
                   }
                 >
                   Ampliar imagen
                 </button>
                 <strong>{i.subproduct?.name ?? "Prueba de IA"}</strong>
+                {i.subproduct&&<a className="button" href={"?"+new URLSearchParams({view:"projects",category:i.subproduct.category.id,subproduct:i.subproduct.id})}>{i.canEdit?"Editar subproducto":"Ir al subproducto"} ↗</a>}
                 {i.canApprove && i.reviewStatus !== "APPROVED" && (
                   <button
                     type="button"
