@@ -72,8 +72,8 @@ export function VariationEditor({
     setBusy(true);
     setMessage("");
     try {
-      await fn();
-      setMessage(success);
+      const outcome=await fn();
+      setMessage(typeof outcome==="string"?outcome:success);
     } catch (e) {
       setMessage(e instanceof Error ? e.message : "No se pudo guardar.");
     } finally {
@@ -541,16 +541,19 @@ export function VariationEditor({
                         expectedRevision: data.revision,
                         document: draft,
                       });
+                      let continuationPending=false;
                       if (data.orderId) {
-                        await orderRequest(`/${data.orderId}/approve`, {
+                        const updated=await orderRequest(`/${data.orderId}/approve`, {
                           jobId: data.jobId,
                         });
-                        if (data.orderMode === "immediate")
+                        continuationPending=["NEEDS_REVIEW","DISPATCH_UNCERTAIN"].includes(updated.status);
+                        if (data.orderMode === "immediate"&&updated.status==="ACTIVE")
                           void driveOrder(data.orderId, async () => {}).catch(
                             (e) => setMessage(e.message),
                           );
                       } else await api(`jobs/${data.jobId}/approve`, "POST");
                       await load();
+                      if(continuationPending)return "Cambios guardados e imagen aprobada. La continuación necesita atención; revisa el motivo en la tarjeta de generación.";
                     }, "Cambios guardados e imagen aprobada.")
                   }
                 >

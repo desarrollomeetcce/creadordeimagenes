@@ -1,8 +1,9 @@
+import {orderRecovery,continuationError,reportContinuationError} from "./order-recovery";
 import { dismissedOrders } from "./order-dismissal";
 import { emptyStoppedOrder } from "./order-visibility";
 import type { Prisma } from "@prisma/client";
 import { db } from "./db";
-import { demand, AppError } from "./errors";
+import { demand } from "./errors";
 import { jobResourceAccess } from "./auth";
 import { recordActivity } from "./activity";
 import { waitingForApproval, approveJob } from "./preview-approval";
@@ -74,6 +75,7 @@ export function orderSummary(
     id: string;
     status: string;
     snapshot: unknown;
+    error?: string | null;
     variation?: {
       id: string;
       reviewStatus: string;
@@ -95,7 +97,8 @@ export function orderSummary(
       (["COMPLETED","ACCEPTED"].includes(order.status) && !jobs.some(j=>["PENDING","RUNNING"].includes(j.status)) && !jobs.some(j=>j.variation&&!j.variation.deletedAt&&j.variation.reviewStatus!=="APPROVED")),
     canDismiss: user.role!=="OBSERVER" && (user.id===order.actorId||user.role==="OWNER") && ["COMPLETED","ACCEPTED","STOPPED","NEEDS_REVIEW"].includes(order.status) && !jobs.some(j=>["PENDING","RUNNING"].includes(j.status)),
     status: order.status,
-    error: order.error,
+    ...orderRecovery(order.status,jobs,order.error,user.role!=="OBSERVER"&&(user.id===order.actorId||user.role==="OWNER")),
+    canReviewConnection:user.role==="OWNER",
     createdAt: order.createdAt,
     mode: String(first?.executionMode ?? "background"),
     requested: (order.jobIds as string[]).length,
@@ -385,7 +388,12 @@ export async function orderTick(
       where: { id, status: "STARTING", runId: order.runId },
       data: { status: "ACTIVE", runId },
     });
-    if (!activated.count) return "STOP";
+    if (!activated.count) {
+      // launchOrder may have acknowledged this very run while the step read
+      // STARTING. Losing that update is harmless only for the same active run.
+      const current=await db.generationOrder.findUnique({where:{id}});
+      if(current?.status!=="ACTIVE"||current.runId!==runId)return "STOP";
+    }
   }
   try {
     const actor = await db.user.findUnique({ where: { id: order.actorId } });
@@ -490,14 +498,12 @@ export async function orderTick(
       },
     });
     if (running) return "WAIT";
+    reportContinuationError(id,error);
     await db.generationOrder.updateMany({
       where: { id, status: "ACTIVE", runId },
       data: {
         status: "NEEDS_REVIEW",
-        error:
-          error instanceof AppError
-            ? error.message
-            : "Revisa el estado de la orden antes de continuar.",
+        error: continuationError(error),
       },
     });
     return "STOP";
@@ -537,6 +543,7 @@ export async function libraryOrders(
     {
       id: string;
       status: string;
+      error: string | null;
       projectId: string;
       subproductId: string | null;
       productId: string | null;
@@ -549,7 +556,7 @@ export async function libraryOrders(
       deletedAt: Date | null;
       revision: number | null;
     }[]
-  >`SELECT j.id,j.status,j."projectId",j."subproductId",c.id AS "productId",p.name AS "projectName",c.name AS "productName",s.name AS "subproductName",jsonb_build_object('executionMode',j.snapshot->'executionMode','orderFinalCount',j.snapshot->'orderFinalCount','previewFirst',j.snapshot->'previewFirst','index',j.snapshot->'index') AS snapshot,v.id AS "variationId",v."reviewStatus",v."deletedAt",v.revision FROM "GenerationJob" j LEFT JOIN "Variation" v ON v."jobId"=j.id LEFT JOIN "Subproduct" s ON s.id=j."subproductId" LEFT JOIN "Category" c ON c.id=s."categoryId" LEFT JOIN "Project" p ON p.id=j."projectId" WHERE j.id=ANY(${ids}::text[])`;
+  >`SELECT j.id,j.status,j.error,j."projectId",j."subproductId",c.id AS "productId",p.name AS "projectName",c.name AS "productName",s.name AS "subproductName",jsonb_build_object('executionMode',j.snapshot->'executionMode','orderFinalCount',j.snapshot->'orderFinalCount','previewFirst',j.snapshot->'previewFirst','index',j.snapshot->'index') AS snapshot,v.id AS "variationId",v."reviewStatus",v."deletedAt",v.revision FROM "GenerationJob" j LEFT JOIN "Variation" v ON v."jobId"=j.id LEFT JOIN "Subproduct" s ON s.id=j."subproductId" LEFT JOIN "Category" c ON c.id=s."categoryId" LEFT JOIN "Project" p ON p.id=j."projectId" WHERE j.id=ANY(${ids}::text[])`;
   return records.map((order) => {
     const rows = jobs.filter((j) => order.jobIds.includes(j.id));
     const context = rows[0];

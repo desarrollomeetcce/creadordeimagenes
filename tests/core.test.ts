@@ -487,3 +487,16 @@ test("Medio predeterminado y niveles de razonamiento siguen la herencia sin camb
  assert.equal(effectiveSettings({reasoningLevel:"high"},{},false).reasoningLevel,"medium");
  assert.equal(effectiveSettings({reasoningLevel:"invalid"},{}).reasoningLevel,"medium");
 });
+
+
+test("recuperación de orden distingue muestra aprobada, pendientes y cargos inciertos sin ocultar el motivo",async()=>{
+ const {orderRecovery,continuationError}=await import("../lib/order-recovery");
+ const sample={status:"COMPLETED",snapshot:{previewFirst:true,index:0},variation:{reviewStatus:"APPROVED",deletedAt:null}},pending={status:"PENDING",snapshot:{previewFirst:true,index:1}};
+ const r=orderRecovery("NEEDS_REVIEW",[sample,pending],"Error",true);assert.equal(r.canContinuePending,true);assert(r.error?.includes("interrumpió"));assert(r.recoveryHint?.includes("no se vuelven a generar"));
+ assert.equal(orderRecovery("NEEDS_REVIEW",[{...sample,variation:{reviewStatus:"PENDING",deletedAt:null}},pending],null,true).canApproveSample,true);
+ assert.equal(orderRecovery("NEEDS_REVIEW",[sample,pending],null,false).canContinuePending,false);
+ for(const status of ["FAILED","UNCERTAIN","RUNNING"]){const blocked=orderRecovery("NEEDS_REVIEW",[sample,pending,{status,snapshot:{}}],null,true);assert.equal(blocked.canContinuePending,false);assert.equal(blocked.canApproveSample,false);}
+ assert.equal(orderRecovery("STOPPED",[sample,{...pending,status:"UNCERTAIN",error:"Error anterior privado"}],null,true).error,null);
+ assert.equal(orderRecovery("NEEDS_REVIEW",[sample,pending],"El OWNER debe guardar y verificar la conexión de IA.",true).needsConnectionReview,true);
+ assert(!continuationError(new Error("SQL con un secreto sintético")).includes("secreto"));assert(continuationError(new Error("interno")).includes("ORDEN_CONTINUACION"));
+});

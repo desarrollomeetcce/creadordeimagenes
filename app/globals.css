@@ -1019,3 +1019,5 @@ html[data-theme="dark"] .subproduct-status.status-error{color:#ffb2b2;background
 
 .quick-start-form .quick-start-destinations{grid-template-columns:repeat(2,minmax(0,1fr))}.quick-start-destinations>div{min-width:0}.quick-start-destinations .hint{display:block;margin-top:6px}.image-preview-bar .button{font-size:12px;flex-shrink:0}.subproduct-generation-actions .quick-generation{font-weight:700}
 @media(max-width:700px){.quick-start-form .quick-start-destinations{grid-template-columns:1fr}.image-preview-bar{flex-wrap:wrap}.image-preview-bar strong{flex-basis:100%}.image-preview-bar .button{font-size:11px;padding:8px}.image-preview-bar .window-close{margin-left:auto}}
+
+.order-recovery-hint{margin:6px 0;max-width:100%;overflow-wrap:anywhere}.order-description .dismissible-notice{margin:6px 0;font-size:12px;max-width:100%;overflow-wrap:anywhere}

@@ -1,3 +1,5 @@
+import {continuationError,reportContinuationError} from "./order-recovery";
+import {waitingForApproval} from "./preview-approval";
 import { dismissedOrders, dismissOrders } from "./order-dismissal";
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
@@ -27,7 +29,7 @@ export async function launchOrder(user: Actor, id: string, resume = false) {
     return;
   if (resume)
     demand(
-      ["PAUSED", "REVIEW", "QUEUED"].includes(order.status),
+      ["PAUSED", "REVIEW", "QUEUED", "NEEDS_REVIEW"].includes(order.status),
       "Revisa la orden antes de reanudar. No se repiten solicitudes de cargo incierto.",
       409,
     );
@@ -36,8 +38,16 @@ export async function launchOrder(user: Actor, id: string, resume = false) {
   );
   const claimed = await db.$transaction(async (tx) => {
     await tx.$executeRaw`SELECT pg_advisory_xact_lock(728291)`;
+    if(resume){
+      const currentJobs=await tx.generationJob.findMany({where:{id:{in:order.jobIds as string[]}}});
+      demand(!currentJobs.some(job=>["RUNNING","FAILED","UNCERTAIN"].includes(job.status)),"No se puede continuar una orden con imágenes en curso, fallidas o cargos inciertos. Revisa Generaciones; no se repetirán solicitudes.",409);
+      const pending=currentJobs.filter(job=>job.status==="PENDING");
+      demand(pending.length>0,"No quedan imágenes pendientes en esta orden.",409);
+      let runnable=false;for(const job of pending)if(!(await waitingForApproval(tx,job))){runnable=true;break;}
+      demand(runnable,"Aprueba la primera muestra antes de continuar las imágenes pendientes.",409);
+    }
     const result = await tx.generationOrder.updateMany({
-      where: { id, status: order.status },
+      where: { id, status: order.status, runId:order.runId },
       data: {
         status: mode === "immediate" ? "ACTIVE" : "STARTING",
         runId: mode === "immediate" ? "interactive:" + randomUUID() : null,
@@ -165,7 +175,15 @@ export async function orderRoutes(
     await approveOrder(user, id, b.jobId);
     const { order } = await orderAccess(user, id);
     // The execution mode was selected at the source. Approval only releases this order.
-    if (order.status === "REVIEW") await launchOrder(user, id, true);
+    if (["REVIEW","NEEDS_REVIEW"].includes(order.status)){
+      try{await launchOrder(user,id,true);}
+      catch(error){
+        // Approval already committed. Preserve that fact even if continuation
+        // cannot start, and never overwrite another caller's active dispatch.
+        reportContinuationError(id,error);
+        await db.generationOrder.updateMany({where:{id,status:order.status,runId:order.runId},data:{status:"NEEDS_REVIEW",error:continuationError(error)}});
+      }
+    }
   } else if (action === "process") {
     const { order, jobs } = await orderAccess(user, id);
     demand(

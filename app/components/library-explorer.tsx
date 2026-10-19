@@ -192,10 +192,10 @@ export function Library() {
     setError("");
     setMessage("");
     try {
-      await fn();
+      const outcome=await fn();
       setSelected([]);
       await refresh();
-      setMessage(text);
+      setMessage(typeof outcome==="string"?outcome:text);
       const c = new BroadcastChannel("studio-updates");
       c.postMessage("library");
       c.close();
@@ -833,13 +833,14 @@ export function Library() {
                           (o) => o.sampleJobId === i.job.id,
                         );
                         if (order) {
-                          await orderRequest(`/${order.id}/approve`, {
+                          const updated=await orderRequest(`/${order.id}/approve`, {
                             jobId: i.job.id,
                           });
-                          if (order.mode === "immediate")
+                          if (order.mode === "immediate"&&updated.status==="ACTIVE")
                             void driveOrder(order.id, refresh).catch((e) =>
                               setError(e.message),
                             );
+                          if(["NEEDS_REVIEW","DISPATCH_UNCERTAIN"].includes(updated.status))return "Imagen aprobada y conservada. La continuación necesita atención; revisa el motivo y la acción disponible en su tarjeta.";
                         } else {
                           const response = await fetch(
                             `/api/jobs/${i.job.id}/approve`,

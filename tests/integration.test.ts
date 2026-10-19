@@ -9945,6 +9945,61 @@ test("Integración HTTP + PostgreSQL (base exclusiva de pruebas, sin llamadas ex
         });
       }
     }
+    await t.test("aprobar conserva la muestra ante bloqueo y permite continuar solo pendientes tras corregir la causa",async()=>withOrderProvider(async(config,calls)=>{
+      const {orderTick}=await import("../lib/generation-orders"),{p,s}=await hierarchyForReview(),actor=await db.user.findFirstOrThrow({where:{role:"OWNER",status:"APPROVED"}}),group=randomUUID();
+      const jobs=await reserveJobs(actor.id,p.id,[0,1].map(index=>({subproductId:s.id,key:randomUUID(),snapshot:{prompt:"Prueba de aprobación y continuación",mode:"Texto",format:"1:1",renderMode:"editable",index,previewFirst:true,approvalGroup:group}})),config.revision);
+      const created=await owner.call("orders","POST",{ids:jobs.map(j=>j.id),requestId:randomUUID(),mode:"immediate"});assert.equal(created.status,202);const id=created.body.orders[0];let order=await db.generationOrder.findUniqueOrThrow({where:{id}});
+      assert.equal(await orderTick(id,order.runId!),"CONTINUE");assert.equal(await orderTick(id,order.runId!),"REVIEW");assert.equal(calls(),1);
+      const original=await db.variation.findUniqueOrThrow({where:{jobId:jobs[0].id}}),originalBytes=await (await import("../lib/storage")).load(original.path),firstLedger=await db.usageLedger.findUniqueOrThrow({where:{jobId:jobs[0].id}});
+      // A continuation error after the approval commit must not turn approval into an HTTP error.
+      await db.generationJob.update({where:{id:jobs[1].id},data:{status:"UNCERTAIN"}});
+      const approved=await owner.call(`orders/${id}/approve`,"POST",{jobId:jobs[0].id});assert.equal(approved.status,200);assert.equal(approved.body.sample.reviewStatus,"APPROVED");assert.equal(approved.body.status,"NEEDS_REVIEW");assert.equal(approved.body.canContinuePending,false);assert.equal((await owner.call(`orders/${id}/resume`,"POST",{})).status,409);assert.equal(calls(),1);
+      // Explicit test setup restores a job that has never called the provider.
+      await db.generationJob.update({where:{id:jobs[1].id},data:{status:"PENDING"}});
+      assert.equal((await owner.call(`orders/${id}/resume`,"POST",{})).status,200);order=await db.generationOrder.findUniqueOrThrow({where:{id}});
+      await db.providerConfiguration.update({where:{id:"global"},data:{verifiedAt:new Date(Date.now()-90000000)}});
+      try{assert.equal(await orderTick(id,order.runId!),"STOP");}finally{await db.providerConfiguration.update({where:{id:"global"},data:{verifiedAt:config.verifiedAt}});}
+      let summary=(await owner.call(`orders?ids=${id}`)).body[0];assert.equal(summary.status,"NEEDS_REVIEW");assert.equal(summary.completed,1);assert.equal(summary.pending,1);assert.equal(summary.canContinuePending,true);assert.equal(summary.needsConnectionReview,true);assert(summary.error.includes("verificar la conexión"));assert.equal(calls(),1);
+      const inLibrary=(await owner.call(`library/explorer?project=${p.id}&product=${s.categoryId}&subproduct=${s.id}`)).body.orders.find((o:any)=>o.id===id);assert.equal(inLibrary.canContinuePending,true);assert.equal(inLibrary.error,summary.error);
+      assert.equal((await observer.call(`orders/${id}/resume`,"POST",{})).status,403);assert.equal((await user.call(`orders/${id}/resume`,"POST",{})).status,403);
+      const attempts=await Promise.all([owner.call(`orders/${id}/resume`,"POST",{}),owner.call(`orders/${id}/resume`,"POST",{})]);assert(attempts.every(r=>r.status===200));order=await db.generationOrder.findUniqueOrThrow({where:{id}});assert.notEqual(order.runId,null);
+      assert.equal(await orderTick(id,order.runId!),"CONTINUE");assert.equal(await orderTick(id,order.runId!),"STOP");assert.equal(calls(),2);summary=(await owner.call(`orders?ids=${id}`)).body[0];assert.equal(summary.status,"COMPLETED");assert.equal(summary.completed,2);
+      const after=await db.variation.findUniqueOrThrow({where:{id:original.id}});assert.equal(after.reviewStatus,"APPROVED");assert.equal(after.revision,original.revision);assert((await (await import("../lib/storage")).load(after.path)).equals(originalBytes));assert.deepEqual(await db.usageLedger.findUniqueOrThrow({where:{jobId:jobs[0].id}}),firstLedger);
+      for(const status of ["FAILED","UNCERTAIN","RUNNING"]){await db.generationOrder.update({where:{id},data:{status:"NEEDS_REVIEW"}});await db.generationJob.update({where:{id:jobs[1].id},data:{status}});assert.equal((await owner.call(`orders/${id}/resume`,"POST",{})).status,409);assert.equal((await owner.call(`orders?ids=${id}`)).body[0].canContinuePending,false);}
+      await db.generationJob.update({where:{id:jobs[1].id},data:{status:"COMPLETED"}});await db.generationOrder.update({where:{id},data:{status:"COMPLETED",error:null}});assert.equal(calls(),2);
+    }));
+    await t.test("arranque concurrente continúa si el mismo ejecutor ya fue confirmado y se detiene ante pausa u otro ejecutor",async()=>withOrderProvider(async(config,calls)=>{
+      const {registerOrders,orderTick}=await import("../lib/generation-orders"),{p,s}=await hierarchyForReview(),actor=await db.user.findFirstOrThrow({where:{role:"OWNER",status:"APPROVED"}});
+      for(const winner of ["same","other","paused"]){
+        const jobs=await reserveJobs(actor.id,p.id,[{subproductId:s.id,key:randomUUID(),snapshot:{prompt:"Prueba de carrera de arranque",mode:"Texto",format:"1:1",renderMode:"editable",index:0}}],config.revision),ids=await registerOrders(actor,jobs.map(j=>j.id),"background",randomUUID()),id=ids[0],runId="synthetic-start-race-"+randomUUID();
+        await db.generationOrder.update({where:{id},data:{status:"STARTING",runId:null}});
+        const original=db.generationOrder.updateMany.bind(db.generationOrder);let injected=false;
+        db.generationOrder.updateMany=(async(args:any)=>{
+          if(!injected&&args.where?.id===id&&args.where?.status==="STARTING"){
+            injected=true;await original({where:{id},data:{status:winner==="paused"?"PAUSED":"ACTIVE",runId:winner==="other"?"another-run":runId}});
+          }
+          return original(args);
+        }) as typeof db.generationOrder.updateMany;
+        try{assert.equal(await orderTick(id,runId),winner==="same"?"CONTINUE":"STOP");assert.equal(injected,true);}finally{db.generationOrder.updateMany=original;}
+        assert.equal((await db.generationJob.findUniqueOrThrow({where:{id:jobs[0].id}})).status,winner==="same"?"COMPLETED":"PENDING");
+        await owner.call(`orders/${id}/stop`,"POST",{});
+      }
+      assert.equal(calls(),1);
+    }));
+    await t.test("Workflow local aprueba la primera muestra y completa la segunda tipográfica sin IA ni duplicar la primera",async()=>withOrderProvider(async(config,calls)=>{
+      const {p,s}=await hierarchyForReview(),actor=await db.user.findFirstOrThrow({where:{role:"OWNER",status:"APPROVED"}}),group=randomUUID();
+      const jobs=await reserveJobs(actor.id,p.id,[0,1].map(index=>({subproductId:s.id,key:randomUUID(),snapshot:{prompt:"Título: MUESTRA LOCAL DE APROBACIÓN\nOferta: TEXTO AUTORIZADO\nPrecio: Pago único $40 USD",mode:"Texto",format:"1:1",renderMode:"flat",index,previewFirst:true,approvalGroup:group}})),config.revision);
+      const registered=await owner.call("orders","POST",{ids:jobs.map(j=>j.id),requestId:randomUUID(),mode:"background"});assert.equal(registered.status,202);const id=registered.body.orders[0];
+      const wait=async(status:string)=>{for(let i=0;i<150;i++){const order=await db.generationOrder.findUniqueOrThrow({where:{id}});if(order.status===status)return order;if(["NEEDS_REVIEW","DISPATCH_UNCERTAIN"].includes(order.status))assert.fail("La orden local no llegó a "+status+": "+order.error);await new Promise(resolve=>setTimeout(resolve,100));}assert.fail("Workflow local no alcanzó "+status);};
+      try{
+      const review=await wait("REVIEW"),first=await db.variation.findUniqueOrThrow({where:{jobId:jobs[0].id}}),path=first.path;
+      assert.equal(await db.variation.count({where:{jobId:{in:jobs.map(j=>j.id)}}}),1);
+      const approved=await owner.call(`orders/${id}/approve`,"POST",{jobId:jobs[0].id});assert.equal(approved.status,200);await wait("COMPLETED");
+      const final=await db.generationOrder.findUniqueOrThrow({where:{id}});assert.notEqual(final.runId,review.runId);assert.equal(await db.variation.count({where:{jobId:{in:jobs.map(j=>j.id)}}}),2);
+      const kept=await db.variation.findUniqueOrThrow({where:{id:first.id}});assert.equal(kept.path,path);assert.equal(kept.revision,first.revision);assert.equal(kept.reviewStatus,"APPROVED");assert.equal(await db.imageVersion.count({where:{variationId:first.id}}),1);
+      const ledgers=await db.usageLedger.findMany({where:{jobId:{in:jobs.map(j=>j.id)}}});assert(ledgers.every(row=>row.actualMicros===0n));assert.equal(calls(),0);
+      }finally{await owner.call(`orders/${id}/stop`,"POST",{});}
+    }));
     await t.test(
       "orden 7: progreso propio, muestra, pausa 4/7, detener y finalizar 4/4 sin cambiar ledger histórico",
       async () =>

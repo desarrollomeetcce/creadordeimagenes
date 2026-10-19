@@ -7,6 +7,11 @@ export type OrderProgress = {
   errorVersion?: string;
   hiddenFromProduction?: boolean;
   canDismiss?: boolean;
+  canContinuePending?:boolean;
+  canApproveSample?:boolean;
+  recoveryHint?:string|null;
+  needsConnectionReview?:boolean;
+  canReviewConnection?:boolean;
   status: string;
   error: string | null;
   createdAt: string;
@@ -108,11 +113,11 @@ export function OrderProgressCard({
     setBusy(true);
     setError("");
     try {
-      await orderRequest(action==="hide-card"?"/hide":`/${o.id}/${action}`,action==="hide-card"?{ids:[o.id]}:body);
+      const updated=await orderRequest(action==="hide-card"?"/hide":`/${o.id}/${action}`,action==="hide-card"?{ids:[o.id]}:body);
       await refresh();
       if (
         (action === "resume" || action === "approve") &&
-        o.mode === "immediate"
+        o.mode === "immediate" && updated.status === "ACTIVE"
       )
         void driveOrder(o.id, refresh).catch((e) => setError(e.message));
     } catch (e) {
@@ -196,6 +201,8 @@ export function OrderProgressCard({
             pedido original de {o.requested}.
           </small>
         )}
+        {o.recoveryHint&&<p className="hint order-recovery-hint">{o.recoveryHint}</p>}
+        {(error || o.error) && <ErrorNotice message={error || o.error!} acknowledgementKey={!error ? `${o.viewerId??"viewer"}:${o.id}:${o.errorVersion??o.createdAt}` : undefined} onDismiss={()=>setError("")} />}
         {o.scope && (
           <a
             target="_blank"
@@ -220,7 +227,7 @@ export function OrderProgressCard({
               Pausar
             </button>
           )}
-          {(o.status === "PAUSED" ||
+          {(o.canContinuePending || o.status === "PAUSED" ||
             (o.status === "ACTIVE" && o.mode === "immediate" && !o.running)) &&
             o.pending > 0 && (
               <button
@@ -229,7 +236,7 @@ export function OrderProgressCard({
                 disabled={busy}
                 onClick={() => void perform("resume")}
               >
-                {o.status === "PAUSED" ? "Reanudar" : "Continuar orden"}
+                {o.canContinuePending ? `Continuar ${o.pending} ${o.pending===1?"imagen pendiente":"imágenes pendientes"}` : o.status === "PAUSED" ? "Reanudar" : "Continuar orden"}
               </button>
             )}
           {!closed && o.status !== "STOPPED" && (o.pending > 0 || o.running > 0 || o.failed > 0 || o.uncertain > 0 || !!o.error) && (
@@ -249,8 +256,8 @@ export function OrderProgressCard({
               Detener
             </button>
           )}
-          {o.status === "REVIEW" &&
-            o.sampleJobId &&
+          {(o.canApproveSample || o.status === "REVIEW") &&
+            o.sample && !o.sample.deletedAt && o.sampleJobId &&
             o.sample?.reviewStatus !== "APPROVED" && (
               <button
                 type="button"
@@ -263,6 +270,8 @@ export function OrderProgressCard({
                 Aprobar muestra y continuar
               </button>
             )}
+          {o.needsConnectionReview&&o.canReviewConnection&&<a className="button" href="?view=ai">Revisar conexión de IA</a>}
+          {(o.failed>0||o.uncertain>0)&&<a className="button" href={"?"+new URLSearchParams({view:"jobs",...(o.scope??{})})}>Ver motivo en Generaciones</a>}
           {o.status !== "ACCEPTED" && o.completed > 0 && !o.running && (
             <button
               type="button"
@@ -291,7 +300,7 @@ export function OrderProgressCard({
           )}
         </div>
       )}
-      {(error || o.error) && <ErrorNotice message={error || o.error!} acknowledgementKey={!error ? `${o.viewerId??"viewer"}:${o.id}:${o.errorVersion??o.createdAt}` : undefined} onDismiss={()=>setError("")} />}
+
       {o.running > 0 && (
         <p className="hint">
           La imagen ya en curso puede terminar y cobrarse. Pausar o detener
