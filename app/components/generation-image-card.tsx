@@ -4,6 +4,7 @@ export type PendingImage = {
   id: string;
   status: string;
   orderId: string | null;
+  sourceNotice?:string|null;
   subproduct: { id: string; name: string; category: { id: string } } | null;
 };
 export function GenerationImageCard({
@@ -58,7 +59,7 @@ export function GenerationImageCard({
       <strong>
         {slot.subproduct?.name ?? order?.name ?? "Imagen pendiente"}
       </strong>
-      {slot.subproduct && (
+      {slot.sourceNotice?<span className="source-deleted-notice">{slot.sourceNotice}</span>:slot.subproduct && (
         <a
           href={
             "?" +

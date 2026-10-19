@@ -1044,3 +1044,5 @@ html[data-theme="dark"] .subproduct-status.status-error{color:#ffb2b2;background
 .subproduct-counter.counter-failed{background:#ffeded;color:#a11919;}
 .subproduct-counter.counter-unapproved,.subproduct-counter.counter-approvalBlocked,.subproduct-counter.counter-uncertain{background:#fff3d5;color:#73500b;}
 @media(max-width:700px){.subproduct-period{margin-left:0;flex-basis:100%;}.subproduct-counters{flex-basis:100%;}.subproduct-counter{font-size:10px;}}
+
+.source-deleted-notice{display:block;font-size:12px;font-weight:600;color:var(--muted);padding:6px 0;overflow-wrap:anywhere;}

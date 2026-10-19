@@ -5,11 +5,12 @@ import { VariationEditor } from "./variation-editor";
 export function ImageEditorModal({
   id,
   onClose,
-  subproductHref,
+  subproductHref, sourceNotice,
 }: {
   id: string;
   onClose: () => void;
   subproductHref?:string;
+  sourceNotice?:string|null;
 }) {
   const dialog = useRef<HTMLDialogElement>(null),
     [full, setFull] = useState(false);
@@ -32,7 +33,7 @@ export function ImageEditorModal({
     >
       <div className="row spread editor-window-bar">
         <strong>Editor de imagen</strong>
-        {subproductHref&&<a className="button" href={subproductHref}>Volver al subproducto ↗</a>}
+        {sourceNotice?<span className="source-deleted-notice">{sourceNotice}</span>:subproductHref&&<a className="button" href={subproductHref}>Volver al subproducto ↗</a>}
         <button type="button" onClick={() => setFull(!full)}>
           {full ? "Restaurar tamaño" : "Ampliar a pantalla completa"}
         </button>

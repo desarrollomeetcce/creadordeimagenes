@@ -1,3 +1,4 @@
+import {deletedSourceNotice} from "./source-status";
 import { recordActivity } from "./activity";
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
@@ -26,7 +27,7 @@ export async function variationRoutes(
   const v = await accessibleVariation(
     user,
     id,
-    method === "GET" ? "VIEW" : action === "regenerate" ? "GENERATE" : "EDIT",
+    method === "GET" ? "VIEW" : ["regenerate","edit-ai"].includes(action) ? "GENERATE" : "EDIT",
     action === "restore",
   );
   if (action === "logos" && method === "GET" && parts.length === 4) {
@@ -64,6 +65,9 @@ export async function variationRoutes(
     });
   }
   if (action === "design" && method === "GET") {
+    const source=v.subproductId?await db.subproduct.findUnique({where:{id:v.subproductId},select:{deletedAt:true,category:{select:{deletedAt:true,project:{select:{deletedAt:true}}}}}}):null;
+    const sourceNotice=deletedSourceNotice(source);
+
     const versions = await db.imageVersion.findMany({
       where: { variationId: id },
       orderBy: { number: "desc" },
@@ -80,7 +84,8 @@ export async function variationRoutes(
     return send({
       id,
       jobId: v.job.id,
-      orderId: (v.job.snapshot as Record<string, unknown>).orderId ?? null,
+      sourceNotice,
+      orderId: sourceNotice?null:(v.job.snapshot as Record<string, unknown>).orderId ?? null,
       orderMode:
         (v.job.snapshot as Record<string, unknown>).executionMode ?? null,
       canApprove:

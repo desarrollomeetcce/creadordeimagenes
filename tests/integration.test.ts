@@ -10869,6 +10869,60 @@ test("Integración HTTP + PostgreSQL (base exclusiva de pruebas, sin llamadas ex
       await owner.call(endpoint+period);assert.equal(await db.generationJob.count({where:{id:{in:createdJobs}}}),createdJobs.length);assert.equal(await db.usageLedger.count({where:{jobId:{in:createdJobs}}}),0);
       await db.generationJob.updateMany({where:{id:{in:createdJobs},status:"RUNNING"},data:{status:"CANCELLED"}});
     });
+    await t.test("Biblioteca independiente del origen: eliminar/restaurar cada nivel conserva carpetas, imágenes, edición, permisos y descargas",async()=>{
+      const {default:sharp}=await import("sharp"),{store,load}=await import("../lib/storage"),JSZip=(await import("jszip")).default;
+      const bytes=await sharp({create:{width:512,height:512,channels:3,background:"#164c58"}}).png().toBuffer();
+      const actor=await db.user.findFirstOrThrow({where:{role:"OWNER"}});
+      for(const level of ["subproduct","category","project"]){
+        const {p,c,s:sub}=await hierarchyForReview();
+        const sibling=await db.subproduct.create({data:{name:"Hermano privado",categoryId:c.id,prompt:"No compartir este contenido"}});
+        await db.subproductMember.createMany({data:[{userId:uid,subproductId:sub.id},{userId:oid,subproductId:sub.id}]});
+        const job=await db.generationJob.create({data:{actorId:actor.id,projectId:p.id,subproductId:sub.id,idempotencyKey:randomUUID(),status:"COMPLETED",snapshot:{prompt:"Snapshot privado",mode:"Texto",orderId:"synthetic-source-order"},reservedMicros:0n}});
+        const path=await store(bytes),image=await db.variation.create({data:{jobId:job.id,subproductId:sub.id,path,model:"synthetic",reviewStatus:"APPROVED",expiresAt:new Date(Date.now()+86400000)}});
+        await db.imageVersion.create({data:{variationId:image.id,number:1,path,actorId:actor.id}});
+        await db.usageLedger.create({data:{jobId:job.id,actorId:actor.id,projectId:p.id,model:"synthetic",reservedMicros:0n,status:"FINAL",actualMicros:0n}});
+        const autoKey=(level==="category"?"product":level)+":"+(level==="project"?p.id:level==="category"?c.id:sub.id);
+        const parent=(await owner.call("library/folder-actions","POST",{action:"create",name:"Carpeta independiente",destination:autoKey})).body;
+        const child=(await owner.call("library/folder-actions","POST",{action:"create",name:"Subcarpeta independiente",destination:"folder:"+parent.id})).body;
+        await db.libraryItem.create({data:{userId:actor.id,variationId:image.id,folderId:child.id}});
+        const ids=["project:"+p.id,"product:"+c.id,"subproduct:"+sub.id,"folder:"+parent.id,"folder:"+child.id];
+        const resource=level==="project"?`projects/${p.id}`:level==="category"?`categories/${c.id}`:`subproducts/${sub.id}`;
+        assert.equal((await owner.call(resource,"DELETE")).status,200);
+        const filter=new URLSearchParams({project:p.id,product:c.id,subproduct:sub.id,folder:"subproduct:"+sub.id});
+        const current=await owner.call("library/explorer?"+filter);assert.equal(current.status,200);assert.equal(current.body.total,1);
+        assert.equal(current.body.items[0].sourceNotice,"Viene de un "+({project:"proyecto",category:"producto",subproduct:"subproducto"}[level])+" eliminado");
+        for(const id of ids)assert(current.body.tree.some((node:any)=>node.id===id));
+        assert.equal((await owner.call("library/explorer?folder=folder:"+child.id)).body.items[0].id,image.id);
+        assert.equal((await owner.call(`subproducts/${sub.id}`)).status,404);assert.equal((await owner.call(`subproducts/${sub.id}/instructions`)).status,404);
+        const metadata=await user.call("library/hierarchy?"+filter);assert.equal(metadata.status,200);assert.deepEqual(metadata.body.subproducts.map((v:any)=>v.id),[sub.id]);assert(!JSON.stringify(metadata.body).includes("Snapshot privado"));assert(!JSON.stringify(metadata.body).includes("No compartir este contenido"));
+        for(const reader of [owner,user,observer]){
+          const listing=await reader.call("library/explorer?"+filter);assert.equal(listing.status,200);assert.equal(listing.body.items[0].id,image.id);assert(!listing.body.tree.some((node:any)=>node.id==="subproduct:"+sibling.id&&reader!==owner));
+          const download=await fetch(root+`/api/variations/${image.id}?download`,{headers:{Cookie:reader.cookie}});assert.equal(download.status,200);assert(Buffer.from(await download.arrayBuffer()).equals(bytes));
+          assert.equal((await reader.call(`variations/${image.id}/design`)).status,200);
+        }
+        const exported=await fetch(root+"/api/exports",{method:"POST",headers:{Cookie:user.cookie,Origin:root,"Content-Type":"application/json"},body:JSON.stringify({ids:[image.id],format:"png"})});assert.equal(exported.status,200);const zip=await JSZip.loadAsync(await exported.arrayBuffer());assert.equal(Object.values(zip.files).filter(f=>!f.dir).length,1);
+        assert.equal((await observer.call(`variations/${image.id}/enable-layers`,"POST",{expectedRevision:1})).status,403);
+        assert.equal((await owner.call(`variations/${image.id}/enable-layers`,"POST",{expectedRevision:1})).status,200);
+        const design=await owner.call(`variations/${image.id}/design`);assert.equal(design.body.revision,2);assert.equal(design.body.orderId,null);
+        assert.equal((await owner.call(`variations/${image.id}/manual`,"POST",{expectedRevision:2,document:design.body.document})).status,200);
+        assert.equal((await owner.call(`jobs/${job.id}/approve`,"POST")).status,200);
+        assert.equal((await owner.call(`variations/${image.id}/regenerate`,"POST",{expectedRevision:3,prompt:"Otra",requestId:randomUUID(),confirmCharge:true,reviewedInstructions:true})).status,404);
+        assert.equal((await owner.call(`variations/${image.id}/edit-ai`,"POST",{expectedRevision:3,prompt:"Otra",requestId:randomUUID(),confirmCharge:true,reviewedInstructions:true})).status,404);
+        assert.equal(await db.generationJob.count({where:{subproductId:sub.id}}),1);assert.equal((await db.usageLedger.findUniqueOrThrow({where:{jobId:job.id}})).actualMicros,0n);
+        await db.subproductMember.delete({where:{subproductId_userId:{subproductId:sub.id,userId:uid}}});
+        assert.equal((await user.call("library/explorer?"+filter)).status,404);assert.equal((await user.call(`variations/${image.id}/design`)).status,404);
+        const afterRevocation=await user.call("library/tree");assert(!afterRevocation.body.some((node:any)=>ids.includes(node.id)));
+        assert.equal((await owner.call(resource+"/restore","POST")).status,200);
+        const restored=(await owner.call("library/explorer?"+filter)).body;assert.equal(restored.items[0].sourceNotice,null);for(const id of ids)assert.equal(restored.tree.filter((node:any)=>node.id===id).length,1);
+        const before=await db.subproduct.findUniqueOrThrow({where:{id:sub.id}});
+        assert.equal((await owner.call("library/folder-actions","POST",{action:"delete",ids:[parent.id]})).status,200);
+        assert.equal(await db.libraryFolder.count({where:{id:{in:[parent.id,child.id]}}}),0);
+        assert.equal((await db.libraryItem.findUniqueOrThrow({where:{userId_variationId:{userId:actor.id,variationId:image.id}}})).folderId,null);
+        assert((await owner.call("library/explorer?folder=loose:root")).body.items.some((v:any)=>v.id===image.id));
+        const after=await db.subproduct.findUniqueOrThrow({where:{id:sub.id}});assert.deepEqual(after,before);assert.equal((await owner.call(`projects/${p.id}`)).status,200);assert.equal((await owner.call(`categories/${c.id}`)).status,200);assert.equal((await owner.call(`subproducts/${sub.id}`)).status,200);
+        assert((await load(path)).equals(bytes));assert.equal(await db.generationJob.count({where:{subproductId:sub.id}}),1);
+      }
+    });
     await t.test("cierre de sesión invalida el token", async () => {
       assert.equal((await user.call("auth/logout", "POST")).status, 200);
       assert.equal((await user.call("projects")).status, 401);

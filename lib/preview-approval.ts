@@ -1,7 +1,8 @@
+import {libraryJobAccess} from "./library-access";
 import type { Prisma } from "@prisma/client";
 import { db } from "./db";
 import { demand } from "./errors";
-import { jobResourceAccess, ownerOnly } from "./auth";
+import { ownerOnly } from "./auth";
 import { recordActivity } from "./activity";
 type Reader = Pick<Prisma.TransactionClient, "generationJob">;
 type Job = { actorId: string; snapshot: unknown };
@@ -69,7 +70,7 @@ export async function approveJob(
     403,
   );
   if (job.projectId === "connection-test") ownerOnly(user);
-  else await jobResourceAccess(user, job, "EDIT");
+  else await libraryJobAccess(user, job, "EDIT");
   return db.$transaction(async (tx) => {
     await tx.$executeRaw`SELECT pg_advisory_xact_lock(728291)`;
     const v = await tx.variation.findUniqueOrThrow({

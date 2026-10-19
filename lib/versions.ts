@@ -1,3 +1,4 @@
+import {libraryJobAccess} from "./library-access";
 import { recordActivity } from "./activity";
 import type { Prisma } from "@prisma/client";
 import { db } from "./db";
@@ -27,7 +28,7 @@ export async function accessibleVariation(
   });
   demand(v && (!v.deletedAt || deleted), "Afiche no encontrado.", 404);
   if (v.job.projectId === "connection-test") ownerOnly(user);
-  else await jobResourceAccess(user, v.job, permission);
+  else await (permission==="GENERATE"?jobResourceAccess:libraryJobAccess)(user, v.job, permission);
   demand(
     !v.expired && (v.permanent || v.expiresAt > new Date()),
     "Los archivos de este afiche ya caducaron.",

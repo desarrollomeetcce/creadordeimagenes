@@ -7,7 +7,7 @@ export function ImagePreviewModal({
   name,
   revision,
   onClose,
-  subproductHref,
+  subproductHref, sourceNotice,
   onPrevious,
   onNext,
 }: {
@@ -16,6 +16,7 @@ export function ImagePreviewModal({
   revision?: number;
   onClose: () => void;
   subproductHref?:string;
+  sourceNotice?:string|null;
   onPrevious?: () => void;
   onNext?: () => void;
 }) {
@@ -49,7 +50,7 @@ export function ImagePreviewModal({
     >
       <div className="image-preview-bar">
         <strong>{name}</strong>
-        {subproductHref&&<a className="button" href={subproductHref}>Volver al subproducto ↗</a>}
+        {sourceNotice?<span className="source-deleted-notice">{sourceNotice}</span>:subproductHref&&<a className="button" href={subproductHref}>Volver al subproducto ↗</a>}
         <button
           type="button"
           onClick={() => setFull(!full)}

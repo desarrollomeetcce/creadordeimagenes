@@ -217,3 +217,7 @@ Límite operativo: no se inspeccionó ni modificó la orden real del usuario. El
 
 - [x] Contadores de cabecera agregados por historial autorizado y fecha de solicitud en Lima; selector único desplegable por producto.
 - [x] Generadas/eliminadas/muestras/retención/errores diferenciados; cargos inciertos separados, sin llamadas IA ni migración.
+
+- [x] Biblioteca conserva carpetas/subcarpetas e imágenes al eliminar/restaurar origen, respetando permisos actuales y revocaciones.
+- [x] Origen eliminado indicado en tarjeta/visor/editor; sin enlaces rotos ni generación desde un origen archivado.
+- [x] Borrar carpeta personal no cambia origen y conserva originales/historial/contabilidad.

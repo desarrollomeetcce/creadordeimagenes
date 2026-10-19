@@ -6,6 +6,7 @@ export type FolderNode = {
   parentId: string | null;
   name: string;
   kind: string;
+  sourceDeleted?:boolean;
 };
 export function folderScope(
   nodes: FolderNode[],
@@ -136,7 +137,7 @@ export function FolderTree({
               ) : (
                 <span className="folder-toggle" />
               )}
-              <button type="button" onClick={() => onOpen(n.id)} title={n.name}>
+              <button type="button" onClick={() => onOpen(n.id)} title={n.name+(n.sourceDeleted?" · origen eliminado; carpeta conservada":"")}>
                 📁 {n.name}
               </button>
             </div>

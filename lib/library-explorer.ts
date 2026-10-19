@@ -1,3 +1,5 @@
+import {libraryProjectFilter,libraryCategoryFilter,librarySubproductFilter,libraryResourceAccess} from "./library-access";
+import {deletedSourceNotice} from "./source-status";
 import {dismissedOrderIds} from "./order-dismissal";
 import {libraryImageVisibility} from "./library-visibility";
 import { emptyStoppedSubproducts } from "./order-visibility";
@@ -7,19 +9,15 @@ import type { Prisma } from "@prisma/client";
 import { db } from "./db";
 import { demand } from "./errors";
 import {
-  projectFilter,
-  categoryFilter,
-  subproductFilter,
-  resourceAccess,
   ownerOnly,
   rateLimit,
 } from "./auth";
-import { hierarchyScope, dateRange } from "./hierarchy-filters";
+import { hierarchyScope, hierarchyOptions, dateRange } from "./hierarchy-filters";
 import { accessibleVariation } from "./versions";
 import { recordActivity } from "./activity";
 import { load, store, remove, fileStream } from "./storage";
 type Actor = { id: string; role: string };
-type Node = { id: string; name: string; parentId: string | null; kind: string };
+type Node = { id: string; name: string; parentId: string | null; kind: string;sourceDeleted?:boolean };
 const ids = z.array(z.string().min(1).max(120)).min(1).max(200);
 const send = (value: unknown, status = 200) =>
   NextResponse.json(value, {
@@ -29,16 +27,16 @@ const send = (value: unknown, status = 200) =>
 export async function libraryTree(user: Actor): Promise<Node[]> {
   const [projects, products, subs, folders] = await Promise.all([
     db.project.findMany({
-      where: { ...projectFilter(user), deletedAt: null },
-      select: { id: true, name: true },
+      where: libraryProjectFilter(user),
+      select: { id: true, name: true, deletedAt:true },
     }),
     db.category.findMany({
-      where: categoryFilter(user),
-      select: { id: true, name: true, projectId: true },
+      where: libraryCategoryFilter(user),
+      select: { id: true, name: true, projectId: true,deletedAt:true,project:{select:{deletedAt:true}} },
     }),
     db.subproduct.findMany({
-      where: subproductFilter(user),
-      select: { id: true, name: true, categoryId: true },
+      where: librarySubproductFilter(user),
+      select: { id: true, name: true, categoryId: true,deletedAt:true,category:{select:{deletedAt:true,project:{select:{deletedAt:true}}}} },
     }),
     db.libraryFolder.findMany({
       where: { userId: user.id },
@@ -51,26 +49,26 @@ export async function libraryTree(user: Actor): Promise<Node[]> {
       },
     }),
   ]);
-  const hiddenSubs = await emptyStoppedSubproducts(subs.map(sub=>sub.id));
+  const hiddenSubs = await emptyStoppedSubproducts(subs.filter(sub=>!deletedSourceNotice(sub)).map(sub=>sub.id));
   return [
     {id:"loose:root",name:"Archivos sin carpeta",parentId:null,kind:"loose"},
     ...projects.map((p) => ({
       id: "project:" + p.id,
       name: p.name,
       parentId: null,
-      kind: "project",
+      kind: "project",sourceDeleted:!!p.deletedAt,
     })),
     ...products.map((p) => ({
       id: "product:" + p.id,
       name: p.name,
       parentId: "project:" + p.projectId,
-      kind: "product",
+      kind: "product",sourceDeleted:!!(p.deletedAt||p.project.deletedAt),
     })),
     ...subs.filter(sub=>!hiddenSubs.has(sub.id)).map((p) => ({
       id: "subproduct:" + p.id,
       name: p.name,
       parentId: "product:" + p.categoryId,
-      kind: "subproduct",
+      kind: "subproduct",sourceDeleted:!!deletedSourceNotice(p),
     })),
     ...(user.role === "OWNER"
       ? [
@@ -94,7 +92,7 @@ export async function libraryTree(user: Actor): Promise<Node[]> {
     })),
   ].sort((a, b) => a.name.localeCompare(b.name, "es"));
 }
-async function destination(user: Actor, key: string | null) {
+async function destination(user: Actor, key: string | null, navigation=false) {
   if (!key || key === "root" || key === "loose:root")
     return { parentId: null, anchorScope: null, anchorId: null };
   const [kind, id] = key.split(":");
@@ -113,19 +111,19 @@ async function destination(user: Actor, key: string | null) {
   );
   if (kind === "tests") ownerOnly(user);
   else
-    await resourceAccess(
+    await libraryResourceAccess(
       user,
       kind === "product" ? "category" : (kind as "project" | "subproduct"),
       id,
-      "VIEW",
+      navigation?"NAVIGATE":"VIEW",
     );
   return { parentId: null, anchorScope: kind, anchorId: id };
 }
 export async function explorerData(user: Actor, params: URLSearchParams) {
-  const scope = await hierarchyScope(user, params),
+  const scope = await hierarchyScope(user, params,true),
     dates = dateRange(params);
   const folder = params.get("folder") ?? "";
-  if (folder) await destination(user, folder);
+  if (folder) await destination(user, folder,true);
   const foldersOnly = !folder && !["project","product","subproduct"].some(key=>params.get(key));
   const page = z.coerce
       .number()
@@ -194,7 +192,7 @@ export async function explorerData(user: Actor, params: URLSearchParams) {
       db.variation.count({where}),
       db.generationJob.findMany({where:slotsWhere,skip:(page-1)*limit,take:limit,orderBy:[{createdAt:order==="oldest"?"asc":"desc"},{id:"asc"}],select:{
         id:true,status:true,createdAt:true,subproductId:true,
-        variation:{select:{id:true,revision:true,reviewStatus:true,createdAt:true,model:true,subproduct:{select:{id:true,name:true,category:{select:{id:true,name:true,project:{select:{id:true,name:true}}}}}},job:{select:{id:true,projectId:true,actorId:true}},libraryItems:{where:{userId:user.id},select:{folderId:true}}}},
+        variation:{select:{id:true,revision:true,reviewStatus:true,createdAt:true,model:true,subproduct:{select:{id:true,name:true,deletedAt:true,category:{select:{id:true,name:true,deletedAt:true,project:{select:{id:true,name:true,deletedAt:true}}}}}},job:{select:{id:true,projectId:true,actorId:true}},libraryItems:{where:{userId:user.id},select:{folderId:true}}}},
       }}),
       db.libraryDocument.findMany({
         where: documentWhere,
@@ -267,8 +265,10 @@ export async function explorerData(user: Actor, params: URLSearchParams) {
     const extra=await (await import("./generation-orders")).libraryOrders(user,{id:{in:slots.filter(slot=>!slot.variation).map(slot=>slot.id)},AND:[scope.where,user.role==="OWNER"?{OR:[scope.access??{id:""},{projectId:"connection-test"}]}:(scope.access??{id:""})]});
     orders=[...new Map([...orders,...extra].map(order=>[order.id,order])).values()];
   }
-  const pendingSubs=await db.subproduct.findMany({where:{id:{in:slots.filter(slot=>!slot.variation).flatMap(slot=>slot.subproductId?[slot.subproductId]:[])},...subproductFilter(user)},select:{id:true,name:true,category:{select:{id:true,name:true,project:{select:{id:true,name:true}}}}}});
-  const inflight=slots.filter(slot=>!slot.variation).map(slot=>({id:slot.id,status:slot.status,createdAt:slot.createdAt,subproduct:pendingSubs.find(sub=>sub.id===slot.subproductId)??null,orderId:orders.find(order=>order.jobs.some(job=>job.id===slot.id))?.id??null}));
+  const pendingSubs=await db.subproduct.findMany({where:{id:{in:slots.filter(slot=>!slot.variation).flatMap(slot=>slot.subproductId?[slot.subproductId]:[])},...librarySubproductFilter(user)},select:{id:true,name:true,deletedAt:true,category:{select:{id:true,name:true,deletedAt:true,project:{select:{id:true,name:true,deletedAt:true}}}}}});
+  const archivedNodes=new Set(tree.filter(node=>node.sourceDeleted).map(node=>node.id));
+  orders=orders.map(order=>archivedNodes.has("subproduct:"+order.scope.subproduct)||archivedNodes.has("project:"+order.scope.project)?{...order,canManage:false,canApproveSample:false,canContinuePending:false}:order);
+  const inflight=slots.filter(slot=>!slot.variation).map(slot=>({id:slot.id,status:slot.status,createdAt:slot.createdAt,subproduct:pendingSubs.find(sub=>sub.id===slot.subproductId)??null,sourceNotice:deletedSourceNotice(pendingSubs.find(sub=>sub.id===slot.subproductId)),orderId:orders.find(order=>order.jobs.some(job=>job.id===slot.id))?.id??null}));
 
   return {
     orders,
@@ -279,6 +279,7 @@ export async function explorerData(user: Actor, params: URLSearchParams) {
     tree,
     items: items.map((v) => ({
       ...v,
+      sourceNotice:deletedSourceNotice(v.subproduct),
       ...(user.role !== "OBSERVER"
         ? { actualMicros: costMap.get(v.job.id) ?? null }
         : {}),
@@ -304,6 +305,7 @@ export async function explorerRoutes(
   user: Actor,
   body: () => Promise<unknown>,
 ) {
+  if(parts[1]==="hierarchy"&&req.method==="GET")return send(await hierarchyOptions(user,req.nextUrl.searchParams,true));
   if (parts[1] === "tree" && req.method === "GET")
     return send(await libraryTree(user));
   if (parts[1] === "explorer" && req.method === "GET")

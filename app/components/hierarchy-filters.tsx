@@ -31,13 +31,14 @@ export function HierarchyFilters({
   onChange,
   disabled = false,
   onAllDates,
-  dateSummary,
+  dateSummary, library=false,
 }: {
   value: HierarchyValue;
   onChange: (v: HierarchyValue) => void;
   disabled?: boolean;
   onAllDates?: () => void;
   dateSummary?: ReactNode;
+  library?:boolean;
 }) {
   const [options, setOptions] = useState<{
     projects: { id: string; name: string }[];
@@ -52,7 +53,7 @@ export function HierarchyFilters({
     let active = true;
     setLoading(true);
     void fetch(
-      "/api/hierarchy/options?" +
+      (library?"/api/library/hierarchy?":"/api/hierarchy/options?") +
         new URLSearchParams({
           project: value.project,
           product: value.product,
@@ -78,7 +79,7 @@ export function HierarchyFilters({
       active = false;
       controller.abort();
     };
-  }, [value.project, value.product, value.subproduct]);
+  }, [value.project, value.product, value.subproduct,library]);
   return (
     <div className="stack hierarchy-filters">
       <div className="fields">

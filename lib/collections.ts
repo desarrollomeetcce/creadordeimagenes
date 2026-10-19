@@ -1,3 +1,4 @@
+import {libraryJobAccess} from "./library-access";
 import { recordActivity } from "./activity";
 import { z } from "zod";
 import type { Prisma } from "@prisma/client";
@@ -8,7 +9,6 @@ import {
   resourceAccess,
   subproductFilter,
   accessFlags,
-  jobResourceAccess,
 } from "./auth";
 import { demand } from "./errors";
 import { fileStream, load } from "./storage";
@@ -250,14 +250,14 @@ export async function exportCollection(user: User, input: unknown) {
       ownerOnly(user);
       projects.set("connection-test", "Prueba_IA");
     } else {
-      await jobResourceAccess(user, {
+      await libraryJobAccess(user, {
         ...row.job,
         subproductId: row.subproductId,
       });
       if (!projects.has(row.job.projectId))
         projects.set(
           row.job.projectId,
-          (await projectAccess(user, row.job.projectId, "NAVIGATE")).name,
+          (await db.project.findUniqueOrThrow({where:{id:row.job.projectId},select:{name:true}})).name,
         );
     }
 

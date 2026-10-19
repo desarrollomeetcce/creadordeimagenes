@@ -1,3 +1,4 @@
+import {libraryProjectFilter,libraryCategoryFilter,librarySubproductFilter,libraryResourceAccess} from "./library-access";
 import type { Prisma } from "@prisma/client";
 import { z } from "zod";
 import { db } from "./db";
@@ -38,7 +39,7 @@ export function dateRange(params: URLSearchParams) {
     ...(until ? { lt: new Date(until.getTime() + 86400000) } : {}),
   };
 }
-export async function hierarchyScope(user: Actor, params: URLSearchParams) {
+export async function hierarchyScope(user: Actor, params: URLSearchParams, library=false) {
   const schema = z.string().max(100);
   const project = schema.parse(params.get("project") ?? ""),
     product = schema.parse(params.get("product") ?? ""),
@@ -61,9 +62,9 @@ export async function hierarchyScope(user: Actor, params: URLSearchParams) {
       where: { projectId: "connection-test" } as Prisma.GenerationJobWhereInput,
     };
   }
-  if (project) await projectAccess(user, project, "NAVIGATE");
+  if (project) {if(library)await libraryResourceAccess(user,"project",project,"NAVIGATE");else await projectAccess(user, project, "NAVIGATE");}
   if (product) {
-    await resourceAccess(user, "category", product, "NAVIGATE");
+    await (library?libraryResourceAccess:resourceAccess)(user, "category", product, "NAVIGATE");
     const row = await db.category.findUnique({
       where: { id: product },
       select: { projectId: true },
@@ -75,7 +76,7 @@ export async function hierarchyScope(user: Actor, params: URLSearchParams) {
     );
   }
   if (subproduct) {
-    await resourceAccess(user, "subproduct", subproduct, "VIEW");
+    await (library?libraryResourceAccess:resourceAccess)(user, "subproduct", subproduct, "VIEW");
     const row = await db.subproduct.findUnique({
       where: { id: subproduct },
       select: { categoryId: true },
@@ -88,7 +89,7 @@ export async function hierarchyScope(user: Actor, params: URLSearchParams) {
   }
   const subs = await db.subproduct.findMany({
     where: {
-      ...subproductFilter(user),
+      ...(library?librarySubproductFilter(user):subproductFilter(user)),
       ...(project ? { category: { projectId: project } } : {}),
       ...(product ? { categoryId: product } : {}),
       ...(subproduct ? { id: subproduct } : {}),
@@ -98,7 +99,7 @@ export async function hierarchyScope(user: Actor, params: URLSearchParams) {
   const full = await db.project.findMany({
     where: {
       ...fullProjectFilter(user),
-      deletedAt: null,
+      ...(library?{}:{deletedAt: null}),
       ...(project ? { id: project } : {}),
     },
     select: { id: true },
@@ -132,24 +133,24 @@ export async function visibleJobWhere(user: Actor, params: URLSearchParams) {
     where: { AND: [base, scope.where] } as Prisma.GenerationJobWhereInput,
   };
 }
-export async function hierarchyOptions(user: Actor, params: URLSearchParams) {
-  const scope = await hierarchyScope(user, params);
+export async function hierarchyOptions(user: Actor, params: URLSearchParams, library=false) {
+  const scope = await hierarchyScope(user, params,library);
   const [projects, products, subproducts] = await Promise.all([
     db.project.findMany({
-      where: { ...projectFilter(user), deletedAt: null },
+      where: library?libraryProjectFilter(user):{ ...projectFilter(user), deletedAt: null },
       select: { id: true, name: true },
       orderBy: [{ name: "asc" }, { id: "asc" }],
     }),
     scope.project && scope.project !== "none"
       ? db.category.findMany({
-          where: { ...categoryFilter(user), projectId: scope.project },
+          where: { ...(library?libraryCategoryFilter(user):categoryFilter(user)), projectId: scope.project },
           select: { id: true, name: true },
           orderBy: [{ name: "asc" }, { id: "asc" }],
         })
       : [],
     scope.product
       ? db.subproduct.findMany({
-          where: { ...subproductFilter(user), categoryId: scope.product },
+          where: { ...(library?librarySubproductFilter(user):subproductFilter(user)), categoryId: scope.product },
           select: { id: true, name: true },
           orderBy: [{ name: "asc" }, { id: "asc" }],
         })

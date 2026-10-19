@@ -28,6 +28,7 @@ import { costLink } from "./hierarchy-filters";
 import { downloadArchive } from "./collection-gallery";
 import {GenerationImageCard,type PendingImage} from "./generation-image-card";
 type Item = {
+  sourceNotice?:string|null;
   canEdit: boolean;
   canApprove: boolean;
   actualMicros?: string | null;
@@ -78,6 +79,7 @@ export function Library() {
     name: string;
     revision: number;
     subproductHref?:string;
+    sourceNotice?:string|null;
   } | null>(null);
   const canEdit = useCanEdit(),
     [hierarchy, setHierarchy] = useState<HierarchyValue>(hierarchyFromLocation),
@@ -296,7 +298,10 @@ export function Library() {
     const b = await r.json();
     if (!r.ok) throw Error(b.error);
   };
-  const editingSubproduct=data?.items.find(item=>item.id===editing)?.subproduct;
+  const editingItem=data?.items.find(item=>item.id===editing);
+  const editingSubproduct=editingItem?.subproduct;
+  const previewItem=data?.items.find(item=>item.id===preview?.id);
+  const previewNotice=previewItem?previewItem.sourceNotice:preview?.sourceNotice;
   const anchors=new Map<string,OrderProgress>();
   for(const order of data?.orders??[]){
    if(!orderNeedsControls(order))continue;
@@ -334,7 +339,8 @@ export function Library() {
                       id: i.id,
                       name: i.subproduct?.name ?? "Prueba de IA",
                       revision: i.revision,
-                      subproductHref:i.subproduct?"?"+new URLSearchParams({view:"projects",category:i.subproduct.category.id,subproduct:i.subproduct.id}):undefined,
+                      sourceNotice:i.sourceNotice,
+                      subproductHref:i.subproduct&&!i.sourceNotice?"?"+new URLSearchParams({view:"projects",category:i.subproduct.category.id,subproduct:i.subproduct.id}):undefined,
                     })
                   }
                 >
@@ -356,14 +362,15 @@ export function Library() {
                       id: i.id,
                       name: i.subproduct?.name ?? "Prueba de IA",
                       revision: i.revision,
-                      subproductHref:i.subproduct?"?"+new URLSearchParams({view:"projects",category:i.subproduct.category.id,subproduct:i.subproduct.id}):undefined,
+                      sourceNotice:i.sourceNotice,
+                      subproductHref:i.subproduct&&!i.sourceNotice?"?"+new URLSearchParams({view:"projects",category:i.subproduct.category.id,subproduct:i.subproduct.id}):undefined,
                     })
                   }
                 >
                   Ampliar imagen
                 </button>
                 <strong>{i.subproduct?.name ?? "Prueba de IA"}</strong>
-                {i.subproduct&&<a className="button" href={"?"+new URLSearchParams({view:"projects",category:i.subproduct.category.id,subproduct:i.subproduct.id})}>{i.canEdit?"Editar subproducto":"Ir al subproducto"} ↗</a>}
+                {i.sourceNotice?<span className="source-deleted-notice">{i.sourceNotice}</span>:i.subproduct&&<a className="button" href={"?"+new URLSearchParams({view:"projects",category:i.subproduct.category.id,subproduct:i.subproduct.id})}>{i.canEdit?"Editar subproducto":"Ir al subproducto"} ↗</a>}
                 {i.canApprove && i.reviewStatus !== "APPROVED" && (
                   <button
                     type="button"
@@ -372,7 +379,7 @@ export function Library() {
                     onClick={() =>
                       void action(async () => {
                         const order = data?.orders?.find(
-                          (o) => o.sampleJobId === i.job.id,
+                          (o) => o.canManage && o.sampleJobId === i.job.id,
                         );
                         if (order) {
                           const updated=await orderRequest(`/${order.id}/approve`, {
@@ -394,7 +401,7 @@ export function Library() {
                       }, "Imagen aprobada. La orden continúa según el modo que elegiste al enviarla.")
                     }
                   >
-                    {data?.orders.some(o=>o.sampleJobId===i.job.id&&o.pending>0)?"Aprobar y continuar":"Aprobar imagen"}
+                    {data?.orders.some(o=>o.canManage&&o.sampleJobId===i.job.id&&o.pending>0)?"Aprobar y continuar":"Aprobar imagen"}
                   </button>
                 )}
                 {i.canEdit && (
@@ -448,14 +455,16 @@ export function Library() {
           id={preview.id}
           name={preview.name}
           revision={preview.revision}
-          subproductHref={preview.subproductHref}
+          sourceNotice={previewNotice}
+          subproductHref={previewNotice?undefined:preview.subproductHref}
           onClose={() => setPreview(null)}
         />
       )}
       {editing && (
         <ImageEditorModal
           id={editing}
-          subproductHref={editingSubproduct ? "?"+new URLSearchParams({view:"projects",category:editingSubproduct.category.id,subproduct:editingSubproduct.id}) : undefined}
+          sourceNotice={editingItem?.sourceNotice}
+          subproductHref={editingSubproduct&&!editingItem?.sourceNotice ? "?"+new URLSearchParams({view:"projects",category:editingSubproduct.category.id,subproduct:editingSubproduct.id}) : undefined}
           onClose={() => {
             setEditing(null);
             void refresh();
@@ -481,7 +490,7 @@ export function Library() {
             onOpen={open}
           />
           <div className="explorer-tools stack">
-            <HierarchyFilters
+            <HierarchyFilters library
               dateSummary={
                 <div
                   className="period-summary"
@@ -864,7 +873,7 @@ export function Library() {
                 <small>
                   {f.kind === "folder"
                     ? "Carpeta personal"
-                    : "Carpeta automática"}
+                    : f.sourceDeleted?"Carpeta conservada · origen eliminado":"Carpeta automática"}
                 </small>
                 {canEdit && f.kind === "folder" && (
                   <button
@@ -892,7 +901,7 @@ export function Library() {
               if(entry.kind==="image"){const item=data?.items.find(i=>i.id===entry.id);return item?renderImage(item):null;}
               const slot=data?.inflight?.find(i=>i.id===entry.id);if(!slot)return null;
               const order=data?.orders.find(o=>o.id===slot.orderId);
-              return <GenerationImageCard key={slot.id} slot={slot} order={order} controls={anchors.has(slot.id)} refresh={refresh} onPreview={()=>{if(order?.sample)setPreview({id:order.sample.id,revision:order.sample.revision??1,name:order.name??"Muestra"});}}/>;
+              return <GenerationImageCard key={slot.id} slot={slot} order={order} controls={anchors.has(slot.id)} refresh={refresh} onPreview={()=>{if(order?.sample)setPreview({id:order.sample.id,revision:order.sample.revision??1,name:order.name??"Muestra",sourceNotice:slot.sourceNotice});}}/>;
             })}
           </div>
           <div className="folder-cards">

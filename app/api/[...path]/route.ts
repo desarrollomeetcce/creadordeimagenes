@@ -1,3 +1,4 @@
+import {libraryJobAccess} from "@/lib/library-access";
 import {libraryImageVisibility} from "@/lib/library-visibility";
 import { instructionPolicySchema,instructionFlags,publicInstructionPolicy } from "@/lib/instruction-policy";
 import { recordActivity } from "@/lib/activity";
@@ -21,7 +22,6 @@ import {
   subproductFilter,
   fullProjectFilter,
   accessFlags,
-  jobResourceAccess,
 } from "@/lib/auth";
 import { encryptKey, maskKey } from "@/lib/crypto";
 import {
@@ -1506,7 +1506,7 @@ async function handle(
       demand(v, "Imagen no encontrada.", 404);
       if (v.job.projectId === "connection-test") ownerOnly(user);
       else
-        await jobResourceAccess(
+        await libraryJobAccess(
           user,
           v.job,
           method === "GET" ? "VIEW" : "EDIT",
