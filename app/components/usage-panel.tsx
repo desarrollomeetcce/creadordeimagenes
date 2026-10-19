@@ -216,12 +216,13 @@ export function UsagePanel() {
   const [hierarchy, setHierarchy] = useState<HierarchyValue>(
     hierarchyFromLocation,
   );
+  const [selectedSubproducts,setSelectedSubproducts]=useState(()=>typeof window==="undefined"?"":new URLSearchParams(location.search).get("subproducts")??"");
   const [ancestors, setAncestors] = useState<
     { label: string; summary: Report["summary"] }[]
   >([]);
   const [ancestorError, setAncestorError] = useState("");
   const [data, setData] = useState<Report | null>(null),
-    [days, setDays] = useState("30"),
+    [days, setDays] = useState(()=>typeof window!=="undefined"&&new URLSearchParams(location.search).get("days")==="all"?"all":"30"),
     [status, setStatus] = useState(""),
     [cost, setCost] = useState("all"),
     [query, setQuery] = useState(""),
@@ -238,6 +239,7 @@ export function UsagePanel() {
     q: query,
     page: String(page),
     ...hierarchy,
+    ...(selectedSubproducts?{subproducts:selectedSubproducts}:{}),
   }).toString();
   useEffect(() => {
     const controller = new AbortController();
@@ -277,7 +279,7 @@ export function UsagePanel() {
   useEffect(() => {
     const controller = new AbortController();
     let active = true;
-    if (!hierarchy.project) {
+    if (!hierarchy.project||selectedSubproducts) {
       setAncestors([]);
       setAncestorError("");
       return;
@@ -375,6 +377,7 @@ export function UsagePanel() {
         todas las cuentas; las demás ven sus operaciones y las generaciones
         terminadas de espacios disponibles para su cuenta.
       </p>
+      {selectedSubproducts&&<p className="notice selected-cost-scope">Costos de {selectedSubproducts.split(",").length} subproductos seleccionados. <button type="button" onClick={()=>{setSelectedSubproducts("");setPage(1);}}>Ver todo el producto</button></p>}
       <ProviderDailyCosts />
       <HierarchyFilters
         onAllDates={() => setDays("all")}
@@ -382,6 +385,7 @@ export function UsagePanel() {
         onChange={(v) => {
           if (v.from !== hierarchy.from || v.to !== hierarchy.to)
             setDays("all");
+          if(v.project!==hierarchy.project||v.product!==hierarchy.product||v.subproduct!==hierarchy.subproduct)setSelectedSubproducts("");
           setHierarchy(v);
           setPage(1);
         }}

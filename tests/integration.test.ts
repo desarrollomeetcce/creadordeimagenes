@@ -10923,6 +10923,43 @@ test("Integración HTTP + PostgreSQL (base exclusiva de pruebas, sin llamadas ex
         assert((await load(path)).equals(bytes));assert.equal(await db.generationJob.count({where:{subproductId:sub.id}}),1);
       }
     });
+    await t.test("Costos de selección: ninguno/todos, uno y varios con CSV, fechas, desconocidos y permisos",async()=>{
+      const {p,c,s}=await hierarchyForReview(),actor=await db.user.findFirstOrThrow({where:{role:"OWNER"}});
+      const others=(await owner.call(`categories/${c.id}/subproducts`,"POST",{names:["Segundo costo","Costo desconocido"]})).body,subs=[s,...others];
+      for(const [i,sub] of subs.entries()){
+        const job=await db.generationJob.create({data:{actorId:actor.id,projectId:p.id,subproductId:sub.id,idempotencyKey:randomUUID(),status:"COMPLETED",snapshot:{},reservedMicros:0n}});
+        await db.usageLedger.create({data:{jobId:job.id,actorId:actor.id,projectId:p.id,model:"selected-cost-"+i,status:"CONSUMED_ESTIMATE",reservedMicros:0n,actualMicros:i===2?null:BigInt(i+1)*1000000n,createdAt:new Date("2026-10-01T05:00:00Z")}});
+      }
+      const base=`days=all&project=${p.id}&product=${c.id}`,one=`&subproducts=${s.id}`,two=`&subproducts=${s.id},${others[0].id}`;
+      const all=await owner.call("usage/list?"+base);assert.equal(all.body.total,3);assert.equal(all.body.summary.knownActualMicros,"3000000");assert.equal(all.body.summary.unknownCosts,1);
+      const single=await owner.call("usage/list?"+base+one);assert.equal(single.body.total,1);assert.equal(single.body.summary.knownActualMicros,"1000000");
+      const pair=await owner.call("usage/list?"+base+two);assert.equal(pair.body.total,2);assert.equal(pair.body.summary.knownActualMicros,"3000000");assert.equal(pair.body.summary.unknownCosts,0);
+      assert.equal((await owner.call("usage/summary?"+base+two)).body.summary.knownActualMicros,"3000000");
+      assert.equal((await owner.call("usage/list?"+base+two+"&from=2026-10-02&to=2026-10-02")).body.total,0);
+      const csv=await fetch(root+"/api/usage/export?"+base+two,{headers:{Cookie:owner.cookie}});assert.equal(csv.status,200);const text=await csv.text();assert(text.includes("selected-cost-0"));assert(text.includes("selected-cost-1"));assert(!text.includes("selected-cost-2"));
+      const foreign=await hierarchyForReview();assert.equal((await owner.call("usage/list?"+base+`&subproducts=${s.id},${foreign.s.id}`)).status,404);
+      assert.equal((await owner.call("usage/list?"+base+"&subproducts=,")).status,400);assert.equal((await owner.call("usage/list?"+base+one+`&subproduct=${s.id}`)).status,400);
+      await db.subproductMember.create({data:{userId:uid,subproductId:s.id}});
+      assert.equal((await user.call("usage/list?"+base+one)).body.total,1);assert.equal((await user.call("usage/list?"+base+two)).status,404);
+      assert.equal((await observer.call("usage/list?"+base+one)).status,403);
+    });
+    await t.test("Compartir selección: un correo, operación atómica, pertenencia, permisos y revocación acotada",async()=>{
+      const {p,c,s}=await hierarchyForReview(),others=(await owner.call(`categories/${c.id}/subproducts`,"POST",{names:["Compartido dos","Hermano sin compartir"]})).body;
+      const ids=[s.id,others[0].id],email=(await db.user.findUniqueOrThrow({where:{id:uid}})).email,base=`categories/${c.id}/subproduct-members`,url=base+"?ids="+ids.join(",");
+      const jobs=await db.generationJob.count(),ledger=await db.usageLedger.count();
+      assert.equal((await owner.call(base+"?ids=","POST",{email})).status,400);assert.equal((await user.call(url,"POST",{email})).status,403);assert.equal((await observer.call(url+"&q=a")).status,403);
+      const foreign=await hierarchyForReview();assert.equal((await owner.call(base+`?ids=${s.id},${foreign.s.id}`,"POST",{email})).status,404);assert.equal(await db.subproductMember.count({where:{subproductId:s.id}}),0);
+      const granted=await Promise.all([owner.call(url,"POST",{email}),owner.call(url,"POST",{email})]);assert(granted.every(r=>r.status===200));assert.equal(await db.subproductMember.count({where:{subproductId:{in:ids},userId:uid}}),2);
+      const list=await owner.call(url);assert.equal(list.body.members.find((m:any)=>m.userId===uid).subproductCount,2);
+      assert.equal((await user.call(`subproducts/${s.id}`)).status,200);assert.equal((await user.call(`subproducts/${others[0].id}`)).status,200);assert.equal((await user.call(`subproducts/${others[1].id}`)).status,404);
+      const parent=(await user.call(`categories/${c.id}`)).body;assert.equal(parent.prompt,"");assert.equal(parent.subproducts.length,2);assert.equal(await db.projectMember.count({where:{projectId:p.id,userId:uid}}),0);assert.equal(await db.categoryMember.count({where:{categoryId:c.id,userId:uid}}),0);
+      assert.equal((await user.call(url)).status,403);assert.equal((await user.call(base+"/directory?ids="+ids.join(","))).status,403);
+      const directory=await owner.call(base+"/directory?ids="+ids.join(",")+"&q="+encodeURIComponent(email));assert.equal(directory.status,200);assert(directory.body.users.some((u:any)=>u.id===uid));
+      await db.subproductMember.create({data:{subproductId:others[1].id,userId:uid}});
+      const revoked=await owner.call(base+"/"+uid+"?ids="+ids.join(","),"DELETE");assert.equal(revoked.status,200);assert.equal(await db.subproductMember.count({where:{subproductId:{in:ids},userId:uid}}),0);assert.equal(await db.subproductMember.count({where:{subproductId:others[1].id,userId:uid}}),1);
+      await owner.call(`subproducts/${others[0].id}`,"DELETE");assert.equal((await owner.call(url,"POST",{email})).status,404);assert.equal(await db.subproductMember.count({where:{subproductId:s.id,userId:uid}}),0);
+      assert.equal(await db.generationJob.count(),jobs);assert.equal(await db.usageLedger.count(),ledger);
+    });
     await t.test("cierre de sesión invalida el token", async () => {
       assert.equal((await user.call("auth/logout", "POST")).status, 200);
       assert.equal((await user.call("projects")).status, 401);

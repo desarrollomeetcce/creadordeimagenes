@@ -221,3 +221,6 @@ Límite operativo: no se inspeccionó ni modificó la orden real del usuario. El
 - [x] Biblioteca conserva carpetas/subcarpetas e imágenes al eliminar/restaurar origen, respetando permisos actuales y revocaciones.
 - [x] Origen eliminado indicado en tarjeta/visor/editor; sin enlaces rotos ni generación desde un origen archivado.
 - [x] Borrar carpeta personal no cambia origen y conserva originales/historial/contabilidad.
+
+- [x] Cabeceras compactas sin acciones repetidas; Costos IA en otra pestaña según selección, con resumen/CSV y permisos coherentes.
+- [x] Compartir selección con un correo, transacción y pertenencia/permisos revalidados; sin concesiones a padres/hermanos ni correo saliente.

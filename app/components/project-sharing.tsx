@@ -1,16 +1,18 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useState,useRef } from "react";
 import { roleLabels } from "../../lib/roles";
 import { SearchSelect } from "./search-select";
 type Member = {
+  subproductCount?:number;
   userId: string;
   user: { name: string; email: string; status: string; role: string };
 };
 export function ProjectSharing({
   projectId,
-  scope = "project",
+  scope = "project", subproductIds,
 }: {
   projectId: string;
+  subproductIds?:string[];
   scope?: "project" | "category" | "subproduct";
 }) {
   const [members, setMembers] = useState<Member[]>([]),
@@ -31,9 +33,11 @@ export function ProjectSharing({
       : scope === "category"
         ? "producto"
         : "subproducto";
-  const root = `/api/${scope === "project" ? "projects" : scope === "category" ? "categories" : "subproducts"}/${projectId}/members`;
+  const batch=!!subproductIds?.length;
+  const selectionQuery=batch?"ids="+encodeURIComponent(subproductIds!.join(",")):"";
+  const root = batch?`/api/categories/${projectId}/subproduct-members`:`/api/${scope === "project" ? "projects" : scope === "category" ? "categories" : "subproducts"}/${projectId}/members`;
   async function request(path = "", method = "GET", data?: unknown) {
-    const r = await fetch(root + path, {
+    const r = await fetch(root + path+(selectionQuery?"?"+selectionQuery:""), {
       method,
       headers: data ? { "Content-Type": "application/json" } : {},
       body: data ? JSON.stringify(data) : undefined,
@@ -49,7 +53,9 @@ export function ProjectSharing({
     setCanSetAdmins(b.canSetAdministrators);
     setReady(true);
   }
+  const generation=useRef(0);
   useEffect(() => {
+    generation.current++;setReady(false);setMessage("");
     let active = true;
     void request()
       .then((b) => {
@@ -61,12 +67,12 @@ export function ProjectSharing({
     return () => {
       active = false;
     };
-  }, [root]);
+  }, [root,selectionQuery]);
   useEffect(() => {
     const controller = new AbortController();
     setSearching(true);
     const timer = setTimeout(() => {
-      void fetch(root + "/directory?q=" + encodeURIComponent(email), {
+      void fetch(root + "/directory?"+(selectionQuery?selectionQuery+"&":"")+"q=" + encodeURIComponent(email), {
         signal: controller.signal,
       })
         .then(async (r) => {
@@ -88,14 +94,15 @@ export function ProjectSharing({
       clearTimeout(timer);
       controller.abort();
     };
-  }, [root, email]);
+  }, [root, email,selectionQuery]);
   async function change(path: string, method: string, data?: unknown) {
+    const version=generation.current;
     setBusy(true);
     setMessage("");
     try {
       await request(path, method, data);
-      loaded(await request());
-      setMessage("Accesos actualizados.");
+      const next=await request();
+      if(version===generation.current){loaded(next);setMessage("Accesos actualizados.");}
     } catch (e) {
       setMessage(e instanceof Error ? e.message : "No se pudo guardar.");
     } finally {
@@ -104,7 +111,7 @@ export function ProjectSharing({
   }
   return (
     <section className="panel stack" aria-label={"Accesos del " + title}>
-      <h3>Accesos del {title}</h3>
+      <h3>{batch?`Accesos de ${subproductIds!.length} subproductos seleccionados`:`Accesos del ${title}`}</h3>
       <p>
         Selecciona una cuenta o escribe su correo. Su rol determina las
         acciones: Usuario y Administrador pueden ver, descargar, editar y
@@ -174,6 +181,7 @@ export function ProjectSharing({
           {members.map((m) => (
             <div key={m.userId} className="card stack">
               <strong>{m.user.name}</strong>
+              {batch&&<span>Acceso directo en {m.subproductCount} de {subproductIds!.length} seleccionados.</span>}
               <span>
                 {m.user.email} · {roleLabels[m.user.role]}
               </span>

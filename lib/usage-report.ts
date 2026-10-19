@@ -5,6 +5,7 @@ import { demand } from "./errors";
 import { recordActivity, resolveActivityContexts } from "./activity";
 type Actor = { id: string; role: string };
 import { dateRange, visibleJobWhere } from "./hierarchy-filters";
+import {subproductFilter} from "./auth";
 import { usdMicros } from "./usage-format";
 export function csvCell(value: string) {
   const safe = /^\s*[=+\-@]|^[\t\r\n]/.test(value) ? "'" + value : value;
@@ -48,13 +49,19 @@ async function filters(user: Actor, params: URLSearchParams) {
       page: params.get("page") ?? 1,
     });
   const range = dateRange(params);
+  const selection=params.get("subproducts");
+  const subproducts=selection?[...new Set(z.array(z.string().min(1).max(100)).min(1).max(200).parse(selection.split(",")))]:[];
+  if(subproducts.length){
+    demand(params.get("product")&&!params.get("subproduct"),"La selección requiere un producto y no admite un subproducto individual a la vez.");
+    demand(await db.subproduct.count({where:{...subproductFilter(user),categoryId:params.get("product")!,id:{in:subproducts}}})===subproducts.length,"La selección contiene subproductos sin acceso o de otro producto.",404);
+  }
   const scoped = ["project", "product", "subproduct"].some(
     (k) => !!params.get(k),
   );
   const jobIds =
     scoped || user.role !== "OWNER"
       ? await db.generationJob.findMany({
-          where: (await visibleJobWhere(user, params)).where,
+          where: {AND:[(await visibleJobWhere(user, params)).where,...(subproducts.length?[{subproductId:{in:subproducts}}]:[])]},
           select: { id: true },
         })
       : null;

@@ -816,6 +816,7 @@ async function handle(
       if(method==="GET")return send(await readReview(user,parts[1]));
       if(method==="POST")return send(await saveReview(user,parts[1],await body(req)));
     }
+    if(parts[0]==="categories"&&parts[1]&&parts[2]==="subproduct-members"&&parts.length<=4){const {selectedSubproductMembers}=await import("@/lib/subproduct-members");return await selectedSubproductMembers(req,parts[1],parts[3],user,()=>body(req));}
     if (parts[0] === "categories" && (parts[1] === "trash" || parts[2] === "restore" || method === "DELETE")) {
       const {productTrashRoutes}=await import("@/lib/product-trash");
       const result=await productTrashRoutes(req,parts,user);if(result)return result;
