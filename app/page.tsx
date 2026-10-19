@@ -4,7 +4,9 @@ import {useGenerationChoices} from "./components/generation-choices";
 import { CreativeFinish } from "./components/creative-finish";
 import { PasswordInput } from "./components/password-input";
 import { useCallback, useEffect, useState, useRef } from "react";
-import {useSubproductStatuses,SubproductStatus} from "./components/subproduct-status";
+import {useSubproductStatuses,SubproductStatus,SubproductCounters} from "./components/subproduct-status";
+import {DateRange} from "./components/date-range";
+import type {SubproductStatistics} from "../lib/subproduct-statistics-types";
 import type {OrderProgress} from "./components/order-progress";
 import { ReviewInstructions, type ReviewInstructionsHandle } from "./components/review-instructions";
 import { ProductTrash } from "./components/product-trash";
@@ -1216,7 +1218,8 @@ function CategoryEditor({
   openGallery: (s: Item) => void;
   openCollection: () => void;
 }) {
-  const {orders:statusBySubproduct,counts:imageCounts}=useSubproductStatuses(c.project.id,c.id);
+  const [statisticsDates,setStatisticsDates]=useState({from:"",to:""});
+  const {orders:statusBySubproduct,counts:imageCounts,statistics,statisticsError}=useSubproductStatuses(c.project.id,c.id,statisticsDates.from,statisticsDates.to);
   const [sharing, setSharing] = useState(false);
   const [trashOpen,setTrashOpen]=useState(false);
   const [selectedSubs, setSelectedSubs] = useState<string[]>([]);
@@ -1336,7 +1339,9 @@ function CategoryEditor({
       <div className="row subproducts-selection">
         <label className="row"><input type="checkbox" checked={!!c.subproducts.length&&selectedSubs.length===c.subproducts.length} onChange={e=>setSelectedSubs(e.target.checked?c.subproducts.map(sub=>sub.id):[])} />Seleccionar todos</label>
         <span className="hint">{selectedSubs.length} seleccionados</span>
+        <div className="subproduct-period"><span className="hint">Contadores · fecha de solicitud</span><DateRange from={statisticsDates.from} to={statisticsDates.to} onChange={(from,to)=>setStatisticsDates({from,to})}/></div>
       </div>
+      {statisticsError&&<p role="alert" className="notice">{statisticsError}</p>}
       {selectedSubs.length>0&&<p className="hint selected-inheritance">Herencias de {selectedSubs.length} seleccionados · Proyecto: <strong>{c.project.name}</strong> · Producto: <strong>{c.name}</strong>. Cada subproducto aplica sus casillas de herencia.</p>}
       {trashOpen&&c.canEdit&&<SubproductTrash categoryId={c.id} onRestored={refresh} initialOpen />}
       {bulk && (
@@ -1443,6 +1448,7 @@ function CategoryEditor({
             sub={sub}
             orderStatus={statusBySubproduct[sub.id]}
             imageCount={imageCounts[sub.id]??sub._count?.variations??0}
+            statistics={statistics[sub.id]}
             selected={selectedSubs.includes(sub.id)}
             onSelected={checked=>setSelectedSubs(ids=>checked?[...new Set([...ids,sub.id])]:ids.filter(id=>id!==sub.id))}
             ancestry={{project:c.project.name,product:c.name}}
@@ -1660,7 +1666,7 @@ function BatchGeneration({
   );
 }
 function SubproductRow({
-  sub, selected, onSelected, ancestry, initiallyOpen=false,orderStatus,imageCount,
+  sub, selected, onSelected, ancestry, initiallyOpen=false,orderStatus,imageCount,statistics,
   costScope,
   index,
   inherited,
@@ -1673,6 +1679,7 @@ function SubproductRow({
   selected:boolean;
   orderStatus?:OrderProgress;
   imageCount:number;
+  statistics?:SubproductStatistics;
   onSelected:(checked:boolean)=>void;
   ancestry:{project:string;product:string};
   initiallyOpen?:boolean;
@@ -1752,9 +1759,10 @@ function SubproductRow({
         <label className="subproduct-check" onClick={e=>e.stopPropagation()}><input type="checkbox" aria-label={"Seleccionar "+name} checked={selected} onChange={e=>onSelected(e.target.checked)} /></label>
         <span aria-hidden="true">{expanded?"▾":"▸"}</span><span className="subproduct-title"><span className="sub-num">{String(index+1).padStart(2,"0")}</span><strong>{name}</strong></span>
         <SubproductStatus order={latestOrder} />
+        <SubproductCounters statistics={statistics} />
         <span className="row subproduct-header-actions" onClick={e=>e.stopPropagation()}>
           {sub.canManageAccess&&<button type="button" aria-expanded={sharing} onClick={()=>setSharing(!sharing)}>Compartir subproducto</button>}
-          <button type="button" onClick={openGallery}>Ver variaciones ({imageCount}) ↗</button>
+          <button type="button" title="Imágenes disponibles actualmente en la carpeta, sin filtro de fecha." onClick={openGallery}>Ver variaciones ({imageCount}) ↗</button>
           {canSeeCosts&&<a className="button" href={"?"+new URLSearchParams({view:"usage",...costScope})}>Costos IA</a>}
           {sub.canEdit&&<button type="button" className="danger" disabled={t.busy} onClick={()=>{if(confirm(`¿Eliminar el subproducto ${name}? Se cancelarán sus pendientes y se conservará el historial.`))void t.run(async()=>{await api("subproducts/"+sub.id,"DELETE");await removed();},"Subproducto eliminado");}}>Eliminar</button>}
         </span>

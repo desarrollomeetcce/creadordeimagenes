@@ -214,3 +214,6 @@ Límite operativo: no se inspeccionó ni modificó la orden real del usuario. El
 
 - [x] Galería única: resultados, aprobación y espacios pendientes comparten paginación; no tarjetas de carga superiores.
 - [x] Controles del subproducto terminal completo ocultos; cantidad disponible independiente del último lote.
+
+- [x] Contadores de cabecera agregados por historial autorizado y fecha de solicitud en Lima; selector único desplegable por producto.
+- [x] Generadas/eliminadas/muestras/retención/errores diferenciados; cargos inciertos separados, sin llamadas IA ni migración.

@@ -1,16 +1,28 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
+import type { SubproductStatistics } from "../../lib/subproduct-statistics-types";
 import type { OrderProgress } from "./order-progress";
 const active = (o: OrderProgress) =>
   o.running > 0 ||
   ["QUEUED", "STARTING", "ACTIVE", "PAUSING"].includes(o.status);
-export function useSubproductStatuses(project: string, product: string) {
+export function useSubproductStatuses(
+  project: string,
+  product: string,
+  from = "",
+  to = "",
+) {
   const [orders, setOrders] = useState<Record<string, OrderProgress>>({});
   const [counts, setCounts] = useState<Record<string, number>>({});
+  const [statistics, setStatistics] = useState<
+    Record<string, SubproductStatistics>
+  >({});
+  const [statisticsError, setStatisticsError] = useState("");
   const latest = useRef(orders);
   latest.current = orders;
   useEffect(() => {
     const controller = new AbortController();
+    setStatistics({});
+    setStatisticsError("");
     let fetching = false;
     const load = async () => {
       if (
@@ -27,17 +39,37 @@ export function useSubproductStatuses(project: string, product: string) {
               new URLSearchParams({ project, product, includeClosed: "true" }),
             { signal: controller.signal, cache: "no-store" },
           ),
-          fetch("/api/categories/" + product + "/image-counts", {
-            signal: controller.signal,
-            cache: "no-store",
-          }),
+          fetch(
+            "/api/categories/" +
+              product +
+              "/image-counts?" +
+              new URLSearchParams({ statistics: "true", from, to }),
+            {
+              signal: controller.signal,
+              cache: "no-store",
+            },
+          ),
         ]);
         if (c.ok) {
-          const rows: { id: string; count: number }[] = await c.json();
-          if (!controller.signal.aborted)
+          const rows: {
+            id: string;
+            count: number;
+            statistics: SubproductStatistics;
+          }[] = await c.json();
+          if (!controller.signal.aborted) {
+            setStatistics(
+              Object.fromEntries(rows.map((row) => [row.id, row.statistics])),
+            );
+            setStatisticsError("");
             setCounts(
               Object.fromEntries(rows.map((row) => [row.id, row.count])),
             );
+          }
+        } else if (!controller.signal.aborted) {
+          const body = await c.json();
+          setStatisticsError(
+            body.error ?? "No se pudieron actualizar los contadores.",
+          );
         }
         if (!r.ok) return;
         const rows: OrderProgress[] = await r.json();
@@ -52,6 +84,10 @@ export function useSubproductStatuses(project: string, product: string) {
           setOrders(next);
         }
       } catch {
+        if (!controller.signal.aborted)
+          setStatisticsError(
+            "No se pudieron actualizar los contadores. Vuelve a abrir el período para intentarlo otra vez.",
+          );
       } finally {
         fetching = false;
       }
@@ -72,8 +108,8 @@ export function useSubproductStatuses(project: string, product: string) {
       window.removeEventListener("focus", focus);
       document.removeEventListener("visibilitychange", focus);
     };
-  }, [project, product]);
-  return { orders, counts };
+  }, [project, product, from, to]);
+  return { orders, counts, statistics, statisticsError };
 }
 export function SubproductStatus({ order }: { order?: OrderProgress }) {
   if (!order) return <span className="badge subproduct-status">Sin orden</span>;
@@ -98,6 +134,7 @@ export function SubproductStatus({ order }: { order?: OrderProgress }) {
   return (
     <span
       role="status"
+      title="Estado actual del último lote; independiente del período de los contadores."
       aria-live="polite"
       className={
         "badge subproduct-status " +
@@ -109,6 +146,66 @@ export function SubproductStatus({ order }: { order?: OrderProgress }) {
       }
     >
       Último lote · {label} · {order.completed}/{order.target}
+    </span>
+  );
+}
+
+export function SubproductCounters({
+  statistics,
+}: {
+  statistics?: SubproductStatistics;
+}) {
+  const metrics: [keyof SubproductStatistics, string, string][] = [
+    [
+      "generated",
+      "Generadas",
+      "Total de imágenes producidas en el período, incluidas las eliminadas o caducadas. No cuenta versiones manuales.",
+    ],
+    [
+      "deleted",
+      "Eliminadas",
+      "Imágenes generadas que están en la papelera o que retiraste de tu Biblioteca. No incluye caducadas ni eliminaciones personales de otra cuenta.",
+    ],
+    [
+      "unapproved",
+      "No aprobadas",
+      "Primeras muestras generadas que siguen sin aprobar, incluidas las retiradas. No cuenta las demás variaciones.",
+    ],
+    [
+      "approvalBlocked",
+      "Sin generar",
+      "Imágenes pendientes o canceladas cuya primera muestra sigue sin aprobar. No incluye cola anterior a la muestra ni imágenes fallidas.",
+    ],
+    [
+      "failed",
+      "Errores",
+      "Solicitudes de imagen fallidas en el período. Los resultados inciertos se indican por separado.",
+    ],
+    ...(statistics?.uncertain
+      ? [
+          [
+            "uncertain",
+            "Inciertas",
+            "Solicitudes con resultado o cargo sin confirmar; no se reintentan automáticamente.",
+          ] as [keyof SubproductStatistics, string, string],
+        ]
+      : []),
+  ];
+  return (
+    <span
+      className="subproduct-counters"
+      role="group"
+      aria-label="Contadores de imágenes del período"
+    >
+      {metrics.map(([key, label, title]) => (
+        <span
+          className={"subproduct-counter counter-" + key}
+          title={title}
+          key={key}
+        >
+          <strong>{statistics?.[key] ?? "…"}</strong> {label}
+        </span>
+      ))}
     </span>
   );
 }

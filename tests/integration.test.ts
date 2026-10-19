@@ -10828,6 +10828,47 @@ test("Integración HTTP + PostgreSQL (base exclusiva de pruebas, sin llamadas ex
       assert.equal((await owner.call(path)).body.inflightTotal,0);
       assert.equal((await owner.call(path)).body.total,2);
     }));
+    await t.test("Contadores por período: historial completo, eliminadas personales, muestras, retención, errores y permisos",async()=>{
+      const {p,c,s:sub}=await hierarchyForReview(),actor=await db.user.findFirstOrThrow({where:{role:"OWNER"}});
+      const empty=await db.subproduct.create({data:{name:"Sin generaciones",categoryId:c.id}});
+      const day=new Date("2026-10-01T05:00:00Z"),end=new Date("2026-10-02T04:59:59.999Z"),next=new Date("2026-10-02T05:00:00Z");
+      const createdJobs:string[]=[],images:string[]=[];
+      async function seed(status:string,group:string,index:number,review?:string,options:{date?:Date;actorId?:string;previewFirst?:boolean}={}){
+        const job=await db.generationJob.create({data:{actorId:options.actorId??actor.id,projectId:p.id,subproductId:sub.id,idempotencyKey:randomUUID(),status,createdAt:options.date??day,reservedMicros:0n,snapshot:{previewFirst:options.previewFirst??true,approvalGroup:group,index}}});createdJobs.push(job.id);
+        if(review){const image=await db.variation.create({data:{jobId:job.id,subproductId:sub.id,path:"statistics-synthetic.png",model:"synthetic",reviewStatus:review,expiresAt:new Date(Date.now()+86400000)}});images.push(image.id);return image.id;}return job.id;
+      }
+      await seed("COMPLETED","held",0,"PENDING");await seed("PENDING","held",1);await seed("CANCELLED","held",2);await seed("FAILED","held",3);await seed("UNCERTAIN","held",4);await seed("RUNNING","held",5);
+      await seed("COMPLETED","held-end",0,"PENDING",{date:end});await seed("PENDING","held-end",1,undefined,{date:end});
+      const approved=await seed("COMPLETED","approved",0,"APPROVED");await seed("PENDING","approved",1);
+      await seed("FAILED","failed-sample",0);await seed("PENDING","failed-sample",1);
+      await seed("COMPLETED","no-preview",0,"PENDING",{previewFirst:false});
+      for(let i=0;i<31;i++)await seed("COMPLETED","normal-"+i,0,"APPROVED",{previewFirst:false});
+      const deleted=images.at(-1)!,excluded=images.at(-2)!,expired=images.at(-3)!;
+      await db.variation.update({where:{id:deleted},data:{deletedAt:new Date()}});
+      await db.libraryExclusion.create({data:{userId:actor.id,variationId:excluded}});
+      await db.variation.update({where:{id:expired},data:{expiresAt:new Date(Date.now()-1000),expired:true}});
+      await seed("COMPLETED","other-actor",0,"PENDING",{actorId:uid});await seed("PENDING","other-actor",1);
+      await seed("COMPLETED","tomorrow",0,"APPROVED",{date:next});await seed("FAILED","tomorrow",1,undefined,{date:next});
+      const endpoint=`categories/${c.id}/image-counts?statistics=true`,period="&from=2026-10-01&to=2026-10-01";
+      const response=await owner.call(endpoint+period);assert.equal(response.status,200);
+      const row=response.body.find((r:any)=>r.id===sub.id);
+      assert.deepEqual(row.statistics,{generated:36,deleted:2,unapproved:3,approvalBlocked:3,failed:2,uncertain:1});
+      assert.equal(row.count,34);assert.deepEqual(response.body.find((r:any)=>r.id===empty.id).statistics,{generated:0,deleted:0,unapproved:0,approvalBlocked:0,failed:0,uncertain:0});
+      const tomorrow=(await owner.call(endpoint+"&from=2026-10-02&to=2026-10-02")).body.find((r:any)=>r.id===sub.id);assert.equal(tomorrow.statistics.generated,1);assert.equal(tomorrow.statistics.failed,1);assert.equal(tomorrow.statistics.unapproved,0);assert.equal(tomorrow.count,34);
+      assert.equal((await owner.call(endpoint)).body.find((r:any)=>r.id===sub.id).statistics.generated,37);
+      assert.equal((await owner.call(endpoint+"&from=2026-02-30")).status,400);assert.equal((await owner.call(endpoint+"&from=2026-10-02&to=2026-10-01")).status,400);
+      assert.equal((await user.call(endpoint)).status,404);
+      await db.subproductMember.createMany({data:[{userId:uid,subproductId:sub.id},{userId:oid,subproductId:sub.id}]});
+      const personal=(await user.call(endpoint+period)).body;assert.equal(personal.length,1);assert.equal(personal[0].statistics.unapproved,1);assert.equal(personal[0].statistics.failed,0);assert.equal(personal[0].statistics.uncertain,0);assert.equal(personal[0].statistics.approvalBlocked,0);assert.equal(personal[0].statistics.deleted,0);
+      const watched=(await observer.call(endpoint+period)).body;assert.equal(watched.length,1);assert.equal(watched[0].statistics.unapproved,0);assert.equal(watched[0].statistics.approvalBlocked,0);assert.equal(watched[0].statistics.failed,0);assert.equal(watched[0].statistics.deleted,0);
+      await db.libraryExclusion.create({data:{userId:uid,variationId:approved}});assert.equal((await user.call(endpoint+period)).body[0].statistics.deleted,1);assert.equal((await owner.call(endpoint+period)).body.find((r:any)=>r.id===sub.id).statistics.deleted,2);
+      await seed("FAILED","published-status-private",0,"APPROVED",{previewFirst:false});
+      assert.equal((await observer.call(endpoint+period)).body[0].statistics.failed,0);
+      assert.equal((await owner.call(endpoint+period)).body.find((r:any)=>r.id===sub.id).statistics.failed,3);
+      assert(!JSON.stringify(response.body).includes("approvalGroup"));assert(!JSON.stringify(response.body).includes("actorId"));
+      await owner.call(endpoint+period);assert.equal(await db.generationJob.count({where:{id:{in:createdJobs}}}),createdJobs.length);assert.equal(await db.usageLedger.count({where:{jobId:{in:createdJobs}}}),0);
+      await db.generationJob.updateMany({where:{id:{in:createdJobs},status:"RUNNING"},data:{status:"CANCELLED"}});
+    });
     await t.test("cierre de sesión invalida el token", async () => {
       assert.equal((await user.call("auth/logout", "POST")).status, 200);
       assert.equal((await user.call("projects")).status, 401);

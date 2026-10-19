@@ -979,8 +979,13 @@ async function handle(
       }
       if(parts[2]==="image-counts"&&method==="GET"){
         const subs=await db.subproduct.findMany({where:{categoryId:id,...subproductFilter(user)},select:{id:true}});
-        const counts=await db.variation.groupBy({by:["subproductId"],where:{...libraryImageVisibility(user),subproductId:{in:subs.map(sub=>sub.id)}},_count:true});
-        return send(subs.map(sub=>({id:sub.id,count:counts.find(row=>row.subproductId===sub.id)?._count??0})));
+        const subIds=subs.map(sub=>sub.id),includeStatistics=req.nextUrl.searchParams.get("statistics")==="true";
+        const [counts,statistics]=await Promise.all([
+          db.variation.groupBy({by:["subproductId"],where:{...libraryImageVisibility(user),subproductId:{in:subIds}},_count:true}),
+          includeStatistics?(await import("@/lib/subproduct-statistics")).subproductStatistics(user,subIds,req.nextUrl.searchParams):null,
+        ]);
+        const countMap=new Map(counts.map(row=>[row.subproductId,row._count]));
+        return send(subs.map(sub=>({id:sub.id,count:countMap.get(sub.id)??0,...(statistics?{statistics:statistics.get(sub.id)}:{})})));
       }
       if (parts[2] === "preview" && method === "GET") {
         const { clientSubproductPreview } = await import("@/lib/generation");
