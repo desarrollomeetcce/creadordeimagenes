@@ -645,10 +645,14 @@ Verificación: 49 unitarias y 121 resultados de integración HTTP/PostgreSQL cor
 
 ### Acciones por selección y cabeceras compactas
 
-Se retiran Eliminar, Compartir subproducto y Costos IA de cada cabecera. Nombre, estado, contadores y Ver variaciones permanecen en una línea; nombres largos tienen título y truncado, móvil permite desplazar esa fila sin desbordar la página. En la barra superior se elimina también la acción Eliminar y se añaden Costos IA y Compartir subproducto según selección.
+Se retiran Eliminar, Compartir subproducto y Costos IA de cada cabecera. Nombre, estado, contadores y Ver variaciones permanecen en una línea; nombres largos tienen título y truncado, móvil permite desplazar esa fila sin desbordar la página. En la barra superior se conservan Costos IA y Compartir subproducto según selección; se restituye Eliminar (N) por petición del usuario, solo para seleccionados y con confirmación.
 
 Costos abre otra pestaña: ninguno/todos consulta el producto autorizado; un subconjunto limita listado, sumas, resumen y CSV mediante subproducts, con validación de pertenencia/acceso y conservación de filtros. Enlaces abren todas las fechas o el rango elegido. La vista identifica la selección y permite volver al producto completo; no muestra como precio conocido un coste no informado.
 
 Compartir usa un único campo de correo para los seleccionados y no está habilitado sin selección. Concesión y revocación son atómicas, con permiso OWNER/creador revalidado en transacción; filas del producto y selección bloqueadas para rechazar eliminados/cruzados. Respeta roles y accesos heredados, informa cuántos seleccionados tienen asignación directa, no añade padres/hermanos ni envía correo. Sin migración ni generación de IA.
 
 Verificación: 49 unitarias y 123 resultados de integración HTTP/PostgreSQL aprobados; TypeScript y build correctos. Casos nuevos validan costos de ninguno/uno/varios/todos, CSV/resumen/fechas/desconocidos, rechazo de IDs ajenos/cruzados y Observador; compartir en una transacción, concurrencia sin duplicados, una cuenta para varios, directorio privado, sin acceso a padres/hermanos, revocación acotada y ausencia de mutaciones de trabajos/ledger. Chromium verifica cabeceras en una línea sin acciones repetidas, botón superior y pestañas nuevas con 7/1/3/7 USD sintéticos, un correo/una petición para dos membresías, revocación, y móvil con desplazamiento local sin desbordamiento de página. Cero llamadas IA, correo, pagos o migración.
+
+### Eliminar subproductos seleccionados
+
+Restituido Eliminar (N) en la barra superior de Subproductos: requiere selección y confirmación, se bloquea durante el envío y limpia la selección tras éxito. No reaparece por fila. Chromium comprueba cancelar sin cambios, borrar solo dos de tres, conservar tres imágenes y ledger, selección vacía desactivada y móvil sin desbordamiento. 49 unitarias, typecheck y build aprobados. Sin IA ni cambios de rutas/persistencia.

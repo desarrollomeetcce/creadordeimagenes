@@ -1315,6 +1315,7 @@ function CategoryEditor({
         {c.canEdit&&<BatchGeneration categoryId={c.id} projectId={c.project.id} count={c.subproducts.length} selectedIds={selectedSubs} />}
         {canSeeCosts&&<a className="button selected-costs" target="_blank" rel="noopener" href={"?"+new URLSearchParams({view:"usage",project:c.project.id,product:c.id,days:"all",from:statisticsDates.from,to:statisticsDates.to,...(selectedSubs.length&&selectedSubs.length!==c.subproducts.length?{subproducts:selectedSubs.join(",")}:{} )})}>Costos IA{selectedSubs.length?` (${selectedSubs.length})`:" · todos"} ↗</a>}
         {c.canManageAccess&&<button type="button" disabled={!selectedSubs.length} aria-expanded={selectionSharing&&!!selectedSubs.length} onClick={()=>setSelectionSharing(!selectionSharing)}>Compartir subproducto{selectedSubs.length?` (${selectedSubs.length})`:""}</button>}
+        {c.canEdit&&<button type="button" className="danger" disabled={!selectedSubs.length||t.busy} onClick={()=>{if(confirm(`¿Eliminar ${selectedSubs.length} subproductos? Se cancelarán sus trabajos pendientes. Las carpetas, imágenes e historial se conservan.`))void t.run(async()=>{await api("subproducts/bulk-delete","POST",{ids:selectedSubs});setSelectedSubs([]);setSelectionSharing(false);await refresh();},"Subproductos eliminados");}}>Eliminar ({selectedSubs.length})</button>}
         {c.canEdit&&<button type="button" aria-expanded={trashOpen} onClick={()=>setTrashOpen(!trashOpen)}>Buscar subproductos eliminados</button>}
 
       </div>
