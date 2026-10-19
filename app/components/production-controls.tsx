@@ -2,7 +2,7 @@
 import { ErrorNotice } from "./error-notice";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
-  OrderProgressCard,
+  OrderProgressCard, orderNeedsControls,
   driveOrder,
   orderRequest,
   type OrderProgress,
@@ -71,7 +71,7 @@ export function useProductionController(
     );
     const b = await r.json();
     if (!r.ok) throw Error(b.error ?? "No se pudo consultar la orden.");
-    if (mounted.current) {setOrders(b.filter((order:OrderProgress)=>!order.hiddenFromProduction));setError("");}
+    if (mounted.current) {setOrders(b.filter((order:OrderProgress)=>!order.hiddenFromProduction&&orderNeedsControls(order)));setError("");}
     await update.current?.();
   }, []);
   const scopeRevision = useRef(0);
@@ -249,7 +249,7 @@ export function ProductionControls({
   return (
     <div className="stack production-controls">
       {c.dispatching && <p role="status">Enviando orden…</p>}
-      {c.orders.filter(order=>!order.hiddenFromProduction).map((order) => (
+      {c.orders.filter(order=>!order.hiddenFromProduction&&orderNeedsControls(order)).map((order) => (
         <OrderProgressCard
           key={order.id}
           order={order}

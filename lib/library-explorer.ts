@@ -1,3 +1,5 @@
+import {dismissedOrderIds} from "./order-dismissal";
+import {libraryImageVisibility} from "./library-visibility";
 import { emptyStoppedSubproducts } from "./order-visibility";
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
@@ -150,11 +152,8 @@ export async function explorerData(user: Actor, params: URLSearchParams) {
       : review === "pending"
         ? { reviewStatus: "PENDING" }
         : {}),
-    libraryExclusions: { none: { userId: user.id } },
-    deletedAt: null,
-    expired: false,
     AND: [
-      { OR: [{ permanent: true }, { expiresAt: { gt: new Date() } }] },
+      libraryImageVisibility(user),
       { job: scope.where },
       {
         job:
@@ -169,19 +168,7 @@ export async function explorerData(user: Actor, params: URLSearchParams) {
       },
     ],
     ...(Object.keys(dates).length ? { createdAt: dates } : {}),
-    ...(personal
-      ? { libraryItems: { some: { userId: user.id, folderId: personal } } }
-      : user.role === "OWNER"
-        ? {}
-        : {
-          OR: [
-            ...(user.role !== "OBSERVER"
-              ? [{ job: { actorId: user.id } }]
-              : []),
-            { reviewStatus: "APPROVED" },
-            { libraryItems: { some: { userId: user.id } } },
-          ],
-        }),
+    ...(personal?{libraryItems:{some:{userId:user.id,folderId:personal}}}:{}),
   };
   if(foldersOnly)where.id="";
   if(folder==="loose:root")where.libraryItems={some:{userId:user.id,folderId:null}};
@@ -191,43 +178,24 @@ export async function explorerData(user: Actor, params: URLSearchParams) {
     ...((!personal && folder && folder!=="loose:root") || kind === "images" || foldersOnly ? { id: "" } : {}),
     ...(Object.keys(dates).length ? { createdAt: dates } : {}),
   };
-  const [total, items, documents, tree, counts, documentCount] =
+  const dismissed=await dismissedOrderIds(user.id);
+  const pendingWhere:Prisma.GenerationJobWhereInput={
+    status:{in:["PENDING","RUNNING","FAILED","UNCERTAIN"]},variation:null,
+    NOT:dismissed.map(id=>({snapshot:{path:["orderId"],equals:id}})),
+    snapshot:{path:["orderId"],string_starts_with:""},
+    AND:[scope.where,user.role==="OWNER"?{OR:[scope.access??{id:""},{projectId:"connection-test"}]}:(scope.access??{id:""})],
+    ...(user.role==="OWNER"?{}:{actorId:user.id}),
+    ...(Object.keys(dates).length?{createdAt:dates}:{}),
+    ...(personal||foldersOnly||folder==="loose:root"||kind==="documents"||review==="approved"||user.role==="OBSERVER"?{id:""}:{}),
+  };
+  const slotsWhere:Prisma.GenerationJobWhereInput={OR:[{variation:where},pendingWhere]};
+  const [total, slots, documents, tree, counts, documentCount,inflightTotal] =
     await Promise.all([
-      db.variation.count({ where }),
-      db.variation.findMany({
-        where,
-        skip: (page - 1) * limit,
-        take: limit,
-        orderBy: [
-          { createdAt: order === "oldest" ? "asc" : "desc" },
-          { id: "asc" },
-        ],
-        select: {
-          id: true,
-          revision: true,
-          reviewStatus: true,
-          createdAt: true,
-          model: true,
-          subproduct: {
-            select: {
-              id: true,
-              name: true,
-              category: {
-                select: {
-                  id: true,
-                  name: true,
-                  project: { select: { id: true, name: true } },
-                },
-              },
-            },
-          },
-          job: { select: { id: true, projectId: true, actorId: true } },
-          libraryItems: {
-            where: { userId: user.id },
-            select: { folderId: true },
-          },
-        },
-      }),
+      db.variation.count({where}),
+      db.generationJob.findMany({where:slotsWhere,skip:(page-1)*limit,take:limit,orderBy:[{createdAt:order==="oldest"?"asc":"desc"},{id:"asc"}],select:{
+        id:true,status:true,createdAt:true,subproductId:true,
+        variation:{select:{id:true,revision:true,reviewStatus:true,createdAt:true,model:true,subproduct:{select:{id:true,name:true,category:{select:{id:true,name:true,project:{select:{id:true,name:true}}}}}},job:{select:{id:true,projectId:true,actorId:true}},libraryItems:{where:{userId:user.id},select:{folderId:true}}}},
+      }}),
       db.libraryDocument.findMany({
         where: documentWhere,
         select: {
@@ -264,7 +232,9 @@ export async function explorerData(user: Actor, params: URLSearchParams) {
         _count: true,
       }),
       db.libraryDocument.count({ where: documentWhere }),
+      db.generationJob.count({where:pendingWhere}),
     ]);
+  const items=slots.flatMap(slot=>slot.variation?[slot.variation]:[]);
   const costs =
     user.role === "OBSERVER"
       ? []
@@ -275,7 +245,7 @@ export async function explorerData(user: Actor, params: URLSearchParams) {
   const costMap = new Map(
     costs.map((c) => [c.jobId, c.actualMicros?.toString() ?? null]),
   );
-  const orders = personal || foldersOnly || folder==="loose:root"
+  let orders = personal || foldersOnly || folder==="loose:root"
     ? []
     : await (
         await import("./generation-orders")
@@ -293,9 +263,19 @@ export async function explorerData(user: Actor, params: URLSearchParams) {
         ],
         ...(Object.keys(dates).length ? { createdAt: dates } : {}),
       });
+  if(!personal&&!foldersOnly&&folder!=="loose:root"&&slots.some(slot=>!slot.variation&&!orders.some(order=>order.jobs.some(job=>job.id===slot.id)))){
+    const extra=await (await import("./generation-orders")).libraryOrders(user,{id:{in:slots.filter(slot=>!slot.variation).map(slot=>slot.id)},AND:[scope.where,user.role==="OWNER"?{OR:[scope.access??{id:""},{projectId:"connection-test"}]}:(scope.access??{id:""})]});
+    orders=[...new Map([...orders,...extra].map(order=>[order.id,order])).values()];
+  }
+  const pendingSubs=await db.subproduct.findMany({where:{id:{in:slots.filter(slot=>!slot.variation).flatMap(slot=>slot.subproductId?[slot.subproductId]:[])},...subproductFilter(user)},select:{id:true,name:true,category:{select:{id:true,name:true,project:{select:{id:true,name:true}}}}}});
+  const inflight=slots.filter(slot=>!slot.variation).map(slot=>({id:slot.id,status:slot.status,createdAt:slot.createdAt,subproduct:pendingSubs.find(sub=>sub.id===slot.subproductId)??null,orderId:orders.find(order=>order.jobs.some(job=>job.id===slot.id))?.id??null}));
+
   return {
     orders,
     foldersOnly,
+    inflight,
+    inflightTotal,
+    entries:slots.map(slot=>({kind:slot.variation?"image":"pending",id:slot.variation?.id??slot.id})),
     tree,
     items: items.map((v) => ({
       ...v,
@@ -312,7 +292,7 @@ export async function explorerData(user: Actor, params: URLSearchParams) {
     page,
     pages: Math.max(
       1,
-      Math.ceil(total / limit),
+      Math.ceil((total+inflightTotal) / limit),
       Math.ceil(documentCount / limit),
     ),
     counts: Object.fromEntries(counts.map((c) => [c.status, c._count])),

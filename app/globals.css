@@ -1021,3 +1021,18 @@ html[data-theme="dark"] .subproduct-status.status-error{color:#ffb2b2;background
 @media(max-width:700px){.quick-start-form .quick-start-destinations{grid-template-columns:1fr}.image-preview-bar{flex-wrap:wrap}.image-preview-bar strong{flex-basis:100%}.image-preview-bar .button{font-size:11px;padding:8px}.image-preview-bar .window-close{margin-left:auto}}
 
 .order-recovery-hint{margin:6px 0;max-width:100%;overflow-wrap:anywhere}.order-description .dismissible-notice{margin:6px 0;font-size:12px;max-width:100%;overflow-wrap:anywhere}
+
+/* Generation slots share the image grid, with text as well as color. */
+.gallery.image-awaiting-approval{border:2px solid #c78a22;}
+.approval-required{background:#fff0cb;color:#694400;}
+.image-order-controls{display:flex;flex-direction:column;gap:.6rem;min-width:0;border-top:1px solid var(--border,#648080);padding-top:.75rem;margin-top:.5rem;}
+.image-order-controls .order-buttons{display:flex;flex-wrap:wrap;gap:.4rem;}
+.image-order-controls .order-buttons>*{max-width:100%;white-space:normal;}
+.image-order-controls .order-description{min-width:0;}
+.generation-placeholder{aspect-ratio:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1rem;padding:1rem;text-align:center;background:color-mix(in srgb,currentColor 6%,transparent);border:1px dashed currentColor;border-radius:.5rem;}
+.generation-placeholder>span{font-size:3rem;}
+.generation-running .generation-placeholder{color:#168f82;}
+.generation-failed .generation-placeholder,.generation-uncertain .generation-placeholder{color:#bd643e;}
+.generation-spinner{animation:generation-spin 2s linear infinite;}
+@keyframes generation-spin{to{transform:rotate(360deg);}}
+@media(prefers-reduced-motion:reduce){.generation-spinner{animation:none;}}

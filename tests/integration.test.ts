@@ -10788,6 +10788,46 @@ test("Integración HTTP + PostgreSQL (base exclusiva de pruebas, sin llamadas ex
       // Clearing this presentation event is test setup to isolate automatic completion filtering.
       await db.auditEvent.deleteMany({where:{actorId:actor.id,action:"ORDEN_RETIRADA_DE_BIBLIOTECA",resourceId:id}});await db.variation.update({where:{id:variation.id},data:{reviewStatus:"APPROVED"}});assert(!(await owner.call(path)).body.orders.some((o:any)=>o.id===id));assert((await owner.call(path)).body.items.some((v:any)=>v.id===variation.id));assert((await owner.call(`orders?project=${p.id}&includeClosed=true`)).body.some((o:any)=>o.id===id&&o.status==="COMPLETED"));
     }));
+    await t.test("Galería unificada: espacios paginados, aprobación, retiradas y contador real",async()=>withOrderProvider(async(config)=>{
+      const {p,c,s:sub}=await hierarchyForReview(),actor=await db.user.findFirstOrThrow({where:{role:"OWNER"}});
+      const jobs=await reserveJobs(actor.id,p.id,Array.from({length:28},()=>({subproductId:sub.id,key:randomUUID(),snapshot:{prompt:"Galería sintética",mode:"Texto",format:"1:1"}})),config.revision);
+      const created=await owner.call("orders","POST",{ids:jobs.map(j=>j.id),mode:"immediate",requestId:randomUUID()});const id=created.body.orders[0];
+      const images=[];
+      for(const job of jobs.slice(0,4)){
+        await db.generationJob.update({where:{id:job.id},data:{status:"COMPLETED"}});
+        images.push(await db.variation.create({data:{jobId:job.id,subproductId:sub.id,path:"gallery-test.png",model:"synthetic",expiresAt:new Date(Date.now()+86400000)}}));
+      }
+      await db.generationOrder.update({where:{id},data:{status:"REVIEW"}});
+      const path=`library/explorer?project=${p.id}&product=${c.id}&subproduct=${sub.id}&limit=25`;
+      const first=(await owner.call(path)).body,second=(await owner.call(path+"&page=2")).body;
+      assert.equal(first.total,4);assert.equal(first.inflightTotal,24);assert.equal(first.entries.length,25);assert.equal(second.entries.length,3);assert.equal(first.pages,2);
+      assert.equal(new Set([...first.entries,...second.entries].map((v:any)=>v.id)).size,28);
+      assert.equal(first.inflight.length+second.inflight.length,24);assert(first.inflight.every((v:any)=>v.orderId===id));
+      assert.equal((await owner.call("library/explorer")).body.entries.length,0);
+      assert.equal((await owner.call(path+"&review=approved")).body.inflightTotal,0);
+      assert.equal((await observer.call(path)).status,404);
+      await db.subproductMember.createMany({data:[{subproductId:sub.id,userId:oid},{subproductId:sub.id,userId:uid}]});
+      await db.variation.update({where:{id:images[0].id},data:{reviewStatus:"APPROVED"}});
+      const observerView=await observer.call(path);assert.equal(observerView.status,200);assert.equal(observerView.body.inflightTotal,0);assert.equal(observerView.body.total,1);
+      const sharedView=await user.call(path);assert.equal(sharedView.status,200);assert.equal(sharedView.body.inflightTotal,0);
+      assert.equal((await observer.call(`categories/${c.id}/image-counts`)).body.find((s:any)=>s.id===sub.id).count,1);
+      const removed=await owner.call("library/item-actions","POST",{action:"remove",ids:images.slice(0,2).map(v=>v.id)});assert.equal(removed.status,200);
+      assert.equal((await owner.call(path)).body.total,2);
+      const category=(await owner.call(`categories/${c.id}`)).body;
+      assert.equal(category.subproducts.find((s:any)=>s.id===sub.id)._count.variations,2);
+      assert.equal((await owner.call(`categories/${c.id}/image-counts`)).body.find((s:any)=>s.id===sub.id).count,2);
+      assert.equal(await db.variation.count({where:{subproductId:sub.id,deletedAt:null}}),4);
+      assert.equal((await observer.call(`categories/${c.id}/image-counts`)).body.find((s:any)=>s.id===sub.id).count,1);
+      await db.variation.update({where:{id:images[3].id},data:{expiresAt:new Date(Date.now()-1000)}});
+      assert.equal((await owner.call(`categories/${c.id}/image-counts`)).body.find((s:any)=>s.id===sub.id).count,1);
+      await db.variation.update({where:{id:images[3].id},data:{expiresAt:new Date(Date.now()+86400000)}});
+      await db.generationJob.updateMany({where:{id:{in:jobs.slice(4).map(j=>j.id)}},data:{status:"FAILED"}});
+      await db.generationOrder.update({where:{id},data:{status:"NEEDS_REVIEW",error:"Error sintético"}});
+      assert.equal((await owner.call(path)).body.inflightTotal,24);
+      assert.equal((await owner.call("orders/hide","POST",{ids:[id]})).status,200);
+      assert.equal((await owner.call(path)).body.inflightTotal,0);
+      assert.equal((await owner.call(path)).body.total,2);
+    }));
     await t.test("cierre de sesión invalida el token", async () => {
       assert.equal((await user.call("auth/logout", "POST")).status, 200);
       assert.equal((await user.call("projects")).status, 401);

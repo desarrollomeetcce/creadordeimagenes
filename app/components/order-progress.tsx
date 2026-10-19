@@ -93,15 +93,19 @@ export async function driveOrder(
     driving.delete(id);
   }
 }
+export function orderNeedsControls(o:OrderProgress){
+ return o.pending>0||o.running>0||(!["COMPLETED","ACCEPTED"].includes(o.status)&&(o.failed>0||o.uncertain>0||!!o.error));
+}
 export function OrderProgressCard({
   order: o,
   refresh,
   compact = false,
-  selection,
+  selection, inline=false, approvalInImage=false,
 }: {
   order: OrderProgress;
   refresh: () => Promise<void>;
   compact?: boolean;
+  inline?:boolean; approvalInImage?:boolean;
   selection?: {checked:boolean;onChange:(checked:boolean)=>void};
 }) {
   const [busy, setBusy] = useState(false),
@@ -146,10 +150,10 @@ export function OrderProgressCard({
       : (orderLabels[o.status] ?? o.status);
   return (
     <article
-      className={"order-progress-card " + (compact ? "order-compact" : "")}
+      className={inline?"image-order-controls":"order-progress-card " + (compact ? "order-compact" : "")}
       data-order-id={o.id}
     >
-      <div className="order-preview">
+      {!inline&&<div className="order-preview">
         {selection&&<label className="row"><input type="checkbox" checked={selection.checked} disabled={!o.canDismiss} onChange={e=>selection.onChange(e.target.checked)} aria-label={"Seleccionar carga "+(o.name??o.id)} />Seleccionar</label>}
         {o.sample && !o.sample.deletedAt ? (
           <img
@@ -160,9 +164,9 @@ export function OrderProgressCard({
         ) : (
           <span aria-hidden="true">▧</span>
         )}
-      </div>
+      </div>}
       <div className="order-description">
-        <strong>{o.name ?? "Orden de generación"}</strong>
+        {!inline&&<><strong>{o.name ?? "Orden de generación"}</strong>
         <span className={"badge " + (closed ? "status-completed" : "")}>
           {statusLabel}
         </span>
@@ -179,6 +183,7 @@ export function OrderProgressCard({
         <small>
           {date} · {modeLabels[o.mode] ?? o.mode}
         </small>
+        </>}
         {o.cancelled > 0 && (
           <small>
             {o.cancelled} canceladas · Pedido original: {o.requested} imágenes
@@ -203,7 +208,7 @@ export function OrderProgressCard({
         )}
         {o.recoveryHint&&<p className="hint order-recovery-hint">{o.recoveryHint}</p>}
         {(error || o.error) && <ErrorNotice message={error || o.error!} acknowledgementKey={!error ? `${o.viewerId??"viewer"}:${o.id}:${o.errorVersion??o.createdAt}` : undefined} onDismiss={()=>setError("")} />}
-        {o.scope && (
+        {!inline&&o.scope && (
           <a
             target="_blank"
             rel="noopener"
@@ -256,7 +261,7 @@ export function OrderProgressCard({
               Detener
             </button>
           )}
-          {(o.canApproveSample || o.status === "REVIEW") &&
+          {!approvalInImage&&(o.canApproveSample || o.status === "REVIEW") &&
             o.sample && !o.sample.deletedAt && o.sampleJobId &&
             o.sample?.reviewStatus !== "APPROVED" && (
               <button
@@ -288,7 +293,7 @@ export function OrderProgressCard({
               Quedarme con {o.completed} · finalizar
             </button>
           )}
-          {o.canDismiss&&<button type="button" className="danger" disabled={busy} onClick={()=>{if(confirm("¿Retirar esta tarjeta de generación? Las imágenes, aprobaciones, historial y costos se conservan."))void perform("hide-card");}}>Eliminar tarjeta</button>}
+          {o.canDismiss&&<button type="button" className="danger" disabled={busy} onClick={()=>{if(confirm("¿Ocultar este aviso de generación? Las imágenes, aprobaciones, historial y costos se conservan."))void perform("hide-card");}}>{inline?"Ocultar aviso":"Eliminar tarjeta"}</button>}
           {o.status === "DISPATCH_UNCERTAIN" && (
             <button
               type="button"

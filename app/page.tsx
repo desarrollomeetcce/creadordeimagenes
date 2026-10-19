@@ -1216,7 +1216,7 @@ function CategoryEditor({
   openGallery: (s: Item) => void;
   openCollection: () => void;
 }) {
-  const statusBySubproduct=useSubproductStatuses(c.project.id,c.id);
+  const {orders:statusBySubproduct,counts:imageCounts}=useSubproductStatuses(c.project.id,c.id);
   const [sharing, setSharing] = useState(false);
   const [trashOpen,setTrashOpen]=useState(false);
   const [selectedSubs, setSelectedSubs] = useState<string[]>([]);
@@ -1442,6 +1442,7 @@ function CategoryEditor({
             key={sub.id}
             sub={sub}
             orderStatus={statusBySubproduct[sub.id]}
+            imageCount={imageCounts[sub.id]??sub._count?.variations??0}
             selected={selectedSubs.includes(sub.id)}
             onSelected={checked=>setSelectedSubs(ids=>checked?[...new Set([...ids,sub.id])]:ids.filter(id=>id!==sub.id))}
             ancestry={{project:c.project.name,product:c.name}}
@@ -1659,7 +1660,7 @@ function BatchGeneration({
   );
 }
 function SubproductRow({
-  sub, selected, onSelected, ancestry, initiallyOpen=false,orderStatus,
+  sub, selected, onSelected, ancestry, initiallyOpen=false,orderStatus,imageCount,
   costScope,
   index,
   inherited,
@@ -1671,6 +1672,7 @@ function SubproductRow({
   sub: Item;
   selected:boolean;
   orderStatus?:OrderProgress;
+  imageCount:number;
   onSelected:(checked:boolean)=>void;
   ancestry:{project:string;product:string};
   initiallyOpen?:boolean;
@@ -1752,7 +1754,7 @@ function SubproductRow({
         <SubproductStatus order={latestOrder} />
         <span className="row subproduct-header-actions" onClick={e=>e.stopPropagation()}>
           {sub.canManageAccess&&<button type="button" aria-expanded={sharing} onClick={()=>setSharing(!sharing)}>Compartir subproducto</button>}
-          <button type="button" onClick={openGallery}>Ver variaciones ({sub._count?.variations??0}) ↗</button>
+          <button type="button" onClick={openGallery}>Ver variaciones ({imageCount}) ↗</button>
           {canSeeCosts&&<a className="button" href={"?"+new URLSearchParams({view:"usage",...costScope})}>Costos IA</a>}
           {sub.canEdit&&<button type="button" className="danger" disabled={t.busy} onClick={()=>{if(confirm(`¿Eliminar el subproducto ${name}? Se cancelarán sus pendientes y se conservará el historial.`))void t.run(async()=>{await api("subproducts/"+sub.id,"DELETE");await removed();},"Subproducto eliminado");}}>Eliminar</button>}
         </span>

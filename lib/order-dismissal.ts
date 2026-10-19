@@ -60,3 +60,12 @@ export async function dismissOrders(
       });
   });
 }
+
+export async function dismissedOrderIds(userId: string) {
+  const rows = await db.auditEvent.findMany({
+    where: { actorId: userId, action },
+    distinct: ["resourceId"],
+    select: { resourceId: true },
+  });
+  return rows.flatMap((row) => (row.resourceId ? [row.resourceId] : []));
+}

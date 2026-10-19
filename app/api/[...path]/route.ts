@@ -1,3 +1,4 @@
+import {libraryImageVisibility} from "@/lib/library-visibility";
 import { instructionPolicySchema,instructionFlags,publicInstructionPolicy } from "@/lib/instruction-policy";
 import { recordActivity } from "@/lib/activity";
 import { NextRequest, NextResponse } from "next/server";
@@ -956,7 +957,7 @@ async function handle(
         user,
         "category",
         id,
-        method === "GET" && parts.length === 2
+        method === "GET" && (parts.length === 2 || parts[2] === "image-counts")
           ? "NAVIGATE"
           : method === "GET"
             ? "VIEW"
@@ -975,6 +976,11 @@ async function handle(
         return send(
           await deletedSubproducts(user, id, req.nextUrl.searchParams),
         );
+      }
+      if(parts[2]==="image-counts"&&method==="GET"){
+        const subs=await db.subproduct.findMany({where:{categoryId:id,...subproductFilter(user)},select:{id:true}});
+        const counts=await db.variation.groupBy({by:["subproductId"],where:{...libraryImageVisibility(user),subproductId:{in:subs.map(sub=>sub.id)}},_count:true});
+        return send(subs.map(sub=>({id:sub.id,count:counts.find(row=>row.subproductId===sub.id)?._count??0})));
       }
       if (parts[2] === "preview" && method === "GET") {
         const { clientSubproductPreview } = await import("@/lib/generation");
@@ -1047,7 +1053,7 @@ async function handle(
               where: subproductFilter(user),
               include: {
                 _count: {
-                  select: { variations: { where: { deletedAt: null } } },
+                  select: { variations: { where: libraryImageVisibility(user) } },
                 },
               },
             },

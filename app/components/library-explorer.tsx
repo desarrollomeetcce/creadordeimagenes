@@ -18,7 +18,7 @@ import { ErrorNotice } from "./error-notice";
 import { ImagePreviewModal } from "./image-preview-modal";
 import { ImageEditorModal } from "./image-editor-modal";
 import {
-  OrderProgressCard,
+  OrderProgressCard, orderNeedsControls,
   orderRequest,
   driveOrder,
   type OrderProgress,
@@ -26,6 +26,7 @@ import {
 import { usdMicros } from "../../lib/usage-format";
 import { costLink } from "./hierarchy-filters";
 import { downloadArchive } from "./collection-gallery";
+import {GenerationImageCard,type PendingImage} from "./generation-image-card";
 type Item = {
   canEdit: boolean;
   canApprove: boolean;
@@ -49,6 +50,8 @@ type Item = {
 type Doc = { id: string; name: string; size: number; mime: string };
 type Data = {
   orders: OrderProgress[];
+  inflight:PendingImage[]; inflightTotal:number;
+  entries:{kind:string;id:string}[];
   tree: FolderNode[];
   items: Item[];
   documents: Doc[];
@@ -69,7 +72,6 @@ async function api(path: string, method = "GET", body?: unknown) {
   return b;
 }
 export function Library() {
-  const [selectedOrders,setSelectedOrders]=useState<string[]>([]);
   const [editing, setEditing] = useState<string | null>(null);
   const [preview, setPreview] = useState<{
     id: string;
@@ -116,7 +118,6 @@ export function Library() {
     order: sort,
     kind,
   }).toString();
-  useEffect(()=>{setSelectedOrders([]);},[params]);
   const refresh = useCallback(async () => {
     const seq = ++revision.current;
     setRefreshing(true);
@@ -296,6 +297,150 @@ export function Library() {
     if (!r.ok) throw Error(b.error);
   };
   const editingSubproduct=data?.items.find(item=>item.id===editing)?.subproduct;
+  const anchors=new Map<string,OrderProgress>();
+  for(const order of data?.orders??[]){
+   if(!orderNeedsControls(order))continue;
+   const image=data?.items.find(i=>i.job.id===order.sampleJobId)??data?.items.find(i=>order.jobs?.some(j=>j.id===i.job.id));
+   const slot=data?.inflight?.find(i=>i.orderId===order.id);
+   if(image||slot)anchors.set(image?.id??slot!.id,order);
+  }
+  const renderImage=(i:Item)=>{const anchorOrder=anchors.get(i.id);return (
+              <article
+                key={i.id}
+                className={"card gallery "+(i.reviewStatus!=="APPROVED"?"image-awaiting-approval":"image-approved")}
+                onContextMenu={(e) => context(e, "v:" + i.id)}
+                draggable={canEdit}
+                onDragStart={(e) => {
+                  if (!selected.includes("v:" + i.id))
+                    setSelected(["v:" + i.id]);
+                  e.dataTransfer.setData("text/plain", i.id);
+                }}
+              >
+                <label className="row">
+                  <input
+                    type="checkbox"
+                    checked={selected.includes("v:" + i.id)}
+                    onChange={(e) => toggle("v:" + i.id, e.target.checked)}
+                  />
+                  Seleccionar
+                </label>
+                <span className={"badge "+(i.reviewStatus==="APPROVED"?"status-completed":"approval-required")}>{i.reviewStatus==="APPROVED"?"Aprobada":"Pendiente de aprobación"}</span>
+                <button
+                  type="button"
+                  className="image-preview-trigger"
+                  aria-label={`Ampliar imagen · ${i.subproduct?.name ?? "Prueba de IA"}`}
+                  onClick={() =>
+                    setPreview({
+                      id: i.id,
+                      name: i.subproduct?.name ?? "Prueba de IA",
+                      revision: i.revision,
+                      subproductHref:i.subproduct?"?"+new URLSearchParams({view:"projects",category:i.subproduct.category.id,subproduct:i.subproduct.id}):undefined,
+                    })
+                  }
+                >
+                  <img
+                    loading="lazy"
+                    src={
+                      "/api/variations/" +
+                      i.id +
+                      "?thumbnail=true&v=" +
+                      i.revision
+                    }
+                    alt={i.subproduct?.name ?? "Prueba de IA"}
+                  />
+                </button>
+                <button
+                  type="button"
+                  onClick={() =>
+                    setPreview({
+                      id: i.id,
+                      name: i.subproduct?.name ?? "Prueba de IA",
+                      revision: i.revision,
+                      subproductHref:i.subproduct?"?"+new URLSearchParams({view:"projects",category:i.subproduct.category.id,subproduct:i.subproduct.id}):undefined,
+                    })
+                  }
+                >
+                  Ampliar imagen
+                </button>
+                <strong>{i.subproduct?.name ?? "Prueba de IA"}</strong>
+                {i.subproduct&&<a className="button" href={"?"+new URLSearchParams({view:"projects",category:i.subproduct.category.id,subproduct:i.subproduct.id})}>{i.canEdit?"Editar subproducto":"Ir al subproducto"} ↗</a>}
+                {i.canApprove && i.reviewStatus !== "APPROVED" && (
+                  <button
+                    type="button"
+                    className="primary"
+                    disabled={busy}
+                    onClick={() =>
+                      void action(async () => {
+                        const order = data?.orders?.find(
+                          (o) => o.sampleJobId === i.job.id,
+                        );
+                        if (order) {
+                          const updated=await orderRequest(`/${order.id}/approve`, {
+                            jobId: i.job.id,
+                          });
+                          if (order.mode === "immediate"&&updated.status==="ACTIVE")
+                            void driveOrder(order.id, refresh).catch((e) =>
+                              setError(e.message),
+                            );
+                          if(["NEEDS_REVIEW","DISPATCH_UNCERTAIN"].includes(updated.status))return "Imagen aprobada y conservada. La continuación necesita atención; revisa el motivo y la acción disponible en esta imagen.";
+                        } else {
+                          const response = await fetch(
+                            `/api/jobs/${i.job.id}/approve`,
+                            { method: "POST" },
+                          );
+                          const result = await response.json();
+                          if (!response.ok) throw Error(result.error);
+                        }
+                      }, "Imagen aprobada. La orden continúa según el modo que elegiste al enviarla.")
+                    }
+                  >
+                    {data?.orders.some(o=>o.sampleJobId===i.job.id&&o.pending>0)?"Aprobar y continuar":"Aprobar imagen"}
+                  </button>
+                )}
+                {i.canEdit && (
+                  <button type="button" onClick={() => setEditing(i.id)}>
+                    Editar imagen
+                  </button>
+                )}
+                <p className="hint">
+                  {i.subproduct
+                    ? [
+                        i.subproduct.category.project.name,
+                        i.subproduct.category.name,
+                        i.subproduct.name,
+                      ].join(" / ")
+                    : "Pruebas"}
+                  <br />
+                  {new Date(i.createdAt).toLocaleString("es-PE", {
+                    timeZone: "America/Lima",
+                  })}
+                </p>
+                {i.actualMicros !== undefined && (
+                  <p className="hint">
+                    Coste informado:{" "}
+                    {i.actualMicros === null
+                      ? "No informado"
+                      : "USD " + usdMicros(i.actualMicros)}
+                    <br />
+                    <a
+                      href={costLink({
+                        project: i.subproduct?.category.project.id ?? "none",
+                        product: i.subproduct?.category.id ?? "",
+                        subproduct: i.subproduct?.id ?? "",
+                        from: hierarchy.from,
+                        to: hierarchy.to,
+                      })}
+                    >
+                      Ver costos de esta carpeta →
+                    </a>
+                  </p>
+                )}
+                <a href={"/api/variations/" + i.id + "?download"}>
+                  Descargar PNG
+                </a>
+                {anchorOrder&&<OrderProgressCard inline approvalInImage order={anchorOrder} refresh={refresh}/>}
+              </article>
+  );};
   return (
     <section className="stack library-explorer">
       {preview && (
@@ -607,26 +752,6 @@ export function Library() {
               </label>
             )}
           </div>
-          {(data?.orders?.length ?? 0) > 0 &&
-          (folder ||
-            hierarchy.project ||
-            hierarchy.product ||
-            hierarchy.subproduct) ? (
-            <aside
-              className="folder-orders"
-              aria-label="Órdenes de esta carpeta"
-            >
-              <div className="row"><label className="row"><input type="checkbox" aria-label="Seleccionar cargas finalizadas" checked={!!data?.orders.filter(o=>o.canDismiss).length&&data.orders.filter(o=>o.canDismiss).every(o=>selectedOrders.includes(o.id))} onChange={e=>setSelectedOrders(e.target.checked?(data?.orders.filter(o=>o.canDismiss).map(o=>o.id)??[]):[])} />Seleccionar cargas</label><button type="button" className="danger" disabled={busy||!selectedOrders.length} onClick={()=>{if(confirm("¿Retirar las tarjetas seleccionadas? Las imágenes, aprobaciones, historial y costos se conservan."))void action(async()=>{await (await import("./order-progress")).orderRequest("/hide",{ids:selectedOrders});setSelectedOrders([]);},"Tarjetas retiradas.");}}>Eliminar tarjetas ({selectedOrders.length})</button></div>
-              {data?.orders.map((order) => (
-                <OrderProgressCard
-                  key={order.id}
-                  order={order}
-                  selection={{checked:selectedOrders.includes(order.id),onChange:checked=>setSelectedOrders(ids=>checked?[...new Set([...ids,order.id])]:ids.filter(id=>id!==order.id))}}
-                  refresh={refresh}
-                />
-              ))}
-            </aside>
-          ) : null}
           {error && <ErrorNotice message={error} onDismiss={()=>setError("")} />}
           {message && (
             <p role="status" className="notice">
@@ -763,151 +888,12 @@ export function Library() {
             ))}
           </div>
           <div className={"grid jobs-grid size-" + size}>
-            {(data?.items ?? []).map((i) => (
-              <article
-                key={i.id}
-                className="card gallery"
-                onContextMenu={(e) => context(e, "v:" + i.id)}
-                draggable={canEdit}
-                onDragStart={(e) => {
-                  if (!selected.includes("v:" + i.id))
-                    setSelected(["v:" + i.id]);
-                  e.dataTransfer.setData("text/plain", i.id);
-                }}
-              >
-                <label className="row">
-                  <input
-                    type="checkbox"
-                    checked={selected.includes("v:" + i.id)}
-                    onChange={(e) => toggle("v:" + i.id, e.target.checked)}
-                  />
-                  Seleccionar
-                </label>
-                <button
-                  type="button"
-                  className="image-preview-trigger"
-                  aria-label={`Ampliar imagen · ${i.subproduct?.name ?? "Prueba de IA"}`}
-                  onClick={() =>
-                    setPreview({
-                      id: i.id,
-                      name: i.subproduct?.name ?? "Prueba de IA",
-                      revision: i.revision,
-                      subproductHref:i.subproduct?"?"+new URLSearchParams({view:"projects",category:i.subproduct.category.id,subproduct:i.subproduct.id}):undefined,
-                    })
-                  }
-                >
-                  <img
-                    loading="lazy"
-                    src={
-                      "/api/variations/" +
-                      i.id +
-                      "?thumbnail=true&v=" +
-                      i.revision
-                    }
-                    alt={i.subproduct?.name ?? "Prueba de IA"}
-                  />
-                </button>
-                <button
-                  type="button"
-                  onClick={() =>
-                    setPreview({
-                      id: i.id,
-                      name: i.subproduct?.name ?? "Prueba de IA",
-                      revision: i.revision,
-                      subproductHref:i.subproduct?"?"+new URLSearchParams({view:"projects",category:i.subproduct.category.id,subproduct:i.subproduct.id}):undefined,
-                    })
-                  }
-                >
-                  Ampliar imagen
-                </button>
-                <strong>{i.subproduct?.name ?? "Prueba de IA"}</strong>
-                {i.subproduct&&<a className="button" href={"?"+new URLSearchParams({view:"projects",category:i.subproduct.category.id,subproduct:i.subproduct.id})}>{i.canEdit?"Editar subproducto":"Ir al subproducto"} ↗</a>}
-                {i.canApprove && i.reviewStatus !== "APPROVED" && (
-                  <button
-                    type="button"
-                    className="primary"
-                    disabled={busy}
-                    onClick={() =>
-                      void action(async () => {
-                        const order = data?.orders?.find(
-                          (o) => o.sampleJobId === i.job.id,
-                        );
-                        if (order) {
-                          const updated=await orderRequest(`/${order.id}/approve`, {
-                            jobId: i.job.id,
-                          });
-                          if (order.mode === "immediate"&&updated.status==="ACTIVE")
-                            void driveOrder(order.id, refresh).catch((e) =>
-                              setError(e.message),
-                            );
-                          if(["NEEDS_REVIEW","DISPATCH_UNCERTAIN"].includes(updated.status))return "Imagen aprobada y conservada. La continuación necesita atención; revisa el motivo y la acción disponible en su tarjeta.";
-                        } else {
-                          const response = await fetch(
-                            `/api/jobs/${i.job.id}/approve`,
-                            { method: "POST" },
-                          );
-                          const result = await response.json();
-                          if (!response.ok) throw Error(result.error);
-                        }
-                      }, "Imagen aprobada. La orden continúa según el modo que elegiste al enviarla.")
-                    }
-                  >
-                    Aprobar imagen
-                  </button>
-                )}
-                {i.canEdit && (
-                  <button type="button" onClick={() => setEditing(i.id)}>
-                    Editar imagen
-                  </button>
-                )}
-                <p className="hint">
-                  {i.subproduct
-                    ? [
-                        i.subproduct.category.project.name,
-                        i.subproduct.category.name,
-                        i.subproduct.name,
-                      ].join(" / ")
-                    : "Pruebas"}
-                  <br />
-                  {new Date(i.createdAt).toLocaleString("es-PE", {
-                    timeZone: "America/Lima",
-                  })}
-                </p>
-                <span
-                  className={
-                    "badge " +
-                    (i.reviewStatus === "APPROVED"
-                      ? "status-completed"
-                      : "status-pending")
-                  }
-                >
-                  {i.reviewStatus === "APPROVED" ? "Aprobado" : "Por aprobar"}
-                </span>
-                {i.actualMicros !== undefined && (
-                  <p className="hint">
-                    Coste informado:{" "}
-                    {i.actualMicros === null
-                      ? "No informado"
-                      : "USD " + usdMicros(i.actualMicros)}
-                    <br />
-                    <a
-                      href={costLink({
-                        project: i.subproduct?.category.project.id ?? "none",
-                        product: i.subproduct?.category.id ?? "",
-                        subproduct: i.subproduct?.id ?? "",
-                        from: hierarchy.from,
-                        to: hierarchy.to,
-                      })}
-                    >
-                      Ver costos de esta carpeta →
-                    </a>
-                  </p>
-                )}
-                <a href={"/api/variations/" + i.id + "?download"}>
-                  Descargar PNG
-                </a>
-              </article>
-            ))}
+            {(data?.entries??data?.items.map(i=>({kind:"image",id:i.id}))??[]).map(entry=>{
+              if(entry.kind==="image"){const item=data?.items.find(i=>i.id===entry.id);return item?renderImage(item):null;}
+              const slot=data?.inflight?.find(i=>i.id===entry.id);if(!slot)return null;
+              const order=data?.orders.find(o=>o.id===slot.orderId);
+              return <GenerationImageCard key={slot.id} slot={slot} order={order} controls={anchors.has(slot.id)} refresh={refresh} onPreview={()=>{if(order?.sample)setPreview({id:order.sample.id,revision:order.sample.revision??1,name:order.name??"Muestra"});}}/>;
+            })}
           </div>
           <div className="folder-cards">
             {data?.documents.map((d) => (
@@ -933,7 +919,7 @@ export function Library() {
           {!data && <p>Cargando biblioteca…</p>}
           {data &&
             !folders.length &&
-            !data.items.length &&
+            !data.items.length && !data.inflight?.length &&
             !data.documents.length && (
               <p className="empty">
                 No hay imágenes ni archivos con estos filtros. Revisa las
@@ -950,7 +936,7 @@ export function Library() {
                 Anterior
               </button>
               <span>
-                {data.total} imágenes · Página {data.page} de {data.pages}
+                {data.total} imágenes{data.inflightTotal>0?` · ${data.inflightTotal} por generar o revisar`:""} · Página {data.page} de {data.pages}
               </span>
               <button
                 disabled={page >= data.pages}
