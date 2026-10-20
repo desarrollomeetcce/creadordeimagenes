@@ -83,7 +83,8 @@ export async function prepareBackground(
           : "GENERATE",
       );
   }
-  await configured();
+  const engines=await (await import("./generation-engines")).engineConfiguration();
+  for(const job of jobs){const engine=(await import("./generation-engines")).requireEngine(engines,(job.snapshot as Record<string,unknown>).engine??"ai");if(engine!=="propiox")await configured(engine==="hybrid");}
   return db.$transaction(async (tx) => {
     await tx.$executeRaw`SELECT pg_advisory_xact_lock(728292)`;
     const existing = await tx.backgroundBatch.findUnique({

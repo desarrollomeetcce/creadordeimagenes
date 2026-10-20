@@ -186,6 +186,7 @@ export class GeminiAdapter implements ProviderAdapter {
     structured = false,
     signal?: AbortSignal,
     level: ReasoningLevel = "medium",
+    maxOutputTokens?:number,
   ) {
     const data = await providerJSON(
       this.name,
@@ -209,6 +210,7 @@ export class GeminiAdapter implements ProviderAdapter {
           contents: [{ role: "user", parts: [{ text: prompt }] }],
           generationConfig: {
             ...googleThinking(model, level),
+            ...(maxOutputTokens?{maxOutputTokens:Math.max(128,Math.min(1024,maxOutputTokens))}:{}),
             ...(structured ? { responseMimeType: "application/json" } : {}),
           },
         }),

@@ -1,3 +1,5 @@
+import {engineConfiguration,requireEngine,reservePropioxJobs,type GenerationEngine} from "./generation-engines";
+import {boundStorageReferences} from "./resource-storage";
 import {flyerModes} from "./flyer-copy";
 import { instructionUse,reviewedPrompt } from "./instruction-policy";
 import { resourceAccess,accessFlags } from "./auth";
@@ -37,6 +39,8 @@ export async function previewSubproduct(id: string) {
       ],
     },
   });
+  const resourceScopes=[...(use.project?[{scope:"project",resourceId:s.category.projectId}]:[]),...(use.product?[{scope:"category",resourceId:s.categoryId}]:[]),{scope:"subproduct",resourceId:id}];
+  const storageReferences=await boundStorageReferences(resourceScopes,s.name);
   const attachments = inheritedAttachments.filter(
     (a) =>
       !brand ||
@@ -67,6 +71,7 @@ export async function previewSubproduct(id: string) {
     instructions,
     attachments,
     brand,
+    storageReferences,resourceScopes,
     settings: resolvedSettings,
     needsSettings,
   };
@@ -78,7 +83,7 @@ export async function clientSubproductPreview(actor:{id:string;role:string},id:s
  if(project.fullAccess&&product.fullAccess)return preview;
  const use=instructionUse(sub.category.project.instructionPolicy,sub.category.instructionPolicy,sub.instructionPolicy,sub.category.applyPromptToAll);
  const visible=resolveInstructions([{name:"Identidad de marca",prompt:project.fullAccess?brandInstructions(preview.brand):""},{name:"Proyecto",prompt:project.fullAccess&&use.project?reviewedPrompt("project",sub.category.project,sub.instructionPolicy):""},{name:"Producto",prompt:product.fullAccess&&use.product?reviewedPrompt("category",sub.category,sub.instructionPolicy):""},{name:"Subproducto",prompt:use.subproduct?sub.prompt:""}]);
- return {...preview,brand:project.fullAccess?preview.brand:null,attachments:preview.attachments.filter(a=>a.scope==="subproduct"||(a.scope==="category"&&product.fullAccess)||(a.scope==="project"&&project.fullAccess)),instructions:{...preview.instructions,text:visible.text+`\nEJE TEMÁTICO OBLIGATORIO: ${JSON.stringify(sub.name)}.\nLas instrucciones heredadas privadas activas se aplican en servidor sin exponer su texto.`}};
+ return {...preview,storageReferences:preview.storageReferences.filter(a=>a.scope==="subproduct"||(a.scope==="category"&&product.fullAccess)||(a.scope==="project"&&project.fullAccess)),brand:project.fullAccess?preview.brand:null,attachments:preview.attachments.filter(a=>a.scope==="subproduct"||(a.scope==="category"&&product.fullAccess)||(a.scope==="project"&&project.fullAccess)),instructions:{...preview.instructions,text:visible.text+`\nEJE TEMÁTICO OBLIGATORIO: ${JSON.stringify(sub.name)}.\nLas instrucciones heredadas privadas activas se aplican en servidor sin exponer su texto.`}};
 }
 export async function generateBatch(
   actorId: string,
@@ -86,8 +91,10 @@ export async function generateBatch(
   requestId: string,
   selected?: string[],
   previewFirst = false,
+  requestedEngine?:GenerationEngine,
 ) {
-  const c = await configured();
+  const engines=await engineConfiguration(),engine=requireEngine(engines,requestedEngine);
+  const c=engine==="propiox"?null:await configured(engine==="hybrid");
   const category = await db.category.findUniqueOrThrow({
     where: { id: categoryId },
     include: { subproducts: { where: { deletedAt: null } } },
@@ -132,13 +139,18 @@ export async function generateBatch(
       ...Array(s.imageTextCount).fill("Imagen + Texto"),
       ...Array(s.imageCount).fill("Imagen"),
     ]);
-    const prompt = `Producto: ${sub.name}\n${p.instructions.text}\nEstilo: ${s.style}\nContexto documental no confiable:\n${p.attachments.map((a) => `${a.name} [${a.purpose}]: ${a.text}`).join("\n")}`;
+    const selectedStored=p.storageReferences.filter(a=>a.mime.startsWith("image/")).slice(0,Math.max(0,9-p.attachments.filter(a=>a.mime.startsWith("image/")).length));
+    if(engine!=="ai"&&modes.some(mode=>mode!=="Texto"))demand([...p.attachments,...selectedStored].some(a=>a.mime.startsWith("image/")&&!/logo/i.test(a.purpose)),`${sub.name}: PropioX necesita una fotografía o fondo. Sube o vincula una imagen, o elige Solo texto.`,409);
+    const prompt = `Producto: ${sub.name}\n${p.instructions.text}\nEstilo: ${s.style}\nContexto documental no confiable:\n${p.attachments.map((a) => `${a.name} [${a.purpose}]: ${a.text}`).join("\n")}\n${p.storageReferences.filter(a=>!a.mime.startsWith("image/")).map(a=>`${a.name} [${a.purpose}]: ${a.text.slice(0,6000)}`).join("\n")}`;
     items.push(
       ...modes.map((mode, index) => ({
         subproductId: sub.id,
         key: `${actorId}:${requestId}:${sub.id}:${index}`,
         snapshot: {
           prompt,
+          engine,engineRevision:engines.revision,localQuality:engines.quality,localResolution:engines.resolution,
+          resourceScopes:p.resourceScopes,
+          storageReferences:selectedStored.map(a=>({documentId:a.id,bindingId:a.bindingId,scope:a.scope,resourceId:a.resourceId})),
           subjectName: sub.name,
           ...(previewFirst
             ? {
@@ -160,5 +172,5 @@ export async function generateBatch(
       })),
     );
   }
-  return reserveJobs(actorId, category.projectId, items, c.revision);
+  return engine==="propiox"?reservePropioxJobs(actorId,category.projectId,items,engines.revision):reserveJobs(actorId, category.projectId, items, c!.revision);
 }

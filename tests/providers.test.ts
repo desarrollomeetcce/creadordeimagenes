@@ -610,3 +610,9 @@ test("Google: pensamiento por familia, sin parámetros incompatibles y respuesta
     assert.equal(calls,6);
   });
 });
+test("apoyo híbrido: presupuestos de salida explícitos en OpenAI y Google",async()=>{
+ const requests:any[]=[];
+ await transport(async(url,init)=>{const body=JSON.parse(String(init?.body));requests.push(body);return String(url).includes('generativelanguage')?json({candidates:[{content:{parts:[{text:'{"layout":"left"}'}]},finishReason:'STOP'}],usageMetadata:{totalTokenCount:40}}):json({status:'completed',output:[{content:[{type:'output_text',text:'{"layout":"left"}'}]}],usage:{input_tokens:30,output_tokens:10}});},async()=>{
+  await adapter('openai').direct(key,'gpt-4.1-mini','Visual JSON',true,undefined,'low',384);await adapter('google').direct(key,'gemini-2.5-flash','Visual JSON',true,undefined,'low',384);
+ });assert.equal(requests[0].max_output_tokens,384);assert.equal(requests[1].generationConfig.maxOutputTokens,384);assert.equal(requests[0].text.format.type,'json_object');assert.equal(requests[1].generationConfig.responseMimeType,'application/json');
+});

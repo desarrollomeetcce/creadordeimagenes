@@ -75,7 +75,9 @@ export async function processJob(
     "Controla esta generación desde su orden en Biblioteca.",
     409,
   );
-  await configured();
+  const engines=await (await import("./generation-engines")).engineConfiguration();
+  const engine=(await import("./generation-engines")).requireEngine(engines,(job.snapshot as Record<string,unknown>).engine??"ai");
+  if(engine!=="propiox")await configured(engine==="hybrid");
   const { runOne, recoverInterrupted } = await import("../scripts/worker");
   await recoverInterrupted();
   const processed = await runOne({
@@ -120,20 +122,22 @@ export async function retryJob(
     job.status !== "UNCERTAIN" || confirmUncertain,
     "La llamada anterior pudo producir un cargo. Debes reconocer ese riesgo antes de otro intento.",
   );
-  const c = await configured();
   const snapshot = job.snapshot as Record<string, unknown>;
+  const engines=await (await import("./generation-engines")).engineConfiguration(),engine=(await import("./generation-engines")).requireEngine(engines,snapshot.engine??"ai");
+  const c = engine==="propiox"?null:await configured(engine==="hybrid");
   if (typeof snapshot.editVariationId === "string")
     await jobResourceAccess(user, job, "EDIT");
-  return reserveJobs(
+  const reserve=engine==="propiox"?(await import("./generation-engines")).reservePropioxJobs:reserveJobs;
+  return reserve(
     user.id,
     job.projectId,
     [
       {
         subproductId: job.subproductId ?? undefined,
         key: `retry:${user.id}:${id}:${requestId}`,
-        snapshot: { ...snapshot, retryOf: id },
+        snapshot: { ...snapshot, engineRevision:engines.revision, retryOf: id },
       },
     ],
-    c.revision,
+    c?.revision??engines.revision,
   );
 }

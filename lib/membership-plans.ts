@@ -49,6 +49,7 @@ export async function checkPlanAllowance(
   count: number,
   reserve: bigint,
   now = new Date(),
+  checkAIBudget = true,
 ) {
   const user = await tx.user.findUnique({
     where: { id: actorId },
@@ -78,7 +79,7 @@ export async function checkPlanAllowance(
     403,
   );
   demand(
-    user.plan.monthlyAIMicros === null ||
+    !checkAIBudget || user.plan.monthlyAIMicros === null ||
       current.micros + reserve <= user.plan.monthlyAIMicros,
     `Se supera el presupuesto mensual de IA de tu plan ${user.plan.name}. Revisa Mi plan.`,
     403,

@@ -38,7 +38,8 @@ export function safeConfiguration(c: ProviderConfiguration | null) {
     imageReserveMicros: String(c.imageReserveMicros),
   };
 }
-export async function configured() {
+export async function configured(textOnly=false) {
+  const {engineConfiguration,requireEngine}=await import("./generation-engines");requireEngine(await engineConfiguration(),"ai");
   const c = await db.providerConfiguration.findUnique({
     where: { id: "global" },
   });
@@ -54,14 +55,14 @@ export async function configured() {
   const models = c.models as ModelCapability[];
   const image = models.find((m) => m.id === c.imageModel && m.kind === "image");
   demand(
-    image,
+    textOnly||image,
     "Selecciona modelos disponibles de imagen y dirección creativa.",
     409,
   );
   await creativeConnection(c);
   demand(
-    image.qualities.includes(c.quality) &&
-      image.resolutions.includes(c.resolution),
+    textOnly||(image!.qualities.includes(c.quality) &&
+      image!.resolutions.includes(c.resolution)),
     "La calidad o resolución no es compatible.",
     409,
   );
@@ -105,6 +106,8 @@ export async function reserveJobs(
         return items.map((item) =>
           known.find((job) => job.idempotencyKey === item.key)!,
         );
+      const engines=await (await import("./generation-engines")).engineConfiguration(tx);
+      for(const item of items){const snapshot=item.snapshot as Record<string,unknown>;(await import("./generation-engines")).requireEngine(engines,snapshot.engine??"ai");demand(snapshot.engineRevision===undefined||snapshot.engineRevision===engines.revision,"Los motores cambiaron. Revisa y autoriza de nuevo.",409);}
       const capabilities = c.models as ModelCapability[];
       const imageCapability = capabilities.find(
         (m) => m.kind === "image" && m.id === c.imageModel,
@@ -192,7 +195,7 @@ export async function reserveJobs(
             jobId: job.id,
             actorId,
             projectId,
-            model: c.imageModel!,
+            model: (item.snapshot as Record<string,unknown>).engine==="hybrid"?`PropioX + ${c.creativeModel}`:c.imageModel!,
             reservedMicros: reserve,
           },
         });

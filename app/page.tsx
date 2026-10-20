@@ -48,6 +48,8 @@ import {
 } from "./components/owner-emergency";
 import { clearGallerySession } from "./components/gallery-session";
 import { SubproductTrash } from "./components/subproduct-trash";
+import {StorageWorkspace} from "./components/resource-storage";
+import {EngineChoice,PropioxSettingsFields,useGenerationEngine,engineRequest,type EngineConfig} from "./components/generation-engine";
 import { StorageUsage } from "./components/storage-usage";
 import { StatisticsPanel } from "./components/statistics-panel";
 import {
@@ -236,6 +238,7 @@ export default function Home() {
         const allowed = [
           "projects",
           "library",
+          "storage",
           "presets",
           "history",
           "usage",
@@ -413,6 +416,7 @@ export default function Home() {
   const titles: Record<string, string> = {
     projects: "Proyectos",
     library: "Biblioteca",
+    storage: "Almacenamiento",
     presets: "Configuraciones guardadas",
     ai: "Ajustes de IA",
     mail: "Ajustes de correo",
@@ -453,6 +457,7 @@ export default function Home() {
             {[
               ["projects", "▦", "Proyectos"],
               ["library", "▧", "Biblioteca"],
+              ["storage", "▣", "Almacenamiento"],
               ["presets", "≡", "Configuraciones guardadas"],
               ["history", "◷", "Historial"],
               ["trash", "⌫", "Papelera"],
@@ -542,6 +547,8 @@ export default function Home() {
               </>
             ) : view === "library" ? (
               <Library key={location} />
+            ) : view === "storage" && user.role!=="OBSERVER" ? (
+              <StorageWorkspace />
             ) : view === "presets" ? (
               <Presets />
             ) : view === "website" && user.role === "OWNER" ? (
@@ -1481,6 +1488,7 @@ function BatchGeneration({
   projectId: string;
   count: number;
 }) {
+  const generationEngine=useGenerationEngine();
   const [preview, setPreview] = useState<any[] | null>(null);
   const {charge:consent,setCharge:setConsent,previewFirst,setPreviewFirst}=useGenerationChoices("product",categoryId);
   const [queued, setQueued] = useState(false);
@@ -1494,6 +1502,7 @@ function BatchGeneration({
   const t = useTask();
   return (
     <div className="batch-generation">
+      <EngineChoice value={generationEngine.engine} onChange={generationEngine.setEngine} config={generationEngine.config} error={generationEngine.error} disabled={t.busy} />
       <div className="row batch-generation-buttons"><button
         disabled={!count || t.busy}
         onClick={() =>
@@ -1579,8 +1588,7 @@ function BatchGeneration({
               checked={consent}
               onChange={(e) => setConsent(e.target.checked)}
             />
-            He revisado las instrucciones de los subproductos seleccionados y
-            autorizo el cargo de API de este lote.
+            {generationEngine.engine==="propiox"?"He revisado las instrucciones y autorizo la composición local sin IA.":"He revisado las instrucciones y autorizo el posible cargo de API de este lote."}
           </label>
           <ExecutionChoice
             value={executionMode}
@@ -1604,6 +1612,7 @@ function BatchGeneration({
                   "POST",
                   {
                     confirmCharge: true,
+                    engine:generationEngine.engine,
                     reviewedInstructions: true,
                     requestId: crypto.randomUUID(),
                     selected,
@@ -1676,6 +1685,7 @@ function SubproductRow({
   removed: () => Promise<void>;
   onReviewSaved?:()=>Promise<void>;
 }) {
+  const generationEngine=useGenerationEngine();
   const [policy,setPolicy]=useState<InstructionPolicy>(sub.instructionPolicy??{});
   const [reviewOpen,setReviewOpen]=useState(false),[reviewDirty,setReviewDirty]=useState(false),[sourceDirty,setSourceDirty]=useState(false),[reviewVersion,setReviewVersion]=useState(0);
   const [configOpen,setConfigOpen]=useState(initiallyOpen);
@@ -1721,11 +1731,12 @@ function SubproductRow({
   const templates=useReusableConfiguration({scope:"subproduct",current:configuration(),enabled:expanded,saveCurrent:async()=>{await save();return configuration();},onApplied:async()=>{const loaded=await api("subproducts/"+sub.id);setName(loaded.name);setPrompt(loaded.prompt);setPolicy(loaded.instructionPolicy??{});setS({...inherited,...loaded.settings});setCustom(true);setPreview(null);setReviewOpen(false);setReview(false);setSourceDirty(false);}});
   const latestOrder=[orderStatus,...production.orders].filter((order):order is OrderProgress=>!!order).sort((a,b)=>b.createdAt.localeCompare(a.createdAt))[0];
   const generate=async(quick=false)=>{
-    if(!charge)throw Error("Activa la autorización de IA para generar.");
+    if(!generationEngine.engine)throw Error("Espera a que se carguen los motores de generación.");
+    if(!charge)throw Error("Activa la autorización de generación.");
     const savedReview=quick?await reviewRef.current?.flush():null;
     const own=savedReview?.layers.find(layer=>layer.scope==="subproduct");
     await save(own?.prompt!==null&&own?{prompt:own.prompt,policy:own.policy}:undefined);
-    const result=await api("subproducts/"+sub.id+"/generate","POST",{confirmCharge:true,...(quick?{quickGeneration:true}:{reviewedInstructions:true}),previewFirst,requestId:crypto.randomUUID()});
+    const result=await api("subproducts/"+sub.id+"/generate","POST",{confirmCharge:true,engine:generationEngine.engine,...(quick?{quickGeneration:true}:{reviewedInstructions:true}),previewFirst,requestId:crypto.randomUUID()});
     setQueued(true);setReview(false);setSourceDirty(false);setReviewDirty(false);
     await production.start(result.runnable,executionMode,result.jobs);
     const channel=new BroadcastChannel("studio-updates");channel.postMessage("queued");channel.close();
@@ -1813,7 +1824,7 @@ function SubproductRow({
             {sourceDirty&&<p className="notice">Hay cambios en el formulario. <button type="button" disabled={t.busy} onClick={loadReview}>Actualizar revisión</button></p>}
             <ReviewInstructions ref={reviewRef} key={reviewVersion} id={sub.id} beforeReload={save} onDirty={()=>{setReviewDirty(true);setReview(false);}} onSaved={async data=>{const own=data.layers.find(layer=>layer.scope==="subproduct");if(own?.prompt!==null&&own){setPrompt(own.prompt);setPolicy(own.policy);}setPreview(await api("subproducts/"+sub.id+"/instructions"));setReviewDirty(false);setSourceDirty(false);setReview(false);await onReviewSaved?.();}} />
             <pre>{preview.text}</pre>
-            <details className="review-references"><summary>Documentos y referencias utilizados ({preview.attachments?.length??0})</summary><div className="inside"><p className="hint">El texto extraído de documentos se incorpora al contexto del prompt. Las imágenes se envían como referencias visuales. Solo se usan las herencias activas; las referencias privadas autorizadas se procesan en servidor sin revelar su contenido aquí.</p>{preview.attachments?.length?<ul>{preview.attachments.map((file:any)=><li key={file.id}><strong>{file.name}</strong> · {file.purpose} · {file.mime.startsWith("image/")?"Referencia visual":"Texto extraído"}</li>)}</ul>:<p className="muted">No hay adjuntos visibles en esta revisión.</p>}</div></details>
+            <details className="review-references"><summary>Documentos y referencias utilizados ({preview.attachments?.length??0})</summary><div className="inside"><p className="hint">El texto extraído de documentos se incorpora al contexto del prompt. Las imágenes se usan como recursos locales en PropioX o referencias en IA. Solo se usan las herencias activas; las referencias privadas autorizadas se procesan en servidor sin revelar su contenido aquí.</p>{preview.attachments?.length?<ul>{preview.attachments.map((file:any)=><li key={file.id}><strong>{file.name}</strong> · {file.purpose} · {file.mime.startsWith("image/")?"Referencia visual":"Texto extraído"}</li>)}</ul>:<p className="muted">No hay adjuntos visibles en esta revisión.</p>}</div></details>
             {preview.overrides.map((w: string, i: number) => (
               <p key={i} className="hint">
                 {w}
@@ -1844,7 +1855,7 @@ function SubproductRow({
                 checked={charge}
                 onChange={(e) => setCharge(e.target.checked)}
               />
-              Autorizo las llamadas de IA y su posible cargo de API.
+              {generationEngine.engine==="propiox"?"Autorizo la composición local · sin llamadas de IA.":"Autorizo las llamadas de IA y su posible cargo de API."}
             </label>
             <ExecutionChoice
               value={executionMode}
@@ -1874,10 +1885,11 @@ function SubproductRow({
             >
               Generar variaciones · {(custom||forceOwn?s:inherited).count}{latestOrder&&latestOrder.pending>0?` · ${latestOrder.completed}/${latestOrder.target}`:""}
             </button>
+      <EngineChoice value={generationEngine.engine} onChange={generationEngine.setEngine} config={generationEngine.config} error={generationEngine.error} disabled={t.busy||production.dispatching} />
       <button type="button" className="primary quick-generation" disabled={t.busy||production.uncertainDispatch||production.dispatching||!charge} onClick={()=>void t.run(()=>generate(true),"Generación rápida registrada. Revisa su avance y la muestra en Biblioteca.")}>Generación rápida ({(custom||forceOwn?s:inherited).count})</button>
       <button type="button" onClick={openGallery}>Ver variaciones ↗</button>
-      <small className="hint">Generación rápida guarda los cambios y autoriza las llamadas de IA sin abrir la revisión. Respeta la primera muestra y el modo elegidos.</small>
-      {!charge&&<label className="row"><input type="checkbox" checked={charge} onChange={e=>setCharge(e.target.checked)} />Autorizo las llamadas de IA y su posible cargo de API.</label>}
+      <small className="hint">Generación rápida guarda los cambios y utiliza el motor elegido sin abrir la revisión. Respeta la primera muestra y el modo de ejecución.</small>
+      {!charge&&<label className="row"><input type="checkbox" checked={charge} onChange={e=>setCharge(e.target.checked)} />{generationEngine.engine==="propiox"?"Autorizo la composición local · sin llamadas de IA.":"Autorizo las llamadas de IA y su posible cargo de API."}</label>}
     </div>
     <ProductionControls controller={{...production,orders:latestOrder?[latestOrder]:production.orders}} />
     {t.notice}
@@ -1885,6 +1897,11 @@ function SubproductRow({
   );
 }
 function AISettings() {
+  const [engines,setEngines]=useState<EngineConfig|null>(null);
+  const [engineDirty,setEngineDirty]=useState(false),[engineError,setEngineError]=useState("");
+  useEffect(()=>{let active=true;engineRequest("engines/config").then(value=>{if(active)setEngines(value);}).catch(e=>{if(active)setEngineError(e.message);});return()=>{active=false;};},[]);
+  const changeEngines=(value:EngineConfig)=>{setEngines(value);setEngineDirty(true);};
+  const saveEngines=async()=>{if(!engines)throw Error("No se pudieron cargar los motores. Recarga Ajustes.");if(engineDirty){const {aiEnabled,propioxEnabled,defaultEngine,quality,resolution,revision}=engines;setEngines(await engineRequest("engines/config","PUT",{aiEnabled,propioxEnabled,defaultEngine,quality,resolution,revision}));setEngineDirty(false);}};
   const [testMode, setTestMode] = useState<ExecutionMode>("background");
   const testProduction = useProductionController(undefined, {
     project: "none",
@@ -2133,8 +2150,9 @@ function AISettings() {
       !dirty &&
       !key,
   });
-  const ready = checks.every((check) => check.ok) && !liveError;
+  const ready = checks.every((check) => check.ok) && !liveError && !!engines?.aiEnabled && !engineDirty;
   const save = async () => {
+    if(!engines?.aiEnabled||(engineDirty&&!dirty&&!key)){await saveEngines();setKey("");await refresh();return;}
     await api("ai/models", "PUT", {
       provider: c.provider,
       ...(key ? { apiKey: key } : {}),
@@ -2150,6 +2168,7 @@ function AISettings() {
       imageReserveMicros: c.imageReserveMicros,
       maxGenerations: Number(c.maxGenerations),
     });
+    await saveEngines();
     setKey("");
     await refresh();
   };
@@ -2165,22 +2184,20 @@ function AISettings() {
       <div className="heading">
         <div>
           <div className="eyebrow">Ajustes / Exclusivo del OWNER</div>
-          <h1>Ajustes de IA</h1>
+          <h1>Ajustes de generación</h1>
           <p className="muted">
             Conecta tu proveedor y establece las reglas de generación de tu
             equipo.
           </p>
         </div>
-        <span className={"badge " + (c.status === "VERIFIED" ? "" : "warning")}>
-          {state[c.status] ?? c.status}
+        <span className={"badge " + ((engines&&!engines.aiEnabled&&engines.propioxEnabled)||c.status === "VERIFIED" ? "" : "warning")}>
+          {engines&&!engines.aiEnabled?"PropioX · sin IA":state[c.status] ?? c.status}
         </span>
       </div>
       <div className="notice">
-        La generación requiere una conexión verificada, modelos compatibles y
-        cuota disponible según el plan asignado (OWNER exento). Una suscripción
-        a ChatGPT no cubre el consumo de API.
+        PropioX compone sin API con tus recursos. Los modos con IA requieren conexión verificada y pueden tener costo. Las cuotas de imágenes del plan se aplican a todos los motores (OWNER exento). Una suscripción a ChatGPT no cubre su API.
       </div>
-      <section className="panel stack" aria-label="Estado de preparación de IA">
+      <section hidden={engines!==null&&!engines.aiEnabled} className="panel stack" aria-label="Estado de preparación de IA">
         <h2>Antes de generar</h2>
         <p className="hint">
           Este resumen comprueba la configuración guardada. El estado se
@@ -2278,7 +2295,7 @@ function AISettings() {
           </div>
         )}
       </section>
-      <ProviderConnections
+      <div hidden={engines!==null&&!engines.aiEnabled}><ProviderConnections
         providers={available}
         changed={async () => {
           if (!editing.current) await refresh();
@@ -2288,21 +2305,25 @@ function AISettings() {
             );
         }}
       />
+      </div>
       <section
         id="ai-connection"
         className={
           "panel stack ai-section" +
-          (!c.maskedKey || !verified || key ? " needs-attention" : "")
+          (engines?.aiEnabled&&(!c.maskedKey || !verified || key) ? " needs-attention" : "")
         }
       >
-        <h2>01　Proveedor de imágenes y credenciales</h2>
+        <h2>01　Motores, proveedor y credenciales</h2>
+        {engineError&&<p className="notice error" role="alert">{engineError} Recarga Ajustes para guardar los motores.</p>}
         <div className="fields">
           <label>
             Proveedor
             <select
-              value={c.provider}
-              onChange={(e) => void changeImageProvider(e.target.value)}
+              value={engines&&!engines.aiEnabled?"none":c.provider}
+              disabled={!engines||t.busy}
+              onChange={(e) => {if(!engines)return;if(e.target.value==="none"){changeEngines({...engines,aiEnabled:false,propioxEnabled:true,defaultEngine:"propiox"});setKey("");}else{changeEngines({...engines,aiEnabled:true});if(c.provider!==e.target.value)void changeImageProvider(e.target.value);}}}
             >
+              <option value="none">Sin IA · PropioX, sin clave API</option>
               {available.map((p) => (
                 <option value={p.id} key={p.id}>
                   {p.name}
@@ -2310,11 +2331,10 @@ function AISettings() {
               ))}
             </select>
             <span className="hint">
-              Selecciona la empresa que emitió tu clave de API. Una suscripción
-              de chat no sustituye la facturación de su API.
+              {engines&&!engines.aiEnabled?"Sin IA no requiere credenciales. Activa un proveedor si utilizarás IA o el modo híbrido.":"Selecciona la empresa que emitió tu clave de API. Una suscripción de chat no sustituye la facturación de su API."}
             </span>
           </label>
-          <label>
+          <label hidden={engines!==null&&!engines.aiEnabled}>
             {c.maskedKey ? "Reemplazar clave API" : "Clave API"}
             <PasswordInput
               value={key}
@@ -2334,6 +2354,9 @@ function AISettings() {
             </span>
           </label>
         </div>
+        {engines&&<PropioxSettingsFields value={engines} onChange={changeEngines} />}
+        {engineDirty&&<p className="notice">Cambios de motor sin guardar. Se aplicarán al pulsar Guardar configuración.</p>}
+        {engines&&!engines.aiEnabled&&<p className="notice">Sin IA: las nuevas generaciones usarán PropioX. Los envíos de IA ya iniciados pueden finalizar. Las claves guardadas se conservan para cuando vuelvas a activar IA.</p>}
         <p className="hint">
           La clave se cifra en el servidor con una clave maestra externa a la
           base de datos. Después de guardarla solo se muestra su versión
@@ -2351,14 +2374,14 @@ function AISettings() {
             onClick={() =>
               void t.run(
                 save,
-                "Configuración guardada. Verifica de nuevo la conexión para habilitarla.",
+                engines?.aiEnabled?"Configuración guardada. Revisa la conexión antes de utilizar IA.":"PropioX guardado. Puedes componer sin IA desde tus subproductos.",
               )
             }
           >
             Guardar configuración
           </button>
           <button
-            disabled={t.busy || dirty || !!key || !c.maskedKey}
+            disabled={t.busy || dirty || engineDirty || !engines?.aiEnabled || !!key || !c.maskedKey}
             onClick={() =>
               void t.run(async () => {
                 try {
@@ -2392,7 +2415,7 @@ function AISettings() {
             </button>
           )}
         </div>
-        {c.verifiedAt && (
+        {engines?.aiEnabled&&c.verifiedAt && (
           <p className="hint">
             Última comprobación real:{" "}
             {new Date(c.verifiedAt).toLocaleString("es-PE", {
@@ -2402,9 +2425,10 @@ function AISettings() {
             garantiza saldo ni generación.
           </p>
         )}
-        {c.error && <div className="notice error">{c.error}</div>}
+        {engines?.aiEnabled&&c.error && <div className="notice error">{c.error}</div>}
       </section>
       <section
+        hidden={engines!==null&&!engines.aiEnabled}
         id="ai-models"
         className={
           "panel stack ai-section" +
@@ -2611,7 +2635,7 @@ function AISettings() {
         </p>
         <PlanSettings />
       </section>
-      <section className="panel stack">
+      <section hidden={engines!==null&&!engines.aiEnabled} className="panel stack">
         <h2>03　Prueba real de generación · opcional</h2>
         <a
           className="button"

@@ -1,4 +1,5 @@
 "use client";
+import {StorageFolderPicker} from "./resource-storage";
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from "react";
 
 type Attachment = {
@@ -292,6 +293,7 @@ export const Attachments = forwardRef<AttachmentsHandle, {
         DOCX sin consumir IA. Las imágenes tienen vistas previas privadas y se
         envían como referencias visuales; revisa su uso antes de generar.
       </p>
+      <StorageFolderPicker scope={scope} id={id} onChanged={onUploaded} />
       {message && (
         <div className="notice" role="status">
           {message}

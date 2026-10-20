@@ -310,6 +310,16 @@ async function handle(
       return send(result);
     }
     const user = await actor();
+    if(parts[0]==="engines"&&parts[1]==="config"){
+      const engines=await import("@/lib/generation-engines");
+      if(method==="GET")return send(await engines.engineConfiguration());
+      if(method==="PUT")return send(await engines.saveEngineConfiguration(user,await body(req)));
+    }
+    if(["storage","storage-bindings"].includes(parts[0])){
+      const response=await (await import("@/lib/resource-storage")).storageRoutes(req,parts,user,()=>body(req));
+      if(response)return response;
+    }
+
     if (route === "privacy/visual-audit" && method === "GET") {
       const { visualAuditNotice } = await import("@/lib/visual-audit");
       return send(await visualAuditNotice());
@@ -1015,6 +1025,7 @@ async function handle(
             reviewedInstructions: z.literal(true),
             requestId: z.uuid(),
             previewFirst: z.boolean().default(false),
+            engine:z.enum(["ai","propiox","hybrid"]).optional(),
             selected: z
               .array(z.string().min(1).max(100))
               .min(1)
@@ -1029,6 +1040,7 @@ async function handle(
           b.requestId,
           b.selected,
           b.previewFirst,
+          b.engine,
         );
         await audit(user.id, "GENERACION_MASIVA_AUTORIZADA", id, {
           jobIds: jobs.map((j) => j.id),
@@ -1257,7 +1269,7 @@ async function handle(
           settings: preview.settings,
           needsSettings: preview.needsSettings,
           brand: preview.brand,
-          attachments: preview.attachments.map(
+          attachments: [...preview.attachments,...preview.storageReferences].map(
             ({ id, name, purpose, text, mime }) => ({
               id,
               name,
@@ -1271,10 +1283,9 @@ async function handle(
 
       if (parts[2] === "generate" && method === "POST") {
         const b = z.union([
-          z.object({confirmCharge:z.literal(true),reviewedInstructions:z.literal(true),requestId:z.uuid(),previewFirst:z.boolean().default(false)}).strict(),
-          z.object({confirmCharge:z.literal(true),quickGeneration:z.literal(true),requestId:z.uuid(),previewFirst:z.boolean().default(true)}).strict(),
+          z.object({confirmCharge:z.literal(true),reviewedInstructions:z.literal(true),engine:z.enum(["ai","propiox","hybrid"]).optional(),requestId:z.uuid(),previewFirst:z.boolean().default(false)}).strict(),
+          z.object({confirmCharge:z.literal(true),quickGeneration:z.literal(true),engine:z.enum(["ai","propiox","hybrid"]).optional(),requestId:z.uuid(),previewFirst:z.boolean().default(true)}).strict(),
         ]).parse(await body(req));
-        const c = await configured();
         const s = effectiveSettings(
           sub.category.settings,
           sub.settings,
@@ -1293,6 +1304,7 @@ async function handle(
           b.requestId,
           [id],
           b.previewFirst,
+          b.engine,
         );
         await audit(user.id, "GENERACION_AUTORIZADA", id, {
           jobIds: jobs.map((j) => j.id),

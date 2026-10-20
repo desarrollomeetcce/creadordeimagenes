@@ -263,3 +263,21 @@ test("variaciones explícitas conservan orden, cantidad y un máximo de llamadas
  assert.deepEqual(flyerModes(prompt,["Imagen + Texto"]),["Imagen + Texto"]);
  assert(!oneFlyerBrief(prompt,"Texto",1).includes("VARIACIÓN 1"));
 });
+test("PropioX: texto literal, fotos propias, resolución y dirección híbrida sin red",async()=>{
+ const {composePropiox,propioxCopy,hybridDirectionPrompt}=await import('../lib/propiox');
+ const old=globalThis.fetch;let calls=0;globalThis.fetch=async()=>{calls++;throw Error('La composición local no puede usar la red');};
+ try{
+  const copy=propioxCopy('Oferta: MENSUALIDADES GRATIS\nPrecio: Pago único $40 USD\nBeneficios: Evaluación forense; Peritaje psicológico\nCTA: SOLICITA INFORMACIÓN','PSICOLOGÍA FORENSE');
+  assert.equal(copy.title,'PSICOLOGÍA FORENSE');assert.equal(copy.price,'Pago único $40 USD');assert.equal(copy.cta,'SOLICITA INFORMACIÓN');assert.equal(copy.benefits.length,2);
+  assert.equal(propioxCopy('Diseño institucional limpio','Servicio').price,'');
+  const photo=await sharp({create:{width:640,height:800,channels:3,background:'#bcd4e6'}}).png().toBuffer();
+  const args={subject:'PSICOLOGÍA FORENSE',prompt:'Título: DIPLOMADO EN PSICOLOGÍA FORENSE\nOferta: MENSUALIDADES GRATIS\nPrecio: Pago único $40 USD',format:'1:1',mode:'Imagen + Texto',index:0,quality:'high',resolution:'1024x1024',resources:[{id:'foto',name:'Psicología forense.png',purpose:'Fotografía principal',mime:'image/png',bytes:photo}]};
+  const local=await composePropiox(args);const meta=await sharp(local.bytes).metadata();assert.equal(meta.width,1024);assert.equal(meta.height,1024);assert(local.background);assert(local.design.layers.some(l=>l.type==='text'&&l.text.includes('PSICOLOGÍA FORENSE')));
+  const hybrid=await composePropiox({...args,resolution:'1536x1536',direction:'{"layout":"right","palette":["#203040","#ffbb33"]}'});assert.equal(hybrid.design.width,1536);assert.equal(hybrid.design.backgroundColor,'#203040');assert(hybrid.design.layers.find(l=>l.id==='copy-panel')!.x>0);
+  const brand=await composePropiox({...args,colors:['#102030','#ffee22'],direction:'{"palette":["#ff0000","#ffffff"]}'});assert.equal(brand.design.backgroundColor,'#102030');
+  const fs=await import('node:fs/promises'),forensicBrief=await fs.readFile('tests/fixtures/forensic-brief.txt','utf8');const branded=await composePropiox({...args,prompt:forensicBrief,mode:'Texto',resources:[{id:'wosa',name:'WOSA.png',purpose:'Logo',mime:'image/png',bytes:photo},{id:'min',name:'ministerio.png',purpose:'Logo',mime:'image/png',bytes:photo}]});assert(branded.design.layers.some(l=>l.type==='logo'&&l.attachmentId==='wosa'));assert(!branded.design.layers.some(l=>l.type==='logo'&&l.attachmentId==='min'));
+  const text=await composePropiox({...args,mode:'Texto',resources:[],quality:'low'});assert.equal(text.background,null);
+  await assert.rejects(composePropiox({...args,resources:[]}),/necesita una fotografía/);
+  const brief=hybridDirectionPrompt('Tema','x'.repeat(30000),Array(50).fill({name:'foto'.repeat(200),purpose:'Fondo',description:'x'.repeat(2000)}));assert(brief.length<9000);assert.equal(calls,0);
+ }finally{globalThis.fetch=old;}
+});

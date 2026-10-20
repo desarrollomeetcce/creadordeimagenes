@@ -428,6 +428,7 @@ export async function organizeSelection(
               data: {
                 userId: user.id,
                 name: d.name,
+                purpose:d.purpose,description:d.description,text:d.text,
                 path: d.path,
                 mime: d.mime,
                 size: d.size,

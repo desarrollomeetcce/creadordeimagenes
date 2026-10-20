@@ -1,3 +1,6 @@
+import {engineConfiguration,requireEngine,propioxRuntime} from "../lib/generation-engines";
+import {resolveStoredReferences,type StoredReference,type ResourceScope} from "../lib/resource-storage";
+import {composePropiox,hybridDirectionPrompt,type CompositionResource} from "../lib/propiox";
 import { oneFlyerBrief, extractFlyerCopy } from "../lib/flyer-copy";
 import { exactFlyer } from "../lib/exact-flyer";
 import { reasoningLevel, type ReasoningLevel } from "../lib/creative-level";
@@ -42,6 +45,9 @@ import {
   accessibleVariation,
 } from "../lib/versions";
 type Snapshot = {
+  engine?: "ai"|"propiox"|"hybrid";
+  engineRevision?:number; subjectName?:string; localQuality?:string;localResolution?:string;
+  storageReferences?:StoredReference[];resourceScopes?:ResourceScope[];
   prompt: string;
   brand?: {colors?: string[]}|null;
   mode: string;
@@ -198,33 +204,36 @@ export async function runOne(filter?: {
       ])
     : heartbeat.signal;
   let called = false;
+  let creativeUsage: unknown = null,imageUsage: unknown = null;
   const written: string[] = [];
   try {
     await requireAuditSpace();
     await requireStorageSpace();
-    const c = await configured(),
-      s = candidate.snapshot as unknown as Snapshot;
+    const s = candidate.snapshot as unknown as Snapshot;
+    const engines=await engineConfiguration(),engine=requireEngine(engines,s.engine??"ai");
+    demand(s.engineRevision===undefined||s.engineRevision===engines.revision,"Los motores cambiaron. Revisa y autoriza de nuevo.",409);
+    const local=engine!=="ai",c=engine==="propiox"?propioxRuntime(engines):await configured(engine==="hybrid");
     demand(
       c.revision === s.configRevision,
       "La configuración cambió: vuelve a autorizar esta generación.",
     );
-    const creative = await creativeConnection(c);
+    const creative = engine==="propiox"?null:await creativeConnection(c);
     const imageCapability = (c.models as ModelCapability[]).find(
       (m) => m.kind === "image" && m.id === c.imageModel,
     )!;
     demand(
-      !s.creativeProvider || s.creativeProvider === creative.provider,
+      !s.creativeProvider || s.creativeProvider === creative?.provider,
       "El proveedor creativo cambió. Vuelve a autorizar la generación.",
       409,
     );
     demand(
       !s.creativeConnectionRevision ||
-        s.creativeConnectionRevision === creative.revision,
+        s.creativeConnectionRevision === creative?.revision,
       "La credencial creativa cambió. Vuelve a autorizar la generación.",
       409,
     );
     demand(
-      !s.imageCapabilityFingerprint ||
+      local || !s.imageCapabilityFingerprint ||
         s.imageCapabilityFingerprint === capabilityFingerprint(imageCapability),
       "Las capacidades del modelo de imágenes cambiaron. Vuelve a revisar y autorizar la generación.",
       409,
@@ -232,7 +241,7 @@ export async function runOne(filter?: {
     demand(
       !s.creativeCapabilityFingerprint ||
         s.creativeCapabilityFingerprint ===
-          capabilityFingerprint(creative.model),
+          capabilityFingerprint(creative!.model),
       "El modelo creativo cambió. Vuelve a revisar y autorizar la generación.",
       409,
     );
@@ -260,15 +269,31 @@ export async function runOne(filter?: {
         s.editVariationId ? "EDIT" : "GENERATE",
       );
     }
-    const provider = adapter(c.provider),
-      key = decryptKey(c.encryptedKey!);
-    const refs = await db.attachment.findMany({
+    const provider = engine==="propiox"?null:adapter(c.provider),
+      key = engine==="propiox"?"":decryptKey(c.encryptedKey!);
+    const nativeRefs = await db.attachment.findMany({
       where: { id: { in: s.attachmentIds ?? [] } },
     });
     demand(
-      refs.length === new Set(s.attachmentIds ?? []).size,
+      nativeRefs.length === new Set(s.attachmentIds ?? []).size,
       "Un adjunto fue eliminado. Revisa y vuelve a autorizar las instrucciones.",
     );
+    const stored=await resolveStoredReferences(s.storageReferences??[],s.resourceScopes??[]);
+    const clonedLogos:{id:string;name:string;mime:string;purpose:string;path:string;size:number}[]=[];
+    const extraRefs=[];
+    for(const resource of stored){
+      if(/logo/i.test(resource.purpose)){
+        const bytes=await load(resource.path),path=await store(bytes);written.push(path);
+        const clone={id:randomUUID(),name:resource.name,mime:resource.mime,purpose:resource.purpose,path,size:bytes.length};clonedLogos.push(clone);extraRefs.push(clone);
+      }else extraRefs.push(resource);
+    }
+    const refs=[...nativeRefs,...extraRefs];
+    const resourceBuffers=await Promise.all(refs.map(async a=>({...a,bytes:await load(a.path)})));
+    const renderLogos=async(doc:Design)=>{
+      const ready=new Map(resourceBuffers.filter(a=>/logo/i.test(a.purpose)).map(a=>[a.id,a.bytes] as [string,Buffer]));
+      const existing={...doc,layers:doc.layers.filter(l=>l.type!=="logo"||!ready.has(l.attachmentId))};
+      return new Map([...(await logoBytes(existing)),...ready]);
+    };
     demand(
       refs.length <= 9,
       "Selecciona como máximo nueve referencias visuales por afiche.",
@@ -279,14 +304,24 @@ export async function runOne(filter?: {
     let document: Design | null = null,
       backgroundPath: string | null = null,
       output: Buffer,
-      creativePlan: string = "",
-      creativeUsage: unknown = null,
-      imageUsage: unknown = null;
+      creativePlan: string = "";
     let creativeRecovery = false;
     const scopedBrief=oneFlyerBrief(s.prompt,s.mode,s.index);
     const exactCopy=s.mode!=="Imagen"?extractFlyerCopy(scopedBrief,s.index):null;
     let literalCopy=false;
-    if (s.editVariationId) {
+    if(local){
+      const resources:CompositionResource[]=resourceBuffers.map(a=>({id:a.id,name:a.name,mime:a.mime,purpose:a.purpose,bytes:a.bytes,...("description" in a&&typeof a.description==="string"?{description:a.description}:{})}));
+      // Validate usable inputs before any potentially billable planning call.
+      demand(s.mode==="Texto"||resources.some(a=>!/logo/i.test(a.purpose)),"Vincula una fotografía o un fondo, o selecciona Solo texto.",409);
+      if(engine==="hybrid"){
+        await heartbeat.check();called=true;
+        const plan=await adapter(creative!.provider).direct(decryptKey(creative!.encryptedKey),c.creativeModel!,hybridDirectionPrompt(s.subjectName??"",scopedBrief,resources),true,signal,"low",384);
+        creativeUsage=plan.usage;creativePlan=plan.incomplete?"":plan.text.slice(0,2000);
+      }
+      const result=await composePropiox({subject:s.subjectName??"",prompt:scopedBrief,format:s.format,mode:s.mode,index:s.index,colors:s.brand?.colors,quality:s.localQuality??engines.quality,resolution:s.localResolution??engines.resolution,resources,direction:creativePlan});
+      document=result.design;output=result.bytes;literalCopy=true;
+      if(result.background){backgroundPath=await store(result.background);written.push(backgroundPath);}
+    } else if (s.editVariationId) {
       const original = await accessibleVariation(u, s.editVariationId, "EDIT");
       demand(
         original.revision === s.expectedRevision,
@@ -312,7 +347,7 @@ export async function runOne(filter?: {
       checkReferences([...(input ? [input] : []), ...images]);
       await heartbeat.check();
       called = true;
-      const result = await provider.generate(key, {
+      const result = await provider!.generate(key, {
         capability: imageCapability,
         signal,
         model: c.imageModel!,
@@ -330,7 +365,7 @@ export async function runOne(filter?: {
         output = await renderDesign(
           document,
           await load(backgroundPath),
-          await logoBytes(document),
+          await renderLogos(document),
         );
       } else output = await adaptImage(result.bytes, s.format);
     } else if(exactCopy){
@@ -346,10 +381,10 @@ export async function runOne(filter?: {
       if(s.mode!=="Texto"){
         const visualImages=images.filter((_,index)=>!/logo/i.test(refs[index].purpose));
         checkReferences(visualImages);await heartbeat.check();called=true;
-        const result=await provider.generate(key,{capability:imageCapability,signal,model:c.imageModel!,prompt:composition.backgroundPrompt,quality:c.quality,size:c.resolution,images:visualImages});
+        const result=await provider!.generate(key,{capability:imageCapability,signal,model:c.imageModel!,prompt:composition.backgroundPrompt,quality:c.quality,size:c.resolution,images:visualImages});
         imageUsage=result.usage;backgroundPath=await store(await adaptImage(result.bytes,s.format));written.push(backgroundPath);
       }
-      output=await renderDesign(document,backgroundPath?await load(backgroundPath):null,await logoBytes(document));
+      output=await renderDesign(document,backgroundPath?await load(backgroundPath):null,await renderLogos(document));
     } else {
       const brief = artDirection(scopedBrief,s.mode,s.format,s.index,s.renderMode==="editable");
       if (s.renderMode !== "editable" || s.mode !== "Texto")
@@ -361,8 +396,8 @@ export async function runOne(filter?: {
       await heartbeat.check();
       const directImage = s.renderMode !== "editable" && reasoningLevel(s.reasoningLevel) === "low";
       if (!directImage) called = true;
-      const plan = directImage ? {text:"", usage:null, incomplete:false} : await adapter(creative.provider).direct(
-        decryptKey(creative.encryptedKey),
+      const plan = directImage ? {text:"", usage:null, incomplete:false} : await adapter(creative!.provider).direct(
+        decryptKey(creative!.encryptedKey),
         c.creativeModel!,
         s.renderMode === "editable"
           ? creativeBrief(
@@ -386,7 +421,7 @@ export async function runOne(filter?: {
         document = planToDesign(layeredPlan, s.format, refs.filter(a => /logo/i.test(a.purpose)).map(a => a.id));
         if (s.mode !== "Texto") {
           await heartbeat.check();
-          const result = await provider.generate(key, {
+          const result = await provider!.generate(key, {
             capability: imageCapability,
             signal,
             model: c.imageModel!,
@@ -406,7 +441,7 @@ export async function runOne(filter?: {
         output = await renderDesign(
           document,
           backgroundPath ? await load(backgroundPath) : null,
-          await logoBytes(document),
+          await renderLogos(document),
         );
       } else {
         checkReferences(images);
@@ -419,7 +454,7 @@ export async function runOne(filter?: {
         creativeRecovery = completed.recovered && !directImage;
         await heartbeat.check();
         called = true;
-        const result = await provider.generate(key, {
+        const result = await provider!.generate(key, {
           capability: imageCapability,
           signal,
           model: c.imageModel!,
@@ -437,6 +472,7 @@ export async function runOne(filter?: {
     const auditThumbnail = await prepareAuditThumbnail(output);
     await db.$transaction(async (tx) => {
       await tx.$executeRaw`SELECT pg_advisory_xact_lock(728291)`;
+      let publishedVariationId=s.editVariationId;
       const active = await tx.generationJob.updateMany({
         where: {
           id: candidate.id,
@@ -479,10 +515,11 @@ export async function runOne(filter?: {
               : {}),
             subproductId: candidate.subproductId,
             path,
-            model: c.imageModel!,
+            model: engine==="hybrid"?`PropioX + ${c.creativeModel}`:c.imageModel!,
             expiresAt: new Date(Date.now() + 48 * 3600000),
           },
         });
+        publishedVariationId=v.id;
         if (approvedBatch)
           await tx.libraryItem.create({
             data: { userId: candidate.actorId, variationId: v.id },
@@ -502,6 +539,7 @@ export async function runOne(filter?: {
         });
         await captureAuditThumbnail(tx, version.id, auditThumbnail);
       }
+      for(const logo of clonedLogos)await tx.attachment.create({data:{...logo,scope:"variation",resourceId:publishedVariationId!,text:""}});
       await tx.generationJob.update({
         where: { id: candidate.id },
         data: {
@@ -557,7 +595,7 @@ export async function runOne(filter?: {
       if (changed.count)
         await tx.usageLedger.updateMany({
           where: { jobId: candidate.id, status: "RESERVED" },
-          data: { status: called ? "UNCERTAIN" : "RELEASED" },
+          data: { status: called ? "UNCERTAIN" : "RELEASED",...(creativeUsage||imageUsage?{usage:JSON.parse(JSON.stringify({creative:creativeUsage,image:imageUsage}))}:{}) },
         });
     });
   } finally {
