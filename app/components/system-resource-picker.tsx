@@ -85,8 +85,13 @@ export function SystemResourcePicker({
     <>
       {(visible || saved.length > 0) && (
         <div className="stack">
-          {saved.map((s) => (
-            <div className="fields attachment-source-row" key={s.selection}>
+          {[
+            ...new Set([
+              ...saved.map((s) => s.purpose),
+              ...(visible ? [purpose] : []),
+            ]),
+          ].map((groupPurpose) => (
+            <div className="fields attachment-source-row" key={groupPurpose}>
               <div className="stack">
                 <div className="row">
                   <strong>Archivo del sistema</strong>
@@ -99,61 +104,32 @@ export function SystemResourcePicker({
                   </a>
                 </div>
                 <div className="attachment-file-box">
-                  <AttachmentFileChip
-                    name={
-                      s.name + (s.available === false ? " · No disponible" : "")
-                    }
-                    href={s.href}
-                    title={s.labelPath ?? s.name}
-                    disabled={busy}
-                    onRemove={() =>
-                      void persist(
-                        saved.filter((row) => row.selection !== s.selection),
-                      )
-                    }
-                  />
-                </div>
-              </div>
-              <label>
-                Uso del archivo del sistema
-                <select
-                  value={s.purpose}
-                  disabled={busy}
-                  onChange={(e) =>
-                    void persist(
-                      saved.map((row) =>
-                        row.selection === s.selection
-                          ? { ...row, purpose: e.target.value }
-                          : row,
-                      ),
-                    )
-                  }
-                >
-                  {purposes.map((p) => (
-                    <option key={p}>{p}</option>
-                  ))}
-                </select>
-              </label>
-            </div>
-          ))}
-          {visible && (
-            <div className="fields attachment-source-row">
-              <div className="stack">
-                <div className="row">
-                  <strong>Archivo del sistema</strong>
-                  <a
-                    href="/?view=library"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                  >
-                    Ver Biblioteca ↗
-                  </a>
-                </div>
-                <div className="attachment-file-box">
+                  {saved
+                    .filter((s) => s.purpose === groupPurpose)
+                    .map((s) => (
+                      <AttachmentFileChip
+                        key={s.selection}
+                        name={
+                          s.name +
+                          (s.available === false ? " · No disponible" : "")
+                        }
+                        href={s.href}
+                        title={s.labelPath ?? s.name}
+                        disabled={busy}
+                        onRemove={() =>
+                          void persist(
+                            saved.filter(
+                              (row) => row.selection !== s.selection,
+                            ),
+                          )
+                        }
+                      />
+                    ))}
                   <button
                     type="button"
                     disabled={busy}
                     onClick={async () => {
+                      setPurpose(groupPurpose);
                       setBusy(true);
                       setMessage("");
                       try {
@@ -177,18 +153,29 @@ export function SystemResourcePicker({
               <label>
                 Uso del archivo del sistema
                 <select
-                  value={purpose}
+                  value={groupPurpose}
                   disabled={busy}
-                  onChange={(e) => setPurpose(e.target.value)}
+                  onChange={(e) => {
+                    const next = e.target.value;
+                    setPurpose(next);
+                    if (saved.some((s) => s.purpose === groupPurpose))
+                      void persist(
+                        saved.map((s) =>
+                          s.purpose === groupPurpose
+                            ? { ...s, purpose: next }
+                            : s,
+                        ),
+                      );
+                  }}
                 >
                   {purposes.map((p) => (
                     <option key={p}>{p}</option>
                   ))}
                 </select>
-                <small>Se aplica a los nuevos archivos seleccionados.</small>
+                <small>Se aplica a los archivos de este recuadro.</small>
               </label>
             </div>
-          )}
+          ))}
         </div>
       )}
       <dialog

@@ -259,17 +259,16 @@ export const Attachments = forwardRef<
     }
   };
   useImperativeHandle(ref, () => ({ flush }));
-  const enqueue = (incoming: File[], key?: string) => {
+  const enqueue = (incoming: File[], purpose = "Material de contexto") => {
     if (!incoming.length || busy || replacing) return;
     setShowPC(true);
-    const previous = draftsRef.current.find((r) => r.key === key);
     const rows = incoming.map((file) => ({
       key: crypto.randomUUID(),
       file,
-      purpose: previous?.purpose ?? "Material de contexto",
+      purpose,
     }));
     updateDrafts([
-      ...draftsRef.current.filter((r) => r.key !== key && (r.file || r.saved)),
+      ...draftsRef.current.filter((r) => r.file || r.saved),
       ...rows,
     ]);
   };
@@ -444,105 +443,121 @@ export const Attachments = forwardRef<
         {sourceButtons()}
         {(showPC || active.length > 0) && (
           <div className="stack attachment-pc-fields">
-            {active.map((file) => (
-              <div className="fields attachment-source-row" key={file.id}>
-                <div className="stack">
-                  <strong>Archivo de mi PC</strong>
-                  <div className="attachment-file-box">
-                    <AttachmentFileChip
-                      name={file.name}
-                      href={`/api/attachments/${file.id}`}
-                      disabled={busy}
-                      onRemove={() => void removeSaved(file)}
-                    />
-                  </div>
-                </div>
-                <label>
-                  Uso del archivo de mi PC
-                  <input value={file.purpose} readOnly />
-                </label>
-              </div>
-            ))}
-            {drafts
-              .filter(
-                (draft) =>
-                  !draft.saved ||
-                  !active.some((file) => file.id === draft.saved?.id),
-              )
-              .map((draft, index) => (
-                <div className="fields attachment-source-row" key={draft.key}>
+            {[
+              ...new Set([
+                ...active.map((f) => f.purpose.replace(purposePrefix, "")),
+                ...drafts.map((r) => r.purpose),
+              ]),
+            ].map((purpose, index) => {
+              const groupFiles = active.filter(
+                (f) => f.purpose.replace(purposePrefix, "") === purpose,
+              );
+              const groupDrafts = drafts.filter(
+                (r) =>
+                  r.purpose === purpose &&
+                  (!r.saved || !active.some((f) => f.id === r.saved?.id)),
+              );
+              return (
+                <div className="fields attachment-source-row" key={purpose}>
                   <div className="stack">
                     <strong>Archivo de mi PC</strong>
                     <div className="attachment-file-box">
-                      {(draft.file || draft.saved) && (
+                      {groupFiles.map((file) => (
                         <AttachmentFileChip
-                          name={draft.file?.name ?? draft.saved!.name}
-                          file={draft.file}
-                          href={
-                            draft.saved
-                              ? `/api/attachments/${draft.saved.id}`
-                              : undefined
-                          }
-                          disabled={busy || !!draft.saved}
-                          onRemove={() =>
-                            updateDrafts(
-                              draftsRef.current.filter(
-                                (r) => r.key !== draft.key,
-                              ),
-                            )
-                          }
+                          key={file.id}
+                          name={file.name}
+                          href={`/api/attachments/${file.id}`}
+                          disabled={busy}
+                          onRemove={() => void removeSaved(file)}
                         />
-                      )}
-                      {!draft.saved && !draft.file && (
-                        <input
-                          aria-label={`Adjuntar archivo ${index + 1}`}
-                          type="file"
-                          multiple
-                          accept={accept}
-                          disabled={busy || !!replacing}
-                          onChange={(e) => {
-                            enqueue([...(e.target.files ?? [])], draft.key);
-                            e.target.value = "";
-                          }}
-                        />
-                      )}
+                      ))}
+                      {groupDrafts
+                        .filter((r) => r.file || r.saved)
+                        .map((draft) => (
+                          <AttachmentFileChip
+                            key={draft.key}
+                            name={draft.file?.name ?? draft.saved!.name}
+                            file={draft.file}
+                            href={
+                              draft.saved
+                                ? `/api/attachments/${draft.saved.id}`
+                                : undefined
+                            }
+                            disabled={busy || !!draft.saved}
+                            onRemove={() =>
+                              updateDrafts(
+                                draftsRef.current.filter(
+                                  (r) => r.key !== draft.key,
+                                ),
+                              )
+                            }
+                          />
+                        ))}
+                      <input
+                        aria-label={`Adjuntar archivo ${index + 1}`}
+                        type="file"
+                        multiple
+                        accept={accept}
+                        disabled={busy || !!replacing}
+                        onChange={(e) => {
+                          enqueue([...(e.target.files ?? [])], purpose);
+                          e.target.value = "";
+                        }}
+                      />
                     </div>
-                    {draft.file && (
+                    {groupDrafts.some((r) => r.file) && (
                       <small>
-                        Pendiente de guardar · puedes pegar capturas con Ctrl+V
-                        en esta zona.
+                        Pendientes de guardar · puedes añadir más archivos en
+                        este mismo recuadro.
                       </small>
                     )}
                   </div>
                   <label>
                     Uso del archivo de mi PC
                     <select
-                      value={draft.purpose}
-                      disabled={busy || !!draft.saved}
-                      onChange={(e) =>
-                        updateDrafts(
-                          draftsRef.current.map((r) =>
-                            r.key === draft.key
-                              ? { ...r, purpose: e.target.value }
+                      value={purpose}
+                      disabled={busy}
+                      onChange={(e) => {
+                        const next = e.target.value;
+                        const pending = draftsRef.current.some(
+                          (r) => r.purpose === purpose && !r.saved,
+                        );
+                        updateDrafts([
+                          ...draftsRef.current.map((r) =>
+                            r.purpose === purpose && !r.saved
+                              ? { ...r, purpose: next }
                               : r,
                           ),
-                        )
-                      }
+                          ...(!pending
+                            ? [{ key: crypto.randomUUID(), purpose: next }]
+                            : []),
+                        ]);
+                      }}
                     >
                       {[
-                        "Material de contexto",
-                        "Logo institucional",
-                        "Referencia visual",
-                        "Fotografía obligatoria",
-                        "Información comercial",
-                        "Manual de marca",
+                        ...new Set([
+                          purpose,
+                          "Material de contexto",
+                          "Logo institucional",
+                          "Referencia visual",
+                          "Fotografía obligatoria",
+                          "Información comercial",
+                          "Manual de marca",
+                        ]),
                       ].map((p) => (
                         <option key={p}>{p}</option>
                       ))}
                     </select>
+                    {groupFiles.length > 0 && (
+                      <small>
+                        Los archivos guardados conservan su uso. Cambiarlo
+                        prepara otro grupo para los nuevos archivos.
+                      </small>
+                    )}
                   </label>
                 </div>
-              ))}
+              );
+            })}
             <small>
               Puedes seleccionar varios archivos, arrastrarlos o pegar una
               captura con Ctrl+V aquí.
