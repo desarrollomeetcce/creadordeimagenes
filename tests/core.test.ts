@@ -515,9 +515,9 @@ test("Paginación de Biblioteca mezcla referencias y originales con empates, pá
   }
  }
 });
-test('motores explícitos y recursos propios: sin fallback facturable, herencia de carpetas y relevancia por tema',async()=>{
+test('generación solo con IA: motores locales retirados, herencia de carpetas y relevancia por tema',async()=>{
  const {requireEngine,engineDefaults}=await import('../lib/generation-engines');const {folderDescendants,storageRelevance}=await import('../lib/resource-storage');
- const local={...engineDefaults,aiEnabled:false,propioxEnabled:true,defaultEngine:'propiox'};assert.equal(requireEngine(local,undefined),'propiox');assert.throws(()=>requireEngine(local,'ai'),/IA está desactivada/);assert.throws(()=>requireEngine(local,'hybrid'),/IA está desactivada/);assert.throws(()=>requireEngine(engineDefaults,'propiox'),/Activa PropioX/);assert.equal(requireEngine({...engineDefaults,propioxEnabled:true},'hybrid'),'hybrid');
+ const retired={...engineDefaults,aiEnabled:false,propioxEnabled:true,defaultEngine:'propiox'};assert.equal(requireEngine(retired,undefined),'ai');assert.equal(requireEngine(engineDefaults,'ai'),'ai');for(const engine of ['propiox','hybrid'])assert.throws(()=>requireEngine(retired,engine),/se retiraron/);
  assert.deepEqual(folderDescendants([{id:'a',parentId:null},{id:'b',parentId:'a'},{id:'c',parentId:'b'},{id:'otro',parentId:null}],'a'),['a','b','c']);assert(storageRelevance('PSICOLOGÍA forense.png','','Psicología Forense')>storageRelevance('Ambiental.png','','Psicología Forense'));assert.equal(storageRelevance('Foto.png','Evaluación de psicología forense','PSICOLOGIA FORENSE'),2);
 });
 test('archivos de 1 GB: límite inclusivo y fragmentos acotados sin reservar buffers grandes',async()=>{

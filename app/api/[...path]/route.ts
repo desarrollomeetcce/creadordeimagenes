@@ -1330,6 +1330,7 @@ async function handle(
       }
     }
     if (parts[0] === "attachments") {
+      if(parts[1]==="from-library"&&method==="POST")return send(await (await import("@/lib/attachments")).attachmentFromLibrary(user,await body(req)),201);
       if (parts.length === 1 && method === "GET") {
         const scope = z
             .enum(["project", "category", "subproduct", "variation", "preset"])

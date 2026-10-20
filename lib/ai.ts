@@ -107,7 +107,7 @@ export async function reserveJobs(
           known.find((job) => job.idempotencyKey === item.key)!,
         );
       const engines=await (await import("./generation-engines")).engineConfiguration(tx);
-      for(const item of items){const snapshot=item.snapshot as Record<string,unknown>;(await import("./generation-engines")).requireEngine(engines,snapshot.engine??"ai");demand(snapshot.engineRevision===undefined||snapshot.engineRevision===engines.revision,"Los motores cambiaron. Revisa y autoriza de nuevo.",409);}
+      for(const item of items){const snapshot=item.snapshot as Record<string,unknown>;(await import("./generation-engines")).requireEngine(engines,snapshot.engine??"ai");}
       const capabilities = c.models as ModelCapability[];
       const imageCapability = capabilities.find(
         (m) => m.kind === "image" && m.id === c.imageModel,

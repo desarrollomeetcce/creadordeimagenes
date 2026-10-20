@@ -206,3 +206,60 @@ export async function deleteAttachment(actor: Actor, id: string) {
   await remove(a.path).catch(() => {});
   return { ok: true };
 }
+
+/** Large originals stay in Library; only a bounded validated reference becomes a generation attachment. */
+export async function attachmentFromLibrary(actor: Actor, input: unknown) {
+  await rateLimit("attachment-reference:" + actor.id, 200);
+  const b = z
+    .object({
+      scope: z.enum(["project", "category", "subproduct", "variation"]),
+      resourceId: z.string().min(1).max(100),
+      documentId: z.string().min(1).max(100),
+      purpose: purposeSchema,
+      replacesId: z.string().min(1).max(100).optional(),
+    })
+    .strict()
+    .parse(input);
+  await resourceAccess(actor, b.scope, b.resourceId, "EDIT");
+  const d = await db.libraryDocument.findFirst({
+    where: { id: b.documentId, userId: actor.id, deletedAt: null },
+  });
+  demand(d, "El original ya no está disponible en tu Biblioteca.", 404);
+  demand(
+    d.generationReady &&
+      (!d.path.startsWith("large:") || d.previewPath || d.text),
+    "El original se guardó en Biblioteca, pero necesita una imagen optimizada o texto extraíble para adjuntarlo a la generación.",
+    409,
+  );
+  const image = d.mime.startsWith("image/");
+  const bytes = image
+    ? await load(d.previewPath ?? d.path)
+    : Buffer.from(d.text.slice(0, 100000));
+  demand(
+    bytes.length > 0 && bytes.length <= maxUploadBytes(),
+    "Necesitas una referencia optimizada para este original.",
+    413,
+  );
+  const saved = await saveAttachment(actor, {
+    ...b,
+    file: new File(
+      [new Uint8Array(bytes)],
+      d.name.replace(/\.[^.]+$/, "") +
+        (image
+          ? d.previewPath
+            ? ".webp"
+            : d.mime === "image/jpeg"
+              ? ".jpg"
+              : d.mime === "image/webp"
+                ? ".webp"
+                : ".png"
+          : ".txt"),
+      { type: image ? (d.previewPath ? "image/webp" : d.mime) : "text/plain" },
+    ),
+  });
+  return {
+    ...saved,
+    purpose: b.purpose,
+    mime: image ? (d.previewPath ? "image/webp" : d.mime) : "text/plain",
+  };
+}

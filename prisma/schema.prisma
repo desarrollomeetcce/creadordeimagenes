@@ -571,7 +571,7 @@ model LibraryImageCopy {
   @@index([variationId])
 }
 
-// Global composition availability, separate from encrypted AI credentials.
+// Historical engine metadata, retained for snapshots; new generation is AI only.
 model GenerationEngineConfiguration {
  id String @id @default("global")
  aiEnabled Boolean @default(true)

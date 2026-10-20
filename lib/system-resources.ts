@@ -275,7 +275,20 @@ export async function systemResourceRoutes(
         orderBy: { createdAt: "asc" },
       }),
       ctx = await context(actor);
-    const result = [];
+    const legacy = await db.storageBinding.findMany({
+      where: { scope, resourceId, userId: actor.id },
+      include: { folder: { select: { name: true } } },
+    });
+    const result = legacy
+      .filter(
+        (b) => !rows.some((r) => r.selection === "n:folder:" + b.folderId),
+      )
+      .map((b) => ({
+        selection: "n:folder:" + b.folderId,
+        purpose: "Referencia visual",
+        name: b.folder.name,
+        available: ctx.tree.some((n) => n.id === "folder:" + b.folderId),
+      }));
     for (const b of rows) {
       try {
         const selected = await files(actor, b.selection, b.purpose, ctx);
@@ -283,8 +296,9 @@ export async function systemResourceRoutes(
           selection: b.selection,
           purpose: b.purpose,
           name: b.selection.startsWith("n:")
-            ? ctx.tree.find((n) => n.id === b.selection.slice(2))?.name
-            : selected[0]?.name,
+            ? (ctx.tree.find((n) => n.id === b.selection.slice(2))?.name ??
+              "Carpeta")
+            : (selected[0]?.name ?? "Archivo"),
           available: true,
         });
       } catch {
@@ -333,7 +347,24 @@ export async function systemResourceRoutes(
           selection: { notIn: input.selections.map((s) => s.selection) },
         },
       });
-      for (const entry of input.selections)
+      const legacy = await tx.storageBinding.findMany({
+        where: { scope, resourceId, userId: actor.id },
+      });
+      await tx.storageBinding.deleteMany({
+        where: {
+          scope,
+          resourceId,
+          userId: actor.id,
+          folderId: {
+            notIn: input.selections
+              .filter((s) => s.selection.startsWith("n:folder:"))
+              .map((s) => s.selection.slice(9)),
+          },
+        },
+      });
+      for (const entry of input.selections.filter(
+        (s) => !legacy.some((b) => s.selection === "n:folder:" + b.folderId),
+      ))
         await tx.libraryResourceBinding.upsert({
           where: {
             scope_resourceId_userId_selection: {

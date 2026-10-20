@@ -36,7 +36,7 @@ export function StorageUsage() {
               {Math.floor(status.limitBytes / 1048576)} MB.
             </p>
             <progress
-              aria-label="Almacenamiento utilizado"
+              aria-label="Espacio utilizado"
               max={status.limitBytes}
               value={status.usedBytes}
               style={{ width: "100%" }}
@@ -53,7 +53,7 @@ export function StorageUsage() {
         ))}
       {status && (
         <p className="muted">
-          Adjuntos de hasta {status.maxUploadBytes / 1000000} MB por archivo.
+          Originales de hasta 1 GB por archivo, según espacio disponible. Para generar se usa una copia optimizada o un extracto.
         </p>
       )}
       <MaintenancePanel

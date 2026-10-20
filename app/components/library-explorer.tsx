@@ -1,9 +1,10 @@
 "use client";
-import {uploadResource} from "./resource-upload";
+import { uploadResource } from "./resource-upload";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   HierarchyFilters,
   hierarchyFromLocation,
+  emptyHierarchy,
   type HierarchyValue,
 } from "./hierarchy-filters";
 import {
@@ -56,7 +57,15 @@ type Item = {
     };
   } | null;
 };
-type Doc = { id: string; name: string; size: number; mime: string };
+type Doc = {
+  id: string;
+  name: string;
+  size: number;
+  mime: string;
+  large?: boolean;
+  hasPreview?: boolean;
+  generationReady?: boolean;
+};
 type Data = {
   orders: OrderProgress[];
   inflight: PendingImage[];
@@ -81,7 +90,11 @@ async function api(path: string, method = "GET", body?: unknown) {
   if (!r.ok) throw Error(b.error ?? "No se pudo completar la operación.");
   return b;
 }
-export function Library() {
+export type LibraryPicker = {
+  selected: string[];
+  onChange: (ids: string[], names: Record<string, string>) => void;
+};
+export function Library({ picker }: { picker?: LibraryPicker } = {}) {
   const [editing, setEditing] = useState<string | null>(null);
   const [preview, setPreview] = useState<{
     id: string;
@@ -90,19 +103,22 @@ export function Library() {
     subproductHref?: string;
     sourceNotice?: string | null;
   } | null>(null);
-  const canEdit = useCanEdit(),
-    [hierarchy, setHierarchy] = useState<HierarchyValue>(hierarchyFromLocation),
+  const permitted = useCanEdit(),
+    canEdit = permitted && !picker;
+  const [hierarchy, setHierarchy] = useState<HierarchyValue>(() =>
+      picker ? { ...emptyHierarchy } : hierarchyFromLocation(),
+    ),
     [folder, setFolder] = useState(() =>
-      typeof window === "undefined"
+      picker || typeof window === "undefined"
         ? ""
         : (new URLSearchParams(location.search).get("folder") ??
           hierarchyFolder(hierarchyFromLocation())),
     );
   const [data, setData] = useState<Data | null>(null),
-    [selected, setSelected] = useState<string[]>([]),
+    [selectionState, setSelectionState] = useState<string[]>([]),
     [page, setPage] = useState(1),
     [limit, setLimit] = useState("25"),
-    [size, setSize] = useState("medium"),
+    [size, setSize] = useState(picker ? "small" : "medium"),
     [format, setFormat] = useState<"png" | "jpg">("png"),
     [review, setReview] = useState("all"),
     [sort, setSort] = useState("newest"),
@@ -112,6 +128,21 @@ export function Library() {
     [error, setError] = useState(""),
     [message, setMessage] = useState(""),
     [refreshing, setRefreshing] = useState(true);
+  const selected = picker?.selected ?? selectionState;
+  const setSelected = (value: string[] | ((old: string[]) => string[])) => {
+    const ids = (typeof value === "function" ? value(selected) : value).slice(
+      0,
+      picker ? 30 : 200,
+    );
+    if (picker) {
+      const names: Record<string, string> = {};
+      for (const node of data?.tree ?? []) names["n:" + node.id] = node.name;
+      for (const image of data?.items ?? [])
+        names[image.selectionId] = image.subproduct?.name ?? "Imagen";
+      for (const d of data?.documents ?? []) names["d:" + d.id] = d.name;
+      picker.onChange(ids, names);
+    } else setSelectionState(ids);
+  };
   const [clipboard, setClipboard] = useState<{
     operation: "move" | "copy";
     selection: string[];
@@ -206,14 +237,14 @@ export function Library() {
     setHierarchy(h);
     setFolder(key);
     setPage(1);
-    setSelected([]);
+    if (!picker) setSelected([]);
     const p = new URLSearchParams({
       view: "library",
       tab: "images",
       ...h,
       ...(key ? { folder: key } : {}),
     });
-    history.replaceState(null, "", "?" + p);
+    if (!picker) history.replaceState(null, "", "?" + p);
   };
   const action = async (fn: () => Promise<unknown>, text: string) => {
     setBusy(true);
@@ -221,7 +252,7 @@ export function Library() {
     setMessage("");
     try {
       const outcome = await fn();
-      setSelected([]);
+      if (!picker) setSelected([]);
       await refresh();
       setMessage(typeof outcome === "string" ? outcome : text);
       const c = new BroadcastChannel("studio-updates");
@@ -242,6 +273,7 @@ export function Library() {
     );
   const context = (e: React.MouseEvent, id: string) => {
     e.preventDefault();
+    if (picker) return;
     if (id && !selected.includes(id)) setSelected([id]);
     setMenu({
       x: Math.min(e.clientX, Math.max(0, innerWidth - 220)),
@@ -393,10 +425,32 @@ export function Library() {
     }
   };
   const upload = async (file: File) => {
-    if(file.size>3000000){
-      const status=await fetch('/api/storage/tree',{cache:'no-store'}).then(async r=>{const b=await r.json();if(!r.ok)throw Error(b.error);return b;});
-      const saved=await uploadResource(file,{folderId:folder.startsWith('folder:')?folder.slice(7):'',purpose:file.type.startsWith('image/')?'Referencia visual':'Material de contexto',userId:status.userId,paused:()=>false,onProgress:(bytes,total)=>setMessage(`Subiendo ${file.name}: ${(bytes/1048576).toFixed(1)} de ${(total/1048576).toFixed(1)} MB`)});
-      if(folder&&!folder.startsWith('folder:')&&folder!=='loose:root')await api('selection-actions','POST',{operation:'move',selection:['d:'+saved.id],destination:folder});
+    if (file.size > 3000000) {
+      const status = await fetch("/api/storage/tree", {
+        cache: "no-store",
+      }).then(async (r) => {
+        const b = await r.json();
+        if (!r.ok) throw Error(b.error);
+        return b;
+      });
+      const saved = await uploadResource(file, {
+        folderId: folder.startsWith("folder:") ? folder.slice(7) : "",
+        purpose: file.type.startsWith("image/")
+          ? "Referencia visual"
+          : "Material de contexto",
+        userId: status.userId,
+        paused: () => false,
+        onProgress: (bytes, total) =>
+          setMessage(
+            `Subiendo ${file.name}: ${(bytes / 1048576).toFixed(1)} de ${(total / 1048576).toFixed(1)} MB`,
+          ),
+      });
+      if (folder && !folder.startsWith("folder:") && folder !== "loose:root")
+        await api("selection-actions", "POST", {
+          operation: "move",
+          selection: ["d:" + saved.id],
+          destination: folder,
+        });
       return;
     }
 
@@ -428,6 +482,45 @@ export function Library() {
   }
   const renderImage = (i: Item) => {
     const anchorOrder = anchors.get(i.id);
+    if (picker)
+      return (
+        <article
+          key={i.entryId}
+          className="card gallery library-picker-image"
+          data-library-selection={i.selectionId}
+        >
+          <label className="row">
+            <input
+              type="checkbox"
+              checked={selected.includes(i.selectionId)}
+              onChange={(e) => toggle(i.selectionId, e.target.checked)}
+            />
+            Seleccionar
+          </label>
+          <button
+            type="button"
+            className="image-preview-trigger"
+            onClick={() =>
+              setPreview({
+                id: i.id,
+                name: i.subproduct?.name ?? "Imagen",
+                revision: i.revision,
+              })
+            }
+          >
+            <img
+              loading="lazy"
+              src={`/api/variations/${i.id}?thumbnail=true&v=${i.revision}`}
+              alt={i.subproduct?.name ?? "Imagen"}
+            />
+          </button>
+          <strong>{i.subproduct?.name ?? "Imagen"}</strong>
+          <small>
+            {i.reviewStatus === "APPROVED" ? "Aprobada" : "Por aprobar"}
+          </small>
+        </article>
+      );
+
     return (
       <article
         key={i.entryId}
@@ -639,7 +732,7 @@ export function Library() {
   };
   return (
     <section
-      className="stack library-explorer"
+      className={"stack library-explorer" + (picker ? " library-picker" : "")}
       tabIndex={-1}
       onKeyDown={shortcuts}
       onPaste={(e) => {
@@ -681,16 +774,18 @@ export function Library() {
           }}
         />
       )}
-      <div className="heading">
-        <div>
-          <h1>Biblioteca</h1>
-          <p className="muted">
-            Imágenes, revisión y archivos en sus carpetas. Envía las órdenes
-            desde el producto, subproducto o Pruebas; aquí revisas sus
-            resultados y controlas su avance.
-          </p>
+      {!picker && (
+        <div className="heading">
+          <div>
+            <h1>Biblioteca</h1>
+            <p className="muted">
+              Imágenes, revisión y archivos en sus carpetas. Envía las órdenes
+              desde el producto, subproducto o Pruebas; aquí revisas sus
+              resultados y controlas su avance.
+            </p>
+          </div>
         </div>
-      </div>
+      )}
       <div className="explorer-layout">
         <FolderTree
           nodes={data?.tree ?? []}
@@ -806,7 +901,7 @@ export function Library() {
                 setHierarchy(h);
                 setFolder(hierarchyFolder(h));
                 setPage(1);
-                setSelected([]);
+                if (!picker) setSelected([]);
               }}
             />
             <div className="explorer-toolbar">
@@ -820,7 +915,7 @@ export function Library() {
                       onChange={(e) => {
                         setReview(e.target.value);
                         setPage(1);
-                        setSelected([]);
+                        if (!picker) setSelected([]);
                       }}
                     >
                       <option value="all">Todos</option>
@@ -835,7 +930,7 @@ export function Library() {
                       onChange={(e) => {
                         setRecursive(e.target.checked);
                         setPage(1);
-                        setSelected([]);
+                        if (!picker) setSelected([]);
                       }}
                     />
                     Incluir imágenes de subcarpetas
@@ -860,7 +955,7 @@ export function Library() {
                       onChange={(e) => {
                         setKind(e.target.value);
                         setPage(1);
-                        setSelected([]);
+                        if (!picker) setSelected([]);
                       }}
                     >
                       <option value="all">Imágenes y archivos</option>
@@ -914,7 +1009,7 @@ export function Library() {
                       })()
                     }
                   >
-                    Seleccionar todo · máximo 200
+                    Seleccionar todo · máximo {picker ? 30 : 200}
                   </button>
                   <button type="button" onClick={() => setSelected([])}>
                     Limpiar selección
@@ -975,18 +1070,20 @@ export function Library() {
                   <option value="jpg">JPG</option>
                 </select>
               </label>
-              <button
-                type="button"
-                disabled={!chosenImages.length || busy}
-                onClick={() =>
-                  void action(
-                    () => downloadArchive({ ids: chosenImages, format }),
-                    "Descarga preparada.",
-                  )
-                }
-              >
-                Descargar ({chosenImages.length})
-              </button>
+              {!picker && (
+                <button
+                  type="button"
+                  disabled={!chosenImages.length || busy}
+                  onClick={() =>
+                    void action(
+                      () => downloadArchive({ ids: chosenImages, format }),
+                      "Descarga preparada.",
+                    )
+                  }
+                >
+                  Descargar ({chosenImages.length})
+                </button>
+              )}
               {canEdit && (
                 <button
                   type="button"
@@ -999,9 +1096,11 @@ export function Library() {
               )}
             </div>
           </div>
-          <p className="library-project-warning" role="note">
-            ⚠ {projectFolderWarning}
-          </p>
+          {!picker && (
+            <p className="library-project-warning" role="note">
+              ⚠ {projectFolderWarning}
+            </p>
+          )}
           <div className="row library-folder-tools">
             {" "}
             {canEdit && (
@@ -1089,12 +1188,15 @@ export function Library() {
               </p>
               <div className="row">
                 <button
+                  type="button"
                   disabled={busy || target === "__unselected"}
                   onClick={moveSelection}
                 >
                   Mover aquí
                 </button>
-                <button onClick={() => setMove(false)}>Cancelar</button>
+                <button type="button" onClick={() => setMove(false)}>
+                  Cancelar
+                </button>
               </div>
             </section>
           )}
@@ -1139,7 +1241,7 @@ export function Library() {
                       onDragOver={(e) => dragOver(e, f.id)}
                       onDrop={(e) => drop(e, f.id)}
                     >
-                      {f.kind !== "loose" && (
+                      {(picker || f.kind !== "loose") && (
                         <label className="row">
                           <input
                             type="checkbox"
@@ -1167,17 +1269,19 @@ export function Library() {
                             ? "Carpeta conservada · origen eliminado"
                             : "Carpeta de proyecto"}
                       </small>
-                      <button
-                        type="button"
-                        className="folder-actions-trigger"
-                        aria-label={"Acciones de " + f.name}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          context(e, f.kind === "loose" ? "" : "n:" + f.id);
-                        }}
-                      >
-                        ⋯ Acciones
-                      </button>
+                      {!picker && (
+                        <button
+                          type="button"
+                          className="folder-actions-trigger"
+                          aria-label={"Acciones de " + f.name}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            context(e, f.kind === "loose" ? "" : "n:" + f.id);
+                          }}
+                        >
+                          ⋯ Acciones
+                        </button>
+                      )}
                     </article>
                   ))}
                 </div>
@@ -1195,7 +1299,7 @@ export function Library() {
                 return item ? renderImage(item) : null;
               }
               const slot = data?.inflight?.find((i) => i.id === entry.id);
-              if (!slot) return null;
+              if (!slot || picker) return null;
               const order = data?.orders.find((o) => o.id === slot.orderId);
               return (
                 <GenerationImageCard
@@ -1239,6 +1343,16 @@ export function Library() {
                   />
                   Seleccionar
                 </label>
+                {picker &&
+                  d.mime.startsWith("image/") &&
+                  (!d.large || d.hasPreview) && (
+                    <img
+                      className="library-picker-document"
+                      loading="lazy"
+                      src={`/api/library/documents/${d.id}?preview=1`}
+                      alt={d.name}
+                    />
+                  )}
                 <strong>📄 {d.name}</strong>
                 <p className="hint">{Math.ceil(d.size / 1024)} KB</p>
                 <a href={"/api/library/documents/" + d.id}>Descargar archivo</a>
@@ -1260,6 +1374,7 @@ export function Library() {
           {data && (
             <div className="row">
               <button
+                type="button"
                 disabled={page <= 1}
                 onClick={() => setPage((p) => p - 1)}
               >
@@ -1273,6 +1388,7 @@ export function Library() {
                 · Página {data.page} de {data.pages}
               </span>
               <button
+                type="button"
                 disabled={page >= data.pages}
                 onClick={() => setPage((p) => p + 1)}
               >
@@ -1318,6 +1434,7 @@ export function Library() {
           )}
           {menu.id.startsWith("n:") && (
             <button
+              type="button"
               role="menuitem"
               onClick={() => {
                 open(menu.id.slice(2));
@@ -1332,6 +1449,7 @@ export function Library() {
             return item ? (
               <>
                 <button
+                  type="button"
                   role="menuitem"
                   onClick={() => {
                     setPreview({
@@ -1347,6 +1465,7 @@ export function Library() {
                 </button>
                 {item.canEdit && (
                   <button
+                    type="button"
                     role="menuitem"
                     onClick={() => {
                       setEditing(item.id);
@@ -1357,6 +1476,7 @@ export function Library() {
                   </button>
                 )}
                 <button
+                  type="button"
                   role="menuitem"
                   onClick={() => {
                     void action(
@@ -1372,6 +1492,7 @@ export function Library() {
             ) : null;
           })()}
           <button
+            type="button"
             role="menuitem"
             disabled={!canEdit || busy || !selected.length}
             onClick={() => prepare("move")}
@@ -1379,6 +1500,7 @@ export function Library() {
             Cortar <kbd>Ctrl+X</kbd>
           </button>
           <button
+            type="button"
             role="menuitem"
             disabled={!canEdit || busy || !selected.length}
             onClick={() => prepare("copy")}
@@ -1386,6 +1508,7 @@ export function Library() {
             Copiar <kbd>Ctrl+C</kbd>
           </button>
           <button
+            type="button"
             role="menuitem"
             disabled={!canEdit || busy || !clipboard}
             onClick={() => {
@@ -1396,6 +1519,7 @@ export function Library() {
             Pegar aquí <kbd>Ctrl+V</kbd>
           </button>
           <button
+            type="button"
             role="menuitem"
             disabled={!canEdit || busy || !selected.length}
             onClick={() => {
@@ -1409,6 +1533,7 @@ export function Library() {
           </button>
           {menu.id.startsWith("n:folder:") && (
             <button
+              type="button"
               role="menuitem"
               disabled={!canEdit || busy}
               onClick={() => {
@@ -1430,6 +1555,7 @@ export function Library() {
             </button>
           )}
           <button
+            type="button"
             role="menuitem"
             disabled={!canEdit || busy || !selected.length}
             onClick={() => {
@@ -1441,6 +1567,7 @@ export function Library() {
           </button>
           {!menu.id && (
             <button
+              type="button"
               role="menuitem"
               disabled={!canEdit || busy}
               onClick={() => {

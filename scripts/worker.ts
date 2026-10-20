@@ -212,7 +212,7 @@ export async function runOne(filter?: {
     await requireStorageSpace();
     const s = candidate.snapshot as unknown as Snapshot;
     const engines=await engineConfiguration(),engine=requireEngine(engines,s.engine??"ai");
-    demand(s.engineRevision===undefined||s.engineRevision===engines.revision,"Los motores cambiaron. Revisa y autoriza de nuevo.",409);
+    // AI jobs remain governed by provider/credential revisions; retiring local modes does not change their authorization.
     const local=engine!=="ai",c=engine==="propiox"?propioxRuntime(engines):await configured(engine==="hybrid");
     demand(
       c.revision === s.configRevision,

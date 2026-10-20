@@ -28,18 +28,9 @@ export async function engineConfiguration(
 export function requireEngine(
   config: Awaited<ReturnType<typeof engineConfiguration>>,
   requested: unknown,
-) {
-  const engine = engineSchema.parse(requested ?? config.defaultEngine);
-  demand(
-    engine === "propiox" || config.aiEnabled,
-    "La IA está desactivada en Ajustes. Activa un proveedor de IA o elige PropioX · sin IA.",
-    409,
-  );
-  demand(
-    engine === "ai" || config.propioxEnabled,
-    "Activa PropioX en Ajustes para utilizar este modo.",
-    409,
-  );
+): GenerationEngine {
+  const engine = engineSchema.parse(requested ?? "ai");
+  demand(engine === "ai", "PropioX y el modo híbrido se retiraron. Selecciona la generación con IA.",409);
   return engine;
 }
 export async function saveEngineConfiguration(
@@ -64,10 +55,7 @@ export async function saveEngineConfiguration(
     })
     .strict()
     .parse(input);
-  demand(
-    b.aiEnabled || b.propioxEnabled,
-    "Activa al menos un motor de generación.",
-  );
+  demand(b.aiEnabled&&!b.propioxEnabled&&b.defaultEngine==="ai","Solo está disponible la generación con IA.",409);
   requireEngine({ ...engineDefaults, ...b }, b.defaultEngine);
   return db.$transaction(async (tx) => {
     await tx.$executeRaw`SELECT pg_advisory_xact_lock(728291)`;
