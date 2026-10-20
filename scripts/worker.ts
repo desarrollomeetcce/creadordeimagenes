@@ -1,3 +1,4 @@
+import {resolveSystemReferences,type SystemReference} from "../lib/system-resources";
 import {engineConfiguration,requireEngine,propioxRuntime} from "../lib/generation-engines";
 import {resolveStoredReferences,type StoredReference,type ResourceScope} from "../lib/resource-storage";
 import {composePropiox,hybridDirectionPrompt,type CompositionResource} from "../lib/propiox";
@@ -47,7 +48,7 @@ import {
 type Snapshot = {
   engine?: "ai"|"propiox"|"hybrid";
   engineRevision?:number; subjectName?:string; localQuality?:string;localResolution?:string;
-  storageReferences?:StoredReference[];resourceScopes?:ResourceScope[];
+  systemReferences?:SystemReference[];storageReferences?:StoredReference[];resourceScopes?:ResourceScope[];
   prompt: string;
   brand?: {colors?: string[]}|null;
   mode: string;
@@ -278,7 +279,7 @@ export async function runOne(filter?: {
       nativeRefs.length === new Set(s.attachmentIds ?? []).size,
       "Un adjunto fue eliminado. Revisa y vuelve a autorizar las instrucciones.",
     );
-    const stored=await resolveStoredReferences(s.storageReferences??[],s.resourceScopes??[]);
+    const stored=[...await resolveStoredReferences(s.storageReferences??[],s.resourceScopes??[]),...await resolveSystemReferences(s.systemReferences??[],s.resourceScopes??[])];
     const clonedLogos:{id:string;name:string;mime:string;purpose:string;path:string;size:number}[]=[];
     const extraRefs=[];
     for(const resource of stored){

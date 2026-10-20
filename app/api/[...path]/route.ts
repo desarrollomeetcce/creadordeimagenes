@@ -310,6 +310,7 @@ async function handle(
       return send(result);
     }
     const user = await actor();
+    if(parts[0]==="system-resources")return await (await import("@/lib/system-resources")).systemResourceRoutes(req,parts,user,()=>body(req));
     if(parts[0]==="engines"&&parts[1]==="config"){
       const engines=await import("@/lib/generation-engines");
       if(method==="GET")return send(await engines.engineConfiguration());
@@ -1269,7 +1270,7 @@ async function handle(
           settings: preview.settings,
           needsSettings: preview.needsSettings,
           brand: preview.brand,
-          attachments: [...preview.attachments,...preview.storageReferences].map(
+          attachments: [...preview.attachments,...preview.storageReferences,...preview.systemReferences].map(
             ({ id, name, purpose, text, mime }) => ({
               id,
               name,

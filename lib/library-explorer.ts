@@ -325,6 +325,9 @@ export async function explorerData(user: Actor, incoming: URLSearchParams) {
         name: true,
         mime: true,
         size: true,
+        generationReady: true,
+        previewPath:true,
+        path:true,
         createdAt: true,
       },
       take: limit,
@@ -696,7 +699,7 @@ export async function explorerData(user: Actor, incoming: URLSearchParams) {
         user.role !== "OBSERVER" &&
         (user.role === "OWNER" || v.job.actorId === user.id),
     })),
-    documents,
+    documents:documents.map(({path,previewPath,...d})=>({...d,large:path.startsWith("large:"),hasPreview:!!previewPath})),
     total,
     page,
     pages: Math.max(
@@ -789,16 +792,17 @@ export async function explorerRoutes(
         where: { id: parts[2], userId: user.id, deletedAt: null },
       });
       demand(d, "Archivo no disponible.", 404);
-      if (req.method === "GET")
-        return new Response(fileStream(await load(d.path)), {
-          headers: {
-            "Content-Type": d.mime,
-            "Content-Disposition":
-              "attachment; filename*=UTF-8''" + encodeURIComponent(d.name),
-            "Cache-Control": "private, no-store",
-            "X-Content-Type-Options": "nosniff",
-          },
-        });
+      if(req.method==='GET'){
+        const preview=req.nextUrl.searchParams.get('preview')==='1';
+        const filePath=preview&&d.previewPath?d.previewPath:d.path;
+        const headers={'Content-Type':preview&&d.previewPath?'image/webp':d.mime,'Content-Disposition':(preview?'inline':'attachment')+"; filename*=UTF-8''"+encodeURIComponent(d.name),'Cache-Control':'private, no-store','X-Content-Type-Options':'nosniff'};
+        if(filePath.startsWith('large:')){
+          if(preview)return new Response(null,{status:404,headers:{'Cache-Control':'no-store'}});
+          const result=await (await import('./large-uploads')).largeAssetStream(filePath,req.headers.get('range'));
+          return new Response(result.stream,{status:result.status,headers:{...headers,...result.headers}});
+        }
+        return new Response(fileStream(await load(filePath)),{headers});
+      }
       if (req.method === "DELETE") {
         demand(
           user.role !== "OBSERVER",

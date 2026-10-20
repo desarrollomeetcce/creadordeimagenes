@@ -1,3 +1,4 @@
+import {maxResourceFileBytes,uploadChunkBytes} from "./large-upload-limits";
 import { NextRequest, NextResponse } from "next/server";
 import type { Prisma } from "@prisma/client";
 import { z } from "zod";
@@ -103,6 +104,7 @@ export async function boundStorageReferences(
     const where: Prisma.LibraryDocumentWhereInput = {
       userId: binding.userId,
       deletedAt: null,
+      generationReady:true,
       OR: [
         { folderId: { in: ids } },
         { destinationKey: { in: ids.map((id) => "folder:" + id) } },
@@ -153,7 +155,7 @@ export async function boundStorageReferences(
         storageRelevance(a.name, a.description, subject) ||
       a.id.localeCompare(b.id),
   );
-  const images = sorted.filter((d) => d.mime.startsWith("image/"));
+  const images = sorted.filter((d) => d.mime.startsWith("image/")&&(!d.path.startsWith("large:")||!!d.previewPath));
   const logos = images.filter((d) => d.purpose === "Logo").slice(0, 4),
     visuals = images
       .filter((d) => d.purpose !== "Logo")
@@ -218,7 +220,8 @@ export async function resolveStoredReferences(
       "Un recurso fue retirado o movido fuera de la carpeta vinculada. Revisa y autoriza de nuevo.",
       409,
     );
-    out.push({ ...d, source: "storage" as const });
+    demand(!d.path.startsWith("large:")||d.previewPath,"Este original necesita una copia optimizada para generación.",409);
+    out.push({ ...d,path:d.previewPath??d.path,mime:d.previewPath?"image/webp":d.mime, source: "storage" as const });
   }
   return out;
 }
@@ -229,9 +232,10 @@ export async function storageRoutes(
   body: () => Promise<unknown>,
 ) {
   const method = req.method;
+  if(parts[0]==="storage"&&parts[1]==="uploads")return (await import("./large-uploads")).largeUploadRoutes(req,parts,actor,body);
   if (parts[0] === "storage") {
     if (parts[1] === "tree" && method === "GET") {
-      const [folders, bytes, status] = await Promise.all([
+      const [folders, bytes, status,uploads] = await Promise.all([
         db.libraryFolder.findMany({
           where: { userId: actor.id },
           select: { id: true, name: true, parentId: true },
@@ -242,13 +246,17 @@ export async function storageRoutes(
           _sum: { size: true },
         }),
         storageStatus(),
+        db.largeAsset.findMany({where:{userId:actor.id,status:"UPLOADING"},select:{id:true,name:true,size:true,receivedBytes:true,expiresAt:true},orderBy:{createdAt:"desc"},take:25}),
       ]);
       return send({
         folders,
+        userId:actor.id,
+        uploads,
         bytes: bytes._sum.size ?? 0,
         usedBytes: status.usedBytes,
         limitBytes: status.limitBytes,
-        maxFileBytes: 3000000,
+        maxFileBytes:maxResourceFileBytes,
+        chunkBytes:uploadChunkBytes,
       });
     }
     if (parts[1] === "files" && method === "GET") {
@@ -280,6 +288,9 @@ export async function storageRoutes(
             purpose: true,
             description: true,
             createdAt: true,
+            previewPath:true,
+            path:true,
+            generationReady:true,
           },
           orderBy: [{ createdAt: "desc" }, { id: "asc" }],
           skip: (page - 1) * 50,
@@ -288,7 +299,7 @@ export async function storageRoutes(
         db.libraryDocument.count({ where }),
       ]);
       return send({
-        files,
+        files:files.map(({previewPath,path,...file})=>({...file,hasPreview:!!previewPath,large:path.startsWith("large:")})),
         total,
         page,
         pages: Math.max(1, Math.ceil(total / 50)),

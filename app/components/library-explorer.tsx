@@ -1,4 +1,5 @@
 "use client";
+import {uploadResource} from "./resource-upload";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   HierarchyFilters,
@@ -392,6 +393,13 @@ export function Library() {
     }
   };
   const upload = async (file: File) => {
+    if(file.size>3000000){
+      const status=await fetch('/api/storage/tree',{cache:'no-store'}).then(async r=>{const b=await r.json();if(!r.ok)throw Error(b.error);return b;});
+      const saved=await uploadResource(file,{folderId:folder.startsWith('folder:')?folder.slice(7):'',purpose:file.type.startsWith('image/')?'Referencia visual':'Material de contexto',userId:status.userId,paused:()=>false,onProgress:(bytes,total)=>setMessage(`Subiendo ${file.name}: ${(bytes/1048576).toFixed(1)} de ${(total/1048576).toFixed(1)} MB`)});
+      if(folder&&!folder.startsWith('folder:')&&folder!=='loose:root')await api('selection-actions','POST',{operation:'move',selection:['d:'+saved.id],destination:folder});
+      return;
+    }
+
     const form = new FormData();
     form.set("file", file);
     if (folder.startsWith("folder:")) form.set("folderId", folder.slice(7));

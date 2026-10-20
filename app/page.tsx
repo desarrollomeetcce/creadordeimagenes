@@ -1811,7 +1811,7 @@ function SubproductRow({
           />
         )}
         </div>
-        <div onChangeCapture={()=>{setSourceDirty(true);setReview(false);}}><Attachments ref={uploadRef} scope="subproduct" id={sub.id} deferred /></div>
+        <div onChangeCapture={()=>{setSourceDirty(true);setReview(false);}}><Attachments ref={uploadRef} scope="subproduct" id={sub.id} deferred onUploaded={()=>{setSourceDirty(true);setReview(false);setPreview(null);}} /></div>
         {templates.saver}
         <div className="row compact-review-actions"><button type="button" className="primary" disabled={t.busy} onClick={()=>void t.run(async()=>{await save();setSourceDirty(true);setReview(false);},"Cambios y documentos guardados. Actualiza la revisión antes de generar.")}>Guardar cambios y documentos del subproducto</button><button type="button" onClick={()=>setConfigOpen(false)}>Minimizar</button></div>
         </div></details>

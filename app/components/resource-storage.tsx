@@ -6,9 +6,14 @@ import {
   useState,
   type InputHTMLAttributes,
 } from "react";
+import { uploadResource, UploadPaused } from "./resource-upload";
+import { maxResourceFileBytes } from "../../lib/large-upload-limits";
 import { engineRequest as api } from "./generation-engine";
 type Folder = { id: string; name: string; parentId: string | null };
 type ResourceFile = {
+  large?: boolean;
+  hasPreview?: boolean;
+  generationReady?: boolean;
   id: string;
   name: string;
   mime: string;
@@ -94,6 +99,7 @@ export function StorageFolderPicker({
       ) : (
         <p className="hint">Sin carpetas vinculadas en este nivel.</p>
       )}
+
       <div className="row">
         <button
           type="button"
@@ -197,6 +203,14 @@ export function StorageWorkspace() {
     [pages, setPages] = useState(1),
     [capacity, setCapacity] = useState<{
       bytes: number;
+      userId: string;
+      uploads: {
+        id: string;
+        name: string;
+        size: number;
+        receivedBytes: number;
+        expiresAt: string;
+      }[];
       usedBytes: number | null;
       limitBytes: number | null;
       maxFileBytes: number;
@@ -215,6 +229,11 @@ export function StorageWorkspace() {
   useEffect(() => {
     if (editing && !editDialog.current?.open) editDialog.current?.showModal();
   }, [editing?.id]);
+  const [fileProgress, setFileProgress] = useState<{
+    name: string;
+    bytes: number;
+    total: number;
+  } | null>(null);
   const cancel = useRef(false),
     upload = useRef<HTMLInputElement>(null),
     uploadFolder = useRef<HTMLInputElement>(null);
@@ -267,6 +286,7 @@ export function StorageWorkspace() {
     cancel.current = false;
     setMessage("");
     setProgress({ done: 0, total: input.length, failed: 0 });
+    setFileProgress(null);
     let done = 0,
       failed = 0;
     const errors: string[] = [],
@@ -276,8 +296,8 @@ export function StorageWorkspace() {
       for (const file of input) {
         if (cancel.current) break;
         try {
-          if (file.size > (capacity?.maxFileBytes ?? 3000000))
-            throw Error("supera 3 MB");
+          if (file.size > (capacity?.maxFileBytes ?? maxResourceFileBytes))
+            throw Error("supera 1 GB (1024 MB)");
           let parent = folder;
           const path = (file.webkitRelativePath || "").split("/").slice(0, -1);
           let key = "";
@@ -305,23 +325,22 @@ export function StorageWorkspace() {
               known.set(key, parent);
             }
           }
-          const form = new FormData();
-          form.set("file", file);
-          form.set("folderId", parent);
-          form.set(
-            "purpose",
-            file.type.startsWith("image/")
+          await uploadResource(file, {
+            folderId: parent,
+            purpose: file.type.startsWith("image/")
               ? uploadPurpose
               : "Material de contexto",
-          );
-          const r = await fetch("/api/storage/files", {
-            method: "POST",
-            body: form,
+            userId: capacity?.userId ?? "",
+            paused: () => cancel.current,
+            onProgress: (bytes, total) =>
+              setFileProgress({ name: file.name, bytes, total }),
           });
-          const b = await r.json();
-          if (!r.ok) throw Error(b.error ?? "no se pudo subir");
           done++;
         } catch (e) {
+          if (e instanceof UploadPaused) {
+            cancel.current = true;
+            break;
+          }
           failed++;
           if (errors.length < 5)
             errors.push(file.name + ": " + (e as Error).message);
@@ -329,7 +348,7 @@ export function StorageWorkspace() {
         setProgress({ done, total: input.length, failed });
       }
       setMessage(
-        `${done} archivos guardados; ${failed} no guardados.${cancel.current ? " Subida detenida; se conservan los archivos ya guardados." : ""}${errors.length ? " " + errors.join(" · ") : ""}`,
+        `${done} archivos guardados; ${failed} no guardados.${cancel.current ? " Subida pausada. Selecciona el mismo archivo y carpeta para continuar; se conservan las partes y archivos ya guardados." : ""}${errors.length ? " " + errors.join(" · ") : ""}`,
       );
       await refresh();
     } catch (e) {
@@ -376,18 +395,49 @@ export function StorageWorkspace() {
         </div>
       </div>
       <div className="notice">
-        No hay un límite por cantidad de archivos. Cada archivo admite hasta 3
-        MB y la capacidad disponible depende del almacenamiento del servidor.
-        Los archivos no entrenan un modelo; se utilizan como recursos de
-        composición o referencias. Para PropioX, usa fotografías sin texto y logos separados; un afiche completo no se convierte automáticamente en capas ni enseña su estilo al sistema.
+        No hay un límite por cantidad de archivos. Cada archivo admite hasta 1
+        GB (1024 MB) y se sube por partes. La capacidad total depende del
+        almacenamiento configurado. Los archivos no entrenan un modelo; se
+        utilizan como recursos de composición o referencias. Para PropioX, usa
+        fotografías sin texto y logos separados; un afiche completo no se
+        convierte automáticamente en capas ni enseña su estilo al sistema.
       </div>
       {capacity && (
         <p className="hint">
           Tus archivos: {(capacity.bytes / 1048576).toFixed(1)} MB.
           {capacity.limitBytes !== null
-            ? ` Servidor: ${((capacity.usedBytes ?? 0) / 1048576).toFixed(1)} de ${(capacity.limitBytes / 1048576).toFixed(0)} MB.`
+            ? ` Espacio ocupado o reservado: ${((capacity.usedBytes ?? 0) / 1048576).toFixed(1)} de ${(capacity.limitBytes / 1048576).toFixed(0)} MB.`
             : " Capacidad según el disco del servidor."}
         </p>
+      )}
+      {!!capacity?.uploads?.length && !busy && (
+        <details className="panel stack">
+          <summary>Subidas sin terminar ({capacity.uploads.length})</summary>
+          <p className="hint">
+            Selecciona el mismo archivo y carpeta en esta pestaña para
+            continuar. Puedes descartar las partes guardadas para liberar
+            espacio; caducan tras 48 horas sin actividad.
+          </p>
+          {capacity.uploads.map((u) => (
+            <div className="row" key={u.id}>
+              <span>
+                {u.name} · {(u.receivedBytes / 1048576).toFixed(1)} /{" "}
+                {(u.size / 1048576).toFixed(1)} MB
+              </span>
+              <button
+                type="button"
+                className="danger"
+                onClick={() =>
+                  void task(async () => {
+                    await api("storage/uploads/" + u.id, "DELETE");
+                  })
+                }
+              >
+                Descartar subida
+              </button>
+            </div>
+          ))}
+        </details>
       )}
       <div className="row">
         <button
@@ -483,6 +533,24 @@ export function StorageWorkspace() {
           </button>
         )}
       </div>
+      {fileProgress && (
+        <div className="stack" role="status">
+          <span>
+            {fileProgress.name} · {(fileProgress.bytes / 1048576).toFixed(1)} /{" "}
+            {(fileProgress.total / 1048576).toFixed(1)} MB
+          </span>
+          <progress
+            aria-label="Progreso del archivo"
+            max={fileProgress.total}
+            value={fileProgress.bytes}
+          />
+          <small className="hint">
+            Mantén abierta la pestaña. Puedes pausar y seleccionar el mismo
+            archivo para continuar. Para generar se usa una copia optimizada o
+            un extracto; el original se conserva completo.
+          </small>
+        </div>
+      )}
       {progress && (
         <p role="status">
           {progress.done + progress.failed} de {progress.total} procesados ·{" "}
@@ -567,14 +635,24 @@ export function StorageWorkspace() {
               />
               Seleccionar
             </label>
-            {f.mime.startsWith("image/") && (
+            {f.mime.startsWith("image/") && (!f.large || f.hasPreview) && (
               <img
-                src={"/api/library/documents/" + f.id}
+                src={"/api/library/documents/" + f.id + "?preview=1"}
                 alt={f.name}
                 loading="lazy"
               />
             )}
             <strong>{f.name}</strong>
+            {f.large && (
+              <small className="hint">
+                Original grande guardado.{" "}
+                {f.hasPreview
+                  ? "Referencia optimizada disponible."
+                  : f.generationReady
+                    ? "Se utiliza el extracto inicial para generación."
+                    : "Para generar, añade una imagen optimizada o un extracto del documento."}
+              </small>
+            )}
             <span>
               {f.purpose} · {(f.size / 1024).toFixed(0)} KB
             </span>
@@ -620,7 +698,8 @@ export function StorageWorkspace() {
       {editing && (
         <dialog
           ref={editDialog}
-          className="storage-resource-dialog" aria-label="Describir recurso"
+          className="storage-resource-dialog"
+          aria-label="Describir recurso"
           onCancel={(e) => {
             if (busy) e.preventDefault();
             else setEditing(null);

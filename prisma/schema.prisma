@@ -523,6 +523,8 @@ model SiteContent {
 }
 
 model LibraryDocument {
+  generationReady Boolean @default(true)
+  previewPath String?
   text String @default("")
   purpose String @default("Referencia visual")
   description String @default("")
@@ -591,4 +593,46 @@ model StorageBinding {
  createdAt DateTime @default(now())
  @@unique([scope,resourceId,folderId])
  @@index([scope,resourceId])
+}
+
+// Explicit visual delegation; source authorization is checked again before use.
+model LibraryResourceBinding {
+ id String @id @default(cuid())
+ scope String
+ resourceId String
+ userId String
+ selection String
+ purpose String @default("Referencia visual")
+ createdAt DateTime @default(now())
+ @@unique([scope,resourceId,userId,selection])
+ @@index([scope,resourceId])
+}
+
+model LargeAsset {
+ id String @id
+ userId String
+ clientKey String
+ name String
+ mime String
+ purpose String
+ folderId String?
+ size Int
+ receivedBytes Int @default(0)
+ status String @default("UPLOADING")
+ previewPath String?
+ documentId String?
+ createdAt DateTime @default(now())
+ expiresAt DateTime
+ chunks LargeAssetChunk[]
+ @@unique([userId,clientKey])
+ @@index([status,expiresAt])
+}
+model LargeAssetChunk {
+ assetId String
+ asset LargeAsset @relation(fields:[assetId],references:[id],onDelete:Cascade)
+ index Int
+ size Int
+ checksum String
+ data Bytes
+ @@id([assetId,index])
 }

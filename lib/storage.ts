@@ -21,9 +21,9 @@ export function storageBackend() {
   return value;
 }
 export function storageByteLimit() {
-  const value = Number(process.env.STORAGE_LIMIT_MB ?? 128);
+  const value = Number(process.env.STORAGE_LIMIT_MB ?? 2048);
   demand(
-    Number.isInteger(value) && value >= 16 && value <= 1024,
+    Number.isInteger(value) && value >= 16 && value <= 65536,
     "El límite de almacenamiento no es válido.",
     503,
   );
@@ -41,9 +41,10 @@ export async function storageStatus() {
     };
   const sum = await db.storedAsset.aggregate({ _sum: { size: true } });
   const audit = await db.auditThumbnail.aggregate({ _sum: { size: true } });
+  const large = await db.largeAsset.aggregate({_sum:{size:true}});
   return {
     backend,
-    usedBytes: (sum._sum.size ?? 0) + (audit._sum.size ?? 0),
+    usedBytes: (sum._sum.size ?? 0) + (audit._sum.size ?? 0) + (large._sum.size??0),
     limitBytes: storageByteLimit(),
     maxUploadBytes: maxUploadBytes(),
   };
@@ -69,8 +70,9 @@ export async function store(bytes: Buffer) {
       await tx.$executeRaw`SELECT pg_advisory_xact_lock(440819)`;
       const sum = await tx.storedAsset.aggregate({ _sum: { size: true } });
       const audit = await tx.auditThumbnail.aggregate({ _sum: { size: true } });
+      const large = await tx.largeAsset.aggregate({_sum:{size:true}});
       demand(
-        (sum._sum.size ?? 0) + (audit._sum.size ?? 0) + bytes.length <=
+        (sum._sum.size ?? 0) + (audit._sum.size ?? 0) + (large._sum.size??0) + bytes.length <=
           storageByteLimit(),
         "El almacenamiento está lleno. Libera archivos temporales o amplía la capacidad.",
         413,
@@ -96,6 +98,7 @@ function databaseId(name: string) {
   return id;
 }
 export async function load(name: string) {
+  demand(!name.startsWith("large:"),"El original es grande. Utiliza su copia optimizada para generación o descárgalo desde Almacenamiento.",413);
   if (!name.startsWith("pg:")) return readFile(path(name));
   const asset = await db.storedAsset.findUnique({
     where: { id: databaseId(name) },
@@ -104,6 +107,15 @@ export async function load(name: string) {
   return Buffer.from(asset.data);
 }
 export async function remove(name: string) {
+  if(name.startsWith('large:')){
+    demand(/^large:[a-f0-9-]{36}$/.test(name),'Archivo no válido.');
+    if(await db.libraryDocument.count({where:{path:name,deletedAt:null}}))return;
+    const row=await db.largeAsset.findUnique({where:{id:name.slice(6)},select:{previewPath:true}});
+    await db.largeAsset.deleteMany({where:{id:name.slice(6)}});
+    if(row?.previewPath&&!await db.libraryDocument.count({where:{previewPath:row.previewPath,deletedAt:null}}))await remove(row.previewPath);
+    return;
+  }
+
   if (!name.startsWith("pg:")) return unlink(path(name));
   await db.storedAsset.deleteMany({ where: { id: databaseId(name) } });
 }

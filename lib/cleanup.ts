@@ -4,6 +4,7 @@ import { cleanupAuditThumbnails } from "./visual-audit";
 
 // Each invocation is bounded; pending deletions survive a process crash or a storage failure.
 export async function cleanupStorage(now = new Date()) {
+  await (await import("./large-uploads")).cleanupIncompleteUploads(now);
   const thumbnails = await cleanupAuditThumbnails(now);
   const candidates = await db.variation.findMany({
     where: { permanent: false, filesQueuedAt: null, expiresAt: { lte: now } },

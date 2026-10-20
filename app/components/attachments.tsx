@@ -1,4 +1,5 @@
 "use client";
+import {SystemResourcePicker} from "./system-resource-picker";
 import {StorageFolderPicker} from "./resource-storage";
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from "react";
 
@@ -293,7 +294,9 @@ export const Attachments = forwardRef<AttachmentsHandle, {
         DOCX sin consumir IA. Las imágenes tienen vistas previas privadas y se
         envían como referencias visuales; revisa su uso antes de generar.
       </p>
-      <StorageFolderPicker scope={scope} id={id} onChanged={onUploaded} />
+      {["project","category","subproduct"].includes(scope)&&<p className="hint">Para originales de hasta 1 GB, súbelos en Almacenamiento y vincula su carpeta aquí. Se utilizará una copia optimizada o un extracto para generar.</p>}
+      <SystemResourcePicker scope={scope} id={id} onChanged={onUploaded} />
+      {["project","category","subproduct"].includes(scope)&&<details><summary>Vínculos anteriores de Almacenamiento</summary><StorageFolderPicker scope={scope} id={id} onChanged={onUploaded} /></details>}
       {message && (
         <div className="notice" role="status">
           {message}
