@@ -11131,6 +11131,21 @@ test("Integración HTTP + PostgreSQL (base exclusiva de pruebas, sin llamadas ex
       const copied=await owner.call('attachments/from-library','POST',input);assert.equal(copied.status,201,JSON.stringify(copied.body));assert.notEqual((await db.attachment.findUniqueOrThrow({where:{id:copied.body.id}})).path,photo.body.path);assert(await db.libraryDocument.count({where:{id:photo.body.id,deletedAt:null}}));assert.equal((await fetch(root+'/api/attachments/'+copied.body.id,{headers:{Cookie:owner.cookie}})).status,200);
       const unusable=await db.libraryDocument.create({data:{userId:actor.id,name:'Original sin copia.pdf',mime:'application/pdf',path:'large:'+randomUUID(),size:10000000,generationReady:false}});assert.equal((await owner.call('attachments/from-library','POST',{...input,documentId:unusable.id})).status,409);
     });
+    await t.test('Adjuntar desde: nombres, enlaces privados, uso por carpeta y retirada persistente', async () => {
+      const {p,s}=await hierarchyForReview(), folder=(await owner.call('library/folder-actions','POST',{action:'create',name:'Carpeta de capturas'})).body;
+      const image=await uploadStored(folder.id,'Captura privada.png','Fotografía principal');assert.equal(image.status,201);
+      await owner.call(`storage-bindings/subproduct/${s.id}`,'PUT',{folderIds:[folder.id]});
+      const selection='n:folder:'+folder.id;
+      const result=await owner.call(`system-resources/subproduct/${s.id}`,'PUT',{selections:[{selection,purpose:'Logo institucional'},{selection:'d:'+image.body.id,purpose:'Material de contexto'}]});
+      assert.equal(result.status,200,JSON.stringify(result.body));assert.equal(await db.storageBinding.count({where:{resourceId:s.id}}),0);
+      const rows=(await owner.call(`system-resources/subproduct/${s.id}`)).body;
+      assert.equal(rows[0].name,'Carpeta de capturas');assert(rows[0].labelPath.includes('Carpeta de capturas'));assert(rows[0].href.includes('view=library'));
+      assert.equal(rows[1].name,'Captura privada.png');assert.equal(rows[1].href,`/api/library/documents/${image.body.id}?preview=1`);assert(!JSON.stringify(rows).includes(image.body.path));
+      const {boundSystemReferences}=await import('../lib/system-resources');const refs=await boundSystemReferences([{scope:'subproduct',resourceId:s.id}],'Captura');assert(refs.length);
+      await owner.call(`system-resources/subproduct/${s.id}`,'PUT',{selections:[{selection,purpose:'Logo institucional'}]});
+      assert((await boundSystemReferences([{scope:'subproduct',resourceId:s.id}],'Captura')).every(r=>r.purpose==='Logo institucional'));
+      await owner.call(`system-resources/subproduct/${s.id}`,'PUT',{selections:[]});assert.equal((await owner.call(`system-resources/subproduct/${s.id}`)).body.length,0);assert(await db.libraryDocument.count({where:{id:image.body.id,deletedAt:null}}));assert(await db.libraryFolder.count({where:{id:folder.id}}));
+    });
     await t.test("cierre de sesión invalida el token", async () => {
       assert.equal((await user.call("auth/logout", "POST")).status, 200);
       assert.equal((await user.call("projects")).status, 401);

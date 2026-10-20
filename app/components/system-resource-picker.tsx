@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useId, useRef, useState } from "react";
+import { AttachmentFileChip } from "./attachment-file-chip";
 import { Library } from "./library-explorer";
 import { engineRequest as api } from "./generation-engine";
 type Selection = {
@@ -7,6 +8,8 @@ type Selection = {
   purpose: string;
   name: string;
   available?: boolean;
+  href?: string;
+  labelPath?: string;
 };
 const purposes = [
   "Referencia visual",
@@ -14,20 +17,25 @@ const purposes = [
   "Fondo",
   "Logo",
   "Material de contexto",
+  "Logo institucional",
+  "Fotografía obligatoria",
+  "Información comercial",
+  "Manual de marca",
 ];
 export function SystemResourcePicker({
   scope,
   id,
   onChanged,
-  external,
+  visible = false,
 }: {
   scope: string;
   id: string;
   onChanged?: () => void;
-  external?: React.ReactNode;
+  visible?: boolean;
 }) {
   const dialog = useRef<HTMLDialogElement>(null),
     titleId = useId();
+  const [purpose, setPurpose] = useState("Material de contexto");
   const [open, setOpen] = useState(false),
     [full, setFull] = useState(false),
     [saved, setSaved] = useState<Selection[]>([]),
@@ -50,50 +58,137 @@ export function SystemResourcePicker({
       live = false;
     };
   }, [path, valid]);
-  if (!valid) return <>{external}</>;
+  if (!valid) return null;
+  const persist = async (rows: Selection[]) => {
+    setBusy(true);
+    setMessage("");
+    try {
+      await api(path, "PUT", {
+        selections: rows.map(({ selection, purpose }) => ({
+          selection,
+          purpose,
+        })),
+      });
+      setSaved(await api(path));
+      onChanged?.();
+    } catch (e) {
+      setMessage((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
   const close = () => {
     dialog.current?.close();
     setOpen(false);
   };
   return (
     <>
-      <div className="attachment-source-fields">
-        {external}
-        <div className="stack attachment-system-field">
-          <strong>Archivo del sistema</strong>
-          <button
-            type="button"
-            disabled={busy}
-            onClick={async () => {
-              setBusy(true);
-              setMessage("");
-              try {
-                const rows = await api(path);
-                setSaved(rows);
-                setSelected(rows);
-                setFull(false);
-                setOpen(true);
-                dialog.current?.showModal();
-              } catch (e) {
-                setMessage((e as Error).message);
-              } finally {
-                setBusy(false);
-              }
-            }}
-          >
-            Seleccionar en Biblioteca{saved.length ? ` (${saved.length})` : ""}
-          </button>
-          <small>Elige carpetas o archivos existentes.</small>
-        </div>
-      </div>
-      {saved.length > 0 && (
-        <div className="attachment-system-list">
+      {(visible || saved.length > 0) && (
+        <div className="stack">
           {saved.map((s) => (
-            <span key={s.selection}>
-              {s.name} · {s.purpose}
-              {s.available === false ? " · No disponible" : ""}
-            </span>
+            <div className="fields attachment-source-row" key={s.selection}>
+              <div className="stack">
+                <div className="row">
+                  <strong>Archivo del sistema</strong>
+                  <a
+                    href="/?view=library"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    Ver Biblioteca ↗
+                  </a>
+                </div>
+                <div className="attachment-file-box">
+                  <AttachmentFileChip
+                    name={
+                      s.name + (s.available === false ? " · No disponible" : "")
+                    }
+                    href={s.href}
+                    title={s.labelPath ?? s.name}
+                    disabled={busy}
+                    onRemove={() =>
+                      void persist(
+                        saved.filter((row) => row.selection !== s.selection),
+                      )
+                    }
+                  />
+                </div>
+              </div>
+              <label>
+                Uso del archivo del sistema
+                <select
+                  value={s.purpose}
+                  disabled={busy}
+                  onChange={(e) =>
+                    void persist(
+                      saved.map((row) =>
+                        row.selection === s.selection
+                          ? { ...row, purpose: e.target.value }
+                          : row,
+                      ),
+                    )
+                  }
+                >
+                  {purposes.map((p) => (
+                    <option key={p}>{p}</option>
+                  ))}
+                </select>
+              </label>
+            </div>
           ))}
+          {visible && (
+            <div className="fields attachment-source-row">
+              <div className="stack">
+                <div className="row">
+                  <strong>Archivo del sistema</strong>
+                  <a
+                    href="/?view=library"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    Ver Biblioteca ↗
+                  </a>
+                </div>
+                <div className="attachment-file-box">
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={async () => {
+                      setBusy(true);
+                      setMessage("");
+                      try {
+                        const rows = await api(path);
+                        setSaved(rows);
+                        setSelected(rows);
+                        setFull(false);
+                        setOpen(true);
+                        dialog.current?.showModal();
+                      } catch (e) {
+                        setMessage((e as Error).message);
+                      } finally {
+                        setBusy(false);
+                      }
+                    }}
+                  >
+                    Seleccionar en Biblioteca
+                  </button>
+                </div>
+              </div>
+              <label>
+                Uso del archivo del sistema
+                <select
+                  value={purpose}
+                  disabled={busy}
+                  onChange={(e) => setPurpose(e.target.value)}
+                >
+                  {purposes.map((p) => (
+                    <option key={p}>{p}</option>
+                  ))}
+                </select>
+                <small>Se aplica a los nuevos archivos seleccionados.</small>
+              </label>
+            </div>
+          )}
         </div>
       )}
       <dialog
@@ -122,7 +217,7 @@ export function SystemResourcePicker({
                       old.find((s) => s.selection === selection) ?? {
                         selection,
                         name: names[selection] ?? "Archivo",
-                        purpose: "Referencia visual",
+                        purpose,
                       },
                   ),
                 ),
@@ -138,7 +233,7 @@ export function SystemResourcePicker({
                 Uso
                 <select
                   value={s.purpose}
-                  disabled={busy || s.selection.startsWith("n:")}
+                  disabled={busy}
                   onChange={(e) =>
                     setSelected((old) =>
                       old.map((row) =>

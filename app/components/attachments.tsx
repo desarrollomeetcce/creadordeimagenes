@@ -1,4 +1,5 @@
 "use client";
+import { AttachmentFileChip } from "./attachment-file-chip";
 import { SystemResourcePicker } from "./system-resource-picker";
 import { uploadResource } from "./resource-upload";
 import { maxResourceFileBytes } from "../../lib/large-upload-limits";
@@ -56,19 +57,14 @@ export const Attachments = forwardRef<
     purposePrefix?: string;
   }
 >(function Attachments(
-  {
-    scope,
-    id,
-    deferred = false,
-    onUploaded,
-    addLabel = "＋ Subir otro documento",
-    purposePrefix = "",
-  },
+  { scope, id, deferred = false, onUploaded, purposePrefix = "" },
   ref,
 ) {
   const [drafts, setDrafts] = useState<Draft[]>([
     { key: "first", purpose: "Material de contexto" },
   ]);
+  const [showPC, setShowPC] = useState(false),
+    [showSystem, setShowSystem] = useState(false);
   const completedOriginals = useRef(new Map<string, { id: string }>());
   const draftsRef = useRef(drafts),
     flushing = useRef(false);
@@ -263,13 +259,70 @@ export const Attachments = forwardRef<
     }
   };
   useImperativeHandle(ref, () => ({ flush }));
-  const select = (key: string, file?: File) => {
-    updateDrafts(
-      draftsRef.current.map((row) =>
-        row.key === key ? { ...row, file, saved: undefined } : row,
-      ),
-    );
+  const enqueue = (incoming: File[], key?: string) => {
+    if (!incoming.length || busy || replacing) return;
+    setShowPC(true);
+    const previous = draftsRef.current.find((r) => r.key === key);
+    const rows = incoming.map((file) => ({
+      key: crypto.randomUUID(),
+      file,
+      purpose: previous?.purpose ?? "Material de contexto",
+    }));
+    updateDrafts([
+      ...draftsRef.current.filter((r) => r.key !== key && (r.file || r.saved)),
+      ...rows,
+    ]);
   };
+  const removeSaved = async (file: Attachment) => {
+    if (
+      !window.confirm(
+        `¿Eliminar ${file.name}? Si está en uso por un afiche o trabajo, se conservará.`,
+      )
+    )
+      return;
+    setBusy(true);
+    setMessage("");
+    try {
+      await request(`attachments/${file.id}`, "DELETE");
+      await refresh();
+      onUploaded?.();
+      setMessage("Adjunto eliminado.");
+    } catch (e) {
+      setMessage((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+  const sourceButtons = () => (
+    <div className="row attachment-source-buttons">
+      <strong>Adjuntar desde:</strong>
+      <button
+        type="button"
+        disabled={busy}
+        aria-expanded={showPC || files.some((f) => !f.archivedAt)}
+        onClick={() => {
+          setShowPC(true);
+          if (!draftsRef.current.some((r) => !r.file && !r.saved))
+            updateDrafts([
+              ...draftsRef.current,
+              { key: crypto.randomUUID(), purpose: "Material de contexto" },
+            ]);
+        }}
+      >
+        Mi PC
+      </button>
+      {["project", "category", "subproduct"].includes(scope) && (
+        <button
+          type="button"
+          disabled={busy}
+          aria-expanded={showSystem}
+          onClick={() => setShowSystem(true)}
+        >
+          Mi sistema
+        </button>
+      )}
+    </div>
+  );
   const card = (file: Attachment) => (
     <article key={file.id} className="attachment-card">
       {file.mime.startsWith("image/") ? (
@@ -351,126 +404,158 @@ export const Attachments = forwardRef<
   const active = files.filter((f) => !f.archivedAt),
     archived = files.filter((f) => f.archivedAt);
   return (
-    <div
-      className="upload stack"
-      onDragOver={(e) => e.preventDefault()}
-      onDrop={(e) => {
-        e.preventDefault();
-        if (!replacing && !busy) {
-          const files = [...e.dataTransfer.files];
-          updateDrafts([
-            ...draftsRef.current.filter((r) => r.file || r.saved),
-            ...files.map((file) => ({
-              key: crypto.randomUUID(),
-              file,
-              purpose: "Material de contexto",
-            })),
-          ]);
-        }
-      }}
-    >
-      <SystemResourcePicker
-        scope={scope}
-        id={id}
-        onChanged={onUploaded}
-        external={
-          <div className="stack">
-            {" "}
-            {drafts.map((draft, index) => (
-              <div className="fields attachment-upload-row" key={draft.key}>
+    <details className="attachment-references">
+      <summary>¿Quieres adjuntar referencias?</summary>
+      <div
+        className="upload stack"
+        tabIndex={0}
+        aria-label="Adjuntos: selecciona archivos o pega una captura con Ctrl+V"
+        onPaste={(e) => {
+          if (
+            (e.target as HTMLElement).closest(
+              "textarea,input:not([type=file]),select,[contenteditable=true]",
+            )
+          )
+            return;
+          const incoming = [...e.clipboardData.items]
+            .filter(
+              (item) => item.kind === "file" && item.type.startsWith("image/"),
+            )
+            .flatMap((item) => {
+              const file = item.getAsFile();
+              return file ? [file] : [];
+            });
+          if (incoming.length && !busy && !replacing) {
+            e.preventDefault();
+            enqueue(incoming);
+            setMessage("Captura añadida; pendiente de guardar.");
+          }
+        }}
+        onDragOver={(e) => {
+          if (e.dataTransfer.types.includes("Files")) e.preventDefault();
+        }}
+        onDrop={(e) => {
+          if (e.dataTransfer.files.length) {
+            e.preventDefault();
+            enqueue([...e.dataTransfer.files]);
+          }
+        }}
+      >
+        {sourceButtons()}
+        {(showPC || active.length > 0) && (
+          <div className="stack attachment-pc-fields">
+            {active.map((file) => (
+              <div className="fields attachment-source-row" key={file.id}>
+                <div className="stack">
+                  <strong>Archivo de mi PC</strong>
+                  <div className="attachment-file-box">
+                    <AttachmentFileChip
+                      name={file.name}
+                      href={`/api/attachments/${file.id}`}
+                      disabled={busy}
+                      onRemove={() => void removeSaved(file)}
+                    />
+                  </div>
+                </div>
                 <label>
-                  Archivo externo {drafts.length > 1 ? index + 1 : ""}
-                  <input
-                    aria-label={`Adjuntar archivo ${index + 1}`}
-                    type="file"
-                    accept={accept}
-                    disabled={busy || !!replacing || !!draft.saved}
-                    onChange={(e) => select(draft.key, e.target.files?.[0])}
-                  />
-                  {draft.file && (
-                    <small>{draft.file.name} · pendiente de guardar</small>
-                  )}
-                  {draft.saved && <small>{draft.saved.name} · ya subido</small>}
+                  Uso del archivo de mi PC
+                  <input value={file.purpose} readOnly />
                 </label>
-                <label>
-                  Uso del archivo {index + 1}
-                  <select
-                    value={draft.purpose}
-                    disabled={busy || !!draft.saved}
-                    onChange={(e) =>
-                      updateDrafts(
-                        draftsRef.current.map((r) =>
-                          r.key === draft.key
-                            ? { ...r, purpose: e.target.value }
-                            : r,
-                        ),
-                      )
-                    }
-                  >
-                    {[
-                      "Material de contexto",
-                      "Logo institucional",
-                      "Referencia visual",
-                      "Fotografía obligatoria",
-                      "Información comercial",
-                      "Manual de marca",
-                    ].map((p) => (
-                      <option key={p}>{p}</option>
-                    ))}
-                  </select>
-                </label>
-                {(draft.file || drafts.length > 1) && (
-                  <button
-                    type="button"
-                    className="danger"
-                    disabled={busy}
-                    aria-label={
-                      draft.file
-                        ? `Quitar archivo ${draft.file.name}`
-                        : `Quitar fila ${index + 1}`
-                    }
-                    onClick={() => {
-                      const next = draftsRef.current.filter(
-                        (r) => r.key !== draft.key,
-                      );
-                      updateDrafts(
-                        next.length
-                          ? next
-                          : [
-                              {
-                                key: crypto.randomUUID(),
-                                purpose: "Material de contexto",
-                              },
-                            ],
-                      );
-                      setMessage(
-                        draft.file
-                          ? "Archivo pendiente retirado; no se subió."
-                          : "",
-                      );
-                    }}
-                  >
-                    {draft.file ? "Quitar archivo" : "Quitar fila"}
-                  </button>
-                )}
               </div>
             ))}
+            {drafts
+              .filter(
+                (draft) =>
+                  !draft.saved ||
+                  !active.some((file) => file.id === draft.saved?.id),
+              )
+              .map((draft, index) => (
+                <div className="fields attachment-source-row" key={draft.key}>
+                  <div className="stack">
+                    <strong>Archivo de mi PC</strong>
+                    <div className="attachment-file-box">
+                      {(draft.file || draft.saved) && (
+                        <AttachmentFileChip
+                          name={draft.file?.name ?? draft.saved!.name}
+                          file={draft.file}
+                          href={
+                            draft.saved
+                              ? `/api/attachments/${draft.saved.id}`
+                              : undefined
+                          }
+                          disabled={busy || !!draft.saved}
+                          onRemove={() =>
+                            updateDrafts(
+                              draftsRef.current.filter(
+                                (r) => r.key !== draft.key,
+                              ),
+                            )
+                          }
+                        />
+                      )}
+                      {!draft.saved && !draft.file && (
+                        <input
+                          aria-label={`Adjuntar archivo ${index + 1}`}
+                          type="file"
+                          multiple
+                          accept={accept}
+                          disabled={busy || !!replacing}
+                          onChange={(e) => {
+                            enqueue([...(e.target.files ?? [])], draft.key);
+                            e.target.value = "";
+                          }}
+                        />
+                      )}
+                    </div>
+                    {draft.file && (
+                      <small>
+                        Pendiente de guardar · puedes pegar capturas con Ctrl+V
+                        en esta zona.
+                      </small>
+                    )}
+                  </div>
+                  <label>
+                    Uso del archivo de mi PC
+                    <select
+                      value={draft.purpose}
+                      disabled={busy || !!draft.saved}
+                      onChange={(e) =>
+                        updateDrafts(
+                          draftsRef.current.map((r) =>
+                            r.key === draft.key
+                              ? { ...r, purpose: e.target.value }
+                              : r,
+                          ),
+                        )
+                      }
+                    >
+                      {[
+                        "Material de contexto",
+                        "Logo institucional",
+                        "Referencia visual",
+                        "Fotografía obligatoria",
+                        "Información comercial",
+                        "Manual de marca",
+                      ].map((p) => (
+                        <option key={p}>{p}</option>
+                      ))}
+                    </select>
+                  </label>
+                </div>
+              ))}
+            <small>
+              Puedes seleccionar varios archivos, arrastrarlos o pegar una
+              captura con Ctrl+V aquí.
+            </small>
           </div>
-        }
-      />
-      <div className="row">
-        <button
-          type="button"
-          disabled={busy}
-          onClick={() =>
-            updateDrafts([
-              ...draftsRef.current,
-              { key: crypto.randomUUID(), purpose: "Material de contexto" },
-            ])
-          }
-        >
-          {addLabel}
-        </button>
+        )}
+        <SystemResourcePicker
+          scope={scope}
+          id={id}
+          onChanged={onUploaded}
+          visible={showSystem}
+        />
+        {(showPC || showSystem || active.length > 0) && sourceButtons()}
         {!deferred && (
           <button
             type="button"
@@ -483,70 +568,77 @@ export const Attachments = forwardRef<
             Guardar archivos
           </button>
         )}
-      </div>
-      {deferred && (
-        <p className="hint">
-          Los archivos seleccionados se subirán al guardar las instrucciones o
-          la identidad. Puedes añadir más filas y definir un uso distinto para
-          cada archivo.
-        </p>
-      )}
-      {replacing && (
-        <section className="panel stack" aria-label="Reemplazar adjunto">
-          <strong>Reemplazar: {replacing.name}</strong>
-          <p>
-            Selecciona el archivo nuevo. Conservaremos el anterior y su uso en
-            afiches y trabajos existentes. El nuevo tendrá el mismo propósito y
-            se utilizará en futuras generaciones. No genera imágenes ni consume
-            IA.
-          </p>
-          <label>
-            Archivo nuevo
-            <input
-              aria-label={`Archivo nuevo para ${replacing.name}`}
-              type="file"
-              accept={accept}
-              disabled={busy}
-              onChange={(e) => {
-                void upload(e.target.files?.[0], replacing).catch(() => {});
-                e.target.value = "";
-              }}
-            />
-          </label>
-          <button
-            type="button"
-            disabled={busy}
-            onClick={() => setReplacing(null)}
-          >
-            Cancelar reemplazo
-          </button>
-        </section>
-      )}
-      <div className="attachment-grid">{active.map(card)}</div>
-      {archived.length > 0 && (
-        <details>
-          <summary>Adjuntos anteriores conservados · {archived.length}</summary>
+        {deferred && (
           <p className="hint">
-            Ocultos en próximas generaciones y nuevas configuraciones guardadas.
-            Conservan sus archivos para los trabajos y afiches existentes, y
-            siguen ocupando almacenamiento. Puedes eliminarlos cuando no estén
-            en uso.
+            Los archivos seleccionados se subirán al guardar las instrucciones o
+            la identidad. Puedes añadir más filas y definir un uso distinto para
+            cada archivo.
           </p>
-          <div className="attachment-grid">{archived.map(card)}</div>
-        </details>
-      )}
-      <p className="hint">
-        Hasta 1 GB por archivo, según espacio disponible. Los originales grandes
-        se conservan en Biblioteca y se adjunta una copia optimizada o un
-        extracto. Extraemos texto de TXT, CSV, PDF y DOCX sin consumir IA. Las
-        imágenes tienen vistas previas privadas y se envían como referencias
-        visuales; revisa su uso antes de generar.
-      </p>
-      {message && (
-        <div className="notice" role="status">
-          {message}
-        </div>
-      )}
-    </div>
+        )}
+        {replacing && (
+          <section className="panel stack" aria-label="Reemplazar adjunto">
+            <strong>Reemplazar: {replacing.name}</strong>
+            <p>
+              Selecciona el archivo nuevo. Conservaremos el anterior y su uso en
+              afiches y trabajos existentes. El nuevo tendrá el mismo propósito
+              y se utilizará en futuras generaciones. No genera imágenes ni
+              consume IA.
+            </p>
+            <label>
+              Archivo nuevo
+              <input
+                aria-label={`Archivo nuevo para ${replacing.name}`}
+                type="file"
+                accept={accept}
+                disabled={busy}
+                onChange={(e) => {
+                  void upload(e.target.files?.[0], replacing).catch(() => {});
+                  e.target.value = "";
+                }}
+              />
+            </label>
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => setReplacing(null)}
+            >
+              Cancelar reemplazo
+            </button>
+          </section>
+        )}
+        {active.length > 0 && (
+          <details>
+            <summary>Reemplazar archivos guardados · {active.length}</summary>
+            <div className="attachment-grid">{active.map(card)}</div>
+          </details>
+        )}
+        {archived.length > 0 && (
+          <details>
+            <summary>
+              Adjuntos anteriores conservados · {archived.length}
+            </summary>
+            <p className="hint">
+              Ocultos en próximas generaciones y nuevas configuraciones
+              guardadas. Conservan sus archivos para los trabajos y afiches
+              existentes, y siguen ocupando almacenamiento. Puedes eliminarlos
+              cuando no estén en uso.
+            </p>
+            <div className="attachment-grid">{archived.map(card)}</div>
+          </details>
+        )}
+        <p className="hint">
+          Hasta 1 GB por archivo, según espacio disponible. Los originales
+          grandes se conservan en Biblioteca y se adjunta una copia optimizada o
+          un extracto. Extraemos texto de TXT, CSV, PDF y DOCX sin consumir IA.
+          Las imágenes tienen vistas previas privadas y se envían como
+          referencias visuales; revisa su uso antes de generar.
+        </p>
+        {message && (
+          <div className="notice" role="status">
+            {message}
+          </div>
+        )}
+      </div>
+    </details>
   );
 });

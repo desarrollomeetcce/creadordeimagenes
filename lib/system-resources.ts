@@ -132,7 +132,8 @@ async function files(
         mime: d.previewPath ? "image/webp" : d.mime,
         path: d.previewPath ?? d.path,
         text: d.text,
-        purpose: kind === "d" ? purpose : d.purpose,
+        purpose:
+          kind === "d" || purpose !== "Referencia visual" ? purpose : d.purpose,
         documentId: d.id,
         variationId: undefined as string | undefined,
         versionId: undefined as string | null | undefined,
@@ -148,7 +149,7 @@ async function files(
       mime: "image/png",
       path: v.versions[0]?.path ?? v.path,
       text: "",
-      purpose: kind === "n" ? "Referencia visual" : purpose,
+      purpose,
       documentId: undefined as string | undefined,
       variationId: v.id,
       versionId: v.versions[0]?.id ?? null,
@@ -279,7 +280,25 @@ export async function systemResourceRoutes(
       where: { scope, resourceId, userId: actor.id },
       include: { folder: { select: { name: true } } },
     });
-    const result = legacy
+    const nodeLabel = (key: string) => {
+      const labels: string[] = [],
+        seen = new Set<string>();
+      let node = ctx.tree.find((n) => n.id === key);
+      while (node && !seen.has(node.id)) {
+        seen.add(node.id);
+        labels.unshift(node.name);
+        node = ctx.tree.find((n) => n.id === node?.parentId);
+      }
+      return labels.join(" / ");
+    };
+    const result: {
+      selection: string;
+      purpose: string;
+      name: string;
+      available: boolean;
+      labelPath?: string;
+      href?: string;
+    }[] = legacy
       .filter(
         (b) => !rows.some((r) => r.selection === "n:folder:" + b.folderId),
       )
@@ -287,18 +306,35 @@ export async function systemResourceRoutes(
         selection: "n:folder:" + b.folderId,
         purpose: "Referencia visual",
         name: b.folder.name,
+        labelPath: nodeLabel("folder:" + b.folderId),
+        href:
+          "/?" +
+          new URLSearchParams({
+            view: "library",
+            folder: "folder:" + b.folderId,
+          }),
         available: ctx.tree.some((n) => n.id === "folder:" + b.folderId),
       }));
     for (const b of rows) {
       try {
-        const selected = await files(actor, b.selection, b.purpose, ctx);
+        const selected = await files(actor, b.selection, b.purpose, ctx),
+          folder = b.selection.startsWith("n:"),
+          key = b.selection.slice(2),
+          file = selected[0];
         result.push({
           selection: b.selection,
           purpose: b.purpose,
-          name: b.selection.startsWith("n:")
-            ? (ctx.tree.find((n) => n.id === b.selection.slice(2))?.name ??
-              "Carpeta")
-            : (selected[0]?.name ?? "Archivo"),
+          name: folder
+            ? (ctx.tree.find((n) => n.id === key)?.name ?? "Carpeta")
+            : (file?.name ?? "Archivo"),
+          labelPath: folder ? nodeLabel(key) : undefined,
+          href: folder
+            ? "/?" + new URLSearchParams({ view: "library", folder: key })
+            : file?.variationId
+              ? "/api/variations/" + encodeURIComponent(file.variationId)
+              : "/api/library/documents/" +
+                encodeURIComponent(key) +
+                "?preview=1",
           available: true,
         });
       } catch {
@@ -357,13 +393,22 @@ export async function systemResourceRoutes(
           userId: actor.id,
           folderId: {
             notIn: input.selections
-              .filter((s) => s.selection.startsWith("n:folder:"))
+              .filter(
+                (s) =>
+                  s.selection.startsWith("n:folder:") &&
+                  s.purpose === "Referencia visual",
+              )
               .map((s) => s.selection.slice(9)),
           },
         },
       });
       for (const entry of input.selections.filter(
-        (s) => !legacy.some((b) => s.selection === "n:folder:" + b.folderId),
+        (s) =>
+          !legacy.some(
+            (b) =>
+              s.selection === "n:folder:" + b.folderId &&
+              s.purpose === "Referencia visual",
+          ),
       ))
         await tx.libraryResourceBinding.upsert({
           where: {
