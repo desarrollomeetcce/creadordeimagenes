@@ -500,3 +500,18 @@ test("recuperación de orden distingue muestra aprobada, pendientes y cargos inc
  assert.equal(orderRecovery("NEEDS_REVIEW",[sample,pending],"El OWNER debe guardar y verificar la conexión de IA.",true).needsConnectionReview,true);
  assert(!continuationError(new Error("SQL con un secreto sintético")).includes("secreto"));assert(continuationError(new Error("interno")).includes("ORDEN_CONTINUACION"));
 });
+
+
+test("Paginación de Biblioteca mezcla referencias y originales con empates, páginas profundas y fuentes vacías",async()=>{
+ const {mergedPage}=await import("../lib/library-organization");
+ for(const ascending of [true,false])for(const sizes of [[500,307],[0,27],[27,0],[0,0]]){
+  const compare=(a:{id:string;createdAt:Date},b:{id:string;createdAt:Date})=>(a.createdAt.getTime()-b.createdAt.getTime())*(ascending?1:-1)||a.id.localeCompare(b.id);
+  const a=Array.from({length:sizes[0]},(_,i)=>({id:"a"+i.toString().padStart(4,"0"),createdAt:new Date(1000*(i%100))})).sort(compare);
+  const b=Array.from({length:sizes[1]},(_,i)=>({id:"b"+i.toString().padStart(4,"0"),createdAt:new Date(1000*(i%100))})).sort(compare);
+  for(const offset of [0,1,24,25,400,806,807,999]){
+   let reads=0;const read=(rows:typeof a)=>async(skip:number,take:number)=>{reads++;return rows.slice(skip,skip+take);};
+   const result=await mergedPage(a.length,b.length,offset,25,ascending,read(a),read(b));
+   assert.deepEqual(result,[...a,...b].sort(compare).slice(offset,offset+25));assert(reads<24);
+  }
+ }
+});

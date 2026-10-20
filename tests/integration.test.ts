@@ -9841,7 +9841,7 @@ test("Integración HTTP + PostgreSQL (base exclusiva de pruebas, sin llamadas ex
           );
           const explorer = await user.call("library/explorer?project=" + pid);
           assert.equal(explorer.status, 200);
-          assert(explorer.body.items.some((v: any) => v.id === second.id));
+          assert(!explorer.body.items.some((v: any) => v.id === second.id)); // Moving removes the entry from its prior folder, without changing the source project.
           const listed = await user.call(
             "jobs/list?project=" + pid + "&size=100",
           );
@@ -10889,14 +10889,15 @@ test("Integración HTTP + PostgreSQL (base exclusiva de pruebas, sin llamadas ex
         const resource=level==="project"?`projects/${p.id}`:level==="category"?`categories/${c.id}`:`subproducts/${sub.id}`;
         assert.equal((await owner.call(resource,"DELETE")).status,200);
         const filter=new URLSearchParams({project:p.id,product:c.id,subproduct:sub.id,folder:"subproduct:"+sub.id});
-        const current=await owner.call("library/explorer?"+filter);assert.equal(current.status,200);assert.equal(current.body.total,1);
+        const ownerFilter=new URLSearchParams(filter);ownerFilter.set("folder","folder:"+child.id);
+        const current=await owner.call("library/explorer?"+ownerFilter);assert.equal(current.status,200);assert.equal(current.body.total,1);
         assert.equal(current.body.items[0].sourceNotice,"Viene de un "+({project:"proyecto",category:"producto",subproduct:"subproducto"}[level])+" eliminado");
         for(const id of ids)assert(current.body.tree.some((node:any)=>node.id===id));
         assert.equal((await owner.call("library/explorer?folder=folder:"+child.id)).body.items[0].id,image.id);
         assert.equal((await owner.call(`subproducts/${sub.id}`)).status,404);assert.equal((await owner.call(`subproducts/${sub.id}/instructions`)).status,404);
         const metadata=await user.call("library/hierarchy?"+filter);assert.equal(metadata.status,200);assert.deepEqual(metadata.body.subproducts.map((v:any)=>v.id),[sub.id]);assert(!JSON.stringify(metadata.body).includes("Snapshot privado"));assert(!JSON.stringify(metadata.body).includes("No compartir este contenido"));
         for(const reader of [owner,user,observer]){
-          const listing=await reader.call("library/explorer?"+filter);assert.equal(listing.status,200);assert.equal(listing.body.items[0].id,image.id);assert(!listing.body.tree.some((node:any)=>node.id==="subproduct:"+sibling.id&&reader!==owner));
+          const listing=await reader.call("library/explorer?"+(reader===owner?ownerFilter:filter));assert.equal(listing.status,200);assert.equal(listing.body.items[0].id,image.id);assert(!listing.body.tree.some((node:any)=>node.id==="subproduct:"+sibling.id&&reader!==owner));
           const download=await fetch(root+`/api/variations/${image.id}?download`,{headers:{Cookie:reader.cookie}});assert.equal(download.status,200);assert(Buffer.from(await download.arrayBuffer()).equals(bytes));
           assert.equal((await reader.call(`variations/${image.id}/design`)).status,200);
         }
@@ -10913,7 +10914,7 @@ test("Integración HTTP + PostgreSQL (base exclusiva de pruebas, sin llamadas ex
         assert.equal((await user.call("library/explorer?"+filter)).status,404);assert.equal((await user.call(`variations/${image.id}/design`)).status,404);
         const afterRevocation=await user.call("library/tree");assert(!afterRevocation.body.some((node:any)=>ids.includes(node.id)));
         assert.equal((await owner.call(resource+"/restore","POST")).status,200);
-        const restored=(await owner.call("library/explorer?"+filter)).body;assert.equal(restored.items[0].sourceNotice,null);for(const id of ids)assert.equal(restored.tree.filter((node:any)=>node.id===id).length,1);
+        const restored=(await owner.call("library/explorer?"+ownerFilter)).body;assert.equal(restored.items[0].sourceNotice,null);for(const id of ids)assert.equal(restored.tree.filter((node:any)=>node.id===id).length,1);
         const before=await db.subproduct.findUniqueOrThrow({where:{id:sub.id}});
         assert.equal((await owner.call("library/folder-actions","POST",{action:"delete",ids:[parent.id]})).status,200);
         assert.equal(await db.libraryFolder.count({where:{id:{in:[parent.id,child.id]}}}),0);
@@ -10959,6 +10960,70 @@ test("Integración HTTP + PostgreSQL (base exclusiva de pruebas, sin llamadas ex
       const revoked=await owner.call(base+"/"+uid+"?ids="+ids.join(","),"DELETE");assert.equal(revoked.status,200);assert.equal(await db.subproductMember.count({where:{subproductId:{in:ids},userId:uid}}),0);assert.equal(await db.subproductMember.count({where:{subproductId:others[1].id,userId:uid}}),1);
       await owner.call(`subproducts/${others[0].id}`,"DELETE");assert.equal((await owner.call(url,"POST",{email})).status,404);assert.equal(await db.subproductMember.count({where:{subproductId:s.id,userId:uid}}),0);
       assert.equal(await db.generationJob.count(),jobs);assert.equal(await db.usageLedger.count(),ledger);
+    });
+    await t.test("Biblioteca: movimientos y copias por selección, ciclos mixtos, borrado independiente y revocación",async()=>{
+      const {p,c,s:sub}=await hierarchyForReview(),actor=await db.user.findFirstOrThrow({where:{role:"OWNER"}});
+      const source=await db.variation.findFirstOrThrow({where:{deletedAt:null,expired:false,expiresAt:{gt:new Date()}}});
+      const job=await db.generationJob.create({data:{actorId:actor.id,projectId:p.id,subproductId:sub.id,idempotencyKey:randomUUID(),status:"COMPLETED",snapshot:{prompt:"Privado"},reservedMicros:0n}});
+      const image=await db.variation.create({data:{jobId:job.id,subproductId:sub.id,path:source.path,model:"synthetic-organization",reviewStatus:"APPROVED",expiresAt:new Date(Date.now()+86400000)}});
+      const sourceBefore=await db.subproduct.findUniqueOrThrow({where:{id:sub.id}}),jobs=await db.generationJob.count(),ledger=await db.usageLedger.count();
+      const run=(client:Client,operation:string,selection:string[],destination?:string)=>client.call("library/selection-actions","POST",{operation,selection,...(destination?{destination}:{})});
+      const folder=(await owner.call("library/folder-actions","POST",{action:"create",name:"Destino Windows"})).body,key="folder:"+folder.id,auto="subproduct:"+sub.id;
+      assert.equal((await run(observer,"move",["n:"+auto],key)).status,403);
+      assert.equal((await run(user,"move",["n:"+auto],key)).status,404);
+      assert.equal((await run(owner,"move",["n:"+auto],key)).status,200);
+      let tree=(await owner.call("library/tree")).body;assert.equal(tree.find((n:any)=>n.id===auto).parentId,key);
+      assert.equal((await owner.call("library/tree?organization=source")).body.find((n:any)=>n.id===auto).parentId,"product:"+c.id);
+      assert.equal((await run(owner,"move",["n:"+key],auto)).status,400);
+      assert.equal((await owner.call("library/explorer?folder="+key)).body.total,0);
+      assert.equal((await owner.call("library/explorer?folder="+auto)).body.items[0].id,image.id);
+      assert.equal((await run(owner,"copy",["n:"+auto],"loose:root")).status,200);
+      const copied=await db.libraryFolder.findFirstOrThrow({where:{userId:actor.id,name:sub.name+" · copia"}}),copyKey="folder:"+copied.id;
+      let view=(await owner.call("library/explorer?folder="+copyKey)).body;assert.equal(view.total,1);assert.equal(view.items[0].id,image.id);assert.equal(view.items[0].copied,true);assert.equal(view.counts.BROUGHT,1);assert.equal(view.counts.COMPLETED??0,0);
+      const copySelection=view.items[0].selectionId;
+      assert.equal((await run(owner,"move",[copySelection],auto)).status,200);
+      assert.equal((await owner.call("library/explorer?folder="+copyKey)).body.total,0);
+      assert.equal((await run(owner,"move",["v:"+image.id],copyKey)).status,200);
+      view=(await owner.call("library/explorer?folder="+copyKey)).body;assert.equal(view.total,1);assert.equal(view.counts.BROUGHT,1);
+      assert.equal((await run(owner,"delete",["v:"+image.id])).status,200);
+      view=(await owner.call("library/explorer?folder="+copyKey)).body;assert.equal(view.total,0);assert.equal(view.counts.DELETED,1);assert.equal(view.counts.BROUGHT,1);
+      view=(await owner.call("library/explorer?folder="+auto)).body;assert.equal(view.total,1);assert.equal(view.items[0].selectionId,copySelection);
+      // Explicit references preserve original permissions, even after moving/copying into personal folders.
+      await db.subproductMember.create({data:{subproductId:sub.id,userId:uid}});
+      const userFolder=(await user.call("library/folder-actions","POST",{action:"create",name:"Copia de usuario"})).body;
+      assert.equal((await run(user,"copy",["v:"+image.id],"folder:"+userFolder.id)).status,200);
+      assert.equal((await user.call("library/explorer?folder=folder:"+userFolder.id)).body.total,1);
+      await db.subproductMember.delete({where:{subproductId_userId:{subproductId:sub.id,userId:uid}}});
+      assert.equal((await user.call("library/explorer?folder=folder:"+userFolder.id)).body.total,0);
+      assert.equal((await run(owner,"delete",["n:"+key])).status,200);
+      assert(!(await owner.call("library/tree")).body.some((n:any)=>n.id===auto));
+      assert((await owner.call("library/tree?organization=source")).body.some((n:any)=>n.id===auto));
+      assert.equal((await owner.call("library/explorer?folder=loose:root")).body.items.some((i:any)=>i.selectionId===copySelection),true);
+      assert.deepEqual(await db.subproduct.findUniqueOrThrow({where:{id:sub.id}}),sourceBefore);
+      assert.equal((await run(owner,"restore",[])).status,200);assert((await owner.call("library/tree")).body.some((n:any)=>n.id===auto));
+      assert.equal(await db.generationJob.count(),jobs);assert.equal(await db.usageLedger.count(),ledger);assert.equal((await db.variation.findUniqueOrThrow({where:{id:image.id}})).path,source.path);
+    });
+    await t.test("Biblioteca: paginación combinada y contadores de importados, eliminados y fechas",async()=>{
+      const {p,c,s:sub}=await hierarchyForReview(),actor=await db.user.findFirstOrThrow({where:{role:"OWNER"}}),source=await db.variation.findFirstOrThrow({where:{deletedAt:null,expired:false,expiresAt:{gt:new Date()}}});
+      const job=await db.generationJob.create({data:{actorId:actor.id,projectId:p.id,subproductId:sub.id,idempotencyKey:randomUUID(),status:"COMPLETED",snapshot:{},reservedMicros:0n,createdAt:new Date("2026-10-01T15:00:00Z")}});
+      const image=await db.variation.create({data:{jobId:job.id,subproductId:sub.id,path:source.path,model:"synthetic-pages",reviewStatus:"APPROVED",expiresAt:new Date(Date.now()+86400000),createdAt:new Date("2026-10-01T15:00:00Z")}});
+      const key="subproduct:"+sub.id;
+      await db.libraryImageCopy.createMany({data:Array.from({length:28},(_,i)=>({userId:actor.id,variationId:image.id,destinationKey:key,createdAt:new Date("2026-10-02T15:00:00Z")}))});
+      const one=(await owner.call("library/explorer?folder="+key+"&limit=25")).body,two=(await owner.call("library/explorer?folder="+key+"&limit=25&page=2")).body;
+      assert.equal(one.items.length,25);assert.equal(two.items.length,4);assert.equal(new Set([...one.items,...two.items].map((i:any)=>i.entryId)).size,29);
+      const filtered=(await owner.call("library/explorer?folder="+key+"&from=2026-10-02&to=2026-10-02")).body;assert.equal(filtered.total,28);assert.equal(filtered.counts.BROUGHT,28);
+      const form=new FormData();form.set("destination",key);form.set("file",new File(["Documento pegado"],"importado.txt",{type:"text/plain"}));
+      const uploaded=await fetch(root+"/api/library/documents",{method:"POST",headers:{Cookie:owner.cookie,Origin:root},body:form});assert.equal(uploaded.status,201);const doc=await uploaded.json();
+      assert((await owner.call("library/explorer?folder="+key)).body.documents.some((d:any)=>d.id===doc.id));
+      assert.equal((await owner.call("library/selection-actions","POST",{operation:"copy",selection:["d:"+doc.id],destination:key})).status,200);
+      assert.equal((await owner.call("library/documents/"+doc.id,"DELETE")).status,200);
+      const docs=(await owner.call("library/explorer?folder="+key)).body;assert.equal(docs.documents.length,1);assert.equal(docs.counts.DELETED,1);assert.equal(docs.counts.BROUGHT,30);
+      const bytes=await fetch(root+"/api/library/documents/"+docs.documents[0].id,{headers:{Cookie:owner.cookie}});assert.equal(bytes.status,200);assert.equal(await bytes.text(),"Documento pegado");
+      const malformed=await owner.call("library/selection-actions","POST",{operation:"move",selection:["d:"+docs.documents[0].id,"v:unknown"],destination:"loose:root"});assert.equal(malformed.status,404);
+      assert.equal((await owner.call("library/explorer?folder="+key)).body.documents.length,1);
+      const survivor=docs.documents[0].id;assert.equal(await db.assetDeletion.count({where:{path:doc.path}}),0);
+      assert.equal((await owner.call("library/selection-actions","POST",{operation:"delete",selection:["d:"+survivor]})).status,200);
+      assert.equal(await db.assetDeletion.count({where:{path:doc.path}}),1);
     });
     await t.test("cierre de sesión invalida el token", async () => {
       assert.equal((await user.call("auth/logout", "POST")).status, 200);

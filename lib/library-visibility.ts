@@ -20,6 +20,7 @@ export function libraryImageVisibility(
                   : []),
                 { reviewStatus: "APPROVED" },
                 { libraryItems: { some: { userId: user.id } } },
+                { libraryCopies: { some: { userId: user.id,deletedAt:null } } },
               ],
             },
           ]),

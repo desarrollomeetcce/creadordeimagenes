@@ -18,7 +18,8 @@ import { ErrorNotice } from "./error-notice";
 import { ImagePreviewModal } from "./image-preview-modal";
 import { ImageEditorModal } from "./image-editor-modal";
 import {
-  OrderProgressCard, orderNeedsControls,
+  OrderProgressCard,
+  orderNeedsControls,
   orderRequest,
   driveOrder,
   type OrderProgress,
@@ -26,9 +27,15 @@ import {
 import { usdMicros } from "../../lib/usage-format";
 import { costLink } from "./hierarchy-filters";
 import { downloadArchive } from "./collection-gallery";
-import {GenerationImageCard,type PendingImage} from "./generation-image-card";
+import {
+  GenerationImageCard,
+  type PendingImage,
+} from "./generation-image-card";
 type Item = {
-  sourceNotice?:string|null;
+  entryId: string;
+  selectionId: string;
+  copied: boolean;
+  sourceNotice?: string | null;
   canEdit: boolean;
   canApprove: boolean;
   actualMicros?: string | null;
@@ -51,8 +58,9 @@ type Item = {
 type Doc = { id: string; name: string; size: number; mime: string };
 type Data = {
   orders: OrderProgress[];
-  inflight:PendingImage[]; inflightTotal:number;
-  entries:{kind:string;id:string}[];
+  inflight: PendingImage[];
+  inflightTotal: number;
+  entries: { kind: string; id: string }[];
   tree: FolderNode[];
   items: Item[];
   documents: Doc[];
@@ -78,8 +86,8 @@ export function Library() {
     id: string;
     name: string;
     revision: number;
-    subproductHref?:string;
-    sourceNotice?:string|null;
+    subproductHref?: string;
+    sourceNotice?: string | null;
   } | null>(null);
   const canEdit = useCanEdit(),
     [hierarchy, setHierarchy] = useState<HierarchyValue>(hierarchyFromLocation),
@@ -98,10 +106,17 @@ export function Library() {
     [review, setReview] = useState("all"),
     [sort, setSort] = useState("newest"),
     [kind, setKind] = useState("all"),
+    [recursive, setRecursive] = useState(false),
     [busy, setBusy] = useState(false),
     [error, setError] = useState(""),
     [message, setMessage] = useState(""),
     [refreshing, setRefreshing] = useState(true);
+  const [clipboard, setClipboard] = useState<{
+    operation: "move" | "copy";
+    selection: string[];
+  } | null>(null);
+  const dragging = useRef<string[]>([]);
+  const [dropTarget, setDropTarget] = useState("");
   const [move, setMove] = useState(false),
     [target, setTarget] = useState("__unselected"),
     [targetQuery, setTargetQuery] = useState(""),
@@ -119,6 +134,7 @@ export function Library() {
     review,
     order: sort,
     kind,
+    recursive: String(recursive),
   }).toString();
   const refresh = useCallback(async () => {
     const seq = ++revision.current;
@@ -169,11 +185,19 @@ export function Library() {
   useEffect(() => {
     if (!menu) return;
     const close = () => setMenu(null);
+    const escape = (e: KeyboardEvent) => {
+      if (e.key === "Escape") close();
+    };
+    document
+      .querySelector<HTMLButtonElement>(
+        ".explorer-context-menu button:not(:disabled)",
+      )
+      ?.focus();
     window.addEventListener("click", close);
-    window.addEventListener("keydown", close);
+    window.addEventListener("keydown", escape);
     return () => {
       window.removeEventListener("click", close);
-      window.removeEventListener("keydown", close);
+      window.removeEventListener("keydown", escape);
     };
   }, [menu]);
   const open = (key: string) => {
@@ -195,10 +219,10 @@ export function Library() {
     setError("");
     setMessage("");
     try {
-      const outcome=await fn();
+      const outcome = await fn();
       setSelected([]);
       await refresh();
-      setMessage(typeof outcome==="string"?outcome:text);
+      setMessage(typeof outcome === "string" ? outcome : text);
       const c = new BroadcastChannel("studio-updates");
       c.postMessage("library");
       c.close();
@@ -217,10 +241,10 @@ export function Library() {
     );
   const context = (e: React.MouseEvent, id: string) => {
     e.preventDefault();
-    if (!selected.includes(id)) setSelected([id]);
+    if (id && !selected.includes(id)) setSelected([id]);
     setMenu({
       x: Math.min(e.clientX, Math.max(0, innerWidth - 220)),
-      y: Math.min(e.clientY, Math.max(0, innerHeight - 160)),
+      y: Math.min(e.clientY, Math.max(0, innerHeight - 390)),
       id,
     });
   };
@@ -230,67 +254,148 @@ export function Library() {
   const chooseAll = () =>
     setSelected(
       [
-        ...folders
-          .filter((f) => f.kind === "folder")
-          .map((f) => "f:" + f.id.slice(7)),
-        ...(data?.items ?? []).map((i) => "v:" + i.id),
+        ...folders.filter((f) => f.kind !== "loose").map((f) => "n:" + f.id),
+        ...(data?.items ?? []).map((i) => i.selectionId),
         ...(data?.documents ?? []).map((d) => "d:" + d.id),
       ].slice(0, 200),
     );
-  const chosenFolders = selected
-      .filter((x) => x.startsWith("f:"))
-      .map((x) => x.slice(2)),
-    chosenImages = selected
-      .filter((x) => x.startsWith("v:"))
-      .map((x) => x.slice(2)),
-    chosenDocs = selected
-      .filter((x) => x.startsWith("d:"))
-      .map((x) => x.slice(2));
+  const projectFolderWarning =
+    "Evita modificar o mover las carpetas de proyectos. Utiliza preferentemente carpetas personales para organizar tus archivos.";
+  const selectedProjectFolder = selected.some(
+    (id) =>
+      id.startsWith("n:") &&
+      data?.tree.some(
+        (n) =>
+          n.id === id.slice(2) && n.kind !== "folder" && n.kind !== "loose",
+      ),
+  );
+  const chosenImages = [
+    ...new Set(
+      (data?.items ?? [])
+        .filter((i) => selected.includes(i.selectionId))
+        .map((i) => i.id),
+    ),
+  ];
+  const transfer = (
+    operation: "move" | "copy",
+    selection: string[],
+    destination: string,
+    clearClipboard = false,
+  ) =>
+    void action(
+      async () => {
+        await api("selection-actions", "POST", {
+          operation,
+          selection,
+          destination: destination || "loose:root",
+        });
+        if (clearClipboard) setClipboard(null);
+        setMove(false);
+        setDropTarget("");
+      },
+      operation === "copy"
+        ? "Copias añadidas a la carpeta. Conservan el mismo original y sus permisos."
+        : "Selección movida.",
+    );
   const removeSelection = () => {
     if (
+      !selected.length ||
       !confirm(
-        "¿Eliminar las carpetas seleccionadas y retirar las imágenes de tu biblioteca? El contenido de las carpetas pasa a la raíz. Los originales de los afiches se conservan; los documentos seleccionados se eliminan.",
+        "¿Quitar esta selección de la Biblioteca? Las carpetas y sus subcarpetas se retiran de tu vista; sus archivos pasan a Archivos sin carpeta. Los proyectos y originales de las imágenes se conservan.",
       )
     )
       return;
-    void action(async () => {
-      if (chosenFolders.length)
-        await api("folder-actions", "POST", {
-          action: "delete",
-          ids: chosenFolders,
-        });
-      if (chosenImages.length)
-        await api("item-actions", "POST", {
-          action: "remove",
-          ids: chosenImages,
-        });
-      for (const id of chosenDocs) await api("documents/" + id, "DELETE");
-    }, "Selección retirada. Los originales de los afiches se conservan.");
+    void action(
+      () =>
+        api("selection-actions", "POST", {
+          operation: "delete",
+          selection: selected,
+        }),
+      "Selección retirada de tu Biblioteca. El origen se conserva.",
+    );
   };
-  const moveSelection = () =>
-    void action(async () => {
-      if (chosenFolders.length)
-        await api("folder-actions", "POST", {
-          action: "move",
-          ids: chosenFolders,
-          destination: target || null,
-        });
-      if (chosenImages.length)
-        await api("item-actions", "POST", {
-          action: "move",
-          ids: chosenImages,
-          folderId: target.startsWith("folder:") ? target.slice(7) : null,
-        });
-      for (const id of chosenDocs)
-        await api("documents/" + id, "PATCH", {
-          folderId: target.startsWith("folder:") ? target.slice(7) : null,
-        });
-      setMove(false);
-    }, "Selección movida sin copiar imágenes.");
+  const moveSelection = () => transfer("move", selected, target);
+  const paste = (destination = folder) => {
+    if (clipboard && !busy)
+      transfer(
+        clipboard.operation,
+        clipboard.selection,
+        destination,
+        clipboard.operation === "move",
+      );
+  };
+  const prepare = (operation: "move" | "copy") => {
+    setClipboard({ operation, selection: [...selected] });
+    setMenu(null);
+    setMessage(
+      operation === "move"
+        ? "Selección cortada. Abre el destino y pulsa Pegar."
+        : "Selección copiada. Abre el destino y pulsa Pegar.",
+    );
+  };
+  const dragStart = (e: React.DragEvent, id: string) => {
+    if (!canEdit || busy) return;
+    e.stopPropagation();
+    const ids = selected.includes(id) ? selected : [id];
+    setSelected(ids);
+    if (
+      ids.some(
+        (id) =>
+          id.startsWith("n:") &&
+          data?.tree.some((n) => n.id === id.slice(2) && n.kind !== "folder"),
+      )
+    )
+      setMessage(projectFolderWarning);
+    dragging.current = ids;
+    e.dataTransfer.effectAllowed = "copyMove";
+    e.dataTransfer.setData("application/x-studio-library", JSON.stringify(ids));
+  };
+  const dragOver = (e: React.DragEvent, key: string) => {
+    if (!canEdit || busy || !dragging.current.length) return;
+    e.preventDefault();
+    e.stopPropagation();
+    e.dataTransfer.dropEffect = e.ctrlKey || e.metaKey ? "copy" : "move";
+    setDropTarget(key);
+  };
+  const drop = (e: React.DragEvent, key: string) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const ids = dragging.current;
+    dragging.current = [];
+    setDropTarget("");
+    if (canEdit && !busy && ids.length)
+      transfer(e.ctrlKey || e.metaKey ? "copy" : "move", ids, key);
+  };
+  const shortcuts = (e: React.KeyboardEvent) => {
+    if (
+      !canEdit ||
+      busy ||
+      (e.target instanceof HTMLElement &&
+        e.target.closest("input,textarea,select,[contenteditable=true]"))
+    )
+      return;
+    if (
+      (e.ctrlKey || e.metaKey) &&
+      ["c", "x", "v"].includes(e.key.toLowerCase())
+    ) {
+      if (e.key.toLowerCase() === "v") {
+        if (!clipboard) return;
+        e.preventDefault();
+        paste();
+      } else if (selected.length) {
+        e.preventDefault();
+        prepare(e.key.toLowerCase() === "x" ? "move" : "copy");
+      }
+    } else if (e.key === "Delete" && selected.length) {
+      e.preventDefault();
+      removeSelection();
+    }
+  };
   const upload = async (file: File) => {
     const form = new FormData();
     form.set("file", file);
     if (folder.startsWith("folder:")) form.set("folderId", folder.slice(7));
+    form.set("destination", folder || "loose:root");
     const r = await fetch("/api/library/documents", {
       method: "POST",
       body: form,
@@ -298,165 +403,253 @@ export function Library() {
     const b = await r.json();
     if (!r.ok) throw Error(b.error);
   };
-  const editingItem=data?.items.find(item=>item.id===editing);
-  const editingSubproduct=editingItem?.subproduct;
-  const previewItem=data?.items.find(item=>item.id===preview?.id);
-  const previewNotice=previewItem?previewItem.sourceNotice:preview?.sourceNotice;
-  const anchors=new Map<string,OrderProgress>();
-  for(const order of data?.orders??[]){
-   if(!orderNeedsControls(order))continue;
-   const image=data?.items.find(i=>i.job.id===order.sampleJobId)??data?.items.find(i=>order.jobs?.some(j=>j.id===i.job.id));
-   const slot=data?.inflight?.find(i=>i.orderId===order.id);
-   if(image||slot)anchors.set(image?.id??slot!.id,order);
+  const editingItem = data?.items.find((item) => item.id === editing);
+  const editingSubproduct = editingItem?.subproduct;
+  const previewItem = data?.items.find((item) => item.id === preview?.id);
+  const previewNotice = previewItem
+    ? previewItem.sourceNotice
+    : preview?.sourceNotice;
+  const anchors = new Map<string, OrderProgress>();
+  for (const order of data?.orders ?? []) {
+    if (!orderNeedsControls(order)) continue;
+    const image =
+      data?.items.find((i) => i.job.id === order.sampleJobId) ??
+      data?.items.find((i) => order.jobs?.some((j) => j.id === i.job.id));
+    const slot = data?.inflight?.find((i) => i.orderId === order.id);
+    if (image || slot) anchors.set(image?.id ?? slot!.id, order);
   }
-  const renderImage=(i:Item)=>{const anchorOrder=anchors.get(i.id);return (
-              <article
-                key={i.id}
-                className={"card gallery "+(i.reviewStatus!=="APPROVED"?"image-awaiting-approval":"image-approved")}
-                onContextMenu={(e) => context(e, "v:" + i.id)}
-                draggable={canEdit}
-                onDragStart={(e) => {
-                  if (!selected.includes("v:" + i.id))
-                    setSelected(["v:" + i.id]);
-                  e.dataTransfer.setData("text/plain", i.id);
-                }}
-              >
-                <label className="row">
-                  <input
-                    type="checkbox"
-                    checked={selected.includes("v:" + i.id)}
-                    onChange={(e) => toggle("v:" + i.id, e.target.checked)}
-                  />
-                  Seleccionar
-                </label>
-                <span className={"badge "+(i.reviewStatus==="APPROVED"?"status-completed":"approval-required")}>{i.reviewStatus==="APPROVED"?"Aprobada":"Pendiente de aprobación"}</span>
-                <button
-                  type="button"
-                  className="image-preview-trigger"
-                  aria-label={`Ampliar imagen · ${i.subproduct?.name ?? "Prueba de IA"}`}
-                  onClick={() =>
-                    setPreview({
-                      id: i.id,
-                      name: i.subproduct?.name ?? "Prueba de IA",
-                      revision: i.revision,
-                      sourceNotice:i.sourceNotice,
-                      subproductHref:i.subproduct&&!i.sourceNotice?"?"+new URLSearchParams({view:"projects",category:i.subproduct.category.id,subproduct:i.subproduct.id}):undefined,
+  const renderImage = (i: Item) => {
+    const anchorOrder = anchors.get(i.id);
+    return (
+      <article
+        key={i.entryId}
+        data-library-selection={i.selectionId}
+        className={
+          "card gallery " +
+          (i.reviewStatus !== "APPROVED"
+            ? "image-awaiting-approval"
+            : "image-approved") +
+          (clipboard?.operation === "move" &&
+          clipboard.selection.includes(i.selectionId)
+            ? " library-cut"
+            : "")
+        }
+        onContextMenu={(e) => context(e, i.selectionId)}
+        draggable={canEdit}
+        onDragStart={(e) => dragStart(e, i.selectionId)}
+        onDragEnd={() => {
+          dragging.current = [];
+          setDropTarget("");
+        }}
+      >
+        <label className="row">
+          <input
+            type="checkbox"
+            checked={selected.includes(i.selectionId)}
+            onChange={(e) => toggle(i.selectionId, e.target.checked)}
+          />
+          Seleccionar
+        </label>
+        <span
+          className={
+            "badge " +
+            (i.reviewStatus === "APPROVED"
+              ? "status-completed"
+              : "approval-required")
+          }
+        >
+          {i.reviewStatus === "APPROVED"
+            ? "Aprobada"
+            : "Pendiente de aprobación"}
+        </span>
+        <button
+          type="button"
+          className="image-preview-trigger"
+          aria-label={`Ampliar imagen · ${i.subproduct?.name ?? "Prueba de IA"}`}
+          onClick={() =>
+            setPreview({
+              id: i.id,
+              name: i.subproduct?.name ?? "Prueba de IA",
+              revision: i.revision,
+              sourceNotice: i.sourceNotice,
+              subproductHref:
+                i.subproduct && !i.sourceNotice
+                  ? "?" +
+                    new URLSearchParams({
+                      view: "projects",
+                      category: i.subproduct.category.id,
+                      subproduct: i.subproduct.id,
                     })
-                  }
-                >
-                  <img
-                    loading="lazy"
-                    src={
-                      "/api/variations/" +
-                      i.id +
-                      "?thumbnail=true&v=" +
-                      i.revision
-                    }
-                    alt={i.subproduct?.name ?? "Prueba de IA"}
-                  />
-                </button>
-                <button
-                  type="button"
-                  onClick={() =>
-                    setPreview({
-                      id: i.id,
-                      name: i.subproduct?.name ?? "Prueba de IA",
-                      revision: i.revision,
-                      sourceNotice:i.sourceNotice,
-                      subproductHref:i.subproduct&&!i.sourceNotice?"?"+new URLSearchParams({view:"projects",category:i.subproduct.category.id,subproduct:i.subproduct.id}):undefined,
+                  : undefined,
+            })
+          }
+        >
+          <img
+            loading="lazy"
+            src={"/api/variations/" + i.id + "?thumbnail=true&v=" + i.revision}
+            alt={i.subproduct?.name ?? "Prueba de IA"}
+          />
+        </button>
+        <button
+          type="button"
+          onClick={() =>
+            setPreview({
+              id: i.id,
+              name: i.subproduct?.name ?? "Prueba de IA",
+              revision: i.revision,
+              sourceNotice: i.sourceNotice,
+              subproductHref:
+                i.subproduct && !i.sourceNotice
+                  ? "?" +
+                    new URLSearchParams({
+                      view: "projects",
+                      category: i.subproduct.category.id,
+                      subproduct: i.subproduct.id,
                     })
-                  }
-                >
-                  Ampliar imagen
-                </button>
-                <strong>{i.subproduct?.name ?? "Prueba de IA"}</strong>
-                {i.sourceNotice?<span className="source-deleted-notice">{i.sourceNotice}</span>:i.subproduct&&<a className="button" href={"?"+new URLSearchParams({view:"projects",category:i.subproduct.category.id,subproduct:i.subproduct.id})}>{i.canEdit?"Editar subproducto":"Ir al subproducto"} ↗</a>}
-                {i.canApprove && i.reviewStatus !== "APPROVED" && (
-                  <button
-                    type="button"
-                    className="primary"
-                    disabled={busy}
-                    onClick={() =>
-                      void action(async () => {
-                        const order = data?.orders?.find(
-                          (o) => o.canManage && o.sampleJobId === i.job.id,
-                        );
-                        if (order) {
-                          const updated=await orderRequest(`/${order.id}/approve`, {
-                            jobId: i.job.id,
-                          });
-                          if (order.mode === "immediate"&&updated.status==="ACTIVE")
-                            void driveOrder(order.id, refresh).catch((e) =>
-                              setError(e.message),
-                            );
-                          if(["NEEDS_REVIEW","DISPATCH_UNCERTAIN"].includes(updated.status))return "Imagen aprobada y conservada. La continuación necesita atención; revisa el motivo y la acción disponible en esta imagen.";
-                        } else {
-                          const response = await fetch(
-                            `/api/jobs/${i.job.id}/approve`,
-                            { method: "POST" },
-                          );
-                          const result = await response.json();
-                          if (!response.ok) throw Error(result.error);
-                        }
-                      }, "Imagen aprobada. La orden continúa según el modo que elegiste al enviarla.")
-                    }
-                  >
-                    {data?.orders.some(o=>o.canManage&&o.sampleJobId===i.job.id&&o.pending>0)?"Aprobar y continuar":"Aprobar imagen"}
-                  </button>
-                )}
-                {i.canEdit && (
-                  <button type="button" onClick={() => setEditing(i.id)}>
-                    Editar imagen
-                  </button>
-                )}
-                <p className="hint">
-                  {i.subproduct
-                    ? [
-                        i.subproduct.category.project.name,
-                        i.subproduct.category.name,
-                        i.subproduct.name,
-                      ].join(" / ")
-                    : "Pruebas"}
-                  <br />
-                  {new Date(i.createdAt).toLocaleString("es-PE", {
-                    timeZone: "America/Lima",
-                  })}
-                </p>
-                {i.actualMicros !== undefined && (
-                  <p className="hint">
-                    Coste informado:{" "}
-                    {i.actualMicros === null
-                      ? "No informado"
-                      : "USD " + usdMicros(i.actualMicros)}
-                    <br />
-                    <a
-                      href={costLink({
-                        project: i.subproduct?.category.project.id ?? "none",
-                        product: i.subproduct?.category.id ?? "",
-                        subproduct: i.subproduct?.id ?? "",
-                        from: hierarchy.from,
-                        to: hierarchy.to,
-                      })}
-                    >
-                      Ver costos de esta carpeta →
-                    </a>
-                  </p>
-                )}
-                <a href={"/api/variations/" + i.id + "?download"}>
-                  Descargar PNG
-                </a>
-                {anchorOrder&&<OrderProgressCard inline approvalInImage order={anchorOrder} refresh={refresh}/>}
-              </article>
-  );};
+                  : undefined,
+            })
+          }
+        >
+          Ampliar imagen
+        </button>
+        <strong>{i.subproduct?.name ?? "Prueba de IA"}</strong>
+        {i.copied && (
+          <small title="Comparte el archivo, versiones y permisos del original">
+            Copia de Biblioteca · mismo original
+          </small>
+        )}
+        {i.sourceNotice ? (
+          <span className="source-deleted-notice">{i.sourceNotice}</span>
+        ) : (
+          i.subproduct && (
+            <a
+              className="button"
+              href={
+                "?" +
+                new URLSearchParams({
+                  view: "projects",
+                  category: i.subproduct.category.id,
+                  subproduct: i.subproduct.id,
+                })
+              }
+            >
+              {i.canEdit ? "Editar subproducto" : "Ir al subproducto"} ↗
+            </a>
+          )
+        )}
+        {i.canApprove && i.reviewStatus !== "APPROVED" && (
+          <button
+            type="button"
+            className="primary"
+            disabled={busy}
+            onClick={() =>
+              void action(async () => {
+                const order = data?.orders?.find(
+                  (o) => o.canManage && o.sampleJobId === i.job.id,
+                );
+                if (order) {
+                  const updated = await orderRequest(`/${order.id}/approve`, {
+                    jobId: i.job.id,
+                  });
+                  if (order.mode === "immediate" && updated.status === "ACTIVE")
+                    void driveOrder(order.id, refresh).catch((e) =>
+                      setError(e.message),
+                    );
+                  if (
+                    ["NEEDS_REVIEW", "DISPATCH_UNCERTAIN"].includes(
+                      updated.status,
+                    )
+                  )
+                    return "Imagen aprobada y conservada. La continuación necesita atención; revisa el motivo y la acción disponible en esta imagen.";
+                } else {
+                  const response = await fetch(
+                    `/api/jobs/${i.job.id}/approve`,
+                    { method: "POST" },
+                  );
+                  const result = await response.json();
+                  if (!response.ok) throw Error(result.error);
+                }
+              }, "Imagen aprobada. La orden continúa según el modo que elegiste al enviarla.")
+            }
+          >
+            {data?.orders.some(
+              (o) => o.canManage && o.sampleJobId === i.job.id && o.pending > 0,
+            )
+              ? "Aprobar y continuar"
+              : "Aprobar imagen"}
+          </button>
+        )}
+        {i.canEdit && (
+          <button type="button" onClick={() => setEditing(i.id)}>
+            Editar imagen
+          </button>
+        )}
+        <p className="hint">
+          {i.subproduct
+            ? [
+                i.subproduct.category.project.name,
+                i.subproduct.category.name,
+                i.subproduct.name,
+              ].join(" / ")
+            : "Pruebas"}
+          <br />
+          {new Date(i.createdAt).toLocaleString("es-PE", {
+            timeZone: "America/Lima",
+          })}
+        </p>
+        {i.actualMicros !== undefined && (
+          <p className="hint">
+            Coste informado:{" "}
+            {i.actualMicros === null
+              ? "No informado"
+              : "USD " + usdMicros(i.actualMicros)}
+            <br />
+            <a
+              href={costLink({
+                project: i.subproduct?.category.project.id ?? "none",
+                product: i.subproduct?.category.id ?? "",
+                subproduct: i.subproduct?.id ?? "",
+                from: hierarchy.from,
+                to: hierarchy.to,
+              })}
+            >
+              Ver costos de esta carpeta →
+            </a>
+          </p>
+        )}
+        <a href={"/api/variations/" + i.id + "?download"}>Descargar PNG</a>
+        {anchorOrder && (
+          <OrderProgressCard
+            inline
+            approvalInImage
+            order={anchorOrder}
+            refresh={refresh}
+          />
+        )}
+      </article>
+    );
+  };
   return (
-    <section className="stack library-explorer">
+    <section
+      className="stack library-explorer"
+      tabIndex={-1}
+      onKeyDown={shortcuts}
+      onPaste={(e) => {
+        if (!canEdit || busy || !e.clipboardData.files.length) return;
+        const files = Array.from(e.clipboardData.files);
+        e.preventDefault();
+        void action(async () => {
+          for (const file of files) await upload(file);
+        }, "Archivos pegados en la carpeta.");
+      }}
+    >
       {preview && (
         <ImagePreviewModal
           id={preview.id}
           name={preview.name}
           revision={preview.revision}
           sourceNotice={previewNotice}
-          subproductHref={previewNotice?undefined:preview.subproductHref}
+          subproductHref={previewNotice ? undefined : preview.subproductHref}
           onClose={() => setPreview(null)}
         />
       )}
@@ -464,7 +657,16 @@ export function Library() {
         <ImageEditorModal
           id={editing}
           sourceNotice={editingItem?.sourceNotice}
-          subproductHref={editingSubproduct&&!editingItem?.sourceNotice ? "?"+new URLSearchParams({view:"projects",category:editingSubproduct.category.id,subproduct:editingSubproduct.id}) : undefined}
+          subproductHref={
+            editingSubproduct && !editingItem?.sourceNotice
+              ? "?" +
+                new URLSearchParams({
+                  view: "projects",
+                  category: editingSubproduct.category.id,
+                  subproduct: editingSubproduct.id,
+                })
+              : undefined
+          }
           onClose={() => {
             setEditing(null);
             void refresh();
@@ -482,15 +684,48 @@ export function Library() {
         </div>
       </div>
       <div className="explorer-layout">
-        <FolderTree nodes={data?.tree ?? []} current={folder} onOpen={open} />
-        <div className="explorer-content stack">
+        <FolderTree
+          nodes={data?.tree ?? []}
+          current={folder}
+          onOpen={open}
+          grouped
+          dropTarget={dropTarget}
+          onContext={context}
+          onDragStart={
+            canEdit ? (e, key) => dragStart(e, "n:" + key) : undefined
+          }
+          onDragOver={dragOver}
+          onDrop={drop}
+          onDragEnd={() => {
+            dragging.current = [];
+            setDropTarget("");
+          }}
+        />
+        <div
+          className="explorer-content stack"
+          onContextMenu={(e) => {
+            if (
+              !(e.target instanceof HTMLElement) ||
+              !e.target.closest("article,button,a,input,select,textarea")
+            )
+              context(e, "");
+          }}
+          onDragOver={(e) => {
+            if (e.target === e.currentTarget)
+              dragOver(e, folder || "loose:root");
+          }}
+          onDrop={(e) => {
+            if (e.target === e.currentTarget) drop(e, folder || "loose:root");
+          }}
+        >
           <FolderBreadcrumbs
             nodes={data?.tree ?? []}
             current={folder}
             onOpen={open}
           />
           <div className="explorer-tools stack">
-            <HierarchyFilters library
+            <HierarchyFilters
+              library
               dateSummary={
                 <div
                   className="period-summary"
@@ -510,6 +745,22 @@ export function Library() {
                       {data?.counts.COMPLETED === 1
                         ? "flyer generado"
                         : "flyers generados"}
+                    </span>
+                    <span title="Imágenes retiradas de tu Biblioteca y archivos eliminados; no incluye caducados">
+                      <strong>
+                        {refreshing
+                          ? "…"
+                          : (data?.counts.DELETED ?? 0).toLocaleString("es-PE")}
+                      </strong>{" "}
+                      eliminados
+                    </span>
+                    <span title="Archivos añadidos, copias y afiches movidos a la carpeta; se cuentan también si después los eliminaste">
+                      <strong>
+                        {refreshing
+                          ? "…"
+                          : (data?.counts.BROUGHT ?? 0).toLocaleString("es-PE")}
+                      </strong>{" "}
+                      traídos
                     </span>
                     <span>
                       <strong>
@@ -569,6 +820,18 @@ export function Library() {
                       <option value="pending">Por aprobar</option>
                     </select>
                   </label>
+                  <label className="row">
+                    <input
+                      type="checkbox"
+                      checked={recursive}
+                      onChange={(e) => {
+                        setRecursive(e.target.checked);
+                        setPage(1);
+                        setSelected([]);
+                      }}
+                    />
+                    Incluir imágenes de subcarpetas
+                  </label>
                   <label>
                     Ordenar
                     <select
@@ -616,14 +879,16 @@ export function Library() {
                         setBusy(true);
                         setError("");
                         try {
-                          const all: string[] = [];
+                          const all: string[] = folders
+                            .filter((f) => f.kind !== "loose")
+                            .map((f) => "n:" + f.id);
                           for (let page = 1; page <= 2; page++) {
                             const p = new URLSearchParams(params);
                             p.set("limit", "100");
                             p.set("page", String(page));
                             const batch: Data = await api("explorer?" + p);
                             all.push(
-                              ...batch.items.map((v) => "v:" + v.id),
+                              ...batch.items.map((v) => v.selectionId),
                               ...batch.documents.map((d) => "d:" + d.id),
                             );
                             if (page >= batch.pages) break;
@@ -646,26 +911,30 @@ export function Library() {
                   <button type="button" onClick={() => setSelected([])}>
                     Limpiar selección
                   </button>
-                  {canEdit && (
-                    <>
-                      <button
-                        type="button"
-                        disabled={!selected.length || busy}
-                        onClick={() => setMove(true)}
-                      >
-                        Mover seleccionados
-                      </button>
-                      <button
-                        type="button"
-                        disabled={!selected.length || busy}
-                        onClick={removeSelection}
-                      >
-                        Eliminar seleccionados
-                      </button>
-                    </>
-                  )}
                 </div>
               </details>
+              {canEdit && (
+                <button
+                  type="button"
+                  disabled={!selected.length || busy}
+                  onClick={() => {
+                    setTarget("__unselected");
+                    setTargetQuery("");
+                    setMove(true);
+                  }}
+                >
+                  Mover ({selected.length})
+                </button>
+              )}
+              {canEdit && (
+                <button
+                  type="button"
+                  disabled={!clipboard || busy}
+                  onClick={() => paste()}
+                >
+                  Pegar{clipboard ? ` (${clipboard.selection.length})` : ""}
+                </button>
+              )}
               <label>
                 Ver
                 <select
@@ -722,6 +991,9 @@ export function Library() {
               )}
             </div>
           </div>
+          <p className="library-project-warning" role="note">
+            ⚠ {projectFolderWarning}
+          </p>
           <div className="row library-folder-tools">
             {" "}
             {canEdit && (
@@ -745,7 +1017,7 @@ export function Library() {
                 ＋ Nueva carpeta
               </button>
             )}
-            {canEdit && (!folder || folder.startsWith("folder:")) && (
+            {canEdit && (
               <label className="button upload-document">
                 Añadir archivo
                 <input
@@ -761,7 +1033,9 @@ export function Library() {
               </label>
             )}
           </div>
-          {error && <ErrorNotice message={error} onDismiss={()=>setError("")} />}
+          {error && (
+            <ErrorNotice message={error} onDismiss={() => setError("")} />
+          )}
           {message && (
             <p role="status" className="notice">
               {message}
@@ -770,6 +1044,11 @@ export function Library() {
           {move && (
             <section className="panel stack" aria-label="Mover selección">
               <h3>Mover {selected.length} elementos</h3>
+              {selectedProjectFolder && (
+                <p className="library-project-warning" role="note">
+                  ⚠ {projectFolderWarning}
+                </p>
+              )}
               <SearchSelect
                 label="Carpeta de destino"
                 value={targetQuery}
@@ -785,11 +1064,7 @@ export function Library() {
                 options={[
                   { id: "", label: "Raíz de la biblioteca" },
                   ...(data?.tree ?? [])
-                    .filter(
-                      (n) =>
-                        n.kind === "folder" ||
-                        (!chosenImages.length && !chosenDocs.length),
-                    )
+                    .filter((n) => !selected.includes("n:" + n.id))
                     .map((n) => ({
                       id: n.id,
                       label: n.name,
@@ -800,9 +1075,9 @@ export function Library() {
                 ]}
               />
               <p className="hint">
-                Las carpetas automáticas conservan la jerarquía del proyecto.
-                Puedes mover carpetas personales dentro de ellas. Las imágenes
-                conservan su proyecto original.
+                Mueve carpetas e imágenes sin modificar sus proyectos ni
+                permisos de origen. También puedes arrastrarlas al árbol o a una
+                carpeta; mantén Ctrl para copiar.
               </p>
               <div className="row">
                 <button
@@ -815,93 +1090,123 @@ export function Library() {
               </div>
             </section>
           )}
-          <div className={"folder-cards size-" + size}>
-            {folders.map((f) => (
-              <article
-                className="folder-card"
-                key={f.id}
-                onContextMenu={(e) =>
-                  f.kind === "folder" && context(e, "f:" + f.id.slice(7))
-                }
-                onDragOver={(e) => e.preventDefault()}
-                onDrop={(e) => {
-                  e.preventDefault();
-                  if (f.kind === "folder") {
-                    setTarget(f.id);
-                    setTargetQuery(f.name);
-                    setMove(true);
-                  }
-                }}
+          {[
+            { name: "Carpetas de proyectos", personal: false },
+            { name: "Carpetas personales", personal: true },
+          ].map((group) => {
+            const list = folders.filter(
+              (f) => (f.kind === "folder") === group.personal,
+            );
+            if (!list.length) return null;
+            return (
+              <section
+                key={group.name}
+                className="library-folder-group"
+                aria-label={group.name}
               >
-                {f.kind === "folder" && (
-                  <label className="row">
-                    <input
-                      type="checkbox"
-                      aria-label={"Seleccionar carpeta " + f.name}
-                      checked={selected.includes("f:" + f.id.slice(7))}
-                      onChange={(e) =>
-                        toggle("f:" + f.id.slice(7), e.target.checked)
+                <h3>{group.name}</h3>
+                <div className={"folder-cards size-" + size}>
+                  {list.map((f) => (
+                    <article
+                      key={f.id}
+                      data-folder-key={f.id}
+                      className={
+                        "folder-card" +
+                        (dropTarget === f.id ? " library-drop-target" : "") +
+                        (clipboard?.operation === "move" &&
+                        clipboard.selection.includes("n:" + f.id)
+                          ? " library-cut"
+                          : "")
                       }
-                    />
-                    Seleccionar
-                  </label>
-                )}
-                <button className="folder-open" onClick={() => open(f.id)}>
-                  <span aria-hidden="true">📁</span>
-                  <strong>{f.name}</strong>
-                </button>
-                {(() => {
-                  const order = data?.orders?.find((o) =>
-                    f.kind === "subproduct"
-                      ? o.scope?.subproduct === f.id.slice(11)
-                      : f.kind === "tests" && o.scope?.project === "none",
-                  );
-                  return order ? (
-                    <small className="folder-order-count">
-                      {order.completed}/{order.target} ·{" "}
-                      {order.status === "PAUSED"
-                        ? "Pausada"
-                        : order.status === "STOPPED"
-                          ? "Detenida"
-                          : order.status === "ACCEPTED" ||
-                              order.status === "COMPLETED"
-                            ? "Completada"
-                            : "En curso"}
-                    </small>
-                  ) : null;
-                })()}
-                <small>
-                  {f.kind === "folder"
-                    ? "Carpeta personal"
-                    : f.sourceDeleted?"Carpeta conservada · origen eliminado":"Carpeta automática"}
-                </small>
-                {canEdit && f.kind === "folder" && (
-                  <button
-                    draggable
-                    onDragStart={(e) => {
-                      if (!selected.includes("f:" + f.id.slice(7)))
-                        setSelected(["f:" + f.id.slice(7)]);
-                      e.dataTransfer.setData("text/plain", f.id);
-                    }}
-                    onClick={() => {
-                      setSelected(["f:" + f.id.slice(7)]);
-                      setTarget("__unselected");
-                      setTargetQuery("");
-                      setMove(true);
-                    }}
-                  >
-                    Mover / acciones
-                  </button>
-                )}
-              </article>
-            ))}
-          </div>
+                      onContextMenu={(e) => {
+                        e.stopPropagation();
+                        context(e, f.kind === "loose" ? "" : "n:" + f.id);
+                      }}
+                      draggable={canEdit && f.kind !== "loose" && !busy}
+                      onDragStart={(e) => dragStart(e, "n:" + f.id)}
+                      onDragEnd={() => {
+                        dragging.current = [];
+                        setDropTarget("");
+                      }}
+                      onDragOver={(e) => dragOver(e, f.id)}
+                      onDrop={(e) => drop(e, f.id)}
+                    >
+                      {f.kind !== "loose" && (
+                        <label className="row">
+                          <input
+                            type="checkbox"
+                            aria-label={"Seleccionar carpeta " + f.name}
+                            checked={selected.includes("n:" + f.id)}
+                            onChange={(e) =>
+                              toggle("n:" + f.id, e.target.checked)
+                            }
+                          />
+                          Seleccionar
+                        </label>
+                      )}
+                      <button
+                        type="button"
+                        className="folder-open"
+                        onClick={() => open(f.id)}
+                      >
+                        <span aria-hidden="true">📁</span>
+                        <strong>{f.name}</strong>
+                      </button>
+                      <small>
+                        {f.kind === "folder"
+                          ? "Carpeta personal"
+                          : f.sourceDeleted
+                            ? "Carpeta conservada · origen eliminado"
+                            : "Carpeta de proyecto"}
+                      </small>
+                      <button
+                        type="button"
+                        className="folder-actions-trigger"
+                        aria-label={"Acciones de " + f.name}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          context(e, f.kind === "loose" ? "" : "n:" + f.id);
+                        }}
+                      >
+                        ⋯ Acciones
+                      </button>
+                    </article>
+                  ))}
+                </div>
+              </section>
+            );
+          })}
           <div className={"grid jobs-grid size-" + size}>
-            {(data?.entries??data?.items.map(i=>({kind:"image",id:i.id}))??[]).map(entry=>{
-              if(entry.kind==="image"){const item=data?.items.find(i=>i.id===entry.id);return item?renderImage(item):null;}
-              const slot=data?.inflight?.find(i=>i.id===entry.id);if(!slot)return null;
-              const order=data?.orders.find(o=>o.id===slot.orderId);
-              return <GenerationImageCard key={slot.id} slot={slot} order={order} controls={anchors.has(slot.id)} refresh={refresh} onPreview={()=>{if(order?.sample)setPreview({id:order.sample.id,revision:order.sample.revision??1,name:order.name??"Muestra",sourceNotice:slot.sourceNotice});}}/>;
+            {(
+              data?.entries ??
+              data?.items.map((i) => ({ kind: "image", id: i.id })) ??
+              []
+            ).map((entry) => {
+              if (entry.kind === "image") {
+                const item = data?.items.find((i) => i.entryId === entry.id);
+                return item ? renderImage(item) : null;
+              }
+              const slot = data?.inflight?.find((i) => i.id === entry.id);
+              if (!slot) return null;
+              const order = data?.orders.find((o) => o.id === slot.orderId);
+              return (
+                <GenerationImageCard
+                  key={slot.id}
+                  slot={slot}
+                  order={order}
+                  controls={anchors.has(slot.id)}
+                  refresh={refresh}
+                  onPreview={() => {
+                    if (order?.sample)
+                      setPreview({
+                        id: order.sample.id,
+                        revision: order.sample.revision ?? 1,
+                        name: order.name ?? "Muestra",
+                        sourceNotice: slot.sourceNotice,
+                      });
+                  }}
+                />
+              );
             })}
           </div>
           <div className="folder-cards">
@@ -909,6 +1214,13 @@ export function Library() {
               <article
                 key={d.id}
                 className="card"
+                data-library-selection={"d:" + d.id}
+                draggable={canEdit && !busy}
+                onDragStart={(e) => dragStart(e, "d:" + d.id)}
+                onDragEnd={() => {
+                  dragging.current = [];
+                  setDropTarget("");
+                }}
                 onContextMenu={(e) => context(e, "d:" + d.id)}
               >
                 <label className="row">
@@ -928,7 +1240,8 @@ export function Library() {
           {!data && <p>Cargando biblioteca…</p>}
           {data &&
             !folders.length &&
-            !data.items.length && !data.inflight?.length &&
+            !data.items.length &&
+            !data.inflight?.length &&
             !data.documents.length && (
               <p className="empty">
                 No hay imágenes ni archivos con estos filtros. Revisa las
@@ -945,7 +1258,11 @@ export function Library() {
                 Anterior
               </button>
               <span>
-                {data.total} imágenes{data.inflightTotal>0?` · ${data.inflightTotal} por generar o revisar`:""} · Página {data.page} de {data.pages}
+                {data.total} imágenes
+                {data.inflightTotal > 0
+                  ? ` · ${data.inflightTotal} por generar o revisar`
+                  : ""}{" "}
+                · Página {data.page} de {data.pages}
               </span>
               <button
                 disabled={page >= data.pages}
@@ -961,39 +1278,178 @@ export function Library() {
         <div
           className="explorer-context-menu stack"
           role="menu"
+          aria-label="Acciones de Biblioteca"
           style={{ left: menu.x, top: menu.y }}
+          onClick={(e) => e.stopPropagation()}
+          onKeyDown={(e) => {
+            if (e.key === "Escape") {
+              setMenu(null);
+              return;
+            }
+            if (["ArrowDown", "ArrowUp"].includes(e.key)) {
+              e.preventDefault();
+              const buttons = [
+                ...e.currentTarget.querySelectorAll<HTMLButtonElement>(
+                  "button:not(:disabled)",
+                ),
+              ];
+              const i = buttons.indexOf(
+                document.activeElement as HTMLButtonElement,
+              );
+              buttons[
+                (i + (e.key === "ArrowDown" ? 1 : buttons.length - 1)) %
+                  buttons.length
+              ]?.focus();
+            }
+          }}
         >
-          <button
-            role="menuitem"
-            disabled={!canEdit}
-            onClick={() => setMove(true)}
-          >
-            Mover selección
-          </button>
-          {menu.id.startsWith("f:") && (
+          {selectedProjectFolder && (
+            <p className="library-project-warning" role="note">
+              ⚠ {projectFolderWarning}
+            </p>
+          )}
+          {menu.id.startsWith("n:") && (
             <button
               role="menuitem"
-              disabled={!canEdit}
+              onClick={() => {
+                open(menu.id.slice(2));
+                setMenu(null);
+              }}
+            >
+              Abrir carpeta
+            </button>
+          )}
+          {(() => {
+            const item = data?.items.find((i) => i.selectionId === menu.id);
+            return item ? (
+              <>
+                <button
+                  role="menuitem"
+                  onClick={() => {
+                    setPreview({
+                      id: item.id,
+                      name: item.subproduct?.name ?? "Imagen",
+                      revision: item.revision,
+                      sourceNotice: item.sourceNotice,
+                    });
+                    setMenu(null);
+                  }}
+                >
+                  Ampliar imagen
+                </button>
+                {item.canEdit && (
+                  <button
+                    role="menuitem"
+                    onClick={() => {
+                      setEditing(item.id);
+                      setMenu(null);
+                    }}
+                  >
+                    Editar imagen
+                  </button>
+                )}
+                <button
+                  role="menuitem"
+                  onClick={() => {
+                    void action(
+                      () => downloadArchive({ ids: [item.id], format }),
+                      "Descarga preparada.",
+                    );
+                    setMenu(null);
+                  }}
+                >
+                  Descargar imagen
+                </button>
+              </>
+            ) : null;
+          })()}
+          <button
+            role="menuitem"
+            disabled={!canEdit || busy || !selected.length}
+            onClick={() => prepare("move")}
+          >
+            Cortar <kbd>Ctrl+X</kbd>
+          </button>
+          <button
+            role="menuitem"
+            disabled={!canEdit || busy || !selected.length}
+            onClick={() => prepare("copy")}
+          >
+            Copiar <kbd>Ctrl+C</kbd>
+          </button>
+          <button
+            role="menuitem"
+            disabled={!canEdit || busy || !clipboard}
+            onClick={() => {
+              paste(menu.id.startsWith("n:") ? menu.id.slice(2) : folder);
+              setMenu(null);
+            }}
+          >
+            Pegar aquí <kbd>Ctrl+V</kbd>
+          </button>
+          <button
+            role="menuitem"
+            disabled={!canEdit || busy || !selected.length}
+            onClick={() => {
+              setTarget("__unselected");
+              setTargetQuery("");
+              setMove(true);
+              setMenu(null);
+            }}
+          >
+            Mover selección…
+          </button>
+          {menu.id.startsWith("n:folder:") && (
+            <button
+              role="menuitem"
+              disabled={!canEdit || busy}
               onClick={() => {
                 const name = prompt("Nuevo nombre");
                 if (name)
                   void action(
                     () =>
-                      api("folder-actions", "POST", {
-                        action: "rename",
-                        ids: [menu.id.slice(2)],
+                      api("selection-actions", "POST", {
+                        operation: "rename",
+                        selection: [menu.id],
                         name,
                       }),
                     "Carpeta renombrada.",
                   );
+                setMenu(null);
               }}
             >
               Renombrar carpeta
             </button>
           )}
-          <button role="menuitem" disabled={!canEdit} onClick={removeSelection}>
+          <button
+            role="menuitem"
+            disabled={!canEdit || busy || !selected.length}
+            onClick={() => {
+              removeSelection();
+              setMenu(null);
+            }}
+          >
             Eliminar selección
           </button>
+          {!menu.id && (
+            <button
+              role="menuitem"
+              disabled={!canEdit || busy}
+              onClick={() => {
+                void action(
+                  () =>
+                    api("selection-actions", "POST", {
+                      operation: "restore",
+                      selection: [],
+                    }),
+                  "Carpetas de proyectos restauradas.",
+                );
+                setMenu(null);
+              }}
+            >
+              Restaurar carpetas de proyectos retiradas
+            </button>
+          )}
         </div>
       )}
     </section>

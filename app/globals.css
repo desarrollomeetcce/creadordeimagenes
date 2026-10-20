@@ -1058,3 +1058,18 @@ html[data-theme="dark"] .subproduct-status.status-error{color:#ffb2b2;background
 .subproducts-toolbar>.button{font-size:11px;padding:9px 10px;white-space:nowrap;}
 @media(max-width:700px){.subproduct-header .subproduct-title{flex:0 0 140px;}.subproduct-header .subproduct-counters,.subproduct-header .subproduct-header-actions{flex-basis:auto;}}
 .subproducts-toolbar>.selected-costs{border:1px solid var(--line);border-radius:6px;background:var(--surface);color:var(--ink);text-decoration:none;font-weight:600;}
+
+/* Library organization and mouse/keyboard actions. */
+.library-folder-group { min-width:0; }
+.library-folder-group h3,.folder-group-label {font-size:.85rem;color:var(--muted);margin:.6rem 0;}
+.folder-tree .folder-group-label {padding:.5rem .4rem .1rem;border-top:1px solid var(--line);}
+.library-drop-target {outline:2px solid var(--accent,#66d9c4);outline-offset:-2px;background:rgba(52,180,150,.15);}
+.library-cut {opacity:.5;}
+.folder-card[draggable=true] {cursor:grab;}
+.folder-actions-trigger {font-size:.75rem;padding:.3rem;}
+.explorer-context-menu {max-height:min(80vh,420px);max-width:calc(100vw - 16px);overflow:auto;z-index:1100;}
+.explorer-context-menu button {display:flex;justify-content:space-between;gap:.75rem;text-align:left;}
+.explorer-context-menu kbd {font:inherit;opacity:.65;white-space:nowrap;}
+
+.library-project-warning {font-size:.8rem;line-height:1.45;color:var(--ink);background:var(--soft);border-left:3px solid #d1a449;border-radius:4px;padding:.6rem .8rem;margin:.25rem 0;}
+.explorer-context-menu .library-project-warning {font-size:.72rem;padding:.4rem .5rem;}

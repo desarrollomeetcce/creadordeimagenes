@@ -224,3 +224,6 @@ Límite operativo: no se inspeccionó ni modificó la orden real del usuario. El
 
 - [x] Cabeceras compactas sin acciones repetidas; Costos IA en otra pestaña según selección, con resumen/CSV y permisos coherentes.
 - [x] Compartir selección con un correo, transacción y pertenencia/permisos revalidados; sin concesiones a padres/hermanos ni correo saliente.
+
+- [x] Biblioteca: selección, movimiento y portapapeles con aislamiento por usuario, aviso de carpetas de proyectos, ciclos rechazados y referencias/archivos conservados.
+- [ ] Migraciones aditivas de organización aplicadas antes del build; despliegue del commit verificado.

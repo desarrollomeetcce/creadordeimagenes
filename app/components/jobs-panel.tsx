@@ -84,7 +84,7 @@ export function JobsPanel() {
   const [folders, setFolders] = useState<FolderNode[]>([]);
   const latestData = useRef<Data | null>(null);
   useEffect(() => {
-    void request("library/tree")
+    void request("library/tree?organization=source")
       .then((nodes: FolderNode[]) =>
         setFolders(nodes.filter((n) => n.kind !== "folder")),
       )

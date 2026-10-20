@@ -571,3 +571,11 @@ Verificación: 49 unitarias y 123 resultados de integración HTTP/PostgreSQL apr
 ### Eliminar subproductos seleccionados
 
 Restituido Eliminar (N) en la barra superior de Subproductos: requiere selección y confirmación, se bloquea durante el envío y limpia la selección tras éxito. No reaparece por fila. Chromium comprueba cancelar sin cambios, borrar solo dos de tres, conservar tres imágenes y ledger, selección vacía desactivada y móvil sin desbordamiento. 49 unitarias, typecheck y build aprobados. Sin IA ni cambios de rutas/persistencia.
+
+### Organización de Biblioteca y portapapeles
+
+Comprobar selección de carpetas automáticas/personales, botón Mover contiguo a Seleccionar, aviso de evitar modificar/mover proyectos, menús de carpeta/imagen y Escape, cortar/copiar/pegar entre carpetas y arrastre real con mouse al árbol y tarjetas. La vista directa debe retirar el elemento de su carpeta anterior; la búsqueda con subcarpetas conserva la opción de agrupar.
+
+Integración: ciclos automáticos/personales, validación atómica de selección mixta, permiso Observador/ajeno, origen y árbol de Generaciones intactos, retiro/restauración de carpeta sin perder archivos, copias que sobreviven a la retirada del original en una cuenta, revocación inmediata del origen, retención mientras queden copias, documentos compartiendo bytes sin borrado prematuro y limpieza tras la última referencia. Verificar Traídos/Eliminados por fecha, 29 referencias en páginas 25+4 sin duplicados, y partición con empates, órdenes opuestos, páginas profundas y fuentes vacías. Todas las pruebas usan PostgreSQL exclusivo, archivos sintéticos y cero llamadas facturables.
+
+Verificación: 50 pruebas unitarias y 125 resultados de integración HTTP/PostgreSQL aprobados; TypeScript y build correctos. Migraciones aplicadas desde cero en base sintética independiente. Chromium valida grupos, checkbox automático, Mover contiguo, aviso solicitado, cortar/copiar/pegar carpetas e imágenes, menús/Escape, arrastre real de carpeta a tarjeta e imagen al árbol, cancelación/eliminación y contador, origen/trabajos/ledger intactos y móvil sin desbordamiento. Sin llamadas IA, correo ni pagos reales. Las copias identificadas comparten el original; estas pruebas no acreditan generación de imágenes externa.

@@ -24,6 +24,7 @@ export async function retainVariation(
     demand(folder?.userId === user.id, "Carpeta no disponible.", 404);
   }
   await db.$transaction(async (tx) => {
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(428281)`;
     await tx.$queryRaw`SELECT id FROM "Variation" WHERE id=${id} FOR UPDATE`;
     const v = await tx.variation.findUniqueOrThrow({ where: { id } });
     demand(
@@ -38,14 +39,14 @@ export async function retainVariation(
     if (permanent)
       await tx.libraryItem.upsert({
         where: { userId_variationId: { userId: user.id, variationId: id } },
-        create: { userId: user.id, variationId: id, folderId },
-        update: folderId !== undefined ? { folderId } : {},
+        create: { userId: user.id, variationId: id, folderId,...(folderId!==undefined?{destinationKey:folderId?"folder:"+folderId:"loose:root",broughtAt:new Date()}:{}) },
+        update: folderId !== undefined ? { folderId,destinationKey:folderId?"folder:"+folderId:"loose:root",broughtAt:new Date() } : {},
       });
     else
       await tx.libraryItem.deleteMany({
         where: { userId: user.id, variationId: id },
       });
-    const count = await tx.libraryItem.count({ where: { variationId: id } });
+    const count = (await tx.libraryItem.count({ where: { variationId: id } }))+(await tx.libraryImageCopy.count({where:{variationId:id,deletedAt:null}}));
     await tx.variation.update({
       where: { id },
       data: { permanent: count > 0 },
