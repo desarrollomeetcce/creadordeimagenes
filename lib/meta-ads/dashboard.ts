@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+import { insightSummaries } from "./insight-cache";
 import { Prisma } from "@prisma/client";
 import { db } from "../db";
 import { demand } from "../errors";
@@ -23,6 +25,8 @@ export async function dashboard(actor: Actor, params: URLSearchParams) {
       targetCost: true,
       minResults: true,
       syncedAt: true,
+      syncState: true,
+      connectionId: true,
       historyFrom: true,
       businessId: true,
       businessName: true,
@@ -120,27 +124,50 @@ export async function dashboard(actor: Actor, params: URLSearchParams) {
         Number.isFinite(Date.parse(customUntil))),
     "Rango de fechas inválido.",
   );
-  // Aggregate in PostgreSQL: do not transfer the full daily history to the browser or Node.
-  const sums = await db.$queryRaw<
-    {
-      objectId: string;
-      key: string;
-      spend: number;
-      impressions: number;
-      clicks: number;
-      actions: unknown;
-      first: string | null;
-      last: string | null;
-      active: number;
-    }[]
-  >(Prisma.sql`
-WITH scoped AS (SELECT d.*, to_char(CURRENT_TIMESTAMP AT TIME ZONE a.timezone,'YYYY-MM-DD') today FROM "MetaAdDaily" d JOIN "MetaAdAccount" a ON a.id=d."accountId" WHERE d."objectId" IN (${Prisma.join(visible.map((o) => o.id))}) AND d.scope='7d_click,1d_view|impression'),
-activity AS (SELECT "objectId",min(day) FILTER(WHERE spend>0 OR impressions>0) first,max(day) FILTER(WHERE spend>0 OR impressions>0) last,count(*) FILTER(WHERE spend>0 OR impressions>0)::int active FROM scoped GROUP BY "objectId"),
-expanded AS (SELECT s.*, p.key FROM scoped s CROSS JOIN (VALUES ('today'),('7'),('15'),('30'),('lifetime'),('previous7'),('complete7'),('custom')) p(key) WHERE CASE p.key WHEN 'today' THEN s.day=s.today WHEN '7' THEN s.day BETWEEN to_char(s.today::date-6,'YYYY-MM-DD') AND s.today WHEN '15' THEN s.day BETWEEN to_char(s.today::date-14,'YYYY-MM-DD') AND s.today WHEN '30' THEN s.day BETWEEN to_char(s.today::date-29,'YYYY-MM-DD') AND s.today WHEN 'previous7' THEN s.day BETWEEN to_char(s.today::date-14,'YYYY-MM-DD') AND to_char(s.today::date-8,'YYYY-MM-DD') WHEN 'complete7' THEN s.day BETWEEN to_char(s.today::date-7,'YYYY-MM-DD') AND to_char(s.today::date-1,'YYYY-MM-DD') WHEN 'custom' THEN s.day BETWEEN ${customSince ?? "9999-01-01"} AND ${customUntil ?? "9999-01-01"} ELSE s.day<=s.today END),
-base AS (SELECT "objectId",key,sum(spend)::float8 spend,sum(impressions)::float8 impressions,sum(clicks)::float8 clicks FROM expanded GROUP BY "objectId",key),
-actions AS (SELECT e."objectId",e.key,j.key action,sum(j.value::numeric)::float8 amount FROM expanded e CROSS JOIN LATERAL jsonb_each_text(e.actions) j GROUP BY e."objectId",e.key,j.key),
-packed AS (SELECT "objectId",key,jsonb_object_agg(action,amount) actions FROM actions GROUP BY "objectId",key)
-SELECT b.*,COALESCE(p.actions,'{}'::jsonb) actions,a.first,a.last,a.active FROM base b LEFT JOIN packed p ON p."objectId"=b."objectId" AND p.key=b.key LEFT JOIN activity a ON a."objectId"=b."objectId"`);
+  const accountContext = new Map(
+    scoped.map((a) => {
+      const today = localDay(a.timezone);
+      const stale = !!a.syncedAt && localDay(a.timezone, a.syncedAt) !== today;
+      const version = createHash("sha256")
+        .update(
+          JSON.stringify([a.connectionId, a.syncedAt, a.syncState, a.timezone]),
+        )
+        .digest("hex");
+      return [
+        a.id,
+        {
+          account: a,
+          today,
+          stale,
+          version,
+          ranges: {
+            today: { since: today, until: today },
+            "7": { since: shiftDay(today, -6), until: today },
+            "15": { since: shiftDay(today, -14), until: today },
+            "30": { since: shiftDay(today, -29), until: today },
+            previous7: {
+              since: shiftDay(today, -14),
+              until: shiftDay(today, -8),
+            },
+            complete7: {
+              since: shiftDay(today, -7),
+              until: shiftDay(today, -1),
+            },
+          },
+        },
+      ];
+    }),
+  );
+  const sums = await insightSummaries(
+    visible.map((o) => ({ id: o.id, accountId: o.accountId })),
+    [...accountContext].map(([id, a]) => ({
+      id,
+      today: a.today,
+      version: a.version,
+    })),
+    customSince,
+    customUntil,
+  );
   const map = new Map<string, typeof sums>();
   for (const row of sums) {
     const list = map.get(row.objectId) ?? [];
@@ -162,7 +189,8 @@ SELECT b.*,COALESCE(p.actions,'{}'::jsonb) actions,a.first,a.last,a.active FROM 
     LINK_CLICKS: ["link_click"],
   };
   let items = visible.map((o) => {
-    const a = scoped.find((a) => a.id === o.accountId)!,
+    const context = accountContext.get(o.accountId)!;
+    const a = context.account,
       c = parentMap.get(o.campaignId ?? ""),
       s = parentMap.get(o.adsetId ?? ""),
       metric = metricFor(
@@ -170,11 +198,11 @@ SELECT b.*,COALESCE(p.actions,'{}'::jsonb) actions,a.first,a.last,a.active FROM 
         o.objective ?? c?.objective,
         o.optimizationGoal ?? s?.optimizationGoal,
       ),
-      today = localDay(a.timezone),
+      today = context.today,
       stats = map.get(o.id) ?? [],
       first = stats[0]?.first ?? null,
       last = stats[0]?.last ?? null;
-    const stale = !!a.syncedAt && localDay(a.timezone, a.syncedAt) !== today;
+    const stale = context.stale;
     const periods = Object.fromEntries(
       [
         "today",
@@ -199,18 +227,12 @@ SELECT b.*,COALESCE(p.actions,'{}'::jsonb) actions,a.first,a.last,a.active FROM 
               : spend > 0
                 ? "NO_RESULTS"
                 : "INACTIVE";
-        const since =
-          key === "today"
-            ? today
-            : key === "lifetime"
-              ? (a.historyFrom ?? first ?? today)
-              : key === "custom"
-                ? customSince!
-                : key === "previous7"
-                  ? shiftDay(today, -14)
-                  : key === "complete7"
-                    ? shiftDay(today, -7)
-                    : shiftDay(today, 1 - Number(key));
+        const range =
+          key === "lifetime"
+            ? { since: a.historyFrom ?? first ?? today, until: today }
+            : key === "custom"
+              ? { since: customSince!, until: customUntil! }
+              : context.ranges[key as keyof typeof context.ranges];
         return [
           key,
           {
@@ -219,15 +241,8 @@ SELECT b.*,COALESCE(p.actions,'{}'::jsonb) actions,a.first,a.last,a.active FROM 
             results,
             cost: state === "RESULTS" ? spend / results : null,
             state,
-            since,
-            until:
-              key === "previous7"
-                ? shiftDay(today, -8)
-                : key === "complete7"
-                  ? shiftDay(today, -1)
-                  : key === "custom"
-                    ? customUntil!
-                    : today,
+            since: range.since,
+            until: range.until,
           },
         ];
       }),

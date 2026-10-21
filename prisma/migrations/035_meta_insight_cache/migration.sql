@@ -1,0 +1,1 @@
+CREATE TABLE "MetaInsightCache" ("objectId" TEXT PRIMARY KEY REFERENCES "MetaAdObject"("id") ON DELETE CASCADE,"day" TEXT NOT NULL,"version" TEXT NOT NULL,"rows" JSONB NOT NULL,"updatedAt" TIMESTAMP(3) NOT NULL);

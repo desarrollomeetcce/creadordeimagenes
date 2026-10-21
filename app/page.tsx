@@ -1,5 +1,6 @@
 "use client";
-import { MetaAds } from "./components/meta-ads";
+import dynamic from "next/dynamic";
+const MetaAds=dynamic(()=>import("./components/meta-ads").then(m=>m.MetaAds),{loading:()=> <p role="status">Cargando Meta Ads…</p>});
 import { reasoningLevel } from "../lib/creative-level";
 import {useGenerationChoices} from "./components/generation-choices";
 import { CreativeFinish } from "./components/creative-finish";
@@ -15,10 +16,11 @@ import { InstructionPolicyControls } from "./components/instruction-policy-contr
 import { useReusableConfiguration } from "./components/reusable-configuration";
 import type { InstructionPolicy } from "../lib/instruction-policy";
 import { SidebarAccount } from "./components/sidebar-account";
-import { SiteEditor } from "./components/site-editor";
-import { PaymentSettings } from "./components/payment-settings";
-import { PlanSettings, MyPlan } from "./components/membership-plans";
-import { ProviderConnections } from "./components/provider-connections";
+const SiteEditor = dynamic(() => import("./components/site-editor").then(m => m.SiteEditor), { loading: () => <p role="status">Cargando…</p> });
+const PaymentSettings = dynamic(() => import("./components/payment-settings").then(m => m.PaymentSettings), { loading: () => <p role="status">Cargando…</p> });
+const PlanSettings = dynamic(() => import("./components/membership-plans").then(m => m.PlanSettings), { loading: () => <p role="status">Cargando…</p> });
+const MyPlan = dynamic(() => import("./components/membership-plans").then(m => m.MyPlan), { loading: () => <p role="status">Cargando…</p> });
+const ProviderConnections = dynamic(() => import("./components/provider-connections").then(m => m.ProviderConnections), { loading: () => <p role="status">Cargando…</p> });
 import { folderScope } from "./components/folder-navigation";
 import { emptyHierarchy } from "./components/hierarchy-filters";
 import { InstructionEditor } from "./components/instruction-editor";
@@ -27,14 +29,15 @@ import { CurrentRole, CurrentUserId, RoleGuide, useCanEdit } from "./components/
 import { roleLabels, managesUsers } from "../lib/roles";
 import { HierarchyBreadcrumbs } from "./components/breadcrumbs";
 import { Attachments, type AttachmentsHandle } from "./components/attachments";
-import { UsersPanel } from "./components/users-panel";
-import { HistoryPanel } from "./components/history";
-import { MailSettings } from "./components/mail-settings";
-import { VisualAuditPanel, VisualAuditNotice } from "./components/visual-audit";
-import { VariationEditor } from "./components/variation-editor";
+const UsersPanel = dynamic(() => import("./components/users-panel").then(m => m.UsersPanel), { loading: () => <p role="status">Cargando…</p> });
+const HistoryPanel = dynamic(() => import("./components/history").then(m => m.HistoryPanel), { loading: () => <p role="status">Cargando…</p> });
+const MailSettings = dynamic(() => import("./components/mail-settings").then(m => m.MailSettings), { loading: () => <p role="status">Cargando…</p> });
+import { VisualAuditNotice } from "./components/visual-audit-notice";
+const VisualAuditPanel = dynamic(() => import("./components/visual-audit").then(m => m.VisualAuditPanel));
+const VariationEditor = dynamic(() => import("./components/variation-editor").then(m => m.VariationEditor), { loading: () => <p role="status">Cargando…</p> });
 import { ProjectSharing } from "./components/project-sharing";
-import { UsagePanel } from "./components/usage-panel";
-import { LibraryWorkspace } from "./components/library-workspace";
+const UsagePanel = dynamic(() => import("./components/usage-panel").then(m => m.UsagePanel), { loading: () => <p role="status">Cargando…</p> });
+const LibraryWorkspace = dynamic(() => import("./components/library-workspace").then(m => m.LibraryWorkspace), { loading: () => <p role="status">Cargando…</p> });
 import {
   ExecutionChoice,
   ProductionControls,
@@ -51,18 +54,18 @@ import { clearGallerySession } from "./components/gallery-session";
 import { SubproductTrash } from "./components/subproduct-trash";
 
 
-import { StorageUsage } from "./components/storage-usage";
-import { StatisticsPanel } from "./components/statistics-panel";
-import {
-  CollectionGallery,
-  downloadArchive,
-} from "./components/collection-gallery";
+const StorageUsage = dynamic(() => import("./components/storage-usage").then(m => m.StorageUsage), { loading: () => <p role="status">Cargando…</p> });
+const StatisticsPanel = dynamic(() => import("./components/statistics-panel").then(m => m.StatisticsPanel), { loading: () => <p role="status">Cargando…</p> });
+import { downloadArchive } from "./components/download-archive";
+const CollectionGallery = dynamic(() => import("./components/collection-gallery").then(m => m.CollectionGallery));
 import {
   AccountSecurity,
   RecoveryIssuer,
   ResetPasswordForm,
 } from "./components/account-security";
-import { Library, Presets, PresetTools } from "./components/productivity";
+const Library = LibraryWorkspace;
+const Presets = dynamic(() => import("./components/productivity").then(m => m.Presets));
+const PresetTools = dynamic(() => import("./components/productivity").then(m => m.PresetTools));
 import type { FormEvent } from "react";
 type User = { id: string; name: string; email: string; role: string };
 type Settings = {

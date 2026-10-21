@@ -79,12 +79,13 @@ type Data = {
   page: number;
   pages: number;
 };
-async function api(path: string, method = "GET", body?: unknown) {
+async function api(path: string, method = "GET", body?: unknown, signal?: AbortSignal) {
   const r = await fetch("/api/library/" + path, {
     method,
     headers: body ? { "Content-Type": "application/json" } : {},
     body: body ? JSON.stringify(body) : undefined,
     cache: "no-store",
+    signal,
   });
   const b = await r.json();
   if (!r.ok) throw Error(b.error ?? "No se pudo completar la operación.");
@@ -155,6 +156,7 @@ export function Library({ picker }: { picker?: LibraryPicker } = {}) {
     [menu, setMenu] = useState<{ x: number; y: number; id: string } | null>(
       null,
     );
+  const loadingRequest = useRef<AbortController | null>(null);
   const revision = useRef(0),
     latest = useRef<Data | null>(null);
   latest.current = data;
@@ -170,14 +172,18 @@ export function Library({ picker }: { picker?: LibraryPicker } = {}) {
   }).toString();
   const refresh = useCallback(async () => {
     const seq = ++revision.current;
+    loadingRequest.current?.abort();
+    const controller = new AbortController();
+    loadingRequest.current = controller;
     setRefreshing(true);
     try {
-      const result = await api("explorer?" + params);
+      const result = await api("explorer?" + params, "GET", undefined, controller.signal);
       if (seq === revision.current) {
         setData(result);
         setError("");
       }
     } catch (e) {
+      if (controller.signal.aborted) return;
       if (seq === revision.current)
         setError(e instanceof Error ? e.message : "No se pudo actualizar.");
     } finally {
@@ -188,6 +194,7 @@ export function Library({ picker }: { picker?: LibraryPicker } = {}) {
     void refresh();
     return () => {
       revision.current++;
+      loadingRequest.current?.abort();
     };
   }, [refresh]);
   useEffect(() => {

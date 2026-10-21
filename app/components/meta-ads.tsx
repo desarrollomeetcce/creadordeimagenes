@@ -198,6 +198,7 @@ export function MetaAds({ role }: { role: string }) {
     [campaign, setCampaign] = useState(""),
     [adset, setAdset] = useState(""),
     [q, setQ] = useState(""),
+    [search, setSearch] = useState(""),
     [state, setState] = useState("all"),
     [metric, setMetric] = useState(""),
     [currency, setCurrency] = useState(""),
@@ -219,14 +220,28 @@ export function MetaAds({ role }: { role: string }) {
     [sharing, setSharing] = useState<Account | null>(null);
   const accountKey = accountIds.join(",");
   const serial = useRef(0);
+  const analyticsTab = ["panel", "ranking", "alerts"].includes(tab);
+  useEffect(() => {
+    const timer = setTimeout(() => { setSearch(q); setPage(1); }, 200);
+    return () => clearTimeout(timer);
+  }, [q]);
   const refresh = useCallback(async () => {
-    const [a, c] = await Promise.all([
-      api("meta-ads/accounts"),
-      owner ? api("meta-ads/connections") : Promise.resolve([]),
-    ]);
-    setAccounts(a);
-    setConnections(c);
-  }, [owner]);
+    setAccounts(await api("meta-ads/accounts"));
+  }, []);
+  useEffect(() => {
+    if (!owner || tab !== "connections") return;
+    let live = true;
+    api("meta-ads/connections")
+      .then((data) => {
+        if (live) setConnections(data);
+      })
+      .catch((e) => {
+        if (live) setMessage(e.message);
+      });
+    return () => {
+      live = false;
+    };
+  }, [owner, tab, revision]);
   useEffect(() => {
     let live = true;
     refresh().catch((e) => {
@@ -237,6 +252,7 @@ export function MetaAds({ role }: { role: string }) {
     };
   }, [refresh]);
   useEffect(() => {
+    if (!analyticsTab) return;
     let live = true;
     api("meta-ads/objects?" + new URLSearchParams({ accounts: accountKey }))
       .then((rows) => {
@@ -248,10 +264,15 @@ export function MetaAds({ role }: { role: string }) {
     return () => {
       live = false;
     };
-  }, [accountKey, revision]);
+  }, [analyticsTab, accountKey, revision]);
   useEffect(() => {
-    const timer = setTimeout(() => {
-      const current = ++serial.current;
+    if (!analyticsTab) {
+      setLoading(false);
+      return;
+    }
+    const controller = new AbortController();
+    const current = ++serial.current;
+    void (async () => {
       setLoading(true);
       const p = new URLSearchParams({
         level,
@@ -259,7 +280,7 @@ export function MetaAds({ role }: { role: string }) {
         business,
         campaign,
         adset,
-        q,
+        q: search,
         state,
         metric,
         currency,
@@ -272,7 +293,16 @@ export function MetaAds({ role }: { role: string }) {
         limit: "25",
         ...(calendar ? { since, until } : {}),
       });
-      api("meta-ads/dashboard?" + p)
+      fetch("/api/meta-ads/dashboard?" + p, {
+        cache: "no-store",
+        signal: controller.signal,
+      })
+        .then(async (response) => {
+          const data = await response.json();
+          if (!response.ok)
+            throw Error(data.error ?? "No se pudo consultar Meta Ads.");
+          return data;
+        })
         .then((data) => {
           if (serial.current === current) {
             setItems(data.items);
@@ -282,24 +312,26 @@ export function MetaAds({ role }: { role: string }) {
           }
         })
         .catch((e) => {
-          if (serial.current === current) setMessage(e.message);
+          if (serial.current === current && e.name !== "AbortError")
+            setMessage(e.message);
         })
         .finally(() => {
           if (serial.current === current) setLoading(false);
         });
-    }, 250);
+    })();
     return () => {
-      clearTimeout(timer);
+      controller.abort();
       serial.current++;
     };
   }, [
     tab,
+    analyticsTab,
     level,
     accountKey,
     business,
     campaign,
     adset,
-    q,
+    search,
     state,
     metric,
     currency,
@@ -967,7 +999,7 @@ export function MetaAds({ role }: { role: string }) {
                 Buscar nombre
                 <input
                   value={q}
-                  onChange={(e) => resetPage(() => setQ(e.target.value))}
+                  onChange={(e) => setQ(e.target.value)}
                 />
               </label>
               <label>

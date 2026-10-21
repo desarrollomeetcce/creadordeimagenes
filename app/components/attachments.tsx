@@ -63,6 +63,7 @@ export const Attachments = forwardRef<
   const [drafts, setDrafts] = useState<Draft[]>([
     { key: "first", purpose: "Material de contexto" },
   ]);
+  const [activated, setActivated] = useState(false);
   const [showPC, setShowPC] = useState(false),
     [showSystem, setShowSystem] = useState(false);
   const completedOriginals = useRef(new Map<string, { id: string }>());
@@ -90,6 +91,7 @@ export const Attachments = forwardRef<
     setUploadLimit(caps.maxUploadBytes);
   }, [scope, id]);
   useEffect(() => {
+    if (!activated) return;
     let active = true;
     void Promise.all([
       request(
@@ -109,7 +111,7 @@ export const Attachments = forwardRef<
     return () => {
       active = false;
     };
-  }, [scope, id]);
+  }, [scope, id, activated]);
   async function upload(
     file?: File,
     previous?: Attachment,
@@ -403,7 +405,7 @@ export const Attachments = forwardRef<
   const active = files.filter((f) => !f.archivedAt),
     archived = files.filter((f) => f.archivedAt);
   return (
-    <details className="attachment-references">
+    <details className="attachment-references" onToggle={e => { if (e.currentTarget.open) setActivated(true); }}>
       <summary>¿Quieres adjuntar referencias?</summary>
       <div
         className="upload stack"
@@ -564,12 +566,12 @@ export const Attachments = forwardRef<
             </small>
           </div>
         )}
-        <SystemResourcePicker
+        {activated && <SystemResourcePicker
           scope={scope}
           id={id}
           onChanged={onUploaded}
           visible={showSystem}
-        />
+        />}
         {(showPC || showSystem || active.length > 0) && sourceButtons()}
         {!deferred && (
           <button

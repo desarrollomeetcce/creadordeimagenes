@@ -713,6 +713,7 @@ model MetaAdObject {
   thumbnailUrl String?
   seenAt DateTime @default(now())
   daily MetaAdDaily[]
+  insightCache MetaInsightCache?
   @@index([accountId,level,campaignId,adsetId])
 }
 model MetaAdDaily {
@@ -754,4 +755,13 @@ model MetaAccountSource {
   account MetaAdAccount @relation(fields:[accountId],references:[id],onDelete:Cascade)
   connection MetaConnection @relation(fields:[connectionId],references:[id],onDelete:Cascade)
   @@id([accountId,connectionId])
+}
+
+model MetaInsightCache {
+  objectId String @id
+  object MetaAdObject @relation(fields:[objectId],references:[id],onDelete:Cascade)
+  day String
+  version String
+  rows Json
+  updatedAt DateTime @updatedAt
 }

@@ -1,7 +1,8 @@
 "use client";
 import { useEffect, useId, useRef, useState } from "react";
 import { AttachmentFileChip } from "./attachment-file-chip";
-import { Library } from "./library-explorer";
+import dynamic from "next/dynamic";
+const Library = dynamic(() => import("./library-explorer").then(m => m.Library), { loading: () => <p role="status">Cargando Biblioteca…</p> });
 import { engineRequest as api } from "./generation-engine";
 type Selection = {
   selection: string;
