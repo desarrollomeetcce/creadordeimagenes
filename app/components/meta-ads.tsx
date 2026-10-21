@@ -1099,7 +1099,9 @@ export function MetaAds({ role }: { role: string }) {
             <div className="row meta-view-tools">
               <details className="meta-calendar">
                 <summary>
-                  Calendario opcional{calendar ? " · rango personalizado" : ""}
+                  Calendario opcional
+                  <span className="meta-calendar-state" aria-hidden="true">{calendar ? "●" : ""}</span>
+                  <span className="sr-only">{calendar ? "Rango personalizado activo" : "Sin rango personalizado"}</span>
                 </summary>
                 <div className="fields">
                   <label>

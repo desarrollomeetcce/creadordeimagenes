@@ -1164,3 +1164,9 @@ html:has(.meta-ads){scrollbar-gutter:stable}
 .meta-feedback>span{flex:1;min-width:0;overflow-wrap:anywhere}.meta-feedback>button{flex:none;padding:0 8px;font-size:20px;line-height:26px}
 .meta-view-tools{align-items:flex-start}.meta-view-tools>button,.meta-view-tools>.meta-calendar>summary{height:42px;min-height:42px;padding:10px 12px;font-size:12px;line-height:20px;border:1px solid var(--line);border-radius:7px}
 .meta-view-tools>.meta-calendar{margin:0;border:0}.meta-view-tools>.meta-calendar>.fields{border:1px solid var(--line);border-radius:7px;margin-top:6px}
+/* Calendar content opens outside the toolbar's layout, like account choices. */
+.meta-view-tools{position:relative}
+.meta-view-tools>.meta-calendar{position:static}
+.meta-view-tools>.meta-calendar>.fields{position:absolute;z-index:8;top:calc(100% + 6px);left:0;width:min(600px,100%);max-height:min(60dvh,480px);overflow:auto;background:var(--surface);box-shadow:0 10px 30px #0003;margin:0}
+
+.meta-calendar-state{display:inline-block;width:10px;margin-left:6px;color:var(--accent);font-size:10px;line-height:1}
