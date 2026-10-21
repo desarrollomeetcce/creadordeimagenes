@@ -551,7 +551,7 @@ export default function Home() {
                 )}
               </>
             ) : view === "metaads" ? (
-              <MetaAds role={user.role} />
+              <MetaAds role={user.role} userId={user.id} />
             ) : view === "library" ? (
               <Library key={location} />
 

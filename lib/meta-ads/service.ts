@@ -1,3 +1,4 @@
+import { writeSyncPage } from "./bulk-sync";
 import { randomUUID } from "node:crypto";
 import { Prisma } from "@prisma/client";
 import { db } from "../db";
@@ -447,6 +448,9 @@ type State = {
   until?: string;
   mode?: string;
   pages?: number;
+  processed?: number;
+  updatedAt?: string;
+  lastRun?: { pages: number; processed: number; finishedAt: string };
   started?: string;
 };
 export async function queueSync(actor: Actor, id: string, full = false) {
@@ -490,7 +494,8 @@ export async function syncStep(id: string): Promise<boolean> {
     data: { syncToken: token, syncLeaseAt: now },
   });
   if (!claimed.count) return false;
-  let revision = 0;
+  let revision = 0,
+    syncPhase = "inicio";
   try {
     const a = await db.metaAdAccount.findUniqueOrThrow({ where: { id } }),
       { connection: c, reader: r } = await reader(a.connectionId);
@@ -509,6 +514,21 @@ export async function syncStep(id: string): Promise<boolean> {
     const current = phases[phase],
       insight = current.startsWith("insights:"),
       level = current.split(":")[1];
+    syncPhase = current;
+    if (!state.started)
+      await db.metaAdAccount.updateMany({
+        where: { id, syncToken: token },
+        data: {
+          syncState: {
+            ...state,
+            started,
+            phase,
+            pages: 0,
+            processed: 0,
+            updatedAt: now.toISOString(),
+          },
+        },
+      });
     const result = await r.get((insight ? "insights" : current) as Operation, {
       accountId: id,
       after: state.after,
@@ -545,6 +565,24 @@ export async function syncStep(id: string): Promise<boolean> {
           "La cuenta o la conexión cambió durante la sincronización.",
           409,
         );
+        const objectIds = [
+          ...new Set(
+            result.data.map((row) =>
+              digits(insight ? row[level + "_id"] : row.id),
+            ),
+          ),
+        ];
+        const existingObjects = new Map(
+          (objectIds.length
+            ? await tx.metaAdObject.findMany({
+                where: { id: { in: objectIds } },
+                select: { id: true, accountId: true },
+              })
+            : []
+          ).map((o) => [o.id, o]),
+        );
+        const objectRows: Record<string, unknown>[] = [],
+          dailyRows: Record<string, unknown>[] = [];
         for (const row of result.data) {
           if (insight) {
             const oid = digits(row[level + "_id"]),
@@ -558,24 +596,20 @@ export async function syncStep(id: string): Promise<boolean> {
               "Meta no devolvió estadísticas diarias del rango solicitado.",
               502,
             );
-            const obj = await tx.metaAdObject.findUnique({
-              where: { id: oid },
-            });
+            const obj = existingObjects.get(oid);
             demand(
               !obj || obj.accountId === id,
               "Meta devolvió un objeto de otra cuenta.",
               502,
             );
             if (!obj)
-              await tx.metaAdObject.create({
-                data: {
-                  id: oid,
-                  accountId: id,
-                  level,
-                  name: text(row[level + "_name"]) || oid,
-                  campaignId: row.campaign_id ? digits(row.campaign_id) : null,
-                  adsetId: row.adset_id ? digits(row.adset_id) : null,
-                },
+              objectRows.push({
+                id: oid,
+                accountId: id,
+                level,
+                name: text(row[level + "_name"]) || oid,
+                campaignId: row.campaign_id ? digits(row.campaign_id) : null,
+                adsetId: row.adset_id ? digits(row.adset_id) : null,
               });
             const actions: Record<string, number> = {};
             if (Array.isArray(row.actions))
@@ -596,22 +630,13 @@ export async function syncStep(id: string): Promise<boolean> {
               clicks: finite(row.clicks),
               actions,
             };
-            await tx.metaAdDaily.upsert({
-              where: {
-                objectId_day_scope: {
-                  objectId: oid,
-                  day,
-                  scope: "7d_click,1d_view|impression",
-                },
-              },
-              create: {
-                accountId: id,
-                objectId: oid,
-                day,
-                scope: "7d_click,1d_view|impression",
-                ...data,
-              },
-              update: data,
+            dailyRows.push({
+              id: randomUUID(),
+              accountId: id,
+              objectId: oid,
+              day,
+              scope: "7d_click,1d_view|impression",
+              ...data,
             });
           } else {
             const oid = digits(row.id),
@@ -621,9 +646,7 @@ export async function syncStep(id: string): Promise<boolean> {
                   : current === "adsets"
                     ? "adset"
                     : "ad";
-            const existing = await tx.metaAdObject.findUnique({
-              where: { id: oid },
-            });
+            const existing = existingObjects.get(oid);
             demand(
               !existing || existing.accountId === id,
               "Meta devolvió un objeto de otra cuenta.",
@@ -666,13 +689,10 @@ export async function syncStep(id: string): Promise<boolean> {
               thumbnailUrl,
               seenAt: new Date(),
             };
-            await tx.metaAdObject.upsert({
-              where: { id: oid },
-              create: { id: oid, accountId: id, ...data },
-              update: data,
-            });
+            objectRows.push({ id: oid, accountId: id, ...data });
           }
         }
+        await writeSyncPage(tx, objectRows, dailyRows, !insight);
         if (insight && !result.after)
           await tx.metaAdDaily.deleteMany({
             where: {
@@ -715,8 +735,17 @@ export async function syncStep(id: string): Promise<boolean> {
             syncLeaseAt: null,
             syncError: null,
             syncState: done
-              ? {}
+              ? {
+                  lastRun: {
+                    pages,
+                    processed: (state.processed ?? 0) + result.data.length,
+                    finishedAt: new Date().toISOString(),
+                  },
+                }
               : {
+                  ...(state.lastRun ? { lastRun: state.lastRun } : {}),
+                  processed: (state.processed ?? 0) + result.data.length,
+                  updatedAt: new Date().toISOString(),
                   started,
                   phase: nextPhase,
                   ...(result.after ? { after: result.after } : {}),
@@ -742,7 +771,7 @@ export async function syncStep(id: string): Promise<boolean> {
     const message =
       e instanceof AppError
         ? e.message
-        : "No se completó la sincronización. Los datos anteriores se conservan.";
+        : `Falló el guardado de la importación en ${syncPhase}${internalErrorCode(e) ? ` (${internalErrorCode(e)})` : ""}. Los datos anteriores se conservan.`;
     await db.metaAdAccount.updateMany({
       where: { id, syncToken: token },
       data: {
@@ -755,7 +784,8 @@ export async function syncStep(id: string): Promise<boolean> {
     console.warn("meta_sync_failed", {
       accountId: id,
       revision,
-      code: e instanceof AppError ? e.status : 503,
+      code: e instanceof AppError ? e.status : (internalErrorCode(e) ?? 503),
+      phase: syncPhase,
     });
     return false;
   }

@@ -11,16 +11,22 @@ export function MetaAccountPicker({
   selected,
   business,
   onChange,
+  query,
+  activity,
+  onQueryChange,
+  onActivityChange,
 }: {
   accounts: SearchableAccount[];
   selected: string[];
   business: string;
   onChange: (ids: string[]) => void;
+  query: string;
+  activity: string;
+  onQueryChange: (value: string) => void;
+  onActivityChange: (value: string) => void;
 }) {
   const id = useId(),
-    [open, setOpen] = useState(false),
-    [query, setQuery] = useState(""),
-    [activity, setActivity] = useState("all");
+    [open, setOpen] = useState(false);
   const visible = accounts.filter((a) =>
     matchesAccount(a, query, activity, business),
   );
@@ -56,7 +62,7 @@ export function MetaAccountPicker({
               <input
                 type="search"
                 value={query}
-                onChange={(e) => setQuery(e.target.value)}
+                onChange={(e) => onQueryChange(e.target.value)}
                 placeholder="Nombre, negocio o act_…"
               />
             </label>
@@ -64,7 +70,7 @@ export function MetaAccountPicker({
               Actividad de cuentas
               <select
                 value={activity}
-                onChange={(e) => setActivity(e.target.value)}
+                onChange={(e) => onActivityChange(e.target.value)}
               >
                 {activityOptions.map(([value, label]) => (
                   <option key={value} value={value}>

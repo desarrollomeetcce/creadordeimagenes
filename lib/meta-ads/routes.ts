@@ -12,9 +12,11 @@ import {
   discover,
   saveToken,
   queueSync,
+  syncStep,
   type Actor,
 } from "./service";
 import { dashboard } from "./dashboard";
+import { syncProgress } from "./sync-progress";
 import { beginOAuth } from "./oauth";
 import { accountActivities } from "./account-activity";
 const cfg = z
@@ -177,6 +179,7 @@ export async function metaRoutes(
       rows.map((a) => ({
         ...a,
         activity: activity.get(a.id),
+        progress: syncProgress(a),
         syncState: { phase: (a.syncState as { phase?: number }).phase ?? null },
         canSync:
           actor.role === "OWNER" ||
@@ -184,6 +187,13 @@ export async function metaRoutes(
         grants: undefined,
       })),
     );
+  }
+  if(path === "sync-status" && method === "GET"){
+    const ids=[...new Set((req.nextUrl.searchParams.get("accounts")??"").split(",").filter(Boolean))];
+    demand(ids.length>0&&ids.length<=100&&ids.every(id=>/^\d{1,40}$/.test(id)),"Selección de cuentas inválida.");
+    const rows=await db.metaAdAccount.findMany({where:{AND:[accountWhere(actor),{id:{in:ids}}]},select:{id:true,enabled:true,syncedAt:true,nextSyncAt:true,syncError:true,syncState:true}});
+    demand(rows.length===ids.length,"Hay cuentas no autorizadas en la selección.",404);
+    return send(rows.map(a=>({id:a.id,syncedAt:a.syncedAt,syncError:a.syncError,syncState:{phase:(a.syncState as {phase?:number}).phase??null},progress:syncProgress(a)})));
   }
   if (parts[1] === "accounts" && parts[2]) {
     const id = parts[2];
@@ -195,6 +205,8 @@ export async function metaRoutes(
         .parse(await body());
       if (b.full) ownerOnly(actor);
       const result = await queueSync(actor, id, b.full);
+      // The explicit action checks one page immediately; remaining pages stay durable.
+      const advanced = await syncStep(id);
       const { startMetaSchedule } = await import("./schedule");
       const scheduled = await startMetaSchedule(id);
       const account = await db.metaAdAccount.findUnique({
@@ -207,7 +219,8 @@ export async function metaRoutes(
           await getRun(account.schedulerRunId).wakeUp();
         } catch {}
       }
-      return send({ ...result, ...scheduled }, 202);
+      const state=await db.metaAdAccount.findUniqueOrThrow({where:{id},select:{syncError:true}});
+      return send({ ...result, ...scheduled, advanced, syncError: state.syncError }, 202);
     }
     if (parts[3] === "grants") {
       ownerOnly(actor);

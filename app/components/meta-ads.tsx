@@ -2,6 +2,8 @@
 import { useCallback, useEffect, useState, useRef } from "react";
 import { MetaAccountPicker } from "./meta-account-picker";
 import { matchesAccount, activityOptions, accountActivityText, type AccountActivity } from "../../lib/meta-ads/account-filters";
+import { parseMetaPreferences } from "../../lib/meta-ads/preferences";
+import type { SyncProgress } from "../../lib/meta-ads/sync-progress";
 import { PasswordInput } from "./password-input";
 import { engineRequest as api } from "./generation-engine";
 type Connection = {
@@ -17,6 +19,7 @@ type Connection = {
 };
 type Account = {
   activity?: AccountActivity;
+  progress?: SyncProgress;
   id: string;
   name: string;
   connectionId: string;
@@ -90,7 +93,7 @@ type ObjectOption = {
   campaignId: string | null;
 };
 const metrics = [
-  ["AUTO", "Según objetivo compatible"],
+  ["AUTO", "Automático · detectar tipo de resultado"],
   ["MESSAGES", "Conversaciones iniciadas"],
   ["LEADS", "Clientes potenciales"],
   ["PURCHASES", "Compras"],
@@ -188,9 +191,17 @@ function exportCSV(items: Item[]) {
   a.click();
   URL.revokeObjectURL(url);
 }
-export function MetaAds({ role }: { role: string }) {
+function SyncIndicator({account}:{account:Account}){
+  const p=account.progress;if(!p)return null;
+  return <div className="meta-sync-progress" role="status"><div className="row spread"><strong>{p.label}</strong><span>{p.phase} de {p.totalPhases} etapas</span></div><progress max={p.totalPhases} value={p.phase} aria-label={`Sincronización de ${account.name}: etapas completadas`} /><small>{p.pages} páginas procesadas · {p.processed} registros recibidos. El total de páginas se conoce al completar la lectura.</small>{p.status==="stalled"&&<p className="notice">No hay avance reciente confirmado. Pulsa Sincronizar ahora para reanudar y consultar el error si lo hubiera.</p>}{p.status==="error"&&p.nextSyncAt&&<small>Próximo intento previsto: {displayTime(p.nextSyncAt)}. Puedes solicitar otro intento manual.</small>}</div>;
+}
+export function MetaAds({ role, userId }: { role: string; userId: string }) {
   const owner = role === "OWNER";
   const [accounts, setAccounts] = useState<Account[]>([]),
+    [preferencesReady, setPreferencesReady] = useState(false),
+    [accountsLoaded, setAccountsLoaded] = useState(false),
+    [accountPickerQuery, setAccountPickerQuery] = useState(""),
+    [accountPickerActivity, setAccountPickerActivity] = useState("all"),
     [connections, setConnections] = useState<Connection[]>([]),
     [showDisconnected, setShowDisconnected] = useState(false),
     [accountListQuery, setAccountListQuery] = useState(""),
@@ -230,6 +241,18 @@ export function MetaAds({ role }: { role: string }) {
     [transport, setTransport] = useState("MCP"),
     [revision, setRevision] = useState(0),
     [sharing, setSharing] = useState<Account | null>(null);
+  const preferencesKey = `meta-ads:preferences:v1:${userId}`;
+  useEffect(() => {
+    let stored = null;try{stored=localStorage.getItem(preferencesKey);}catch{}
+    const p=parseMetaPreferences(stored);
+    setAccountIds(p.accountIds);setLevel(p.level);setBusiness(p.business);setCampaign(p.campaign);setAdset(p.adset);setQ(p.q);setSearch(p.q);setState(p.state);setMetric(p.metric);setCurrency(p.currency);setSort(p.sort);setAnalysisPeriod(p.analysisPeriod);setDirection(p.direction);setAge(p.age);setRating(p.rating);setSince(p.since);setUntil(p.until);setCalendar(p.calendar);setView(p.view);setAccountListQuery(p.accountListQuery);setAccountListActivity(p.accountListActivity);setAccountListBusiness(p.accountListBusiness);setAccountListPage(p.accountListPage);setAccountPickerQuery(p.accountPickerQuery);setAccountPickerActivity(p.accountPickerActivity);
+    setTab(new URLSearchParams(window.location.search).get("metaTab")==="connections"&&owner?"connections":p.tab==="connections"&&!owner?"panel":p.tab);
+    setPreferencesReady(true);
+  },[preferencesKey,owner]);
+  useEffect(()=>{
+    if(!preferencesReady||!accountsLoaded)return;
+    try{localStorage.setItem(preferencesKey,JSON.stringify({accountIds,tab,level,business,campaign,adset,q,state,metric,currency,sort,analysisPeriod,direction,age,rating,since,until,calendar,view,accountListQuery,accountListActivity,accountListBusiness,accountListPage,accountPickerQuery,accountPickerActivity}));}catch{}
+  },[preferencesReady,accountsLoaded,preferencesKey,accountIds,tab,level,business,campaign,adset,q,state,metric,currency,sort,analysisPeriod,direction,age,rating,since,until,calendar,view,accountListQuery,accountListActivity,accountListBusiness,accountListPage,accountPickerQuery,accountPickerActivity]);
   const businesses = [...new Map(accounts.filter(a => a.businessId).map(a => [a.businessId!, a.businessName ?? a.businessId!])).entries()];
   const filteredAccounts = accounts.filter(a => matchesAccount(a, accountListQuery, accountListActivity, accountListBusiness));
   const accountPages = Math.max(1, Math.ceil(filteredAccounts.length / 25));
@@ -237,16 +260,19 @@ export function MetaAds({ role }: { role: string }) {
   const visibleAccounts = filteredAccounts.slice((accountPage - 1) * 25, accountPage * 25);
   const accountKey = accountIds.join(",");
   const serial = useRef(0);
+  const syncVersions = useRef(new Map<string,string|null>());
   const analyticsTab = ["panel", "ranking", "alerts"].includes(tab);
   useEffect(() => {
     const timer = setTimeout(() => { setSearch(q); setPage(1); }, 200);
     return () => clearTimeout(timer);
   }, [q]);
   const refresh = useCallback(async () => {
-    setAccounts(await api("meta-ads/accounts"));
+    const rows: Account[] = await api("meta-ads/accounts");
+    rows.forEach(a=>syncVersions.current.set(a.id,a.syncedAt));
+    setAccounts(rows);setAccountIds(ids=>ids.filter(id=>rows.some(a=>a.id===id)));setAccountsLoaded(true);
   }, []);
   useEffect(() => {
-    if (!owner || tab !== "connections") return;
+    if (!preferencesReady || !owner || tab !== "connections") return;
     let live = true;
     api("meta-ads/connections")
       .then((data) => {
@@ -258,8 +284,9 @@ export function MetaAds({ role }: { role: string }) {
     return () => {
       live = false;
     };
-  }, [owner, tab, revision]);
+  }, [owner, tab, revision, preferencesReady]);
   useEffect(() => {
+    if(!preferencesReady)return;
     let live = true;
     refresh().catch((e) => {
       if (live) setMessage(e.message);
@@ -267,9 +294,9 @@ export function MetaAds({ role }: { role: string }) {
     return () => {
       live = false;
     };
-  }, [refresh]);
+  }, [refresh, preferencesReady]);
   useEffect(() => {
-    if (!analyticsTab) return;
+    if (!analyticsTab || !preferencesReady || !accountsLoaded) return;
     let live = true;
     api("meta-ads/objects?" + new URLSearchParams({ accounts: accountKey }))
       .then((rows) => {
@@ -281,9 +308,9 @@ export function MetaAds({ role }: { role: string }) {
     return () => {
       live = false;
     };
-  }, [analyticsTab, accountKey, revision]);
+  }, [analyticsTab, accountKey, revision, preferencesReady, accountsLoaded]);
   useEffect(() => {
-    if (!analyticsTab) {
+    if (!analyticsTab || !preferencesReady || !accountsLoaded) {
       setLoading(false);
       return;
     }
@@ -342,6 +369,8 @@ export function MetaAds({ role }: { role: string }) {
     };
   }, [
     tab,
+    preferencesReady,
+    accountsLoaded,
     analyticsTab,
     level,
     accountKey,
@@ -362,6 +391,27 @@ export function MetaAds({ role }: { role: string }) {
     until,
     revision,
   ]);
+  const pendingKey = accounts.filter(a=>a.enabled&&(!accountIds.length||accountIds.includes(a.id))).map(a=>a.id).slice(0,100).join(",");
+  useEffect(()=>{
+    if(!preferencesReady||!pendingKey)return;
+    let stopped=false,delay=5000,timer:ReturnType<typeof setTimeout>|undefined;const controller=new AbortController();
+    const poll=async()=>{
+      if(stopped)return;
+      if(document.visibilityState!=="visible"){timer=setTimeout(poll,5000);return;}
+      try{
+        const response=await fetch("/api/meta-ads/sync-status?"+new URLSearchParams({accounts:pendingKey}),{cache:"no-store",signal:controller.signal});
+        if(!response.ok){if(response.status===404)await refresh();else throw Error("No se pudo actualizar el progreso de Meta.");return;}
+        const updates:Pick<Account,"id"|"syncedAt"|"syncError"|"syncState"|"progress">[]=await response.json();
+        if(stopped)return;
+        delay=updates.some(u=>["queued","running","stalled"].includes(u.progress?.status??""))?5000:30000;
+        const finished=updates.some(u=>u.progress?.status==="complete"&&!!u.syncedAt&&u.syncedAt!==syncVersions.current.get(u.id));
+        updates.forEach(u=>syncVersions.current.set(u.id,u.syncedAt));
+        if(finished)setRevision(n=>n+1);
+        setAccounts(old=>old.map(a=>{const update=updates.find(u=>u.id===a.id);return update?{...a,...update}:a;}));
+        if(finished)await refresh();
+      }catch(e){if(!stopped&&(e as Error).name!=="AbortError")setMessage((e as Error).message);}finally{if(!stopped)timer=setTimeout(poll,delay);}
+    };timer=setTimeout(poll,1000);return()=>{stopped=true;controller.abort();if(timer)clearTimeout(timer);};
+  },[preferencesReady,pendingKey,refresh]);
   const run = async (fn: () => Promise<unknown>, success?: string) => {
     setBusy(true);
     setMessage("");
@@ -417,6 +467,7 @@ export function MetaAds({ role }: { role: string }) {
       (!accountIds.length || accountIds.includes(a.id)) &&
       (!business || a.businessId === business),
   );
+  if(!preferencesReady)return <p role="status">Restaurando tu selección de Meta Ads…</p>;
   return (
     <section className="meta-ads stack">
       <header className="meta-header">
@@ -779,6 +830,7 @@ export function MetaAds({ role }: { role: string }) {
                 {a.syncState.phase !== null ? " · Importación en curso" : ""}
               </small>
               <small className="meta-account-activity">{accountActivityText(a)}</small>
+              {a.progress && <SyncIndicator account={a} /> }
               {a.syncError && <p className="notice">{a.syncError}</p>}
               {owner && (
                 <form
@@ -872,6 +924,7 @@ export function MetaAds({ role }: { role: string }) {
                       </label>
                     )}
                   </div>
+                  <small>Automático detecta un resultado compatible; no suma objetivos. Para analizar mensajes, elige Conversaciones iniciadas. Guarda los cambios.</small>
                   <button disabled={busy}>Guardar cuenta</button>
                 </form>
               )}
@@ -888,9 +941,9 @@ export function MetaAds({ role }: { role: string }) {
                           {},
                         );
                         setMessage(
-                          r.scheduled
-                            ? "Sincronización solicitada. Actualiza la vista para consultar el progreso."
-                            : "En cola: el programador no confirmó su arranque. Revisa el worker.",
+                          r.syncError ? r.syncError : r.scheduled
+                            ? "Importación iniciada. El avance se actualizará automáticamente; puedes salir de esta pantalla."
+                            : "Primera página comprobada; el arranque en segundo plano no está confirmado. Revisa el estado de la cuenta.",
                         );
                       })
                     }
@@ -941,6 +994,7 @@ export function MetaAds({ role }: { role: string }) {
         </>
       ) : (
         <>
+          {chosen.filter(a=>a.enabled&&a.progress?.status!=="complete").map(a=><div className="panel" key={a.id}><strong>{a.name}</strong><SyncIndicator account={a} />{a.syncError&&<p className="notice">{a.syncError}</p>}</div>)}
           <div className="panel stack">
             <div className="meta-level-tabs" role="tablist" aria-label="Nivel publicitario">
               {[
@@ -981,7 +1035,7 @@ export function MetaAds({ role }: { role: string }) {
                   ))}
                 </select>
               </label>
-              <MetaAccountPicker accounts={accounts} selected={accountIds} business={business} onChange={ids => resetPage(() => { setAccountIds(ids); setCampaign(""); setAdset(""); })} />
+              <MetaAccountPicker accounts={accounts} selected={accountIds} business={business} query={accountPickerQuery} activity={accountPickerActivity} onQueryChange={setAccountPickerQuery} onActivityChange={setAccountPickerActivity} onChange={ids => resetPage(() => { setAccountIds(ids); setCampaign(""); setAdset(""); })} />
               <label>
                 Campaña
                 <select
