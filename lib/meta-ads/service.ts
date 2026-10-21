@@ -107,10 +107,20 @@ function date(v: unknown) {
   const d = new Date(v);
   return Number.isFinite(d.valueOf()) ? d : null;
 }
-export async function discover(actor: Actor, id: string) {
+export async function discover(
+  actor: Actor,
+  id: string,
+  expectedRevision?: number,
+  sessionId?: string,
+) {
   ownerOnly(actor);
   await rateLimit("meta:discover:" + actor.id, 15);
   const { connection: c, reader: r } = await reader(id, true);
+  demand(
+    expectedRevision === undefined || c.revision === expectedRevision,
+    "La conexión cambió durante la autorización. Inicia de nuevo.",
+    409,
+  );
   try {
     const tools = c.transport === "MCP" ? await r.tools() : [];
     let after: string | undefined;
@@ -119,6 +129,19 @@ export async function discover(actor: Actor, id: string) {
     do {
       const result = await r.get("accounts", { after });
       await db.$transaction(async (tx) => {
+        if (sessionId)
+          demand(
+            await tx.session.findFirst({
+              where: {
+                id: sessionId,
+                userId: actor.id,
+                expiresAt: { gt: new Date() },
+                user: { role: "OWNER", status: "APPROVED" },
+              },
+            }),
+            "La sesión original ya no está autorizada.",
+            401,
+          );
         demand(
           await tx.user.findFirst({
             where: { id: c.ownerId, role: "OWNER", status: "APPROVED" },
@@ -194,14 +217,45 @@ export async function discover(actor: Actor, id: string) {
         409,
       );
     } while (after);
-    await db.metaConnection.updateMany({
-      where: { id, revision: c.revision, disconnectedAt: null },
-      data: {
-        verifiedAt: new Date(),
-        lastError: null,
-        tools: tools as unknown as Prisma.InputJsonValue,
-      },
+    const verified = await db.$transaction(async (tx) => {
+      if (sessionId)
+        demand(
+          await tx.session.findFirst({
+            where: {
+              id: sessionId,
+              userId: actor.id,
+              expiresAt: { gt: new Date() },
+              user: { role: "OWNER", status: "APPROVED" },
+            },
+          }),
+          "La sesión original ya no está autorizada.",
+          401,
+        );
+      demand(
+        await tx.user.findFirst({
+          where: { id: c.ownerId, role: "OWNER", status: "APPROVED" },
+        }),
+        "El propietario de la conexión ya no está autorizado.",
+        403,
+      );
+      return tx.metaConnection.updateMany({
+        where: {
+          id,
+          revision: c.revision,
+          disconnectedAt: null,
+        },
+        data: {
+          verifiedAt: new Date(),
+          lastError: null,
+          tools: tools as unknown as Prisma.InputJsonValue,
+        },
+      });
     });
+    demand(
+      verified.count,
+      "La conexión cambió antes de completar la verificación.",
+      409,
+    );
     await recordActivity(db, {
       data: {
         actorId: actor.id,
@@ -218,7 +272,7 @@ export async function discover(actor: Actor, id: string) {
         : "No se pudo verificar la conexión con Meta.";
     await db.metaConnection.updateMany({
       where: { id, revision: c.revision },
-      data: { lastError: message },
+      data: { lastError: message, verifiedAt: null },
     });
     throw new AppError(message, e instanceof AppError ? e.status : 503);
   }
@@ -228,7 +282,7 @@ export async function saveToken(
   token: string,
   expectedRevision?: number,
 ) {
-  await db.$transaction(async (tx) => {
+  return db.$transaction(async (tx) => {
     const c = await tx.metaConnection.findUniqueOrThrow({ where: { id } });
     demand(
       expectedRevision === undefined || c.revision === expectedRevision,
@@ -252,6 +306,7 @@ export async function saveToken(
       },
     });
     demand(changed.count, "La conexión cambió. Vuelve a intentarlo.", 409);
+    return c.revision + 1;
   });
 }
 

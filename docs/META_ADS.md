@@ -8,17 +8,36 @@ Como OWNER, abre Meta Ads → Conexiones → Mi app · Marketing API. Crea/confi
 
 Guarda nombre, versión Graph compatible con tu app, ID de app opcional y token de acceso. La versión inicial del formulario es v23.0, no una afirmación de ser la versión más reciente: se puede cambiar antes de guardar. Nunca enviar tokens por chat, Git ni logs. Pulsa Verificar y traer cuentas. La verificación comprueba lectura de cuentas; sincronizar comprueba los campos de objetos/estadísticas.
 
-## Conectar MCP
+## Conectar MCP con OAuth
 
-Meta Ads → Conexiones → Conexión MCP. Guarda la conexión y prueba Autorizar MCP. El cliente usa Streamable HTTP JSON/SSE al destino fijo `https://mcp.facebook.com/ads`, descubrimiento OAuth, PKCE S256 y cliente público registrado cuando el servidor lo admite. Si Meta exige un cliente previamente registrado, coloca su ID de cliente. Redirect de producción:
+Como OWNER, entra en Meta Ads → Conexiones → Conexión MCP y pulsa **Conectar con Meta**. No hace falta copiar un token. La plataforma crea una conexión pendiente y consulta metadatos públicos del destino fijo `https://mcp.facebook.com/ads`. No abre una URL inventada ni considera ese intento una conexión exitosa.
 
-`https://creadordeimagenes-three.vercel.app/api/meta/oauth/callback`
+Se comprueban recurso, emisor, endpoints oficiales previstos, PKCE S256 y compatibilidad con cliente público. Se usa documento público de cliente (CIMD) solo si Meta lo anuncia; de lo contrario, registro dinámico cuando Meta lo permite. Si exige cliente preaprobado, coloca su ID en «Cliente OAuth registrado · avanzado» de la conexión. No copies IDs de Claude/ChatGPT ni confundas un ID de app Graph con un cliente MCP autorizado. No se omiten errores de emisor o de registro.
 
-La alternativa es introducir un token emitido para ese servidor MCP. No se asume que un token de Graph, una suscripción de chat o una clave de OpenAI sean válidos para MCP. Las autorizaciones se vinculan a sesión/usuario/navegador, caducan en10min y solo se consumen una vez. Cambiar/desconectar una conexión invalida callbacks anteriores; las credenciales nuevas exigen otra verificación.
+URLs de esta plataforma:
 
-El cliente descubre herramientas de lectura, sin permitir llamadas arbitrarias desde el navegador. Importa herramientas compatibles de cuentas, campañas, conjuntos, anuncios e insights con parámetros declarados para cuenta, nivel, datos diarios, fechas y atribución. No usa herramientas de publicación, mutación, presupuesto ni ejecución genérica. Respuestas narrativas o esquemas incompatibles fallan con indicación de usar Marketing API. Verificar cuentas no garantiza que el MCP ofrezca todos los insights requeridos.
+- Retorno: `https://creadordeimagenes-three.vercel.app/api/meta/oauth/callback`
+- Documento público de cliente, sin secretos: `https://creadordeimagenes-three.vercel.app/api/meta/oauth/client`
 
-**Estado de verificación externa:** el entorno de desarrollo bloqueó los dominios Meta y no dispone de autorización real. Se probaron protocolo, OAuth, parsers y sincronización con dobles explícitos. No está confirmada la disponibilidad del servidor MCP para clientes propios ni sus herramientas reales; lo confirma la conexión del OWNER en producción. No se afirma integración real validada a partir de los datos de prueba.
+Meta debe admitir el cliente y esa URL de retorno. Publicar el documento no obliga a Meta a aceptarlo. Clientes que exijan secreto o métodos distintos a cliente público PKCE no están admitidos en este flujo. No se pide el secreto de tu app para aparentar compatibilidad.
+
+Al regresar se comprueban sesión OWNER vigente, navegador, estado de un uso, revisión de conexión y emisor; se intercambia el código en servidor y se conserva el token cifrado. A continuación se inicia una sesión MCP, se descubre el catálogo de lectura y se consultan las cuentas accesibles. **Solo después de esas consultas exitosas se marca Acceso verificado.** Un token recibido/guardado permanece sin verificar si Meta rechaza la lectura. Una respuesta real sin cuentas no inventa cuentas ni habilita sincronizaciones. No se publican ni cambian campañas, anuncios o presupuestos.
+
+El token manual queda en Configuración avanzada y se verifica al guardarlo. Debe estar emitido para ese servidor MCP; no existe aquí un token universal. No se asume que un token de otro cliente, una suscripción de chat o una clave de OpenAI sean válidos. Sesión revocada durante el intercambio o modificación de credenciales bloquean respuestas tardías. Un fallo vuelve a indicar conexión no verificada, sin mostrar códigos/tokens ni una pantalla falsa de éxito.
+
+### Si Meta no admite OAuth para este cliente
+
+Necesitas un cliente OAuth público **oficialmente admitido por Meta para el MCP**, con PKCE S256 y la URL de retorno registrada, o una credencial MCP emitida por su proceso oficial. No se puede fabricar una identidad autorizada ni utilizar credenciales de otro asistente. Si Meta no ofrece ese registro para tu caso, conserva la conexión pendiente o desconéctala y utiliza **Mi app · Marketing API**.
+
+Para Marketing API necesitas tu propia app de Meta habilitada para acceso publicitario, token de usuario o usuario del sistema con `ads_read` y acceso a las cuentas correspondientes; `business_management` cuando el tipo de acceso empresarial lo requiera. Revisión de app, roles y verificación del negocio dependen de Meta. Configura versión Graph compatible e introduce el token solo en el campo protegido; pulsa Verificar y traer cuentas. No compartas contraseña, token ni App Secret por chat o Git. El campo ID de app es informativo/opcional y no sustituye los permisos del token.
+
+### Resultado de esta verificación
+
+El entorno de desarrollo mantiene una política de red que bloquea los dominios Meta. **No se ha completado una autorización real contra Meta ni se confirma que admita este cliente concreto.** Se verificaron código, metadatos, flujo y rechazos con dobles explícitos en una base local exclusiva. La comprobación real se hace desde el servidor de la plataforma al pulsar el botón y requiere la autorización del OWNER en Facebook; nunca se simula éxito en producción.
+
+Se consultaron reportes de reproducción de los clientes oficiales: [registro rechazado en Codex](https://github.com/openai/codex/issues/24103), [inconsistencia de emisor reportada en Codex](https://github.com/openai/codex/issues/38944) y [retornos no registrados en Claude Code](https://github.com/anthropics/claude-code/issues/55002). Son incidencias de esos clientes y fechas, no prueba del estado actual de Meta ni garantía de disponibilidad. Por ello el botón valida la respuesta actual y ofrece Marketing API si no es compatible.
+
+El catálogo real puede no ofrecer los nombres, esquemas o métricas requeridos. La aplicación solo admite herramientas compatibles de lectura y resultados estructurados; no usa herramientas de publicación o ejecución genérica, ni IA para interpretar respuestas. Verificar cuentas no demuestra compatibilidad con todos los insights.
 
 ## Cuentas y roles
 

@@ -191,7 +191,7 @@ export function MetaAds({ role }: { role: string }) {
     [total, setTotal] = useState(0),
     [limited, setLimited] = useState(false),
     [rankingExcluded, setRankingExcluded] = useState(0),
-    [tab, setTab] = useState("panel"),
+    [tab, setTab] = useState(() => typeof window !== "undefined" && new URLSearchParams(window.location.search).get("metaTab") === "connections" ? "connections" : "panel"),
     [level, setLevel] = useState("ad"),
     [accountIds, setAccountIds] = useState<string[]>([]),
     [business, setBusiness] = useState(""),
@@ -467,9 +467,11 @@ export function MetaAds({ role }: { role: string }) {
               onSubmit={(e) => {
                 e.preventDefault();
                 const form = e.currentTarget,
-                  data = new FormData(form);
+                  data = new FormData(form),
+                  manual = transport === "API" || (e.nativeEvent as SubmitEvent).submitter?.getAttribute("value") === "manual";
                 void run(async () => {
-                  await api("meta-ads/connections", "POST", {
+                  if (manual && !data.get("token")) throw Error("Introduce el token oficial en el campo seguro.");
+                  const created = await api("meta-ads/connections", "POST", {
                     name: String(data.get("name")),
                     transport,
                     ...(transport === "API"
@@ -480,12 +482,22 @@ export function MetaAds({ role }: { role: string }) {
                             : {}),
                         }
                       : {}),
-                    ...(data.get("token")
+                    ...(manual && data.get("token")
                       ? { token: String(data.get("token")) }
                       : {}),
                   });
+                  setConnections(old => [...old, created]);
                   form.reset();
-                }, "Conexión guardada. Autoriza o verifica el acceso.");
+                  if (transport === "MCP") {
+                    if (manual) {
+                      const result = await api(`meta-ads/connections/${created.id}/verify`, "POST", {});
+                      setMessage(`Acceso MCP verificado: ${result.accounts} cuentas. ${result.accounts === 0 ? "Meta no devolvió cuentas accesibles." : "Ya puedes configurar su lectura."}`);
+                    } else {
+                      const auth = await api(`meta-ads/connections/${created.id}/oauth`, "POST", {});
+                      window.location.assign(auth.url);
+                    }
+                  } else setMessage("Conexión guardada; verifica el acceso antes de sincronizar.");
+                });
               }}
             >
               <div className="fields">
@@ -493,6 +505,8 @@ export function MetaAds({ role }: { role: string }) {
                   Nombre de la conexión
                   <input
                     name="name"
+                    key={transport}
+                    defaultValue={transport === "MCP" ? "Meta MCP" : ""}
                     required
                     maxLength={100}
                     placeholder={
@@ -527,26 +541,34 @@ export function MetaAds({ role }: { role: string }) {
                   </>
                 )}
               </div>
-              <label>
-                {transport === "MCP"
-                  ? "Token MCP autorizado · opcional si usarás OAuth"
-                  : "Token de acceso de Marketing API"}
-                <PasswordInput
-                  name="token"
-                  secretLabel="token de Meta"
-                  required={transport === "API"}
-                  autoComplete="off"
-                />
-              </label>
-              <small>
-                {transport === "MCP"
-                  ? "Destino fijo: https://mcp.facebook.com/ads. Puedes intentar Autorizar MCP o usar un token emitido para ese servidor. No uses aquí una clave de OpenAI."
-                  : "Configura tu app y permisos de lectura (ads_read y acceso a cuentas; business_management cuando sea necesario). Pega el token solo en este formulario. Nunca por chat."}
-              </small>
-              <button disabled={busy} className="primary">
-                Guardar conexión {transport}
+              {transport === "MCP" ? <>
+                <p className="hint">Autoriza tu cuenta en Facebook sin copiar un token. Antes de abrir la autorización se comprobará si Meta admite este cliente; al regresar se validarán la sesión, herramientas y cuentas. Si Meta exige un cliente previamente aprobado, se indicará sin simular una conexión.</p>
+                <details>
+                  <summary>Configuración avanzada · token MCP oficial</summary>
+                  <div className="inside stack">
+                    <label>Token emitido para este servidor MCP
+                      <PasswordInput name="token" secretLabel="token de Meta" autoComplete="off" />
+                    </label>
+                    <small>No se considera válido hasta completar la verificación real. No uses claves de OpenAI, contraseñas de Facebook ni tokens de otro cliente.</small>
+                    <button type="submit" value="manual" disabled={busy}>Guardar token y verificar</button>
+                  </div>
+                </details>
+              </> : <label>Token de acceso de Marketing API
+                <PasswordInput name="token" secretLabel="token de Meta" required autoComplete="off" />
+              </label>}
+              <small>{transport === "MCP" ? "Servidor: https://mcp.facebook.com/ads. OAuth disponible solo si Meta autoriza este cliente y la URL de retorno." : "Token de tu app con ads_read y acceso a las cuentas; business_management cuando corresponda. Introduce el token solo aquí, nunca por chat."}</small>
+              <button type="submit" disabled={busy} className="primary">
+                {transport === "MCP" ? "Conectar con Meta" : "Guardar conexión API"}
               </button>
             </form>
+            <details>
+              <summary>Si OAuth no está disponible: credenciales y alternativa</summary>
+              <div className="inside stack">
+                <p>Para MCP necesitas que Meta admita el registro de este cliente, un documento de cliente público o un ID de cliente MCP autorizado para la URL de retorno de esta plataforma. Un ID de app Graph o el ID de Claude/ChatGPT no sirve como sustituto. No podemos crear una autorización que Meta no conceda.</p>
+                <p>Para Marketing API, crea o utiliza tu propia app en <a href="https://developers.facebook.com/apps/" target="_blank" rel="noopener noreferrer">Meta for Developers</a>, habilita el acceso publicitario y obtén un token de usuario o usuario del sistema con ads_read, acceso a las cuentas y business_management si tu organización lo requiere. Meta puede exigir revisión de la app o verificación del negocio.</p>
+                <p>Selecciona «Mi app · Marketing API», guarda el token en el campo protegido y pulsa «Verificar y traer cuentas». No pegues contraseñas, tokens ni el secreto de tu app en el chat. Las credenciales se cifran en el servidor; guardar una credencial no demuestra acceso.</p>
+              </div>
+            </details>
           </section>
           {connections.map((c) => (
             <article className="panel stack" key={c.id}>
@@ -587,11 +609,11 @@ export function MetaAds({ role }: { role: string }) {
                       });
                     }}
                   >
-                    <label>
-                      ID de cliente OAuth · si lo exige Meta
-                      <input name="clientId" maxLength={300} />
-                    </label>
-                    <button disabled={busy}>Autorizar MCP</button>
+                    <details>
+                      <summary>Cliente OAuth registrado · avanzado</summary>
+                      <div className="inside stack"><label>ID de cliente MCP autorizado por Meta<input name="clientId" maxLength={300} /></label><small>Debe tener registrada la URL /api/meta/oauth/callback de esta plataforma. No copies el ID de otro cliente ni lo sustituyas por un ID de app Graph.</small></div>
+                    </details>
+                    <button disabled={busy} className="primary">Conectar con Meta</button>
                   </form>
                 )}
                 <button
