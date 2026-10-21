@@ -73,3 +73,15 @@ export const optionalFieldError = (e: unknown): e is MetaGraphError =>
   e instanceof MetaGraphError &&
   [10, 100, 200].includes(e.diagnostic.code ?? -1) &&
   e.diagnostic.httpStatus !== 429;
+
+// Prisma/driver messages may contain query arguments. Only expose a recognized code.
+export function internalErrorCode(error: unknown): string | null {
+  const code =
+    error && typeof error === "object"
+      ? (error as { code?: unknown }).code
+      : null;
+  return typeof code === "string" &&
+    /^(?:P\d{4}|[0-9A-Z]{5}|ECONNREFUSED|ECONNRESET|ETIMEDOUT)$/.test(code)
+    ? code
+    : null;
+}

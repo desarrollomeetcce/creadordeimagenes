@@ -186,6 +186,7 @@ export function MetaAds({ role }: { role: string }) {
   const owner = role === "OWNER";
   const [accounts, setAccounts] = useState<Account[]>([]),
     [connections, setConnections] = useState<Connection[]>([]),
+    [showDisconnected, setShowDisconnected] = useState(false),
     [objects, setObjects] = useState<ObjectOption[]>([]),
     [items, setItems] = useState<Item[]>([]),
     [total, setTotal] = useState(0),
@@ -356,6 +357,8 @@ export function MetaAds({ role }: { role: string }) {
       if (success) setMessage(success);
     } catch (e) {
       setMessage((e as Error).message);
+      // Read persisted diagnostics without repeating the verification request.
+      try { await refresh(); } catch {}
     } finally {
       setBusy(false);
     }
@@ -584,7 +587,8 @@ export function MetaAds({ role }: { role: string }) {
               </div>
             </details>
           </section>
-          {connections.map((c) => (
+          {connections.some(c => c.disconnectedAt) && <label className="row"><input type="checkbox" checked={showDisconnected} onChange={e => setShowDisconnected(e.target.checked)} />Ver conexiones retiradas ({connections.filter(c => c.disconnectedAt).length})</label>}
+          {connections.filter(c => showDisconnected || !c.disconnectedAt).map((c) => (
             <article className="panel stack" key={c.id}>
               <div className="row spread">
                 <h3>{c.name}</h3>
@@ -661,16 +665,16 @@ export function MetaAds({ role }: { role: string }) {
                   onClick={() => {
                     if (
                       confirm(
-                        "¿Desconectar? Se conservará el histórico sincronizado.",
+                        "¿Eliminar esta conexión de la lista activa? Se retirará su token y se desactivará su sincronización. Se conservan las cuentas y el histórico. No se modifica nada en Meta ni otras conexiones.",
                       )
                     )
                       void run(
                         () => api("meta-ads/connections/" + c.id, "DELETE"),
-                        "Conexión desconectada.",
+                        "Conexión retirada de la lista activa. Se conserva el histórico; puedes consultarla en Ver conexiones retiradas.",
                       );
                   }}
                 >
-                  Desconectar
+                  {c.disconnectedAt ? "Conexión retirada" : "Eliminar conexión"}
                 </button>
               </div>
               <details>

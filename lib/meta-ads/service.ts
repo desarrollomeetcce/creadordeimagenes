@@ -6,7 +6,11 @@ import { encryptKey, decryptKey, maskKey } from "../crypto";
 import { demand, AppError } from "../errors";
 import { recordActivity } from "../activity";
 import { MetaReader, type Operation, type Query } from "./provider";
-import { MetaGraphError, type GraphDiagnostic } from "./graph-error";
+import {
+  MetaGraphError,
+  internalErrorCode,
+  type GraphDiagnostic,
+} from "./graph-error";
 import { localDay, shiftDay, metricFor } from "./analytics";
 export type Actor = { id: string; role: string };
 export const connectionSelect = {
@@ -122,6 +126,8 @@ export async function discover(
     "La conexión cambió durante la autorización. Inicia de nuevo.",
     409,
   );
+  let phase = "descubrimiento de herramientas",
+    minimalVerified = false;
   try {
     const tools = c.transport === "MCP" ? await r.tools() : [];
     let after: string | undefined;
@@ -129,53 +135,36 @@ export async function discover(
     const warnings: GraphDiagnostic[] = [];
     const visited = new Set<string>();
     do {
-      const result = await r.accounts(after);
+      const result = await r.accounts(after, (next) => {
+        phase = next;
+        if (
+          c.transport === "API" &&
+          next === "lectura de moneda y zona horaria"
+        )
+          minimalVerified = true;
+      });
+      if (c.transport === "API") minimalVerified = true;
       warnings.push(...(result.warnings ?? []));
-      await db.$transaction(async (tx) => {
-        if (sessionId)
-          demand(
-            await tx.session.findFirst({
-              where: {
-                id: sessionId,
-                userId: actor.id,
-                expiresAt: { gt: new Date() },
-                user: { role: "OWNER", status: "APPROVED" },
-              },
-            }),
-            "La sesión original ya no está autorizada.",
-            401,
-          );
+      phase = "validación de metadatos";
+      const normalized = result.data.map((row) => {
+        const aid = digits(row.id),
+          currency = text(row.currency, 3),
+          timezone = text(row.timezone_name, 100);
         demand(
-          await tx.user.findFirst({
-            where: { id: c.ownerId, role: "OWNER", status: "APPROVED" },
-          }),
-          "El propietario de la conexión ya no está autorizado.",
-          403,
+          /^[A-Z]{3}$/.test(currency),
+          "Meta no devolvió la moneda de la cuenta.",
+          502,
         );
-        const active = await tx.metaConnection.findFirst({
-          where: { id, revision: c.revision, disconnectedAt: null },
-        });
-        demand(active, "La conexión cambió. Vuelve a verificarla.", 409);
-        for (const row of result.data) {
-          const aid = digits(row.id),
-            currency = text(row.currency, 3),
-            timezone = text(row.timezone_name, 100);
-          demand(
-            /^[A-Z]{3}$/.test(currency),
-            "Meta no devolvió la moneda de la cuenta.",
-            502,
-          );
-          try {
-            localDay(timezone);
-          } catch {
-            throw new AppError(
-              "Meta no devolvió una zona horaria válida.",
-              502,
-            );
-          }
-          const business = row.business as
-            { id?: unknown; name?: unknown } | undefined;
-          const data = {
+        try {
+          localDay(timezone);
+        } catch {
+          throw new AppError("Meta no devolvió una zona horaria válida.", 502);
+        }
+        const business = row.business as
+          { id?: unknown; name?: unknown } | undefined;
+        return {
+          aid,
+          data: {
             name: text(row.name) || aid,
             currency,
             timezone,
@@ -193,26 +182,80 @@ export async function discover(
                       : null,
                 }
               : {}),
-          };
-          const previous = await tx.metaAdAccount.findUnique({
-            where: { id: aid },
-          });
-          if (!previous)
-            await tx.metaAdAccount.create({
-              data: { id: aid, connectionId: id, ...data },
-            });
-          else if (previous.connectionId === id)
-            await tx.metaAdAccount.update({ where: { id: aid }, data });
-          await tx.metaAccountSource.upsert({
-            where: {
-              accountId_connectionId: { accountId: aid, connectionId: id },
-            },
-            create: { accountId: aid, connectionId: id, revision: c.revision },
-            update: { revision: c.revision, verifiedAt: new Date() },
-          });
-          count++;
-        }
+          },
+        };
       });
+      phase = "guardado de cuentas";
+      // Keep remote-database round trips out of one default five-second transaction.
+      for (let offset = 0; offset < normalized.length; offset += 10) {
+        const batch = normalized.slice(offset, offset + 10),
+          ids = batch.map((row) => row.aid);
+        await db.$transaction(
+          async (tx) => {
+            await tx.$executeRaw`SELECT pg_advisory_xact_lock(884411)`;
+            if (sessionId)
+              demand(
+                await tx.session.findFirst({
+                  where: {
+                    id: sessionId,
+                    userId: actor.id,
+                    expiresAt: { gt: new Date() },
+                    user: { role: "OWNER", status: "APPROVED" },
+                  },
+                }),
+                "La sesión original ya no está autorizada.",
+                401,
+              );
+            demand(
+              await tx.user.findFirst({
+                where: { id: c.ownerId, role: "OWNER", status: "APPROVED" },
+              }),
+              "El propietario de la conexión ya no está autorizado.",
+              403,
+            );
+            demand(
+              await tx.metaConnection.findFirst({
+                where: { id, revision: c.revision, disconnectedAt: null },
+              }),
+              "La conexión cambió. Vuelve a verificarla.",
+              409,
+            );
+            const previous = await tx.metaAdAccount.findMany({
+              where: { id: { in: ids } },
+              select: { id: true, connectionId: true },
+            });
+            const existing = new Map(
+              previous.map((a) => [a.id, a.connectionId]),
+            );
+            await tx.metaAdAccount.createMany({
+              data: batch
+                .filter((row) => !existing.has(row.aid))
+                .map((row) => ({ id: row.aid, connectionId: id, ...row.data })),
+              skipDuplicates: true,
+            });
+            for (const row of batch)
+              if (existing.get(row.aid) === id)
+                await tx.metaAdAccount.update({
+                  where: { id: row.aid },
+                  data: row.data,
+                });
+            await tx.metaAccountSource.createMany({
+              data: ids.map((accountId) => ({
+                accountId,
+                connectionId: id,
+                revision: c.revision,
+              })),
+              skipDuplicates: true,
+            });
+            await tx.metaAccountSource.updateMany({
+              where: { accountId: { in: ids }, connectionId: id },
+              data: { revision: c.revision, verifiedAt: new Date() },
+            });
+          },
+          { timeout: 30000, maxWait: 10000 },
+        );
+        count += batch.length;
+      }
       after = result.after;
       if (after) {
         demand(
@@ -228,6 +271,7 @@ export async function discover(
         409,
       );
     } while (after);
+    phase = "confirmación de la conexión";
     const verified = await db.$transaction(async (tx) => {
       if (sessionId)
         demand(
@@ -275,6 +319,7 @@ export async function discover(
       "La conexión cambió antes de completar la verificación.",
       409,
     );
+    phase = "registro de verificación";
     await recordActivity(db, {
       data: {
         actorId: actor.id,
@@ -298,23 +343,59 @@ export async function discover(
         : {}),
     };
   } catch (e) {
+    const reference = randomUUID();
+    const code = internalErrorCode(e);
     const message =
       e instanceof AppError
         ? e.message
-        : "No se pudo verificar la conexión con Meta.";
-    await db.metaConnection.updateMany({
-      where: { id, revision: c.revision },
-      data: { lastError: message, verifiedAt: null },
-    });
-    if (e instanceof MetaGraphError)
+        : `${minimalVerified ? "La consulta mínima id,name fue correcta. " : ""}Falló ${phase} en la plataforma${code ? ` (${code})` : ""}. Referencia: ${reference}. Se conservan la conexión y los datos previos.`;
+    const diagnostic = {
+      reference,
+      phase,
+      minimalVerified,
+      apiVersion: c.apiVersion,
+      ...(code ? { internalCode: code } : {}),
+      ...(e instanceof MetaGraphError ? e.diagnostic : {}),
+    };
+    console.warn(
+      JSON.stringify({
+        event: "meta_verification_failed",
+        connectionId: id,
+        ...diagnostic,
+      }),
+    );
+    try {
+      await db.metaConnection.updateMany({
+        where: { id, revision: c.revision },
+        data: { lastError: message, verifiedAt: null },
+      });
+    } catch (persistenceError) {
+      console.warn(
+        JSON.stringify({
+          event: "meta_verification_diagnostic_unavailable",
+          reference,
+          code: internalErrorCode(persistenceError),
+        }),
+      );
+    }
+    try {
       await recordActivity(db, {
         data: {
           actorId: actor.id,
           action: "META_CONEXION_ERROR",
           resourceId: id,
-          detail: e.diagnostic,
+          detail: diagnostic,
         },
       });
+    } catch (auditError) {
+      console.warn(
+        JSON.stringify({
+          event: "meta_verification_audit_unavailable",
+          reference,
+          code: internalErrorCode(auditError),
+        }),
+      );
+    }
     throw new AppError(message, e instanceof AppError ? e.status : 503);
   }
 }

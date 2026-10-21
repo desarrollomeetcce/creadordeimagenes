@@ -11194,6 +11194,30 @@ test("Integración HTTP + PostgreSQL (base exclusiva de pruebas, sin llamadas ex
       const audit=await db.auditEvent.findFirstOrThrow({where:{resourceId:id,action:'META_CONEXION_ERROR'}});assert.equal((audit.detail as any).code,190);assert.equal((audit.detail as any).subcode,463);assert(!JSON.stringify(audit.detail).includes(token));
       }finally{globalThis.fetch=original;}
     });
+    await t.test('Meta: varias cuentas, fallo interno diagnosticado y retirada de conexión duplicada sin borrar histórico',async()=>{
+      const {discover}=await import('../lib/meta-ads/service');const actor=await db.user.findFirstOrThrow({where:{role:'OWNER'}}),original=globalThis.fetch,originalTransaction=db.$transaction.bind(db),originalWarn=console.warn;
+      const logs:string[]=[];console.warn=(value)=>logs.push(String(value));
+      const old=(await owner.call('meta-ads/connections','POST',{name:'Anterior de prueba',transport:'API',apiVersion:'v23.0',token:'synthetic-duplicate-old-123456789'})).body;
+      const current=(await owner.call('meta-ads/connections','POST',{name:'Actual de prueba',transport:'API',apiVersion:'v26.0',token:'synthetic-duplicate-new-123456789'})).body;
+      const rows=Array.from({length:25},(_,i)=>({id:'act_'+(83000+i),name:'Cuenta '+i,currency:'PEN',timezone_name:'America/Lima',account_status:1}));
+      globalThis.fetch=async(input,init)=>{const u=new URL(String(input));if(u.hostname!=='graph.facebook.com')return original(input,init);return Response.json({data:rows});};
+      try{
+        // A real database operation taking longer than Prisma's default timeout must succeed.
+        let delayed=false;
+        db.$transaction=(async(fn:any,options:any)=>originalTransaction(async(tx:any)=>{if(!delayed&&options?.timeout===30000){delayed=true;await tx.$executeRawUnsafe('SELECT pg_sleep(5.2)');}return fn(tx);},options)) as typeof db.$transaction;
+        assert.equal((await discover(actor,current.id)).accounts,25);db.$transaction=originalTransaction;
+        assert.equal((await discover(actor,old.id)).accounts,25);assert.equal(await db.metaAdAccount.count({where:{id:{in:rows.map(r=>r.id.slice(4))}}}),25,'Connections share accounts without duplicating history');
+        const before=await db.metaConnection.findUniqueOrThrow({where:{id:current.id}});
+        assert.equal((await owner.call('meta-ads/connections/'+old.id,'DELETE')).status,200);
+        const retired=await db.metaConnection.findUniqueOrThrow({where:{id:old.id}});assert(retired.disconnectedAt);assert.equal(retired.encryptedToken,null);assert.equal(await db.metaAdAccount.count({where:{connectionId:current.id}}),25);assert.equal((await db.metaConnection.findUniqueOrThrow({where:{id:current.id}})).encryptedToken,before.encryptedToken);
+        assert.equal((await discover(actor,current.id)).accounts,25);
+        db.$transaction=(async(fn:any,options:any)=>{if(options?.timeout===30000)throw Object.assign(new Error('database arguments synthetic-duplicate-new-123456789'),{code:'P2028'});return originalTransaction(fn,options);}) as typeof db.$transaction;
+        await assert.rejects(()=>discover(actor,current.id),/consulta mínima id,name fue correcta.*guardado de cuentas.*P2028.*Referencia:/);
+        db.$transaction=originalTransaction;
+        const failed=await db.metaConnection.findUniqueOrThrow({where:{id:current.id}});assert(failed.lastError?.includes('P2028'));assert(!failed.lastError?.includes('synthetic-duplicate-new'));assert.equal(failed.encryptedToken,before.encryptedToken);assert.equal(failed.verifiedAt,null);
+        const audit=await db.auditEvent.findFirstOrThrow({where:{resourceId:current.id,action:'META_CONEXION_ERROR'}});assert.equal((audit.detail as any).phase,'guardado de cuentas');assert.equal((audit.detail as any).minimalVerified,true);assert.equal((audit.detail as any).internalCode,'P2028');assert(!JSON.stringify(audit.detail).includes('database arguments'));assert(!logs.join().includes('synthetic-duplicate-new'));
+      }finally{db.$transaction=originalTransaction;globalThis.fetch=original;console.warn=originalWarn;}
+    });
     await t.test('Meta MCP OAuth: autorización vinculada, verificación real del protocolo y cuentas antes de éxito',async()=>{
       const {NextRequest}=await import('next/server');const {beginOAuth,finishOAuth}=await import('../lib/meta-ads/oauth');const {tokenHash}=await import('../lib/auth');
       const actor=await db.user.findFirstOrThrow({where:{role:'OWNER'}}),original=globalThis.fetch;

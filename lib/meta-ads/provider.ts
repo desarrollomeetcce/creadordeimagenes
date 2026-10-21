@@ -361,7 +361,11 @@ export class MetaReader {
         annotations: t.annotations,
       })));
   }
-  async accounts(after?: string): Promise<Page> {
+  async accounts(
+    after?: string,
+    progress?: (phase: string) => void,
+  ): Promise<Page> {
+    progress?.("lectura mínima de cuentas");
     if (this.transport !== "API") return this.get("accounts", { after });
     const minimal = await this.get("accounts", {
       after,
@@ -373,6 +377,13 @@ export class MetaReader {
     );
     const warnings: GraphDiagnostic[] = [];
     for (const view of ["metadata", "status", "business"] as const) {
+      progress?.(
+        view === "metadata"
+          ? "lectura de moneda y zona horaria"
+          : view === "status"
+            ? "lectura del estado"
+            : "lectura del negocio opcional",
+      );
       try {
         const result = await this.get("accounts", { after, accountView: view });
         for (const row of result.data) {
