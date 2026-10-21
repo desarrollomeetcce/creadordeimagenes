@@ -1,4 +1,5 @@
 "use client";
+import { MetaAds } from "./components/meta-ads";
 import { reasoningLevel } from "../lib/creative-level";
 import {useGenerationChoices} from "./components/generation-choices";
 import { CreativeFinish } from "./components/creative-finish";
@@ -238,6 +239,7 @@ export default function Home() {
         const allowed = [
           "projects",
           "library",
+          "metaads",
           "presets",
           "history",
           "usage",
@@ -264,6 +266,7 @@ export default function Home() {
             [
               "projects",
               "library",
+              "metaads",
               "presets",
               "account",
               "plans",
@@ -415,6 +418,7 @@ export default function Home() {
   const titles: Record<string, string> = {
     projects: "Proyectos",
     library: "Biblioteca",
+    metaads: "Meta Ads",
     presets: "Configuraciones guardadas",
     ai: "Ajustes de IA",
     mail: "Ajustes de correo",
@@ -455,6 +459,7 @@ export default function Home() {
             {[
               ["projects", "▦", "Proyectos"],
               ["library", "▧", "Biblioteca"],
+              ["metaads", "▥", "Meta Ads"],
               ["presets", "≡", "Configuraciones guardadas"],
               ["history", "◷", "Historial"],
               ["trash", "⌫", "Papelera"],
@@ -542,6 +547,8 @@ export default function Home() {
                   </>
                 )}
               </>
+            ) : view === "metaads" ? (
+              <MetaAds role={user.role} />
             ) : view === "library" ? (
               <Library key={location} />
 

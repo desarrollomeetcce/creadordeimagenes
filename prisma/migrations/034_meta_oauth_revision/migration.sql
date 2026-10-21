@@ -1,0 +1,1 @@
+ALTER TABLE "MetaOAuthState" ADD COLUMN "connectionRevision" INTEGER NOT NULL DEFAULT 0;

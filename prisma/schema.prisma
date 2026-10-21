@@ -36,6 +36,7 @@ model User {
   subproductMemberships SubproductMember[]
   passwordResets PasswordReset[]
   ownerRecovery OwnerRecovery?
+  metaAccountGrants MetaAccountGrant[]
 }
 model PasswordReset {
   tokenHash String @id
@@ -635,4 +636,122 @@ model LargeAssetChunk {
  checksum String
  data Bytes
  @@id([assetId,index])
+}
+
+model MetaConnection {
+  id String @id @default(cuid())
+  ownerId String
+  name String
+  transport String
+  apiVersion String @default("v23.0")
+  appId String?
+  encryptedToken String?
+  tokenMask String?
+  revision Int @default(1)
+  tools Json @default("[]")
+  verifiedAt DateTime?
+  disconnectedAt DateTime?
+  lastError String?
+  createdAt DateTime @default(now())
+  accounts MetaAdAccount[]
+  sources MetaAccountSource[]
+}
+model MetaAdAccount {
+  id String @id
+  connectionId String
+  connection MetaConnection @relation(fields:[connectionId], references:[id])
+  name String
+  businessId String?
+  businessName String?
+  currency String
+  timezone String
+  accountStatus Int?
+  enabled Boolean @default(false)
+  metric String @default("AUTO")
+  targetCost Decimal? @db.Decimal(18,6)
+  minResults Int @default(10)
+  intervalMinutes Int @default(30)
+  historyFrom String?
+  syncedAt DateTime?
+  nextSyncAt DateTime?
+  syncState Json @default("{}")
+  syncToken String?
+  syncLeaseAt DateTime?
+  syncError String?
+  schedulerToken String?
+  schedulerRunId String?
+  sources MetaAccountSource[]
+  grants MetaAccountGrant[]
+  objects MetaAdObject[]
+  daily MetaAdDaily[]
+  @@index([enabled,nextSyncAt])
+}
+model MetaAccountGrant {
+  user User @relation(fields:[userId],references:[id],onDelete:Cascade)
+  id String @id @default(cuid())
+  accountId String
+  account MetaAdAccount @relation(fields:[accountId],references:[id],onDelete:Cascade)
+  userId String
+  canSync Boolean @default(false)
+  @@unique([accountId,userId])
+  @@index([userId])
+}
+model MetaAdObject {
+  id String @id
+  accountId String
+  account MetaAdAccount @relation(fields:[accountId],references:[id],onDelete:Cascade)
+  level String
+  campaignId String?
+  adsetId String?
+  name String
+  objective String?
+  optimizationGoal String?
+  status String?
+  effectiveStatus String?
+  createdTime DateTime?
+  scheduledStart DateTime?
+  thumbnailUrl String?
+  seenAt DateTime @default(now())
+  daily MetaAdDaily[]
+  @@index([accountId,level,campaignId,adsetId])
+}
+model MetaAdDaily {
+  id String @id @default(cuid())
+  accountId String
+  account MetaAdAccount @relation(fields:[accountId],references:[id],onDelete:Cascade)
+  objectId String
+  object MetaAdObject @relation(fields:[objectId],references:[id],onDelete:Cascade)
+  day String
+  scope String @default("account-default")
+  spend Decimal @db.Decimal(18,6)
+  impressions Float @default(0)
+  clicks Float @default(0)
+  actions Json @default("{}")
+  updatedAt DateTime @updatedAt
+  @@unique([objectId,day,scope])
+  @@index([accountId,day])
+}
+model MetaOAuthState {
+  id String @id
+  connectionId String
+  ownerId String
+  sessionId String
+  connectionRevision Int @default(0)
+  verifier String
+  browserHash String
+  tokenEndpoint String
+  clientId String
+  redirectUri String
+  expiresAt DateTime
+  @@index([expiresAt])
+}
+
+model MetaAccountSource {
+  accountId String
+  connectionId String
+  revision Int
+  verifiedAt DateTime @default(now())
+  account MetaAdAccount @relation(fields:[accountId],references:[id],onDelete:Cascade)
+  connection MetaConnection @relation(fields:[connectionId],references:[id],onDelete:Cascade)
+  @@id([accountId,connectionId])
 }

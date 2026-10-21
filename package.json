@@ -1,7 +1,7 @@
 {
   "name": "creadordeimagenes",
   "version": "1.0.0",
-  "description": "Sistema de generación automática de afiches publicitarios mediante inteligencia artificial.",
+  "description": "Sistema de generaci\u00f3n autom\u00e1tica de afiches publicitarios mediante inteligencia artificial.",
   "main": "index.js",
   "directories": {
     "doc": "docs",
@@ -13,7 +13,7 @@
     "build": "next build --webpack",
     "start": "next start --hostname 0.0.0.0",
     "typecheck": "tsc --noEmit",
-    "test": "tsx --test tests/core.test.ts tests/design.test.ts tests/providers.test.ts",
+    "test": "tsx --test tests/core.test.ts tests/design.test.ts tests/providers.test.ts tests/meta-ads.test.ts",
     "worker": "tsx scripts/worker.ts",
     "maintenance": "tsx scripts/maintenance.ts",
     "db:generate": "node scripts/generate.mjs",
@@ -21,7 +21,8 @@
     "postinstall": "node scripts/generate.mjs",
     "test:integration": "tsx --test tests/integration.test.ts",
     "test:installation": "node --test tests/installation.test.mjs",
-    "test:mail": "tsx --test tests/mail.test.ts"
+    "test:mail": "tsx --test tests/mail.test.ts",
+    "test:meta-workflow": "tsx --test tests/meta-workflow.test.ts"
   },
   "repository": {
     "type": "git",

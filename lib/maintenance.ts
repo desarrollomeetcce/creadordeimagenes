@@ -93,6 +93,7 @@ export async function runMaintenance(
     return tx.maintenanceRun.create({ data: { source } });
   });
   try {
+    await (await import("./meta-ads/schedule")).recoverMetaSchedules();
     const result = {
       ...(await cleanupStorage()),
       interrupted: await recoverInterrupted(),

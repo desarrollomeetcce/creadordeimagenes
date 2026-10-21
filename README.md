@@ -129,3 +129,7 @@ Página pública `/plans`, panel **Mi plan**, asignación OWNER en **Usuarios** 
 **Página web** en el menú OWNER permite editar presentación, beneficios, funcionalidades, pasos, testimonios reales, planes, preguntas frecuentes y contacto del sitio público `/plans`. Cada sección se guarda por separado y se refleja al recargar. Testimonios ocultos hasta añadir opiniones reales.
 
 Los planes se editan en filas compactas con ✓ guardar y × retirar. **Planes personalizados** permite crear varios con nombre, precio, cuotas y correo de usuario existente/aprobado; quedan privados y se asignan sin cobrar. Usuarios muestra **Personalizado · nombre**. Retirar un plan no borra compras ni quita las condiciones de cuentas ya asignadas; cambia su plan desde Usuarios cuando corresponda.
+
+## Meta Ads
+
+Nuevo módulo de consulta con Marketing API y cliente MCP, cuentas autorizadas por usuario, campañas/conjuntos/anuncios y costos simultáneos de hoy,7,15,30días y desde el inicio. No publica ni modifica campañas y no usa IA para analizar. Conectar como OWNER desde Meta Ads → Conexiones y habilitar las cuentas importadas. La disponibilidad/autorización real del servidor MCP debe verificarse con Meta; no se sustituye por datos de demostración. Configuración, límites y pruebas: [guía de Meta Ads](docs/META_ADS.md).

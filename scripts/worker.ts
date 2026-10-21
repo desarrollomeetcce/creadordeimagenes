@@ -659,6 +659,7 @@ async function main() {
       await runMaintenance("WORKER").catch(() => {});
       lastMaintenance = Date.now();
     }
+    await (await import("../lib/meta-ads/service")).runDueSync(1);
     await runOne();
     await new Promise((r) => setTimeout(r, 1500));
   }
