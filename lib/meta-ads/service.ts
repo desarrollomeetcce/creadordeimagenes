@@ -1,4 +1,5 @@
 import { writeSyncPage } from "./bulk-sync";
+import { syncProgress } from "./sync-progress";
 import { randomUUID } from "node:crypto";
 import { Prisma } from "@prisma/client";
 import { db } from "../db";
@@ -461,9 +462,17 @@ export async function queueSync(actor: Actor, id: string, full = false) {
     409,
   );
   await rateLimit("meta:sync:" + actor.id, 30);
-  await db.metaAdAccount.updateMany({
+  const progress = syncProgress(a);
+  const resumed = !full && typeof (a.syncState as State).phase === "number";
+  // Retire a stopped executor, including runs pinned to a previous deployment.
+  // The saved page cursor and imported records belong to the account, not the run.
+  const recover = progress.status === "error" || progress.status === "stalled";
+  const updated = await db.metaAdAccount.updateMany({
     where: {
       id,
+      enabled: true,
+      connectionId: a.connectionId,
+      connection: { revision: a.connection.revision, disconnectedAt: null },
       OR: [
         { syncToken: null },
         { syncLeaseAt: { lt: new Date(Date.now() - 120000) } },
@@ -472,10 +481,12 @@ export async function queueSync(actor: Actor, id: string, full = false) {
     data: {
       nextSyncAt: new Date(),
       syncError: null,
+      ...(recover ? { schedulerToken: null, schedulerRunId: null } : {}),
       ...(full ? { syncState: {}, syncedAt: null } : {}),
     },
   });
-  return { queued: true };
+  demand(updated.count, "La cuenta ya está procesando una página o su conexión cambió. Espera a que termine y vuelve a consultar el progreso.", 409);
+  return { queued: true, resumed };
 }
 export async function syncStep(id: string): Promise<boolean> {
   const token = randomUUID(),

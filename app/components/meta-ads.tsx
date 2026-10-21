@@ -193,7 +193,7 @@ function exportCSV(items: Item[]) {
 }
 function SyncIndicator({account}:{account:Account}){
   const p=account.progress;if(!p)return null;
-  return <div className="meta-sync-progress" role="status"><div className="row spread"><strong>{p.label}</strong><span>{p.phase} de {p.totalPhases} etapas</span></div><progress max={p.totalPhases} value={p.phase} aria-label={`Sincronización de ${account.name}: etapas completadas`} /><small>{p.pages} páginas procesadas · {p.processed} registros recibidos. El total de páginas se conoce al completar la lectura.</small>{p.status==="stalled"&&<p className="notice">No hay avance reciente confirmado. Pulsa Sincronizar ahora para reanudar y consultar el error si lo hubiera.</p>}{p.status==="error"&&p.nextSyncAt&&<small>Próximo intento previsto: {displayTime(p.nextSyncAt)}. Puedes solicitar otro intento manual.</small>}</div>;
+  return <div className="meta-sync-progress" role="status"><div className="row spread"><strong>{p.label}</strong><span>{p.phase} de {p.totalPhases} etapas</span></div><progress max={p.totalPhases} value={p.phase} aria-label={`Sincronización de ${account.name}: etapas completadas`} /><small>{p.pages} páginas procesadas · {p.processed} registros recibidos. El total de páginas se conoce al completar la lectura.</small>{p.status==="stalled"&&<p className="notice">No hay avance reciente confirmado. Pulsa Continuar sincronización para retomar el avance guardado y consultar el error si lo hubiera.</p>}{p.status==="error"&&p.nextSyncAt&&<small>Próximo intento previsto: {displayTime(p.nextSyncAt)}. Puedes solicitar otro intento manual.</small>}</div>;
 }
 export function MetaAds({ role, userId }: { role: string; userId: string }) {
   const owner = role === "OWNER";
@@ -928,6 +928,7 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
                   <button disabled={busy}>Guardar cuenta</button>
                 </form>
               )}
+              {a.canSync && a.progress && ["running", "stalled", "error"].includes(a.progress.status) && <small>Continuar retoma la página pendiente y conserva lo ya importado. Reimportar histórico vuelve a consultar el historial desde el inicio.</small>}
               <div className="row">
                 {a.canSync && (
                   <button
@@ -942,13 +943,15 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
                         );
                         setMessage(
                           r.syncError ? r.syncError : r.scheduled
-                            ? "Importación iniciada. El avance se actualizará automáticamente; puedes salir de esta pantalla."
+                            ? r.resumed
+                              ? "Sincronización retomada desde el avance guardado. El progreso se actualizará automáticamente."
+                              : "Importación iniciada. El avance se actualizará automáticamente; puedes salir de esta pantalla."
                             : "Primera página comprobada; el arranque en segundo plano no está confirmado. Revisa el estado de la cuenta.",
                         );
                       })
                     }
                   >
-                    Sincronizar ahora
+                    {busy ? "Procesando…" : a.progress && ["running", "stalled", "error"].includes(a.progress.status) ? "Continuar sincronización" : "Sincronizar ahora"}
                   </button>
                 )}
                 {owner && (

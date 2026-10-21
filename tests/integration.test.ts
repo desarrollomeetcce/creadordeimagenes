@@ -11226,6 +11226,31 @@ test("Integración HTTP + PostgreSQL (base exclusiva de pruebas, sin llamadas ex
       const response=await owner.call('meta-ads/accounts');assert.equal(response.status,200,JSON.stringify(response.body));const found=new Map(response.body.map((a:any)=>[a.id,a.activity]));assert.deepEqual(found.get('85001'),{state:'READY',spend30:18,activeCampaigns:1});assert.deepEqual(found.get('85002'),{state:'READY',spend30:0,activeCampaigns:0});assert.deepEqual(found.get('85003'),{state:'UNSYNCED',spend30:null,activeCampaigns:null});assert.deepEqual(found.get('85004'),{state:'STALE',spend30:null,activeCampaigns:null});assert.deepEqual(found.get('85005'),{state:'SYNCING',spend30:null,activeCampaigns:null});
       await db.metaAccountGrant.create({data:{accountId:'85001',userId:uid}});const visible=(await user.call('meta-ads/accounts')).body;assert(visible.some((a:any)=>a.id==='85001'&&a.activity.spend30===18));assert(!visible.some((a:any)=>a.id==='85002'));await db.metaAccountGrant.deleteMany({where:{accountId:'85001',userId:uid}});assert(!(await user.call('meta-ads/accounts')).body.some((a:any)=>a.id==='85001'));
     });
+    await t.test('Meta: continuar conserva cursor/histórico, recupera ejecutor detenido y respeta lease y permisos',async()=>{
+      const {queueSync,syncStep}=await import('../lib/meta-ads/service');
+      const actor=await db.user.findFirstOrThrow({where:{role:'OWNER'}});
+      const conn=(await owner.call('meta-ads/connections','POST',{name:'Continuación sintética',transport:'API',token:'synthetic-resume-123456789'})).body;
+      await db.metaConnection.update({where:{id:conn.id},data:{verifiedAt:new Date()}});
+      const id='86007',started=new Date(Date.now()-600000).toISOString();
+      const state={phase:1,after:'private-saved-cursor',pages:63,processed:12,started,updatedAt:started,mode:'history',until:'2026-10-21'};
+      const syncedAt=new Date('2026-10-01T12:00:00Z');
+      await db.metaAdAccount.create({data:{id,connectionId:conn.id,name:'Continuar prueba',currency:'PEN',timezone:'America/Lima',enabled:true,syncedAt,syncState:state,syncError:'Error anterior',schedulerToken:'old-synthetic-schedule',schedulerRunId:'old-synthetic-run',nextSyncAt:new Date(Date.now()+1800000)}});
+      await db.metaAdObject.create({data:{id:'8600701',accountId:id,level:'campaign',name:'Conservada'}});
+      await assert.rejects(()=>queueSync({id:uid,role:'USER'},id),/no disponible|permiso/);
+      const queued=await queueSync(actor,id);assert.equal(queued.resumed,true);
+      let current=await db.metaAdAccount.findUniqueOrThrow({where:{id}});
+      assert.deepEqual(current.syncState,state);assert.equal(current.syncedAt?.toISOString(),syncedAt.toISOString());assert.equal(current.schedulerToken,null);assert.equal(current.schedulerRunId,null);assert.equal(current.syncError,null);
+      const original=globalThis.fetch;
+      globalThis.fetch=async(input,init)=>{const u=new URL(String(input));if(u.hostname!=='graph.facebook.com')return original(input,init);assert(u.pathname.endsWith('/act_86007/adsets'));assert.equal(u.searchParams.get('after'),'private-saved-cursor');return Response.json({data:[]});};
+      try{assert(await syncStep(id));}finally{globalThis.fetch=original;}
+      current=await db.metaAdAccount.findUniqueOrThrow({where:{id}});assert.equal((current.syncState as any).phase,2);assert.equal((current.syncState as any).pages,64);assert.equal(await db.metaAdObject.count({where:{accountId:id}}),1);
+      await db.metaAdAccount.update({where:{id},data:{syncToken:'active-synthetic-lease',syncLeaseAt:new Date(),schedulerToken:'active-synthetic-schedule',schedulerRunId:'active-synthetic-run',syncError:'No borrar durante lease'}});
+      await assert.rejects(()=>queueSync(actor,id),/ya está procesando/);
+      current=await db.metaAdAccount.findUniqueOrThrow({where:{id}});assert.equal(current.schedulerToken,'active-synthetic-schedule');assert.equal(current.syncError,'No borrar durante lease');assert.equal((current.syncState as any).phase,2);
+      await db.metaAdAccount.update({where:{id},data:{syncToken:null,syncLeaseAt:null,syncError:null,syncState:state}});
+      assert.equal((await queueSync(actor,id)).resumed,true);current=await db.metaAdAccount.findUniqueOrThrow({where:{id}});assert.equal(current.schedulerToken,null);assert.deepEqual(current.syncState,state);
+      await db.metaAdAccount.update({where:{id},data:{enabled:false,schedulerToken:null,schedulerRunId:null,nextSyncAt:null}});
+    });
     await t.test('Meta: páginas masivas, progreso autorizado y conservación ante respuesta de otra cuenta',async()=>{
       const {syncStep}=await import('../lib/meta-ads/service'),{localDay}=await import('../lib/meta-ads/analytics');const actor=await db.user.findFirstOrThrow({where:{role:'OWNER'}}),conn=(await owner.call('meta-ads/connections','POST',{name:'Importación masiva sintética',transport:'API',token:'synthetic-bulk-sync-123456789'})).body;await db.metaConnection.update({where:{id:conn.id},data:{verifiedAt:new Date()}});const id='86005',today=localDay('America/Lima');await db.metaAdAccount.create({data:{id,connectionId:conn.id,name:'Masiva',currency:'PEN',timezone:'America/Lima',enabled:true,nextSyncAt:new Date(),syncState:{phase:5,mode:'recent',since:today,until:today}}});
       const original=globalThis.fetch;let page=0;const rows=Array.from({length:200},(_,i)=>({account_id:id,ad_id:id+String(i).padStart(4,'0'),ad_name:'Anuncio '+i,date_start:today,date_stop:today,spend:'1',impressions:'10',actions:[{action_type:'onsite_conversion.messaging_conversation_started_7d',value:'1'}]}));globalThis.fetch=async(input,init)=>{const u=new URL(String(input));if(u.hostname!=='graph.facebook.com')return original(input,init);assert(u.pathname.endsWith('/act_86005/insights'));return Response.json(page++===0?{data:rows,paging:{next:'ignored',cursors:{after:'private-next-page'}}}:{data:[]});};
