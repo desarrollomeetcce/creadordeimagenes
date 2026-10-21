@@ -6,6 +6,7 @@ import { encryptKey, decryptKey, maskKey } from "../crypto";
 import { demand, AppError } from "../errors";
 import { recordActivity } from "../activity";
 import { MetaReader, type Operation, type Query } from "./provider";
+import { MetaGraphError, type GraphDiagnostic } from "./graph-error";
 import { localDay, shiftDay, metricFor } from "./analytics";
 export type Actor = { id: string; role: string };
 export const connectionSelect = {
@@ -125,9 +126,11 @@ export async function discover(
     const tools = c.transport === "MCP" ? await r.tools() : [];
     let after: string | undefined;
     let count = 0;
+    const warnings: GraphDiagnostic[] = [];
     const visited = new Set<string>();
     do {
-      const result = await r.get("accounts", { after });
+      const result = await r.accounts(after);
+      warnings.push(...(result.warnings ?? []));
       await db.$transaction(async (tx) => {
         if (sessionId)
           demand(
@@ -176,12 +179,20 @@ export async function discover(
             name: text(row.name) || aid,
             currency,
             timezone,
-            businessId: business?.id ? digits(business.id) : null,
-            businessName: text(business?.name) || null,
-            accountStatus:
-              typeof row.account_status === "number"
-                ? row.account_status
-                : null,
+            ...(Object.hasOwn(row, "business")
+              ? {
+                  businessId: business?.id ? digits(business.id) : null,
+                  businessName: text(business?.name) || null,
+                }
+              : {}),
+            ...(Object.hasOwn(row, "account_status")
+              ? {
+                  accountStatus:
+                    typeof row.account_status === "number"
+                      ? row.account_status
+                      : null,
+                }
+              : {}),
           };
           const previous = await tx.metaAdAccount.findUnique({
             where: { id: aid },
@@ -246,7 +257,15 @@ export async function discover(
         },
         data: {
           verifiedAt: new Date(),
-          lastError: null,
+          lastError: warnings.length
+            ? `Cuentas verificadas; campos opcionales omitidos: ${warnings
+                .slice(0, 3)
+                .map(
+                  (w) =>
+                    `${w.fields}: código ${w.code ?? w.httpStatus}${w.subcode !== null ? `/${w.subcode}` : ""} · ${w.message}`,
+                )
+                .join("; ")}`.slice(0, 2200)
+            : null,
           tools: tools as unknown as Prisma.InputJsonValue,
         },
       });
@@ -261,10 +280,23 @@ export async function discover(
         actorId: actor.id,
         action: "META_CONEXION_VERIFICADA",
         resourceId: id,
-        detail: { transport: c.transport, accounts: count },
+        detail: {
+          transport: c.transport,
+          accounts: count,
+          apiVersion: c.apiVersion,
+          ...(c.transport === "API" ? { minimalFields: "id,name" } : {}),
+          warnings: warnings.slice(0, 5),
+        },
       },
     });
-    return { accounts: count, tools: tools.map((t) => t.name) };
+    return {
+      accounts: count,
+      tools: tools.map((t) => t.name),
+      warnings: warnings.slice(0, 5),
+      ...(c.transport === "API"
+        ? { minimalVerified: true, apiVersion: c.apiVersion }
+        : {}),
+    };
   } catch (e) {
     const message =
       e instanceof AppError
@@ -274,6 +306,15 @@ export async function discover(
       where: { id, revision: c.revision },
       data: { lastError: message, verifiedAt: null },
     });
+    if (e instanceof MetaGraphError)
+      await recordActivity(db, {
+        data: {
+          actorId: actor.id,
+          action: "META_CONEXION_ERROR",
+          resourceId: id,
+          detail: e.diagnostic,
+        },
+      });
     throw new AppError(message, e instanceof AppError ? e.status : 503);
   }
 }

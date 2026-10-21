@@ -531,7 +531,7 @@ export function MetaAds({ role }: { role: string }) {
                       <input
                         name="version"
                         required
-                        defaultValue="v23.0"
+                        defaultValue="v26.0"
                         pattern="v[0-9]{2}\.0"
                       />
                       <small>
@@ -561,6 +561,20 @@ export function MetaAds({ role }: { role: string }) {
                 {transport === "MCP" ? "Conectar con Meta" : "Guardar conexión API"}
               </button>
             </form>
+            {transport === "API" && <details>
+              <summary>Preparar mi app de Meta · pruebas y publicación</summary>
+              <div className="inside stack">
+                <p>Para pruebas con tus propias cuentas, normalmente puedes usar la app en desarrollo: tu usuario debe tener un rol aceptado en la app y acceso a las cuentas publicitarias. «Listo para la prueba» en un permiso no confirma que el token lo tenga concedido.</p>
+                <ol>
+                  <li>En <a href="https://developers.facebook.com/apps/" target="_blank" rel="noopener noreferrer">Meta for Developers</a>, revisa los roles de tu app y el acceso publicitario de ese mismo usuario.</li>
+                  <li>En <a href="https://developers.facebook.com/tools/explorer/" target="_blank" rel="noopener noreferrer">Graph API Explorer</a>, selecciona esa app y la versión que usarás aquí. Obtén un token de usuario con ads_read concedido.</li>
+                  <li>Ejecuta GET <code>/me/adaccounts?fields=id,name</code>. Consultar <code>/me?fields=id,name</code> solo confirma tu perfil; no acredita acceso publicitario. Una lista vacía indica que Meta no devuelve cuentas accesibles para ese token.</li>
+                  <li>Guarda el token únicamente en el campo protegido. Si la conexión ya existe, actualiza su versión en su propia tarjeta y vuelve a verificarla; no necesitas eliminarla.</li>
+                </ol>
+                <p>Esta integración solo lee cuentas y estadísticas. No solicita ads_management ni requiere configurar Facebook Login para verificar un token manual. El retorno OAuth del MCP es un flujo distinto: no lo copies como configuración de tu app Marketing API.</p>
+                <p>Para usuarios externos pueden hacer falta publicación, revisión de permisos y verificación del negocio según lo que Meta solicite. Completa dominio, privacidad y eliminación de datos con información real de tu servicio; la plataforma no puede aprobar esos requisitos por ti. No generes llamadas artificiales ni cambies campañas para completar los contadores de pruebas.</p>
+              </div>
+            </details>}
             <details>
               <summary>Si OAuth no está disponible: credenciales y alternativa</summary>
               <div className="inside stack">
@@ -584,10 +598,16 @@ export function MetaAds({ role }: { role: string }) {
                 </span>
               </div>
               <small>
-                {c.tokenMask ?? "Sin token guardado"} · Última verificación:{" "}
+                {c.transport === "API" ? `Graph ${c.apiVersion} · GET /me/adaccounts · ` : ""}{c.tokenMask ?? "Sin token guardado"} · Última verificación:{" "}
                 {displayTime(c.verifiedAt)}
               </small>
               {c.lastError && <p className="notice">{c.lastError}</p>}
+              {c.transport === "API" && <form className="row" onSubmit={e=>{e.preventDefault();const apiVersion=String(new FormData(e.currentTarget).get("apiVersion"));void run(async()=>{await api(`meta-ads/connections/${c.id}`,"PATCH",{apiVersion});},"Versión actualizada. Se conserva el token; vuelve a Verificar y traer cuentas.");}}>
+                <label>Versión Graph guardada<input name="apiVersion" defaultValue={c.apiVersion} key={c.apiVersion} required pattern="v[0-9]{2}\.0" /></label>
+                <button disabled={busy}>Actualizar versión sin cambiar token</button>
+                <small>Usa la misma versión que funcionó en Explorer. Actualizar el formulario de una conexión nueva no cambia esta conexión.</small>
+              </form>}
+
               <div className="row">
                 {c.transport === "MCP" && (
                   <form
@@ -627,7 +647,7 @@ export function MetaAds({ role }: { role: string }) {
                         {},
                       );
                       setMessage(
-                        `${r.accounts} cuentas encontradas${r.tools.length ? ` · Herramientas de lectura: ${r.tools.join(", ")}` : ""}.`,
+                        `${r.minimalVerified ? `Consulta mínima id,name correcta en ${r.apiVersion}. ` : ""}${r.accounts} cuentas encontradas${r.tools.length ? ` · Herramientas de lectura: ${r.tools.join(", ")}` : ""}.${r.warnings?.length ? ` Aviso: se omitieron campos opcionales. ${r.warnings.map((w:{fields:string;code:number|null;message:string})=>`${w.fields} · código ${w.code ?? "no indicado"}: ${w.message}`).join("; ")}` : ""}`,
                       );
                     })
                   }

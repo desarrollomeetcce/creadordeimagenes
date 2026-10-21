@@ -1,5 +1,10 @@
 import { randomUUID } from "node:crypto";
 import { AppError, demand } from "../errors";
+import {
+  MetaGraphError,
+  optionalFieldError,
+  type GraphDiagnostic,
+} from "./graph-error";
 export const MCP_URL = "https://mcp.facebook.com/ads";
 export type Operation =
   "accounts" | "campaigns" | "adsets" | "ads" | "insights";
@@ -11,8 +16,13 @@ export type MetaTool = {
   };
   annotations?: { readOnlyHint?: boolean; destructiveHint?: boolean };
 };
-export type Page = { data: Record<string, unknown>[]; after?: string };
+export type Page = {
+  data: Record<string, unknown>[];
+  after?: string;
+  warnings?: GraphDiagnostic[];
+};
 export type Query = {
+  accountView?: "minimal" | "metadata" | "status" | "business";
   accountId?: string;
   after?: string;
   level?: string;
@@ -351,6 +361,37 @@ export class MetaReader {
         annotations: t.annotations,
       })));
   }
+  async accounts(after?: string): Promise<Page> {
+    if (this.transport !== "API") return this.get("accounts", { after });
+    const minimal = await this.get("accounts", {
+      after,
+      accountView: "minimal",
+    });
+    if (!minimal.data.length) return minimal;
+    const rows = new Map(
+      minimal.data.map((row) => [String(row.id), { ...row }]),
+    );
+    const warnings: GraphDiagnostic[] = [];
+    for (const view of ["metadata", "status", "business"] as const) {
+      try {
+        const result = await this.get("accounts", { after, accountView: view });
+        for (const row of result.data) {
+          const saved = rows.get(String(row.id));
+          if (saved) Object.assign(saved, row);
+        }
+      } catch (error) {
+        if (view === "metadata" || !optionalFieldError(error)) {
+          if (error instanceof MetaGraphError)
+            error.message =
+              "La consulta mínima id,name fue correcta, pero falló la ampliación de campos. " +
+              error.message;
+          throw error;
+        }
+        warnings.push(error.diagnostic);
+      }
+    }
+    return { ...minimal, data: [...rows.values()], warnings };
+  }
   async get(op: Operation, q: Query = {}): Promise<Page> {
     if (this.transport === "API") {
       demand(
@@ -360,7 +401,18 @@ export class MetaReader {
       const path =
         op === "accounts" ? "me/adaccounts" : `act_${q.accountId}/${op}`;
       const u = new URL(`https://graph.facebook.com/${this.version}/${path}`);
-      u.searchParams.set("fields", fields(op));
+      const accountFields = {
+        minimal: "id,name",
+        metadata: "id,name,currency,timezone_name",
+        status: "id,name,account_status",
+        business: "id,name,business{id,name}",
+      };
+      u.searchParams.set(
+        "fields",
+        op === "accounts"
+          ? accountFields[q.accountView ?? "minimal"]
+          : fields(op),
+      );
       u.searchParams.set("limit", "100");
       if (q.after) u.searchParams.set("after", q.after);
       if (op === "insights") {
@@ -381,13 +433,30 @@ export class MetaReader {
       const r = await external(u.href, {
         headers: { Authorization: "Bearer " + this.token },
       });
-      if (!r.ok) fail(r.status);
+      let payload: unknown;
       try {
-        return page(JSON.parse(await boundedResponse(r)));
-      } catch (e) {
-        if (e instanceof AppError) throw e;
-        throw new AppError("Formato de Marketing API no válido.", 502);
+        payload = JSON.parse(await boundedResponse(r));
+      } catch {
+        if (r.ok)
+          throw new AppError("Formato de Marketing API no válido.", 502);
       }
+      if (
+        !r.ok ||
+        (payload &&
+          typeof payload === "object" &&
+          (payload as { error?: unknown }).error)
+      ) {
+        const error = new MetaGraphError(r.status, payload, this.token, {
+          version: this.version,
+          endpoint: path,
+          fields: u.searchParams.get("fields")!,
+        });
+        console.warn(
+          JSON.stringify({ event: "meta_graph_error", ...error.diagnostic }),
+        );
+        throw error;
+      }
+      return page(payload);
     }
     const tools = await this.tools(),
       tool = selectTool(tools, op);

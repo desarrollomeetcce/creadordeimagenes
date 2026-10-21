@@ -23,7 +23,7 @@ const cfg = z
     apiVersion: z
       .string()
       .regex(/^v\d{2}\.0$/)
-      .default("v23.0"),
+      .default("v26.0"),
     appId: z
       .string()
       .regex(/^\d{1,40}$/)
