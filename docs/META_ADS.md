@@ -47,3 +47,5 @@ Sincronizar ahora despierta un workflow dormido; no depende de dejar una pestañ
 ## Verificación
 
 Unitarias con fetch simulado para Graph/MCP/SSE y cálculos; integración HTTP/PostgreSQL exclusiva para roles, cifrado, cuentas duplicadas, actualización incremental, ceros, histórico y OAuth de un uso. Prueba Workflow local sin autorización comprueba rechazo antes de llamadas externas. Browser usa exclusivamente datos sintéticos en la base local, nunca los publica como estadísticas reales.
+
+Frescura diaria: si la última importación completa es de otro día de la cuenta, la tarjeta avisa Datos atrasados, Hoy no se declara sin actividad y el ranking la excluye hasta actualizar. Los valores históricos siguen disponibles con fecha; no se convierten en una prueba de eficiencia actual.

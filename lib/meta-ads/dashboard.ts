@@ -174,6 +174,7 @@ SELECT b.*,COALESCE(p.actions,'{}'::jsonb) actions,a.first,a.last,a.active FROM 
       stats = map.get(o.id) ?? [],
       first = stats[0]?.first ?? null,
       last = stats[0]?.last ?? null;
+    const stale = !!a.syncedAt && localDay(a.timezone, a.syncedAt) !== today;
     const periods = Object.fromEntries(
       [
         "today",
@@ -191,7 +192,7 @@ SELECT b.*,COALESCE(p.actions,'{}'::jsonb) actions,a.first,a.last,a.active FROM 
           results = action ? actions[action] : 0,
           spend = v?.spend ?? 0;
         const state =
-          !a.syncedAt || metric === "UNKNOWN"
+          !a.syncedAt || metric === "UNKNOWN" || (key === "today" && stale)
             ? "UNAVAILABLE"
             : results > 0
               ? "RESULTS"
@@ -264,8 +265,10 @@ SELECT b.*,COALESCE(p.actions,'{}'::jsonb) actions,a.first,a.last,a.active FROM 
       rating = "CRITICAL";
     if (rating === "GOOD" && change !== null && change >= 30)
       rating = "DETERIORATING";
+    if (stale) rating = "STALE";
     return {
       ...o,
+      stale,
       campaignName:
         c?.name ?? (o.level === "campaign" ? o.name : "Campaña no disponible"),
       adsetName:
@@ -310,7 +313,7 @@ SELECT b.*,COALESCE(p.actions,'{}'::jsonb) actions,a.first,a.last,a.active FROM 
     items = items.filter((o) => o.currency === params.get("currency"));
   if (params.get("rating") === "alerts")
     items = items.filter((o) =>
-      ["CRITICAL", "WATCH", "DETERIORATING"].includes(o.rating),
+      ["CRITICAL", "WATCH", "DETERIORATING", "STALE"].includes(o.rating),
     );
   else if (params.get("rating"))
     items = items.filter((o) => o.rating === params.get("rating"));
@@ -333,6 +336,7 @@ SELECT b.*,COALESCE(p.actions,'{}'::jsonb) actions,a.first,a.last,a.active FROM 
     params.get("ranking") === "1"
       ? items.filter(
           (o) =>
+            o.stale ||
             (o.periods[sort] ?? o.periods["7"]).results < o.minResults ||
             (o.periods[sort] ?? o.periods["7"]).cost === null,
         ).length
@@ -340,6 +344,7 @@ SELECT b.*,COALESCE(p.actions,'{}'::jsonb) actions,a.first,a.last,a.active FROM 
   if (params.get("ranking") === "1")
     items = items.filter(
       (o) =>
+        !o.stale &&
         (o.periods[sort] ?? o.periods["7"]).results >= o.minResults &&
         (o.periods[sort] ?? o.periods["7"]).cost !== null,
     );

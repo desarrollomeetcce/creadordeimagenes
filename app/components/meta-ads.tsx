@@ -100,6 +100,7 @@ const periods = [
   ["lifetime", "Desde el inicio"],
 ];
 const ratings: Record<string, string> = {
+  STALE: "Datos atrasados · sincronizar",
   GOOD: "Buen rendimiento",
   WATCH: "En observación",
   CRITICAL: "Crítico",
@@ -1234,7 +1235,9 @@ export function MetaAds({ role }: { role: string }) {
                 .filter(
                   (o) =>
                     tab !== "alerts" ||
-                    ["CRITICAL", "WATCH", "DETERIORATING"].includes(o.rating),
+                    ["CRITICAL", "WATCH", "DETERIORATING", "STALE"].includes(
+                      o.rating,
+                    ),
                 )
                 .map((o) => (
                   <article
