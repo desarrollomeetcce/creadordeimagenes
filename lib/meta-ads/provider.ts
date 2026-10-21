@@ -227,6 +227,7 @@ export function fields(op: Operation) {
           : "account_id,campaign_id,campaign_name,adset_id,adset_name,ad_id,ad_name,date_start,date_stop,spend,impressions,clicks,actions";
 }
 export class MetaReader {
+  private unavailableAccountFields = new Set<string>();
   private cachedTools: MetaTool[] | null = null;
   private session = "";
   private protocol = "2025-03-26";
@@ -377,6 +378,7 @@ export class MetaReader {
     );
     const warnings: GraphDiagnostic[] = [];
     for (const view of ["metadata", "status", "business"] as const) {
+      if (this.unavailableAccountFields.has(view)) continue;
       progress?.(
         view === "metadata"
           ? "lectura de moneda y zona horaria"
@@ -398,6 +400,7 @@ export class MetaReader {
               error.message;
           throw error;
         }
+        this.unavailableAccountFields.add(view);
         warnings.push(error.diagnostic);
       }
     }

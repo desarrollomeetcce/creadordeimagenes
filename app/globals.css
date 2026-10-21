@@ -1170,3 +1170,34 @@ html:has(.meta-ads){scrollbar-gutter:stable}
 .meta-view-tools>.meta-calendar>.fields{position:absolute;z-index:8;top:calc(100% + 6px);left:0;width:min(600px,100%);max-height:min(60dvh,480px);overflow:auto;background:var(--surface);box-shadow:0 10px 30px #0003;margin:0}
 
 .meta-calendar-state{display:inline-block;width:10px;margin-left:6px;color:var(--accent);font-size:10px;line-height:1}
+
+/* Meta: searchable account lists and explicit sort actions, with stable control sizes. */
+.meta-account-picker>div{max-height:min(600px,75vh);overflow:auto}
+.meta-account-picker>div>label{display:flex;flex-direction:column;gap:6px}
+.meta-account-picker input[type=search],.meta-account-picker select{height:42px;min-width:0;width:100%;margin:0}
+.meta-account-options{max-height:260px;overflow:auto;overscroll-behavior:contain;display:flex;flex-direction:column;gap:8px}
+.meta-account-options .check{padding:6px 0;align-items:flex-start}
+.meta-account-options small{display:block;color:var(--muted);font-size:10px;line-height:1.5;font-weight:400}
+.meta-account-activity{color:var(--accent)}
+.meta-sort-tools{display:flex;flex-direction:column;gap:10px;font-size:12px}
+.meta-cost-sort{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:8px;max-width:850px}
+.meta-cost-sort button{min-height:42px;padding:8px 5px;font-size:12px;white-space:nowrap}
+.meta-cost-sort button span{display:inline-block;width:13px}
+@media(max-width:650px){.meta-cost-sort{grid-template-columns:repeat(3,minmax(0,1fr))}.meta-cost-sort button{white-space:normal}}
+.meta-cost-sort{grid-template-columns:repeat(6,minmax(0,1fr))}.meta-sort-tools button{font-weight:600}
+@media(max-width:650px){.meta-cost-sort{grid-template-columns:repeat(3,minmax(0,1fr))}}
+
+/* Meta cards: visible time context, readable KPIs and honest evaluation. */
+.meta-card{--meta-tone:#879697;border-top-width:4px;box-shadow:0 4px 18px #00000009;gap:14px;background:linear-gradient(150deg,color-mix(in srgb,var(--meta-tone) 7%,var(--surface)),var(--surface) 60%)}
+.meta-rating-good{--meta-tone:#24a17a}.meta-rating-watch{--meta-tone:#d4aa23}.meta-rating-deteriorating{--meta-tone:#e48632}.meta-rating-critical{--meta-tone:#df5858}
+.meta-card-heading h2{font-size:21px;line-height:1.35;letter-spacing:-.02em;margin:3px 0 9px}
+.meta-card-heading .meta-object-level{color:var(--accent);font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.09em}
+.meta-delivery{border:1px solid var(--line);border-radius:24px;padding:4px 9px;font-size:11px;white-space:nowrap;color:var(--muted);background:var(--bg)}
+.meta-delivery.is-active{color:var(--accent);border-color:color-mix(in srgb,var(--accent) 45%,var(--line));background:color-mix(in srgb,var(--accent) 12%,var(--surface))}
+.meta-circulation{display:grid;grid-template-columns:1fr 1fr;gap:12px;padding-bottom:15px;border-bottom:1px solid var(--line)}
+.meta-circulation>div{display:flex;flex-direction:column;gap:6px}.meta-circulation span{font-size:11px;color:var(--muted)}.meta-circulation strong{font-size:15px}
+.meta-summary-heading{display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap}.meta-summary-heading strong{font-size:12px}.meta-summary-heading small{font-size:10px;color:var(--muted)}
+.meta-summary-metrics{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}.meta-summary-metrics>div{display:flex;flex-direction:column;gap:7px;background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:12px 9px;min-width:0}.meta-summary-metrics span{font-size:11px;color:var(--muted)}.meta-summary-metrics strong{font-size:18px;overflow-wrap:anywhere}
+.meta-periods{grid-template-columns:repeat(5,minmax(0,1fr));gap:6px}.meta-periods>div{padding:9px 5px;background:transparent;text-align:center}.meta-periods strong{font-size:14px}.meta-periods small{font-size:9px}.meta-periods>div>span{min-height:28px}
+.meta-card-evaluation{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.meta-card-evaluation .badge{color:var(--ink);background:color-mix(in srgb,var(--meta-tone) 18%,var(--surface));border:1px solid color-mix(in srgb,var(--meta-tone) 40%,var(--line))}.meta-card-evaluation small{font-size:10px;color:var(--muted)}
+@media(max-width:650px){.meta-periods{grid-template-columns:repeat(3,minmax(0,1fr))}.meta-periods>div>span{min-height:auto}.meta-summary-metrics strong{font-size:15px}.meta-card-heading h2{font-size:19px}}

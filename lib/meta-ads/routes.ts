@@ -16,6 +16,7 @@ import {
 } from "./service";
 import { dashboard } from "./dashboard";
 import { beginOAuth } from "./oauth";
+import { accountActivities } from "./account-activity";
 const cfg = z
   .object({
     name: z.string().trim().min(1).max(100),
@@ -171,9 +172,11 @@ export async function metaRoutes(
       },
       orderBy: { name: "asc" },
     });
+    const activity = await accountActivities(rows);
     return send(
       rows.map((a) => ({
         ...a,
+        activity: activity.get(a.id),
         syncState: { phase: (a.syncState as { phase?: number }).phase ?? null },
         canSync:
           actor.role === "OWNER" ||

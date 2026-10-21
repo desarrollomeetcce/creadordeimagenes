@@ -1,5 +1,7 @@
 "use client";
-import { useCallback, useEffect, useState, useRef, useId } from "react";
+import { useCallback, useEffect, useState, useRef } from "react";
+import { MetaAccountPicker } from "./meta-account-picker";
+import { matchesAccount, activityOptions, accountActivityText, type AccountActivity } from "../../lib/meta-ads/account-filters";
 import { PasswordInput } from "./password-input";
 import { engineRequest as api } from "./generation-engine";
 type Connection = {
@@ -14,6 +16,7 @@ type Connection = {
   lastError: string | null;
 };
 type Account = {
+  activity?: AccountActivity;
   id: string;
   name: string;
   connectionId: string;
@@ -80,6 +83,7 @@ type Item = {
   pausedCandidate: boolean;
 };
 type ObjectOption = {
+  accountId: string;
   id: string;
   name: string;
   level: string;
@@ -99,6 +103,8 @@ const periods = [
   ["30", "30 días"],
   ["lifetime", "Desde el inicio"],
 ];
+const costLabels: Record<string, string> = { MESSAGES: "Costo por conversación iniciada", LEADS: "Costo por cliente potencial", PURCHASES: "Costo por compra", LINK_CLICKS: "Costo por clic", UNKNOWN: "Costo por resultado no identificado" };
+const deliveryLabels: Record<string, string> = { ACTIVE: "Activo", PAUSED: "Pausado", CAMPAIGN_PAUSED: "Campaña pausada", ADSET_PAUSED: "Conjunto pausado", PENDING_REVIEW: "En revisión", DISAPPROVED: "Rechazado", WITH_ISSUES: "Con problemas", DELETED: "Eliminado", ARCHIVED: "Archivado", NOT_RETURNED: "No disponible" };
 const ratings: Record<string, string> = {
   STALE: "Datos atrasados · sincronizar",
   GOOD: "Buen rendimiento",
@@ -187,6 +193,10 @@ export function MetaAds({ role }: { role: string }) {
   const [accounts, setAccounts] = useState<Account[]>([]),
     [connections, setConnections] = useState<Connection[]>([]),
     [showDisconnected, setShowDisconnected] = useState(false),
+    [accountListQuery, setAccountListQuery] = useState(""),
+    [accountListActivity, setAccountListActivity] = useState("all"),
+    [accountListBusiness, setAccountListBusiness] = useState(""),
+    [accountListPage, setAccountListPage] = useState(1),
     [objects, setObjects] = useState<ObjectOption[]>([]),
     [items, setItems] = useState<Item[]>([]),
     [total, setTotal] = useState(0),
@@ -204,6 +214,7 @@ export function MetaAds({ role }: { role: string }) {
     [metric, setMetric] = useState(""),
     [currency, setCurrency] = useState(""),
     [sort, setSort] = useState("7"),
+    [analysisPeriod, setAnalysisPeriod] = useState("30"),
     [direction, setDirection] = useState("asc"),
     [age, setAge] = useState(""),
     [rating, setRating] = useState(""),
@@ -219,7 +230,11 @@ export function MetaAds({ role }: { role: string }) {
     [transport, setTransport] = useState("MCP"),
     [revision, setRevision] = useState(0),
     [sharing, setSharing] = useState<Account | null>(null);
-  const accountLabelId = useId();
+  const businesses = [...new Map(accounts.filter(a => a.businessId).map(a => [a.businessId!, a.businessName ?? a.businessId!])).entries()];
+  const filteredAccounts = accounts.filter(a => matchesAccount(a, accountListQuery, accountListActivity, accountListBusiness));
+  const accountPages = Math.max(1, Math.ceil(filteredAccounts.length / 25));
+  const accountPage = Math.min(accountListPage, accountPages);
+  const visibleAccounts = filteredAccounts.slice((accountPage - 1) * 25, accountPage * 25);
   const accountKey = accountIds.join(",");
   const serial = useRef(0);
   const analyticsTab = ["panel", "ranking", "alerts"].includes(tab);
@@ -733,6 +748,15 @@ export function MetaAds({ role }: { role: string }) {
               Actualizar vista
             </button>
           </div>
+          <p className="hint">Son cuentas publicitarias accesibles al usuario del token, incluidas las compartidas; no pertenecen necesariamente al negocio de la app. Sus nombres pueden mencionar WhatsApp: esta lista procede de /me/adaccounts, no del catálogo de WhatsApp.</p>
+          <div className="fields meta-filters panel">
+            <label>Buscar cuenta por nombre o ID<input type="search" value={accountListQuery} onChange={e => { setAccountListQuery(e.target.value); setAccountListPage(1); }} placeholder="Nombre, negocio o act_…" /></label>
+            <label>Actividad de cuentas<select value={accountListActivity} onChange={e => { setAccountListActivity(e.target.value); setAccountListPage(1); }}>{activityOptions.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
+            <label>Negocio informado por Meta<select value={accountListBusiness} onChange={e => { setAccountListBusiness(e.target.value); setAccountListPage(1); }}><option value="">Todos los autorizados</option><option value="__unknown">Sin agrupación disponible</option>{businesses.map(([id, name]) => <option key={id} value={id}>{name}</option>)}</select></label>
+          </div>
+          <small>{filteredAccounts.length} de {accounts.length} cuentas · actividad basada en la última importación completa de hoy. Antes de sincronizar, el gasto y las campañas activas son desconocidos.</small>
+          {accounts.some(a => !a.businessId) && <p className="hint">La agrupación por negocio no está disponible para algunas cuentas. Meta puede exigir business_management para informarla; no es necesario para buscar por nombre o ID.</p>}
+          {!!accounts.length && !filteredAccounts.length && <p className="panel">No hay cuentas que coincidan. Prueba otro nombre o ID, o elige Toda la actividad para incluir cuentas sin sincronizar.</p>}
           {!accounts.length && (
             <p className="panel">
               {owner
@@ -740,13 +764,13 @@ export function MetaAds({ role }: { role: string }) {
                 : "El OWNER todavía no te ha asignado cuentas publicitarias."}
             </p>
           )}
-          {accounts.map((a) => (
+          {visibleAccounts.map((a) => (
             <article className="panel stack" key={a.id}>
               <h3>
                 {a.name} <small>act_{a.id}</small>
               </h3>
               <p>
-                {a.businessName ?? "Sin administrador comercial informado"} ·{" "}
+                {a.businessName ?? "Agrupación por negocio no disponible"} ·{" "}
                 {a.currency} · {a.timezone}
               </p>
               <small>
@@ -754,6 +778,7 @@ export function MetaAds({ role }: { role: string }) {
                 {a.enabled ? "Cuenta habilitada" : "Cuenta deshabilitada"}
                 {a.syncState.phase !== null ? " · Importación en curso" : ""}
               </small>
+              <small className="meta-account-activity">{accountActivityText(a)}</small>
               {a.syncError && <p className="notice">{a.syncError}</p>}
               {owner && (
                 <form
@@ -907,6 +932,7 @@ export function MetaAds({ role }: { role: string }) {
               </div>
             </article>
           ))}
+          {!!filteredAccounts.length && <div className="row" aria-label="Paginación de cuentas"><button type="button" disabled={accountPage === 1} onClick={() => setAccountListPage(accountPage - 1)}>Anterior</button><span>{filteredAccounts.length} cuentas · Página {accountPage} de {accountPages}</span><button type="button" disabled={accountPage === accountPages} onClick={() => setAccountListPage(accountPage + 1)}>Siguiente</button></div>}
           <p className="hint">
             La frecuencia efectiva depende de los límites de Meta y del
             programador disponible. Consultar este panel no sincroniza ni
@@ -939,7 +965,7 @@ export function MetaAds({ role }: { role: string }) {
                 Administrador comercial
                 <select
                   value={business}
-                  onChange={(e) => resetPage(() => setBusiness(e.target.value))}
+                  onChange={(e) => resetPage(() => { setBusiness(e.target.value); setAccountIds([]); setCampaign(""); setAdset(""); })}
                 >
                   <option value="">Todos los autorizados</option>
                   {[
@@ -955,44 +981,7 @@ export function MetaAds({ role }: { role: string }) {
                   ))}
                 </select>
               </label>
-              <div className="meta-filter-field">
-                <span id={accountLabelId}>Cuentas publicitarias</span>
-                <details className="meta-account-picker">
-                <summary aria-labelledby={`${accountLabelId} ${accountLabelId}-value`}>
-                  <span id={`${accountLabelId}-value`}>{accountIds.length ? `${accountIds.length} ${accountIds.length === 1 ? "seleccionada" : "seleccionadas"}` : "Todas las autorizadas"}</span>
-                </summary>
-                <div className="stack">
-                  {accounts
-                    .filter((a) => !business || a.businessId === business)
-                    .map((a) => (
-                      <label className="check" key={a.id}>
-                        <input
-                          type="checkbox"
-                          checked={accountIds.includes(a.id)}
-                          onChange={(e) =>
-                            resetPage(() => {
-                              setAccountIds((old) =>
-                                e.target.checked
-                                  ? [...old, a.id]
-                                  : old.filter((id) => id !== a.id),
-                              );
-                              setCampaign("");
-                              setAdset("");
-                            })
-                          }
-                        />
-                        {a.name} · {a.id} · {a.currency}
-                      </label>
-                    ))}
-                  <button
-                    type="button"
-                    onClick={() => resetPage(() => setAccountIds([]))}
-                  >
-                    Todas las autorizadas
-                  </button>
-                </div>
-                </details>
-              </div>
+              <MetaAccountPicker accounts={accounts} selected={accountIds} business={business} onChange={ids => resetPage(() => { setAccountIds(ids); setCampaign(""); setAdset(""); })} />
               <label>
                 Campaña
                 <select
@@ -1006,7 +995,7 @@ export function MetaAds({ role }: { role: string }) {
                 >
                   <option value="">Todas las campañas</option>
                   {objects
-                    .filter((o) => o.level === "campaign")
+                    .filter((o) => o.level === "campaign" && chosen.some(a => a.id === o.accountId))
                     .map((o) => (
                       <option key={o.id} value={o.id}>
                         {o.name}
@@ -1024,7 +1013,7 @@ export function MetaAds({ role }: { role: string }) {
                   {objects
                     .filter(
                       (o) =>
-                        o.level === "adset" &&
+                        o.level === "adset" && chosen.some(a => a.id === o.accountId) &&
                         (!campaign || o.campaignId === campaign),
                     )
                     .map((o) => (
@@ -1050,8 +1039,11 @@ export function MetaAds({ role }: { role: string }) {
                 </select>
               </label>
               <label>
-                Buscar nombre
+                Buscar por palabra
                 <input
+                  type="search"
+                  aria-label="Buscar campañas, conjuntos o anuncios"
+                  placeholder="Escribe parte del nombre"
                   value={q}
                   onChange={(e) => setQ(e.target.value)}
                 />
@@ -1084,36 +1076,7 @@ export function MetaAds({ role }: { role: string }) {
                   ))}
                 </select>
               </label>
-              <label>
-                Ordenar por menor costo
-                <select
-                  value={sort}
-                  onChange={(e) => resetPage(() => setSort(e.target.value))}
-                >
-                  {periods.map(([id, label]) => (
-                    <option key={id} value={id}>
-                      {label}
-                    </option>
-                  ))}
-                  {calendar && (
-                    <option value="custom">Calendario elegido</option>
-                  )}
-                  <option value="newest">Más nuevos</option>
-                  <option value="age">Antigüedad en días</option>
-                </select>
-              </label>
-              <label>
-                Dirección
-                <select
-                  value={direction}
-                  onChange={(e) =>
-                    resetPage(() => setDirection(e.target.value))
-                  }
-                >
-                  <option value="asc">Menor primero</option>
-                  <option value="desc">Mayor primero</option>
-                </select>
-              </label>
+              <label>Periodo de análisis<select value={calendar ? "custom" : analysisPeriod} onChange={e => { const value=e.target.value; if(value!=="custom"){setAnalysisPeriod(value);setCalendar("");setSince("");setUntil("");if(sort==="custom")setSort("7");} }}>{periods.map(([id,label])=><option key={id} value={id}>{label}</option>)}{calendar && <option value="custom">Calendario elegido</option>}</select></label>
               <label>
                 Antigüedad · días
                 <select
@@ -1141,6 +1104,12 @@ export function MetaAds({ role }: { role: string }) {
                   ))}
                 </select>
               </label>
+            </div>
+            <div className="meta-sort-tools" aria-label="Orden de resultados">
+              <span>Ordenar por costo</span>
+              <div className="meta-cost-sort" aria-label="Periodo para ordenar por costo">{[...periods, ["custom", "Calendario"]].map(([id, label]) => <button type="button" key={id} aria-pressed={sort === id} disabled={id === "custom" && !calendar} className={sort === id ? "primary" : ""} onClick={() => resetPage(() => { setSort(id); setDirection(sort === id && direction === "asc" ? "desc" : "asc"); })}>{label}<span aria-hidden="true">{sort === id ? direction === "asc" ? " ↑" : " ↓" : " ↕"}</span></button>)}</div>
+              <div className="row"><button type="button" aria-pressed={sort === "newest"} onClick={() => resetPage(() => setSort("newest"))}>Más nuevos</button><button type="button" aria-pressed={sort === "age"} onClick={() => resetPage(() => { setSort("age"); setDirection(sort === "age" && direction === "asc" ? "desc" : "asc"); })}>Antigüedad en días</button></div>
+              <small>Las tarjetas muestran siempre Hoy, 7, 15, 30 días y Desde el inicio. Estos botones solo cambian el orden; otro clic invierte la dirección. Sin costo disponible queda al final.</small>
             </div>
             <div className="row meta-view-tools">
               <details className="meta-calendar">
@@ -1330,18 +1299,18 @@ export function MetaAds({ role }: { role: string }) {
                       o.rating,
                     ),
                 )
-                .map((o) => (
-                  <article
+                .map((o) => {
+                  const summary = o.periods[calendar ? "custom" : analysisPeriod] ?? o.periods["30"];
+                  const summaryLabel = calendar ? "Calendario elegido" : periods.find(([id]) => id === analysisPeriod)?.[1] ?? "30 días";
+                  return <article
                     className={
                       "meta-card meta-rating-" + o.rating.toLowerCase()
                     }
                     key={o.id}
                   >
                     <header>
-                      <span className="meta-account-name">
-                        {o.accountName} · {o.currency}
-                      </span>
-                      <span className="badge">{ratings[o.rating]}</span>
+                      <span className="meta-account-name">{o.accountName} · {o.currency}</span>
+                      <span className={"meta-delivery " + (o.effectiveStatus === "ACTIVE" ? "is-active" : "")}>{deliveryLabels[o.effectiveStatus] ?? o.effectiveStatus ?? "Entrega no informada"}</span>
                     </header>
                     <div className="meta-card-heading">
                       {o.thumbnailUrl && (
@@ -1358,20 +1327,20 @@ export function MetaAds({ role }: { role: string }) {
                         />
                       )}
                       <div>
-                        <small>Campaña: {o.campaignName}</small>
-                        {o.level !== "campaign" && (
-                          <small>Conjunto: {o.adsetName}</small>
-                        )}
+                        <small className="meta-object-level">{o.level === "ad" ? "Anuncio" : o.level === "adset" ? "Conjunto de anuncios" : "Campaña"}</small>
                         <h2>{o.name}</h2>
+                        <small>Campaña: {o.campaignName}</small>
+                        {o.level !== "campaign" && <small>Conjunto: {o.adsetName}</small>}
                       </div>
                     </div>
-                    <div className="row">
-                      <span className="badge">
-                        {o.effectiveStatus ?? "Entrega no informada"}
-                      </span>
-                      <small>Configurado: {o.status ?? "No informado"}</small>
+                    <div className="meta-circulation"><div><span>Primera circulación conocida</span><strong>{date(o.firstDelivery)}</strong></div><div><span>Días transcurridos</span><strong>{o.ageDays !== null ? `${o.ageDays} días` : "Por confirmar"}</strong></div></div>
+                    <div className="meta-summary-heading"><strong>Resumen · {summaryLabel}</strong><small>{date(summary.since)} → {date(summary.until)}</small></div>
+                    <div className="meta-summary-metrics">
+                      <div><span>Gasto</span><strong>{summary.state === "UNAVAILABLE" ? "—" : money(summary.spend, o.currency)}</strong></div>
+                      <div title={o.metricName}><span>Resultados</span><strong>{summary.state === "UNAVAILABLE" ? "—" : summary.results.toLocaleString("es-PE")}</strong><span className="sr-only">{o.metricName}</span></div>
+                      <div><span>Costo por resultado</span><strong>{cost(summary,o.currency)}</strong></div>
                     </div>
-                    <strong className="meta-metric-name">{o.metricName}</strong>
+                    <strong className="meta-metric-name">{costLabels[o.metric] ?? "Costo por resultado"}</strong>
                     <div className="meta-periods">
                       {periods.map(([key, label]) => (
                         <div
@@ -1398,11 +1367,8 @@ export function MetaAds({ role }: { role: string }) {
                         {o.periods.custom.results} resultados
                       </p>
                     )}
+                    <div className="meta-card-evaluation"><span className="badge">{ratings[o.rating]}</span><small>Evaluación de 7 días · según objetivo y volumen mínimo configurados</small></div>
                     <div className="meta-dates">
-                      <span>
-                        Primera circulación conocida:{" "}
-                        <b>{date(o.firstDelivery)}</b>
-                      </span>
                       <span>
                         Creado: {date(o.createdTime, o.timezone)} · Activos
                         conocidos: {o.activeDays} días
@@ -1430,8 +1396,8 @@ export function MetaAds({ role }: { role: string }) {
                     <button type="button" onClick={() => setSelected(o)}>
                       Ver detalle y periodos
                     </button>
-                  </article>
-                ))}
+                  </article>;
+                })}
             </div>
           )}
           <div className="row">
