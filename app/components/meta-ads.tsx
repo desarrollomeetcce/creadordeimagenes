@@ -1,5 +1,5 @@
 "use client";
-import { useCallback, useEffect, useState, useRef } from "react";
+import { useCallback, useEffect, useState, useRef, useId } from "react";
 import { PasswordInput } from "./password-input";
 import { engineRequest as api } from "./generation-engine";
 type Connection = {
@@ -218,6 +218,7 @@ export function MetaAds({ role }: { role: string }) {
     [transport, setTransport] = useState("MCP"),
     [revision, setRevision] = useState(0),
     [sharing, setSharing] = useState<Account | null>(null);
+  const accountLabelId = useId();
   const accountKey = accountIds.join(",");
   const serial = useRef(0);
   const analyticsTab = ["panel", "ranking", "alerts"].includes(tab);
@@ -429,10 +430,12 @@ export function MetaAds({ role }: { role: string }) {
         ))}
       </div>
       {message && (
-        <p className="notice" role="status">
-          {message}
-        </p>
+        <aside className="notice meta-feedback" role="status">
+          <span>{message}</span>
+          <button type="button" aria-label="Cerrar aviso" onClick={() => setMessage("")}>×</button>
+        </aside>
       )}
+      <div className="meta-content">
       {tab === "connections" && owner ? (
         <>
           <section className="panel stack">
@@ -867,7 +870,7 @@ export function MetaAds({ role }: { role: string }) {
       ) : (
         <>
           <div className="panel stack">
-            <div className="row" role="tablist" aria-label="Nivel publicitario">
+            <div className="meta-level-tabs" role="tablist" aria-label="Nivel publicitario">
               {[
                 ["campaign", "Campañas"],
                 ["adset", "Conjuntos de anuncios"],
@@ -906,8 +909,12 @@ export function MetaAds({ role }: { role: string }) {
                   ))}
                 </select>
               </label>
-              <details className="meta-account-picker">
-                <summary>Cuentas · {accountIds.length || "Todas"}</summary>
+              <div className="meta-filter-field">
+                <span id={accountLabelId}>Cuentas publicitarias</span>
+                <details className="meta-account-picker">
+                <summary aria-labelledby={`${accountLabelId} ${accountLabelId}-value`}>
+                  <span id={`${accountLabelId}-value`}>{accountIds.length ? `${accountIds.length} ${accountIds.length === 1 ? "seleccionada" : "seleccionadas"}` : "Todas las autorizadas"}</span>
+                </summary>
                 <div className="stack">
                   {accounts
                     .filter((a) => !business || a.businessId === business)
@@ -938,7 +945,8 @@ export function MetaAds({ role }: { role: string }) {
                     Todas las autorizadas
                   </button>
                 </div>
-              </details>
+                </details>
+              </div>
               <label>
                 Campaña
                 <select
@@ -1088,7 +1096,7 @@ export function MetaAds({ role }: { role: string }) {
                 </select>
               </label>
             </div>
-            <div className="row">
+            <div className="row meta-view-tools">
               <details className="meta-calendar">
                 <summary>
                   Calendario opcional{calendar ? " · rango personalizado" : ""}
@@ -1167,6 +1175,7 @@ export function MetaAds({ role }: { role: string }) {
               y tipo de resultado.
             </small>
           </div>
+          <div className="meta-results" aria-busy={loading}>
           {tab === "ranking" && rankingExcluded > 0 && (
             <p className="hint">
               {rankingExcluded} elementos separados por datos insuficientes en
@@ -1179,7 +1188,9 @@ export function MetaAds({ role }: { role: string }) {
               acotar el ranking.
             </p>
           )}
-          {loading && <p role="status">Consultando estadísticas guardadas…</p>}
+          <div className="meta-load-status" role="status" aria-live="polite">
+            {loading ? "Consultando estadísticas guardadas…" : ""}
+          </div>
           {!loading && !items.length && (
             <section className="panel meta-empty">
               <h2>
@@ -1395,8 +1406,10 @@ export function MetaAds({ role }: { role: string }) {
               Siguiente
             </button>
           </div>
+          </div>
         </>
       )}
+      </div>
       {selected && (
         <MetaDetail item={selected} onClose={() => setSelected(null)} />
       )}
