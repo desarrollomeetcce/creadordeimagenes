@@ -151,6 +151,7 @@ export async function metaRoutes(
       where: accountWhere(actor),
       select: {
         ...accountSelect,
+        connection: { select: { name: true, revision: true, verifiedAt: true, disconnectedAt: true } },
         grants: { where: { userId: actor.id }, select: { canSync: true } },
         ...(actor.role === "OWNER"
           ? {

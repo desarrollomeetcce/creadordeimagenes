@@ -11226,6 +11226,26 @@ test("Integración HTTP + PostgreSQL (base exclusiva de pruebas, sin llamadas ex
       const response=await owner.call('meta-ads/accounts');assert.equal(response.status,200,JSON.stringify(response.body));const found=new Map(response.body.map((a:any)=>[a.id,a.activity]));assert.deepEqual(found.get('85001'),{state:'READY',spend30:18,activeCampaigns:1});assert.deepEqual(found.get('85002'),{state:'READY',spend30:0,activeCampaigns:0});assert.deepEqual(found.get('85003'),{state:'UNSYNCED',spend30:null,activeCampaigns:null});assert.deepEqual(found.get('85004'),{state:'STALE',spend30:null,activeCampaigns:null});assert.deepEqual(found.get('85005'),{state:'SYNCING',spend30:null,activeCampaigns:null});
       await db.metaAccountGrant.create({data:{accountId:'85001',userId:uid}});const visible=(await user.call('meta-ads/accounts')).body;assert(visible.some((a:any)=>a.id==='85001'&&a.activity.spend30===18));assert(!visible.some((a:any)=>a.id==='85002'));await db.metaAccountGrant.deleteMany({where:{accountId:'85001',userId:uid}});assert(!(await user.call('meta-ads/accounts')).body.some((a:any)=>a.id==='85001'));
     });
+    await t.test('Meta: token renovado invalida respuestas tardías y usa credencial nueva sin perder cursor',async()=>{
+      const {saveToken,syncStep,queueSync,discover}=await import('../lib/meta-ads/service');const actor=await db.user.findFirstOrThrow({where:{role:'OWNER'}});
+      const oldToken='synthetic-expired-123456789',newToken='synthetic-replacement-987654321';
+      const conn=(await owner.call('meta-ads/connections','POST',{name:'Renovación sintética',transport:'API',apiVersion:'v26.0',token:oldToken})).body;await db.metaConnection.update({where:{id:conn.id},data:{verifiedAt:new Date()}});
+      const id='86008',state={phase:1,pages:63,processed:0,after:'private-retained-cursor',started:new Date().toISOString()};
+      await db.metaAdAccount.create({data:{id,connectionId:conn.id,name:'Token renovado',currency:'PEN',timezone:'America/Lima',enabled:true,syncState:state,syncError:'Error anterior 190/463',nextSyncAt:new Date(),schedulerToken:'previous-synthetic-scheduler',schedulerRunId:'previous-synthetic-run'}});
+      await db.metaAdObject.create({data:{id:'86008001',accountId:id,level:'campaign',name:'Conservar'}});
+      const original=globalThis.fetch;let renewed=false,newRequests=0;
+      globalThis.fetch=async(input,init)=>{const u=new URL(String(input));if(u.hostname!=='graph.facebook.com')return original(input,init);const auth=new Headers(init?.headers).get('Authorization');
+        if(auth==='Bearer '+oldToken){assert(!renewed);renewed=true;await saveToken(conn.id,newToken);return Response.json({error:{code:190,error_subcode:463,message:'Expired '+oldToken}},{status:401});}
+        assert.equal(auth,'Bearer '+newToken);newRequests++;if(u.pathname.endsWith('/me/adaccounts'))return Response.json({data:[{id:'act_'+id,name:'Token renovado',currency:'PEN',timezone_name:'America/Lima'}]});
+        assert(u.pathname.endsWith('/act_'+id+'/adsets'));assert.equal(u.searchParams.get('after'),state.after);return Response.json({data:[]});};
+      try{
+        assert.equal(await syncStep(id),false);let a=await db.metaAdAccount.findUniqueOrThrow({where:{id}}),c=await db.metaConnection.findUniqueOrThrow({where:{id:conn.id}});
+        assert.equal(a.syncError,null,'Late expired-token response must not replace the new credential state');assert.equal(a.schedulerToken,null);assert.equal(a.syncToken,null);assert.equal(a.nextSyncAt,null);assert.equal(c.verifiedAt,null);assert.equal((a.syncState as any).after,state.after);assert.equal((a.syncState as any).pages,63);
+        await assert.rejects(()=>queueSync(actor,id),/verifica/);assert.equal((await import('../lib/meta-ads/schedule').then(m=>m.startMetaSchedule(id))).scheduled,false);assert.equal(await db.metaAdObject.count({where:{accountId:id}}),1);
+        await discover(actor,conn.id);assert.equal((await queueSync(actor,id)).resumed,true);assert(await syncStep(id));a=await db.metaAdAccount.findUniqueOrThrow({where:{id}});c=await db.metaConnection.findUniqueOrThrow({where:{id:conn.id}});assert.equal((a.syncState as any).pages,64);assert.equal((a.syncState as any).phase,2);assert.equal(a.syncError,null);assert(newRequests>1);
+        const rows=(await owner.call('meta-ads/accounts')).body,visible=rows.find((r:any)=>r.id===id);assert.equal(visible.connection.name,'Renovación sintética');assert.equal(visible.connection.revision,c.revision);assert(visible.connection.verifiedAt);assert.equal(visible.progress.credentialRevision,c.revision);assert(visible.progress.attemptAt);assert(!JSON.stringify(visible).includes(newToken));assert(!JSON.stringify(visible).includes(oldToken));assert(!JSON.stringify(visible).includes(state.after));
+      }finally{globalThis.fetch=original;await db.metaAdAccount.update({where:{id},data:{enabled:false,nextSyncAt:null,schedulerToken:null,schedulerRunId:null}});}
+    });
     await t.test('Meta: continuar conserva cursor/histórico, recupera ejecutor detenido y respeta lease y permisos',async()=>{
       const {queueSync,syncStep}=await import('../lib/meta-ads/service');
       const actor=await db.user.findFirstOrThrow({where:{role:'OWNER'}});

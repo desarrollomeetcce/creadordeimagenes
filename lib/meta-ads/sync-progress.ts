@@ -15,6 +15,8 @@ export type SyncProgress = {
   processed: number;
   lastActivityAt: string | null;
   nextSyncAt: string | null;
+  attemptAt: string | null;
+  credentialRevision: number | null;
 };
 export function syncProgress(
   a: {
@@ -35,6 +37,7 @@ export function syncProgress(
     updatedAt?: unknown;
     started?: unknown;
     lastRun?: { pages?: unknown; processed?: unknown; finishedAt?: unknown };
+    lastAttempt?: { at?: unknown; revision?: unknown };
   };
   const integer = (n: unknown) =>
     typeof n === "number" && Number.isSafeInteger(n) && n >= 0 ? n : 0;
@@ -81,5 +84,7 @@ export function syncProgress(
     processed: integer(phase === null ? s.lastRun?.processed : s.processed),
     lastActivityAt: lastActivityAt ?? date(s.lastRun?.finishedAt),
     nextSyncAt: a.nextSyncAt?.toISOString() ?? null,
+    attemptAt: date(s.lastAttempt?.at),
+    credentialRevision: integer(s.lastAttempt?.revision) || null,
   };
 }

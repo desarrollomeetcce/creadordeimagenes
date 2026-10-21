@@ -407,6 +407,7 @@ export async function saveToken(
   expectedRevision?: number,
 ) {
   return db.$transaction(async (tx) => {
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(884411)`;
     const c = await tx.metaConnection.findUniqueOrThrow({ where: { id } });
     demand(
       expectedRevision === undefined || c.revision === expectedRevision,
@@ -430,6 +431,18 @@ export async function saveToken(
       },
     });
     demand(changed.count, "La conexión cambió. Vuelve a intentarlo.", 409);
+    // Stop old credential attempts without discarding imported data or page cursors.
+    await tx.metaAdAccount.updateMany({
+      where: { connectionId: id },
+      data: {
+        syncError: null,
+        syncToken: null,
+        syncLeaseAt: null,
+        schedulerToken: null,
+        schedulerRunId: null,
+        nextSyncAt: null,
+      },
+    });
     return c.revision + 1;
   });
 }
@@ -453,6 +466,7 @@ type State = {
   updatedAt?: string;
   lastRun?: { pages: number; processed: number; finishedAt: string };
   started?: string;
+  lastAttempt?: { at: string; revision: number };
 };
 export async function queueSync(actor: Actor, id: string, full = false) {
   const a = await access(actor, id, true);
@@ -526,20 +540,21 @@ export async function syncStep(id: string): Promise<boolean> {
       insight = current.startsWith("insights:"),
       level = current.split(":")[1];
     syncPhase = current;
-    if (!state.started)
-      await db.metaAdAccount.updateMany({
-        where: { id, syncToken: token },
+    const lastAttempt = { at: now.toISOString(), revision: c.revision };
+    const attempt = await db.metaAdAccount.updateMany({
+        where: { id, syncToken: token, connectionId: a.connectionId, connection: { revision: c.revision, disconnectedAt: null } },
         data: {
           syncState: {
             ...state,
             started,
             phase,
-            pages: 0,
-            processed: 0,
-            updatedAt: now.toISOString(),
+            pages: state.pages ?? 0,
+            processed: state.processed ?? 0,
+            lastAttempt,
           },
         },
       });
+    demand(attempt.count, "La credencial cambió antes de consultar Meta. Vuelve a verificar la conexión.", 409);
     const result = await r.get((insight ? "insights" : current) as Operation, {
       accountId: id,
       after: state.after,
@@ -747,6 +762,7 @@ export async function syncStep(id: string): Promise<boolean> {
             syncError: null,
             syncState: done
               ? {
+                  lastAttempt,
                   lastRun: {
                     pages,
                     processed: (state.processed ?? 0) + result.data.length,
@@ -754,6 +770,7 @@ export async function syncStep(id: string): Promise<boolean> {
                   },
                 }
               : {
+                  lastAttempt,
                   ...(state.lastRun ? { lastRun: state.lastRun } : {}),
                   processed: (state.processed ?? 0) + result.data.length,
                   updatedAt: new Date().toISOString(),
@@ -784,7 +801,7 @@ export async function syncStep(id: string): Promise<boolean> {
         ? e.message
         : `Falló el guardado de la importación en ${syncPhase}${internalErrorCode(e) ? ` (${internalErrorCode(e)})` : ""}. Los datos anteriores se conservan.`;
     await db.metaAdAccount.updateMany({
-      where: { id, syncToken: token },
+      where: { id, syncToken: token, ...(revision ? { connection: { revision, disconnectedAt: null } } : {}) },
       data: {
         syncToken: null,
         syncLeaseAt: null,

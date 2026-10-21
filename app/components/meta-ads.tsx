@@ -23,6 +23,7 @@ type Account = {
   id: string;
   name: string;
   connectionId: string;
+  connection?: { name: string; revision: number; verifiedAt: string | null; disconnectedAt: string | null };
   currency: string;
   timezone: string;
   businessId: string | null;
@@ -193,7 +194,7 @@ function exportCSV(items: Item[]) {
 }
 function SyncIndicator({account}:{account:Account}){
   const p=account.progress;if(!p)return null;
-  return <div className="meta-sync-progress" role="status"><div className="row spread"><strong>{p.label}</strong><span>{p.phase} de {p.totalPhases} etapas</span></div><progress max={p.totalPhases} value={p.phase} aria-label={`Sincronización de ${account.name}: etapas completadas`} /><small>{p.pages} páginas procesadas · {p.processed} registros recibidos. El total de páginas se conoce al completar la lectura.</small>{p.status==="stalled"&&<p className="notice">No hay avance reciente confirmado. Pulsa Continuar sincronización para retomar el avance guardado y consultar el error si lo hubiera.</p>}{p.status==="error"&&p.nextSyncAt&&<small>Próximo intento previsto: {displayTime(p.nextSyncAt)}. Puedes solicitar otro intento manual.</small>}</div>;
+  return <div className="meta-sync-progress" role="status"><div className="row spread"><strong>{p.label}</strong><span>{p.phase} de {p.totalPhases} etapas</span></div><progress max={p.totalPhases} value={p.phase} aria-label={`Sincronización de ${account.name}: etapas completadas`} />{p.attemptAt && <small>Último intento: {displayTime(p.attemptAt)} · versión de credencial {p.credentialRevision ?? "no registrada"}.</small>}<small>{p.pages} páginas procesadas · {p.processed} registros recibidos. El total de páginas se conoce al completar la lectura.</small>{p.status==="stalled"&&<p className="notice">No hay avance reciente confirmado. Pulsa Continuar sincronización para retomar el avance guardado y consultar el error si lo hubiera.</p>}{p.status==="error"&&p.nextSyncAt&&<small>Próximo intento previsto: {displayTime(p.nextSyncAt)}. Puedes solicitar otro intento manual.</small>}</div>;
 }
 export function MetaAds({ role, userId }: { role: string; userId: string }) {
   const owner = role === "OWNER";
@@ -756,7 +757,7 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
                         token,
                       });
                       form.reset();
-                    }, "Token reemplazado. Verifica otra vez la conexión.");
+                    }, "Token reemplazado. Se retiró el error anterior y se conservó el avance. Pulsa Verificar y traer cuentas en esta misma conexión; después continúa la sincronización.");
                   }}
                 >
                   <label>
@@ -829,6 +830,8 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
                 {a.enabled ? "Cuenta habilitada" : "Cuenta deshabilitada"}
                 {a.syncState.phase !== null ? " · Importación en curso" : ""}
               </small>
+              {a.connection && <small>Conexión utilizada: {a.connection.name} · versión de credencial {a.connection.revision} · {a.connection.verifiedAt ? "Verificada" : "Pendiente de verificar"}</small>}
+              {a.connection && !a.connection.verifiedAt && a.enabled && <p className="notice">La credencial cambió o no está verificada. Verifica esta misma conexión antes de continuar. El avance guardado se conserva.</p>}
               <small className="meta-account-activity">{accountActivityText(a)}</small>
               {a.progress && <SyncIndicator account={a} /> }
               {a.syncError && <p className="notice">{a.syncError}</p>}
@@ -933,7 +936,7 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
                 {a.canSync && (
                   <button
                     type="button"
-                    disabled={busy || !a.enabled}
+                    disabled={busy || !a.enabled || !!(a.connection && !a.connection.verifiedAt)}
                     onClick={() =>
                       void run(async () => {
                         const r = await api(
@@ -965,7 +968,7 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
                     </button>
                     <button
                       type="button"
-                      disabled={busy || !a.enabled}
+                      disabled={busy || !a.enabled || !!(a.connection && !a.connection.verifiedAt)}
                       onClick={() => {
                         if (
                           confirm(

@@ -1,7 +1,9 @@
 import { randomUUID } from "node:crypto";
 import { db } from "../db";
 export async function startMetaSchedule(id: string) {
-  const current = await db.metaAdAccount.findUnique({ where: { id } });
+  const current = await db.metaAdAccount.findUnique({ where: { id }, include: { connection: { select: { verifiedAt: true, disconnectedAt: true } } } });
+  if (!current?.enabled || !current.connection.verifiedAt || current.connection.disconnectedAt)
+    return { scheduled: false };
   if (current?.schedulerToken && current.schedulerRunId) {
     try {
       const { getRun } = await import("workflow/api");
@@ -45,7 +47,7 @@ export async function startMetaSchedule(id: string) {
 }
 export async function recoverMetaSchedules() {
   const accounts = await db.metaAdAccount.findMany({
-    where: { enabled: true, connection: { disconnectedAt: null } },
+    where: { enabled: true, connection: { disconnectedAt: null, verifiedAt: { not: null } } },
     select: { id: true },
     take: 100,
   });
