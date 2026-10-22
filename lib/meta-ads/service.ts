@@ -467,6 +467,8 @@ const phases = [
   "insights:ad",
 ];
 type State = {
+  plan?: "activity";
+  recentDays?: number;
   phase?: number;
   after?: string;
   since?: string;
@@ -475,20 +477,21 @@ type State = {
   pages?: number;
   processed?: number;
   updatedAt?: string;
-  lastRun?: { pages: number; processed: number; finishedAt: string };
+  lastRun?: { pages: number; processed: number; finishedAt: string; plan?: "activity"; recentDays?: number; since?: string; until?: string };
   started?: string;
   lastAttempt?: { at: string; revision: number };
 };
-export async function queueSync(actor: Actor, id: string, full = false) {
+export async function queueSync(actor: Actor, id: string, full = false, recentDays?: number) {
   const a = await access(actor, id, true);
   demand(
     a.enabled && a.connection.verifiedAt,
     "Habilita la cuenta y verifica su conexión antes de sincronizar.",
     409,
   );
+  demand(!recentDays || (!full && [30,90,180].includes(recentDays) && a.connection.transport === "API"), "La importación rápida admite 30, 90 o 180 días con Marketing API.");
   await rateLimit("meta:sync:" + actor.id, 30);
   const progress = syncProgress(a);
-  const resumed = !full && typeof (a.syncState as State).phase === "number";
+  const resumed = !full && !recentDays && typeof (a.syncState as State).phase === "number";
   // Retire a stopped executor, including runs pinned to a previous deployment.
   // The saved page cursor and imported records belong to the account, not the run.
   const recover = progress.status === "error" || progress.status === "stalled";
@@ -506,8 +509,8 @@ export async function queueSync(actor: Actor, id: string, full = false) {
     data: {
       nextSyncAt: new Date(),
       syncError: null,
-      ...(recover ? { schedulerToken: null, schedulerRunId: null } : {}),
-      ...(full ? { syncState: {}, syncedAt: null } : {}),
+      ...(recover || full || recentDays ? { schedulerToken: null, schedulerRunId: null } : {}),
+      ...(full ? { syncState: {mode:"history"} } : recentDays ? {syncState:{plan:"activity",recentDays,phase:0,mode:"recent",since:shiftDay(localDay(a.timezone),1-recentDays),until:localDay(a.timezone), ...((a.syncState as State).lastRun ? {lastRun:(a.syncState as State).lastRun} : {})}} : {}),
     },
   });
   demand(updated.count, "La cuenta ya está procesando una página o su conexión cambió. Espera a que termine y vuelve a consultar el progreso.", 409);
@@ -537,17 +540,20 @@ export async function syncStep(id: string): Promise<boolean> {
       { connection: c, reader: r } = await reader(a.connectionId);
     revision = c.revision;
     const state = a.syncState as State;
+    // Preserve legacy in-flight cursors. New API imports start with recent activity.
+    const activity = state.plan === "activity" || (state.phase === undefined && state.mode !== "history" && c.transport === "API");
+    const recentDays = state.recentDays ?? state.lastRun?.recentDays ?? 30;
+    const planFields = activity ? {plan:"activity" as const,recentDays} : {};
+    const runPhases = activity ? ["insights:campaign","insights:adset","insights:ad","campaigns","adsets","ads"] : phases;
     const started = state.started ?? new Date().toISOString();
     const today = localDay(a.timezone);
     const since = state.mode
       ? state.since
-      : a.syncedAt
-        ? shiftDay(today, -35)
-        : undefined;
+      : activity ? shiftDay(today,1-recentDays) : a.syncedAt ? shiftDay(today,-35) : undefined;
     const until = state.until ?? today;
     const phase = state.phase ?? 0;
     demand(phase < phases.length, "Estado de sincronización inválido.", 409);
-    const current = phases[phase],
+    const current = runPhases[phase],
       insight = current.startsWith("insights:"),
       level = current.split(":")[1];
     syncPhase = current;
@@ -557,6 +563,8 @@ export async function syncStep(id: string): Promise<boolean> {
         data: {
           syncState: {
             ...state,
+            ...planFields,
+            ...(since ? {since} : {}), until, mode:since ? "recent" : "history",
             started,
             phase,
             pages: state.pages ?? 0,
@@ -566,13 +574,17 @@ export async function syncStep(id: string): Promise<boolean> {
         },
       });
     demand(attempt.count, "La credencial cambió antes de consultar Meta. Vuelve a verificar la conexión.", 409);
-    const result = await r.get((insight ? "insights" : current) as Operation, {
+    const metadataLevel = current === "campaigns" ? "campaign" : current === "adsets" ? "adset" : "ad";
+    const ids = activity && !insight ? await db.metaAdObject.findMany({where:{accountId:id,level:metadataLevel, ...(state.after ? {id:{gt:state.after}} : {}), daily:{some:{day:{gte:since,lte:until},scope:"7d_click,1d_view|impression"}}},select:{id:true},orderBy:{id:"asc"},take:51}) : null;
+    const result = ids?.length === 0 ? {data:[]} : await r.get((insight ? "insights" : current) as Operation, {
+      ...(ids ? {ids:ids.slice(0,50).map(o=>o.id)} : {}),
       accountId: id,
-      after: state.after,
+      ...(!ids ? {after:state.after} : {}),
       level,
       since,
       until,
     });
+    if (ids && ids.length > 50) result.after = ids[49].id;
     demand(
       !result.after || result.after !== state.after,
       "Meta repitió la página de resultados. Revisa la sincronización.",
@@ -676,6 +688,7 @@ export async function syncStep(id: string): Promise<boolean> {
               ...data,
             });
           } else {
+            demand(!activity || digits(row.account_id) === id, "Meta devolvió metadatos de otra cuenta.", 502);
             const oid = digits(row.id),
               kind =
                 current === "campaigns"
@@ -730,6 +743,11 @@ export async function syncStep(id: string): Promise<boolean> {
           }
         }
         await writeSyncPage(tx, objectRows, dailyRows, !insight);
+        if (ids) {
+          const returned = new Set(result.data.map(row=>String(row.id)));
+          const unavailable = ids.slice(0,50).map(o=>o.id).filter(id=>!returned.has(id));
+          if (unavailable.length) await tx.metaAdObject.updateMany({where:{accountId:id,id:{in:unavailable}},data:{status:null,effectiveStatus:"UNAVAILABLE"}});
+        }
         if (insight && !result.after)
           await tx.metaAdDaily.deleteMany({
             where: {
@@ -740,7 +758,7 @@ export async function syncStep(id: string): Promise<boolean> {
               updatedAt: { lt: new Date(started) },
             },
           });
-        if (!insight && !result.after)
+        if (!activity && !insight && !result.after)
           await tx.metaAdObject.updateMany({
             where: {
               accountId: id,
@@ -778,10 +796,12 @@ export async function syncStep(id: string): Promise<boolean> {
                     pages,
                     processed: (state.processed ?? 0) + result.data.length,
                     finishedAt: new Date().toISOString(),
+                    ...planFields, ...(since ? {since} : {}), until,
                   },
                 }
               : {
                   lastAttempt,
+                  ...planFields,
                   ...(state.lastRun ? { lastRun: state.lastRun } : {}),
                   processed: (state.processed ?? 0) + result.data.length,
                   updatedAt: new Date().toISOString(),

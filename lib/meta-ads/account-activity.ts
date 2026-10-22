@@ -23,15 +23,15 @@ export async function accountActivities(accounts: Account[]) {
             : "READY";
     result.set(a.id, { state, spend30: null, activeCampaigns: null });
     return state === "READY"
-      ? [{ id: a.id, since: shiftDay(today, -29), until: today }]
+      ? [{ id: a.id, since: shiftDay(today, -29), until: today, activityOnly:(a.syncState as {lastRun?:{plan?:string}}).lastRun?.plan === "activity" }]
       : [];
   });
   if (!ready.length) return result;
   const rows = await db.$queryRaw<
     { id: string; spend: number; active: number }[]
   >`
-    WITH scope AS (SELECT * FROM jsonb_to_recordset(${JSON.stringify(ready)}::jsonb) AS s(id text, since text, until text)),
-    campaigns AS (SELECT o.id, o."accountId", o."effectiveStatus" FROM "MetaAdObject" o JOIN scope s ON s.id=o."accountId" WHERE o.level='campaign'),
+    WITH scope AS (SELECT * FROM jsonb_to_recordset(${JSON.stringify(ready)}::jsonb) AS s(id text, since text, until text, "activityOnly" boolean)),
+    campaigns AS (SELECT o.id, o."accountId", o."effectiveStatus" FROM "MetaAdObject" o JOIN scope s ON s.id=o."accountId" WHERE o.level='campaign' AND (NOT s."activityOnly" OR EXISTS (SELECT 1 FROM "MetaAdDaily" d WHERE d."objectId"=o.id AND d."accountId"=s.id AND d.day BETWEEN s.since AND s.until))),
     activity AS (SELECT c."accountId", COUNT(*) FILTER (WHERE c."effectiveStatus"='ACTIVE')::integer AS active FROM campaigns c GROUP BY c."accountId"),
     spend AS (SELECT d."accountId", SUM(d.spend)::float8 AS spend FROM "MetaAdDaily" d JOIN campaigns c ON c.id=d."objectId" AND c."accountId"=d."accountId" JOIN scope s ON s.id=d."accountId" WHERE d.day BETWEEN s.since AND s.until AND d.scope='7d_click,1d_view|impression' GROUP BY d."accountId")
     SELECT s.id, COALESCE(p.spend,0)::float8 AS spend, COALESCE(a.active,0)::integer AS active FROM scope s LEFT JOIN activity a ON a."accountId"=s.id LEFT JOIN spend p ON p."accountId"=s.id
@@ -41,6 +41,7 @@ export async function accountActivities(accounts: Account[]) {
       state: "READY",
       spend30: row.spend,
       activeCampaigns: row.active,
+      ...(ready.find(a=>a.id===row.id)?.activityOnly ? {partial:true} : {}),
     });
   return result;
 }

@@ -1,4 +1,5 @@
 export type AccountActivity = {
+  partial?: boolean;
   state: "READY" | "UNSYNCED" | "SYNCING" | "STALE";
   spend30: number | null;
   activeCampaigns: number | null;
@@ -43,7 +44,7 @@ export function matchesAccount(
     return false;
   if (activity === "enabled") return a.enabled;
   if (activity === "unknown")
-    return !a.activity || a.activity.state !== "READY";
+    return !a.activity || a.activity.state !== "READY" || (!!a.activity.partial && !a.activity.activeCampaigns);
   if (activity !== "all") {
     if (a.activity?.state !== "READY") return false;
     if (activity === "spend")
@@ -53,7 +54,7 @@ export function matchesAccount(
         a.activity.activeCampaigns !== null && a.activity.activeCampaigns > 0
       );
     if (activity === "none")
-      return a.activity.spend30 === 0 && a.activity.activeCampaigns === 0;
+      return !a.activity.partial && a.activity.spend30 === 0 && a.activity.activeCampaigns === 0;
   }
   return true;
 }
@@ -64,5 +65,5 @@ export function accountActivityText(a: SearchableAccount) {
     return "Importación en curso · actividad aún no confirmada";
   if (a.activity.state === "STALE")
     return "Datos atrasados · sincroniza para confirmar actividad";
-  return `${a.activity.activeCampaigns ?? "—"} campañas activas · gasto 30 días: ${a.currency} ${a.activity.spend30?.toFixed(2) ?? "—"}`;
+  return `${a.activity.activeCampaigns ?? "—"} campañas activas${a.activity.partial ? " con actividad importada (inventario parcial)" : ""} · gasto 30 días: ${a.currency} ${a.activity.spend30?.toFixed(2) ?? "—"}`;
 }

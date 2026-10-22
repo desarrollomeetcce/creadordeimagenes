@@ -165,7 +165,7 @@ export async function metaRoutes(
       where: accountWhere(actor),
       select: {
         ...accountSelect,
-        connection: { select: { name: true, revision: true, verifiedAt: true, disconnectedAt: true } },
+        connection: { select: { transport:true, name: true, revision: true, verifiedAt: true, disconnectedAt: true } },
         grants: { where: { userId: actor.id }, select: { canSync: true } },
         ...(actor.role === "OWNER"
           ? {
@@ -215,11 +215,11 @@ export async function metaRoutes(
     const a = await access(actor, id);
     if (parts[3] === "sync" && method === "POST") {
       const b = z
-        .object({ full: z.boolean().default(false) })
+        .object({ full: z.boolean().default(false), recentDays:z.union([z.literal(30),z.literal(90),z.literal(180)]).optional() })
         .strict()
         .parse(await body());
       if (b.full) ownerOnly(actor);
-      const result = await queueSync(actor, id, b.full);
+      const result = await queueSync(actor, id, b.full, b.recentDays);
       // The explicit action checks one page immediately; remaining pages stay durable.
       const advanced = await syncStep(id);
       const { startMetaSchedule } = await import("./schedule");

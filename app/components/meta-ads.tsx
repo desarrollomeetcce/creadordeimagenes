@@ -28,7 +28,7 @@ type Account = {
   id: string;
   name: string;
   connectionId: string;
-  connection?: { name: string; revision: number; verifiedAt: string | null; disconnectedAt: string | null };
+  connection?: { transport:string; name: string; revision: number; verifiedAt: string | null; disconnectedAt: string | null };
   currency: string;
   timezone: string;
   businessId: string | null;
@@ -199,7 +199,7 @@ function exportCSV(items: Item[]) {
 }
 function SyncIndicator({account}:{account:Account}){
   const p=account.progress;if(!p)return null;
-  return <div className="meta-sync-progress" role="status"><div className="row spread"><strong>{p.label}</strong><span>{p.phase} de {p.totalPhases} etapas</span></div><progress max={p.totalPhases} value={p.phase} aria-label={`Sincronización de ${account.name}: etapas completadas`} />{p.attemptAt && <small>Último intento: {displayTime(p.attemptAt)} · versión de credencial {p.credentialRevision ?? "no registrada"}.</small>}<small>{p.pages} páginas procesadas · {p.processed} registros recibidos. El total de páginas se conoce al completar la lectura.</small>{p.status==="stalled"&&<p className="notice">No hay avance reciente confirmado. Pulsa Continuar sincronización para retomar el avance guardado y consultar el error si lo hubiera.</p>}{p.status==="error"&&p.nextSyncAt&&<small>Próximo intento previsto: {displayTime(p.nextSyncAt)}. Puedes solicitar otro intento manual.</small>}</div>;
+  return <div className="meta-sync-progress" role="status"><div className="row spread"><strong>{p.label}</strong><span>{p.phase} de {p.totalPhases} etapas</span></div><progress max={p.totalPhases} value={p.phase} aria-label={`Sincronización de ${account.name}: etapas completadas`} />{p.attemptAt && <small>Último intento: {displayTime(p.attemptAt)} · versión de credencial {p.credentialRevision ?? "no registrada"}.</small>}{p.scope && <small>Alcance: {p.scope}. Histórico anterior conservado.</small>}<small>{p.pages} páginas procesadas · {p.processed} registros recibidos. El total de páginas se conoce al completar la lectura.</small>{p.status==="stalled"&&<p className="notice">No hay avance reciente confirmado. Pulsa Continuar sincronización para retomar el avance guardado y consultar el error si lo hubiera.</p>}{p.status==="error"&&p.nextSyncAt&&<small>Próximo intento previsto: {displayTime(p.nextSyncAt)}. Puedes solicitar otro intento manual.</small>}</div>;
 }
 export function MetaAds({ role, userId }: { role: string; userId: string }) {
   const owner = role === "OWNER";
@@ -941,7 +941,8 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
                   <button disabled={busy}>Guardar cuenta</button>
                 </form>
               )}
-              {a.canSync && a.progress && ["running", "stalled", "error"].includes(a.progress.status) && <small>Continuar retoma la página pendiente y conserva lo ya importado. Reimportar histórico vuelve a consultar el historial desde el inicio.</small>}
+              {a.canSync && a.connection?.transport === "API" && <form className="row" onSubmit={e=>{e.preventDefault();const days=Number(new FormData(e.currentTarget).get("recentDays"));void run(async()=>{const result=await api(`meta-ads/accounts/${a.id}/sync`,"POST",{recentDays:days});setMessage(result.syncError ?? "Importación rápida iniciada. Se conservan los datos anteriores y se reemplaza únicamente el avance pendiente.");});}}><label>Importación rápida<select name="recentDays" defaultValue={a.progress?.recentDays ?? 30}>{[30,90,180].map(days=><option key={days} value={days}>Últimos {days} días</option>)}</select></label><button disabled={busy || !a.enabled || !a.connection.verifiedAt}>Sincronizar periodo seleccionado</button><small>Consulta actividad del periodo y los detalles de los objetos encontrados; incluye anuncios pausados que tuvieron actividad. No recorre todo el catálogo. Desde el inicio permanece parcial hasta importar el histórico.</small></form>}
+              {a.canSync && a.progress && ["running", "stalled", "error"].includes(a.progress.status) && <small>Continuar retoma la página pendiente y conserva lo ya importado. La importación rápida empieza el periodo elegido sin borrar datos. Reimportar histórico recorre todo el catálogo y puede tardar bastante.</small>}
               <div className="row">
                 {a.canSync && (
                   <button

@@ -22,6 +22,7 @@ export type Page = {
   warnings?: GraphDiagnostic[];
 };
 export type Query = {
+  ids?: string[];
   accountView?: "minimal" | "metadata" | "status" | "business";
   accountId?: string;
   after?: string;
@@ -413,8 +414,9 @@ export class MetaReader {
         /^v\d{2}\.0$/.test(this.version),
         "Configura la versión de Graph API de tu app.",
       );
-      const path =
-        op === "accounts" ? "me/adaccounts" : `act_${q.accountId}/${op}`;
+      const byIds = q.ids !== undefined;
+      demand(!byIds || (["campaigns", "adsets", "ads"].includes(op) && q.ids!.length > 0 && q.ids!.length <= 50 && q.ids!.every(id => /^\d{1,40}$/.test(id))), "Selección de objetos inválida.");
+      const path = byIds ? "" : op === "accounts" ? "me/adaccounts" : `act_${q.accountId}/${op}`;
       const u = new URL(`https://graph.facebook.com/${this.version}/${path}`);
       const accountFields = {
         minimal: "id,name",
@@ -426,9 +428,10 @@ export class MetaReader {
         "fields",
         op === "accounts"
           ? accountFields[q.accountView ?? "minimal"]
-          : fields(op),
+          : (byIds ? "account_id," : "") + fields(op),
       );
       u.searchParams.set("limit", "100");
+      if (byIds) u.searchParams.set("ids", q.ids!.join(","));
       if (this.appSecret) u.searchParams.set("appsecret_proof", createHmac("sha256", this.appSecret).update(this.token).digest("hex"));
       if (q.after) u.searchParams.set("after", q.after);
       if (op === "insights") {
@@ -472,8 +475,21 @@ export class MetaReader {
         );
         throw error;
       }
+      if (byIds) {
+        demand(payload && typeof payload === "object" && !Array.isArray(payload), "Respuesta de objetos incompatible.", 502);
+        const rows: Record<string, unknown>[] = [];
+        for (const id of q.ids!) {
+          const row = (payload as Record<string, Record<string, unknown> | null>)[id];
+          if (!row) continue; // Deleted/inaccessible objects retain their known name; no invented status.
+          if (row.error) throw new MetaGraphError(r.status, row, this.token, {version:this.version,endpoint:"objects",fields:fields(op)});
+          demand(String(row.id) === id, "Meta devolvió otro objeto.", 502);
+          rows.push(row);
+        }
+        return {data: rows};
+      }
       return page(payload);
     }
+    demand(!q.ids, "La lectura rápida por objetos requiere Marketing API.", 409);
     const tools = await this.tools(),
       tool = selectTool(tools, op);
     const result = (await this.rpc("tools/call", {

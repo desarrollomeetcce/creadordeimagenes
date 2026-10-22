@@ -7,6 +7,8 @@ const labels = [
   "Resultados de anuncios",
 ];
 export type SyncProgress = {
+  recentDays: number;
+  scope: string | null;
   status: "disabled" | "queued" | "running" | "error" | "complete" | "stalled";
   phase: number;
   totalPhases: number;
@@ -31,12 +33,16 @@ export function syncProgress(
   const s = (
     a.syncState && typeof a.syncState === "object" ? a.syncState : {}
   ) as {
+    recentDays?: number;
+    plan?: string;
+    since?: string;
+    until?: string;
     phase?: unknown;
     pages?: unknown;
     processed?: unknown;
     updatedAt?: unknown;
     started?: unknown;
-    lastRun?: { pages?: unknown; processed?: unknown; finishedAt?: unknown };
+    lastRun?: { pages?: unknown; processed?: unknown; finishedAt?: unknown; since?: string; until?: string; plan?: string; recentDays?: number };
     lastAttempt?: { at?: unknown; revision?: unknown };
   };
   const integer = (n: unknown) =>
@@ -65,6 +71,8 @@ export function syncProgress(
             ? "queued"
             : "complete";
   return {
+    recentDays: s.recentDays ?? s.lastRun?.recentDays ?? 30,
+    scope: (phase !== null ? s.since : s.lastRun?.since) ? `${phase !== null ? s.since : s.lastRun?.since} → ${phase !== null ? s.until : s.lastRun?.until} · ${(phase !== null ? s.plan : s.lastRun?.plan) === "activity" ? "solo objetos con actividad en el periodo" : "catálogo completo"}` : null,
     status,
     phase: status === "complete" ? 6 : (phase ?? 0),
     totalPhases: 6,
@@ -79,7 +87,7 @@ export function syncProgress(
               ? "Esperando al ejecutor"
               : status === "complete"
                 ? "Última importación completada"
-                : labels[phase ?? 0],
+                : (s.plan === "activity" ? ["Resultados de campañas", "Resultados de conjuntos", "Resultados de anuncios", "Detalles de campañas", "Detalles de conjuntos", "Detalles de anuncios"] : labels)[phase ?? 0],
     pages: integer(phase === null ? s.lastRun?.pages : s.pages),
     processed: integer(phase === null ? s.lastRun?.processed : s.processed),
     lastActivityAt: lastActivityAt ?? date(s.lastRun?.finishedAt),

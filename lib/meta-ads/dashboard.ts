@@ -53,6 +53,11 @@ export async function dashboard(actor: Actor, params: URLSearchParams) {
   const where: Prisma.MetaAdObjectWhereInput = {
     accountId: { in: scoped.map((a) => a.id) },
     level,
+    // A recent import must not display thousands of unrelated legacy catalogue rows.
+    AND: [{OR:scoped.map(a=>{
+      const run=(a.syncState as {lastRun?:{plan?:string;since?:string;until?:string}}).lastRun;
+      return {accountId:a.id,...(run?.plan === "activity" && run.since && run.until ? {daily:{some:{day:{gte:run.since,lte:run.until},scope:"7d_click,1d_view|impression"}}} : {})};
+    })}],
     ...(campaign ? { campaignId: campaign } : {}),
     ...(adset ? { adsetId: adset } : {}),
     ...(q ? { name: { contains: q, mode: "insensitive" } } : {}),
