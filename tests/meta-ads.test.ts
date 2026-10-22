@@ -109,3 +109,11 @@ test('Calendario único: rangos inclusivos Lima, cambios de mes/año y semanas l
  assert.deepEqual(quickRange('week','2026-10-25'),['2026-10-19','2026-10-25']);
  assert.equal(monthDate('2026-01-31',-1),'2025-12-01');assert.equal(shiftDate('2024-02-28',1),'2024-02-29');
 });
+
+test('Meta detalle diario: rangos inclusivos, todo lo guardado y rechazo de fechas inválidas',async()=>{
+ const {dailyRange}=await import('../lib/meta-ads/daily-range');
+ assert.deepEqual(dailyRange(new URLSearchParams(),'2026-10-22'),{gte:'2026-09-23',lte:'2026-10-22'});
+ assert.deepEqual(dailyRange(new URLSearchParams('since=2024-02-29&until=2024-03-01'),'2026-10-22'),{gte:'2024-02-29',lte:'2024-03-01'});
+ assert.deepEqual(dailyRange(new URLSearchParams('all=1'),'2026-10-22'),{lte:'2026-10-22'});
+ for(const q of ['since=2026-02-30&until=2026-03-01','since=2026-10-22&until=2026-10-21','since=2026-10-22','since=&until=','since=2026-10-23&until=2026-10-24','all=1&since=2026-10-01&until=2026-10-22','all=2'])assert.throws(()=>dailyRange(new URLSearchParams(q),'2026-10-22'));
+});

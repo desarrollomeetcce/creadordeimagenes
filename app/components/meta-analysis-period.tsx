@@ -6,7 +6,7 @@ import {
   reportToday,
   shiftDate,
 } from "../../lib/meta-ads/date-range";
-const presets = [
+const standardPresets = [
   ["today", "Hoy"],
   ["yesterday", "Ayer"],
   ["two", "Hoy y ayer"],
@@ -34,7 +34,15 @@ export function MetaAnalysisPeriod({
   until,
   onPreset,
   onRange,
+  label = "Periodo de análisis",
+  lifetimeLabel = "Desde el inicio",
+  today: suppliedToday,
+  timezoneLabel = "Lima",
 }: {
+  label?: string;
+  lifetimeLabel?: string;
+  today?: string;
+  timezoneLabel?: string;
   value: string;
   since: string;
   until: string;
@@ -50,7 +58,11 @@ export function MetaAnalysisPeriod({
     [month, setMonth] = useState("2026-01-01"),
     [preset, setPreset] = useState(""),
     [pickingEnd, setPickingEnd] = useState(false);
-  const today = reportToday();
+  const today = suppliedToday ?? reportToday();
+  const presets = standardPresets.map(([key, text]) => [
+    key,
+    key === "lifetime" ? lifetimeLabel : text,
+  ]);
   useEffect(() => {
     if (open) ref.current?.showModal();
     else if (ref.current?.open) {
@@ -191,7 +203,7 @@ export function MetaAnalysisPeriod({
   };
   return (
     <div className="meta-analysis-period">
-      <label id={id + "-label"}>Periodo de análisis</label>
+      <label id={id + "-label"}>{label}</label>
       <button
         type="button"
         ref={trigger}
@@ -210,7 +222,10 @@ export function MetaAnalysisPeriod({
       <dialog
         ref={ref}
         className="meta-period-dialog"
-        onCancel={() => setOpen(false)}
+        onCancel={(e) => {
+          e.stopPropagation();
+          setOpen(false);
+        }}
         onClick={(e) => {
           if (e.target !== e.currentTarget) return;
           const r = e.currentTarget.getBoundingClientRect();
@@ -233,7 +248,7 @@ export function MetaAnalysisPeriod({
             setOpen(false);
           }}
         >
-          <h3 id={id + "-title"}>Periodo de análisis</h3>
+          <h3 id={id + "-title"}>{label}</h3>
           <div className="meta-range-layout">
             <nav aria-label="Periodos rápidos">
               {presets.map(([key, label]) => (
@@ -273,13 +288,13 @@ export function MetaAnalysisPeriod({
               </div>
               <p className="meta-range-value" aria-live="polite">
                 {preset === "lifetime"
-                  ? "Desde el inicio"
+                  ? lifetimeLabel
                   : `${labelDate(start || today)} – ${labelDate(end || today)}`}
                 {pickingEnd ? " · Selecciona el último día" : ""}
               </p>
               <small>
-                Fechas en hora de Lima. El calendario cambia el análisis del
-                periodo seleccionado.
+                Fechas en {timezoneLabel}. Selecciona el periodo y pulsa
+                Actualizar.
               </small>
             </div>
           </div>

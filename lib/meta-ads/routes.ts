@@ -604,25 +604,31 @@ export async function metaRoutes(
     const obj = await db.metaAdObject.findUnique({ where: { id: parts[2] } });
     demand(obj, "Anuncio no disponible.", 404);
     const a = await access(actor, obj.accountId);
-    const { localDay, shiftDay } = await import("./analytics");
+    const { localDay } = await import("./analytics");
+    const { dailyRange } = await import("./daily-range");
     const today = localDay(a.timezone);
-    return send(
-      await db.metaAdDaily.findMany({
-        where: {
-          objectId: obj.id,
-          scope: "7d_click,1d_view|impression",
-          day: { gte: shiftDay(today, -29), lte: today },
-        },
-        select: {
-          day: true,
-          spend: true,
-          impressions: true,
-          clicks: true,
-          actions: true,
-        },
-        orderBy: { day: "asc" },
-      }),
+    const rows = await db.metaAdDaily.findMany({
+      where: {
+        objectId: obj.id,
+        accountId: a.id,
+        scope: "7d_click,1d_view|impression",
+        day: dailyRange(req.nextUrl.searchParams, today),
+      },
+      select: {
+        day: true,
+        spend: true,
+        impressions: true,
+        clicks: true,
+        actions: true,
+      },
+      orderBy: { day: "asc" },
+      take: 10001,
+    });
+    demand(
+      rows.length <= 10000,
+      "Hay demasiados días guardados. Acota el periodo en el calendario.",
     );
+    return send(rows);
   }
   if (path === "objects" && method === "GET") {
     const allowed = await db.metaAdAccount.findMany({

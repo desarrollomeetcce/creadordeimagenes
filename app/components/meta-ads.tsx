@@ -13,6 +13,7 @@ import {
 } from "./meta-alias-directory";
 import { MetaStatusSwitch } from "./meta-status-switch";
 import { MetaDataFreshness } from "./meta-data-freshness";
+import { MetaDailyDetail } from "./meta-daily-detail";
 import { MetaCostOrder } from "./meta-cost-order";
 import type { MetaSelection } from "../../lib/meta-ads/preferences";
 import { MetaAccountPicker } from "./meta-account-picker";
@@ -2552,41 +2553,7 @@ function MetaDetail({ item: o, onClose }: { item: Item; onClose: () => void }) {
       <p>
         {o.metricName} · {o.timezone}
       </p>
-      <div className="meta-table">
-        <table>
-          <thead>
-            <tr>
-              <th>Periodo</th>
-              <th>Fechas</th>
-              <th>Resultados</th>
-              <th>Gasto</th>
-              <th>Costo</th>
-            </tr>
-          </thead>
-          <tbody>
-            {periods.map(([key, label]) => (
-              <tr key={key}>
-                <td>{label}</td>
-                <td>
-                  {date(o.periods[key].since)} – {date(o.periods[key].until)}
-                </td>
-                <td>
-                  {o.periods[key].state === "UNAVAILABLE"
-                    ? "—"
-                    : o.periods[key].results}
-                </td>
-                <td>
-                  {o.periods[key].state === "UNAVAILABLE"
-                    ? "—"
-                    : money(o.periods[key].spend, o.currency)}
-                </td>
-                <td>{cost(o.periods[key], o.currency)}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-      <MetaDailyChart item={o} />
+      <MetaDailyDetail key={o.id} item={o} />
       <p>
         Primera circulación conocida: {date(o.firstDelivery)} ·{" "}
         {o.ageDays ?? "—"} días transcurridos. Última circulación:{" "}
@@ -2724,121 +2691,5 @@ function MetaSharing({
         </button>
       </div>
     </dialog>
-  );
-}
-
-function MetaDailyChart({ item }: { item: Item }) {
-  const [rows, setRows] = useState<
-      {
-        day: string;
-        spend: string;
-        impressions: number;
-        actions: Record<string, number>;
-      }[]
-    >([]),
-    [error, setError] = useState("");
-  useEffect(() => {
-    let live = true;
-    api(`meta-ads/objects/${item.id}/daily`)
-      .then((data) => {
-        if (live) setRows(data);
-      })
-      .catch((e) => {
-        if (live) setError(e.message);
-      });
-    return () => {
-      live = false;
-    };
-  }, [item.id]);
-  const actionKeys: Record<string, string[]> = {
-    MESSAGES: ["onsite_conversion.messaging_conversation_started_7d"],
-    LEADS: [
-      "lead",
-      "onsite_conversion.lead_grouped",
-      "offsite_conversion.fb_pixel_lead",
-    ],
-    PURCHASES: [
-      "purchase",
-      "omni_purchase",
-      "offsite_conversion.fb_pixel_purchase",
-    ],
-    LINK_CLICKS: ["link_click"],
-  };
-  const values = rows.map((r) => {
-    const key = actionKeys[item.metric]?.find((k) =>
-      Object.hasOwn(r.actions, k),
-    );
-    const results = key ? r.actions[key] : 0;
-    return {
-      ...r,
-      results,
-      cost: results > 0 ? Number(r.spend) / results : null,
-    };
-  });
-  const max = Math.max(1, ...values.map((r) => Number(r.spend)));
-  return (
-    <section className="stack">
-      <h3>Actividad diaria · últimos 30 días</h3>
-      {error ? (
-        <p role="status">{error}</p>
-      ) : !rows.length ? (
-        <p>No hay datos diarios disponibles.</p>
-      ) : (
-        <>
-          <div
-            className="meta-daily-bars"
-            role="img"
-            aria-label="Gasto diario; el detalle accesible figura en la tabla siguiente"
-          >
-            {values.map((r) => (
-              <div
-                key={r.day}
-                title={`${r.day}: ${money(Number(r.spend), item.currency)} · ${r.results} resultados`}
-              >
-                <span
-                  style={{
-                    height: `${Math.max(2, (Number(r.spend) / max) * 100)}%`,
-                  }}
-                />
-                <small>{r.day.slice(8)}</small>
-              </div>
-            ))}
-          </div>
-          <details>
-            <summary>Ver fechas, gasto, resultados y costo diario</summary>
-            <div className="meta-table">
-              <table>
-                <thead>
-                  <tr>
-                    <th>Fecha</th>
-                    <th>Gasto</th>
-                    <th>Resultados</th>
-                    <th>Costo</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {values.map((r) => (
-                    <tr key={r.day}>
-                      <td>{date(r.day)}</td>
-                      <td>{money(Number(r.spend), item.currency)}</td>
-                      <td>{r.results}</td>
-                      <td>
-                        {r.cost === null
-                          ? "Sin resultados"
-                          : money(r.cost, item.currency)}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </details>
-          <small>
-            Solo fechas con datos importados; los intervalos ausentes no se
-            rellenan con resultados inventados. Hoy puede ser parcial.
-          </small>
-        </>
-      )}
-    </section>
   );
 }
