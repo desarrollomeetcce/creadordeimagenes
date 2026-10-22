@@ -30,6 +30,11 @@ export function MetaConnectionAccess({
         Esta conexión usa una sola credencial. Guarda un token manual o completa
         la autorización con Facebook para cambiarla.
       </p>
+      {connection.tokenMask && (
+        <p className="meta-saved-token" aria-label="Token guardado">
+          Token guardado: <span aria-hidden="true">****************</span>
+        </p>
+      )}
       <div
         className="row"
         role="group"
@@ -45,7 +50,9 @@ export function MetaConnectionAccess({
             setMessage("");
           }}
         >
-          Manual (token){!!connection.tokenMask && !oauth && " · En uso"}
+          {!!connection.tokenMask && !oauth
+            ? "Actualizar solo token"
+            : "Manual (token)"}
         </button>
         <button
           type="button"
@@ -76,7 +83,7 @@ export function MetaConnectionAccess({
               form.reset();
               await onUpdated();
               setMessage(
-                "Token manual guardado. Verifica el acceso para continuar con tus cuentas; el histórico y el avance se conservan.",
+                "Token actualizado. La configuración, las cuentas, el histórico y el avance se conservan. Verifica la conexión para continuar desde el avance guardado.",
               );
             })()
               .catch((e) => setMessage(e.message))
@@ -93,6 +100,11 @@ export function MetaConnectionAccess({
             Token manual de Meta
             <PasswordInput
               name="token"
+              placeholder={
+                connection.tokenMask
+                  ? "****************"
+                  : "Pega el token de Meta"
+              }
               autoComplete="off"
               required
               disabled={busy}
@@ -100,12 +112,22 @@ export function MetaConnectionAccess({
             />
           </label>
           <small>
+            {connection.tokenMask &&
+              "El token está guardado y oculto. Escribe uno nuevo solo para reemplazarlo. "}
+            Actualiza únicamente la credencial. Conserva la versión de API, la
+            configuración de la app, las cuentas y los datos guardados.
+          </small>
+          <small>
             Se guarda cifrado. La caducidad solo se muestra si está informada;
             un token manual no se considera permanente automáticamente.
           </small>
           <div>
             <button type="submit" disabled={busy}>
-              {busy ? "Guardando…" : "Guardar token manual"}
+              {busy
+                ? "Guardando…"
+                : connection.tokenMask
+                  ? "Guardar nuevo token"
+                  : "Guardar token manual"}
             </button>
           </div>
         </form>

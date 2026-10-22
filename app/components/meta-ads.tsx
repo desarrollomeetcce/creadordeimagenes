@@ -938,7 +938,7 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
               >
                 {[
                   ["manual", "Manual (token)"],
-                  ["quick", "Conexión rápida"],
+                  ["quick", "Conexión OAuth con Meta"],
                   ["oauth", "Agregar conexión OAuth"],
                 ].map(([mode, label]) => (
                   <button
@@ -1017,7 +1017,8 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
                           token: String(data.get("token")),
                         });
                         form.reset();
-                      }, "Conexión guardada. Verifica el acceso para traer tus cuentas.");
+                        setApiMode("");
+                      }, "Conexión guardada. El token aparece oculto en su tarjeta. Verifica el acceso para traer tus cuentas.");
                     }}
                   >
                     <div className="fields">
