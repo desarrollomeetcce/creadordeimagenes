@@ -52,6 +52,11 @@ export async function dashboard(actor: Actor, params: URLSearchParams) {
     state = params.get("state") ?? "all",
     campaign = params.get("campaign"),
     adset = params.get("adset");
+  const selectionIds=(name:string)=>{
+    const raw=params.get(name)??""; const ids=[...new Set(raw.split(",").filter(Boolean))];
+    demand(raw.length<=4100&&ids.length<=100&&ids.every(id=>/^\d{1,40}$/.test(id)),"Selección de elementos inválida.");return ids;
+  };
+  const campaignIds=selectionIds("campaigns"),adsetIds=selectionIds("adsets");
   const where: Prisma.MetaAdObjectWhereInput = {
     accountId: { in: scoped.map((a) => a.id) },
     level,
@@ -63,8 +68,8 @@ export async function dashboard(actor: Actor, params: URLSearchParams) {
       const cutoff=a.selectionSince??(state.plan==="focus" && typeof state.started==="string" && Number.isFinite(Date.parse(state.started)) ? new Date(state.started) : null);
       return {accountId:a.id,...(cutoff ? {selectedAt:{gte:cutoff}} : {}),...(run?.plan === "activity" && run.since && run.until ? {daily:{some:{day:{gte:run.since,lte:run.until},scope:"7d_click,1d_view|impression"}}} : {})};
     })}],
-    ...(campaign ? { campaignId: campaign } : {}),
-    ...(adset ? { adsetId: adset } : {}),
+    ...(campaignIds.length ? {campaignId:{in:campaignIds}} : campaign ? { campaignId: campaign } : {}),
+    ...(adsetIds.length ? {adsetId:{in:adsetIds}} : adset ? { adsetId: adset } : {}),
     ...(q ? { name: { contains: q, mode: "insensitive" } } : {}),
     ...(state === "active"
       ? { status: "ACTIVE" }

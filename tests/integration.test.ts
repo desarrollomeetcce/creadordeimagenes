@@ -11276,6 +11276,12 @@ test("Integración HTTP + PostgreSQL (base exclusiva de pruebas, sin llamadas ex
         for(const level of ['campaign','adset','ad']){const data=await dashboard(actor,new URLSearchParams({accounts:id,level,metric:'MESSAGES'}));assert.equal(data.total,2);const active=data.items.find(o=>o.status==='ACTIVE')!;assert.equal(active.periods['7'].results,180);assert(Math.abs(active.periods['7'].cost!-75.26/180)<0.00001);assert.equal(active.metric,'MESSAGES');}
         assert.equal((await dashboard(actor,new URLSearchParams({accounts:id,level:'adset',campaign:'970011',metric:'MESSAGES'}))).total,1);
         assert.equal((await dashboard(actor,new URLSearchParams({accounts:id,level:'ad',campaign:'970021',adset:'970022',metric:'MESSAGES'}))).items[0].id,'970023');
+        assert.equal((await dashboard(actor,new URLSearchParams({accounts:id,level:'adset',campaigns:'970011,970021',metric:'MESSAGES'}))).total,2);
+        assert.equal((await dashboard(actor,new URLSearchParams({accounts:id,level:'ad',adsets:'970012,970022',metric:'MESSAGES'}))).total,2);
+        assert.equal((await dashboard(actor,new URLSearchParams({accounts:id,level:'ad',campaigns:'970011',adsets:'970022',metric:'MESSAGES'}))).total,0);
+        assert.equal((await dashboard(actor,new URLSearchParams({accounts:id,level:'ad',adsets:'970012,999999999',metric:'MESSAGES'}))).total,1);
+        await assert.rejects(()=>dashboard(actor,new URLSearchParams({accounts:id,level:'ad',campaigns:'bad'})),/Selección/);
+        await assert.rejects(()=>dashboard({id:oid,role:'OBSERVER'},new URLSearchParams({accounts:id,level:'ad',campaigns:'970011,970021'})),/no autorizadas/);
         const input={status:'PAUSED',expectedStatus:'ACTIVE',confirmed:true};assert.equal((await user.call('meta-ads/objects/970011/status','POST',input)).status,403);assert.equal((await admin.call('meta-ads/objects/970011/status','POST',input)).status,403);assert.equal((await owner.call('meta-ads/objects/970011/status','POST',{...input,confirmed:false})).status,400);assert.equal(posts,0);
         await assert.rejects(()=>setMetaStatus({id:uid,role:'USER'},'970011','PAUSED','ACTIVE'));assert.equal(posts,0);
         deny=true;await assert.rejects(()=>setMetaStatus(actor,'970011','PAUSED','ACTIVE'),/ads_management/);assert.equal((await db.metaAdObject.findUniqueOrThrow({where:{id:'970011'}})).status,'ACTIVE');deny=false;

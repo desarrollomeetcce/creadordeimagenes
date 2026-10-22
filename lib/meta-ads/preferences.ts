@@ -1,5 +1,14 @@
+export type MetaSelection = {
+  id: string;
+  accountId: string;
+  level: "campaign" | "adset" | "ad";
+};
 export const metaDefaults = {
   accountIds: [] as string[],
+  pinnedAccountIds: [] as string[],
+  selectedObjects: [] as MetaSelection[],
+  campaignScope: [] as string[],
+  adsetScope: [] as string[],
   tab: "panel",
   level: "ad",
   business: "",
@@ -9,8 +18,8 @@ export const metaDefaults = {
   state: "all",
   metric: "MESSAGES",
   currency: "",
-  sort: "7",
-  analysisPeriod: "30",
+  sort: "today",
+  analysisPeriod: "today",
   direction: "asc",
   age: "",
   rating: "",
@@ -28,7 +37,7 @@ export const metaDefaults = {
 export type MetaPreferences = typeof metaDefaults;
 export function parseMetaPreferences(raw: string | null): MetaPreferences {
   const result = { ...metaDefaults, accountIds: [] as string[] };
-  if (!raw || raw.length > 20000) return result;
+  if (!raw || raw.length > 50000) return result;
   let data: Record<string, unknown>;
   try {
     data = JSON.parse(raw);
@@ -125,5 +134,45 @@ export function parseMetaPreferences(raw: string | null): MetaPreferences {
     result.adset = "";
   }
   if (["newest", "age"].includes(result.sort)) result.sort = "7";
+  const ids = (v: unknown) =>
+    Array.isArray(v)
+      ? [
+          ...new Set(
+            v.filter(
+              (id): id is string =>
+                typeof id === "string" && /^\d{1,40}$/.test(id),
+            ),
+          ),
+        ].slice(0, 100)
+      : [];
+  result.pinnedAccountIds = ids(data.pinnedAccountIds ?? result.accountIds);
+  result.campaignScope = ids(data.campaignScope);
+  result.adsetScope = ids(data.adsetScope);
+  if (Array.isArray(data.selectedObjects)) {
+    const seen = new Set<string>(),
+      counts: Record<string, number> = {};
+    result.selectedObjects = data.selectedObjects
+      .filter((v): v is MetaSelection => {
+        if (!v || typeof v !== "object" || Array.isArray(v)) return false;
+        const o = v as Record<string, unknown>;
+        if (
+          typeof o.id !== "string" ||
+          !/^\d{1,40}$/.test(o.id) ||
+          typeof o.accountId !== "string" ||
+          !/^\d{1,40}$/.test(o.accountId) ||
+          !["campaign", "adset", "ad"].includes(String(o.level)) ||
+          seen.has(o.id) ||
+          (counts[String(o.level)] ?? 0) >= 100
+        )
+          return false;
+        seen.add(o.id);
+        counts[String(o.level)] = (counts[String(o.level)] ?? 0) + 1;
+        return true;
+      })
+      .map(({ id, accountId, level }) => ({ id, accountId, level }));
+  }
+  result.campaign = "";
+  result.adset = "";
+
   return result;
 }

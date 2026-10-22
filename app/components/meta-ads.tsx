@@ -6,6 +6,9 @@ import {
   type MarketingOAuthInfo,
 } from "./meta-marketing-oauth";
 import { MetaConnectionAccess } from "./meta-connection-access";
+import { MetaAnalysisPeriod } from "./meta-analysis-period";
+import { MetaCostOrder } from "./meta-cost-order";
+import type { MetaSelection } from "../../lib/meta-ads/preferences";
 import { MetaAccountPicker } from "./meta-account-picker";
 import {
   matchesAccount,
@@ -110,13 +113,7 @@ type Item = {
   rating: string;
   pausedCandidate: boolean;
 };
-type ObjectOption = {
-  accountId: string;
-  id: string;
-  name: string;
-  level: string;
-  campaignId: string | null;
-};
+
 const metrics = [
   ["AUTO", "Automático · detectar tipo de resultado"],
   ["MESSAGES", "Conversaciones iniciadas"],
@@ -186,52 +183,6 @@ function displayTime(value: string | null) {
   return value
     ? new Date(value).toLocaleString("es-PE")
     : "Todavía no sincronizada";
-}
-function exportCSV(items: Item[]) {
-  const cols = [
-    "Cuenta",
-    "Campaña",
-    "Conjunto",
-    "Anuncio",
-    "Moneda",
-    "Resultado",
-    "Primera circulación",
-    "Días",
-    ...periods.map((p) => p[1]),
-  ];
-  const safe = (s: unknown) =>
-    '"' +
-    String(s ?? "")
-      .replace(/^[\s]*[=+@-]/, "'$&")
-      .replaceAll('"', '""') +
-    '"';
-  const rows = items.map((o) => [
-    o.accountName,
-    o.campaignName,
-    o.adsetName,
-    o.name,
-    o.currency,
-    o.metricName,
-    o.firstDelivery,
-    o.ageDays,
-    ...periods.map(
-      ([key]) => o.periods[key].cost ?? cost(o.periods[key], o.currency),
-    ),
-  ]);
-  const url = URL.createObjectURL(
-    new Blob(
-      [
-        "\ufeff" +
-          [cols, ...rows].map((r) => r.map(safe).join(";")).join("\r\n"),
-      ],
-      { type: "text/csv;charset=utf-8" },
-    ),
-  );
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = "meta-ads-pagina.csv";
-  a.click();
-  URL.revokeObjectURL(url);
 }
 function SyncIndicator({
   account,
@@ -347,7 +298,6 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
     [accountListActivity, setAccountListActivity] = useState("all"),
     [accountListBusiness, setAccountListBusiness] = useState(""),
     [accountListPage, setAccountListPage] = useState(1),
-    [objects, setObjects] = useState<ObjectOption[]>([]),
     [items, setItems] = useState<Item[]>([]),
     [total, setTotal] = useState(0),
     [limited, setLimited] = useState(false),
@@ -361,6 +311,10 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
     ),
     [level, setLevel] = useState("ad"),
     [accountIds, setAccountIds] = useState<string[]>([]),
+    [pinnedAccountIds, setPinnedAccountIds] = useState<string[]>([]),
+    [selectedObjects, setSelectedObjects] = useState<MetaSelection[]>([]),
+    [campaignScope, setCampaignScope] = useState<string[]>([]),
+    [adsetScope, setAdsetScope] = useState<string[]>([]),
     [business, setBusiness] = useState(""),
     [campaign, setCampaign] = useState(""),
     [adset, setAdset] = useState(""),
@@ -370,7 +324,7 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
     [metric, setMetric] = useState("MESSAGES"),
     [currency, setCurrency] = useState(""),
     [sort, setSort] = useState("7"),
-    [analysisPeriod, setAnalysisPeriod] = useState("30"),
+    [analysisPeriod, setAnalysisPeriod] = useState("today"),
     [direction, setDirection] = useState("asc"),
     [age, setAge] = useState(""),
     [rating, setRating] = useState(""),
@@ -390,20 +344,98 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
     ),
     [revision, setRevision] = useState(0),
     [sharing, setSharing] = useState<Account | null>(null);
+  const selectedIds = new Set(selectedObjects.map((o) => o.id));
+  const chooseAccounts = (ids: string[], pin = true) =>
+    resetPage(() => {
+      setAccountIds(ids);
+      setCampaign("");
+      setAdset("");
+      setCampaignScope([]);
+      setAdsetScope([]);
+      if (pin)
+        setPinnedAccountIds((old) =>
+          [...new Set([...old, ...ids])].slice(0, 100),
+        );
+    });
+  const selectObject = (o: Item, checked: boolean) => {
+    const next = selectedObjects.filter((s) => s.id !== o.id);
+    if (checked) {
+      if (next.filter((s) => s.level === o.level).length >= 100) {
+        setMessage("Puedes seleccionar hasta 100 elementos por nivel.");
+        return;
+      }
+      next.push({
+        id: o.id,
+        accountId: o.accountId,
+        level: o.level as MetaSelection["level"],
+      });
+    }
+    setSelectedObjects(next);
+    if (o.level === "campaign") {
+      setCampaignScope(
+        next
+          .filter(
+            (s) =>
+              s.level === "campaign" &&
+              (!accountIds.length || accountIds.includes(s.accountId)),
+          )
+          .map((s) => s.id),
+      );
+      setAdsetScope([]);
+    }
+    if (o.level === "adset")
+      setAdsetScope(
+        next
+          .filter(
+            (s) =>
+              s.level === "adset" &&
+              (!accountIds.length || accountIds.includes(s.accountId)),
+          )
+          .map((s) => s.id),
+      );
+    setPage(1);
+  };
   const openChildren = (o: Item) => {
+    if (!selectedIds.has(o.id)) selectObject(o, true);
     if (o.level === "ad") {
       setSelected(o);
       return;
     }
     resetPage(() => {
       setAccountIds([o.accountId]);
-      setCampaign(o.level === "campaign" ? o.id : o.campaignId);
-      setAdset(o.level === "adset" ? o.id : "");
+      setCampaign("");
+      setAdset("");
+      setCampaignScope([o.level === "campaign" ? o.id : o.campaignId]);
+      setAdsetScope(o.level === "adset" ? [o.id] : []);
       setLevel(o.level === "campaign" ? "adset" : "ad");
       setQ("");
       setSearch("");
     });
   };
+  const clearFilters = () =>
+    resetPage(() => {
+      setAccountIds([]);
+      setCampaign("");
+      setAdset("");
+      setCampaignScope([]);
+      setAdsetScope([]);
+      setBusiness("");
+      setCurrency("");
+      setAge("");
+      setState("all");
+      setMetric("MESSAGES");
+      setRating("");
+      setQ("");
+      setSearch("");
+      setAccountPickerQuery("");
+      setAccountPickerActivity("all");
+      setCalendar("");
+      setSince("");
+      setUntil("");
+      setAnalysisPeriod("today");
+      setSort("today");
+      setDirection("asc");
+    });
   const changeStatus = (o: Item) => {
     const next = o.status === "ACTIVE" ? "PAUSED" : "ACTIVE";
     if (
@@ -422,16 +454,6 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
       "Estado actualizado en Meta. Los resultados anteriores se conservan.",
     );
   };
-  useEffect(() => {
-    const close = (e: PointerEvent) =>
-      document
-        .querySelectorAll<HTMLDetailsElement>(".meta-calendar[open]")
-        .forEach((el) => {
-          if (!el.contains(e.target as Node)) el.open = false;
-        });
-    document.addEventListener("pointerdown", close);
-    return () => document.removeEventListener("pointerdown", close);
-  }, []);
   const preferencesKey = `meta-ads:preferences:v1:${userId}`;
   useEffect(() => {
     let stored = null;
@@ -440,6 +462,10 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
     } catch {}
     const p = parseMetaPreferences(stored);
     setAccountIds(p.accountIds);
+    setPinnedAccountIds(p.pinnedAccountIds);
+    setSelectedObjects(p.selectedObjects);
+    setCampaignScope(p.campaignScope);
+    setAdsetScope(p.adsetScope);
     setLevel(p.level);
     setBusiness(p.business);
     setCampaign(p.campaign);
@@ -482,6 +508,10 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
         JSON.stringify({
           layoutRevision: 2,
           accountIds,
+          pinnedAccountIds,
+          selectedObjects,
+          campaignScope,
+          adsetScope,
           tab,
           level,
           business,
@@ -514,6 +544,10 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
     accountsLoaded,
     preferencesKey,
     accountIds,
+    pinnedAccountIds,
+    selectedObjects,
+    campaignScope,
+    adsetScope,
     tab,
     level,
     business,
@@ -561,6 +595,8 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
     accountPage * 25,
   );
   const accountKey = accountIds.join(",");
+  const campaignScopeKey = level === "campaign" ? "" : campaignScope.join(",");
+  const adsetScopeKey = level === "ad" ? adsetScope.join(",") : "";
   const serial = useRef(0);
   const syncVersions = useRef(new Map<string, string | null>());
   const historicalVersions = useRef(new Map<string, number>());
@@ -576,6 +612,9 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
     const rows: Account[] = await api("meta-ads/accounts");
     rows.forEach((a) => syncVersions.current.set(a.id, a.syncedAt));
     setAccounts(rows);
+    const allowed = new Set(rows.map((a) => a.id));
+    setPinnedAccountIds((ids) => ids.filter((id) => allowed.has(id)));
+    setSelectedObjects((old) => old.filter((o) => allowed.has(o.accountId)));
     setAccountIds((ids) => ids.filter((id) => rows.some((a) => a.id === id)));
     setAccountsLoaded(true);
   }, []);
@@ -610,20 +649,6 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
     };
   }, [refresh, preferencesReady]);
   useEffect(() => {
-    if (!analyticsTab || !preferencesReady || !accountsLoaded) return;
-    let live = true;
-    api("meta-ads/objects?" + new URLSearchParams({ accounts: accountKey }))
-      .then((rows) => {
-        if (live) setObjects(rows);
-      })
-      .catch((e) => {
-        if (live) setMessage(e.message);
-      });
-    return () => {
-      live = false;
-    };
-  }, [analyticsTab, accountKey, revision, preferencesReady, accountsLoaded]);
-  useEffect(() => {
     if (!analyticsTab || !preferencesReady || !accountsLoaded) {
       setLoading(false);
       return;
@@ -638,6 +663,8 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
         business,
         campaign,
         adset,
+        campaigns: campaignScopeKey,
+        adsets: adsetScopeKey,
         q: search,
         state,
         metric,
@@ -691,6 +718,8 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
     business,
     campaign,
     adset,
+    campaignScopeKey,
+    adsetScopeKey,
     search,
     state,
     metric,
@@ -832,31 +861,6 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
       async () => {},
       "Datos guardados actualizados. No se consultó Meta.",
     );
-  const chooseCalendar = (value: string) => {
-    if (!value) {
-      setCalendar("");
-      setSince("");
-      setUntil("");
-      if (sort === "custom") setSort("7");
-      return;
-    }
-    const tz =
-      accounts.find((a) => accountIds.includes(a.id))?.timezone ??
-      accounts[0]?.timezone ??
-      "America/Lima";
-    const end = new Intl.DateTimeFormat("en-CA", {
-      timeZone: tz,
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit",
-    }).format(new Date());
-    const start = new Date(end + "T12:00:00Z");
-    start.setUTCDate(start.getUTCDate() + 1 - Number(value));
-    setSince(start.toISOString().slice(0, 10));
-    setUntil(end);
-    setCalendar("custom");
-    setPage(1);
-  };
   const resetPage = (fn: () => void) => {
     setPage(1);
     fn();
@@ -1389,10 +1393,8 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
                   <SyncIndicator
                     account={a}
                     onAnalyze={() => {
-                      setAccountIds([a.id]);
+                      chooseAccounts([a.id]);
                       setBusiness("");
-                      setCampaign("");
-                      setAdset("");
                       setPage(1);
                       setTab("panel");
                       setRevision((r) => r + 1);
@@ -1632,13 +1634,7 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
                   activity={accountPickerActivity}
                   onQueryChange={setAccountPickerQuery}
                   onActivityChange={setAccountPickerActivity}
-                  onChange={(ids) =>
-                    resetPage(() => {
-                      setAccountIds(ids);
-                      setCampaign("");
-                      setAdset("");
-                    })
-                  }
+                  onChange={(ids) => chooseAccounts(ids)}
                 />
                 <label>
                   Medir resultado
@@ -1674,31 +1670,6 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
                   </select>
                 </label>
                 <label>
-                  Periodo de análisis
-                  <select
-                    value={calendar ? "custom" : analysisPeriod}
-                    onChange={(e) => {
-                      const value = e.target.value;
-                      if (value !== "custom") {
-                        setAnalysisPeriod(value);
-                        setCalendar("");
-                        setSince("");
-                        setUntil("");
-                        if (sort === "custom") setSort("7");
-                      }
-                    }}
-                  >
-                    {periods.map(([id, label]) => (
-                      <option key={id} value={id}>
-                        {label}
-                      </option>
-                    ))}
-                    {calendar && (
-                      <option value="custom">Calendario elegido</option>
-                    )}
-                  </select>
-                </label>
-                <label>
                   Evaluación
                   <select
                     value={rating}
@@ -1712,132 +1683,69 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
                     ))}
                   </select>
                 </label>
-              </div>
-              <div className="meta-sort-tools" aria-label="Orden de resultados">
-                <button
-                  type="button"
-                  onClick={() => setView(view === "cards" ? "table" : "cards")}
-                >
-                  {view === "cards" ? "Ver tabla" : "Ver tarjetas"}
-                </button>
-                <span>Ordenar por costo</span>
-                <div
-                  className="meta-cost-sort"
-                  aria-label="Periodo para ordenar por costo"
-                >
-                  {[...periods, ["custom", "Calendario"]].map(([id, label]) => (
-                    <button
-                      type="button"
-                      key={id}
-                      aria-pressed={sort === id}
-                      disabled={id === "custom" && !calendar}
-                      className={sort === id ? "primary" : ""}
-                      onClick={() =>
-                        resetPage(() => {
-                          setSort(id);
-                          setDirection(
-                            sort === id && direction === "asc" ? "desc" : "asc",
-                          );
-                        })
-                      }
-                    >
-                      {label}
-                      <span aria-hidden="true">
-                        {sort === id
-                          ? direction === "asc"
-                            ? " ↑"
-                            : " ↓"
-                          : " ↕"}
-                      </span>
-                    </button>
-                  ))}
+                <div className="meta-filter-actions">
+                  <button
+                    type="button"
+                    onClick={clearFilters}
+                    title="Volver a todas las cuentas y al periodo Hoy; conserva tus checks y cuentas fijadas"
+                  >
+                    Borrar filtros
+                  </button>
+                  <button
+                    className="meta-refresh"
+                    type="button"
+                    onClick={reload}
+                    disabled={busy || loading}
+                    aria-label="Actualizar datos guardados"
+                    title="Actualizar vista con los datos guardados"
+                  >
+                    ↻
+                  </button>
                 </div>
-                <small>
-                  Las tarjetas muestran siempre Hoy, 7, 15, 30 días y Desde el
-                  inicio. Estos botones solo cambian el orden; otro clic
-                  invierte la dirección. Sin costo disponible queda al final.
-                </small>
               </div>
-              <div className="row meta-view-tools">
-                <details className="meta-calendar">
-                  <summary>
-                    Calendario opcional
-                    <span className="meta-calendar-state" aria-hidden="true">
-                      {calendar ? "●" : ""}
-                    </span>
-                    <span className="sr-only">
-                      {calendar
-                        ? "Rango personalizado activo"
-                        : "Sin rango personalizado"}
-                    </span>
-                  </summary>
-                  <div className="fields">
-                    <label>
-                      Periodo rápido
-                      <select
-                        defaultValue=""
-                        aria-label="Periodo del calendario"
-                        onChange={(e) => chooseCalendar(e.target.value)}
-                      >
-                        <option value="">Desde el inicio / sin rango</option>
-                        <option value="1">Hoy</option>
-                        <option value="7">Últimos 7 días</option>
-                        <option value="15">Últimos 15 días</option>
-                        <option value="30">Últimos 30 días</option>
-                      </select>
-                    </label>
-                    <label>
-                      Desde
-                      <input
-                        type="date"
-                        value={since}
-                        onChange={(e) => {
-                          setSince(e.target.value);
-                          if (e.target.value && until) setCalendar("custom");
-                        }}
-                      />
-                    </label>
-                    <label>
-                      Hasta
-                      <input
-                        type="date"
-                        value={until}
-                        onChange={(e) => {
-                          setUntil(e.target.value);
-                          if (e.target.value && since) setCalendar("custom");
-                        }}
-                      />
-                    </label>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setCalendar("");
-                        setSince("");
-                        setUntil("");
-                        if (sort === "custom") setSort("7");
-                      }}
-                    >
-                      Quitar rango
-                    </button>
-                  </div>
-                </details>
-                <button type="button" onClick={reload} disabled={busy}>
-                  Actualizar datos guardados
-                </button>
-                <button
-                  type="button"
-                  onClick={() => exportCSV(items)}
-                  disabled={!items.length}
+              {pinnedAccountIds.length > 0 && (
+                <div
+                  className="meta-pinned-accounts"
+                  aria-label="Cuentas fijadas"
                 >
-                  Exportar esta página · CSV
-                </button>
-              </div>
-              <small>
-                Comparaciones permanentes independientes del calendario.
-                Atribución: 7 días clic / 1 día vista, por fecha de impresión.
-                Hoy es parcial; Meta puede actualizar resultados. Se ordena por
-                moneda y tipo de resultado.
-              </small>
+                  <span>Cuentas fijadas</span>
+                  <button
+                    type="button"
+                    aria-pressed={!accountIds.length}
+                    className={!accountIds.length ? "primary" : ""}
+                    onClick={() => chooseAccounts([], false)}
+                  >
+                    Todas
+                  </button>
+                  {pinnedAccountIds.map((id) => {
+                    const a = accounts.find((a) => a.id === id);
+                    return a ? (
+                      <div className="meta-account-pin" key={id}>
+                        <button
+                          type="button"
+                          aria-pressed={accountIds.includes(id)}
+                          className={accountIds.includes(id) ? "primary" : ""}
+                          onClick={() => chooseAccounts([id], false)}
+                        >
+                          {a.name}
+                        </button>
+                        <button
+                          type="button"
+                          className="meta-unpin"
+                          aria-label={`Desfijar ${a.name}`}
+                          onClick={() =>
+                            setPinnedAccountIds((old) =>
+                              old.filter((v) => v !== id),
+                            )
+                          }
+                        >
+                          Desfijar
+                        </button>
+                      </div>
+                    ) : null;
+                  })}
+                </div>
+              )}
             </div>
             <div className="meta-result-controls">
               <div
@@ -1856,21 +1764,50 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
                     aria-selected={level === id}
                     key={id}
                     className={level === id ? "primary" : ""}
-                    onClick={() =>
-                      resetPage(() => {
-                        setLevel(id);
-                        if (id === "campaign") {
-                          setCampaign("");
-                          setAdset("");
-                        }
-                        if (id === "adset") setAdset("");
-                      })
-                    }
+                    onClick={() => resetPage(() => setLevel(id))}
                   >
                     {label}
                   </button>
                 ))}
               </div>
+              <button
+                className="meta-view-toggle"
+                type="button"
+                onClick={() => setView(view === "cards" ? "table" : "cards")}
+              >
+                {view === "cards" ? "Ver tabla" : "Ver tarjetas"}
+              </button>
+              <MetaCostOrder
+                calendar={!!calendar}
+                value={sort}
+                direction={direction}
+                onChange={(id) =>
+                  resetPage(() => {
+                    setSort(id);
+                    setDirection(
+                      sort === id && direction === "asc" ? "desc" : "asc",
+                    );
+                  })
+                }
+              />
+              <MetaAnalysisPeriod
+                value={calendar ? "custom" : analysisPeriod}
+                since={since}
+                until={until}
+                onPreset={(id) => {
+                  setAnalysisPeriod(id);
+                  setCalendar("");
+                  setSince("");
+                  setUntil("");
+                  if (sort === "custom") setSort("today");
+                }}
+                onRange={(start, end) => {
+                  setSince(start);
+                  setUntil(end);
+                  setCalendar("custom");
+                  setPage(1);
+                }}
+              />
               <label>
                 Buscar por palabra
                 <input
@@ -1882,51 +1819,42 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
                 />
               </label>
             </div>
-            {(campaign || adset) && (
-              <div
-                className="row meta-breadcrumbs"
-                aria-label="Ámbito de resultados"
-              >
+            {selectedObjects.some(
+              (o) =>
+                o.level === level &&
+                (!accountIds.length || accountIds.includes(o.accountId)),
+            ) && (
+              <div className="row meta-selection-tools">
+                <span>
+                  {
+                    selectedObjects.filter(
+                      (o) =>
+                        o.level === level &&
+                        (!accountIds.length ||
+                          accountIds.includes(o.accountId)),
+                    ).length
+                  }{" "}
+                  seleccionados
+                </span>
                 <button
                   type="button"
-                  onClick={() =>
-                    resetPage(() => {
-                      setCampaign("");
-                      setAdset("");
-                      setLevel("campaign");
-                    })
-                  }
-                >
-                  Todas las campañas
-                </button>
-                {campaign && (
-                  <button
-                    type="button"
-                    onClick={() =>
-                      resetPage(() => {
-                        setAdset("");
-                        setLevel("adset");
-                      })
+                  onClick={() => {
+                    setSelectedObjects((old) =>
+                      old.filter(
+                        (o) =>
+                          o.level !== level ||
+                          (accountIds.length > 0 &&
+                            !accountIds.includes(o.accountId)),
+                      ),
+                    );
+                    if (level === "campaign") {
+                      setCampaignScope([]);
+                      setAdsetScope([]);
                     }
-                  >
-                    {objects.find((o) => o.id === campaign)?.name ?? campaign}
-                  </button>
-                )}
-                {adset && (
-                  <span>
-                    {objects.find((o) => o.id === adset)?.name ?? adset}
-                  </span>
-                )}
-                <button
-                  type="button"
-                  onClick={() =>
-                    resetPage(() => {
-                      setCampaign("");
-                      setAdset("");
-                    })
-                  }
+                    if (level === "adset") setAdsetScope([]);
+                  }}
                 >
-                  Quitar selección
+                  Deseleccionar este nivel
                 </button>
               </div>
             )}
@@ -1981,6 +1909,9 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
                   <table>
                     <thead>
                       <tr>
+                        <th className="meta-check-cell">
+                          <span className="sr-only">Selección</span>
+                        </th>
                         <th>Campaña / Conjunto / Anuncio</th>
                         <th>Cuenta / Resultado</th>
                         <th>Estado</th>
@@ -2001,7 +1932,26 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
                             ),
                         )
                         .map((o) => (
-                          <tr key={o.id}>
+                          <tr
+                            key={o.id}
+                            data-object-id={o.id}
+                            aria-selected={selectedIds.has(o.id)}
+                            className={
+                              selectedIds.has(o.id)
+                                ? "meta-object-selected"
+                                : ""
+                            }
+                          >
+                            <td className="meta-check-cell">
+                              <input
+                                type="checkbox"
+                                aria-label={`Seleccionar ${o.name}`}
+                                checked={selectedIds.has(o.id)}
+                                onChange={(e) =>
+                                  selectObject(o, e.target.checked)
+                                }
+                              />
+                            </td>
                             <td>
                               <button
                                 type="button"
@@ -2086,14 +2036,29 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
                       return (
                         <article
                           className={
-                            "meta-card meta-rating-" + o.rating.toLowerCase()
+                            "meta-card meta-rating-" +
+                            o.rating.toLowerCase() +
+                            (selectedIds.has(o.id)
+                              ? " meta-object-selected"
+                              : "")
                           }
                           key={o.id}
+                          data-object-id={o.id}
                         >
                           <header>
-                            <span className="meta-account-name">
-                              {o.accountName} · {o.currency}
-                            </span>
+                            <label className="meta-object-check">
+                              <input
+                                type="checkbox"
+                                aria-label={`Seleccionar ${o.name}`}
+                                checked={selectedIds.has(o.id)}
+                                onChange={(e) =>
+                                  selectObject(o, e.target.checked)
+                                }
+                              />
+                              <span className="meta-account-name">
+                                {o.accountName} · {o.currency}
+                              </span>
+                            </label>
                             <span
                               className={
                                 "meta-delivery " +
