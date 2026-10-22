@@ -1,5 +1,6 @@
 "use client";
 import { useCallback, useEffect, useState, useRef } from "react";
+import { MetaMarketingOAuth, type MarketingOAuthInfo } from "./meta-marketing-oauth";
 import { MetaAccountPicker } from "./meta-account-picker";
 import { matchesAccount, activityOptions, accountActivityText, type AccountActivity } from "../../lib/meta-ads/account-filters";
 import { parseMetaPreferences } from "../../lib/meta-ads/preferences";
@@ -16,6 +17,10 @@ type Connection = {
   verifiedAt: string | null;
   disconnectedAt: string | null;
   lastError: string | null;
+  loginConfigId: string | null;
+  appSecretConfiguredAt: string | null;
+  authMethod: string | null;
+  tokenExpiresAt: string | null;
 };
 type Account = {
   activity?: AccountActivity;
@@ -240,6 +245,8 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
     [busy, setBusy] = useState(false),
     [loading, setLoading] = useState(false),
     [transport, setTransport] = useState("MCP"),
+    [apiMode, setApiMode] = useState("oauth"),
+    [marketingInfo, setMarketingInfo] = useState<MarketingOAuthInfo | null>(null),
     [revision, setRevision] = useState(0),
     [sharing, setSharing] = useState<Account | null>(null);
   const preferencesKey = `meta-ads:preferences:v1:${userId}`;
@@ -275,9 +282,9 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
   useEffect(() => {
     if (!preferencesReady || !owner || tab !== "connections") return;
     let live = true;
-    api("meta-ads/connections")
-      .then((data) => {
-        if (live) setConnections(data);
+    Promise.all([api("meta-ads/connections"), api("meta-ads/marketing-oauth-config")])
+      .then(([data, info]) => {
+        if (live) { setConnections(data); setMarketingInfo(info); }
       })
       .catch((e) => {
         if (live) setMessage(e.message);
@@ -511,7 +518,7 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
           <section className="panel stack">
             <h2>Dos formas de conectar, un solo panel</h2>
             <p>
-              Marketing API usa el token de tu app de Meta. MCP descubre
+              Marketing API permite autorizar con tu propia app de Facebook o guardar un token manual. MCP descubre
               herramientas de lectura en el servidor configurado de Meta.
               Autorizar no demuestra que todas las métricas estén disponibles:
               la verificación indica las capacidades que ofrece tu cuenta.
@@ -532,7 +539,8 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
                 Mi app · Marketing API
               </button>
             </div>
-            <form
+            {transport === "API" && <><div className="row"><button type="button" className={apiMode === "oauth" ? "primary" : ""} onClick={() => setApiMode("oauth")}>Autorizar con Facebook</button><button type="button" className={apiMode === "manual" ? "primary" : ""} onClick={() => setApiMode("manual")}>Token manual</button></div>{apiMode === "oauth" && <MetaMarketingOAuth info={marketingInfo} onUpdated={() => { void refresh().catch(e => setMessage(e.message)); setRevision(r => r + 1); }} />}</>}
+            {(transport === "MCP" || apiMode === "manual") && <form
               className="stack"
               onSubmit={(e) => {
                 e.preventDefault();
@@ -630,7 +638,7 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
               <button type="submit" disabled={busy} className="primary">
                 {transport === "MCP" ? "Conectar con Meta" : "Guardar conexión API"}
               </button>
-            </form>
+            </form>}
             {transport === "API" && <details>
               <summary>Preparar mi app de Meta · pruebas y publicación</summary>
               <div className="inside stack">
@@ -641,7 +649,7 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
                   <li>Ejecuta GET <code>/me/adaccounts?fields=id,name</code>. Consultar <code>/me?fields=id,name</code> solo confirma tu perfil; no acredita acceso publicitario. Una lista vacía indica que Meta no devuelve cuentas accesibles para ese token.</li>
                   <li>Guarda el token únicamente en el campo protegido. Si la conexión ya existe, actualiza su versión en su propia tarjeta y vuelve a verificarla; no necesitas eliminarla.</li>
                 </ol>
-                <p>Esta integración solo lee cuentas y estadísticas. No solicita ads_management ni requiere configurar Facebook Login para verificar un token manual. El retorno OAuth del MCP es un flujo distinto: no lo copies como configuración de tu app Marketing API.</p>
+                <p>Esta integración solo lee cuentas y estadísticas. No solicita ads_management. OAuth requiere configurar Facebook Login con la URI indicada; verificar un token manual sigue siendo una alternativa independiente. El retorno OAuth del MCP es un flujo distinto: no lo copies como configuración de tu app Marketing API.</p>
                 <p>Para usuarios externos pueden hacer falta publicación, revisión de permisos y verificación del negocio según lo que Meta solicite. Completa dominio, privacidad y eliminación de datos con información real de tu servicio; la plataforma no puede aprobar esos requisitos por ti. No generes llamadas artificiales ni cambies campañas para completar los contadores de pruebas.</p>
               </div>
             </details>}
@@ -672,6 +680,8 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
                 {c.transport === "API" ? `Graph ${c.apiVersion} · GET /me/adaccounts · ` : ""}{c.tokenMask ?? "Sin token guardado"} · Última verificación:{" "}
                 {displayTime(c.verifiedAt)}
               </small>
+              {c.transport === "API" && <small>Credencial: {c.authMethod === "OAUTH" ? "OAuth de tu app" : "Token manual"} · Caducidad: {c.tokenExpiresAt ? displayTime(c.tokenExpiresAt) : "No informada"}{c.tokenExpiresAt && Date.parse(c.tokenExpiresAt) <= Date.now() ? " · Reconecta con Facebook" : ""}</small>}
+              {c.transport === "API" && !c.disconnectedAt && <details><summary>Conectar con Facebook · configuración OAuth de mi app</summary><div className="inside"><MetaMarketingOAuth key={c.id + (c.appSecretConfiguredAt ?? "")} connection={c} info={marketingInfo} onUpdated={() => { void refresh().catch(e => setMessage(e.message)); setRevision(r => r + 1); }} /></div></details>}
               {c.lastError && <p className="notice">{c.lastError}</p>}
               {c.transport === "API" && <form className="row" onSubmit={e=>{e.preventDefault();const apiVersion=String(new FormData(e.currentTarget).get("apiVersion"));void run(async()=>{await api(`meta-ads/connections/${c.id}`,"PATCH",{apiVersion});},"Versión actualizada. Se conserva el token; vuelve a Verificar y traer cuentas.");}}>
                 <label>Versión Graph guardada<input name="apiVersion" defaultValue={c.apiVersion} key={c.apiVersion} required pattern="v[0-9]{2}\.0" /></label>

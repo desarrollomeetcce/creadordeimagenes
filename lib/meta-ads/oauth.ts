@@ -169,7 +169,7 @@ export async function finishOAuth(req: NextRequest) {
       400,
     );
     const row = await db.metaOAuthState.findUnique({
-      where: { id: hash(state) },
+      where: { id: hash(state), purpose: "MCP" },
     });
     demand(
       row &&

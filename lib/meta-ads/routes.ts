@@ -18,6 +18,8 @@ import {
 import { dashboard } from "./dashboard";
 import { syncProgress } from "./sync-progress";
 import { beginOAuth } from "./oauth";
+import { beginMarketingOAuth, configureMarketingApp } from "./marketing-oauth";
+import { marketingOAuthInfo } from "./marketing-policy";
 import { accountActivities } from "./account-activity";
 const cfg = z
   .object({
@@ -44,6 +46,9 @@ export async function metaRoutes(
 ) {
   const path = parts.slice(1).join("/"),
     method = req.method;
+  if (path === "marketing-oauth-config" && method === "GET") {
+    ownerOnly(actor); return send(marketingOAuthInfo(process.env.APP_ORIGIN));
+  }
   if (path === "connections") {
     ownerOnly(actor);
     if (method === "GET")
@@ -87,9 +92,14 @@ export async function metaRoutes(
     const id = parts[2];
     const c = await db.metaConnection.findUnique({ where: { id } });
     demand(c, "Conexión no encontrada.", 404);
+    if (parts[3] === "app" && method === "PATCH") return send(await configureMarketingApp(actor, id, await body()));
     if (parts[3] === "verify" && method === "POST")
       return send(await discover(actor, id));
     if (parts[3] === "oauth" && method === "POST") {
+      if (c.transport === "API") {
+        z.object({}).strict().parse(await body());
+        return beginMarketingOAuth(req, actor, id);
+      }
       const b = z
         .object({ clientId: z.string().max(300).optional() })
         .strict()
@@ -99,6 +109,7 @@ export async function metaRoutes(
     if (parts[3] === "tools" && method === "GET") return send(c.tools);
     if (method === "PATCH" && !parts[3]) {
       const b = cfg.partial().parse(await body());
+      demand(!b.appId || b.appId === c.appId || !c.encryptedAppSecret, "Cambia el ID y la clave de la app desde Configuración OAuth.", 409);
       demand(
         !b.transport || b.transport === c.transport,
         "Crea otra conexión para cambiar de tipo.",
@@ -124,6 +135,9 @@ export async function metaRoutes(
           where: { id },
           data: {
             encryptedToken: null,
+            encryptedAppSecret: null,
+            appSecretConfiguredAt: null,
+            tokenExpiresAt: null,
             tokenMask: null,
             verifiedAt: null,
             disconnectedAt: new Date(),

@@ -8,6 +8,29 @@ Como OWNER, abre Meta Ads → Conexiones → Mi app · Marketing API. Crea/confi
 
 Guarda nombre, versión Graph compatible con tu app, ID de app opcional y token de acceso. La versión inicial del formulario es v23.0, no una afirmación de ser la versión más reciente: se puede cambiar antes de guardar. Nunca enviar tokens por chat, Git ni logs. Pulsa Verificar y traer cuentas. La verificación comprueba lectura de cuentas; sincronizar comprueba los campos de objetos/estadísticas.
 
+## Conectar mi propia app con Facebook (OAuth de Marketing API)
+
+En OWNER → Meta Ads → Conexiones → Mi app · Marketing API, el modo **Autorizar con Facebook** permite una conexión nueva. Si ya existe PULPO ANALISIS Y AUTO, utiliza su tarjeta → **Conectar con Facebook · configuración OAuth de mi app** para mantener el vínculo de las cuentas y el histórico.
+
+Guarda el ID y la clave secreta de la app desde Meta for Developers → Configuración básica, usando únicamente el campo PasswordInput protegido de la plataforma. El secreto se cifra en el servidor con contexto por conexión y no vuelve al navegador. No compartirlo por chat ni guardarlo en Git. Si la app exige Facebook Login para empresas, crea una configuración de **token de usuario** con ads_read y pega su ID opcional; no confundirlo con appId/cuenta publicitaria. No requiere Vercel Connect ni otra cuenta intermediaria y funciona también en el VPS.
+
+Registra estas URI exactas en **Facebook Login → Configurar → URI de redireccionamiento OAuth válidos**:
+
+- `https://generator.agenciamagneto.org/api/meta/marketing/oauth/callback`
+- `https://creadordeimagenes-three.vercel.app/api/meta/marketing/oauth/callback`
+
+Se pueden registrar ambas. Cada instalación utiliza la correspondiente a su APP_ORIGIN. En el VPS: `APP_ORIGIN=https://generator.agenciamagneto.org`; en Vercel: `APP_ORIGIN=https://creadordeimagenes-three.vercel.app`. Sin ruta, query o fragmento. La plataforma muestra la URI efectiva y bloquea autorización desde otro dominio. Una base compartida no sustituye una configuración de origen correcta; no se modificaron variables reales del VPS desde este entorno.
+
+Ajustes de la pantalla de Facebook Login: inicio de sesión del cliente OAuth Sí; OAuth web Sí; HTTPS Sí; modo estricto de URI Sí. No se utiliza SDK de JavaScript, dispositivos o navegador integrado: dejar esas opciones No y dominios del SDK vacíos. Forzar reautenticación es opcional, no necesario para este flujo. La URL de autorización cancelada (deautorización programática) y la de solicitud de eliminación programática permanecen vacías: este cambio no implementa esos callbacks firmados. En Configuración básica, eliminación de datos usa **URL de instrucciones** con `/eliminacion-de-datos`, no el callback OAuth.
+
+El validador de URI solo comprueba una dirección; no sustituye registrarla y guardar la lista de URI válidas. Abrir manualmente el callback sin state/código produce un error controlado: se utiliza regresando de la autorización iniciada por OWNER desde la plataforma.
+
+El flujo usa código confidencial con App Secret, state de un uso y vinculación a navegador/sesión/revisión; no presume PKCE ni reutiliza cliente MCP. Intercambia un token de larga duración mediante el endpoint oficial, verifica identidad, permiso ads_read y consulta mínima de cuentas antes de sustituir la credencial. Después importa todas las páginas autorizadas antes de mostrar Acceso verificado. Solo consulta Meta, sin anuncios de prueba ni cambios en campañas. Se conserva un error específico y saneado ante rechazo. Denegar antes de guardar mantiene la credencial anterior.
+
+Caducidad: se guarda la que Meta devuelva y se muestra en la tarjeta; si no se informa, se indica No informada. Un token de larga duración también puede vencer/revocarse y no dispone de una renovación perpetua: usa Reconectar con Facebook. Sesión revocada o app/credencial modificada durante el intercambio bloquean persistencia tardía. Roles elevados y asignaciones permanecen independientes de la identidad de Facebook. App en desarrollo y acceso de terceros siguen sujetos a las reglas y revisión de Meta.
+
+Verificación propia: Meta está bloqueado por política de red en este entorno. Las pruebas usan dobles explícitos y base sintética exclusiva; no acreditan que la app real tenga acceso avanzado ni completan su revisión. La autorización real requiere que el usuario registre la URI, guarde sus credenciales oficiales y acepte el consentimiento en Facebook.
+
 ## Conectar MCP con OAuth
 
 Como OWNER, entra en Meta Ads → Conexiones → Conexión MCP y pulsa **Conectar con Meta**. No hace falta copiar un token. La plataforma crea una conexión pendiente y consulta metadatos públicos del destino fijo `https://mcp.facebook.com/ads`. No abre una URL inventada ni considera ese intento una conexión exitosa.
@@ -29,7 +52,7 @@ El token manual queda en Configuración avanzada y se verifica al guardarlo. Deb
 
 Necesitas un cliente OAuth público **oficialmente admitido por Meta para el MCP**, con PKCE S256 y la URL de retorno registrada, o una credencial MCP emitida por su proceso oficial. No se puede fabricar una identidad autorizada ni utilizar credenciales de otro asistente. Si Meta no ofrece ese registro para tu caso, conserva la conexión pendiente o desconéctala y utiliza **Mi app · Marketing API**.
 
-Para Marketing API necesitas tu propia app de Meta habilitada para acceso publicitario, token de usuario o usuario del sistema con `ads_read` y acceso a las cuentas correspondientes; `business_management` cuando el tipo de acceso empresarial lo requiera. Revisión de app, roles y verificación del negocio dependen de Meta. Configura versión Graph compatible e introduce el token solo en el campo protegido; pulsa Verificar y traer cuentas. No compartas contraseña, token ni App Secret por chat o Git. El campo ID de app es informativo/opcional y no sustituye los permisos del token.
+Para Marketing API necesitas tu propia app de Meta habilitada para acceso publicitario, token de usuario o usuario del sistema con `ads_read` y acceso a las cuentas correspondientes; `business_management` cuando el tipo de acceso empresarial lo requiera. Revisión de app, roles y verificación del negocio dependen de Meta. Configura versión Graph compatible e introduce el token solo en el campo protegido; pulsa Verificar y traer cuentas. No compartas contraseña, token ni App Secret por chat o Git. En la alternativa manual, el ID de app es informativo/opcional y no sustituye los permisos del token; en OAuth propio es obligatorio junto con su clave secreta.
 
 ### Resultado de esta verificación
 

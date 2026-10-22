@@ -645,6 +645,12 @@ model MetaConnection {
   transport String
   apiVersion String @default("v23.0")
   appId String?
+  encryptedAppSecret String?
+  appSecretConfiguredAt DateTime?
+  loginConfigId String?
+  authMethod String?
+  tokenExpiresAt DateTime?
+  metaUserId String?
   encryptedToken String?
   tokenMask String?
   revision Int @default(1)
@@ -734,6 +740,7 @@ model MetaAdDaily {
 }
 model MetaOAuthState {
   id String @id
+  purpose String @default("MCP")
   connectionId String
   ownerId String
   sessionId String

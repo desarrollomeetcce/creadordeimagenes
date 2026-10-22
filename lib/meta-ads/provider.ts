@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { randomUUID, createHmac } from "node:crypto";
 import { AppError, demand } from "../errors";
 import {
   MetaGraphError,
@@ -235,6 +235,7 @@ export class MetaReader {
     private token: string,
     private transport: string,
     private version: string,
+    private appSecret?: string,
   ) {}
   async rpc(
     method: string,
@@ -428,6 +429,7 @@ export class MetaReader {
           : fields(op),
       );
       u.searchParams.set("limit", "100");
+      if (this.appSecret) u.searchParams.set("appsecret_proof", createHmac("sha256", this.appSecret).update(this.token).digest("hex"));
       if (q.after) u.searchParams.set("after", q.after);
       if (op === "insights") {
         u.searchParams.set("level", q.level!);

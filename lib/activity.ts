@@ -369,6 +369,7 @@ const verbs: Record<string, string> = {
   PLAN_PERSONALIZADO_CREADO: "Creó y asignó un plan personalizado",
   PLAN_RETIRADO: "Retiró un plan de nuevas contrataciones",
   SOLICITUD_PRIVACIDAD_ATENDIDA: "Atendió una solicitud de privacidad",
+  META_APP_OAUTH_CONFIGURADA: "Configuró la app de Meta para OAuth",
   PAGINA_PUBLICA_ACTUALIZADA: "Actualizó una sección de la página pública",
   PLAN_ASIGNADO: "Asignó un plan a la cuenta",
   PLAN_ACTUALIZADO: "Actualizó un plan y sus cuotas",

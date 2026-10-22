@@ -21,6 +21,10 @@ export const connectionSelect = {
   transport: true,
   apiVersion: true,
   appId: true,
+  appSecretConfiguredAt: true,
+  loginConfigId: true,
+  authMethod: true,
+  tokenExpiresAt: true,
   tokenMask: true,
   revision: true,
   verifiedAt: true,
@@ -84,12 +88,14 @@ export async function reader(id: string, allowUnverified = false) {
     "La conexión cambió o todavía no se verificó. Verifica antes de sincronizar.",
     409,
   );
+  demand(!c.tokenExpiresAt || c.tokenExpiresAt > new Date(), "El token de Facebook caducó. Pulsa Conectar con Facebook para renovar la autorización.", 409);
   return {
     connection: c,
     reader: new MetaReader(
       decryptKey(c.encryptedToken, `meta:${c.id}`),
       c.transport,
       c.apiVersion,
+      c.transport === "API" && c.authMethod === "OAUTH" && c.encryptedAppSecret ? decryptKey(c.encryptedAppSecret, `meta-app:${c.id}`) : undefined,
     ),
   };
 }
@@ -405,6 +411,7 @@ export async function saveToken(
   id: string,
   token: string,
   expectedRevision?: number,
+  options?: { method: "OAUTH"; expiresAt: Date | null; metaUserId: string; sessionId: string },
 ) {
   return db.$transaction(async (tx) => {
     await tx.$executeRaw`SELECT pg_advisory_xact_lock(884411)`;
@@ -418,6 +425,7 @@ export async function saveToken(
       where: { id: c.ownerId, role: "OWNER", status: "APPROVED" },
     });
     demand(owner, "El propietario de la conexión ya no está autorizado.", 403);
+    if (options) demand(await tx.session.findFirst({ where: { id: options.sessionId, userId: c.ownerId, expiresAt: { gt: new Date() }, user: { role: "OWNER", status: "APPROVED" } } }), "La sesión original ya no está autorizada.", 401);
     const changed = await tx.metaConnection.updateMany({
       where: { id, revision: c.revision },
       data: {
@@ -428,6 +436,9 @@ export async function saveToken(
         disconnectedAt: null,
         lastError: null,
         tools: [],
+        authMethod: options?.method ?? (c.transport === "MCP" ? "MCP" : "MANUAL"),
+        tokenExpiresAt: options?.expiresAt ?? null,
+        metaUserId: options?.metaUserId ?? null,
       },
     });
     demand(changed.count, "La conexión cambió. Vuelve a intentarlo.", 409);
