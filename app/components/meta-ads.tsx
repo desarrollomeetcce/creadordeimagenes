@@ -244,7 +244,7 @@ function SyncIndicator({
 }) {
   const p = account.progress;
   if (!p || p.status === "disabled") return null;
-  const ongoing = ["running", "queued", "stalled", "error", "paused"].includes(
+  const ongoing = ["running", "queued", "stalled", "error", "paused", "waiting"].includes(
     p.status,
   );
   return (
@@ -264,6 +264,9 @@ function SyncIndicator({
         <small>
           Comparativos recientes disponibles. Completando el histórico.
         </small>
+      )}
+      {p.status === "waiting" && p.nextSyncAt && (
+        <p className="notice">Avance guardado. Próximo intento automático: {displayTime(p.nextSyncAt)}. {p.waitReason !== "pacing" && "Meta puede ampliar la espera si el límite continúa."}</p>
       )}
       {onControl && ongoing && (
         <div className="row">
@@ -1250,8 +1253,8 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
                   />
                 )}
                 {a.syncError && (
-                  <details className="notice" open>
-                    <summary>No se completó la sincronización</summary>
+                  <details className="notice" open={a.progress?.status !== "waiting"}>
+                    <summary>{a.progress?.status === "waiting" ? "Detalle del límite de Meta" : "No se completó la sincronización"}</summary>
                     <p>{a.syncError}</p>
                   </details>
                 )}
@@ -1270,7 +1273,7 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
                           { focused: true, recentDays },
                         );
                         setMessage(
-                          r.syncError ??
+                          r.waiting ? "Sincronización programada después de la pausa por límite de Meta." : r.syncError ??
                             (r.resumed
                               ? "Sincronización retomada."
                               : "Análisis iniciado. Primero se cargarán los datos recientes y después el histórico."),
@@ -1298,10 +1301,11 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
                     </label>
                     <button
                       className="primary"
-                      disabled={busy || !a.connection?.verifiedAt}
+                      disabled={busy || !a.connection?.verifiedAt || a.progress?.status === "waiting"}
                     >
                       {busy
                         ? "Procesando…"
+                        : a.progress?.status === "waiting" ? "Esperando a Meta"
                         : a.progress &&
                             ["running", "stalled", "error", "paused"].includes(
                               a.progress.status,

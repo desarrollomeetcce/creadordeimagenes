@@ -10,9 +10,11 @@ const labels = [
 export type SyncProgress = {
   focused: boolean;
   recentReady: boolean;
+  waitReason: "quota" | "pacing" | null;
   recentDays: number;
   scope: string | null;
   status:
+    | "waiting"
     | "paused"
     | "cancelled"
     | "disabled"
@@ -45,6 +47,8 @@ export function syncProgress(
     a.syncState && typeof a.syncState === "object" ? a.syncState : {}
   ) as {
     stop?: string;
+    quotaUntil?: unknown;
+    waitReason?: unknown;
     recentReady?: boolean;
     recentDays?: number;
     plan?: string;
@@ -83,23 +87,33 @@ export function syncProgress(
     phase !== null
       ? !!lastActivityAt && now - Date.parse(lastActivityAt) > 180000
       : waiting && !!a.nextSyncAt && now - a.nextSyncAt.valueOf() > 180000;
+  const quotaWaiting =
+    !!date(s.quotaUntil) && Date.parse(date(s.quotaUntil)!) > now;
   const status = !a.enabled
     ? s.stop === "paused"
       ? "paused"
       : s.stop === "cancelled"
         ? "cancelled"
         : "disabled"
-    : a.syncError
-      ? "error"
-      : stale
-        ? "stalled"
-        : phase !== null
-          ? "running"
-          : waiting
-            ? "queued"
-            : "complete";
+    : quotaWaiting
+      ? "waiting"
+      : a.syncError
+        ? "error"
+        : stale
+          ? "stalled"
+          : phase !== null
+            ? "running"
+            : waiting
+              ? "queued"
+              : "complete";
   return {
     focused,
+    waitReason:
+      status === "waiting"
+        ? s.waitReason === "pacing"
+          ? "pacing"
+          : "quota"
+        : null,
     recentReady: !!(
       s.recentReady ||
       (phase === null && s.lastRun?.recentReady)
@@ -112,32 +126,36 @@ export function syncProgress(
     phase: status === "complete" ? totalPhases : (phase ?? 0),
     totalPhases,
     label:
-      status === "paused"
-        ? "Sincronización pausada"
-        : status === "cancelled"
-          ? "Sincronización cancelada"
-          : status === "disabled"
-            ? "Sincronización deshabilitada"
-            : status === "error"
-              ? "Importación detenida por un error"
-              : status === "stalled"
-                ? "Sin avance reciente confirmado"
-                : status === "queued"
-                  ? "Esperando al ejecutor"
-                  : status === "complete"
-                    ? "Última importación completada"
-                    : s.plan === "focus"
-                      ? focusedLabels[phase ?? 0]
-                      : (s.plan === "activity"
-                          ? [
-                              "Resultados de campañas",
-                              "Resultados de conjuntos",
-                              "Resultados de anuncios",
-                              "Detalles de campañas",
-                              "Detalles de conjuntos",
-                              "Detalles de anuncios",
-                            ]
-                          : labels)[phase ?? 0],
+      status === "waiting"
+        ? s.waitReason === "pacing"
+          ? "Esperando el turno de consulta"
+          : "En espera por límite de consultas de Meta"
+        : status === "paused"
+          ? "Sincronización pausada"
+          : status === "cancelled"
+            ? "Sincronización cancelada"
+            : status === "disabled"
+              ? "Sincronización deshabilitada"
+              : status === "error"
+                ? "Importación detenida por un error"
+                : status === "stalled"
+                  ? "Sin avance reciente confirmado"
+                  : status === "queued"
+                    ? "Esperando al ejecutor"
+                    : status === "complete"
+                      ? "Última importación completada"
+                      : s.plan === "focus"
+                        ? focusedLabels[phase ?? 0]
+                        : (s.plan === "activity"
+                            ? [
+                                "Resultados de campañas",
+                                "Resultados de conjuntos",
+                                "Resultados de anuncios",
+                                "Detalles de campañas",
+                                "Detalles de conjuntos",
+                                "Detalles de anuncios",
+                              ]
+                            : labels)[phase ?? 0],
     pages: integer(phase === null ? s.lastRun?.pages : s.pages),
     processed: integer(phase === null ? s.lastRun?.processed : s.processed),
     lastActivityAt: lastActivityAt ?? date(s.lastRun?.finishedAt),

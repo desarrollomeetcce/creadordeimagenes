@@ -638,6 +638,13 @@ model LargeAssetChunk {
  @@id([assetId,index])
 }
 
+model MetaApiQuota {
+  scope String @id
+  nextReadAt DateTime @default(now()) @db.Timestamptz
+  blockedUntil DateTime? @db.Timestamptz
+  lastLimitedAt DateTime? @db.Timestamptz
+  failures Int @default(0)
+}
 model MetaConnection {
   id String @id @default(cuid())
   ownerId String

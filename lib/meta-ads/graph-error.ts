@@ -38,8 +38,22 @@ export function redactGraphMessage(value: unknown, token: string) {
     .replace(/[\u0000-\u001f\u007f]/g, " ")
     .slice(0, 600);
 }
+// Graph often reports throttling as HTTP 400, rather than HTTP 429.
+export function isGraphQuota(status: number, code: number | null) {
+  return status === 429 || [4, 17, 32, 613, 80000, 80004].includes(code ?? -1);
+}
+export function retryDelay(header: string | null, now = Date.now()) {
+  if (!header || header.length > 100) return 0;
+  const seconds = /^\d+(?:\.\d+)?$/.test(header)
+    ? Number(header)
+    : (Date.parse(header) - now) / 1000;
+  return Number.isFinite(seconds)
+    ? Math.max(0, Math.min(86400000, seconds * 1000))
+    : 0;
+}
 export class MetaGraphError extends AppError {
   diagnostic: GraphDiagnostic;
+  retryAt?: Date;
   constructor(
     status: number,
     payload: unknown,
@@ -63,7 +77,7 @@ export class MetaGraphError extends AppError {
     };
     super(
       `Meta Graph ${context.version} · GET /${context.endpoint} · campos ${context.fields} · HTTP ${status}${diagnostic.code !== null ? ` · código ${diagnostic.code}` : ""}${diagnostic.subcode !== null ? ` / subcódigo ${diagnostic.subcode}` : ""}: ${diagnostic.message}`,
-      status === 429 ? 429 : 502,
+      isGraphQuota(status, diagnostic.code) ? 429 : 502,
     );
     this.name = "MetaGraphError";
     this.diagnostic = diagnostic;

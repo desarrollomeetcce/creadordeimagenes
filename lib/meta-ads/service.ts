@@ -1,3 +1,4 @@
+import { metaQuotaScope, quotaHooks, quotaUntil, MetaQuotaWait } from "./quota";
 import { focusedReportDay } from "./focused-labels";
 import { focusedSyncStep, type FocusState } from "./focused-sync";
 import { writeSyncPage } from "./bulk-sync";
@@ -76,7 +77,7 @@ export async function access(actor: Actor, id: string, sync = false) {
     );
   return a;
 }
-export async function reader(id: string, allowUnverified = false) {
+export async function reader(id: string, allowUnverified = false, paced = false) {
   const c = await db.metaConnection.findUniqueOrThrow({ where: { id } });
   const owner = await db.user.findFirst({
     where: { id: c.ownerId, role: "OWNER", status: "APPROVED" },
@@ -92,13 +93,15 @@ export async function reader(id: string, allowUnverified = false) {
     409,
   );
   demand(!c.tokenExpiresAt || c.tokenExpiresAt > new Date(), "El token de Facebook caducó. Pulsa Conectar con Facebook para renovar la autorización.", 409);
+  const token = decryptKey(c.encryptedToken, `meta:${c.id}`);
   return {
     connection: c,
     reader: new MetaReader(
-      decryptKey(c.encryptedToken, `meta:${c.id}`),
+      token,
       c.transport,
       c.apiVersion,
       c.transport === "API" && c.authMethod === "OAUTH" && c.encryptedAppSecret ? decryptKey(c.encryptedAppSecret, `meta-app:${c.id}`) : undefined,
+      c.transport === "API" ? quotaHooks(metaQuotaScope(c, token), paced) : undefined,
     ),
   };
 }
@@ -378,7 +381,7 @@ export async function discover(
     try {
       await db.metaConnection.updateMany({
         where: { id, revision: c.revision },
-        data: { lastError: message, verifiedAt: null },
+        data: { lastError: message, ...(e instanceof MetaQuotaWait || e instanceof MetaGraphError && e.status === 429 ? {} : {verifiedAt:null}) },
       });
     } catch (persistenceError) {
       console.warn(
@@ -494,6 +497,7 @@ export async function queueSync(actor: Actor, id: string, full = false, recentDa
   demand(!recentDays || (!full && [7,15,30,90,180].includes(recentDays) && a.connection.transport === "API"), "La importación rápida admite 30, 90 o 180 días con Marketing API.");
   demand(!focused || (!full && a.connection.transport === "API" && (!recentDays || [7,15,30,90].includes(recentDays))), "La sincronización de análisis requiere Marketing API y un periodo válido.");
   await rateLimit("meta:sync:" + actor.id, 30);
+  const deferredUntil = a.connection.transport === "API" && a.connection.encryptedToken ? await quotaUntil(metaQuotaScope(a.connection, decryptKey(a.connection.encryptedToken, `meta:${a.connection.id}`))) : null;
   const progress = syncProgress(a);
   const focusResume = focused && (a.syncState as {plan?:string}).plan === "focus" && typeof (a.syncState as State).phase === "number" && (!recentDays || recentDays === (a.syncState as State).recentDays);
   const focusStart=focused && !focusResume;
@@ -513,15 +517,15 @@ export async function queueSync(actor: Actor, id: string, full = false, recentDa
       ],
     },
     data: {
-      nextSyncAt: new Date(),
-      syncError: null,
+      nextSyncAt: deferredUntil ?? new Date(),
+      syncError: deferredUntil ? a.syncError : null,
       ...(recover || full || recentDays || focusStart ? { schedulerToken: null, schedulerRunId: null } : {}),
       ...(focused ? {enabled:true} : {}),
-      ...(focused ? {syncState:focusResume?{...(a.syncState as Prisma.InputJsonObject),stop:null}:{plan:"focus",recentDays:recentDays??7,phase:0,started:new Date().toISOString(),until:localDay(a.timezone),...(focusedReportDay(a.syncState)?{lastReportUntil:focusedReportDay(a.syncState)}:{}),...((a.syncState as State).lastRun?{lastRun:(a.syncState as State).lastRun}:{})}} : full ? { syncState: {mode:"history"} } : recentDays ? {syncState:{plan:"activity",recentDays,phase:0,mode:"recent",since:shiftDay(localDay(a.timezone),1-recentDays),until:localDay(a.timezone), ...((a.syncState as State).lastRun ? {lastRun:(a.syncState as State).lastRun} : {})}} : {}),
+      ...(focused ? {syncState:focusResume?{...(a.syncState as Prisma.InputJsonObject),stop:null,quotaUntil:deferredUntil?.toISOString()??null}:{quotaUntil:deferredUntil?.toISOString()??null,plan:"focus",recentDays:recentDays??7,phase:0,started:new Date().toISOString(),until:localDay(a.timezone),...(focusedReportDay(a.syncState)?{lastReportUntil:focusedReportDay(a.syncState)}:{}),...((a.syncState as State).lastRun?{lastRun:(a.syncState as State).lastRun}:{})}} : full ? { syncState: {mode:"history"} } : recentDays ? {syncState:{plan:"activity",recentDays,phase:0,mode:"recent",since:shiftDay(localDay(a.timezone),1-recentDays),until:localDay(a.timezone), ...((a.syncState as State).lastRun ? {lastRun:(a.syncState as State).lastRun} : {})}} : {}),
     },
   });
   demand(updated.count, "La cuenta ya está procesando una página o su conexión cambió. Espera a que termine y vuelve a consultar el progreso.", 409);
-  return { queued: true, resumed };
+  return { queued: true, resumed, waiting: !!deferredUntil };
 }
 export async function syncStep(id: string, expectedSchedule?:string): Promise<boolean> {
   const token = randomUUID(),
@@ -545,7 +549,7 @@ export async function syncStep(id: string, expectedSchedule?:string): Promise<bo
     syncPhase = "inicio";
   try {
     const a = await db.metaAdAccount.findUniqueOrThrow({ where: { id } }),
-      { connection: c, reader: r } = await reader(a.connectionId);
+      { connection: c, reader: r } = await reader(a.connectionId, false, true);
     revision = c.revision;
     const state = a.syncState as State;
     if ((state as {plan?:string}).plan === "focus") {
@@ -847,14 +851,19 @@ export async function syncStep(id: string, expectedSchedule?:string): Promise<bo
       e instanceof AppError
         ? e.message
         : `Falló el guardado de la importación en ${syncPhase}${internalErrorCode(e) ? ` (${internalErrorCode(e)})` : ""}. Los datos anteriores se conservan.`;
-    await db.metaAdAccount.updateMany({
-      where: { id, syncToken: token, ...(revision ? { connection: { revision, disconnectedAt: null } } : {}) },
-      data: {
+    const retryAt = e instanceof MetaQuotaWait || e instanceof MetaGraphError ? e.retryAt : undefined;
+    await db.$transaction(async tx => {
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(884411)`;
+      const where = { id, syncToken: token, ...(revision ? { connection: { revision, disconnectedAt: null } } : {}) };
+      const current = await tx.metaAdAccount.findFirst({where});
+      if (!current) return; // A pause, cancellation or credential change retired this response.
+      await tx.metaAdAccount.updateMany({where, data: {
         syncToken: null,
         syncLeaseAt: null,
         syncError: message,
-        nextSyncAt: new Date(Date.now() + 30 * 60000),
-      },
+        nextSyncAt: retryAt ?? new Date(Date.now() + 30 * 60000),
+        ...(retryAt ? {syncState:{...(current.syncState as Prisma.InputJsonObject),quotaUntil:retryAt.toISOString(),waitReason:e instanceof MetaQuotaWait?e.reason:"quota"}} : {}),
+      }});
     });
     console.warn("meta_sync_failed", {
       accountId: id,

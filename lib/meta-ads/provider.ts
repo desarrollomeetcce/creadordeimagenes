@@ -2,6 +2,7 @@ import { randomUUID, createHmac } from "node:crypto";
 import { AppError, demand } from "../errors";
 import {
   MetaGraphError,
+  retryDelay,
   optionalFieldError,
   type GraphDiagnostic,
 } from "./graph-error";
@@ -230,6 +231,13 @@ export function fields(op: Operation) {
           ? "id,name,campaign_id,adset_id,status,effective_status,created_time,creative{thumbnail_url}"
           : "account_id,campaign_id,campaign_name,adset_id,adset_name,ad_id,ad_name,date_start,date_stop,spend,impressions,clicks,actions";
 }
+// Drain reserved reads before returning an error; no requests escape a failed batch.
+export async function settledReads<T>(reads: Promise<T>[]): Promise<T[]> {
+  const results = await Promise.allSettled(reads);
+  const error = results.find((r): r is PromiseRejectedResult => r.status === "rejected");
+  if (error) throw error.reason;
+  return results.map(r => (r as PromiseFulfilledResult<T>).value);
+}
 export class MetaReader {
   private unavailableAccountFields = new Set<string>();
   private cachedTools: MetaTool[] | null = null;
@@ -240,6 +248,7 @@ export class MetaReader {
     private transport: string,
     private version: string,
     private appSecret?: string,
+    private quota?: { beforeRead: () => Promise<unknown>; limited: (error: MetaGraphError, retryMs: number) => Promise<void> },
   ) {}
   async rpc(
     method: string,
@@ -421,7 +430,7 @@ export class MetaReader {
         demand(["campaigns","adsets","ads"].includes(op) && q.ids.length>0 && q.ids.length<=50 && q.ids.every(id=>/^\d{1,40}$/.test(id)), "Selección de objetos inválida.");
         const data: Record<string,unknown>[]=[];
         for(let i=0;i<q.ids.length;i+=5){
-          const pages=await Promise.all(q.ids.slice(i,i+5).map(objectId=>this.get(op,{accountId:q.accountId,objectId})));
+          const pages=await settledReads(q.ids.slice(i,i+5).map(objectId=>this.get(op,{accountId:q.accountId,objectId})));
           pages.forEach(page=>data.push(...page.data));
         }
         return {data};
@@ -460,6 +469,7 @@ export class MetaReader {
           );
         else u.searchParams.set("date_preset", "maximum");
       }
+      await this.quota?.beforeRead();
       const r = await external(u.href, {
         headers: { Authorization: "Bearer " + this.token },
       });
@@ -481,6 +491,7 @@ export class MetaReader {
           endpoint: path,
           fields: u.searchParams.get("fields")!,
         });
+        await this.quota?.limited(error, retryDelay(r.headers.get("retry-after")));
         console.warn(
           JSON.stringify({ event: "meta_graph_error", ...error.diagnostic }),
         );

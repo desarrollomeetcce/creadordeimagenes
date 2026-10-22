@@ -3,7 +3,7 @@ import type { Prisma, MetaAdAccount, MetaConnection } from "@prisma/client";
 import { db } from "../db";
 import { demand } from "../errors";
 import { localDay, shiftDay } from "./analytics";
-import { MetaReader, type Operation, type Page } from "./provider";
+import { MetaReader, settledReads, type Operation, type Page } from "./provider";
 import { writeSyncPage } from "./bulk-sync";
 
 import { focusedLabels } from "./focused-labels";
@@ -238,7 +238,7 @@ export async function focusedSyncStep(
     });
     const batch = candidates.slice(0, 5);
     if (phase < 9) {
-      const reads = await Promise.all(
+      const reads = await settledReads(
         batch.map((o) =>
           r.get(operations[phase - 6], { accountId: a.id, objectId: o.id }),
         ),
@@ -249,7 +249,7 @@ export async function focusedSyncStep(
       );
     } else if (phase === 9) {
       const from = shiftDay(state.until, -29);
-      const reads = await Promise.all(
+      const reads = await settledReads(
         batch.map((o) =>
           r.get("insights", {
             accountId: a.id,
@@ -305,7 +305,7 @@ export async function focusedSyncStep(
       const missing = batch.filter(
         (o) => !stored.some((t) => t.objectId === o.id),
       );
-      const reads = await Promise.all(
+      const reads = await settledReads(
         missing.map((o) =>
           r.get("insights", {
             accountId: a.id,
