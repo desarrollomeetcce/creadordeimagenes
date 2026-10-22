@@ -58,7 +58,10 @@ export async function dashboard(actor: Actor, params: URLSearchParams) {
     // A recent import must not display thousands of unrelated legacy catalogue rows.
     AND: [{OR:scoped.map(a=>{
       const run=(a.syncState as {lastRun?:{plan?:string;since?:string;until?:string}}).lastRun;
-      return {accountId:a.id,...(a.selectionSince ? {selectedAt:{gte:a.selectionSince}} : (a.syncState as {plan?:string;started?:string}).plan === "focus" ? {selectedAt:{gte:new Date((a.syncState as {started:string}).started)}} : {}),...(run?.plan === "activity" && run.since && run.until ? {daily:{some:{day:{gte:run.since,lte:run.until},scope:"7d_click,1d_view|impression"}}} : {})};
+      const state=a.syncState as {plan?:string;started?:unknown};
+      // Cancelled/never-started runs have no started date. Preserve the saved selection/history.
+      const cutoff=a.selectionSince??(state.plan==="focus" && typeof state.started==="string" && Number.isFinite(Date.parse(state.started)) ? new Date(state.started) : null);
+      return {accountId:a.id,...(cutoff ? {selectedAt:{gte:cutoff}} : {}),...(run?.plan === "activity" && run.since && run.until ? {daily:{some:{day:{gte:run.since,lte:run.until},scope:"7d_click,1d_view|impression"}}} : {})};
     })}],
     ...(campaign ? { campaignId: campaign } : {}),
     ...(adset ? { adsetId: adset } : {}),
@@ -71,6 +74,7 @@ export async function dashboard(actor: Actor, params: URLSearchParams) {
           ? {
               OR: [
                 { status: "PAUSED" },
+                { effectiveStatus: "PAUSED" },
                 { effectiveStatus: "CAMPAIGN_PAUSED" },
                 { effectiveStatus: "ADSET_PAUSED" },
               ],

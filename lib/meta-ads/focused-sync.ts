@@ -3,7 +3,12 @@ import type { Prisma, MetaAdAccount, MetaConnection } from "@prisma/client";
 import { db } from "../db";
 import { demand } from "../errors";
 import { localDay, shiftDay } from "./analytics";
-import { MetaReader, settledReads, type Operation, type Page } from "./provider";
+import {
+  MetaReader,
+  settledReads,
+  type Operation,
+  type Page,
+} from "./provider";
 import { writeSyncPage } from "./bulk-sync";
 
 import { focusedLabels } from "./focused-labels";
@@ -19,7 +24,7 @@ export type FocusState = {
   processed?: number;
   updatedAt?: string;
   recentReady?: boolean;
-  lastReportUntil?:string;
+  lastReportUntil?: string;
   lastRun?: Prisma.InputJsonObject;
   lastAttempt?: { at: string; revision: number };
 };
@@ -209,12 +214,17 @@ export async function focusedSyncStep(
     });
     pages++;
     for (const row of result.data) {
+      // Validate ownership even for rows omitted from the active inventory.
+      // Meta can return a non-active row (including a concurrent status change).
+      const object = metadata(row, a.id, level);
       demand(
-        row.effective_status === "ACTIVE",
-        "Meta no respetó el filtro de entrega activa.",
+        typeof row.effective_status === "string" &&
+          row.effective_status.length > 0,
+        "Meta no informó el estado efectivo del elemento.",
         502,
       );
-      objectRows.push(metadata(row, a.id, level));
+      if (row.effective_status !== "ACTIVE") continue;
+      objectRows.push(object);
       selected.push(id(row.id));
     }
     nextAfter = result.after;
@@ -440,7 +450,11 @@ export async function focusedSyncStep(
             : objectRows.length + dailyRows.length + totalRows.length),
         lastAttempt,
         recentReady,
-      ...(recentReady?{lastReportUntil:state.until}:state.lastReportUntil?{lastReportUntil:state.lastReportUntil}:{}),
+        ...(recentReady
+          ? { lastReportUntil: state.until }
+          : state.lastReportUntil
+            ? { lastReportUntil: state.lastReportUntil }
+            : {}),
         updatedAt: new Date().toISOString(),
       };
       await tx.metaAdAccount.updateMany({

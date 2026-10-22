@@ -2,8 +2,10 @@
 import { useCallback, useEffect, useState, useRef } from "react";
 import {
   MetaMarketingOAuth,
+  MetaOAuthQuickConnect,
   type MarketingOAuthInfo,
 } from "./meta-marketing-oauth";
+import { MetaConnectionAccess } from "./meta-connection-access";
 import { MetaAccountPicker } from "./meta-account-picker";
 import {
   matchesAccount,
@@ -138,9 +140,9 @@ const costLabels: Record<string, string> = {
 };
 const deliveryLabels: Record<string, string> = {
   ACTIVE: "Activo",
-  PAUSED: "Pausado",
-  CAMPAIGN_PAUSED: "Campaña pausada",
-  ADSET_PAUSED: "Conjunto pausado",
+  PAUSED: "Desactivado (pausado)",
+  CAMPAIGN_PAUSED: "Desactivado por campaña",
+  ADSET_PAUSED: "Desactivado por conjunto",
   PENDING_REVIEW: "En revisión",
   DISAPPROVED: "Rechazado",
   WITH_ISSUES: "Con problemas",
@@ -244,9 +246,14 @@ function SyncIndicator({
 }) {
   const p = account.progress;
   if (!p || p.status === "disabled") return null;
-  const ongoing = ["running", "queued", "stalled", "error", "paused", "waiting"].includes(
-    p.status,
-  );
+  const ongoing = [
+    "running",
+    "queued",
+    "stalled",
+    "error",
+    "paused",
+    "waiting",
+  ].includes(p.status);
   return (
     <div className="meta-sync-progress" role="status">
       <div className="row spread">
@@ -266,7 +273,12 @@ function SyncIndicator({
         </small>
       )}
       {p.status === "waiting" && p.nextSyncAt && (
-        <p className="notice">Avance guardado. Próximo intento automático: {displayTime(p.nextSyncAt)}. {p.waitReason !== "pacing" && "Meta puede ampliar la espera si el límite continúa."}</p>
+        <p className="notice">
+          Avance guardado. Próximo intento automático:{" "}
+          {displayTime(p.nextSyncAt)}.{" "}
+          {p.waitReason !== "pacing" &&
+            "Meta puede ampliar la espera si el límite continúa."}
+        </p>
       )}
       {onControl && ongoing && (
         <div className="row">
@@ -356,7 +368,7 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
     [message, setMessage] = useState(""),
     [busy, setBusy] = useState(false),
     [loading, setLoading] = useState(false),
-    [apiMode, setApiMode] = useState("oauth"),
+    [apiMode, setApiMode] = useState(""),
     [marketingInfo, setMarketingInfo] = useState<MarketingOAuthInfo | null>(
       null,
     ),
@@ -806,35 +818,78 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
       <div className="meta-content">
         {tab === "connections" && owner ? (
           <>
-            <details
-              className="panel"
-              open={
-                connections.filter(
-                  (c) => c.transport === "API" && !c.disconnectedAt,
-                ).length === 0
-              }
+            <section
+              className="panel stack"
+              aria-label="Agregar conexión de Meta"
             >
-              <summary>Agregar conexión de Facebook</summary>
-              <div className="inside stack">
-                <p>
-                  Autoriza tu app de Meta para consultar cuentas y estadísticas.
-                </p>
-                <div className="row">
+              <h3>Conectar cuentas de Meta</h3>
+              <p>
+                Elige cómo conectar. Cada conexión utiliza un único método de
+                acceso.
+              </p>
+              <div
+                className="row"
+                role="group"
+                aria-label="Opciones para conectar con Meta"
+              >
+                {[
+                  ["manual", "Manual (token)"],
+                  ["quick", "Conexión rápida"],
+                  ["oauth", "Agregar conexión OAuth"],
+                ].map(([mode, label]) => (
                   <button
+                    key={mode}
                     type="button"
-                    className={apiMode === "oauth" ? "primary" : ""}
-                    onClick={() => setApiMode("oauth")}
+                    className={apiMode === mode ? "primary" : ""}
+                    aria-expanded={apiMode === mode}
+                    onClick={() => setApiMode(apiMode === mode ? "" : mode)}
                   >
-                    Autorizar con Facebook
+                    {label}
                   </button>
-                  <button
-                    type="button"
-                    className={apiMode === "manual" ? "primary" : ""}
-                    onClick={() => setApiMode("manual")}
+                ))}
+              </div>
+              <div className="stack">
+                {apiMode === "quick" && (
+                  <section
+                    className="stack"
+                    aria-label="Conexiones OAuth disponibles"
                   >
-                    Token manual
-                  </button>
-                </div>
+                    <p>
+                      Abre Facebook con una conexión cuya app ya esté
+                      configurada. Al completar la autorización se reemplazará
+                      su credencial actual.
+                    </p>
+                    {connections
+                      .filter(
+                        (c) =>
+                          c.transport === "API" &&
+                          !c.disconnectedAt &&
+                          c.appId &&
+                          c.appSecretConfiguredAt,
+                      )
+                      .map((c) => (
+                        <div className="panel stack" key={c.id}>
+                          <strong>{c.name}</strong>
+                          <MetaOAuthQuickConnect
+                            connection={c}
+                            info={marketingInfo}
+                          />
+                        </div>
+                      ))}
+                    {!connections.some(
+                      (c) =>
+                        c.transport === "API" &&
+                        !c.disconnectedAt &&
+                        c.appId &&
+                        c.appSecretConfiguredAt,
+                    ) && (
+                      <p>
+                        Primero usa «Agregar conexión OAuth» para configurar tu
+                        app de Meta.
+                      </p>
+                    )}
+                  </section>
+                )}
                 {apiMode === "oauth" ? (
                   <MetaMarketingOAuth
                     info={marketingInfo}
@@ -843,7 +898,7 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
                       setRevision((r) => r + 1);
                     }}
                   />
-                ) : (
+                ) : apiMode === "manual" ? (
                   <form
                     className="stack"
                     onSubmit={(e) => {
@@ -887,9 +942,9 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
                     </label>
                     <button disabled={busy}>Guardar conexión API</button>
                   </form>
-                )}
+                ) : null}
               </div>
-            </details>
+            </section>
             {connections.some(
               (c) => c.transport === "API" && c.disconnectedAt,
             ) && (
@@ -934,9 +989,11 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
                   {c.transport === "API" && (
                     <small>
                       Credencial:{" "}
-                      {c.authMethod === "OAUTH"
-                        ? "OAuth de tu app"
-                        : "Token manual"}{" "}
+                      {!c.tokenMask
+                        ? "Sin autorización"
+                        : c.authMethod === "OAUTH"
+                          ? "OAuth de tu app"
+                          : "Token manual"}{" "}
                       · Caducidad:{" "}
                       {c.tokenExpiresAt
                         ? displayTime(c.tokenExpiresAt)
@@ -947,23 +1004,15 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
                         : ""}
                     </small>
                   )}
-                  {c.transport === "API" && !c.disconnectedAt && (
-                    <details>
-                      <summary>
-                        Conectar con Facebook · configuración OAuth de mi app
-                      </summary>
-                      <div className="inside">
-                        <MetaMarketingOAuth
-                          key={c.id + (c.appSecretConfiguredAt ?? "")}
-                          connection={c}
-                          info={marketingInfo}
-                          onUpdated={() => {
-                            void refresh().catch((e) => setMessage(e.message));
-                            setRevision((r) => r + 1);
-                          }}
-                        />
-                      </div>
-                    </details>
+                  {!c.disconnectedAt && (
+                    <MetaConnectionAccess
+                      connection={c}
+                      info={marketingInfo}
+                      onUpdated={async () => {
+                        await refresh();
+                        setRevision((r) => r + 1);
+                      }}
+                    />
                   )}
                   {c.lastError &&
                     (c.verifiedAt ? (
@@ -1053,34 +1102,6 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
                         : "Eliminar conexión"}
                     </button>
                   </div>
-                  <details>
-                    <summary>Reemplazar token</summary>
-                    <form
-                      className="row"
-                      onSubmit={(e) => {
-                        e.preventDefault();
-                        const form = e.currentTarget,
-                          token = String(new FormData(form).get("token"));
-                        void run(async () => {
-                          await api("meta-ads/connections/" + c.id, "PATCH", {
-                            token,
-                          });
-                          form.reset();
-                        }, "Token reemplazado. Se retiró el error anterior y se conservó el avance. Pulsa Verificar y traer cuentas en esta misma conexión; después continúa la sincronización.");
-                      }}
-                    >
-                      <label>
-                        Token nuevo
-                        <PasswordInput
-                          name="token"
-                          autoComplete="off"
-                          required
-                          secretLabel="token"
-                        />
-                      </label>
-                      <button disabled={busy}>Guardar token</button>
-                    </form>
-                  </details>
                 </article>
               ))}
           </>
@@ -1253,8 +1274,15 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
                   />
                 )}
                 {a.syncError && (
-                  <details className="notice" open={a.progress?.status !== "waiting"}>
-                    <summary>{a.progress?.status === "waiting" ? "Detalle del límite de Meta" : "No se completó la sincronización"}</summary>
+                  <details
+                    className="notice"
+                    open={a.progress?.status !== "waiting"}
+                  >
+                    <summary>
+                      {a.progress?.status === "waiting"
+                        ? "Detalle del límite de Meta"
+                        : "No se completó la sincronización"}
+                    </summary>
                     <p>{a.syncError}</p>
                   </details>
                 )}
@@ -1273,10 +1301,12 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
                           { focused: true, recentDays },
                         );
                         setMessage(
-                          r.waiting ? "Sincronización programada después de la pausa por límite de Meta." : r.syncError ??
-                            (r.resumed
-                              ? "Sincronización retomada."
-                              : "Análisis iniciado. Primero se cargarán los datos recientes y después el histórico."),
+                          r.waiting
+                            ? "Sincronización programada después de la pausa por límite de Meta."
+                            : (r.syncError ??
+                                (r.resumed
+                                  ? "Sincronización retomada."
+                                  : "Análisis iniciado. Primero se cargarán los datos recientes y después el histórico.")),
                         );
                       });
                     }}
@@ -1301,23 +1331,32 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
                     </label>
                     <button
                       className="primary"
-                      disabled={busy || !a.connection?.verifiedAt || a.progress?.status === "waiting"}
+                      disabled={
+                        busy ||
+                        !a.connection?.verifiedAt ||
+                        a.progress?.status === "waiting"
+                      }
                     >
                       {busy
                         ? "Procesando…"
-                        : a.progress?.status === "waiting" ? "Esperando a Meta"
-                        : a.progress &&
-                            ["running", "stalled", "error", "paused"].includes(
-                              a.progress.status,
-                            )
-                          ? "Continuar análisis"
-                          : "Sincronizar y analizar"}
+                        : a.progress?.status === "waiting"
+                          ? "Esperando a Meta"
+                          : a.progress &&
+                              [
+                                "running",
+                                "stalled",
+                                "error",
+                                "paused",
+                              ].includes(a.progress.status)
+                            ? "Continuar análisis"
+                            : "Sincronizar y analizar"}
                     </button>
                   </form>
                 )}
                 <small>
-                  El periodo selecciona qué mostrar. Los comparativos incluyen
-                  hoy, 7, 15, 30 días e histórico disponible en Meta.
+                  El periodo incluye los desactivados que tuvieron entrega en
+                  esos días. Los comparativos incluyen hoy, 7, 15, 30 días e
+                  histórico disponible en Meta.
                 </small>
                 {owner && (
                   <div className="row">
@@ -1521,7 +1560,7 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
                     </option>
                     <option value="delivery">Entrega registrada hoy</option>
                     <option value="effective">Estado efectivo activo</option>
-                    <option value="paused">Pausados</option>
+                    <option value="paused">Desactivados (pausados)</option>
                     <option value="issues">Revisión o problemas</option>
                   </select>
                 </label>
@@ -1939,7 +1978,11 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
                               {o.accountName}
                               <small>{o.metricName}</small>
                             </td>
-                            <td>{o.effectiveStatus ?? "No informado"}</td>
+                            <td>
+                              {deliveryLabels[o.effectiveStatus] ??
+                                o.effectiveStatus ??
+                                "No informado"}
+                            </td>
                             <td>
                               {date(o.firstDelivery)}
                               <small>{o.ageDays ?? "—"} días</small>
