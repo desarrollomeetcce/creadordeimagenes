@@ -1,8 +1,16 @@
 "use client";
 import { useCallback, useEffect, useState, useRef } from "react";
-import { MetaMarketingOAuth, type MarketingOAuthInfo } from "./meta-marketing-oauth";
+import {
+  MetaMarketingOAuth,
+  type MarketingOAuthInfo,
+} from "./meta-marketing-oauth";
 import { MetaAccountPicker } from "./meta-account-picker";
-import { matchesAccount, activityOptions, accountActivityText, type AccountActivity } from "../../lib/meta-ads/account-filters";
+import {
+  matchesAccount,
+  activityOptions,
+  accountActivityText,
+  type AccountActivity,
+} from "../../lib/meta-ads/account-filters";
 import { parseMetaPreferences } from "../../lib/meta-ads/preferences";
 import type { SyncProgress } from "../../lib/meta-ads/sync-progress";
 import { PasswordInput } from "./password-input";
@@ -28,7 +36,13 @@ type Account = {
   id: string;
   name: string;
   connectionId: string;
-  connection?: { transport:string; name: string; revision: number; verifiedAt: string | null; disconnectedAt: string | null };
+  connection?: {
+    transport: string;
+    name: string;
+    revision: number;
+    verifiedAt: string | null;
+    disconnectedAt: string | null;
+  };
   currency: string;
   timezone: string;
   businessId: string | null;
@@ -82,8 +96,11 @@ type Item = {
   firstDelivery: string | null;
   lastDelivery: string | null;
   ageDays: number | null;
+  ageFromCreation?: boolean;
   activeDays: number;
   historyPartial: boolean;
+  historyPending?: boolean;
+  historyUpdatedAt?: string | null;
   createdTime: string | null;
   scheduledStart: string | null;
   syncedAt: string | null;
@@ -112,8 +129,25 @@ const periods = [
   ["30", "30 días"],
   ["lifetime", "Desde el inicio"],
 ];
-const costLabels: Record<string, string> = { MESSAGES: "Costo por conversación iniciada", LEADS: "Costo por cliente potencial", PURCHASES: "Costo por compra", LINK_CLICKS: "Costo por clic", UNKNOWN: "Costo por resultado no identificado" };
-const deliveryLabels: Record<string, string> = { ACTIVE: "Activo", PAUSED: "Pausado", CAMPAIGN_PAUSED: "Campaña pausada", ADSET_PAUSED: "Conjunto pausado", PENDING_REVIEW: "En revisión", DISAPPROVED: "Rechazado", WITH_ISSUES: "Con problemas", DELETED: "Eliminado", ARCHIVED: "Archivado", NOT_RETURNED: "No disponible" };
+const costLabels: Record<string, string> = {
+  MESSAGES: "Costo por conversación iniciada",
+  LEADS: "Costo por cliente potencial",
+  PURCHASES: "Costo por compra",
+  LINK_CLICKS: "Costo por clic",
+  UNKNOWN: "Costo por resultado no identificado",
+};
+const deliveryLabels: Record<string, string> = {
+  ACTIVE: "Activo",
+  PAUSED: "Pausado",
+  CAMPAIGN_PAUSED: "Campaña pausada",
+  ADSET_PAUSED: "Conjunto pausado",
+  PENDING_REVIEW: "En revisión",
+  DISAPPROVED: "Rechazado",
+  WITH_ISSUES: "Con problemas",
+  DELETED: "Eliminado",
+  ARCHIVED: "Archivado",
+  NOT_RETURNED: "No disponible",
+};
 const ratings: Record<string, string> = {
   STALE: "Datos atrasados · sincronizar",
   GOOD: "Buen rendimiento",
@@ -197,9 +231,78 @@ function exportCSV(items: Item[]) {
   a.click();
   URL.revokeObjectURL(url);
 }
-function SyncIndicator({account}:{account:Account}){
-  const p=account.progress;if(!p)return null;
-  return <div className="meta-sync-progress" role="status"><div className="row spread"><strong>{p.label}</strong><span>{p.phase} de {p.totalPhases} etapas</span></div><progress max={p.totalPhases} value={p.phase} aria-label={`Sincronización de ${account.name}: etapas completadas`} />{p.attemptAt && <small>Último intento: {displayTime(p.attemptAt)} · versión de credencial {p.credentialRevision ?? "no registrada"}.</small>}{p.scope && <small>Alcance: {p.scope}. Histórico anterior conservado.</small>}<small>{p.pages} páginas procesadas · {p.processed} registros recibidos. El total de páginas se conoce al completar la lectura.</small>{p.status==="stalled"&&<p className="notice">No hay avance reciente confirmado. Pulsa Continuar sincronización para retomar el avance guardado y consultar el error si lo hubiera.</p>}{p.status==="error"&&p.nextSyncAt&&<small>Próximo intento previsto: {displayTime(p.nextSyncAt)}. Puedes solicitar otro intento manual.</small>}</div>;
+function SyncIndicator({
+  account,
+  busy = false,
+  onControl,
+  onResume,
+}: {
+  account: Account;
+  busy?: boolean;
+  onControl?: (action: "pause" | "cancel") => void;
+  onResume?: () => void;
+}) {
+  const p = account.progress;
+  if (!p || p.status === "disabled") return null;
+  const ongoing = ["running", "queued", "stalled", "error", "paused"].includes(
+    p.status,
+  );
+  return (
+    <div className="meta-sync-progress" role="status">
+      <div className="row spread">
+        <strong>{p.label}</strong>
+        <span>
+          {p.phase}/{p.totalPhases}
+        </span>
+      </div>
+      <progress
+        max={p.totalPhases}
+        value={p.phase}
+        aria-label={`Sincronización de ${account.name}: etapas completadas`}
+      />
+      {p.recentReady && p.status !== "complete" && (
+        <small>
+          Comparativos recientes disponibles. Completando el histórico.
+        </small>
+      )}
+      {onControl && ongoing && (
+        <div className="row">
+          {p.status === "paused" && onResume && (
+            <button type="button" disabled={busy} onClick={onResume}>
+              Reanudar sincronización
+            </button>
+          )}
+          {!["paused", "error"].includes(p.status) && (
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => onControl("pause")}
+            >
+              Pausar sincronización
+            </button>
+          )}
+          <button
+            type="button"
+            disabled={busy}
+            className="danger"
+            onClick={() => onControl("cancel")}
+          >
+            Cancelar sincronización
+          </button>
+        </div>
+      )}
+      <details>
+        <summary>Detalles del progreso</summary>
+        {p.scope && <small>{p.scope}</small>}
+        <small>
+          {p.pages} consultas procesadas · {p.processed} registros.
+        </small>
+        {p.attemptAt && (
+          <small>Último intento: {displayTime(p.attemptAt)}</small>
+        )}
+      </details>
+    </div>
+  );
 }
 export function MetaAds({ role, userId }: { role: string; userId: string }) {
   const owner = role === "OWNER";
@@ -219,7 +322,13 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
     [total, setTotal] = useState(0),
     [limited, setLimited] = useState(false),
     [rankingExcluded, setRankingExcluded] = useState(0),
-    [tab, setTab] = useState(() => typeof window !== "undefined" && new URLSearchParams(window.location.search).get("metaTab") === "connections" ? "connections" : "panel"),
+    [tab, setTab] = useState(() =>
+      typeof window !== "undefined" &&
+      new URLSearchParams(window.location.search).get("metaTab") ===
+        "connections"
+        ? "connections"
+        : "panel",
+    ),
     [level, setLevel] = useState("ad"),
     [accountIds, setAccountIds] = useState<string[]>([]),
     [business, setBusiness] = useState(""),
@@ -244,47 +353,169 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
     [message, setMessage] = useState(""),
     [busy, setBusy] = useState(false),
     [loading, setLoading] = useState(false),
-    [transport, setTransport] = useState("MCP"),
     [apiMode, setApiMode] = useState("oauth"),
-    [marketingInfo, setMarketingInfo] = useState<MarketingOAuthInfo | null>(null),
+    [marketingInfo, setMarketingInfo] = useState<MarketingOAuthInfo | null>(
+      null,
+    ),
     [revision, setRevision] = useState(0),
     [sharing, setSharing] = useState<Account | null>(null);
   const preferencesKey = `meta-ads:preferences:v1:${userId}`;
   useEffect(() => {
-    let stored = null;try{stored=localStorage.getItem(preferencesKey);}catch{}
-    const p=parseMetaPreferences(stored);
-    setAccountIds(p.accountIds);setLevel(p.level);setBusiness(p.business);setCampaign(p.campaign);setAdset(p.adset);setQ(p.q);setSearch(p.q);setState(p.state);setMetric(p.metric);setCurrency(p.currency);setSort(p.sort);setAnalysisPeriod(p.analysisPeriod);setDirection(p.direction);setAge(p.age);setRating(p.rating);setSince(p.since);setUntil(p.until);setCalendar(p.calendar);setView(p.view);setAccountListQuery(p.accountListQuery);setAccountListActivity(p.accountListActivity);setAccountListBusiness(p.accountListBusiness);setAccountListPage(p.accountListPage);setAccountPickerQuery(p.accountPickerQuery);setAccountPickerActivity(p.accountPickerActivity);
-    setTab(new URLSearchParams(window.location.search).get("metaTab")==="connections"&&owner?"connections":p.tab==="connections"&&!owner?"panel":p.tab);
+    let stored = null;
+    try {
+      stored = localStorage.getItem(preferencesKey);
+    } catch {}
+    const p = parseMetaPreferences(stored);
+    setAccountIds(p.accountIds);
+    setLevel(p.level);
+    setBusiness(p.business);
+    setCampaign(p.campaign);
+    setAdset(p.adset);
+    setQ(p.q);
+    setSearch(p.q);
+    setState(p.state);
+    setMetric(p.metric);
+    setCurrency(p.currency);
+    setSort(p.sort);
+    setAnalysisPeriod(p.analysisPeriod);
+    setDirection(p.direction);
+    setAge(p.age);
+    setRating(p.rating);
+    setSince(p.since);
+    setUntil(p.until);
+    setCalendar(p.calendar);
+    setView(p.view);
+    setAccountListQuery(p.accountListQuery);
+    setAccountListActivity(p.accountListActivity);
+    setAccountListBusiness(p.accountListBusiness);
+    setAccountListPage(p.accountListPage);
+    setAccountPickerQuery(p.accountPickerQuery);
+    setAccountPickerActivity(p.accountPickerActivity);
+    setTab(
+      new URLSearchParams(window.location.search).get("metaTab") ===
+        "connections" && owner
+        ? "connections"
+        : p.tab === "connections" && !owner
+          ? "panel"
+          : p.tab,
+    );
     setPreferencesReady(true);
-  },[preferencesKey,owner]);
-  useEffect(()=>{
-    if(!preferencesReady||!accountsLoaded)return;
-    try{localStorage.setItem(preferencesKey,JSON.stringify({accountIds,tab,level,business,campaign,adset,q,state,metric,currency,sort,analysisPeriod,direction,age,rating,since,until,calendar,view,accountListQuery,accountListActivity,accountListBusiness,accountListPage,accountPickerQuery,accountPickerActivity}));}catch{}
-  },[preferencesReady,accountsLoaded,preferencesKey,accountIds,tab,level,business,campaign,adset,q,state,metric,currency,sort,analysisPeriod,direction,age,rating,since,until,calendar,view,accountListQuery,accountListActivity,accountListBusiness,accountListPage,accountPickerQuery,accountPickerActivity]);
-  const businesses = [...new Map(accounts.filter(a => a.businessId).map(a => [a.businessId!, a.businessName ?? a.businessId!])).entries()];
-  const filteredAccounts = accounts.filter(a => matchesAccount(a, accountListQuery, accountListActivity, accountListBusiness));
+  }, [preferencesKey, owner]);
+  useEffect(() => {
+    if (!preferencesReady || !accountsLoaded) return;
+    try {
+      localStorage.setItem(
+        preferencesKey,
+        JSON.stringify({
+          accountIds,
+          tab,
+          level,
+          business,
+          campaign,
+          adset,
+          q,
+          state,
+          metric,
+          currency,
+          sort,
+          analysisPeriod,
+          direction,
+          age,
+          rating,
+          since,
+          until,
+          calendar,
+          view,
+          accountListQuery,
+          accountListActivity,
+          accountListBusiness,
+          accountListPage,
+          accountPickerQuery,
+          accountPickerActivity,
+        }),
+      );
+    } catch {}
+  }, [
+    preferencesReady,
+    accountsLoaded,
+    preferencesKey,
+    accountIds,
+    tab,
+    level,
+    business,
+    campaign,
+    adset,
+    q,
+    state,
+    metric,
+    currency,
+    sort,
+    analysisPeriod,
+    direction,
+    age,
+    rating,
+    since,
+    until,
+    calendar,
+    view,
+    accountListQuery,
+    accountListActivity,
+    accountListBusiness,
+    accountListPage,
+    accountPickerQuery,
+    accountPickerActivity,
+  ]);
+  const businesses = [
+    ...new Map(
+      accounts
+        .filter((a) => a.businessId)
+        .map((a) => [a.businessId!, a.businessName ?? a.businessId!]),
+    ).entries(),
+  ];
+  const filteredAccounts = accounts.filter((a) =>
+    matchesAccount(
+      a,
+      accountListQuery,
+      accountListActivity,
+      accountListBusiness,
+    ),
+  );
   const accountPages = Math.max(1, Math.ceil(filteredAccounts.length / 25));
   const accountPage = Math.min(accountListPage, accountPages);
-  const visibleAccounts = filteredAccounts.slice((accountPage - 1) * 25, accountPage * 25);
+  const visibleAccounts = filteredAccounts.slice(
+    (accountPage - 1) * 25,
+    accountPage * 25,
+  );
   const accountKey = accountIds.join(",");
   const serial = useRef(0);
-  const syncVersions = useRef(new Map<string,string|null>());
+  const syncVersions = useRef(new Map<string, string | null>());
   const analyticsTab = ["panel", "ranking", "alerts"].includes(tab);
   useEffect(() => {
-    const timer = setTimeout(() => { setSearch(q); setPage(1); }, 200);
+    const timer = setTimeout(() => {
+      setSearch(q);
+      setPage(1);
+    }, 200);
     return () => clearTimeout(timer);
   }, [q]);
   const refresh = useCallback(async () => {
     const rows: Account[] = await api("meta-ads/accounts");
-    rows.forEach(a=>syncVersions.current.set(a.id,a.syncedAt));
-    setAccounts(rows);setAccountIds(ids=>ids.filter(id=>rows.some(a=>a.id===id)));setAccountsLoaded(true);
+    rows.forEach((a) => syncVersions.current.set(a.id, a.syncedAt));
+    setAccounts(rows);
+    setAccountIds((ids) => ids.filter((id) => rows.some((a) => a.id === id)));
+    setAccountsLoaded(true);
   }, []);
   useEffect(() => {
     if (!preferencesReady || !owner || tab !== "connections") return;
     let live = true;
-    Promise.all([api("meta-ads/connections"), api("meta-ads/marketing-oauth-config")])
+    Promise.all([
+      api("meta-ads/connections"),
+      api("meta-ads/marketing-oauth-config"),
+    ])
       .then(([data, info]) => {
-        if (live) { setConnections(data); setMarketingInfo(info); }
+        if (live) {
+          setConnections(data);
+          setMarketingInfo(info);
+        }
       })
       .catch((e) => {
         if (live) setMessage(e.message);
@@ -294,7 +525,7 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
     };
   }, [owner, tab, revision, preferencesReady]);
   useEffect(() => {
-    if(!preferencesReady)return;
+    if (!preferencesReady) return;
     let live = true;
     refresh().catch((e) => {
       if (live) setMessage(e.message);
@@ -399,27 +630,75 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
     until,
     revision,
   ]);
-  const pendingKey = accounts.filter(a=>a.enabled&&(!accountIds.length||accountIds.includes(a.id))).map(a=>a.id).slice(0,100).join(",");
-  useEffect(()=>{
-    if(!preferencesReady||!pendingKey)return;
-    let stopped=false,delay=5000,timer:ReturnType<typeof setTimeout>|undefined;const controller=new AbortController();
-    const poll=async()=>{
-      if(stopped)return;
-      if(document.visibilityState!=="visible"){timer=setTimeout(poll,5000);return;}
-      try{
-        const response=await fetch("/api/meta-ads/sync-status?"+new URLSearchParams({accounts:pendingKey}),{cache:"no-store",signal:controller.signal});
-        if(!response.ok){if(response.status===404)await refresh();else throw Error("No se pudo actualizar el progreso de Meta.");return;}
-        const updates:Pick<Account,"id"|"syncedAt"|"syncError"|"syncState"|"progress">[]=await response.json();
-        if(stopped)return;
-        delay=updates.some(u=>["queued","running","stalled"].includes(u.progress?.status??""))?5000:30000;
-        const finished=updates.some(u=>u.progress?.status==="complete"&&!!u.syncedAt&&u.syncedAt!==syncVersions.current.get(u.id));
-        updates.forEach(u=>syncVersions.current.set(u.id,u.syncedAt));
-        if(finished)setRevision(n=>n+1);
-        setAccounts(old=>old.map(a=>{const update=updates.find(u=>u.id===a.id);return update?{...a,...update}:a;}));
-        if(finished)await refresh();
-      }catch(e){if(!stopped&&(e as Error).name!=="AbortError")setMessage((e as Error).message);}finally{if(!stopped)timer=setTimeout(poll,delay);}
-    };timer=setTimeout(poll,1000);return()=>{stopped=true;controller.abort();if(timer)clearTimeout(timer);};
-  },[preferencesReady,pendingKey,refresh]);
+  const pendingKey = accounts
+    .filter(
+      (a) => a.enabled && (!accountIds.length || accountIds.includes(a.id)),
+    )
+    .map((a) => a.id)
+    .slice(0, 100)
+    .join(",");
+  useEffect(() => {
+    if (!preferencesReady || !pendingKey) return;
+    let stopped = false,
+      delay = 5000,
+      timer: ReturnType<typeof setTimeout> | undefined;
+    const controller = new AbortController();
+    const poll = async () => {
+      if (stopped) return;
+      if (document.visibilityState !== "visible") {
+        timer = setTimeout(poll, 5000);
+        return;
+      }
+      try {
+        const response = await fetch(
+          "/api/meta-ads/sync-status?" +
+            new URLSearchParams({ accounts: pendingKey }),
+          { cache: "no-store", signal: controller.signal },
+        );
+        if (!response.ok) {
+          if (response.status === 404) await refresh();
+          else throw Error("No se pudo actualizar el progreso de Meta.");
+          return;
+        }
+        const updates: Pick<
+          Account,
+          "id" | "syncedAt" | "syncError" | "syncState" | "progress"
+        >[] = await response.json();
+        if (stopped) return;
+        delay = updates.some((u) =>
+          ["queued", "running", "stalled"].includes(u.progress?.status ?? ""),
+        )
+          ? 5000
+          : 30000;
+        const finished = updates.some(
+          (u) =>
+            (u.progress?.status === "complete" || u.progress?.recentReady) &&
+            !!u.syncedAt &&
+            u.syncedAt !== syncVersions.current.get(u.id),
+        );
+        updates.forEach((u) => syncVersions.current.set(u.id, u.syncedAt));
+        if (finished) setRevision((n) => n + 1);
+        setAccounts((old) =>
+          old.map((a) => {
+            const update = updates.find((u) => u.id === a.id);
+            return update ? { ...a, ...update } : a;
+          }),
+        );
+        if (finished) await refresh();
+      } catch (e) {
+        if (!stopped && (e as Error).name !== "AbortError")
+          setMessage((e as Error).message);
+      } finally {
+        if (!stopped) timer = setTimeout(poll, delay);
+      }
+    };
+    timer = setTimeout(poll, 1000);
+    return () => {
+      stopped = true;
+      controller.abort();
+      if (timer) clearTimeout(timer);
+    };
+  }, [preferencesReady, pendingKey, refresh]);
   const run = async (fn: () => Promise<unknown>, success?: string) => {
     setBusy(true);
     setMessage("");
@@ -431,7 +710,9 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
     } catch (e) {
       setMessage((e as Error).message);
       // Read persisted diagnostics without repeating the verification request.
-      try { await refresh(); } catch {}
+      try {
+        await refresh();
+      } catch {}
     } finally {
       setBusy(false);
     }
@@ -475,7 +756,8 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
       (!accountIds.length || accountIds.includes(a.id)) &&
       (!business || a.businessId === business),
   );
-  if(!preferencesReady)return <p role="status">Restaurando tu selección de Meta Ads…</p>;
+  if (!preferencesReady)
+    return <p role="status">Restaurando tu selección de Meta Ads…</p>;
   return (
     <section className="meta-ads stack">
       <header className="meta-header">
@@ -492,7 +774,7 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
           ["ranking", "Ranking de eficiencia"],
           ["alerts", "Alertas"],
           ["accounts", "Cuentas publicitarias"],
-          ...(owner ? [["connections", "Conexiones · API y MCP"]] : []),
+          ...(owner ? [["connections", "Conexiones"]] : []),
         ].map(([id, label]) => (
           <button
             type="button"
@@ -509,467 +791,532 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
       {message && (
         <aside className="notice meta-feedback" role="status">
           <span>{message}</span>
-          <button type="button" aria-label="Cerrar aviso" onClick={() => setMessage("")}>×</button>
+          <button
+            type="button"
+            aria-label="Cerrar aviso"
+            onClick={() => setMessage("")}
+          >
+            ×
+          </button>
         </aside>
       )}
       <div className="meta-content">
-      {tab === "connections" && owner ? (
-        <>
-          <section className="panel stack">
-            <h2>Dos formas de conectar, un solo panel</h2>
-            <p>
-              Marketing API permite autorizar con tu propia app de Facebook o guardar un token manual. MCP descubre
-              herramientas de lectura en el servidor configurado de Meta.
-              Autorizar no demuestra que todas las métricas estén disponibles:
-              la verificación indica las capacidades que ofrece tu cuenta.
-            </p>
-            <div className="row">
-              <button
-                type="button"
-                className={transport === "MCP" ? "primary" : ""}
-                onClick={() => setTransport("MCP")}
-              >
-                Conexión MCP
-              </button>
-              <button
-                type="button"
-                className={transport === "API" ? "primary" : ""}
-                onClick={() => setTransport("API")}
-              >
-                Mi app · Marketing API
-              </button>
-            </div>
-            {transport === "API" && <><div className="row"><button type="button" className={apiMode === "oauth" ? "primary" : ""} onClick={() => setApiMode("oauth")}>Autorizar con Facebook</button><button type="button" className={apiMode === "manual" ? "primary" : ""} onClick={() => setApiMode("manual")}>Token manual</button></div>{apiMode === "oauth" && <MetaMarketingOAuth info={marketingInfo} onUpdated={() => { void refresh().catch(e => setMessage(e.message)); setRevision(r => r + 1); }} />}</>}
-            {(transport === "MCP" || apiMode === "manual") && <form
-              className="stack"
-              onSubmit={(e) => {
-                e.preventDefault();
-                const form = e.currentTarget,
-                  data = new FormData(form),
-                  manual = transport === "API" || (e.nativeEvent as SubmitEvent).submitter?.getAttribute("value") === "manual";
-                void run(async () => {
-                  if (manual && !data.get("token")) throw Error("Introduce el token oficial en el campo seguro.");
-                  const created = await api("meta-ads/connections", "POST", {
-                    name: String(data.get("name")),
-                    transport,
-                    ...(transport === "API"
-                      ? {
-                          apiVersion: String(data.get("version")),
-                          ...(data.get("appId")
-                            ? { appId: String(data.get("appId")) }
-                            : {}),
-                        }
-                      : {}),
-                    ...(manual && data.get("token")
-                      ? { token: String(data.get("token")) }
-                      : {}),
-                  });
-                  setConnections(old => [...old, created]);
-                  form.reset();
-                  if (transport === "MCP") {
-                    if (manual) {
-                      const result = await api(`meta-ads/connections/${created.id}/verify`, "POST", {});
-                      setMessage(`Acceso MCP verificado: ${result.accounts} cuentas. ${result.accounts === 0 ? "Meta no devolvió cuentas accesibles." : "Ya puedes configurar su lectura."}`);
-                    } else {
-                      const auth = await api(`meta-ads/connections/${created.id}/oauth`, "POST", {});
-                      window.location.assign(auth.url);
-                    }
-                  } else setMessage("Conexión guardada; verifica el acceso antes de sincronizar.");
-                });
-              }}
+        {tab === "connections" && owner ? (
+          <>
+            <details
+              className="panel"
+              open={
+                connections.filter(
+                  (c) => c.transport === "API" && !c.disconnectedAt,
+                ).length === 0
+              }
             >
-              <div className="fields">
-                <label>
-                  Nombre de la conexión
-                  <input
-                    name="name"
-                    key={transport}
-                    defaultValue={transport === "MCP" ? "Meta MCP" : ""}
-                    required
-                    maxLength={100}
-                    placeholder={
-                      transport === "MCP"
-                        ? "Meta MCP principal"
-                        : "Mi app de Meta"
-                    }
-                  />
-                </label>
-                {transport === "API" && (
-                  <>
-                    <label>
-                      ID de tu app de Meta · opcional
-                      <input
-                        name="appId"
-                        inputMode="numeric"
-                        pattern="[0-9]+"
-                      />
-                    </label>
-                    <label>
-                      Versión Graph de tu app
-                      <input
-                        name="version"
-                        required
-                        defaultValue="v26.0"
-                        pattern="v[0-9]{2}\.0"
-                      />
-                      <small>
-                        Confirma la versión compatible en tu app de Meta.
-                      </small>
-                    </label>
-                  </>
-                )}
-              </div>
-              {transport === "MCP" ? <>
-                <p className="hint">Autoriza tu cuenta en Facebook sin copiar un token. Antes de abrir la autorización se comprobará si Meta admite este cliente; al regresar se validarán la sesión, herramientas y cuentas. Si Meta exige un cliente previamente aprobado, se indicará sin simular una conexión.</p>
-                <details>
-                  <summary>Configuración avanzada · token MCP oficial</summary>
-                  <div className="inside stack">
-                    <label>Token emitido para este servidor MCP
-                      <PasswordInput name="token" secretLabel="token de Meta" autoComplete="off" />
-                    </label>
-                    <small>No se considera válido hasta completar la verificación real. No uses claves de OpenAI, contraseñas de Facebook ni tokens de otro cliente.</small>
-                    <button type="submit" value="manual" disabled={busy}>Guardar token y verificar</button>
-                  </div>
-                </details>
-              </> : <label>Token de acceso de Marketing API
-                <PasswordInput name="token" secretLabel="token de Meta" required autoComplete="off" />
-              </label>}
-              <small>{transport === "MCP" ? "Servidor: https://mcp.facebook.com/ads. OAuth disponible solo si Meta autoriza este cliente y la URL de retorno." : "Token de tu app con ads_read y acceso a las cuentas; business_management cuando corresponda. Introduce el token solo aquí, nunca por chat."}</small>
-              <button type="submit" disabled={busy} className="primary">
-                {transport === "MCP" ? "Conectar con Meta" : "Guardar conexión API"}
-              </button>
-            </form>}
-            {transport === "API" && <details>
-              <summary>Preparar mi app de Meta · pruebas y publicación</summary>
+              <summary>Agregar conexión de Facebook</summary>
               <div className="inside stack">
-                <p>Para pruebas con tus propias cuentas, normalmente puedes usar la app en desarrollo: tu usuario debe tener un rol aceptado en la app y acceso a las cuentas publicitarias. «Listo para la prueba» en un permiso no confirma que el token lo tenga concedido.</p>
-                <ol>
-                  <li>En <a href="https://developers.facebook.com/apps/" target="_blank" rel="noopener noreferrer">Meta for Developers</a>, revisa los roles de tu app y el acceso publicitario de ese mismo usuario.</li>
-                  <li>En <a href="https://developers.facebook.com/tools/explorer/" target="_blank" rel="noopener noreferrer">Graph API Explorer</a>, selecciona esa app y la versión que usarás aquí. Obtén un token de usuario con ads_read concedido.</li>
-                  <li>Ejecuta GET <code>/me/adaccounts?fields=id,name</code>. Consultar <code>/me?fields=id,name</code> solo confirma tu perfil; no acredita acceso publicitario. Una lista vacía indica que Meta no devuelve cuentas accesibles para ese token.</li>
-                  <li>Guarda el token únicamente en el campo protegido. Si la conexión ya existe, actualiza su versión en su propia tarjeta y vuelve a verificarla; no necesitas eliminarla.</li>
-                </ol>
-                <p>Esta integración solo lee cuentas y estadísticas. No solicita ads_management. OAuth requiere configurar Facebook Login con la URI indicada; verificar un token manual sigue siendo una alternativa independiente. El retorno OAuth del MCP es un flujo distinto: no lo copies como configuración de tu app Marketing API.</p>
-                <p>Para usuarios externos pueden hacer falta publicación, revisión de permisos y verificación del negocio según lo que Meta solicite. Completa dominio, privacidad y eliminación de datos con información real de tu servicio; la plataforma no puede aprobar esos requisitos por ti. No generes llamadas artificiales ni cambies campañas para completar los contadores de pruebas.</p>
-              </div>
-            </details>}
-            <details>
-              <summary>Si OAuth no está disponible: credenciales y alternativa</summary>
-              <div className="inside stack">
-                <p>Para MCP necesitas que Meta admita el registro de este cliente, un documento de cliente público o un ID de cliente MCP autorizado para la URL de retorno de esta plataforma. Un ID de app Graph o el ID de Claude/ChatGPT no sirve como sustituto. No podemos crear una autorización que Meta no conceda.</p>
-                <p>Para Marketing API, crea o utiliza tu propia app en <a href="https://developers.facebook.com/apps/" target="_blank" rel="noopener noreferrer">Meta for Developers</a>, habilita el acceso publicitario y obtén un token de usuario o usuario del sistema con ads_read, acceso a las cuentas y business_management si tu organización lo requiere. Meta puede exigir revisión de la app o verificación del negocio.</p>
-                <p>Selecciona «Mi app · Marketing API», guarda el token en el campo protegido y pulsa «Verificar y traer cuentas». No pegues contraseñas, tokens ni el secreto de tu app en el chat. Las credenciales se cifran en el servidor; guardar una credencial no demuestra acceso.</p>
-              </div>
-            </details>
-          </section>
-          {connections.some(c => c.disconnectedAt) && <label className="row"><input type="checkbox" checked={showDisconnected} onChange={e => setShowDisconnected(e.target.checked)} />Ver conexiones retiradas ({connections.filter(c => c.disconnectedAt).length})</label>}
-          {connections.filter(c => showDisconnected || !c.disconnectedAt).map((c) => (
-            <article className="panel stack" key={c.id}>
-              <div className="row spread">
-                <h3>{c.name}</h3>
-                <span className="badge">
-                  {c.transport} ·{" "}
-                  {c.disconnectedAt
-                    ? "Desconectada"
-                    : c.verifiedAt
-                      ? "Acceso verificado"
-                      : "Pendiente de verificar"}
-                </span>
-              </div>
-              <small>
-                {c.transport === "API" ? `Graph ${c.apiVersion} · GET /me/adaccounts · ` : ""}{c.tokenMask ?? "Sin token guardado"} · Última verificación:{" "}
-                {displayTime(c.verifiedAt)}
-              </small>
-              {c.transport === "API" && <small>Credencial: {c.authMethod === "OAUTH" ? "OAuth de tu app" : "Token manual"} · Caducidad: {c.tokenExpiresAt ? displayTime(c.tokenExpiresAt) : "No informada"}{c.tokenExpiresAt && Date.parse(c.tokenExpiresAt) <= Date.now() ? " · Reconecta con Facebook" : ""}</small>}
-              {c.transport === "API" && !c.disconnectedAt && <details><summary>Conectar con Facebook · configuración OAuth de mi app</summary><div className="inside"><MetaMarketingOAuth key={c.id + (c.appSecretConfiguredAt ?? "")} connection={c} info={marketingInfo} onUpdated={() => { void refresh().catch(e => setMessage(e.message)); setRevision(r => r + 1); }} /></div></details>}
-              {c.lastError && <p className="notice">{c.lastError}</p>}
-              {c.transport === "API" && <form className="row" onSubmit={e=>{e.preventDefault();const apiVersion=String(new FormData(e.currentTarget).get("apiVersion"));void run(async()=>{await api(`meta-ads/connections/${c.id}`,"PATCH",{apiVersion});},"Versión actualizada. Se conserva el token; vuelve a Verificar y traer cuentas.");}}>
-                <label>Versión Graph guardada<input name="apiVersion" defaultValue={c.apiVersion} key={c.apiVersion} required pattern="v[0-9]{2}\.0" /></label>
-                <button disabled={busy}>Actualizar versión sin cambiar token</button>
-                <small>Usa la misma versión que funcionó en Explorer. Actualizar el formulario de una conexión nueva no cambia esta conexión.</small>
-              </form>}
-
-              <div className="row">
-                {c.transport === "MCP" && (
-                  <form
-                    className="row"
-                    onSubmit={(e) => {
-                      e.preventDefault();
-                      const data = new FormData(e.currentTarget);
-                      void run(async () => {
-                        const r = await api(
-                          `meta-ads/connections/${c.id}/oauth`,
-                          "POST",
-                          {
-                            ...(data.get("clientId")
-                              ? { clientId: String(data.get("clientId")) }
-                              : {}),
-                          },
-                        );
-                        window.location.assign(r.url);
-                      });
-                    }}
-                  >
-                    <details>
-                      <summary>Cliente OAuth registrado · avanzado</summary>
-                      <div className="inside stack"><label>ID de cliente MCP autorizado por Meta<input name="clientId" maxLength={300} /></label><small>Debe tener registrada la URL /api/meta/oauth/callback de esta plataforma. No copies el ID de otro cliente ni lo sustituyas por un ID de app Graph.</small></div>
-                    </details>
-                    <button disabled={busy} className="primary">Conectar con Meta</button>
-                  </form>
-                )}
-                <button
-                  type="button"
-                  disabled={busy || !c.tokenMask || !!c.disconnectedAt}
-                  onClick={() =>
-                    void run(async () => {
-                      const r = await api(
-                        `meta-ads/connections/${c.id}/verify`,
-                        "POST",
-                        {},
-                      );
-                      setMessage(
-                        `${r.minimalVerified ? `Consulta mínima id,name correcta en ${r.apiVersion}. ` : ""}${r.accounts} cuentas encontradas${r.tools.length ? ` · Herramientas de lectura: ${r.tools.join(", ")}` : ""}.${r.warnings?.length ? ` Aviso: se omitieron campos opcionales. ${r.warnings.map((w:{fields:string;code:number|null;message:string})=>`${w.fields} · código ${w.code ?? "no indicado"}: ${w.message}`).join("; ")}` : ""}`,
-                      );
-                    })
-                  }
-                >
-                  Verificar y traer cuentas
-                </button>
-                <button
-                  type="button"
-                  className="danger"
-                  disabled={busy || !!c.disconnectedAt}
-                  onClick={() => {
-                    if (
-                      confirm(
-                        "¿Eliminar esta conexión de la lista activa? Se retirará su token y se desactivará su sincronización. Se conservan las cuentas y el histórico. No se modifica nada en Meta ni otras conexiones.",
-                      )
-                    )
-                      void run(
-                        () => api("meta-ads/connections/" + c.id, "DELETE"),
-                        "Conexión retirada de la lista activa. Se conserva el histórico; puedes consultarla en Ver conexiones retiradas.",
-                      );
-                  }}
-                >
-                  {c.disconnectedAt ? "Conexión retirada" : "Eliminar conexión"}
-                </button>
-              </div>
-              <details>
-                <summary>Reemplazar token</summary>
-                <form
-                  className="row"
-                  onSubmit={(e) => {
-                    e.preventDefault();
-                    const form = e.currentTarget,
-                      token = String(new FormData(form).get("token"));
-                    void run(async () => {
-                      await api("meta-ads/connections/" + c.id, "PATCH", {
-                        token,
-                      });
-                      form.reset();
-                    }, "Token reemplazado. Se retiró el error anterior y se conservó el avance. Pulsa Verificar y traer cuentas en esta misma conexión; después continúa la sincronización.");
-                  }}
-                >
-                  <label>
-                    Token nuevo
-                    <PasswordInput
-                      name="token"
-                      autoComplete="off"
-                      required
-                      secretLabel="token"
-                    />
-                  </label>
-                  <button disabled={busy}>Guardar token</button>
-                </form>
-              </details>
-            </article>
-          ))}
-          <details className="panel">
-            <summary>Configuración de tu app y alcance de MCP</summary>
-            <p>
-              Usa una app empresarial de Meta y habilita el acceso que
-              corresponda a tus cuentas. Los permisos avanzados pueden necesitar
-              revisión y verificación empresarial. El ID de app no sustituye un
-              token autorizado. MCP requiere una autorización propia; no se
-              presupone que un token Graph funcione para MCP.
-            </p>
-            <p>
-              OAuth usa PKCE y descubrimiento del servidor. Si Meta no ofrece
-              registro de clientes públicos o herramientas con estadísticas
-              diarias/atribución compatibles, la pantalla indicará el requisito;
-              Marketing API permanece disponible. La compatibilidad real debe
-              comprobarse con tu autorización.
-            </p>
-          </details>
-        </>
-      ) : tab === "accounts" ? (
-        <>
-          <div className="row">
-            <h2>Cuentas autorizadas · {accounts.length}</h2>
-            <button type="button" disabled={busy} onClick={reload}>
-              Actualizar vista
-            </button>
-          </div>
-          <p className="hint">Son cuentas publicitarias accesibles al usuario del token, incluidas las compartidas; no pertenecen necesariamente al negocio de la app. Sus nombres pueden mencionar WhatsApp: esta lista procede de /me/adaccounts, no del catálogo de WhatsApp.</p>
-          <div className="fields meta-filters panel">
-            <label>Buscar cuenta por nombre o ID<input type="search" value={accountListQuery} onChange={e => { setAccountListQuery(e.target.value); setAccountListPage(1); }} placeholder="Nombre, negocio o act_…" /></label>
-            <label>Actividad de cuentas<select value={accountListActivity} onChange={e => { setAccountListActivity(e.target.value); setAccountListPage(1); }}>{activityOptions.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
-            <label>Negocio informado por Meta<select value={accountListBusiness} onChange={e => { setAccountListBusiness(e.target.value); setAccountListPage(1); }}><option value="">Todos los autorizados</option><option value="__unknown">Sin agrupación disponible</option>{businesses.map(([id, name]) => <option key={id} value={id}>{name}</option>)}</select></label>
-          </div>
-          <small>{filteredAccounts.length} de {accounts.length} cuentas · actividad basada en la última importación completa de hoy. Antes de sincronizar, el gasto y las campañas activas son desconocidos.</small>
-          {accounts.some(a => !a.businessId) && <p className="hint">La agrupación por negocio no está disponible para algunas cuentas. Meta puede exigir business_management para informarla; no es necesario para buscar por nombre o ID.</p>}
-          {!!accounts.length && !filteredAccounts.length && <p className="panel">No hay cuentas que coincidan. Prueba otro nombre o ID, o elige Toda la actividad para incluir cuentas sin sincronizar.</p>}
-          {!accounts.length && (
-            <p className="panel">
-              {owner
-                ? "Conecta Meta y pulsa Verificar y traer cuentas para empezar."
-                : "El OWNER todavía no te ha asignado cuentas publicitarias."}
-            </p>
-          )}
-          {visibleAccounts.map((a) => (
-            <article className="panel stack" key={a.id}>
-              <h3>
-                {a.name} <small>act_{a.id}</small>
-              </h3>
-              <p>
-                {a.businessName ?? "Agrupación por negocio no disponible"} ·{" "}
-                {a.currency} · {a.timezone}
-              </p>
-              <small>
-                Última sincronización: {displayTime(a.syncedAt)} ·{" "}
-                {a.enabled ? "Cuenta habilitada" : "Cuenta deshabilitada"}
-                {a.syncState.phase !== null ? " · Importación en curso" : ""}
-              </small>
-              {a.connection && <small>Conexión utilizada: {a.connection.name} · versión de credencial {a.connection.revision} · {a.connection.verifiedAt ? "Verificada" : "Pendiente de verificar"}</small>}
-              {a.connection && !a.connection.verifiedAt && a.enabled && <p className="notice">La credencial cambió o no está verificada. Verifica esta misma conexión antes de continuar. El avance guardado se conserva.</p>}
-              <small className="meta-account-activity">{accountActivityText(a)}</small>
-              {a.progress && <SyncIndicator account={a} /> }
-              {a.syncError && <p className="notice">{a.syncError}</p>}
-              {owner && (
-                <form
-                  className="stack"
-                  onSubmit={(e) => {
-                    e.preventDefault();
-                    const data = new FormData(e.currentTarget);
-                    void run(
-                      () =>
-                        api("meta-ads/accounts/" + a.id, "PATCH", {
-                          enabled: data.has("enabled"),
-                          metric: String(data.get("metric")),
-                          targetCost: data.get("target")
-                            ? Number(data.get("target"))
-                            : null,
-                          minResults: Number(data.get("minimum")),
-                          intervalMinutes: Number(data.get("interval")),
-                          ...(data.get("connection")
-                            ? { connectionId: String(data.get("connection")) }
-                            : {}),
-                        }),
-                      "Cuenta actualizada.",
-                    );
-                  }}
-                >
-                  <div className="fields">
-                    <label className="check">
-                      <input
-                        type="checkbox"
-                        name="enabled"
-                        defaultChecked={a.enabled}
-                      />
-                      Habilitar sincronización
-                    </label>
-                    <label>
-                      Resultado principal
-                      <select name="metric" defaultValue={a.metric}>
-                        {metrics.map(([id, label]) => (
-                          <option key={id} value={id}>
-                            {label}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                    <label>
-                      Costo objetivo · {a.currency}
-                      <input
-                        name="target"
-                        type="number"
-                        min="0.000001"
-                        step="any"
-                        defaultValue={a.targetCost ?? ""}
-                        placeholder="Sin umbral"
-                      />
-                    </label>
-                    <label>
-                      Mínimo de resultados
-                      <input
-                        name="minimum"
-                        type="number"
-                        min="1"
-                        max="10000"
-                        defaultValue={a.minResults}
-                      />
-                    </label>
-                    <label>
-                      Intervalo solicitado · minutos
-                      <input
-                        name="interval"
-                        type="number"
-                        min="15"
-                        max="1440"
-                        defaultValue={a.intervalMinutes}
-                      />
-                    </label>
-                    {a.sources && a.sources.length > 0 && (
-                      <label>
-                        Conexión de esta cuenta
-                        <select name="connection" defaultValue={a.connectionId}>
-                          {a.sources
-                            .filter((s) => !s.connection.disconnectedAt)
-                            .map((s) => (
-                              <option
-                                key={s.connectionId}
-                                value={s.connectionId}
-                              >
-                                {s.connection.name} · {s.connection.transport}
-                              </option>
-                            ))}
-                        </select>
-                      </label>
-                    )}
-                  </div>
-                  <small>Automático detecta un resultado compatible; no suma objetivos. Para analizar mensajes, elige Conversaciones iniciadas. Guarda los cambios.</small>
-                  <button disabled={busy}>Guardar cuenta</button>
-                </form>
-              )}
-              {a.canSync && a.connection?.transport === "API" && <form className="row" onSubmit={e=>{e.preventDefault();const days=Number(new FormData(e.currentTarget).get("recentDays"));void run(async()=>{const result=await api(`meta-ads/accounts/${a.id}/sync`,"POST",{recentDays:days});setMessage(result.syncError ?? "Importación rápida iniciada. Se conservan los datos anteriores y se reemplaza únicamente el avance pendiente.");});}}><label>Importación rápida<select name="recentDays" defaultValue={a.progress?.recentDays ?? 30}>{[30,90,180].map(days=><option key={days} value={days}>Últimos {days} días</option>)}</select></label><button disabled={busy || !a.enabled || !a.connection.verifiedAt}>Sincronizar periodo seleccionado</button><small>Consulta actividad del periodo y los detalles de los objetos encontrados; incluye anuncios pausados que tuvieron actividad. No recorre todo el catálogo. Desde el inicio permanece parcial hasta importar el histórico.</small></form>}
-              {a.canSync && a.progress && ["running", "stalled", "error"].includes(a.progress.status) && <small>Continuar retoma la página pendiente y conserva lo ya importado. La importación rápida empieza el periodo elegido sin borrar datos. Reimportar histórico recorre todo el catálogo y puede tardar bastante.</small>}
-              <div className="row">
-                {a.canSync && (
+                <p>
+                  Autoriza tu app de Meta para consultar cuentas y estadísticas.
+                </p>
+                <div className="row">
                   <button
                     type="button"
-                    disabled={busy || !a.enabled || !!(a.connection && !a.connection.verifiedAt)}
-                    onClick={() =>
+                    className={apiMode === "oauth" ? "primary" : ""}
+                    onClick={() => setApiMode("oauth")}
+                  >
+                    Autorizar con Facebook
+                  </button>
+                  <button
+                    type="button"
+                    className={apiMode === "manual" ? "primary" : ""}
+                    onClick={() => setApiMode("manual")}
+                  >
+                    Token manual
+                  </button>
+                </div>
+                {apiMode === "oauth" ? (
+                  <MetaMarketingOAuth
+                    info={marketingInfo}
+                    onUpdated={() => {
+                      void refresh();
+                      setRevision((r) => r + 1);
+                    }}
+                  />
+                ) : (
+                  <form
+                    className="stack"
+                    onSubmit={(e) => {
+                      e.preventDefault();
+                      const form = e.currentTarget,
+                        data = new FormData(form);
+                      void run(async () => {
+                        await api("meta-ads/connections", "POST", {
+                          name: String(data.get("name")),
+                          transport: "API",
+                          apiVersion: String(data.get("version")),
+                          token: String(data.get("token")),
+                        });
+                        form.reset();
+                      }, "Conexión guardada. Verifica el acceso para traer tus cuentas.");
+                    }}
+                  >
+                    <div className="fields">
+                      <label>
+                        Nombre
+                        <input name="name" required maxLength={100} />
+                      </label>
+                      <label>
+                        Versión Graph
+                        <input
+                          name="version"
+                          defaultValue="v26.0"
+                          required
+                          pattern="v[0-9]{2}\.0"
+                        />
+                      </label>
+                    </div>
+                    <label>
+                      Token oficial de Marketing API
+                      <PasswordInput
+                        name="token"
+                        required
+                        secretLabel="token de Meta"
+                        autoComplete="off"
+                      />
+                    </label>
+                    <button disabled={busy}>Guardar conexión API</button>
+                  </form>
+                )}
+              </div>
+            </details>
+            {connections.some(
+              (c) => c.transport === "API" && c.disconnectedAt,
+            ) && (
+              <label className="row">
+                <input
+                  type="checkbox"
+                  checked={showDisconnected}
+                  onChange={(e) => setShowDisconnected(e.target.checked)}
+                />
+                Ver conexiones retiradas (
+                {
+                  connections.filter(
+                    (c) => c.transport === "API" && c.disconnectedAt,
+                  ).length
+                }
+                )
+              </label>
+            )}
+            {connections
+              .filter(
+                (c) =>
+                  c.transport === "API" &&
+                  (showDisconnected || !c.disconnectedAt),
+              )
+              .map((c) => (
+                <article className="panel stack" key={c.id}>
+                  <div className="row spread">
+                    <h3>{c.name}</h3>
+                    <span className="badge">
+                      {c.transport} ·{" "}
+                      {c.disconnectedAt
+                        ? "Desconectada"
+                        : c.verifiedAt
+                          ? "Acceso verificado"
+                          : "Pendiente de verificar"}
+                    </span>
+                  </div>
+                  <small>
+                    {c.tokenMask ?? "Sin token guardado"} · Última verificación:{" "}
+                    {displayTime(c.verifiedAt)}
+                  </small>
+                  {c.transport === "API" && (
+                    <small>
+                      Credencial:{" "}
+                      {c.authMethod === "OAUTH"
+                        ? "OAuth de tu app"
+                        : "Token manual"}{" "}
+                      · Caducidad:{" "}
+                      {c.tokenExpiresAt
+                        ? displayTime(c.tokenExpiresAt)
+                        : "No informada"}
+                      {c.tokenExpiresAt &&
+                      Date.parse(c.tokenExpiresAt) <= Date.now()
+                        ? " · Reconecta con Facebook"
+                        : ""}
+                    </small>
+                  )}
+                  {c.transport === "API" && !c.disconnectedAt && (
+                    <details>
+                      <summary>
+                        Conectar con Facebook · configuración OAuth de mi app
+                      </summary>
+                      <div className="inside">
+                        <MetaMarketingOAuth
+                          key={c.id + (c.appSecretConfiguredAt ?? "")}
+                          connection={c}
+                          info={marketingInfo}
+                          onUpdated={() => {
+                            void refresh().catch((e) => setMessage(e.message));
+                            setRevision((r) => r + 1);
+                          }}
+                        />
+                      </div>
+                    </details>
+                  )}
+                  {c.lastError &&
+                    (c.verifiedAt ? (
+                      <details>
+                        <summary>Información de la verificación</summary>
+                        <p>{c.lastError}</p>
+                      </details>
+                    ) : (
+                      <p className="notice">{c.lastError}</p>
+                    ))}
+                  {c.transport === "API" && (
+                    <details>
+                      <summary>Versión de la API · avanzado</summary>
+                      <form
+                        className="row"
+                        onSubmit={(e) => {
+                          e.preventDefault();
+                          const apiVersion = String(
+                            new FormData(e.currentTarget).get("apiVersion"),
+                          );
+                          void run(async () => {
+                            await api(`meta-ads/connections/${c.id}`, "PATCH", {
+                              apiVersion,
+                            });
+                          }, "Versión actualizada. Se conserva el token; vuelve a Verificar y traer cuentas.");
+                        }}
+                      >
+                        <label>
+                          Versión Graph guardada
+                          <input
+                            name="apiVersion"
+                            defaultValue={c.apiVersion}
+                            key={c.apiVersion}
+                            required
+                            pattern="v[0-9]{2}\.0"
+                          />
+                        </label>
+                        <button disabled={busy}>
+                          Actualizar versión sin cambiar token
+                        </button>
+                        <small>
+                          Usa la misma versión que funcionó en Explorer.
+                          Actualizar el formulario de una conexión nueva no
+                          cambia esta conexión.
+                        </small>
+                      </form>
+                    </details>
+                  )}
+
+                  <div className="row">
+                    <button
+                      type="button"
+                      disabled={busy || !c.tokenMask || !!c.disconnectedAt}
+                      onClick={() =>
+                        void run(async () => {
+                          const r = await api(
+                            `meta-ads/connections/${c.id}/verify`,
+                            "POST",
+                            {},
+                          );
+                          setMessage(
+                            `Acceso verificado · ${r.accounts} cuentas disponibles.`,
+                          );
+                        })
+                      }
+                    >
+                      Verificar y traer cuentas
+                    </button>
+                    <button
+                      type="button"
+                      className="danger"
+                      disabled={busy || !!c.disconnectedAt}
+                      onClick={() => {
+                        if (
+                          confirm(
+                            "¿Eliminar esta conexión de la lista activa? Se retirará su token y se desactivará su sincronización. Se conservan las cuentas y el histórico. No se modifica nada en Meta ni otras conexiones.",
+                          )
+                        )
+                          void run(
+                            () => api("meta-ads/connections/" + c.id, "DELETE"),
+                            "Conexión retirada de la lista activa. Se conserva el histórico; puedes consultarla en Ver conexiones retiradas.",
+                          );
+                      }}
+                    >
+                      {c.disconnectedAt
+                        ? "Conexión retirada"
+                        : "Eliminar conexión"}
+                    </button>
+                  </div>
+                  <details>
+                    <summary>Reemplazar token</summary>
+                    <form
+                      className="row"
+                      onSubmit={(e) => {
+                        e.preventDefault();
+                        const form = e.currentTarget,
+                          token = String(new FormData(form).get("token"));
+                        void run(async () => {
+                          await api("meta-ads/connections/" + c.id, "PATCH", {
+                            token,
+                          });
+                          form.reset();
+                        }, "Token reemplazado. Se retiró el error anterior y se conservó el avance. Pulsa Verificar y traer cuentas en esta misma conexión; después continúa la sincronización.");
+                      }}
+                    >
+                      <label>
+                        Token nuevo
+                        <PasswordInput
+                          name="token"
+                          autoComplete="off"
+                          required
+                          secretLabel="token"
+                        />
+                      </label>
+                      <button disabled={busy}>Guardar token</button>
+                    </form>
+                  </details>
+                </article>
+              ))}
+          </>
+        ) : tab === "accounts" ? (
+          <>
+            <div className="row">
+              <h2>Cuentas autorizadas · {accounts.length}</h2>
+              <button type="button" disabled={busy} onClick={reload}>
+                Actualizar vista
+              </button>
+            </div>
+            <p className="hint">
+              Busca tus cuentas publicitarias por nombre o ID.
+            </p>
+            <div className="fields meta-filters panel">
+              <label>
+                Buscar cuenta por nombre o ID
+                <input
+                  type="search"
+                  value={accountListQuery}
+                  onChange={(e) => {
+                    setAccountListQuery(e.target.value);
+                    setAccountListPage(1);
+                  }}
+                  placeholder="Nombre, negocio o act_…"
+                />
+              </label>
+              <label>
+                Actividad de cuentas
+                <select
+                  value={accountListActivity}
+                  onChange={(e) => {
+                    setAccountListActivity(e.target.value);
+                    setAccountListPage(1);
+                  }}
+                >
+                  {activityOptions.map(([value, label]) => (
+                    <option key={value} value={value}>
+                      {label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                Negocio informado por Meta
+                <select
+                  value={accountListBusiness}
+                  onChange={(e) => {
+                    setAccountListBusiness(e.target.value);
+                    setAccountListPage(1);
+                  }}
+                >
+                  <option value="">Todos los autorizados</option>
+                  <option value="__unknown">Sin agrupación disponible</option>
+                  {businesses.map(([id, name]) => (
+                    <option key={id} value={id}>
+                      {name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+            <small>
+              {filteredAccounts.length} de {accounts.length} cuentas · actividad
+              basada en la última importación completa de hoy. Antes de
+              sincronizar, el gasto y las campañas activas son desconocidos.
+            </small>
+            {!!accounts.length && !filteredAccounts.length && (
+              <p className="panel">
+                No hay cuentas que coincidan. Prueba otro nombre o ID, o elige
+                Toda la actividad para incluir cuentas sin sincronizar.
+              </p>
+            )}
+            {!accounts.length && (
+              <p className="panel">
+                {owner
+                  ? "Conecta Meta y pulsa Verificar y traer cuentas para empezar."
+                  : "El OWNER todavía no te ha asignado cuentas publicitarias."}
+              </p>
+            )}
+            {visibleAccounts.map((a) => (
+              <article className="panel stack" key={a.id}>
+                <h3>
+                  {a.name} <small>act_{a.id}</small>
+                </h3>
+                <p>
+                  {a.businessName ? `${a.businessName} · ` : ""}
+                  {a.currency} · {a.timezone}
+                </p>
+                <div className="row spread">
+                  <small>Datos recientes: {displayTime(a.syncedAt)}</small>
+                  {owner && a.sources && (
+                    <label>
+                      Conexión
+                      <select
+                        aria-label={`Conexión de ${a.name}`}
+                        value={a.connectionId}
+                        disabled={busy}
+                        onChange={(e) =>
+                          void run(
+                            () =>
+                              api(`meta-ads/accounts/${a.id}`, "PATCH", {
+                                connectionId: e.target.value,
+                              }),
+                            "Conexión actualizada.",
+                          )
+                        }
+                      >
+                        {a.sources
+                          .filter(
+                            (source) =>
+                              source.connection.transport === "API" &&
+                              !source.connection.disconnectedAt,
+                          )
+                          .map((source) => (
+                            <option
+                              key={source.connectionId}
+                              value={source.connectionId}
+                            >
+                              {source.connection.name}
+                            </option>
+                          ))}
+                      </select>
+                    </label>
+                  )}
+                </div>
+                {a.connection && !a.connection.verifiedAt && (
+                  <p className="notice">
+                    Verifica esta conexión en Conexiones antes de sincronizar.
+                  </p>
+                )}
+                <small className="meta-account-activity">
+                  {accountActivityText(a)}
+                </small>
+                {a.progress && (
+                  <SyncIndicator
+                    account={a}
+                    busy={busy}
+                    onResume={
+                      a.canSync
+                        ? () =>
+                            void run(
+                              () =>
+                                api(`meta-ads/accounts/${a.id}/sync`, "POST", {
+                                  focused: true,
+                                  recentDays: a.progress?.focused
+                                    ? a.progress.recentDays
+                                    : 7,
+                                }),
+                              "Sincronización retomada.",
+                            )
+                        : undefined
+                    }
+                    onControl={
+                      a.canSync
+                        ? (action) =>
+                            void run(
+                              () =>
+                                api(
+                                  `meta-ads/accounts/${a.id}/control`,
+                                  "POST",
+                                  { action },
+                                ),
+                              action === "pause"
+                                ? "Sincronización pausada; puedes retomarla."
+                                : "Sincronización cancelada. Los datos guardados se conservan.",
+                            )
+                        : undefined
+                    }
+                  />
+                )}
+                {a.syncError && (
+                  <details className="notice" open>
+                    <summary>No se completó la sincronización</summary>
+                    <p>{a.syncError}</p>
+                  </details>
+                )}
+                {a.canSync && (
+                  <form
+                    className="row meta-sync-actions"
+                    onSubmit={(e) => {
+                      e.preventDefault();
+                      const recentDays = Number(
+                        new FormData(e.currentTarget).get("recentDays"),
+                      );
                       void run(async () => {
                         const r = await api(
                           `meta-ads/accounts/${a.id}/sync`,
                           "POST",
-                          {},
+                          { focused: true, recentDays },
                         );
                         setMessage(
-                          r.syncError ? r.syncError : r.scheduled
-                            ? r.resumed
-                              ? "Sincronización retomada desde el avance guardado. El progreso se actualizará automáticamente."
-                              : "Importación iniciada. El avance se actualizará automáticamente; puedes salir de esta pantalla."
-                            : "Primera página comprobada; el arranque en segundo plano no está confirmado. Revisa el estado de la cuenta.",
+                          r.syncError ??
+                            (r.resumed
+                              ? "Sincronización retomada."
+                              : "Análisis iniciado. Primero se cargarán los datos recientes y después el histórico."),
                         );
-                      })
-                    }
+                      });
+                    }}
                   >
-                    {busy ? "Procesando…" : a.progress && ["running", "stalled", "error"].includes(a.progress.status) ? "Continuar sincronización" : "Sincronizar ahora"}
-                  </button>
+                    <label>
+                      Activos o con entrega en
+                      <select
+                        name="recentDays"
+                        defaultValue={
+                          a.progress?.focused &&
+                          [7, 15, 30, 90].includes(a.progress.recentDays)
+                            ? a.progress.recentDays
+                            : 7
+                        }
+                      >
+                        {[7, 15, 30, 90].map((days) => (
+                          <option key={days} value={days}>
+                            Últimos {days} días
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <button
+                      className="primary"
+                      disabled={busy || !a.connection?.verifiedAt}
+                    >
+                      {busy
+                        ? "Procesando…"
+                        : a.progress &&
+                            ["running", "stalled", "error", "paused"].includes(
+                              a.progress.status,
+                            )
+                          ? "Continuar análisis"
+                          : "Sincronizar y analizar"}
+                    </button>
+                  </form>
                 )}
+                <small>
+                  El periodo selecciona qué mostrar. Los comparativos incluyen
+                  hoy, 7, 15, 30 días e histórico disponible en Meta.
+                </small>
                 {owner && (
-                  <>
+                  <div className="row">
                     <button
                       type="button"
                       disabled={busy}
@@ -977,523 +1324,859 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
                     >
                       Accesos por usuario
                     </button>
-                    <button
-                      type="button"
-                      disabled={busy || !a.enabled || !!(a.connection && !a.connection.verifiedAt)}
-                      onClick={() => {
-                        if (
-                          confirm(
-                            "¿Volver a importar el histórico disponible de esta cuenta?",
-                          )
-                        )
+                    <details>
+                      <summary>Costo objetivo · opcional</summary>
+                      <form
+                        className="row"
+                        onSubmit={(e) => {
+                          e.preventDefault();
+                          const value = new FormData(e.currentTarget).get(
+                            "target",
+                          );
                           void run(
                             () =>
-                              api(`meta-ads/accounts/${a.id}/sync`, "POST", {
-                                full: true,
+                              api(`meta-ads/accounts/${a.id}`, "PATCH", {
+                                targetCost: value ? Number(value) : null,
                               }),
-                            "Reimportación solicitada.",
+                            "Costo objetivo actualizado.",
                           );
-                      }}
-                    >
-                      Reimportar histórico
-                    </button>
-                  </>
+                        }}
+                      >
+                        <label>
+                          Meta de costo · {a.currency}
+                          <input
+                            name="target"
+                            type="number"
+                            min="0.000001"
+                            step="any"
+                            defaultValue={a.targetCost ?? ""}
+                            placeholder="Sin meta"
+                          />
+                        </label>
+                        <button disabled={busy}>Guardar</button>
+                      </form>
+                    </details>
+                  </div>
                 )}
-              </div>
-            </article>
-          ))}
-          {!!filteredAccounts.length && <div className="row" aria-label="Paginación de cuentas"><button type="button" disabled={accountPage === 1} onClick={() => setAccountListPage(accountPage - 1)}>Anterior</button><span>{filteredAccounts.length} cuentas · Página {accountPage} de {accountPages}</span><button type="button" disabled={accountPage === accountPages} onClick={() => setAccountListPage(accountPage + 1)}>Siguiente</button></div>}
-          <p className="hint">
-            La frecuencia efectiva depende de los límites de Meta y del
-            programador disponible. Consultar este panel no sincroniza ni
-            consume tokens de IA.
-          </p>
-        </>
-      ) : (
-        <>
-          {chosen.filter(a=>a.enabled&&a.progress?.status!=="complete").map(a=><div className="panel" key={a.id}><strong>{a.name}</strong><SyncIndicator account={a} />{a.syncError&&<p className="notice">{a.syncError}</p>}</div>)}
-          <div className="panel stack">
-            <div className="meta-level-tabs" role="tablist" aria-label="Nivel publicitario">
-              {[
-                ["campaign", "Campañas"],
-                ["adset", "Conjuntos de anuncios"],
-                ["ad", "Anuncios"],
-              ].map(([id, label]) => (
+              </article>
+            ))}
+            {!!filteredAccounts.length && (
+              <div className="row" aria-label="Paginación de cuentas">
                 <button
                   type="button"
-                  role="tab"
-                  aria-selected={level === id}
-                  key={id}
-                  className={level === id ? "primary" : ""}
-                  onClick={() => resetPage(() => setLevel(id))}
+                  disabled={accountPage === 1}
+                  onClick={() => setAccountListPage(accountPage - 1)}
                 >
-                  {label}
+                  Anterior
                 </button>
-              ))}
-            </div>
-            <div className="fields meta-filters">
-              <label>
-                Administrador comercial
-                <select
-                  value={business}
-                  onChange={(e) => resetPage(() => { setBusiness(e.target.value); setAccountIds([]); setCampaign(""); setAdset(""); })}
+                <span>
+                  {filteredAccounts.length} cuentas · Página {accountPage} de{" "}
+                  {accountPages}
+                </span>
+                <button
+                  type="button"
+                  disabled={accountPage === accountPages}
+                  onClick={() => setAccountListPage(accountPage + 1)}
                 >
-                  <option value="">Todos los autorizados</option>
-                  {[
-                    ...new Map(
-                      accounts
-                        .filter((a) => a.businessId)
-                        .map((a) => [a.businessId, a.businessName]),
-                    ).entries(),
-                  ].map(([id, name]) => (
-                    <option key={id} value={id!}>
-                      {name ?? id}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <MetaAccountPicker accounts={accounts} selected={accountIds} business={business} query={accountPickerQuery} activity={accountPickerActivity} onQueryChange={setAccountPickerQuery} onActivityChange={setAccountPickerActivity} onChange={ids => resetPage(() => { setAccountIds(ids); setCampaign(""); setAdset(""); })} />
-              <label>
-                Campaña
-                <select
-                  value={campaign}
-                  onChange={(e) =>
+                  Siguiente
+                </button>
+              </div>
+            )}
+            <p className="hint">
+              La actualización continúa en segundo plano. Consultar estadísticas
+              no consume IA.
+            </p>
+          </>
+        ) : (
+          <>
+            {chosen
+              .filter(
+                (a) =>
+                  a.progress &&
+                  !["complete", "disabled", "cancelled"].includes(
+                    a.progress.status,
+                  ),
+              )
+              .map((a) => (
+                <div className="panel" key={a.id}>
+                  <strong>{a.name}</strong>
+                  <SyncIndicator
+                    account={a}
+                    busy={busy}
+                    onResume={
+                      a.canSync
+                        ? () =>
+                            void run(
+                              () =>
+                                api(`meta-ads/accounts/${a.id}/sync`, "POST", {
+                                  focused: true,
+                                  recentDays: a.progress?.focused
+                                    ? a.progress.recentDays
+                                    : 7,
+                                }),
+                              "Sincronización retomada.",
+                            )
+                        : undefined
+                    }
+                    onControl={
+                      a.canSync
+                        ? (action) =>
+                            void run(
+                              () =>
+                                api(
+                                  `meta-ads/accounts/${a.id}/control`,
+                                  "POST",
+                                  { action },
+                                ),
+                              action === "pause"
+                                ? "Sincronización pausada; puedes retomarla."
+                                : "Sincronización cancelada. Los datos guardados se conservan.",
+                            )
+                        : undefined
+                    }
+                  />
+                  {a.syncError && <p className="notice">{a.syncError}</p>}
+                </div>
+              ))}
+            <div className="panel stack">
+              <div
+                className="meta-level-tabs"
+                role="tablist"
+                aria-label="Nivel publicitario"
+              >
+                {[
+                  ["campaign", "Campañas"],
+                  ["adset", "Conjuntos de anuncios"],
+                  ["ad", "Anuncios"],
+                ].map(([id, label]) => (
+                  <button
+                    type="button"
+                    role="tab"
+                    aria-selected={level === id}
+                    key={id}
+                    className={level === id ? "primary" : ""}
+                    onClick={() => resetPage(() => setLevel(id))}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+              <div className="fields meta-filters">
+                <MetaAccountPicker
+                  accounts={accounts}
+                  selected={accountIds}
+                  business={business}
+                  query={accountPickerQuery}
+                  activity={accountPickerActivity}
+                  onQueryChange={setAccountPickerQuery}
+                  onActivityChange={setAccountPickerActivity}
+                  onChange={(ids) =>
                     resetPage(() => {
-                      setCampaign(e.target.value);
+                      setAccountIds(ids);
+                      setCampaign("");
                       setAdset("");
                     })
                   }
-                >
-                  <option value="">Todas las campañas</option>
-                  {objects
-                    .filter((o) => o.level === "campaign" && chosen.some(a => a.id === o.accountId))
-                    .map((o) => (
-                      <option key={o.id} value={o.id}>
-                        {o.name}
-                      </option>
-                    ))}
-                </select>
-              </label>
-              <label>
-                Conjunto
-                <select
-                  value={adset}
-                  onChange={(e) => resetPage(() => setAdset(e.target.value))}
-                >
-                  <option value="">Todos los conjuntos</option>
-                  {objects
-                    .filter(
-                      (o) =>
-                        o.level === "adset" && chosen.some(a => a.id === o.accountId) &&
-                        (!campaign || o.campaignId === campaign),
-                    )
-                    .map((o) => (
-                      <option key={o.id} value={o.id}>
-                        {o.name}
-                      </option>
-                    ))}
-                </select>
-              </label>
-              <label>
-                Estado / entrega
-                <select
-                  value={state}
-                  onChange={(e) => resetPage(() => setState(e.target.value))}
-                >
-                  <option value="all">Todos</option>
-                  <option value="active">Activos configurados</option>
-                  <option value="campaign-active">Solo campañas activas</option>
-                  <option value="delivery">Entrega registrada hoy</option>
-                  <option value="effective">Estado efectivo activo</option>
-                  <option value="paused">Pausados</option>
-                  <option value="issues">Revisión o problemas</option>
-                </select>
-              </label>
-              <label>
-                Buscar por palabra
-                <input
-                  type="search"
-                  aria-label="Buscar campañas, conjuntos o anuncios"
-                  placeholder="Escribe parte del nombre"
-                  value={q}
-                  onChange={(e) => setQ(e.target.value)}
                 />
-              </label>
-              <label>
-                Resultado
-                <select
-                  value={metric}
-                  onChange={(e) => resetPage(() => setMetric(e.target.value))}
-                >
-                  <option value="">Todos · separados al ordenar</option>
-                  {metrics
-                    .filter(([id]) => id !== "AUTO")
-                    .map(([id, label]) => (
+                <label>
+                  Buscar por palabra
+                  <input
+                    type="search"
+                    aria-label="Buscar campañas, conjuntos o anuncios"
+                    placeholder="Escribe parte del nombre"
+                    value={q}
+                    onChange={(e) => setQ(e.target.value)}
+                  />
+                </label>
+                <label>
+                  Medir resultado
+                  <select
+                    value={metric}
+                    onChange={(e) => resetPage(() => setMetric(e.target.value))}
+                  >
+                    <option value="">Automático según objetivo</option>
+                    {metrics
+                      .filter(([id]) => id !== "AUTO")
+                      .map(([id, label]) => (
+                        <option key={id} value={id}>
+                          {label}
+                        </option>
+                      ))}
+                  </select>
+                </label>
+                <label>
+                  Estado / entrega
+                  <select
+                    value={state}
+                    onChange={(e) => resetPage(() => setState(e.target.value))}
+                  >
+                    <option value="all">Todos</option>
+                    <option value="active">Activos configurados</option>
+                    <option value="campaign-active">
+                      Solo campañas activas
+                    </option>
+                    <option value="delivery">Entrega registrada hoy</option>
+                    <option value="effective">Estado efectivo activo</option>
+                    <option value="paused">Pausados</option>
+                    <option value="issues">Revisión o problemas</option>
+                  </select>
+                </label>
+                <label>
+                  Periodo de análisis
+                  <select
+                    value={calendar ? "custom" : analysisPeriod}
+                    onChange={(e) => {
+                      const value = e.target.value;
+                      if (value !== "custom") {
+                        setAnalysisPeriod(value);
+                        setCalendar("");
+                        setSince("");
+                        setUntil("");
+                        if (sort === "custom") setSort("7");
+                      }
+                    }}
+                  >
+                    {periods.map(([id, label]) => (
                       <option key={id} value={id}>
                         {label}
                       </option>
                     ))}
-                </select>
-              </label>
-              <label>
-                Moneda
-                <select
-                  value={currency}
-                  onChange={(e) => resetPage(() => setCurrency(e.target.value))}
-                >
-                  <option value="">Todas · separadas al ordenar</option>
-                  {[...new Set(chosen.map((a) => a.currency))].map((c) => (
-                    <option key={c}>{c}</option>
-                  ))}
-                </select>
-              </label>
-              <label>Periodo de análisis<select value={calendar ? "custom" : analysisPeriod} onChange={e => { const value=e.target.value; if(value!=="custom"){setAnalysisPeriod(value);setCalendar("");setSince("");setUntil("");if(sort==="custom")setSort("7");} }}>{periods.map(([id,label])=><option key={id} value={id}>{label}</option>)}{calendar && <option value="custom">Calendario elegido</option>}</select></label>
-              <label>
-                Antigüedad · días
-                <select
-                  value={age}
-                  onChange={(e) => resetPage(() => setAge(e.target.value))}
-                >
-                  <option value="">Todas</option>
-                  <option value="7">Hasta 7 días</option>
-                  <option value="15">8 a 15 días</option>
-                  <option value="30">16 a 30 días</option>
-                  <option value="older">Más de 30 días</option>
-                </select>
-              </label>
-              <label>
-                Evaluación
-                <select
-                  value={rating}
-                  onChange={(e) => resetPage(() => setRating(e.target.value))}
-                >
-                  <option value="">Todas</option>
-                  {Object.entries(ratings).map(([id, label]) => (
-                    <option key={id} value={id}>
-                      {label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            </div>
-            <div className="meta-sort-tools" aria-label="Orden de resultados">
-              <span>Ordenar por costo</span>
-              <div className="meta-cost-sort" aria-label="Periodo para ordenar por costo">{[...periods, ["custom", "Calendario"]].map(([id, label]) => <button type="button" key={id} aria-pressed={sort === id} disabled={id === "custom" && !calendar} className={sort === id ? "primary" : ""} onClick={() => resetPage(() => { setSort(id); setDirection(sort === id && direction === "asc" ? "desc" : "asc"); })}>{label}<span aria-hidden="true">{sort === id ? direction === "asc" ? " ↑" : " ↓" : " ↕"}</span></button>)}</div>
-              <div className="row"><button type="button" aria-pressed={sort === "newest"} onClick={() => resetPage(() => setSort("newest"))}>Más nuevos</button><button type="button" aria-pressed={sort === "age"} onClick={() => resetPage(() => { setSort("age"); setDirection(sort === "age" && direction === "asc" ? "desc" : "asc"); })}>Antigüedad en días</button></div>
-              <small>Las tarjetas muestran siempre Hoy, 7, 15, 30 días y Desde el inicio. Estos botones solo cambian el orden; otro clic invierte la dirección. Sin costo disponible queda al final.</small>
-            </div>
-            <div className="row meta-view-tools">
-              <details className="meta-calendar">
-                <summary>
-                  Calendario opcional
-                  <span className="meta-calendar-state" aria-hidden="true">{calendar ? "●" : ""}</span>
-                  <span className="sr-only">{calendar ? "Rango personalizado activo" : "Sin rango personalizado"}</span>
-                </summary>
-                <div className="fields">
-                  <label>
-                    Periodo rápido
-                    <select
-                      defaultValue=""
-                      aria-label="Periodo del calendario"
-                      onChange={(e) => chooseCalendar(e.target.value)}
-                    >
-                      <option value="">Desde el inicio / sin rango</option>
-                      <option value="1">Hoy</option>
-                      <option value="7">Últimos 7 días</option>
-                      <option value="15">Últimos 15 días</option>
-                      <option value="30">Últimos 30 días</option>
-                    </select>
-                  </label>
-                  <label>
-                    Desde
-                    <input
-                      type="date"
-                      value={since}
-                      onChange={(e) => {
-                        setSince(e.target.value);
-                        if (e.target.value && until) setCalendar("custom");
-                      }}
-                    />
-                  </label>
-                  <label>
-                    Hasta
-                    <input
-                      type="date"
-                      value={until}
-                      onChange={(e) => {
-                        setUntil(e.target.value);
-                        if (e.target.value && since) setCalendar("custom");
-                      }}
-                    />
-                  </label>
+                    {calendar && (
+                      <option value="custom">Calendario elegido</option>
+                    )}
+                  </select>
+                </label>
+              </div>
+              <details
+                open={
+                  !!(business || campaign || adset || currency || age || rating)
+                }
+              >
+                <summary>Más filtros</summary>
+                <div className="inside stack">
+                  <div className="fields meta-filters">
+                    {businesses.length > 0 && (
+                      <label>
+                        Administrador comercial
+                        <select
+                          value={business}
+                          onChange={(e) =>
+                            resetPage(() => {
+                              setBusiness(e.target.value);
+                              setAccountIds([]);
+                              setCampaign("");
+                              setAdset("");
+                            })
+                          }
+                        >
+                          <option value="">Todos los autorizados</option>
+                          {[
+                            ...new Map(
+                              accounts
+                                .filter((a) => a.businessId)
+                                .map((a) => [a.businessId, a.businessName]),
+                            ).entries(),
+                          ].map(([id, name]) => (
+                            <option key={id} value={id!}>
+                              {name ?? id}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                    )}
+                    <label>
+                      Campaña
+                      <select
+                        value={campaign}
+                        onChange={(e) =>
+                          resetPage(() => {
+                            setCampaign(e.target.value);
+                            setAdset("");
+                          })
+                        }
+                      >
+                        <option value="">Todas las campañas</option>
+                        {objects
+                          .filter(
+                            (o) =>
+                              o.level === "campaign" &&
+                              chosen.some((a) => a.id === o.accountId),
+                          )
+                          .map((o) => (
+                            <option key={o.id} value={o.id}>
+                              {o.name}
+                            </option>
+                          ))}
+                      </select>
+                    </label>
+                    <label>
+                      Conjunto
+                      <select
+                        value={adset}
+                        onChange={(e) =>
+                          resetPage(() => setAdset(e.target.value))
+                        }
+                      >
+                        <option value="">Todos los conjuntos</option>
+                        {objects
+                          .filter(
+                            (o) =>
+                              o.level === "adset" &&
+                              chosen.some((a) => a.id === o.accountId) &&
+                              (!campaign || o.campaignId === campaign),
+                          )
+                          .map((o) => (
+                            <option key={o.id} value={o.id}>
+                              {o.name}
+                            </option>
+                          ))}
+                      </select>
+                    </label>
+                    <label>
+                      Moneda
+                      <select
+                        value={currency}
+                        onChange={(e) =>
+                          resetPage(() => setCurrency(e.target.value))
+                        }
+                      >
+                        <option value="">Todas · separadas al ordenar</option>
+                        {[...new Set(chosen.map((a) => a.currency))].map(
+                          (c) => (
+                            <option key={c}>{c}</option>
+                          ),
+                        )}
+                      </select>
+                    </label>
+                    <label>
+                      Antigüedad · días
+                      <select
+                        value={age}
+                        onChange={(e) =>
+                          resetPage(() => setAge(e.target.value))
+                        }
+                      >
+                        <option value="">Todas</option>
+                        <option value="7">Hasta 7 días</option>
+                        <option value="15">8 a 15 días</option>
+                        <option value="30">16 a 30 días</option>
+                        <option value="older">Más de 30 días</option>
+                      </select>
+                    </label>
+                    <label>
+                      Evaluación
+                      <select
+                        value={rating}
+                        onChange={(e) =>
+                          resetPage(() => setRating(e.target.value))
+                        }
+                      >
+                        <option value="">Todas</option>
+                        {Object.entries(ratings).map(([id, label]) => (
+                          <option key={id} value={id}>
+                            {label}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  </div>
                   <button
                     type="button"
-                    onClick={() => {
-                      setCalendar("");
-                      setSince("");
-                      setUntil("");
-                      if (sort === "custom") setSort("7");
-                    }}
+                    onClick={() =>
+                      resetPage(() => {
+                        setBusiness("");
+                        setCampaign("");
+                        setAdset("");
+                        setCurrency("");
+                        setAge("");
+                        setRating("");
+                      })
+                    }
                   >
-                    Quitar rango
+                    Limpiar filtros adicionales
                   </button>
                 </div>
               </details>
-              <button
-                type="button"
-                onClick={() => setView(view === "cards" ? "table" : "cards")}
-              >
-                {view === "cards" ? "Ver tabla" : "Ver tarjetas"}
-              </button>
-              <button type="button" onClick={reload} disabled={busy}>
-                Actualizar datos guardados
-              </button>
-              <button
-                type="button"
-                onClick={() => exportCSV(items)}
-                disabled={!items.length}
-              >
-                Exportar esta página · CSV
-              </button>
-            </div>
-            <small>
-              Comparaciones permanentes independientes del calendario.
-              Atribución: 7 días clic / 1 día vista, por fecha de impresión. Hoy
-              es parcial; Meta puede actualizar resultados. Se ordena por moneda
-              y tipo de resultado.
-            </small>
-          </div>
-          <div className="meta-results" aria-busy={loading}>
-          {tab === "ranking" && rankingExcluded > 0 && (
-            <p className="hint">
-              {rankingExcluded} elementos separados por datos insuficientes en
-              el periodo elegido. Puedes consultarlos en Rendimiento.
-            </p>
-          )}
-          {limited && (
-            <p className="notice">
-              Hay más de 10.000 elementos: filtra por cuenta o campaña para
-              acotar el ranking.
-            </p>
-          )}
-          <div className="meta-load-status" role="status" aria-live="polite">
-            {loading ? "Consultando estadísticas guardadas…" : ""}
-          </div>
-          {!loading && !items.length && (
-            <section className="panel meta-empty">
-              <h2>
-                {accounts.length
-                  ? "No hay resultados para esta selección"
-                  : "Conecta tus cuentas publicitarias"}
-              </h2>
-              <p>
-                {accounts.length
-                  ? "Habilita y sincroniza una cuenta, o ajusta los filtros. Las estadísticas aparecerán cuando termine la importación."
-                  : owner
-                    ? "Puedes empezar por MCP o conectar el token de tu app de Meta."
-                    : "Solicita al OWNER acceso a las cuentas que necesitas consultar."}
-              </p>
-              {owner && (
+              <div className="meta-sort-tools" aria-label="Orden de resultados">
+                <span>Ordenar por costo</span>
+                <div
+                  className="meta-cost-sort"
+                  aria-label="Periodo para ordenar por costo"
+                >
+                  {[...periods, ["custom", "Calendario"]].map(([id, label]) => (
+                    <button
+                      type="button"
+                      key={id}
+                      aria-pressed={sort === id}
+                      disabled={id === "custom" && !calendar}
+                      className={sort === id ? "primary" : ""}
+                      onClick={() =>
+                        resetPage(() => {
+                          setSort(id);
+                          setDirection(
+                            sort === id && direction === "asc" ? "desc" : "asc",
+                          );
+                        })
+                      }
+                    >
+                      {label}
+                      <span aria-hidden="true">
+                        {sort === id
+                          ? direction === "asc"
+                            ? " ↑"
+                            : " ↓"
+                          : " ↕"}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+                <div className="row">
+                  <button
+                    type="button"
+                    aria-pressed={sort === "newest"}
+                    onClick={() => resetPage(() => setSort("newest"))}
+                  >
+                    Más nuevos
+                  </button>
+                  <button
+                    type="button"
+                    aria-pressed={sort === "age"}
+                    onClick={() =>
+                      resetPage(() => {
+                        setSort("age");
+                        setDirection(
+                          sort === "age" && direction === "asc"
+                            ? "desc"
+                            : "asc",
+                        );
+                      })
+                    }
+                  >
+                    Antigüedad en días
+                  </button>
+                </div>
+                <small>
+                  Las tarjetas muestran siempre Hoy, 7, 15, 30 días y Desde el
+                  inicio. Estos botones solo cambian el orden; otro clic
+                  invierte la dirección. Sin costo disponible queda al final.
+                </small>
+              </div>
+              <div className="row meta-view-tools">
+                <details className="meta-calendar">
+                  <summary>
+                    Calendario opcional
+                    <span className="meta-calendar-state" aria-hidden="true">
+                      {calendar ? "●" : ""}
+                    </span>
+                    <span className="sr-only">
+                      {calendar
+                        ? "Rango personalizado activo"
+                        : "Sin rango personalizado"}
+                    </span>
+                  </summary>
+                  <div className="fields">
+                    <label>
+                      Periodo rápido
+                      <select
+                        defaultValue=""
+                        aria-label="Periodo del calendario"
+                        onChange={(e) => chooseCalendar(e.target.value)}
+                      >
+                        <option value="">Desde el inicio / sin rango</option>
+                        <option value="1">Hoy</option>
+                        <option value="7">Últimos 7 días</option>
+                        <option value="15">Últimos 15 días</option>
+                        <option value="30">Últimos 30 días</option>
+                      </select>
+                    </label>
+                    <label>
+                      Desde
+                      <input
+                        type="date"
+                        value={since}
+                        onChange={(e) => {
+                          setSince(e.target.value);
+                          if (e.target.value && until) setCalendar("custom");
+                        }}
+                      />
+                    </label>
+                    <label>
+                      Hasta
+                      <input
+                        type="date"
+                        value={until}
+                        onChange={(e) => {
+                          setUntil(e.target.value);
+                          if (e.target.value && since) setCalendar("custom");
+                        }}
+                      />
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setCalendar("");
+                        setSince("");
+                        setUntil("");
+                        if (sort === "custom") setSort("7");
+                      }}
+                    >
+                      Quitar rango
+                    </button>
+                  </div>
+                </details>
                 <button
                   type="button"
-                  onClick={() =>
-                    setTab(accounts.length ? "accounts" : "connections")
-                  }
+                  onClick={() => setView(view === "cards" ? "table" : "cards")}
                 >
-                  {accounts.length ? "Configurar cuentas" : "Conectar Meta"}
+                  {view === "cards" ? "Ver tabla" : "Ver tarjetas"}
                 </button>
+                <button type="button" onClick={reload} disabled={busy}>
+                  Actualizar datos guardados
+                </button>
+                <button
+                  type="button"
+                  onClick={() => exportCSV(items)}
+                  disabled={!items.length}
+                >
+                  Exportar esta página · CSV
+                </button>
+              </div>
+              <small>
+                Comparaciones permanentes independientes del calendario.
+                Atribución: 7 días clic / 1 día vista, por fecha de impresión.
+                Hoy es parcial; Meta puede actualizar resultados. Se ordena por
+                moneda y tipo de resultado.
+              </small>
+            </div>
+            <div className="meta-results" aria-busy={loading}>
+              {tab === "ranking" && rankingExcluded > 0 && (
+                <p className="hint">
+                  {rankingExcluded} elementos separados por datos insuficientes
+                  en el periodo elegido. Puedes consultarlos en Rendimiento.
+                </p>
               )}
-            </section>
-          )}
-          {view === "table" ? (
-            <div className="meta-table">
-              <table>
-                <thead>
-                  <tr>
-                    <th>Campaña / Conjunto / Anuncio</th>
-                    <th>Cuenta / Resultado</th>
-                    <th>Estado</th>
-                    <th>Inicio · días</th>
-                    {periods.map(([key, label]) => (
-                      <th key={key}>{label}</th>
-                    ))}
-                    <th>Evaluación</th>
-                  </tr>
-                </thead>
-                <tbody>
+              {limited && (
+                <p className="notice">
+                  Hay más de 10.000 elementos: filtra por cuenta o campaña para
+                  acotar el ranking.
+                </p>
+              )}
+              <div
+                className="meta-load-status"
+                role="status"
+                aria-live="polite"
+              >
+                {loading ? "Consultando estadísticas guardadas…" : ""}
+              </div>
+              {!loading && !items.length && (
+                <section className="panel meta-empty">
+                  <h2>
+                    {accounts.length
+                      ? "No hay resultados para esta selección"
+                      : "Conecta tus cuentas publicitarias"}
+                  </h2>
+                  <p>
+                    {accounts.length
+                      ? "Habilita y sincroniza una cuenta, o ajusta los filtros. Las estadísticas aparecerán cuando termine la importación."
+                      : owner
+                        ? "Conecta tu cuenta de Facebook para empezar."
+                        : "Solicita al OWNER acceso a las cuentas que necesitas consultar."}
+                  </p>
+                  {owner && (
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setTab(accounts.length ? "accounts" : "connections")
+                      }
+                    >
+                      {accounts.length ? "Configurar cuentas" : "Conectar Meta"}
+                    </button>
+                  )}
+                </section>
+              )}
+              {view === "table" ? (
+                <div className="meta-table">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Campaña / Conjunto / Anuncio</th>
+                        <th>Cuenta / Resultado</th>
+                        <th>Estado</th>
+                        <th>Inicio · días</th>
+                        {periods.map(([key, label]) => (
+                          <th key={key}>{label}</th>
+                        ))}
+                        <th>Evaluación</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {items
+                        .filter(
+                          (o) =>
+                            tab !== "alerts" ||
+                            ["CRITICAL", "WATCH", "DETERIORATING"].includes(
+                              o.rating,
+                            ),
+                        )
+                        .map((o) => (
+                          <tr key={o.id}>
+                            <td>
+                              <button
+                                type="button"
+                                onClick={() => setSelected(o)}
+                              >
+                                {o.name}
+                              </button>
+                              <small>
+                                {o.campaignName} / {o.adsetName}
+                              </small>
+                            </td>
+                            <td>
+                              {o.accountName}
+                              <small>{o.metricName}</small>
+                            </td>
+                            <td>{o.effectiveStatus ?? "No informado"}</td>
+                            <td>
+                              {date(o.firstDelivery)}
+                              <small>{o.ageDays ?? "—"} días</small>
+                            </td>
+                            {periods.map(([key]) => (
+                              <td key={key}>
+                                {cost(o.periods[key], o.currency)}
+                                <small>
+                                  {o.periods[key].results} resultados
+                                </small>
+                              </td>
+                            ))}
+                            <td>{ratings[o.rating]}</td>
+                          </tr>
+                        ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <div className="meta-cards">
                   {items
                     .filter(
                       (o) =>
                         tab !== "alerts" ||
-                        ["CRITICAL", "WATCH", "DETERIORATING"].includes(
-                          o.rating,
-                        ),
+                        [
+                          "CRITICAL",
+                          "WATCH",
+                          "DETERIORATING",
+                          "STALE",
+                        ].includes(o.rating),
                     )
-                    .map((o) => (
-                      <tr key={o.id}>
-                        <td>
-                          <button type="button" onClick={() => setSelected(o)}>
-                            {o.name}
-                          </button>
-                          <small>
-                            {o.campaignName} / {o.adsetName}
-                          </small>
-                        </td>
-                        <td>
-                          {o.accountName}
-                          <small>{o.metricName}</small>
-                        </td>
-                        <td>{o.effectiveStatus ?? "No informado"}</td>
-                        <td>
-                          {date(o.firstDelivery)}
-                          <small>{o.ageDays ?? "—"} días</small>
-                        </td>
-                        {periods.map(([key]) => (
-                          <td key={key}>
-                            {cost(o.periods[key], o.currency)}
-                            <small>{o.periods[key].results} resultados</small>
-                          </td>
-                        ))}
-                        <td>{ratings[o.rating]}</td>
-                      </tr>
-                    ))}
-                </tbody>
-              </table>
-            </div>
-          ) : (
-            <div className="meta-cards">
-              {items
-                .filter(
-                  (o) =>
-                    tab !== "alerts" ||
-                    ["CRITICAL", "WATCH", "DETERIORATING", "STALE"].includes(
-                      o.rating,
-                    ),
-                )
-                .map((o) => {
-                  const summary = o.periods[calendar ? "custom" : analysisPeriod] ?? o.periods["30"];
-                  const summaryLabel = calendar ? "Calendario elegido" : periods.find(([id]) => id === analysisPeriod)?.[1] ?? "30 días";
-                  return <article
-                    className={
-                      "meta-card meta-rating-" + o.rating.toLowerCase()
-                    }
-                    key={o.id}
-                  >
-                    <header>
-                      <span className="meta-account-name">{o.accountName} · {o.currency}</span>
-                      <span className={"meta-delivery " + (o.effectiveStatus === "ACTIVE" ? "is-active" : "")}>{deliveryLabels[o.effectiveStatus] ?? o.effectiveStatus ?? "Entrega no informada"}</span>
-                    </header>
-                    <div className="meta-card-heading">
-                      {o.thumbnailUrl && (
-                        <img
-                          src={`/api/meta-ads/objects/${o.id}/thumbnail`}
-                          width={84}
-                          height={84}
-                          loading="lazy"
-                          referrerPolicy="no-referrer"
-                          alt="Creatividad del anuncio"
-                          onError={(e) => {
-                            e.currentTarget.hidden = true;
-                          }}
-                        />
-                      )}
-                      <div>
-                        <small className="meta-object-level">{o.level === "ad" ? "Anuncio" : o.level === "adset" ? "Conjunto de anuncios" : "Campaña"}</small>
-                        <h2>{o.name}</h2>
-                        <small>Campaña: {o.campaignName}</small>
-                        {o.level !== "campaign" && <small>Conjunto: {o.adsetName}</small>}
-                      </div>
-                    </div>
-                    <div className="meta-circulation"><div><span>Primera circulación conocida</span><strong>{date(o.firstDelivery)}</strong></div><div><span>Días transcurridos</span><strong>{o.ageDays !== null ? `${o.ageDays} días` : "Por confirmar"}</strong></div></div>
-                    <div className="meta-summary-heading"><strong>Resumen · {summaryLabel}</strong><small>{date(summary.since)} → {date(summary.until)}</small></div>
-                    <div className="meta-summary-metrics">
-                      <div><span>Gasto</span><strong>{summary.state === "UNAVAILABLE" ? "—" : money(summary.spend, o.currency)}</strong></div>
-                      <div title={o.metricName}><span>Resultados</span><strong>{summary.state === "UNAVAILABLE" ? "—" : summary.results.toLocaleString("es-PE")}</strong><span className="sr-only">{o.metricName}</span></div>
-                      <div><span>Costo por resultado</span><strong>{cost(summary,o.currency)}</strong></div>
-                    </div>
-                    <strong className="meta-metric-name">{costLabels[o.metric] ?? "Costo por resultado"}</strong>
-                    <div className="meta-periods">
-                      {periods.map(([key, label]) => (
-                        <div
-                          key={key}
-                          title={`${o.periods[key].since} → ${o.periods[key].until}`}
+                    .map((o) => {
+                      const summary =
+                        o.periods[calendar ? "custom" : analysisPeriod] ??
+                        o.periods["30"];
+                      const summaryLabel = calendar
+                        ? "Calendario elegido"
+                        : (periods.find(([id]) => id === analysisPeriod)?.[1] ??
+                          "30 días");
+                      return (
+                        <article
+                          className={
+                            "meta-card meta-rating-" + o.rating.toLowerCase()
+                          }
+                          key={o.id}
                         >
-                          <span>
-                            {label}
-                            {key === "lifetime" && o.ageDays !== null
-                              ? ` · ${o.ageDays} días`
-                              : ""}
-                          </span>
-                          <strong>{cost(o.periods[key], o.currency)}</strong>
-                          <small>
-                            {o.periods[key].results} resultados ·{" "}
-                            {money(o.periods[key].spend, o.currency)}
-                          </small>
-                        </div>
-                      ))}
-                    </div>
-                    {calendar && o.periods.custom && (
-                      <p>
-                        Calendario: {cost(o.periods.custom, o.currency)} ·{" "}
-                        {o.periods.custom.results} resultados
-                      </p>
-                    )}
-                    <div className="meta-card-evaluation"><span className="badge">{ratings[o.rating]}</span><small>Evaluación de 7 días · según objetivo y volumen mínimo configurados</small></div>
-                    <div className="meta-dates">
-                      <span>
-                        Creado: {date(o.createdTime, o.timezone)} · Activos
-                        conocidos: {o.activeDays} días
-                      </span>
-                      <span>
-                        Histórico parcial / disponible · Actualizado:{" "}
-                        {displayTime(o.syncedAt)}
-                      </span>
-                    </div>
-                    {o.changePercent !== null && (
-                      <p className="hint">
-                        Costo de 7 días completos frente a los 7 anteriores:{" "}
-                        {o.changePercent > 0 ? "+" : ""}
-                        {o.changePercent.toFixed(1)}%.{" "}
-                        {o.changePercent > 0 ? "Aumento" : "Reducción"} del
-                        costo; compara también el volumen.
-                      </p>
-                    )}
-                    {o.pausedCandidate && (
-                      <p className="notice">
-                        Pausado con buen historial · candidato a revisión
-                        manual.
-                      </p>
-                    )}
-                    <button type="button" onClick={() => setSelected(o)}>
-                      Ver detalle y periodos
-                    </button>
-                  </article>;
-                })}
+                          <header>
+                            <span className="meta-account-name">
+                              {o.accountName} · {o.currency}
+                            </span>
+                            <span
+                              className={
+                                "meta-delivery " +
+                                (o.effectiveStatus === "ACTIVE"
+                                  ? "is-active"
+                                  : "")
+                              }
+                            >
+                              {deliveryLabels[o.effectiveStatus] ??
+                                o.effectiveStatus ??
+                                "Entrega no informada"}
+                            </span>
+                          </header>
+                          <div className="meta-card-heading">
+                            {o.thumbnailUrl && (
+                              <img
+                                src={`/api/meta-ads/objects/${o.id}/thumbnail`}
+                                width={84}
+                                height={84}
+                                loading="lazy"
+                                referrerPolicy="no-referrer"
+                                alt="Creatividad del anuncio"
+                                onError={(e) => {
+                                  e.currentTarget.hidden = true;
+                                }}
+                              />
+                            )}
+                            <div>
+                              <small className="meta-object-level">
+                                {o.level === "ad"
+                                  ? "Anuncio"
+                                  : o.level === "adset"
+                                    ? "Conjunto de anuncios"
+                                    : "Campaña"}
+                              </small>
+                              <h2>{o.name}</h2>
+                              <small>Campaña: {o.campaignName}</small>
+                              {o.level !== "campaign" && (
+                                <small>Conjunto: {o.adsetName}</small>
+                              )}
+                            </div>
+                          </div>
+                          <div className="meta-circulation">
+                            <div>
+                              <span>
+                                {o.createdTime
+                                  ? "Creado el"
+                                  : "Entrega registrada desde"}
+                              </span>
+                              <strong>
+                                {date(
+                                  o.createdTime ?? o.firstDelivery,
+                                  o.timezone,
+                                )}
+                              </strong>
+                            </div>
+                            <div>
+                              <span>
+                                {o.ageFromCreation
+                                  ? "Antigüedad"
+                                  : "Días registrados"}
+                              </span>
+                              <strong>
+                                {o.ageDays !== null
+                                  ? `${o.ageDays} días`
+                                  : "Por confirmar"}
+                              </strong>
+                            </div>
+                          </div>
+                          <div className="meta-summary-heading">
+                            <strong>Resumen · {summaryLabel}</strong>
+                            <small>
+                              {date(summary.since)} → {date(summary.until)}
+                            </small>
+                          </div>
+                          <div className="meta-summary-metrics">
+                            <div>
+                              <span>Gasto</span>
+                              <strong>
+                                {summary.state === "UNAVAILABLE"
+                                  ? "—"
+                                  : money(summary.spend, o.currency)}
+                              </strong>
+                            </div>
+                            <div title={o.metricName}>
+                              <span>Resultados</span>
+                              <strong>
+                                {summary.state === "UNAVAILABLE"
+                                  ? "—"
+                                  : summary.results.toLocaleString("es-PE")}
+                              </strong>
+                              <span className="sr-only">{o.metricName}</span>
+                            </div>
+                            <div>
+                              <span>Costo por resultado</span>
+                              <strong>{cost(summary, o.currency)}</strong>
+                            </div>
+                          </div>
+                          <strong className="meta-metric-name">
+                            {costLabels[o.metric] ?? "Costo por resultado"}
+                          </strong>
+                          <div className="meta-periods">
+                            {periods.map(([key, label]) => (
+                              <div
+                                key={key}
+                                title={`${o.periods[key].since} → ${o.periods[key].until}`}
+                              >
+                                <span>{label}</span>
+                                <strong>
+                                  {cost(o.periods[key], o.currency)}
+                                </strong>
+                                <small>
+                                  {o.periods[key].state === "UNAVAILABLE"
+                                    ? "Pendiente / no disponible"
+                                    : `${o.periods[key].results} resultados`}{" "}
+                                  · {money(o.periods[key].spend, o.currency)}
+                                </small>
+                              </div>
+                            ))}
+                          </div>
+                          {calendar && o.periods.custom && (
+                            <p>
+                              Calendario: {cost(o.periods.custom, o.currency)} ·{" "}
+                              {o.periods.custom.results} resultados
+                            </p>
+                          )}
+                          <div className="meta-card-evaluation">
+                            <span className="badge">{ratings[o.rating]}</span>
+                            <small>
+                              Evaluación orientativa · últimos 7 días
+                            </small>
+                          </div>
+                          <div className="meta-dates">
+                            <span>
+                              Creado: {date(o.createdTime, o.timezone)} ·
+                              Activos conocidos: {o.activeDays} días
+                            </span>
+                            <span>
+                              {o.historyPending
+                                ? "Histórico en preparación"
+                                : "Histórico disponible en Meta"}{" "}
+                              · Actualizado:{" "}
+                              {displayTime(o.historyUpdatedAt ?? o.syncedAt)}
+                            </span>
+                          </div>
+                          {o.changePercent !== null && (
+                            <p className="hint">
+                              Costo de 7 días completos frente a los 7
+                              anteriores: {o.changePercent > 0 ? "+" : ""}
+                              {o.changePercent.toFixed(1)}%.{" "}
+                              {o.changePercent > 0 ? "Aumento" : "Reducción"}{" "}
+                              del costo; compara también el volumen.
+                            </p>
+                          )}
+                          {o.pausedCandidate && (
+                            <p className="notice">
+                              Pausado con buen historial · candidato a revisión
+                              manual.
+                            </p>
+                          )}
+                          <button type="button" onClick={() => setSelected(o)}>
+                            Ver detalle y periodos
+                          </button>
+                        </article>
+                      );
+                    })}
+                </div>
+              )}
+              <div className="row">
+                <button
+                  type="button"
+                  disabled={page <= 1}
+                  onClick={() => setPage((p) => p - 1)}
+                >
+                  Anterior
+                </button>
+                <span>
+                  {total} elementos · Página {page} de{" "}
+                  {Math.max(1, Math.ceil(total / 25))}
+                </span>
+                <button
+                  type="button"
+                  disabled={page * 25 >= total}
+                  onClick={() => setPage((p) => p + 1)}
+                >
+                  Siguiente
+                </button>
+              </div>
             </div>
-          )}
-          <div className="row">
-            <button
-              type="button"
-              disabled={page <= 1}
-              onClick={() => setPage((p) => p - 1)}
-            >
-              Anterior
-            </button>
-            <span>
-              {total} elementos · Página {page} de{" "}
-              {Math.max(1, Math.ceil(total / 25))}
-            </span>
-            <button
-              type="button"
-              disabled={page * 25 >= total}
-              onClick={() => setPage((p) => p + 1)}
-            >
-              Siguiente
-            </button>
-          </div>
-          </div>
-        </>
-      )}
+          </>
+        )}
       </div>
       {selected && (
         <MetaDetail item={selected} onClose={() => setSelected(null)} />
@@ -1541,8 +2224,16 @@ function MetaDetail({ item: o, onClose }: { item: Item; onClose: () => void }) {
                 <td>
                   {date(o.periods[key].since)} – {date(o.periods[key].until)}
                 </td>
-                <td>{o.periods[key].results}</td>
-                <td>{money(o.periods[key].spend, o.currency)}</td>
+                <td>
+                  {o.periods[key].state === "UNAVAILABLE"
+                    ? "—"
+                    : o.periods[key].results}
+                </td>
+                <td>
+                  {o.periods[key].state === "UNAVAILABLE"
+                    ? "—"
+                    : money(o.periods[key].spend, o.currency)}
+                </td>
                 <td>{cost(o.periods[key], o.currency)}</td>
               </tr>
             ))}
@@ -1558,8 +2249,8 @@ function MetaDetail({ item: o, onClose }: { item: Item; onClose: () => void }) {
       </p>
       <p>
         Las clasificaciones son cálculos internos, según el costo objetivo y
-        mínimo de resultados configurados. No son puntuaciones oficiales de
-        Meta. Un estado efectivo activo no garantiza entrega actual.
+        volumen de resultados disponible. No son puntuaciones oficiales de Meta.
+        Un estado efectivo activo no garantiza entrega actual.
       </p>
       <a
         href={`https://adsmanager.facebook.com/adsmanager/manage/ads?act=${encodeURIComponent(o.accountId)}`}

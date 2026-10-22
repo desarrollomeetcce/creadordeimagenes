@@ -1,3 +1,5 @@
+import { focusedReportDay } from "./focused-labels";
+import { focusedSyncStep, type FocusState } from "./focused-sync";
 import { writeSyncPage } from "./bulk-sync";
 import { syncProgress } from "./sync-progress";
 import { randomUUID } from "node:crypto";
@@ -45,6 +47,7 @@ export const accountSelect = {
   targetCost: true,
   minResults: true,
   intervalMinutes: true,
+  selectionSince:true,
   historyFrom: true,
   syncedAt: true,
   nextSyncAt: true,
@@ -481,24 +484,27 @@ type State = {
   started?: string;
   lastAttempt?: { at: string; revision: number };
 };
-export async function queueSync(actor: Actor, id: string, full = false, recentDays?: number) {
+export async function queueSync(actor: Actor, id: string, full = false, recentDays?: number, focused = false) {
   const a = await access(actor, id, true);
   demand(
-    a.enabled && a.connection.verifiedAt,
+    (a.enabled || focused) && a.connection.verifiedAt,
     "Habilita la cuenta y verifica su conexión antes de sincronizar.",
     409,
   );
-  demand(!recentDays || (!full && [30,90,180].includes(recentDays) && a.connection.transport === "API"), "La importación rápida admite 30, 90 o 180 días con Marketing API.");
+  demand(!recentDays || (!full && [7,15,30,90,180].includes(recentDays) && a.connection.transport === "API"), "La importación rápida admite 30, 90 o 180 días con Marketing API.");
+  demand(!focused || (!full && a.connection.transport === "API" && (!recentDays || [7,15,30,90].includes(recentDays))), "La sincronización de análisis requiere Marketing API y un periodo válido.");
   await rateLimit("meta:sync:" + actor.id, 30);
   const progress = syncProgress(a);
-  const resumed = !full && !recentDays && typeof (a.syncState as State).phase === "number";
+  const focusResume = focused && (a.syncState as {plan?:string}).plan === "focus" && typeof (a.syncState as State).phase === "number" && (!recentDays || recentDays === (a.syncState as State).recentDays);
+  const focusStart=focused && !focusResume;
+  const resumed = focusResume || !focused && !full && !recentDays && typeof (a.syncState as State).phase === "number";
   // Retire a stopped executor, including runs pinned to a previous deployment.
   // The saved page cursor and imported records belong to the account, not the run.
   const recover = progress.status === "error" || progress.status === "stalled";
   const updated = await db.metaAdAccount.updateMany({
     where: {
       id,
-      enabled: true,
+      ...(focused ? {} : {enabled:true}),
       connectionId: a.connectionId,
       connection: { revision: a.connection.revision, disconnectedAt: null },
       OR: [
@@ -509,20 +515,22 @@ export async function queueSync(actor: Actor, id: string, full = false, recentDa
     data: {
       nextSyncAt: new Date(),
       syncError: null,
-      ...(recover || full || recentDays ? { schedulerToken: null, schedulerRunId: null } : {}),
-      ...(full ? { syncState: {mode:"history"} } : recentDays ? {syncState:{plan:"activity",recentDays,phase:0,mode:"recent",since:shiftDay(localDay(a.timezone),1-recentDays),until:localDay(a.timezone), ...((a.syncState as State).lastRun ? {lastRun:(a.syncState as State).lastRun} : {})}} : {}),
+      ...(recover || full || recentDays || focusStart ? { schedulerToken: null, schedulerRunId: null } : {}),
+      ...(focused ? {enabled:true} : {}),
+      ...(focused ? {syncState:focusResume?{...(a.syncState as Prisma.InputJsonObject),stop:null}:{plan:"focus",recentDays:recentDays??7,phase:0,started:new Date().toISOString(),until:localDay(a.timezone),...(focusedReportDay(a.syncState)?{lastReportUntil:focusedReportDay(a.syncState)}:{}),...((a.syncState as State).lastRun?{lastRun:(a.syncState as State).lastRun}:{})}} : full ? { syncState: {mode:"history"} } : recentDays ? {syncState:{plan:"activity",recentDays,phase:0,mode:"recent",since:shiftDay(localDay(a.timezone),1-recentDays),until:localDay(a.timezone), ...((a.syncState as State).lastRun ? {lastRun:(a.syncState as State).lastRun} : {})}} : {}),
     },
   });
   demand(updated.count, "La cuenta ya está procesando una página o su conexión cambió. Espera a que termine y vuelve a consultar el progreso.", 409);
   return { queued: true, resumed };
 }
-export async function syncStep(id: string): Promise<boolean> {
+export async function syncStep(id: string, expectedSchedule?:string): Promise<boolean> {
   const token = randomUUID(),
     now = new Date();
   const claimed = await db.metaAdAccount.updateMany({
     where: {
       id,
       enabled: true,
+      ...(expectedSchedule?{schedulerToken:expectedSchedule}:{}),
       nextSyncAt: { lte: now },
       connection: { disconnectedAt: null },
       OR: [
@@ -540,6 +548,14 @@ export async function syncStep(id: string): Promise<boolean> {
       { connection: c, reader: r } = await reader(a.connectionId);
     revision = c.revision;
     const state = a.syncState as State;
+    if ((state as {plan?:string}).plan === "focus") {
+      syncPhase="análisis seleccionado";
+      return await focusedSyncStep(a,c,r,token,state as unknown as FocusState);
+    }
+    if (state.phase === undefined && (state.lastRun as {plan?:string}|undefined)?.plan === "focus") {
+      syncPhase="actualización del análisis";
+      return await focusedSyncStep(a,c,r,token,{plan:"focus",phase:0,recentDays:state.lastRun?.recentDays??7,started:new Date().toISOString(),until:localDay(a.timezone),lastRun:state.lastRun as Prisma.InputJsonObject});
+    }
     // Preserve legacy in-flight cursors. New API imports start with recent activity.
     const activity = state.plan === "activity" || (state.phase === undefined && state.mode !== "history" && c.transport === "API");
     const recentDays = state.recentDays ?? state.lastRun?.recentDays ?? 30;
@@ -862,4 +878,19 @@ export async function runDueSync(limit = 3) {
   });
   for (const a of accounts) await syncStep(a.id);
   return accounts.length;
+}
+
+export async function controlSync(actor:Actor,id:string,action:"pause"|"cancel") {
+  await access(actor,id,true);
+  await db.$transaction(async tx=>{
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(884411)`;
+    const user=await tx.user.findFirst({where:{id:actor.id,status:"APPROVED"}});
+    const a=await tx.metaAdAccount.findUniqueOrThrow({where:{id},include:{grants:{where:{userId:actor.id}}}});
+    demand(user && (user.role==="OWNER" || user.role==="ADMIN" && a.grants.some(g=>g.canSync)),"No tienes permiso para controlar la sincronización.",403);
+    const state=a.syncState as Prisma.InputJsonObject;
+    const stopped=action==="pause"?{...state,stop:"paused"}:{plan:"focus",recentDays:state.plan==="focus"?(state.recentDays??7):7,stop:"cancelled",...(focusedReportDay(state)?{lastReportUntil:focusedReportDay(state)}:{}),...(state.lastRun?{lastRun:state.lastRun}:{})};
+    await tx.metaAdAccount.update({where:{id},data:{enabled:false,syncToken:null,syncLeaseAt:null,schedulerToken:null,schedulerRunId:null,nextSyncAt:null,syncError:null,syncState:stopped}});
+    await recordActivity(tx,{data:{actorId:actor.id,action:action==="pause"?"META_SYNC_PAUSADA":"META_SYNC_CANCELADA",resourceId:id,detail:{preserved:true}}});
+  });
+  return {ok:true};
 }

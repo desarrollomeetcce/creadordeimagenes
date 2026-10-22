@@ -18,7 +18,7 @@ async function advance(accountId: string, scheduleToken: string) {
   );
   if (delay > 0) return { active: true, delay };
   console.info("meta_sync_step", { accountId });
-  await syncStep(accountId);
+  await syncStep(accountId,scheduleToken);
   return { active: true, delay: 2000 };
 }
 export async function metaSyncWorkflow(

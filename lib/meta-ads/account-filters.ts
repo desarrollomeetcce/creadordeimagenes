@@ -17,7 +17,6 @@ export const activityOptions = [
   ["all", "Toda la actividad"],
   ["spend", "Con gasto · últimos 30 días"],
   ["active", "Con campañas activas"],
-  ["enabled", "Sincronización habilitada"],
   ["none", "Sin gasto ni campañas activas"],
   ["unknown", "Sin datos actuales / sin sincronizar"],
 ] as const;

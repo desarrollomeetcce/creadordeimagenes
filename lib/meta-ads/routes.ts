@@ -213,15 +213,19 @@ export async function metaRoutes(
   if (parts[1] === "accounts" && parts[2]) {
     const id = parts[2];
     const a = await access(actor, id);
+    if(parts[3] === "control" && method === "POST") {
+      const b=z.object({action:z.enum(["pause","cancel"])}).strict().parse(await body());
+      return send(await (await import("./service")).controlSync(actor,id,b.action));
+    }
     if (parts[3] === "sync" && method === "POST") {
       const b = z
-        .object({ full: z.boolean().default(false), recentDays:z.union([z.literal(30),z.literal(90),z.literal(180)]).optional() })
+        .object({ full: z.boolean().default(false), focused:z.boolean().default(false), recentDays:z.union([z.literal(7),z.literal(15),z.literal(30),z.literal(90),z.literal(180)]).optional() })
         .strict()
         .parse(await body());
       if (b.full) ownerOnly(actor);
-      const result = await queueSync(actor, id, b.full, b.recentDays);
+      const result = await queueSync(actor, id, b.full, b.recentDays, b.focused);
       // The explicit action checks one page immediately; remaining pages stay durable.
-      const advanced = await syncStep(id);
+      const advanced = b.focused ? false : await syncStep(id);
       const { startMetaSchedule } = await import("./schedule");
       const scheduled = await startMetaSchedule(id);
       const account = await db.metaAdAccount.findUnique({
@@ -420,7 +424,7 @@ export async function metaRoutes(
   if (path === "objects" && method === "GET") {
     const allowed = await db.metaAdAccount.findMany({
       where: accountWhere(actor),
-      select: { id: true },
+      select: { id: true,selectionSince:true,syncState:true },
     });
     const ids = (req.nextUrl.searchParams.get("accounts") ?? "")
       .split(",")
@@ -435,6 +439,7 @@ export async function metaRoutes(
         where: {
           accountId: { in: ids.length ? ids : allowed.map((a) => a.id) },
           level: { in: ["campaign", "adset"] },
+          AND:[{OR:allowed.filter(a=>!ids.length || ids.includes(a.id)).map(a=>{const started=(a.syncState as {plan?:string;started?:string}).plan==="focus"?(a.syncState as {started?:string}).started:undefined;const cutoff=a.selectionSince??(started?new Date(started):null);return {accountId:a.id,...(cutoff?{selectedAt:{gte:cutoff}}:{})};})}],
         },
         select: {
           id: true,

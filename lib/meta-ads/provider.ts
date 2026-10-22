@@ -22,6 +22,9 @@ export type Page = {
   warnings?: GraphDiagnostic[];
 };
 export type Query = {
+  objectId?: string;
+  aggregate?: boolean;
+  activeOnly?: boolean;
   ids?: string[];
   accountView?: "minimal" | "metadata" | "status" | "business";
   accountId?: string;
@@ -414,9 +417,17 @@ export class MetaReader {
         /^v\d{2}\.0$/.test(this.version),
         "Configura la versión de Graph API de tu app.",
       );
-      const byIds = q.ids !== undefined;
-      demand(!byIds || (["campaigns", "adsets", "ads"].includes(op) && q.ids!.length > 0 && q.ids!.length <= 50 && q.ids!.every(id => /^\d{1,40}$/.test(id))), "Selección de objetos inválida.");
-      const path = byIds ? "" : op === "accounts" ? "me/adaccounts" : `act_${q.accountId}/${op}`;
+      if (q.ids) {
+        demand(["campaigns","adsets","ads"].includes(op) && q.ids.length>0 && q.ids.length<=50 && q.ids.every(id=>/^\d{1,40}$/.test(id)), "Selección de objetos inválida.");
+        const data: Record<string,unknown>[]=[];
+        for(let i=0;i<q.ids.length;i+=5){
+          const pages=await Promise.all(q.ids.slice(i,i+5).map(objectId=>this.get(op,{accountId:q.accountId,objectId})));
+          pages.forEach(page=>data.push(...page.data));
+        }
+        return {data};
+      }
+      demand(!q.objectId || /^\d{1,40}$/.test(q.objectId), "Identificador de objeto inválido.");
+      const path = q.objectId ? q.objectId + (op === "insights" ? "/insights" : "") : op === "accounts" ? "me/adaccounts" : `act_${q.accountId}/${op}`;
       const u = new URL(`https://graph.facebook.com/${this.version}/${path}`);
       const accountFields = {
         minimal: "id,name",
@@ -428,15 +439,15 @@ export class MetaReader {
         "fields",
         op === "accounts"
           ? accountFields[q.accountView ?? "minimal"]
-          : (byIds ? "account_id," : "") + fields(op),
+          : ((q.objectId || q.activeOnly) && op !== "insights" ? "account_id," : "") + fields(op),
       );
       u.searchParams.set("limit", "100");
-      if (byIds) u.searchParams.set("ids", q.ids!.join(","));
+      if(q.activeOnly) u.searchParams.set("effective_status",JSON.stringify(["ACTIVE"]));
       if (this.appSecret) u.searchParams.set("appsecret_proof", createHmac("sha256", this.appSecret).update(this.token).digest("hex"));
       if (q.after) u.searchParams.set("after", q.after);
       if (op === "insights") {
         u.searchParams.set("level", q.level!);
-        u.searchParams.set("time_increment", "1");
+        u.searchParams.set("time_increment", q.aggregate ? "all_days" : "1");
         u.searchParams.set(
           "action_attribution_windows",
           JSON.stringify(["7d_click", "1d_view"]),
@@ -475,21 +486,13 @@ export class MetaReader {
         );
         throw error;
       }
-      if (byIds) {
-        demand(payload && typeof payload === "object" && !Array.isArray(payload), "Respuesta de objetos incompatible.", 502);
-        const rows: Record<string, unknown>[] = [];
-        for (const id of q.ids!) {
-          const row = (payload as Record<string, Record<string, unknown> | null>)[id];
-          if (!row) continue; // Deleted/inaccessible objects retain their known name; no invented status.
-          if (row.error) throw new MetaGraphError(r.status, row, this.token, {version:this.version,endpoint:"objects",fields:fields(op)});
-          demand(String(row.id) === id, "Meta devolvió otro objeto.", 502);
-          rows.push(row);
-        }
-        return {data: rows};
+      if(q.objectId && op !== "insights") {
+        demand(payload && typeof payload === "object" && String((payload as Record<string,unknown>).id) === q.objectId, "Meta devolvió otro objeto.",502);
+        return {data:[payload as Record<string,unknown>]};
       }
       return page(payload);
     }
-    demand(!q.ids, "La lectura rápida por objetos requiere Marketing API.", 409);
+    demand(!q.ids && !q.objectId && !q.aggregate && !q.activeOnly, "Esta lectura acotada requiere Marketing API.", 409);
     const tools = await this.tools(),
       tool = selectTool(tools, op);
     const result = (await this.rpc("tools/call", {
