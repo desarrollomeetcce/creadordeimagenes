@@ -11262,11 +11262,11 @@ test("Integración HTTP + PostgreSQL (base exclusiva de pruebas, sin llamadas ex
       await db.metaConnection.create({data:{id:cid,ownerId:actor.id,name:'Todos los estados',transport:'API',apiVersion:'v26.0',encryptedToken:encryptKey('synthetic-all-status-token','meta:'+cid),verifiedAt:new Date()}});
       await db.metaAdAccount.create({data:{id,connectionId:cid,name:'Todos',currency:'PEN',timezone:'America/Lima',metric:'AUTO'}});
       const rows=[{id:'970011',level:'campaign',campaign_id:'970011',status:'ACTIVE',name:'Campaña conversaciones'},{id:'970012',level:'adset',campaign_id:'970011',adset_id:'970012',status:'ACTIVE',name:'Conjunto conversaciones'},{id:'970013',level:'ad',campaign_id:'970011',adset_id:'970012',status:'ACTIVE',name:'Anuncio activo'},{id:'970021',level:'campaign',campaign_id:'970021',status:'PAUSED',name:'Campaña antigua desactivada'},{id:'970022',level:'adset',campaign_id:'970021',adset_id:'970022',status:'PAUSED',name:'Conjunto antiguo desactivado'},{id:'970023',level:'ad',campaign_id:'970021',adset_id:'970022',status:'PAUSED',name:'Anuncio antiguo desactivado'}];
-      const original=globalThis.fetch;let posts=0,deny=false,foreign=false,changeRevision=false;const calls:URL[]=[];
+      const original=globalThis.fetch;let posts=0,deny=false,foreign=false,changeRevision=false,refreshed=false;const calls:URL[]=[];
       globalThis.fetch=async(input,init)=>{const u=new URL(String(input));if(u.hostname!=='graph.facebook.com')return original(input,init);calls.push(u);assert(!u.searchParams.has('ids'));const leaf=u.pathname.split('/').at(-1)!,oid=u.pathname.split('/')[2],row=rows.find(r=>r.id===oid);
         if(init?.method==='POST'){posts++;assert(row);assert.equal(new URLSearchParams(String(init.body)).get('status'),'PAUSED');if(deny)return Response.json({error:{code:200,message:'Requires ads_management'}},{status:403});row.status='PAUSED';return Response.json({success:true});}
-        const metadata=(r:any)=>({...r,account_id:foreign?'99999':id,effective_status:r.status,objective:'OUTCOME_LEADS',created_time:'2020-01-01T12:00:00Z'});
-        if(leaf==='insights'){if(!u.searchParams.has('filtering'))return Response.json({data:[]});const [f]=JSON.parse(u.searchParams.get('filtering')!);const selected=rows.filter(r=>f.value.includes(r.id));assert.equal(selected.length,f.value.length);return Response.json({data:selected.filter(r=>r.status==='ACTIVE').map(r=>({account_id:id,[r.level+'_id']:r.id,campaign_id:r.campaign_id,adset_id:r.adset_id,date_start:u.searchParams.has('date_preset')?shiftDay(today,-300):today,date_stop:today,spend:'75.26',impressions:'5574',clicks:'200',actions:[{action_type:'onsite_conversion.messaging_conversation_started_7d',value:'180'},{action_type:'lead',value:'2'}]}))});}
+        const metadata=(r:any)=>({...r,account_id:foreign?'99999':id,effective_status:r.status,objective:'OUTCOME_LEADS',created_time:'2020-01-01T12:00:00Z',...(refreshed&&r.id==='970013'?{creative:{thumbnail_url:'https://synthetic.fbcdn.net/new-flyer.jpg'}}:{})});
+        if(leaf==='insights'){if(!u.searchParams.has('filtering'))return Response.json({data:[]});const [f]=JSON.parse(u.searchParams.get('filtering')!);const selected=rows.filter(r=>f.value.includes(r.id));assert.equal(selected.length,f.value.length);return Response.json({data:selected.filter(r=>r.status==='ACTIVE').map(r=>({account_id:id,[r.level+'_id']:r.id,campaign_id:r.campaign_id,adset_id:r.adset_id,date_start:u.searchParams.has('date_preset')?shiftDay(today,-300):today,date_stop:today,spend:refreshed?'150.52':'75.26',impressions:'5574',clicks:'200',actions:[{action_type:'onsite_conversion.messaging_conversation_started_7d',value:'180'},{action_type:'lead',value:'2'}]}))});}
         if(['campaigns','adsets','ads'].includes(leaf)){assert(!u.searchParams.has('effective_status'));assert(u.searchParams.get('fields')!.includes('account_id'));const level=leaf==='campaigns'?'campaign':leaf==='adsets'?'adset':'ad';return Response.json({data:rows.filter(r=>r.level===level&&r.status===(u.searchParams.has('after')?'ACTIVE':'PAUSED')).map(metadata),...(!u.searchParams.has('after')?{paging:{next:'ignored',cursors:{after:'next'}}}:{})});}
         assert(row);if(changeRevision){await db.metaConnection.update({where:{id:cid},data:{revision:{increment:1}}});changeRevision=false;}return Response.json(metadata(row));
       };
@@ -11282,6 +11282,11 @@ test("Integración HTTP + PostgreSQL (base exclusiva de pruebas, sin llamadas ex
         assert.equal((await dashboard(actor,new URLSearchParams({accounts:id,level:'ad',adsets:'970012,999999999',metric:'MESSAGES'}))).total,1);
         await assert.rejects(()=>dashboard(actor,new URLSearchParams({accounts:id,level:'ad',campaigns:'bad'})),/Selección/);
         await assert.rejects(()=>dashboard({id:oid,role:'OBSERVER'},new URLSearchParams({accounts:id,level:'ad',campaigns:'970011,970021'})),/no autorizadas/);
+        const alias=await db.metaAlias.create({data:{name:'Alias temporal de actualización'}});await db.metaAdObject.update({where:{id:'970013'},data:{aliasId:alias.id}});
+        refreshed=true;rows.find(r=>r.id==='970013')!.name='Anuncio con flyer nuevo';await queueSync(actor,id,false,7,true,'all',true);let refreshedDone=false;
+        for(let i=0;i<25;i++){assert(await syncStep(id));const a=await db.metaAdAccount.findUniqueOrThrow({where:{id}});if((a.syncState as any).phase===undefined){refreshedDone=true;break;}}assert(refreshedDone);
+        const renewed=await db.metaAdObject.findUniqueOrThrow({where:{id:'970013'}});assert.equal(renewed.name,'Anuncio con flyer nuevo');assert.equal(renewed.thumbnailUrl,'https://synthetic.fbcdn.net/new-flyer.jpg');assert.equal(renewed.aliasId,alias.id);assert.equal(await db.metaAdObject.count({where:{accountId:id}}),6);
+        const newData=await dashboard(actor,new URLSearchParams({accounts:id,level:'ad',metric:'MESSAGES'}));assert(Math.abs(newData.items.find(o=>o.id==='970013')!.periods['7'].cost!-150.52/180)<0.00001);assert.equal(posts,0);await db.metaAlias.delete({where:{id:alias.id}});
         const input={status:'PAUSED',expectedStatus:'ACTIVE',confirmed:true};assert.equal((await user.call('meta-ads/objects/970011/status','POST',input)).status,403);assert.equal((await admin.call('meta-ads/objects/970011/status','POST',input)).status,403);assert.equal((await owner.call('meta-ads/objects/970011/status','POST',{...input,confirmed:false})).status,400);assert.equal(posts,0);
         await assert.rejects(()=>setMetaStatus({id:uid,role:'USER'},'970011','PAUSED','ACTIVE'));assert.equal(posts,0);
         deny=true;await assert.rejects(()=>setMetaStatus(actor,'970011','PAUSED','ACTIVE'),/ads_management/);assert.equal((await db.metaAdObject.findUniqueOrThrow({where:{id:'970011'}})).status,'ACTIVE');deny=false;
@@ -11340,6 +11345,52 @@ test("Integración HTTP + PostgreSQL (base exclusiva de pruebas, sin llamadas ex
       const audit=await db.auditEvent.findFirstOrThrow({where:{resourceId:id,action:'META_CONEXION_ERROR'}});assert.equal((audit.detail as any).code,190);assert.equal((audit.detail as any).subcode,463);assert(!JSON.stringify(audit.detail).includes(token));
       }finally{globalThis.fetch=original;}
     });
+    await t.test('Meta: conexión ligera no recorre cuentas ni altera inventario, cursado o credencial; revisión y cuota protegidas',async()=>{
+      const {refreshConnection,queueSync}=await import('../lib/meta-ads/service');
+      const actor=await db.user.findFirstOrThrow({where:{role:'OWNER'}});
+      const c=(await owner.call('meta-ads/connections','POST',{name:'Comprobación ligera sintética',transport:'API',token:'synthetic-refresh-connection-123456789'})).body;
+      const state={plan:'focus',inventory:'all',phase:10,after:'saved-cursor',started:new Date().toISOString(),recentDays:7,until:'2026-10-21',historyProcessed:50};
+      await db.metaAdAccount.create({data:{id:'96091',connectionId:c.id,name:'Ligera',currency:'PEN',timezone:'America/Lima',enabled:true,syncState:state,syncToken:'old-lease',syncLeaseAt:new Date()}});
+      await db.metaAccountSource.create({data:{accountId:'96091',connectionId:c.id,revision:0}});
+      const before=await db.metaConnection.findUniqueOrThrow({where:{id:c.id}}),original=globalThis.fetch;let calls=0,mode='ok';
+      globalThis.fetch=async(input,init)=>{calls++;const u=new URL(String(input));assert.equal(u.pathname,'/v26.0/me/adaccounts');assert.equal(u.searchParams.get('fields'),'id,name');assert(!u.searchParams.has('after'));assert.equal(init?.method??'GET','GET');
+        if(mode==='race')await db.metaConnection.update({where:{id:c.id},data:{revision:{increment:1}}});
+        if(mode==='quota')return Response.json({error:{code:17,message:'Synthetic quota'}},{status:400});
+        return Response.json({data:[{id:'act_96091',name:'Ligera'},{id:'act_96092',name:'No importar'}],paging:{cursors:{after:'ignored'},next:'https://graph.facebook.com/v26.0/me/adaccounts?after=ignored'}});};
+      try{
+        await refreshConnection(actor,c.id);assert.equal(calls,1);let saved=await db.metaConnection.findUniqueOrThrow({where:{id:c.id}});assert(saved.verifiedAt);assert.equal(saved.encryptedToken,before.encryptedToken);assert.equal(saved.revision,before.revision);
+        assert.equal(await db.metaAdAccount.count({where:{id:'96092'}}),0);assert.deepEqual((await db.metaAdAccount.findUniqueOrThrow({where:{id:'96091'}})).syncState,state);
+        assert.equal((await db.metaAccountSource.findUniqueOrThrow({where:{accountId_connectionId:{accountId:'96091',connectionId:c.id}}})).revision,c.revision);
+        mode='race';await assert.rejects(()=>refreshConnection(actor,c.id),/cambió/);
+        mode='quota';await assert.rejects(()=>refreshConnection(actor,c.id),/Synthetic quota/);saved=await db.metaConnection.findUniqueOrThrow({where:{id:c.id}});assert(saved.verifiedAt);assert(saved.encryptedToken);
+        await assert.rejects(()=>refreshConnection({id:uid,role:'USER'},c.id));
+        // Explicit refresh restarts recent/catalog phases, fences old leases and preserves data/quota.
+        const result=await queueSync(actor,'96091',false,7,true,'all',true);assert(result.queued);assert(result.waiting);
+        const a=await db.metaAdAccount.findUniqueOrThrow({where:{id:'96091'}});assert.equal((a.syncState as any).phase,0);assert.equal(a.syncToken,null);assert(a.nextSyncAt!>new Date());
+      }finally{globalThis.fetch=original;}
+      assert.equal((await user.call('meta-ads/connections/'+c.id+'/refresh','POST',{})).status,403);
+    });
+    await t.test('Meta: catálogo de alias vacío, asignación local, filtro autorizado y permisos',async()=>{
+      const c=(await owner.call('meta-ads/connections','POST',{name:'Alias sintético',transport:'API',token:'synthetic-alias-123456789'})).body;
+      for(const id of ['96081','96082'])await db.metaAdAccount.create({data:{id,connectionId:c.id,name:'Alias '+id,currency:'PEN',timezone:'America/Lima'}});
+      for(const [id,accountId] of [['960811','96081'],['960812','96081'],['960821','96082']])await db.metaAdObject.create({data:{id,accountId,level:'campaign',name:'Campaña alias'}});
+      assert.deepEqual((await owner.call('meta-ads/aliases')).body,[]);
+      const r=await owner.call('meta-ads/aliases','POST',{name:'Diplomado sintético'});assert.equal(r.status,201);const alias=r.body;
+      assert.equal((await user.call('meta-ads/aliases','POST',{name:'No permitido'})).status,403);
+      assert.equal((await owner.call('meta-ads/aliases','POST',{name:'DIPLOMADO SINTÉTICO'})).status,409);
+      assert.equal((await owner.call('meta-ads/objects/960811/alias','PATCH',{aliasId:alias.id})).status,200);
+      assert.equal((await owner.call('meta-ads/objects/960821/alias','PATCH',{aliasId:alias.id})).status,200);
+      assert.equal((await admin.call('meta-ads/objects/960812/alias','PATCH',{aliasId:alias.id})).status,403);
+      assert.equal((await owner.call('meta-ads/objects/960812/alias','PATCH',{aliasId:'not-existing'})).status,404);
+      const list=await owner.call('meta-ads/dashboard?accounts=96081&level=campaign&alias='+alias.id);assert.equal(list.status,200);assert.deepEqual(list.body.items.map((o:any)=>o.id),['960811']);assert.equal(list.body.items[0].alias.name,'Diplomado sintético');
+      assert.deepEqual((await owner.call('meta-ads/dashboard?accounts=96081&level=campaign&alias=__none')).body.items.map((o:any)=>o.id),['960812']);
+      assert(!(await user.call('meta-ads/aliases')).body.some((a:any)=>a.id===alias.id));
+      assert.equal((await user.call('meta-ads/dashboard?accounts=96081&level=campaign&alias='+alias.id)).status,404);
+      assert.equal((await owner.call('meta-ads/aliases/'+alias.id,'PATCH',{name:'Alias renombrado'})).status,200);
+      assert.equal((await owner.call('meta-ads/objects/960811/alias','PATCH',{aliasId:null})).status,200);
+      assert.equal((await db.metaAdObject.findUniqueOrThrow({where:{id:'960811'}})).aliasId,null);
+      await db.metaAlias.delete({where:{id:alias.id}});
+    });
     await t.test('Meta: varias cuentas, fallo interno diagnosticado y retirada de conexión duplicada sin borrar histórico',async()=>{
       const {discover}=await import('../lib/meta-ads/service');const actor=await db.user.findFirstOrThrow({where:{role:'OWNER'}}),original=globalThis.fetch,originalTransaction=db.$transaction.bind(db),originalWarn=console.warn;
       const logs:string[]=[];console.warn=(value)=>logs.push(String(value));
@@ -11369,7 +11420,7 @@ test("Integración HTTP + PostgreSQL (base exclusiva de pruebas, sin llamadas ex
       for(const id of ['85001','85002','85003','85004','85005'])await db.metaAdAccount.create({data:{id,connectionId:connection.id,name:'Cuenta actividad '+id,currency:'PEN',timezone:'America/Lima',syncedAt:id==='85003'?null:id==='85004'?new Date(shiftDay(today,-1)+'T12:00:00-05:00'):new Date(),syncState:id==='85005'?{phase:2}:{}}});
       for(const [id,level] of [['850011','campaign'],['850012','adset'],['850013','ad']])await db.metaAdObject.create({data:{id,accountId:'85001',level,name:'Objeto '+level,effectiveStatus:'ACTIVE'}});
       for(const [oid,day,spend,scope] of [['850011',today,7,'7d_click,1d_view|impression'],['850011',shiftDay(today,-29),11,'7d_click,1d_view|impression'],['850011',shiftDay(today,-30),20,'7d_click,1d_view|impression'],['850012',today,999,'7d_click,1d_view|impression'],['850013',today,999,'7d_click,1d_view|impression'],['850011',today,999,'other-attribution']])await db.metaAdDaily.create({data:{accountId:'85001',objectId:String(oid),day:String(day),spend:Number(spend),scope:String(scope),actions:{}}});
-      const response=await owner.call('meta-ads/accounts');assert.equal(response.status,200,JSON.stringify(response.body));const found=new Map(response.body.map((a:any)=>[a.id,a.activity]));assert.deepEqual(found.get('85001'),{state:'READY',spend30:18,activeCampaigns:1});assert.deepEqual(found.get('85002'),{state:'READY',spend30:0,activeCampaigns:0});assert.deepEqual(found.get('85003'),{state:'UNSYNCED',spend30:null,activeCampaigns:null});assert.deepEqual(found.get('85004'),{state:'STALE',spend30:null,activeCampaigns:null});assert.deepEqual(found.get('85005'),{state:'SYNCING',spend30:null,activeCampaigns:null});
+      const response=await owner.call('meta-ads/accounts');assert.equal(response.status,200,JSON.stringify(response.body));assert.deepEqual(response.body.find((a:any)=>a.id==='85001').coverage,{since:shiftDay(today,-30),until:today});assert.equal(response.body.find((a:any)=>a.id==='85002').coverage,null);assert(Number.isFinite(Date.parse(response.body.find((a:any)=>a.id==='85001').lastDataAt)));assert.equal(response.body.find((a:any)=>a.id==='85003').lastDataAt,null);const found=new Map(response.body.map((a:any)=>[a.id,a.activity]));assert.deepEqual(found.get('85001'),{state:'READY',spend30:18,activeCampaigns:1});assert.deepEqual(found.get('85002'),{state:'READY',spend30:0,activeCampaigns:0});assert.deepEqual(found.get('85003'),{state:'UNSYNCED',spend30:null,activeCampaigns:null});assert.deepEqual(found.get('85004'),{state:'STALE',spend30:null,activeCampaigns:null});assert.deepEqual(found.get('85005'),{state:'SYNCING',spend30:null,activeCampaigns:null});
       await db.metaAccountGrant.create({data:{accountId:'85001',userId:uid}});const visible=(await user.call('meta-ads/accounts')).body;assert(visible.some((a:any)=>a.id==='85001'&&a.activity.spend30===18));assert(!visible.some((a:any)=>a.id==='85002'));await db.metaAccountGrant.deleteMany({where:{accountId:'85001',userId:uid}});assert(!(await user.call('meta-ads/accounts')).body.some((a:any)=>a.id==='85001'));
     });
     await t.test('Marketing OAuth propio: código confidencial, sesión/estado/revisión, cifrado y cuentas reales antes de éxito',async()=>{

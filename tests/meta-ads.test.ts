@@ -98,3 +98,14 @@ test('Meta: escrituras inciertas se informan sin reintento y MCP nunca cambia es
 test('Meta: cuentas fijadas y checks persisten con IDs válidos, sin copiar nombres ni secretos',async()=>{
  const {parseMetaPreferences}=await import('../lib/meta-ads/preferences');const p=parseMetaPreferences(JSON.stringify({layoutRevision:2,accountIds:['123'],pinnedAccountIds:['123','123','456','bad'],selectedObjects:[{id:'1001',accountId:'123',level:'campaign',token:'secret-value',name:'not-persisted'},{id:'1001',accountId:'123',level:'campaign'},{id:'1002',accountId:'456',level:'ad'},{id:'bad',accountId:'456',level:'ad'}],campaignScope:['1001','1001'],calendar:'custom',since:'2026-10-01',until:'2026-10-22',sort:'custom'}));assert.deepEqual(p.pinnedAccountIds,['123','456']);assert.deepEqual(p.selectedObjects,[{id:'1001',accountId:'123',level:'campaign'},{id:'1002',accountId:'456',level:'ad'}]);assert.deepEqual(p.campaignScope,['1001']);assert.equal(p.calendar,'custom');assert.equal(p.sort,'custom');assert.equal(p.since,'2026-10-01');assert(!JSON.stringify(p).includes('secret-value'));assert(!JSON.stringify(p).includes('not-persisted'));const restored=parseMetaPreferences(JSON.stringify({...p,layoutRevision:2}));assert.deepEqual(restored.selectedObjects,p.selectedObjects);assert.deepEqual(restored.pinnedAccountIds,p.pinnedAccountIds);
 });
+
+
+test('Calendario único: rangos inclusivos Lima, cambios de mes/año y semanas lunes',async()=>{
+ const {reportToday,shiftDate,monthDate,quickRange}=await import('../lib/meta-ads/date-range');
+ assert.equal(reportToday(new Date('2026-01-01T03:00:00Z')),'2025-12-31');
+ assert.deepEqual(quickRange('7','2026-01-03'),['2025-12-28','2026-01-03']);
+ assert.deepEqual(quickRange('lastmonth','2024-03-15'),['2024-02-01','2024-02-29']);
+ assert.deepEqual(quickRange('lastweek','2026-10-22'),['2026-10-12','2026-10-18']);
+ assert.deepEqual(quickRange('week','2026-10-25'),['2026-10-19','2026-10-25']);
+ assert.equal(monthDate('2026-01-31',-1),'2025-12-01');assert.equal(shiftDate('2024-02-28',1),'2024-02-29');
+});

@@ -15,6 +15,7 @@ export const metaDefaults = {
   campaign: "",
   adset: "",
   q: "",
+  aliasFilter: "",
   state: "all",
   metric: "MESSAGES",
   currency: "",
@@ -46,7 +47,7 @@ export function parseMetaPreferences(raw: string | null): MetaPreferences {
   }
   if (!data || typeof data !== "object" || Array.isArray(data)) return result;
   const choices: Record<string, string[]> = {
-    tab: ["panel", "ranking", "alerts", "accounts", "connections"],
+    tab: ["panel", "ranking", "alerts", "accounts", "connections", "aliases"],
     level: ["campaign", "adset", "ad"],
     state: [
       "all",
@@ -125,6 +126,11 @@ export function parseMetaPreferences(raw: string | null): MetaPreferences {
     result.calendar = "";
     if (result.sort === "custom") result.sort = "7";
   }
+  if (
+    typeof data.aliasFilter === "string" &&
+    /^[a-zA-Z0-9_-]{0,80}$/.test(data.aliasFilter)
+  )
+    result.aliasFilter = data.aliasFilter;
   result.business = "";
   result.currency = "";
   result.age = "";

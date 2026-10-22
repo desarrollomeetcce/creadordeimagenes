@@ -711,6 +711,11 @@ model MetaAccountGrant {
   @@unique([accountId,userId])
   @@index([userId])
 }
+model MetaAlias {
+  id String @id @default(cuid())
+  name String @unique
+  objects MetaAdObject[]
+}
 model MetaAdObject {
   id String @id
   accountId String
@@ -730,6 +735,9 @@ model MetaAdObject {
   total MetaAdTotal?
   seenAt DateTime @default(now())
   daily MetaAdDaily[]
+  aliasId String?
+  alias MetaAlias? @relation(fields:[aliasId],references:[id],onDelete:SetNull)
+  @@index([aliasId])
   insightCache MetaInsightCache?
   @@index([accountId,selectedAt,level])
   @@index([accountId,level,campaignId,adsetId])

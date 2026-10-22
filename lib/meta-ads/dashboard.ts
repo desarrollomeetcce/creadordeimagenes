@@ -29,7 +29,7 @@ export async function dashboard(actor: Actor, params: URLSearchParams) {
       syncState: true,
       connectionId: true,
       historyFrom: true,
-      selectionSince:true,
+      selectionSince: true,
       businessId: true,
       businessName: true,
     },
@@ -52,24 +52,72 @@ export async function dashboard(actor: Actor, params: URLSearchParams) {
     state = params.get("state") ?? "all",
     campaign = params.get("campaign"),
     adset = params.get("adset");
-  const selectionIds=(name:string)=>{
-    const raw=params.get(name)??""; const ids=[...new Set(raw.split(",").filter(Boolean))];
-    demand(raw.length<=4100&&ids.length<=100&&ids.every(id=>/^\d{1,40}$/.test(id)),"Selección de elementos inválida.");return ids;
+  const selectionIds = (name: string) => {
+    const raw = params.get(name) ?? "";
+    const ids = [...new Set(raw.split(",").filter(Boolean))];
+    demand(
+      raw.length <= 4100 &&
+        ids.length <= 100 &&
+        ids.every((id) => /^\d{1,40}$/.test(id)),
+      "Selección de elementos inválida.",
+    );
+    return ids;
   };
-  const campaignIds=selectionIds("campaigns"),adsetIds=selectionIds("adsets");
+  const campaignIds = selectionIds("campaigns"),
+    adsetIds = selectionIds("adsets");
   const where: Prisma.MetaAdObjectWhereInput = {
     accountId: { in: scoped.map((a) => a.id) },
     level,
+    ...(params.get("alias") === "__none"
+      ? { aliasId: null }
+      : params.get("alias")
+        ? { aliasId: params.get("alias")!.slice(0, 80) }
+        : {}),
     // A recent import must not display thousands of unrelated legacy catalogue rows.
-    AND: [{OR:scoped.map(a=>{
-      const run=(a.syncState as {lastRun?:{plan?:string;since?:string;until?:string}}).lastRun;
-      const state=a.syncState as {plan?:string;started?:unknown};
-      // Cancelled/never-started runs have no started date. Preserve the saved selection/history.
-      const cutoff=a.selectionSince??(state.plan==="focus" && typeof state.started==="string" && Number.isFinite(Date.parse(state.started)) ? new Date(state.started) : null);
-      return {accountId:a.id,...(cutoff ? {selectedAt:{gte:cutoff}} : {}),...(run?.plan === "activity" && run.since && run.until ? {daily:{some:{day:{gte:run.since,lte:run.until},scope:"7d_click,1d_view|impression"}}} : {})};
-    })}],
-    ...(campaignIds.length ? {campaignId:{in:campaignIds}} : campaign ? { campaignId: campaign } : {}),
-    ...(adsetIds.length ? {adsetId:{in:adsetIds}} : adset ? { adsetId: adset } : {}),
+    AND: [
+      {
+        OR: scoped.map((a) => {
+          const run = (
+            a.syncState as {
+              lastRun?: { plan?: string; since?: string; until?: string };
+            }
+          ).lastRun;
+          const state = a.syncState as { plan?: string; started?: unknown };
+          // Cancelled/never-started runs have no started date. Preserve the saved selection/history.
+          const cutoff =
+            a.selectionSince ??
+            (state.plan === "focus" &&
+            typeof state.started === "string" &&
+            Number.isFinite(Date.parse(state.started))
+              ? new Date(state.started)
+              : null);
+          return {
+            accountId: a.id,
+            ...(cutoff ? { selectedAt: { gte: cutoff } } : {}),
+            ...(run?.plan === "activity" && run.since && run.until
+              ? {
+                  daily: {
+                    some: {
+                      day: { gte: run.since, lte: run.until },
+                      scope: "7d_click,1d_view|impression",
+                    },
+                  },
+                }
+              : {}),
+          };
+        }),
+      },
+    ],
+    ...(campaignIds.length
+      ? { campaignId: { in: campaignIds } }
+      : campaign
+        ? { campaignId: campaign }
+        : {}),
+    ...(adsetIds.length
+      ? { adsetId: { in: adsetIds } }
+      : adset
+        ? { adsetId: adset }
+        : {}),
     ...(q ? { name: { contains: q, mode: "insensitive" } } : {}),
     ...(state === "active"
       ? { status: "ACTIVE" }
@@ -100,6 +148,7 @@ export async function dashboard(actor: Actor, params: URLSearchParams) {
   const objects = await db.metaAdObject.findMany({
     where,
     orderBy: { id: "asc" },
+    include: { alias: { select: { id: true, name: true } } },
     take: 10001,
   });
   const limited = objects.length > 10000;
@@ -127,10 +176,21 @@ export async function dashboard(actor: Actor, params: URLSearchParams) {
     },
   });
   const parentMap = new Map(parents.map((o) => [o.id, o]));
-  const totals = await db.metaAdTotal.findMany({where:{objectId:{in:visible.map(o=>o.id)},accountId:{in:scoped.map(a=>a.id)},scope:"7d_click,1d_view|impression"}});
-  const totalMap = new Map(totals.map(t=>[t.objectId,t]));
-  const measure=params.get("metric")??"";
-  demand(["","MESSAGES","LEADS","PURCHASES","LINK_CLICKS","UNKNOWN"].includes(measure),"Tipo de resultado inválido.");
+  const totals = await db.metaAdTotal.findMany({
+    where: {
+      objectId: { in: visible.map((o) => o.id) },
+      accountId: { in: scoped.map((a) => a.id) },
+      scope: "7d_click,1d_view|impression",
+    },
+  });
+  const totalMap = new Map(totals.map((t) => [t.objectId, t]));
+  const measure = params.get("metric") ?? "";
+  demand(
+    ["", "MESSAGES", "LEADS", "PURCHASES", "LINK_CLICKS", "UNKNOWN"].includes(
+      measure,
+    ),
+    "Tipo de resultado inválido.",
+  );
   const customSince = params.get("since"),
     customUntil = params.get("until");
   demand(
@@ -147,7 +207,10 @@ export async function dashboard(actor: Actor, params: URLSearchParams) {
   const accountContext = new Map(
     scoped.map((a) => {
       const today = localDay(a.timezone);
-      const stale = !!a.syncedAt && (localDay(a.timezone, a.syncedAt) !== today || (focusedReportDay(a.syncState)??today)<today);
+      const stale =
+        !!a.syncedAt &&
+        (localDay(a.timezone, a.syncedAt) !== today ||
+          (focusedReportDay(a.syncState) ?? today) < today);
       const version = createHash("sha256")
         .update(
           JSON.stringify([a.connectionId, a.syncedAt, a.syncState, a.timezone]),
@@ -223,9 +286,10 @@ export async function dashboard(actor: Actor, params: URLSearchParams) {
       first = stats[0]?.first ?? null,
       last = stats[0]?.last ?? null;
     const stale = context.stale;
-    const total=totalMap.get(o.id);
-    const focused=!!a.selectionSince || (a.syncState as {plan?:string}).plan === "focus";
-    const reportUntil=focusedReportDay(a.syncState)??today;
+    const total = totalMap.get(o.id);
+    const focused =
+      !!a.selectionSince || (a.syncState as { plan?: string }).plan === "focus";
+    const reportUntil = focusedReportDay(a.syncState) ?? today;
     const periods = Object.fromEntries(
       [
         "today",
@@ -237,13 +301,28 @@ export async function dashboard(actor: Actor, params: URLSearchParams) {
         "complete7",
         ...(customSince ? ["custom"] : []),
       ].map((key) => {
-        const v = key === "lifetime" && total ? {...total,spend:Number(total.spend)} : stats.find((r) => r.key === key),
+        const v =
+            key === "lifetime" && total
+              ? { ...total, spend: Number(total.spend) }
+              : stats.find((r) => r.key === key),
           actions = (v?.actions ?? {}) as Record<string, number>,
           action = actionTypes[metric]?.find((k) => Object.hasOwn(actions, k)),
           results = action ? actions[action] : 0,
           spend = v?.spend ?? 0;
         const state =
-          !a.syncedAt || metric === "UNKNOWN" || (focused && key!=="lifetime" && !!o.selectedAt && (!a.syncedAt || o.selectedAt>a.syncedAt) && stats.length===0) || (key === "today" && stale) || (focused && key === "lifetime" && !total) || (focused && key === "custom" && (customSince! < shiftDay(reportUntil,-29) || customUntil! > reportUntil))
+          !a.syncedAt ||
+          metric === "UNKNOWN" ||
+          (focused &&
+            key !== "lifetime" &&
+            !!o.selectedAt &&
+            (!a.syncedAt || o.selectedAt > a.syncedAt) &&
+            stats.length === 0) ||
+          (key === "today" && stale) ||
+          (focused && key === "lifetime" && !total) ||
+          (focused &&
+            key === "custom" &&
+            (customSince! < shiftDay(reportUntil, -29) ||
+              customUntil! > reportUntil))
             ? "UNAVAILABLE"
             : results > 0
               ? "RESULTS"
@@ -252,7 +331,10 @@ export async function dashboard(actor: Actor, params: URLSearchParams) {
                 : "INACTIVE";
         const range =
           key === "lifetime"
-            ? { since: total?.since ?? a.historyFrom ?? first ?? today, until: total?.until ?? today }
+            ? {
+                since: total?.since ?? a.historyFrom ?? first ?? today,
+                until: total?.until ?? today,
+              }
             : key === "custom"
               ? { since: customSince!, until: customUntil! }
               : context.ranges[key as keyof typeof context.ranges];
@@ -320,12 +402,18 @@ export async function dashboard(actor: Actor, params: URLSearchParams) {
       periods,
       firstDelivery: first,
       lastDelivery: last,
-      ageFromCreation:!!o.createdTime,
-      ageDays: o.createdTime ? dayCount(localDay(a.timezone,o.createdTime),today) : first ? dayCount(first, today) : null,
+      ageFromCreation: !!o.createdTime,
+      ageDays: o.createdTime
+        ? dayCount(localDay(a.timezone, o.createdTime), today)
+        : first
+          ? dayCount(first, today)
+          : null,
       activeDays: stats[0]?.active ?? 0,
-      historyUpdatedAt:total?.updatedAt??null,
-      historyPending:focused && (!total || total.until < reportUntil),
-      historyPartial: !total || (!!o.createdTime && total.since > localDay(a.timezone,o.createdTime)),
+      historyUpdatedAt: total?.updatedAt ?? null,
+      historyPending: focused && (!total || total.until < reportUntil),
+      historyPartial:
+        !total ||
+        (!!o.createdTime && total.since > localDay(a.timezone, o.createdTime)),
       syncedAt: a.syncedAt,
       changePercent: change,
       rating,

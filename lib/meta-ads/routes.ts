@@ -10,6 +10,7 @@ import {
   accountWhere,
   access,
   discover,
+  refreshConnection,
   saveToken,
   queueSync,
   syncStep,
@@ -38,6 +39,11 @@ const cfg = z
   .strict();
 const send = (v: unknown, status = 200) =>
   NextResponse.json(v, { status, headers: { "Cache-Control": "no-store" } });
+function completedAt(state: unknown) {
+  const v = (state as { lastRun?: { finishedAt?: unknown } } | null)?.lastRun
+    ?.finishedAt;
+  return typeof v === "string" && Number.isFinite(Date.parse(v)) ? v : null;
+}
 export async function metaRoutes(
   req: NextRequest,
   parts: string[],
@@ -66,6 +72,50 @@ export async function metaRoutes(
       await (
         await import("./manage")
       ).setMetaStatus(actor, parts[2], b.status, b.expectedStatus),
+    );
+  }
+  if (path === "aliases" && method === "GET")
+    return send(await (await import("./aliases")).aliases(actor));
+  if (path === "aliases" && method === "POST") {
+    ownerOnly(actor);
+    const b = z
+      .object({ name: z.string().trim().min(1).max(150) })
+      .strict()
+      .parse(await body());
+    return send(
+      await (await import("./aliases")).saveAlias(actor, b.name),
+      201,
+    );
+  }
+  if (
+    parts[1] === "aliases" &&
+    parts[2] &&
+    parts.length === 3 &&
+    method === "PATCH"
+  ) {
+    ownerOnly(actor);
+    const b = z
+      .object({ name: z.string().trim().min(1).max(150) })
+      .strict()
+      .parse(await body());
+    return send(
+      await (await import("./aliases")).saveAlias(actor, b.name, parts[2]),
+    );
+  }
+  if (
+    parts[1] === "objects" &&
+    parts[2] &&
+    parts[3] === "alias" &&
+    parts.length === 4 &&
+    method === "PATCH"
+  ) {
+    ownerOnly(actor);
+    const b = z
+      .object({ aliasId: z.string().max(80).nullable() })
+      .strict()
+      .parse(await body());
+    return send(
+      await (await import("./aliases")).assignAlias(actor, parts[2], b.aliasId),
     );
   }
   if (path === "marketing-oauth-config" && method === "GET") {
@@ -123,6 +173,12 @@ export async function metaRoutes(
     }
     if (parts[3] === "app" && method === "PATCH")
       return send(await configureMarketingApp(actor, id, await body()));
+    if (parts[3] === "refresh" && parts.length === 4 && method === "POST") {
+      z.object({})
+        .strict()
+        .parse(await body());
+      return send(await refreshConnection(actor, id));
+    }
     if (parts[3] === "verify" && method === "POST")
       return send(await discover(actor, id));
     if (parts[3] === "oauth" && method === "POST") {
@@ -233,11 +289,48 @@ export async function metaRoutes(
       },
       orderBy: { name: "asc" },
     });
-    const activity = await accountActivities(rows);
+    const [activity, stored, totals] = await Promise.all([
+      accountActivities(rows),
+      db.metaAdDaily.groupBy({
+        by: ["accountId"],
+        where: {
+          accountId: { in: rows.map((a) => a.id) },
+          scope: "7d_click,1d_view|impression",
+        },
+        _min: { day: true },
+        _max: { day: true, updatedAt: true },
+      }),
+      db.metaAdTotal.groupBy({
+        by: ["accountId"],
+        where: {
+          accountId: { in: rows.map((a) => a.id) },
+          scope: "7d_click,1d_view|impression",
+        },
+        _max: { updatedAt: true },
+      }),
+    ]);
+    const coverage = new Map(
+      stored.map((s) => [
+        s.accountId,
+        { since: s._min.day, until: s._max.day },
+      ]),
+    );
+    const dailyTimes = new Map(
+      stored.map((s) => [s.accountId, s._max.updatedAt]),
+    );
+    const totalTimes = new Map(
+      totals.map((s) => [s.accountId, s._max.updatedAt]),
+    );
     return send(
       rows.map((a) => ({
         ...a,
+        lastDataAt:
+          [a.syncedAt, dailyTimes.get(a.id), totalTimes.get(a.id)]
+            .filter((v): v is Date => !!v)
+            .sort((x, y) => y.valueOf() - x.valueOf())[0] ?? null,
         activity: activity.get(a.id),
+        coverage: coverage.get(a.id) ?? null,
+        lastCompletedAt: completedAt(a.syncState),
         progress: syncProgress(a),
         syncState: { phase: (a.syncState as { phase?: number }).phase ?? null },
         canSync:
@@ -304,6 +397,7 @@ export async function metaRoutes(
         .object({
           full: z.boolean().default(false),
           focused: z.boolean().default(false),
+          fresh: z.boolean().default(false),
           inventory: z.enum(["all", "recent"]).optional(),
           recentDays: z
             .union([
@@ -325,6 +419,7 @@ export async function metaRoutes(
         b.recentDays,
         b.focused,
         b.inventory ?? (b.focused ? "all" : "recent"),
+        b.fresh,
       );
       // The explicit action checks one page immediately; remaining pages stay durable.
       const advanced = b.focused ? false : await syncStep(id);

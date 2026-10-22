@@ -138,6 +138,57 @@ function date(v: unknown) {
   const d = new Date(v);
   return Number.isFinite(d.valueOf()) ? d : null;
 }
+// A lightweight check of the saved credential, separate from account discovery.
+export async function refreshConnection(actor: Actor, id: string) {
+  ownerOnly(actor);
+  await rateLimit("meta:refresh:" + actor.id, 15);
+  const { connection: c, reader: r } = await reader(id, true);
+  demand(
+    c.transport === "API",
+    "Esta comprobación requiere Marketing API.",
+    409,
+  );
+  const page = await r.get("accounts", { accountView: "minimal" });
+  const ids = page.data.map((row) => digits(row.id));
+  await db.$transaction(async (tx) => {
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(884411)`;
+    const [user, owner] = await Promise.all([
+      tx.user.findFirst({
+        where: { id: actor.id, role: "OWNER", status: "APPROVED" },
+      }),
+      tx.user.findFirst({
+        where: { id: c.ownerId, role: "OWNER", status: "APPROVED" },
+      }),
+    ]);
+    demand(
+      user && owner,
+      "Ya no tienes permiso para actualizar esta conexión.",
+      403,
+    );
+    const result = await tx.metaConnection.updateMany({
+      where: { id, revision: c.revision, disconnectedAt: null },
+      data: { verifiedAt: new Date(), lastError: null },
+    });
+    demand(
+      result.count === 1,
+      "La conexión cambió. Vuelve a comprobarla.",
+      409,
+    );
+    // Only the accounts actually returned were checked with this credential.
+    await tx.metaAccountSource.updateMany({
+      where: { connectionId: id, accountId: { in: ids } },
+      data: { revision: c.revision, verifiedAt: new Date() },
+    });
+    await recordActivity(tx, {
+      data: {
+        actorId: actor.id,
+        action: "META_CONEXION_VERIFICADA",
+        resourceId: id,
+      },
+    });
+  });
+  return { ok: true, checkedAccounts: ids.length, moreAccounts: !!page.after };
+}
 export async function discover(
   actor: Actor,
   id: string,
@@ -539,7 +590,12 @@ export async function queueSync(
   recentDays?: number,
   focused = false,
   inventory: "all" | "recent" = "recent",
+  fresh = false,
 ) {
+  demand(
+    !fresh || focused,
+    "Actualizar requiere un análisis de Marketing API.",
+  );
   const a = await access(actor, id, true);
   demand(
     (a.enabled || focused) && a.connection.verifiedAt,
@@ -597,11 +653,13 @@ export async function queueSync(
         409,
       );
       const scopeChanged =
-        focused &&
-        (a.syncState as { plan?: string }).plan === "focus" &&
-        ((a.syncState as State).inventory ?? "recent") !== inventory;
+        fresh ||
+        (focused &&
+          (a.syncState as { plan?: string }).plan === "focus" &&
+          ((a.syncState as State).inventory ?? "recent") !== inventory);
       const progress = syncProgress(a);
       const focusResume =
+        !fresh &&
         focused &&
         ((a.syncState as State).inventory ?? "recent") === inventory &&
         (a.syncState as { plan?: string }).plan === "focus" &&
