@@ -765,3 +765,18 @@ model MetaInsightCache {
   rows Json
   updatedAt DateTime @updatedAt
 }
+
+model PrivacyRequest {
+  id String @id @default(cuid())
+  receiptHash String @unique
+  kind String
+  name String @default("")
+  email String
+  message String
+  origin String
+  status String @default("PENDING")
+  reply String @default("")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@index([status, createdAt])
+}

@@ -9388,6 +9388,28 @@ test("Integración HTTP + PostgreSQL (base exclusiva de pruebas, sin llamadas ex
         }
       },
     );
+    await t.test('Legal: páginas públicas, compatibilidad de sitio previo y solicitudes privadas atendidas solo por OWNER',async()=>{
+      const before=await db.siteContent.findUnique({where:{id:'public'}}),{defaultSite}=await import('../lib/site-content');
+      try{
+        const {legal,...legacy}=defaultSite;await db.siteContent.upsert({where:{id:'public'},create:{id:'public',content:legacy},update:{content:legacy}});
+        for(const path of ['/privacidad','/terminos','/eliminacion-de-datos','/solicitudes-de-privacidad']){const r=await fetch(root+path);assert.equal(r.status,200,path);const html=await r.text();assert(html.includes('CAMARA NACIONAL DE NEGOCIOS SAC'));assert(html.includes('PULPO ANALISIS Y AUTO'));assert(!html.includes('mailto:'));assert(!html.includes('name="password"'));}
+        const site=(await owner.call('site/admin')).body;assert.equal(site.content.legal.contactEmail,'');assert(site.content.legal.privacyText.length>200);assert.equal(site.content.hero.title,legacy.hero.title);
+        for(const c of [user,admin,observer,anonymous])assert([401,403].includes((await c.call('site/legal','PUT',{revision:site.revision,value:site.content.legal})).status));
+        const updated=await owner.call('site/legal','PUT',{revision:site.revision,value:{...site.content.legal,privacyText:site.content.legal.privacyText+'\n\n<script>window.privateLeak=1</script>'}});assert.equal(updated.status,200);const html=await(await fetch(root+'/privacidad')).text();assert(html.includes('&lt;script&gt;'));assert(!html.includes('<script>window.privateLeak=1</script>'));
+        assert.equal((await owner.call('site/legal','PUT',{revision:site.revision,value:site.content.legal})).status,409);
+        const input={kind:'DELETE_META',name:'Persona prueba',email:'privacy.'+Date.now()+'@example.test',message:'Solicito eliminar los datos importados de mi cuenta publicitaria de prueba.',consent:true,website:''};
+        assert.equal((await anonymous.call('site/privacy-requests','POST',input,'https://untrusted.example')).status,403);
+        assert.equal((await anonymous.call('site/privacy-requests','POST',{...input,consent:false})).status,400);
+        assert.equal((await anonymous.call('site/privacy-requests','POST',{...input,website:'spam'})).status,400);
+        const userCount=await db.user.count(),metaCount=await db.metaAdAccount.count();const created=await anonymous.call('site/privacy-requests','POST',input);assert.equal(created.status,201);assert(/^[a-f0-9]{64}$/.test(created.body.receipt));assert(!JSON.stringify(created.body).includes(input.email));const stored=await db.privacyRequest.findUniqueOrThrow({where:{id:created.body.id}});assert.notEqual(stored.receiptHash,created.body.receipt);assert.equal(stored.origin,new URL(root).origin);
+        const lookup=await anonymous.call('site/privacy-requests/lookup','POST',{receipt:created.body.receipt});assert.equal(lookup.status,200);assert.equal(lookup.body.status,'PENDING');assert(!JSON.stringify(lookup.body).includes(input.message));assert(!JSON.stringify(lookup.body).includes(input.email));assert(!JSON.stringify(lookup.body).includes(stored.receiptHash));assert.equal((await anonymous.call('site/privacy-requests/lookup','POST',{receipt:'f'.repeat(64)})).status,404);
+        for(const c of [user,admin,observer,anonymous]){assert([401,403].includes((await c.call('site/privacy-requests')).status));assert([401,403].includes((await c.call('site/privacy-requests/'+stored.id,'PATCH',{status:'CLOSED',reply:'No autorizado',revision:stored.updatedAt.toISOString()})).status));}
+        const list=await owner.call('site/privacy-requests?status=PENDING&page=1');assert.equal(list.status,200);assert(list.body.items.some((r:any)=>r.email===input.email));assert(!JSON.stringify(list.body).includes(stored.receiptHash));
+        const answer={status:'IN_REVIEW',reply:'Recibimos tu solicitud. Confirma el identificador de la cuenta afectada para revisar el alcance.',revision:stored.updatedAt.toISOString()};assert.equal((await owner.call('site/privacy-requests/'+stored.id,'PATCH',answer)).status,200);assert.equal((await owner.call('site/privacy-requests/'+stored.id,'PATCH',answer)).status,409);
+        const answered=await anonymous.call('site/privacy-requests/lookup','POST',{receipt:created.body.receipt});assert.equal(answered.body.reply,answer.reply);assert.equal(answered.body.status,'IN_REVIEW');assert.equal(await db.user.count(),userCount);assert.equal(await db.metaAdAccount.count(),metaCount);
+        for(let i=1;i<5;i++)assert.equal((await anonymous.call('site/privacy-requests','POST',input)).status,201);assert.equal((await anonymous.call('site/privacy-requests','POST',input)).status,429);
+      }finally{if(before)await db.siteContent.upsert({where:{id:'public'},create:{...before,content:before.content as any},update:{...before,content:before.content as any}});else await db.siteContent.deleteMany({where:{id:'public'}});}
+    });
     await t.test(
       "página pública editable OWNER: secciones persistidas, conflicto entre pestañas y testimonios sin inventar",
       async () => {

@@ -3,10 +3,12 @@ import { db } from "./db";
 import { ownerOnly } from "./auth";
 import { demand } from "./errors";
 import { recordActivity } from "./activity";
+import { defaultLegal, legalSchema, legalReady } from "./legal-content";
 const short = z.string().trim().min(1).max(180),
   copy = z.string().trim().min(1).max(1500),
   item = z.object({ title: short, text: copy }).strict();
 export const siteSections = {
+  legal: legalSchema.default(defaultLegal),
   hero: z
     .object({
       brand: short,
@@ -79,6 +81,7 @@ export const siteSections = {
 export const siteSchema = z.object(siteSections).strict();
 export type SiteDocument = z.infer<typeof siteSchema>;
 export const defaultSite: SiteDocument = {
+  legal: defaultLegal,
   hero: {
     brand: "estudio AI",
     eyebrow: "TU ESTUDIO DE CAMPAÑAS CON INTELIGENCIA ARTIFICIAL",
@@ -225,6 +228,7 @@ export async function saveSiteSection(
   const value = siteSections[section as keyof typeof siteSections].parse(
     b.value,
   );
+  if (section === "legal") demand(legalReady(value as SiteDocument["legal"]), "Completa el responsable antes de publicar los documentos legales.");
   if (section === "testimonials") {
     const t = value as SiteDocument["testimonials"];
     demand(

@@ -1,5 +1,6 @@
 import type { SiteDocument } from "../../lib/site-content";
 import { PublicPlans } from "./membership-plans";
+import { legalReady } from "../../lib/legal-content";
 export function MarketingSite({
   content: c,
   plans,
@@ -201,6 +202,7 @@ export function MarketingSite({
           <a href={"mailto:" + c.closing.contactEmail}>Contacto</a>
         )}
         <a href="/">Acceder a la plataforma →</a>
+        {legalReady(c.legal) && <nav aria-label="Información legal"><a href="/privacidad">Privacidad</a> · <a href="/terminos">Términos del servicio</a> · <a href="/eliminacion-de-datos">Eliminación de datos</a></nav>}
       </footer>
     </div>
   );

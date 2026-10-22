@@ -175,6 +175,10 @@ async function handle(
       );
     if (route === "site/public" && method === "GET")
       return send(await (await import("@/lib/site-content")).publicSite());
+    if (route === "site/privacy-requests" && method === "POST")
+      return send(await (await import("@/lib/privacy-requests")).createPrivacyRequest(await body(req), new URL(process.env.APP_ORIGIN ?? "http://localhost:3000").origin), 201);
+    if (route === "site/privacy-requests/lookup" && method === "POST")
+      return send(await (await import("@/lib/privacy-requests")).lookupPrivacyRequest(await body(req)));
     if (route === "plans/public" && method === "GET")
       return send(
         await (await import("@/lib/membership-plans")).plansCatalog(),
@@ -420,6 +424,12 @@ async function handle(
     }
     if (parts[0] === "site") {
       ownerOnly(user);
+      if (route === "site/privacy-requests" && method === "GET") {
+        const page = z.coerce.number().int().min(1).max(10000).parse(req.nextUrl.searchParams.get("page") ?? "1");
+        return send(await (await import("@/lib/privacy-requests")).listPrivacyRequests(user, req.nextUrl.searchParams.get("status") ?? "ALL", page));
+      }
+      if (parts.length === 3 && parts[1] === "privacy-requests" && method === "PATCH")
+        return send(await (await import("@/lib/privacy-requests")).answerPrivacyRequest(user, parts[2], await body(req)));
       const site = await import("@/lib/site-content");
       if (route === "site/admin" && method === "GET")
         return send(await site.publicSite());

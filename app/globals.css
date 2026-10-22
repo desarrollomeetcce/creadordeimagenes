@@ -1203,3 +1203,23 @@ html:has(.meta-ads){scrollbar-gutter:stable}
 @media(max-width:650px){.meta-periods{grid-template-columns:repeat(3,minmax(0,1fr))}.meta-periods>div>span{min-height:auto}.meta-summary-metrics strong{font-size:15px}.meta-card-heading h2{font-size:19px}}
 .meta-sync-progress{display:flex;flex-direction:column;gap:9px;margin:12px 0}.meta-sync-progress strong{font-size:12px}.meta-sync-progress span,.meta-sync-progress small{font-size:11px;color:var(--muted)}.meta-sync-progress progress{display:block;width:100%;height:9px;accent-color:var(--accent)}
 .meta-ads .fields .check{align-self:end;display:flex;align-items:center;justify-content:flex-start;min-height:42px;gap:8px}.meta-ads .fields .check input[type=checkbox]{width:18px;height:18px;min-height:18px;flex:0 0 18px;align-self:center}
+
+.legal-site { max-width: 960px; margin: 0 auto; padding: 24px; line-height: 1.7; overflow-wrap: anywhere; }
+.legal-site header, .legal-site footer nav { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 16px; }
+.legal-site header { padding-bottom: 24px; border-bottom: 1px solid var(--line); }
+.legal-site main { padding: 32px 0; }
+.legal-site h1 { line-height: 1.2; font-size: clamp(1.8rem, 5vw, 2.7rem); }
+.legal-site h2 { font-size: 1.2rem; margin: 28px 0 8px; }
+.legal-site p { white-space: pre-line; }
+.legal-site dl { padding: 20px; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; }
+.legal-site dl div + div { margin-top: 12px; }
+.legal-site dt { font-weight: 700; }
+.legal-site dd { margin: 0; }
+.legal-site footer { border-top: 1px solid var(--line); padding: 24px 0; }
+.legal-site footer > a { display: inline-block; margin-top: 16px; }
+.site-section-editor[data-site-section="legal"] .fields { grid-template-columns: 1fr; }
+.site-section-editor[data-site-section="legal"] textarea { font-family: inherit; line-height: 1.6; }
+.privacy-honeypot { position: absolute; left: -10000px; width: 1px; height: 1px; overflow: hidden; }
+.privacy-receipt { display: block; overflow-wrap: anywhere; padding: 12px; user-select: all; }
+.privacy-message { white-space: pre-wrap; overflow-wrap: anywhere; }
+.legal-site input[type="checkbox"] { width: 18px; height: 18px; flex: 0 0 18px; }

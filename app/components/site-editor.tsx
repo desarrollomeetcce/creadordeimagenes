@@ -1,8 +1,10 @@
 "use client";
 import { useEffect, useState } from "react";
+import { PrivacyRequestInbox } from "./privacy-request-form";
 import { PlanSettings } from "./membership-plans";
 import type { SiteDocument } from "../../lib/site-content";
 const names: Record<string, string> = {
+  legal: "Privacidad, términos y eliminación de datos · Meta",
   hero: "Presentación y título principal",
   benefits: "Beneficios",
   features: "Funcionalidades",
@@ -25,6 +27,11 @@ const labels: Record<string, string> = {
   question: "Pregunta",
   answer: "Respuesta",
   contactEmail: "Correo público de contacto · opcional",
+  operatorName: "Responsable legal",
+  updatedOn: "Fecha de actualización",
+  privacyText: "Política de privacidad",
+  termsText: "Términos y condiciones del servicio",
+  deletionText: "Instrucciones de eliminación de datos",
 };
 async function request(path: string, method = "GET", body?: unknown) {
   const r = await fetch("/api/site/" + path, {
@@ -41,7 +48,8 @@ export function SiteEditor() {
   const [content, setContent] = useState<SiteDocument | null>(null),
     [revision, setRevision] = useState(0),
     [busy, setBusy] = useState(false),
-    [message, setMessage] = useState("");
+    [message, setMessage] = useState(""),
+    [inboxOpen, setInboxOpen] = useState(false);
   useEffect(() => {
     let active = true;
     void request("admin")
@@ -85,6 +93,7 @@ export function SiteEditor() {
         Guarda cada sección para publicarla. Los botones de la página llevan a
         planes o al ingreso de la plataforma. No se admite código HTML.
       </p>
+      <details className="panel" onToggle={e => { if (e.currentTarget.open) setInboxOpen(true); }}><summary>Solicitudes de privacidad y eliminación de datos</summary><div className="inside">{inboxOpen && <PrivacyRequestInbox />}</div></details>
       {content &&
         Object.entries(content).map(([section, raw]) => {
           const value = raw as Record<string, any>;
@@ -131,13 +140,14 @@ export function SiteEditor() {
                         </label>
                       ) : (
                         <label key={key}>
-                          {labels[key] ?? key}
-                          {["text"].includes(key) ? (
+                          {section === "legal" && key === "contactEmail" ? "Correo público de privacidad · opcional, el formulario siempre está disponible" : labels[key] ?? key}
+                          {["text", "privacyText", "termsText", "deletionText"].includes(key) ? (
                             <textarea
                               name={section + "-" + key}
                               value={v}
                               required
-                              maxLength={1500}
+                              maxLength={section === "legal" ? key === "deletionText" ? 8000 : 18000 : 1500}
+                              rows={section === "legal" ? 12 : 4}
                               disabled={busy}
                               onChange={(e) =>
                                 set(section, key, e.target.value)
@@ -146,7 +156,7 @@ export function SiteEditor() {
                           ) : (
                             <input
                               name={section + "-" + key}
-                              type={key === "contactEmail" ? "email" : "text"}
+                              type={key === "contactEmail" ? "email" : key === "updatedOn" ? "date" : "text"}
                               value={v}
                               maxLength={key === "contactEmail" ? 200 : 180}
                               required={key !== "contactEmail"}
@@ -160,6 +170,11 @@ export function SiteEditor() {
                       ),
                     )}
                 </div>
+                {section === "legal" && <div className="stack">
+                  <p>Documentos de PULPO ANALISIS Y AUTO. Se publican sin exigir inicio de sesión; guarda esta sección con el responsable correcto; el correo es opcional porque hay un formulario público funcional. Los textos también describen la generación de imágenes y los servicios externos configurados.</p>
+                  <div className="row"><a href="/privacidad" target="_blank" rel="noopener noreferrer">Ver política de privacidad ↗</a><a href="/terminos" target="_blank" rel="noopener noreferrer">Ver términos del servicio ↗</a><a href="/eliminacion-de-datos" target="_blank" rel="noopener noreferrer">Ver eliminación de datos ↗</a><a href="/solicitudes-de-privacidad" target="_blank" rel="noopener noreferrer">Ver formulario de privacidad ↗</a></div>
+                  <p>Para Meta, usa las páginas del dominio que ya publicaste: generator.agenciamagneto.org. Las mismas rutas están disponibles en el dominio de Vercel al actualizar ese despliegue.</p>
+                </div>}
                 {section === "testimonials" && (
                   <p className="notice">
                     Añade solo testimonios reales con autorización para
