@@ -1,5 +1,5 @@
 "use client";
-import { useId, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import {
   matchesAccount,
   activityOptions,
@@ -27,6 +27,16 @@ export function MetaAccountPicker({
 }) {
   const id = useId(),
     [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDetailsElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const close = (e: PointerEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node))
+        ref.current.open = false;
+    };
+    document.addEventListener("pointerdown", close);
+    return () => document.removeEventListener("pointerdown", close);
+  }, [open]);
   const visible = accounts.filter((a) =>
     matchesAccount(a, query, activity, business),
   );
@@ -41,6 +51,7 @@ export function MetaAccountPicker({
     <div className="meta-filter-field">
       <span id={id}>Cuentas publicitarias</span>
       <details
+        ref={ref}
         className="meta-account-picker"
         onToggle={(e) => setOpen(e.currentTarget.open)}
         onKeyDown={(e) => {

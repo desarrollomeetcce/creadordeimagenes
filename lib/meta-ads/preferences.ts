@@ -7,7 +7,7 @@ export const metaDefaults = {
   adset: "",
   q: "",
   state: "all",
-  metric: "",
+  metric: "MESSAGES",
   currency: "",
   sort: "7",
   analysisPeriod: "30",
@@ -65,20 +65,8 @@ export function parseMetaPreferences(raw: string | null): MetaPreferences {
     ],
     calendar: ["", "custom"],
     view: ["cards", "table"],
-    accountListActivity: [
-      "all",
-      "spend",
-      "active",
-      "none",
-      "unknown",
-    ],
-    accountPickerActivity: [
-      "all",
-      "spend",
-      "active",
-      "none",
-      "unknown",
-    ],
+    accountListActivity: ["all", "spend", "active", "none", "unknown"],
+    accountPickerActivity: ["all", "spend", "active", "none", "unknown"],
   };
   for (const [key, values] of Object.entries(choices))
     if (typeof data[key] === "string" && values.includes(data[key] as string))
@@ -128,5 +116,14 @@ export function parseMetaPreferences(raw: string | null): MetaPreferences {
     result.calendar = "";
     if (result.sort === "custom") result.sort = "7";
   }
+  result.business = "";
+  result.currency = "";
+  result.age = "";
+  if (data.layoutRevision !== 2) {
+    result.metric = "MESSAGES";
+    result.campaign = "";
+    result.adset = "";
+  }
+  if (["newest", "age"].includes(result.sort)) result.sort = "7";
   return result;
 }

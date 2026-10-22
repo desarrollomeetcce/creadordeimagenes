@@ -48,7 +48,7 @@ export const accountSelect = {
   targetCost: true,
   minResults: true,
   intervalMinutes: true,
-  selectionSince:true,
+  selectionSince: true,
   historyFrom: true,
   syncedAt: true,
   nextSyncAt: true,
@@ -77,7 +77,11 @@ export async function access(actor: Actor, id: string, sync = false) {
     );
   return a;
 }
-export async function reader(id: string, allowUnverified = false, paced = false) {
+export async function reader(
+  id: string,
+  allowUnverified = false,
+  paced = false,
+) {
   const c = await db.metaConnection.findUniqueOrThrow({ where: { id } });
   const owner = await db.user.findFirst({
     where: { id: c.ownerId, role: "OWNER", status: "APPROVED" },
@@ -92,7 +96,11 @@ export async function reader(id: string, allowUnverified = false, paced = false)
     "La conexión cambió o todavía no se verificó. Verifica antes de sincronizar.",
     409,
   );
-  demand(!c.tokenExpiresAt || c.tokenExpiresAt > new Date(), "El token de Facebook caducó. Pulsa Conectar con Facebook para renovar la autorización.", 409);
+  demand(
+    !c.tokenExpiresAt || c.tokenExpiresAt > new Date(),
+    "El token de Facebook caducó. Pulsa Conectar con Facebook para renovar la autorización.",
+    409,
+  );
   const token = decryptKey(c.encryptedToken, `meta:${c.id}`);
   return {
     connection: c,
@@ -100,8 +108,12 @@ export async function reader(id: string, allowUnverified = false, paced = false)
       token,
       c.transport,
       c.apiVersion,
-      c.transport === "API" && c.authMethod === "OAUTH" && c.encryptedAppSecret ? decryptKey(c.encryptedAppSecret, `meta-app:${c.id}`) : undefined,
-      c.transport === "API" ? quotaHooks(metaQuotaScope(c, token), paced) : undefined,
+      c.transport === "API" && c.authMethod === "OAUTH" && c.encryptedAppSecret
+        ? decryptKey(c.encryptedAppSecret, `meta-app:${c.id}`)
+        : undefined,
+      c.transport === "API"
+        ? quotaHooks(metaQuotaScope(c, token), paced)
+        : undefined,
     ),
   };
 }
@@ -381,7 +393,13 @@ export async function discover(
     try {
       await db.metaConnection.updateMany({
         where: { id, revision: c.revision },
-        data: { lastError: message, ...(e instanceof MetaQuotaWait || e instanceof MetaGraphError && e.status === 429 ? {} : {verifiedAt:null}) },
+        data: {
+          lastError: message,
+          ...(e instanceof MetaQuotaWait ||
+          (e instanceof MetaGraphError && e.status === 429)
+            ? {}
+            : { verifiedAt: null }),
+        },
       });
     } catch (persistenceError) {
       console.warn(
@@ -417,7 +435,12 @@ export async function saveToken(
   id: string,
   token: string,
   expectedRevision?: number,
-  options?: { method: "OAUTH"; expiresAt: Date | null; metaUserId: string; sessionId: string },
+  options?: {
+    method: "OAUTH";
+    expiresAt: Date | null;
+    metaUserId: string;
+    sessionId: string;
+  },
 ) {
   return db.$transaction(async (tx) => {
     await tx.$executeRaw`SELECT pg_advisory_xact_lock(884411)`;
@@ -431,7 +454,19 @@ export async function saveToken(
       where: { id: c.ownerId, role: "OWNER", status: "APPROVED" },
     });
     demand(owner, "El propietario de la conexión ya no está autorizado.", 403);
-    if (options) demand(await tx.session.findFirst({ where: { id: options.sessionId, userId: c.ownerId, expiresAt: { gt: new Date() }, user: { role: "OWNER", status: "APPROVED" } } }), "La sesión original ya no está autorizada.", 401);
+    if (options)
+      demand(
+        await tx.session.findFirst({
+          where: {
+            id: options.sessionId,
+            userId: c.ownerId,
+            expiresAt: { gt: new Date() },
+            user: { role: "OWNER", status: "APPROVED" },
+          },
+        }),
+        "La sesión original ya no está autorizada.",
+        401,
+      );
     const changed = await tx.metaConnection.updateMany({
       where: { id, revision: c.revision },
       data: {
@@ -442,7 +477,8 @@ export async function saveToken(
         disconnectedAt: null,
         lastError: null,
         tools: [],
-        authMethod: options?.method ?? (c.transport === "MCP" ? "MCP" : "MANUAL"),
+        authMethod:
+          options?.method ?? (c.transport === "MCP" ? "MCP" : "MANUAL"),
         tokenExpiresAt: options?.expiresAt ?? null,
         metaUserId: options?.metaUserId ?? null,
       },
@@ -475,6 +511,7 @@ const phases = [
 type State = {
   plan?: "activity";
   recentDays?: number;
+  inventory?: "all" | "recent";
   phase?: number;
   after?: string;
   since?: string;
@@ -483,58 +520,191 @@ type State = {
   pages?: number;
   processed?: number;
   updatedAt?: string;
-  lastRun?: { pages: number; processed: number; finishedAt: string; plan?: "activity"; recentDays?: number; since?: string; until?: string };
+  lastRun?: {
+    pages: number;
+    processed: number;
+    finishedAt: string;
+    plan?: "activity";
+    recentDays?: number;
+    since?: string;
+    until?: string;
+  };
   started?: string;
   lastAttempt?: { at: string; revision: number };
 };
-export async function queueSync(actor: Actor, id: string, full = false, recentDays?: number, focused = false) {
+export async function queueSync(
+  actor: Actor,
+  id: string,
+  full = false,
+  recentDays?: number,
+  focused = false,
+  inventory: "all" | "recent" = "recent",
+) {
   const a = await access(actor, id, true);
   demand(
     (a.enabled || focused) && a.connection.verifiedAt,
     "Habilita la cuenta y verifica su conexión antes de sincronizar.",
     409,
   );
-  demand(!recentDays || (!full && [7,15,30,90,180].includes(recentDays) && a.connection.transport === "API"), "La importación rápida admite 30, 90 o 180 días con Marketing API.");
-  demand(!focused || (!full && a.connection.transport === "API" && (!recentDays || [7,15,30,90].includes(recentDays))), "La sincronización de análisis requiere Marketing API y un periodo válido.");
+  demand(
+    !recentDays ||
+      (!full &&
+        [7, 15, 30, 90, 180].includes(recentDays) &&
+        a.connection.transport === "API"),
+    "La importación rápida admite 30, 90 o 180 días con Marketing API.",
+  );
+  demand(
+    !focused ||
+      (!full &&
+        a.connection.transport === "API" &&
+        (!recentDays || [7, 15, 30, 90].includes(recentDays))),
+    "La sincronización de análisis requiere Marketing API y un periodo válido.",
+  );
   await rateLimit("meta:sync:" + actor.id, 30);
-  const deferredUntil = a.connection.transport === "API" && a.connection.encryptedToken ? await quotaUntil(metaQuotaScope(a.connection, decryptKey(a.connection.encryptedToken, `meta:${a.connection.id}`))) : null;
-  const progress = syncProgress(a);
-  const focusResume = focused && (a.syncState as {plan?:string}).plan === "focus" && typeof (a.syncState as State).phase === "number" && (!recentDays || recentDays === (a.syncState as State).recentDays);
-  const focusStart=focused && !focusResume;
-  const resumed = focusResume || !focused && !full && !recentDays && typeof (a.syncState as State).phase === "number";
-  // Retire a stopped executor, including runs pinned to a previous deployment.
-  // The saved page cursor and imported records belong to the account, not the run.
-  const recover = progress.status === "error" || progress.status === "stalled";
-  const updated = await db.metaAdAccount.updateMany({
-    where: {
-      id,
-      ...(focused ? {} : {enabled:true}),
-      connectionId: a.connectionId,
-      connection: { revision: a.connection.revision, disconnectedAt: null },
-      OR: [
-        { syncToken: null },
-        { syncLeaseAt: { lt: new Date(Date.now() - 120000) } },
-      ],
+  const deferredUntil =
+    a.connection.transport === "API" && a.connection.encryptedToken
+      ? await quotaUntil(
+          metaQuotaScope(
+            a.connection,
+            decryptKey(a.connection.encryptedToken, `meta:${a.connection.id}`),
+          ),
+        )
+      : null;
+  const expectedConnection = a.connection;
+  return db.$transaction(
+    async (tx) => {
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(884411)`;
+      const currentUser = await tx.user.findFirst({
+        where: { id: actor.id, status: "APPROVED" },
+      });
+      const a = await tx.metaAdAccount.findUniqueOrThrow({
+        where: { id },
+        include: { connection: true, grants: { where: { userId: actor.id } } },
+      });
+      demand(
+        currentUser &&
+          (currentUser.role === "OWNER" ||
+            (currentUser.role === "ADMIN" && a.grants.some((g) => g.canSync))),
+        "Ya no tienes permiso para sincronizar esta cuenta.",
+        403,
+      );
+      demand(
+        a.connection.id === expectedConnection.id &&
+          a.connection.revision === expectedConnection.revision &&
+          a.connection.verifiedAt &&
+          !a.connection.disconnectedAt,
+        "La conexión cambió. Verifica antes de sincronizar.",
+        409,
+      );
+      const scopeChanged =
+        focused &&
+        (a.syncState as { plan?: string }).plan === "focus" &&
+        ((a.syncState as State).inventory ?? "recent") !== inventory;
+      const progress = syncProgress(a);
+      const focusResume =
+        focused &&
+        ((a.syncState as State).inventory ?? "recent") === inventory &&
+        (a.syncState as { plan?: string }).plan === "focus" &&
+        typeof (a.syncState as State).phase === "number" &&
+        (!recentDays || recentDays === (a.syncState as State).recentDays);
+      const focusStart = focused && !focusResume;
+      const resumed =
+        focusResume ||
+        (!focused &&
+          !full &&
+          !recentDays &&
+          typeof (a.syncState as State).phase === "number");
+      // Retire a stopped executor, including runs pinned to a previous deployment.
+      // The saved page cursor and imported records belong to the account, not the run.
+      const recover =
+        progress.status === "error" || progress.status === "stalled";
+      const updated = await tx.metaAdAccount.updateMany({
+        where: {
+          id,
+          ...(focused ? {} : { enabled: true }),
+          connectionId: a.connectionId,
+          connection: { revision: a.connection.revision, disconnectedAt: null },
+          ...(!scopeChanged
+            ? {
+                OR: [
+                  { syncToken: null },
+                  { syncLeaseAt: { lt: new Date(Date.now() - 120000) } },
+                ],
+              }
+            : {}),
+        },
+        data: {
+          nextSyncAt: deferredUntil ?? new Date(),
+          ...(scopeChanged ? { syncToken: null, syncLeaseAt: null } : {}),
+          syncError: deferredUntil ? a.syncError : null,
+          ...(recover || full || recentDays || focusStart
+            ? { schedulerToken: null, schedulerRunId: null }
+            : {}),
+          ...(focused ? { enabled: true } : {}),
+          ...(focused
+            ? {
+                syncState: focusResume
+                  ? {
+                      ...(a.syncState as Prisma.InputJsonObject),
+                      stop: null,
+                      quotaUntil: deferredUntil?.toISOString() ?? null,
+                    }
+                  : {
+                      quotaUntil: deferredUntil?.toISOString() ?? null,
+                      plan: "focus",
+                      inventory,
+                      recentDays: recentDays ?? 7,
+                      phase: 0,
+                      started: new Date().toISOString(),
+                      until: localDay(a.timezone),
+                      ...(focusedReportDay(a.syncState)
+                        ? { lastReportUntil: focusedReportDay(a.syncState) }
+                        : {}),
+                      ...((a.syncState as State).lastRun
+                        ? { lastRun: (a.syncState as State).lastRun }
+                        : {}),
+                    },
+              }
+            : full
+              ? { syncState: { mode: "history" } }
+              : recentDays
+                ? {
+                    syncState: {
+                      plan: "activity",
+                      recentDays,
+                      phase: 0,
+                      mode: "recent",
+                      since: shiftDay(localDay(a.timezone), 1 - recentDays),
+                      until: localDay(a.timezone),
+                      ...((a.syncState as State).lastRun
+                        ? { lastRun: (a.syncState as State).lastRun }
+                        : {}),
+                    },
+                  }
+                : {}),
+        },
+      });
+      demand(
+        updated.count,
+        "La cuenta ya está procesando una página o su conexión cambió. Espera a que termine y vuelve a consultar el progreso.",
+        409,
+      );
+      return { queued: true, resumed, waiting: !!deferredUntil };
     },
-    data: {
-      nextSyncAt: deferredUntil ?? new Date(),
-      syncError: deferredUntil ? a.syncError : null,
-      ...(recover || full || recentDays || focusStart ? { schedulerToken: null, schedulerRunId: null } : {}),
-      ...(focused ? {enabled:true} : {}),
-      ...(focused ? {syncState:focusResume?{...(a.syncState as Prisma.InputJsonObject),stop:null,quotaUntil:deferredUntil?.toISOString()??null}:{quotaUntil:deferredUntil?.toISOString()??null,plan:"focus",recentDays:recentDays??7,phase:0,started:new Date().toISOString(),until:localDay(a.timezone),...(focusedReportDay(a.syncState)?{lastReportUntil:focusedReportDay(a.syncState)}:{}),...((a.syncState as State).lastRun?{lastRun:(a.syncState as State).lastRun}:{})}} : full ? { syncState: {mode:"history"} } : recentDays ? {syncState:{plan:"activity",recentDays,phase:0,mode:"recent",since:shiftDay(localDay(a.timezone),1-recentDays),until:localDay(a.timezone), ...((a.syncState as State).lastRun ? {lastRun:(a.syncState as State).lastRun} : {})}} : {}),
-    },
-  });
-  demand(updated.count, "La cuenta ya está procesando una página o su conexión cambió. Espera a que termine y vuelve a consultar el progreso.", 409);
-  return { queued: true, resumed, waiting: !!deferredUntil };
+    { timeout: 15000, maxWait: 10000 },
+  );
 }
-export async function syncStep(id: string, expectedSchedule?:string): Promise<boolean> {
+export async function syncStep(
+  id: string,
+  expectedSchedule?: string,
+): Promise<boolean> {
   const token = randomUUID(),
     now = new Date();
   const claimed = await db.metaAdAccount.updateMany({
     where: {
       id,
       enabled: true,
-      ...(expectedSchedule?{schedulerToken:expectedSchedule}:{}),
+      ...(expectedSchedule ? { schedulerToken: expectedSchedule } : {}),
       nextSyncAt: { lte: now },
       connection: { disconnectedAt: null },
       OR: [
@@ -552,24 +722,62 @@ export async function syncStep(id: string, expectedSchedule?:string): Promise<bo
       { connection: c, reader: r } = await reader(a.connectionId, false, true);
     revision = c.revision;
     const state = a.syncState as State;
-    if ((state as {plan?:string}).plan === "focus") {
-      syncPhase="análisis seleccionado";
-      return await focusedSyncStep(a,c,r,token,state as unknown as FocusState);
+    if ((state as { plan?: string }).plan === "focus") {
+      syncPhase = "análisis seleccionado";
+      return await focusedSyncStep(
+        a,
+        c,
+        r,
+        token,
+        state as unknown as FocusState,
+      );
     }
-    if (state.phase === undefined && (state.lastRun as {plan?:string}|undefined)?.plan === "focus") {
-      syncPhase="actualización del análisis";
-      return await focusedSyncStep(a,c,r,token,{plan:"focus",phase:0,recentDays:state.lastRun?.recentDays??7,started:new Date().toISOString(),until:localDay(a.timezone),lastRun:state.lastRun as Prisma.InputJsonObject});
+    if (
+      state.phase === undefined &&
+      (state.lastRun as { plan?: string } | undefined)?.plan === "focus"
+    ) {
+      syncPhase = "actualización del análisis";
+      return await focusedSyncStep(a, c, r, token, {
+        plan: "focus",
+        phase: 0,
+        inventory:
+          (state.lastRun as { inventory?: "all" | "recent" })?.inventory ??
+          "all",
+        recentDays: state.lastRun?.recentDays ?? 7,
+        started: new Date().toISOString(),
+        until: localDay(a.timezone),
+        lastRun: state.lastRun as Prisma.InputJsonObject,
+      });
     }
     // Preserve legacy in-flight cursors. New API imports start with recent activity.
-    const activity = state.plan === "activity" || (state.phase === undefined && state.mode !== "history" && c.transport === "API");
+    const activity =
+      state.plan === "activity" ||
+      (state.phase === undefined &&
+        state.mode !== "history" &&
+        c.transport === "API");
     const recentDays = state.recentDays ?? state.lastRun?.recentDays ?? 30;
-    const planFields = activity ? {plan:"activity" as const,recentDays} : {};
-    const runPhases = activity ? ["insights:campaign","insights:adset","insights:ad","campaigns","adsets","ads"] : phases;
+    const planFields = activity
+      ? { plan: "activity" as const, recentDays }
+      : {};
+    const runPhases = activity
+      ? [
+          "insights:campaign",
+          "insights:adset",
+          "insights:ad",
+          "campaigns",
+          "adsets",
+          "ads",
+        ]
+      : phases;
     const started = state.started ?? new Date().toISOString();
     const today = localDay(a.timezone);
     const since = state.mode
       ? state.since
-      : activity ? shiftDay(today,1-recentDays) : a.syncedAt ? shiftDay(today,-35) : undefined;
+      : activity
+        ? shiftDay(today, 1 - recentDays)
+        : a.syncedAt
+          ? shiftDay(today, -35)
+          : undefined;
     const until = state.until ?? today;
     const phase = state.phase ?? 0;
     demand(phase < phases.length, "Estado de sincronización inválido.", 409);
@@ -579,31 +787,68 @@ export async function syncStep(id: string, expectedSchedule?:string): Promise<bo
     syncPhase = current;
     const lastAttempt = { at: now.toISOString(), revision: c.revision };
     const attempt = await db.metaAdAccount.updateMany({
-        where: { id, syncToken: token, connectionId: a.connectionId, connection: { revision: c.revision, disconnectedAt: null } },
-        data: {
-          syncState: {
-            ...state,
-            ...planFields,
-            ...(since ? {since} : {}), until, mode:since ? "recent" : "history",
-            started,
-            phase,
-            pages: state.pages ?? 0,
-            processed: state.processed ?? 0,
-            lastAttempt,
-          },
+      where: {
+        id,
+        syncToken: token,
+        connectionId: a.connectionId,
+        connection: { revision: c.revision, disconnectedAt: null },
+      },
+      data: {
+        syncState: {
+          ...state,
+          ...planFields,
+          ...(since ? { since } : {}),
+          until,
+          mode: since ? "recent" : "history",
+          started,
+          phase,
+          pages: state.pages ?? 0,
+          processed: state.processed ?? 0,
+          lastAttempt,
         },
-      });
-    demand(attempt.count, "La credencial cambió antes de consultar Meta. Vuelve a verificar la conexión.", 409);
-    const metadataLevel = current === "campaigns" ? "campaign" : current === "adsets" ? "adset" : "ad";
-    const ids = activity && !insight ? await db.metaAdObject.findMany({where:{accountId:id,level:metadataLevel, ...(state.after ? {id:{gt:state.after}} : {}), daily:{some:{day:{gte:since,lte:until},scope:"7d_click,1d_view|impression"}}},select:{id:true},orderBy:{id:"asc"},take:51}) : null;
-    const result = ids?.length === 0 ? {data:[]} : await r.get((insight ? "insights" : current) as Operation, {
-      ...(ids ? {ids:ids.slice(0,50).map(o=>o.id)} : {}),
-      accountId: id,
-      ...(!ids ? {after:state.after} : {}),
-      level,
-      since,
-      until,
+      },
     });
+    demand(
+      attempt.count,
+      "La credencial cambió antes de consultar Meta. Vuelve a verificar la conexión.",
+      409,
+    );
+    const metadataLevel =
+      current === "campaigns"
+        ? "campaign"
+        : current === "adsets"
+          ? "adset"
+          : "ad";
+    const ids =
+      activity && !insight
+        ? await db.metaAdObject.findMany({
+            where: {
+              accountId: id,
+              level: metadataLevel,
+              ...(state.after ? { id: { gt: state.after } } : {}),
+              daily: {
+                some: {
+                  day: { gte: since, lte: until },
+                  scope: "7d_click,1d_view|impression",
+                },
+              },
+            },
+            select: { id: true },
+            orderBy: { id: "asc" },
+            take: 51,
+          })
+        : null;
+    const result =
+      ids?.length === 0
+        ? { data: [] }
+        : await r.get((insight ? "insights" : current) as Operation, {
+            ...(ids ? { ids: ids.slice(0, 50).map((o) => o.id) } : {}),
+            accountId: id,
+            ...(!ids ? { after: state.after } : {}),
+            level,
+            since,
+            until,
+          });
     if (ids && ids.length > 50) result.after = ids[49].id;
     demand(
       !result.after || result.after !== state.after,
@@ -708,7 +953,11 @@ export async function syncStep(id: string, expectedSchedule?:string): Promise<bo
               ...data,
             });
           } else {
-            demand(!activity || digits(row.account_id) === id, "Meta devolvió metadatos de otra cuenta.", 502);
+            demand(
+              !activity || digits(row.account_id) === id,
+              "Meta devolvió metadatos de otra cuenta.",
+              502,
+            );
             const oid = digits(row.id),
               kind =
                 current === "campaigns"
@@ -764,9 +1013,16 @@ export async function syncStep(id: string, expectedSchedule?:string): Promise<bo
         }
         await writeSyncPage(tx, objectRows, dailyRows, !insight);
         if (ids) {
-          const returned = new Set(result.data.map(row=>String(row.id)));
-          const unavailable = ids.slice(0,50).map(o=>o.id).filter(id=>!returned.has(id));
-          if (unavailable.length) await tx.metaAdObject.updateMany({where:{accountId:id,id:{in:unavailable}},data:{status:null,effectiveStatus:"UNAVAILABLE"}});
+          const returned = new Set(result.data.map((row) => String(row.id)));
+          const unavailable = ids
+            .slice(0, 50)
+            .map((o) => o.id)
+            .filter((id) => !returned.has(id));
+          if (unavailable.length)
+            await tx.metaAdObject.updateMany({
+              where: { accountId: id, id: { in: unavailable } },
+              data: { status: null, effectiveStatus: "UNAVAILABLE" },
+            });
         }
         if (insight && !result.after)
           await tx.metaAdDaily.deleteMany({
@@ -816,7 +1072,9 @@ export async function syncStep(id: string, expectedSchedule?:string): Promise<bo
                     pages,
                     processed: (state.processed ?? 0) + result.data.length,
                     finishedAt: new Date().toISOString(),
-                    ...planFields, ...(since ? {since} : {}), until,
+                    ...planFields,
+                    ...(since ? { since } : {}),
+                    until,
                   },
                 }
               : {
@@ -851,19 +1109,37 @@ export async function syncStep(id: string, expectedSchedule?:string): Promise<bo
       e instanceof AppError
         ? e.message
         : `Falló el guardado de la importación en ${syncPhase}${internalErrorCode(e) ? ` (${internalErrorCode(e)})` : ""}. Los datos anteriores se conservan.`;
-    const retryAt = e instanceof MetaQuotaWait || e instanceof MetaGraphError ? e.retryAt : undefined;
-    await db.$transaction(async tx => {
+    const retryAt =
+      e instanceof MetaQuotaWait || e instanceof MetaGraphError
+        ? e.retryAt
+        : undefined;
+    await db.$transaction(async (tx) => {
       await tx.$executeRaw`SELECT pg_advisory_xact_lock(884411)`;
-      const where = { id, syncToken: token, ...(revision ? { connection: { revision, disconnectedAt: null } } : {}) };
-      const current = await tx.metaAdAccount.findFirst({where});
+      const where = {
+        id,
+        syncToken: token,
+        ...(revision ? { connection: { revision, disconnectedAt: null } } : {}),
+      };
+      const current = await tx.metaAdAccount.findFirst({ where });
       if (!current) return; // A pause, cancellation or credential change retired this response.
-      await tx.metaAdAccount.updateMany({where, data: {
-        syncToken: null,
-        syncLeaseAt: null,
-        syncError: message,
-        nextSyncAt: retryAt ?? new Date(Date.now() + 30 * 60000),
-        ...(retryAt ? {syncState:{...(current.syncState as Prisma.InputJsonObject),quotaUntil:retryAt.toISOString(),waitReason:e instanceof MetaQuotaWait?e.reason:"quota"}} : {}),
-      }});
+      await tx.metaAdAccount.updateMany({
+        where,
+        data: {
+          syncToken: null,
+          syncLeaseAt: null,
+          syncError: message,
+          nextSyncAt: retryAt ?? new Date(Date.now() + 30 * 60000),
+          ...(retryAt
+            ? {
+                syncState: {
+                  ...(current.syncState as Prisma.InputJsonObject),
+                  quotaUntil: retryAt.toISOString(),
+                  waitReason: e instanceof MetaQuotaWait ? e.reason : "quota",
+                },
+              }
+            : {}),
+        },
+      });
     });
     console.warn("meta_sync_failed", {
       accountId: id,
@@ -889,17 +1165,64 @@ export async function runDueSync(limit = 3) {
   return accounts.length;
 }
 
-export async function controlSync(actor:Actor,id:string,action:"pause"|"cancel") {
-  await access(actor,id,true);
-  await db.$transaction(async tx=>{
+export async function controlSync(
+  actor: Actor,
+  id: string,
+  action: "pause" | "cancel",
+) {
+  await access(actor, id, true);
+  await db.$transaction(async (tx) => {
     await tx.$executeRaw`SELECT pg_advisory_xact_lock(884411)`;
-    const user=await tx.user.findFirst({where:{id:actor.id,status:"APPROVED"}});
-    const a=await tx.metaAdAccount.findUniqueOrThrow({where:{id},include:{grants:{where:{userId:actor.id}}}});
-    demand(user && (user.role==="OWNER" || user.role==="ADMIN" && a.grants.some(g=>g.canSync)),"No tienes permiso para controlar la sincronización.",403);
-    const state=a.syncState as Prisma.InputJsonObject;
-    const stopped=action==="pause"?{...state,stop:"paused"}:{plan:"focus",recentDays:state.plan==="focus"?(state.recentDays??7):7,stop:"cancelled",...(focusedReportDay(state)?{lastReportUntil:focusedReportDay(state)}:{}),...(state.lastRun?{lastRun:state.lastRun}:{})};
-    await tx.metaAdAccount.update({where:{id},data:{enabled:false,syncToken:null,syncLeaseAt:null,schedulerToken:null,schedulerRunId:null,nextSyncAt:null,syncError:null,syncState:stopped}});
-    await recordActivity(tx,{data:{actorId:actor.id,action:action==="pause"?"META_SYNC_PAUSADA":"META_SYNC_CANCELADA",resourceId:id,detail:{preserved:true}}});
+    const user = await tx.user.findFirst({
+      where: { id: actor.id, status: "APPROVED" },
+    });
+    const a = await tx.metaAdAccount.findUniqueOrThrow({
+      where: { id },
+      include: { grants: { where: { userId: actor.id } } },
+    });
+    demand(
+      user &&
+        (user.role === "OWNER" ||
+          (user.role === "ADMIN" && a.grants.some((g) => g.canSync))),
+      "No tienes permiso para controlar la sincronización.",
+      403,
+    );
+    const state = a.syncState as Prisma.InputJsonObject;
+    const stopped =
+      action === "pause"
+        ? { ...state, stop: "paused" }
+        : {
+            plan: "focus",
+            inventory: state.inventory ?? "recent",
+            recentDays: state.plan === "focus" ? (state.recentDays ?? 7) : 7,
+            stop: "cancelled",
+            ...(focusedReportDay(state)
+              ? { lastReportUntil: focusedReportDay(state) }
+              : {}),
+            ...(state.lastRun ? { lastRun: state.lastRun } : {}),
+          };
+    await tx.metaAdAccount.update({
+      where: { id },
+      data: {
+        enabled: false,
+        syncToken: null,
+        syncLeaseAt: null,
+        schedulerToken: null,
+        schedulerRunId: null,
+        nextSyncAt: null,
+        syncError: null,
+        syncState: stopped,
+      },
+    });
+    await recordActivity(tx, {
+      data: {
+        actorId: actor.id,
+        action:
+          action === "pause" ? "META_SYNC_PAUSADA" : "META_SYNC_CANCELADA",
+        resourceId: id,
+        detail: { preserved: true },
+      },
+    });
   });
-  return {ok:true};
+  return { ok: true };
 }

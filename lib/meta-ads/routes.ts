@@ -46,8 +46,31 @@ export async function metaRoutes(
 ) {
   const path = parts.slice(1).join("/"),
     method = req.method;
+  if (
+    parts[1] === "objects" &&
+    parts[2] &&
+    parts[3] === "status" &&
+    parts.length === 4 &&
+    method === "POST"
+  ) {
+    ownerOnly(actor);
+    const b = z
+      .object({
+        status: z.enum(["ACTIVE", "PAUSED"]),
+        expectedStatus: z.enum(["ACTIVE", "PAUSED"]),
+        confirmed: z.literal(true),
+      })
+      .strict()
+      .parse(await body());
+    return send(
+      await (
+        await import("./manage")
+      ).setMetaStatus(actor, parts[2], b.status, b.expectedStatus),
+    );
+  }
   if (path === "marketing-oauth-config" && method === "GET") {
-    ownerOnly(actor); return send(marketingOAuthInfo(process.env.APP_ORIGIN));
+    ownerOnly(actor);
+    return send(marketingOAuthInfo(process.env.APP_ORIGIN));
   }
   if (path === "connections") {
     ownerOnly(actor);
@@ -92,12 +115,21 @@ export async function metaRoutes(
     const id = parts[2];
     const c = await db.metaConnection.findUnique({ where: { id } });
     demand(c, "Conexión no encontrada.", 404);
-    if (parts[3] === "app" && method === "PATCH") return send(await configureMarketingApp(actor, id, await body()));
+    if (parts[3] === "manage-oauth" && method === "POST") {
+      z.object({})
+        .strict()
+        .parse(await body());
+      return beginMarketingOAuth(req, actor, id, true);
+    }
+    if (parts[3] === "app" && method === "PATCH")
+      return send(await configureMarketingApp(actor, id, await body()));
     if (parts[3] === "verify" && method === "POST")
       return send(await discover(actor, id));
     if (parts[3] === "oauth" && method === "POST") {
       if (c.transport === "API") {
-        z.object({}).strict().parse(await body());
+        z.object({})
+          .strict()
+          .parse(await body());
         return beginMarketingOAuth(req, actor, id);
       }
       const b = z
@@ -109,7 +141,11 @@ export async function metaRoutes(
     if (parts[3] === "tools" && method === "GET") return send(c.tools);
     if (method === "PATCH" && !parts[3]) {
       const b = cfg.partial().parse(await body());
-      demand(!b.appId || b.appId === c.appId || !c.encryptedAppSecret, "Cambia el ID y la clave de la app desde Configuración OAuth.", 409);
+      demand(
+        !b.appId || b.appId === c.appId || !c.encryptedAppSecret,
+        "Cambia el ID y la clave de la app desde Configuración OAuth.",
+        409,
+      );
       demand(
         !b.transport || b.transport === c.transport,
         "Crea otra conexión para cambiar de tipo.",
@@ -165,7 +201,15 @@ export async function metaRoutes(
       where: accountWhere(actor),
       select: {
         ...accountSelect,
-        connection: { select: { transport:true, name: true, revision: true, verifiedAt: true, disconnectedAt: true } },
+        connection: {
+          select: {
+            transport: true,
+            name: true,
+            revision: true,
+            verifiedAt: true,
+            disconnectedAt: true,
+          },
+        },
         grants: { where: { userId: actor.id }, select: { canSync: true } },
         ...(actor.role === "OWNER"
           ? {
@@ -203,27 +247,85 @@ export async function metaRoutes(
       })),
     );
   }
-  if(path === "sync-status" && method === "GET"){
-    const ids=[...new Set((req.nextUrl.searchParams.get("accounts")??"").split(",").filter(Boolean))];
-    demand(ids.length>0&&ids.length<=100&&ids.every(id=>/^\d{1,40}$/.test(id)),"Selección de cuentas inválida.");
-    const rows=await db.metaAdAccount.findMany({where:{AND:[accountWhere(actor),{id:{in:ids}}]},select:{id:true,enabled:true,syncedAt:true,nextSyncAt:true,syncError:true,syncState:true}});
-    demand(rows.length===ids.length,"Hay cuentas no autorizadas en la selección.",404);
-    return send(rows.map(a=>({id:a.id,syncedAt:a.syncedAt,syncError:a.syncError,syncState:{phase:(a.syncState as {phase?:number}).phase??null},progress:syncProgress(a)})));
+  if (path === "sync-status" && method === "GET") {
+    const ids = [
+      ...new Set(
+        (req.nextUrl.searchParams.get("accounts") ?? "")
+          .split(",")
+          .filter(Boolean),
+      ),
+    ];
+    demand(
+      ids.length > 0 &&
+        ids.length <= 100 &&
+        ids.every((id) => /^\d{1,40}$/.test(id)),
+      "Selección de cuentas inválida.",
+    );
+    const rows = await db.metaAdAccount.findMany({
+      where: { AND: [accountWhere(actor), { id: { in: ids } }] },
+      select: {
+        id: true,
+        enabled: true,
+        syncedAt: true,
+        nextSyncAt: true,
+        syncError: true,
+        syncState: true,
+      },
+    });
+    demand(
+      rows.length === ids.length,
+      "Hay cuentas no autorizadas en la selección.",
+      404,
+    );
+    return send(
+      rows.map((a) => ({
+        id: a.id,
+        syncedAt: a.syncedAt,
+        syncError: a.syncError,
+        syncState: { phase: (a.syncState as { phase?: number }).phase ?? null },
+        progress: syncProgress(a),
+      })),
+    );
   }
   if (parts[1] === "accounts" && parts[2]) {
     const id = parts[2];
     const a = await access(actor, id);
-    if(parts[3] === "control" && method === "POST") {
-      const b=z.object({action:z.enum(["pause","cancel"])}).strict().parse(await body());
-      return send(await (await import("./service")).controlSync(actor,id,b.action));
+    if (parts[3] === "control" && method === "POST") {
+      const b = z
+        .object({ action: z.enum(["pause", "cancel"]) })
+        .strict()
+        .parse(await body());
+      return send(
+        await (await import("./service")).controlSync(actor, id, b.action),
+      );
     }
     if (parts[3] === "sync" && method === "POST") {
       const b = z
-        .object({ full: z.boolean().default(false), focused:z.boolean().default(false), recentDays:z.union([z.literal(7),z.literal(15),z.literal(30),z.literal(90),z.literal(180)]).optional() })
+        .object({
+          full: z.boolean().default(false),
+          focused: z.boolean().default(false),
+          inventory: z.enum(["all", "recent"]).optional(),
+          recentDays: z
+            .union([
+              z.literal(7),
+              z.literal(15),
+              z.literal(30),
+              z.literal(90),
+              z.literal(180),
+            ])
+            .optional(),
+        })
         .strict()
         .parse(await body());
       if (b.full) ownerOnly(actor);
-      const result = await queueSync(actor, id, b.full, b.recentDays, b.focused);
+      const result = await queueSync(
+        actor,
+        id,
+        b.full,
+        b.recentDays,
+        b.focused,
+        b.inventory ?? (b.focused ? "all" : "recent"),
+      );
       // The explicit action checks one page immediately; remaining pages stay durable.
       const advanced = b.focused ? false : await syncStep(id);
       const { startMetaSchedule } = await import("./schedule");
@@ -238,8 +340,14 @@ export async function metaRoutes(
           await getRun(account.schedulerRunId).wakeUp();
         } catch {}
       }
-      const state=await db.metaAdAccount.findUniqueOrThrow({where:{id},select:{syncError:true}});
-      return send({ ...result, ...scheduled, advanced, syncError: state.syncError }, 202);
+      const state = await db.metaAdAccount.findUniqueOrThrow({
+        where: { id },
+        select: { syncError: true },
+      });
+      return send(
+        { ...result, ...scheduled, advanced, syncError: state.syncError },
+        202,
+      );
     }
     if (parts[3] === "grants") {
       ownerOnly(actor);
@@ -424,7 +532,7 @@ export async function metaRoutes(
   if (path === "objects" && method === "GET") {
     const allowed = await db.metaAdAccount.findMany({
       where: accountWhere(actor),
-      select: { id: true,selectionSince:true,syncState:true },
+      select: { id: true, selectionSince: true, syncState: true },
     });
     const ids = (req.nextUrl.searchParams.get("accounts") ?? "")
       .split(",")
@@ -439,7 +547,25 @@ export async function metaRoutes(
         where: {
           accountId: { in: ids.length ? ids : allowed.map((a) => a.id) },
           level: { in: ["campaign", "adset"] },
-          AND:[{OR:allowed.filter(a=>!ids.length || ids.includes(a.id)).map(a=>{const started=(a.syncState as {plan?:string;started?:string}).plan==="focus"?(a.syncState as {started?:string}).started:undefined;const cutoff=a.selectionSince??(started?new Date(started):null);return {accountId:a.id,...(cutoff?{selectedAt:{gte:cutoff}}:{})};})}],
+          AND: [
+            {
+              OR: allowed
+                .filter((a) => !ids.length || ids.includes(a.id))
+                .map((a) => {
+                  const started =
+                    (a.syncState as { plan?: string; started?: string })
+                      .plan === "focus"
+                      ? (a.syncState as { started?: string }).started
+                      : undefined;
+                  const cutoff =
+                    a.selectionSince ?? (started ? new Date(started) : null);
+                  return {
+                    accountId: a.id,
+                    ...(cutoff ? { selectedAt: { gte: cutoff } } : {}),
+                  };
+                }),
+            },
+          ],
         },
         select: {
           id: true,

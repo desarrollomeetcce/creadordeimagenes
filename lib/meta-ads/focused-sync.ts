@@ -15,6 +15,7 @@ import { focusedLabels } from "./focused-labels";
 export type FocusState = {
   plan: "focus";
   recentDays: number;
+  inventory?: "all" | "recent";
   phase: number;
   started: string;
   until: string;
@@ -213,7 +214,9 @@ export async function focusedSyncStep(
   } else if (phase < 6) {
     result = await r.get(operations[phase - 3], {
       accountId: a.id,
-      activeOnly: true,
+      ...(state.inventory === "all"
+        ? { inventoryAll: true }
+        : { activeOnly: true }),
       after: state.after,
     });
     pages++;
@@ -227,7 +230,12 @@ export async function focusedSyncStep(
         "Meta no informó el estado efectivo del elemento.",
         502,
       );
-      if (row.effective_status !== "ACTIVE") continue;
+      if (
+        state.inventory === "all"
+          ? ["DELETED", "ARCHIVED"].includes(String(row.effective_status))
+          : row.effective_status !== "ACTIVE"
+      )
+        continue;
       objectRows.push(object);
       selected.push(id(row.id));
     }
@@ -474,6 +482,7 @@ export async function focusedSyncStep(
       const common = {
         plan: "focus",
         recentDays: state.recentDays,
+        inventory: state.inventory ?? "recent",
         since,
         until: state.until,
         started,

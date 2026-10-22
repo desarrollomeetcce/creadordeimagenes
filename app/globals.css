@@ -1223,3 +1223,20 @@ html:has(.meta-ads){scrollbar-gutter:stable}
 .privacy-receipt { display: block; overflow-wrap: anywhere; padding: 12px; user-select: all; }
 .privacy-message { white-space: pre-wrap; overflow-wrap: anywhere; }
 .legal-site input[type="checkbox"] { width: 18px; height: 18px; flex: 0 0 18px; }
+
+/* Meta: filters, ordering and results have distinct, stable rows. */
+.meta-main-filters { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+.meta-sort-tools { flex-direction: row; flex-wrap: wrap; align-items: center; gap: 10px; }
+.meta-sort-tools > small { flex-basis: 100%; }
+.meta-sort-tools > span { font-weight: 600; white-space: nowrap; }
+.meta-cost-sort { display: flex; flex: 1; flex-wrap: wrap; max-width: none; gap: 7px; }
+.meta-cost-sort button { flex: 1 0 88px; }
+.meta-result-controls { display: flex; align-items: end; flex-wrap: wrap; gap: 18px; }
+.meta-result-controls > label { flex: 1; min-width: min(280px, 100%); }
+.meta-result-controls .meta-level-tabs { flex: 0 1 490px; width: 100%; }
+.meta-breadcrumbs { padding: 10px 0; }
+.meta-name-button { border: 0; padding: 0; background: transparent; color: inherit; font: inherit; text-align: left; text-decoration: underline; text-underline-offset: 4px; }
+.meta-name-button:hover { color: var(--accent); }
+.meta-results .meta-table td button { margin: 4px 4px 4px 0; }
+@media (max-width: 1000px) { .meta-main-filters { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 560px) { .meta-main-filters { grid-template-columns: minmax(0, 1fr); } .meta-result-controls .meta-level-tabs { flex-basis: 100%; } .meta-sort-tools > span { flex-basis: 100%; } }

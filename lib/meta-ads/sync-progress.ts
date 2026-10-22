@@ -9,6 +9,7 @@ const labels = [
 ];
 export type SyncProgress = {
   focused: boolean;
+  inventory: "all" | "recent";
   recentReady: boolean;
   historyProcessed: number;
   historyTotal: number;
@@ -54,6 +55,7 @@ export function syncProgress(
     recentReady?: boolean;
     historyProcessed?: unknown;
     historyTotal?: unknown;
+    inventory?: "all" | "recent";
     recentDays?: number;
     plan?: string;
     since?: string;
@@ -72,6 +74,7 @@ export function syncProgress(
       since?: string;
       until?: string;
       plan?: string;
+      inventory?: "all" | "recent";
       recentDays?: number;
       recentReady?: boolean;
     };
@@ -114,6 +117,10 @@ export function syncProgress(
               : "complete";
   return {
     focused,
+    inventory:
+      (phase === null ? s.lastRun?.inventory : s.inventory) === "all"
+        ? "all"
+        : "recent",
     historyProcessed: integer(
       phase === null ? s.lastRun?.historyProcessed : s.historyProcessed,
     ),
@@ -131,9 +138,12 @@ export function syncProgress(
       (phase === null && s.lastRun?.recentReady)
     ),
     recentDays: s.recentDays ?? s.lastRun?.recentDays ?? (focused ? 7 : 30),
-    scope: (phase !== null ? s.since : s.lastRun?.since)
-      ? `${phase !== null ? s.since : s.lastRun?.since} → ${phase !== null ? s.until : s.lastRun?.until} · ${(phase !== null ? s.plan : s.lastRun?.plan) === "focus" ? "activos o con entrega reciente; estadísticas históricas independientes" : (phase !== null ? s.plan : s.lastRun?.plan) === "activity" ? "solo objetos con actividad en el periodo" : "catálogo completo"}`
-      : null,
+    scope:
+      (phase !== null ? s.inventory : s.lastRun?.inventory) === "all"
+        ? "Catálogo activo y desactivado sin límite de antigüedad · comparativos de 30 días e histórico disponible en Meta"
+        : (phase !== null ? s.since : s.lastRun?.since)
+          ? `${phase !== null ? s.since : s.lastRun?.since} → ${phase !== null ? s.until : s.lastRun?.until} · ${(phase !== null ? s.plan : s.lastRun?.plan) === "focus" ? ((phase !== null ? s.inventory : s.lastRun?.inventory) === "all" ? "activos y desactivados, sin límite de antigüedad; estadísticas históricas independientes" : "activos o con entrega reciente; estadísticas históricas independientes") : (phase !== null ? s.plan : s.lastRun?.plan) === "activity" ? "solo objetos con actividad en el periodo" : "catálogo completo"}`
+          : null,
     status,
     phase: status === "complete" ? totalPhases : (phase ?? 0),
     totalPhases,
@@ -157,7 +167,16 @@ export function syncProgress(
                     : status === "complete"
                       ? "Última importación completada"
                       : s.plan === "focus"
-                        ? focusedLabels[phase ?? 0]
+                        ? s.inventory === "all" &&
+                          phase !== null &&
+                          phase >= 3 &&
+                          phase < 6
+                          ? [
+                              "Todas las campañas",
+                              "Todos los conjuntos",
+                              "Todos los anuncios",
+                            ][phase - 3]
+                          : focusedLabels[phase ?? 0]
                         : (s.plan === "activity"
                             ? [
                                 "Resultados de campañas",

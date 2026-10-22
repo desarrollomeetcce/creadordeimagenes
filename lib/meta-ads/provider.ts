@@ -27,6 +27,7 @@ export type Query = {
   objectId?: string;
   aggregate?: boolean;
   activeOnly?: boolean;
+  inventoryAll?: boolean;
   ids?: string[];
   accountView?: "minimal" | "metadata" | "status" | "business";
   accountId?: string;
@@ -235,9 +236,11 @@ export function fields(op: Operation) {
 // Drain reserved reads before returning an error; no requests escape a failed batch.
 export async function settledReads<T>(reads: Promise<T>[]): Promise<T[]> {
   const results = await Promise.allSettled(reads);
-  const error = results.find((r): r is PromiseRejectedResult => r.status === "rejected");
+  const error = results.find(
+    (r): r is PromiseRejectedResult => r.status === "rejected",
+  );
   if (error) throw error.reason;
-  return results.map(r => (r as PromiseFulfilledResult<T>).value);
+  return results.map((r) => (r as PromiseFulfilledResult<T>).value);
 }
 export class MetaReader {
   private unavailableAccountFields = new Set<string>();
@@ -249,8 +252,73 @@ export class MetaReader {
     private transport: string,
     private version: string,
     private appSecret?: string,
-    private quota?: { beforeRead: () => Promise<unknown>; limited: (error: MetaGraphError, retryMs: number) => Promise<void> },
+    private quota?: {
+      beforeRead: () => Promise<unknown>;
+      limited: (error: MetaGraphError, retryMs: number) => Promise<void>;
+    },
   ) {}
+  async setStatus(objectId: string, status: "ACTIVE" | "PAUSED") {
+    demand(
+      this.transport === "API" &&
+        /^\d{1,40}$/.test(objectId) &&
+        ["ACTIVE", "PAUSED"].includes(status),
+      "Cambio de estado no permitido.",
+      400,
+    );
+    await this.quota?.beforeRead();
+    const params = new URLSearchParams({ status });
+    if (this.appSecret)
+      params.set(
+        "appsecret_proof",
+        createHmac("sha256", this.appSecret).update(this.token).digest("hex"),
+      );
+    let r: Response;
+    try {
+      r = await external(
+        `https://graph.facebook.com/${this.version}/${objectId}`,
+        {
+          method: "POST",
+          headers: {
+            Authorization: "Bearer " + this.token,
+            "Content-Type": "application/x-www-form-urlencoded",
+          },
+          body: params.toString(),
+        },
+      );
+    } catch {
+      throw new AppError(
+        "No se confirmó el cambio en Meta. Actualiza el estado antes de volver a intentarlo; la solicitud pudo haberse aplicado.",
+        503,
+      );
+    }
+    let payload: unknown;
+    try {
+      payload = JSON.parse(await boundedResponse(r, 64000));
+    } catch {
+      throw new AppError(
+        "Meta no confirmó el resultado del cambio. Consulta el estado antes de repetirlo.",
+        502,
+      );
+    }
+    if (!r.ok || (payload as { error?: unknown })?.error) {
+      const error = new MetaGraphError(r.status, payload, this.token, {
+        version: this.version,
+        endpoint: objectId,
+        fields: "status",
+      });
+      await this.quota?.limited(
+        error,
+        retryDelay(r.headers.get("retry-after")),
+      );
+      throw error;
+    }
+    demand(
+      (payload as { success?: unknown })?.success === true,
+      "Meta no confirmó el cambio de estado. Consulta su estado antes de repetirlo.",
+      502,
+    );
+    return { success: true };
+  }
   async rpc(
     method: string,
     params: Record<string, unknown> = {},
@@ -427,18 +495,48 @@ export class MetaReader {
         /^v\d{2}\.0$/.test(this.version),
         "Configura la versión de Graph API de tu app.",
       );
-      demand(!q.insightIds || (op === "insights" && !q.objectId && !!q.accountId && ["campaign","adset","ad"].includes(q.level ?? "") && q.insightIds.length > 0 && q.insightIds.length <= 50 && new Set(q.insightIds).size === q.insightIds.length && q.insightIds.every(id => /^\d{1,40}$/.test(id))), "Filtro de estadísticas inválido.");
+      demand(
+        !q.insightIds ||
+          (op === "insights" &&
+            !q.objectId &&
+            !!q.accountId &&
+            ["campaign", "adset", "ad"].includes(q.level ?? "") &&
+            q.insightIds.length > 0 &&
+            q.insightIds.length <= 50 &&
+            new Set(q.insightIds).size === q.insightIds.length &&
+            q.insightIds.every((id) => /^\d{1,40}$/.test(id))),
+        "Filtro de estadísticas inválido.",
+      );
       if (q.ids) {
-        demand(["campaigns","adsets","ads"].includes(op) && q.ids.length>0 && q.ids.length<=50 && q.ids.every(id=>/^\d{1,40}$/.test(id)), "Selección de objetos inválida.");
-        const data: Record<string,unknown>[]=[];
-        for(let i=0;i<q.ids.length;i+=5){
-          const pages=await settledReads(q.ids.slice(i,i+5).map(objectId=>this.get(op,{accountId:q.accountId,objectId})));
-          pages.forEach(page=>data.push(...page.data));
+        demand(
+          ["campaigns", "adsets", "ads"].includes(op) &&
+            q.ids.length > 0 &&
+            q.ids.length <= 50 &&
+            q.ids.every((id) => /^\d{1,40}$/.test(id)),
+          "Selección de objetos inválida.",
+        );
+        const data: Record<string, unknown>[] = [];
+        for (let i = 0; i < q.ids.length; i += 5) {
+          const pages = await settledReads(
+            q.ids
+              .slice(i, i + 5)
+              .map((objectId) =>
+                this.get(op, { accountId: q.accountId, objectId }),
+              ),
+          );
+          pages.forEach((page) => data.push(...page.data));
         }
-        return {data};
+        return { data };
       }
-      demand(!q.objectId || /^\d{1,40}$/.test(q.objectId), "Identificador de objeto inválido.");
-      const path = q.objectId ? q.objectId + (op === "insights" ? "/insights" : "") : op === "accounts" ? "me/adaccounts" : `act_${q.accountId}/${op}`;
+      demand(
+        !q.objectId || /^\d{1,40}$/.test(q.objectId),
+        "Identificador de objeto inválido.",
+      );
+      const path = q.objectId
+        ? q.objectId + (op === "insights" ? "/insights" : "")
+        : op === "accounts"
+          ? "me/adaccounts"
+          : `act_${q.accountId}/${op}`;
       const u = new URL(`https://graph.facebook.com/${this.version}/${path}`);
       const accountFields = {
         minimal: "id,name",
@@ -450,14 +548,27 @@ export class MetaReader {
         "fields",
         op === "accounts"
           ? accountFields[q.accountView ?? "minimal"]
-          : ((q.objectId || q.activeOnly) && op !== "insights" ? "account_id," : "") + fields(op),
+          : ((q.objectId || q.activeOnly || q.inventoryAll) && op !== "insights"
+              ? "account_id,"
+              : "") + fields(op),
       );
       u.searchParams.set("limit", "100");
-      if(q.activeOnly) u.searchParams.set("effective_status",JSON.stringify(["ACTIVE"]));
-      if (this.appSecret) u.searchParams.set("appsecret_proof", createHmac("sha256", this.appSecret).update(this.token).digest("hex"));
+      if (q.activeOnly)
+        u.searchParams.set("effective_status", JSON.stringify(["ACTIVE"]));
+      if (this.appSecret)
+        u.searchParams.set(
+          "appsecret_proof",
+          createHmac("sha256", this.appSecret).update(this.token).digest("hex"),
+        );
       if (q.after) u.searchParams.set("after", q.after);
       if (op === "insights") {
-        if(q.insightIds) u.searchParams.set("filtering",JSON.stringify([{field:q.level+".id",operator:"IN",value:q.insightIds}]));
+        if (q.insightIds)
+          u.searchParams.set(
+            "filtering",
+            JSON.stringify([
+              { field: q.level + ".id", operator: "IN", value: q.insightIds },
+            ]),
+          );
         u.searchParams.set("level", q.level!);
         u.searchParams.set("time_increment", q.aggregate ? "all_days" : "1");
         u.searchParams.set(
@@ -494,19 +605,37 @@ export class MetaReader {
           endpoint: path,
           fields: u.searchParams.get("fields")!,
         });
-        await this.quota?.limited(error, retryDelay(r.headers.get("retry-after")));
+        await this.quota?.limited(
+          error,
+          retryDelay(r.headers.get("retry-after")),
+        );
         console.warn(
           JSON.stringify({ event: "meta_graph_error", ...error.diagnostic }),
         );
         throw error;
       }
-      if(q.objectId && op !== "insights") {
-        demand(payload && typeof payload === "object" && String((payload as Record<string,unknown>).id) === q.objectId, "Meta devolvió otro objeto.",502);
-        return {data:[payload as Record<string,unknown>]};
+      if (q.objectId && op !== "insights") {
+        demand(
+          payload &&
+            typeof payload === "object" &&
+            String((payload as Record<string, unknown>).id) === q.objectId,
+          "Meta devolvió otro objeto.",
+          502,
+        );
+        return { data: [payload as Record<string, unknown>] };
       }
       return page(payload);
     }
-    demand(!q.insightIds && !q.ids && !q.objectId && !q.aggregate && !q.activeOnly, "Esta lectura acotada requiere Marketing API.", 409);
+    demand(
+      !q.insightIds &&
+        !q.ids &&
+        !q.objectId &&
+        !q.aggregate &&
+        !q.activeOnly &&
+        !q.inventoryAll,
+      "Esta lectura acotada requiere Marketing API.",
+      409,
+    );
     const tools = await this.tools(),
       tool = selectTool(tools, op);
     const result = (await this.rpc("tools/call", {

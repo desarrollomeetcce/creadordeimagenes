@@ -81,3 +81,17 @@ test('Meta Insights agrupados: filtro por nivel/IDs acotado sin ids raíz ni cat
  const original=globalThis.fetch;const calls:URL[]=[];globalThis.fetch=async(input)=>{calls.push(new URL(String(input)));return Response.json({data:[]});};
  try{const r=new MetaReader('synthetic','API','v26.0');await r.get('insights',{accountId:'123',level:'ad',insightIds:['11','12'],aggregate:true});assert.equal(calls[0].pathname,'/v26.0/act_123/insights');assert.deepEqual(JSON.parse(calls[0].searchParams.get('filtering')!),[{field:'ad.id',operator:'IN',value:['11','12']}]);assert(!calls[0].searchParams.has('ids'));await assert.rejects(()=>r.get('ads',{accountId:'123',level:'ad',insightIds:['11']}));await assert.rejects(()=>r.get('insights',{accountId:'123',level:'ad',insightIds:[]}));await assert.rejects(()=>r.get('insights',{accountId:'123',level:'ad',insightIds:['11','11']}));await assert.rejects(()=>r.get('insights',{accountId:'123',level:'ad',insightIds:Array.from({length:51},(_,i)=>String(i))}));assert.equal(calls.length,1);}finally{globalThis.fetch=original;}
 });
+
+test('Meta: conversación agregada usa gasto dividido entre resultados, no promedio de costos',()=>{
+ const rows=[{spend:10,impressions:100,clicks:10,actions:{'onsite_conversion.messaging_conversation_started_7d':10}},{spend:90,impressions:300,clicks:30,actions:{'onsite_conversion.messaging_conversation_started_7d':30}}];
+ const total=summarize(rows.map(r=>({...r,day:'2026-10-22'})),'MESSAGES','2026-10-22','2026-10-22',true);assert.equal(total.results,40);assert.equal(total.cost,2.5);
+});
+test('Meta: inventario completo no impone filtro ACTIVE y exige identidad de cuenta',async()=>{
+ const previous=globalThis.fetch;globalThis.fetch=async(input)=>{const u=new URL(String(input));assert.equal(u.pathname,'/v26.0/act_123/ads');assert(!u.searchParams.has('effective_status'));assert(u.searchParams.get('fields')!.includes('account_id'));return Response.json({data:[{id:'1231',account_id:'123',status:'PAUSED',effective_status:'PAUSED'}]});};try{assert.equal((await new MetaReader('synthetic-token','API','v26.0').get('ads',{accountId:'123',inventoryAll:true})).data[0].status,'PAUSED');}finally{globalThis.fetch=previous;}
+});
+test('Meta: preferencias migran medida a conversaciones sin perder cuenta ni búsqueda',async()=>{
+ const {parseMetaPreferences}=await import('../lib/meta-ads/preferences');const old=parseMetaPreferences(JSON.stringify({metric:'LINK_CLICKS',accountIds:['123'],q:'Psicología',business:'99',currency:'USD',age:'older'}));assert.equal(old.metric,'MESSAGES');assert.deepEqual(old.accountIds,['123']);assert.equal(old.q,'Psicología');assert.equal(old.business,'');assert.equal(old.currency,'');assert.equal(old.age,'');assert.equal(parseMetaPreferences(JSON.stringify({layoutRevision:2,metric:'LEADS'})).metric,'LEADS');
+});
+test('Meta: escrituras inciertas se informan sin reintento y MCP nunca cambia estados',async()=>{
+ const previous=globalThis.fetch;let calls=0;globalThis.fetch=async(input,init)=>{calls++;assert.equal(new URL(String(input)).pathname,'/v26.0/123');assert.equal(init?.method,'POST');assert.equal(new URLSearchParams(String(init?.body)).get('status'),'PAUSED');throw Error('Synthetic connection lost');};try{await assert.rejects(()=>new MetaReader('synthetic-token','API','v26.0').setStatus('123','PAUSED'),/pudo haberse aplicado/);assert.equal(calls,1);await assert.rejects(()=>new MetaReader('synthetic-token','MCP','v26.0').setStatus('123','PAUSED'),/no permitido/);assert.equal(calls,1);}finally{globalThis.fetch=previous;}
+});
