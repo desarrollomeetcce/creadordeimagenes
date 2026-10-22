@@ -24,6 +24,8 @@ export type FocusState = {
   processed?: number;
   updatedAt?: string;
   recentReady?: boolean;
+  historyProcessed?: number;
+  historyTotal?: number;
   lastReportUntil?: string;
   lastRun?: Prisma.InputJsonObject;
   lastAttempt?: { at: string; revision: number };
@@ -164,6 +166,8 @@ export async function focusedSyncStep(
   let nextAfter: string | undefined,
     objectAfter: string | undefined,
     pages = 0;
+  let historyProcessed = state.historyProcessed,
+    historyTotal = state.historyTotal;
   const level = levels[phase % 3];
   if (phase < 3) {
     result = await r.get("insights", {
@@ -229,6 +233,7 @@ export async function focusedSyncStep(
     }
     nextAfter = result.after;
   } else {
+    const batchSize = phase === 10 ? 50 : phase === 9 ? 15 : 5;
     const candidates = await db.metaAdObject.findMany({
       where: {
         accountId: a.id,
@@ -244,9 +249,9 @@ export async function focusedSyncStep(
         ...(state.objectAfter ? { id: { gt: state.objectAfter } } : {}),
       },
       orderBy: { id: "asc" },
-      take: 6,
+      take: batchSize + 1,
     });
-    const batch = candidates.slice(0, 5);
+    const batch = candidates.slice(0, batchSize);
     if (phase < 9) {
       const reads = await settledReads(
         batch.map((o) =>
@@ -259,12 +264,18 @@ export async function focusedSyncStep(
       );
     } else if (phase === 9) {
       const from = shiftDay(state.until, -29);
+      const groups: (typeof batch)[] = [];
+      for (const level of levels) {
+        const objects = batch.filter((o) => o.level === level);
+        for (let i = 0; i < objects.length; i += 3)
+          groups.push(objects.slice(i, i + 3));
+      }
       const reads = await settledReads(
-        batch.map((o) =>
+        groups.map((objects) =>
           r.get("insights", {
             accountId: a.id,
-            objectId: o.id,
-            level: o.level,
+            insightIds: objects.map((o) => o.id),
+            level: objects[0].level,
             since: from,
             until: state.until,
           }),
@@ -277,25 +288,28 @@ export async function focusedSyncStep(
           "Meta paginó un informe diario acotado inesperadamente. El progreso se conserva.",
           502,
         );
-        const object = batch[i],
-          dates = new Set<string>();
+        const dates = new Set<string>(),
+          group = groups[i];
         for (const row of page.data) {
-          const d = day(row.date_start);
+          const oid = id(row[group[0].level + "_id"]),
+            object = group.find((o) => o.id === oid),
+            d = day(row.date_start),
+            key = oid + ":" + d;
           demand(
-            id(row.account_id) === a.id &&
-              id(row[object.level + "_id"]) === object.id &&
+            object &&
+              id(row.account_id) === a.id &&
               d === row.date_stop &&
               d >= from &&
               d <= state.until &&
-              !dates.has(d),
-            "Meta devolvió datos diarios incompatibles con el objeto o periodo.",
+              !dates.has(key),
+            "Meta devolvió datos diarios incompatibles con los objetos o periodo.",
             502,
           );
-          dates.add(d);
+          dates.add(key);
           dailyRows.push({
             id: randomUUID(),
             accountId: a.id,
-            objectId: object.id,
+            objectId: oid,
             day: d,
             scope,
             ...facts(row),
@@ -315,49 +329,70 @@ export async function focusedSyncStep(
       const missing = batch.filter(
         (o) => !stored.some((t) => t.objectId === o.id),
       );
+      const groups = levels
+        .map((level) => missing.filter((o) => o.level === level))
+        .filter((objects) => objects.length);
       const reads = await settledReads(
-        missing.map((o) =>
+        groups.map((objects) =>
           r.get("insights", {
             accountId: a.id,
-            objectId: o.id,
-            level: o.level,
+            insightIds: objects.map((o) => o.id),
+            level: objects[0].level,
             aggregate: true,
           }),
         ),
       );
       pages += reads.length;
       reads.forEach((page, i) => {
-        const object = missing[i];
+        const group = groups[i],
+          seen = new Map<string, Record<string, unknown>>();
         demand(
-          !page.after && page.data.length <= 1,
-          "Meta no devolvió un acumulado único del objeto.",
+          !page.after && page.data.length <= group.length,
+          "Meta no devolvió acumulados únicos de los objetos solicitados.",
           502,
         );
-        const row = page.data[0];
-        if (row)
+        for (const row of page.data) {
+          const oid = id(row[group[0].level + "_id"]);
           demand(
             id(row.account_id) === a.id &&
-              id(row[object.level + "_id"]) === object.id &&
+              group.some((o) => o.id === oid) &&
+              !seen.has(oid) &&
               day(row.date_stop) <= state.until &&
               day(row.date_start) <= day(row.date_stop),
-            "Meta devolvió un acumulado de otro objeto o fechas inválidas.",
+            "Meta devolvió un acumulado ajeno, repetido o con fechas inválidas.",
             502,
           );
-        totalRows.push({
-          objectId: object.id,
-          accountId: a.id,
-          since: row
-            ? day(row.date_start)
-            : object.createdTime
-              ? localDay(a.timezone, object.createdTime)
-              : state.until,
-          until: row ? day(row.date_stop) : state.until,
-          scope,
-          ...facts(row ?? {}),
-        });
+          seen.set(oid, row);
+        }
+        for (const object of group) {
+          const row = seen.get(object.id);
+          totalRows.push({
+            objectId: object.id,
+            accountId: a.id,
+            since: row
+              ? day(row.date_start)
+              : object.createdTime
+                ? localDay(a.timezone, object.createdTime)
+                : state.until,
+            until: row ? day(row.date_stop) : state.until,
+            scope,
+            ...facts(row ?? {}),
+          });
+        }
       });
+      const selectedWhere = {
+        accountId: a.id,
+        selectedAt: { gte: new Date(started) },
+      };
+      historyTotal ??= await db.metaAdObject.count({ where: selectedWhere });
+      historyProcessed ??= state.objectAfter
+        ? await db.metaAdObject.count({
+            where: { ...selectedWhere, id: { lte: state.objectAfter } },
+          })
+        : 0;
+      historyProcessed += batch.length;
     }
-    if (candidates.length > 5) objectAfter = batch.at(-1)!.id;
+    if (candidates.length > batchSize) objectAfter = batch.at(-1)!.id;
     // Reconciliation is limited to exactly the queried objects, even when Meta returns no rows.
     selected = phase === 9 ? batch.map((o) => o.id) : [];
   }
@@ -450,6 +485,9 @@ export async function focusedSyncStep(
             : objectRows.length + dailyRows.length + totalRows.length),
         lastAttempt,
         recentReady,
+        ...(historyTotal !== undefined
+          ? { historyTotal, historyProcessed: historyProcessed ?? 0 }
+          : {}),
         ...(recentReady
           ? { lastReportUntil: state.until }
           : state.lastReportUntil

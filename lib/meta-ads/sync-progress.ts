@@ -10,6 +10,8 @@ const labels = [
 export type SyncProgress = {
   focused: boolean;
   recentReady: boolean;
+  historyProcessed: number;
+  historyTotal: number;
   waitReason: "quota" | "pacing" | null;
   recentDays: number;
   scope: string | null;
@@ -50,6 +52,8 @@ export function syncProgress(
     quotaUntil?: unknown;
     waitReason?: unknown;
     recentReady?: boolean;
+    historyProcessed?: unknown;
+    historyTotal?: unknown;
     recentDays?: number;
     plan?: string;
     since?: string;
@@ -60,6 +64,8 @@ export function syncProgress(
     updatedAt?: unknown;
     started?: unknown;
     lastRun?: {
+      historyProcessed?: unknown;
+      historyTotal?: unknown;
       pages?: unknown;
       processed?: unknown;
       finishedAt?: unknown;
@@ -108,6 +114,12 @@ export function syncProgress(
               : "complete";
   return {
     focused,
+    historyProcessed: integer(
+      phase === null ? s.lastRun?.historyProcessed : s.historyProcessed,
+    ),
+    historyTotal: integer(
+      phase === null ? s.lastRun?.historyTotal : s.historyTotal,
+    ),
     waitReason:
       status === "waiting"
         ? s.waitReason === "pacing"

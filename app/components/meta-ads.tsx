@@ -238,11 +238,13 @@ function SyncIndicator({
   busy = false,
   onControl,
   onResume,
+  onAnalyze,
 }: {
   account: Account;
   busy?: boolean;
   onControl?: (action: "pause" | "cancel") => void;
   onResume?: () => void;
+  onAnalyze?: () => void;
 }) {
   const p = account.progress;
   if (!p || p.status === "disabled") return null;
@@ -269,8 +271,21 @@ function SyncIndicator({
       />
       {p.recentReady && p.status !== "complete" && (
         <small>
-          Comparativos recientes disponibles. Completando el histórico.
+          Análisis reciente listo. El histórico se completa en segundo plano.
         </small>
+      )}
+      {p.recentReady && p.historyTotal > 0 && (
+        <small>
+          Histórico: {p.historyProcessed} de {p.historyTotal} elementos
+          completados.
+        </small>
+      )}
+      {p.recentReady && onAnalyze && (
+        <div>
+          <button type="button" className="primary" onClick={onAnalyze}>
+            Ver análisis disponible
+          </button>
+        </div>
       )}
       {p.status === "waiting" && p.nextSyncAt && (
         <p className="notice">
@@ -504,6 +519,7 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
   const accountKey = accountIds.join(",");
   const serial = useRef(0);
   const syncVersions = useRef(new Map<string, string | null>());
+  const historicalVersions = useRef(new Map<string, number>());
   const analyticsTab = ["panel", "ranking", "alerts"].includes(tab);
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -691,8 +707,20 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
             !!u.syncedAt &&
             u.syncedAt !== syncVersions.current.get(u.id),
         );
-        updates.forEach((u) => syncVersions.current.set(u.id, u.syncedAt));
-        if (finished) setRevision((n) => n + 1);
+        const historyChanged = updates.some(
+          (u) =>
+            u.progress?.recentReady &&
+            u.progress.historyProcessed !==
+              historicalVersions.current.get(u.id),
+        );
+        updates.forEach((u) => {
+          syncVersions.current.set(u.id, u.syncedAt);
+          historicalVersions.current.set(
+            u.id,
+            u.progress?.historyProcessed ?? 0,
+          );
+        });
+        if (finished || historyChanged) setRevision((n) => n + 1);
         setAccounts((old) =>
           old.map((a) => {
             const update = updates.find((u) => u.id === a.id);
@@ -1239,6 +1267,15 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
                 {a.progress && (
                   <SyncIndicator
                     account={a}
+                    onAnalyze={() => {
+                      setAccountIds([a.id]);
+                      setBusiness("");
+                      setCampaign("");
+                      setAdset("");
+                      setPage(1);
+                      setTab("panel");
+                      setRevision((r) => r + 1);
+                    }}
                     busy={busy}
                     onResume={
                       a.canSync

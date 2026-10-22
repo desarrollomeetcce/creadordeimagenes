@@ -23,6 +23,7 @@ export type Page = {
   warnings?: GraphDiagnostic[];
 };
 export type Query = {
+  insightIds?: string[];
   objectId?: string;
   aggregate?: boolean;
   activeOnly?: boolean;
@@ -426,6 +427,7 @@ export class MetaReader {
         /^v\d{2}\.0$/.test(this.version),
         "Configura la versión de Graph API de tu app.",
       );
+      demand(!q.insightIds || (op === "insights" && !q.objectId && !!q.accountId && ["campaign","adset","ad"].includes(q.level ?? "") && q.insightIds.length > 0 && q.insightIds.length <= 50 && new Set(q.insightIds).size === q.insightIds.length && q.insightIds.every(id => /^\d{1,40}$/.test(id))), "Filtro de estadísticas inválido.");
       if (q.ids) {
         demand(["campaigns","adsets","ads"].includes(op) && q.ids.length>0 && q.ids.length<=50 && q.ids.every(id=>/^\d{1,40}$/.test(id)), "Selección de objetos inválida.");
         const data: Record<string,unknown>[]=[];
@@ -455,6 +457,7 @@ export class MetaReader {
       if (this.appSecret) u.searchParams.set("appsecret_proof", createHmac("sha256", this.appSecret).update(this.token).digest("hex"));
       if (q.after) u.searchParams.set("after", q.after);
       if (op === "insights") {
+        if(q.insightIds) u.searchParams.set("filtering",JSON.stringify([{field:q.level+".id",operator:"IN",value:q.insightIds}]));
         u.searchParams.set("level", q.level!);
         u.searchParams.set("time_increment", q.aggregate ? "all_days" : "1");
         u.searchParams.set(
@@ -503,7 +506,7 @@ export class MetaReader {
       }
       return page(payload);
     }
-    demand(!q.ids && !q.objectId && !q.aggregate && !q.activeOnly, "Esta lectura acotada requiere Marketing API.", 409);
+    demand(!q.insightIds && !q.ids && !q.objectId && !q.aggregate && !q.activeOnly, "Esta lectura acotada requiere Marketing API.", 409);
     const tools = await this.tools(),
       tool = selectTool(tools, op);
     const result = (await this.rpc("tools/call", {
