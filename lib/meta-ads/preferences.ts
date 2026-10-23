@@ -1,3 +1,4 @@
+import { parseDeliveryFilters, encodeDeliveryFilters } from "./state-filter";
 export type MetaSelection = {
   id: string;
   accountId: string;
@@ -49,15 +50,6 @@ export function parseMetaPreferences(raw: string | null): MetaPreferences {
   const choices: Record<string, string[]> = {
     tab: ["panel", "ranking", "alerts", "accounts", "connections", "aliases"],
     level: ["campaign", "adset", "ad"],
-    state: [
-      "all",
-      "active",
-      "effective",
-      "paused",
-      "issues",
-      "campaign-active",
-      "delivery",
-    ],
     metric: ["", "MESSAGES", "LEADS", "PURCHASES", "LINK_CLICKS", "UNKNOWN"],
     sort: ["today", "7", "15", "30", "lifetime", "custom", "newest", "age"],
     analysisPeriod: ["today", "7", "15", "30", "lifetime"],
@@ -81,6 +73,10 @@ export function parseMetaPreferences(raw: string | null): MetaPreferences {
   for (const [key, values] of Object.entries(choices))
     if (typeof data[key] === "string" && values.includes(data[key] as string))
       (result as Record<string, unknown>)[key] = data[key];
+  if (typeof data.state === "string") {
+    const filters = parseDeliveryFilters(data.state);
+    result.state = filters ? encodeDeliveryFilters(filters) : "all";
+  }
   for (const key of ["q", "accountListQuery", "accountPickerQuery"] as const)
     if (typeof data[key] === "string")
       result[key] = (data[key] as string).slice(0, 200);

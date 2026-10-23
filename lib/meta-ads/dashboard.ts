@@ -1,3 +1,4 @@
+import { parseDeliveryFilters } from "./state-filter";
 import { metaSummary } from "./summary";
 import { compareMetaItems } from "./order";
 import { focusedReportDay } from "./focused-labels";
@@ -54,6 +55,13 @@ export async function dashboard(actor: Actor, params: URLSearchParams) {
     state = params.get("state") ?? "all",
     campaign = params.get("campaign"),
     adset = params.get("adset");
+  const filters = parseDeliveryFilters(state);
+  demand(
+    filters !== null || ["campaign-active", "issues"].includes(state),
+    "Combinación de estados inválida.",
+  );
+  const hasFilter = (id: "active" | "paused" | "delivery" | "effective") =>
+    filters?.includes(id) ?? false;
   const selectionIds = (name: string) => {
     const raw = params.get(name) ?? "";
     const ids = [...new Set(raw.split(",").filter(Boolean))];
@@ -142,31 +150,30 @@ export async function dashboard(actor: Actor, params: URLSearchParams) {
         ? { adsetId: adset }
         : {}),
     ...(q ? { name: { contains: q, mode: "insensitive" } } : {}),
-    ...(state === "active"
-      ? { status: "ACTIVE" }
-      : state === "effective"
-        ? { effectiveStatus: "ACTIVE" }
-        : state === "paused"
-          ? {
-              OR: [
-                { status: "PAUSED" },
-                { effectiveStatus: "PAUSED" },
-                { effectiveStatus: "CAMPAIGN_PAUSED" },
-                { effectiveStatus: "ADSET_PAUSED" },
-              ],
-            }
-          : state === "issues"
-            ? {
-                effectiveStatus: {
-                  in: [
-                    "DISAPPROVED",
-                    "PENDING_REVIEW",
-                    "WITH_ISSUES",
-                    "PENDING_BILLING_INFO",
-                  ],
-                },
-              }
-            : {}),
+    ...(hasFilter("active") ? { status: "ACTIVE" } : {}),
+    ...(hasFilter("effective") ? { effectiveStatus: "ACTIVE" } : {}),
+    ...(hasFilter("paused")
+      ? {
+          OR: [
+            { status: "PAUSED" },
+            { effectiveStatus: "PAUSED" },
+            { effectiveStatus: "CAMPAIGN_PAUSED" },
+            { effectiveStatus: "ADSET_PAUSED" },
+          ],
+        }
+      : {}),
+    ...(state === "issues"
+      ? {
+          effectiveStatus: {
+            in: [
+              "DISAPPROVED",
+              "PENDING_REVIEW",
+              "WITH_ISSUES",
+              "PENDING_BILLING_INFO",
+            ],
+          },
+        }
+      : {}),
   };
   const objects = await db.metaAdObject.findMany({
     where,
@@ -477,7 +484,7 @@ export async function dashboard(actor: Actor, params: URLSearchParams) {
     items = items.filter(
       (o) => parentMap.get(o.campaignId ?? o.id)?.status === "ACTIVE",
     );
-  if (state === "delivery")
+  if (hasFilter("delivery"))
     items = items.filter(
       (o) => o.periods.today.impressions > 0 || o.periods.today.spend > 0,
     );
@@ -525,7 +532,7 @@ export async function dashboard(actor: Actor, params: URLSearchParams) {
   if (params.get("summary") === "1") {
     const computedFilters =
       state === "campaign-active" ||
-      state === "delivery" ||
+      hasFilter("delivery") ||
       !!params.get("rating") ||
       !!age ||
       params.get("ranking") === "1";

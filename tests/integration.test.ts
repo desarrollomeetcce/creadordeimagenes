@@ -11592,6 +11592,22 @@ test("Integración HTTP + PostgreSQL (base exclusiva de pruebas, sin llamadas ex
         const api=await owner.call('meta-ads/dashboard?accounts='+account+'&level=campaign&summary=1&analysisPeriod=today');assert.equal(api.status,200);assert.equal(api.body.summary.currencies[0].spend,78);
       } finally {await db.metaAdAccount.deleteMany({where:{connectionId:conn.id}});await db.metaConnection.delete({where:{id:conn.id}});}
     });
+    await t.test('Meta estados múltiples: intersección autorizada y rechazo de activados/desactivados incompatibles',async()=>{
+      const {localDay}=await import('../lib/meta-ads/analytics');const actor=await db.user.findFirstOrThrow({where:{role:'OWNER'}}),today=localDay('America/Lima');
+      const conn=await db.metaConnection.create({data:{ownerId:actor.id,name:'Filtros múltiples sintéticos',transport:'API'}}),account='8399910';
+      try{
+        await db.metaAdAccount.create({data:{id:account,connectionId:conn.id,name:'Estados',currency:'PEN',timezone:'America/Lima',syncedAt:new Date()}});
+        for(const [level,prefix] of [['ad','83999101'],['adset','83999102'],['campaign','83999103']] as const){
+          const data=[['ACTIVE','ACTIVE',1],['ACTIVE',level==='campaign'?'WITH_ISSUES':'CAMPAIGN_PAUSED',1],['PAUSED','PAUSED',1],['ACTIVE','ACTIVE',0],['ACTIVE','DISAPPROVED',1]] as const;
+          for(const [i,[status,effective,delivery]] of data.entries()){const id=prefix+(i+1);await db.metaAdObject.create({data:{id,accountId:account,level,name:'Estado '+id,status,effectiveStatus:effective}});if(delivery)await db.metaAdDaily.create({data:{accountId:account,objectId:id,day:today,scope:'7d_click,1d_view|impression',spend:1,impressions:10,actions:{'onsite_conversion.messaging_conversation_started_7d':1}}});}
+          const read=(state:string)=>owner.call('meta-ads/dashboard?'+new URLSearchParams({accounts:account,level,state,summary:'1',analysisPeriod:'today'}));
+          for(const [state,suffixes] of [['all',[1,2,3,4,5]],['active',[1,2,4,5]],['active,delivery',[1,2,5]],['effective,delivery',[1]],['active,effective',[1,4]],['paused,delivery',level==='campaign'?[3]:[2,3]],['active,delivery,effective',[1]]] as const){const r=await read(state);assert.equal(r.status,200,JSON.stringify(r.body));assert.deepEqual(r.body.items.map((o:any)=>o.id).sort(),suffixes.map(n=>prefix+n).sort());assert(r.body.items.every((o:any)=>o.level===level));assert.equal(r.body.summary.objects,suffixes.length);}
+          for(const state of ['active,paused','active,unknown','all,active'])assert.equal((await read(state)).status,400);
+        }
+        assert.equal((await user.call('meta-ads/dashboard?'+new URLSearchParams({accounts:account,level:'ad',state:'active,delivery'}))).status,404);
+        assert.equal(await db.metaAdObject.count({where:{accountId:account,status:'ACTIVE'}}),12);
+      }finally{await db.metaAdAccount.deleteMany({where:{connectionId:conn.id}});await db.metaConnection.delete({where:{id:conn.id}});}
+    });
     await t.test("cierre de sesión invalida el token", async () => {
       assert.equal((await user.call("auth/logout", "POST")).status, 200);
       assert.equal((await user.call("projects")).status, 401);

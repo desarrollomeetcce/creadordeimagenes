@@ -525,3 +525,28 @@ test('archivos de 1 GB: límite inclusivo y fragmentos acotados sin reservar buf
 });
 
 test('Legal: contacto por formulario, responsable real y validación de textos sin exigir correo público',async()=>{const {defaultLegal,legalSchema,legalReady}=await import('../lib/legal-content');assert.equal(defaultLegal.operatorName,'CAMARA NACIONAL DE NEGOCIOS SAC');assert(legalReady(defaultLegal));assert.equal(defaultLegal.contactEmail,'');assert(defaultLegal.privacyText.includes('formulario público'));assert(defaultLegal.deletionText.includes('código privado'));assert(!legalReady({...defaultLegal,operatorName:''}));assert(!legalSchema.safeParse({...defaultLegal,contactEmail:'incorrecto'}).success);assert(!legalSchema.safeParse({...defaultLegal,privacyText:'corto'}).success);assert(!legalSchema.safeParse({...defaultLegal,html:'<script>'}).success);});
+
+test('HTTP cliente: JSON válido preservado y respuestas vacías, HTML o truncadas nunca confirman operaciones', async()=>{
+  const {readJsonResponse}=await import('../lib/http-response');
+  assert.deepEqual(await readJsonResponse(Response.json({ok:true,spend:'10.50'})),{ok:true,spend:'10.50'});
+  await assert.rejects(()=>readJsonResponse(Response.json({error:'Cuota de Meta en espera'},{status:429})),/^Error: Cuota de Meta en espera$/);
+  for(const [status,body] of [[200,''],[502,''],[504,'<html>Gateway secreto</html>'],[200,'{"ok":'],[503,' ']] as const){
+    await assert.rejects(()=>readJsonResponse(new Response(body,{status}), undefined, "PATCH"),e=>e instanceof Error && e.message.includes(`HTTP ${status}`)&&e.message.includes('No se confirmó el resultado')&&!e.message.includes('secreto')&&!e.message.includes('Unexpected'));
+  }
+  await assert.rejects(()=>readJsonResponse(Response.json({error:null},{status:500}),'Consulta fallida'),/Consulta fallida \(HTTP 500\)/);
+  const abort=new DOMException('Cancelado','AbortError');
+  await assert.rejects(()=>readJsonResponse({status:200,text:async()=>{throw abort}} as unknown as Response),e=>e===abort);
+  await assert.rejects(()=>readJsonResponse({status:200,text:async()=>{throw Error('detalle privado de conexión')}} as unknown as Response),e=>e instanceof Error&&e.message.includes('respuesta vacía o incompleta')&&!e.message.includes('privado'));
+});
+
+test('Meta HTTP: un reintento GET transitorio, sin repetir acciones, permisos, cuotas ni abortos',async()=>{
+ const {fetchJsonResponse}=await import('../lib/http-response');const original=globalThis.fetch;let calls=0;
+ try{
+  globalThis.fetch=async()=>{calls++;return calls===1?new Response('',{status:200}):Response.json({ok:true});};assert.deepEqual(await fetchJsonResponse('/api/meta-ads/accounts'),{ok:true});assert.equal(calls,2);
+  calls=0;globalThis.fetch=async()=>{calls++;return new Response('',{status:502});};await assert.rejects(()=>fetchJsonResponse('/api/meta-ads/accounts'));assert.equal(calls,2);
+  for(const method of ['POST','PATCH','DELETE']){calls=0;await assert.rejects(()=>fetchJsonResponse('/api/meta-ads/objects/1/alias',{method}),/No se confirmó el resultado/);assert.equal(calls,1);}
+  for(const status of [401,403,429]){calls=0;globalThis.fetch=async()=>{calls++;return Response.json({error:'Acceso o cuota'},{status});};await assert.rejects(()=>fetchJsonResponse('/api/meta-ads/accounts'),/Acceso o cuota/);assert.equal(calls,1);}
+  calls=0;globalThis.fetch=async()=>{calls++;return new Response('',{status:503});};await assert.rejects(()=>fetchJsonResponse('/api/other'));assert.equal(calls,1);
+  calls=0;const controller=new AbortController();globalThis.fetch=async()=>{calls++;controller.abort();return new Response('',{status:502});};await assert.rejects(()=>fetchJsonResponse('/api/meta-ads/accounts',{signal:controller.signal}));assert.equal(calls,1);
+ }finally{globalThis.fetch=original;}
+});

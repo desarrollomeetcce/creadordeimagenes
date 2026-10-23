@@ -1,4 +1,5 @@
 "use client";
+import { fetchJsonResponse } from "../../lib/http-response";
 import { useEffect, useState } from "react";
 import { compareDailyRows, type DailySort } from "../../lib/meta-ads/order";
 import { localDay, summarize } from "../../lib/meta-ads/analytics";
@@ -30,7 +31,10 @@ export function MetaDailyDetail({ item }: { item: DailyItem }) {
     [loading, setLoading] = useState(true),
     [error, setError] = useState(""),
     [chart, setChart] = useState("cost");
-  const [sort, setSort] = useState<DailySort>({ key: "day", direction: "desc" });
+  const [sort, setSort] = useState<DailySort>({
+    key: "day",
+    direction: "desc",
+  });
   const [since, until] = range;
   useEffect(() => {
     const controller = new AbortController();
@@ -41,18 +45,14 @@ export function MetaDailyDetail({ item }: { item: DailyItem }) {
       preset === "lifetime"
         ? new URLSearchParams({ all: "1" })
         : new URLSearchParams({ since, until });
-    void fetch(`/api/meta-ads/objects/${item.id}/daily?${query}`, {
-      cache: "no-store",
-      signal: controller.signal,
-    })
-      .then(async (response) => {
-        const data = await response.json();
-        if (!response.ok)
-          throw Error(
-            typeof data.error === "string"
-              ? data.error
-              : "No se pudo consultar el histórico diario.",
-          );
+    void fetchJsonResponse<DailyRow[]>(
+      `/api/meta-ads/objects/${item.id}/daily?${query}`,
+      {
+        cache: "no-store",
+        signal: controller.signal,
+      },
+    )
+      .then((data) => {
         if (!controller.signal.aborted) setRows(data);
       })
       .catch((e) => {

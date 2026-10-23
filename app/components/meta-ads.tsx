@@ -1,7 +1,14 @@
 "use client";
+import { fetchJsonResponse, readJsonResponse } from "../../lib/http-response";
 import { metaObjectURL } from "../../lib/meta-ads/meta-link";
 import { useMetaStableViewport } from "./meta-stable-viewport";
-import { useCallback, useEffect, useState, useRef } from "react";
+import {
+  useCallback,
+  useEffect,
+  useState,
+  useRef,
+  type ReactNode,
+} from "react";
 import {
   MetaMarketingOAuth,
   MetaOAuthQuickConnect,
@@ -20,6 +27,7 @@ import { MetaDailyDetail } from "./meta-daily-detail";
 import { MetaAliasAction } from "./meta-alias-action";
 import { MetaSummaryCounters } from "./meta-summary-counters";
 import type { MetaSummary } from "../../lib/meta-ads/summary";
+import { MetaDeliveryFilter } from "./meta-delivery-filter";
 import { MetaCostOrder, MetaCostButton } from "./meta-cost-order";
 import type { MetaSelection } from "../../lib/meta-ads/preferences";
 import { MetaAccountPicker } from "./meta-account-picker";
@@ -804,16 +812,10 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
         summarySelection: summarySelectionKey,
         ...(calendar ? { since, until } : {}),
       });
-      fetch("/api/meta-ads/dashboard?" + p, {
+      fetchJsonResponse("/api/meta-ads/dashboard?" + p, {
         cache: "no-store",
         signal: controller.signal,
       })
-        .then(async (response) => {
-          const data = await response.json();
-          if (!response.ok)
-            throw Error(data.error ?? "No se pudo consultar Meta Ads.");
-          return data;
-        })
         .then((data) => {
           if (serial.current === current) {
             setItems(data.items);
@@ -900,10 +902,14 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
           else {
             let detail = "";
             try {
-              const body = await response.json();
+              await readJsonResponse(
+                response,
+                "No se pudo consultar el progreso.",
+              );
+            } catch (error) {
               detail =
-                typeof body.error === "string" ? body.error.slice(0, 300) : "";
-            } catch {}
+                error instanceof Error ? error.message.slice(0, 300) : "";
+            }
             throw Error(
               `No se pudo consultar el progreso (HTTP ${response.status}). ${detail}`,
             );
@@ -913,7 +919,10 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
         const updates: Pick<
           Account,
           "id" | "syncedAt" | "syncError" | "syncState" | "progress"
-        >[] = await response.json();
+        >[] = await readJsonResponse(
+          response,
+          "No se pudo consultar el progreso.",
+        );
         if (stopped) return;
         setProgressError("");
         delay = updates.some((u) =>
@@ -1066,69 +1075,234 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
       }}
     />
   );
+  const tableColumnSpecs: {
+    key: string;
+    width: number | string;
+    label: ReactNode;
+    cellClass?: string;
+    headingClass?: string;
+    title?: string;
+    highlight?: boolean;
+    sortKey?: string;
+    sortLabel?: string;
+    render: (o: Item) => ReactNode;
+  }[] = [
+    {
+      key: "selection",
+      width: 28,
+      label: <span className="sr-only">Selección</span>,
+      cellClass: "meta-check-cell",
+      render: (o) => (
+        <input
+          type="checkbox"
+          aria-label={`Seleccionar ${o.name}`}
+          checked={selectedIds.has(o.id)}
+          onChange={(e) => selectObject(o, e.target.checked)}
+        />
+      ),
+    },
+    {
+      key: "status",
+      width: 46,
+      label: <span className="sr-only">Activado</span>,
+      render: (o) => (
+        <MetaStatusSwitch
+          name={o.name}
+          status={o.status}
+          delivery={
+            deliveryLabels[o.effectiveStatus] ??
+            o.effectiveStatus ??
+            "No informado"
+          }
+          disabled={!owner || busy}
+          onToggle={() => changeStatus(o)}
+        />
+      ),
+    },
+    {
+      key: "name",
+      width: "23%",
+      label: "Campaña / Conjunto / Anuncio",
+      cellClass: "meta-object-name",
+      render: (o) => (
+        <>
+          <button
+            className="meta-name-button"
+            type="button"
+            onClick={() => openChildren(o)}
+            title={o.name}
+          >
+            {o.name}
+          </button>
+          <small className="meta-object-links">
+            <MetaObjectLink item={o} />
+            {aliasControl(o)}
+            <button
+              type="button"
+              className="meta-inline-detail"
+              onClick={() => setSelected(o)}
+            >
+              Ver detalle
+            </button>
+          </small>
+        </>
+      ),
+    },
+    {
+      key: "account",
+      width: "8%",
+      label: "Cuenta / Resultado",
+      render: (o) => (
+        <>
+          {o.accountName}
+          <small>
+            {o.metric === "MESSAGES" ? "Conversaciones" : o.metricName}
+          </small>
+        </>
+      ),
+    },
+    {
+      key: "start",
+      width: "6%",
+      label: "Inicio · días",
+      render: (o) => (
+        <>
+          {date(o.firstDelivery)}
+          <small>{o.ageDays ?? "—"} días</small>
+        </>
+      ),
+    },
+    {
+      key: "spend",
+      width: "7%",
+      label: "Gasto por fecha",
+      highlight: true,
+      cellClass: "meta-analysis-spend",
+      title: "Gasto del periodo de análisis seleccionado",
+      render: (o) => {
+        const p = o.periods[calendar ? "custom" : analysisPeriod];
+        return p &&
+          p.state !== "UNAVAILABLE" &&
+          (!calendar || (p.since === since && p.until === until))
+          ? money(p.spend, o.currency)
+          : "Informe pendiente";
+      },
+    },
+    {
+      key: "custom",
+      width: "9%",
+      label: (
+        <>
+          Costo por resultado por fecha
+          <small>
+            {calendar ? `${date(since)} – ${date(until)}` : "Elige un periodo"}
+          </small>
+        </>
+      ),
+      highlight: true,
+      cellClass: "meta-calendar-cost",
+      headingClass: "meta-calendar-column",
+      sortKey: "custom",
+      sortLabel: "Por fecha",
+      render: (o) => (
+        <>
+          {calendar &&
+          o.periods.custom?.since === since &&
+          o.periods.custom.until === until
+            ? cost(o.periods.custom, o.currency)
+            : calendar
+              ? "Informe pendiente"
+              : "Elige un periodo"}
+          {calendar &&
+            o.periods.custom?.since === since &&
+            o.periods.custom.until === until &&
+            o.periods.custom.state !== "UNAVAILABLE" && (
+              <small>{o.periods.custom.results} resultados</small>
+            )}
+        </>
+      ),
+    },
+    ...periods.map(([key, label]) => ({
+      key,
+      width: "6%",
+      label,
+      sortKey: key,
+      sortLabel: label,
+      render: (o: Item) => (
+        <>
+          {cost(o.periods[key], o.currency)}
+          <small>{o.periods[key].results} resultados</small>
+        </>
+      ),
+    })),
+    {
+      key: "rating",
+      width: "9%",
+      label: "Evaluación",
+      render: (o) => ratings[o.rating],
+    },
+  ];
+  // Headers, cost controls and cells derive from this same ordered list, including future columns.
+  const tableControlSpan = tableColumnSpecs.findIndex(
+    (c) => c.highlight || c.sortKey,
+  );
+  const columnClass = (
+    column: (typeof tableColumnSpecs)[number],
+    heading = false,
+  ) =>
+    [
+      heading ? column.headingClass : column.cellClass,
+      column.highlight ? "meta-date-highlight" : "",
+    ]
+      .filter(Boolean)
+      .join(" ") || undefined;
   const tableColumns = () => (
     <colgroup>
-      <col style={{ width: 28 }} />
-      <col style={{ width: 46 }} />
-      <col style={{ width: "23%" }} />
-      <col style={{ width: "8%" }} />
-      <col style={{ width: "7%" }} />
-      <col style={{ width: "6%" }} />
-      {periods.map(([key]) => (
-        <col key={key} style={{ width: "6%" }} />
+      {tableColumnSpecs.map((c) => (
+        <col key={c.key} style={{ width: c.width }} />
       ))}
-      <col style={{ width: "9%" }} />
-      <col style={{ width: "9%" }} />
     </colgroup>
   );
   const tableHead = (hidden = false) => (
     <thead className={hidden ? "sr-only" : undefined}>
       {!hidden && (
         <tr className="meta-aligned-order">
-          <th colSpan={6}>
+          <th colSpan={tableControlSpan}>
             <div className="meta-table-level-controls">
               {levelControls()}
               <span>Ordenar por costo</span>
             </div>
           </th>
-          {[...periods, ["custom", "Por fecha"]].map(([id, label]) => (
-            <th key={id}>
-              <MetaCostButton
-                id={id}
-                label={label}
-                value={sort}
-                direction={direction}
-                calendar={!!calendar}
-                onChange={orderByCost}
-              />
+          {tableColumnSpecs.slice(tableControlSpan).map((c) => (
+            <th
+              key={c.key}
+              className={c.highlight ? "meta-date-highlight" : undefined}
+            >
+              {c.sortKey ? (
+                <MetaCostButton
+                  id={c.sortKey}
+                  label={c.sortLabel!}
+                  value={sort}
+                  direction={direction}
+                  calendar={!!calendar}
+                  onChange={orderByCost}
+                />
+              ) : null}
             </th>
           ))}
-          <th aria-hidden="true" />
         </tr>
       )}
       <tr aria-hidden={!hidden ? true : undefined}>
-        <th className="meta-check-cell">
-          <span className="sr-only">Selección</span>
-        </th>
-        <th>
-          <span className="sr-only">Activado</span>
-        </th>
-        <th>Campaña / Conjunto / Anuncio</th>
-        <th>Cuenta / Resultado</th>
-        <th title="Gasto del periodo de análisis seleccionado">Gasto</th>
-        <th>Inicio · días</th>
-        {periods.map(([key, label]) => (
-          <th key={key}>{label}</th>
+        {tableColumnSpecs.map((c) => (
+          <th
+            key={c.key}
+            scope="col"
+            className={columnClass(c, true)}
+            title={c.title}
+          >
+            {c.label}
+          </th>
         ))}
-        <th className="meta-calendar-column" scope="col">
-          Por fecha
-          <small>
-            {calendar
-              ? `${date(since)} – ${date(until)}`
-              : "Costo por resultado"}
-          </small>
-        </th>
-        <th>Evaluación</th>
       </tr>
     </thead>
   );
@@ -2207,25 +2381,11 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
                         ))}
                     </select>
                   </label>
-                  <label>
-                    Estado / entrega
-                    <select
-                      value={state}
-                      onChange={(e) =>
-                        resetPage(() => setState(e.target.value))
-                      }
-                    >
-                      <option value="all">Todos</option>
-                      <option value="active">Activos configurados</option>
-                      <option value="campaign-active">
-                        Solo campañas activas
-                      </option>
-                      <option value="delivery">Entrega registrada hoy</option>
-                      <option value="effective">Estado efectivo activo</option>
-                      <option value="paused">Desactivados (pausados)</option>
-                      <option value="issues">Revisión o problemas</option>
-                    </select>
-                  </label>
+                  <MetaDeliveryFilter
+                    value={state}
+                    onChange={(value) => resetPage(() => setState(value))}
+                  />
+
                   <label>
                     Evaluación
                     <select
@@ -2535,102 +2695,14 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
                                   : ""
                               }
                             >
-                              <td className="meta-check-cell">
-                                <input
-                                  type="checkbox"
-                                  aria-label={`Seleccionar ${o.name}`}
-                                  checked={selectedIds.has(o.id)}
-                                  onChange={(e) =>
-                                    selectObject(o, e.target.checked)
-                                  }
-                                />
-                              </td>
-                              <td>
-                                <MetaStatusSwitch
-                                  name={o.name}
-                                  status={o.status}
-                                  delivery={
-                                    deliveryLabels[o.effectiveStatus] ??
-                                    o.effectiveStatus ??
-                                    "No informado"
-                                  }
-                                  disabled={!owner || busy}
-                                  onToggle={() => changeStatus(o)}
-                                />
-                              </td>
-                              <td>
-                                <button
-                                  className="meta-name-button"
-                                  type="button"
-                                  onClick={() => openChildren(o)}
-                                  title={o.name}
+                              {tableColumnSpecs.map((column) => (
+                                <td
+                                  key={column.key}
+                                  className={columnClass(column)}
                                 >
-                                  {o.name}
-                                </button>
-                                <small className="meta-object-links">
-                                  <MetaObjectLink item={o} />
-                                  {aliasControl(o)}
-                                  <button
-                                    type="button"
-                                    className="meta-inline-detail"
-                                    onClick={() => setSelected(o)}
-                                  >
-                                    Ver detalle
-                                  </button>
-                                </small>
-                              </td>
-                              <td>
-                                {o.accountName}
-                                <small>
-                                  {o.metric === "MESSAGES"
-                                    ? "Conversaciones"
-                                    : o.metricName}
-                                </small>
-                              </td>
-                              <td className="meta-analysis-spend">
-                                {(() => {
-                                  const p =
-                                    o.periods[
-                                      calendar ? "custom" : analysisPeriod
-                                    ];
-                                  return p &&
-                                    p.state !== "UNAVAILABLE" &&
-                                    (!calendar ||
-                                      (p.since === since && p.until === until))
-                                    ? money(p.spend, o.currency)
-                                    : "Informe pendiente";
-                                })()}
-                              </td>
-                              <td>
-                                {date(o.firstDelivery)}
-                                <small>{o.ageDays ?? "—"} días</small>
-                              </td>
-                              {periods.map(([key]) => (
-                                <td key={key}>
-                                  {cost(o.periods[key], o.currency)}
-                                  <small>
-                                    {o.periods[key].results} resultados
-                                  </small>
+                                  {column.render(o)}
                                 </td>
                               ))}
-                              <td className="meta-calendar-cost">
-                                {calendar &&
-                                o.periods.custom?.since === since &&
-                                o.periods.custom.until === until
-                                  ? cost(o.periods.custom, o.currency)
-                                  : calendar
-                                    ? "Informe pendiente"
-                                    : "Elige un periodo"}
-                                {calendar &&
-                                  o.periods.custom?.since === since &&
-                                  o.periods.custom.until === until &&
-                                  o.periods.custom.state !== "UNAVAILABLE" && (
-                                    <small>
-                                      {o.periods.custom.results} resultados
-                                    </small>
-                                  )}
-                              </td>
-                              <td>{ratings[o.rating]}</td>
                             </tr>
                           ))}
                       </tbody>

@@ -148,3 +148,10 @@ test('Daily table sorts real numeric measures both directions with missing value
  assert.deepEqual(order('results','asc'),['20','21','22','19']);assert.deepEqual(order('results','desc'),['21','22','20','19']);
  assert.deepEqual(order('cost','asc'),['21','22','19','20']);assert.deepEqual(order('cost','desc'),['22','21','19','20']);
 });
+
+test('Meta filtros múltiples: cuatro criterios, Todos reinicia y activar/desactivar se sustituyen sin perder entrega',async()=>{
+ const {deliveryFilters,parseDeliveryFilters,encodeDeliveryFilters,toggleDeliveryFilter}=await import('../lib/meta-ads/state-filter');const {parseMetaPreferences}=await import('../lib/meta-ads/preferences');
+ assert.deepEqual(deliveryFilters.map(f=>f.label),['Activados','Desactivados','Con entrega','Efectivos']);assert.deepEqual(parseDeliveryFilters('all'),[]);assert.deepEqual(parseDeliveryFilters('delivery,active,effective'),['active','delivery','effective']);assert.equal(parseDeliveryFilters('active,paused'),null);assert.equal(parseDeliveryFilters('active,unknown'),null);assert.equal(parseDeliveryFilters('all,active'),null);
+ const on=toggleDeliveryFilter(['paused','delivery'],'active');assert.deepEqual(on,['delivery','active']);assert.equal(encodeDeliveryFilters(on),'active,delivery');assert.deepEqual(toggleDeliveryFilter(['active','delivery'],'delivery'),['active']);assert.equal(encodeDeliveryFilters([]),'all');
+ assert.equal(parseMetaPreferences(JSON.stringify({layoutRevision:2,state:'delivery,active,effective'})).state,'active,delivery,effective');for(const state of ['active,paused','issues','campaign-active'])assert.equal(parseMetaPreferences(JSON.stringify({layoutRevision:2,state})).state,'all');
+});
