@@ -1333,7 +1333,9 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
             o.periods.custom?.since === since &&
             o.periods.custom.until === until &&
             o.periods.custom.state !== "UNAVAILABLE" && (
-              <small>{o.periods.custom.results} resultados</small>
+              <small className="meta-result-count">
+                {o.periods.custom.results} resultados
+              </small>
             )}
         </>
       ),
@@ -1347,7 +1349,9 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
       render: (o: Item) => (
         <>
           {cost(o.periods[key], o.currency)}
-          <small>{o.periods[key].results} resultados</small>
+          <small className="meta-result-count">
+            {o.periods[key].results} resultados
+          </small>
         </>
       ),
     })),

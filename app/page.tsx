@@ -466,12 +466,12 @@ export default function Home() {
               ["projects", "▦", "Proyectos"],
               ["library", "▧", "Biblioteca"],
               ["metaads", "▥", "Meta Ads"],
+              ...(user.role === "OWNER" ? [["products", "▤", "Listado de bienes"]] : []),
               ["presets", "≡", "Configuraciones guardadas"],
               ["history", "◷", "Historial"],
               ["trash", "⌫", "Papelera"],
               ...(user.role === "OWNER"
                 ? [
-                    ["products", "▤", "Listado de bienes"],
                     ["statistics", "▥", "Estadísticas"],
                     ["website", "◈", "Página web"],
                     ["visual-audit", "▧", "Auditoría visual"],
@@ -509,7 +509,7 @@ export default function Home() {
 
           </header>
           <main>
-            {view !== "metaads" && <><RoleGuide name={user.name} role={user.role} /><VisualAuditNotice key={user.id} /></>}
+            {!["metaads", "products"].includes(view) && <><RoleGuide name={user.name} role={user.role} /><VisualAuditNotice key={user.id} /></>}
             {project && view === "projects" && (
               <HierarchyBreadcrumbs
                 project={project}

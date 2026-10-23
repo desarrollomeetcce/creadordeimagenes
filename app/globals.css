@@ -1642,3 +1642,6 @@ html:has(.meta-ads),.meta-ads { overflow-anchor:none; }
 .meta-sync-inline details div{display:flex;flex-direction:column;margin-top:6px;border-top:1px solid var(--line);padding-top:5px;}
 @media(max-width:650px){.meta-summary-row .meta-pinned-actions{flex:1 1 100%;}.meta-sync-inline{max-width:100%;}.meta-topbar-role{font-size:10px;}.topbar:has(.meta-topbar-role){flex-wrap:wrap;}}
 .products-catalog{min-width:0;}.products-catalog h1,.products-catalog h2{margin:0;}.products-catalog table{width:100%;border-collapse:collapse;}.products-catalog td,.products-catalog th{padding:8px;text-align:left;border-bottom:1px solid var(--line);}.products-catalog td:first-child{width:75%;}.products-catalog td input{width:100%;}.products-catalog caption{text-align:left;font-weight:650;padding:6px 8px;}.products-catalog .table-scroll{overflow:auto;}
+
+/* Results remain secondary to cost, with a readable size and theme-aware contrast. */
+.meta-table small.meta-result-count{font-size:11px;line-height:13px;font-weight:500;letter-spacing:-.2px;color:var(--accent);}

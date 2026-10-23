@@ -1057,3 +1057,9 @@ Validación final conjunta:126 unitarias,155 integraciones HTTP/Postgres, TypeSc
 Ajuste final de nombre solicitado antes de publicar: menú lateral, topbar y título del módulo ahora Listado de bienes; alta dice Agregar bien. Tabla Diplomados, otras tablas y alias Meta conservan estructura, datos y rutas internas compatibles. Sin cambios de persistencia/autorización respecto de la validación anterior.
 
 Confirmación final del usuario: Diplomados es la tabla inicial del módulo lateral Listado de bienes. Se revisó la separación con productos/subproductos del generador; modelos y funciones de esa jerarquía permanecen intactos. Chromium verifica el nombre definitivo y la tabla inicial, además de TypeScript/build finales aprobados.
+
+### Resultados más legibles y acceso inmediato al catálogo
+
+Cantidades de resultados bajo costos en Tabla usan11px (antes10), peso500, color de acento verde por tema y línea13px; siguen menores que el costo principal y se limitan a las etiquetas de resultados, incluidos rangos por fecha. Ajuste ligero de espaciado evita una tercera línea en columnas estrechas. No se modifican datos/órdenes/fechas ni otros textos secundarios. Listado de bienes pasa inmediatamente debajo de Meta Ads y se retiran los dos avisos de rol/privacidad solo de ese módulo, además de Meta; otros módulos intactos.
+
+126 unitarias, TypeScript/build aprobados. Chromium claro/oscuro a1520/1366 comprueba11px<dato principal, contraste distinto y altura de filas idéntica al estilo anterior; móvil390 sin overflow. Prueba de catálogo confirma orden lateral, ausencia de avisos y conservación de Diplomados/Agregar tabla. Sin API/migraciones nuevas ni llamadas publicitarias.
