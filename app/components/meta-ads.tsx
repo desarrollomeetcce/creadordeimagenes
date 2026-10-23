@@ -20,7 +20,7 @@ import { MetaDailyDetail } from "./meta-daily-detail";
 import { MetaAliasAction } from "./meta-alias-action";
 import { MetaSummaryCounters } from "./meta-summary-counters";
 import type { MetaSummary } from "../../lib/meta-ads/summary";
-import { MetaCostOrder } from "./meta-cost-order";
+import { MetaCostOrder, MetaCostButton } from "./meta-cost-order";
 import type { MetaSelection } from "../../lib/meta-ads/preferences";
 import { MetaAccountPicker } from "./meta-account-picker";
 import {
@@ -1000,6 +1000,72 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
       (!accountIds.length || accountIds.includes(a.id)) &&
       (!business || a.businessId === business),
   );
+  const orderByCost = (id: string) =>
+    resetPage(() => {
+      setSort(id);
+      setDirection(sort === id && direction === "asc" ? "desc" : "asc");
+    });
+  const levelControls = () => (
+    <>
+      <div
+        className="meta-level-tabs"
+        role="tablist"
+        aria-label="Nivel publicitario"
+      >
+        {[
+          ["campaign", "Campañas"],
+          ["adset", "Conjuntos de anuncios"],
+          ["ad", "Anuncios"],
+        ].map(([id, label]) => (
+          <button
+            type="button"
+            role="tab"
+            aria-selected={level === id}
+            key={id}
+            className={level === id ? "primary" : ""}
+            onClick={() => {
+              resetPage(() => setLevel(id));
+            }}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+      <button
+        className="meta-view-toggle"
+        type="button"
+        onClick={() => setView(view === "cards" ? "table" : "cards")}
+      >
+        {view === "cards" ? "Ver tabla" : "Ver tarjetas"}
+      </button>
+    </>
+  );
+  const analysisControl = () => (
+    <MetaAnalysisPeriod
+      value={calendar ? "custom" : analysisPeriod}
+      since={since}
+      until={until}
+      onPreset={(id, range) => {
+        setAnalysisPeriod(id);
+        setCalendar(range ? "custom" : "");
+        setSince(range?.[0] ?? "");
+        setUntil(range?.[1] ?? "");
+        if (range || sort === "custom") {
+          setSort(range ? "custom" : id);
+          setDirection("asc");
+        }
+        setPage(1);
+      }}
+      onRange={(start, end) => {
+        setSort("custom");
+        setDirection("asc");
+        setSince(start);
+        setUntil(end);
+        setCalendar("custom");
+        setPage(1);
+      }}
+    />
+  );
   const tableColumns = () => (
     <colgroup>
       <col style={{ width: 28 }} />
@@ -1017,7 +1083,30 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
   );
   const tableHead = (hidden = false) => (
     <thead className={hidden ? "sr-only" : undefined}>
-      <tr>
+      {!hidden && (
+        <tr className="meta-aligned-order">
+          <th colSpan={6}>
+            <div className="meta-table-level-controls">
+              {levelControls()}
+              <span>Ordenar por costo</span>
+            </div>
+          </th>
+          {[...periods, ["custom", "Por fecha"]].map(([id, label]) => (
+            <th key={id}>
+              <MetaCostButton
+                id={id}
+                label={label}
+                value={sort}
+                direction={direction}
+                calendar={!!calendar}
+                onChange={orderByCost}
+              />
+            </th>
+          ))}
+          <th aria-hidden="true" />
+        </tr>
+      )}
+      <tr aria-hidden={!hidden ? true : undefined}>
         <th className="meta-check-cell">
           <span className="sr-only">Selección</span>
         </th>
@@ -2229,42 +2318,49 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
                   className="meta-pinned-accounts"
                   aria-label="Cuentas fijadas"
                 >
-                  <span>Cuentas fijadas</span>
-                  <button
-                    type="button"
-                    aria-pressed={!accountIds.length}
-                    className={!accountIds.length ? "primary" : ""}
-                    onClick={() => chooseAccounts([], false)}
-                  >
-                    Todas
-                  </button>
-                  {pinnedAccountIds.map((id) => {
-                    const a = accounts.find((a) => a.id === id);
-                    return a ? (
-                      <div className="meta-account-pin" key={id}>
-                        <button
-                          type="button"
-                          aria-pressed={accountIds.includes(id)}
-                          className={accountIds.includes(id) ? "primary" : ""}
-                          onClick={() => chooseAccounts([id], false)}
-                        >
-                          {a.name}
-                        </button>
-                        <button
-                          type="button"
-                          className="meta-unpin"
-                          aria-label={`Desfijar ${a.name}`}
-                          onClick={() =>
-                            setPinnedAccountIds((old) =>
-                              old.filter((v) => v !== id),
-                            )
-                          }
-                        >
-                          Desfijar
-                        </button>
-                      </div>
-                    ) : null;
-                  })}
+                  <div className="meta-pins-list">
+                    <span>Cuentas fijadas</span>
+                    <button
+                      type="button"
+                      aria-pressed={!accountIds.length}
+                      className={!accountIds.length ? "primary" : ""}
+                      onClick={() => chooseAccounts([], false)}
+                    >
+                      Todas
+                    </button>
+                    {pinnedAccountIds.map((id) => {
+                      const a = accounts.find((a) => a.id === id);
+                      return a ? (
+                        <div className="meta-account-pin" key={id}>
+                          <button
+                            type="button"
+                            aria-pressed={accountIds.includes(id)}
+                            className={accountIds.includes(id) ? "primary" : ""}
+                            onClick={() => chooseAccounts([id], false)}
+                          >
+                            {a.name}
+                          </button>
+                          <button
+                            type="button"
+                            className="meta-unpin"
+                            aria-label={`Desfijar ${a.name}`}
+                            onClick={() =>
+                              setPinnedAccountIds((old) =>
+                                old.filter((v) => v !== id),
+                              )
+                            }
+                          >
+                            <span aria-hidden="true">×</span>
+                          </button>
+                        </div>
+                      ) : null;
+                    })}
+                  </div>
+                  <MetaSummaryCounters
+                    summary={summary}
+                    loading={loading}
+                    compact
+                  />
                   <div className="meta-pinned-actions">
                     {owner && (
                       <MetaAliasAction
@@ -2333,87 +2429,24 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
                         ↻ Actualizar desde Meta
                       </button>
                     )}
+                    {analysisControl()}
                   </div>
                 </div>
               </div>
-              <div className="meta-result-controls">
-                <div
-                  className="meta-level-tabs"
-                  role="tablist"
-                  aria-label="Nivel publicitario"
-                >
-                  {[
-                    ["campaign", "Campañas"],
-                    ["adset", "Conjuntos de anuncios"],
-                    ["ad", "Anuncios"],
-                  ].map(([id, label]) => (
-                    <button
-                      type="button"
-                      role="tab"
-                      aria-selected={level === id}
-                      key={id}
-                      className={level === id ? "primary" : ""}
-                      onClick={() => {
-                        resetPage(() => setLevel(id));
-                      }}
-                    >
-                      {label}
-                    </button>
-                  ))}
+              {view === "cards" && (
+                <div className="meta-result-controls">
+                  {levelControls()}
+                  <MetaCostOrder
+                    calendar={!!calendar}
+                    value={sort}
+                    direction={direction}
+                    onChange={orderByCost}
+                  />
                 </div>
-                <button
-                  className="meta-view-toggle"
-                  type="button"
-                  onClick={() => setView(view === "cards" ? "table" : "cards")}
-                >
-                  {view === "cards" ? "Ver tabla" : "Ver tarjetas"}
-                </button>
-                <MetaCostOrder
-                  calendar={!!calendar}
-                  value={sort}
-                  direction={direction}
-                  onChange={(id) =>
-                    resetPage(() => {
-                      setSort(id);
-                      setDirection(
-                        sort === id && direction === "asc" ? "desc" : "asc",
-                      );
-                    })
-                  }
-                />
-                <MetaAnalysisPeriod
-                  value={calendar ? "custom" : analysisPeriod}
-                  since={since}
-                  until={until}
-                  onPreset={(id, range) => {
-                    setAnalysisPeriod(id);
-                    setCalendar(range ? "custom" : "");
-                    setSince(range?.[0] ?? "");
-                    setUntil(range?.[1] ?? "");
-                    if (range || sort === "custom") {
-                      setSort(range ? "custom" : id);
-                      setDirection("asc");
-                    }
-                    setPage(1);
-                  }}
-                  onRange={(start, end) => {
-                    setSort("custom");
-                    setDirection("asc");
-                    setSince(start);
-                    setUntil(end);
-                    setCalendar("custom");
-                    setPage(1);
-                  }}
-                />
-              </div>
-              <MetaSummaryCounters summary={summary} loading={loading} />
+              )}
               {view === "table" && (
-                <div
-                  className="meta-fixed-table-head"
-                  aria-hidden="true"
-                  ref={tableHeaderScroll}
-                >
-                  <table>
+                <div className="meta-fixed-table-head" ref={tableHeaderScroll}>
+                  <table role="presentation">
                     {tableColumns()}
                     {tableHead()}
                   </table>

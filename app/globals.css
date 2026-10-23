@@ -1496,3 +1496,30 @@ html:has(.meta-ads),.meta-ads { overflow-anchor:none; }
 .meta-sticky-controls{grid-template-columns:minmax(0,1fr);}
 .meta-sticky-controls>*{min-width:0;}
 .meta-pinned-actions{min-width:0;max-width:100%;}
+
+/* One compact pinned-account row; cost controls share the table's exact columns. */
+.meta-pinned-accounts{flex-wrap:nowrap;gap:8px;overflow-x:auto;max-width:100%;padding-top:6px;}
+.meta-pins-list{display:flex;flex:1 1 150px;min-width:110px;gap:5px;align-items:center;overflow-x:auto;white-space:nowrap;}
+.meta-pins-list>span{font-size:10px;color:var(--muted);}
+.meta-pins-list>button,.meta-pins-list>.meta-account-pin{flex-shrink:0;}
+.meta-pins-list button{padding:8px;font-size:11px;}
+.meta-account-pin .meta-unpin{width:25px;min-width:25px;padding:5px;font-size:18px;line-height:1;}
+.meta-pinned-actions{flex:0 0 auto;flex-wrap:nowrap!important;gap:5px;}
+.meta-pinned-actions>button{font-size:11px;padding:8px;white-space:nowrap;}
+.meta-pinned-actions .meta-bulk-alias{min-width:116px;font-size:11px;padding:8px;}
+.meta-pinned-actions>.meta-analysis-period{flex:0 0 205px;width:205px;min-width:0;position:relative;}
+.meta-pinned-actions>.meta-analysis-period>label{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;margin:0;}
+.meta-pinned-actions .meta-period-trigger{min-height:36px;font-size:11px;padding:8px;gap:8px;white-space:nowrap;}
+.meta-counters.meta-counters-inline{display:flex;flex:0 0 auto;align-items:center;gap:5px;border:0;padding:0;margin:0;background:transparent;min-height:36px;}
+.meta-counters-inline .meta-counter-grid{display:flex;gap:10px;}
+.meta-counters-inline .meta-counter-grid>div{min-width:35px;max-width:82px;}
+.meta-counters-inline .meta-counter-grid span{font-size:9px;line-height:1.2;}
+.meta-counters-inline .meta-counter-grid strong{font-size:11px;min-height:15px;line-height:1.3;}
+.meta-counter-partial{font-size:9px;color:var(--muted);writing-mode:vertical-rl;}
+.meta-table-level-controls{display:flex;gap:5px;align-items:center;min-width:0;}
+.meta-table-level-controls .meta-level-tabs{display:flex;gap:4px;flex:0 0 auto;width:auto;}
+.meta-table-level-controls button{font-size:11px;padding:8px 6px;white-space:nowrap;}
+.meta-table-level-controls>span{font-size:10px;margin-left:auto;white-space:nowrap;}
+.meta-fixed-table-head .meta-aligned-order>th{padding:5px 2px;}
+.meta-aligned-order .meta-cost-column-button{width:100%;min-width:0;padding:8px 2px;font-size:10px;white-space:normal;line-height:1.2;}
+.meta-fixed-table-head .meta-aligned-order th:first-child{padding-left:5px;padding-right:5px;}

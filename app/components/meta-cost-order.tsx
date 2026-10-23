@@ -26,26 +26,54 @@ export function MetaCostOrder({
       <span>Ordenar por costo</span>
       <div>
         {[...periods, ["custom", "Por fecha"]].map(([id, label]) => (
-          <button
-            type="button"
+          <MetaCostButton
             key={id}
-            aria-pressed={value === id}
-            className={value === id ? "primary" : ""}
-            disabled={id === "custom" && !calendar}
-            title={
-              id === "custom" && !calendar
-                ? "Elige un rango en Periodo de análisis"
-                : undefined
-            }
-            onClick={() => onChange(id)}
-          >
-            {label}
-            <span aria-hidden="true">
-              {value === id ? (direction === "asc" ? " ↑" : " ↓") : " ↕"}
-            </span>
-          </button>
+            id={id}
+            label={label}
+            value={value}
+            direction={direction}
+            calendar={calendar}
+            onChange={onChange}
+          />
         ))}
       </div>
     </div>
+  );
+}
+
+export function MetaCostButton({
+  id,
+  label,
+  value,
+  direction,
+  calendar,
+  onChange,
+}: {
+  id: string;
+  label: string;
+  value: string;
+  direction: string;
+  calendar: boolean;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <button
+      type="button"
+      className={"meta-cost-column-button" + (value === id ? " primary" : "")}
+      data-cost-period={id}
+      aria-pressed={value === id}
+      disabled={id === "custom" && !calendar}
+      title={
+        id === "custom" && !calendar
+          ? "Elige un rango en Periodo de análisis"
+          : undefined
+      }
+      onClick={() => onChange(id)}
+    >
+      {label}
+      <span aria-hidden="true">
+        {value === id ? (direction === "asc" ? " ↑" : " ↓") : " ↕"}
+      </span>
+    </button>
   );
 }

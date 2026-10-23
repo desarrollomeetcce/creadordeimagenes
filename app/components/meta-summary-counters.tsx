@@ -11,9 +11,11 @@ const money = (v: number, currency: string) =>
 export function MetaSummaryCounters({
   summary,
   loading,
+  compact = false,
 }: {
   summary: MetaSummary | null;
   loading: boolean;
+  compact?: boolean;
 }) {
   const currencies = summary?.currencies ?? [];
   const financial = (key: "spend" | "conversations" | "average") =>
@@ -57,11 +59,11 @@ export function MetaSummaryCounters({
   ];
   return (
     <section
-      className="meta-counters"
+      className={"meta-counters" + (compact ? " meta-counters-inline" : "")}
       aria-label="Resumen del periodo de análisis"
       aria-busy={loading}
     >
-      <div className="meta-counter-scope">
+      <div className={"meta-counter-scope" + (compact ? " sr-only" : "")}>
         {loading
           ? "Consultando resumen…"
           : summary
@@ -71,10 +73,28 @@ export function MetaSummaryCounters({
           Periodo de análisis
         </span>
       </div>
+      {compact && summary?.partial && (
+        <span
+          className="meta-counter-partial"
+          title="Cobertura parcial: faltan informes de algunos elementos o fechas."
+        >
+          Parcial
+        </span>
+      )}
       <div className="meta-counter-grid">
         {labels.map(([label, value, title]) => (
-          <div key={label} title={title}>
-            <span>{label}</span>
+          <div key={label} title={`${label}: ${value}. ${title}`}>
+            <span>
+              {compact
+                ? ({
+                    "Gasto total": "Gasto",
+                    Conversaciones: "Convers.",
+                    "Costo promedio": "Costo",
+                    "Campañas activas": "Activas",
+                    Desactivadas: "Desact.",
+                  }[label] ?? label)
+                : label}
+            </span>
             <strong>{loading ? "—" : value}</strong>
           </div>
         ))}
