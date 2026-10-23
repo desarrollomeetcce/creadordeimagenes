@@ -243,8 +243,8 @@ function SyncIndicator({
       )}
       {p.lastActivityAt && (
         <small>
-          Última actividad registrada: {displayTime(p.lastActivityAt)} · hora de
-          Lima.
+          Último intento o avance de la importación:{" "}
+          {displayTime(p.lastActivityAt)} · hora de Lima.
         </small>
       )}
       {p.status === "stalled" && (
@@ -279,10 +279,13 @@ function SyncIndicator({
       )}
       {p.status === "waiting" && p.nextSyncAt && (
         <p className="notice">
-          Avance guardado. Próximo intento automático:{" "}
-          {displayTime(p.nextSyncAt)}.{" "}
-          {p.waitReason !== "pacing" &&
-            "Meta puede ampliar la espera si el límite continúa."}
+          {p.waitReason === "pacing"
+            ? "Pausa entre consultas para respetar el ritmo permitido."
+            : "Meta alcanzó el límite de consultas; la importación está en espera."}{" "}
+          Reintento automático previsto: {displayTime(p.nextSyncAt)}. El avance
+          está guardado; esta hora no significa que se hayan recibido datos
+          nuevos.{" "}
+          {p.waitReason !== "pacing" && "Meta puede prolongar la espera."}
         </p>
       )}
       {onControl && ongoing && (
@@ -433,6 +436,11 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
       <span>{o.alias?.name ?? "Sin alias"}</span>
     );
   const selectedIds = new Set(selectedObjects.map((o) => o.id));
+  const selectedCount = selectedObjects.filter(
+    (o) =>
+      o.level === level &&
+      (!accountIds.length || accountIds.includes(o.accountId)),
+  ).length;
   const chooseAccounts = (ids: string[], pin = true) =>
     resetPage(() => {
       setAccountIds(ids);
@@ -481,7 +489,6 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
           )
           .map((s) => s.id),
       );
-    setPage(1);
   };
   const openChildren = (o: Item) => {
     if (!selectedIds.has(o.id)) selectObject(o, true);
@@ -756,8 +763,8 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
         business,
         campaign,
         adset,
-        campaigns: campaignScopeKey,
-        adsets: adsetScopeKey,
+        campaigns: level === "campaign" ? "" : campaignScopeKey,
+        adsets: level === "ad" ? adsetScopeKey : "",
         q: search,
         alias: aliasFilter,
         state,
@@ -1961,299 +1968,300 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
                   {a.syncError && <p className="notice">{a.syncError}</p>}
                 </div>
               ))}
-            <div className="panel stack">
-              <div className="fields meta-filters meta-main-filters">
-                <MetaAccountPicker
-                  accounts={accounts}
-                  selected={accountIds}
-                  business={business}
-                  query={accountPickerQuery}
-                  activity={accountPickerActivity}
-                  onQueryChange={setAccountPickerQuery}
-                  onActivityChange={setAccountPickerActivity}
-                  onChange={(ids) => chooseAccounts(ids)}
-                />
-                <label>
-                  Medir resultado
-                  <select
-                    value={metric}
-                    onChange={(e) => resetPage(() => setMetric(e.target.value))}
-                  >
-                    <option value="">Automático según objetivo</option>
-                    {metrics
-                      .filter(([id]) => id !== "AUTO")
-                      .map(([id, label]) => (
+            <MetaDataFreshness accounts={chosen} />
+            <div
+              className="meta-sticky-controls"
+              aria-label="Filtros y niveles de Meta Ads"
+            >
+              <div className="panel stack">
+                <div className="fields meta-filters meta-main-filters">
+                  <MetaAccountPicker
+                    accounts={accounts}
+                    selected={accountIds}
+                    business={business}
+                    query={accountPickerQuery}
+                    activity={accountPickerActivity}
+                    onQueryChange={setAccountPickerQuery}
+                    onActivityChange={setAccountPickerActivity}
+                    onChange={(ids) => chooseAccounts(ids)}
+                  />
+                  <label>
+                    Medir resultado
+                    <select
+                      value={metric}
+                      onChange={(e) =>
+                        resetPage(() => setMetric(e.target.value))
+                      }
+                    >
+                      <option value="">Automático según objetivo</option>
+                      {metrics
+                        .filter(([id]) => id !== "AUTO")
+                        .map(([id, label]) => (
+                          <option key={id} value={id}>
+                            {label}
+                          </option>
+                        ))}
+                    </select>
+                  </label>
+                  <label>
+                    Estado / entrega
+                    <select
+                      value={state}
+                      onChange={(e) =>
+                        resetPage(() => setState(e.target.value))
+                      }
+                    >
+                      <option value="all">Todos</option>
+                      <option value="active">Activos configurados</option>
+                      <option value="campaign-active">
+                        Solo campañas activas
+                      </option>
+                      <option value="delivery">Entrega registrada hoy</option>
+                      <option value="effective">Estado efectivo activo</option>
+                      <option value="paused">Desactivados (pausados)</option>
+                      <option value="issues">Revisión o problemas</option>
+                    </select>
+                  </label>
+                  <label>
+                    Evaluación
+                    <select
+                      value={rating}
+                      onChange={(e) =>
+                        resetPage(() => setRating(e.target.value))
+                      }
+                    >
+                      <option value="">Todas</option>
+                      {Object.entries(ratings).map(([id, label]) => (
                         <option key={id} value={id}>
                           {label}
                         </option>
                       ))}
-                  </select>
-                </label>
-                <label>
-                  Estado / entrega
-                  <select
-                    value={state}
-                    onChange={(e) => resetPage(() => setState(e.target.value))}
+                    </select>
+                  </label>
+                  <label>
+                    Buscar por palabra
+                    <input
+                      type="search"
+                      aria-label="Buscar campañas, conjuntos o anuncios"
+                      placeholder="Escribe parte del nombre"
+                      value={q}
+                      onChange={(e) => setQ(e.target.value)}
+                    />
+                  </label>
+                  <label>
+                    Buscar por alias
+                    <select
+                      value={aliasFilter}
+                      onChange={(e) =>
+                        resetPage(() => setAliasFilter(e.target.value))
+                      }
+                    >
+                      <option value="">Todos los alias</option>
+                      <option value="__none">Sin alias</option>
+                      {aliases.map((a) => (
+                        <option key={a.id} value={a.id}>
+                          {a.name}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <div className="meta-filter-actions">
+                    <button
+                      type="button"
+                      className="meta-clear-selection"
+                      disabled={!selectedCount}
+                      title="Deseleccionar los elementos de este nivel"
+                      aria-label="Deseleccionar este nivel"
+                      onClick={() => {
+                        setSelectedObjects((old) =>
+                          old.filter(
+                            (o) =>
+                              o.level !== level ||
+                              (accountIds.length > 0 &&
+                                !accountIds.includes(o.accountId)),
+                          ),
+                        );
+                        if (level === "campaign") {
+                          setCampaignScope([]);
+                          setAdsetScope([]);
+                        }
+                        if (level === "adset") setAdsetScope([]);
+                      }}
+                    >
+                      Selección: {selectedCount} ×
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={clearFilters}
+                      title="Volver a todas las cuentas y al periodo Hoy; conserva tus checks y cuentas fijadas"
+                    >
+                      Borrar filtros
+                    </button>
+                    <button
+                      className="meta-refresh"
+                      type="button"
+                      onClick={reload}
+                      disabled={busy || loading}
+                      aria-label="Actualizar datos guardados"
+                      title="Actualizar vista con los datos guardados"
+                    >
+                      ↻
+                    </button>
+                  </div>
+                </div>
+                {pinnedAccountIds.length > 0 && (
+                  <div
+                    className="meta-pinned-accounts"
+                    aria-label="Cuentas fijadas"
                   >
-                    <option value="all">Todos</option>
-                    <option value="active">Activos configurados</option>
-                    <option value="campaign-active">
-                      Solo campañas activas
-                    </option>
-                    <option value="delivery">Entrega registrada hoy</option>
-                    <option value="effective">Estado efectivo activo</option>
-                    <option value="paused">Desactivados (pausados)</option>
-                    <option value="issues">Revisión o problemas</option>
-                  </select>
-                </label>
-                <label>
-                  Evaluación
-                  <select
-                    value={rating}
-                    onChange={(e) => resetPage(() => setRating(e.target.value))}
-                  >
-                    <option value="">Todas</option>
-                    {Object.entries(ratings).map(([id, label]) => (
-                      <option key={id} value={id}>
-                        {label}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label>
-                  Buscar por palabra
-                  <input
-                    type="search"
-                    aria-label="Buscar campañas, conjuntos o anuncios"
-                    placeholder="Escribe parte del nombre"
-                    value={q}
-                    onChange={(e) => setQ(e.target.value)}
-                  />
-                </label>
-                <label>
-                  Buscar por alias
-                  <select
-                    value={aliasFilter}
-                    onChange={(e) =>
-                      resetPage(() => setAliasFilter(e.target.value))
+                    <span>Cuentas fijadas</span>
+                    <button
+                      type="button"
+                      aria-pressed={!accountIds.length}
+                      className={!accountIds.length ? "primary" : ""}
+                      onClick={() => chooseAccounts([], false)}
+                    >
+                      Todas
+                    </button>
+                    {pinnedAccountIds.map((id) => {
+                      const a = accounts.find((a) => a.id === id);
+                      return a ? (
+                        <div className="meta-account-pin" key={id}>
+                          <button
+                            type="button"
+                            aria-pressed={accountIds.includes(id)}
+                            className={accountIds.includes(id) ? "primary" : ""}
+                            onClick={() => chooseAccounts([id], false)}
+                          >
+                            {a.name}
+                          </button>
+                          <button
+                            type="button"
+                            className="meta-unpin"
+                            aria-label={`Desfijar ${a.name}`}
+                            onClick={() =>
+                              setPinnedAccountIds((old) =>
+                                old.filter((v) => v !== id),
+                              )
+                            }
+                          >
+                            Desfijar
+                          </button>
+                        </div>
+                      ) : null;
+                    })}
+                  </div>
+                )}
+              </div>
+              <div className="meta-result-controls">
+                <div
+                  className="meta-level-tabs"
+                  role="tablist"
+                  aria-label="Nivel publicitario"
+                >
+                  {[
+                    ["campaign", "Campañas"],
+                    ["adset", "Conjuntos de anuncios"],
+                    ["ad", "Anuncios"],
+                  ].map(([id, label]) => (
+                    <button
+                      type="button"
+                      role="tab"
+                      aria-selected={level === id}
+                      key={id}
+                      className={level === id ? "primary" : ""}
+                      onClick={() => {
+                        resetPage(() => setLevel(id));
+                      }}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+                <button
+                  className="meta-view-toggle"
+                  type="button"
+                  onClick={() => setView(view === "cards" ? "table" : "cards")}
+                >
+                  {view === "cards" ? "Ver tabla" : "Ver tarjetas"}
+                </button>
+                {chosen.some((a) => a.canSync) && (
+                  <button
+                    type="button"
+                    className="meta-live-refresh"
+                    disabled={busy || !accountIds.length}
+                    title={
+                      accountIds.length
+                        ? "Actualizar datos y miniaturas desde Meta"
+                        : "Selecciona una cuenta para actualizar desde Meta"
+                    }
+                    onClick={() =>
+                      void run(async () => {
+                        const targets = chosen.filter((a) => a.canSync);
+                        const failed: string[] = [];
+                        let queued = 0;
+                        for (const a of targets) {
+                          try {
+                            await api(
+                              `meta-ads/accounts/${a.id}/sync`,
+                              "POST",
+                              {
+                                focused: true,
+                                inventory: "all",
+                                recentDays: 7,
+                                fresh: true,
+                              },
+                            );
+                            queued++;
+                          } catch (e) {
+                            failed.push(
+                              `${a.name}: ${e instanceof Error ? e.message : "No se pudo solicitar"}`,
+                            );
+                          }
+                        }
+                        setMessage(
+                          `${queued} cuenta(s) en actualización desde Meta. Los datos y miniaturas aparecerán conforme se reciban.${failed.length ? " " + failed.join(" · ") : ""}`,
+                        );
+                      })
                     }
                   >
-                    <option value="">Todos los alias</option>
-                    <option value="__none">Sin alias</option>
-                    {aliases.map((a) => (
-                      <option key={a.id} value={a.id}>
-                        {a.name}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <div className="meta-filter-actions">
-                  <button
-                    type="button"
-                    onClick={clearFilters}
-                    title="Volver a todas las cuentas y al periodo Hoy; conserva tus checks y cuentas fijadas"
-                  >
-                    Borrar filtros
+                    ↻ Actualizar desde Meta
                   </button>
-                  <button
-                    className="meta-refresh"
-                    type="button"
-                    onClick={reload}
-                    disabled={busy || loading}
-                    aria-label="Actualizar datos guardados"
-                    title="Actualizar vista con los datos guardados"
-                  >
-                    ↻
-                  </button>
-                </div>
-              </div>
-              {pinnedAccountIds.length > 0 && (
-                <div
-                  className="meta-pinned-accounts"
-                  aria-label="Cuentas fijadas"
-                >
-                  <span>Cuentas fijadas</span>
-                  <button
-                    type="button"
-                    aria-pressed={!accountIds.length}
-                    className={!accountIds.length ? "primary" : ""}
-                    onClick={() => chooseAccounts([], false)}
-                  >
-                    Todas
-                  </button>
-                  {pinnedAccountIds.map((id) => {
-                    const a = accounts.find((a) => a.id === id);
-                    return a ? (
-                      <div className="meta-account-pin" key={id}>
-                        <button
-                          type="button"
-                          aria-pressed={accountIds.includes(id)}
-                          className={accountIds.includes(id) ? "primary" : ""}
-                          onClick={() => chooseAccounts([id], false)}
-                        >
-                          {a.name}
-                        </button>
-                        <button
-                          type="button"
-                          className="meta-unpin"
-                          aria-label={`Desfijar ${a.name}`}
-                          onClick={() =>
-                            setPinnedAccountIds((old) =>
-                              old.filter((v) => v !== id),
-                            )
-                          }
-                        >
-                          Desfijar
-                        </button>
-                      </div>
-                    ) : null;
-                  })}
-                </div>
-              )}
-            </div>
-            <MetaDataFreshness accounts={chosen} />
-            <div className="meta-result-controls">
-              <div
-                className="meta-level-tabs"
-                role="tablist"
-                aria-label="Nivel publicitario"
-              >
-                {[
-                  ["campaign", "Campañas"],
-                  ["adset", "Conjuntos de anuncios"],
-                  ["ad", "Anuncios"],
-                ].map(([id, label]) => (
-                  <button
-                    type="button"
-                    role="tab"
-                    aria-selected={level === id}
-                    key={id}
-                    className={level === id ? "primary" : ""}
-                    onClick={() => {
-                      resetPage(() => setLevel(id));
-                    }}
-                  >
-                    {label}
-                  </button>
-                ))}
-              </div>
-              <button
-                className="meta-view-toggle"
-                type="button"
-                onClick={() => setView(view === "cards" ? "table" : "cards")}
-              >
-                {view === "cards" ? "Ver tabla" : "Ver tarjetas"}
-              </button>
-              {chosen.some((a) => a.canSync) && (
-                <button
-                  type="button"
-                  className="meta-live-refresh"
-                  disabled={busy || !accountIds.length}
-                  title={
-                    accountIds.length
-                      ? "Actualizar datos y miniaturas desde Meta"
-                      : "Selecciona una cuenta para actualizar desde Meta"
-                  }
-                  onClick={() =>
-                    void run(async () => {
-                      const targets = chosen.filter((a) => a.canSync);
-                      const failed: string[] = [];
-                      let queued = 0;
-                      for (const a of targets) {
-                        try {
-                          await api(`meta-ads/accounts/${a.id}/sync`, "POST", {
-                            focused: true,
-                            inventory: "all",
-                            recentDays: 7,
-                            fresh: true,
-                          });
-                          queued++;
-                        } catch (e) {
-                          failed.push(
-                            `${a.name}: ${e instanceof Error ? e.message : "No se pudo solicitar"}`,
-                          );
-                        }
-                      }
-                      setMessage(
-                        `${queued} cuenta(s) en actualización desde Meta. Los datos y miniaturas aparecerán conforme se reciban.${failed.length ? " " + failed.join(" · ") : ""}`,
+                )}
+                <MetaCostOrder
+                  calendar={!!calendar}
+                  value={sort}
+                  direction={direction}
+                  onChange={(id) =>
+                    resetPage(() => {
+                      setSort(id);
+                      setDirection(
+                        sort === id && direction === "asc" ? "desc" : "asc",
                       );
                     })
                   }
-                >
-                  ↻ Actualizar desde Meta
-                </button>
-              )}
-              <MetaCostOrder
-                calendar={!!calendar}
-                value={sort}
-                direction={direction}
-                onChange={(id) =>
-                  resetPage(() => {
-                    setSort(id);
-                    setDirection(
-                      sort === id && direction === "asc" ? "desc" : "asc",
-                    );
-                  })
-                }
-              />
-              <MetaAnalysisPeriod
-                value={calendar ? "custom" : analysisPeriod}
-                since={since}
-                until={until}
-                onPreset={(id) => {
-                  setAnalysisPeriod(id);
-                  setCalendar("");
-                  setSince("");
-                  setUntil("");
-                  if (sort === "custom") setSort("today");
-                }}
-                onRange={(start, end) => {
-                  setSince(start);
-                  setUntil(end);
-                  setCalendar("custom");
-                  setPage(1);
-                }}
-              />
-            </div>
-            {selectedObjects.some(
-              (o) =>
-                o.level === level &&
-                (!accountIds.length || accountIds.includes(o.accountId)),
-            ) && (
-              <div className="row meta-selection-tools">
-                <span>
-                  {
-                    selectedObjects.filter(
-                      (o) =>
-                        o.level === level &&
-                        (!accountIds.length ||
-                          accountIds.includes(o.accountId)),
-                    ).length
-                  }{" "}
-                  seleccionados
-                </span>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setSelectedObjects((old) =>
-                      old.filter(
-                        (o) =>
-                          o.level !== level ||
-                          (accountIds.length > 0 &&
-                            !accountIds.includes(o.accountId)),
-                      ),
-                    );
-                    if (level === "campaign") {
-                      setCampaignScope([]);
-                      setAdsetScope([]);
-                    }
-                    if (level === "adset") setAdsetScope([]);
+                />
+                <MetaAnalysisPeriod
+                  value={calendar ? "custom" : analysisPeriod}
+                  since={since}
+                  until={until}
+                  onPreset={(id) => {
+                    setAnalysisPeriod(id);
+                    setCalendar("");
+                    setSince("");
+                    setUntil("");
+                    if (sort === "custom") setSort("today");
                   }}
-                >
-                  Deseleccionar este nivel
-                </button>
+                  onRange={(start, end) => {
+                    setSince(start);
+                    setUntil(end);
+                    setCalendar("custom");
+                    setPage(1);
+                  }}
+                />
               </div>
-            )}
+            </div>
             <div data-meta-result-region className="meta-results-stage">
               <div className="meta-results" aria-busy={loading}>
                 {tab === "ranking" && rankingExcluded > 0 && (

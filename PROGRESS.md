@@ -936,3 +936,12 @@ Por instrucción posterior del usuario, eliminados selector/vista y componentes 
 Orden compartido de todos los niveles: ACTIVE efectivo primero, antes de paginación; luego moneda/resultado y costo del periodo seleccionado, sin costo al final de cada estado. No comparar importes de distintas monedas ni alterar estados. Busca por palabra y alias integradas en la barra superior; sin fila aparte. Menores gaps/padding y cargador superpuesto sin reservar una fila vacía; grid alineado al inicio para no distribuir altura de reserva entre los controles.
 
 Chromium: una fila de filtros a1520px,8px entre barra de controles y tabla, anuncios/conjuntos activos primero incluso con pausado más barato, misma secuencia en tarjetas, preferencias antiguas no reabren recomendaciones, búsqueda vacía conserva scroll, móvil390 sin desbordamiento y cero peticiones de recomendaciones/escrituras publicitarias/errores JS/HTTP.117 unitarias, TypeScript y compilación aprobados. 152/152 integraciones de plataforma aprobadas.
+
+
+### Meta: selección sin desplazamientos y controles fijos unidos
+
+Resaltado mediante sombra interior y nombre con peso constante. Sustituida la fila condicional de seleccionados por botón de ancho fijo en acciones, evitando insertar altura al marcar/desmarcar. Seleccionar ya no lleva a página1 ni limita la lista del mismo nivel; las selecciones de campaña/conjunto siguen filtrando sus hijos y el nombre conserva navegación/detalle.
+
+Filtros, cuentas fijadas y botones de nivel/orden/periodo en único contenedor sticky con separación interna0. Últimos datos guardados encima de ese bloque, inmediatamente después del progreso de carga. Texto distingue actividad de la importación de fecha de estadísticas persistidas y explica reintento previsto por cuota/pacing sin prometer éxito ni alterar el presupuesto de consultas.
+
+117 unitarias, TypeScript y build aprobados. Chromium comprueba geometría exacta de filas/tarjetas y altura de controles antes/después de selección, lista íntegra al seleccionar un conjunto, sticky top0 con filtros y niveles juntos, orden de fecha/progreso y explicación de espera; búsqueda vacía sin salto y móvil390 sin desbordamiento. Sin consultas reales Meta/IA ni escrituras publicitarias.

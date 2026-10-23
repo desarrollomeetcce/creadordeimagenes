@@ -1428,3 +1428,13 @@ html:has(.meta-ads),.meta-ads { overflow-anchor:none; }
 .meta-data-freshness{flex-direction:row;flex-wrap:wrap;align-items:baseline;gap:4px 10px;padding:2px 0;border-bottom:0;}
 .meta-data-freshness>div>small{display:inline;margin-left:8px;}
 .meta-data-freshness>small{display:inline;}
+
+/* Keep selection geometry unchanged and join both control rows into one sticky block. */
+.meta-sticky-controls{position:sticky;top:0;z-index:12;display:grid;gap:0;background:var(--surface);border:1px solid var(--line);border-radius:12px;min-width:0;}
+.meta-ads .meta-sticky-controls>.panel.stack{border:0;margin:0;border-radius:12px 12px 0 0;padding:10px 10px 6px;}
+.meta-sticky-controls>.meta-result-controls{margin:0;padding:0 10px 10px;}
+.meta-clear-selection{width:114px;min-width:114px;font-variant-numeric:tabular-nums;white-space:nowrap;}
+.meta-card.meta-object-selected,.meta-table tr.meta-object-selected{outline:0;outline-offset:0;box-shadow:inset 0 0 0 2px var(--accent);}
+.meta-name-button,.meta-object-selected .meta-name-button{font-weight:650;}
+.meta-freshness-explanation{flex-basis:100%;}
+@media(max-width:600px){.meta-sticky-controls{top:0;border-radius:8px;}.meta-main-filters .meta-filter-actions{flex-wrap:wrap;}}

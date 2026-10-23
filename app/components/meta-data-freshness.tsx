@@ -28,7 +28,7 @@ export function MetaDataFreshness({ accounts }: { accounts: FreshAccount[] }) {
       aria-label="Actualización de datos de Meta"
     >
       <div role="status" aria-live="polite">
-        <strong>Última actualización de datos: </strong>
+        <strong>Últimos datos guardados: </strong>
         {accounts.length === 1
           ? stamp(accounts[0].lastDataAt)
           : times.length
@@ -44,6 +44,16 @@ export function MetaDataFreshness({ accounts }: { accounts: FreshAccount[] }) {
             : "Sincronización automática pausada"}
         </small>
       </div>
+      {accounts.some(
+        (a) =>
+          a.progress &&
+          !["complete", "disabled", "cancelled"].includes(a.progress.status),
+      ) && (
+        <small className="meta-freshness-explanation">
+          El intento de importación puede ser más reciente que los datos: una
+          espera o un error no actualizan las estadísticas guardadas.
+        </small>
+      )}
       {accounts.length === 1 && (
         <small>
           {accounts[0].enabled
