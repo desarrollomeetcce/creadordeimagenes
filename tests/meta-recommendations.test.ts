@@ -419,3 +419,42 @@ test("active ads still observing are not declared failed or told to create repla
   assert.equal(r.task, null);
   assert.match(r.summary, /observación/);
 });
+
+test("recommendation mode persists until explicitly cleared, only whitelisted modes and views", async () => {
+  const { parseMetaPreferences } = await import("../lib/meta-ads/preferences");
+  for (const mode of ["day", "night"]) {
+    const p = parseMetaPreferences(
+      JSON.stringify({
+        layoutRevision: 2,
+        recommendationMode: mode,
+        recommendationView: "table",
+        view: "cards",
+        token: "never-save",
+      }),
+    );
+    assert.equal(p.recommendationMode, mode);
+    assert.equal(p.recommendationView, "table");
+    assert.equal(p.view, "cards");
+    assert.equal(
+      parseMetaPreferences(JSON.stringify({ ...p, recommendationMode: "" }))
+        .recommendationMode,
+      "",
+    );
+    assert(!JSON.stringify(p).includes("never-save"));
+  }
+  assert.equal(parseMetaPreferences(null).recommendationMode, "");
+  assert.equal(
+    parseMetaPreferences(
+      JSON.stringify({
+        recommendationMode: "automatic",
+        recommendationView: "bad",
+      }),
+    ).recommendationMode,
+    "",
+  );
+  assert.equal(
+    parseMetaPreferences(JSON.stringify({ recommendationView: "bad" }))
+      .recommendationView,
+    "cards",
+  );
+});

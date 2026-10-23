@@ -581,6 +581,8 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
     setUntil(p.until);
     setCalendar(p.calendar);
     setView(p.view);
+    setRecommendationMode(p.recommendationMode);
+    setRecommendationView(p.recommendationView);
     setAccountListQuery(p.accountListQuery);
     setAccountListActivity(p.accountListActivity);
     setAccountListBusiness(p.accountListBusiness);
@@ -628,6 +630,8 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
           until,
           calendar,
           view,
+          recommendationMode,
+          recommendationView,
           accountListQuery,
           accountListActivity,
           accountListBusiness,
@@ -665,6 +669,8 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
     until,
     calendar,
     view,
+    recommendationMode,
+    recommendationView,
     accountListQuery,
     accountListActivity,
     accountListBusiness,
@@ -2148,7 +2154,11 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
                     );
                   }}
                 >
-                  <option value="">Recomendaciones</option>
+                  <option value="">
+                    {recommendationMode
+                      ? "Ocultar recomendaciones"
+                      : "Recomendaciones"}
+                  </option>
                   <option value="night">Nocturna</option>
                   <option value="day">Diurna · 8:00 a. m. Perú</option>
                 </select>
@@ -2306,19 +2316,25 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
               </div>
             )}
             {recommendationMode ? (
-              <MetaRecommendations
-                mode={recommendationMode}
-                accountIds={accountIds}
-                campaignIds={campaignScope}
-                owner={owner}
-                view={recommendationView}
-                revision={revision}
-                renderCard={renderCard}
-                selectedIds={selectedIds}
-                selectObject={selectObject}
-                onDetail={setSelected}
-                onUpdated={() => setRevision((n) => n + 1)}
-              />
+              accountsLoaded ? (
+                <MetaRecommendations
+                  mode={recommendationMode}
+                  accountIds={accountIds}
+                  campaignIds={campaignScope}
+                  owner={owner}
+                  view={recommendationView}
+                  revision={revision}
+                  renderCard={renderCard}
+                  selectedIds={selectedIds}
+                  selectObject={selectObject}
+                  onDetail={setSelected}
+                  onUpdated={() => setRevision((n) => n + 1)}
+                />
+              ) : (
+                <p role="status">
+                  Restaurando tus cuentas para mostrar las recomendaciones…
+                </p>
+              )
             ) : (
               <div className="meta-results" aria-busy={loading}>
                 {tab === "ranking" && rankingExcluded > 0 && (
