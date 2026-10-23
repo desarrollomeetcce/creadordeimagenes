@@ -1,4 +1,5 @@
 "use client";
+import { Fragment, type ReactNode } from "react";
 const periods = [
   ["today", "Hoy"],
   ["7", "7 días"],
@@ -11,9 +12,11 @@ export function MetaCostOrder({
   calendar = false,
   direction,
   onChange,
+  afterLifetime,
 }: {
   value: string;
   calendar?: boolean;
+  afterLifetime?: ReactNode;
   direction: string;
   onChange: (value: string) => void;
 }) {
@@ -26,15 +29,17 @@ export function MetaCostOrder({
       <span>Ordenar por costo</span>
       <div>
         {[...periods, ["custom", "Por fecha"]].map(([id, label]) => (
-          <MetaCostButton
-            key={id}
-            id={id}
-            label={label}
-            value={value}
-            direction={direction}
-            calendar={calendar}
-            onChange={onChange}
-          />
+          <Fragment key={id}>
+            <MetaCostButton
+              id={id}
+              label={label}
+              value={value}
+              direction={direction}
+              calendar={calendar}
+              onChange={onChange}
+            />
+            {id === "lifetime" ? afterLifetime : null}
+          </Fragment>
         ))}
       </div>
     </div>

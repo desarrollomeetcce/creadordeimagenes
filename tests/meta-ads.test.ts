@@ -155,3 +155,10 @@ test('Meta filtros múltiples: cuatro criterios, Todos reinicia y activar/desact
  const on=toggleDeliveryFilter(['paused','delivery'],'active');assert.deepEqual(on,['delivery','active']);assert.equal(encodeDeliveryFilters(on),'active,delivery');assert.deepEqual(toggleDeliveryFilter(['active','delivery'],'delivery'),['active']);assert.equal(encodeDeliveryFilters([]),'all');
  assert.equal(parseMetaPreferences(JSON.stringify({layoutRevision:2,state:'delivery,active,effective'})).state,'active,delivery,effective');for(const state of ['active,paused','issues','campaign-active'])assert.equal(parseMetaPreferences(JSON.stringify({layoutRevision:2,state})).state,'all');
 });
+
+test('Meta gráfico dual: escalas independientes, fechas reales y huecos sin fabricar ceros',async()=>{
+ const {dailyChartLayout}=await import('../lib/meta-ads/daily-chart');
+ const rows=[{day:'2026-10-03',spend:30,results:10,cost:3},{day:'2026-10-01',spend:10,results:20,cost:.5},{day:'2026-10-04',spend:2,results:0,cost:null}];
+ const chart=dailyChartLayout(rows,'cost','results','2026-10-01','2026-10-04');assert.deepEqual(chart.points.map(p=>p.row.day),['2026-10-01','2026-10-03','2026-10-04']);assert(chart.left.max>=3&&chart.right.max>=20);assert.notEqual(chart.left.max,chart.right.max);assert.equal(chart.points[0].barHeight,.5/chart.left.max*200);assert.equal(chart.points[2].barHeight,null);assert.equal(chart.points[2].y,212);assert.equal(chart.points[1].x-chart.points[0].x,chart.width/2);assert.equal(chart.segments.length,2);assert.deepEqual(rows.map(r=>r.day),['2026-10-03','2026-10-01','2026-10-04']);
+ const gaps=dailyChartLayout(rows,'spend','cost');assert.equal(gaps.points[2].y,null);assert.equal(gaps.segments.length,2);assert(gaps.points.every(p=>Number.isFinite(p.x)));assert.deepEqual(dailyChartLayout([],'cost','results').points,[]);
+});

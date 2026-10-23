@@ -357,6 +357,7 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
   const owner = role === "OWNER";
   const stableViewport = useMetaStableViewport();
   const tableHeaderScroll = useRef<HTMLDivElement>(null);
+  const masterSelection = useRef<HTMLInputElement>(null);
   const [accounts, setAccounts] = useState<Account[]>([]),
     [preferencesReady, setPreferencesReady] = useState(false),
     [accountsLoaded, setAccountsLoaded] = useState(false),
@@ -470,6 +471,47 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
       o.level === level &&
       (!accountIds.length || accountIds.includes(o.accountId)),
   ).length;
+  const pageSelectionItems = items.filter(
+    (o) =>
+      tab !== "alerts" ||
+      ["CRITICAL", "WATCH", "DETERIORATING"].includes(o.rating),
+  );
+  useEffect(() => {
+    if (masterSelection.current)
+      masterSelection.current.indeterminate =
+        selectedCount > 0 &&
+        (!pageSelectionItems.length ||
+          !pageSelectionItems.every((o) => selectedIds.has(o.id)));
+  }, [selectedCount, items, selectedObjects, view, preferencesReady]);
+  const selectPage = (checked: boolean) => {
+    if (!checked) {
+      commitSelection(
+        selectedObjects.filter(
+          (o) =>
+            o.level !== level ||
+            (accountIds.length > 0 && !accountIds.includes(o.accountId)),
+        ),
+        level,
+      );
+      return;
+    }
+    const next = [...selectedObjects];
+    let capacity = 100 - next.filter((o) => o.level === level).length;
+    for (const o of pageSelectionItems) {
+      if (next.some((s) => s.id === o.id)) continue;
+      if (capacity <= 0) {
+        setMessage("Puedes seleccionar hasta 100 elementos por nivel.");
+        break;
+      }
+      next.push({
+        id: o.id,
+        accountId: o.accountId,
+        level: o.level as MetaSelection["level"],
+      });
+      capacity--;
+    }
+    commitSelection(next, level);
+  };
   const chooseAccounts = (ids: string[], pin = true) =>
     resetPage(() => {
       setAccountIds(ids);
@@ -482,6 +524,31 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
           [...new Set([...old, ...ids])].slice(0, 100),
         );
     });
+  const commitSelection = (next: MetaSelection[], targetLevel: string) => {
+    setSelectedObjects(next);
+    if (targetLevel === "campaign") {
+      setCampaignScope(
+        next
+          .filter(
+            (s) =>
+              s.level === "campaign" &&
+              (!accountIds.length || accountIds.includes(s.accountId)),
+          )
+          .map((s) => s.id),
+      );
+      setAdsetScope([]);
+    }
+    if (targetLevel === "adset")
+      setAdsetScope(
+        next
+          .filter(
+            (s) =>
+              s.level === "adset" &&
+              (!accountIds.length || accountIds.includes(s.accountId)),
+          )
+          .map((s) => s.id),
+      );
+  };
   const selectObject = (o: Item, checked: boolean) => {
     const next = selectedObjects.filter((s) => s.id !== o.id);
     if (checked) {
@@ -495,29 +562,7 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
         level: o.level as MetaSelection["level"],
       });
     }
-    setSelectedObjects(next);
-    if (o.level === "campaign") {
-      setCampaignScope(
-        next
-          .filter(
-            (s) =>
-              s.level === "campaign" &&
-              (!accountIds.length || accountIds.includes(s.accountId)),
-          )
-          .map((s) => s.id),
-      );
-      setAdsetScope([]);
-    }
-    if (o.level === "adset")
-      setAdsetScope(
-        next
-          .filter(
-            (s) =>
-              s.level === "adset" &&
-              (!accountIds.length || accountIds.includes(s.accountId)),
-          )
-          .map((s) => s.id),
-      );
+    commitSelection(next, o.level);
   };
   const openChildren = (o: Item) => {
     if (!selectedIds.has(o.id)) selectObject(o, true);
@@ -1014,8 +1059,50 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
       setSort(id);
       setDirection(sort === id && direction === "asc" ? "desc" : "asc");
     });
+  const bulkAliasControl = () => (
+    <>
+      {owner && (
+        <MetaAliasAction
+          name="selección"
+          aliases={aliases}
+          disabled={busy}
+          bulkCount={
+            summarySelectionKey ? summarySelectionKey.split(",").length : 0
+          }
+          onAssign={(aliasId) =>
+            void run(
+              () =>
+                api("meta-ads/objects/alias", "PATCH", {
+                  objectIds: summarySelectionKey.split(",").filter(Boolean),
+                  aliasId,
+                }),
+              "Alias asignado a la selección.",
+            )
+          }
+        />
+      )}
+    </>
+  );
   const levelControls = () => (
     <>
+      <label
+        className="meta-selection-toggle"
+        title="Marcar selecciona los elementos de esta página; desmarcar limpia la selección de este nivel"
+      >
+        <input
+          ref={masterSelection}
+          type="checkbox"
+          checked={selectedCount > 0}
+          disabled={loading || busy || (!items.length && !selectedCount)}
+          aria-label={
+            selectedCount
+              ? "Deseleccionar este nivel"
+              : "Seleccionar esta página"
+          }
+          onChange={(e) => selectPage(e.target.checked)}
+        />
+        <span>Selección ({selectedCount})</span>
+      </label>
       <div
         className="meta-level-tabs"
         role="tablist"
@@ -1085,6 +1172,7 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
     highlight?: boolean;
     sortKey?: string;
     sortLabel?: string;
+    toolbarAction?: ReactNode;
     render: (o: Item) => ReactNode;
   }[] = [
     {
@@ -1239,6 +1327,7 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
       key: "rating",
       width: "9%",
       label: "Evaluación",
+      toolbarAction: bulkAliasControl(),
       render: (o) => ratings[o.rating],
     },
   ];
@@ -1287,7 +1376,9 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
                   calendar={!!calendar}
                   onChange={orderByCost}
                 />
-              ) : null}
+              ) : (
+                (c.toolbarAction ?? null)
+              )}
             </th>
           ))}
         </tr>
@@ -2432,31 +2523,6 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
                   <div className="meta-filter-actions">
                     <button
                       type="button"
-                      className="meta-clear-selection"
-                      disabled={!selectedCount}
-                      title="Deseleccionar los elementos de este nivel"
-                      aria-label="Deseleccionar este nivel"
-                      onClick={() => {
-                        setSelectedObjects((old) =>
-                          old.filter(
-                            (o) =>
-                              o.level !== level ||
-                              (accountIds.length > 0 &&
-                                !accountIds.includes(o.accountId)),
-                          ),
-                        );
-                        if (level === "campaign") {
-                          setCampaignScope([]);
-                          setAdsetScope([]);
-                        }
-                        if (level === "adset") setAdsetScope([]);
-                      }}
-                    >
-                      Selección: {selectedCount} ×
-                    </button>
-
-                    <button
-                      type="button"
                       onClick={clearFilters}
                       title="Volver a todas las cuentas y al periodo Hoy; conserva tus checks y cuentas fijadas"
                     >
@@ -2516,36 +2582,15 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
                       ) : null;
                     })}
                   </div>
-                  <MetaSummaryCounters
-                    summary={summary}
-                    loading={loading}
-                    compact
-                  />
+                  <div className="meta-summary-date">
+                    <MetaSummaryCounters
+                      summary={summary}
+                      loading={loading}
+                      compact
+                    />
+                    {analysisControl()}
+                  </div>
                   <div className="meta-pinned-actions">
-                    {owner && (
-                      <MetaAliasAction
-                        name="selección"
-                        aliases={aliases}
-                        disabled={busy}
-                        bulkCount={
-                          summarySelectionKey
-                            ? summarySelectionKey.split(",").length
-                            : 0
-                        }
-                        onAssign={(aliasId) =>
-                          void run(
-                            () =>
-                              api("meta-ads/objects/alias", "PATCH", {
-                                objectIds: summarySelectionKey
-                                  .split(",")
-                                  .filter(Boolean),
-                                aliasId,
-                              }),
-                            "Alias asignado a la selección.",
-                          )
-                        }
-                      />
-                    )}
                     {chosen.some((a) => a.canSync) && (
                       <button
                         type="button"
@@ -2589,7 +2634,6 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
                         ↻ Actualizar desde Meta
                       </button>
                     )}
-                    {analysisControl()}
                   </div>
                 </div>
               </div>
@@ -2601,6 +2645,7 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
                     value={sort}
                     direction={direction}
                     onChange={orderByCost}
+                    afterLifetime={bulkAliasControl()}
                   />
                 </div>
               )}

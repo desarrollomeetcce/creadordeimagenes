@@ -4,6 +4,8 @@ import { useEffect, useState } from "react";
 import { compareDailyRows, type DailySort } from "../../lib/meta-ads/order";
 import { localDay, summarize } from "../../lib/meta-ads/analytics";
 import { quickRange } from "../../lib/meta-ads/date-range";
+import { MetaDailyChart } from "./meta-daily-chart";
+import type { DailyChartMetric } from "../../lib/meta-ads/daily-chart";
 import { MetaAnalysisPeriod } from "./meta-analysis-period";
 type DailyRow = {
   day: string;
@@ -30,7 +32,8 @@ export function MetaDailyDetail({ item }: { item: DailyItem }) {
     [rows, setRows] = useState<DailyRow[]>([]),
     [loading, setLoading] = useState(true),
     [error, setError] = useState(""),
-    [chart, setChart] = useState("cost");
+    [chart, setChart] = useState<DailyChartMetric>("cost"),
+    [line, setLine] = useState<DailyChartMetric>("results");
   const [sort, setSort] = useState<DailySort>({
     key: "day",
     direction: "desc",
@@ -91,15 +94,6 @@ export function MetaDailyDetail({ item }: { item: DailyItem }) {
     };
   });
   const sortedRows = [...values].sort((a, b) => compareDailyRows(a, b, sort));
-  const metricValue = (row: (typeof values)[number]) =>
-    chart === "spend" ? row.spend : chart === "cost" ? row.cost : row.results;
-  const max = Math.max(0, ...values.map((row) => metricValue(row) ?? 0)) || 1;
-  const chartLabel =
-    chart === "spend"
-      ? "Gasto"
-      : chart === "cost"
-        ? "Costo por resultado"
-        : item.metricName;
   return (
     <section className="meta-daily-detail stack" aria-label="Histórico diario">
       <div className="meta-daily-toolbar">
@@ -121,8 +115,32 @@ export function MetaDailyDetail({ item }: { item: DailyItem }) {
           }}
         />
         <label>
-          Mostrar en las barras
-          <select value={chart} onChange={(e) => setChart(e.target.value)}>
+          1 · Barras · eje izquierdo
+          <select
+            aria-label="1 · Variable de las barras"
+            value={chart}
+            onChange={(e) => {
+              const next = e.target.value as DailyChartMetric;
+              if (next === line) setLine(chart);
+              setChart(next);
+            }}
+          >
+            <option value="results">{item.metricName}</option>
+            <option value="spend">Gasto</option>
+            <option value="cost">Costo por resultado</option>
+          </select>
+        </label>
+        <label>
+          2 · Línea con puntos · eje derecho
+          <select
+            aria-label="2 · Variable de la línea"
+            value={line}
+            onChange={(e) => {
+              const next = e.target.value as DailyChartMetric;
+              if (next === chart) setChart(line);
+              setLine(next);
+            }}
+          >
             <option value="results">{item.metricName}</option>
             <option value="spend">Gasto</option>
             <option value="cost">Costo por resultado</option>
@@ -151,42 +169,17 @@ export function MetaDailyDetail({ item }: { item: DailyItem }) {
         ) : (
           <>
             <p className="meta-daily-chart-title">
-              {chartLabel} por día · {rows.length} día(s) con datos
+              {rows.length} día(s) con datos · barras y línea por fecha
             </p>
-            <div
-              className="meta-daily-scroll"
-              role="img"
-              aria-label={`${chartLabel} por día. Fechas y cifras en la tabla siguiente.`}
-            >
-              <div
-                className="meta-daily-track"
-                style={{ minWidth: `${values.length * 30}px` }}
-              >
-                {values.map((row) => {
-                  const value = metricValue(row),
-                    title = `${date(row.day)} · ${row.results === null ? "Resultado no identificado" : `${row.results} resultados`} · Gasto ${money(row.spend)} · Costo ${row.cost === null ? "Sin resultados" : money(row.cost)}`;
-                  return (
-                    <div
-                      className="meta-daily-column"
-                      key={row.day}
-                      data-day={row.day}
-                      title={title}
-                    >
-                      <div className="meta-daily-bar-slot">
-                        <span
-                          style={{
-                            height: `${value === null ? 0 : (value / max) * 100}%`,
-                          }}
-                        />
-                      </div>
-                      <small>
-                        {row.day.slice(8)}/{row.day.slice(5, 7)}
-                      </small>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
+            <MetaDailyChart
+              rows={values}
+              bars={chart}
+              line={line}
+              currency={item.currency}
+              metricName={item.metricName}
+              since={preset === "lifetime" ? undefined : since}
+              until={preset === "lifetime" ? undefined : until}
+            />
             <div className="meta-table meta-daily-table">
               <table>
                 <caption>Detalle diario · {item.metricName}</caption>
