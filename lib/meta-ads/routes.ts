@@ -586,6 +586,14 @@ export async function metaRoutes(
       return send({ ok: true });
     }
   }
+  if (path === "recommendations/rules" && method === "GET")
+    return send(await (await import("./recommendations/service")).getRules(actor));
+  if (path === "recommendations/rules" && method === "PUT")
+    return send(await (await import("./recommendations/service")).saveRules(actor, await body()));
+  if (path === "recommendations" && method === "GET")
+    return send(await (await import("./recommendations/service")).campaignList(actor,req.nextUrl.searchParams));
+  if (parts[1] === "recommendations" && /^\d{1,40}$/.test(parts[2] ?? "") && parts.length === 3 && method === "GET")
+    return send(await (await import("./recommendations/service")).campaignAnalysis(actor,parts[2],req.nextUrl.searchParams.get("refresh")==="1",req.nextUrl.searchParams.get("mode")==="day"?"day":"night"));
   if (path === "dashboard" && method === "GET")
     return send(await dashboard(actor, req.nextUrl.searchParams));
   if (

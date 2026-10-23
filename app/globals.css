@@ -1371,3 +1371,32 @@ html:has(.meta-ads){scrollbar-gutter:stable}
 .meta-connection-account-list>article{padding:10px 0;border-bottom:1px solid var(--line);overflow-wrap:anywhere;}
 .meta-connection-accounts-footer{justify-content:flex-end;border-top:1px solid var(--line);padding-top:10px;}
 @media(max-width:560px){.meta-connection-accounts-body{padding:10px;}.meta-connection-accounts .row{gap:7px;}}
+
+/* Deterministic Meta recommendations keep the normal card and table styles. */
+.meta-recommendations { min-width:0; }
+.meta-recommendations .row { flex-wrap:wrap; align-items:end; gap:12px; }
+.meta-recommendations .row label { min-width:180px; flex:1; }
+.meta-recommendations .row label:has(input[type="checkbox"]) { display:flex; align-items:center; gap:8px; }
+.meta-recommendations input[type="checkbox"] { width:18px; height:18px; flex:none; }
+.meta-recommendation-group { margin-top:16px; border:1px solid var(--line); border-radius:8px; padding:12px; }
+.meta-recommendation-group > summary { cursor:pointer; padding:12px; font-weight:700; }
+.meta-recommendation-card { min-width:0; display:flex; flex-direction:column; gap:8px; }
+.meta-recommendation-card .meta-card { flex:1; }
+.meta-recommendation-card > .badge { align-self:flex-start; }
+.meta-recommendation-reason { border-left:3px solid var(--accent); padding:10px 14px; background:var(--soft); color:var(--ink); border-radius:4px; max-width:100%; }
+.meta-recommendation-reason p { margin:8px 0; }
+.meta-recommendation-reason small { display:block; }
+.meta-recommendation-reason details { margin-top:12px; }
+.meta-recommendation-reason summary { cursor:pointer; }
+.meta-recommendations th:last-child,.meta-recommendations td:last-child { min-width:260px; white-space:normal; }
+.meta-recommendations td > small { display:block; }
+.meta-rule-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(210px,1fr)); gap:14px; }
+.meta-rule-grid label { display:flex; flex-direction:column; gap:8px; }
+.meta-recommendation-mode { margin:0; }
+.meta-recommendation-campaign h3 { display:flex; flex-wrap:wrap; align-items:center; gap:10px; }
+@media(max-width:600px) { .meta-recommendation-group { padding:8px; } .meta-recommendations .row>* { max-width:100%; } }
+
+.meta-recommendation-fields { border:0; padding:0; margin:0; min-width:0; }
+
+.meta-recommendation-campaign > summary { cursor:pointer; padding:12px; border-radius:6px; }
+.meta-recommendation-campaign > summary h3 { display:inline-flex; margin:0; }
