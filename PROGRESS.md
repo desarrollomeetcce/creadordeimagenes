@@ -945,3 +945,14 @@ Resaltado mediante sombra interior y nombre con peso constante. Sustituida la fi
 Filtros, cuentas fijadas y botones de nivel/orden/periodo en único contenedor sticky con separación interna0. Últimos datos guardados encima de ese bloque, inmediatamente después del progreso de carga. Texto distingue actividad de la importación de fecha de estadísticas persistidas y explica reintento previsto por cuota/pacing sin prometer éxito ni alterar el presupuesto de consultas.
 
 117 unitarias, TypeScript y build aprobados. Chromium comprueba geometría exacta de filas/tarjetas y altura de controles antes/después de selección, lista íntegra al seleccionar un conjunto, sticky top0 con filtros y niveles juntos, orden de fecha/progreso y explicación de espera; búsqueda vacía sin salto y móvil390 sin desbordamiento. Sin consultas reales Meta/IA ni escrituras publicitarias.
+
+
+### Meta: calendario funcional desde Ordenar por costo
+
+Botón Calendario siempre disponible y conectado mediante handle al único selector existente de Periodo de análisis, con dos meses, presets e inicio/fin. Abrir solo prepara borrador; confirmar rango aplica since/until y sort=custom ascendente, confirmar preset finito desde Calendario conserva sus fechas como rango y orden custom; Desde el inicio mantiene su acumulado propio. Cancelar no cambia filtros ni consulta dashboard; cierre restablece intención de ordenar. No se duplica modal ni se altera el selector de detalle diario.
+
+TypeScript y build de producción aprobados. Chromium verifica apertura desde ambas entradas del mismo diálogo, dos meses, cancelación sin consultas, fechas exactas en petición custom, preset7 después de custom, conservación de selección/geométrica y sticky/móvil. Cero cambios reales Meta/IA y sin errores HTTP/JS.
+
+Columna Calendario añadida después de Desde el inicio y antes de Evaluación; cabecera con fechas y acceso al mismo selector. Muestra costo y resultados exactos del rango; sin elección pide periodo y con informe ausente queda pendiente. Tarjetas incorporan sexto recuadro equivalente, sin fila adicional de resumen. Durante carga solo se muestran hechos custom cuyas fechas coinciden exactamente con la elección actual.
+
+Chromium sobre build final: columna adyacente y placeholder inicial; rango3 días produce costo1.83 y30 resultados en fixture; header/costo/Periodo de análisis abren la misma instancia de dos meses; cancelar no consulta ni cambia filtros; preset7 conserva fechas explícitas. También pasan selección estable, sticky y móvil390.

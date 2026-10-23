@@ -330,6 +330,12 @@ function SyncIndicator({
 export function MetaAds({ role, userId }: { role: string; userId: string }) {
   const owner = role === "OWNER";
   const stableViewport = useMetaStableViewport();
+  const periodPicker = useRef<{ open: () => void }>(null);
+  const orderingCalendar = useRef(false);
+  const openCostCalendar = () => {
+    orderingCalendar.current = true;
+    periodPicker.current?.open();
+  };
   const [accounts, setAccounts] = useState<Account[]>([]),
     [preferencesReady, setPreferencesReady] = useState(false),
     [accountsLoaded, setAccountsLoaded] = useState(false),
@@ -1134,13 +1140,40 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
               </small>
             </div>
           ))}
+          <div
+            className="meta-calendar-period"
+            title={
+              calendar
+                ? `${since} → ${until}`
+                : "Selecciona un rango en Calendario"
+            }
+          >
+            <span>Calendario</span>
+            <strong>
+              {calendar &&
+              o.periods.custom?.since === since &&
+              o.periods.custom.until === until
+                ? cost(o.periods.custom, o.currency)
+                : calendar
+                  ? "Informe pendiente"
+                  : "Elige un periodo"}
+            </strong>
+            <small>
+              {calendar
+                ? `${date(since)} – ${date(until)}`
+                : "Costo por resultado del rango elegido"}
+            </small>
+            {calendar &&
+              o.periods.custom?.since === since &&
+              o.periods.custom.until === until &&
+              o.periods.custom.state !== "UNAVAILABLE" && (
+                <small>
+                  {o.periods.custom.results} resultados ·{" "}
+                  {money(o.periods.custom.spend, o.currency)}
+                </small>
+              )}
+          </div>
         </div>
-        {calendar && o.periods.custom && (
-          <p>
-            Calendario: {cost(o.periods.custom, o.currency)} ·{" "}
-            {o.periods.custom.results} resultados
-          </p>
-        )}
         <div className="meta-card-evaluation">
           <span className="badge">{ratings[o.rating]}</span>
           <small>Evaluación orientativa · últimos 7 días</small>
@@ -2230,6 +2263,7 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
                   </button>
                 )}
                 <MetaCostOrder
+                  onCalendar={openCostCalendar}
                   calendar={!!calendar}
                   value={sort}
                   direction={direction}
@@ -2243,17 +2277,43 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
                   }
                 />
                 <MetaAnalysisPeriod
+                  openHandle={periodPicker}
+                  onClose={() => {
+                    orderingCalendar.current = false;
+                  }}
                   value={calendar ? "custom" : analysisPeriod}
                   since={since}
                   until={until}
-                  onPreset={(id) => {
+                  onPreset={(id, range) => {
+                    if (
+                      orderingCalendar.current &&
+                      id !== "lifetime" &&
+                      range
+                    ) {
+                      setSort("custom");
+                      setDirection("asc");
+                      setSince(range[0]);
+                      setUntil(range[1]);
+                      setCalendar("custom");
+                      setPage(1);
+                      return;
+                    }
+                    if (orderingCalendar.current) {
+                      setSort(id);
+                      setDirection("asc");
+                    }
                     setAnalysisPeriod(id);
                     setCalendar("");
                     setSince("");
                     setUntil("");
-                    if (sort === "custom") setSort("today");
+                    if (sort === "custom" && !orderingCalendar.current)
+                      setSort("today");
                   }}
                   onRange={(start, end) => {
+                    if (orderingCalendar.current) {
+                      setSort("custom");
+                      setDirection("asc");
+                    }
                     setSince(start);
                     setUntil(end);
                     setCalendar("custom");
@@ -2329,6 +2389,21 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
                           {periods.map(([key, label]) => (
                             <th key={key}>{label}</th>
                           ))}
+                          <th className="meta-calendar-column" scope="col">
+                            <button
+                              type="button"
+                              className="meta-name-button"
+                              aria-haspopup="dialog"
+                              onClick={openCostCalendar}
+                            >
+                              Calendario
+                            </button>
+                            <small>
+                              {calendar
+                                ? `${date(since)} – ${date(until)}`
+                                : "Costo por resultado"}
+                            </small>
+                          </th>
                           <th>Evaluación</th>
                         </tr>
                       </thead>
@@ -2416,6 +2491,23 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
                                   </small>
                                 </td>
                               ))}
+                              <td className="meta-calendar-cost">
+                                {calendar &&
+                                o.periods.custom?.since === since &&
+                                o.periods.custom.until === until
+                                  ? cost(o.periods.custom, o.currency)
+                                  : calendar
+                                    ? "Informe pendiente"
+                                    : "Elige un periodo"}
+                                {calendar &&
+                                  o.periods.custom?.since === since &&
+                                  o.periods.custom.until === until &&
+                                  o.periods.custom.state !== "UNAVAILABLE" && (
+                                    <small>
+                                      {o.periods.custom.results} resultados
+                                    </small>
+                                  )}
+                              </td>
                               <td>
                                 {ratings[o.rating]}
 

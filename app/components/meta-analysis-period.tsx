@@ -1,5 +1,12 @@
 "use client";
-import { useEffect, useId, useRef, useState } from "react";
+import {
+  useEffect,
+  useId,
+  useRef,
+  useState,
+  useImperativeHandle,
+  type Ref,
+} from "react";
 import {
   monthDate,
   quickRange,
@@ -38,7 +45,11 @@ export function MetaAnalysisPeriod({
   lifetimeLabel = "Desde el inicio",
   today: suppliedToday,
   timezoneLabel = "Lima",
+  openHandle,
+  onClose,
 }: {
+  openHandle?: Ref<{ open: () => void }>;
+  onClose?: () => void;
   label?: string;
   lifetimeLabel?: string;
   today?: string;
@@ -46,7 +57,7 @@ export function MetaAnalysisPeriod({
   value: string;
   since: string;
   until: string;
-  onPreset: (value: string) => void;
+  onPreset: (value: string, range?: [string, string]) => void;
   onRange: (since: string, until: string) => void;
 }) {
   const id = useId(),
@@ -82,6 +93,7 @@ export function MetaAnalysisPeriod({
     setPickingEnd(false);
     setOpen(true);
   };
+  useImperativeHandle(openHandle, () => ({ open: edit }));
   const choose = (key: string) => {
     const [a, b] = quickRange(key, today);
     setStart(a);
@@ -222,6 +234,10 @@ export function MetaAnalysisPeriod({
       <dialog
         ref={ref}
         className="meta-period-dialog"
+        onClose={() => {
+          setOpen(false);
+          onClose?.();
+        }}
         onCancel={(e) => {
           e.stopPropagation();
           setOpen(false);
@@ -243,7 +259,7 @@ export function MetaAnalysisPeriod({
           onSubmit={(e) => {
             e.preventDefault();
             if (["today", "7", "15", "30", "lifetime"].includes(preset))
-              onPreset(preset);
+              onPreset(preset, [start, end]);
             else onRange(start, end);
             setOpen(false);
           }}
