@@ -194,3 +194,13 @@ test('Meta sincronización compacta: actividad reciente no sustituye importació
 test('Meta país de alias: ISO explícito, nombres y preferencias válidas sin inferir moneda',async()=>{
  const {countryCodes,isCountryCode,countryName}=await import('../lib/meta-ads/countries');const {parseMetaPreferences}=await import('../lib/meta-ads/preferences');assert.equal(countryCodes.length,249);assert.equal(new Set(countryCodes).size,249);assert(isCountryCode('PE'));assert(isCountryCode('CO'));for(const bad of ['pe','Perú','ZZ','PEN','',null])assert.equal(isCountryCode(bad),false);assert.equal(countryName('PE'),'Perú');assert.equal(countryName(null),'Sin país');assert.equal(parseMetaPreferences(JSON.stringify({countryFilter:'CO',layoutRevision:2})).countryFilter,'CO');assert.equal(parseMetaPreferences(JSON.stringify({countryFilter:'ZZ'})).countryFilter,'');assert.equal(parseMetaPreferences(JSON.stringify({countryFilter:'__none'})).countryFilter,'__none');
 });
+
+test('Efectividad: pegar columnas de Excel, países escritos, monedas y CSV sin inventar filas',async()=>{
+ const {resolveCountry,parseEffectivenessPaste}=await import('../lib/meta-ads/effectiveness-paste');
+ assert.equal(resolveCountry(' peru '),'PE');assert.equal(resolveCountry('ARGENTINA'),'AR');assert.equal(resolveCountry('PE · Perú'),'PE');assert.equal(resolveCountry(''), '');assert.equal(resolveCountry('ZZ'),null);
+ assert.deepEqual(parseEffectivenessPaste('Monitoreo ambiental\tPerú\tPEN\r\nDermatología\tAR\tUSD\r\n'),[{name:'Monitoreo ambiental',country:'PE',currency:'PEN'},{name:'Dermatología',country:'AR',currency:'USD'}]);
+ assert.deepEqual(parseEffectivenessPaste('Uno\nDos\n\n','CO','usd'),[{name:'Uno',country:'CO',currency:'USD'},{name:'Dos',country:'CO',currency:'USD'}]);
+ assert.deepEqual(parseEffectivenessPaste('"Diplomado, ambiental";PE;PEN\r\n"Otro ""nombre""";AR;USD','','PEN',true),[{name:'Diplomado, ambiental',country:'PE',currency:'PEN'},{name:'Otro "nombre"',country:'AR',currency:'USD'}]);
+ assert.deepEqual(parseEffectivenessPaste('"Diplomado; uno",PE,PEN','','PEN',true),[{name:'Diplomado; uno',country:'PE',currency:'PEN'}]);
+ assert.throws(()=>parseEffectivenessPaste('Uno\tZZ'),/país/);assert.throws(()=>parseEffectivenessPaste('Uno\tPE\tPEN\tExtra'),/máximo/);assert.throws(()=>parseEffectivenessPaste('Uno\tPE\t??'),/moneda/);assert.throws(()=>parseEffectivenessPaste(Array(501).fill('Uno').join('\n')),/500/);assert.throws(()=>parseEffectivenessPaste(''),/1 y 500/);assert.throws(()=>parseEffectivenessPaste('"Sin cierre','','PEN',true),/comillas/);
+});

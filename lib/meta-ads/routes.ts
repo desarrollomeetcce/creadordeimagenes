@@ -75,6 +75,52 @@ export async function metaRoutes(
       ).setMetaStatus(actor, parts[2], b.status, b.expectedStatus),
     );
   }
+  if (path === "effectiveness/import" && method === "POST") {
+    ownerOnly(actor);
+    const b = z
+      .object({
+        tableId: z.string().min(1).max(100),
+        rows: z
+          .array(
+            z
+              .object({
+                name: z.string().trim().min(1).max(150),
+                country: z.string().refine((v) => v === "" || isCountryCode(v)),
+                currency: z.string().regex(/^[A-Z]{3}$/),
+              })
+              .strict(),
+          )
+          .min(1)
+          .max(500),
+      })
+      .strict()
+      .parse(await body());
+    return send(
+      await (
+        await import("./effectiveness")
+      ).importEffectiveness(actor, b.tableId, b.rows),
+    );
+  }
+  if (path === "effectiveness/identity" && method === "PATCH") {
+    ownerOnly(actor);
+    const country = z.string().refine((v) => v === "" || isCountryCode(v));
+    const b = z
+      .object({
+        aliasId: z.string().min(1).max(100),
+        fromCountry: country,
+        fromCurrency: z.string().regex(/^[A-Z]{3}$/),
+        country,
+        currency: z.string().regex(/^[A-Z]{3}$/),
+        revision: z.number().int().min(0),
+      })
+      .strict()
+      .parse(await body());
+    return send(
+      await (
+        await import("./effectiveness")
+      ).changeEffectivenessIdentity(actor, b),
+    );
+  }
   if (path === "effectiveness" && method === "GET") {
     ownerOnly(actor);
     const q = z
@@ -100,12 +146,13 @@ export async function metaRoutes(
     const b = z
       .object({
         aliasId: z.string().min(1).max(100),
-        country: z.string().refine(isCountryCode),
+        country: z.string().refine((v) => v === "" || isCountryCode(v)),
         currency: z.string().regex(/^[A-Z]{3}$/),
         day: z.string().date().optional(),
         sales: z.number().int().min(0).max(100000000).nullable().optional(),
         fixedCost: z.number().min(0).max(1000000000).nullable().optional(),
         revision: z.number().int().min(0).optional(),
+        rowRevision: z.number().int().min(0).optional(),
       })
       .strict()
       .parse(await body());

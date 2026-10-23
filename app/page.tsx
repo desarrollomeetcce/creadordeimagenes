@@ -508,7 +508,7 @@ export default function Home() {
             <span className="badge">Producción publicitaria</span>
 
           </header>
-          <main>
+          <main className={view === "products" ? "effectiveness-main" : undefined}>
             {!["metaads", "products"].includes(view) && <><RoleGuide name={user.name} role={user.role} /><VisualAuditNotice key={user.id} /></>}
             {project && view === "projects" && (
               <HierarchyBreadcrumbs

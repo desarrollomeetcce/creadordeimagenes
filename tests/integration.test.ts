@@ -11478,6 +11478,33 @@ test("Integración HTTP + PostgreSQL (base exclusiva de pruebas, sin llamadas ex
        r=await owner.call(root);assert.equal(pair(r.body).days[day].spend,35);assert.equal(pair(r.body).days[day].base,11);assert.equal(pair(r.body).days[day].sales,3);
       }finally{await db.metaEffectivenessRow.deleteMany({where:{alias:{tableId:table.id}}});await db.metaAdAccount.deleteMany({where:{connectionId:conn.id}});await db.metaConnection.delete({where:{id:conn.id}});await db.metaAlias.deleteMany({where:{tableId:table.id}});await db.metaAliasTable.delete({where:{id:table.id}});}
     });
+    await t.test('Efectividad hoja: importar diplomados atómicamente, países editables sin cambiar Meta y conservar celdas con revisión',async()=>{
+      const actor=await db.user.findFirstOrThrow({where:{role:'OWNER'}});
+      const conn=await db.metaConnection.create({data:{ownerId:actor.id,name:'Hoja sintética',transport:'API'}});
+      const table=await db.metaAliasTable.create({data:{name:'Hoja '+tag}}),foreign=await db.metaAliasTable.create({data:{name:'Otra hoja '+tag}});
+      const other=await db.metaAlias.create({data:{name:'Nombre ocupado '+tag,tableId:foreign.id}});
+      const name='Diplomado hoja '+tag,day='2026-10-20',currency='PEN',scope='7d_click,1d_view|impression';
+      const root='meta-ads/effectiveness?'+new URLSearchParams({tableId:table.id,since:day,until:'2026-10-23'}),upload=(rows:any[])=>owner.call('meta-ads/effectiveness/import','POST',{tableId:table.id,rows});
+      try{
+       assert.equal((await upload([{name,country:'PE',currency},{name,country:'AR',currency},{name:'Pendiente '+tag,country:'',currency}])).status,200);
+       const aliases=await db.metaAlias.findMany({where:{tableId:table.id}});assert.equal(aliases.length,2);const aliasId=aliases.find(a=>a.name===name)!.id;
+       assert.equal((await upload([{name:name.toLowerCase(),country:'PE',currency}])).status,200);assert.equal(await db.metaAlias.count({where:{tableId:table.id}}),2);
+       assert.equal((await upload([{name:'No crear '+tag,country:'PE',currency},{name:other.name,country:'PE',currency}])).status,409);assert.equal(await db.metaAlias.count({where:{name:'No crear '+tag}}),0);
+       const many=await upload(Array.from({length:500},(_,i)=>({name:'Carga '+tag+' '+i,country:'',currency})));assert.equal(many.status,200,JSON.stringify(many.body));assert.equal(many.body.created,500);assert.equal((await upload(Array.from({length:501},(_,i)=>({name:'Exceso '+tag+' '+i,country:'',currency})))).status,400);
+       assert.equal((await upload([{name:'Inválido',country:'ZZ',currency}])).status,400);assert.equal((await admin.call('meta-ads/effectiveness/import','POST',{tableId:table.id,rows:[{name:'No',country:'PE',currency}]})).status,403);
+       await db.metaAdAccount.create({data:{id:'962601',connectionId:conn.id,name:'Hoja',currency,timezone:'America/Lima'}});
+       for(const [id,country,spend]of [['9626011','PE',10],['9626012','CO',7],['9626013','AR',99]] as const){await db.metaAdObject.create({data:{id,accountId:'962601',level:'campaign',name:id,aliasId,aliasCountry:country,status:'ACTIVE'}});await db.metaAdDaily.create({data:{objectId:id,accountId:'962601',day,scope,spend,actions:{'onsite_conversion.messaging_conversation_started_7d':spend}}});}
+       let r=await owner.call(root);assert.equal(r.status,200);assert(r.body.rows.some((x:any)=>x.country===''));const pair=(data:any,country:string)=>data.rows.find((x:any)=>x.aliasId===aliasId&&x.country===country&&x.currency===currency);
+       const pe=pair(r.body,'PE');assert.equal((await owner.call('meta-ads/effectiveness','PATCH',{aliasId,country:'PE',currency,day,sales:3,fixedCost:12.5,revision:0,rowRevision:pe.rowRevision})).status,200);
+       const change={aliasId,fromCountry:'PE',fromCurrency:currency,country:'CO',currency,revision:pe.rowRevision};assert.equal((await owner.call('meta-ads/effectiveness/identity','PATCH',change)).status,200);
+       r=await owner.call(root);assert(!pair(r.body,'PE'));assert.equal(pair(r.body,'CO').days[day].spend,7);assert.equal(pair(r.body,'CO').days[day].sales,3);assert.equal(pair(r.body,'CO').days[day].fixedCost,12.5);assert.equal((await db.metaAdObject.findUniqueOrThrow({where:{id:'9626011'}})).aliasCountry,'PE');assert.equal(pair(r.body,'AR').days[day].spend,99);
+       assert.equal((await owner.call('meta-ads/effectiveness/identity','PATCH',change)).status,409);assert.equal((await owner.call('meta-ads/effectiveness','PATCH',{aliasId,country:'PE',currency,day,sales:8,revision:1,rowRevision:pe.rowRevision})).status,409);
+       const co=pair(r.body,'CO');assert.equal((await owner.call('meta-ads/effectiveness/identity','PATCH',{...change,fromCountry:'CO',country:'AR',revision:co.rowRevision})).status,409);
+       assert.equal((await owner.call('meta-ads/effectiveness/identity','PATCH',{...change,fromCountry:'CO',country:'',revision:co.rowRevision})).status,200);
+       r=await owner.call(root);assert.equal(pair(r.body,'').days[day].sales,3);assert.equal(pair(r.body,'').days[day].spend,null);
+       assert.equal((await upload([{name,country:'PE',currency}])).status,200);r=await owner.call(root);assert.equal(pair(r.body,'PE').days[day].spend,10);assert.equal(pair(r.body,'PE').days[day].sales,null);
+      }finally{await db.metaEffectivenessRow.deleteMany({where:{alias:{tableId:{in:[table.id,foreign.id]}}}});await db.metaAdAccount.deleteMany({where:{connectionId:conn.id}});await db.metaConnection.delete({where:{id:conn.id}});await db.metaAlias.deleteMany({where:{tableId:{in:[table.id,foreign.id]}}});await db.metaAliasTable.deleteMany({where:{id:{in:[table.id,foreign.id]}}});}
+    });
     await t.test('Meta: varias cuentas, fallo interno diagnosticado y retirada de conexión duplicada sin borrar histórico',async()=>{
       const {discover}=await import('../lib/meta-ads/service');const actor=await db.user.findFirstOrThrow({where:{role:'OWNER'}}),original=globalThis.fetch,originalTransaction=db.$transaction.bind(db),originalWarn=console.warn;
       const logs:string[]=[];console.warn=(value)=>logs.push(String(value));

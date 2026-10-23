@@ -864,6 +864,8 @@ model MetaRecommendationSource {
 
 model MetaEffectivenessRow {
  id String @id @default(cuid())
+ hidden Boolean @default(false)
+ revision Int @default(0)
  aliasId String
  alias MetaAlias @relation(fields:[aliasId],references:[id],onDelete:Restrict)
  country String

@@ -62,6 +62,7 @@ export async function effectiveness(
           revision: number;
         }
       >;
+      rowRevision: number;
       campaigns: number;
       timezones: string[];
     }
@@ -70,13 +71,29 @@ export async function effectiveness(
     const key = JSON.stringify([aliasId, country, currency]);
     let r = rows.get(key);
     if (!r) {
-      r = { aliasId, country, currency, days: {}, campaigns: 0, timezones: [] };
+      r = {
+        aliasId,
+        country,
+        currency,
+        days: {},
+        campaigns: 0,
+        rowRevision: 0,
+        timezones: [],
+      };
       rows.set(key, r);
     }
     return r;
   };
+  const key = (a: string, p: string, m: string) => JSON.stringify([a, p, m]);
+  const hidden = new Set(
+    stored
+      .filter((s) => s.hidden)
+      .map((s) => key(s.aliasId, s.country, s.currency)),
+  );
   for (const s of stored) {
+    if (s.hidden) continue;
     const r = get(s.aliasId, s.country, s.currency);
+    r.rowRevision = s.revision;
     for (const d of s.days)
       r.days[d.day] = {
         spend: null,
@@ -89,6 +106,8 @@ export async function effectiveness(
       };
   }
   for (const c of campaigns) {
+    if (hidden.has(key(c.aliasId!, c.aliasCountry!, c.account.currency)))
+      continue;
     const r = get(c.aliasId!, c.aliasCountry!, c.account.currency);
     r.campaigns++;
     if (!r.timezones.includes(c.account.timezone))
@@ -114,6 +133,9 @@ export async function effectiveness(
         cell.updatedAt = d.updatedAt.toISOString();
     }
   }
+  for (const a of table!.aliases)
+    if (![...rows.values()].some((r) => r.aliasId === a.id))
+      get(a.id, "", "PEN");
   return { table, rows: [...rows.values()], since, until };
 }
 export async function saveEffectiveness(
@@ -126,6 +148,7 @@ export async function saveEffectiveness(
     sales?: number | null;
     fixedCost?: number | null;
     revision?: number;
+    rowRevision?: number;
   },
 ) {
   ownerOnly(actor);
@@ -143,6 +166,28 @@ export async function saveEffectiveness(
       "Alias no disponible.",
       404,
     );
+    const previous = await tx.metaEffectivenessRow.findUnique({
+      where: {
+        aliasId_country_currency: {
+          aliasId: b.aliasId,
+          country: b.country,
+          currency: b.currency,
+        },
+      },
+    });
+    if (b.day) {
+      demand(
+        !previous?.hidden,
+        "La fila cambió de país o moneda. Recarga antes de guardar.",
+        409,
+      );
+      demand(
+        b.rowRevision === undefined ||
+          b.rowRevision === (previous?.revision ?? 0),
+        "La fila cambió. Recarga antes de guardar.",
+        409,
+      );
+    }
     const row = await tx.metaEffectivenessRow.upsert({
       where: {
         aliasId_country_currency: {
@@ -152,7 +197,12 @@ export async function saveEffectiveness(
         },
       },
       create: { aliasId: b.aliasId, country: b.country, currency: b.currency },
-      update: {},
+      update: b.day
+        ? {}
+        : {
+            hidden: false,
+            ...(previous?.hidden ? { revision: { increment: 1 } } : {}),
+          },
     });
     if (b.day) {
       const old = await tx.metaEffectivenessDay.findUnique({
@@ -189,4 +239,193 @@ export async function saveEffectiveness(
     });
     return { ok: true };
   });
+}
+
+export async function changeEffectivenessIdentity(
+  actor: Actor,
+  b: {
+    aliasId: string;
+    fromCountry: string;
+    fromCurrency: string;
+    country: string;
+    currency: string;
+    revision: number;
+  },
+) {
+  ownerOnly(actor);
+  return db.$transaction(async (tx) => {
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(884411)`;
+    demand(
+      await tx.user.findFirst({
+        where: { id: actor.id, role: "OWNER", status: "APPROVED" },
+      }),
+      "Sin permiso.",
+      403,
+    );
+    demand(
+      await tx.metaAlias.findUnique({ where: { id: b.aliasId } }),
+      "Alias no disponible.",
+      404,
+    );
+    const oldKey = {
+      aliasId: b.aliasId,
+      country: b.fromCountry,
+      currency: b.fromCurrency,
+    };
+    const old = await tx.metaEffectivenessRow.findUnique({
+      where: { aliasId_country_currency: oldKey },
+    });
+    demand(
+      !old?.hidden && (old?.revision ?? 0) === b.revision,
+      "La fila cambió. Recarga antes de editar.",
+      409,
+    );
+    if (b.country === b.fromCountry && b.currency === b.fromCurrency)
+      return { ok: true };
+    const nextKey = {
+      aliasId: b.aliasId,
+      country: b.country,
+      currency: b.currency,
+    };
+    const existing = await tx.metaEffectivenessRow.findUnique({
+      where: { aliasId_country_currency: nextKey },
+    });
+    demand(
+      !existing || existing.hidden,
+      "Ya existe una fila de este diplomado, país y moneda. No se sobrescribieron sus datos.",
+      409,
+    );
+    const next = await tx.metaEffectivenessRow.upsert({
+      where: { aliasId_country_currency: nextKey },
+      create: nextKey,
+      update: { hidden: false, revision: { increment: 1 } },
+    });
+    if (old) {
+      await tx.metaEffectivenessDay.updateMany({
+        where: { rowId: old.id },
+        data: { rowId: next.id, revision: { increment: 1 } },
+      });
+      await tx.metaEffectivenessRow.update({
+        where: { id: old.id },
+        data: { hidden: true, revision: { increment: 1 } },
+      });
+    } else
+      await tx.metaEffectivenessRow.create({
+        data: { ...oldKey, hidden: true, revision: 1 },
+      });
+    await recordActivity(tx, {
+      data: {
+        actorId: actor.id,
+        action: "META_EFECTIVIDAD_FILA_EDITADA",
+        resourceId: next.id,
+        detail: {
+          fromCountry: b.fromCountry,
+          country: b.country,
+          fromCurrency: b.fromCurrency,
+          currency: b.currency,
+        },
+      },
+    });
+    return { ok: true };
+  });
+}
+export async function importEffectiveness(
+  actor: Actor,
+  tableId: string,
+  entries: { name: string; country: string; currency: string }[],
+) {
+  ownerOnly(actor);
+  return db.$transaction(
+    async (tx) => {
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(884411)`;
+      demand(
+        await tx.user.findFirst({
+          where: { id: actor.id, role: "OWNER", status: "APPROVED" },
+        }),
+        "Sin permiso.",
+        403,
+      );
+      demand(
+        await tx.metaAliasTable.findUnique({ where: { id: tableId } }),
+        "Tabla no disponible.",
+        404,
+      );
+      const aliases = await tx.metaAlias.findMany({
+        select: { id: true, name: true, tableId: true },
+      });
+      const byName = new Map(
+        aliases.map((a) => [a.name.toLocaleLowerCase("es"), a]),
+      );
+      const newNames = new Set(
+        entries
+          .filter((e) => !byName.has(e.name.toLocaleLowerCase("es")))
+          .map((e) => e.name.toLocaleLowerCase("es")),
+      );
+      demand(
+        aliases.length + newNames.size <= 1000,
+        "El catálogo admite hasta 1000 alias.",
+      );
+      for (const e of entries) {
+        const a = byName.get(e.name.toLocaleLowerCase("es"));
+        demand(
+          !a || a.tableId === tableId,
+          `El diplomado «${e.name}» ya pertenece a otra tabla.`,
+          409,
+        );
+      }
+      const namesToCreate = new Map<string, string>();
+      for (const e of entries) {
+        const key = e.name.toLocaleLowerCase("es");
+        if (!byName.has(key) && !namesToCreate.has(key))
+          namesToCreate.set(key, e.name);
+      }
+      if (namesToCreate.size)
+        await tx.metaAlias.createMany({
+          data: [...namesToCreate.values()].map((name) => ({ name, tableId })),
+        });
+      const catalogue = await tx.metaAlias.findMany({
+        where: { tableId },
+        select: { id: true, name: true },
+      });
+      const resolved = new Map(
+        catalogue.map((a) => [a.name.toLocaleLowerCase("es"), a.id]),
+      );
+      const unique = new Map<
+        string,
+        { aliasId: string; country: string; currency: string }
+      >();
+      for (const e of entries) {
+        const row = {
+          aliasId: resolved.get(e.name.toLocaleLowerCase("es"))!,
+          country: e.country,
+          currency: e.currency,
+        };
+        unique.set(
+          JSON.stringify([row.aliasId, row.country, row.currency]),
+          row,
+        );
+      }
+      const imported = [...unique.values()];
+      await tx.metaEffectivenessRow.createMany({
+        data: imported,
+        skipDuplicates: true,
+      });
+      await tx.metaEffectivenessRow.updateMany({
+        where: { hidden: true, OR: imported },
+        data: { hidden: false, revision: { increment: 1 } },
+      });
+      const created = namesToCreate.size,
+        seen = unique;
+      await recordActivity(tx, {
+        data: {
+          actorId: actor.id,
+          action: "META_EFECTIVIDAD_IMPORTADA",
+          resourceId: tableId,
+          detail: { rows: seen.size, created },
+        },
+      });
+      return { ok: true, rows: seen.size, created };
+    },
+    { timeout: 30000 },
+  );
 }
