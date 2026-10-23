@@ -1,4 +1,5 @@
 "use client";
+import { countryName, countryOptions } from "../../lib/meta-ads/countries";
 import { fetchJsonResponse, readJsonResponse } from "../../lib/http-response";
 import { metaObjectURL } from "../../lib/meta-ads/meta-link";
 import { useMetaStableViewport } from "./meta-stable-viewport";
@@ -101,6 +102,7 @@ type Period = {
 };
 export type Item = {
   aliasId: string | null;
+  aliasCountry?: string | null;
   alias: MetaAliasOption | null;
   id: string;
   name: string;
@@ -419,6 +421,7 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
     [adset, setAdset] = useState(""),
     [aliases, setAliases] = useState<MetaAliasOption[]>([]),
     [aliasFilter, setAliasFilter] = useState(""),
+    [countryFilter, setCountryFilter] = useState(""),
     [q, setQ] = useState(""),
     [search, setSearch] = useState(""),
     [state, setState] = useState("all"),
@@ -471,12 +474,17 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
     <MetaAliasAction
       name={o.name}
       value={o.aliasId}
+      country={o.aliasCountry}
       aliases={aliases}
       disabled={busy}
       readOnly={!owner}
-      onAssign={(aliasId) =>
+      onAssign={(aliasId, country) =>
         void run(
-          () => api(`meta-ads/objects/${o.id}/alias`, "PATCH", { aliasId }),
+          () =>
+            api(`meta-ads/objects/${o.id}/alias`, "PATCH", {
+              aliasId,
+              country,
+            }),
           "Alias actualizado.",
         )
       }
@@ -605,6 +613,7 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
       setAdsetScope(o.level === "adset" ? [o.id] : []);
       setLevel(o.level === "campaign" ? "adset" : "ad");
       setAliasFilter("");
+      setCountryFilter("");
       setQ("");
       setSearch("");
     });
@@ -623,6 +632,7 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
       setMetric("MESSAGES");
       setRating("");
       setAliasFilter("");
+      setCountryFilter("");
       setQ("");
       setSearch("");
       setAccountPickerQuery("");
@@ -669,6 +679,7 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
     setCampaign(p.campaign);
     setAdset(p.adset);
     setAliasFilter(p.aliasFilter);
+    setCountryFilter(p.countryFilter);
     setQ(p.q);
     setSearch(p.q);
     setState(p.state);
@@ -718,6 +729,7 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
           adset,
           q,
           aliasFilter,
+          countryFilter,
           state,
           metric,
           currency,
@@ -755,6 +767,7 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
     adset,
     q,
     aliasFilter,
+    countryFilter,
     state,
     metric,
     currency,
@@ -869,6 +882,7 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
         adsets: level === "ad" ? adsetScopeKey : "",
         q: search,
         alias: aliasFilter,
+        country: countryFilter,
         state,
         metric,
         currency,
@@ -924,6 +938,7 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
     adsetScopeKey,
     search,
     aliasFilter,
+    countryFilter,
     state,
     metric,
     currency,
@@ -1097,12 +1112,13 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
           bulkCount={
             summarySelectionKey ? summarySelectionKey.split(",").length : 0
           }
-          onAssign={(aliasId) =>
+          onAssign={(aliasId, country) =>
             void run(
               () =>
                 api("meta-ads/objects/alias", "PATCH", {
                   objectIds: summarySelectionKey.split(",").filter(Boolean),
                   aliasId,
+                  country,
                 }),
               "Alias asignado a la selección.",
             )
@@ -2578,23 +2594,41 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
                       onChange={(e) => setQ(e.target.value)}
                     />
                   </label>
-                  <label>
-                    Buscar por alias
-                    <select
-                      value={aliasFilter}
-                      onChange={(e) =>
-                        resetPage(() => setAliasFilter(e.target.value))
-                      }
-                    >
-                      <option value="">Todos los alias</option>
-                      <option value="__none">Sin alias</option>
-                      {aliases.map((a) => (
-                        <option key={a.id} value={a.id}>
-                          {a.name}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
+                  <div className="meta-alias-country-filter">
+                    <span>Buscar por alias y país</span>
+                    <div>
+                      <select
+                        aria-label="Buscar por alias"
+                        value={aliasFilter}
+                        onChange={(e) =>
+                          resetPage(() => setAliasFilter(e.target.value))
+                        }
+                      >
+                        <option value="">Todos los alias</option>
+                        <option value="__none">Sin alias</option>
+                        {aliases.map((a) => (
+                          <option key={a.id} value={a.id}>
+                            {a.name}
+                          </option>
+                        ))}
+                      </select>
+                      <select
+                        aria-label="Filtrar por país del alias"
+                        value={countryFilter}
+                        onChange={(e) =>
+                          resetPage(() => setCountryFilter(e.target.value))
+                        }
+                      >
+                        <option value="">País: todos</option>
+                        <option value="__none">Sin país</option>
+                        {countryOptions.map((c) => (
+                          <option key={c.code} value={c.code}>
+                            {c.code} · {c.name}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
                   <div className="meta-filter-actions">
                     <button
                       type="button"
@@ -2912,7 +2946,8 @@ function MetaDetail({ item: o, onClose }: { item: Item; onClose: () => void }) {
         {o.metricName} · {o.timezone}
       </p>
       <p className="meta-detail-alias">
-        Alias: <strong>{o.alias?.name ?? "Sin alias"}</strong>
+        Alias: <strong>{o.alias?.name ?? "Sin alias"}</strong> · País:{" "}
+        <strong>{countryName(o.aliasCountry)}</strong>
       </p>
       <MetaDailyDetail key={o.id} item={o} />
       <p>

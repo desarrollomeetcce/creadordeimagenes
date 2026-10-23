@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import { engineRequest as api } from "./generation-engine";
+import { MetaEffectiveness } from "./meta-effectiveness";
 import type { MetaAliasOption } from "./meta-alias-directory";
 type CatalogTable = { id: string; name: string; aliases: MetaAliasOption[] };
 export function ProductsCatalog() {
@@ -67,7 +68,7 @@ export function ProductsCatalog() {
   return (
     <section className="products-catalog stack">
       <header className="row spread">
-        <h1>Listado de bienes</h1>
+        <h1>Efectividad</h1>
         <button
           type="button"
           disabled={busy}
@@ -107,7 +108,7 @@ export function ProductsCatalog() {
           <div
             className="row"
             role="tablist"
-            aria-label="Tablas del listado de bienes"
+            aria-label="Tablas de efectividad"
           >
             {tables.map((t) => (
               <button
@@ -127,76 +128,121 @@ export function ProductsCatalog() {
           </div>
           {table && (
             <section className="panel stack" aria-label={`Tabla ${table.name}`}>
-              <h2>{table.name}</h2>
-              <p className="hint">
-                Estos nombres se pueden asignar como alias a campañas, conjuntos
-                y anuncios. Las asignaciones actuales se conservan.
-              </p>
               <form
+                key={table.id + table.name}
                 className="row"
-                onSubmit={(e) => {
+                onSubmit={async (e) => {
                   e.preventDefault();
-                  void save(e.currentTarget);
+                  const name = String(
+                    new FormData(e.currentTarget).get("name") ?? "",
+                  );
+                  setBusy(true);
+                  try {
+                    await api("meta-ads/alias-tables/" + table.id, "PATCH", {
+                      name,
+                    });
+                    await load();
+                  } catch (error) {
+                    setMessage(
+                      error instanceof Error
+                        ? error.message
+                        : "No se pudo guardar.",
+                    );
+                  } finally {
+                    setBusy(false);
+                  }
                 }}
               >
                 <label>
-                  Nombre
+                  Nombre de la tabla
                   <input
                     name="name"
-                    placeholder="Escribe un nombre"
+                    aria-label="Nombre de la tabla"
+                    defaultValue={table.name}
                     required
-                    maxLength={150}
+                    maxLength={100}
                   />
                 </label>
-                <button disabled={busy}>Agregar bien</button>
+                <button disabled={busy}>Guardar tabla</button>
               </form>
-              <div className="table-scroll">
-                <table>
-                  <caption>{table.name}</caption>
-                  <thead>
-                    <tr>
-                      <th scope="col">Nombre</th>
-                      <th scope="col">Acciones</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {table.aliases.length ? (
-                      table.aliases.map((a) => (
-                        <tr key={a.id}>
-                          <td>
-                            <form
-                              id={`catalog-${a.id}`}
-                              onSubmit={(e) => {
-                                e.preventDefault();
-                                void save(e.currentTarget, a.id);
-                              }}
-                            >
-                              <input
-                                name="name"
-                                aria-label={`Nombre de ${a.name}`}
-                                defaultValue={a.name}
-                                required
-                                maxLength={150}
-                              />
-                            </form>
-                          </td>
-                          <td>
-                            <button form={`catalog-${a.id}`} disabled={busy}>
-                              Guardar nombre
-                            </button>
+              <MetaEffectiveness
+                key={table.id}
+                tableId={table.id}
+                aliases={table.aliases}
+                onNamesChanged={load}
+              />
+              <details>
+                <summary>Editar nombres de diplomados / alias</summary>
+                <p className="hint">
+                  Estos nombres se pueden asignar como alias a campañas,
+                  conjuntos y anuncios. Las asignaciones actuales se conservan.
+                </p>
+                <form
+                  className="row"
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    void save(e.currentTarget);
+                  }}
+                >
+                  <label>
+                    Nombre
+                    <input
+                      name="name"
+                      placeholder="Escribe un nombre"
+                      required
+                      maxLength={150}
+                    />
+                  </label>
+                  <button disabled={busy}>Agregar diplomado</button>
+                </form>
+                <div className="table-scroll">
+                  <table>
+                    <caption>{table.name}</caption>
+                    <thead>
+                      <tr>
+                        <th scope="col">Nombre</th>
+                        <th scope="col">Acciones</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {table.aliases.length ? (
+                        table.aliases.map((a) => (
+                          <tr key={a.id}>
+                            <td>
+                              <form
+                                id={`catalog-${a.id}`}
+                                onSubmit={(e) => {
+                                  e.preventDefault();
+                                  void save(e.currentTarget, a.id);
+                                }}
+                              >
+                                <input
+                                  name="name"
+                                  aria-label={`Nombre de ${a.name}`}
+                                  defaultValue={a.name}
+                                  required
+                                  maxLength={150}
+                                />
+                              </form>
+                            </td>
+                            <td>
+                              <button form={`catalog-${a.id}`} disabled={busy}>
+                                Guardar nombre
+                              </button>
+                            </td>
+                          </tr>
+                        ))
+                      ) : (
+                        <tr>
+                          <td colSpan={2}>
+                            Todavía no hay diplomados en esta tabla.
                           </td>
                         </tr>
-                      ))
-                    ) : (
-                      <tr>
-                        <td colSpan={2}>
-                          Todavía no hay bienes en esta tabla.
-                        </td>
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
-              </div>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </details>
             </section>
           )}
         </>

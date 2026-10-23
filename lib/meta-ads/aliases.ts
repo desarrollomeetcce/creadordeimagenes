@@ -1,3 +1,4 @@
+import { isCountryCode } from "./countries";
 import { db } from "../db";
 import { ownerOnly } from "../auth";
 import { demand } from "../errors";
@@ -74,15 +75,22 @@ export async function assignAlias(
   actor: Actor,
   objectId: string,
   aliasId: string | null,
+  country?: string | null,
 ) {
-  return assignAliases(actor, [objectId], aliasId);
+  return assignAliases(actor, [objectId], aliasId, country);
 }
 export async function assignAliases(
   actor: Actor,
   objectIds: string[],
   aliasId: string | null,
+  country?: string | null,
 ) {
   ownerOnly(actor);
+  demand(
+    country === undefined || country === null || isCountryCode(country),
+    "País no válido.",
+  );
+  demand(aliasId !== null || !country, "El país debe acompañar a un alias.");
   const ids = [...new Set(objectIds)];
   demand(
     ids.length > 0 &&
@@ -115,7 +123,14 @@ export async function assignAliases(
       );
     await tx.metaAdObject.updateMany({
       where: { id: { in: ids } },
-      data: { aliasId },
+      data: {
+        aliasId,
+        ...(!aliasId
+          ? { aliasCountry: null }
+          : country !== undefined
+            ? { aliasCountry: country }
+            : {}),
+      },
     });
     for (const id of ids)
       await recordActivity(tx, {
@@ -123,7 +138,14 @@ export async function assignAliases(
           actorId: actor.id,
           action: "META_ALIAS_ASIGNADO",
           resourceId: id,
-          detail: { aliasId },
+          detail: {
+            aliasId,
+            country: aliasId
+              ? country === undefined
+                ? "unchanged"
+                : country
+              : null,
+          },
         },
       });
     return { ok: true, count: ids.length };
@@ -170,6 +192,44 @@ export async function createAliasTable(actor: Actor, name: string) {
         actorId: actor.id,
         action: "PRODUCTOS_TABLA_CREADA",
         resourceId: row.id,
+      },
+    });
+    return row;
+  });
+}
+
+export async function renameAliasTable(actor: Actor, id: string, name: string) {
+  ownerOnly(actor);
+  return db.$transaction(async (tx) => {
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(884411)`;
+    demand(
+      await tx.user.findFirst({
+        where: { id: actor.id, role: "OWNER", status: "APPROVED" },
+      }),
+      "Sin permiso.",
+      403,
+    );
+    demand(
+      await tx.metaAliasTable.findUnique({ where: { id } }),
+      "Tabla no disponible.",
+      404,
+    );
+    demand(
+      !(await tx.metaAliasTable.findFirst({
+        where: { name: { equals: name, mode: "insensitive" }, id: { not: id } },
+      })),
+      "Ya existe una tabla con ese nombre.",
+      409,
+    );
+    const row = await tx.metaAliasTable.update({
+      where: { id },
+      data: { name },
+    });
+    await recordActivity(tx, {
+      data: {
+        actorId: actor.id,
+        action: "META_TABLA_RENOMBRADA",
+        resourceId: id,
       },
     });
     return row;

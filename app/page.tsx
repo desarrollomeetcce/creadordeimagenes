@@ -1,6 +1,6 @@
 "use client";
 import dynamic from "next/dynamic";
-const ProductsCatalog=dynamic(()=>import("./components/products-catalog").then(m=>m.ProductsCatalog),{loading:()=> <p role="status">Cargando listado de bienes…</p>});
+const ProductsCatalog=dynamic(()=>import("./components/products-catalog").then(m=>m.ProductsCatalog),{loading:()=> <p role="status">Cargando efectividad…</p>});
 const MetaAds=dynamic(()=>import("./components/meta-ads").then(m=>m.MetaAds),{loading:()=> <p role="status">Cargando Meta Ads…</p>});
 import { reasoningLevel } from "../lib/creative-level";
 import {useGenerationChoices} from "./components/generation-choices";
@@ -424,7 +424,7 @@ export default function Home() {
     projects: "Proyectos",
     library: "Biblioteca",
     metaads: "Meta Ads",
-    products: "Listado de bienes",
+    products: "Efectividad",
     presets: "Configuraciones guardadas",
     ai: "Ajustes de IA",
     mail: "Ajustes de correo",
@@ -466,7 +466,7 @@ export default function Home() {
               ["projects", "▦", "Proyectos"],
               ["library", "▧", "Biblioteca"],
               ["metaads", "▥", "Meta Ads"],
-              ...(user.role === "OWNER" ? [["products", "▤", "Listado de bienes"]] : []),
+              ...(user.role === "OWNER" ? [["products", "▤", "Efectividad"]] : []),
               ["presets", "≡", "Configuraciones guardadas"],
               ["history", "◷", "Historial"],
               ["trash", "⌫", "Papelera"],

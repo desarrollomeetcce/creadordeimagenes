@@ -190,3 +190,7 @@ test('Meta sincronización compacta: actividad reciente no sustituye importació
  const missing=syncTiming([a,{...b,lastCompletedAt:null,progress:{...b.progress,lastActivityAt:'invalid'}}]);assert.equal(missing.completed,a.lastCompletedAt);assert.equal(missing.activity,a.progress.lastActivityAt);assert.equal(missing.pending,1);
  assert.equal(syncTiming([{...a,progress:{...a.progress,status:'paused'}}]).automatic,0);assert.equal(syncTiming([{...a,lastCompletedAt:null}]).completed,null);assert.deepEqual(syncTiming([]),{activity:null,completed:null,pending:0,automatic:0,ongoing:0});assert.equal(parseMetaPreferences(JSON.stringify({tab:'ranking'})).tab,'panel');
 });
+
+test('Meta país de alias: ISO explícito, nombres y preferencias válidas sin inferir moneda',async()=>{
+ const {countryCodes,isCountryCode,countryName}=await import('../lib/meta-ads/countries');const {parseMetaPreferences}=await import('../lib/meta-ads/preferences');assert.equal(countryCodes.length,249);assert.equal(new Set(countryCodes).size,249);assert(isCountryCode('PE'));assert(isCountryCode('CO'));for(const bad of ['pe','Perú','ZZ','PEN','',null])assert.equal(isCountryCode(bad),false);assert.equal(countryName('PE'),'Perú');assert.equal(countryName(null),'Sin país');assert.equal(parseMetaPreferences(JSON.stringify({countryFilter:'CO',layoutRevision:2})).countryFilter,'CO');assert.equal(parseMetaPreferences(JSON.stringify({countryFilter:'ZZ'})).countryFilter,'');assert.equal(parseMetaPreferences(JSON.stringify({countryFilter:'__none'})).countryFilter,'__none');
+});

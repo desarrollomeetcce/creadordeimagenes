@@ -1,3 +1,4 @@
+import { isCountryCode } from "./countries";
 import { parseDeliveryFilters, encodeDeliveryFilters } from "./state-filter";
 export type MetaSelection = {
   id: string;
@@ -17,6 +18,7 @@ export const metaDefaults = {
   adset: "",
   q: "",
   aliasFilter: "",
+  countryFilter: "",
   state: "all",
   metric: "MESSAGES",
   currency: "",
@@ -127,6 +129,8 @@ export function parseMetaPreferences(raw: string | null): MetaPreferences {
     /^[a-zA-Z0-9_-]{0,80}$/.test(data.aliasFilter)
   )
     result.aliasFilter = data.aliasFilter;
+  if (data.countryFilter === "__none" || isCountryCode(data.countryFilter))
+    result.countryFilter = data.countryFilter;
   result.business = "";
   result.currency = "";
   result.age = "";

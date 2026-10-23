@@ -720,6 +720,7 @@ model MetaAlias {
   id String @id @default(cuid())
   name String @unique
   objects MetaAdObject[]
+  effectivenessRows MetaEffectivenessRow[]
   tableId String @default("diplomados")
   table MetaAliasTable @relation(fields:[tableId],references:[id],onDelete:Restrict)
   @@index([tableId])
@@ -744,8 +745,10 @@ model MetaAdObject {
   seenAt DateTime @default(now())
   daily MetaAdDaily[]
   aliasId String?
+  aliasCountry String?
   alias MetaAlias? @relation(fields:[aliasId],references:[id],onDelete:SetNull)
   @@index([aliasId])
+  @@index([aliasId,aliasCountry])
   insightCache MetaInsightCache?
   @@index([accountId,selectedAt,level])
   @@index([accountId,level,campaignId,adsetId])
@@ -857,4 +860,23 @@ model MetaRecommendationSource {
   state Json
   updatedAt DateTime @updatedAt
   @@index([accountId])
+}
+
+model MetaEffectivenessRow {
+ id String @id @default(cuid())
+ aliasId String
+ alias MetaAlias @relation(fields:[aliasId],references:[id],onDelete:Restrict)
+ country String
+ currency String
+ days MetaEffectivenessDay[]
+ @@unique([aliasId,country,currency])
+}
+model MetaEffectivenessDay {
+ rowId String
+ row MetaEffectivenessRow @relation(fields:[rowId],references:[id],onDelete:Cascade)
+ day String
+ sales Int?
+ fixedCost Decimal? @db.Decimal(18,6)
+ revision Int @default(1)
+ @@id([rowId,day])
 }

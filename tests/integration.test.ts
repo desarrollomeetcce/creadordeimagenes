@@ -11428,6 +11428,56 @@ test("Integración HTTP + PostgreSQL (base exclusiva de pruebas, sin llamadas ex
         await db.metaAlias.deleteMany({where:{id:{in:[alias?.id,legacy?.id].filter(Boolean)}}});await db.metaAliasTable.delete({where:{id:table.id}});
       }
     });
+    await t.test('Meta alias+país: misma identidad en varias cuentas, filtro antes de resumen y lote atómico autorizado',async()=>{
+      const c=(await owner.call('meta-ads/connections','POST',{name:'País de alias sintético',transport:'API',token:'synthetic-country-123456789'})).body;
+      const alias=(await owner.call('meta-ads/aliases','POST',{name:'Diplomado internacional '+tag})).body;
+      try {
+        for(const id of ['962401','962402'])await db.metaAdAccount.create({data:{id,connectionId:c.id,name:'País '+id,currency:'PEN',timezone:'America/Lima'}});
+        for(const [id,accountId,level]of [['9624011','962401','campaign'],['9624012','962401','campaign'],['9624021','962402','campaign'],['9624022','962402','adset'],['9624023','962402','ad']])await db.metaAdObject.create({data:{id,accountId,level,name:'Fila de país',status:'ACTIVE',effectiveStatus:'ACTIVE'}});
+        assert.equal((await owner.call('meta-ads/objects/9624011/alias','PATCH',{aliasId:alias.id,country:'PE'})).status,200);
+        assert.equal((await owner.call('meta-ads/objects/9624012/alias','PATCH',{aliasId:alias.id,country:'CO'})).status,200);
+        assert.equal((await owner.call('meta-ads/objects/9624021/alias','PATCH',{aliasId:alias.id,country:'PE'})).status,200);
+        const root='meta-ads/dashboard?accounts=962401,962402&level=campaign&summary=1&alias='+alias.id;
+        const pe=await owner.call(root+'&country=PE');assert.equal(pe.status,200);assert.deepEqual(pe.body.items.map((x:any)=>x.id).sort(),['9624011','9624021']);assert(pe.body.items.every((x:any)=>x.aliasCountry==='PE'));assert.equal(pe.body.summary.objects,2);assert.equal(pe.body.summary.campaigns.active,2);
+        assert.deepEqual((await owner.call(root+'&country=CO')).body.items.map((x:any)=>x.id),['9624012']);assert.equal((await owner.call(root+'&country=__none')).body.total,0);assert.equal((await owner.call(root+'&country=ZZ')).status,400);assert.equal((await user.call(root+'&country=PE')).status,404);
+        assert.equal((await admin.call('meta-ads/objects/9624011/alias','PATCH',{aliasId:alias.id,country:'CO'})).status,403);
+        for(const country of ['ZZ','pe','Perú'])assert.equal((await owner.call('meta-ads/objects/9624011/alias','PATCH',{aliasId:alias.id,country})).status,400);
+        assert.equal((await owner.call('meta-ads/objects/9624011/alias','PATCH',{aliasId:null,country:'PE'})).status,400);
+        const before=await db.metaAdObject.findMany({where:{id:{in:['9624011','9624012']}}});
+        assert.equal((await owner.call('meta-ads/objects/alias','PATCH',{objectIds:['9624011','999999999'],aliasId:alias.id,country:'MX'})).status,404);assert.deepEqual(await db.metaAdObject.findMany({where:{id:{in:['9624011','9624012']}}}),before);
+        const bulk=await owner.call('meta-ads/objects/alias','PATCH',{objectIds:['9624011','9624012'],aliasId:alias.id,country:'MX'});assert.equal(bulk.status,200);assert.equal(await db.metaAdObject.count({where:{id:{in:['9624011','9624012']},aliasCountry:'MX',aliasId:alias.id}}),2);
+        // Old clients without country preserve existing labels; legacy records never get an inferred country.
+        assert.equal((await owner.call('meta-ads/objects/9624011/alias','PATCH',{aliasId:alias.id})).status,200);assert.equal((await db.metaAdObject.findUniqueOrThrow({where:{id:'9624011'}})).aliasCountry,'MX');
+        for(const id of ['9624022','9624023']){assert.equal((await owner.call('meta-ads/objects/'+id+'/alias','PATCH',{aliasId:alias.id,country:'EC'})).status,200);const level=id==='9624022'?'adset':'ad';assert.deepEqual((await owner.call('meta-ads/dashboard?accounts=962402&level='+level+'&alias='+alias.id+'&country=EC')).body.items.map((x:any)=>x.id),[id]);}
+        assert.equal((await owner.call('meta-ads/objects/9624011/alias','PATCH',{aliasId:null})).status,200);const cleared=await db.metaAdObject.findUniqueOrThrow({where:{id:'9624011'}});assert.equal(cleared.aliasId,null);assert.equal(cleared.aliasCountry,null);
+      } finally {await db.metaAdAccount.deleteMany({where:{connectionId:c.id}});await db.metaConnection.delete({where:{id:c.id}});await db.metaAlias.delete({where:{id:alias.id}});}
+    });
+    await t.test('Efectividad: intersección exacta alias/país, campañas de varias cuentas sin doble conteo y manuales independientes',async()=>{
+      const actor=await db.user.findFirstOrThrow({where:{role:'OWNER'}});
+      const conn=await db.metaConnection.create({data:{ownerId:actor.id,name:'Efectividad sintética',transport:'API'}});
+      const table=await db.metaAliasTable.create({data:{name:'Efectividad '+tag}});
+      const alias=await db.metaAlias.create({data:{name:'Monitoreo '+tag,tableId:table.id}}),other=await db.metaAlias.create({data:{name:'Otro '+tag,tableId:table.id}});
+      const day='2026-10-20',scope='7d_click,1d_view|impression';
+      const root='meta-ads/effectiveness?'+new URLSearchParams({tableId:table.id,since:day,until:'2026-10-23'});
+      try{
+       for(const [id,currency] of [['962501','PEN'],['962502','PEN'],['962503','USD']])await db.metaAdAccount.create({data:{id,connectionId:conn.id,name:id,currency,timezone:'America/Lima'}});
+       for(const [id,accountId,aliasId,country,level,spend,base] of [['9625011','962501',alias.id,'PE','campaign',10,4],['9625021','962502',alias.id,'PE','campaign',20,6],['9625012','962501',alias.id,'AR','campaign',99,9],['9625013','962501',other.id,'PE','campaign',200,20],['9625014','962501',alias.id,'PE','adset',900,90],['9625015','962501',alias.id,'PE','ad',800,80],['9625016','962501',alias.id,null,'campaign',700,70],['9625031','962503',alias.id,'PE','campaign',5,2]] as const){await db.metaAdObject.create({data:{id,accountId,aliasId,aliasCountry:country,level,name:id,status:'PAUSED'}});await db.metaAdDaily.create({data:{objectId:id,accountId,day,scope,spend,actions:{'onsite_conversion.messaging_conversation_started_7d':base}}});}
+       await db.metaAdDaily.create({data:{objectId:'9625011',accountId:'962501',day,scope:'other',spend:999,actions:{'onsite_conversion.messaging_conversation_started_7d':999}}});
+       let r=await owner.call(root);assert.equal(r.status,200,JSON.stringify(r.body));assert.equal(r.body.rows.length,4);
+       const pair=(data:any,country='PE',currency='PEN')=>data.rows.find((x:any)=>x.aliasId===alias.id&&x.country===country&&x.currency===currency);
+       assert.equal(pair(r.body).days[day].spend,30);assert.equal(pair(r.body).days[day].base,10);assert.equal(pair(r.body).campaigns,2);assert.equal(pair(r.body,'AR').days[day].spend,99);assert.equal(pair(r.body,'PE','USD').days[day].spend,5);assert.equal(pair(r.body).days['2026-10-21'],undefined);
+       assert.equal((await admin.call(root)).status,403);assert.equal((await user.call(root)).status,403);
+       const manual={aliasId:alias.id,country:'PE',currency:'PEN',day,sales:3,fixedCost:12.5,revision:0};
+       assert.equal((await owner.call('meta-ads/effectiveness','PATCH',manual)).status,200);assert.equal((await owner.call('meta-ads/effectiveness','PATCH',manual)).status,409);
+       r=await owner.call(root);assert.equal(pair(r.body).days[day].sales,3);assert.equal(pair(r.body).days[day].fixedCost,12.5);assert.equal(pair(r.body).days[day].spend,30);assert.equal(pair(r.body,'AR').days[day].sales,null);
+       for(const patch of [{country:'ZZ'},{sales:-1},{spend:3},{day:'2026-02-30'},{day:undefined},{base:6}])assert.equal((await owner.call('meta-ads/effectiveness','PATCH',{...manual,...patch})).status,400);
+       assert.equal((await owner.call(root.replace('2026-10-23','2026-12-23'))).status,400);
+       assert.equal((await owner.call('meta-ads/alias-tables/'+table.id,'PATCH',{name:'Renombrada '+tag})).status,200);
+       assert.equal((await db.metaAlias.findUniqueOrThrow({where:{id:alias.id}})).tableId,table.id);
+       await db.metaAdDaily.update({where:{objectId_day_scope:{objectId:'9625021',day,scope}},data:{spend:25,actions:{'onsite_conversion.messaging_conversation_started_7d':7}}});
+       r=await owner.call(root);assert.equal(pair(r.body).days[day].spend,35);assert.equal(pair(r.body).days[day].base,11);assert.equal(pair(r.body).days[day].sales,3);
+      }finally{await db.metaEffectivenessRow.deleteMany({where:{alias:{tableId:table.id}}});await db.metaAdAccount.deleteMany({where:{connectionId:conn.id}});await db.metaConnection.delete({where:{id:conn.id}});await db.metaAlias.deleteMany({where:{tableId:table.id}});await db.metaAliasTable.delete({where:{id:table.id}});}
+    });
     await t.test('Meta: varias cuentas, fallo interno diagnosticado y retirada de conexión duplicada sin borrar histórico',async()=>{
       const {discover}=await import('../lib/meta-ads/service');const actor=await db.user.findFirstOrThrow({where:{role:'OWNER'}}),original=globalThis.fetch,originalTransaction=db.$transaction.bind(db),originalWarn=console.warn;
       const logs:string[]=[];console.warn=(value)=>logs.push(String(value));

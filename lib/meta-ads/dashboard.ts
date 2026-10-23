@@ -1,3 +1,4 @@
+import { isCountryCode } from "./countries";
 import { parseDeliveryFilters } from "./state-filter";
 import { metaSummary } from "./summary";
 import { compareMetaItems } from "./order";
@@ -96,9 +97,15 @@ export async function dashboard(actor: Actor, params: URLSearchParams) {
   }
   const campaignIds = selectionIds("campaigns"),
     adsetIds = selectionIds("adsets");
+  const country = params.get("country") ?? "";
+  demand(
+    !country || country === "__none" || isCountryCode(country),
+    "País no válido.",
+  );
   const where: Prisma.MetaAdObjectWhereInput = {
     accountId: { in: scoped.map((a) => a.id) },
     level,
+    ...(country ? { aliasCountry: country === "__none" ? null : country } : {}),
     ...(params.get("alias") === "__none"
       ? { aliasId: null }
       : params.get("alias")

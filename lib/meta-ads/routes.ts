@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { isCountryCode } from "./countries";
 import { z } from "zod";
 import { db } from "../db";
 import { ownerOnly } from "../auth";
@@ -74,6 +75,69 @@ export async function metaRoutes(
       ).setMetaStatus(actor, parts[2], b.status, b.expectedStatus),
     );
   }
+  if (path === "effectiveness" && method === "GET") {
+    ownerOnly(actor);
+    const q = z
+      .object({
+        tableId: z.string().min(1).max(100),
+        since: z.string().date(),
+        until: z.string().date(),
+      })
+      .parse(Object.fromEntries(req.nextUrl.searchParams));
+    demand(
+      q.since <= q.until &&
+        (Date.parse(q.until) - Date.parse(q.since)) / 86400000 < 31,
+      "Elige hasta 31 días.",
+    );
+    return send(
+      await (
+        await import("./effectiveness")
+      ).effectiveness(actor, q.tableId, q.since, q.until),
+    );
+  }
+  if (path === "effectiveness" && method === "PATCH") {
+    ownerOnly(actor);
+    const b = z
+      .object({
+        aliasId: z.string().min(1).max(100),
+        country: z.string().refine(isCountryCode),
+        currency: z.string().regex(/^[A-Z]{3}$/),
+        day: z.string().date().optional(),
+        sales: z.number().int().min(0).max(100000000).nullable().optional(),
+        fixedCost: z.number().min(0).max(1000000000).nullable().optional(),
+        revision: z.number().int().min(0).optional(),
+      })
+      .strict()
+      .parse(await body());
+    demand(
+      !b.day || b.sales !== undefined || b.fixedCost !== undefined,
+      "Indica una cifra manual.",
+    );
+    demand(
+      !!b.day || (b.sales === undefined && b.fixedCost === undefined),
+      "Indica la fecha para guardar cifras.",
+    );
+    return send(
+      await (await import("./effectiveness")).saveEffectiveness(actor, b),
+    );
+  }
+  if (
+    parts[1] === "alias-tables" &&
+    parts[2] &&
+    parts.length === 3 &&
+    method === "PATCH"
+  ) {
+    ownerOnly(actor);
+    const b = z
+      .object({ name: z.string().trim().min(1).max(100) })
+      .strict()
+      .parse(await body());
+    return send(
+      await (
+        await import("./aliases")
+      ).renameAliasTable(actor, parts[2], b.name),
+    );
+  }
   if (path === "alias-tables" && method === "GET")
     return send(await (await import("./aliases")).aliasTables(actor));
   if (path === "alias-tables" && method === "POST") {
@@ -129,13 +193,18 @@ export async function metaRoutes(
           .min(1)
           .max(100),
         aliasId: z.string().min(1).max(80).nullable(),
+        country: z
+          .string()
+          .refine(isCountryCode, "País no válido.")
+          .nullable()
+          .optional(),
       })
       .strict()
       .parse(await body());
     return send(
       await (
         await import("./aliases")
-      ).assignAliases(actor, b.objectIds, b.aliasId),
+      ).assignAliases(actor, b.objectIds, b.aliasId, b.country),
     );
   }
   if (
@@ -147,11 +216,20 @@ export async function metaRoutes(
   ) {
     ownerOnly(actor);
     const b = z
-      .object({ aliasId: z.string().max(80).nullable() })
+      .object({
+        aliasId: z.string().max(80).nullable(),
+        country: z
+          .string()
+          .refine(isCountryCode, "País no válido.")
+          .nullable()
+          .optional(),
+      })
       .strict()
       .parse(await body());
     return send(
-      await (await import("./aliases")).assignAlias(actor, parts[2], b.aliasId),
+      await (
+        await import("./aliases")
+      ).assignAlias(actor, parts[2], b.aliasId, b.country),
     );
   }
   if (path === "marketing-oauth-config" && method === "GET") {
