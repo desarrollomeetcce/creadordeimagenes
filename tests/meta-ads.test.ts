@@ -127,3 +127,14 @@ test('Meta ordering: active objects first before pagination, costs within compar
  assert(compareMetaItems(row('a','ACTIVE',5,'USD'),row('b','PAUSED',.1), 'today',1)<0);
  const inherited={...row('child','PAUSED',.1),status:'ACTIVE'};assert(compareMetaItems(inherited,row('live','ACTIVE',2),'today',1)>0);
 });
+
+test('Meta links select the exact campaign, adset or ad in the correct account and level',async()=>{
+ const {metaObjectURL}=await import('../lib/meta-ads/meta-link');
+ for(const [level,route]of [['campaign','campaigns'],['adset','adsets'],['ad','ads']]){
+  const u=new URL(metaObjectURL({id:'333',accountId:'111',level,campaignId:'222',adsetId:'444'})!);
+  assert.equal(u.origin,'https://adsmanager.facebook.com');assert.equal(u.pathname,'/adsmanager/manage/'+route);assert.equal(u.searchParams.get('act'),'111');assert.equal(u.searchParams.get('selected_'+level+'_ids'),'333');
+  if(level!=='campaign')assert.equal(u.searchParams.get('selected_campaign_ids'),'222');
+  if(level==='ad')assert.equal(u.searchParams.get('selected_adset_ids'),'444');
+ }
+ assert.equal(metaObjectURL({id:'bad',accountId:'111',level:'ad'}),null);assert.equal(metaObjectURL({id:'333',accountId:'111',level:'unknown'}),null);
+});

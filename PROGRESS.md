@@ -956,3 +956,10 @@ TypeScript y build de producción aprobados. Chromium verifica apertura desde am
 Columna Calendario añadida después de Desde el inicio y antes de Evaluación; cabecera con fechas y acceso al mismo selector. Muestra costo y resultados exactos del rango; sin elección pide periodo y con informe ausente queda pendiente. Tarjetas incorporan sexto recuadro equivalente, sin fila adicional de resumen. Durante carga solo se muestran hechos custom cuyas fechas coinciden exactamente con la elección actual.
 
 Chromium sobre build final: columna adyacente y placeholder inicial; rango3 días produce costo1.83 y30 resultados en fixture; header/costo/Periodo de análisis abren la misma instancia de dos meses; cancelar no consulta ni cambia filtros; preset7 conserva fechas explícitas. También pasan selección estable, sticky y móvil390.
+
+
+### Meta: tabla reducida y enlaces a objetos específicos
+
+Eliminada columna textual Estado duplicada, preservando interruptores y su descripción de entrega. Etiqueta MESSAGES bajo cuenta abreviada a Conversaciones. Ruta bajo nombre reemplazada por Ver en Meta; helper construye ruta campaigns/adsets/ads según nivel, act y selección exacta de objeto/padres. Tarjetas y detalle usan el mismo enlace; sin URL genérica de cuenta ni tokens.
+
+Tabla con colgroup/anchos, padding reducido, nombres hasta2 líneas con title completo y alias ajustado. Se mantienen seis comparaciones, calendario y controles manuales.118 unitarias, TypeScript y build aprobados. Chromium confirma todas las columnas visibles sin scroll horizontal en1520/1366, enlaces de los3 niveles y cuenta/padres correctos, calendario/selección sin regresiones y móvil390 sin desbordamiento de página. No se abrieron enlaces externos ni se consultó/publicó publicidad real.

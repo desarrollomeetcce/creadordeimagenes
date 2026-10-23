@@ -1,4 +1,5 @@
 "use client";
+import { metaObjectURL } from "../../lib/meta-ads/meta-link";
 import { useMetaStableViewport } from "./meta-stable-viewport";
 import { useCallback, useEffect, useState, useRef } from "react";
 import {
@@ -171,6 +172,20 @@ const ratings: Record<string, string> = {
   INSUFFICIENT: "Datos insuficientes",
   ENOUGH_DATA: "Volumen suficiente · define una meta",
 };
+function MetaObjectLink({ item }: { item: Item }) {
+  const href = metaObjectURL(item);
+  return href ? (
+    <a
+      className="meta-external-link"
+      href={href}
+      target="_blank"
+      rel="noopener noreferrer"
+      title={`Abrir ${item.name} en el administrador de anuncios`}
+    >
+      Ver en Meta ↗
+    </a>
+  ) : null;
+}
 function money(n: number, currency: string) {
   return new Intl.NumberFormat("es-PE", {
     style: "currency",
@@ -1061,8 +1076,9 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
                 {o.name}
               </button>
             </h2>
-            <small>Campaña: {o.campaignName}</small>
-            {o.level !== "campaign" && <small>Conjunto: {o.adsetName}</small>}
+            <small>
+              <MetaObjectLink item={o} />
+            </small>
           </div>
         </div>
         <div className="meta-circulation">
@@ -2375,16 +2391,30 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
                 {view === "table" ? (
                   <div className="meta-table">
                     <table>
+                      <colgroup>
+                        <col style={{ width: 28 }} />
+                        <col style={{ width: 46 }} />
+                        <col style={{ width: "18%" }} />
+                        <col style={{ width: "7%" }} />
+                        <col style={{ width: "9%" }} />
+                        <col style={{ width: "7%" }} />
+                        {periods.map(([key]) => (
+                          <col key={key} style={{ width: "7%" }} />
+                        ))}
+                        <col style={{ width: "9%" }} />
+                        <col style={{ width: "8%" }} />
+                      </colgroup>
                       <thead>
                         <tr>
                           <th className="meta-check-cell">
                             <span className="sr-only">Selección</span>
                           </th>
-                          <th>Activado</th>
+                          <th>
+                            <span className="sr-only">Activado</span>
+                          </th>
                           <th>Campaña / Conjunto / Anuncio</th>
                           <th>Alias</th>
                           <th>Cuenta / Resultado</th>
-                          <th>Estado</th>
                           <th>Inicio · días</th>
                           {periods.map(([key, label]) => (
                             <th key={key}>{label}</th>
@@ -2455,11 +2485,12 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
                                   className="meta-name-button"
                                   type="button"
                                   onClick={() => openChildren(o)}
+                                  title={o.name}
                                 >
                                   {o.name}
                                 </button>
                                 <small>
-                                  {o.campaignName} / {o.adsetName}
+                                  <MetaObjectLink item={o} />
                                 </small>
                               </td>
                               <td className="meta-alias-cell">
@@ -2467,17 +2498,11 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
                               </td>
                               <td>
                                 {o.accountName}
-                                <small>{o.metricName}</small>
-                              </td>
-                              <td
-                                className="meta-delivery-state"
-                                data-active={o.effectiveStatus === "ACTIVE"}
-                              >
-                                {deliveryLabels[o.effectiveStatus] ??
-                                  o.effectiveStatus ??
-                                  (o.status === "ACTIVE"
-                                    ? "Activo · entrega por confirmar"
-                                    : "No informado")}
+                                <small>
+                                  {o.metric === "MESSAGES"
+                                    ? "Conversaciones"
+                                    : o.metricName}
+                                </small>
                               </td>
                               <td>
                                 {date(o.firstDelivery)}
@@ -2619,13 +2644,7 @@ function MetaDetail({ item: o, onClose }: { item: Item; onClose: () => void }) {
         volumen de resultados disponible. No son puntuaciones oficiales de Meta.
         Un estado efectivo activo no garantiza entrega actual.
       </p>
-      <a
-        href={`https://adsmanager.facebook.com/adsmanager/manage/ads?act=${encodeURIComponent(o.accountId)}`}
-        target="_blank"
-        rel="noopener noreferrer"
-      >
-        Abrir cuenta en Meta ↗
-      </a>
+      <MetaObjectLink item={o} />
     </dialog>
   );
 }
