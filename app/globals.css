@@ -1400,3 +1400,8 @@ html:has(.meta-ads){scrollbar-gutter:stable}
 
 .meta-recommendation-campaign > summary { cursor:pointer; padding:12px; border-radius:6px; }
 .meta-recommendation-campaign > summary h3 { display:inline-flex; margin:0; }
+
+html:has(.meta-ads),.meta-ads { overflow-anchor:none; }
+.meta-results-stage { min-width:0; }
+.meta-source-fetch { border:1px solid var(--line); border-radius:8px; padding:12px; margin:12px 0; }
+.meta-formula { font-family:ui-monospace,monospace; overflow-wrap:anywhere; background:var(--paper); border-radius:5px; padding:8px; }

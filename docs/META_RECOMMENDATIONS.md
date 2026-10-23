@@ -1,6 +1,6 @@
 # Recomendaciones determinísticas de Meta Ads
 
-Motor `rules-1`. No utiliza modelos generativos, servicios de IA ni tokens. No predice con certeza la eficacia de un anuncio ni ejecuta publicidad al leer una vista.
+Motor `rules-2`. No utiliza modelos generativos, servicios de IA ni tokens. No predice con certeza la eficacia de un anuncio ni ejecuta publicidad al leer una vista.
 
 ## Uso
 
@@ -12,11 +12,11 @@ Se revisa el inventario local de campañas, conjuntos y anuncios, incluidos paus
 
 Atribución única: `7d_click,1d_view|impression`. Conversaciones: `onsite_conversion.messaging_conversation_started_7d`. No se suman acciones de distintos objetivos ni campañas + conjuntos + anuncios.
 
-Costo agregado = suma del gasto / suma de las conversaciones. Con cero conversaciones el costo es desconocido, no cero. Los periodos de hoy, ayer, 3, 7, 14, 15 y 30 días y el acumulado disponible usan el propio anuncio. El acumulado se identifica como desconocido cuando no existe `MetaAdTotal`; no se reconstruye el total a partir de los últimos 30 días.
+Costo agregado = suma del gasto / suma de las conversaciones. Con cero conversaciones el costo es desconocido, no cero. Los periodos de hoy, ayer, 3, 7, 14, 15 y 30 días y el acumulado disponible usan el propio anuncio. El acumulado se identifica como desconocido cuando no existe `MetaAdTotal`. Solo puede derivarse de diarios completos si toda la vida del anuncio, desde su creación, está contenida en el rango recibido; los anuncios anteriores al rango nunca obtienen un falso acumulado de 30 días.
 
 La clasificación principal es excluyente: NUEVO por fecha de creación (<24 horas por defecto); después SIN GASTO cuando el acumulado conocido y actualizado al día tiene gasto <0.30 PEN; después CON HISTORIAL. Ausencia de datos no equivale a SIN GASTO.
 
-Las decisiones requieren inventario `all`, comparativos recientes preparados, ausencia de error, sincronización del día local con menos de una hora, informe correspondiente al día y credencial verificada vigente. Los objetos y padres deben pertenecer a la selección de inventario confirmada. En caso contrario se muestra REVISAR DATOS, sin propuesta de estado. Esto puede requerir actualizar Meta antes de analizar.
+Las decisiones requieren inventario confirmado y estadísticas recientes del día local con menos de una hora, informe correspondiente al día y credencial verificada vigente. Puede acreditarlo el sincronizador global completo o la lectura específica de campaña descrita abajo. Un fallo del acumulado histórico global no invalida diarios actuales confirmados de la campaña. Los objetos y padres deben pertenecer al inventario confirmado. Fuera de esa cobertura se muestran las cifras realmente recibidas como parciales, sin convertir ausencia en cero ni proponer estados con datos no confirmados.
 
 ## Nocturna
 
@@ -56,10 +56,22 @@ Reglas editables solo por OWNER, centralizadas por código de moneda en `MetaRec
 
 `MetaRecommendationAnalysis` mantiene un resultado por campaña/modo, parámetros, versión, huella de los datos y fechas de cálculo/caducidad. La huella incluye inventario/estado/nombres/alias, revisiones y desconexión de la credencial, sincronización, cambios de hechos diarios/acumulados, moneda, reglas y día local. La vigencia termina también al alcanzar el límite de antigüedad de un anuncio nuevo. Los permisos actuales se revalidan al leer incluso una entrada válida. Guardar el caché no concede acceso.
 
-No hay consultas por anuncio: metadatos, hechos diarios agrupados y acumulados se leen por campaña. No se modifican datos históricos ni el sincronizador existente.
+No hay consultas por anuncio: metadatos, hechos diarios agrupados y acumulados se leen por campaña. Se conserva el sincronizador existente y su avance global. La lectura explícita por campaña actualiza únicamente los hechos realmente devueltos por Meta, sin borrar estadísticas fuera del rango.
 
 ## Aprobación manual
 
 Los interruptores existentes siguen siendo manuales. Para varias recomendaciones, seleccionar anuncios y pulsar Revisar y aprobar seleccionados. La confirmación enumera las operaciones y los padres pausados que deben activarse, deduplicados y antes que sus hijos. Activar un padre puede reanudar la entrega y el gasto de otros anuncios ya activados dentro de él.
 
 Se llama secuencialmente a la ruta existente de estado, con `confirmed:true` y estado anterior esperado. Solo OWNER con permisos reales de Meta puede ejecutarla; `canSync` no concede gestión publicitaria. Cada operación mantiene validación remota, fencing y auditoría existentes. Un fallo detiene el lote y conserva los resultados individuales; ninguna escritura incierta se reintenta automáticamente. Las recomendaciones no crean anuncios, conjuntos ni presupuestos.
+
+## Lectura explícita por campaña y evidencia verificable
+
+«Traer datos de Meta y analizar» lee metadatos de campaña, todos sus conjuntos/anuncios activos y pausados (excluye archivados/eliminados), diarios de los últimos 30 días inclusivos y acumulados disponibles en Meta. No basta pulsar Actualizar recomendaciones: ese botón vuelve a calcular con los datos guardados. Cada POST a `recommendations/:id/data` procesa una sola página; las estadísticas se consultan en bloques de hasta 50 IDs confirmados. El GET de estado y abrir/recargar la vista nunca consultan Meta. El bucle visible puede detenerse después de guardar la página y conserva el cursor; no sigue solicitando nuevas páginas en una pestaña oculta.
+
+`MetaRecommendationSource` conserva avance, rango, IDs confirmados y revisión de credencial por campaña. Usa el lease compartido de cuenta y las cuotas/backoff existentes, con revalidación de usuario, canSync, propietario, conexión y revisión antes de guardar. Esperar por otra importación o por cuota no reinicia el cursor. La lectura no habilita cuentas ni declara finalizada la sincronización de toda la cuenta. Los diarios completos pueden analizarse aun si falla después el acumulado; el botón permite continuar.
+
+Cada anuncio muestra gasto y conversaciones reales, la división que produce el costo, los importes y fechas exactas de ambas ventanas históricas y la fórmula de variación. El origen indica cuántos anuncios tienen filas de hoy, acumulados pendientes, frescura y atribución. Cero conversaciones no tiene costo calculable. Muestra corta aparece «En observación» con cifras y mínimos; si produce hoy y su historial reciente estable respalda un costo aceptable, la nocturna propone mantener en observación, sin contarlo como viable confirmado ni forzar un cambio de estado.
+
+## Posición de pantalla
+
+Los cambios de filtros reservan únicamente la altura de resultados necesaria para conservar el viewport actual durante carga o listas vacías. Se evita el anclaje automático de scroll en Meta y el foco de calendario/selector usa preventScroll. Refrescar la misma campaña conserva el resultado visible mientras llega el reemplazo; no desmonta sus grupos expandidos. No se fuerza scrollTo ni se bloquea el desplazamiento manual.

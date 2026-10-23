@@ -1,6 +1,6 @@
 import { shiftDay } from "../analytics";
 
-export const ENGINE_VERSION = "rules-1";
+export const ENGINE_VERSION = "rules-2";
 export type Rules = {
   dayNoResultSpend: number;
   dayMaxCost: number;
@@ -115,6 +115,15 @@ export type Decision = {
   active: boolean;
   today: Aggregate;
   periods: Record<string, Aggregate>;
+  comparison: {
+    recent: Aggregate;
+    previous: Aggregate;
+    recentSince: string;
+    recentUntil: string;
+    previousSince: string;
+    previousUntil: string;
+    windowDays: number;
+  };
   changePercent: number | null;
   forecast: {
     cost: number;
@@ -179,7 +188,12 @@ export function analyzeCampaign(input: Input, rules: Rules | null) {
         : ad.total
           ? "CON HISTORIAL"
           : null;
-    const active = ad.status === "ACTIVE" && ad.effectiveStatus === "ACTIVE";
+    const active =
+      ad.status === "ACTIVE" &&
+      ad.effectiveStatus === "ACTIVE" &&
+      ad.confirmed !== false &&
+      sets.get(ad.adsetId ?? "")?.confirmed !== false &&
+      input.campaign.confirmed !== false;
     const changePercent =
       enough(recent) && enough(prior) && prior.cost && recent.cost !== null
         ? (recent.cost / prior.cost - 1) * 100
@@ -282,12 +296,21 @@ export function analyzeCampaign(input: Input, rules: Rules | null) {
       badge,
       behavior,
       action: "REVISAR DATOS",
-      reason: "Faltan resultados o cobertura para concluir.",
+      reason: `Hoy se recibieron ${current.results} conversaciones con gasto ${current.spend.toFixed(2)} ${input.currency}. Se revisará la cobertura y su historial antes de proponer cambios.`,
       priority: 8,
       viable: false,
       active,
       today: current,
       periods,
+      comparison: {
+        recent,
+        previous: prior,
+        recentSince: shiftDay(today, -(rules?.windowDays ?? 3)),
+        recentUntil: shiftDay(today, -1),
+        previousSince: shiftDay(today, -2 * (rules?.windowDays ?? 3)),
+        previousUntil: shiftDay(today, -1 - (rules?.windowDays ?? 3)),
+        windowDays: rules?.windowDays ?? 3,
+      },
       changePercent,
       forecast,
       proposedStatus: null,
@@ -396,11 +419,25 @@ export function analyzeCampaign(input: Input, rules: Rules | null) {
           ? "Mejora frente a su propio historial y volumen suficiente hoy; conservar."
           : `Costo de hoy aceptable con ${current.results} conversaciones; ${behavior === "ESTABLE" ? "historial estable" : "sin deterioro sostenido demostrado"}. Conservar aunque existan anuncios más baratos.`,
       };
+    if (
+      active &&
+      !enough(current) &&
+      current.results > 0 &&
+      enough(recent) &&
+      recent.cost !== null &&
+      recent.cost <= rules.reviewCost &&
+      !deteriorated
+    )
+      return {
+        ...base,
+        action: "MANTENER" as const,
+        priority: 1,
+        reason: `Hoy: ${current.results} conversaciones con gasto ${current.spend.toFixed(2)} ${rules.currency} y costo real ${current.cost!.toFixed(2)} ${rules.currency}. En sus últimos ${rules.windowDays} días completos produjo ${recent.results} conversaciones a ${recent.cost.toFixed(2)} ${rules.currency}. Conservar en observación por su historial propio; esperar ${rules.minResults} conversaciones y ${rules.minSpend.toFixed(2)} ${rules.currency} antes de confirmar la tendencia de hoy.`,
+      };
     if (active && !enough(current))
       return {
         ...base,
-        reason:
-          "Hoy aún no alcanza el gasto y volumen mínimos. Mantener observación, sin pausa por un costo aislado.",
+        reason: `Hoy: ${current.results} conversaciones y gasto ${current.spend.toFixed(2)} ${rules.currency}${current.cost !== null ? `; costo real ${current.cost.toFixed(2)} ${rules.currency}` : " sin conversaciones"}. Para confirmar la tendencia nocturna se requieren ${rules.minResults} conversaciones y ${rules.minSpend.toFixed(2)} ${rules.currency} de gasto. En sus últimos ${rules.windowDays} días completos produjo ${recent.results} conversaciones con ${recent.spend.toFixed(2)} ${rules.currency}; no recomendar pausa solo por una muestra pequeña.`,
       };
     if (
       active &&
@@ -503,13 +540,10 @@ export function analyzeCampaign(input: Input, rules: Rules | null) {
     rules.currency !== input.currency;
   const observing =
     active > 0 &&
+    viable === 0 &&
     decisions
       .filter((d) => d.active)
-      .every(
-        (d) =>
-          d.action === "REVISAR DATOS" ||
-          (d.badge === "NUEVO" && d.action === "MANTENER"),
-      );
+      .every((d) => d.action === "REVISAR DATOS" || d.action === "MANTENER");
   const status =
     uncertain || observing
       ? "REVISAR DATOS"

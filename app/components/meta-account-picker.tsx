@@ -57,7 +57,9 @@ export function MetaAccountPicker({
         onKeyDown={(e) => {
           if (e.key === "Escape") {
             e.currentTarget.open = false;
-            e.currentTarget.querySelector("summary")?.focus();
+            e.currentTarget
+              .querySelector("summary")
+              ?.focus({ preventScroll: true });
           }
         }}
       >

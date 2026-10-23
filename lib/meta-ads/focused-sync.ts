@@ -54,7 +54,7 @@ function value(v: unknown) {
   );
   return n;
 }
-function facts(row: Record<string, unknown>) {
+export function facts(row: Record<string, unknown>) {
   const actions: Record<string, number> = {};
   if (Array.isArray(row.actions))
     for (const a of row.actions.slice(0, 150))
@@ -75,7 +75,7 @@ function parsedDate(v: unknown) {
   const s = text(v, 50);
   return s && Number.isFinite(Date.parse(s)) ? new Date(s) : null;
 }
-function metadata(
+export function metadata(
   row: Record<string, unknown>,
   accountId: string,
   level: string,
@@ -120,7 +120,7 @@ function metadata(
     seenAt: new Date(),
   };
 }
-function day(v: unknown) {
+export function day(v: unknown) {
   const s = text(v, 10);
   demand(
     /^\d{4}-\d{2}-\d{2}$/.test(s) && Number.isFinite(Date.parse(s)),

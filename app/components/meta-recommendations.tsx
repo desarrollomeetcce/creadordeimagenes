@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useState, useRef, type ReactNode } from "react";
 import type { Item } from "./meta-ads";
 import type {
   Analysis,
@@ -10,9 +10,24 @@ import {
   approvalPlan,
   applyApprovedPlan,
 } from "../../lib/meta-ads/recommendations/approval";
+import { MetaRecommendationData } from "./meta-recommendation-data";
 import { MetaStatusSwitch } from "./meta-status-switch";
 
 type Result = {
+  canReadFromMeta: boolean;
+  dataOrigin: {
+    source: string;
+    since: string;
+    until: string;
+    inventoryComplete: boolean;
+    fresh: boolean;
+    historyComplete: boolean;
+    readableAds: number;
+    todayWithRows: number;
+    missingTotals: number;
+    error: string | null;
+    attribution: string;
+  };
   fresh: boolean;
   coverage: boolean;
   analysis: Analysis;
@@ -211,7 +226,12 @@ function Evidence({
 }) {
   return (
     <div className="meta-recommendation-reason">
-      <strong>{d.action}</strong> <span className="badge">{d.behavior}</span>
+      <strong>{d.action}</strong>{" "}
+      <span className="badge">
+        {d.behavior === "INSUFICIENTE"
+          ? "En observación · cifras disponibles abajo"
+          : d.behavior}
+      </span>
       <small>
         {d.proposedStatus === "ACTIVE"
           ? d.badge === "NUEVO"
@@ -244,8 +264,26 @@ function Evidence({
           "Datos parciales o antiguos: no interpretar ausencias como cero."
         )}
       </small>
+      <div className="meta-formula">
+        {d.today.days > 0 || d.dataComplete ? (
+          <>
+            Costo de hoy = {money(d.today.spend, currency)} ÷ {d.today.results}{" "}
+            conversaciones ={" "}
+            {d.today.results > 0
+              ? money(d.today.cost, currency)
+              : "no existe costo por conversación con cero conversaciones"}
+            .
+          </>
+        ) : (
+          "Todavía no se recibió el informe de hoy de este anuncio; usa Traer datos de Meta y analizar."
+        )}
+      </div>
       <details>
-        <summary>Evidencia y proyección de mañana</summary>
+        <summary>Evidencia, fórmulas y proyección de mañana</summary>
+        <p>
+          Se suma el gasto y se divide por la suma de conversaciones de cada
+          periodo. Nunca se promedian los costos diarios.
+        </p>
         <div className="meta-table">
           <table>
             <thead>
@@ -292,6 +330,27 @@ function Evidence({
               )}
             </tbody>
           </table>
+        </div>
+        <div className="meta-formula">
+          Ventana reciente ({d.comparison.recentSince} →{" "}
+          {d.comparison.recentUntil}):{" "}
+          {money(d.comparison.recent.spend, currency)} ÷{" "}
+          {d.comparison.recent.results} ={" "}
+          {money(d.comparison.recent.cost, currency)}.<br />
+          Ventana anterior ({d.comparison.previousSince} →{" "}
+          {d.comparison.previousUntil}):{" "}
+          {money(d.comparison.previous.spend, currency)} ÷{" "}
+          {d.comparison.previous.results} ={" "}
+          {money(d.comparison.previous.cost, currency)}.<br />
+          {d.changePercent !== null ? (
+            <>
+              Variación = ({money(d.comparison.recent.cost, currency)} ÷{" "}
+              {money(d.comparison.previous.cost, currency)} − 1) × 100 ={" "}
+              {d.changePercent.toFixed(1)}%.
+            </>
+          ) : (
+            "La variación porcentual no se usa todavía para proponer una pausa: revisa el volumen y los requisitos de evidencia, sin ocultar las cifras recibidas."
+          )}
         </div>
         {d.changePercent !== null && (
           <p>
@@ -483,11 +542,16 @@ export function MetaRecommendations({
     [operationResults, setOperationResults] = useState<string[]>([]);
   const key = accountIds.join(","),
     campaignKey = campaignIds.join(",");
+  const scopeKey = JSON.stringify([key, campaignKey, page, allStates, mode]);
+  const previousScope = useRef("");
   useEffect(() => setPage(1), [key, campaignKey, allStates, mode]);
   useEffect(() => {
     const c = new AbortController();
-    setRows([]);
-    setResults({});
+    if (previousScope.current !== scopeKey) {
+      setRows([]);
+      setResults({});
+      previousScope.current = scopeKey;
+    }
     setErrors({});
     setLoading(true);
     void (async () => {
@@ -789,7 +853,7 @@ export function MetaRecommendations({
           {owner && (
             <button
               type="button"
-              disabled={busy}
+              disabled={busy || loading}
               onClick={() => void approve()}
             >
               Revisar y aprobar seleccionados
@@ -873,6 +937,45 @@ export function MetaRecommendations({
               <p className="notice">Tarea pendiente: {r.analysis.task}</p>
             )}
             <p className="hint">{r.analysis.warning}</p>
+            <details>
+              <summary>Origen, cobertura y reglas aplicadas</summary>
+              <p>
+                {r.dataOrigin.source} · {r.dataOrigin.since} →{" "}
+                {r.dataOrigin.until} · atribución {r.dataOrigin.attribution}.
+              </p>
+              <p>
+                {r.dataOrigin.todayWithRows} anuncios con filas recibidas de hoy
+                de {r.dataOrigin.readableAds} anuncios.{" "}
+                {r.dataOrigin.inventoryComplete
+                  ? "Inventario confirmado."
+                  : "El inventario completo de esta campaña aún no está confirmado."}{" "}
+                {r.dataOrigin.fresh
+                  ? "Informe de hoy actualizado."
+                  : "Falta actualizar el informe de hoy."}{" "}
+                {r.dataOrigin.missingTotals} anuncios sin acumulado recibido.
+              </p>
+              {r.rules && (
+                <p>
+                  Diurna: sin conversaciones con gasto ≥{" "}
+                  {money(r.rules.dayNoResultSpend, r.analysis.currency)}, o
+                  costo ≥ {money(r.rules.dayMaxCost, r.analysis.currency)}.
+                  Nocturna: {r.rules.minResults} conversaciones y{" "}
+                  {money(r.rules.minSpend, r.analysis.currency)} de gasto por
+                  ventana; deterioro ≥ {r.rules.deteriorationPercent}% entre
+                  ventanas de {r.rules.windowDays} días, con aumentos
+                  sostenidos. Referencia de costo:{" "}
+                  {money(r.rules.reviewCost, r.analysis.currency)}.
+                </p>
+              )}
+              {r.dataOrigin.error && (
+                <p className="notice">Última lectura: {r.dataOrigin.error}</p>
+              )}
+            </details>
+            <MetaRecommendationData
+              campaignId={row.id}
+              canSync={r.canReadFromMeta}
+              onReceived={onUpdated}
+            />
             {r.analysis.adsets.map((s, index) => (
               <RecommendationGroup
                 key={`${s.id}:${expandAll}`}

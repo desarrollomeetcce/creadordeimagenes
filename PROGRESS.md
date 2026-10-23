@@ -916,3 +916,14 @@ Desplegable junto a vista, campañas/conjuntos plegables, tablas con motivo/evid
 Verificación local:114 unitarias,152 integraciones existentes, integración específica de recomendaciones con base exclusiva, TypeScript y build aprobados. Chromium comprueba modos, jerarquía pausada, aprobación cancelada/aceptada con respuestas simuladas, conservación al volver y móvil390. Ninguna campaña real fue modificada y no se hicieron llamadas reales de Meta/IA. No se acredita calibración predictiva ni estado real del VPS.
 
 Aclaración de persistencia de la vista: las recomendaciones permanecen seleccionadas al actualizar datos o recargar, hasta Ocultar recomendaciones / Volver a vista normal / elegir un nivel. Se guardan únicamente modalidad y vista por usuario, con whitelist; nunca resultados, tokens o secretos. Normal sigue siendo inicial si no hubo selección, y ocultar persiste ese estado. Añadida prueba de preferencias y comprobación de ambos ciclos en Chromium.
+
+
+### Meta: datos reales por campaña, fórmulas y filtros sin salto
+
+Motor rules-2 y lectura explícita «Traer datos de Meta y analizar»: inventario completo activo/pausado de una campaña, diarios30 y acumulados, páginas acotadas e IDs agrupados50. Persistencia MetaRecommendationSource con revisión/lease/cuota compartidos, permisos revalidados y cursor reanudable; no modifica estados publicitarios ni marca completada toda la cuenta. Los diarios confirmados permiten analizar aunque el histórico falle. Ausencias y cifras parciales se distinguen de ceros; totales derivados solo cuando la creación y toda la vida están cubiertas. Evidencia muestra gasto/conversaciones, división, fechas de ventanas y variación; muestra corta explica mínimos y mantiene observación si el historial estable la respalda. Permiso de lectura directa se recalcula por actor incluso con caché compartido.
+
+Filtros conservan altura mínima hasta el viewport para evitar saltos al cargar/vaciar resultados; sin anclaje automático y foco preventScroll en calendario/cuentas. Actualizar la misma campaña mantiene el análisis anterior y grupos abiertos hasta recibir el reemplazo. Vista y modalidad siguen persistiendo hasta ocultar.
+
+Validación:116 unitarias,152 integraciones de plataforma con base exclusiva,2 pruebas específicas de origen/caché/permisos/derivación y navegador Chromium. Búsqueda y filtro de recomendaciones conservan scrollY450; reglas diurna/nocturna, aprobación cancelada/confirmada simulada, evidencia, temas y móvil390 sin desbordamiento. TypeScript y compilación de producción aprobados. Ninguna publicidad ni IA real utilizada en pruebas.
+
+El usuario confirmó que el VPS se despliega automáticamente al publicar commits en main; el commit validado activa ese mecanismo. Un push no acredita por sí solo la finalización del despliegue en Hostinger.

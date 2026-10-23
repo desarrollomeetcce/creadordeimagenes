@@ -840,3 +840,13 @@ model MetaRecommendationAnalysis {
   expiresAt DateTime
   @@index([expiresAt])
 }
+
+model MetaRecommendationSource {
+  campaignId String @id
+  accountId String
+  connectionId String
+  revision Int
+  state Json
+  updatedAt DateTime @updatedAt
+  @@index([accountId])
+}

@@ -458,3 +458,18 @@ test("recommendation mode persists until explicitly cleared, only whitelisted mo
     "cards",
   );
 });
+
+test("small current-day sample keeps a stable ad by its own history and explains actual numbers", () => {
+  const a = ad("stable-small");
+  a.daily[0] = fact(0.4, 0, 1);
+  const r = run([a]);
+  const d = decisions(r)[0];
+  assert.equal(d.action, "MANTENER");
+  assert.equal(d.viable, false);
+  assert.match(d.reason, /0.40/);
+  assert.match(d.reason, /historial propio/);
+  assert.equal(r.status, "REVISAR DATOS");
+  assert.equal(r.task, null);
+  assert.equal(d.comparison.windowDays, 3);
+  assert.equal(d.comparison.recentUntil, shiftDay(today, -1));
+});

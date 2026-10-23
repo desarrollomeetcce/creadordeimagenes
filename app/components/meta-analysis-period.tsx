@@ -67,7 +67,7 @@ export function MetaAnalysisPeriod({
     if (open) ref.current?.showModal();
     else if (ref.current?.open) {
       ref.current.close();
-      trigger.current?.focus();
+      trigger.current?.focus({ preventScroll: true });
     }
   }, [open]);
   const edit = () => {

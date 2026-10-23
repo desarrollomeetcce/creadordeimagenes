@@ -8,6 +8,7 @@ import { recordActivity } from "../../activity";
 import { accountWhere, access, type Actor } from "../service";
 import { localDay, shiftDay, dayCount } from "../analytics";
 import { focusedReportDay } from "../focused-labels";
+import type { SourceState } from "./source";
 import { syncProgress } from "../sync-progress";
 import {
   analyzeCampaign,
@@ -193,7 +194,7 @@ export async function campaignAnalysis(
       },
     ],
   };
-  const [objects, changed, totalsChanged] = await Promise.all([
+  const [objects, changed, totalsChanged, source] = await Promise.all([
     db.metaAdObject.findMany({
       where,
       include: { alias: { select: { id: true, name: true } } },
@@ -210,6 +211,7 @@ export async function campaignAnalysis(
       _max: { updatedAt: true },
       _count: true,
     }),
+    db.metaRecommendationSource.findUnique({ where: { campaignId } }),
   ]);
   demand(
     objects.length <= 5001,
@@ -220,6 +222,7 @@ export async function campaignAnalysis(
     .update(
       JSON.stringify([
         ENGINE_VERSION,
+        source,
         mode,
         today,
         rules,
@@ -245,6 +248,7 @@ export async function campaignAnalysis(
     await access(actor, a.id);
     return {
       ...(cached.payload as object),
+      canReadFromMeta: actor.role === "OWNER" || (actor.role === "ADMIN" && a.grants.some((g) => g.canSync)),
       computedAt: cached.computedAt.toISOString(),
       expiresAt: cached.expiresAt.toISOString(),
       cached: true,
@@ -265,39 +269,51 @@ export async function campaignAnalysis(
   const factMap = new Map(facts.map((f) => [f.objectId, f.rows]));
   const totalMap = new Map(totals.map((t) => [t.objectId, t]));
   const progress = syncProgress(a),
-    state = a.syncState as {
-      inventory?: string;
-      recentReady?: boolean;
-      lastRun?: { inventory?: string; recentReady?: boolean };
-    };
+    state = source?.state as SourceState | undefined;
+  const scopedReady =
+    !!source &&
+    source.accountId === a.id &&
+    source.connectionId === a.connectionId &&
+    source.revision === a.connection.revision &&
+    !!state &&
+    state.phase >= 4 &&
+    state.until === today &&
+    !!state.dailyAt;
   const coverage =
-    progress.inventory === "all" &&
-    progress.recentReady &&
-    !a.syncError &&
-    !!a.syncedAt;
+    scopedReady ||
+    (progress.inventory === "all" &&
+      progress.recentReady &&
+      !a.syncError &&
+      !!a.syncedAt);
+  const sourceAt = scopedReady ? new Date(state!.dailyAt!) : a.syncedAt;
   const fresh =
-    !!a.syncedAt &&
-    localDay(a.timezone, a.syncedAt) === today &&
-    focusedReportDay(a.syncState) === today &&
-    now.valueOf() - a.syncedAt.valueOf() <= 3600000 &&
+    !!sourceAt &&
+    localDay(a.timezone, sourceAt) === today &&
+    (scopedReady || focusedReportDay(a.syncState) === today) &&
+    now.valueOf() - sourceAt.valueOf() <= 3600000 &&
     !!a.connection.verifiedAt &&
     !a.connection.disconnectedAt;
+  const confirmedIds = scopedReady
+    ? new Set([campaignId, ...state!.adIds, ...state!.setIds])
+    : null;
+  const confirmed = (o: typeof campaign) =>
+    confirmedIds
+      ? confirmedIds.has(o.id) && o.seenAt >= new Date(state!.started)
+      : !!o.selectedAt &&
+        (!a.selectionSince || o.selectedAt >= a.selectionSince);
   const group = (o: typeof campaign) => ({
     id: o.id,
     name: o.name,
     status: o.status,
     effectiveStatus: o.effectiveStatus,
-    confirmed:
-      !!o.selectedAt && (!a.selectionSince || o.selectedAt >= a.selectionSince),
+    confirmed: confirmed(o),
   });
   const inputAds = ads.map((o) => {
     const t = totalMap.get(o.id);
     return {
       id: o.id,
       name: o.name,
-      confirmed:
-        !!o.selectedAt &&
-        (!a.selectionSince || o.selectedAt >= a.selectionSince),
+      confirmed: confirmed(o),
       adsetId: o.adsetId,
       status: o.status,
       effectiveStatus: o.effectiveStatus,
@@ -341,18 +357,23 @@ export async function campaignAnalysis(
     const periods = Object.fromEntries(
       ["today", "7", "15", "30", "lifetime"].map((key) => {
         const s = d.periods[key];
-        const available = key === "lifetime" ? !!t : coverage && fresh;
+        const available =
+          key === "lifetime"
+            ? !!t
+            : (coverage && fresh && confirmed(o)) || s.days > 0;
         return [
           key,
           {
             ...s,
             state: !available
               ? "UNAVAILABLE"
-              : s.results > 0
-                ? "RESULTS"
-                : s.spend > 0
-                  ? "NO_RESULTS"
-                  : "INACTIVE",
+              : key !== "lifetime" && (!coverage || !fresh || !confirmed(o))
+                ? "PARTIAL"
+                : s.results > 0
+                  ? "RESULTS"
+                  : s.spend > 0
+                    ? "NO_RESULTS"
+                    : "INACTIVE",
             since:
               key === "lifetime"
                 ? (t?.since ?? today)
@@ -368,8 +389,10 @@ export async function campaignAnalysis(
       createdTime: o.createdTime?.toISOString() ?? null,
       scheduledStart: o.scheduledStart?.toISOString() ?? null,
       seenAt: o.seenAt.toISOString(),
-      status: o.status ?? "UNKNOWN",
-      effectiveStatus: o.effectiveStatus ?? "UNKNOWN",
+      status: confirmed(o) ? (o.status ?? "UNKNOWN") : "UNKNOWN",
+      effectiveStatus: confirmed(o)
+        ? (o.effectiveStatus ?? "UNKNOWN")
+        : "UNKNOWN",
       campaignId: campaign.id,
       adsetId: o.adsetId ?? "",
       campaignName: campaign.name,
@@ -391,7 +414,7 @@ export async function campaignAnalysis(
       historyPartial: !t,
       historyPending: !t,
       historyUpdatedAt: t?.updatedAt.toISOString() ?? null,
-      syncedAt: a.syncedAt?.toISOString() ?? null,
+      syncedAt: sourceAt?.toISOString() ?? null,
       changePercent: null,
       rating: !fresh
         ? "STALE"
@@ -411,11 +434,34 @@ export async function campaignAnalysis(
     coverage,
     fresh,
     parameters: { version: ENGINE_VERSION, rules, attribution: scope },
-    sourceUpdatedAt: a.syncedAt?.toISOString() ?? null,
+    dataOrigin: {
+      source: scopedReady
+        ? "Lectura directa de Meta de esta campaña"
+        : "Estadísticas sincronizadas de la cuenta",
+      since: scopedReady ? state!.since : shiftDay(today, -29),
+      until: today,
+      inventoryComplete: coverage,
+      fresh,
+      historyComplete: scopedReady
+        ? state!.phase === 5
+        : totals.length === ads.length,
+      readableAds: ads.length,
+      todayWithRows: inputAds.filter((o) =>
+        o.daily.some((d) => d.day === today),
+      ).length,
+      missingTotals: ads.length - totals.length,
+      error: source && state?.error ? state.error : a.syncError,
+      attribution: scope,
+    },
+    canReadFromMeta:
+      actor.role === "OWNER" ||
+      (actor.role === "ADMIN" && a.grants.some((g) => g.canSync)),
+    sourceUpdatedAt: sourceAt?.toISOString() ?? null,
   };
   const expiresAt = new Date(
     Math.min(
       now.valueOf() + (rules?.cacheMinutes ?? 15) * 60000,
+      ...(fresh && sourceAt ? [sourceAt.valueOf() + 3600000] : []),
       ...inputAds
         .filter(
           (ad) =>

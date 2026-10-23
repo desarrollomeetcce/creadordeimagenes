@@ -234,6 +234,10 @@ test(
       );
       const cached = await call(`recommendations/${cid}`, "", user);
       assert.equal(cached.cached, true);
+      assert.equal(cached.canReadFromMeta, false);
+      const ownerCached = await call(`recommendations/${cid}`);
+      assert.equal(ownerCached.cached, true);
+      assert.equal(ownerCached.canReadFromMeta, true);
       const daytime = await call(`recommendations/${cid}`, "mode=day", user);
       assert.equal(daytime.analysis.mode, "day");
       assert.equal(

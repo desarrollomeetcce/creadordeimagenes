@@ -23,6 +23,7 @@ export type Page = {
   warnings?: GraphDiagnostic[];
 };
 export type Query = {
+  campaignId?: string;
   insightIds?: string[];
   objectId?: string;
   aggregate?: boolean;
@@ -507,6 +508,16 @@ export class MetaReader {
             q.insightIds.every((id) => /^\d{1,40}$/.test(id))),
         "Filtro de estadísticas inválido.",
       );
+      demand(
+        !q.campaignId ||
+          (/^\d{1,40}$/.test(q.campaignId) &&
+            /^\d{1,40}$/.test(q.accountId ?? "") &&
+            !q.objectId &&
+            !q.ids &&
+            !q.insightIds &&
+            ["adsets", "ads"].includes(op)),
+        "Filtro de campaña inválido.",
+      );
       if (q.ids) {
         demand(
           ["campaigns", "adsets", "ads"].includes(op) &&
@@ -536,7 +547,9 @@ export class MetaReader {
         ? q.objectId + (op === "insights" ? "/insights" : "")
         : op === "accounts"
           ? "me/adaccounts"
-          : `act_${q.accountId}/${op}`;
+          : q.campaignId && op !== "insights"
+            ? `${q.campaignId}/${op}`
+            : `act_${q.accountId}/${op}`;
       const u = new URL(`https://graph.facebook.com/${this.version}/${path}`);
       const accountFields = {
         minimal: "id,name",
@@ -627,7 +640,8 @@ export class MetaReader {
       return page(payload);
     }
     demand(
-      !q.insightIds &&
+      !q.campaignId &&
+        !q.insightIds &&
         !q.ids &&
         !q.objectId &&
         !q.aggregate &&
