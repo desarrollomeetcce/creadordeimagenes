@@ -1019,3 +1019,11 @@ Detalle permite1 Barras/eje izquierdo y2 Línea con puntos/eje derecho, eligiend
 Calendario de análisis junto al contador, inmediatamente a su derecha y con tinte violeta distinto. Actualizar sigue en esa fila; Asignar alias pasa junto a Desde el inicio en la cabecera compartida por columnas (también en barra de tarjetas). Check Selección(n) junto a Campañas sustituye botón del filtro: selecciona página y desmarca ámbito actual, respetando100/nivel, otras selecciones y página estable. No añade filas; botones de costo conservan centros con sus datos.
 
 Validación:123 unitarias, TypeScript y build aprobados. Chromium1520/1366/móvil390: alineación<1px, fila compacta, cuatro checks masivos, alias, rango, filtros y recuperación HTTP previos. Detalle comprueba razón real de alturas4.4, puntos/escala independiente, intercambio de variables, lectura por fecha, cuatro órdenes y defaults al reabrir. Sin escrituras de publicidad ni llamadas Meta/IA; sin cambios de API/persistencia.
+
+### Fila centrada de resumen y progreso angosto
+
+Por nueva indicación, cuentas fijadas usan el ancho completo con ajuste natural y sin barra horizontal; contador, calendario y Actualizar desde Meta se trasladan a segunda fila centrada. Calendario mantiene color distinto y posición contigua al contador. Controles de costo/alias/selección siguen en sus columnas y posiciones. Cuadro de progreso reduce720 a240px (tercera parte), mínimo270px de altura, creciendo si requiere mostrar avisos; acciones Pausar/Cancelar junto al nombre, sin cambio de endpoints, autorización o esperas. Estados pausados conservan Reanudar.
+
+TypeScript/build aprobados; Chromium escritorio1520/1366 y móvil390 verifican centrado, lista de seis cuentas sin scrollbar, ancho240, centros verticales de nombre/acciones y textos cortos. Revisión amplia mantiene alias/selección estable, filtros, fechas/orden, alineación de columnas y protección HTTP. Sin cambios de API/persistencia ni llamadas Meta/IA reales.
+
+Aviso de espera compacto muestra motivo y reintento; explicación completa permanece en Detalles del progreso. Contador de etapas conserva posición junto al estado y nombre largo se limita visualmente a dos líneas con title completo.

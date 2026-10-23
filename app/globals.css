@@ -1587,3 +1587,25 @@ html:has(.meta-ads),.meta-ads { overflow-anchor:none; }
 .meta-chart-day text{fill:var(--muted);font-size:10px;}
 .meta-chart-readout{min-height:22px;font-size:11px;line-height:1.4;margin:6px 0;color:var(--muted);}
 @media(max-width:650px){.meta-dual-axes{grid-template-columns:60px minmax(0,1fr) 60px;gap:3px;}.meta-chart-axis{font-size:9px;}.meta-daily-toolbar>.meta-analysis-period,.meta-daily-toolbar>label{flex-basis:100%;}}
+
+/* Pinned accounts have their full row; summary, range and refresh are centered below. */
+.meta-pinned-accounts{display:block;overflow:visible;}
+.meta-pins-list{width:100%;flex-wrap:wrap;overflow:visible;min-width:0;gap:6px;}
+.meta-pins-list>.meta-account-pin{max-width:100%;min-width:0;}
+.meta-pins-list .meta-account-pin>button:first-child{min-width:0;white-space:normal;overflow-wrap:anywhere;}
+.meta-summary-row{display:flex;align-items:center;justify-content:center;gap:8px;flex-wrap:wrap;min-width:0;padding:6px 0 0;border-top:1px solid var(--line);}
+.meta-summary-row>.meta-pinned-actions{margin-left:0;}
+.meta-summary-row .meta-live-refresh{min-height:44px;}
+.meta-analysis-progress{width:min(100%,240px);min-height:270px;padding:12px!important;}
+.meta-analysis-progress .meta-sync-progress{margin:0;}
+.meta-progress-heading{display:flex;align-items:center;justify-content:space-between;gap:6px;min-height:30px;}
+.meta-progress-heading>strong{min-width:0;overflow-wrap:anywhere;}
+.meta-progress-heading>.meta-progress-controls{flex:0 0 auto;flex-wrap:nowrap;gap:4px;}
+.meta-progress-heading button{font-size:10px;padding:6px;}
+.meta-analysis-progress .meta-sync-progress>.row.spread{align-items:start;}
+.meta-analysis-progress .meta-sync-progress>.row.spread strong{font-size:11px;}
+.meta-analysis-progress .meta-sync-progress small,.meta-analysis-progress .notice{font-size:10px;}
+@media(max-width:650px){.meta-summary-row>.meta-summary-date{flex-wrap:wrap;justify-content:center;max-width:100%;}.meta-summary-row .meta-counters-inline{max-width:100%;}.meta-summary-row .meta-counter-grid{gap:8px;}.meta-summary-row .meta-counter-grid strong{font-size:13px;}.meta-summary-row .meta-counter-grid>div{min-width:35px;}.meta-analysis-progress{width:min(100%,240px);}}
+.meta-analysis-progress .meta-sync-progress>.row.spread{flex-wrap:nowrap;gap:6px;}
+.meta-analysis-progress .meta-sync-progress>.row.spread>span{flex:0 0 auto;}
+.meta-progress-heading>strong{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;}

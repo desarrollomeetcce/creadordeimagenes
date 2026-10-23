@@ -232,8 +232,10 @@ function SyncIndicator({
   onControl,
   onResume,
   onAnalyze,
+  compactHeader = false,
 }: {
   account: Account;
+  compactHeader?: boolean;
   busy?: boolean;
   onControl?: (action: "pause" | "cancel") => void;
   onResume?: () => void;
@@ -249,8 +251,41 @@ function SyncIndicator({
     "paused",
     "waiting",
   ].includes(p.status);
+  const controls =
+    onControl && ongoing ? (
+      <div className="row meta-progress-controls">
+        {p.status === "paused" && onResume && (
+          <button type="button" disabled={busy} onClick={onResume}>
+            {compactHeader ? "Reanudar" : "Reanudar sincronización"}
+          </button>
+        )}
+        {!["paused", "error"].includes(p.status) && (
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => onControl("pause")}
+          >
+            {compactHeader ? "Pausar" : "Pausar sincronización"}
+          </button>
+        )}
+        <button
+          type="button"
+          disabled={busy}
+          className="danger"
+          onClick={() => onControl("cancel")}
+        >
+          {compactHeader ? "Cancelar" : "Cancelar sincronización"}
+        </button>
+      </div>
+    ) : null;
   return (
     <div className="meta-sync-progress" role="status">
+      {compactHeader && (
+        <div className="meta-progress-heading">
+          <strong title={account.name}>{account.name}</strong>
+          {controls}
+        </div>
+      )}
       <div className="row spread">
         <strong>{p.label}</strong>
         <span>
@@ -303,7 +338,15 @@ function SyncIndicator({
           </button>
         </div>
       )}
-      {p.status === "waiting" && p.nextSyncAt && (
+      {compactHeader && p.status === "waiting" && p.nextSyncAt && (
+        <p className="notice">
+          {p.waitReason === "pacing"
+            ? "Pausa entre consultas."
+            : "Límite de consultas de Meta."}{" "}
+          Reintento: {displayTime(p.nextSyncAt)}.
+        </p>
+      )}
+      {!compactHeader && p.status === "waiting" && p.nextSyncAt && (
         <p className="notice">
           {p.waitReason === "pacing"
             ? "Pausa entre consultas para respetar el ritmo permitido."
@@ -314,34 +357,20 @@ function SyncIndicator({
           {p.waitReason !== "pacing" && "Meta puede prolongar la espera."}
         </p>
       )}
-      {onControl && ongoing && (
-        <div className="row">
-          {p.status === "paused" && onResume && (
-            <button type="button" disabled={busy} onClick={onResume}>
-              Reanudar sincronización
-            </button>
-          )}
-          {!["paused", "error"].includes(p.status) && (
-            <button
-              type="button"
-              disabled={busy}
-              onClick={() => onControl("pause")}
-            >
-              Pausar sincronización
-            </button>
-          )}
-          <button
-            type="button"
-            disabled={busy}
-            className="danger"
-            onClick={() => onControl("cancel")}
-          >
-            Cancelar sincronización
-          </button>
-        </div>
-      )}
+      {!compactHeader && controls}
       <details>
         <summary>Detalles del progreso</summary>
+        {compactHeader && p.status === "waiting" && p.nextSyncAt && (
+          <p className="notice">
+            {p.waitReason === "pacing"
+              ? "Pausa entre consultas para respetar el ritmo permitido."
+              : "Meta alcanzó el límite de consultas; la importación está en espera."}{" "}
+            Reintento automático previsto: {displayTime(p.nextSyncAt)}. El
+            avance está guardado; esta hora no significa que se hayan recibido
+            datos nuevos.{" "}
+            {p.waitReason !== "pacing" && "Meta puede prolongar la espera."}
+          </p>
+        )}
         {p.scope && <small>{p.scope}</small>}
         <small>
           {p.pages} consultas procesadas · {p.processed} registros.
@@ -2394,8 +2423,8 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
               )
               .map((a) => (
                 <div className="panel meta-analysis-progress" key={a.id}>
-                  <strong>{a.name}</strong>
                   <SyncIndicator
+                    compactHeader
                     account={a}
                     busy={busy}
                     onResume={
@@ -2582,6 +2611,11 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
                       ) : null;
                     })}
                   </div>
+                </div>
+                <div
+                  className="meta-summary-row"
+                  aria-label="Resumen y actualización"
+                >
                   <div className="meta-summary-date">
                     <MetaSummaryCounters
                       summary={summary}
