@@ -162,3 +162,22 @@ test('Meta gráfico dual: escalas independientes, fechas reales y huecos sin fab
  const chart=dailyChartLayout(rows,'cost','results','2026-10-01','2026-10-04');assert.deepEqual(chart.points.map(p=>p.row.day),['2026-10-01','2026-10-03','2026-10-04']);assert(chart.left.max>=3&&chart.right.max>=20);assert.notEqual(chart.left.max,chart.right.max);assert.equal(chart.points[0].barHeight,.5/chart.left.max*200);assert.equal(chart.points[2].barHeight,null);assert.equal(chart.points[2].y,212);assert.equal(chart.points[1].x-chart.points[0].x,chart.width/2);assert.equal(chart.segments.length,2);assert.deepEqual(rows.map(r=>r.day),['2026-10-03','2026-10-01','2026-10-04']);
  const gaps=dailyChartLayout(rows,'spend','cost');assert.equal(gaps.points[2].y,null);assert.equal(gaps.segments.length,2);assert(gaps.points.every(p=>Number.isFinite(p.x)));assert.deepEqual(dailyChartLayout([],'cost','results').points,[]);
 });
+
+test('Meta tendencia: mejora, estabilidad y deterioro sostenido con costo ponderado e intervalo reproducible',async()=>{
+ const {dailyTrend}=await import('../lib/meta-ads/daily-trend');const {shiftDay}=await import('../lib/meta-ads/analytics');
+ const make=(factor:number)=>Array.from({length:14},(_,i)=>({day:shiftDay('2026-10-09',i),spend:20*(i>=7?factor:1),results:20}));
+ for(const [factor,status] of [[.5,'improving'],[1,'stable'],[1.5,'deteriorating']] as const){const rows=make(factor).map(r=>factor===1?{...r,spend:r.spend*10,results:r.results*10}:r),copy=structuredClone(rows);const t=dailyTrend(rows,'2026-10-09','2026-10-22','2026-10-23');assert.equal(t.status,status);assert.equal(t.change,factor-1);assert.equal(t.weekdaysMatched,true);assert(t.interval);assert(t.interval[0]<factor-1&&t.interval[1]>factor-1);assert.deepEqual(dailyTrend([...rows].reverse(),'2026-10-09','2026-10-22','2026-10-23'),t);assert.deepEqual(rows,copy);}
+ const weighted=make(1);weighted[13]={...weighted[13],spend:100,results:1};const t=dailyTrend(weighted,'2026-10-09','2026-10-22','2026-10-23');assert.equal(t.recent.cost,220/121);assert.notEqual(t.status,'deteriorating'); // single-day spike fails persistence
+ const seasonal=make(1.5).map((r,i)=>({...r,spend:r.spend*(i%7+1)}));assert.equal(dailyTrend(seasonal,'2026-10-09','2026-10-22','2026-10-23').status,'deteriorating');
+});
+test('Meta tendencia: no fabricar certeza con huecos, duplicados, métricas desconocidas, hoy parcial o gasto nulo',async()=>{
+ const {dailyTrend}=await import('../lib/meta-ads/daily-trend');const {shiftDay}=await import('../lib/meta-ads/analytics');
+ const rows=Array.from({length:14},(_,i)=>({day:shiftDay('2026-10-09',i),spend:20,results:20 as number|null}));
+ const run=(r:typeof rows,until='2026-10-22')=>dailyTrend(r,'2026-10-09',until,'2026-10-23');
+ assert.equal(run(rows.slice(0,-1)).status,'partial');assert.equal(run([...rows,rows[4]]).status,'partial');assert.equal(run(rows.map(r=>({...r,results:null}))).status,'partial');assert.equal(run(rows.map((r,i)=>({...r,spend:i>=7?0:20,results:i>=7?0:20}))).status,'no-spend');
+ const noResults=run(rows.map((r,i)=>({...r,results:i>=7?0:20})));assert.equal(noResults.status,'no-results');assert.equal(noResults.recent.cost,null);assert.equal(noResults.interval,null);
+ assert.equal(run(rows.map(r=>({...r,results:1}))).status,'observing');
+ const today=run([...rows,{day:'2026-10-23',spend:10000,results:0}],'2026-10-23');assert.equal(today.status,'mixed');assert.equal(today.excludedToday,true);assert.equal(today.recent.spend,140);
+ assert.equal(dailyTrend(rows.slice(0,3),'2026-10-09','2026-10-11','2026-10-23').status,'observing');assert.equal(dailyTrend([],'2026-10-23','2026-10-23','2026-10-23').status,'observing');
+ const reduced=run(rows.map((r,i)=>({...r,spend:i>=7?10:20,results:i>=7?10:20})));assert.equal(reduced.status,'mixed');assert.equal(reduced.resultChange,-.5);assert.equal(reduced.spendChange,-.5);
+});

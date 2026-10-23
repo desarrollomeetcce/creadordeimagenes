@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { compareDailyRows, type DailySort } from "../../lib/meta-ads/order";
 import { localDay, summarize } from "../../lib/meta-ads/analytics";
 import { quickRange } from "../../lib/meta-ads/date-range";
+import { MetaDailyTrend } from "./meta-daily-trend";
 import { MetaDailyChart } from "./meta-daily-chart";
 import type { DailyChartMetric } from "../../lib/meta-ads/daily-chart";
 import { MetaAnalysisPeriod } from "./meta-analysis-period";
@@ -91,6 +92,8 @@ export function MetaDailyDetail({ item }: { item: DailyItem }) {
       spend,
       results: knownMetric ? summary.results : null,
       cost: summary.cost,
+      impressions: row.impressions,
+      clicks: row.clicks,
     };
   });
   const sortedRows = [...values].sort((a, b) => compareDailyRows(a, b, sort));
@@ -179,6 +182,18 @@ export function MetaDailyDetail({ item }: { item: DailyItem }) {
               metricName={item.metricName}
               since={preset === "lifetime" ? undefined : since}
               until={preset === "lifetime" ? undefined : until}
+            />
+            <MetaDailyTrend
+              rows={values}
+              since={
+                preset === "lifetime"
+                  ? (rows.map((r) => r.day).sort()[0] ?? since)
+                  : since
+              }
+              until={preset === "lifetime" ? today : until}
+              today={today}
+              currency={item.currency}
+              metricName={item.metricName}
             />
             <div className="meta-table meta-daily-table">
               <table>

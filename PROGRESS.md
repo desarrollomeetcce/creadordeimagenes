@@ -1027,3 +1027,11 @@ Por nueva indicación, cuentas fijadas usan el ancho completo con ajuste natural
 TypeScript/build aprobados; Chromium escritorio1520/1366 y móvil390 verifican centrado, lista de seis cuentas sin scrollbar, ancho240, centros verticales de nombre/acciones y textos cortos. Revisión amplia mantiene alias/selección estable, filtros, fechas/orden, alineación de columnas y protección HTTP. Sin cambios de API/persistencia ni llamadas Meta/IA reales.
 
 Aviso de espera compacto muestra motivo y reintento; explicación completa permanece en Detalles del progreso. Contador de etapas conserva posición junto al estado y nombre largo se limita visualmente a dos líneas con title completo.
+
+### Interpretación matemática debajo del gráfico diario
+
+Nuevo módulo puro compara días cerrados de objeto/rango con ventanas iguales (7+7 por defecto), costo ponderado, gasto y resultados diarios; referencia histórica previa dentro del rango. Clasifica mejora/deterioro sostenido, estabilidad, variación inconcluyente, observación, cobertura parcial, gasto sin resultados y sin gasto. Datos desconocidos/duplicados/huecos no se inventan; hoy local se excluye. Presenta fórmula, fechas, cifras, cobertura y límites en detalles plegables. Sin IA ni vista de recomendaciones, sin API/persistencia nueva ni estado publicitario automático.
+
+Intervalo exploratorio combina bootstrap pareado de bloques consecutivos/semilla fija con incertidumbre logarítmica de conteos para evitar falsa precisión si costos diarios son idénticos. Persistencia compara cada mitad con su mitad previa correspondiente; una prueba con estacionalidad detectó y corrigió la comparación contra promedio semanal, que podía confundir el patrón de días. Señal de desgaste se expresa como compatible, nunca causa demostrada. Parámetros operativos y método documentados en docs/META_DAILY_TREND.md.
+
+125 unitarias aprobadas (dos pruebas nuevas con múltiples escenarios), TypeScript y build aprobados. Chromium con diarios sintéticos verifica costo+100% y deterioro, exclusión de hoy, explicación/fórmulas, actualización por rango, gráfico/orden intactos y móvil sin overflow; se verifica también el mismo panel en campañas y conjuntos. Sin llamadas Meta/IA o escrituras de publicidad reales. Integraciones previas154, sin cambios de servidor/persistencia que requieran repetirlas.
