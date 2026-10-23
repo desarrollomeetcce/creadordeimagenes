@@ -1364,3 +1364,10 @@ html:has(.meta-ads){scrollbar-gutter:stable}
 .meta-daily-table th{position:sticky;top:0;background:var(--surface);}
 .meta-daily-note{color:var(--muted);font-size:11px;}
 @media(max-width:650px){.meta-daily-toolbar>.meta-analysis-period,.meta-daily-toolbar>label{flex-basis:100%;}.meta-daily-track{height:160px;}.meta-daily-table td,.meta-daily-table th{padding:10px;}}
+.meta-connection-accounts{margin:12px 0;}
+.meta-connection-accounts>summary{font-size:12px;}
+.meta-connection-accounts-body{display:grid;grid-template-columns:minmax(0,1fr);gap:12px;padding:12px;}
+.meta-connection-account-list{max-height:340px;overflow-y:auto;overscroll-behavior:contain;}
+.meta-connection-account-list>article{padding:10px 0;border-bottom:1px solid var(--line);overflow-wrap:anywhere;}
+.meta-connection-accounts-footer{justify-content:flex-end;border-top:1px solid var(--line);padding-top:10px;}
+@media(max-width:560px){.meta-connection-accounts-body{padding:10px;}.meta-connection-accounts .row{gap:7px;}}

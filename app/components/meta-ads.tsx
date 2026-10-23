@@ -5,6 +5,7 @@ import {
   MetaOAuthQuickConnect,
   type MarketingOAuthInfo,
 } from "./meta-marketing-oauth";
+import { MetaConnectionScope } from "./meta-connection-scope";
 import { MetaConnectionAccess } from "./meta-connection-access";
 import { MetaAnalysisPeriod } from "./meta-analysis-period";
 import {
@@ -194,7 +195,7 @@ function date(value: string | null, timezone = "UTC") {
 }
 function displayTime(value: string | null) {
   return value
-    ? new Date(value).toLocaleString("es-PE")
+    ? new Date(value).toLocaleString("es-PE", { timeZone: "America/Lima" })
     : "Todavía no sincronizada";
 }
 function SyncIndicator({
@@ -233,9 +234,32 @@ function SyncIndicator({
         value={p.phase}
         aria-label={`Sincronización de ${account.name}: etapas completadas`}
       />
+      {ongoing && (
+        <small>
+          La barra cuenta etapas; una etapa puede procesar muchos anuncios.
+        </small>
+      )}
+      {p.lastActivityAt && (
+        <small>
+          Última actividad registrada: {displayTime(p.lastActivityAt)} · hora de
+          Lima.
+        </small>
+      )}
+      {p.status === "stalled" && (
+        <small>
+          El servidor no ha confirmado avance reciente. Revisa el detalle del
+          progreso antes de iniciar otra actualización.
+        </small>
+      )}
+      {p.status === "error" && (
+        <small>
+          La importación está detenida por un error; el avance guardado se
+          conserva.
+        </small>
+      )}
       {p.recentReady && p.status !== "complete" && (
         <small>
-          Análisis reciente listo. El histórico se completa en segundo plano.
+          Análisis reciente disponible. Falta completar el histórico.
         </small>
       )}
       {p.recentReady && p.historyTotal > 0 && (
@@ -1191,60 +1215,9 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
                         : ""}
                     </small>
                   )}
-                  <section
-                    className="meta-connection-scope"
-                    aria-label="Alcance de sincronización"
-                  >
-                    <strong>Alcance de sincronización</strong>
-                    <p>
-                      Inventario completo: campañas, conjuntos y anuncios
-                      activos y desactivados, sin límite de antigüedad. No
-                      incluye eliminados ni archivados.
-                    </p>
-                    <p>
-                      Estadísticas diarias: últimos 30 días. Desde el inicio:
-                      histórico acumulado disponible en Meta.
-                    </p>
-                    {accounts.filter((a) => a.connectionId === c.id).length ? (
-                      accounts
-                        .filter((a) => a.connectionId === c.id)
-                        .map((a) => (
-                          <div key={a.id}>
-                            <strong>{a.name}</strong>
-                            <small>
-                              {a.progress?.label ?? "Sin importación iniciada"}{" "}
-                              · Última sincronización completa:{" "}
-                              {a.lastCompletedAt
-                                ? displayTime(a.lastCompletedAt)
-                                : "Todavía no completada"}
-                            </small>
-                            {a.coverage && (
-                              <small>
-                                Fechas con estadísticas guardadas:{" "}
-                                {date(a.coverage.since)} →{" "}
-                                {date(a.coverage.until)}. La importación puede
-                                estar incompleta.
-                              </small>
-                            )}
-                            {a.progress?.scope && (
-                              <small>
-                                Alcance del intento: {a.progress.scope}
-                              </small>
-                            )}
-                          </div>
-                        ))
-                    ) : (
-                      <small>
-                        No hay cuentas vinculadas. Usa Buscar cuentas nuevas
-                        para incorporarlas.
-                      </small>
-                    )}
-                    <small>
-                      Actualizar conexión comprueba el acceso guardado. Buscar
-                      cuentas nuevas consulta la lista disponible; ninguna de
-                      estas acciones importa campañas.
-                    </small>
-                  </section>
+                  <MetaConnectionScope
+                    accounts={accounts.filter((a) => a.connectionId === c.id)}
+                  />
                   {!c.disconnectedAt && (
                     <MetaConnectionAccess
                       connection={c}
