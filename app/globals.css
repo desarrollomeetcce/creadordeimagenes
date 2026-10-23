@@ -1453,3 +1453,46 @@ html:has(.meta-ads),.meta-ads { overflow-anchor:none; }
 .meta-external-link:hover{color:var(--accent);}
 .meta-daily-table th>.meta-daily-sort{border:0;background:transparent;color:inherit;padding:2px 0;font:inherit;font-weight:650;text-align:left;white-space:nowrap;cursor:pointer;}
 .meta-daily-table th[aria-sort=ascending],.meta-daily-table th[aria-sort=descending]{color:var(--accent);}
+
+/* Period summary: stable height during selection/loading; no extra filter row. */
+.meta-pinned-accounts>.meta-live-refresh{margin-left:auto;}
+.meta-result-controls>.meta-analysis-period{flex:0 1 295px;max-width:340px;min-width:220px;}
+.meta-analysis-period>button{width:100%;text-align:left;}
+.meta-object-links{display:flex!important;align-items:center;gap:8px;flex-wrap:wrap;}
+.meta-inline-detail{border:0;background:transparent;padding:0!important;font-size:11px;color:var(--muted);text-decoration:underline;text-underline-offset:2px;line-height:1.4;}
+.meta-inline-detail:hover{color:var(--accent);}
+.meta-counters{margin:6px 0 4px;border:1px solid var(--line);border-radius:8px;padding:7px 10px;background:var(--surface);}
+.meta-counter-scope{display:flex;justify-content:space-between;gap:8px;min-height:18px;font-size:10px;color:var(--muted);white-space:nowrap;overflow:hidden;}
+.meta-counter-grid{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:10px;}
+.meta-counter-grid>div{min-width:0;}
+.meta-counter-grid span{display:block;font-size:11px;color:var(--muted);}
+.meta-counter-grid strong{display:block;font-size:14px;min-height:21px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+@media(max-width:700px){.meta-counter-grid{grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;}.meta-counter-scope{font-size:9px;}.meta-result-controls>.meta-analysis-period{flex:1 1 220px;max-width:none;}}
+.meta-counter-grid{grid-template-columns:repeat(5,minmax(0,1fr));}
+.meta-pinned-actions{display:flex;align-items:center;gap:6px;margin-left:auto;}
+.meta-inline-alias{border:0;background:transparent;padding:0!important;font-size:11px;color:var(--muted);line-height:1.4;}
+.meta-alias-indicator{font-size:11px;color:var(--muted);}
+.meta-alias-popover{position:fixed;inset:auto;margin:0;width:264px;max-width:calc(100vw - 16px);padding:12px;border:1px solid var(--line);border-radius:8px;background:var(--surface);color:var(--text);box-shadow:0 8px 28px #0006;z-index:20;}
+.meta-alias-popover label{font-size:12px;display:block;}
+.meta-alias-popover select{width:100%;margin-top:6px;}
+.meta-alias-popover>button{font-size:11px;margin-top:8px;}
+@media(max-width:700px){.meta-counter-grid{grid-template-columns:repeat(3,minmax(0,1fr));}.meta-pinned-actions{flex-wrap:wrap;}}
+.meta-bulk-alias{min-width:145px;}
+/* Keep cost choices horizontal and leave a readable range control. */
+.meta-result-controls .meta-level-tabs button,.meta-result-controls>.meta-view-toggle{font-size:11px;padding:9px 7px;}
+.meta-order-horizontal>div{flex-wrap:nowrap;overflow-x:auto;}
+.meta-order-horizontal button{font-size:11px;padding:9px 5px;flex:1 0 auto;}
+.meta-result-controls>.meta-analysis-period{flex:1 1 245px;min-width:230px;max-width:340px;}
+/* The complete table toolbar, summary and visible column header stick together. */
+.meta-sticky-controls{position:static;}
+.meta-sticky-controls.meta-table-sticky{position:sticky;top:0;}
+.meta-sticky-controls>.meta-counters{border-radius:0;border-width:1px 0 0;margin:0;padding:6px 10px;}
+.meta-fixed-table-head{overflow:hidden;border-top:1px solid var(--line);border-radius:0 0 12px 12px;}
+.meta-fixed-table-head table{width:100%;min-width:1050px;table-layout:fixed;border-collapse:collapse;margin:0;white-space:normal;}
+.meta-fixed-table-head th{padding:8px 5px;overflow-wrap:anywhere;vertical-align:middle;line-height:1.2;text-align:left;}
+.meta-fixed-table-head small{display:block;font-size:10px;line-height:1.3;}
+.meta-results .meta-table thead.sr-only{border:0;}
+@media(max-width:700px){.meta-sticky-controls.meta-table-sticky{position:static;}}
+.meta-sticky-controls{grid-template-columns:minmax(0,1fr);}
+.meta-sticky-controls>*{min-width:0;}
+.meta-pinned-actions{min-width:0;max-width:100%;}

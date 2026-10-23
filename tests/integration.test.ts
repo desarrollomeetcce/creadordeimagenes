@@ -11386,6 +11386,15 @@ test("Integración HTTP + PostgreSQL (base exclusiva de pruebas, sin llamadas ex
       assert.deepEqual((await owner.call('meta-ads/dashboard?accounts=96081&level=campaign&alias=__none')).body.items.map((o:any)=>o.id),['960812']);
       assert(!(await user.call('meta-ads/aliases')).body.some((a:any)=>a.id===alias.id));
       assert.equal((await user.call('meta-ads/dashboard?accounts=96081&level=campaign&alias='+alias.id)).status,404);
+      const bulkPath='meta-ads/objects/alias',chosen=['960811','960812'];
+      assert.equal((await admin.call(bulkPath,'PATCH',{objectIds:chosen,aliasId:alias.id})).status,403);
+      assert.equal((await owner.call(bulkPath,'PATCH',{objectIds:[],aliasId:alias.id})).status,400);
+      assert.equal((await owner.call(bulkPath,'PATCH',{objectIds:['960811','999999999'],aliasId:alias.id})).status,404);
+      assert.equal((await db.metaAdObject.findUniqueOrThrow({where:{id:'960812'}})).aliasId,null);
+      assert.equal((await owner.call(bulkPath,'PATCH',{objectIds:chosen,aliasId:'not-existing'})).status,404);
+      const bulk=await owner.call(bulkPath,'PATCH',{objectIds:[...chosen,'960811'],aliasId:alias.id});assert.equal(bulk.status,200,JSON.stringify(bulk.body));assert.equal(bulk.body.count,2);assert.equal(await db.metaAdObject.count({where:{id:{in:chosen},aliasId:alias.id}}),2);
+      const clear=await owner.call(bulkPath,'PATCH',{objectIds:chosen,aliasId:null});assert.equal(clear.status,200);assert.equal(await db.metaAdObject.count({where:{id:{in:chosen},aliasId:null}}),2);
+      assert.equal((await owner.call('meta-ads/objects/960811/alias','PATCH',{aliasId:alias.id})).status,200);
       assert.equal((await owner.call('meta-ads/aliases/'+alias.id,'PATCH',{name:'Alias renombrado'})).status,200);
       assert.equal((await owner.call('meta-ads/objects/960811/alias','PATCH',{aliasId:null})).status,200);
       assert.equal((await db.metaAdObject.findUniqueOrThrow({where:{id:'960811'}})).aliasId,null);
@@ -11550,6 +11559,38 @@ test("Integración HTTP + PostgreSQL (base exclusiva de pruebas, sin llamadas ex
         // Revocation of the initiating session during exchange blocks storage, even if the code is valid.
         const raw='synthetic-oauth-session-'+randomUUID();await db.session.create({data:{id:tokenHash(raw),userId:actor.id,expiresAt:new Date(Date.now()+60000)}});const revoked=await connection(),revokedAuth=await start(revoked.id,'session='+raw);onExchange=async()=>{await db.session.delete({where:{id:tokenHash(raw)}});};assert.equal((await finishOAuth(new NextRequest(revokedAuth.url,{headers:{Cookie:revokedAuth.cookie}}))).status,401);assert.equal((await db.metaConnection.findUniqueOrThrow({where:{id:revoked.id}})).encryptedToken,null);
       }finally{globalThis.fetch=original;}
+    });
+    await t.test('Meta resumen: ámbito completo antes de paginar, seleccionados, periodo y promedio ponderado sin duplicar niveles', async()=>{
+      const {dashboard}=await import('../lib/meta-ads/dashboard');
+      const {localDay,shiftDay}=await import('../lib/meta-ads/analytics');
+      const actor=await db.user.findFirstOrThrow({where:{role:'OWNER'}}),today=localDay('America/Lima'),scope='7d_click,1d_view|impression';
+      const conn=await db.metaConnection.create({data:{ownerId:actor.id,name:'Resumen sintético',transport:'API',verifiedAt:new Date()}});
+      const account='84001',usd='84002';
+      for(const [id,currency] of [[account,'PEN'],[usd,'USD']]) await db.metaAdAccount.create({data:{id,connectionId:conn.id,name:'Resumen '+currency,currency,timezone:'America/Lima',syncedAt:new Date()}});
+      try {
+        for(let i=0;i<26;i++) {
+          const id='84001'+String(i).padStart(3,'0');
+          await db.metaAdObject.create({data:{id,accountId:account,level:'campaign',name:'Campaña '+i,status:i%2?'PAUSED':'ACTIVE',effectiveStatus:i%2?'PAUSED':'ACTIVE'}});
+          await db.metaAdDaily.create({data:{accountId:account,objectId:id,day:today,scope,spend:i===0?20:i===1?10:2,actions:{'onsite_conversion.messaging_conversation_started_7d':i===0?10:1,'onsite_conversion.messaging_conversation_replied_7d':999}}});
+        }
+        await db.metaAdDaily.create({data:{accountId:account,objectId:'84001000',day:shiftDay(today,-1),scope,spend:8,actions:{'onsite_conversion.messaging_conversation_started_7d':4}}});
+        await db.metaAdDaily.create({data:{accountId:account,objectId:'84001000',day:today,scope:'other',spend:999,actions:{'onsite_conversion.messaging_conversation_started_7d':999}}});
+        for(const id of ['84001888','84001889']) {await db.metaAdObject.create({data:{id,accountId:account,level:'adset',campaignId:'84001000',name:'Hijo',status:'ACTIVE'}});await db.metaAdDaily.create({data:{accountId:account,objectId:id,day:today,scope,spend:500,actions:{'onsite_conversion.messaging_conversation_started_7d':100}}});}
+        await db.metaAdObject.create({data:{id:'84002000',accountId:usd,level:'campaign',name:'USD',status:'ACTIVE'}});
+        await db.metaAdDaily.create({data:{accountId:usd,objectId:'84002000',day:today,scope,spend:9,actions:{'onsite_conversion.messaging_conversation_started_7d':3}}});
+        const read=(extra:Record<string,string>={})=>dashboard(actor,new URLSearchParams({accounts:account,level:'campaign',summary:'1',analysisPeriod:'today',limit:'10',...extra}));
+        const all=await read();assert.equal(all.items.length,10);assert.equal(all.summary!.objects,26);assert.equal(all.summary!.currencies[0].spend,78);assert.equal(all.summary!.currencies[0].conversations,35);assert.equal(all.summary!.currencies[0].average,78/35);assert.deepEqual(all.summary!.campaigns,{active:13,inactive:13,unknown:0});assert.equal(all.summary!.partial,false);
+        const selected=await read({summarySelection:'84001000,84001001',page:'2'});assert.equal(selected.summary!.objects,2);assert.equal(selected.summary!.currencies[0].spend,30);assert.equal(selected.summary!.currencies[0].conversations,11);assert.equal(selected.items.length,10);
+        const week=await read({analysisPeriod:'7'});assert.equal(week.summary!.currencies[0].spend,86);assert.equal(week.summary!.currencies[0].conversations,39);
+        const custom=await read({analysisPeriod:'custom',since:shiftDay(today,-1),until:shiftDay(today,-1)});assert.equal(custom.summary!.currencies[0].spend,8);assert.equal(custom.summary!.currencies[0].conversations,4);assert.equal(custom.summary!.partial,true);
+        const children=await read({level:'adset'});assert.equal(children.summary!.currencies[0].spend,1000);assert.equal(children.summary!.campaigns.active,1);
+        const mixed=await read({accounts:account+','+usd});assert.equal(mixed.summary!.currencies.length,2);assert.equal(mixed.summary!.currencies.find(g=>g.currency==='USD')!.average,3);
+        await db.metaAdTotal.create({data:{accountId:account,objectId:'84001000',scope,since:shiftDay(today,-100),until:today,spend:1000,actions:{'onsite_conversion.messaging_conversation_started_7d':500}}});
+        const lifetime=await read({analysisPeriod:'lifetime'});assert.equal(lifetime.summary!.currencies[0].spend,1000);assert.equal(lifetime.summary!.currencies[0].average,2);assert.equal(lifetime.summary!.partial,true);
+        await assert.rejects(()=>read({summarySelection:'84002000'}),/no autorizada/);await assert.rejects(()=>read({analysisPeriod:'custom'}),/fechas/);
+        assert.equal((await user.call('meta-ads/dashboard?accounts='+account+'&level=campaign&summary=1')).status,404);
+        const api=await owner.call('meta-ads/dashboard?accounts='+account+'&level=campaign&summary=1&analysisPeriod=today');assert.equal(api.status,200);assert.equal(api.body.summary.currencies[0].spend,78);
+      } finally {await db.metaAdAccount.deleteMany({where:{connectionId:conn.id}});await db.metaConnection.delete({where:{id:conn.id}});}
     });
     await t.test("cierre de sesión invalida el token", async () => {
       assert.equal((await user.call("auth/logout", "POST")).status, 200);

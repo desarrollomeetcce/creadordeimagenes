@@ -64,7 +64,21 @@ export async function assignAlias(
   objectId: string,
   aliasId: string | null,
 ) {
+  return assignAliases(actor, [objectId], aliasId);
+}
+export async function assignAliases(
+  actor: Actor,
+  objectIds: string[],
+  aliasId: string | null,
+) {
   ownerOnly(actor);
+  const ids = [...new Set(objectIds)];
+  demand(
+    ids.length > 0 &&
+      ids.length <= 100 &&
+      ids.every((id) => /^\d{1,40}$/.test(id)),
+    "Selección de alias inválida.",
+  );
   return db.$transaction(async (tx) => {
     await tx.$executeRaw`SELECT pg_advisory_xact_lock(884411)`;
     demand(
@@ -74,9 +88,12 @@ export async function assignAlias(
       "Sin permiso para asignar alias.",
       403,
     );
+    const count = await tx.metaAdObject.count({
+      where: { id: { in: ids }, account: accountWhere(actor) },
+    });
     demand(
-      await tx.metaAdObject.findUnique({ where: { id: objectId } }),
-      "Elemento no disponible.",
+      count === ids.length,
+      "Hay elementos no disponibles en la selección.",
       404,
     );
     if (aliasId)
@@ -85,18 +102,19 @@ export async function assignAlias(
         "Alias no disponible.",
         404,
       );
-    await tx.metaAdObject.update({
-      where: { id: objectId },
+    await tx.metaAdObject.updateMany({
+      where: { id: { in: ids } },
       data: { aliasId },
     });
-    await recordActivity(tx, {
-      data: {
-        actorId: actor.id,
-        action: "META_ALIAS_ASIGNADO",
-        resourceId: objectId,
-        detail: { aliasId },
-      },
-    });
-    return { ok: true };
+    for (const id of ids)
+      await recordActivity(tx, {
+        data: {
+          actorId: actor.id,
+          action: "META_ALIAS_ASIGNADO",
+          resourceId: id,
+          detail: { aliasId },
+        },
+      });
+    return { ok: true, count: ids.length };
   });
 }

@@ -102,6 +102,24 @@ export async function metaRoutes(
       await (await import("./aliases")).saveAlias(actor, b.name, parts[2]),
     );
   }
+  if (path === "objects/alias" && method === "PATCH") {
+    ownerOnly(actor);
+    const b = z
+      .object({
+        objectIds: z
+          .array(z.string().regex(/^\d{1,40}$/))
+          .min(1)
+          .max(100),
+        aliasId: z.string().min(1).max(80).nullable(),
+      })
+      .strict()
+      .parse(await body());
+    return send(
+      await (
+        await import("./aliases")
+      ).assignAliases(actor, b.objectIds, b.aliasId),
+    );
+  }
   if (
     parts[1] === "objects" &&
     parts[2] &&

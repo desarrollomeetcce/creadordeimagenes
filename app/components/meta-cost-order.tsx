@@ -11,13 +11,11 @@ export function MetaCostOrder({
   calendar = false,
   direction,
   onChange,
-  onCalendar,
 }: {
   value: string;
   calendar?: boolean;
   direction: string;
   onChange: (value: string) => void;
-  onCalendar?: () => void;
 }) {
   return (
     <div
@@ -27,19 +25,19 @@ export function MetaCostOrder({
     >
       <span>Ordenar por costo</span>
       <div>
-        {(calendar || onCalendar
-          ? [...periods, ["custom", "Calendario"]]
-          : periods
-        ).map(([id, label]) => (
+        {[...periods, ["custom", "Por fecha"]].map(([id, label]) => (
           <button
             type="button"
             key={id}
             aria-pressed={value === id}
             className={value === id ? "primary" : ""}
-            aria-haspopup={id === "custom" && onCalendar ? "dialog" : undefined}
-            onClick={() =>
-              id === "custom" && onCalendar ? onCalendar() : onChange(id)
+            disabled={id === "custom" && !calendar}
+            title={
+              id === "custom" && !calendar
+                ? "Elige un rango en Periodo de análisis"
+                : undefined
             }
+            onClick={() => onChange(id)}
           >
             {label}
             <span aria-hidden="true">

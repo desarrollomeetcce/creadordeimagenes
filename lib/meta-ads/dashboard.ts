@@ -1,3 +1,4 @@
+import { metaSummary } from "./summary";
 import { compareMetaItems } from "./order";
 import { focusedReportDay } from "./focused-labels";
 import { createHash } from "node:crypto";
@@ -64,6 +65,27 @@ export async function dashboard(actor: Actor, params: URLSearchParams) {
     );
     return ids;
   };
+  const summarySelection =
+    params.get("summary") === "1" ? selectionIds("summarySelection") : [];
+  const analysisPeriod = params.get("analysisPeriod") ?? "today";
+  demand(
+    ["today", "7", "15", "30", "lifetime", "custom"].includes(analysisPeriod),
+    "Periodo de análisis inválido.",
+  );
+  if (summarySelection.length) {
+    const permitted = await db.metaAdObject.count({
+      where: {
+        id: { in: summarySelection },
+        level,
+        accountId: { in: scoped.map((a) => a.id) },
+      },
+    });
+    demand(
+      permitted === summarySelection.length,
+      "Selección no autorizada.",
+      404,
+    );
+  }
   const campaignIds = selectionIds("campaigns"),
     adsetIds = selectionIds("adsets");
   const where: Prisma.MetaAdObjectWhereInput = {
@@ -154,7 +176,25 @@ export async function dashboard(actor: Actor, params: URLSearchParams) {
   });
   const limited = objects.length > 10000;
   const visible = objects.slice(0, 10000);
-  if (!visible.length) return { items: [], total: 0, page: 1, limited };
+  if (!visible.length)
+    return {
+      items: [],
+      total: 0,
+      page: 1,
+      limited,
+      ...(params.get("summary") === "1"
+        ? {
+            summary: await metaSummary(
+              [],
+              scoped,
+              "today",
+              null,
+              null,
+              summarySelection.length > 0,
+            ),
+          }
+        : {}),
+    };
   const parents = await db.metaAdObject.findMany({
     where: {
       accountId: { in: scoped.map((a) => a.id) },
@@ -204,6 +244,10 @@ export async function dashboard(actor: Actor, params: URLSearchParams) {
         Number.isFinite(Date.parse(customSince)) &&
         Number.isFinite(Date.parse(customUntil))),
     "Rango de fechas inválido.",
+  );
+  demand(
+    analysisPeriod !== "custom" || (!!customSince && !!customUntil),
+    "Selecciona fechas de análisis.",
   );
   const accountContext = new Map(
     scoped.map((a) => {
@@ -477,6 +521,45 @@ export async function dashboard(actor: Actor, params: URLSearchParams) {
         (o.periods[sort] ?? o.periods["7"]).results >= o.minResults &&
         (o.periods[sort] ?? o.periods["7"]).cost !== null,
     );
+  let summary;
+  if (params.get("summary") === "1") {
+    const computedFilters =
+      state === "campaign-active" ||
+      state === "delivery" ||
+      !!params.get("rating") ||
+      !!age ||
+      params.get("ranking") === "1";
+    // Full catalogue scope can exceed the table's safety cap. Only derived filters need its calculated rows.
+    let refs =
+      limited && !computedFilters
+        ? await db.metaAdObject.findMany({
+            where,
+            select: {
+              id: true,
+              accountId: true,
+              level: true,
+              campaignId: true,
+            },
+          })
+        : items;
+    if (params.get("currency"))
+      refs = refs.filter(
+        (o) =>
+          scoped.find((a) => a.id === o.accountId)?.currency ===
+          params.get("currency"),
+      );
+    if (summarySelection.length)
+      refs = refs.filter((o) => summarySelection.includes(o.id));
+    summary = await metaSummary(
+      refs,
+      scoped,
+      analysisPeriod,
+      customSince,
+      customUntil,
+      summarySelection.length > 0,
+      limited && computedFilters,
+    );
+  }
   items.sort((a, b) => compareMetaItems(a, b, sort, direction));
   const page = Math.max(1, Math.min(10000, Number(params.get("page")) || 1)),
     limit = Math.max(10, Math.min(100, Number(params.get("limit")) || 25));
@@ -486,6 +569,7 @@ export async function dashboard(actor: Actor, params: URLSearchParams) {
     page,
     limited,
     excludedForRanking,
+    ...(summary ? { summary } : {}),
     attribution: "7 días clic / 1 día vista · fecha de impresión",
     note: "Datos de hoy parciales. Histórico disponible; no se garantiza toda la vida del anuncio. Rankings separados por moneda y resultado.",
   };

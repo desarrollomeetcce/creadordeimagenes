@@ -17,6 +17,9 @@ import {
 import { MetaStatusSwitch } from "./meta-status-switch";
 import { MetaDataFreshness } from "./meta-data-freshness";
 import { MetaDailyDetail } from "./meta-daily-detail";
+import { MetaAliasAction } from "./meta-alias-action";
+import { MetaSummaryCounters } from "./meta-summary-counters";
+import type { MetaSummary } from "../../lib/meta-ads/summary";
 import { MetaCostOrder } from "./meta-cost-order";
 import type { MetaSelection } from "../../lib/meta-ads/preferences";
 import { MetaAccountPicker } from "./meta-account-picker";
@@ -345,12 +348,7 @@ function SyncIndicator({
 export function MetaAds({ role, userId }: { role: string; userId: string }) {
   const owner = role === "OWNER";
   const stableViewport = useMetaStableViewport();
-  const periodPicker = useRef<{ open: () => void }>(null);
-  const orderingCalendar = useRef(false);
-  const openCostCalendar = () => {
-    orderingCalendar.current = true;
-    periodPicker.current?.open();
-  };
+  const tableHeaderScroll = useRef<HTMLDivElement>(null);
   const [accounts, setAccounts] = useState<Account[]>([]),
     [preferencesReady, setPreferencesReady] = useState(false),
     [accountsLoaded, setAccountsLoaded] = useState(false),
@@ -363,6 +361,7 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
     [accountListBusiness, setAccountListBusiness] = useState(""),
     [accountListPage, setAccountListPage] = useState(1),
     [items, setItems] = useState<Item[]>([]),
+    [summary, setSummary] = useState<MetaSummary | null>(null),
     [total, setTotal] = useState(0),
     [limited, setLimited] = useState(false),
     [rankingExcluded, setRankingExcluded] = useState(0),
@@ -432,31 +431,32 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
       active = false;
     };
   }, [revision]);
-  const aliasControl = (o: Item) =>
-    owner ? (
-      <select
-        aria-label={`Alias de ${o.name}`}
-        value={o.aliasId ?? ""}
-        disabled={busy}
-        onChange={(e) => {
-          const aliasId = e.target.value || null;
-          void run(
-            () => api(`meta-ads/objects/${o.id}/alias`, "PATCH", { aliasId }),
-            "Alias actualizado.",
-          );
-        }}
-      >
-        <option value="">Sin alias</option>
-        {aliases.map((a) => (
-          <option key={a.id} value={a.id}>
-            {a.name}
-          </option>
-        ))}
-      </select>
-    ) : (
-      <span>{o.alias?.name ?? "Sin alias"}</span>
-    );
+  const aliasControl = (o: Item) => (
+    <MetaAliasAction
+      name={o.name}
+      value={o.aliasId}
+      aliases={aliases}
+      disabled={busy}
+      readOnly={!owner}
+      onAssign={(aliasId) =>
+        void run(
+          () => api(`meta-ads/objects/${o.id}/alias`, "PATCH", { aliasId }),
+          "Alias actualizado.",
+        )
+      }
+    />
+  );
   const selectedIds = new Set(selectedObjects.map((o) => o.id));
+  const summarySelectionKey = selectedObjects
+    .filter(
+      (o) =>
+        o.level === level &&
+        (!accountIds.length || accountIds.includes(o.accountId)) &&
+        (!business ||
+          accounts.find((a) => a.id === o.accountId)?.businessId === business),
+    )
+    .map((o) => o.id)
+    .join(",");
   const selectedCount = selectedObjects.filter(
     (o) =>
       o.level === level &&
@@ -778,6 +778,7 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
     const current = ++serial.current;
     void (async () => {
       setLoading(true);
+      setSummary(null);
       const p = new URLSearchParams({
         level,
         accounts: accountKey,
@@ -798,6 +799,9 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
         ranking: tab === "ranking" ? "1" : "0",
         page: String(page),
         limit: "25",
+        summary: "1",
+        analysisPeriod: calendar ? "custom" : analysisPeriod,
+        summarySelection: summarySelectionKey,
         ...(calendar ? { since, until } : {}),
       });
       fetch("/api/meta-ads/dashboard?" + p, {
@@ -813,6 +817,7 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
         .then((data) => {
           if (serial.current === current) {
             setItems(data.items);
+            setSummary(data.summary ?? null);
             setTotal(data.total);
             setLimited(data.limited);
             setRankingExcluded(data.excludedForRanking ?? 0);
@@ -835,6 +840,8 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
     preferencesReady,
     accountsLoaded,
     analyticsTab,
+    analysisPeriod,
+    summarySelectionKey,
     level,
     accountKey,
     business,
@@ -993,9 +1000,64 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
       (!accountIds.length || accountIds.includes(a.id)) &&
       (!business || a.businessId === business),
   );
+  const tableColumns = () => (
+    <colgroup>
+      <col style={{ width: 28 }} />
+      <col style={{ width: 46 }} />
+      <col style={{ width: "23%" }} />
+      <col style={{ width: "8%" }} />
+      <col style={{ width: "7%" }} />
+      <col style={{ width: "6%" }} />
+      {periods.map(([key]) => (
+        <col key={key} style={{ width: "6%" }} />
+      ))}
+      <col style={{ width: "9%" }} />
+      <col style={{ width: "9%" }} />
+    </colgroup>
+  );
+  const tableHead = (hidden = false) => (
+    <thead className={hidden ? "sr-only" : undefined}>
+      <tr>
+        <th className="meta-check-cell">
+          <span className="sr-only">Selección</span>
+        </th>
+        <th>
+          <span className="sr-only">Activado</span>
+        </th>
+        <th>Campaña / Conjunto / Anuncio</th>
+        <th>Cuenta / Resultado</th>
+        <th title="Gasto del periodo de análisis seleccionado">Gasto</th>
+        <th>Inicio · días</th>
+        {periods.map(([key, label]) => (
+          <th key={key}>{label}</th>
+        ))}
+        <th className="meta-calendar-column" scope="col">
+          Por fecha
+          <small>
+            {calendar
+              ? `${date(since)} – ${date(until)}`
+              : "Costo por resultado"}
+          </small>
+        </th>
+        <th>Evaluación</th>
+      </tr>
+    </thead>
+  );
   const renderCard = (o: Item) => {
-    const summary =
-      o.periods[calendar ? "custom" : analysisPeriod] ?? o.periods["30"];
+    const savedSummary = o.periods[calendar ? "custom" : analysisPeriod];
+    const summary: Period =
+      savedSummary &&
+      (!calendar ||
+        (savedSummary.since === since && savedSummary.until === until))
+        ? savedSummary
+        : {
+            spend: 0,
+            results: 0,
+            cost: null,
+            state: "UNAVAILABLE",
+            since: calendar ? since : "",
+            until: calendar ? until : "",
+          };
     const summaryLabel = calendar
       ? "Calendario elegido"
       : (periods.find(([id]) => id === analysisPeriod)?.[1] ?? "30 días");
@@ -1076,8 +1138,16 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
                 {o.name}
               </button>
             </h2>
-            <small>
+            <small className="meta-object-links">
               <MetaObjectLink item={o} />
+              {aliasControl(o)}
+              <button
+                type="button"
+                className="meta-inline-detail"
+                onClick={() => setSelected(o)}
+              >
+                Ver detalle
+              </button>
             </small>
           </div>
         </div>
@@ -1129,10 +1199,6 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
         <strong className="meta-metric-name">
           {costLabels[o.metric] ?? "Costo por resultado"}
         </strong>
-        <div className="meta-card-alias">
-          <span>Alias</span>
-          {aliasControl(o)}
-        </div>
         <div className="meta-periods">
           {periods.map(([key, label]) => (
             <div
@@ -1164,7 +1230,7 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
                 : "Selecciona un rango en Calendario"
             }
           >
-            <span>Calendario</span>
+            <span>Por fecha</span>
             <strong>
               {calendar &&
               o.periods.custom?.since === since &&
@@ -1226,9 +1292,6 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
               {o.level === "campaign" ? "Ver conjuntos" : "Ver anuncios"}
             </button>
           )}
-          <button type="button" onClick={() => setSelected(o)}>
-            Ver detalle y periodos
-          </button>
         </div>
       </article>
     );
@@ -2019,7 +2082,10 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
               ))}
             <MetaDataFreshness accounts={chosen} />
             <div
-              className="meta-sticky-controls"
+              className={
+                "meta-sticky-controls" +
+                (view === "table" ? " meta-table-sticky" : "")
+              }
               aria-label="Filtros y niveles de Meta Ads"
             >
               <div className="panel stack">
@@ -2159,49 +2225,116 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
                     </button>
                   </div>
                 </div>
-                {pinnedAccountIds.length > 0 && (
-                  <div
-                    className="meta-pinned-accounts"
-                    aria-label="Cuentas fijadas"
+                <div
+                  className="meta-pinned-accounts"
+                  aria-label="Cuentas fijadas"
+                >
+                  <span>Cuentas fijadas</span>
+                  <button
+                    type="button"
+                    aria-pressed={!accountIds.length}
+                    className={!accountIds.length ? "primary" : ""}
+                    onClick={() => chooseAccounts([], false)}
                   >
-                    <span>Cuentas fijadas</span>
-                    <button
-                      type="button"
-                      aria-pressed={!accountIds.length}
-                      className={!accountIds.length ? "primary" : ""}
-                      onClick={() => chooseAccounts([], false)}
-                    >
-                      Todas
-                    </button>
-                    {pinnedAccountIds.map((id) => {
-                      const a = accounts.find((a) => a.id === id);
-                      return a ? (
-                        <div className="meta-account-pin" key={id}>
-                          <button
-                            type="button"
-                            aria-pressed={accountIds.includes(id)}
-                            className={accountIds.includes(id) ? "primary" : ""}
-                            onClick={() => chooseAccounts([id], false)}
-                          >
-                            {a.name}
-                          </button>
-                          <button
-                            type="button"
-                            className="meta-unpin"
-                            aria-label={`Desfijar ${a.name}`}
-                            onClick={() =>
-                              setPinnedAccountIds((old) =>
-                                old.filter((v) => v !== id),
-                              )
+                    Todas
+                  </button>
+                  {pinnedAccountIds.map((id) => {
+                    const a = accounts.find((a) => a.id === id);
+                    return a ? (
+                      <div className="meta-account-pin" key={id}>
+                        <button
+                          type="button"
+                          aria-pressed={accountIds.includes(id)}
+                          className={accountIds.includes(id) ? "primary" : ""}
+                          onClick={() => chooseAccounts([id], false)}
+                        >
+                          {a.name}
+                        </button>
+                        <button
+                          type="button"
+                          className="meta-unpin"
+                          aria-label={`Desfijar ${a.name}`}
+                          onClick={() =>
+                            setPinnedAccountIds((old) =>
+                              old.filter((v) => v !== id),
+                            )
+                          }
+                        >
+                          Desfijar
+                        </button>
+                      </div>
+                    ) : null;
+                  })}
+                  <div className="meta-pinned-actions">
+                    {owner && (
+                      <MetaAliasAction
+                        name="selección"
+                        aliases={aliases}
+                        disabled={busy}
+                        bulkCount={
+                          summarySelectionKey
+                            ? summarySelectionKey.split(",").length
+                            : 0
+                        }
+                        onAssign={(aliasId) =>
+                          void run(
+                            () =>
+                              api("meta-ads/objects/alias", "PATCH", {
+                                objectIds: summarySelectionKey
+                                  .split(",")
+                                  .filter(Boolean),
+                                aliasId,
+                              }),
+                            "Alias asignado a la selección.",
+                          )
+                        }
+                      />
+                    )}
+                    {chosen.some((a) => a.canSync) && (
+                      <button
+                        type="button"
+                        className="meta-live-refresh"
+                        disabled={busy || !accountIds.length}
+                        title={
+                          accountIds.length
+                            ? "Actualizar datos y miniaturas desde Meta"
+                            : "Selecciona una cuenta para actualizar desde Meta"
+                        }
+                        onClick={() =>
+                          void run(async () => {
+                            const targets = chosen.filter((a) => a.canSync);
+                            const failed: string[] = [];
+                            let queued = 0;
+                            for (const a of targets) {
+                              try {
+                                await api(
+                                  `meta-ads/accounts/${a.id}/sync`,
+                                  "POST",
+                                  {
+                                    focused: true,
+                                    inventory: "all",
+                                    recentDays: 7,
+                                    fresh: true,
+                                  },
+                                );
+                                queued++;
+                              } catch (e) {
+                                failed.push(
+                                  `${a.name}: ${e instanceof Error ? e.message : "No se pudo solicitar"}`,
+                                );
+                              }
                             }
-                          >
-                            Desfijar
-                          </button>
-                        </div>
-                      ) : null;
-                    })}
+                            setMessage(
+                              `${queued} cuenta(s) en actualización desde Meta. Los datos y miniaturas aparecerán conforme se reciban.${failed.length ? " " + failed.join(" · ") : ""}`,
+                            );
+                          })
+                        }
+                      >
+                        ↻ Actualizar desde Meta
+                      </button>
+                    )}
                   </div>
-                )}
+                </div>
               </div>
               <div className="meta-result-controls">
                 <div
@@ -2235,51 +2368,7 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
                 >
                   {view === "cards" ? "Ver tabla" : "Ver tarjetas"}
                 </button>
-                {chosen.some((a) => a.canSync) && (
-                  <button
-                    type="button"
-                    className="meta-live-refresh"
-                    disabled={busy || !accountIds.length}
-                    title={
-                      accountIds.length
-                        ? "Actualizar datos y miniaturas desde Meta"
-                        : "Selecciona una cuenta para actualizar desde Meta"
-                    }
-                    onClick={() =>
-                      void run(async () => {
-                        const targets = chosen.filter((a) => a.canSync);
-                        const failed: string[] = [];
-                        let queued = 0;
-                        for (const a of targets) {
-                          try {
-                            await api(
-                              `meta-ads/accounts/${a.id}/sync`,
-                              "POST",
-                              {
-                                focused: true,
-                                inventory: "all",
-                                recentDays: 7,
-                                fresh: true,
-                              },
-                            );
-                            queued++;
-                          } catch (e) {
-                            failed.push(
-                              `${a.name}: ${e instanceof Error ? e.message : "No se pudo solicitar"}`,
-                            );
-                          }
-                        }
-                        setMessage(
-                          `${queued} cuenta(s) en actualización desde Meta. Los datos y miniaturas aparecerán conforme se reciban.${failed.length ? " " + failed.join(" · ") : ""}`,
-                        );
-                      })
-                    }
-                  >
-                    ↻ Actualizar desde Meta
-                  </button>
-                )}
                 <MetaCostOrder
-                  onCalendar={openCostCalendar}
                   calendar={!!calendar}
                   value={sort}
                   direction={direction}
@@ -2293,43 +2382,23 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
                   }
                 />
                 <MetaAnalysisPeriod
-                  openHandle={periodPicker}
-                  onClose={() => {
-                    orderingCalendar.current = false;
-                  }}
                   value={calendar ? "custom" : analysisPeriod}
                   since={since}
                   until={until}
                   onPreset={(id, range) => {
-                    if (
-                      orderingCalendar.current &&
-                      id !== "lifetime" &&
-                      range
-                    ) {
-                      setSort("custom");
-                      setDirection("asc");
-                      setSince(range[0]);
-                      setUntil(range[1]);
-                      setCalendar("custom");
-                      setPage(1);
-                      return;
-                    }
-                    if (orderingCalendar.current) {
-                      setSort(id);
-                      setDirection("asc");
-                    }
                     setAnalysisPeriod(id);
-                    setCalendar("");
-                    setSince("");
-                    setUntil("");
-                    if (sort === "custom" && !orderingCalendar.current)
-                      setSort("today");
+                    setCalendar(range ? "custom" : "");
+                    setSince(range?.[0] ?? "");
+                    setUntil(range?.[1] ?? "");
+                    if (range || sort === "custom") {
+                      setSort(range ? "custom" : id);
+                      setDirection("asc");
+                    }
+                    setPage(1);
                   }}
                   onRange={(start, end) => {
-                    if (orderingCalendar.current) {
-                      setSort("custom");
-                      setDirection("asc");
-                    }
+                    setSort("custom");
+                    setDirection("asc");
                     setSince(start);
                     setUntil(end);
                     setCalendar("custom");
@@ -2337,6 +2406,19 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
                   }}
                 />
               </div>
+              <MetaSummaryCounters summary={summary} loading={loading} />
+              {view === "table" && (
+                <div
+                  className="meta-fixed-table-head"
+                  aria-hidden="true"
+                  ref={tableHeaderScroll}
+                >
+                  <table>
+                    {tableColumns()}
+                    {tableHead()}
+                  </table>
+                </div>
+              )}
             </div>
             <div data-meta-result-region className="meta-results-stage">
               <div className="meta-results" aria-busy={loading}>
@@ -2389,54 +2471,17 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
                   </section>
                 )}
                 {view === "table" ? (
-                  <div className="meta-table">
+                  <div
+                    className="meta-table"
+                    onScroll={(e) => {
+                      if (tableHeaderScroll.current)
+                        tableHeaderScroll.current.scrollLeft =
+                          e.currentTarget.scrollLeft;
+                    }}
+                  >
                     <table>
-                      <colgroup>
-                        <col style={{ width: 28 }} />
-                        <col style={{ width: 46 }} />
-                        <col style={{ width: "18%" }} />
-                        <col style={{ width: "7%" }} />
-                        <col style={{ width: "9%" }} />
-                        <col style={{ width: "7%" }} />
-                        {periods.map(([key]) => (
-                          <col key={key} style={{ width: "7%" }} />
-                        ))}
-                        <col style={{ width: "9%" }} />
-                        <col style={{ width: "8%" }} />
-                      </colgroup>
-                      <thead>
-                        <tr>
-                          <th className="meta-check-cell">
-                            <span className="sr-only">Selección</span>
-                          </th>
-                          <th>
-                            <span className="sr-only">Activado</span>
-                          </th>
-                          <th>Campaña / Conjunto / Anuncio</th>
-                          <th>Alias</th>
-                          <th>Cuenta / Resultado</th>
-                          <th>Inicio · días</th>
-                          {periods.map(([key, label]) => (
-                            <th key={key}>{label}</th>
-                          ))}
-                          <th className="meta-calendar-column" scope="col">
-                            <button
-                              type="button"
-                              className="meta-name-button"
-                              aria-haspopup="dialog"
-                              onClick={openCostCalendar}
-                            >
-                              Calendario
-                            </button>
-                            <small>
-                              {calendar
-                                ? `${date(since)} – ${date(until)}`
-                                : "Costo por resultado"}
-                            </small>
-                          </th>
-                          <th>Evaluación</th>
-                        </tr>
-                      </thead>
+                      {tableColumns()}
+                      {tableHead(true)}
                       <tbody>
                         {items
                           .filter(
@@ -2489,12 +2534,17 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
                                 >
                                   {o.name}
                                 </button>
-                                <small>
+                                <small className="meta-object-links">
                                   <MetaObjectLink item={o} />
+                                  {aliasControl(o)}
+                                  <button
+                                    type="button"
+                                    className="meta-inline-detail"
+                                    onClick={() => setSelected(o)}
+                                  >
+                                    Ver detalle
+                                  </button>
                                 </small>
-                              </td>
-                              <td className="meta-alias-cell">
-                                {aliasControl(o)}
                               </td>
                               <td>
                                 {o.accountName}
@@ -2503,6 +2553,20 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
                                     ? "Conversaciones"
                                     : o.metricName}
                                 </small>
+                              </td>
+                              <td className="meta-analysis-spend">
+                                {(() => {
+                                  const p =
+                                    o.periods[
+                                      calendar ? "custom" : analysisPeriod
+                                    ];
+                                  return p &&
+                                    p.state !== "UNAVAILABLE" &&
+                                    (!calendar ||
+                                      (p.since === since && p.until === until))
+                                    ? money(p.spend, o.currency)
+                                    : "Informe pendiente";
+                                })()}
                               </td>
                               <td>
                                 {date(o.firstDelivery)}
@@ -2533,16 +2597,7 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
                                     </small>
                                   )}
                               </td>
-                              <td>
-                                {ratings[o.rating]}
-
-                                <button
-                                  type="button"
-                                  onClick={() => setSelected(o)}
-                                >
-                                  Ver detalle
-                                </button>
-                              </td>
+                              <td>{ratings[o.rating]}</td>
                             </tr>
                           ))}
                       </tbody>
@@ -2631,6 +2686,9 @@ function MetaDetail({ item: o, onClose }: { item: Item; onClose: () => void }) {
       </p>
       <p>
         {o.metricName} · {o.timezone}
+      </p>
+      <p className="meta-detail-alias">
+        Alias: <strong>{o.alias?.name ?? "Sin alias"}</strong>
       </p>
       <MetaDailyDetail key={o.id} item={o} />
       <p>
