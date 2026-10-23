@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
+import { compareDailyRows, type DailySort } from "../../lib/meta-ads/order";
 import { localDay, summarize } from "../../lib/meta-ads/analytics";
 import { quickRange } from "../../lib/meta-ads/date-range";
 import { MetaAnalysisPeriod } from "./meta-analysis-period";
@@ -28,7 +29,8 @@ export function MetaDailyDetail({ item }: { item: DailyItem }) {
     [rows, setRows] = useState<DailyRow[]>([]),
     [loading, setLoading] = useState(true),
     [error, setError] = useState(""),
-    [chart, setChart] = useState("results");
+    [chart, setChart] = useState("cost");
+  const [sort, setSort] = useState<DailySort>({ key: "day", direction: "desc" });
   const [since, until] = range;
   useEffect(() => {
     const controller = new AbortController();
@@ -88,6 +90,7 @@ export function MetaDailyDetail({ item }: { item: DailyItem }) {
       cost: summary.cost,
     };
   });
+  const sortedRows = [...values].sort((a, b) => compareDailyRows(a, b, sort));
   const metricValue = (row: (typeof values)[number]) =>
     chart === "spend" ? row.spend : chart === "cost" ? row.cost : row.results;
   const max = Math.max(0, ...values.map((row) => metricValue(row) ?? 0)) || 1;
@@ -189,14 +192,54 @@ export function MetaDailyDetail({ item }: { item: DailyItem }) {
                 <caption>Detalle diario · {item.metricName}</caption>
                 <thead>
                   <tr>
-                    <th scope="col">Fecha</th>
-                    <th scope="col">Gasto</th>
-                    <th scope="col">Resultados</th>
-                    <th scope="col">Costo por resultado</th>
+                    {(
+                      [
+                        ["day", "Fecha"],
+                        ["spend", "Gasto"],
+                        ["results", "Resultados"],
+                        ["cost", "Costo por resultado"],
+                      ] as const
+                    ).map(([key, label]) => (
+                      <th
+                        key={key}
+                        scope="col"
+                        aria-sort={
+                          sort.key === key
+                            ? sort.direction === "asc"
+                              ? "ascending"
+                              : "descending"
+                            : "none"
+                        }
+                      >
+                        <button
+                          type="button"
+                          className="meta-daily-sort"
+                          onClick={() =>
+                            setSort((current) => ({
+                              key,
+                              direction:
+                                current.key === key &&
+                                current.direction === "asc"
+                                  ? "desc"
+                                  : "asc",
+                            }))
+                          }
+                        >
+                          {label}{" "}
+                          <span aria-hidden="true">
+                            {sort.key === key
+                              ? sort.direction === "asc"
+                                ? "↑"
+                                : "↓"
+                              : "↕"}
+                          </span>
+                        </button>
+                      </th>
+                    ))}
                   </tr>
                 </thead>
                 <tbody>
-                  {values.map((row) => (
+                  {sortedRows.map((row) => (
                     <tr key={row.day} data-day={row.day}>
                       <td>{date(row.day)}</td>
                       <td>{money(row.spend)}</td>

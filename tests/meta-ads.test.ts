@@ -138,3 +138,13 @@ test('Meta links select the exact campaign, adset or ad in the correct account a
  }
  assert.equal(metaObjectURL({id:'bad',accountId:'111',level:'ad'}),null);assert.equal(metaObjectURL({id:'333',accountId:'111',level:'unknown'}),null);
 });
+
+test('Daily table sorts real numeric measures both directions with missing values last and stable dates',async()=>{
+ const {compareDailyRows}=await import('../lib/meta-ads/order');
+ const rows=[{day:'2026-10-22',spend:10,results:2,cost:5},{day:'2026-10-21',spend:2,results:2,cost:1},{day:'2026-10-20',spend:0,results:0,cost:null},{day:'2026-10-19',spend:1,results:null,cost:null}];
+ const order=(key:'day'|'spend'|'results'|'cost',direction:'asc'|'desc')=>[...rows].sort((a,b)=>compareDailyRows(a,b,{key,direction})).map(r=>r.day.slice(-2));
+ assert.deepEqual(order('day','asc'),['19','20','21','22']);assert.deepEqual(order('day','desc'),['22','21','20','19']);
+ assert.deepEqual(order('spend','asc'),['20','19','21','22']);assert.deepEqual(order('spend','desc'),['22','21','19','20']);
+ assert.deepEqual(order('results','asc'),['20','21','22','19']);assert.deepEqual(order('results','desc'),['21','22','20','19']);
+ assert.deepEqual(order('cost','asc'),['21','22','19','20']);assert.deepEqual(order('cost','desc'),['22','21','19','20']);
+});

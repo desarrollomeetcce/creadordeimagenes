@@ -31,3 +31,28 @@ export function compareMetaItems(
     return ap.cost === bp.cost ? 0 : ap.cost === null ? 1 : -1;
   return direction * (ap.cost - bp.cost) || bp.results - ap.results;
 }
+
+export type DailySort = {
+  key: "day" | "spend" | "results" | "cost";
+  direction: "asc" | "desc";
+};
+type DailySortRow = {
+  day: string;
+  spend: number;
+  results: number | null;
+  cost: number | null;
+};
+export function compareDailyRows(
+  a: DailySortRow,
+  b: DailySortRow,
+  sort: DailySort,
+) {
+  const direction = sort.direction === "asc" ? 1 : -1;
+  if (sort.key === "day") return direction * a.day.localeCompare(b.day);
+  const av = a[sort.key],
+    bv = b[sort.key];
+  // Missing measurements remain last, including descending order; they are not zero.
+  if (av === null || bv === null)
+    return av === bv ? a.day.localeCompare(b.day) : av === null ? 1 : -1;
+  return direction * (av - bv) || a.day.localeCompare(b.day);
+}
