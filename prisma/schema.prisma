@@ -711,10 +711,18 @@ model MetaAccountGrant {
   @@unique([accountId,userId])
   @@index([userId])
 }
+model MetaAliasTable {
+  id String @id @default(cuid())
+  name String @unique
+  aliases MetaAlias[]
+}
 model MetaAlias {
   id String @id @default(cuid())
   name String @unique
   objects MetaAdObject[]
+  tableId String @default("diplomados")
+  table MetaAliasTable @relation(fields:[tableId],references:[id],onDelete:Restrict)
+  @@index([tableId])
 }
 model MetaAdObject {
   id String @id

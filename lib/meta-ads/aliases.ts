@@ -14,7 +14,12 @@ export async function aliases(actor: Actor) {
     take: 1000,
   });
 }
-export async function saveAlias(actor: Actor, name: string, id?: string) {
+export async function saveAlias(
+  actor: Actor,
+  name: string,
+  id?: string,
+  tableId = "diplomados",
+) {
   ownerOnly(actor);
   return db.$transaction(async (tx) => {
     await tx.$executeRaw`SELECT pg_advisory_xact_lock(884411)`;
@@ -25,6 +30,12 @@ export async function saveAlias(actor: Actor, name: string, id?: string) {
       "Sin permiso para editar alias.",
       403,
     );
+    if (!id)
+      demand(
+        await tx.metaAliasTable.findUnique({ where: { id: tableId } }),
+        "Tabla no disponible.",
+        404,
+      );
     if (!id)
       demand(
         (await tx.metaAlias.count()) < 1000,
@@ -48,7 +59,7 @@ export async function saveAlias(actor: Actor, name: string, id?: string) {
     );
     const row = id
       ? await tx.metaAlias.update({ where: { id }, data: { name } })
-      : await tx.metaAlias.create({ data: { name } });
+      : await tx.metaAlias.create({ data: { name, tableId } });
     await recordActivity(tx, {
       data: {
         actorId: actor.id,
@@ -116,5 +127,51 @@ export async function assignAliases(
         },
       });
     return { ok: true, count: ids.length };
+  });
+}
+
+export async function aliasTables(actor: Actor) {
+  ownerOnly(actor);
+  return db.metaAliasTable.findMany({
+    select: {
+      id: true,
+      name: true,
+      aliases: { select: { id: true, name: true }, orderBy: { name: "asc" } },
+    },
+    orderBy: { name: "asc" },
+    take: 100,
+  });
+}
+export async function createAliasTable(actor: Actor, name: string) {
+  ownerOnly(actor);
+  return db.$transaction(async (tx) => {
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(884411)`;
+    demand(
+      await tx.user.findFirst({
+        where: { id: actor.id, role: "OWNER", status: "APPROVED" },
+      }),
+      "Sin permiso para crear tablas.",
+      403,
+    );
+    demand(
+      (await tx.metaAliasTable.count()) < 100,
+      "El catálogo admite hasta 100 tablas.",
+    );
+    demand(
+      !(await tx.metaAliasTable.findFirst({
+        where: { name: { equals: name, mode: "insensitive" } },
+      })),
+      "Ya existe una tabla con ese nombre.",
+      409,
+    );
+    const row = await tx.metaAliasTable.create({ data: { name } });
+    await recordActivity(tx, {
+      data: {
+        actorId: actor.id,
+        action: "PRODUCTOS_TABLA_CREADA",
+        resourceId: row.id,
+      },
+    });
+    return row;
   });
 }

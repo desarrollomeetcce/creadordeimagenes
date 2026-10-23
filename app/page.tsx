@@ -1,5 +1,6 @@
 "use client";
 import dynamic from "next/dynamic";
+const ProductsCatalog=dynamic(()=>import("./components/products-catalog").then(m=>m.ProductsCatalog),{loading:()=> <p role="status">Cargando listado de bienes…</p>});
 const MetaAds=dynamic(()=>import("./components/meta-ads").then(m=>m.MetaAds),{loading:()=> <p role="status">Cargando Meta Ads…</p>});
 import { reasoningLevel } from "../lib/creative-level";
 import {useGenerationChoices} from "./components/generation-choices";
@@ -254,6 +255,7 @@ export default function Home() {
           ...(managesUsers(user.role) ? ["users"] : []),
           ...(user.role === "OWNER"
             ? [
+                "products",
                 "ai",
                 "mail",
                 "payments",
@@ -422,6 +424,7 @@ export default function Home() {
     projects: "Proyectos",
     library: "Biblioteca",
     metaads: "Meta Ads",
+    products: "Listado de bienes",
     presets: "Configuraciones guardadas",
     ai: "Ajustes de IA",
     mail: "Ajustes de correo",
@@ -468,6 +471,7 @@ export default function Home() {
               ["trash", "⌫", "Papelera"],
               ...(user.role === "OWNER"
                 ? [
+                    ["products", "▤", "Listado de bienes"],
                     ["statistics", "▥", "Estadísticas"],
                     ["website", "◈", "Página web"],
                     ["visual-audit", "▧", "Auditoría visual"],
@@ -499,13 +503,13 @@ export default function Home() {
         </aside>
         <div className="workspace">
           <header className="topbar">
-            <span className="muted">{titles[view]}</span>
+            <span className="muted">{view === "metaads" ? "Análisis y control de Meta" : titles[view]}</span>
+            {view === "metaads" && <span className="meta-topbar-role">Rol: <strong>{user.role}</strong></span>}
             <span className="badge">Producción publicitaria</span>
 
           </header>
           <main>
-            <RoleGuide name={user.name} role={user.role} />
-            <VisualAuditNotice key={user.id} />
+            {view !== "metaads" && <><RoleGuide name={user.name} role={user.role} /><VisualAuditNotice key={user.id} /></>}
             {project && view === "projects" && (
               <HierarchyBreadcrumbs
                 project={project}
@@ -550,6 +554,8 @@ export default function Home() {
                   </>
                 )}
               </>
+            ) : view === "products" && user.role === "OWNER" ? (
+              <ProductsCatalog />
             ) : view === "metaads" ? (
               <MetaAds role={user.role} userId={user.id} />
             ) : view === "library" ? (

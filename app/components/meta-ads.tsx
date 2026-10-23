@@ -17,10 +17,7 @@ import {
 import { MetaConnectionScope } from "./meta-connection-scope";
 import { MetaConnectionAccess } from "./meta-connection-access";
 import { MetaAnalysisPeriod } from "./meta-analysis-period";
-import {
-  MetaAliasDirectory,
-  type MetaAliasOption,
-} from "./meta-alias-directory";
+import { type MetaAliasOption } from "./meta-alias-directory";
 import { MetaStatusSwitch } from "./meta-status-switch";
 import { MetaDataFreshness } from "./meta-data-freshness";
 import { MetaDailyDetail } from "./meta-daily-detail";
@@ -387,6 +384,7 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
   const stableViewport = useMetaStableViewport();
   const tableHeaderScroll = useRef<HTMLDivElement>(null);
   const masterSelection = useRef<HTMLInputElement>(null);
+  const performanceTab = useRef<HTMLButtonElement>(null);
   const [accounts, setAccounts] = useState<Account[]>([]),
     [preferencesReady, setPreferencesReady] = useState(false),
     [accountsLoaded, setAccountsLoaded] = useState(false),
@@ -402,7 +400,7 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
     [summary, setSummary] = useState<MetaSummary | null>(null),
     [total, setTotal] = useState(0),
     [limited, setLimited] = useState(false),
-    [rankingExcluded, setRankingExcluded] = useState(0),
+    [syncOpen, setSyncOpen] = useState(false),
     [tab, setTab] = useState(() =>
       typeof window !== "undefined" &&
       new URLSearchParams(window.location.search).get("metaTab") ===
@@ -803,7 +801,7 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
   const serial = useRef(0);
   const syncVersions = useRef(new Map<string, string | null>());
   const historicalVersions = useRef(new Map<string, number>());
-  const analyticsTab = ["panel", "ranking", "alerts"].includes(tab);
+  const analyticsTab = ["panel", "alerts"].includes(tab);
   useEffect(() => {
     const timer = setTimeout(() => {
       setSearch(q);
@@ -878,7 +876,7 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
         direction,
         age,
         rating: tab === "alerts" ? "alerts" : rating,
-        ranking: tab === "ranking" ? "1" : "0",
+        ranking: "0",
         page: String(page),
         limit: "25",
         summary: "1",
@@ -896,7 +894,6 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
             setSummary(data.summary ?? null);
             setTotal(data.total);
             setLimited(data.limited);
-            setRankingExcluded(data.excludedForRanking ?? 0);
           }
         })
         .catch((e) => {
@@ -942,7 +939,9 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
   ]);
   const pendingKey = accounts
     .filter(
-      (a) => a.enabled && (!accountIds.length || accountIds.includes(a.id)),
+      (a) =>
+        a.enabled &&
+        (syncOpen || !accountIds.length || accountIds.includes(a.id)),
     )
     .map((a) => a.id)
     .slice(0, 100)
@@ -1679,40 +1678,59 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
       </article>
     );
   };
+  const minimizeSync = () => {
+    setSyncOpen(false);
+    setTab("panel");
+    performanceTab.current?.focus({ preventScroll: true });
+  };
   if (!preferencesReady)
     return <p role="status">Restaurando tu selección de Meta Ads…</p>;
   return (
     <section className="meta-ads stack" {...stableViewport}>
-      <header className="meta-header">
-        <div>
-          <span className="eyebrow">CONTROL PUBLICITARIO</span>
-          <h1>Meta Ads</h1>
-          <p>Resultados claros, cinco periodos a la vez.</p>
-        </div>
-        <span className="meta-readonly">
-          {owner ? "Análisis y control de Meta" : "Consulta de Meta"}
-        </span>
-      </header>
       <div className="row" role="tablist" aria-label="Secciones Meta Ads">
         {[
           ["panel", "Rendimiento"],
-          ["ranking", "Ranking de eficiencia"],
+          ["sync", "Sincronización de cuentas"],
           ["alerts", "Alertas"],
           ["accounts", "Cuentas publicitarias"],
-          ...(owner
-            ? [
-                ["connections", "Conexiones"],
-                ["aliases", "Alias de diplomados"],
-              ]
-            : []),
+          ...(owner ? [["connections", "Conexiones"]] : []),
         ].map(([id, label]) => (
           <button
             type="button"
             role="tab"
-            aria-selected={tab === id}
-            className={tab === id ? "primary" : ""}
+            aria-selected={
+              id === "sync"
+                ? syncOpen && tab === "panel"
+                : tab === id && !(id === "panel" && syncOpen)
+            }
+            aria-expanded={
+              id === "sync" ? syncOpen && tab === "panel" : undefined
+            }
+            aria-controls={
+              id === "sync" && syncOpen && tab === "panel"
+                ? "meta-account-sync-panel"
+                : undefined
+            }
+            ref={id === "panel" ? performanceTab : undefined}
+            className={
+              (
+                id === "sync"
+                  ? syncOpen && tab === "panel"
+                  : tab === id && !(id === "panel" && syncOpen)
+              )
+                ? "primary"
+                : ""
+            }
             key={id}
-            onClick={() => setTab(id)}
+            onClick={() => {
+              if (id === "sync") {
+                setTab("panel");
+                setSyncOpen((v) => !v);
+              } else {
+                setSyncOpen(false);
+                setTab(id);
+              }
+            }}
           >
             {label}
           </button>
@@ -1738,12 +1756,7 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
         </p>
       )}
       <div className="meta-content">
-        {tab === "aliases" && owner ? (
-          <MetaAliasDirectory
-            aliases={aliases}
-            onSaved={() => setRevision((v) => v + 1)}
-          />
-        ) : tab === "connections" && owner ? (
+        {tab === "connections" && owner ? (
           <>
             <section
               className="panel stack"
@@ -2413,57 +2426,86 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
           </>
         ) : (
           <>
-            {chosen
-              .filter(
-                (a) =>
-                  a.progress &&
-                  !["complete", "disabled", "cancelled"].includes(
-                    a.progress.status,
-                  ),
-              )
-              .map((a) => (
-                <div className="panel meta-analysis-progress" key={a.id}>
-                  <SyncIndicator
-                    compactHeader
-                    account={a}
-                    busy={busy}
-                    onResume={
-                      a.canSync
-                        ? () =>
-                            void run(
-                              () =>
-                                api(`meta-ads/accounts/${a.id}/sync`, "POST", {
-                                  focused: true,
-                                  inventory: "all",
-                                  recentDays: a.progress?.focused
-                                    ? a.progress.recentDays
-                                    : 7,
-                                }),
-                              "Sincronización retomada.",
-                            )
-                        : undefined
-                    }
-                    onControl={
-                      a.canSync
-                        ? (action) =>
-                            void run(
-                              () =>
-                                api(
-                                  `meta-ads/accounts/${a.id}/control`,
-                                  "POST",
-                                  { action },
-                                ),
-                              action === "pause"
-                                ? "Sincronización pausada; puedes retomarla."
-                                : "Sincronización cancelada. Los datos guardados se conservan.",
-                            )
-                        : undefined
-                    }
-                  />
-                  {a.syncError && <p className="notice">{a.syncError}</p>}
+            {syncOpen && tab === "panel" && (
+              <section
+                className="meta-account-sync-panel"
+                id="meta-account-sync-panel"
+                aria-label="Sincronización de cuentas"
+              >
+                <div className="row spread">
+                  <h2>Sincronización de cuentas</h2>
+                  <button type="button" onClick={minimizeSync}>
+                    Minimizar
+                  </button>
                 </div>
-              ))}
-            <MetaDataFreshness accounts={chosen} />
+                <div className="meta-sync-grid">
+                  {accounts
+                    .filter(
+                      (a) =>
+                        a.progress &&
+                        !["complete", "disabled", "cancelled"].includes(
+                          a.progress.status,
+                        ),
+                    )
+                    .map((a) => (
+                      <div className="panel meta-analysis-progress" key={a.id}>
+                        <SyncIndicator
+                          compactHeader
+                          account={a}
+                          busy={busy}
+                          onResume={
+                            a.canSync
+                              ? () =>
+                                  void run(
+                                    () =>
+                                      api(
+                                        `meta-ads/accounts/${a.id}/sync`,
+                                        "POST",
+                                        {
+                                          focused: true,
+                                          inventory: "all",
+                                          recentDays: a.progress?.focused
+                                            ? a.progress.recentDays
+                                            : 7,
+                                        },
+                                      ),
+                                    "Sincronización retomada.",
+                                  )
+                              : undefined
+                          }
+                          onControl={
+                            a.canSync
+                              ? (action) =>
+                                  void run(
+                                    () =>
+                                      api(
+                                        `meta-ads/accounts/${a.id}/control`,
+                                        "POST",
+                                        { action },
+                                      ),
+                                    action === "pause"
+                                      ? "Sincronización pausada; puedes retomarla."
+                                      : "Sincronización cancelada. Los datos guardados se conservan.",
+                                  )
+                              : undefined
+                          }
+                        />
+                        {a.syncError && <p className="notice">{a.syncError}</p>}
+                      </div>
+                    ))}
+                </div>
+                {!accounts.some(
+                  (a) =>
+                    a.progress &&
+                    !["complete", "disabled", "cancelled"].includes(
+                      a.progress.status,
+                    ),
+                ) && <p className="hint">No hay sincronizaciones en curso.</p>}
+                <button type="button" onClick={minimizeSync}>
+                  Minimizar y volver a Rendimiento
+                </button>
+              </section>
+            )}
             <div
               className={
                 "meta-sticky-controls" +
@@ -2668,6 +2710,7 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
                         ↻ Actualizar desde Meta
                       </button>
                     )}
+                    <MetaDataFreshness accounts={chosen} />
                   </div>
                 </div>
               </div>
@@ -2694,17 +2737,10 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
             </div>
             <div data-meta-result-region className="meta-results-stage">
               <div className="meta-results" aria-busy={loading}>
-                {tab === "ranking" && rankingExcluded > 0 && (
-                  <p className="hint">
-                    {rankingExcluded} elementos separados por datos
-                    insuficientes en el periodo elegido. Puedes consultarlos en
-                    Rendimiento.
-                  </p>
-                )}
                 {limited && (
                   <p className="notice">
                     Hay más de 10.000 elementos: filtra por cuenta o campaña
-                    para acotar el ranking.
+                    para acotar los resultados.
                   </p>
                 )}
                 <div

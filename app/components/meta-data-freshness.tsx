@@ -1,12 +1,8 @@
 "use client";
-type FreshAccount = {
-  id: string;
-  name: string;
-  lastDataAt?: string | null;
-  enabled: boolean;
-  intervalMinutes: number;
-  progress?: { status: string; label: string };
-};
+import {
+  syncTiming,
+  type SyncTimingAccount,
+} from "../../lib/meta-ads/sync-timing";
 const stamp = (value?: string | null) =>
   value && Number.isFinite(Date.parse(value))
     ? new Date(value).toLocaleString("es-PE", {
@@ -14,71 +10,72 @@ const stamp = (value?: string | null) =>
         dateStyle: "short",
         timeStyle: "medium",
       })
-    : "Pendiente de la primera sincronización";
-export function MetaDataFreshness({ accounts }: { accounts: FreshAccount[] }) {
-  const times = accounts
-    .map((a) => a.lastDataAt)
-    .filter((v): v is string => !!v && Number.isFinite(Date.parse(v)))
-    .sort((a, b) => Date.parse(a) - Date.parse(b));
-  const pending = accounts.length - times.length,
-    automatic = accounts.filter((a) => a.enabled).length;
+    : "Pendiente";
+export function MetaDataFreshness({
+  accounts,
+}: {
+  accounts: SyncTimingAccount[];
+}) {
+  if (!accounts.length) return null;
+  const t = syncTiming(accounts),
+    single = accounts.length === 1;
   return (
     <section
-      className="meta-data-freshness"
-      aria-label="Actualización de datos de Meta"
+      className="meta-sync-inline"
+      aria-label="Información de sincronización"
     >
-      <div role="status" aria-live="polite">
-        <strong>Últimos datos guardados: </strong>
-        {accounts.length === 1
-          ? stamp(accounts[0].lastDataAt)
-          : times.length
-            ? `${stamp(times[0])} · fecha más antigua de las cuentas con datos`
-            : "Todavía no hay datos sincronizados"}
-        {accounts.length > 1 && pending > 0 && (
-          <span> · {pending} cuenta(s) pendientes</span>
-        )}
-        <small>
-          Hora de Lima ·{" "}
-          {automatic
-            ? `Automática programada en ${automatic} cuenta(s)`
-            : "Sincronización automática pausada"}
-        </small>
-      </div>
-      {accounts.some(
-        (a) =>
-          a.progress &&
-          !["complete", "disabled", "cancelled"].includes(a.progress.status),
-      ) && (
-        <small className="meta-freshness-explanation">
-          El intento de importación puede ser más reciente que los datos: una
-          espera o un error no actualizan las estadísticas guardadas.
-        </small>
-      )}
-      {accounts.length === 1 && (
-        <small>
-          {accounts[0].enabled
-            ? `Cada ${accounts[0].intervalMinutes} min al terminar la importación actual. `
-            : ""}
-          {accounts[0].progress?.label}
-        </small>
-      )}
-      {accounts.length > 1 && (
-        <details>
-          <summary>Ver actualización por cuenta</summary>
-          {accounts.map((a) => (
-            <div key={a.id}>
-              <strong>{a.name}</strong>
-              <span>{stamp(a.lastDataAt)}</span>
-              <small>
-                {a.enabled
-                  ? `Automática cada ${a.intervalMinutes} min`
-                  : "Automática pausada"}{" "}
-                · {a.progress?.label}
-              </small>
-            </div>
-          ))}
-        </details>
-      )}
+      <span>
+        <b>{single ? "Actividad" : "Actividad más reciente"}:</b>{" "}
+        {stamp(t.activity)}
+      </span>
+      <span>
+        <b>{single ? "Última completa" : "Completa más antigua"}:</b>{" "}
+        {stamp(t.completed)}
+        {!single && t.pending > 0 ? ` · ${t.pending} pendientes` : ""}
+      </span>
+      <details>
+        <summary>
+          {single
+            ? (accounts[0].progress?.label ?? "Ver sincronización")
+            : `${t.ongoing} sin finalizar · ${accounts.length} cuentas`}{" "}
+          ·{" "}
+          {single
+            ? accounts[0].enabled && accounts[0].progress?.status !== "paused"
+              ? `Auto ${accounts[0].intervalMinutes} min`
+              : "Auto pausada"
+            : `Auto en ${t.automatic}`}{" "}
+          · hora de Lima
+        </summary>
+        <p>
+          Actividad es el último intento o avance, no confirma datos nuevos.
+          Completa es la última importación terminada. La actualización es
+          periódica, no continua en tiempo real.
+        </p>
+        {accounts.map((a) => (
+          <div key={a.id}>
+            <strong>{a.name}</strong>
+            <span>
+              Actividad: {stamp(a.progress?.lastActivityAt)} · Completa:{" "}
+              {stamp(a.lastCompletedAt)}
+            </span>
+            <span>Datos recibidos: {stamp(a.lastDataAt)}</span>
+            <span>
+              {a.enabled && a.progress?.status !== "paused"
+                ? `Automática cada ${a.intervalMinutes} min, al terminar la importación actual.`
+                : "Automática pausada."}{" "}
+              {a.progress?.label}
+            </span>
+            {a.progress?.nextSyncAt && (
+              <span>
+                {a.progress.status === "waiting"
+                  ? "Reintento previsto"
+                  : "Próxima ejecución prevista"}
+                : {stamp(a.progress.nextSyncAt)}
+              </span>
+            )}
+          </div>
+        ))}
+      </details>
     </section>
   );
 }

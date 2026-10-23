@@ -181,3 +181,12 @@ test('Meta tendencia: no fabricar certeza con huecos, duplicados, métricas desc
  assert.equal(dailyTrend(rows.slice(0,3),'2026-10-09','2026-10-11','2026-10-23').status,'observing');assert.equal(dailyTrend([],'2026-10-23','2026-10-23','2026-10-23').status,'observing');
  const reduced=run(rows.map((r,i)=>({...r,spend:i>=7?10:20,results:i>=7?10:20})));assert.equal(reduced.status,'mixed');assert.equal(reduced.resultChange,-.5);assert.equal(reduced.spendChange,-.5);
 });
+
+test('Meta sincronización compacta: actividad reciente no sustituye importación completa y ranking antiguo vuelve a Rendimiento',async()=>{
+ const {syncTiming}=await import('../lib/meta-ads/sync-timing');const {parseMetaPreferences}=await import('../lib/meta-ads/preferences');
+ const a={id:'1',name:'Uno',enabled:true,intervalMinutes:30,lastCompletedAt:'2026-10-20T15:00:00Z',lastDataAt:'2026-10-23T15:00:00Z',progress:{status:'running',label:'Procesando',lastActivityAt:'2026-10-23T16:00:00Z'}};
+ const b={...a,id:'2',lastCompletedAt:'2026-10-19T15:00:00Z',progress:{...a.progress,status:'waiting',lastActivityAt:'2026-10-23T17:00:00Z'}};
+ assert.deepEqual(syncTiming([a,b]),{activity:'2026-10-23T17:00:00Z',completed:'2026-10-19T15:00:00Z',pending:0,automatic:2,ongoing:2});
+ const missing=syncTiming([a,{...b,lastCompletedAt:null,progress:{...b.progress,lastActivityAt:'invalid'}}]);assert.equal(missing.completed,a.lastCompletedAt);assert.equal(missing.activity,a.progress.lastActivityAt);assert.equal(missing.pending,1);
+ assert.equal(syncTiming([{...a,progress:{...a.progress,status:'paused'}}]).automatic,0);assert.equal(syncTiming([{...a,lastCompletedAt:null}]).completed,null);assert.deepEqual(syncTiming([]),{activity:null,completed:null,pending:0,automatic:0,ongoing:0});assert.equal(parseMetaPreferences(JSON.stringify({tab:'ranking'})).tab,'panel');
+});

@@ -1624,3 +1624,21 @@ html:has(.meta-ads),.meta-ads { overflow-anchor:none; }
 .meta-trend details summary{padding:7px 9px;font-size:11px;}
 .meta-trend details>.stack{padding:0 9px;gap:0;}
 @media(max-width:550px){.meta-trend-comparison{grid-template-columns:1fr;}}
+
+/* Meta opens directly on controls; synchronization expands only on request. */
+.meta-topbar-role{font-size:12px;white-space:nowrap;color:var(--muted);}
+.meta-account-sync-panel{border:1px solid var(--line);border-radius:9px;padding:10px;min-width:0;}
+.meta-account-sync-panel h2{font-size:14px;margin:0;}
+.meta-account-sync-panel>.row{margin-bottom:8px;}
+.meta-sync-grid{display:flex;flex-wrap:wrap;gap:10px;align-items:flex-start;}
+.meta-account-sync-panel>button{margin-top:8px;font-size:11px;}
+.meta-summary-row .meta-pinned-actions{align-items:center;flex-wrap:wrap!important;justify-content:center;}
+.meta-sync-inline{display:flex;flex-direction:column;align-items:flex-start;max-width:355px;font-size:10px;line-height:1.4;min-width:0;}
+.meta-sync-inline>span{display:block;}
+.meta-sync-inline details{border:0;padding:0;margin:0;position:relative;}
+.meta-sync-inline summary{padding:0;font-size:10px;color:var(--muted);}
+.meta-sync-inline details[open]{padding:7px;border:1px solid var(--line);border-radius:6px;}
+.meta-sync-inline details p{margin:6px 0;}
+.meta-sync-inline details div{display:flex;flex-direction:column;margin-top:6px;border-top:1px solid var(--line);padding-top:5px;}
+@media(max-width:650px){.meta-summary-row .meta-pinned-actions{flex:1 1 100%;}.meta-sync-inline{max-width:100%;}.meta-topbar-role{font-size:10px;}.topbar:has(.meta-topbar-role){flex-wrap:wrap;}}
+.products-catalog{min-width:0;}.products-catalog h1,.products-catalog h2{margin:0;}.products-catalog table{width:100%;border-collapse:collapse;}.products-catalog td,.products-catalog th{padding:8px;text-align:left;border-bottom:1px solid var(--line);}.products-catalog td:first-child{width:75%;}.products-catalog td input{width:100%;}.products-catalog caption{text-align:left;font-weight:650;padding:6px 8px;}.products-catalog .table-scroll{overflow:auto;}

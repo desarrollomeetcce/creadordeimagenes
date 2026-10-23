@@ -11400,6 +11400,34 @@ test("Integración HTTP + PostgreSQL (base exclusiva de pruebas, sin llamadas ex
       assert.equal((await db.metaAdObject.findUniqueOrThrow({where:{id:'960811'}})).aliasId,null);
       await db.metaAlias.delete({where:{id:alias.id}});
     });
+    await t.test('Productos: tablas privadas del OWNER, Diplomados por defecto y alias conservados por tabla',async()=>{
+      const tables='meta-ads/alias-tables';
+      assert.equal((await admin.call(tables)).status,403);assert.equal((await observer.call(tables)).status,403);assert.equal((await anonymous.call(tables)).status,401);
+      const initial=await owner.call(tables);assert.equal(initial.status,200);assert(initial.body.some((x:any)=>x.id==='diplomados'&&x.name==='Diplomados'));
+      assert.equal((await user.call(tables,'POST',{name:'No permitido'})).status,403);
+      assert.equal((await owner.call(tables,'POST',{name:'   '})).status,400);assert.equal((await owner.call(tables,'POST',{name:'Cursos',extra:true})).status,400);
+      const r=await owner.call(tables,'POST',{name:'Cursos '+tag});assert.equal(r.status,201);const table=r.body;
+      let alias:any,legacy:any,connection:any;
+      try {
+        assert.equal((await owner.call(tables,'POST',{name:('Cursos '+tag).toUpperCase()})).status,409);
+        assert.equal((await owner.call('meta-ads/aliases','POST',{name:'No crear '+tag,tableId:'missing'})).status,404);
+        const made=await owner.call('meta-ads/aliases','POST',{name:'Producto '+tag,tableId:table.id});assert.equal(made.status,201);alias=made.body;assert.equal(alias.tableId,table.id);
+        legacy=(await owner.call('meta-ads/aliases','POST',{name:'Diplomado previo '+tag})).body;assert.equal(legacy.tableId,'diplomados');
+        const list=(await owner.call(tables)).body;assert(list.find((x:any)=>x.id===table.id).aliases.some((x:any)=>x.id===alias.id));assert(!list.find((x:any)=>x.id==='diplomados').aliases.some((x:any)=>x.id===alias.id));
+        assert((await owner.call('meta-ads/aliases')).body.some((x:any)=>x.id===alias.id));
+        connection=(await owner.call('meta-ads/connections','POST',{name:'Tabla de productos sintética',transport:'API',token:'synthetic-table-connection-123456789'})).body;
+        await db.metaAdAccount.create({data:{id:'961701',connectionId:connection.id,name:'Productos',currency:'PEN',timezone:'America/Lima'}});
+        await db.metaAdObject.create({data:{id:'9617011',accountId:'961701',level:'campaign',name:'Campaña de tabla'}});
+        assert.equal((await owner.call('meta-ads/objects/9617011/alias','PATCH',{aliasId:alias.id})).status,200);
+        assert.equal((await owner.call('meta-ads/aliases/'+alias.id,'PATCH',{name:'Producto renombrado '+tag})).status,200);assert.equal((await db.metaAdObject.findUniqueOrThrow({where:{id:'9617011'}})).aliasId,alias.id);assert.equal((await db.metaAlias.findUniqueOrThrow({where:{id:alias.id}})).tableId,table.id);
+        assert.equal((await owner.call('meta-ads/aliases/'+alias.id,'PATCH',{name:'Mover',tableId:'diplomados'})).status,400);
+        await assert.rejects(()=>db.metaAliasTable.delete({where:{id:table.id}}));
+        assert.equal(await db.auditEvent.count({where:{resourceId:table.id,action:'PRODUCTOS_TABLA_CREADA'}}),1);
+      } finally {
+        if(connection){await db.metaAdAccount.deleteMany({where:{connectionId:connection.id}});await db.metaConnection.delete({where:{id:connection.id}});}
+        await db.metaAlias.deleteMany({where:{id:{in:[alias?.id,legacy?.id].filter(Boolean)}}});await db.metaAliasTable.delete({where:{id:table.id}});
+      }
+    });
     await t.test('Meta: varias cuentas, fallo interno diagnosticado y retirada de conexión duplicada sin borrar histórico',async()=>{
       const {discover}=await import('../lib/meta-ads/service');const actor=await db.user.findFirstOrThrow({where:{role:'OWNER'}}),original=globalThis.fetch,originalTransaction=db.$transaction.bind(db),originalWarn=console.warn;
       const logs:string[]=[];console.warn=(value)=>logs.push(String(value));

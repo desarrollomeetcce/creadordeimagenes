@@ -74,16 +74,34 @@ export async function metaRoutes(
       ).setMetaStatus(actor, parts[2], b.status, b.expectedStatus),
     );
   }
+  if (path === "alias-tables" && method === "GET")
+    return send(await (await import("./aliases")).aliasTables(actor));
+  if (path === "alias-tables" && method === "POST") {
+    ownerOnly(actor);
+    const b = z
+      .object({ name: z.string().trim().min(1).max(100) })
+      .strict()
+      .parse(await body());
+    return send(
+      await (await import("./aliases")).createAliasTable(actor, b.name),
+      201,
+    );
+  }
   if (path === "aliases" && method === "GET")
     return send(await (await import("./aliases")).aliases(actor));
   if (path === "aliases" && method === "POST") {
     ownerOnly(actor);
     const b = z
-      .object({ name: z.string().trim().min(1).max(150) })
+      .object({
+        name: z.string().trim().min(1).max(150),
+        tableId: z.string().min(1).max(100).optional(),
+      })
       .strict()
       .parse(await body());
     return send(
-      await (await import("./aliases")).saveAlias(actor, b.name),
+      await (
+        await import("./aliases")
+      ).saveAlias(actor, b.name, undefined, b.tableId),
       201,
     );
   }

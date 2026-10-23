@@ -48,7 +48,7 @@ export function parseMetaPreferences(raw: string | null): MetaPreferences {
   }
   if (!data || typeof data !== "object" || Array.isArray(data)) return result;
   const choices: Record<string, string[]> = {
-    tab: ["panel", "ranking", "alerts", "accounts", "connections", "aliases"],
+    tab: ["panel", "alerts", "accounts", "connections"],
     level: ["campaign", "adset", "ad"],
     metric: ["", "MESSAGES", "LEADS", "PURCHASES", "LINK_CLICKS", "UNKNOWN"],
     sort: ["today", "7", "15", "30", "lifetime", "custom", "newest", "age"],
