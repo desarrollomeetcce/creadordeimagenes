@@ -1,3 +1,4 @@
+import { compareMetaItems } from "./order";
 import { focusedReportDay } from "./focused-labels";
 import { createHash } from "node:crypto";
 import { insightSummaries } from "./insight-cache";
@@ -476,19 +477,7 @@ export async function dashboard(actor: Actor, params: URLSearchParams) {
         (o.periods[sort] ?? o.periods["7"]).results >= o.minResults &&
         (o.periods[sort] ?? o.periods["7"]).cost !== null,
     );
-  items.sort((a, b) => {
-    if (a.currency !== b.currency) return a.currency.localeCompare(b.currency);
-    if (a.metric !== b.metric) return a.metric.localeCompare(b.metric);
-    if (sort === "newest")
-      return (b.createdTime?.valueOf() ?? 0) - (a.createdTime?.valueOf() ?? 0);
-    if (sort === "age")
-      return direction * ((a.ageDays ?? Infinity) - (b.ageDays ?? Infinity));
-    const ap = a.periods[sort] ?? a.periods["7"],
-      bp = b.periods[sort] ?? b.periods["7"];
-    if (ap.cost === null || bp.cost === null)
-      return ap.cost === bp.cost ? 0 : ap.cost === null ? 1 : -1;
-    return direction * (ap.cost - bp.cost) || bp.results - ap.results;
-  });
+  items.sort((a, b) => compareMetaItems(a, b, sort, direction));
   const page = Math.max(1, Math.min(10000, Number(params.get("page")) || 1)),
     limit = Math.max(10, Math.min(100, Number(params.get("limit")) || 25));
   return {

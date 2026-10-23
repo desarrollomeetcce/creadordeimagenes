@@ -927,3 +927,12 @@ Filtros conservan altura mínima hasta el viewport para evitar saltos al cargar/
 Validación:116 unitarias,152 integraciones de plataforma con base exclusiva,2 pruebas específicas de origen/caché/permisos/derivación y navegador Chromium. Búsqueda y filtro de recomendaciones conservan scrollY450; reglas diurna/nocturna, aprobación cancelada/confirmada simulada, evidencia, temas y móvil390 sin desbordamiento. TypeScript y compilación de producción aprobados. Ninguna publicidad ni IA real utilizada en pruebas.
 
 El usuario confirmó que el VPS se despliega automáticamente al publicar commits en main; el commit validado activa ese mecanismo. Un push no acredita por sí solo la finalización del despliegue en Hostinger.
+
+
+### Meta: retirada de recomendaciones y filtros en menos filas
+
+Por instrucción posterior del usuario, eliminados selector/vista y componentes de recomendaciones del cliente. La restauración/persistencia de preferencias ignora los modos anteriores; no hay consultas de recomendaciones al abrir Meta ni recargar. Se conservan estadísticas y migraciones históricas. Panel normal, sincronización y controles de publicidad existentes continúan.
+
+Orden compartido de todos los niveles: ACTIVE efectivo primero, antes de paginación; luego moneda/resultado y costo del periodo seleccionado, sin costo al final de cada estado. No comparar importes de distintas monedas ni alterar estados. Busca por palabra y alias integradas en la barra superior; sin fila aparte. Menores gaps/padding y cargador superpuesto sin reservar una fila vacía; grid alineado al inicio para no distribuir altura de reserva entre los controles.
+
+Chromium: una fila de filtros a1520px,8px entre barra de controles y tabla, anuncios/conjuntos activos primero incluso con pausado más barato, misma secuencia en tarjetas, preferencias antiguas no reabren recomendaciones, búsqueda vacía conserva scroll, móvil390 sin desbordamiento y cero peticiones de recomendaciones/escrituras publicitarias/errores JS/HTTP.117 unitarias, TypeScript y compilación aprobados. 152/152 integraciones de plataforma aprobadas.

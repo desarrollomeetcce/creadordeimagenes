@@ -117,3 +117,13 @@ test('Meta detalle diario: rangos inclusivos, todo lo guardado y rechazo de fech
  assert.deepEqual(dailyRange(new URLSearchParams('all=1'),'2026-10-22'),{lte:'2026-10-22'});
  for(const q of ['since=2026-02-30&until=2026-03-01','since=2026-10-22&until=2026-10-21','since=2026-10-22','since=&until=','since=2026-10-23&until=2026-10-24','all=1&since=2026-10-01&until=2026-10-22','all=2'])assert.throws(()=>dailyRange(new URLSearchParams(q),'2026-10-22'));
 });
+
+test('Meta ordering: active objects first before pagination, costs within comparable groups and missing costs last',async()=>{
+ const {compareMetaItems}=await import('../lib/meta-ads/order');
+ const row=(id:string,status:string,cost:number|null,currency='PEN')=>({id,status,effectiveStatus:status,currency,metric:'MESSAGES',createdTime:null,ageDays:null,periods:{today:{cost,results:cost===null?0:10},'7':{cost,results:10}}});
+ const rows=[row('paused-cheap','PAUSED',.1),row('active-high','ACTIVE',2),row('active-none','ACTIVE',null),row('active-low','ACTIVE',.5),row('paused-high','PAUSED',1)];
+ assert.deepEqual([...rows].sort((a,b)=>compareMetaItems(a,b,'today',1)).map(o=>o.id),['active-low','active-high','active-none','paused-cheap','paused-high']);
+ assert.deepEqual([...rows].sort((a,b)=>compareMetaItems(a,b,'today',-1)).map(o=>o.id),['active-high','active-low','active-none','paused-high','paused-cheap']);
+ assert(compareMetaItems(row('a','ACTIVE',5,'USD'),row('b','PAUSED',.1), 'today',1)<0);
+ const inherited={...row('child','PAUSED',.1),status:'ACTIVE'};assert(compareMetaItems(inherited,row('live','ACTIVE',2),'today',1)>0);
+});

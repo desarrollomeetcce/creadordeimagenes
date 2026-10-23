@@ -1,5 +1,4 @@
 "use client";
-import dynamic from "next/dynamic";
 import { useMetaStableViewport } from "./meta-stable-viewport";
 import { useCallback, useEffect, useState, useRef } from "react";
 import {
@@ -325,17 +324,9 @@ function SyncIndicator({
     </div>
   );
 }
-const MetaRecommendations = dynamic(
-  () => import("./meta-recommendations").then((m) => m.MetaRecommendations),
-  { loading: () => <p role="status">Abriendo recomendaciones…</p> },
-);
 export function MetaAds({ role, userId }: { role: string; userId: string }) {
   const owner = role === "OWNER";
   const stableViewport = useMetaStableViewport();
-  const [recommendationView, setRecommendationView] = useState("cards");
-  const [recommendationMode, setRecommendationMode] = useState<
-    "" | "night" | "day"
-  >("");
   const [accounts, setAccounts] = useState<Account[]>([]),
     [preferencesReady, setPreferencesReady] = useState(false),
     [accountsLoaded, setAccountsLoaded] = useState(false),
@@ -584,8 +575,6 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
     setUntil(p.until);
     setCalendar(p.calendar);
     setView(p.view);
-    setRecommendationMode(p.recommendationMode);
-    setRecommendationView(p.recommendationView);
     setAccountListQuery(p.accountListQuery);
     setAccountListActivity(p.accountListActivity);
     setAccountListBusiness(p.accountListBusiness);
@@ -633,8 +622,6 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
           until,
           calendar,
           view,
-          recommendationMode,
-          recommendationView,
           accountListQuery,
           accountListActivity,
           accountListBusiness,
@@ -672,8 +659,6 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
     until,
     calendar,
     view,
-    recommendationMode,
-    recommendationView,
     accountListQuery,
     accountListActivity,
     accountListBusiness,
@@ -757,12 +742,7 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
     };
   }, [refresh, preferencesReady]);
   useEffect(() => {
-    if (
-      !analyticsTab ||
-      !preferencesReady ||
-      !accountsLoaded ||
-      recommendationMode
-    ) {
+    if (!analyticsTab || !preferencesReady || !accountsLoaded) {
       setLoading(false);
       return;
     }
@@ -827,7 +807,6 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
     preferencesReady,
     accountsLoaded,
     analyticsTab,
-    recommendationMode,
     level,
     accountKey,
     business,
@@ -988,14 +967,10 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
   );
   const renderCard = (o: Item) => {
     const summary =
-      o.periods[
-        recommendationMode ? "today" : calendar ? "custom" : analysisPeriod
-      ] ?? o.periods["30"];
-    const summaryLabel = recommendationMode
-      ? "Hoy"
-      : calendar
-        ? "Calendario elegido"
-        : (periods.find(([id]) => id === analysisPeriod)?.[1] ?? "30 días");
+      o.periods[calendar ? "custom" : analysisPeriod] ?? o.periods["30"];
+    const summaryLabel = calendar
+      ? "Calendario elegido"
+      : (periods.find(([id]) => id === analysisPeriod)?.[1] ?? "30 días");
     return (
       <article
         className={
@@ -1160,11 +1135,7 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
           </p>
         )}
         <div className="meta-card-evaluation">
-          <span className="badge">
-            {recommendationMode
-              ? "Datos reales · ver cálculo y recomendación"
-              : ratings[o.rating]}
-          </span>
+          <span className="badge">{ratings[o.rating]}</span>
           <small>Evaluación orientativa · últimos 7 días</small>
         </div>
         <div className="meta-dates">
@@ -2049,6 +2020,33 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
                     ))}
                   </select>
                 </label>
+                <label>
+                  Buscar por palabra
+                  <input
+                    type="search"
+                    aria-label="Buscar campañas, conjuntos o anuncios"
+                    placeholder="Escribe parte del nombre"
+                    value={q}
+                    onChange={(e) => setQ(e.target.value)}
+                  />
+                </label>
+                <label>
+                  Buscar por alias
+                  <select
+                    value={aliasFilter}
+                    onChange={(e) =>
+                      resetPage(() => setAliasFilter(e.target.value))
+                    }
+                  >
+                    <option value="">Todos los alias</option>
+                    <option value="__none">Sin alias</option>
+                    {aliases.map((a) => (
+                      <option key={a.id} value={a.id}>
+                        {a.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
                 <div className="meta-filter-actions">
                   <button
                     type="button"
@@ -2132,7 +2130,6 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
                     key={id}
                     className={level === id ? "primary" : ""}
                     onClick={() => {
-                      setRecommendationMode("");
                       resetPage(() => setLevel(id));
                     }}
                   >
@@ -2143,45 +2140,10 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
               <button
                 className="meta-view-toggle"
                 type="button"
-                onClick={() =>
-                  recommendationMode
-                    ? setRecommendationView(
-                        recommendationView === "cards" ? "table" : "cards",
-                      )
-                    : setView(view === "cards" ? "table" : "cards")
-                }
+                onClick={() => setView(view === "cards" ? "table" : "cards")}
               >
-                {(recommendationMode ? recommendationView : view) === "cards"
-                  ? "Ver tabla"
-                  : "Ver tarjetas"}
+                {view === "cards" ? "Ver tabla" : "Ver tarjetas"}
               </button>
-              <label className="meta-recommendation-mode">
-                <span className="sr-only">Modo de recomendaciones</span>
-                <select
-                  aria-label="Recomendaciones"
-                  value={recommendationMode}
-                  onChange={(e) => {
-                    if (!recommendationMode && e.target.value)
-                      setRecommendationView(view);
-                    setRecommendationMode(
-                      e.target.value as "" | "night" | "day",
-                    );
-                  }}
-                >
-                  <option value="">
-                    {recommendationMode
-                      ? "Ocultar recomendaciones"
-                      : "Recomendaciones"}
-                  </option>
-                  <option value="night">Nocturna</option>
-                  <option value="day">Diurna · 8:00 a. m. Perú</option>
-                </select>
-              </label>
-              {recommendationMode && (
-                <button type="button" onClick={() => setRecommendationMode("")}>
-                  Volver a vista normal
-                </button>
-              )}
               {chosen.some((a) => a.canSync) && (
                 <button
                   type="button"
@@ -2221,75 +2183,38 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
                   ↻ Actualizar desde Meta
                 </button>
               )}
-              {!recommendationMode && (
-                <>
-                  <MetaCostOrder
-                    calendar={!!calendar}
-                    value={sort}
-                    direction={direction}
-                    onChange={(id) =>
-                      resetPage(() => {
-                        setSort(id);
-                        setDirection(
-                          sort === id && direction === "asc" ? "desc" : "asc",
-                        );
-                      })
-                    }
-                  />
-                  <MetaAnalysisPeriod
-                    value={calendar ? "custom" : analysisPeriod}
-                    since={since}
-                    until={until}
-                    onPreset={(id) => {
-                      setAnalysisPeriod(id);
-                      setCalendar("");
-                      setSince("");
-                      setUntil("");
-                      if (sort === "custom") setSort("today");
-                    }}
-                    onRange={(start, end) => {
-                      setSince(start);
-                      setUntil(end);
-                      setCalendar("custom");
-                      setPage(1);
-                    }}
-                  />
-                </>
-              )}
+              <MetaCostOrder
+                calendar={!!calendar}
+                value={sort}
+                direction={direction}
+                onChange={(id) =>
+                  resetPage(() => {
+                    setSort(id);
+                    setDirection(
+                      sort === id && direction === "asc" ? "desc" : "asc",
+                    );
+                  })
+                }
+              />
+              <MetaAnalysisPeriod
+                value={calendar ? "custom" : analysisPeriod}
+                since={since}
+                until={until}
+                onPreset={(id) => {
+                  setAnalysisPeriod(id);
+                  setCalendar("");
+                  setSince("");
+                  setUntil("");
+                  if (sort === "custom") setSort("today");
+                }}
+                onRange={(start, end) => {
+                  setSince(start);
+                  setUntil(end);
+                  setCalendar("custom");
+                  setPage(1);
+                }}
+              />
             </div>
-            {!recommendationMode && (
-              <>
-                <div className="meta-search-row">
-                  <label>
-                    Buscar por palabra
-                    <input
-                      type="search"
-                      aria-label="Buscar campañas, conjuntos o anuncios"
-                      placeholder="Escribe parte del nombre"
-                      value={q}
-                      onChange={(e) => setQ(e.target.value)}
-                    />
-                  </label>
-                  <label>
-                    Buscar por alias
-                    <select
-                      value={aliasFilter}
-                      onChange={(e) =>
-                        resetPage(() => setAliasFilter(e.target.value))
-                      }
-                    >
-                      <option value="">Todos los alias</option>
-                      <option value="__none">Sin alias</option>
-                      {aliases.map((a) => (
-                        <option key={a.id} value={a.id}>
-                          {a.name}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                </div>
-              </>
-            )}
             {selectedObjects.some(
               (o) =>
                 o.level === level &&
@@ -2330,235 +2255,211 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
               </div>
             )}
             <div data-meta-result-region className="meta-results-stage">
-              {recommendationMode ? (
-                accountsLoaded ? (
-                  <MetaRecommendations
-                    mode={recommendationMode}
-                    accountIds={accountIds}
-                    campaignIds={campaignScope}
-                    owner={owner}
-                    view={recommendationView}
-                    revision={revision}
-                    renderCard={renderCard}
-                    selectedIds={selectedIds}
-                    selectObject={selectObject}
-                    onDetail={setSelected}
-                    onUpdated={() => setRevision((n) => n + 1)}
-                  />
-                ) : (
-                  <p role="status">
-                    Restaurando tus cuentas para mostrar las recomendaciones…
+              <div className="meta-results" aria-busy={loading}>
+                {tab === "ranking" && rankingExcluded > 0 && (
+                  <p className="hint">
+                    {rankingExcluded} elementos separados por datos
+                    insuficientes en el periodo elegido. Puedes consultarlos en
+                    Rendimiento.
                   </p>
-                )
-              ) : (
-                <div className="meta-results" aria-busy={loading}>
-                  {tab === "ranking" && rankingExcluded > 0 && (
-                    <p className="hint">
-                      {rankingExcluded} elementos separados por datos
-                      insuficientes en el periodo elegido. Puedes consultarlos
-                      en Rendimiento.
+                )}
+                {limited && (
+                  <p className="notice">
+                    Hay más de 10.000 elementos: filtra por cuenta o campaña
+                    para acotar el ranking.
+                  </p>
+                )}
+                <div
+                  className="meta-load-status"
+                  role="status"
+                  aria-live="polite"
+                >
+                  {loading ? "Consultando estadísticas guardadas…" : ""}
+                </div>
+                {!loading && !items.length && (
+                  <section className="panel meta-empty">
+                    <h2>
+                      {accounts.length
+                        ? "No hay resultados para esta selección"
+                        : "Conecta tus cuentas publicitarias"}
+                    </h2>
+                    <p>
+                      {accounts.length
+                        ? "Habilita y sincroniza una cuenta, o ajusta los filtros. Las estadísticas aparecerán cuando termine la importación."
+                        : owner
+                          ? "Conecta tu cuenta de Facebook para empezar."
+                          : "Solicita al OWNER acceso a las cuentas que necesitas consultar."}
                     </p>
-                  )}
-                  {limited && (
-                    <p className="notice">
-                      Hay más de 10.000 elementos: filtra por cuenta o campaña
-                      para acotar el ranking.
-                    </p>
-                  )}
-                  <div
-                    className="meta-load-status"
-                    role="status"
-                    aria-live="polite"
-                  >
-                    {loading ? "Consultando estadísticas guardadas…" : ""}
-                  </div>
-                  {!loading && !items.length && (
-                    <section className="panel meta-empty">
-                      <h2>
+                    {owner && (
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setTab(accounts.length ? "accounts" : "connections")
+                        }
+                      >
                         {accounts.length
-                          ? "No hay resultados para esta selección"
-                          : "Conecta tus cuentas publicitarias"}
-                      </h2>
-                      <p>
-                        {accounts.length
-                          ? "Habilita y sincroniza una cuenta, o ajusta los filtros. Las estadísticas aparecerán cuando termine la importación."
-                          : owner
-                            ? "Conecta tu cuenta de Facebook para empezar."
-                            : "Solicita al OWNER acceso a las cuentas que necesitas consultar."}
-                      </p>
-                      {owner && (
-                        <button
-                          type="button"
-                          onClick={() =>
-                            setTab(accounts.length ? "accounts" : "connections")
-                          }
-                        >
-                          {accounts.length
-                            ? "Configurar cuentas"
-                            : "Conectar Meta"}
-                        </button>
-                      )}
-                    </section>
-                  )}
-                  {view === "table" ? (
-                    <div className="meta-table">
-                      <table>
-                        <thead>
-                          <tr>
-                            <th className="meta-check-cell">
-                              <span className="sr-only">Selección</span>
-                            </th>
-                            <th>Activado</th>
-                            <th>Campaña / Conjunto / Anuncio</th>
-                            <th>Alias</th>
-                            <th>Cuenta / Resultado</th>
-                            <th>Estado</th>
-                            <th>Inicio · días</th>
-                            {periods.map(([key, label]) => (
-                              <th key={key}>{label}</th>
-                            ))}
-                            <th>Evaluación</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {items
-                            .filter(
-                              (o) =>
-                                tab !== "alerts" ||
-                                ["CRITICAL", "WATCH", "DETERIORATING"].includes(
-                                  o.rating,
-                                ),
-                            )
-                            .map((o) => (
-                              <tr
-                                key={o.id}
-                                data-object-id={o.id}
-                                aria-selected={selectedIds.has(o.id)}
-                                className={
-                                  selectedIds.has(o.id)
-                                    ? "meta-object-selected"
-                                    : ""
-                                }
+                          ? "Configurar cuentas"
+                          : "Conectar Meta"}
+                      </button>
+                    )}
+                  </section>
+                )}
+                {view === "table" ? (
+                  <div className="meta-table">
+                    <table>
+                      <thead>
+                        <tr>
+                          <th className="meta-check-cell">
+                            <span className="sr-only">Selección</span>
+                          </th>
+                          <th>Activado</th>
+                          <th>Campaña / Conjunto / Anuncio</th>
+                          <th>Alias</th>
+                          <th>Cuenta / Resultado</th>
+                          <th>Estado</th>
+                          <th>Inicio · días</th>
+                          {periods.map(([key, label]) => (
+                            <th key={key}>{label}</th>
+                          ))}
+                          <th>Evaluación</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {items
+                          .filter(
+                            (o) =>
+                              tab !== "alerts" ||
+                              ["CRITICAL", "WATCH", "DETERIORATING"].includes(
+                                o.rating,
+                              ),
+                          )
+                          .map((o) => (
+                            <tr
+                              key={o.id}
+                              data-object-id={o.id}
+                              aria-selected={selectedIds.has(o.id)}
+                              className={
+                                selectedIds.has(o.id)
+                                  ? "meta-object-selected"
+                                  : ""
+                              }
+                            >
+                              <td className="meta-check-cell">
+                                <input
+                                  type="checkbox"
+                                  aria-label={`Seleccionar ${o.name}`}
+                                  checked={selectedIds.has(o.id)}
+                                  onChange={(e) =>
+                                    selectObject(o, e.target.checked)
+                                  }
+                                />
+                              </td>
+                              <td>
+                                <MetaStatusSwitch
+                                  name={o.name}
+                                  status={o.status}
+                                  delivery={
+                                    deliveryLabels[o.effectiveStatus] ??
+                                    o.effectiveStatus ??
+                                    "No informado"
+                                  }
+                                  disabled={!owner || busy}
+                                  onToggle={() => changeStatus(o)}
+                                />
+                              </td>
+                              <td>
+                                <button
+                                  className="meta-name-button"
+                                  type="button"
+                                  onClick={() => openChildren(o)}
+                                >
+                                  {o.name}
+                                </button>
+                                <small>
+                                  {o.campaignName} / {o.adsetName}
+                                </small>
+                              </td>
+                              <td className="meta-alias-cell">
+                                {aliasControl(o)}
+                              </td>
+                              <td>
+                                {o.accountName}
+                                <small>{o.metricName}</small>
+                              </td>
+                              <td
+                                className="meta-delivery-state"
+                                data-active={o.effectiveStatus === "ACTIVE"}
                               >
-                                <td className="meta-check-cell">
-                                  <input
-                                    type="checkbox"
-                                    aria-label={`Seleccionar ${o.name}`}
-                                    checked={selectedIds.has(o.id)}
-                                    onChange={(e) =>
-                                      selectObject(o, e.target.checked)
-                                    }
-                                  />
-                                </td>
-                                <td>
-                                  <MetaStatusSwitch
-                                    name={o.name}
-                                    status={o.status}
-                                    delivery={
-                                      deliveryLabels[o.effectiveStatus] ??
-                                      o.effectiveStatus ??
-                                      "No informado"
-                                    }
-                                    disabled={!owner || busy}
-                                    onToggle={() => changeStatus(o)}
-                                  />
-                                </td>
-                                <td>
-                                  <button
-                                    className="meta-name-button"
-                                    type="button"
-                                    onClick={() => openChildren(o)}
-                                  >
-                                    {o.name}
-                                  </button>
+                                {deliveryLabels[o.effectiveStatus] ??
+                                  o.effectiveStatus ??
+                                  (o.status === "ACTIVE"
+                                    ? "Activo · entrega por confirmar"
+                                    : "No informado")}
+                              </td>
+                              <td>
+                                {date(o.firstDelivery)}
+                                <small>{o.ageDays ?? "—"} días</small>
+                              </td>
+                              {periods.map(([key]) => (
+                                <td key={key}>
+                                  {cost(o.periods[key], o.currency)}
                                   <small>
-                                    {o.campaignName} / {o.adsetName}
+                                    {o.periods[key].results} resultados
                                   </small>
                                 </td>
-                                <td className="meta-alias-cell">
-                                  {aliasControl(o)}
-                                </td>
-                                <td>
-                                  {o.accountName}
-                                  <small>{o.metricName}</small>
-                                </td>
-                                <td
-                                  className="meta-delivery-state"
-                                  data-active={o.effectiveStatus === "ACTIVE"}
-                                >
-                                  {deliveryLabels[o.effectiveStatus] ??
-                                    o.effectiveStatus ??
-                                    (o.status === "ACTIVE"
-                                      ? "Activo · entrega por confirmar"
-                                      : "No informado")}
-                                </td>
-                                <td>
-                                  {date(o.firstDelivery)}
-                                  <small>{o.ageDays ?? "—"} días</small>
-                                </td>
-                                {periods.map(([key]) => (
-                                  <td key={key}>
-                                    {cost(o.periods[key], o.currency)}
-                                    <small>
-                                      {o.periods[key].results} resultados
-                                    </small>
-                                  </td>
-                                ))}
-                                <td>
-                                  {recommendationMode
-                                    ? "Datos reales · ver cálculo y recomendación"
-                                    : ratings[o.rating]}
+                              ))}
+                              <td>
+                                {ratings[o.rating]}
 
-                                  <button
-                                    type="button"
-                                    onClick={() => setSelected(o)}
-                                  >
-                                    Ver detalle
-                                  </button>
-                                </td>
-                              </tr>
-                            ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  ) : (
-                    <div className="meta-cards">
-                      {items
-                        .filter(
-                          (o) =>
-                            tab !== "alerts" ||
-                            [
-                              "CRITICAL",
-                              "WATCH",
-                              "DETERIORATING",
-                              "STALE",
-                            ].includes(o.rating),
-                        )
-                        .map(renderCard)}
-                    </div>
-                  )}
-                  <div className="row">
-                    <button
-                      type="button"
-                      disabled={page <= 1}
-                      onClick={() => setPage((p) => p - 1)}
-                    >
-                      Anterior
-                    </button>
-                    <span>
-                      {total} elementos · Página {page} de{" "}
-                      {Math.max(1, Math.ceil(total / 25))}
-                    </span>
-                    <button
-                      type="button"
-                      disabled={page * 25 >= total}
-                      onClick={() => setPage((p) => p + 1)}
-                    >
-                      Siguiente
-                    </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setSelected(o)}
+                                >
+                                  Ver detalle
+                                </button>
+                              </td>
+                            </tr>
+                          ))}
+                      </tbody>
+                    </table>
                   </div>
+                ) : (
+                  <div className="meta-cards">
+                    {items
+                      .filter(
+                        (o) =>
+                          tab !== "alerts" ||
+                          [
+                            "CRITICAL",
+                            "WATCH",
+                            "DETERIORATING",
+                            "STALE",
+                          ].includes(o.rating),
+                      )
+                      .map(renderCard)}
+                  </div>
+                )}
+                <div className="row">
+                  <button
+                    type="button"
+                    disabled={page <= 1}
+                    onClick={() => setPage((p) => p - 1)}
+                  >
+                    Anterior
+                  </button>
+                  <span>
+                    {total} elementos · Página {page} de{" "}
+                    {Math.max(1, Math.ceil(total / 25))}
+                  </span>
+                  <button
+                    type="button"
+                    disabled={page * 25 >= total}
+                    onClick={() => setPage((p) => p + 1)}
+                  >
+                    Siguiente
+                  </button>
                 </div>
-              )}
+              </div>
             </div>
           </>
         )}

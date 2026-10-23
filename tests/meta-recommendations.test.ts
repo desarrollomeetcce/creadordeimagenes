@@ -420,43 +420,12 @@ test("active ads still observing are not declared failed or told to create repla
   assert.match(r.summary, /observación/);
 });
 
-test("recommendation mode persists until explicitly cleared, only whitelisted modes and views", async () => {
+test("removed recommendation preferences cannot reopen the old view", async () => {
   const { parseMetaPreferences } = await import("../lib/meta-ads/preferences");
-  for (const mode of ["day", "night"]) {
-    const p = parseMetaPreferences(
-      JSON.stringify({
-        layoutRevision: 2,
-        recommendationMode: mode,
-        recommendationView: "table",
-        view: "cards",
-        token: "never-save",
-      }),
-    );
-    assert.equal(p.recommendationMode, mode);
-    assert.equal(p.recommendationView, "table");
-    assert.equal(p.view, "cards");
-    assert.equal(
-      parseMetaPreferences(JSON.stringify({ ...p, recommendationMode: "" }))
-        .recommendationMode,
-      "",
-    );
-    assert(!JSON.stringify(p).includes("never-save"));
-  }
-  assert.equal(parseMetaPreferences(null).recommendationMode, "");
-  assert.equal(
-    parseMetaPreferences(
-      JSON.stringify({
-        recommendationMode: "automatic",
-        recommendationView: "bad",
-      }),
-    ).recommendationMode,
-    "",
-  );
-  assert.equal(
-    parseMetaPreferences(JSON.stringify({ recommendationView: "bad" }))
-      .recommendationView,
-    "cards",
-  );
+  const p = parseMetaPreferences(JSON.stringify({layoutRevision:2,recommendationMode:"night",recommendationView:"table",view:"cards"}));
+  assert.equal(p.view,"cards");
+  assert.equal("recommendationMode" in p,false);
+  assert.equal("recommendationView" in p,false);
 });
 
 test("small current-day sample keeps a stable ad by its own history and explains actual numbers", () => {

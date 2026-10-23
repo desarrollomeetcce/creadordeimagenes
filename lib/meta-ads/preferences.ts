@@ -28,8 +28,6 @@ export const metaDefaults = {
   until: "",
   calendar: "",
   view: "cards",
-  recommendationMode: "" as "" | "night" | "day",
-  recommendationView: "cards",
   accountListQuery: "",
   accountListActivity: "all",
   accountListBusiness: "",
@@ -77,8 +75,6 @@ export function parseMetaPreferences(raw: string | null): MetaPreferences {
     ],
     calendar: ["", "custom"],
     view: ["cards", "table"],
-    recommendationMode: ["", "night", "day"],
-    recommendationView: ["cards", "table"],
     accountListActivity: ["all", "spend", "active", "none", "unknown"],
     accountPickerActivity: ["all", "spend", "active", "none", "unknown"],
   };

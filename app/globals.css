@@ -1405,3 +1405,26 @@ html:has(.meta-ads),.meta-ads { overflow-anchor:none; }
 .meta-results-stage { min-width:0; }
 .meta-source-fetch { border:1px solid var(--line); border-radius:8px; padding:12px; margin:12px 0; }
 .meta-formula { font-family:ui-monospace,monospace; overflow-wrap:anywhere; background:var(--paper); border-radius:5px; padding:8px; }
+
+/* Compact Meta filters: search belongs to the same bar, no extra search row. */
+.meta-ads{align-content:start;gap:10px;}
+.meta-content{gap:8px;}
+.meta-ads .panel.stack{padding:12px;gap:8px;margin-bottom:0;}
+.meta-main-filters{grid-template-columns:repeat(6,minmax(110px,1fr)) auto;gap:8px;}
+.meta-main-filters>label{gap:4px;}
+.meta-main-filters .meta-filter-actions{gap:5px;}
+.meta-main-filters .meta-filter-actions>button:not(.meta-refresh){padding:10px;white-space:nowrap;}
+.meta-result-controls{gap:6px;}
+.meta-result-controls .meta-level-tabs{flex:0 0 auto;width:auto;gap:5px;}
+.meta-result-controls .meta-level-tabs button{padding:10px;}
+.meta-result-controls .meta-order-horizontal{flex:1 1 365px;gap:4px;}
+.meta-order-horizontal button{padding:9px 7px;}
+.meta-result-controls>.meta-analysis-period{flex:0 1 165px;}
+.meta-results{gap:8px;position:relative;}
+.meta-load-status{position:absolute;right:6px;top:6px;z-index:2;background:var(--surface);padding:4px 8px;border-radius:5px;}
+.meta-load-status:empty{display:none;}
+@media(max-width:1150px){.meta-main-filters{grid-template-columns:repeat(3,minmax(0,1fr));}.meta-main-filters .meta-filter-actions{grid-column:auto;}.meta-result-controls .meta-level-tabs{flex-basis:auto;}}
+@media(max-width:600px){.meta-main-filters{grid-template-columns:repeat(2,minmax(0,1fr));}.meta-result-controls .meta-level-tabs{width:100%;}.meta-result-controls .meta-order-horizontal{flex-basis:100%;}.meta-result-controls>.meta-analysis-period{flex:1 1 160px;}.meta-main-filters .meta-filter-actions{grid-column:1/-1;}}
+.meta-data-freshness{flex-direction:row;flex-wrap:wrap;align-items:baseline;gap:4px 10px;padding:2px 0;border-bottom:0;}
+.meta-data-freshness>div>small{display:inline;margin-left:8px;}
+.meta-data-freshness>small{display:inline;}

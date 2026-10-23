@@ -808,3 +808,10 @@ Aclaración posterior de selección persistente:115/115 unitarias con prueba adi
 116/116 unitarias;152/152 integraciones HTTP/PostgreSQL en base exclusiva (repetición completa limpia tras un fallo transitorio de la aserción de cuota del foco semanal).2/2 pruebas de BD dirigidas: lecturas GET de proveedor simuladas, pertenencia/cursor/paginación, lease ocupado, revisión de credencial, permiso canSync, diarios válidos cuando falla máximo histórico y derivación de totales solo para vida completamente cubierta. El caché no comparte permiso canReadFromMeta de otro actor.
 
 Chromium: fórmulas visibles, origen de datos y ausencia de rótulo genérico Datos insuficientes en recomendaciones; filtro que vacía la campaña y búsqueda que vacía resultados mantienen scrollY450. Cambios de estado/evaluación, modos, tarjetas/tabla, retorno, persistencia al refrescar/recargar, temas y móvil390. Aprobación publicitaria interceptada con fixtures sintéticos; ningún cambio en Meta real. Logs meta-real-data-{unit,typecheck,build,db-final,integration-final,browser}.txt en /workspace/work. Estas pruebas no acreditan calibración estadística de la proyección ni la finalización del despliegue en VPS.
+
+
+### Meta: vista normal compacta, sin recomendaciones y activos primero
+
+117/117 unitarias, incluida la precedencia ACTIVE antes de ordenar costo y paginar, nulos al final, monedas separadas, dirección inversa y padre pausado aunque status del hijo sea ACTIVE. Preferencias legacy de recomendaciones se ignoran. TypeScript y build aprobados.
+
+Chromium con datos sintéticos: no selector/vista ni solicitudes de recomendaciones al abrir/recargar incluso con preferencia antigua; palabras y alias dentro de filtros principales en una sola fila a1520px,8px entre controles y tabla; activos con costo1.20/2.20 antes de pausado con costo0.10; mismo orden en tarjetas y conjuntos; búsqueda vacía conserva scroll; móvil390 sin desbordamiento. Cero escrituras publicitarias y errores JS/HTTP. Capturas meta-compact-desktop.png/meta-compact-mobile.png; logs meta-compact-{unit,types,build,browser,integration}.txt en /workspace/work. 152/152 integraciones de plataforma aprobadas.

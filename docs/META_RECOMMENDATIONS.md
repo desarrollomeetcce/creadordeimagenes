@@ -1,5 +1,7 @@
 # Recomendaciones determinísticas de Meta Ads
 
+**Vista retirada por solicitud posterior del usuario.** Ya no existe selector ni vista de recomendaciones en la aplicación. Las preferencias antiguas no la reabren y el cliente no consulta sus rutas. El documento siguiente conserva la descripción histórica del motor y sus tablas, que no se borran.
+
 Motor `rules-2`. No utiliza modelos generativos, servicios de IA ni tokens. No predice con certeza la eficacia de un anuncio ni ejecuta publicidad al leer una vista.
 
 ## Uso
