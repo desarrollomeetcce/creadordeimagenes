@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { engineRequest as api } from "./generation-engine";
-import { countryName, countryOptions } from "../../lib/meta-ads/countries";
+import { countryOptions } from "../../lib/meta-ads/countries";
 import {
   parseEffectivenessPaste,
   resolveCountry,
@@ -17,8 +17,18 @@ import {
   type PeriodMode,
   type MetricRange,
 } from "../../lib/meta-ads/period-summary";
+import { SheetSearchSelect } from "./sheet-search-select";
 import { SheetNumberFilter } from "./sheet-number-filter";
 import { EffectivenessCell } from "./effectiveness-cell";
+const countries = countryOptions.map((c) => ({
+  value: c.code,
+  label: `${c.code} · ${c.name}`,
+}));
+const currencyNames = new Intl.DisplayNames(["es"], { type: "currency" });
+const currencies = currencyCodes.map((c) => ({
+  value: c,
+  label: `${c} · ${currencyNames.of(c) || c}`,
+}));
 type Cell = {
   spend: number | null;
   base: number | null;
@@ -108,6 +118,7 @@ export function MetaEffectiveness({
       field: "alias",
       direction: "asc",
     });
+  const [periodPosition, setPeriodPosition] = useState({ top: 8, left: 8 });
   const currentRange = useRef(""),
     queryVersion = useRef(0),
     attemptedFx = useRef(new Set<string>());
@@ -446,49 +457,11 @@ export function MetaEffectiveness({
   const activeFilters = Object.values(metricRanges).some(
     (r) => r?.min !== undefined || r?.max !== undefined,
   );
-  const number = (
-    v: number | null,
-    money: boolean,
-    currency: string,
-    average = false,
-  ) =>
-    v === null
-      ? "—"
-      : v.toLocaleString("es-PE", {
-          minimumFractionDigits: money
-            ? new Intl.NumberFormat("en", {
-                style: "currency",
-                currency: currency || "USD",
-              }).resolvedOptions().minimumFractionDigits
-            : average
-              ? 2
-              : 0,
-          maximumFractionDigits: money
-            ? new Intl.NumberFormat("en", {
-                style: "currency",
-                currency: currency || "USD",
-              }).resolvedOptions().maximumFractionDigits
-            : average
-              ? 2
-              : 6,
-        });
   return (
     <section
       className="effectiveness sheet-view"
       aria-label="Efectividad diaria"
     >
-      <datalist id="effectiveness-countries">
-        {countryOptions.map((c) => (
-          <option key={c.code} value={c.code}>
-            {c.name}
-          </option>
-        ))}
-      </datalist>
-      <datalist id="effectiveness-currencies">
-        {currencyCodes.map((c) => (
-          <option key={c} value={c} />
-        ))}
-      </datalist>
       <div className="row sheet-toolbar">
         <span className="sheet-legend">
           <b>V</b> Ventas · <b>B</b> Conversaciones · <b>G</b> Gasto · <b>CF</b>{" "}
@@ -508,20 +481,114 @@ export function MetaEffectiveness({
         />
         <label>
           Filtrar país
-          <select
-            aria-label="País de efectividad"
+          <SheetSearchSelect
+            label="País de efectividad"
             value={country}
-            onChange={(e) => setCountry(e.target.value)}
-          >
-            <option value="">Todos</option>
-            <option value="__none">Sin país</option>
-            {countryOptions.map((c) => (
-              <option key={c.code} value={c.code}>
-                {c.code} · {c.name}
-              </option>
-            ))}
-          </select>
+            options={[
+              { value: "", label: "Todos" },
+              { value: "__none", label: "Sin país" },
+              ...countries,
+            ]}
+            placeholder="Todos"
+            onSelect={setCountry}
+          />
         </label>
+        <details
+          className="sheet-period-tools"
+          onToggle={(e) => {
+            if (!e.currentTarget.open) return;
+            const r = e.currentTarget
+              .querySelector("summary")!
+              .getBoundingClientRect();
+            setPeriodPosition({
+              left: Math.max(8, Math.min(r.left, innerWidth - 338)),
+              top: Math.max(8, Math.min(r.bottom + 3, innerHeight - 190)),
+            });
+          }}
+        >
+          <summary>
+            Filtros del período{activeFilters ? " · activos" : ""}
+          </summary>
+          <div
+            className="sheet-period-controls"
+            style={{
+              ...periodPosition,
+              maxHeight: `calc(100dvh - ${periodPosition.top + 8}px)`,
+            }}
+          >
+            <select
+              aria-label="Resumen del período"
+              value={summaryMode}
+              onChange={(e) => {
+                setSummaryMode(e.target.value as PeriodMode);
+                setMetricRanges({});
+              }}
+            >
+              <option value="total">Total del período</option>
+              <option value="average">Promedio diario</option>
+            </select>
+            <small title="Filas que cumplen los filtros">
+              {rows.length}/{baseRows.length}
+            </small>
+            {activeFilters && (
+              <button
+                type="button"
+                aria-label="Borrar filtros de métricas"
+                onClick={() => setMetricRanges({})}
+              >
+                ×
+              </button>
+            )}
+            {sheetMetrics.map((m) => (
+              <div
+                key={"period-" + m.key}
+                data-sort={
+                  activeSort.kind === "period" && activeSort.metric === m.key
+                    ? activeSort.direction === "asc"
+                      ? "ascending"
+                      : "descending"
+                    : undefined
+                }
+                className="sheet-period-heading"
+              >
+                <span className="sheet-metric-heading">
+                  <button
+                    type="button"
+                    className="sheet-sort-button"
+                    aria-label={`Ordenar ${summaryMode === "total" ? "total" : "promedio"} ${m.name}`}
+                    title={
+                      m.money
+                        ? "Ordena dentro de cada moneda. Elige una misma moneda para comparar todas las filas."
+                        : `Ordenar ${m.name} del período`
+                    }
+                    onClick={() =>
+                      order({
+                        kind: "period",
+                        metric: m.key,
+                        direction: "asc",
+                      })
+                    }
+                  >
+                    {m.label}
+                    {arrow({
+                      kind: "period",
+                      metric: m.key,
+                      direction: "asc",
+                    })}
+                  </button>
+                  <SheetNumberFilter
+                    label={`${summaryMode === "total" ? "total" : "promedio"} ${m.name}`}
+                    money={m.money}
+                    value={metricRanges[m.key]}
+                    onApply={(v) =>
+                      setMetricRanges((old) => ({ ...old, [m.key]: v }))
+                    }
+                  />
+                </span>
+              </div>
+            ))}
+          </div>
+        </details>
         <button
           onClick={() => {
             setCsv(false);
@@ -565,7 +632,7 @@ export function MetaEffectiveness({
           <summary>Cómo se calcula</summary> Totales y promedios usan el período
           elegido. Promedio diario = suma / días con datos; registra 0 cuando
           realmente no hubo ventas/costos. * Indica días o campañas faltantes.
-          Los filtros numéricos se aplican al resumen visible; al cambiar de
+          Los filtros numéricos están en Filtros del período; al cambiar de
           total a promedio se limpian. Los importes de monedas distintas se
           ordenan en grupos separados. Solo campañas, incluidas apagadas; nunca
           suma sus conjuntos/anuncios. Se consulta lo importado cada 30 s; hoy
@@ -615,21 +682,20 @@ export function MetaEffectiveness({
           <div className="row">
             <label>
               País si la columna no está
-              <input
-                list="effectiveness-countries"
-                aria-label="País para la lista"
+              <SheetSearchSelect
+                label="País para la lista"
                 value={pasteCountry}
-                onChange={(e) => setPasteCountry(e.target.value)}
-                placeholder="Sin asignar"
+                options={[{ value: "", label: "Sin asignar" }, ...countries]}
+                onSelect={setPasteCountry}
               />
             </label>
             <label>
               Moneda si la columna no está
-              <input
+              <SheetSearchSelect
+                label="Moneda para la lista"
                 value={pasteCurrency}
-                onChange={(e) => setPasteCurrency(e.target.value)}
-                pattern="[A-Za-z]{3}"
-                maxLength={3}
+                options={[{ value: "", label: "Sin asignar" }, ...currencies]}
+                onSelect={setPasteCurrency}
               />
             </label>
             <span>
@@ -717,27 +783,18 @@ export function MetaEffectiveness({
                       direction: "asc",
                     })}
                   </button>
-                  <select
+                  <SheetSearchSelect
                     className="sheet-column-control"
-                    aria-label="País para todas las filas"
-                    title="Aplicar a todas las filas; luego puedes editar cada una"
+                    label="País para todas las filas"
                     value={settings.defaultCountry}
-                    onChange={(e) => {
-                      if (e.target.value)
-                        void columns({
-                          country:
-                            e.target.value === "__empty" ? "" : e.target.value,
-                        }).catch((e) => setMessage(e.message));
-                    }}
-                  >
-                    <option value="">Para todas…</option>
-                    <option value="__empty">Vacío en todas</option>
-                    {countryOptions.map((c) => (
-                      <option key={c.code} value={c.code}>
-                        {c.code} · {c.name}
-                      </option>
-                    ))}
-                  </select>
+                    placeholder="Para todas…"
+                    options={[
+                      { value: "", label: "Vacío en todas" },
+                      ...countries,
+                    ]}
+                    onSelect={(v) => columns({ country: v })}
+                    onError={setMessage}
+                  />
                 </th>
                 <th rowSpan={2} scope="col" className="effectiveness-currency">
                   <button
@@ -759,56 +816,18 @@ export function MetaEffectiveness({
                       direction: "asc",
                     })}
                   </button>
-                  <select
+                  <SheetSearchSelect
                     className="sheet-column-control"
-                    aria-label="Moneda para todas las filas"
-                    title="Moneda de visualización; convierte los importes con tasa de cada día"
+                    label="Moneda para todas las filas"
                     value={settings.defaultCurrency}
-                    onChange={(e) => {
-                      if (e.target.value)
-                        void columns({
-                          currency:
-                            e.target.value === "__empty" ? "" : e.target.value,
-                        }).catch((e) => setMessage(e.message));
-                    }}
-                  >
-                    <option value="">Para todas…</option>
-                    <option value="__empty">Vacío en todas</option>
-                    {currencyCodes.map((c) => (
-                      <option key={c} value={c}>
-                        {c}
-                      </option>
-                    ))}
-                  </select>
-                </th>
-                <th
-                  colSpan={4}
-                  scope="colgroup"
-                  className="sheet-period-heading"
-                >
-                  <select
-                    aria-label="Resumen del período"
-                    value={summaryMode}
-                    onChange={(e) => {
-                      setSummaryMode(e.target.value as PeriodMode);
-                      setMetricRanges({});
-                    }}
-                  >
-                    <option value="total">Total del período</option>
-                    <option value="average">Promedio diario</option>
-                  </select>
-                  <small title="Filas que cumplen los filtros">
-                    {rows.length}/{baseRows.length}
-                  </small>
-                  {activeFilters && (
-                    <button
-                      type="button"
-                      aria-label="Borrar filtros de métricas"
-                      onClick={() => setMetricRanges({})}
-                    >
-                      ×
-                    </button>
-                  )}
+                    placeholder="Para todas…"
+                    options={[
+                      { value: "", label: "Vacío en todas" },
+                      ...currencies,
+                    ]}
+                    onSelect={(v) => columns({ currency: v })}
+                    onError={setMessage}
+                  />
                 </th>
                 {days.map((d) => (
                   <th key={d} colSpan={4} scope="colgroup">
@@ -817,56 +836,6 @@ export function MetaEffectiveness({
                 ))}
               </tr>
               <tr>
-                {sheetMetrics.map((m) => (
-                  <th
-                    key={"period-" + m.key}
-                    aria-sort={
-                      activeSort.kind === "period" &&
-                      activeSort.metric === m.key
-                        ? activeSort.direction === "asc"
-                          ? "ascending"
-                          : "descending"
-                        : undefined
-                    }
-                    scope="col"
-                    className="sheet-period-heading"
-                  >
-                    <span className="sheet-metric-heading">
-                      <button
-                        type="button"
-                        className="sheet-sort-button"
-                        aria-label={`Ordenar ${summaryMode === "total" ? "total" : "promedio"} ${m.name}`}
-                        title={
-                          m.money
-                            ? "Ordena dentro de cada moneda. Elige una misma moneda para comparar todas las filas."
-                            : `Ordenar ${m.name} del período`
-                        }
-                        onClick={() =>
-                          order({
-                            kind: "period",
-                            metric: m.key,
-                            direction: "asc",
-                          })
-                        }
-                      >
-                        {m.label}
-                        {arrow({
-                          kind: "period",
-                          metric: m.key,
-                          direction: "asc",
-                        })}
-                      </button>
-                      <SheetNumberFilter
-                        label={`${summaryMode === "total" ? "total" : "promedio"} ${m.name}`}
-                        money={m.money}
-                        value={metricRanges[m.key]}
-                        onApply={(v) =>
-                          setMetricRanges((old) => ({ ...old, [m.key]: v }))
-                        }
-                      />
-                    </span>
-                  </th>
-                ))}
                 {days.flatMap((d) =>
                   sheetMetrics.map((m) => (
                     <th
@@ -944,45 +913,29 @@ export function MetaEffectiveness({
                       />
                     </td>
                     <td className="effectiveness-country">
-                      <EffectivenessCell
+                      <SheetSearchSelect
                         label={`País de ${name} ${r.country || "sin país"}`}
                         value={r.country}
-                        list="effectiveness-countries"
+                        options={[
+                          { value: "", label: "Sin asignar" },
+                          ...countries,
+                        ]}
+                        onSelect={(v) => identity(r, "country", v)}
                         onError={setMessage}
-                        onSave={(v) => identity(r, "country", v)}
                       />
                     </td>
                     <td className="effectiveness-currency">
-                      <EffectivenessCell
-                        label={`Moneda de ${name} ${r.country}`}
+                      <SheetSearchSelect
+                        label={`Moneda de ${name} ${r.country || "sin país"}`}
                         value={r.currency}
-                        list="effectiveness-currencies"
+                        options={[
+                          { value: "", label: "Sin asignar" },
+                          ...currencies,
+                        ]}
+                        onSelect={(v) => identity(r, "currency", v)}
                         onError={setMessage}
-                        onSave={(v) => identity(r, "currency", v)}
                       />
                     </td>
-                    {sheetMetrics.map((m) => {
-                      const sum = summary(r, m.key),
-                        value = sum[summaryMode];
-                      return (
-                        <td
-                          key={"summary-" + m.key}
-                          className="sheet-period-cell"
-                          data-summary={m.key}
-                          title={`${summaryMode === "total" ? "Suma conocida" : "Promedio = suma / días con dato"}: ${sum.knownDays}/${sum.periodDays} días con datos. Total ${sum.total ?? "—"}; promedio ${sum.total ?? "—"}/${sum.knownDays || "—"} = ${sum.average ?? "—"}. ${sum.conversionPending ? "Conversión pendiente; no se muestra un subtotal incompleto." : ""} ${sum.partial ? "* Cobertura parcial." : ""} ${m.money ? r.currency : ""}`}
-                        >
-                          {sum.conversionPending && r.currency
-                            ? "Sin tasa"
-                            : number(
-                                value,
-                                m.money,
-                                r.currency,
-                                summaryMode === "average",
-                              )}
-                          {value !== null && sum.partial ? " *" : ""}
-                        </td>
-                      );
-                    })}
                     {days.flatMap((d) => {
                       const c = r.days[d],
                         partial = c && c.campaigns < r.campaigns;
@@ -1089,23 +1042,27 @@ export function MetaEffectiveness({
                   />
                 </td>
                 <td className="effectiveness-country">
-                  <input
-                    aria-label="País del nuevo alias"
-                    list="effectiveness-countries"
+                  <SheetSearchSelect
+                    label="País del nuevo alias"
                     value={newCountry}
-                    placeholder="PE / Perú"
-                    onChange={(e) => setNewCountry(e.target.value)}
+                    options={[
+                      { value: "", label: "Sin asignar" },
+                      ...countries,
+                    ]}
+                    onSelect={setNewCountry}
                   />
                 </td>
                 <td className="effectiveness-currency">
-                  <input
-                    aria-label="Moneda del nuevo alias"
+                  <SheetSearchSelect
+                    label="Moneda del nuevo alias"
                     value={newCurrency}
-                    maxLength={3}
-                    onChange={(e) => setNewCurrency(e.target.value)}
+                    options={[
+                      { value: "", label: "Sin asignar" },
+                      ...currencies,
+                    ]}
+                    onSelect={setNewCurrency}
                   />
                 </td>
-                <td colSpan={4} className="sheet-period-cell" />
                 <td colSpan={days.length * 4}>
                   <button
                     disabled={busy || !newName.trim()}
