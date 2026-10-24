@@ -21,7 +21,7 @@ export function resolveCountry(value: string): string | null {
 export function parseEffectivenessPaste(
   text: string,
   country = "",
-  currency = "PEN",
+  currency = "",
   csv = false,
 ) {
   if (text.length > 100000)
@@ -87,7 +87,7 @@ export function parseEffectivenessPaste(
     const code = resolveCountry(r[1] ?? country);
     if (code === null) throw Error(`Fila ${i + 1}: país no reconocido.`);
     const unit = (r[2] ?? currency).trim().toUpperCase();
-    if (!/^[A-Z]{3}$/.test(unit))
+    if (unit && !/^[A-Z]{3}$/.test(unit))
       throw Error(
         `Fila ${i + 1}: indica una moneda de 3 letras, por ejemplo PEN.`,
       );

@@ -420,6 +420,9 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
     [campaign, setCampaign] = useState(""),
     [adset, setAdset] = useState(""),
     [aliases, setAliases] = useState<MetaAliasOption[]>([]),
+    [aliasTables, setAliasTables] = useState<{ id: string; name: string }[]>(
+      [],
+    ),
     [aliasFilter, setAliasFilter] = useState(""),
     [countryFilter, setCountryFilter] = useState(""),
     [q, setQ] = useState(""),
@@ -450,10 +453,11 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
     [sharing, setSharing] = useState<Account | null>(null);
   useEffect(() => {
     let active = true;
-    api("meta-ads/aliases")
-      .then((rows) => {
+    Promise.all([api("meta-ads/aliases"), api("meta-ads/alias-table-options")])
+      .then(([rows, tables]) => {
         if (active) {
           setAliases(rows);
+          setAliasTables(tables);
           setAliasFilter((current) =>
             current &&
             current !== "__none" &&
@@ -476,6 +480,7 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
       value={o.aliasId}
       country={o.aliasCountry}
       aliases={aliases}
+      tables={aliasTables}
       disabled={busy}
       readOnly={!owner}
       onAssign={(aliasId, country) =>
@@ -1108,6 +1113,7 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
         <MetaAliasAction
           name="selección"
           aliases={aliases}
+          tables={aliasTables}
           disabled={busy}
           bulkCount={
             summarySelectionKey ? summarySelectionKey.split(",").length : 0

@@ -4,7 +4,14 @@ import { engineRequest as api } from "./generation-engine";
 import { MetaEffectiveness } from "./meta-effectiveness";
 import { EffectivenessCell } from "./effectiveness-cell";
 import type { MetaAliasOption } from "./meta-alias-directory";
-type CatalogTable = { id: string; name: string; aliases: MetaAliasOption[] };
+type CatalogTable = {
+  id: string;
+  name: string;
+  aliases: MetaAliasOption[];
+  aliasColumnName: string;
+  defaultCountry: string;
+  defaultCurrency: string;
+};
 export function ProductsCatalog() {
   const [tables, setTables] = useState<CatalogTable[]>([]),
     [selected, setSelected] = useState("diplomados"),
@@ -122,6 +129,7 @@ export function ProductsCatalog() {
           key={table.id}
           tableId={table.id}
           aliases={table.aliases}
+          settings={table}
           onNamesChanged={load}
         />
       )}

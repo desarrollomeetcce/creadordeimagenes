@@ -10,6 +10,8 @@ export function EffectivenessCell({
   list,
   onPaste,
   step,
+  hint,
+  locked = false,
 }: {
   value: string;
   label: string;
@@ -19,6 +21,8 @@ export function EffectivenessCell({
   list?: string;
   onPaste?: (text: string) => boolean;
   step?: string;
+  hint?: string;
+  locked?: boolean;
 }) {
   const [draft, setDraft] = useState(value),
     [state, setState] = useState<"idle" | "saving" | "error">("idle");
@@ -69,18 +73,19 @@ export function EffectivenessCell({
       aria-label={label}
       aria-invalid={state === "error" || undefined}
       title={
-        state === "saving"
+        hint ??
+        (state === "saving"
           ? "Guardando…"
           : state === "error"
             ? "No guardado. Corrige el valor o pulsa Escape para descartar."
-            : value || "Escribe y pulsa Enter o Tab"
+            : value || "Escribe y pulsa Enter o Tab")
       }
       type={type}
       list={list}
       min={type === "number" ? 0 : undefined}
       step={step}
       value={draft}
-      readOnly={state === "saving"}
+      readOnly={locked || state === "saving"}
       onFocus={() => {
         focused.current = true;
         if (!dirty.current) {

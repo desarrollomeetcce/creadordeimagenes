@@ -1,8 +1,22 @@
 import { db } from "../db";
+import type { Prisma } from "@prisma/client";
 import { ownerOnly } from "../auth";
 import { demand } from "../errors";
 import { recordActivity } from "../activity";
 import { accountWhere, type Actor } from "./service";
+import { convertMoney, type FxRates } from "./exchange-rates";
+type Tx = Prisma.TransactionClient;
+const key = (a: string, p: string) => JSON.stringify([a, p]);
+async function lock(tx: Tx, actor: Actor) {
+  await tx.$executeRaw`SELECT pg_advisory_xact_lock(884411)`;
+  demand(
+    await tx.user.findFirst({
+      where: { id: actor.id, role: "OWNER", status: "APPROVED" },
+    }),
+    "Sin permiso.",
+    403,
+  );
+}
 export async function effectiveness(
   actor: Actor,
   tableId: string,
@@ -15,128 +29,221 @@ export async function effectiveness(
     select: {
       id: true,
       name: true,
+      aliasColumnName: true,
+      defaultCountry: true,
+      defaultCurrency: true,
       aliases: { select: { id: true, name: true } },
     },
   });
   demand(table, "Tabla no disponible.", 404);
-  const campaigns = await db.metaAdObject.findMany({
-    where: {
-      level: "campaign",
-      alias: { tableId },
-      aliasCountry: { not: null },
-      account: accountWhere(actor),
-    },
-    select: {
-      id: true,
-      aliasId: true,
-      aliasCountry: true,
-      account: { select: { currency: true, timezone: true } },
-      daily: {
-        where: {
-          day: { gte: since, lte: until },
-          scope: "7d_click,1d_view|impression",
-        },
-        select: { day: true, spend: true, actions: true, updatedAt: true },
+  const [campaigns, stored, snapshots] = await Promise.all([
+    db.metaAdObject.findMany({
+      where: {
+        level: "campaign",
+        alias: { tableId },
+        aliasCountry: { not: null },
+        account: accountWhere(actor),
       },
-    },
-  });
-  const stored = await db.metaEffectivenessRow.findMany({
-    where: { alias: { tableId } },
-    include: { days: { where: { day: { gte: since, lte: until } } } },
-  });
+      select: {
+        aliasId: true,
+        aliasCountry: true,
+        account: { select: { currency: true, timezone: true } },
+        daily: {
+          where: {
+            day: { gte: since, lte: until },
+            scope: "7d_click,1d_view|impression",
+          },
+          select: { day: true, spend: true, actions: true, updatedAt: true },
+        },
+      },
+    }),
+    db.metaEffectivenessRow.findMany({
+      where: { legacy: false, alias: { tableId } },
+      include: {
+        days: { where: { day: { gte: since, lte: until } } },
+        legacySources: {
+          where: { hidden: false },
+          include: { days: { where: { day: { gte: since, lte: until } } } },
+        },
+      },
+    }),
+    db.metaFxDay.findMany({
+      where: { day: { gte: since, lte: until } },
+      select: {
+        day: true,
+        rates: true,
+        source: true,
+        sourceUrl: true,
+        fetchedAt: true,
+      },
+    }),
+  ]);
+  const hidden = new Set(
+      stored.filter((s) => s.hidden).map((s) => key(s.aliasId, s.country)),
+    ),
+    fx = new Map(snapshots.map((s) => [s.day, s]));
+  type Amount = { currency: string; amount: number };
+  type InternalCell = {
+    spend: number | null;
+    base: number | null;
+    sales: number | null;
+    fixedCost: number | null;
+    campaigns: number;
+    updatedAt: string | null;
+    revision: number;
+    sourceSpend: Amount[];
+    sourceFixedCost: Amount[];
+    fxMissing: boolean;
+    fx: {
+      from: string;
+      to: string;
+      rate: number;
+      date: string;
+      source: string;
+      url: string;
+    }[];
+  };
   const rows = new Map<
     string,
     {
       aliasId: string;
       country: string;
       currency: string;
-      days: Record<
-        string,
-        {
-          spend: number | null;
-          base: number | null;
-          campaigns: number;
-          updatedAt: string | null;
-          sales: number | null;
-          fixedCost: number | null;
-          revision: number;
-        }
-      >;
       rowRevision: number;
+      days: Record<string, InternalCell>;
       campaigns: number;
       timezones: string[];
     }
   >();
-  const get = (aliasId: string, country: string, currency: string) => {
-    const key = JSON.stringify([aliasId, country, currency]);
-    let r = rows.get(key);
+  const get = (a: string, p: string) => {
+    const k = key(a, p);
+    let r = rows.get(k);
     if (!r) {
       r = {
-        aliasId,
-        country,
-        currency,
+        aliasId: a,
+        country: p,
+        currency: table!.defaultCurrency,
+        rowRevision: 0,
         days: {},
         campaigns: 0,
-        rowRevision: 0,
         timezones: [],
       };
-      rows.set(key, r);
+      rows.set(k, r);
     }
     return r;
   };
-  const key = (a: string, p: string, m: string) => JSON.stringify([a, p, m]);
-  const hidden = new Set(
-    stored
-      .filter((s) => s.hidden)
-      .map((s) => key(s.aliasId, s.country, s.currency)),
-  );
+  const cell = (r: ReturnType<typeof get>, day: string) =>
+    (r.days[day] ??= {
+      spend: null,
+      base: null,
+      sales: null,
+      fixedCost: null,
+      campaigns: 0,
+      updatedAt: null,
+      revision: 0,
+      sourceSpend: [],
+      sourceFixedCost: [],
+      fxMissing: false,
+      fx: [],
+    });
   for (const s of stored) {
     if (s.hidden) continue;
-    const r = get(s.aliasId, s.country, s.currency);
+    const r = get(s.aliasId, s.country);
+    r.currency = s.displayCurrency;
     r.rowRevision = s.revision;
-    for (const d of s.days)
-      r.days[d.day] = {
-        spend: null,
-        base: null,
-        campaigns: 0,
-        updatedAt: null,
-        sales: d.sales,
-        fixedCost: d.fixedCost === null ? null : Number(d.fixedCost),
-        revision: d.revision,
-      };
+    for (const legacy of s.legacySources)
+      for (const d of legacy.days) {
+        const c = cell(r, d.day);
+        if (d.sales !== null) c.sales = (c.sales ?? 0) + d.sales;
+        if (d.fixedCost !== null)
+          c.sourceFixedCost.push({
+            currency: d.fixedCostCurrency ?? legacy.currency,
+            amount: Number(d.fixedCost),
+          });
+      }
+    for (const d of s.days) {
+      const c = cell(r, d.day);
+      c.revision = d.revision;
+      if (d.salesOverridden) c.sales = d.sales;
+      if (d.fixedCostOverridden)
+        c.sourceFixedCost =
+          d.fixedCost === null
+            ? []
+            : [
+                {
+                  currency: d.fixedCostCurrency ?? s.displayCurrency,
+                  amount: Number(d.fixedCost),
+                },
+              ];
+    }
   }
   for (const c of campaigns) {
-    if (hidden.has(key(c.aliasId!, c.aliasCountry!, c.account.currency)))
-      continue;
-    const r = get(c.aliasId!, c.aliasCountry!, c.account.currency);
+    if (hidden.has(key(c.aliasId!, c.aliasCountry!))) continue;
+    const r = get(c.aliasId!, c.aliasCountry!);
     r.campaigns++;
     if (!r.timezones.includes(c.account.timezone))
       r.timezones.push(c.account.timezone);
     for (const d of c.daily) {
-      const cell = (r.days[d.day] ??= {
-        spend: null,
-        base: null,
-        campaigns: 0,
-        updatedAt: null,
-        sales: null,
-        fixedCost: null,
-        revision: 0,
+      const x = cell(r, d.day);
+      x.sourceSpend.push({
+        currency: c.account.currency,
+        amount: Number(d.spend),
       });
-      cell.spend = (cell.spend ?? 0) + Number(d.spend);
-      const actions = d.actions as Record<string, unknown>;
-      const v = actions["onsite_conversion.messaging_conversation_started_7d"];
-      cell.base =
-        (cell.base ?? 0) +
-        (typeof v === "number" && Number.isFinite(v) ? v : 0);
-      cell.campaigns++;
-      if (!cell.updatedAt || d.updatedAt.toISOString() > cell.updatedAt)
-        cell.updatedAt = d.updatedAt.toISOString();
+      const actions = d.actions as Record<string, unknown>,
+        v = actions["onsite_conversion.messaging_conversation_started_7d"];
+      x.base =
+        (x.base ?? 0) + (typeof v === "number" && Number.isFinite(v) ? v : 0);
+      x.campaigns++;
+      if (!x.updatedAt || d.updatedAt.toISOString() > x.updatedAt)
+        x.updatedAt = d.updatedAt.toISOString();
     }
   }
   for (const a of table!.aliases)
     if (![...rows.values()].some((r) => r.aliasId === a.id))
-      get(a.id, "", "PEN");
-  return { table, rows: [...rows.values()], since, until };
+      get(a.id, table!.defaultCountry);
+  const missing = new Set<string>();
+  for (const r of rows.values())
+    for (const [day, c] of Object.entries(r.days)) {
+      const snapshot = fx.get(day),
+        rates = snapshot?.rates as FxRates | undefined;
+      const project = (amounts: Amount[]) => {
+        if (!amounts.length || !r.currency) return null;
+        let total = 0;
+        for (const a of amounts) {
+          const v = convertMoney(a.amount, a.currency, r.currency, rates);
+          if (v === null) {
+            c.fxMissing = true;
+            missing.add(day);
+            return null;
+          }
+          total += v;
+          if (
+            a.currency !== r.currency &&
+            a.amount !== 0 &&
+            snapshot &&
+            !c.fx.some((f) => f.from === a.currency)
+          )
+            c.fx.push({
+              from: a.currency,
+              to: r.currency,
+              rate: rates![r.currency] / rates![a.currency],
+              date: day,
+              source: snapshot.source,
+              url: snapshot.sourceUrl,
+            });
+        }
+        return total;
+      };
+      c.spend = project(c.sourceSpend);
+      c.fixedCost = project(c.sourceFixedCost);
+    }
+  return {
+    table,
+    rows: [...rows.values()],
+    since,
+    until,
+    missingFxDays: [...missing].sort(),
+  };
 }
 export async function saveEffectiveness(
   actor: Actor,
@@ -153,80 +260,76 @@ export async function saveEffectiveness(
 ) {
   ownerOnly(actor);
   return db.$transaction(async (tx) => {
-    await tx.$executeRaw`SELECT pg_advisory_xact_lock(884411)`;
-    demand(
-      await tx.user.findFirst({
-        where: { id: actor.id, role: "OWNER", status: "APPROVED" },
-      }),
-      "Sin permiso.",
-      403,
-    );
+    await lock(tx, actor);
     demand(
       await tx.metaAlias.findUnique({ where: { id: b.aliasId } }),
       "Alias no disponible.",
       404,
     );
-    const previous = await tx.metaEffectivenessRow.findUnique({
+    const old = await tx.metaEffectivenessRow.findUnique({
       where: {
         aliasId_country_currency: {
           aliasId: b.aliasId,
           country: b.country,
-          currency: b.currency,
+          currency: "",
         },
       },
     });
-    if (b.day) {
+    demand(
+      !old?.hidden,
+      "La fila cambió de país. Recarga antes de guardar.",
+      409,
+    );
+    demand(
+      b.rowRevision === undefined || b.rowRevision === (old?.revision ?? 0),
+      "La fila cambió. Recarga antes de guardar.",
+      409,
+    );
+    demand(
+      b.fixedCost === undefined || b.fixedCost === null || !!b.currency,
+      "Elige una moneda antes de registrar costos fijos.",
+    );
+    if (old && b.fixedCost !== undefined)
       demand(
-        !previous?.hidden,
-        "La fila cambió de país o moneda. Recarga antes de guardar.",
+        old.displayCurrency === b.currency,
+        "La moneda cambió. Recarga antes de guardar.",
         409,
       );
-      demand(
-        b.rowRevision === undefined ||
-          b.rowRevision === (previous?.revision ?? 0),
-        "La fila cambió. Recarga antes de guardar.",
-        409,
-      );
-    }
-    const row = await tx.metaEffectivenessRow.upsert({
-      where: {
-        aliasId_country_currency: {
+    const row =
+      old ??
+      (await tx.metaEffectivenessRow.create({
+        data: {
           aliasId: b.aliasId,
           country: b.country,
-          currency: b.currency,
+          currency: "",
+          displayCurrency: b.currency,
         },
-      },
-      create: { aliasId: b.aliasId, country: b.country, currency: b.currency },
-      update: b.day
-        ? {}
-        : {
-            hidden: false,
-            ...(previous?.hidden ? { revision: { increment: 1 } } : {}),
-          },
-    });
+      }));
     if (b.day) {
-      const old = await tx.metaEffectivenessDay.findUnique({
+      const prior = await tx.metaEffectivenessDay.findUnique({
         where: { rowId_day: { rowId: row.id, day: b.day } },
       });
       demand(
-        (old?.revision ?? 0) === (b.revision ?? 0),
+        (prior?.revision ?? 0) === (b.revision ?? 0),
         "Esta celda cambió. Recarga antes de guardar.",
         409,
       );
+      const data = {
+        ...(b.sales !== undefined
+          ? { sales: b.sales, salesOverridden: true }
+          : {}),
+        ...(b.fixedCost !== undefined
+          ? {
+              fixedCost: b.fixedCost,
+              fixedCostOverridden: true,
+              fixedCostCurrency: b.currency || null,
+            }
+          : {}),
+      };
       await tx.metaEffectivenessDay.upsert({
         where: { rowId_day: { rowId: row.id, day: b.day } },
-        create: {
-          rowId: row.id,
-          day: b.day,
-          sales: b.sales ?? null,
-          fixedCost: b.fixedCost ?? null,
-          revision: 1,
-        },
-        update: {
-          sales: b.sales,
-          fixedCost: b.fixedCost,
-          revision: { increment: 1 },
-        },
+        create: { rowId: row.id, day: b.day, ...data, revision: 1 },
+        update: { ...data, revision: { increment: 1 } },
       });
     }
     await recordActivity(tx, {
@@ -240,7 +343,29 @@ export async function saveEffectiveness(
     return { ok: true };
   });
 }
-
+async function emptyHiddenDestination(
+  tx: Tx,
+  aliasId: string,
+  country: string,
+) {
+  const target = await tx.metaEffectivenessRow.findUnique({
+    where: { aliasId_country_currency: { aliasId, country, currency: "" } },
+    include: {
+      _count: { select: { days: true } },
+      legacySources: { select: { _count: { select: { days: true } } } },
+    },
+  });
+  if (target) {
+    demand(
+      target.hidden &&
+        !target._count.days &&
+        target.legacySources.every((s) => !s._count.days),
+      "Ya existe una fila de este alias y país. No se sobrescribieron sus datos.",
+      409,
+    );
+    await tx.metaEffectivenessRow.delete({ where: { id: target.id } });
+  }
+}
 export async function changeEffectivenessIdentity(
   actor: Actor,
   b: {
@@ -254,74 +379,64 @@ export async function changeEffectivenessIdentity(
 ) {
   ownerOnly(actor);
   return db.$transaction(async (tx) => {
-    await tx.$executeRaw`SELECT pg_advisory_xact_lock(884411)`;
-    demand(
-      await tx.user.findFirst({
-        where: { id: actor.id, role: "OWNER", status: "APPROVED" },
-      }),
-      "Sin permiso.",
-      403,
-    );
-    demand(
-      await tx.metaAlias.findUnique({ where: { id: b.aliasId } }),
-      "Alias no disponible.",
-      404,
-    );
-    const oldKey = {
-      aliasId: b.aliasId,
-      country: b.fromCountry,
-      currency: b.fromCurrency,
-    };
+    await lock(tx, actor);
+    const a = await tx.metaAlias.findUnique({
+      where: { id: b.aliasId },
+      include: { table: true },
+    });
+    demand(a, "Alias no disponible.", 404);
     const old = await tx.metaEffectivenessRow.findUnique({
-      where: { aliasId_country_currency: oldKey },
+      where: {
+        aliasId_country_currency: {
+          aliasId: b.aliasId,
+          country: b.fromCountry,
+          currency: "",
+        },
+      },
     });
     demand(
       !old?.hidden && (old?.revision ?? 0) === b.revision,
       "La fila cambió. Recarga antes de editar.",
       409,
     );
-    if (b.country === b.fromCountry && b.currency === b.fromCurrency)
-      return { ok: true };
-    const nextKey = {
-      aliasId: b.aliasId,
-      country: b.country,
-      currency: b.currency,
-    };
-    const existing = await tx.metaEffectivenessRow.findUnique({
-      where: { aliasId_country_currency: nextKey },
-    });
-    demand(
-      !existing || existing.hidden,
-      "Ya existe una fila de este diplomado, país y moneda. No se sobrescribieron sus datos.",
-      409,
-    );
-    const next = await tx.metaEffectivenessRow.upsert({
-      where: { aliasId_country_currency: nextKey },
-      create: nextKey,
-      update: { hidden: false, revision: { increment: 1 } },
-    });
-    if (old) {
-      await tx.metaEffectivenessDay.updateMany({
-        where: { rowId: old.id },
-        data: { rowId: next.id, revision: { increment: 1 } },
-      });
-      await tx.metaEffectivenessRow.update({
-        where: { id: old.id },
-        data: { hidden: true, revision: { increment: 1 } },
-      });
-    } else
+    if (b.country !== b.fromCountry)
+      await emptyHiddenDestination(tx, b.aliasId, b.country);
+    const row = old
+      ? await tx.metaEffectivenessRow.update({
+          where: { id: old.id },
+          data: {
+            country: b.country,
+            displayCurrency: b.currency,
+            revision: { increment: 1 },
+          },
+        })
+      : await tx.metaEffectivenessRow.create({
+          data: {
+            aliasId: b.aliasId,
+            country: b.country,
+            currency: "",
+            displayCurrency: b.currency,
+            revision: 1,
+          },
+        });
+    if (b.country !== b.fromCountry)
       await tx.metaEffectivenessRow.create({
-        data: { ...oldKey, hidden: true, revision: 1 },
+        data: {
+          aliasId: b.aliasId,
+          country: b.fromCountry,
+          currency: "",
+          hidden: true,
+          revision: b.revision + 1,
+        },
       });
     await recordActivity(tx, {
       data: {
         actorId: actor.id,
         action: "META_EFECTIVIDAD_FILA_EDITADA",
-        resourceId: next.id,
+        resourceId: row.id,
         detail: {
           fromCountry: b.fromCountry,
           country: b.country,
-          fromCurrency: b.fromCurrency,
           currency: b.currency,
         },
       },
@@ -337,95 +452,260 @@ export async function importEffectiveness(
   ownerOnly(actor);
   return db.$transaction(
     async (tx) => {
-      await tx.$executeRaw`SELECT pg_advisory_xact_lock(884411)`;
-      demand(
-        await tx.user.findFirst({
-          where: { id: actor.id, role: "OWNER", status: "APPROVED" },
-        }),
-        "Sin permiso.",
-        403,
-      );
+      await lock(tx, actor);
       demand(
         await tx.metaAliasTable.findUnique({ where: { id: tableId } }),
         "Tabla no disponible.",
         404,
       );
       const aliases = await tx.metaAlias.findMany({
-        select: { id: true, name: true, tableId: true },
-      });
-      const byName = new Map(
-        aliases.map((a) => [a.name.toLocaleLowerCase("es"), a]),
-      );
-      const newNames = new Set(
-        entries
-          .filter((e) => !byName.has(e.name.toLocaleLowerCase("es")))
-          .map((e) => e.name.toLocaleLowerCase("es")),
-      );
-      demand(
-        aliases.length + newNames.size <= 1000,
-        "El catálogo admite hasta 1000 alias.",
-      );
+          select: { id: true, name: true, tableId: true },
+        }),
+        byName = new Map(
+          aliases.map((a) => [a.name.toLocaleLowerCase("es"), a]),
+        );
+      const fresh = new Map<string, string>();
       for (const e of entries) {
-        const a = byName.get(e.name.toLocaleLowerCase("es"));
+        const k = e.name.toLocaleLowerCase("es"),
+          a = byName.get(k);
         demand(
           !a || a.tableId === tableId,
-          `El diplomado «${e.name}» ya pertenece a otra tabla.`,
+          `El alias «${e.name}» ya pertenece a otra tabla.`,
           409,
         );
+        if (!a && !fresh.has(k)) fresh.set(k, e.name);
       }
-      const namesToCreate = new Map<string, string>();
-      for (const e of entries) {
-        const key = e.name.toLocaleLowerCase("es");
-        if (!byName.has(key) && !namesToCreate.has(key))
-          namesToCreate.set(key, e.name);
-      }
-      if (namesToCreate.size)
+      demand(
+        aliases.length + fresh.size <= 1000,
+        "El catálogo admite hasta 1000 alias.",
+      );
+      if (fresh.size)
         await tx.metaAlias.createMany({
-          data: [...namesToCreate.values()].map((name) => ({ name, tableId })),
+          data: [...fresh.values()].map((name) => ({ name, tableId })),
         });
       const catalogue = await tx.metaAlias.findMany({
-        where: { tableId },
-        select: { id: true, name: true },
-      });
-      const resolved = new Map(
-        catalogue.map((a) => [a.name.toLocaleLowerCase("es"), a.id]),
-      );
+          where: { tableId },
+          select: { id: true, name: true },
+        }),
+        ids = new Map(
+          catalogue.map((a) => [a.name.toLocaleLowerCase("es"), a.id]),
+        );
       const unique = new Map<
         string,
-        { aliasId: string; country: string; currency: string }
+        {
+          aliasId: string;
+          country: string;
+          currency: string;
+          displayCurrency: string;
+        }
       >();
       for (const e of entries) {
-        const row = {
-          aliasId: resolved.get(e.name.toLocaleLowerCase("es"))!,
-          country: e.country,
-          currency: e.currency,
-        };
-        unique.set(
-          JSON.stringify([row.aliasId, row.country, row.currency]),
-          row,
+        const aliasId = ids.get(e.name.toLocaleLowerCase("es"))!,
+          k = key(aliasId, e.country);
+        demand(
+          !unique.has(k) || unique.get(k)!.displayCurrency === e.currency,
+          "El mismo alias y país no puede tener dos monedas de visualización en un lote.",
         );
+        unique.set(k, {
+          aliasId,
+          country: e.country,
+          currency: "",
+          displayCurrency: e.currency,
+        });
       }
       const imported = [...unique.values()];
       await tx.metaEffectivenessRow.createMany({
         data: imported,
         skipDuplicates: true,
       });
-      await tx.metaEffectivenessRow.updateMany({
-        where: { hidden: true, OR: imported },
-        data: { hidden: false, revision: { increment: 1 } },
-      });
-      const created = namesToCreate.size,
-        seen = unique;
+      const units = new Set(imported.map((r) => r.displayCurrency));
+      for (const unit of units)
+        await tx.metaEffectivenessRow.updateMany({
+          where: {
+            legacy: false,
+            hidden: true,
+            OR: imported
+              .filter((r) => r.displayCurrency === unit)
+              .map((r) => ({ aliasId: r.aliasId, country: r.country })),
+          },
+          data: {
+            hidden: false,
+            displayCurrency: unit,
+            revision: { increment: 1 },
+          },
+        });
       await recordActivity(tx, {
         data: {
           actorId: actor.id,
           action: "META_EFECTIVIDAD_IMPORTADA",
           resourceId: tableId,
-          detail: { rows: seen.size, created },
+          detail: { rows: unique.size, created: fresh.size },
         },
       });
-      return { ok: true, rows: seen.size, created };
+      return { ok: true, rows: unique.size, created: fresh.size };
     },
     { timeout: 30000 },
+  );
+}
+export async function setEffectivenessColumns(
+  actor: Actor,
+  b: {
+    tableId: string;
+    aliasColumnName?: string;
+    country?: string;
+    currency?: string;
+  },
+) {
+  ownerOnly(actor);
+  return db.$transaction(
+    async (tx) => {
+      await lock(tx, actor);
+      const table = await tx.metaAliasTable.findUnique({
+        where: { id: b.tableId },
+        include: { aliases: { select: { id: true } } },
+      });
+      demand(table, "Tabla no disponible.", 404);
+      const stored = await tx.metaEffectivenessRow.findMany({
+        where: { legacy: false, alias: { tableId: b.tableId } },
+      });
+      const hidden = new Set(
+        stored.filter((r) => r.hidden).map((r) => key(r.aliasId, r.country)),
+      );
+      const rows = new Map(
+        stored
+          .filter((r) => !r.hidden)
+          .map((r) => [
+            key(r.aliasId, r.country),
+            {
+              aliasId: r.aliasId,
+              country: r.country,
+              displayCurrency: r.displayCurrency,
+              id: r.id,
+            },
+          ]),
+      );
+      const sources = await tx.metaAdObject.findMany({
+        where: {
+          level: "campaign",
+          alias: { tableId: b.tableId },
+          aliasCountry: { not: null },
+        },
+        select: { aliasId: true, aliasCountry: true },
+        distinct: ["aliasId", "aliasCountry"],
+      });
+      for (const s of sources) {
+        const k = key(s.aliasId!, s.aliasCountry!);
+        if (!hidden.has(k) && !rows.has(k))
+          rows.set(k, {
+            aliasId: s.aliasId!,
+            country: s.aliasCountry!,
+            displayCurrency: table!.defaultCurrency,
+            id: "",
+          });
+      }
+      for (const a of table!.aliases)
+        if (![...rows.values()].some((r) => r.aliasId === a.id))
+          rows.set(key(a.id, table!.defaultCountry), {
+            aliasId: a.id,
+            country: table!.defaultCountry,
+            displayCurrency: table!.defaultCurrency,
+            id: "",
+          });
+      if (b.country !== undefined) {
+        const seen = new Set<string>();
+        for (const r of rows.values()) {
+          demand(
+            !seen.has(r.aliasId),
+            "Hay varias filas del mismo alias con distintos países. Edita esos países por fila para evitar combinar sus datos.",
+            409,
+          );
+          seen.add(r.aliasId);
+        }
+        for (const r of rows.values())
+          if (r.country !== b.country)
+            await emptyHiddenDestination(tx, r.aliasId, b.country);
+        const persisted = [...rows.values()].filter((r) => r.id);
+        if (persisted.length)
+          await tx.metaEffectivenessRow.updateMany({
+            where: { id: { in: persisted.map((r) => r.id) } },
+            data: {
+              country: b.country,
+              revision: { increment: 1 },
+              ...(b.currency !== undefined
+                ? { displayCurrency: b.currency }
+                : {}),
+            },
+          });
+        const virtual = [...rows.values()].filter((r) => !r.id);
+        if (virtual.length)
+          await tx.metaEffectivenessRow.createMany({
+            data: virtual.map((r) => ({
+              aliasId: r.aliasId,
+              country: b.country!,
+              currency: "",
+              displayCurrency: b.currency ?? r.displayCurrency,
+              revision: 1,
+            })),
+          });
+        const markers = [...rows.values()]
+          .filter((r) => r.country !== b.country)
+          .map((r) => ({
+            aliasId: r.aliasId,
+            country: r.country,
+            currency: "",
+            hidden: true,
+            revision: 1,
+          }));
+        if (markers.length)
+          await tx.metaEffectivenessRow.createMany({
+            data: markers,
+            skipDuplicates: true,
+          });
+      } else if (b.currency !== undefined) {
+        await tx.metaEffectivenessRow.createMany({
+          data: [...rows.values()]
+            .filter((r) => !r.id)
+            .map((r) => ({
+              aliasId: r.aliasId,
+              country: r.country,
+              currency: "",
+              displayCurrency: b.currency!,
+            })),
+          skipDuplicates: true,
+        });
+        await tx.metaEffectivenessRow.updateMany({
+          where: {
+            legacy: false,
+            hidden: false,
+            alias: { tableId: b.tableId },
+          },
+          data: { displayCurrency: b.currency, revision: { increment: 1 } },
+        });
+      }
+      const row = await tx.metaAliasTable.update({
+        where: { id: b.tableId },
+        data: {
+          ...(b.aliasColumnName !== undefined
+            ? { aliasColumnName: b.aliasColumnName }
+            : {}),
+          ...(b.country !== undefined ? { defaultCountry: b.country } : {}),
+          ...(b.currency !== undefined ? { defaultCurrency: b.currency } : {}),
+        },
+      });
+      await recordActivity(tx, {
+        data: {
+          actorId: actor.id,
+          action: "META_EFECTIVIDAD_COLUMNAS",
+          resourceId: b.tableId,
+          detail: {
+            country: b.country ?? null,
+            currency: b.currency ?? null,
+            aliasColumnName: b.aliasColumnName ?? null,
+          },
+        },
+      });
+      return { ok: true, table: row };
+    },
+    { timeout: 60000 },
   );
 }

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { isCurrency, syncFxDays } from "./exchange-rates";
 import { isCountryCode } from "./countries";
 import { z } from "zod";
 import { db } from "../db";
@@ -75,6 +76,48 @@ export async function metaRoutes(
       ).setMetaStatus(actor, parts[2], b.status, b.expectedStatus),
     );
   }
+  if (path === "effectiveness/columns" && method === "PATCH") {
+    ownerOnly(actor);
+    const b = z
+      .object({
+        tableId: z.string().min(1).max(100),
+        aliasColumnName: z.string().trim().min(1).max(100).optional(),
+        country: z
+          .string()
+          .refine((v) => v === "" || isCountryCode(v))
+          .optional(),
+        currency: z.string().refine(isCurrency).optional(),
+      })
+      .strict()
+      .parse(await body());
+    demand(
+      b.aliasColumnName !== undefined ||
+        b.country !== undefined ||
+        b.currency !== undefined,
+      "Indica una columna.",
+    );
+    return send(
+      await (await import("./effectiveness")).setEffectivenessColumns(actor, b),
+    );
+  }
+  if (path === "effectiveness/fx" && method === "POST") {
+    ownerOnly(actor);
+    const b = z
+      .object({ days: z.array(z.string().date()).min(1).max(31) })
+      .strict()
+      .parse(await body());
+    const today = new Intl.DateTimeFormat("en-CA", {
+      timeZone: "America/Lima",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).format(new Date());
+    demand(
+      b.days.every((d) => d <= today && d >= "2024-03-02"),
+      "Las tasas corresponden a fechas publicadas desde marzo de 2024, sin fechas futuras.",
+    );
+    return send(await syncFxDays(actor, [...new Set(b.days)]));
+  }
   if (path === "effectiveness/import" && method === "POST") {
     ownerOnly(actor);
     const b = z
@@ -86,7 +129,7 @@ export async function metaRoutes(
               .object({
                 name: z.string().trim().min(1).max(150),
                 country: z.string().refine((v) => v === "" || isCountryCode(v)),
-                currency: z.string().regex(/^[A-Z]{3}$/),
+                currency: z.string().refine(isCurrency),
               })
               .strict(),
           )
@@ -108,9 +151,9 @@ export async function metaRoutes(
       .object({
         aliasId: z.string().min(1).max(100),
         fromCountry: country,
-        fromCurrency: z.string().regex(/^[A-Z]{3}$/),
+        fromCurrency: z.string().refine(isCurrency),
         country,
-        currency: z.string().regex(/^[A-Z]{3}$/),
+        currency: z.string().refine(isCurrency),
         revision: z.number().int().min(0),
       })
       .strict()
@@ -147,7 +190,7 @@ export async function metaRoutes(
       .object({
         aliasId: z.string().min(1).max(100),
         country: z.string().refine((v) => v === "" || isCountryCode(v)),
-        currency: z.string().regex(/^[A-Z]{3}$/),
+        currency: z.string().refine(isCurrency),
         day: z.string().date().optional(),
         sales: z.number().int().min(0).max(100000000).nullable().optional(),
         fixedCost: z.number().min(0).max(1000000000).nullable().optional(),
@@ -185,6 +228,8 @@ export async function metaRoutes(
       ).renameAliasTable(actor, parts[2], b.name),
     );
   }
+  if (path === "alias-table-options" && method === "GET")
+    return send(await (await import("./aliases")).aliasTableOptions(actor));
   if (path === "alias-tables" && method === "GET")
     return send(await (await import("./aliases")).aliasTables(actor));
   if (path === "alias-tables" && method === "POST") {

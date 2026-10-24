@@ -1,43 +1,62 @@
-# Efectividad diaria
+# Efectividad: hoja por alias y país
 
-El módulo lateral Efectividad conserva las tablas/alias existentes (Diplomados inicial). No pertenece a los productos del generador de imágenes. Gestión exclusiva OWNER, igual que el catálogo anterior.
+Módulo lateral OWNER independiente de productos/subproductos del generador. Tablas lógicas con nombres editables; Diplomados inicial conserva los alias previos. La columna A tiene nombre propio editable: Diplomado, Producto, Artículo, etc. Cambiar ese encabezado no cambia el nombre de la tabla ni de los alias. Renombrar un alias mantiene su ID y cambia su nombre visible en todos los países.
 
-## Identidad y cálculo
+## Hoja y asignación
 
-Cada fila se identifica por **aliasId + país ISO alpha-2 + moneda de la cuenta**. El país se elige junto al alias en Meta Ads, por objeto o por selección. No se infiere de moneda, segmentación, conexión o nombre de campaña. No hay coincidencias aproximadas ni herencia de alias de un anuncio hacia su campaña. Solo campañas etiquetadas explícitamente participan en Efectividad; las etiquetas de conjuntos/anuncios siguen disponibles en Meta pero no se suman aquí.
+Vista continua sin tarjeta ni márgenes centrales, filas compactas, columna de alias/país fijas horizontalmente y cabecera fija dentro de la hoja. Enter/Tab/salir guarda las celdas; Escape descarta. B/G son solo lectura; V y CF editables. Mantener borrador ante error, revisión congelada al comenzar y cola por día para guardar V/CF rápidamente sin pisarse. No hay reintentos automáticos de mutaciones.
 
-Para un día `d`, alias `a`, país `p` y moneda `m`:
+En Meta Ads se elige primero tabla y después uno de sus alias; opciones de tablas vacías disponibles al OWNER. Administradores solo reciben metadatos de tablas con objetos autorizados. Cambiar de tabla limpia el alias preparado sin guardar nada. Una tabla vacía no permite Guardar; quitar alias es una acción explícita que limpia también el país. Asignación individual/lote conserva permiso OWNER aprobado, auditoría y lock884411; no cambia targeting ni hereda alias a hijos.
 
-- `C = campañas autorizadas con aliasId=a AND aliasCountry=p AND currency=m`.
-- `G(d) = Σ spend(c,d)`, para `c ∈ C` con diario importado.
-- `B(d) = Σ actions[onsite_conversion.messaging_conversation_started_7d](c,d)` sobre esos mismos diarios. Ausencia de esa acción en un diario válido se interpreta como cero; ausencia del diario es sin dato.
-- `V(d)` = número de ventas que escribe el OWNER.
-- `CF(d)` = importe de costos fijos manual, en la moneda de la fila.
+Pegar alias abre revisión para una columna de nombres o columnas nombre[TAB]país[TAB]moneda, sin encabezados. También TXT/TSV/CSV<=100KB y hasta500 filas por lote. CSV valida comillas y delimitadores fuera de ellas. País acepta código ISO o nombre español. Nombres existentes reutilizan ID; un alias ocupado en otra tabla o una fila inválida rechaza toda la importación. Nuevas filas heredan solo los defaults elegidos explícitamente en cabecera; ambos vacíos si no se eligieron. El límite del catálogo es1000 alias. Crear tabla no ejecuta DDL arbitrario.
 
-Se usa exclusivamente el scope `7d_click,1d_view|impression`, igual que el histórico de Meta de la aplicación. No sumar diarios con totales, scopes alternativos, conjuntos o anuncios. Incluye campañas pausadas con histórico. Cuentas diferentes se suman si cumplen ambas etiquetas y usan la misma moneda. Monedas diferentes permanecen separadas; no se inventa conversión. B es conversaciones iniciadas atribuidas por Meta, no personas únicas ni conversaciones recurrentes.
+## País y moneda
 
-Ejemplo: campaña de cuenta A, alias X+PE con G10/B4 y cuenta B, alias X+PE G20/B6, producen G30/B10. Alias X+AR G99/B9 permanece aparte. Alias Y+PE tampoco participa. Una campaña sin país no entra en ninguna fila nacional.
+País es una etiqueta explícita para cruzar datos, nunca inferida de moneda, audiencia, cuenta o nombre. Cada fila agrupa un aliasId + país, incluso entre administradores/cuentas. Un país diferente es otra fila. País vacío no reúne campañas de países conocidos.
 
-## Fechas, cobertura y actualización
+Las cabeceras País y Moneda permiten aplicarlos a todas las filas o vaciarlos sin botones/renglones adicionales. La edición individual puede sobrescribir esos defaults. «Todas» afecta la tabla completa, no solo el filtro visual. Si aplicar un país único colisiona con varias filas del mismo alias,409 y ningún cambio: no fusionar manuales silenciosamente. Los valores de cabecera son defaults para próximas altas; una excepción individual no cambia el default.
 
-Rango inicial desde el20 del mes actual hasta hoy (antes del20, desde el1); rango modificable hasta31 días. Fechas de los diarios corresponden a la zona horaria de cada cuenta, no a una conversión horaria reconstruida. El tooltip muestra zonas y hora de recepción en Lima. Hoy puede estar incompleto. Un guion no equivale a cero; `*` indica menos campañas con diario que campañas etiquetadas en la fila.
+La moneda es **de visualización**. No filtra ni reclasifica gasto de Meta. Se suman campañas del alias/país aunque sus cuentas tengan monedas diferentes, después de convertir cada importe. Elegir USD o EUR no exige que la cuenta publicitaria use USD o EUR. Moneda vacía deja G/CF sin expresar; B/V son conteos y permanecen disponibles. CF guarda el importe y la moneda en que se escribió; cambiar presentación no reescribe ese original. V es número de ventas, no importe monetario.
 
-La vista consulta el endpoint local cada30s cuando está visible. No llama Meta desde GET ni inicia importaciones. Las sincronizaciones existentes actualizan diarios y la siguiente consulta refleja cambios; la cadencia depende del programador, cuota y progreso real de Meta. No prometer gasto en tiempo real. Cambiar alias/país reclasifica el histórico disponible de esa campaña; los manuales se mantienen en su clave alias+país+moneda, sin trasladarse silenciosamente.
+## Fórmulas y fuente de tasas
 
-## Persistencia y API
+Para un día d, alias a y país p:
 
-Migraciones aditivas005 y006: país nullable en MetaAdObject; MetaEffectivenessRow y MetaEffectivenessDay separados de métricas importadas. Alias existentes conservan ID y asignación, sin país inventado. API antigua que omite country conserva país; quitar alias limpia ambos. La interfaz exige seleccionar país para guardar un alias.
+- C = campañas autorizadas con aliasId=a AND aliasCountry=p, activas o pausadas.
+- `importe_destino = importe_origen × tasa_EUR[destino,d] / tasa_EUR[origen,d]`.
+- `G(d) = Σ convertir(spend(c,d), moneda_cuenta(c), moneda_fila, d)` para c∈C con diario disponible.
+- `B(d) = Σ actions[onsite_conversion.messaging_conversation_started_7d](c,d)` sobre esos diarios.
+- `V(d)` = ventas manuales. `CF(d)` = costos fijos manuales convertidos desde su moneda original al destino para ese día.
 
-`GET /api/meta-ads/effectiveness?tableId=...&since=YYYY-MM-DD&until=YYYY-MM-DD`: solo OWNER; valida rango y selecciona únicamente campos necesarios, sin credenciales. `PATCH` permite agregar una fila por aliasId/country/currency y guardar day/sales/fixedCost/revision. Rechaza spend/base enviados: B/G son solo lectura. Revisión optimista por fila/día devuelve409 si otra sesión cambió la celda; no reintentar escrituras automáticamente. Guardado bajo lock884411, permiso OWNER aprobado revalidado en transacción y auditoría. No hay operaciones de publicidad ni IA.
+Se usa solo scope `7d_click,1d_view|impression`. Nunca sumar conjuntos/anuncios, totales con diarios ni dos scopes. B son conversaciones iniciadas atribuidas por Meta, no personas únicas ni conversaciones recurrentes. Ausencia de esa acción en un diario válido es cero; ausencia de diario es sin dato. — no equivale a cero; * indica menos campañas con diario que campañas etiquetadas.
 
-Nombre de tabla y diplomado editables conservando IDs y asignaciones; renombrar un alias cambia su etiqueta visible para todos los países. La tabla lógica no es DDL arbitrario. Agregar fila manual no etiqueta ni modifica campañas.
+Referencia pública diaria: [Currency API](https://github.com/fawazahmed0/exchange-api), endpoint fijado por fecha `https://cdn.jsdelivr.net/npm/@fawazahmed0/currency-api@YYYY-MM-DD/v1/currencies/eur.min.json`. Fecha del JSON debe coincidir exactamente; solo códigos fiat y coeficientes positivos/finítos. No se sustituye por hoy ni por otra fecha para completar un histórico. Misma moneda utiliza factor1. Tasa inexistente/incompatible deja el importe como Sin tasa; nunca suma solo las partes convertibles ni inventa tasa1. Fuente/fecha/factor y originales visibles en tooltip, vínculo a fuente en ayuda. Son referencias diarias, no cotizaciones bancarias de compra/venta. No reutilizar el cambio comercial de planes/pagos.
 
-## Hoja editable e importación
+GET de hoja solo lee Neon. Cuando falta una tasa necesaria, POST explícito de la interfaz consulta hasta31 días, cuatro solicitudes concurrentes, timeout8s y enfriamiento15min ante falta de publicación. Caché pública por fecha; históricos exitosos se conservan para resultados verificables. Consulta de datos Meta importados cada30s visible, independiente de la descarga de tasas y sin llamadas Meta/IA. Hoy puede ser parcial; fechas de diarios conservan zona de cada cuenta. Tooltip de recepción se presenta en Lima.
 
-La vista ahora ocupa todo el ancho junto al menú, sin tarjeta envolvente. Edición en celdas con Enter/Tab/salir; Escape descarta. B/G protegidos. V/CF sin completar son vacíos, no ceros. País acepta ISO o nombre español (Perú/Argentina), con datalist. Moneda inicial visible PEN en alias sin campañas, editable: no se usa para inferir país. Todos los alias del catálogo aparecen aunque no exista gasto.
+## Persistencia y correcciones
 
-Se pueden pegar hasta500 filas de una columna o nombre[TAB]país[TAB]moneda; archivoTXT/TSV/CSV<=100KB. CSV reconoce separador fuera de comillas y comillas escapadas. Vista previa antes de Importar, sin encabezados; país/moneda por defecto solo si la columna no existe. País en blanco queda pendiente y no suma publicidad; moneda por defecto visiblePEN. Nombres duplicados reutilizan alias y parejas idénticas sin duplicar ni sobrescribir manuales; nombre ocupado en otra tabla o fila inválida rechaza todo el lote. Se escriben lotes con createMany y actualización de marcadores, no500 rondas por fila.
+Migraciones005/006/007 se conservan. Nueva202610240001 crea encabezados/defaults y caché MetaFxDay. Las filas originales con moneda pasan a ser fuentes legacy; sus IDs, días, importes, monedas y ventas permanecen intactos y se vinculan a una fila de presentación por alias/país. Si había varias monedas para ese país, G/CF se expresan conjuntamente al elegir destino. No se calculan tasas ni se convierten importes durante la migración. Las unidades existentes explícitas se conservan; nuevos defaults vacíos.
 
-`POST effectiveness/import` exige OWNER aprobado y valida tabla/filas, países/monedas y capacidad del catálogo bajo884411. `PATCH effectiveness/identity` recibe origen/destino y revisión: cambiar país/moneda conserva V/CF en la fila corregida, consulta B/G del nuevo destino y deja las etiquetas de Meta Ads intactas. La antigua pareja se oculta en esa hoja mediante marcador para que no reaparezca al refrescar; sigue existiendo en Meta Ads. Volver a agregar/importar explícitamente la pareja la restaura. Si el destino tiene otra fila persistente,409 sin sobrescribir. No se realiza conversión monetaria; al editar moneda se conserva el valor numérico manual escrito.
+La fila canónica utiliza currency interna vacía; displayCurrency determina presentación. Un CF nuevo/edición explícita guarda fixedCostCurrency y un override, sin cambiar los originales legacy. Limpiar un manual es un override vacío, no resucita un valor legacy oculto. Revisión por día y fila evita escritura tardía tras corregir país/moneda.
 
-Migración007 añade marcador/revisión y país vacío en filas de la hoja, sin cambiar el país nullable de objetos Meta. La revisión de fila y la de celda impiden escrituras tardías sobre identidades corregidas. El cliente serializa ediciones V/CF del mismo día y mantiene borradores con error, sin reintentos automáticos de mutaciones. Estas reglas de corrección sustituyen la limitación previa de tener que crear siempre otra fila para cambiar país.
+Cambiar país mantiene la fila y sus fuentes manuales, consulta B/G del nuevo país y no cambia etiquetas de campañas. Marcador oculta la antigua pareja en esta hoja para que no reaparezca; gasto original sigue visible en Meta Ads. Agregar/importar explícitamente esa pareja la restaura. Destino persistente ocupado devuelve409. Filtros de alias+país en Meta siguen intersectándose antes de paginar/resumir.
+
+## API
+
+- GET effectiveness?tableId&since&until: hasta31 días, fila agregada, fuentes, factores y missingFxDays; solo OWNER.
+- PATCH effectiveness: manuales por día; currency es la unidad mostrada al escribir CF y debe seguir vigente. B/spend no admitidos.
+- PATCH effectiveness/identity: país/moneda por fila y revisión.
+- PATCH effectiveness/columns: nombre de columnaA/defaults globales, transacción atómica y auditoría.
+- POST effectiveness/import: hasta500 filas válidas, escrituras batch y reutilización de IDs.
+- POST effectiveness/fx: solo referencias diarias públicas, OWNER aprobado, fechas válidas no futuras. Sin credenciales ni cuerpos de Meta.
+
+Ninguna operación modifica el generador de imágenes, estados de publicidad, presupuestos o cobros.
+
+## Calendario y resumen del período
+
+Un solo botón abre calendario estilo Meta: períodos a la izquierda, dos meses, mes/año elegibles, rango resaltado y Cancelar/Actualizar. Hoy/ayer/7/14/28/30 días, semanas lunes/domingo y meses completos respetan Lima y hasta31 días; sin fechas futuras. Cancelar no cambia los datos. Popup móvil acotado al viewport. Recientes solo refleja elecciones aplicadas en esa sesión; no hay controles ficticios de comparación.
+
+El bloque de4 columnas de resumen aparece dentro de la tabla, antes de los días. Selector Total del período/Promedio diario; cada V/B/G/CF tiene orden asc/desc y filtro mínimo/máximo. Cada métrica diaria y alias/país/moneda también se ordena. Contador de filas y limpiar en la cabecera, sin barra nueva. Datos desconocidos al final en ambos sentidos. Los importes de monedas diferentes se ordenan dentro de cada moneda; elegir moneda global única permite compararlos entre todas las filas.
+
+Total = suma de valores conocidos del rango. Promedio diario = suma / número de días con datos; cero explícito participa, vacío no se convierte en cero. Cobertura incompleta se indica con* y n/días en tooltip; también campañas faltantes para B/G. Si un G/CF necesario está sin convertir, el resumen monetario no presenta una suma parcial: Sin tasa. Las conversiones diarias se realizan antes de sumar/promediar, nunca con una sola tasa sobre el total. Tooltip incluye fórmula y cifras. Filtros se aplican al modo visible y se limpian al cambiar Total/Promedio; no escriben datos ni consultan Meta. Tolerancia de redondeo IEEE evita excluir0.1+0.2 frente al límite0.3, sin redondear las cifras fuente.

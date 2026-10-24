@@ -712,6 +712,9 @@ model MetaAccountGrant {
   @@index([userId])
 }
 model MetaAliasTable {
+  aliasColumnName String @default("Alias")
+  defaultCountry String @default("")
+  defaultCurrency String @default("")
   id String @id @default(cuid())
   name String @unique
   aliases MetaAlias[]
@@ -863,6 +866,12 @@ model MetaRecommendationSource {
 }
 
 model MetaEffectivenessRow {
+ legacy Boolean @default(false)
+ displayCurrency String @default("")
+ presentationRowId String?
+ presentation MetaEffectivenessRow? @relation("FxLegacyRows",fields:[presentationRowId],references:[id],onDelete:SetNull)
+ legacySources MetaEffectivenessRow[] @relation("FxLegacyRows")
+ @@index([presentationRowId])
  id String @id @default(cuid())
  hidden Boolean @default(false)
  revision Int @default(0)
@@ -874,6 +883,9 @@ model MetaEffectivenessRow {
  @@unique([aliasId,country,currency])
 }
 model MetaEffectivenessDay {
+ salesOverridden Boolean @default(false)
+ fixedCostOverridden Boolean @default(false)
+ fixedCostCurrency String?
  rowId String
  row MetaEffectivenessRow @relation(fields:[rowId],references:[id],onDelete:Cascade)
  day String
@@ -881,4 +893,13 @@ model MetaEffectivenessDay {
  fixedCost Decimal? @db.Decimal(18,6)
  revision Int @default(1)
  @@id([rowId,day])
+}
+
+model MetaFxDay {
+ day String @id
+ rates Json @default("{}")
+ source String
+ sourceUrl String
+ fetchedAt DateTime @default(now())
+ lastError String?
 }

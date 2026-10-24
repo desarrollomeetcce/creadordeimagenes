@@ -7,6 +7,7 @@ export function MetaAliasAction({
   value,
   country,
   aliases,
+  tables: providedTables,
   disabled = false,
   readOnly = false,
   bulkCount,
@@ -16,6 +17,7 @@ export function MetaAliasAction({
   value?: string | null;
   country?: string | null;
   aliases: MetaAliasOption[];
+  tables?: { id: string; name: string }[];
   disabled?: boolean;
   readOnly?: boolean;
   bulkCount?: number;
@@ -25,7 +27,16 @@ export function MetaAliasAction({
     popover = useRef<HTMLDivElement>(null);
   const [position, setPosition] = useState({ top: 0, left: 0 }),
     [draftAlias, setDraftAlias] = useState(""),
-    [draftCountry, setDraftCountry] = useState("");
+    [draftCountry, setDraftCountry] = useState(""),
+    [draftTable, setDraftTable] = useState("");
+  const tables = providedTables ?? [
+    ...new Map(
+      aliases.map((a) => [
+        a.tableId ?? "diplomados",
+        { id: a.tableId ?? "diplomados", name: a.table?.name ?? "Diplomados" },
+      ]),
+    ).values(),
+  ];
   const bulk = bulkCount !== undefined,
     label = bulk
       ? "Asignar alias"
@@ -61,11 +72,16 @@ export function MetaAliasAction({
         }
         onClick={(e) => {
           setDraftAlias(bulk ? "" : (value ?? ""));
+          setDraftTable(
+            bulk || !value
+              ? ""
+              : (aliases.find((a) => a.id === value)?.tableId ?? "diplomados"),
+          );
           setDraftCountry(bulk ? "" : (country ?? ""));
           const r = e.currentTarget.getBoundingClientRect();
           setPosition({
             left: Math.max(8, Math.min(r.left, window.innerWidth - 280)),
-            top: Math.max(8, Math.min(r.bottom + 5, window.innerHeight - 320)),
+            top: Math.max(8, Math.min(r.bottom + 5, window.innerHeight - 420)),
           });
         }}
       >
@@ -77,7 +93,10 @@ export function MetaAliasAction({
         ref={popover}
         popover="auto"
         className="meta-alias-popover"
-        style={position}
+        style={{
+          ...position,
+          maxHeight: `calc(100dvh - ${position.top + 8}px)`,
+        }}
       >
         <form
           onSubmit={(e) => {
@@ -86,24 +105,45 @@ export function MetaAliasAction({
           }}
         >
           <label>
+            Tabla
+            <select
+              aria-label="Tabla de alias"
+              value={draftTable}
+              disabled={disabled}
+              onChange={(e) => {
+                setDraftTable(e.target.value);
+                setDraftAlias("");
+              }}
+            >
+              <option value="">Elige una tabla</option>
+              {tables.map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
             {bulk ? `Alias para ${bulkCount} seleccionados` : "Alias"}
             <select
               aria-label={
                 bulk ? "Alias para seleccionados" : `Alias de ${name}`
               }
               value={draftAlias}
-              disabled={disabled}
+              disabled={disabled || !draftTable}
               onChange={(e) => {
                 setDraftAlias(e.target.value);
                 if (!e.target.value) setDraftCountry("");
               }}
             >
-              <option value="">{bulk ? "Elige un alias" : "Sin alias"}</option>
-              {aliases.map((a) => (
-                <option value={a.id} key={a.id}>
-                  {a.name}
-                </option>
-              ))}
+              <option value="">{"Elige un alias"}</option>
+              {aliases
+                .filter((a) => (a.tableId ?? "diplomados") === draftTable)
+                .map((a) => (
+                  <option value={a.id} key={a.id}>
+                    {a.name}
+                  </option>
+                ))}
             </select>
           </label>
           <label>
@@ -134,11 +174,7 @@ export function MetaAliasAction({
             <button
               type="submit"
               className="primary"
-              disabled={
-                disabled ||
-                (bulk && !draftAlias) ||
-                (!!draftAlias && !draftCountry)
-              }
+              disabled={disabled || !draftTable || !draftAlias || !draftCountry}
             >
               Guardar alias y país
             </button>
@@ -150,6 +186,15 @@ export function MetaAliasAction({
             </button>
           </div>
         </form>
+        {!bulk && !!value && (
+          <button
+            type="button"
+            disabled={disabled}
+            onClick={() => assign(null, null)}
+          >
+            Quitar alias de esta fila
+          </button>
+        )}
         {bulk && (
           <button
             type="button"

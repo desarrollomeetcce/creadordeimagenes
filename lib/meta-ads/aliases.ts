@@ -10,7 +10,12 @@ export async function aliases(actor: Actor) {
       actor.role === "OWNER"
         ? {}
         : { objects: { some: { account: accountWhere(actor) } } },
-    select: { id: true, name: true },
+    select: {
+      id: true,
+      name: true,
+      tableId: true,
+      table: { select: { id: true, name: true } },
+    },
     orderBy: { name: "asc" },
     take: 1000,
   });
@@ -158,6 +163,9 @@ export async function aliasTables(actor: Actor) {
     select: {
       id: true,
       name: true,
+      aliasColumnName: true,
+      defaultCountry: true,
+      defaultCurrency: true,
       aliases: { select: { id: true, name: true }, orderBy: { name: "asc" } },
     },
     orderBy: { name: "asc" },
@@ -233,5 +241,21 @@ export async function renameAliasTable(actor: Actor, id: string, name: string) {
       },
     });
     return row;
+  });
+}
+
+export async function aliasTableOptions(actor: Actor) {
+  return db.metaAliasTable.findMany({
+    where:
+      actor.role === "OWNER"
+        ? {}
+        : {
+            aliases: {
+              some: { objects: { some: { account: accountWhere(actor) } } },
+            },
+          },
+    select: { id: true, name: true },
+    orderBy: { name: "asc" },
+    take: 100,
   });
 }

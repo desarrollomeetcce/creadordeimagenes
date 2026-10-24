@@ -1,7 +1,7 @@
 "use client";
 import { useState } from "react";
 import { engineRequest as api } from "./generation-engine";
-export type MetaAliasOption = { id: string; name: string };
+export type MetaAliasOption = { id: string; name: string; tableId?:string; table?:{id:string;name:string} };
 export function MetaAliasDirectory({
   aliases,
   onSaved,

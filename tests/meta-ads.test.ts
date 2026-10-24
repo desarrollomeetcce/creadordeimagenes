@@ -204,3 +204,29 @@ test('Efectividad: pegar columnas de Excel, países escritos, monedas y CSV sin 
  assert.deepEqual(parseEffectivenessPaste('"Diplomado; uno",PE,PEN','','PEN',true),[{name:'Diplomado; uno',country:'PE',currency:'PEN'}]);
  assert.throws(()=>parseEffectivenessPaste('Uno\tZZ'),/país/);assert.throws(()=>parseEffectivenessPaste('Uno\tPE\tPEN\tExtra'),/máximo/);assert.throws(()=>parseEffectivenessPaste('Uno\tPE\t??'),/moneda/);assert.throws(()=>parseEffectivenessPaste(Array(501).fill('Uno').join('\n')),/500/);assert.throws(()=>parseEffectivenessPaste(''),/1 y 500/);assert.throws(()=>parseEffectivenessPaste('"Sin cierre','','PEN',true),/comillas/);
 });
+
+test('Efectividad FX: conversión cruzada diaria, originales preservados, sin tasa no inventa importes',async()=>{
+ const {convertMoney}=await import('../lib/meta-ads/exchange-rates');const rates={EUR:1,PEN:4,USD:2};assert.equal(convertMoney(100,'PEN','USD',rates),50);assert.equal(convertMoney(100,'PEN','EUR',rates),25);assert.equal(convertMoney(100,'PEN','PEN'),100);assert.equal(convertMoney(100,'PEN','USD'),null);assert.equal(convertMoney(100,'PEN','',rates),null);assert.equal(convertMoney(0,'PEN','USD'),0);assert.equal(convertMoney(100,'PEN','USD',{EUR:1,PEN:5,USD:1}),20);assert.equal(rates.PEN,4);
+ const {parseEffectivenessPaste}=await import('../lib/meta-ads/effectiveness-paste');assert.deepEqual(parseEffectivenessPaste('Producto X'),[{name:'Producto X',country:'',currency:''}]);
+});
+test('Efectividad FX: proveedor público exige fecha exacta y coeficientes válidos con doble HTTP explícito',async()=>{
+ const {fetchFxDay}=await import('../lib/meta-ads/exchange-rates');let requested='';const fake=(async(input:any)=>{requested=String(input);return Response.json({date:'2026-10-20',eur:{eur:1,pen:4,usd:2,btc:2,zzz:4}});}) as typeof fetch;
+ const result=await fetchFxDay('2026-10-20',fake);assert.equal(result.rates.PEN,4);assert.equal(result.rates.USD,2);assert.equal(result.rates.BTC,undefined);assert(requested.includes('@2026-10-20/'));assert.equal(result.sourceUrl,requested);
+ await assert.rejects(()=>fetchFxDay('2026-10-21',fake),/fecha/);await assert.rejects(()=>fetchFxDay('2026-10-20',(async()=>new Response('html',{status:503})) as typeof fetch),/disponible/);await assert.rejects(()=>fetchFxDay('2026-10-20',(async()=>Response.json({date:'2026-10-20',eur:{eur:1,pen:-1,usd:0}})) as typeof fetch),/incompletas/);
+});
+
+test('Calendario estilo Meta: rangos inclusivos, lunes y límites de mes/año/bisiesto sin UTC desplazar Lima',async()=>{
+ const {presetRange}=await import('../lib/meta-ads/calendar-presets');assert.deepEqual(presetRange('30','2026-10-24'),['2026-09-25','2026-10-24']);assert.deepEqual(presetRange('today-yesterday','2026-01-01'),['2025-12-31','2026-01-01']);assert.deepEqual(presetRange('week','2026-10-24'),['2026-10-19','2026-10-24']);assert.deepEqual(presetRange('last-week','2026-10-24'),['2026-10-12','2026-10-18']);assert.deepEqual(presetRange('last-month','2024-03-01'),['2024-02-01','2024-02-29']);assert.deepEqual(presetRange('last-month','2026-01-24'),['2025-12-01','2025-12-31']);assert.equal(presetRange('custom','2026-10-24'),null);
+});
+
+test('Hoja: totales y promedios del rango, días faltantes/ceros explícitos y conversiones pendientes',async()=>{
+ const {summarizePeriod,matchesMetricRange}=await import('../lib/meta-ads/period-summary');const cell=(v:number|null,b:number|null,g:number|null,cf:number|null,extra={})=>({sales:v,base:b,spend:g,fixedCost:cf,campaigns:2,...extra});
+ const days=['2026-10-20','2026-10-21','2026-10-22'],data={'2026-10-20':cell(3,8,60,4),'2026-10-21':cell(0,8,30,0)};
+ const v=summarizePeriod(data,days,'sales');assert.equal(v.total,3);assert.equal(v.average,1.5);assert.equal(v.knownDays,2);assert.equal(v.periodDays,3);assert(v.partial);
+ const g=summarizePeriod(data,days,'spend',2);assert.equal(g.total,90);assert.equal(g.average,45);assert(g.partial);assert.equal(summarizePeriod(data,days.slice(0,2),'base',2).total,16);assert.equal(summarizePeriod(data,days.slice(0,2),'fixedCost').average,2);
+ const incomplete={...data,'2026-10-22':cell(null,1,null,null,{sourceSpend:[{currency:'PEN',amount:8}],sourceFixedCost:[{currency:'PEN',amount:1}]})};assert.equal(summarizePeriod(incomplete,days,'spend').total,null);assert(summarizePeriod(incomplete,days,'spend').conversionPending);assert.equal(summarizePeriod(incomplete,days,'fixedCost').average,null);assert.equal(summarizePeriod({},days,'sales').total,null);
+ assert(matchesMetricRange(3,{min:3,max:3}));assert(!matchesMetricRange(null,{min:0}));assert(matchesMetricRange(null,{}));assert(!matchesMetricRange(3,{max:2}));assert(matchesMetricRange(0,{min:0,max:0}));assert(matchesMetricRange(0.1+0.2,{max:0.3}));
+});
+test('Hoja: orden numérico ascendente/descendente mantiene desconocidos al final y monedas separadas',async()=>{
+ const {compareSheetNumbers}=await import('../lib/meta-ads/period-summary');const values=[null,9,3,0];assert.deepEqual([...values].sort((a,b)=>compareSheetNumbers(a,b,'asc')),[0,3,9,null]);assert.deepEqual([...values].sort((a,b)=>compareSheetNumbers(a,b,'desc')),[9,3,0,null]);assert(compareSheetNumbers(100,1,'asc','EUR','USD')<0);assert(compareSheetNumbers(100,1,'desc','EUR','USD')<0);
+});
