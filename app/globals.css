@@ -1682,3 +1682,27 @@ select option, select optgroup { background:var(--surface); color:var(--ink); }
 
 .products-catalog .sheet-view .effectiveness-grid th.sheet-date-heading{color:var(--accent);border-left:1px solid var(--line);text-align:center;}
 .sheet-multi-popover input[type=search]{max-width:none;min-width:0;}
+/* Efectividad: exact compact columns, independent of the viewport's spare width. */
+.products-catalog .sheet-view .effectiveness-grid{--sheet-alias-width:174.2px;--sheet-country-width:45px;--sheet-currency-width:35px;--sheet-metric-width:36px;min-width:0;width:calc(var(--sheet-alias-width) + var(--sheet-country-width) + var(--sheet-currency-width) + var(--sheet-metrics-width));}
+.products-catalog .sheet-view .effectiveness-grid td,.products-catalog .sheet-view .effectiveness-grid th{width:var(--sheet-metric-width);min-width:0;padding-left:1px;padding-right:1px;}
+.products-catalog .sheet-view .effectiveness-grid .effectiveness-name{width:var(--sheet-alias-width);min-width:0;max-width:var(--sheet-alias-width);}
+.products-catalog .sheet-view .effectiveness-grid .effectiveness-country{left:var(--sheet-alias-width);width:var(--sheet-country-width);min-width:0;max-width:var(--sheet-country-width);}
+.products-catalog .sheet-view .effectiveness-grid .effectiveness-currency{width:var(--sheet-currency-width);min-width:0;max-width:var(--sheet-currency-width);}
+.effectiveness-grid .sheet-alias-col{width:var(--sheet-alias-width);}.effectiveness-grid .sheet-country-col{width:var(--sheet-country-width);}.effectiveness-grid .sheet-currency-col{width:var(--sheet-currency-width);}.effectiveness-grid .sheet-metric-col{width:var(--sheet-metric-width);}
+.products-catalog .sheet-view .effectiveness-grid input.sheet-cell,.products-catalog .sheet-view .effectiveness-grid .sheet-new-row input{padding-left:2px;padding-right:2px;white-space:nowrap;}
+.products-catalog .sheet-view .effectiveness-grid .sheet-derived{padding-left:2px;padding-right:2px;}
+.products-catalog .sheet-view .effectiveness-grid .sheet-sort-button{padding-left:1px;padding-right:1px;max-width:100%;white-space:nowrap;}
+.products-catalog .sheet-view .effectiveness-grid .sheet-alias-heading .sheet-sort-button{width:14px;flex-basis:14px;}
+.products-catalog .sheet-view .effectiveness-grid .sheet-search-trigger{gap:1px;padding-left:2px;padding-right:2px;}
+.products-catalog .sheet-view .effectiveness-grid .sheet-search-trigger>span:first-child{flex:1;min-width:0;text-overflow:clip;white-space:nowrap;}
+.products-catalog .sheet-view .effectiveness-grid .sheet-search-trigger>span[aria-hidden]{font-size:8px;flex:0 0 6px;}
+.products-catalog .sheet-view .effectiveness-grid .sheet-new-row button:not(.sheet-search-trigger){max-width:100%;white-space:nowrap;}
+@media(max-width:600px){.products-catalog .sheet-view .effectiveness-grid{--sheet-alias-width:120.6px;--sheet-country-width:37.5px;}}
+
+.products-catalog .sheet-view .effectiveness-grid th.sheet-parameter-heading,.products-catalog .sheet-view .effectiveness-grid th.effectiveness-currency{position:relative;}
+.products-catalog .sheet-view .effectiveness-grid .sheet-column-resizer{position:absolute;top:0;right:-2px;bottom:0;width:5px;min-width:0;max-width:none;height:auto;margin:0;padding:0;border:0;border-radius:0;background:transparent;cursor:col-resize;touch-action:none;z-index:8;}
+.products-catalog .sheet-view .effectiveness-grid .sheet-column-resizer:hover,.products-catalog .sheet-view .effectiveness-grid .sheet-column-resizer:focus-visible{background:var(--accent);outline-offset:-1px;}
+.products-catalog .sheet-view .effectiveness-grid th>.sheet-sort-button{width:100%;}
+
+.products-catalog .sheet-view .effectiveness-grid .sheet-new-row button:not(.sheet-search-trigger){width:80px;}
+.products-catalog .sheet-view .effectiveness-grid .sheet-column-resizer{user-select:none;}

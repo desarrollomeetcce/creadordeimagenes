@@ -1,5 +1,11 @@
 "use client";
-import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+} from "react";
 import { engineRequest as api } from "./generation-engine";
 import { countryOptions } from "../../lib/meta-ads/countries";
 import {
@@ -15,6 +21,8 @@ import {
 } from "../../lib/meta-ads/period-summary";
 import { SheetSearchSelect } from "./sheet-search-select";
 import { SheetMultiFilter } from "./sheet-multi-filter";
+import { SheetColumnResizer } from "./sheet-column-resizer";
+import { useSheetTextFit } from "./use-sheet-text-fit";
 import { EffectivenessCell } from "./effectiveness-cell";
 const countries = countryOptions.map((c) => ({
   value: c.code,
@@ -83,6 +91,16 @@ export function MetaEffectiveness({
   aliases: { id: string; name: string }[];
   onNamesChanged: () => Promise<void>;
 }) {
+  const grid = useRef<HTMLTableElement>(null);
+  useSheetTextFit(grid);
+  const [columnWidths, setColumnWidths] = useState<Record<string, number>>({});
+  const resizeColumn = (key: string, width?: number) =>
+    setColumnWidths((old) => {
+      const next = { ...old };
+      if (width === undefined) delete next[key];
+      else next[key] = width;
+      return next;
+    });
   const today = new Intl.DateTimeFormat("en-CA", {
     timeZone: "America/Lima",
     year: "numeric",
@@ -615,10 +633,42 @@ export function MetaEffectiveness({
       )}
       {valid && (
         <div className="table-scroll effectiveness-scroll sheet-scroll">
-          <table className="effectiveness-grid">
+          <table
+            ref={grid}
+            className="effectiveness-grid"
+            style={
+              {
+                ...(columnWidths.alias
+                  ? { "--sheet-alias-width": `${columnWidths.alias}px` }
+                  : {}),
+                ...(columnWidths.country
+                  ? { "--sheet-country-width": `${columnWidths.country}px` }
+                  : {}),
+                ...(columnWidths.currency
+                  ? { "--sheet-currency-width": `${columnWidths.currency}px` }
+                  : {}),
+                "--sheet-metrics-width": `${days.reduce((sum, day) => sum + visibleMetrics.reduce((n, m) => n + (columnWidths[day + m.key] ?? 36), 0), 0)}px`,
+              } as CSSProperties
+            }
+          >
             <caption className="sr-only">
               Efectividad diaria desde {since} hasta {until}
             </caption>
+            <colgroup>
+              <col className="sheet-alias-col" />
+              <col className="sheet-country-col" />
+              <col className="sheet-currency-col" />
+              {days.flatMap((day) =>
+                visibleMetrics.map((metric) => (
+                  <col
+                    key={day + metric.key}
+                    className="sheet-metric-col"
+                    style={{ width: columnWidths[day + metric.key] ?? 36 }}
+                  />
+                )),
+              )}
+            </colgroup>
+
             <thead>
               <tr>
                 <th
@@ -660,6 +710,11 @@ export function MetaEffectiveness({
                       })}
                     </button>
                   </div>
+                  <SheetColumnResizer
+                    label={settings.aliasColumnName}
+                    onResize={(w) => resizeColumn("alias", w)}
+                    onReset={() => resizeColumn("alias")}
+                  />
                 </th>
                 <th
                   rowSpan={visibleMetrics.length ? 2 : 1}
@@ -686,16 +741,22 @@ export function MetaEffectiveness({
                     })}
                   </button>
                   <SheetSearchSelect
+                    compact
                     className="sheet-column-control"
                     label="País para todas las filas"
                     value={settings.defaultCountry}
-                    placeholder="Para todas…"
+                    placeholder="Todas"
                     options={[
                       { value: "", label: "Vacío en todas" },
                       ...countries,
                     ]}
                     onSelect={(v) => columns({ country: v })}
                     onError={setMessage}
+                  />
+                  <SheetColumnResizer
+                    label="País"
+                    onResize={(w) => resizeColumn("country", w)}
+                    onReset={() => resizeColumn("country")}
                   />
                 </th>
                 <th
@@ -723,16 +784,22 @@ export function MetaEffectiveness({
                     })}
                   </button>
                   <SheetSearchSelect
+                    compact
                     className="sheet-column-control"
                     label="Moneda para todas las filas"
                     value={settings.defaultCurrency}
-                    placeholder="Para todas…"
+                    placeholder="Todas"
                     options={[
                       { value: "", label: "Vacío en todas" },
                       ...currencies,
                     ]}
                     onSelect={(v) => columns({ currency: v })}
                     onError={setMessage}
+                  />
+                  <SheetColumnResizer
+                    label="Moneda"
+                    onResize={(w) => resizeColumn("currency", w)}
+                    onReset={() => resizeColumn("currency")}
                   />
                 </th>
                 {visibleMetrics.length > 0 &&
@@ -754,6 +821,7 @@ export function MetaEffectiveness({
                     visibleMetrics.map((m) => (
                       <th
                         key={d + m.key}
+                        className="sheet-parameter-heading"
                         scope="col"
                         aria-sort={
                           activeSort.kind === "day" &&
@@ -791,6 +859,11 @@ export function MetaEffectiveness({
                             direction: "asc",
                           })}
                         </button>
+                        <SheetColumnResizer
+                          label={`${m.name} ${d}`}
+                          onResize={(w) => resizeColumn(d + m.key, w)}
+                          onReset={() => resizeColumn(d + m.key)}
+                        />
                       </th>
                     )),
                   )}
@@ -829,6 +902,8 @@ export function MetaEffectiveness({
                     </td>
                     <td className="effectiveness-country">
                       <SheetSearchSelect
+                        compact
+                        placeholder="—"
                         label={`País de ${name} ${r.country || "sin país"}`}
                         value={r.country}
                         options={[
@@ -841,6 +916,8 @@ export function MetaEffectiveness({
                     </td>
                     <td className="effectiveness-currency">
                       <SheetSearchSelect
+                        compact
+                        placeholder="—"
                         label={`Moneda de ${name} ${r.country || "sin país"}`}
                         value={r.currency}
                         options={[
@@ -961,6 +1038,8 @@ export function MetaEffectiveness({
                 </td>
                 <td className="effectiveness-country">
                   <SheetSearchSelect
+                    compact
+                    placeholder="—"
                     label="País del nuevo alias"
                     value={newCountry}
                     options={[
@@ -972,6 +1051,8 @@ export function MetaEffectiveness({
                 </td>
                 <td className="effectiveness-currency">
                   <SheetSearchSelect
+                    compact
+                    placeholder="—"
                     label="Moneda del nuevo alias"
                     value={newCurrency}
                     options={[
