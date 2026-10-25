@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+import { sheetMetrics, type SheetMetric } from "./period-summary";
 import { db } from "../db";
 import type { Prisma } from "@prisma/client";
 import { ownerOnly } from "../auth";
@@ -7,7 +9,7 @@ import { accountWhere, type Actor } from "./service";
 import { convertMoney, type FxRates } from "./exchange-rates";
 type Tx = Prisma.TransactionClient;
 const key = (a: string, p: string) => JSON.stringify([a, p]);
-async function lock(tx: Tx, actor: Actor) {
+export async function effectivenessLock(tx: Tx, actor: Actor) {
   await tx.$executeRaw`SELECT pg_advisory_xact_lock(884411)`;
   demand(
     await tx.user.findFirst({
@@ -22,9 +24,10 @@ export async function effectiveness(
   tableId: string,
   since: string,
   until: string,
+  client: Prisma.TransactionClient = db,
 ) {
   ownerOnly(actor);
-  const table = await db.metaAliasTable.findUnique({
+  const table = await client.metaAliasTable.findUnique({
     where: { id: tableId },
     select: {
       id: true,
@@ -36,8 +39,8 @@ export async function effectiveness(
     },
   });
   demand(table, "Tabla no disponible.", 404);
-  const [campaigns, stored, snapshots] = await Promise.all([
-    db.metaAdObject.findMany({
+  const [campaigns, stored, snapshots, states] = await Promise.all([
+    client.metaAdObject.findMany({
       where: {
         level: "campaign",
         alias: { tableId },
@@ -57,7 +60,7 @@ export async function effectiveness(
         },
       },
     }),
-    db.metaEffectivenessRow.findMany({
+    client.metaEffectivenessRow.findMany({
       where: { legacy: false, alias: { tableId } },
       include: {
         days: { where: { day: { gte: since, lte: until } } },
@@ -67,7 +70,7 @@ export async function effectiveness(
         },
       },
     }),
-    db.metaFxDay.findMany({
+    client.metaFxDay.findMany({
       where: { day: { gte: since, lte: until } },
       select: {
         day: true,
@@ -75,6 +78,20 @@ export async function effectiveness(
         source: true,
         sourceUrl: true,
         fetchedAt: true,
+      },
+    }),
+    client.metaEffectivenessState.findMany({
+      where: { alias: { tableId } },
+      select: {
+        aliasId: true,
+        country: true,
+        active: true,
+        revision: true,
+        events: {
+          orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+          take: 1,
+          select: { createdAt: true, active: true },
+        },
       },
     }),
   ]);
@@ -94,6 +111,8 @@ export async function effectiveness(
     sourceSpend: Amount[];
     sourceFixedCost: Amount[];
     fxMissing: boolean;
+    na: SheetMetric[];
+    manual: SheetMetric[];
     fx: {
       from: string;
       to: string;
@@ -113,6 +132,10 @@ export async function effectiveness(
       days: Record<string, InternalCell>;
       campaigns: number;
       timezones: string[];
+      active: boolean;
+      stateRevision: number;
+      lastStateChange: string | null;
+      token: string;
     }
   >();
   const get = (a: string, p: string) => {
@@ -127,6 +150,16 @@ export async function effectiveness(
         days: {},
         campaigns: 0,
         timezones: [],
+        active:
+          states.find((s) => s.aliasId === a && s.country === p)?.active ??
+          true,
+        stateRevision:
+          states.find((s) => s.aliasId === a && s.country === p)?.revision ?? 0,
+        lastStateChange:
+          states
+            .find((s) => s.aliasId === a && s.country === p)
+            ?.events[0]?.createdAt.toISOString() ?? null,
+        token: "",
       };
       rows.set(k, r);
     }
@@ -145,6 +178,8 @@ export async function effectiveness(
       sourceFixedCost: [],
       fxMissing: false,
       fx: [],
+      na: [],
+      manual: [],
     });
   for (const s of stored) {
     if (s.hidden) continue;
@@ -202,6 +237,20 @@ export async function effectiveness(
     if (![...rows.values()].some((r) => r.aliasId === a.id))
       get(a.id, table!.defaultCountry);
   const missing = new Set<string>();
+  const annotations = new Map(
+    stored.map((s) => [
+      key(s.aliasId, s.country),
+      new Map(
+        s.days.map((d) => [
+          d.day,
+          d.annotations as Record<
+            string,
+            { value: number | "NA"; currency?: string }
+          >,
+        ]),
+      ),
+    ]),
+  );
   for (const r of rows.values())
     for (const [day, c] of Object.entries(r.days)) {
       const snapshot = fx.get(day),
@@ -234,9 +283,43 @@ export async function effectiveness(
         }
         return total;
       };
-      c.spend = project(c.sourceSpend);
-      c.fixedCost = project(c.sourceFixedCost);
+      const overrides =
+        annotations.get(key(r.aliasId, r.country))?.get(day) ?? {};
+      c.spend = overrides.spend ? null : project(c.sourceSpend);
+      c.fixedCost = overrides.fixedCost ? null : project(c.sourceFixedCost);
+      for (const m of sheetMetrics) {
+        const override = overrides[m.key];
+        if (!override) continue;
+        c.manual.push(m.key);
+        if (override.value === "NA") {
+          c[m.key] = null;
+          c.na.push(m.key);
+        } else
+          c[m.key] =
+            m.money && override.value !== 0
+              ? project([
+                  { amount: override.value, currency: override.currency || "" },
+                ])
+              : override.value;
+      }
     }
+  for (const r of rows.values())
+    r.token = createHash("sha256")
+      .update(
+        JSON.stringify([
+          r.aliasId,
+          r.country,
+          r.currency,
+          r.rowRevision,
+          since,
+          until,
+          Object.entries(r.days)
+            .map(([day, c]) => [day, c.revision])
+            .sort(),
+        ]),
+      )
+      .digest("hex")
+      .slice(0, 32);
   return {
     table,
     rows: [...rows.values()],
@@ -260,7 +343,7 @@ export async function saveEffectiveness(
 ) {
   ownerOnly(actor);
   return db.$transaction(async (tx) => {
-    await lock(tx, actor);
+    await effectivenessLock(tx, actor);
     demand(
       await tx.metaAlias.findUnique({ where: { id: b.aliasId } }),
       "Alias no disponible.",
@@ -314,7 +397,13 @@ export async function saveEffectiveness(
         "Esta celda cambió. Recarga antes de guardar.",
         409,
       );
+      const annotations = {
+        ...((prior?.annotations as Record<string, Prisma.JsonValue>) ?? {}),
+      };
+      if (b.sales !== undefined) delete annotations.sales;
+      if (b.fixedCost !== undefined) delete annotations.fixedCost;
       const data = {
+        annotations: annotations as Prisma.InputJsonValue,
         ...(b.sales !== undefined
           ? { sales: b.sales, salesOverridden: true }
           : {}),
@@ -379,7 +468,7 @@ export async function changeEffectivenessIdentity(
 ) {
   ownerOnly(actor);
   return db.$transaction(async (tx) => {
-    await lock(tx, actor);
+    await effectivenessLock(tx, actor);
     const a = await tx.metaAlias.findUnique({
       where: { id: b.aliasId },
       include: { table: true },
@@ -452,7 +541,7 @@ export async function importEffectiveness(
   ownerOnly(actor);
   return db.$transaction(
     async (tx) => {
-      await lock(tx, actor);
+      await effectivenessLock(tx, actor);
       demand(
         await tx.metaAliasTable.findUnique({ where: { id: tableId } }),
         "Tabla no disponible.",
@@ -559,7 +648,7 @@ export async function setEffectivenessColumns(
   ownerOnly(actor);
   return db.$transaction(
     async (tx) => {
-      await lock(tx, actor);
+      await effectivenessLock(tx, actor);
       const table = await tx.metaAliasTable.findUnique({
         where: { id: b.tableId },
         include: { aliases: { select: { id: true } } },

@@ -13,6 +13,7 @@ export type PeriodCell = {
   spend: number | null;
   fixedCost: number | null;
   campaigns?: number;
+  na?: readonly SheetMetric[];
   sourceSpend?: unknown[];
   sourceFixedCost?: unknown[];
 };
@@ -37,6 +38,7 @@ export function summarizePeriod(
   for (const day of dates) {
     const c = cells[day],
       v = c?.[metric];
+    if (c?.na?.includes(metric)) continue;
     if (typeof v === "number" && Number.isFinite(v)) {
       sum += v;
       known++;

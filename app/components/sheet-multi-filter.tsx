@@ -1,5 +1,5 @@
 "use client";
-import { useId, useRef, useState } from "react";
+import { useId, useRef, useState, type ReactNode } from "react";
 import type { SheetOption } from "./sheet-search-select";
 const normalize = (text: string) =>
   text
@@ -12,11 +12,13 @@ export function SheetMultiFilter({
   options,
   value,
   onChange,
+  children,
 }: {
   label: string;
   options: SheetOption[];
   value: string[] | null;
   onChange: (value: string[] | null) => void;
+  children?: ReactNode;
 }) {
   const id = useId(),
     popover = useRef<HTMLDivElement>(null),
@@ -154,6 +156,7 @@ export function SheetMultiFilter({
             </p>
           )}
         </div>
+        {open && children}
         <footer>
           <small>
             {count}/{options.length} seleccionados

@@ -11739,6 +11739,46 @@ test("Integración HTTP + PostgreSQL (base exclusiva de pruebas, sin llamadas ex
         assert.equal(await db.metaAdObject.count({where:{accountId:account,status:'ACTIVE'}}),12);
       }finally{await db.metaAdAccount.deleteMany({where:{connectionId:conn.id}});await db.metaConnection.delete({where:{id:conn.id}});}
     });
+    await t.test('Efectividad: ajustes N.A./0 masivos, originales conservados, conflicto atómico y países separados',async()=>{
+      const table=(await owner.call('meta-ads/alias-tables','POST',{name:'Controles '+tag})).body;
+      const alias=(await owner.call('meta-ads/aliases','POST',{name:'Control valores '+tag,tableId:table.id})).body;
+      const day='2026-10-20',until='2026-10-21',root='meta-ads/effectiveness?'+new URLSearchParams({tableId:table.id,since:day,until});
+      const read=()=>owner.call(root),pair=(v:any,p='PE')=>v.body.rows.find((r:any)=>r.aliasId===alias.id&&r.country===p);
+      const fill=(r:any,value:any,metrics=['sales','base','spend','fixedCost'],days?:string[])=>({tableId:table.id,since:day,until,metrics,value,targets:[{aliasId:r.aliasId,country:r.country,token:r.token}],...(days?{days}:{})});
+      try{
+        assert.equal((await owner.call('meta-ads/effectiveness/import','POST',{tableId:table.id,rows:[{name:alias.name,country:'PE',currency:'PEN'},{name:alias.name,country:'CL',currency:'PEN'}]})).status,200);
+        let r=pair(await read());assert.equal((await owner.call('meta-ads/effectiveness','PATCH',{aliasId:alias.id,country:'PE',currency:'PEN',day,sales:7,fixedCost:12,revision:0,rowRevision:r.rowRevision})).status,200);
+        r=pair(await read());const stale=fill(r,'NA');assert.equal((await admin.call('meta-ads/effectiveness/cells','PATCH',stale)).status,403);assert.equal((await anonymous.call('meta-ads/effectiveness/cells','PATCH',stale)).status,401);
+        const saved=await owner.call('meta-ads/effectiveness/cells','PATCH',stale);assert.equal(saved.status,200,JSON.stringify(saved.body));assert.equal(saved.body.cells,8);
+        r=pair(await read());assert.deepEqual(r.days[day].na,['sales','base','spend','fixedCost']);assert.equal(r.days[day].sales,null);assert.equal(r.days[until].base,null);assert.equal(pair(await read(),'CL').days[day],undefined);
+        const stored=await db.metaEffectivenessDay.findFirstOrThrow({where:{row:{aliasId:alias.id,country:'PE',legacy:false},day}});assert.equal(stored.sales,7);assert.equal(Number(stored.fixedCost),12);
+        assert.equal((await owner.call('meta-ads/effectiveness/cells','PATCH',stale)).status,409);
+        const bad=fill(r,0);bad.targets.push({aliasId:'missing',country:'PE',token:'0'.repeat(32)});assert.equal((await owner.call('meta-ads/effectiveness/cells','PATCH',bad)).status,404);assert(pair(await read()).days[day].na.includes('sales'));
+        assert.equal((await owner.call('meta-ads/effectiveness/cells','PATCH',fill(r,0,['sales'],[day]))).status,200);r=pair(await read());assert.equal(r.days[day].sales,0);assert(!r.days[day].na.includes('sales'));assert(r.days[day].na.includes('base'));assert(r.days[until].na.includes('sales'));
+        for(const patch of [{value:-1},{value:1.5,metrics:['base']},{value:'N.A.'},{days:['2026-11-01']},{metrics:['sales','sales']}])assert.equal((await owner.call('meta-ads/effectiveness/cells','PATCH',{...fill(r,0),...patch})).status,400);
+        assert.equal((await owner.call('meta-ads/effectiveness/cells','PATCH',fill(r,null))).status,200);r=pair(await read());assert.equal(r.days[day].sales,7);assert.equal(r.days[day].fixedCost,12);assert.equal(r.days[day].base,null);assert.deepEqual(r.days[day].na,[]);
+        assert.equal((await owner.call('meta-ads/effectiveness/cells','PATCH',fill(r,5,['base'],[day]))).status,200);r=pair(await read());assert.equal(r.days[day].base,5);assert(r.days[day].manual.includes('base'));
+        assert.equal((await owner.call('meta-ads/effectiveness/cells','PATCH',fill(r,'NA',['sales'],[day]))).status,200);r=pair(await read());assert.equal((await owner.call('meta-ads/effectiveness','PATCH',{aliasId:alias.id,country:'PE',currency:'PEN',day,sales:9,revision:r.days[day].revision,rowRevision:r.rowRevision})).status,200);r=pair(await read());assert.equal(r.days[day].sales,9);assert(!r.days[day].na.includes('sales'));assert.equal(r.days[day].base,5);
+      }finally{await db.metaEffectivenessRow.deleteMany({where:{aliasId:alias.id}});await db.metaAlias.delete({where:{id:alias.id}});await db.metaAliasTable.delete({where:{id:table.id}});}
+    });
+    await t.test('Efectividad: activación por alias+país, historial inmutable con cifras y sin cambios Meta',async()=>{
+      const table=(await owner.call('meta-ads/alias-tables','POST',{name:'Estado hoja '+tag})).body,alias=(await owner.call('meta-ads/aliases','POST',{name:'Estado por país '+tag,tableId:table.id})).body;
+      const since='2026-10-20',until='2026-10-21',root='meta-ads/effectiveness?'+new URLSearchParams({tableId:table.id,since,until}),history='meta-ads/effectiveness/history?'+new URLSearchParams({aliasId:alias.id,country:'PE'});
+      const read=()=>owner.call(root),pair=(v:any,p='PE')=>v.body.rows.find((r:any)=>r.aliasId===alias.id&&r.country===p);
+      const state=(r:any,active:boolean)=>({tableId:table.id,aliasId:alias.id,country:r.country,active,revision:r.stateRevision,since,until,metrics:['sales','base']});
+      try{
+        await owner.call('meta-ads/effectiveness/import','POST',{tableId:table.id,rows:[{name:alias.name,country:'PE',currency:'PEN'},{name:alias.name,country:'CL',currency:'PEN'}]});let r=pair(await read());assert(r.active);assert.equal(r.lastStateChange,null);assert.equal((await owner.call(history)).body.events.length,0);
+        await owner.call('meta-ads/effectiveness','PATCH',{aliasId:alias.id,country:'PE',currency:'PEN',day:since,sales:3,fixedCost:8,revision:0,rowRevision:r.rowRevision});
+        const off=state(r,false);assert.equal((await admin.call('meta-ads/effectiveness/state','PATCH',off)).status,403);assert.equal((await admin.call(history)).status,403);assert.equal((await owner.call('meta-ads/effectiveness/state','PATCH',{...off,country:''})).status,400);
+        assert.equal((await owner.call('meta-ads/effectiveness/state','PATCH',off)).status,200);assert.equal((await owner.call('meta-ads/effectiveness/state','PATCH',off)).status,409);r=pair(await read());assert.equal(r.active,false);assert(pair(await read(),'CL').active);assert(r.lastStateChange);
+        let log=(await owner.call(history)).body;assert.equal(log.events.length,1);const snapshot=log.events[0].snapshot;assert.equal(snapshot.values.sales.total,3);assert.equal(snapshot.values.fixedCost.total,8);assert.equal(snapshot.parameterCount,2);assert.equal(snapshot.since,since);
+        let day=r.days[since];await owner.call('meta-ads/effectiveness','PATCH',{aliasId:alias.id,country:'PE',currency:'PEN',day:since,sales:11,revision:day.revision,rowRevision:r.rowRevision});assert.equal((await owner.call(history)).body.events[0].snapshot.values.sales.total,3);
+        r=pair(await read());const on=state(r,true),results=await Promise.all([owner.call('meta-ads/effectiveness/state','PATCH',on),owner.call('meta-ads/effectiveness/state','PATCH',on)]);assert.deepEqual(results.map(x=>x.status).sort(),[200,409]);log=(await owner.call(history)).body;assert.equal(log.events.length,2);assert.equal(log.events[0].snapshot.values.sales.total,11);
+        const s=await db.metaEffectivenessState.findUniqueOrThrow({where:{aliasId_country:{aliasId:alias.id,country:'PE'}}});const ownerId=(await owner.call("auth/me")).body.id;await db.metaEffectivenessEvent.createMany({data:Array.from({length:50},(_,i)=>({stateId:s.id,active:!!(i%2),actorId:ownerId,createdAt:new Date(Date.now()-100000-i*1000),snapshot}))});
+        log=(await owner.call(history)).body;assert.equal(log.events.length,50);assert(log.next);const older=(await owner.call(history+'&cursor='+log.next)).body;assert.equal(older.events.length,2);assert.equal(older.next,null);
+        assert.equal((await owner.call('meta-ads/alias-tables')).body.find((t:any)=>t.id===table.id).aliases.some((a:any)=>a.id===alias.id),true);
+      }finally{await db.metaEffectivenessRow.deleteMany({where:{aliasId:alias.id}});await db.metaAlias.delete({where:{id:alias.id}});await db.metaAliasTable.delete({where:{id:table.id}});}
+    });
     await t.test("cierre de sesión invalida el token", async () => {
       assert.equal((await user.call("auth/logout", "POST")).status, 200);
       assert.equal((await user.call("projects")).status, 401);

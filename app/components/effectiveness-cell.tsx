@@ -12,6 +12,9 @@ export function EffectivenessCell({
   step,
   hint,
   locked = false,
+  allowNA = false,
+  manual = false,
+  placeholder,
 }: {
   value: string;
   label: string;
@@ -23,6 +26,9 @@ export function EffectivenessCell({
   step?: string;
   hint?: string;
   locked?: boolean;
+  allowNA?: boolean;
+  manual?: boolean;
+  placeholder?: string;
 }) {
   const [draft, setDraft] = useState(value),
     [state, setState] = useState<"idle" | "saving" | "error">("idle");
@@ -70,6 +76,8 @@ export function EffectivenessCell({
       ref={input}
       className="sheet-cell"
       data-state={state}
+      data-manual={manual || undefined}
+      placeholder={placeholder}
       aria-label={label}
       aria-invalid={state === "error" || undefined}
       title={
@@ -80,7 +88,8 @@ export function EffectivenessCell({
             ? "No guardado. Corrige el valor o pulsa Escape para descartar."
             : value || "Escribe y pulsa Enter o Tab")
       }
-      type={type}
+      type={allowNA ? "text" : type}
+      inputMode={allowNA ? "decimal" : undefined}
       list={list}
       min={type === "number" ? 0 : undefined}
       step={step}

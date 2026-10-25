@@ -724,6 +724,7 @@ model MetaAlias {
   name String @unique
   objects MetaAdObject[]
   effectivenessRows MetaEffectivenessRow[]
+  effectivenessStates MetaEffectivenessState[]
   tableId String @default("diplomados")
   table MetaAliasTable @relation(fields:[tableId],references:[id],onDelete:Restrict)
   @@index([tableId])
@@ -883,6 +884,7 @@ model MetaEffectivenessRow {
  @@unique([aliasId,country,currency])
 }
 model MetaEffectivenessDay {
+ annotations Json @default("{}")
  salesOverridden Boolean @default(false)
  fixedCostOverridden Boolean @default(false)
  fixedCostCurrency String?
@@ -902,4 +904,25 @@ model MetaFxDay {
  sourceUrl String
  fetchedAt DateTime @default(now())
  lastError String?
+}
+
+model MetaEffectivenessState {
+ id String @id @default(cuid())
+ aliasId String
+ alias MetaAlias @relation(fields:[aliasId],references:[id],onDelete:Cascade)
+ country String
+ active Boolean @default(true)
+ revision Int @default(0)
+ events MetaEffectivenessEvent[]
+ @@unique([aliasId,country])
+}
+model MetaEffectivenessEvent {
+ id String @id @default(cuid())
+ stateId String
+ state MetaEffectivenessState @relation(fields:[stateId],references:[id],onDelete:Cascade)
+ active Boolean
+ createdAt DateTime @default(now())
+ actorId String
+ snapshot Json
+ @@index([stateId,createdAt,id])
 }

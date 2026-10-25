@@ -22,6 +22,8 @@ import {
 import { SheetSearchSelect } from "./sheet-search-select";
 import { SheetMultiFilter } from "./sheet-multi-filter";
 import { SheetColumnResizer } from "./sheet-column-resizer";
+import { useSheetWidths } from "./use-sheet-widths";
+import { EffectivenessHistory } from "./effectiveness-history";
 import { useSheetTextFit } from "./use-sheet-text-fit";
 import { EffectivenessCell } from "./effectiveness-cell";
 const countries = countryOptions.map((c) => ({
@@ -44,6 +46,8 @@ type Cell = {
   sourceSpend: { currency: string; amount: number }[];
   sourceFixedCost: { currency: string; amount: number }[];
   fxMissing: boolean;
+  na: SheetMetric[];
+  manual: SheetMetric[];
   fx: {
     from: string;
     to: string;
@@ -58,6 +62,10 @@ type Row = {
   country: string;
   currency: string;
   rowRevision: number;
+  active: boolean;
+  stateRevision: number;
+  lastStateChange: string | null;
+  token: string;
   days: Record<string, Cell>;
   campaigns: number;
   timezones: string[];
@@ -93,14 +101,11 @@ export function MetaEffectiveness({
 }) {
   const grid = useRef<HTMLTableElement>(null);
   useSheetTextFit(grid);
-  const [columnWidths, setColumnWidths] = useState<Record<string, number>>({});
-  const resizeColumn = (key: string, width?: number) =>
-    setColumnWidths((old) => {
-      const next = { ...old };
-      if (width === undefined) delete next[key];
-      else next[key] = width;
-      return next;
-    });
+  const {
+    widths: columnWidths,
+    resize: resizeColumn,
+    warning: widthWarning,
+  } = useSheetWidths(tableId);
   const today = new Intl.DateTimeFormat("en-CA", {
     timeZone: "America/Lima",
     year: "numeric",
@@ -129,6 +134,8 @@ export function MetaEffectiveness({
       field: "alias",
       direction: "asc",
     });
+  const [valueFilter, setValueFilter] = useState<string[] | null>(null),
+    [stateFilter, setStateFilter] = useState("");
   const visibleMetrics = sheetMetrics.filter(
     (m) => selectedMetrics === null || selectedMetrics.includes(m.key),
   );
@@ -214,6 +221,81 @@ export function MetaEffectiveness({
         "Guardado, pero no se pudo recargar la tabla. Actualiza la página antes de seguir editando.",
       );
     }
+  };
+  const fill = async (
+    targets: Row[],
+    metrics: SheetMetric[],
+    value: number | "NA" | null,
+    onlyDays?: string[],
+  ) => {
+    if (!targets.length || !metrics.length) return;
+    await mutate("meta-ads/effectiveness/cells", "PATCH", {
+      tableId,
+      since,
+      until,
+      metrics,
+      value,
+      ...(onlyDays ? { days: onlyDays } : {}),
+      targets: targets.map((r) => ({
+        aliasId: r.aliasId,
+        country: r.country,
+        token: r.token,
+      })),
+    });
+  };
+  const fillVisible = async (value: 0 | "NA" | null) => {
+    setBusy(true);
+    try {
+      await fill(
+        rows,
+        visibleMetrics.map((m) => m.key),
+        value,
+      );
+    } catch (e) {
+      setMessage(e instanceof Error ? e.message : "No se pudo completar.");
+    } finally {
+      setBusy(false);
+    }
+  };
+  const toggleState = async (r: Row) => {
+    setBusy(true);
+    try {
+      await mutate("meta-ads/effectiveness/state", "PATCH", {
+        tableId,
+        aliasId: r.aliasId,
+        country: r.country,
+        active: !r.active,
+        revision: r.stateRevision,
+        since,
+        until,
+        metrics: visibleMetrics.map((m) => m.key),
+      });
+    } catch (e) {
+      setMessage(
+        e instanceof Error ? e.message : "No se pudo cambiar el estado.",
+      );
+    } finally {
+      setBusy(false);
+    }
+  };
+  const editCell = (r: Row, day: string, metric: SheetMetric, text: string) => {
+    const na = /^n\.?a\.?$/i.test(text.trim());
+    if (na) return fill([r], [metric], "NA", [day]);
+    const value = text.trim() === "" ? null : Number(text);
+    if (
+      value !== null &&
+      (!Number.isFinite(value) ||
+        value < 0 ||
+        value >
+          (metric === "sales" || metric === "base" ? 100000000 : 1000000000) ||
+        ((metric === "sales" || metric === "base") && !Number.isInteger(value)))
+    )
+      return Promise.reject(
+        Error("Escribe un número válido no negativo o N.A."),
+      );
+    if (metric === "sales" || metric === "fixedCost")
+      return manual(r, day, metric, value === null ? "" : String(value));
+    return fill([r], [metric], value, [day]);
   };
   const columns = async (
     change: Partial<{
@@ -390,7 +472,23 @@ export function MetaEffectiveness({
         (country === "__none"
           ? !r.country
           : !country || r.country === country) &&
-        (selectedAliases === null || selectedAliases.includes(r.aliasId)),
+        (selectedAliases === null || selectedAliases.includes(r.aliasId)) &&
+        (!stateFilter || (stateFilter === "active" ? r.active : !r.active)) &&
+        (valueFilter === null ||
+          days.some((day) =>
+            visibleMetrics.some((m) => {
+              const c = r.days[day],
+                v = c?.[m.key];
+              return (
+                (valueFilter.includes("na") && c?.na?.includes(m.key)) ||
+                (!c?.na?.includes(m.key) &&
+                  ((valueFilter.includes("zero") && v === 0) ||
+                    (valueFilter.includes("positive") &&
+                      typeof v === "number" &&
+                      v > 0)))
+              );
+            }),
+          )),
     )
     .sort((a, b) => {
       let result = 0;
@@ -494,6 +592,74 @@ export function MetaEffectiveness({
           value={selectedAliases}
           onChange={setSelectedAliases}
         />
+        <SheetMultiFilter
+          label="Valores"
+          options={[
+            { value: "zero", label: "Igual a 0" },
+            { value: "positive", label: "Mayor que 0" },
+            { value: "na", label: "N.A. (no aplica)" },
+          ]}
+          value={valueFilter}
+          onChange={setValueFilter}
+        >
+          <div className="sheet-fill-controls">
+            <small>
+              Muestra filas con algún valor coincidente en las columnas y fechas
+              visibles.
+            </small>
+            <p>
+              Completar: {rows.length} filas × {days.length} días ×{" "}
+              {visibleMetrics.length} parámetros.
+            </p>
+            <button
+              disabled={
+                busy ||
+                !rows.length ||
+                !visibleMetrics.length ||
+                rows.length > 1000
+              }
+              onClick={() => void fillVisible(0)}
+            >
+              Poner 0 a todos los visibles
+            </button>
+            <button
+              disabled={
+                busy ||
+                !rows.length ||
+                !visibleMetrics.length ||
+                rows.length > 1000
+              }
+              onClick={() => void fillVisible("NA")}
+            >
+              Poner N.A. a todos los visibles
+            </button>
+            <button
+              disabled={
+                busy ||
+                !rows.length ||
+                !visibleMetrics.length ||
+                rows.length > 1000
+              }
+              onClick={() => void fillVisible(null)}
+            >
+              Restaurar valores originales
+            </button>
+          </div>
+        </SheetMultiFilter>
+        <label>
+          Estado
+          <SheetSearchSelect
+            label="Estado de alias"
+            value={stateFilter}
+            placeholder="Todos"
+            options={[
+              { value: "", label: "Todos" },
+              { value: "active", label: "Activados" },
+              { value: "inactive", label: "Desactivados" },
+            ]}
+            onSelect={setStateFilter}
+          />
+        </label>
         <button
           onClick={() => {
             setCsv(false);
@@ -528,8 +694,9 @@ export function MetaEffectiveness({
       </div>
       <div className="sheet-help">
         Edita y pulsa Enter o Tab para guardar; Escape descarta. V y CF
-        manuales; B y G por coincidencia exacta de alias + país. G y CF se
-        muestran en la moneda elegida con la tasa de cada fecha.{" "}
+        manuales; B/G de Meta por alias + país, con ajustes manuales
+        identificados. N.A. no es cero. G y CF se muestran en la moneda elegida
+        con la tasa de cada fecha.{" "}
         {data?.missingFxDays.length ? (
           <span> Tasas pendientes: {data.missingFxDays.join(", ")}. </span>
         ) : null}
@@ -549,6 +716,11 @@ export function MetaEffectiveness({
           cotización bancaria de compra/venta.
         </details>
       </div>
+      {widthWarning && (
+        <p className="sheet-message" role="status">
+          {widthWarning}
+        </p>
+      )}
       {message && (
         <p className="sheet-message" role="status">
           {message}
@@ -879,26 +1051,48 @@ export function MetaEffectiveness({
                     data-alias-id={r.aliasId}
                     data-country={r.country}
                     data-currency={r.currency}
+                    data-active={r.active}
                   >
                     <td className="effectiveness-name">
-                      <EffectivenessCell
-                        label={`Alias ${name} ${r.country || "sin país"}`}
-                        value={name}
-                        onError={setMessage}
-                        onPaste={openPaste}
-                        onSave={async (v) => {
-                          if (!v || v.length > 150)
-                            throw Error(
-                              "El nombre debe tener entre 1 y 150 caracteres.",
+                      <div className="sheet-alias-row">
+                        <button
+                          type="button"
+                          className="sheet-state-toggle"
+                          disabled={busy || !r.country}
+                          aria-label={`${r.active ? "Desactivar" : "Activar"} ${name} ${r.country || "sin país"}`}
+                          title={
+                            !r.country
+                              ? "Elige un país para activar o desactivar esta fila"
+                              : `${r.active ? "Activado" : "Desactivado"} · ${r.country}${r.lastStateChange ? " · " + new Date(r.lastStateChange).toLocaleString("es-PE", { timeZone: "America/Lima" }) : " · por defecto"}`
+                          }
+                          onClick={() => void toggleState(r)}
+                        >
+                          {r.active ? "●" : "○"}
+                        </button>
+                        <EffectivenessCell
+                          label={`Alias ${name} ${r.country || "sin país"}`}
+                          value={name}
+                          onError={setMessage}
+                          onPaste={openPaste}
+                          onSave={async (v) => {
+                            if (!v || v.length > 150)
+                              throw Error(
+                                "El nombre debe tener entre 1 y 150 caracteres.",
+                              );
+                            await mutate(
+                              "meta-ads/aliases/" + r.aliasId,
+                              "PATCH",
+                              { name: v },
+                              true,
                             );
-                          await mutate(
-                            "meta-ads/aliases/" + r.aliasId,
-                            "PATCH",
-                            { name: v },
-                            true,
-                          );
-                        }}
-                      />
+                          }}
+                        />
+                        <EffectivenessHistory
+                          aliasId={r.aliasId}
+                          country={r.country}
+                          name={name}
+                        />
+                      </div>
                     </td>
                     <td className="effectiveness-country">
                       <SheetSearchSelect
@@ -931,85 +1125,62 @@ export function MetaEffectiveness({
                     {days.flatMap((d) => {
                       const c = r.days[d],
                         partial = c && c.campaigns < r.campaigns;
-                      const cells = [
-                        <td key={d + "V"}>
+                      const cells = sheetMetrics.map((m) => (
+                        <td
+                          key={d + m.label}
+                          className={
+                            m.key === "base" || m.key === "spend"
+                              ? "sheet-derived" +
+                                (partial && !c?.manual?.includes(m.key)
+                                  ? " sheet-partial"
+                                  : "")
+                              : ""
+                          }
+                        >
                           <EffectivenessCell
-                            label={`V ${name} ${r.country} ${d}`}
-                            value={
-                              c?.sales === null || c?.sales === undefined
-                                ? ""
-                                : String(c.sales)
-                            }
-                            type="number"
-                            step="1"
-                            onError={setMessage}
-                            onSave={(v) => manual(r, d, "sales", v)}
-                          />
-                        </td>,
-                        <td
-                          key={d + "B"}
-                          className="sheet-derived"
-                          title={
-                            partial
-                              ? `${c.campaigns}/${r.campaigns} campañas importadas`
-                              : "Conversaciones iniciadas de campañas"
-                          }
-                        >
-                          {c?.base ?? "—"}
-                          {partial ? " *" : ""}
-                        </td>,
-                        <td
-                          key={d + "G"}
-                          className="sheet-derived"
-                          title={
-                            c?.updatedAt
-                              ? `Original: ${c.sourceSpend.map((x) => x.currency + " " + x.amount).join(" + ")}. ${c.fx.map((f) => `1 ${f.from} = ${f.rate} ${f.to} · ${f.date} · ${f.source}`).join("; ")}. Datos recibidos: ${new Date(c.updatedAt).toLocaleString("es-PE", { timeZone: "America/Lima" })} · ${r.timezones.join(", ")}`
-                              : "Sin datos importados"
-                          }
-                        >
-                          {c?.spend === null || c?.spend === undefined
-                            ? c?.fxMissing
-                              ? "Sin tasa"
-                              : !r.currency
-                                ? "—"
+                            allowNA
+                            manual={c?.manual?.includes(m.key)}
+                            placeholder={
+                              m.money &&
+                              c?.fxMissing &&
+                              c[m.key] === null &&
+                              !c.na?.includes(m.key)
+                                ? "Sin tasa"
                                 : "—"
-                            : c.spend.toLocaleString("es-PE", {
-                                minimumFractionDigits: 2,
-                                maximumFractionDigits: 2,
-                              })}
-                          {partial ? " *" : ""}
-                        </td>,
-                        <td key={d + "CF"}>
-                          <EffectivenessCell
-                            label={`CF ${name} ${r.country} ${d}`}
+                            }
+                            label={`${m.label} ${name} ${r.country} ${d}`}
                             value={
-                              c?.fixedCost === null ||
-                              c?.fixedCost === undefined
-                                ? ""
-                                : c.fixedCost.toFixed(
-                                    new Intl.NumberFormat("en", {
-                                      style: "currency",
-                                      currency: r.currency || "USD",
-                                    }).resolvedOptions().maximumFractionDigits,
-                                  )
+                              c?.na?.includes(m.key)
+                                ? "N.A."
+                                : c?.[m.key] === null ||
+                                    c?.[m.key] === undefined
+                                  ? ""
+                                  : m.money
+                                    ? c[m.key]!.toFixed(
+                                        new Intl.NumberFormat("en", {
+                                          style: "currency",
+                                          currency: r.currency || "USD",
+                                        }).resolvedOptions()
+                                          .maximumFractionDigits,
+                                      )
+                                    : String(c[m.key])
                             }
-                            type="number"
-                            hint={
-                              c?.sourceFixedCost.length
-                                ? `Original CF: ${c.sourceFixedCost.map((x) => x.currency + " " + x.amount).join(" + ")}. ${c.fx.map((f) => `${f.date}: 1 ${f.from} = ${f.rate} ${f.to} (${f.source})`).join("; ")}`
-                                : undefined
-                            }
-                            locked={
-                              !r.currency ||
-                              (!!c?.sourceFixedCost.length &&
-                                c.fixedCost === null)
-                            }
-                            step="0.000001"
                             onError={setMessage}
-                            onSave={(v) => manual(r, d, "fixedCost", v)}
+                            onSave={(v) => editCell(r, d, m.key, v)}
+                            hint={`${c?.manual?.includes(m.key) ? "Ajuste manual de Efectividad. Originales conservados. " : ""}${m.key === "spend" ? "Original Meta: " + (c?.sourceSpend.map((x) => x.currency + " " + x.amount).join(" + ") || "sin datos") + ". " : ""}${c?.fxMissing && c?.[m.key] === null && !c.na?.includes(m.key) ? "Sin tasa. " : ""}${partial ? "Cobertura parcial. " : ""}${m.key === "fixedCost" ? "Original CF: " + (c?.sourceFixedCost.map((x) => x.currency + " " + x.amount).join(" + ") || "sin datos") + ". " : ""}${m.money ? c?.fx.map((f) => `${f.date}: 1 ${f.from} = ${f.rate} ${f.to} · ${f.source}`).join("; ") || "" : ""} Escribe un número o N.A.; vacío restaura el importado en B/G.`}
                           />
-                        </td>,
-                      ];
+                          {partial &&
+                            !c?.manual?.includes(m.key) &&
+                            (m.key === "base" || m.key === "spend") && (
+                              <span
+                                className="sheet-partial-marker"
+                                title="Cobertura parcial"
+                              >
+                                *
+                              </span>
+                            )}
+                        </td>
+                      ));
                       return cells.filter((_, i) =>
                         visibleMetricKeys.has(sheetMetrics[i].key),
                       );

@@ -76,6 +76,103 @@ export async function metaRoutes(
       ).setMetaStatus(actor, parts[2], b.status, b.expectedStatus),
     );
   }
+  if (path === "effectiveness/cells" && method === "PATCH") {
+    ownerOnly(actor);
+    const b = z
+      .object({
+        tableId: z.string().min(1).max(100),
+        since: z.string().date(),
+        until: z.string().date(),
+        days: z.array(z.string().date()).min(1).max(31).optional(),
+        metrics: z
+          .array(z.enum(["sales", "base", "spend", "fixedCost"]))
+          .min(1)
+          .max(4),
+        value: z.union([
+          z.literal("NA"),
+          z.number().min(0).max(1000000000),
+          z.null(),
+        ]),
+        targets: z
+          .array(
+            z
+              .object({
+                aliasId: z.string().min(1).max(100),
+                country: z.string().refine((v) => v === "" || isCountryCode(v)),
+                token: z.string().regex(/^[a-f0-9]{32}$/),
+              })
+              .strict(),
+          )
+          .min(1)
+          .max(1000),
+      })
+      .strict()
+      .parse(await body());
+    demand(
+      b.since <= b.until &&
+        (Date.parse(b.until) - Date.parse(b.since)) / 86400000 < 31,
+      "Elige hasta31 días.",
+    );
+    demand(new Set(b.metrics).size === b.metrics.length, "Parámetro repetido.");
+    if (
+      typeof b.value === "number" &&
+      b.metrics.some((m) => m === "sales" || m === "base")
+    )
+      demand(
+        Number.isInteger(b.value) && b.value <= 100000000,
+        "Las cantidades deben ser enteros entre0 y100000000.",
+      );
+    return send(
+      await (
+        await import("./effectiveness-controls")
+      ).fillEffectiveness(actor, b),
+    );
+  }
+  if (path === "effectiveness/state" && method === "PATCH") {
+    ownerOnly(actor);
+    const b = z
+      .object({
+        tableId: z.string().min(1).max(100),
+        aliasId: z.string().min(1).max(100),
+        country: z.string().refine(isCountryCode),
+        active: z.boolean(),
+        revision: z.number().int().min(0),
+        since: z.string().date(),
+        until: z.string().date(),
+        metrics: z
+          .array(z.enum(["sales", "base", "spend", "fixedCost"]))
+          .max(4),
+      })
+      .strict()
+      .parse(await body());
+    demand(
+      b.since <= b.until &&
+        (Date.parse(b.until) - Date.parse(b.since)) / 86400000 < 31,
+      "Elige hasta31 días.",
+    );
+    demand(new Set(b.metrics).size === b.metrics.length, "Parámetro repetido.");
+    return send(
+      await (
+        await import("./effectiveness-controls")
+      ).setEffectivenessState(actor, b),
+    );
+  }
+  if (path === "effectiveness/history" && method === "GET") {
+    ownerOnly(actor);
+    const q = z
+      .object({
+        aliasId: z.string().min(1).max(100),
+        country: z.string().refine(isCountryCode),
+        cursor: z.string().min(1).max(100).optional(),
+      })
+      .strict()
+      .parse(Object.fromEntries(req.nextUrl.searchParams));
+    return send(
+      await (
+        await import("./effectiveness-controls")
+      ).effectivenessHistory(actor, q.aliasId, q.country, q.cursor),
+    );
+  }
   if (path === "effectiveness/columns" && method === "PATCH") {
     ownerOnly(actor);
     const b = z

@@ -4,7 +4,7 @@ Módulo lateral OWNER independiente de productos/subproductos del generador. Tab
 
 ## Hoja y asignación
 
-Vista continua sin tarjeta ni márgenes centrales, filas compactas, columna de alias/país fijas horizontalmente y cabecera fija dentro de la hoja. Enter/Tab/salir guarda las celdas; Escape descarta. B/G son solo lectura; V y CF editables. Mantener borrador ante error, revisión congelada al comenzar y cola por día para guardar V/CF rápidamente sin pisarse. No hay reintentos automáticos de mutaciones.
+Vista continua sin tarjeta ni márgenes centrales, filas compactas, columna de alias/país fijas horizontalmente y cabecera fija dentro de la hoja. Enter/Tab/salir guarda las celdas; Escape descarta. V/CF son manuales; B/G conservan su origen Meta y admiten ajustes explícitos de presentación, incluidos0 y N.A. Los originales de Meta no se escriben. Mantener borrador ante error, revisión congelada al comenzar y cola por día para guardar V/CF rápidamente sin pisarse. No hay reintentos automáticos de mutaciones.
 
 En Meta Ads se elige primero tabla y después uno de sus alias; opciones de tablas vacías disponibles al OWNER. Administradores solo reciben metadatos de tablas con objetos autorizados. Cambiar de tabla limpia el alias preparado sin guardar nada. Una tabla vacía no permite Guardar; quitar alias es una acción explícita que limpia también el país. Asignación individual/lote conserva permiso OWNER aprobado, auditoría y lock884411; no cambia targeting ni hereda alias a hijos.
 
@@ -69,6 +69,18 @@ País y moneda conservan desplegables con buscador propio en filtro, cabecera pa
 
 Anchos iniciales de Alias:174.2px escritorio y120.6 móvil (33% menos que260/180); País45/37.5px, Moneda35px y cada parámetro diario36px (50% menos que90/75,70 y72). La tabla utiliza colgroup y suma explícita: no rellena el ancho sobrante ampliando columnas. Los encabezados de fecha abarcan exactamente las métricas visibles, incluidas ampliaciones individuales.
 
-Arrastrar el borde derecho de cada encabezado cambia su columna, independientemente de otras fechas. Flechas ajustan5px, Mayús+flechas20px; Inicio o doble clic recuperan el ancho inicial. Alias y País siguen fijos horizontalmente y su separación se adapta al ancho actual de Alias. Los ajustes se conservan mientras esa tabla está abierta; no se escriben datos/preferencias remotas y volver a abrirla usa los valores iniciales.
+Arrastrar el borde derecho de cada encabezado cambia su columna, independientemente de otras fechas. Flechas ajustan5px, Mayús+flechas20px; Inicio o doble clic recuperan el ancho inicial. Alias y País siguen fijos horizontalmente y su separación se adapta al ancho actual de Alias. Los anchos se guardan en localStorage por usuario, tabla y columna/fecha, y se restauran al recargar o volver desde otro menú en ese navegador. Doble clic/Inicio restablece el ancho inicial. Si el navegador impide guardarlos se informa; no se escriben preferencias remotas.
 
 Texto, cifras y borradores se mantienen en una línea con fuente que disminuye si hace falta, sin cortar su contenido; al ampliar vuelve hasta el tamaño normal. Un observador por tabla mide con Canvas y agrupa lecturas/escrituras en animationFrame, incluido input y resize. Los controles se miden con ancho fijo disponible para evitar encogimiento acumulativo. Las celdas País/Moneda muestran código completo; los nombres completos siguen en el desplegable buscable y title. No se alteran valores, revisiones, fórmulas ni permisos.
+
+## Valores y estado por país
+
+Valores ofrece Todos, Igual a0, Mayor que0 y N.A. Muestra filas con alguna celda visible coincidente, cruzando alias, país, estado, fechas y parámetros. Sin dato no es0 ni N.A. Desde el mismo menú se completan las celdas visibles con0/N.A. o se restauran sus originales; el alcance se muestra antes de pulsar. Hasta1000 filas/31 días por operación atómica. No hay asignación automática de domingos: se elige la fecha y se marca explícitamente.
+
+Las anotaciones de lote/B/G se guardan como overlays por campo/día en MetaEffectivenessDay.annotations. Los originales V/CF y diarios Meta se conservan; editar V/CF numéricamente elimina solo su overlay. Cualquier parámetro admite número o N.A.; vaciar B/G restaura su importado. N.A. se excluye de sumas/promedios y0 sí cuenta. Ajustes positivos monetarios conservan moneda de entrada para conversión diaria;0/N.A. no requieren moneda. Ajustes identificados por color/tooltip, con originales/factores disponibles.
+
+PATCH effectiveness/cells valida OWNER aprobado, tabla, campos/tipos/rango y token de revisiones por fila bajo lock884411; conflictos409 no escriben parte del lote. Un upsert parametrizado JSON a recordset evita consultas por celda. Solo esta ruta admite cuerpo JSON<=1MB; otras mantienen100KB. Sin reintentos de escrituras inciertas.
+
+MetaEffectivenessState guarda activación por aliasId+país, independiente de la presentación. País obligatorio para cambiar estado; default activado sin fabricar una fecha anterior. Icono verde lleno frente a naranja/atenuado, filtro Todos/Activados/Desactivados y detalleⓘ. No cambia disponibilidad/asignación de alias ni campañas de Meta, ni bloquea edición de cifras. Cambiar país no transporta su estado al país nuevo.
+
+MetaEffectivenessEvent registra transiciones reales, fecha/hora, actor y snapshot inmutable: rango/moneda, parámetros seleccionados/cantidad y totales/cobertura/N.A. de V/B/G/CF. Datos posteriores no reescriben snapshots. Detalle muestra horas de Lima y páginas de50 eventos. PATCH effectiveness/state requiere revisión y bloqueo; concurrencia/repetición409 sin duplicar evento. GET effectiveness/history valida OWNER y cursor de la misma pareja. Migración202610250001 aditiva conserva días, importes y revisiones previas.

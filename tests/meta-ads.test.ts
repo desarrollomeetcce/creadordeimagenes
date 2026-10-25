@@ -230,3 +230,11 @@ test('Hoja: totales y promedios del rango, días faltantes/ceros explícitos y c
 test('Hoja: orden numérico ascendente/descendente mantiene desconocidos al final y monedas separadas',async()=>{
  const {compareSheetNumbers}=await import('../lib/meta-ads/period-summary');const values=[null,9,3,0];assert.deepEqual([...values].sort((a,b)=>compareSheetNumbers(a,b,'asc')),[0,3,9,null]);assert.deepEqual([...values].sort((a,b)=>compareSheetNumbers(a,b,'desc')),[9,3,0,null]);assert(compareSheetNumbers(100,1,'asc','EUR','USD')<0);assert(compareSheetNumbers(100,1,'desc','EUR','USD')<0);
 });
+
+test('Efectividad: N.A. no es cero ni una conversión pendiente en el resumen histórico', async()=>{
+ const {summarizePeriod}=await import('../lib/meta-ads/period-summary');
+ const days=['2026-10-20','2026-10-21','2026-10-22'];
+ const cells:any={ [days[0]]:{sales:0,base:0,spend:0,fixedCost:0},[days[1]]:{sales:null,base:null,spend:null,fixedCost:null,na:['sales','base','spend','fixedCost'],sourceSpend:[{currency:'PEN',amount:20}]},[days[2]]:{sales:8,base:4,spend:12,fixedCost:2}};
+ const sum=summarizePeriod(cells,days,'spend');assert.equal(sum.total,12);assert.equal(sum.average,6);assert.equal(sum.knownDays,2);assert.equal(sum.conversionPending,false);
+ assert.equal(summarizePeriod(cells,days,'sales').average,4);
+});
