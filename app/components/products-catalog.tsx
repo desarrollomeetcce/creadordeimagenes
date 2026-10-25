@@ -1,6 +1,7 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { engineRequest as api } from "./generation-engine";
+import { useSheetOrder } from "./use-sheet-order";
 import { MetaEffectiveness } from "./meta-effectiveness";
 import { EffectivenessTotals } from "./effectiveness-totals";
 import { EffectivenessCell } from "./effectiveness-cell";
@@ -42,6 +43,25 @@ export function ProductsCatalog() {
   }, []);
   const [view, setView] = useState<"manual" | "automatic">("manual");
   const [totals, setTotals] = useState(false);
+  const {
+    ids: sheetOrder,
+    move: moveSheet,
+    warning: orderWarning,
+    append: appendSheet,
+  } = useSheetOrder(tables);
+  const orderedTables = sheetOrder.map((id) =>
+    tables.find((t) => t.id === id)!,
+  );
+  const dragged = useRef<string | null>(null);
+  const [dragging, setDragging] = useState<string | null>(null),
+    [drop, setDrop] = useState<{ id: string; after: boolean } | null>(null),
+    [orderMessage, setOrderMessage] = useState("");
+  const reorder = (from: string, to: string, after = false) => {
+    if (moveSheet(from, to, after))
+      setOrderMessage(
+        `Hoja ${tables.find((t) => t.id === from)?.name} reordenada.`,
+      );
+  };
   const table = tables.find((t) => t.id === selected);
   const sheetTabs = (
     <nav className="sheet-tabs" aria-label="Hojas del libro de efectividad">
@@ -50,12 +70,69 @@ export function ProductsCatalog() {
         role="tablist"
         aria-label="Tablas de efectividad"
       >
-        {tables.map((t) => (
+        {orderedTables.map((t) => (
           <button
             key={t.id}
             role="tab"
             aria-selected={!totals && selected === t.id}
             className="sheet-tab-alias"
+            draggable
+            data-sheet-id={t.id}
+            data-dragging={dragging === t.id || undefined}
+            data-drop-edge={
+              drop?.id === t.id ? (drop.after ? "after" : "before") : undefined
+            }
+            title="Arrastra para ordenar; Alt + flecha izquierda/derecha también mueve la hoja"
+            onDragStart={(e) => {
+              dragged.current = t.id;
+              setDragging(t.id);
+              e.dataTransfer.effectAllowed = "move";
+              e.dataTransfer.setData("text/plain", t.id);
+            }}
+            onDragOver={(e) => {
+              if (!dragged.current) return;
+              e.preventDefault();
+              e.dataTransfer.dropEffect = "move";
+              const rect = e.currentTarget.getBoundingClientRect(),
+                after = e.clientX > rect.left + rect.width / 2;
+              setDrop((old) =>
+                old?.id === t.id && old.after === after
+                  ? old
+                  : { id: t.id, after },
+              );
+            }}
+            onDrop={(e) => {
+              e.preventDefault();
+              const rect = e.currentTarget.getBoundingClientRect();
+              if (dragged.current)
+                reorder(
+                  dragged.current,
+                  t.id,
+                  e.clientX > rect.left + rect.width / 2,
+                );
+              dragged.current = null;
+              setDragging(null);
+              setDrop(null);
+            }}
+            onDragEnd={() => {
+              dragged.current = null;
+              setDragging(null);
+              setDrop(null);
+            }}
+            onKeyDown={(e) => {
+              if (!e.altKey || !["ArrowLeft", "ArrowRight"].includes(e.key))
+                return;
+              e.preventDefault();
+              const index = sheetOrder.indexOf(t.id),
+                target = sheetOrder[index + (e.key === "ArrowRight" ? 1 : -1)];
+              if (target) {
+                const button = e.currentTarget;
+                reorder(t.id, target, e.key === "ArrowRight");
+                requestAnimationFrame(() =>
+                  button.focus({ preventScroll: true }),
+                );
+              }
+            }}
             onClick={() => {
               setSelected(t.id);
               setTotals(false);
@@ -65,6 +142,13 @@ export function ProductsCatalog() {
             {t.name} ({t.aliases.length})
           </button>
         ))}
+        <button
+          className="sheet-add-tab"
+          aria-expanded={adding}
+          onClick={() => setAdding((v) => !v)}
+        >
+          + Tabla
+        </button>
         <button
           role="tab"
           aria-selected={totals}
@@ -77,13 +161,6 @@ export function ProductsCatalog() {
           Totales
         </button>
       </div>
-      <button
-        className="sheet-add-tab"
-        aria-expanded={adding}
-        onClick={() => setAdding((v) => !v)}
-      >
-        + Tabla
-      </button>
     </nav>
   );
   return (
@@ -148,6 +225,7 @@ export function ProductsCatalog() {
             setBusy(true);
             try {
               const t = await api("meta-ads/alias-tables", "POST", { name });
+              appendSheet(t.id);
               await load();
               setSelected(t.id);
               setTotals(false);
@@ -179,9 +257,17 @@ export function ProductsCatalog() {
         </p>
       )}
       {loading && <p role="status">Cargando tablas…</p>}
+      {orderWarning && (
+        <p className="sheet-message" role="status">
+          {orderWarning}
+        </p>
+      )}
+      <span className="sr-only" role="status">
+        {orderMessage}
+      </span>
       {totals && table && (
         <EffectivenessTotals
-          tables={tables}
+          tables={orderedTables}
           initialTableId={table.id}
           sheetTabs={sheetTabs}
         />
@@ -191,7 +277,7 @@ export function ProductsCatalog() {
           key={table.id}
           view={view}
           sheetTabs={sheetTabs}
-          tables={tables}
+          tables={orderedTables}
           tableId={table.id}
           aliases={table.aliases}
           settings={table}

@@ -229,6 +229,44 @@ export async function metaRoutes(
       ).fillEffectiveness(actor, b),
     );
   }
+  if (path === "effectiveness/states" && method === "PATCH") {
+    ownerOnly(actor);
+    const b = z
+      .object({
+        tableId: z.string().min(1).max(100),
+        since: z.string().date(),
+        until: z.string().date(),
+        active: z.boolean(),
+        metrics: z
+          .array(z.enum(["sales", "budget", "base", "spend", "fixedCost"]))
+          .max(5),
+        targets: z
+          .array(
+            z
+              .object({
+                aliasId: z.string().min(1).max(100),
+                country: z.string().refine(isCountryCode),
+                revision: z.number().int().min(0),
+              })
+              .strict(),
+          )
+          .min(1)
+          .max(1000),
+      })
+      .strict()
+      .parse(await body());
+    demand(
+      b.since <= b.until &&
+        (Date.parse(b.until) - Date.parse(b.since)) / 86400000 < 31,
+      "Elige hasta 31 días.",
+    );
+    demand(new Set(b.metrics).size === b.metrics.length, "Parámetro repetido.");
+    return send(
+      await (
+        await import("./effectiveness-controls")
+      ).setEffectivenessStates(actor, b),
+    );
+  }
   if (path === "effectiveness/state" && method === "PATCH") {
     ownerOnly(actor);
     const b = z

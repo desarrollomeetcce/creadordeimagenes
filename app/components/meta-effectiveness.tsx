@@ -75,6 +75,8 @@ type Row = {
   campaigns: number;
   timezones: string[];
 };
+const activationKey = (r: Pick<Row, "aliasId" | "country">) =>
+  JSON.stringify([r.aliasId, r.country]);
 type Settings = {
   aliasColumnName: string;
   defaultCountry: string;
@@ -111,6 +113,8 @@ export function MetaEffectiveness({
   onNamesChanged: () => Promise<void>;
 }) {
   const [syncOpen, setSyncOpen] = useState(false);
+  const [aliasSearch, setAliasSearch] = useState("");
+  const [selectedPairs, setSelectedPairs] = useState<string[]>([]);
   const grid = useRef<HTMLTableElement>(null);
   useSheetTextFit(grid);
   const {
@@ -489,9 +493,23 @@ export function MetaEffectiveness({
       !visibleMetricKeys.has(sheetSort.metric))
       ? { kind: "text", field: "alias", direction: "asc" }
       : sheetSort;
+  const searchWords = aliasSearch
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLocaleLowerCase("es")
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean);
   const rows = (data?.rows ?? [])
     .filter(
       (r) =>
+        searchWords.every((word) =>
+          (names.get(r.aliasId) ?? "")
+            .normalize("NFD")
+            .replace(/[\u0300-\u036f]/g, "")
+            .toLocaleLowerCase("es")
+            .includes(word),
+        ) &&
         (country === "__none"
           ? !r.country
           : !country || r.country === country) &&
@@ -549,6 +567,60 @@ export function MetaEffectiveness({
         a.country.localeCompare(b.country)
       );
     });
+  const selectedPairSet = new Set(selectedPairs),
+    eligibleRows = rows.filter((r) => !!r.country);
+  const selectedVisibleRows = eligibleRows.filter((r) =>
+    selectedPairSet.has(activationKey(r)),
+  );
+  const allVisibleSelected =
+    eligibleRows.length > 0 &&
+    selectedVisibleRows.length === eligibleRows.length;
+  const choosePairs = (next: string[]) => {
+    if (next.length > 1000) {
+      setMessage(
+        "Selecciona hasta 1000 filas. Puedes reducirlas con los filtros.",
+      );
+      return;
+    }
+    setSelectedPairs(next);
+  };
+  const bulkState = async (active: boolean) => {
+    if (!selectedVisibleRows.length) return;
+    const targets = selectedVisibleRows.map((r) => ({
+      aliasId: r.aliasId,
+      country: r.country,
+      revision: r.stateRevision,
+    }));
+    setBusy(true);
+    try {
+      const result = await api("meta-ads/effectiveness/states", "PATCH", {
+        tableId,
+        since,
+        until,
+        metrics: visibleMetrics.map((m) => m.key),
+        active,
+        targets,
+      });
+      const keys = new Set(targets.map(activationKey));
+      setSelectedPairs((old) => old.filter((k) => !keys.has(k)));
+      try {
+        await refresh();
+        setMessage(
+          `${result.changed} filas ${active ? "activadas" : "desactivadas"}; ${result.unchanged} ya tenían ese estado.`,
+        );
+      } catch {
+        setMessage(
+          "Estados guardados. No se pudo recargar la hoja; actualiza la página antes de continuar.",
+        );
+      }
+    } catch (e) {
+      setMessage(
+        e instanceof Error ? e.message : "No se pudieron cambiar los estados.",
+      );
+    } finally {
+      setBusy(false);
+    }
+  };
   const sortId = (v: SheetSort) =>
     v.kind === "text" ? v.field : v.day + "-" + v.metric;
   const order = (v: SheetSort) =>
@@ -613,6 +685,14 @@ export function MetaEffectiveness({
           value={selectedMetrics}
           onChange={setSelectedMetrics}
         />
+        <input
+          className="sheet-alias-search"
+          type="search"
+          aria-label="Buscar alias por palabra"
+          placeholder="Buscar alias por palabra…"
+          value={aliasSearch}
+          onChange={(e) => setAliasSearch(e.target.value)}
+        />
         <SheetMultiFilter
           label="Filtro de alias"
           options={aliases.map((a) => ({ value: a.id, label: a.name }))}
@@ -620,7 +700,7 @@ export function MetaEffectiveness({
           onChange={setSelectedAliases}
         />
         <SheetMultiFilter
-          label="Valores"
+          label="Filtro de valores"
           options={[
             { value: "zero", label: "Igual a 0" },
             { value: "positive", label: "Mayor que 0" },
@@ -687,6 +767,35 @@ export function MetaEffectiveness({
             onSelect={setStateFilter}
           />
         </label>
+        <div
+          className="sheet-activation-actions"
+          title="Aplica solo a las filas seleccionadas visibles, por alias y país. No modifica Meta Ads."
+        >
+          <span>Selección ({selectedVisibleRows.length})</span>
+          <button
+            className="sheet-activate-bulk"
+            disabled={busy || !selectedVisibleRows.length}
+            onClick={() => void bulkState(true)}
+          >
+            Activar
+          </button>
+          <button
+            className="sheet-deactivate-bulk"
+            disabled={busy || !selectedVisibleRows.length}
+            onClick={() => void bulkState(false)}
+          >
+            Desactivar
+          </button>
+          {selectedPairs.length > 0 && (
+            <button
+              aria-label="Limpiar selección de alias"
+              disabled={busy}
+              onClick={() => setSelectedPairs([])}
+            >
+              ×
+            </button>
+          )}
+        </div>
         <button
           onClick={() => {
             setCsv(false);
@@ -896,6 +1005,28 @@ export function MetaEffectiveness({
                   }
                 >
                   <div className="sheet-alias-heading">
+                    <input
+                      type="checkbox"
+                      className="sheet-alias-select"
+                      aria-label="Seleccionar alias visibles"
+                      checked={allVisibleSelected}
+                      disabled={busy || !eligibleRows.length}
+                      title="Selecciona las filas visibles con país para activar o desactivar en bloque"
+                      ref={(el) => {
+                        if (el)
+                          el.indeterminate =
+                            selectedVisibleRows.length > 0 &&
+                            !allVisibleSelected;
+                      }}
+                      onChange={() => {
+                        const next = new Set(selectedPairs);
+                        for (const r of eligibleRows) {
+                          if (allVisibleSelected) next.delete(activationKey(r));
+                          else next.add(activationKey(r));
+                        }
+                        choosePairs([...next]);
+                      }}
+                    />
                     <EffectivenessCell
                       label="Nombre de columna A"
                       value={settings.aliasColumnName}
@@ -1096,19 +1227,42 @@ export function MetaEffectiveness({
                   >
                     <td className="effectiveness-name">
                       <div className="sheet-alias-row">
+                        <input
+                          type="checkbox"
+                          className="sheet-alias-select"
+                          aria-label={`Seleccionar ${name} ${r.country || "sin país"}`}
+                          checked={selectedPairSet.has(activationKey(r))}
+                          disabled={busy || !r.country}
+                          title={
+                            !r.country
+                              ? "Elige un país para activar o desactivar esta fila"
+                              : `Seleccionar ${name} en ${r.country} para activación masiva`
+                          }
+                          onChange={() =>
+                            choosePairs(
+                              selectedPairSet.has(activationKey(r))
+                                ? selectedPairs.filter(
+                                    (k) => k !== activationKey(r),
+                                  )
+                                : [...selectedPairs, activationKey(r)],
+                            )
+                          }
+                        />
                         <button
                           type="button"
-                          className="sheet-state-toggle"
+                          role="switch"
+                          aria-checked={r.active}
+                          className="meta-status-switch sheet-alias-switch"
                           disabled={busy || !r.country}
                           aria-label={`${r.active ? "Desactivar" : "Activar"} ${name} ${r.country || "sin país"}`}
                           title={
                             !r.country
                               ? "Elige un país para activar o desactivar esta fila"
-                              : `${r.active ? "Activado" : "Desactivado"} · ${r.country}${r.lastStateChange ? " · " + new Date(r.lastStateChange).toLocaleString("es-PE", { timeZone: "America/Lima" }) : " · por defecto"}`
+                              : `${r.active ? "Activado" : "Desactivado"} · ${r.country}${r.lastStateChange ? " · " + new Date(r.lastStateChange).toLocaleString("es-PE", { timeZone: "America/Lima" }) : " · por defecto"}. Solo Efectividad.`
                           }
                           onClick={() => void toggleState(r)}
                         >
-                          {r.active ? "●" : "○"}
+                          <span aria-hidden="true" />
                         </button>
                         <EffectivenessCell
                           label={`Alias ${name} ${r.country || "sin país"}`}

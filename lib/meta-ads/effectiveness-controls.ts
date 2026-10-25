@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { db } from "../db";
 import { ownerOnly } from "../auth";
 import { demand } from "../errors";
@@ -118,6 +119,31 @@ export async function fillEffectiveness(
     { timeout: 60000 },
   );
 }
+function stateSnapshot(
+  r: Awaited<ReturnType<typeof effectiveness>>["rows"][number],
+  b: { since: string; until: string; metrics: SheetMetric[] },
+) {
+  const dates: string[] = [];
+  for (let d = Date.parse(b.since); d <= Date.parse(b.until); d += 86400000)
+    dates.push(new Date(d).toISOString().slice(0, 10));
+  return {
+    since: b.since,
+    until: b.until,
+    currency: r.currency,
+    metrics: b.metrics,
+    parameterCount: b.metrics.length,
+    values: Object.fromEntries(
+      sheetMetrics.map((m) => [
+        m.key,
+        {
+          ...summarizePeriod(r.days, dates, m.key, r.campaigns),
+          notApplicableDays: dates.filter((d) => r.days[d]?.na.includes(m.key))
+            .length,
+        },
+      ]),
+    ),
+  };
+}
 export async function setEffectivenessState(
   actor: Actor,
   b: {
@@ -145,27 +171,7 @@ export async function setEffectivenessState(
         "El estado cambió. Recarga antes de continuar.",
         409,
       );
-      const dates: string[] = [];
-      for (let d = Date.parse(b.since); d <= Date.parse(b.until); d += 86400000)
-        dates.push(new Date(d).toISOString().slice(0, 10));
-      const snapshot = {
-        since: b.since,
-        until: b.until,
-        currency: r.currency,
-        metrics: b.metrics,
-        parameterCount: b.metrics.length,
-        values: Object.fromEntries(
-          sheetMetrics.map((m) => [
-            m.key,
-            {
-              ...summarizePeriod(r.days, dates, m.key, r.campaigns),
-              notApplicableDays: dates.filter((d) =>
-                r.days[d]?.na.includes(m.key),
-              ).length,
-            },
-          ]),
-        ),
-      };
+      const snapshot = stateSnapshot(r, b);
       const state = await tx.metaEffectivenessState.upsert({
         where: { aliasId_country: { aliasId: b.aliasId, country: b.country } },
         create: {
@@ -238,4 +244,82 @@ export async function effectivenessHistory(
     events: events.slice(0, 50),
     next: events.length > 50 ? events[49].id : null,
   };
+}
+
+export async function setEffectivenessStates(
+  actor: Actor,
+  b: {
+    tableId: string;
+    since: string;
+    until: string;
+    metrics: SheetMetric[];
+    active: boolean;
+    targets: { aliasId: string; country: string; revision: number }[];
+  },
+) {
+  ownerOnly(actor);
+  return db.$transaction(
+    async (tx) => {
+      await effectivenessLock(tx, actor);
+      const view = await effectiveness(actor, b.tableId, b.since, b.until, tx),
+        key = (r: { aliasId: string; country: string }) =>
+          JSON.stringify([r.aliasId, r.country]);
+      const rows = new Map(view.rows.map((r) => [key(r), r])),
+        seen = new Set<string>();
+      const targets = b.targets.map((t) => {
+        const k = key(t),
+          r = rows.get(k);
+        demand(!seen.has(k), "Fila repetida.");
+        seen.add(k);
+        demand(r, "Fila no disponible en esta tabla.", 404);
+        demand(
+          r.stateRevision === t.revision,
+          "Un estado cambió. Recarga antes de continuar.",
+          409,
+        );
+        return r;
+      });
+      const changed = targets.filter((r) => r.active !== b.active);
+      if (!changed.length)
+        return { ok: true, changed: 0, unchanged: targets.length };
+      const values = changed.map((r) => ({
+        id: randomUUID(),
+        aliasId: r.aliasId,
+        country: r.country,
+        active: b.active,
+      }));
+      const states = await tx.$queryRaw<
+        { id: string; aliasId: string; country: string }[]
+      >`INSERT INTO "MetaEffectivenessState" (id,"aliasId",country,active,revision) SELECT x.id,x."aliasId",x.country,x.active,1 FROM jsonb_to_recordset(${JSON.stringify(values)}::jsonb) AS x(id text,"aliasId" text,country text,active boolean) ON CONFLICT ("aliasId",country) DO UPDATE SET active=EXCLUDED.active,revision="MetaEffectivenessState".revision+1 RETURNING id,"aliasId",country`;
+      const stateIds = new Map(states.map((s) => [key(s), s.id]));
+      await tx.metaEffectivenessEvent.createMany({
+        data: changed.map((r) => ({
+          stateId: stateIds.get(key(r))!,
+          active: b.active,
+          actorId: actor.id,
+          snapshot: stateSnapshot(r, b),
+        })),
+      });
+      await recordActivity(tx, {
+        data: {
+          actorId: actor.id,
+          action: "META_EFECTIVIDAD_ESTADOS_LOTE",
+          resourceId: b.tableId,
+          detail: {
+            active: b.active,
+            changed: changed.length,
+            unchanged: targets.length - changed.length,
+            since: b.since,
+            until: b.until,
+          },
+        },
+      });
+      return {
+        ok: true,
+        changed: changed.length,
+        unchanged: targets.length - changed.length,
+      };
+    },
+    { timeout: 60000 },
+  );
 }

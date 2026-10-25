@@ -112,3 +112,11 @@ La cobertura parcial viaja en las anotaciones copiadas: marca * en la celda dest
 La leyenda está en la cabecera superior con Efectividad. Los controles quedan arriba y las pestañas están inmediatamente junto al borde superior de la tabla; Totales es una hoja ámbar en esa misma franja, independiente del verde de alias. Manual azul/Automática violeta, sin depender solo del color: también nombre y selección accesibles.
 
 En Totales, «+ Agregar hoja» permite buscar/elegir cualquier tabla no incluida. Se añade a la derecha con el mismo grupo de parámetros y fechas; cada bloque conserva su nombre de origen y sus propias cifras/manuales. El orden sigue la adición, no el orden alfabético. Hojas de origen permite ajustar la selección o Todos. No fusiona cifras de distintos países/monedas/tablas ni crea nuevos parámetros; usa los cálculos/guardados ya existentes. Crear +Tabla desde Totales abre la nueva hoja de alias.
+
+### Selección y activación manual, búsqueda y orden de hojas
+
+El check por fila selecciona una pareja alias+país; no cambia su activación. El interruptor sí permite activarla/desactivarla individualmente. Los botones Activar/Desactivar junto al contador aplican ese mismo estado manual a la selección visible. Check de cabecera para seleccionar/deseleccionar visibles; filas sin país no se seleccionan para cambiar activación. Las filas ocultas por filtros quedan fuera del lote. Hasta1000 por operación, permisos/revisiones y existencia validados antes de un upsert atómico; eventos solo de transiciones reales, preservando fechas/cantidades del historial. No estados de campañas ni datos Meta.
+
+Buscador directo de alias por palabras (sin distinguir acentos/mayúsculas) cruza filtros; Filtro de alias sigue disponible para selección múltiple. «Valores» se denomina ahora «Filtro de valores».
+
+Arrastra una pestaña de alias antes/después de otra, o usa Alt+flecha izquierda/derecha. El orden queda en localStorage por usuario (en este navegador) y se restaura al volver/recargar. Nuevas tablas al final; +Tabla sigue a la última hoja de alias y Totales queda a continuación. Mover no cambia nombres, datos, permisos ni identidades de las tablas. Si el navegador bloquea almacenamiento, se avisa que el orden no pudo guardarse.

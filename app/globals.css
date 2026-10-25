@@ -1779,3 +1779,18 @@ select option, select optgroup { background:var(--surface); color:var(--ink); }
 @media(max-width:620px) { .effectiveness-topbar { min-height: 66px; padding: 8px 12px; }.effectiveness-topbar-title { gap: 4px; }.effectiveness-topbar .sheet-legend { font-size: 10px; gap: 2px 7px; }.sheet-tabs { padding: 3px 4px 0; }.sheet-tabs button { padding: 6px 9px; } }
 .sheet-view > .sheet-help { margin: 0; }
 .sheet-toolbar .sheet-add-source { width: auto; max-width: 220px; flex: 0 0 auto; border-color: #b08a31; background: color-mix(in srgb,#d3a94c 12%,var(--surface)); color: var(--ink); font-weight: 600; }
+
+/* Alias activation and workbook ordering stay separate from Meta advertising controls. */
+.products-catalog .sheet-view .effectiveness-grid .sheet-alias-select { appearance: auto; display: block; flex: 0 0 13px; width: 13px; min-width: 13px; height: 13px; margin: 0 3px; padding: 0; accent-color: var(--accent); }
+.products-catalog .sheet-view .effectiveness-grid .sheet-alias-switch { flex: 0 0 27px; width: 27px; height: 17px; margin: 0 2px 0 0; padding: 1px !important; }
+.products-catalog .sheet-view .effectiveness-grid .sheet-alias-switch > span { width: 12px; height: 12px; }
+.products-catalog .sheet-view .effectiveness-grid .sheet-alias-switch[aria-checked="true"] > span { transform: translateX(10px); }
+.sheet-toolbar input.sheet-alias-search { width: 175px; max-width: 175px; flex: 0 1 175px; }
+.sheet-tab-alias[draggable="true"] { cursor: grab; }
+.sheet-tab-alias[data-dragging="true"] { opacity: .55; cursor: grabbing; }
+.sheet-tabs .sheet-tab-alias[data-drop-edge="before"] { box-shadow: inset 3px 0 0 #629bd1; }
+.sheet-tabs .sheet-tab-alias[data-drop-edge="after"] { box-shadow: inset -3px 0 0 #629bd1; }
+
+.sheet-activation-actions { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; font-size: 10px; }
+.sheet-toolbar .sheet-activate-bulk { border-color: #629bd1; background: color-mix(in srgb,#629bd1 13%,var(--surface)); color: var(--ink); }
+.sheet-toolbar .sheet-deactivate-bulk { border-color: #b08a31; background: color-mix(in srgb,#d3a94c 12%,var(--surface)); color: var(--ink); }
