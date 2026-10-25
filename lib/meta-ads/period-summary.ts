@@ -1,5 +1,6 @@
 export const sheetMetrics = [
   { key: "sales", label: "V", name: "Ventas", money: false },
+  { key: "budget", label: "P", name: "Presupuesto", money: true },
   { key: "base", label: "B", name: "Conversaciones", money: false },
   { key: "spend", label: "G", name: "Gasto", money: true },
   { key: "fixedCost", label: "CF", name: "Costos fijos", money: true },
@@ -8,12 +9,15 @@ export type SheetMetric = (typeof sheetMetrics)[number]["key"];
 export type PeriodMode = "total" | "average";
 export type MetricRange = { min?: number; max?: number };
 export type PeriodCell = {
+  budget?: number | null;
   sales: number | null;
   base: number | null;
   spend: number | null;
   fixedCost: number | null;
   campaigns?: number;
   na?: readonly SheetMetric[];
+  manual?: readonly SheetMetric[];
+  partialMetrics?: readonly SheetMetric[];
   sourceSpend?: unknown[];
   sourceFixedCost?: unknown[];
 };
@@ -42,6 +46,7 @@ export function summarizePeriod(
     if (typeof v === "number" && Number.isFinite(v)) {
       sum += v;
       known++;
+      if (c.partialMetrics?.includes(metric)) incomplete = true;
       if (
         (metric === "base" || metric === "spend") &&
         expectedCampaigns > 0 &&

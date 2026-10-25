@@ -712,6 +712,9 @@ model MetaAccountGrant {
   @@index([userId])
 }
 model MetaAliasTable {
+  syncTarget MetaEffectivenessSync? @relation("SyncDestination")
+  syncSources MetaEffectivenessSync[] @relation("SyncSource")
+  totals MetaEffectivenessTotalDay[]
   aliasColumnName String @default("Alias")
   defaultCountry String @default("")
   defaultCurrency String @default("")
@@ -721,7 +724,8 @@ model MetaAliasTable {
 }
 model MetaAlias {
   id String @id @default(cuid())
-  name String @unique
+  name String
+  @@unique([tableId,name])
   objects MetaAdObject[]
   effectivenessRows MetaEffectivenessRow[]
   effectivenessStates MetaEffectivenessState[]
@@ -925,4 +929,25 @@ model MetaEffectivenessEvent {
  actorId String
  snapshot Json
  @@index([stateId,createdAt,id])
+}
+
+model MetaEffectivenessTotalDay {
+ tableId String
+ table MetaAliasTable @relation(fields:[tableId],references:[id],onDelete:Restrict)
+ country String
+ currency String
+ day String
+ values Json @default("{}")
+ revision Int @default(1)
+ @@id([tableId,country,currency,day])
+}
+
+model MetaEffectivenessSync {
+ tableId String @id
+ target MetaAliasTable @relation("SyncDestination",fields:[tableId],references:[id],onDelete:Cascade)
+ source MetaAliasTable @relation("SyncSource",fields:[sourceTableId],references:[id],onDelete:Restrict)
+ sourceTableId String
+ columns Json
+ revision Int @default(1)
+ lastSyncAt DateTime @default(now())
 }

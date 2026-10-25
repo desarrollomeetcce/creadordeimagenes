@@ -23,6 +23,7 @@ import { SheetSearchSelect } from "./sheet-search-select";
 import { SheetMultiFilter } from "./sheet-multi-filter";
 import { SheetColumnResizer } from "./sheet-column-resizer";
 import { useSheetWidths } from "./use-sheet-widths";
+import { EffectivenessSync } from "./effectiveness-sync";
 import { EffectivenessHistory } from "./effectiveness-history";
 import { useSheetTextFit } from "./use-sheet-text-fit";
 import { EffectivenessCell } from "./effectiveness-cell";
@@ -36,6 +37,7 @@ const currencies = currencyCodes.map((c) => ({
   label: `${c} · ${currencyNames.of(c) || c}`,
 }));
 type Cell = {
+  budget: number | null;
   spend: number | null;
   base: number | null;
   sales: number | null;
@@ -48,6 +50,8 @@ type Cell = {
   fxMissing: boolean;
   na: SheetMetric[];
   manual: SheetMetric[];
+  synced?: Partial<Record<SheetMetric, string>>;
+  partialMetrics?: SheetMetric[];
   fx: {
     from: string;
     to: string;
@@ -93,12 +97,17 @@ export function MetaEffectiveness({
   aliases,
   onNamesChanged,
   settings,
+  view,
+  tables,
 }: {
+  tables: { id: string; name: string }[];
+  view: "manual" | "automatic";
   tableId: string;
   settings: Settings;
   aliases: { id: string; name: string }[];
   onNamesChanged: () => Promise<void>;
 }) {
+  const [syncOpen, setSyncOpen] = useState(false);
   const grid = useRef<HTMLTableElement>(null);
   useSheetTextFit(grid);
   const {
@@ -127,8 +136,14 @@ export function MetaEffectiveness({
   const [newName, setNewName] = useState(""),
     [newCountry, setNewCountry] = useState(settings.defaultCountry),
     [newCurrency, setNewCurrency] = useState(settings.defaultCurrency);
-  const [selectedMetrics, setSelectedMetrics] = useState<string[] | null>(null),
-    [selectedAliases, setSelectedAliases] = useState<string[] | null>(null),
+  const [metricsByView, setMetricsByView] = useState<{
+    manual: string[] | null;
+    automatic: string[] | null;
+  }>({ manual: null, automatic: null });
+  const selectedMetrics = metricsByView[view];
+  const setSelectedMetrics = (value: string[] | null) =>
+    setMetricsByView((old) => ({ ...old, [view]: value }));
+  const [selectedAliases, setSelectedAliases] = useState<string[] | null>(null),
     [sheetSort, setSheetSort] = useState<SheetSort>({
       kind: "text",
       field: "alias",
@@ -136,7 +151,12 @@ export function MetaEffectiveness({
     });
   const [valueFilter, setValueFilter] = useState<string[] | null>(null),
     [stateFilter, setStateFilter] = useState("");
-  const visibleMetrics = sheetMetrics.filter(
+  const viewMetrics = sheetMetrics.filter((m) =>
+    view === "manual"
+      ? m.key === "sales" || m.key === "budget"
+      : m.key !== "budget",
+  );
+  const visibleMetrics = viewMetrics.filter(
     (m) => selectedMetrics === null || selectedMetrics.includes(m.key),
   );
   const visibleMetricKeys = new Set(visibleMetrics.map((m) => m.key));
@@ -507,7 +527,8 @@ export function MetaEffectiveness({
         const metric = activeSort.metric,
           av = a.days[activeSort.day]?.[metric] ?? null,
           bv = b.days[activeSort.day]?.[metric] ?? null,
-          money = metric === "spend" || metric === "fixedCost";
+          money =
+            metric === "budget" || metric === "spend" || metric === "fixedCost";
         result = compareSheetNumbers(
           av,
           bv,
@@ -547,10 +568,13 @@ export function MetaEffectiveness({
       aria-label="Efectividad diaria"
     >
       <div className="row sheet-toolbar">
-        <span className="sheet-legend">
-          <b>V</b> Ventas · <b>B</b> Conversaciones · <b>G</b> Gasto · <b>CF</b>{" "}
-          Costos fijos
-        </span>
+        <button
+          className={syncOpen ? "primary" : ""}
+          aria-expanded={syncOpen}
+          onClick={() => setSyncOpen((v) => !v)}
+        >
+          ⇄ Sincronizar columnas
+        </button>
         <MetaDateRange
           from={since}
           to={until}
@@ -579,7 +603,7 @@ export function MetaEffectiveness({
         </label>
         <SheetMultiFilter
           label="Filtro de parámetros"
-          options={sheetMetrics.map((m) => ({
+          options={viewMetrics.map((m) => ({
             value: m.key,
             label: `${m.key === "base" ? "Base" : m.name} (${m.label})`,
           }))}
@@ -692,11 +716,23 @@ export function MetaEffectiveness({
           />
         </label>
       </div>
+      {syncOpen && (
+        <EffectivenessSync
+          tableId={tableId}
+          tables={tables}
+          since={since}
+          until={until}
+          onSynced={async () => {
+            await onNamesChanged();
+            await refresh();
+          }}
+        />
+      )}
       <div className="sheet-help">
-        Edita y pulsa Enter o Tab para guardar; Escape descarta. V y CF
+        Edita y pulsa Enter o Tab para guardar; Escape descarta. V, P y CF
         manuales; B/G de Meta por alias + país, con ajustes manuales
-        identificados. N.A. no es cero. G y CF se muestran en la moneda elegida
-        con la tasa de cada fecha.{" "}
+        identificados. N.A. no es cero. P, G y CF se muestran en la moneda
+        elegida con la tasa de cada fecha.{" "}
         {data?.missingFxDays.length ? (
           <span> Tasas pendientes: {data.missingFxDays.join(", ")}. </span>
         ) : null}
@@ -994,6 +1030,7 @@ export function MetaEffectiveness({
                       <th
                         key={d + m.key}
                         className="sheet-parameter-heading"
+                        data-metric={m.key}
                         scope="col"
                         aria-sort={
                           activeSort.kind === "day" &&
@@ -1131,10 +1168,13 @@ export function MetaEffectiveness({
                           className={
                             m.key === "base" || m.key === "spend"
                               ? "sheet-derived" +
-                                (partial && !c?.manual?.includes(m.key)
+                                ((partial && !c?.manual?.includes(m.key)) ||
+                                c?.partialMetrics?.includes(m.key)
                                   ? " sheet-partial"
                                   : "")
-                              : ""
+                              : c?.synced?.[m.key]
+                                ? "sheet-synced-cell"
+                                : ""
                           }
                         >
                           <EffectivenessCell
@@ -1167,10 +1207,10 @@ export function MetaEffectiveness({
                             }
                             onError={setMessage}
                             onSave={(v) => editCell(r, d, m.key, v)}
-                            hint={`${c?.manual?.includes(m.key) ? "Ajuste manual de Efectividad. Originales conservados. " : ""}${m.key === "spend" ? "Original Meta: " + (c?.sourceSpend.map((x) => x.currency + " " + x.amount).join(" + ") || "sin datos") + ". " : ""}${c?.fxMissing && c?.[m.key] === null && !c.na?.includes(m.key) ? "Sin tasa. " : ""}${partial ? "Cobertura parcial. " : ""}${m.key === "fixedCost" ? "Original CF: " + (c?.sourceFixedCost.map((x) => x.currency + " " + x.amount).join(" + ") || "sin datos") + ". " : ""}${m.money ? c?.fx.map((f) => `${f.date}: 1 ${f.from} = ${f.rate} ${f.to} · ${f.source}`).join("; ") || "" : ""} Escribe un número o N.A.; vacío restaura el importado en B/G.`}
+                            hint={`${c?.synced?.[m.key] ? "Sincronizado desde «" + c.synced[m.key] + "». " : ""}${c?.manual?.includes(m.key) ? "Ajuste manual de Efectividad. Originales conservados. " : ""}${m.key === "spend" ? "Original Meta: " + (c?.sourceSpend.map((x) => x.currency + " " + x.amount).join(" + ") || "sin datos") + ". " : ""}${c?.fxMissing && c?.[m.key] === null && !c.na?.includes(m.key) ? "Sin tasa. " : ""}${partial || c?.partialMetrics?.includes(m.key) ? "Cobertura parcial. " : ""}${m.key === "fixedCost" ? "Original CF: " + (c?.sourceFixedCost.map((x) => x.currency + " " + x.amount).join(" + ") || "sin datos") + ". " : ""}${m.money ? c?.fx.map((f) => `${f.date}: 1 ${f.from} = ${f.rate} ${f.to} · ${f.source}`).join("; ") || "" : ""} Escribe un número o N.A.; vacío restaura el importado en B/G; en P borra el presupuesto.`}
                           />
-                          {partial &&
-                            !c?.manual?.includes(m.key) &&
+                          {(c?.partialMetrics?.includes(m.key) ||
+                            (partial && !c?.manual?.includes(m.key))) &&
                             (m.key === "base" || m.key === "spend") && (
                               <span
                                 className="sheet-partial-marker"

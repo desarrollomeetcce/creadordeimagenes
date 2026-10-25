@@ -11490,7 +11490,8 @@ test("Integración HTTP + PostgreSQL (base exclusiva de pruebas, sin llamadas ex
        assert.equal((await upload([{name,country:'PE',currency},{name,country:'AR',currency},{name:'Pendiente '+tag,country:'',currency}])).status,200);
        const aliases=await db.metaAlias.findMany({where:{tableId:table.id}});assert.equal(aliases.length,2);const aliasId=aliases.find(a=>a.name===name)!.id;
        assert.equal((await upload([{name:name.toLowerCase(),country:'PE',currency}])).status,200);assert.equal(await db.metaAlias.count({where:{tableId:table.id}}),2);
-       assert.equal((await upload([{name:'No crear '+tag,country:'PE',currency},{name:other.name,country:'PE',currency}])).status,409);assert.equal(await db.metaAlias.count({where:{name:'No crear '+tag}}),0);
+       assert.equal((await upload([{name:other.name,country:'PE',currency}])).status,200);const separate=await db.metaAlias.findFirstOrThrow({where:{tableId:table.id,name:other.name}});assert.notEqual(separate.id,other.id);assert.equal((await db.metaAlias.findUniqueOrThrow({where:{id:other.id}})).tableId,foreign.id);
+       assert.equal((await upload([{name:'No crear '+tag,country:'PE',currency},{name:'Inválido '+tag,country:'ZZ',currency}])).status,400);assert.equal(await db.metaAlias.count({where:{name:'No crear '+tag}}),0);
        const many=await upload(Array.from({length:500},(_,i)=>({name:'Carga '+tag+' '+i,country:'',currency})));assert.equal(many.status,200,JSON.stringify(many.body));assert.equal(many.body.created,500);assert.equal((await upload(Array.from({length:501},(_,i)=>({name:'Exceso '+tag+' '+i,country:'',currency})))).status,400);
        assert.equal((await upload([{name:'Inválido',country:'ZZ',currency}])).status,400);assert.equal((await admin.call('meta-ads/effectiveness/import','POST',{tableId:table.id,rows:[{name:'No',country:'PE',currency}]})).status,403);
        await db.metaAdAccount.create({data:{id:'962601',connectionId:conn.id,name:'Hoja',currency,timezone:'America/Lima'}});
@@ -11778,6 +11779,73 @@ test("Integración HTTP + PostgreSQL (base exclusiva de pruebas, sin llamadas ex
         log=(await owner.call(history)).body;assert.equal(log.events.length,50);assert(log.next);const older=(await owner.call(history+'&cursor='+log.next)).body;assert.equal(older.events.length,2);assert.equal(older.next,null);
         assert.equal((await owner.call('meta-ads/alias-tables')).body.find((t:any)=>t.id===table.id).aliases.some((a:any)=>a.id===alias.id),true);
       }finally{await db.metaEffectivenessRow.deleteMany({where:{aliasId:alias.id}});await db.metaAlias.delete({where:{id:alias.id}});await db.metaAliasTable.delete({where:{id:table.id}});}
+    });
+    await t.test('Efectividad: P independiente, FX diario, totales por país/moneda/tabla y manuales aislados',async()=>{
+      const table=(await owner.call('meta-ads/alias-tables','POST',{name:'Totales '+tag})).body;
+      const other=(await owner.call('meta-ads/alias-tables','POST',{name:'Totales otra '+tag})).body;
+      const a=(await owner.call('meta-ads/aliases','POST',{name:'Presupuesto uno '+tag,tableId:table.id})).body;
+      const b=(await owner.call('meta-ads/aliases','POST',{name:'Presupuesto dos '+tag,tableId:table.id})).body;
+      const day='2026-10-20',until='2026-10-21',params=new URLSearchParams({tableId:table.id,since:day,until}),root='meta-ads/effectiveness?'+params,totals='meta-ads/effectiveness/totals?'+params;
+      const read=()=>owner.call(root),pair=(v:any,id=a.id,country='PE')=>v.body.rows.find((r:any)=>r.aliasId===id&&r.country===country);
+      const fill=(r:any,value:any,metric='budget')=>owner.call('meta-ads/effectiveness/cells','PATCH',{tableId:table.id,since:day,until,days:[day],metrics:[metric],value,targets:[{aliasId:r.aliasId,country:r.country,token:r.token}]});
+      const group=(v:any,country='PE',currency='PEN')=>v.body.groups.find((g:any)=>g.country===country&&g.currency===currency)?.days[day];
+      try{
+        assert.equal((await owner.call('meta-ads/effectiveness/import','POST',{tableId:table.id,rows:[{name:a.name,country:'PE',currency:'PEN'},{name:b.name,country:'PE',currency:'PEN'},{name:a.name,country:'CL',currency:'PEN'}]})).status,200);
+        let r=pair(await read());assert.equal((await fill(r,100)).status,200);r=pair(await read());assert.equal(r.days[day].budget,100);assert.equal(r.days[day].spend,null);
+        assert.equal((await fill(pair(await read(),b.id),20)).status,200);assert.equal((await fill(pair(await read(),a.id,'CL'),70)).status,200);
+        r=pair(await read());assert.equal((await owner.call('meta-ads/effectiveness','PATCH',{aliasId:a.id,country:'PE',currency:'PEN',day,sales:3,fixedCost:9,revision:r.days[day].revision,rowRevision:r.rowRevision})).status,200);
+        r=pair(await read());assert.equal((await fill(r,40,'spend')).status,200);assert.equal((await fill(pair(await read()),8,'base')).status,200);
+        let result=await owner.call(totals);assert.equal(result.status,200);let c=group(result);assert.equal(c.sums.budget.value,120);assert.equal(c.sums.sales.value,3);assert.equal(c.sums.spend.value,40);assert.equal(c.sums.base.value,8);assert.equal(c.sums.fixedCost.value,9);assert.equal(group(result,'CL').sums.budget.value,70);
+        const manual={tableId:table.id,country:'PE',currency:'PEN',day,metric:'baseManual',value:55,revision:0};
+        assert.equal((await admin.call(totals)).status,403);assert.equal((await admin.call('meta-ads/effectiveness/totals','PATCH',manual)).status,403);
+        assert.equal((await owner.call('meta-ads/effectiveness/totals','PATCH',manual)).status,200);assert.equal((await owner.call('meta-ads/effectiveness/totals','PATCH',manual)).status,409);
+        const concurrent=await Promise.all([owner.call('meta-ads/effectiveness/totals','PATCH',{...manual,metric:'totalSpend',value:88,revision:1}),owner.call('meta-ads/effectiveness/totals','PATCH',{...manual,metric:'fixedCost',value:22,revision:1})]);assert.deepEqual(concurrent.map(x=>x.status).sort(),[200,409]);
+        c=group(await owner.call(totals));assert.equal(c.manual.baseManual,55);assert.equal(c.revision,2);assert.equal(c.sums.fixedCost.value,9);
+        assert.equal((await owner.call('meta-ads/effectiveness/totals','PATCH',{...manual,metric:'fixedCost',value:'NA',revision:2})).status,200);c=group(await owner.call(totals));assert.equal(c.manual.fixedCost,'NA');assert.equal(c.sums.fixedCost.value,9);assert.equal(c.sums.base.value,8);
+        const otherRead=await owner.call('meta-ads/effectiveness/totals?'+new URLSearchParams({tableId:other.id,since:day,until}));assert.equal(otherRead.body.groups.length,0);
+        for(const patch of [{value:-1},{value:1.5},{country:'XX'},{metric:'budget'},{revision:-1}])assert.equal((await owner.call('meta-ads/effectiveness/totals','PATCH',{...manual,...patch})).status,400);
+        assert.equal((await owner.call('meta-ads/effectiveness/totals?'+new URLSearchParams({tableId:table.id,since:day,until:'2026-12-01'}))).status,400);
+        assert.equal((await fill(pair(await read(),b.id),'NA')).status,200);c=group(await owner.call(totals));assert.equal(c.sums.budget.value,100);assert.equal(c.sums.budget.na,1);
+        await db.metaFxDay.upsert({where:{day},create:{day,rates:{EUR:1,PEN:4,USD:2},source:'sintética',sourceUrl:'https://example.test'},update:{rates:{EUR:1,PEN:4,USD:2}}});
+        r=pair(await read());assert.equal((await owner.call('meta-ads/effectiveness/identity','PATCH',{aliasId:a.id,fromCountry:'PE',fromCurrency:'PEN',country:'PE',currency:'USD',revision:r.rowRevision})).status,200);
+        r=pair(await read());assert.equal(r.days[day].budget,50);assert.equal(r.days[day].spend,20);assert.equal(r.days[day].fixedCost,4.5);
+        result=await owner.call(totals);assert.equal(group(result,'PE','USD').sums.budget.value,50);assert.equal(group(result,'PE','PEN').manual.baseManual,55);assert.equal(group(result,'CL').sums.budget.value,70);
+        // Totals are scoped to their explicit unit; changing an alias presentation never relabels totals.
+        assert.equal(group(result,'PE','USD').manual.baseManual,undefined);
+      }finally{await db.metaEffectivenessTotalDay.deleteMany({where:{tableId:table.id}});await db.metaEffectivenessRow.deleteMany({where:{aliasId:{in:[a.id,b.id]}}});await db.metaAlias.deleteMany({where:{id:{in:[a.id,b.id]}}});await db.metaAliasTable.deleteMany({where:{id:{in:[table.id,other.id]}}});}
+    });
+    await t.test('Efectividad: sincronizador interno exacto, revisión previa, FX, vacíos y cero/N.A. sin borrar originales',async()=>{
+      const source=(await owner.call('meta-ads/alias-tables','POST',{name:'Origen sync '+tag})).body,target=(await owner.call('meta-ads/alias-tables','POST',{name:'Destino sync '+tag})).body;
+      const a=(await owner.call('meta-ads/aliases','POST',{name:'Alias exacto sync '+tag,tableId:source.id})).body,newAlias=(await owner.call('meta-ads/aliases','POST',{name:'Alias nuevo sync '+tag,tableId:source.id})).body,dest=(await owner.call('meta-ads/aliases','POST',{name:a.name,tableId:target.id})).body;
+      assert(dest.id&&dest.id!==a.id);const day='2026-10-20',until='2026-10-21';
+      const read=(id:string)=>owner.call('meta-ads/effectiveness?'+new URLSearchParams({tableId:id,since:day,until}));
+      const row=(v:any,id:string,country='PE')=>v.body.rows.find((r:any)=>r.aliasId===id&&r.country===country);
+      const set=(r:any,tableId:string,metric:string,value:any,days=[day])=>owner.call('meta-ads/effectiveness/cells','PATCH',{tableId,since:day,until,days,metrics:[metric],value,targets:[{aliasId:r.aliasId,country:r.country,token:r.token}]});
+      const request={tableId:target.id,sourceTableId:source.id,since:day,until,columns:['sales','budget']};
+      try{
+        for(const [t,entries] of [[source,[{name:a.name,country:'PE',currency:'PEN'},{name:a.name,country:'CL',currency:'PEN'},{name:newAlias.name,country:'PE',currency:'PEN'}]],[target,[{name:dest.name,country:'PE',currency:'USD'}]]] as const)assert.equal((await owner.call('meta-ads/effectiveness/import','POST',{tableId:t.id,rows:entries})).status,200);
+        await db.metaFxDay.upsert({where:{day},create:{day,rates:{EUR:1,PEN:4,USD:2},source:'sintética',sourceUrl:'https://example.test'},update:{rates:{EUR:1,PEN:4,USD:2}}});
+        for(const [metric,value] of [['sales',2],['budget',20],['base','NA'],['spend',40],['fixedCost',5]] as const)assert.equal((await set(row(await read(source.id),a.id),source.id,metric,value)).status,200);
+        assert.equal((await set(row(await read(source.id),a.id,'CL'),source.id,'sales',7)).status,200);assert.equal((await set(row(await read(source.id),newAlias.id),source.id,'budget',0)).status,200);
+        let r=row(await read(target.id),dest.id);assert.equal((await owner.call('meta-ads/effectiveness','PATCH',{aliasId:dest.id,country:'PE',currency:'USD',day,sales:100,revision:0,rowRevision:r.rowRevision})).status,200);
+        assert.equal((await set(row(await read(target.id),dest.id),target.id,'spend',999)).status,200);assert.equal((await set(row(await read(target.id),dest.id),target.id,'sales',88,[until])).status,200);
+        assert.equal((await admin.call('meta-ads/effectiveness/sync/preview','POST',request)).status,403);
+        assert.equal((await owner.call('meta-ads/effectiveness/sync/preview','POST',{...request,sourceTableId:target.id})).status,400);
+        assert.equal((await owner.call('meta-ads/effectiveness/sync/preview','POST',{...request,columns:['sales','base'],mapping:{sales:'base'}})).status,400);
+        let p=await owner.call('meta-ads/effectiveness/sync/preview','POST',request);assert.equal(p.status,200);assert.equal(p.body.summary.aliasesAdded,0);assert.equal(p.body.summary.unmatched,2);assert.equal(row(await read(target.id),dest.id).days[day].sales,100);
+        const apply={...request,token:p.body.token};assert.equal((await owner.call('meta-ads/effectiveness/sync','POST',apply)).status,200);assert.equal((await owner.call('meta-ads/effectiveness/sync','POST',apply)).status,409);
+        r=row(await read(target.id),dest.id);assert.equal(r.days[day].sales,2);assert.equal(r.days[day].budget,10);assert.equal(r.days[day].spend,999);assert.equal(r.days[until].sales,88);assert.equal(await db.metaEffectivenessDay.findFirst({where:{row:{aliasId:dest.id},day}}).then(d=>d!.sales),100);
+        const all={...request,columns:['alias','sales','budget','base','spend','fixedCost']};p=await owner.call('meta-ads/effectiveness/sync/preview','POST',all);assert.equal(p.body.summary.aliasesAdded,1);
+        assert.equal((await set(row(await read(source.id),a.id),source.id,'sales',3)).status,200);assert.equal((await owner.call('meta-ads/effectiveness/sync','POST',{...all,token:p.body.token})).status,409);assert.equal(await db.metaAlias.count({where:{tableId:target.id}}),1);
+        p=await owner.call('meta-ads/effectiveness/sync/preview','POST',all);assert.equal((await owner.call('meta-ads/effectiveness/sync','POST',{...all,token:p.body.token})).status,200);
+        r=row(await read(target.id),dest.id);assert.equal(r.days[day].sales,3);assert(r.days[day].na.includes('base'));assert.equal(r.days[day].spend,20);assert.equal(r.days[day].fixedCost,2.5);assert.equal(row(await read(target.id),dest.id,'CL').days[day].sales,7);
+        const copied=await db.metaAlias.findFirstOrThrow({where:{tableId:target.id,name:newAlias.name}});assert.equal(row(await read(target.id),copied.id).days[day].budget,0);
+        const cfg=await owner.call('meta-ads/effectiveness/sync?tableId='+target.id);assert.equal(cfg.body.sourceTableId,source.id);assert.deepEqual(cfg.body.columns,all.columns);assert(cfg.body.lastSyncAt);
+        assert.equal(row(await read(source.id),a.id).days[day].spend,40);assert.equal(row(await read(source.id),a.id).days[day].sales,3);
+        const original=await db.metaEffectivenessDay.findFirstOrThrow({where:{row:{aliasId:a.id,country:'PE'},day}});const annotations:any=original.annotations;annotations.spend.partial=true;await db.metaEffectivenessDay.update({where:{rowId_day:{rowId:original.rowId,day}},data:{annotations,revision:{increment:1}}});
+        p=await owner.call('meta-ads/effectiveness/sync/preview','POST',all);assert.equal((await owner.call('meta-ads/effectiveness/sync','POST',{...all,token:p.body.token})).status,200);assert(row(await read(target.id),dest.id).days[day].partialMetrics.includes('spend'));const totals=await owner.call('meta-ads/effectiveness/totals?'+new URLSearchParams({tableId:target.id,since:day,until}));assert(totals.body.groups.find((g:any)=>g.country==='PE'&&g.currency==='USD').days[day].sums.spend.partial);
+
+      }finally{await db.metaEffectivenessSync.deleteMany({where:{tableId:target.id}});await db.metaEffectivenessRow.deleteMany({where:{alias:{tableId:{in:[source.id,target.id]}}}});await db.metaAlias.deleteMany({where:{tableId:{in:[source.id,target.id]}}});await db.metaAliasTable.deleteMany({where:{id:{in:[source.id,target.id]}}});}
     });
     await t.test("cierre de sesión invalida el token", async () => {
       assert.equal((await user.call("auth/logout", "POST")).status, 200);

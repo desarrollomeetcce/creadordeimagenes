@@ -101,6 +101,7 @@ export async function effectiveness(
     fx = new Map(snapshots.map((s) => [s.day, s]));
   type Amount = { currency: string; amount: number };
   type InternalCell = {
+    budget: number | null;
     spend: number | null;
     base: number | null;
     sales: number | null;
@@ -113,6 +114,8 @@ export async function effectiveness(
     fxMissing: boolean;
     na: SheetMetric[];
     manual: SheetMetric[];
+    synced: Partial<Record<SheetMetric, string>>;
+    partialMetrics: SheetMetric[];
     fx: {
       from: string;
       to: string;
@@ -167,6 +170,7 @@ export async function effectiveness(
   };
   const cell = (r: ReturnType<typeof get>, day: string) =>
     (r.days[day] ??= {
+      budget: null,
       spend: null,
       base: null,
       sales: null,
@@ -180,6 +184,8 @@ export async function effectiveness(
       fx: [],
       na: [],
       manual: [],
+      synced: {},
+      partialMetrics: [],
     });
   for (const s of stored) {
     if (s.hidden) continue;
@@ -245,7 +251,12 @@ export async function effectiveness(
           d.day,
           d.annotations as Record<
             string,
-            { value: number | "NA"; currency?: string }
+            {
+              value: number | "NA";
+              currency?: string;
+              sourceTableName?: string;
+              partial?: boolean;
+            }
           >,
         ]),
       ),
@@ -291,6 +302,9 @@ export async function effectiveness(
         const override = overrides[m.key];
         if (!override) continue;
         c.manual.push(m.key);
+        if (override.partial) c.partialMetrics.push(m.key);
+        if (override.sourceTableName)
+          c.synced[m.key] = override.sourceTableName;
         if (override.value === "NA") {
           c[m.key] = null;
           c.na.push(m.key);
@@ -551,7 +565,9 @@ export async function importEffectiveness(
           select: { id: true, name: true, tableId: true },
         }),
         byName = new Map(
-          aliases.map((a) => [a.name.toLocaleLowerCase("es"), a]),
+          aliases
+            .filter((a) => a.tableId === tableId)
+            .map((a) => [a.name.toLocaleLowerCase("es"), a]),
         );
       const fresh = new Map<string, string>();
       for (const e of entries) {

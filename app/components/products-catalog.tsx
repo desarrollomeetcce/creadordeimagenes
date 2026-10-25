@@ -2,6 +2,7 @@
 import { useEffect, useState } from "react";
 import { engineRequest as api } from "./generation-engine";
 import { MetaEffectiveness } from "./meta-effectiveness";
+import { EffectivenessTotals } from "./effectiveness-totals";
 import { EffectivenessCell } from "./effectiveness-cell";
 import type { MetaAliasOption } from "./meta-alias-directory";
 type CatalogTable = {
@@ -39,11 +40,18 @@ export function ProductsCatalog() {
       active = false;
     };
   }, []);
+  const [view, setView] = useState<"manual" | "automatic">("manual");
+  const [totals, setTotals] = useState(false);
   const table = tables.find((t) => t.id === selected);
   return (
     <section className="products-catalog effectiveness-workbook">
       <div className="sheet-book-bar">
         <h1>Efectividad</h1>
+        <span className="sheet-legend">
+          <b>V</b> Ventas · <b>P</b> Presupuesto · <b>B</b> Base · <b>G</b>{" "}
+          Gasto · <b>CF</b> Costos fijos · <b>BM</b> Base manual · <b>GT</b>{" "}
+          Gasto total
+        </span>
         <div className="row" role="tablist" aria-label="Tablas de efectividad">
           {tables.map((t) => (
             <button
@@ -53,6 +61,7 @@ export function ProductsCatalog() {
               className={selected === t.id ? "primary" : ""}
               onClick={() => {
                 setSelected(t.id);
+                setTotals(false);
                 setMessage("");
               }}
             >
@@ -63,7 +72,32 @@ export function ProductsCatalog() {
         <button aria-expanded={adding} onClick={() => setAdding((v) => !v)}>
           + Tabla
         </button>
-        {table && (
+        <button
+          className={totals ? "primary" : ""}
+          aria-pressed={totals}
+          onClick={() => setTotals((v) => !v)}
+        >
+          Totales
+        </button>
+        {!totals && (
+          <div className="row sheet-view-buttons" aria-label="Vista de la hoja">
+            <button
+              className={view === "manual" ? "primary" : ""}
+              aria-pressed={view === "manual"}
+              onClick={() => setView("manual")}
+            >
+              Vista manual
+            </button>
+            <button
+              className={view === "automatic" ? "primary" : ""}
+              aria-pressed={view === "automatic"}
+              onClick={() => setView("automatic")}
+            >
+              Vista automática
+            </button>
+          </div>
+        )}
+        {table && !totals && (
           <label className="sheet-table-title">
             Nombre de tabla
             <EffectivenessCell
@@ -124,9 +158,14 @@ export function ProductsCatalog() {
         </p>
       )}
       {loading && <p role="status">Cargando tablas…</p>}
-      {table && (
+      {totals && table && (
+        <EffectivenessTotals tables={tables} initialTableId={table.id} />
+      )}
+      {table && !totals && (
         <MetaEffectiveness
           key={table.id}
+          view={view}
+          tables={tables}
           tableId={table.id}
           aliases={table.aliases}
           settings={table}

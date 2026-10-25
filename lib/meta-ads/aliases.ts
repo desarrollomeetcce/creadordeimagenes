@@ -47,15 +47,15 @@ export async function saveAlias(
         (await tx.metaAlias.count()) < 1000,
         "El catálogo admite hasta 1000 alias.",
       );
-    if (id)
-      demand(
-        await tx.metaAlias.findUnique({ where: { id } }),
-        "Alias no disponible.",
-        404,
-      );
+    if (id) {
+      const existing = await tx.metaAlias.findUnique({ where: { id } });
+      demand(existing, "Alias no disponible.", 404);
+      tableId = existing.tableId;
+    }
     demand(
       !(await tx.metaAlias.findFirst({
         where: {
+          tableId,
           name: { equals: name, mode: "insensitive" },
           ...(id ? { id: { not: id } } : {}),
         },

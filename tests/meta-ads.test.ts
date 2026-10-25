@@ -238,3 +238,14 @@ test('Efectividad: N.A. no es cero ni una conversión pendiente en el resumen hi
  const sum=summarizePeriod(cells,days,'spend');assert.equal(sum.total,12);assert.equal(sum.average,6);assert.equal(sum.knownDays,2);assert.equal(sum.conversionPending,false);
  assert.equal(summarizePeriod(cells,days,'sales').average,4);
 });
+
+test('Efectividad: totales diarios por parámetro, N.A., cero y conversión pendiente',async()=>{
+ const {sumEffectivenessDay}=await import('../lib/meta-ads/effectiveness-total-values');
+ const day='2026-10-20';
+ const rows:any=[{campaigns:1,days:{[day]:{sales:2,budget:30,base:4,spend:10,fixedCost:3,campaigns:1}}},{campaigns:0,days:{[day]:{sales:0,budget:0,base:null,spend:null,fixedCost:null,na:['base','spend','fixedCost']}}}];
+ let sums=sumEffectivenessDay(rows,day);assert.equal(sums.sales.value,2);assert.equal(sums.budget.value,30);assert.equal(sums.budget.known,2);assert.equal(sums.spend.value,10);assert.equal(sums.spend.na,1);assert.equal(sums.spend.partial,false);
+ rows.push({campaigns:1,days:{[day]:{sales:null,budget:null,base:0,spend:null,fixedCost:null,sourceSpend:[{currency:'PEN',amount:8}],manual:['budget'],fxMissing:true}}});
+ sums=sumEffectivenessDay(rows,day);assert.equal(sums.spend.value,null);assert(sums.spend.pending);assert.equal(sums.budget.value,null);assert(sums.budget.pending);assert.equal(sums.sales.value,2);assert(sums.sales.partial);assert.equal(sumEffectivenessDay([],day).sales.value,null);
+});
+
+ test('Efectividad: sincronización mantiene la cobertura parcial en sumas e histórico',async()=>{const {sumEffectivenessDay}=await import('../lib/meta-ads/effectiveness-total-values');const {summarizePeriod}=await import('../lib/meta-ads/period-summary');const day='2026-10-20',days:any={[day]:{sales:2,base:4,spend:10,fixedCost:null,budget:null,campaigns:0,manual:['spend'],partialMetrics:['spend']}};assert(sumEffectivenessDay([{days,campaigns:0}],day).spend.partial);assert(summarizePeriod(days,[day],'spend').partial);});

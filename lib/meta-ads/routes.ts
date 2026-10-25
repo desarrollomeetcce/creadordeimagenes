@@ -76,6 +76,107 @@ export async function metaRoutes(
       ).setMetaStatus(actor, parts[2], b.status, b.expectedStatus),
     );
   }
+  if (path === "effectiveness/sync" && method === "GET") {
+    ownerOnly(actor);
+    const q = z
+      .object({ tableId: z.string().min(1).max(100) })
+      .strict()
+      .parse(Object.fromEntries(req.nextUrl.searchParams));
+    return send(
+      await (
+        await import("./effectiveness-sync")
+      ).effectivenessSyncConfig(actor, q.tableId),
+    );
+  }
+  if (
+    (path === "effectiveness/sync" || path === "effectiveness/sync/preview") &&
+    method === "POST"
+  ) {
+    ownerOnly(actor);
+    const schema = z
+      .object({
+        tableId: z.string().min(1).max(100),
+        sourceTableId: z.string().min(1).max(100),
+        since: z.string().date(),
+        until: z.string().date(),
+        columns: z
+          .array(
+            z.enum(["alias", "sales", "budget", "base", "spend", "fixedCost"]),
+          )
+          .min(1)
+          .max(6),
+        ...(path === "effectiveness/sync"
+          ? { token: z.string().regex(/^[a-f0-9]{64}$/) }
+          : {}),
+      })
+      .strict();
+    const b = schema.parse(await body());
+    demand(
+      b.since <= b.until &&
+        (Date.parse(b.until) - Date.parse(b.since)) / 86400000 < 31,
+      "Elige hasta 31 días.",
+    );
+    demand(new Set(b.columns).size === b.columns.length, "Columna repetida.");
+    const service = await import("./effectiveness-sync");
+    return send(
+      path === "effectiveness/sync"
+        ? await service.applyEffectivenessSync(actor, {
+            ...b,
+            token: String(b.token),
+          })
+        : await service.previewEffectivenessSync(actor, b),
+    );
+  }
+  if (path === "effectiveness/totals" && method === "GET") {
+    ownerOnly(actor);
+    const q = z
+      .object({
+        tableId: z.string().min(1).max(100),
+        since: z.string().date(),
+        until: z.string().date(),
+      })
+      .strict()
+      .parse(Object.fromEntries(req.nextUrl.searchParams));
+    demand(
+      q.since <= q.until &&
+        (Date.parse(q.until) - Date.parse(q.since)) / 86400000 < 31,
+      "Elige hasta 31 días.",
+    );
+    return send(
+      await (
+        await import("./effectiveness-totals")
+      ).effectivenessTotals(actor, q.tableId, q.since, q.until),
+    );
+  }
+  if (path === "effectiveness/totals" && method === "PATCH") {
+    ownerOnly(actor);
+    const b = z
+      .object({
+        tableId: z.string().min(1).max(100),
+        country: z.string().refine((v) => v === "" || isCountryCode(v)),
+        currency: z.string().refine(isCurrency),
+        day: z.string().date(),
+        metric: z.enum(["baseManual", "totalSpend", "fixedCost"]),
+        value: z.union([
+          z.literal("NA"),
+          z.number().min(0).max(1000000000),
+          z.null(),
+        ]),
+        revision: z.number().int().min(0),
+      })
+      .strict()
+      .parse(await body());
+    if (b.metric === "baseManual" && typeof b.value === "number")
+      demand(
+        Number.isInteger(b.value) && b.value <= 100000000,
+        "La base debe ser entera y no mayor de 100000000.",
+      );
+    return send(
+      await (
+        await import("./effectiveness-totals")
+      ).saveEffectivenessTotal(actor, b),
+    );
+  }
   if (path === "effectiveness/cells" && method === "PATCH") {
     ownerOnly(actor);
     const b = z
@@ -85,9 +186,9 @@ export async function metaRoutes(
         until: z.string().date(),
         days: z.array(z.string().date()).min(1).max(31).optional(),
         metrics: z
-          .array(z.enum(["sales", "base", "spend", "fixedCost"]))
+          .array(z.enum(["sales", "budget", "base", "spend", "fixedCost"]))
           .min(1)
-          .max(4),
+          .max(5),
         value: z.union([
           z.literal("NA"),
           z.number().min(0).max(1000000000),
@@ -140,8 +241,8 @@ export async function metaRoutes(
         since: z.string().date(),
         until: z.string().date(),
         metrics: z
-          .array(z.enum(["sales", "base", "spend", "fixedCost"]))
-          .max(4),
+          .array(z.enum(["sales", "budget", "base", "spend", "fixedCost"]))
+          .max(5),
       })
       .strict()
       .parse(await body());

@@ -55,7 +55,9 @@ export async function fillEffectiveness(
         if (
           typeof b.value === "number" &&
           b.value > 0 &&
-          b.metrics.some((m) => m === "spend" || m === "fixedCost")
+          b.metrics.some(
+            (m) => m === "budget" || m === "spend" || m === "fixedCost",
+          )
         )
           demand(r.currency, "Elige la moneda antes de escribir importes.");
         return r;
@@ -87,7 +89,7 @@ export async function fillEffectiveness(
                 ? null
                 : {
                     value: b.value,
-                    ...(m === "spend" || m === "fixedCost"
+                    ...(m === "budget" || m === "spend" || m === "fixedCost"
                       ? { currency: r.currency }
                       : {}),
                   },
