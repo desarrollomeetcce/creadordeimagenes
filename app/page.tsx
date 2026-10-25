@@ -1,5 +1,6 @@
 "use client";
 import dynamic from "next/dynamic";
+import {EffectivenessLegend} from "./components/effectiveness-legend";
 const ProductsCatalog=dynamic(()=>import("./components/products-catalog").then(m=>m.ProductsCatalog),{loading:()=> <p role="status">Cargando efectividad…</p>});
 const MetaAds=dynamic(()=>import("./components/meta-ads").then(m=>m.MetaAds),{loading:()=> <p role="status">Cargando Meta Ads…</p>});
 import { reasoningLevel } from "../lib/creative-level";
@@ -502,8 +503,8 @@ export default function Home() {
           }} />
         </aside>
         <div className="workspace">
-          <header className="topbar">
-            <span className="muted">{view === "metaads" ? "Análisis y control de Meta" : titles[view]}</span>
+          <header className={view === "products" ? "topbar effectiveness-topbar" : "topbar"}>
+            {view === "products" ? <div className="effectiveness-topbar-title"><h1>Efectividad</h1><EffectivenessLegend /></div> : <span className="muted">{view === "metaads" ? "Análisis y control de Meta" : titles[view]}</span>}
             {view === "metaads" && <span className="meta-topbar-role">Rol: <strong>{user.role}</strong></span>}
             <span className="badge">Producción publicitaria</span>
 

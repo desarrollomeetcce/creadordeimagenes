@@ -5,6 +5,7 @@ import {
   useRef,
   useState,
   type CSSProperties,
+  type ReactNode,
 } from "react";
 import { engineRequest as api } from "./generation-engine";
 import { countryOptions } from "../../lib/meta-ads/countries";
@@ -99,7 +100,9 @@ export function MetaEffectiveness({
   settings,
   view,
   tables,
+  sheetTabs,
 }: {
+  sheetTabs: ReactNode;
   tables: { id: string; name: string }[];
   view: "manual" | "automatic";
   tableId: string;
@@ -839,6 +842,7 @@ export function MetaEffectiveness({
           columnas por fecha.
         </p>
       )}
+      {sheetTabs}
       {valid && (
         <div className="table-scroll effectiveness-scroll sheet-scroll">
           <table

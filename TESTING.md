@@ -966,3 +966,11 @@ Navegador `/workspace/work/browser/controls-sheet.mjs`, resultado `controls-brow
 - Evidencia local: `/workspace/work/views-unit.txt`, `views-integration-final.txt`, `views-typecheck.txt`, `views-build.txt`, `views-browser.txt`; capturas `views-sync-preview.png`, `views-sync.png`, `views-totals.png`, `views-dark.png`, `views-light.png`, `views-mobile.png`.
 - Revisión React: componentes separados para Totales/Sincronizador, efectos con cancelación/limpieza, lecturas en paralelo acotadas, guardado serializado por día, protección de contexto/revisiones, tipado sin `any` en código nuevo, controles etiquetados con estado y colores del tema. Autorización y comprobaciones de integridad en servidor.
 - La validación local y push a main no acreditan por sí solos el despliegue de Hostinger ni acceso al dominio público. No se modifica infraestructura sin conocer el proyecto/imagen actuales.
+
+## Efectividad: jerarquía visual y agregar hojas a Totales
+
+136 unitarias, `npm run typecheck`, `npm run build` y Chromium de producción aprobados. Sin cambios de backend ni migraciones: se conserva evidencia de163 integraciones anterior. Script local `browser/layout-sheet.mjs`, resultados `layout-unit.txt`, `layout-typecheck.txt`, `layout-build.txt`, `layout-browser.txt` bajo `/workspace/work`.
+
+Se comprueba leyenda única en topbar/h1; pestañas inmediatamente antes del scroll/grilla con coordenadas contiguas(<1px), izquierda<10px y altura<45px en escritorio; selección exclusiva incluyendo Totales y colores de modos distintos. Revisión visual detectó nav vertical heredado y botón Agregar hoja de ancho completo; corregidos y comprobados sobre build final. Claro/oscuro y móvil390 sin desbordamiento externo. Capturas `layout-manual.png`, `layout-automatic.png`, `layout-totals.png`, `layout-dark.png`, `layout-light.png`, `layout-mobile.png`.
+
+Botón «+ Agregar hoja» buscable/compacto añade Tienda al bloque existente:10 métricas manuales u8 automáticas, cada nombre encima de sus columnas, V9/V7 separados y GT33 de Tienda no modifica GT90 de Diplomados. Selección inversa Tienda→Diplomados conserva orden de adición. Se repite flujo completo de ventas compartidas, presupuesto, anchos, totales/manuales persistentes, países/unidades, sincronizador/procedencia/recarga y ausencia de errores JS/HTTP/escrituras Meta. Sin pruebas IA pagadas ni datos reales.

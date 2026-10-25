@@ -1755,3 +1755,27 @@ select option, select optgroup { background:var(--surface); color:var(--ink); }
 .products-catalog .sheet-view .sheet-totals-grid [data-entry="manual"] { background: color-mix(in srgb,#d3a94c 8%,var(--surface)); }
 .products-catalog .sheet-view .sheet-totals-grid thead [data-entry="manual"] { background: color-mix(in srgb,#d3a94c 20%,var(--surface)); }
 .products-catalog .sheet-view .effectiveness-grid th[data-metric="budget"] { background: color-mix(in srgb,#b5a1ee 20%,var(--surface)); }
+
+/* Workbook hierarchy: legend in the topbar, sheet tabs directly touching the grid. */
+.effectiveness-topbar { min-height: 73px; height: auto; padding-top: 10px; padding-bottom: 10px; }
+.effectiveness-topbar-title { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 14px; min-width: 0; }
+.effectiveness-topbar-title h1 { margin: 0; font-size: 16px; line-height: 1.4; }
+.effectiveness-topbar .sheet-legend { display: flex; align-items: center; flex-wrap: wrap; gap: 3px 9px; font-size: 11px; line-height: 1.5; color: var(--muted); white-space: normal; }
+.effectiveness-topbar .sheet-legend > span { white-space: nowrap; }
+.effectiveness-topbar .sheet-legend b { color: var(--ink); }
+.effectiveness-topbar .badge { flex: 0 0 auto; }
+.sheet-tabs { display: flex; flex-direction: row; justify-content: flex-start; align-items: flex-end; flex-wrap: nowrap; gap: 3px; margin: 0; padding: 4px 6px 0; border-bottom: 1px solid var(--line); background: var(--surface); }
+.sheet-tab-list { display: flex; flex: 0 1 auto; align-items: flex-end; flex-wrap: wrap; gap: 3px; min-width: 0; }
+.sheet-tabs button { border: 1px solid var(--line); margin: 0; padding: 6px 12px; border-radius: 5px 5px 0 0; font-size: 11px; font-weight: 600; line-height: 1.5; white-space: nowrap; }
+.sheet-tabs .sheet-tab-alias { color: var(--ink); background: color-mix(in srgb,var(--accent) 5%,var(--surface)); border-color: var(--line); border-bottom-color: transparent; }
+.sheet-tabs .sheet-tab-alias[aria-selected="true"] { background: color-mix(in srgb,var(--accent) 22%,var(--surface)); border-color: var(--accent); box-shadow: inset 0 3px 0 var(--accent); border-bottom-color: transparent; }
+.sheet-tabs .sheet-tab-totals { color: var(--ink); background: color-mix(in srgb,#d3a94c 13%,var(--surface)); border-color: color-mix(in srgb,#d3a94c 60%,var(--line)); border-bottom-color: transparent; }
+.sheet-tabs .sheet-tab-totals[aria-selected="true"] { background: color-mix(in srgb,#d3a94c 30%,var(--surface)); border-color: #b08a31; border-bottom-color: transparent; box-shadow: inset 0 3px 0 #d3a94c; }
+.sheet-tabs .sheet-add-tab { flex: 0 0 auto; color: var(--muted); background: transparent; border-style: dashed; }
+.sheet-view-buttons .sheet-mode-manual { color: var(--ink); border-color: #629bd1; background: color-mix(in srgb,#629bd1 10%,var(--surface)); }
+.sheet-view-buttons .sheet-mode-automatic { color: var(--ink); border-color: #a28ada; background: color-mix(in srgb,#a28ada 10%,var(--surface)); }
+.sheet-view-buttons .sheet-mode-manual[aria-pressed="true"] { color: #fff; background: #286399; border-color: #629bd1; box-shadow: inset 0 -3px 0 #9dceff; }
+.sheet-view-buttons .sheet-mode-automatic[aria-pressed="true"] { color: #fff; background: #6d49a3; border-color: #a28ada; box-shadow: inset 0 -3px 0 #d8c1ff; }
+@media(max-width:620px) { .effectiveness-topbar { min-height: 66px; padding: 8px 12px; }.effectiveness-topbar-title { gap: 4px; }.effectiveness-topbar .sheet-legend { font-size: 10px; gap: 2px 7px; }.sheet-tabs { padding: 3px 4px 0; }.sheet-tabs button { padding: 6px 9px; } }
+.sheet-view > .sheet-help { margin: 0; }
+.sheet-toolbar .sheet-add-source { width: auto; max-width: 220px; flex: 0 0 auto; border-color: #b08a31; background: color-mix(in srgb,#d3a94c 12%,var(--surface)); color: var(--ink); font-weight: 600; }

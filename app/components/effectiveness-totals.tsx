@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { engineRequest as api } from "./generation-engine";
 import { MetaDateRange } from "./meta-date-range";
 import { SheetMultiFilter } from "./sheet-multi-filter";
@@ -38,7 +38,9 @@ const names = new Intl.DisplayNames(["es"], { type: "currency" });
 export function EffectivenessTotals({
   tables,
   initialTableId,
+  sheetTabs,
 }: {
+  sheetTabs: ReactNode;
   tables: { id: string; name: string }[];
   initialTableId: string;
 }) {
@@ -63,10 +65,11 @@ export function EffectivenessTotals({
   const seq = useRef(0),
     queues = useRef(new Map<string, Promise<void>>()),
     versions = useRef(new Map<string, number>());
-  const ids = tables
-    .filter((t) => selected === null || selected.includes(t.id))
-    .map((t) => t.id)
-    .join(",");
+  const ids = (
+    selected === null
+      ? tables.map((t) => t.id)
+      : selected.filter((id) => tables.some((t) => t.id === id))
+  ).join(",");
   const context = JSON.stringify([ids, since, until]);
   const activeContext = useRef(context);
   activeContext.current = context;
@@ -241,14 +244,18 @@ export function EffectivenessTotals({
         <div className="row sheet-view-buttons" aria-label="Vista de totales">
           <button
             aria-pressed={mode === "manual"}
-            className={mode === "manual" ? "primary" : ""}
+            className={
+              "sheet-mode-manual" + (mode === "manual" ? " primary" : "")
+            }
             onClick={() => setMode("manual")}
           >
             Total manual
           </button>
           <button
             aria-pressed={mode === "automatic"}
-            className={mode === "automatic" ? "primary" : ""}
+            className={
+              "sheet-mode-automatic" + (mode === "automatic" ? " primary" : "")
+            }
             onClick={() => setMode("automatic")}
           >
             Total automático
@@ -277,6 +284,22 @@ export function EffectivenessTotals({
           onChange={setSelected}
           options={tables.map((t) => ({ value: t.id, label: t.name }))}
         />
+        {selected !== null && tables.some((t) => !selected.includes(t.id)) && (
+          <SheetSearchSelect
+            label="Agregar hoja a Totales"
+            className="sheet-add-source"
+            value=""
+            placeholder="+ Agregar hoja"
+            options={tables
+              .filter((t) => !selected.includes(t.id))
+              .map((t) => ({ value: t.id, label: t.name }))}
+            onSelect={(id) =>
+              setSelected((old) =>
+                old === null ? null : [...new Set([...old, id])],
+              )
+            }
+          />
+        )}
         <label>
           País
           <SheetSearchSelect
@@ -341,6 +364,7 @@ export function EffectivenessTotals({
       {!data.length && !loading && (
         <p className="sheet-help">Selecciona al menos una tabla.</p>
       )}
+      {sheetTabs}
       {!!data.length && (
         <div className="table-scroll effectiveness-scroll sheet-scroll">
           <table className="effectiveness-grid sheet-totals-grid">

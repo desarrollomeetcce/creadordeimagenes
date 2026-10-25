@@ -43,82 +43,102 @@ export function ProductsCatalog() {
   const [view, setView] = useState<"manual" | "automatic">("manual");
   const [totals, setTotals] = useState(false);
   const table = tables.find((t) => t.id === selected);
-  return (
-    <section className="products-catalog effectiveness-workbook">
-      <div className="sheet-book-bar">
-        <h1>Efectividad</h1>
-        <span className="sheet-legend">
-          <b>V</b> Ventas · <b>P</b> Presupuesto · <b>B</b> Base · <b>G</b>{" "}
-          Gasto · <b>CF</b> Costos fijos · <b>BM</b> Base manual · <b>GT</b>{" "}
-          Gasto total
-        </span>
-        <div className="row" role="tablist" aria-label="Tablas de efectividad">
-          {tables.map((t) => (
-            <button
-              key={t.id}
-              role="tab"
-              aria-selected={selected === t.id}
-              className={selected === t.id ? "primary" : ""}
-              onClick={() => {
-                setSelected(t.id);
-                setTotals(false);
-                setMessage("");
-              }}
-            >
-              {t.name} ({t.aliases.length})
-            </button>
-          ))}
-        </div>
-        <button aria-expanded={adding} onClick={() => setAdding((v) => !v)}>
-          + Tabla
-        </button>
+  const sheetTabs = (
+    <nav className="sheet-tabs" aria-label="Hojas del libro de efectividad">
+      <div
+        className="sheet-tab-list"
+        role="tablist"
+        aria-label="Tablas de efectividad"
+      >
+        {tables.map((t) => (
+          <button
+            key={t.id}
+            role="tab"
+            aria-selected={!totals && selected === t.id}
+            className="sheet-tab-alias"
+            onClick={() => {
+              setSelected(t.id);
+              setTotals(false);
+              setMessage("");
+            }}
+          >
+            {t.name} ({t.aliases.length})
+          </button>
+        ))}
         <button
-          className={totals ? "primary" : ""}
-          aria-pressed={totals}
-          onClick={() => setTotals((v) => !v)}
+          role="tab"
+          aria-selected={totals}
+          className="sheet-tab-totals"
+          onClick={() => {
+            setTotals(true);
+            setMessage("");
+          }}
         >
           Totales
         </button>
-        {!totals && (
-          <div className="row sheet-view-buttons" aria-label="Vista de la hoja">
-            <button
-              className={view === "manual" ? "primary" : ""}
-              aria-pressed={view === "manual"}
-              onClick={() => setView("manual")}
-            >
-              Vista manual
-            </button>
-            <button
-              className={view === "automatic" ? "primary" : ""}
-              aria-pressed={view === "automatic"}
-              onClick={() => setView("automatic")}
-            >
-              Vista automática
-            </button>
-          </div>
-        )}
-        {table && !totals && (
-          <label className="sheet-table-title">
-            Nombre de tabla
-            <EffectivenessCell
-              key={table.id}
-              value={table.name}
-              label="Nombre de la tabla"
-              onError={setMessage}
-              onSave={async (name) => {
-                if (!name || name.length > 100)
-                  throw Error(
-                    "El nombre de la tabla admite de 1 a 100 caracteres.",
-                  );
-                await api("meta-ads/alias-tables/" + table.id, "PATCH", {
-                  name,
-                });
-                await load();
-              }}
-            />
-          </label>
-        )}
       </div>
+      <button
+        className="sheet-add-tab"
+        aria-expanded={adding}
+        onClick={() => setAdding((v) => !v)}
+      >
+        + Tabla
+      </button>
+    </nav>
+  );
+  return (
+    <section className="products-catalog effectiveness-workbook">
+      {!totals && (
+        <div className="sheet-book-bar">
+          {!totals && (
+            <div
+              className="row sheet-view-buttons"
+              aria-label="Vista de la hoja"
+            >
+              <button
+                className={
+                  "sheet-mode-manual" + (view === "manual" ? " primary" : "")
+                }
+                aria-pressed={view === "manual"}
+                onClick={() => setView("manual")}
+              >
+                Vista manual
+              </button>
+              <button
+                className={
+                  "sheet-mode-automatic" +
+                  (view === "automatic" ? " primary" : "")
+                }
+                aria-pressed={view === "automatic"}
+                onClick={() => setView("automatic")}
+              >
+                Vista automática
+              </button>
+            </div>
+          )}
+          {table && !totals && (
+            <label className="sheet-table-title">
+              Nombre de tabla
+              <EffectivenessCell
+                key={table.id}
+                value={table.name}
+                label="Nombre de la tabla"
+                onError={setMessage}
+                onSave={async (name) => {
+                  if (!name || name.length > 100)
+                    throw Error(
+                      "El nombre de la tabla admite de 1 a 100 caracteres.",
+                    );
+                  await api("meta-ads/alias-tables/" + table.id, "PATCH", {
+                    name,
+                  });
+                  await load();
+                }}
+              />
+            </label>
+          )}
+        </div>
+      )}
       {adding && (
         <form
           className="row sheet-add-table"
@@ -130,6 +150,7 @@ export function ProductsCatalog() {
               const t = await api("meta-ads/alias-tables", "POST", { name });
               await load();
               setSelected(t.id);
+              setTotals(false);
               setAdding(false);
             } catch (error) {
               setMessage(
@@ -159,12 +180,17 @@ export function ProductsCatalog() {
       )}
       {loading && <p role="status">Cargando tablas…</p>}
       {totals && table && (
-        <EffectivenessTotals tables={tables} initialTableId={table.id} />
+        <EffectivenessTotals
+          tables={tables}
+          initialTableId={table.id}
+          sheetTabs={sheetTabs}
+        />
       )}
       {table && !totals && (
         <MetaEffectiveness
           key={table.id}
           view={view}
+          sheetTabs={sheetTabs}
           tables={tables}
           tableId={table.id}
           aliases={table.aliases}

@@ -106,3 +106,9 @@ La revisión muestra alias/filas nuevos, celdas con datos y omisiones; no escrib
 MetaEffectivenessSync guarda origen, columnas y última sincronización. Se ejecuta al pulsar «Sincronizar ahora», sin programación implícita ni sincronización continua; la configuración se recupera al volver. Sin vínculos a Excel/Google Sheets externos. OWNER aprobado y auditoría, transacción y lote con un upsert SQL, sin reintento automático de respuesta incierta. Los totales usan los valores ya sincronizados de la hoja elegida como origen.
 
 La cobertura parcial viaja en las anotaciones copiadas: marca * en la celda destino y en los totales/histórico, aun si no hay campañas etiquetadas en esa tabla. Copiar un subtotal conocido no lo transforma en cobertura completa.
+
+### Disposición del libro y más hojas en Totales
+
+La leyenda está en la cabecera superior con Efectividad. Los controles quedan arriba y las pestañas están inmediatamente junto al borde superior de la tabla; Totales es una hoja ámbar en esa misma franja, independiente del verde de alias. Manual azul/Automática violeta, sin depender solo del color: también nombre y selección accesibles.
+
+En Totales, «+ Agregar hoja» permite buscar/elegir cualquier tabla no incluida. Se añade a la derecha con el mismo grupo de parámetros y fechas; cada bloque conserva su nombre de origen y sus propias cifras/manuales. El orden sigue la adición, no el orden alfabético. Hojas de origen permite ajustar la selección o Todos. No fusiona cifras de distintos países/monedas/tablas ni crea nuevos parámetros; usa los cálculos/guardados ya existentes. Crear +Tabla desde Totales abre la nueva hoja de alias.
