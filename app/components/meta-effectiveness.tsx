@@ -10,15 +10,11 @@ import { MetaDateRange } from "./meta-date-range";
 import { currencyCodes, isCurrency } from "../../lib/meta-ads/currency-codes";
 import {
   sheetMetrics,
-  summarizePeriod,
-  matchesMetricRange,
   compareSheetNumbers,
   type SheetMetric,
-  type PeriodMode,
-  type MetricRange,
 } from "../../lib/meta-ads/period-summary";
 import { SheetSearchSelect } from "./sheet-search-select";
-import { SheetNumberFilter } from "./sheet-number-filter";
+import { SheetMultiFilter } from "./sheet-multi-filter";
 import { EffectivenessCell } from "./effectiveness-cell";
 const countries = countryOptions.map((c) => ({
   value: c.code,
@@ -69,7 +65,6 @@ type SheetSort =
       field: "alias" | "country" | "currency";
       direction: "asc" | "desc";
     }
-  | { kind: "period"; metric: SheetMetric; direction: "asc" | "desc" }
   | {
       kind: "day";
       metric: SheetMetric;
@@ -109,16 +104,17 @@ export function MetaEffectiveness({
   const [newName, setNewName] = useState(""),
     [newCountry, setNewCountry] = useState(settings.defaultCountry),
     [newCurrency, setNewCurrency] = useState(settings.defaultCurrency);
-  const [summaryMode, setSummaryMode] = useState<PeriodMode>("total"),
-    [metricRanges, setMetricRanges] = useState<
-      Partial<Record<SheetMetric, MetricRange>>
-    >({}),
+  const [selectedMetrics, setSelectedMetrics] = useState<string[] | null>(null),
+    [selectedAliases, setSelectedAliases] = useState<string[] | null>(null),
     [sheetSort, setSheetSort] = useState<SheetSort>({
       kind: "text",
       field: "alias",
       direction: "asc",
     });
-  const [periodPosition, setPeriodPosition] = useState({ top: 8, left: 8 });
+  const visibleMetrics = sheetMetrics.filter(
+    (m) => selectedMetrics === null || selectedMetrics.includes(m.key),
+  );
+  const visibleMetricKeys = new Set(visibleMetrics.map((m) => m.key));
   const currentRange = useRef(""),
     queryVersion = useRef(0),
     attemptedFx = useRef(new Set<string>());
@@ -363,35 +359,20 @@ export function MetaEffectiveness({
     () => new Map(aliases.map((a) => [a.id, a.name])),
     [aliases],
   );
-  const summaries = useMemo(
-    () =>
-      new Map(
-        (data?.rows ?? []).map((r) => [
-          JSON.stringify([r.aliasId, r.country]),
-          Object.fromEntries(
-            sheetMetrics.map((m) => [
-              m.key,
-              summarizePeriod(r.days, days, m.key, r.campaigns),
-            ]),
-          ) as Record<SheetMetric, ReturnType<typeof summarizePeriod>>,
-        ]),
-      ),
-    [data, days],
-  );
-  const summary = (r: Row, m: SheetMetric) =>
-    summaries.get(JSON.stringify([r.aliasId, r.country]))![m];
   const activeSort: SheetSort =
-    sheetSort.kind === "day" && (sheetSort.day < since || sheetSort.day > until)
+    sheetSort.kind === "day" &&
+    (sheetSort.day < since ||
+      sheetSort.day > until ||
+      !visibleMetricKeys.has(sheetSort.metric))
       ? { kind: "text", field: "alias", direction: "asc" }
       : sheetSort;
-  const baseRows = (data?.rows ?? []).filter((r) =>
-    country === "__none" ? !r.country : !country || r.country === country,
-  );
-  const rows = baseRows
-    .filter((r) =>
-      sheetMetrics.every((m) =>
-        matchesMetricRange(summary(r, m.key)[summaryMode], metricRanges[m.key]),
-      ),
+  const rows = (data?.rows ?? [])
+    .filter(
+      (r) =>
+        (country === "__none"
+          ? !r.country
+          : !country || r.country === country) &&
+        (selectedAliases === null || selectedAliases.includes(r.aliasId)),
     )
     .sort((a, b) => {
       let result = 0;
@@ -408,14 +389,8 @@ export function MetaEffectiveness({
         if (activeSort.direction === "desc") result = -result;
       } else {
         const metric = activeSort.metric,
-          av =
-            activeSort.kind === "day"
-              ? (a.days[activeSort.day]?.[metric] ?? null)
-              : summary(a, metric)[summaryMode],
-          bv =
-            activeSort.kind === "day"
-              ? (b.days[activeSort.day]?.[metric] ?? null)
-              : summary(b, metric)[summaryMode],
+          av = a.days[activeSort.day]?.[metric] ?? null,
+          bv = b.days[activeSort.day]?.[metric] ?? null,
           money = metric === "spend" || metric === "fixedCost";
         result = compareSheetNumbers(
           av,
@@ -435,11 +410,7 @@ export function MetaEffectiveness({
       );
     });
   const sortId = (v: SheetSort) =>
-    v.kind === "text"
-      ? v.field
-      : v.kind === "period"
-        ? "period-" + v.metric
-        : v.day + "-" + v.metric;
+    v.kind === "text" ? v.field : v.day + "-" + v.metric;
   const order = (v: SheetSort) =>
     setSheetSort({
       ...v,
@@ -454,9 +425,6 @@ export function MetaEffectiveness({
         ? " ↑"
         : " ↓"
       : " ↕";
-  const activeFilters = Object.values(metricRanges).some(
-    (r) => r?.min !== undefined || r?.max !== undefined,
-  );
   return (
     <section
       className="effectiveness sheet-view"
@@ -493,102 +461,21 @@ export function MetaEffectiveness({
             onSelect={setCountry}
           />
         </label>
-        <details
-          className="sheet-period-tools"
-          onToggle={(e) => {
-            if (!e.currentTarget.open) return;
-            const r = e.currentTarget
-              .querySelector("summary")!
-              .getBoundingClientRect();
-            setPeriodPosition({
-              left: Math.max(8, Math.min(r.left, innerWidth - 338)),
-              top: Math.max(8, Math.min(r.bottom + 3, innerHeight - 190)),
-            });
-          }}
-        >
-          <summary>
-            Filtros del período{activeFilters ? " · activos" : ""}
-          </summary>
-          <div
-            className="sheet-period-controls"
-            style={{
-              ...periodPosition,
-              maxHeight: `calc(100dvh - ${periodPosition.top + 8}px)`,
-            }}
-          >
-            <select
-              aria-label="Resumen del período"
-              value={summaryMode}
-              onChange={(e) => {
-                setSummaryMode(e.target.value as PeriodMode);
-                setMetricRanges({});
-              }}
-            >
-              <option value="total">Total del período</option>
-              <option value="average">Promedio diario</option>
-            </select>
-            <small title="Filas que cumplen los filtros">
-              {rows.length}/{baseRows.length}
-            </small>
-            {activeFilters && (
-              <button
-                type="button"
-                aria-label="Borrar filtros de métricas"
-                onClick={() => setMetricRanges({})}
-              >
-                ×
-              </button>
-            )}
-            {sheetMetrics.map((m) => (
-              <div
-                key={"period-" + m.key}
-                data-sort={
-                  activeSort.kind === "period" && activeSort.metric === m.key
-                    ? activeSort.direction === "asc"
-                      ? "ascending"
-                      : "descending"
-                    : undefined
-                }
-                className="sheet-period-heading"
-              >
-                <span className="sheet-metric-heading">
-                  <button
-                    type="button"
-                    className="sheet-sort-button"
-                    aria-label={`Ordenar ${summaryMode === "total" ? "total" : "promedio"} ${m.name}`}
-                    title={
-                      m.money
-                        ? "Ordena dentro de cada moneda. Elige una misma moneda para comparar todas las filas."
-                        : `Ordenar ${m.name} del período`
-                    }
-                    onClick={() =>
-                      order({
-                        kind: "period",
-                        metric: m.key,
-                        direction: "asc",
-                      })
-                    }
-                  >
-                    {m.label}
-                    {arrow({
-                      kind: "period",
-                      metric: m.key,
-                      direction: "asc",
-                    })}
-                  </button>
-                  <SheetNumberFilter
-                    label={`${summaryMode === "total" ? "total" : "promedio"} ${m.name}`}
-                    money={m.money}
-                    value={metricRanges[m.key]}
-                    onApply={(v) =>
-                      setMetricRanges((old) => ({ ...old, [m.key]: v }))
-                    }
-                  />
-                </span>
-              </div>
-            ))}
-          </div>
-        </details>
+        <SheetMultiFilter
+          label="Filtro de parámetros"
+          options={sheetMetrics.map((m) => ({
+            value: m.key,
+            label: `${m.key === "base" ? "Base" : m.name} (${m.label})`,
+          }))}
+          value={selectedMetrics}
+          onChange={setSelectedMetrics}
+        />
+        <SheetMultiFilter
+          label="Filtro de alias"
+          options={aliases.map((a) => ({ value: a.id, label: a.name }))}
+          value={selectedAliases}
+          onChange={setSelectedAliases}
+        />
         <button
           onClick={() => {
             setCsv(false);
@@ -629,15 +516,15 @@ export function MetaEffectiveness({
           <span> Tasas pendientes: {data.missingFxDays.join(", ")}. </span>
         ) : null}
         <details>
-          <summary>Cómo se calcula</summary> Totales y promedios usan el período
-          elegido. Promedio diario = suma / días con datos; registra 0 cuando
-          realmente no hubo ventas/costos. * Indica días o campañas faltantes.
-          Los filtros numéricos están en Filtros del período; al cambiar de
-          total a promedio se limpian. Los importes de monedas distintas se
-          ordenan en grupos separados. Solo campañas, incluidas apagadas; nunca
-          suma sus conjuntos/anuncios. Se consulta lo importado cada 30 s; hoy
-          puede ser parcial y cada cuenta conserva su zona horaria. — sin dato,
-          * cobertura parcial. Cambiar país consulta B/G de ese país sin cambiar
+          <summary>Cómo se calcula</summary> Filtro de parámetros elige las
+          columnas visibles de cada fecha; Filtro de alias elige las filas. Se
+          cruzan con el país y el rango de fechas; Todos incluye la lista
+          completa, aunque haya una búsqueda escrita. Ocultar una columna no
+          borra sus datos. Los importes de monedas distintas se ordenan en
+          grupos separados. Solo campañas, incluidas apagadas; nunca suma sus
+          conjuntos/anuncios. Se consulta lo importado cada 30 s; hoy puede ser
+          parcial y cada cuenta conserva su zona horaria. — sin dato, *
+          cobertura parcial. Cambiar país consulta B/G de ese país sin cambiar
           las etiquetas de Meta Ads. Cambiar moneda convierte importes sin
           alterar los originales. Un alias puede tener una fila por país. La
           tasa diaria de referencia proviene de Currency API; no es una
@@ -715,6 +602,17 @@ export function MetaEffectiveness({
           </div>
         </form>
       )}
+      {data && rows.length === 0 && (
+        <p className="sheet-message" role="status">
+          No hay alias que coincidan con los filtros.
+        </p>
+      )}
+      {visibleMetrics.length === 0 && (
+        <p className="sheet-message" role="status">
+          Sin parámetros seleccionados. Elige uno o marca Todos para mostrar las
+          columnas por fecha.
+        </p>
+      )}
       {valid && (
         <div className="table-scroll effectiveness-scroll sheet-scroll">
           <table className="effectiveness-grid">
@@ -724,7 +622,7 @@ export function MetaEffectiveness({
             <thead>
               <tr>
                 <th
-                  rowSpan={2}
+                  rowSpan={visibleMetrics.length ? 2 : 1}
                   scope="col"
                   className="effectiveness-name"
                   aria-sort={
@@ -763,7 +661,11 @@ export function MetaEffectiveness({
                     </button>
                   </div>
                 </th>
-                <th rowSpan={2} scope="col" className="effectiveness-country">
+                <th
+                  rowSpan={visibleMetrics.length ? 2 : 1}
+                  scope="col"
+                  className="effectiveness-country"
+                >
                   <button
                     type="button"
                     className="sheet-sort-button"
@@ -796,7 +698,11 @@ export function MetaEffectiveness({
                     onError={setMessage}
                   />
                 </th>
-                <th rowSpan={2} scope="col" className="effectiveness-currency">
+                <th
+                  rowSpan={visibleMetrics.length ? 2 : 1}
+                  scope="col"
+                  className="effectiveness-currency"
+                >
                   <button
                     type="button"
                     className="sheet-sort-button"
@@ -829,58 +735,67 @@ export function MetaEffectiveness({
                     onError={setMessage}
                   />
                 </th>
-                {days.map((d) => (
-                  <th key={d} colSpan={4} scope="colgroup">
-                    {d.slice(8)}.{d.slice(5, 7)}
-                  </th>
-                ))}
-              </tr>
-              <tr>
-                {days.flatMap((d) =>
-                  sheetMetrics.map((m) => (
+                {visibleMetrics.length > 0 &&
+                  days.map((d) => (
                     <th
-                      key={d + m.key}
-                      scope="col"
-                      aria-sort={
-                        activeSort.kind === "day" &&
-                        activeSort.day === d &&
-                        activeSort.metric === m.key
-                          ? activeSort.direction === "asc"
-                            ? "ascending"
-                            : "descending"
-                          : undefined
-                      }
+                      key={d}
+                      className="sheet-date-heading"
+                      data-day={d}
+                      colSpan={visibleMetrics.length}
+                      scope="colgroup"
                     >
-                      <button
-                        type="button"
-                        className="sheet-sort-button"
-                        aria-label={`Ordenar ${m.name} ${d}`}
-                        title={
-                          m.money
-                            ? "Ordena dentro de cada moneda; desconocidos al final"
-                            : `Ordenar ${m.name} de ${d}`
+                      {d.slice(8)}.{d.slice(5, 7)}
+                    </th>
+                  ))}
+              </tr>
+              {visibleMetrics.length > 0 && (
+                <tr>
+                  {days.flatMap((d) =>
+                    visibleMetrics.map((m) => (
+                      <th
+                        key={d + m.key}
+                        scope="col"
+                        aria-sort={
+                          activeSort.kind === "day" &&
+                          activeSort.day === d &&
+                          activeSort.metric === m.key
+                            ? activeSort.direction === "asc"
+                              ? "ascending"
+                              : "descending"
+                            : undefined
                         }
-                        onClick={() =>
-                          order({
+                      >
+                        <button
+                          type="button"
+                          className="sheet-sort-button"
+                          aria-label={`Ordenar ${m.name} ${d}`}
+                          title={
+                            m.money
+                              ? "Ordena dentro de cada moneda; desconocidos al final"
+                              : `Ordenar ${m.name} de ${d}`
+                          }
+                          onClick={() =>
+                            order({
+                              kind: "day",
+                              day: d,
+                              metric: m.key,
+                              direction: "asc",
+                            })
+                          }
+                        >
+                          {m.label}
+                          {arrow({
                             kind: "day",
                             day: d,
                             metric: m.key,
                             direction: "asc",
-                          })
-                        }
-                      >
-                        {m.label}
-                        {arrow({
-                          kind: "day",
-                          day: d,
-                          metric: m.key,
-                          direction: "asc",
-                        })}
-                      </button>
-                    </th>
-                  )),
-                )}
-              </tr>
+                          })}
+                        </button>
+                      </th>
+                    )),
+                  )}
+                </tr>
+              )}
             </thead>
             <tbody>
               {rows.map((r) => {
@@ -939,7 +854,7 @@ export function MetaEffectiveness({
                     {days.flatMap((d) => {
                       const c = r.days[d],
                         partial = c && c.campaigns < r.campaigns;
-                      return [
+                      const cells = [
                         <td key={d + "V"}>
                           <EffectivenessCell
                             label={`V ${name} ${r.country} ${d}`}
@@ -1018,6 +933,9 @@ export function MetaEffectiveness({
                           />
                         </td>,
                       ];
+                      return cells.filter((_, i) =>
+                        visibleMetricKeys.has(sheetMetrics[i].key),
+                      );
                     })}
                   </tr>
                 );
@@ -1062,16 +980,26 @@ export function MetaEffectiveness({
                     ]}
                     onSelect={setNewCurrency}
                   />
+                  {visibleMetrics.length === 0 && (
+                    <button
+                      disabled={busy || !newName.trim()}
+                      onClick={() => void addRow()}
+                    >
+                      Agregar fila
+                    </button>
+                  )}
                 </td>
-                <td colSpan={days.length * 4}>
-                  <button
-                    disabled={busy || !newName.trim()}
-                    onClick={() => void addRow()}
-                  >
-                    Agregar fila
-                  </button>
-                  {!data && <span role="status"> Cargando datos…</span>}
-                </td>
+                {visibleMetrics.length > 0 && (
+                  <td colSpan={days.length * visibleMetrics.length}>
+                    <button
+                      disabled={busy || !newName.trim()}
+                      onClick={() => void addRow()}
+                    >
+                      Agregar fila
+                    </button>
+                    {!data && <span role="status"> Cargando datos…</span>}
+                  </td>
+                )}
               </tr>
             </tbody>
           </table>
