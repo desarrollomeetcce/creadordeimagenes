@@ -724,6 +724,9 @@ model MetaAliasTable {
   aliases MetaAlias[]
 }
 model MetaAlias {
+ inventorySheetId String @default("default-inventory")
+ inventorySheet MetaEffectivenessSheet @relation(fields:[inventorySheetId],references:[id],onDelete:Restrict)
+ @@index([inventorySheetId])
  advisorAssignments MetaAdvisorAssignment[]
   id String @id @default(cuid())
   name String
@@ -941,6 +944,8 @@ model MetaEffectivenessEvent {
 }
 
 model MetaEffectivenessTotalDay {
+ sheetId String @default("default-totals")
+ sheet MetaEffectivenessSheet @relation(fields:[sheetId],references:[id],onDelete:Restrict)
  tableId String
  table MetaAliasTable @relation(fields:[tableId],references:[id],onDelete:Restrict)
  country String
@@ -948,7 +953,7 @@ model MetaEffectivenessTotalDay {
  day String
  values Json @default("{}")
  revision Int @default(1)
- @@id([tableId,country,currency,day])
+ @@id([sheetId,tableId,country,currency,day])
 }
 
 model MetaEffectivenessSync {
@@ -962,11 +967,14 @@ model MetaEffectivenessSync {
 }
 
 model MetaAdvisor {
+ sheetId String @default("default-advisors")
+ sheet MetaEffectivenessSheet @relation(fields:[sheetId],references:[id],onDelete:Restrict)
+ @@unique([sheetId,name])
  assignments MetaAdvisorAssignment[] @relation("AssignmentIncoming")
  previousAssignments MetaAdvisorAssignment[] @relation("AssignmentOutgoing")
  absences MetaAdvisorAbsence[]
  id String @id @default(cuid())
- name String @unique
+ name String
  revision Int @default(0)
  objects MetaAdObject[]
  rows MetaEffectivenessRow[]
@@ -1027,4 +1035,18 @@ model MetaAdvisorSalesApproval {
  approvedAt DateTime @default(now())
  actorId String
  @@id([rowId,day])
+}
+
+model MetaEffectivenessSheet {
+ advisors MetaAdvisor[]
+ inventory MetaAlias[]
+ totals MetaEffectivenessTotalDay[]
+ id String @id @default(cuid())
+ kind String
+ name String
+ config Json @default("{}")
+ revision Int @default(1)
+ createdAt DateTime @default(now())
+ updatedAt DateTime @updatedAt
+ @@index([kind,createdAt])
 }

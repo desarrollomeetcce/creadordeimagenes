@@ -11,12 +11,20 @@ export async function effectivenessTotals(
   tableId: string,
   since: string,
   until: string,
+  sheetId = "default-totals",
 ) {
   ownerOnly(actor);
+  demand(
+    await db.metaEffectivenessSheet.findFirst({
+      where: { id: sheetId, kind: "TOTALS" },
+    }),
+    "Hoja de totales no disponible.",
+    404,
+  );
   const [sheet, stored] = await Promise.all([
     effectiveness(actor, tableId, since, until),
     db.metaEffectivenessTotalDay.findMany({
-      where: { tableId, day: { gte: since, lte: until } },
+      where: { sheetId, tableId, day: { gte: since, lte: until } },
     }),
   ]);
   const groups = new Map<
@@ -62,6 +70,7 @@ export async function effectivenessTotals(
 export async function saveEffectivenessTotal(
   actor: Actor,
   b: {
+    sheetId?: string;
     tableId: string;
     country: string;
     currency: string;
@@ -86,14 +95,23 @@ export async function saveEffectivenessTotal(
         b.currency,
       "Elige moneda antes de registrar importes.",
     );
+    const sheetId = b.sheetId ?? "default-totals";
+    demand(
+      await tx.metaEffectivenessSheet.findFirst({
+        where: { id: sheetId, kind: "TOTALS" },
+      }),
+      "Hoja de totales no disponible.",
+      404,
+    );
     const key = {
+      sheetId,
       tableId: b.tableId,
       country: b.country,
       currency: b.currency,
       day: b.day,
     };
     const old = await tx.metaEffectivenessTotalDay.findUnique({
-      where: { tableId_country_currency_day: key },
+      where: { sheetId_tableId_country_currency_day: key },
     });
     demand(
       (old?.revision ?? 0) === b.revision,
@@ -106,7 +124,7 @@ export async function saveEffectivenessTotal(
     if (b.value === null) delete values[b.metric];
     else values[b.metric] = b.value;
     await tx.metaEffectivenessTotalDay.upsert({
-      where: { tableId_country_currency_day: key },
+      where: { sheetId_tableId_country_currency_day: key },
       create: { ...key, values: values as Prisma.InputJsonValue },
       update: {
         values: values as Prisma.InputJsonValue,

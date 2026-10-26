@@ -19,26 +19,39 @@ import { accountWhere, type Actor } from "./service";
 import { effectiveness, effectivenessLock } from "./effectiveness";
 
 export async function advisors(actor: Actor) {
-  return db.metaAdvisor.findMany({
+  const people = await db.metaAdvisor.findMany({
     where:
       actor.role === "OWNER"
         ? {}
         : { objects: { some: { account: accountWhere(actor) } } },
-    select: { id: true, name: true, revision: true },
+    select: {
+      id: true,
+      name: true,
+      revision: true,
+      sheetId: true,
+      sheet: { select: { id: true, name: true } },
+    },
     orderBy: { name: "asc" },
     take: 1000,
   });
+  return people.map((p) => ({
+    ...p,
+    label:
+      p.sheetId === "default-advisors" ? p.name : p.name + " · " + p.sheet.name,
+  }));
 }
 export async function saveAdvisor(
   actor: Actor,
-  b: { id?: string; name: string; revision?: number },
+  b: { id?: string; name: string; revision?: number; sheetId?: string },
 ) {
   ownerOnly(actor);
   return db.$transaction(async (tx) => {
     await effectivenessLock(tx, actor);
+    let sheetId = b.sheetId ?? "default-advisors";
     if (b.id) {
       const old = await tx.metaAdvisor.findUnique({ where: { id: b.id } });
       demand(old, "Asesor no disponible.", 404);
+      sheetId = old.sheetId;
       demand(
         old.revision === b.revision,
         "El asesor cambió. Recarga antes de guardar.",
@@ -47,8 +60,16 @@ export async function saveAdvisor(
     } else
       demand((await tx.metaAdvisor.count()) < 1000, "Máximo 1000 asesores.");
     demand(
+      await tx.metaEffectivenessSheet.findFirst({
+        where: { id: sheetId, kind: "ADVISORS" },
+      }),
+      "Lista de asesores no disponible.",
+      404,
+    );
+    demand(
       !(await tx.metaAdvisor.findFirst({
         where: {
+          sheetId,
           name: { equals: b.name, mode: "insensitive" },
           ...(b.id ? { id: { not: b.id } } : {}),
         },
@@ -61,7 +82,7 @@ export async function saveAdvisor(
           where: { id: b.id },
           data: { name: b.name, revision: { increment: 1 } },
         })
-      : await tx.metaAdvisor.create({ data: { name: b.name } });
+      : await tx.metaAdvisor.create({ data: { name: b.name, sheetId } });
     await recordActivity(tx, {
       data: {
         actorId: actor.id,
@@ -387,16 +408,48 @@ export async function advisorSheet(
   tableId: string,
   since: string,
   until: string,
-  filters: { aliasId?: string; country?: string; advisorId?: string } = {},
+  filters: {
+    aliasId?: string;
+    country?: string;
+    advisorId?: string;
+    advisorListId?: string;
+  } = {},
 ) {
   ownerOnly(actor);
   return db.$transaction(
     async (tx) => {
-      const personWhere = filters.advisorId ? { id: filters.advisorId } : {};
+      const sheetId =
+        filters.advisorListId ??
+        (filters.advisorId
+          ? (
+              await tx.metaAdvisor.findUnique({
+                where: { id: filters.advisorId },
+                select: { sheetId: true },
+              })
+            )?.sheetId
+          : "default-advisors");
+      demand(
+        sheetId &&
+          (await tx.metaEffectivenessSheet.findFirst({
+            where: { id: sheetId, kind: "ADVISORS" },
+          })),
+        "Lista de asesores no disponible.",
+        404,
+      );
+      const personWhere = {
+        sheetId,
+        ...(filters.advisorId ? { id: filters.advisorId } : {}),
+      };
       const [people, attendance, absences, tables] = await Promise.all([
         tx.metaAdvisor.findMany({
           where: personWhere,
-          select: { id: true, name: true, revision: true },
+          select: {
+            id: true,
+            name: true,
+            revision: true,
+            sheetId: true,
+            sheet: { select: { id: true, name: true } },
+          },
           orderBy: { name: "asc" },
         }),
         tx.metaAdvisorAttendance.findMany({
@@ -444,6 +497,7 @@ export async function advisorSheet(
         absenceByDay = new Map(
           absences.map((a) => [key(a.advisorId, a.day), a]),
         );
+      const personIds = new Set(people.map((p) => p.id));
       const totals = new Map<
         string,
         Map<
@@ -544,7 +598,8 @@ export async function advisorSheet(
               approval,
             );
             for (const portion of plan.portions) {
-              if (!portion.advisorId) continue;
+              if (!portion.advisorId || !personIds.has(portion.advisorId))
+                continue;
               if (filters.advisorId && portion.advisorId !== filters.advisorId)
                 continue;
               if (!totals.has(portion.advisorId))

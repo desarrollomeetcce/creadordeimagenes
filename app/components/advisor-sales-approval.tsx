@@ -12,7 +12,7 @@ type Review = {
   token: string;
   revision: number;
   status: string;
-  advisors: { id: string; name: string }[];
+  advisors: { id: string; name: string; label?: string }[];
   allocations: { advisorId: string | null; sales: number | null }[];
 };
 export function AdvisorSalesApproval({
@@ -157,7 +157,7 @@ export function AdvisorSalesApproval({
                       { value: "", label: "Sin asesor" },
                       ...data.advisors.map((a) => ({
                         value: a.id,
-                        label: a.name,
+                        label: a.label ?? a.name,
                       })),
                     ]}
                     onSelect={(id) =>

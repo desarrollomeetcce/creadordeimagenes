@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useWorkbookPreference } from "./use-workbook-preference";
 import { engineRequest as api } from "./generation-engine";
 import { MetaDateRange } from "./meta-date-range";
 import { EffectivenessCell } from "./effectiveness-cell";
@@ -22,10 +23,12 @@ const statuses = [
 ];
 export function AdvisorsSheet({
   tables,
+  listId = "default-advisors",
   initialTableId,
   sheetTabs,
   onChanged,
 }: {
+  listId?: string;
   tables: AdvisorTable[];
   initialTableId: string;
   sheetTabs: ReactNode;
@@ -38,11 +41,27 @@ export function AdvisorsSheet({
     day: "2-digit",
   }).format(new Date());
   const [detailVersion, setDetailVersion] = useState(0);
-  const [since, setSince] = useState(today.slice(0, 8) + "01"),
-    [until, setUntil] = useState(today),
-    [tableId, setTableId] = useState(initialTableId),
-    [aliasId, setAliasId] = useState(""),
-    [country, setCountry] = useState(""),
+  const [since, setSince] = useWorkbookPreference<string>(
+      listId,
+      "since",
+      today.slice(0, 8) + "01",
+    ),
+    [until, setUntil] = useWorkbookPreference<string>(listId, "until", today),
+    [tableId, setTableId] = useWorkbookPreference<string>(
+      listId,
+      "tableId",
+      initialTableId,
+    ),
+    [aliasId, setAliasId] = useWorkbookPreference<string>(
+      listId,
+      "aliasId",
+      "",
+    ),
+    [country, setCountry] = useWorkbookPreference<string>(
+      listId,
+      "country",
+      "",
+    ),
     [detail, setDetail] = useState<Person | null>(null),
     [rows, setRows] = useState<Person[]>([]),
     [message, setMessage] = useState(""),
@@ -50,7 +69,7 @@ export function AdvisorsSheet({
     [loading, setLoading] = useState(true),
     [busy, setBusy] = useState(false),
     [name, setName] = useState(""),
-    [query, setQuery] = useState("");
+    [query, setQuery] = useWorkbookPreference<string>(listId, "query", "");
   useEffect(() => {
     if (tableId !== "all" && !tables.some((t) => t.id === tableId)) {
       setTableId(tables[0]?.id ?? "all");
@@ -77,6 +96,7 @@ export function AdvisorsSheet({
       const data = await api(
         "meta-ads/advisors/sheet?" +
           new URLSearchParams({
+            advisorListId: listId,
             tableId,
             since,
             until,
@@ -215,7 +235,10 @@ export function AdvisorsSheet({
           onSubmit={async (e) => {
             e.preventDefault();
             try {
-              await write("meta-ads/advisors", "POST", { name: name.trim() });
+              await write("meta-ads/advisors", "POST", {
+                name: name.trim(),
+                sheetId: listId,
+              });
               setName("");
             } catch (e) {
               setMessage((e as Error).message);

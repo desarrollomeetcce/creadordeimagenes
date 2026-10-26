@@ -31,7 +31,7 @@ export function AdvisorAssignment({
   name: string;
   advisorId: string | null;
   revision: number;
-  advisors: { id: string; name: string }[];
+  advisors: { id: string; name: string; label?: string }[];
   onClose: () => void;
   onSave: (body: unknown) => Promise<void>;
   initial?: boolean;
@@ -80,7 +80,9 @@ export function AdvisorAssignment({
     };
   }, [aliasId, country, day, version, initial, revision]);
   const label = (id: string | null) =>
-    advisors.find((a) => a.id === id)?.name ?? "Sin asesor";
+    advisors.find((a) => a.id === id)?.label ??
+    advisors.find((a) => a.id === id)?.name ??
+    "Sin asesor";
   return (
     <dialog
       ref={dialog}

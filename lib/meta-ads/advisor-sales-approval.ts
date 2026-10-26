@@ -35,7 +35,12 @@ async function review(
       where: { rowId_day: { rowId: stored.id, day } },
     }),
     tx.metaAdvisor.findMany({
-      select: { id: true, name: true },
+      select: {
+        id: true,
+        name: true,
+        sheetId: true,
+        sheet: { select: { name: true } },
+      },
       orderBy: { name: "asc" },
     }),
   ]);
@@ -84,7 +89,13 @@ async function review(
     token,
     revision: plan.revision,
     status: plan.status,
-    advisors,
+    advisors: advisors.map((p) => ({
+      ...p,
+      label:
+        p.sheetId === "default-advisors"
+          ? p.name
+          : p.name + " · " + p.sheet.name,
+    })),
     events: plan.events,
     activeAdvisorId: plan.activeAdvisorId,
     allocations: plan.suggestions

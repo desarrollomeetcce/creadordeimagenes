@@ -421,8 +421,13 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
     [campaign, setCampaign] = useState(""),
     [adset, setAdset] = useState(""),
     [aliases, setAliases] = useState<MetaAliasOption[]>([]),
-    [advisors, setAdvisors] = useState<{ id: string; name: string }[]>([]),
+    [advisors, setAdvisors] = useState<
+      { id: string; name: string; label?: string }[]
+    >([]),
     [aliasTables, setAliasTables] = useState<{ id: string; name: string }[]>(
+      [],
+    ),
+    [inventories, setInventories] = useState<{ id: string; name: string }[]>(
       [],
     ),
     [aliasFilter, setAliasFilter] = useState(""),
@@ -459,9 +464,13 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
       api("meta-ads/aliases"),
       api("meta-ads/alias-table-options"),
       api("meta-ads/advisors"),
+      owner ? api("meta-ads/workbook-sheets") : Promise.resolve([]),
     ])
-      .then(([rows, tables, advisors]) => {
+      .then(([rows, tables, advisors, sheets]) => {
         if (active) {
+          setInventories(
+            sheets.filter((s: { kind: string }) => s.kind === "INVENTORY"),
+          );
           setAliases(rows);
           setAdvisors(advisors);
           setAliasTables(tables);
@@ -489,6 +498,7 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
       advisorId={o.advisorId}
       advisors={advisors}
       aliases={aliases}
+      inventories={inventories}
       tables={aliasTables}
       disabled={busy}
       readOnly={!owner}
@@ -1124,6 +1134,7 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
           name="selección"
           advisors={advisors}
           aliases={aliases}
+          inventories={inventories}
           tables={aliasTables}
           disabled={busy}
           bulkCount={

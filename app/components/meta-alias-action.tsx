@@ -10,6 +10,7 @@ export function MetaAliasAction({
   advisors,
   aliases,
   tables: providedTables,
+  inventories: providedInventories,
   disabled = false,
   readOnly = false,
   bulkCount,
@@ -20,8 +21,9 @@ export function MetaAliasAction({
   country?: string | null;
   aliases: MetaAliasOption[];
   advisorId?: string | null;
-  advisors: { id: string; name: string }[];
+  advisors: { id: string; name: string; label?: string }[];
   tables?: { id: string; name: string }[];
+  inventories?: { id: string; name: string }[];
   disabled?: boolean;
   readOnly?: boolean;
   bulkCount?: number;
@@ -37,12 +39,24 @@ export function MetaAliasAction({
     [draftAlias, setDraftAlias] = useState(""),
     [draftCountry, setDraftCountry] = useState(""),
     [draftAdvisor, setDraftAdvisor] = useState(""),
+    [draftList, setDraftList] = useState(""),
     [draftTable, setDraftTable] = useState("");
   const tables = providedTables ?? [
     ...new Map(
       aliases.map((a) => [
         a.tableId ?? "diplomados",
         { id: a.tableId ?? "diplomados", name: a.table?.name ?? "Diplomados" },
+      ]),
+    ).values(),
+  ];
+  const inventories = providedInventories ?? [
+    ...new Map(
+      aliases.map((a) => [
+        a.inventorySheetId ?? "default-inventory",
+        {
+          id: a.inventorySheetId ?? "default-inventory",
+          name: a.inventorySheet?.name ?? "Inventario",
+        },
       ]),
     ).values(),
   ];
@@ -80,6 +94,12 @@ export function MetaAliasAction({
             : `${label} de ${name}`
         }
         onClick={(e) => {
+          setDraftList(
+            bulk || !value
+              ? ""
+              : (aliases.find((a) => a.id === value)?.inventorySheetId ??
+                  "default-inventory"),
+          );
           setDraftAlias(bulk ? "" : (value ?? ""));
           setDraftTable(
             bulk || !value
@@ -115,6 +135,25 @@ export function MetaAliasAction({
           }}
         >
           <label>
+            Lista de inventario
+            <select
+              aria-label="Lista de inventario"
+              value={draftList}
+              onChange={(e) => {
+                setDraftList(e.target.value);
+                setDraftTable("");
+                setDraftAlias("");
+              }}
+            >
+              <option value="">Todas las listas</option>
+              {inventories.map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
             Tabla
             <select
               aria-label="Tabla de inventario"
@@ -148,7 +187,13 @@ export function MetaAliasAction({
             >
               <option value="">{"Elige un elemento del inventario"}</option>
               {aliases
-                .filter((a) => (a.tableId ?? "diplomados") === draftTable)
+                .filter(
+                  (a) =>
+                    (a.tableId ?? "diplomados") === draftTable &&
+                    (!draftList ||
+                      (a.inventorySheetId ?? "default-inventory") ===
+                        draftList),
+                )
                 .map((a) => (
                   <option value={a.id} key={a.id}>
                     {a.name}
@@ -185,15 +230,15 @@ export function MetaAliasAction({
               <option value="">Selecciona un asesor</option>
               {advisors.map((a) => (
                 <option key={a.id} value={a.id}>
-                  {a.name}
+                  {a.label ?? a.name}
                 </option>
               ))}
             </select>
           </label>
           <small>
-            Inventario, país y asesor deben coincidir exactamente con Efectividad.
-            Crea los asesores en la hoja «Asesores». No cambia la segmentación
-            en Meta.
+            Inventario, país y asesor deben coincidir exactamente con
+            Efectividad. Crea los asesores en la hoja «Asesores». No cambia la
+            segmentación en Meta.
           </small>
           {!aliases.length && (
             <p className="hint">Crea los nombres en «Efectividad».</p>

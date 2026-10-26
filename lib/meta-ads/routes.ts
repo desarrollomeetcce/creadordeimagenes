@@ -1,3 +1,4 @@
+import { workbookKindSchema } from "./workbook-sheets";
 import { salesAllocationsSchema } from "./advisor-sales-plan";
 import { assignmentTimingSchema } from "./advisor-attribution";
 import { advisorAbsenceSchema } from "./advisor-absence";
@@ -78,6 +79,96 @@ export async function metaRoutes(
       await (
         await import("./manage")
       ).setMetaStatus(actor, parts[2], b.status, b.expectedStatus),
+    );
+  }
+  if (path === "inventory/rename" && method === "POST") {
+    ownerOnly(actor);
+    const b = z
+      .object({
+        listId: z.string().min(1).max(100),
+        name: z.string().trim().min(1).max(150),
+        expectedName: z.string().min(1).max(150),
+        ids: z.array(z.string().min(1).max(100)).min(1).max(100),
+      })
+      .strict()
+      .parse(await body());
+    return send(
+      await (
+        await import("./inventory-catalog")
+      ).renameInventoryGroup(actor, b),
+    );
+  }
+  if (
+    parts[1] === "aliases" &&
+    parts[2] &&
+    parts[3] === "delete-preview" &&
+    parts.length === 4 &&
+    method === "GET"
+  )
+    return send(
+      await (
+        await import("./inventory-catalog")
+      ).previewRemoveInventory(actor, parts[2]),
+    );
+  if (
+    parts[1] === "aliases" &&
+    parts[2] &&
+    parts.length === 3 &&
+    method === "DELETE"
+  ) {
+    ownerOnly(actor);
+    const b = z
+      .object({ token: z.string().regex(/^[a-f0-9]{64}$/) })
+      .strict()
+      .parse(await body());
+    return send(
+      await (
+        await import("./inventory-catalog")
+      ).removeInventory(actor, parts[2], b.token),
+    );
+  }
+  if (path === "workbook-sheets" && method === "GET")
+    return send(
+      await (await import("./workbook-sheets")).workbookSheets(actor),
+    );
+  if (path === "workbook-sheets" && method === "POST") {
+    ownerOnly(actor);
+    const b = z
+      .object({
+        kind: workbookKindSchema,
+        name: z.string().trim().min(1).max(100).optional(),
+        config: z.record(z.string(), z.unknown()).optional(),
+      })
+      .strict()
+      .parse(await body());
+    return send(
+      await (await import("./workbook-sheets")).createWorkbookSheet(actor, b),
+      201,
+    );
+  }
+  if (
+    parts[1] === "workbook-sheets" &&
+    parts[2] &&
+    parts.length === 3 &&
+    method === "PATCH"
+  ) {
+    ownerOnly(actor);
+    const b = z
+      .object({
+        revision: z.number().int().positive(),
+        name: z.string().trim().min(1).max(100).optional(),
+        config: z.record(z.string(), z.unknown()).optional(),
+      })
+      .strict()
+      .refine(
+        (v) => v.name !== undefined || v.config !== undefined,
+        "Indica el cambio de la pestaña.",
+      )
+      .parse(await body());
+    return send(
+      await (
+        await import("./workbook-sheets")
+      ).updateWorkbookSheet(actor, parts[2], b),
     );
   }
   if (path === "effectiveness/colors" && method === "GET") {
@@ -170,7 +261,10 @@ export async function metaRoutes(
     const b =
       method === "POST"
         ? z
-            .object({ name: z.string().trim().min(1).max(100) })
+            .object({
+              name: z.string().trim().min(1).max(100),
+              sheetId: z.string().min(1).max(100).optional(),
+            })
             .strict()
             .parse(data)
         : z
@@ -277,6 +371,7 @@ export async function metaRoutes(
     ownerOnly(actor);
     const q = z
       .object({
+        advisorListId: z.string().min(1).max(100).optional(),
         tableId: z.string().min(1).max(100),
         aliasId: z.string().min(1).max(100).optional(),
         country: z
@@ -302,6 +397,7 @@ export async function metaRoutes(
         aliasId: q.aliasId,
         country: q.country,
         advisorId: q.advisorId,
+        advisorListId: q.advisorListId,
       }),
     );
   }
@@ -360,6 +456,7 @@ export async function metaRoutes(
     ownerOnly(actor);
     const q = z
       .object({
+        sheetId: z.string().min(1).max(100).optional(),
         tableId: z.string().min(1).max(100),
         since: z.string().date(),
         until: z.string().date(),
@@ -374,13 +471,14 @@ export async function metaRoutes(
     return send(
       await (
         await import("./effectiveness-totals")
-      ).effectivenessTotals(actor, q.tableId, q.since, q.until),
+      ).effectivenessTotals(actor, q.tableId, q.since, q.until, q.sheetId),
     );
   }
   if (path === "effectiveness/totals" && method === "PATCH") {
     ownerOnly(actor);
     const b = z
       .object({
+        sheetId: z.string().min(1).max(100).optional(),
         tableId: z.string().min(1).max(100),
         country: z.string().refine((v) => v === "" || isCountryCode(v)),
         currency: z.string().refine(isCurrency),
@@ -749,6 +847,7 @@ export async function metaRoutes(
     const b = z
       .object({
         name: z.string().trim().min(1).max(150),
+        inventorySheetId: z.string().min(1).max(100).optional(),
         tableId: z.string().min(1).max(100).optional(),
       })
       .strict()
@@ -756,7 +855,7 @@ export async function metaRoutes(
     return send(
       await (
         await import("./aliases")
-      ).saveAlias(actor, b.name, undefined, b.tableId),
+      ).saveAlias(actor, b.name, undefined, b.tableId, b.inventorySheetId),
       201,
     );
   }

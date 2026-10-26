@@ -13,6 +13,8 @@ export async function aliases(actor: Actor) {
     select: {
       id: true,
       name: true,
+      inventorySheetId: true,
+      inventorySheet: { select: { id: true, name: true } },
       tableId: true,
       table: { select: { id: true, name: true } },
     },
@@ -25,6 +27,7 @@ export async function saveAlias(
   name: string,
   id?: string,
   tableId = "diplomados",
+  inventorySheetId = "default-inventory",
 ) {
   ownerOnly(actor);
   return db.$transaction(async (tx) => {
@@ -36,6 +39,14 @@ export async function saveAlias(
       "Sin permiso para editar inventario.",
       403,
     );
+    if (!id)
+      demand(
+        await tx.metaEffectivenessSheet.findFirst({
+          where: { id: inventorySheetId, kind: "INVENTORY" },
+        }),
+        "Lista de inventario no disponible.",
+        404,
+      );
     if (!id)
       demand(
         await tx.metaAliasTable.findUnique({ where: { id: tableId } }),
@@ -65,7 +76,9 @@ export async function saveAlias(
     );
     const row = id
       ? await tx.metaAlias.update({ where: { id }, data: { name } })
-      : await tx.metaAlias.create({ data: { name, tableId } });
+      : await tx.metaAlias.create({
+          data: { name, tableId, inventorySheetId },
+        });
     await recordActivity(tx, {
       data: {
         actorId: actor.id,
@@ -97,7 +110,10 @@ export async function assignAliases(
     country === undefined || country === null || isCountryCode(country),
     "País no válido.",
   );
-  demand(aliasId !== null || !country, "El país debe acompañar a un elemento del inventario.");
+  demand(
+    aliasId !== null || !country,
+    "El país debe acompañar a un elemento del inventario.",
+  );
   const ids = [...new Set(objectIds)];
   demand(
     ids.length > 0 &&
@@ -178,7 +194,10 @@ export async function aliasTables(actor: Actor) {
       aliasColumnName: true,
       defaultCountry: true,
       defaultCurrency: true,
-      aliases: { select: { id: true, name: true }, orderBy: { name: "asc" } },
+      aliases: {
+        select: { id: true, name: true, inventorySheetId: true },
+        orderBy: { name: "asc" },
+      },
     },
     orderBy: { name: "asc" },
     take: 100,

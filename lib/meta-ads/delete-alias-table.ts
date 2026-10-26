@@ -29,7 +29,7 @@ async function deletionReview(tx: Prisma.TransactionClient, tableId: string) {
  UNION ALL SELECT 'salesApprovals',x."rowId"||'/'||x.day,to_jsonb(x)::text FROM "MetaAdvisorSalesApproval" x JOIN r ON r.id=x."rowId"
  UNION ALL SELECT 'events',e.id,jsonb_build_array(e.active,e."createdAt")::text FROM "MetaEffectivenessEvent" e JOIN s ON s.id=e."stateId"
  UNION ALL SELECT 'assignments',o.id,jsonb_build_array(o."aliasId",o."aliasCountry",o."advisorId")::text FROM "MetaAdObject" o JOIN a ON a.id=o."aliasId"
- UNION ALL SELECT 'totals',jsonb_build_array(t.country,t.currency,t.day)::text,t.revision::text FROM "MetaEffectivenessTotalDay" t WHERE t."tableId"=${tableId}
+ UNION ALL SELECT 'totals',jsonb_build_array(t."sheetId",t.country,t.currency,t.day)::text,t.revision::text FROM "MetaEffectivenessTotalDay" t WHERE t."tableId"=${tableId}
  UNION ALL SELECT 'colors',c."tableId",jsonb_build_array(c.revision,c.rules)::text FROM "MetaEffectivenessColors" c WHERE c."tableId"=${tableId}
  UNION ALL SELECT 'links',l."tableId",jsonb_build_array(l."sourceTableId",l.revision,l.columns)::text FROM "MetaEffectivenessSync" l WHERE l."tableId"=${tableId} OR l."sourceTableId"=${tableId}
  ) SELECT kind,COUNT(*)::int AS count,md5(COALESCE(string_agg(md5(k||'|'||v),'' ORDER BY k),'')) AS hash FROM items GROUP BY kind ORDER BY kind`;

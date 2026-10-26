@@ -24,6 +24,127 @@ export function ProductsCatalog() {
     [loading, setLoading] = useState(true),
     [adding, setAdding] = useState(false),
     [busy, setBusy] = useState(false);
+  type Special = {
+    id: string;
+    kind: "TOTALS" | "ADVISORS" | "INVENTORY";
+    name: string;
+    revision: number;
+  };
+  const [specials, setSpecials] = useState<Special[]>([]),
+    [specialId, setSpecialId] = useState<string | null>(null);
+  const special = specials.find((s) => s.id === specialId);
+  const totals = special?.kind === "TOTALS",
+    advisorSheet = special?.kind === "ADVISORS",
+    inventorySheet = special?.kind === "INVENTORY";
+  const [editing, setEditing] = useState<{
+      id: string;
+      name: string;
+      special: boolean;
+      revision?: number;
+    } | null>(null),
+    [editBusy, setEditBusy] = useState(false);
+  const editPending = useRef(false),
+    editCancelled = useRef(false);
+  const saveTab = async () => {
+    if (!editing || editPending.current || editCancelled.current) return;
+    const draft = { ...editing, name: editing.name.trim() };
+    const currentName = editing.special
+      ? specials.find((t) => t.id === editing.id)?.name
+      : tables.find((t) => t.id === editing.id)?.name;
+    if (draft.name === currentName) {
+      setEditing(null);
+      return;
+    }
+    if (!draft.name || draft.name.length > 100) {
+      setMessage("El nombre admite de 1 a 100 caracteres.");
+      return;
+    }
+    editPending.current = true;
+    setEditBusy(true);
+    try {
+      if (draft.special) {
+        const updated = await api(
+          "meta-ads/workbook-sheets/" + draft.id,
+          "PATCH",
+          { name: draft.name, revision: draft.revision },
+        );
+        setSpecials((old) => old.map((t) => (t.id === draft.id ? updated : t)));
+      } else {
+        await api("meta-ads/alias-tables/" + draft.id, "PATCH", {
+          name: draft.name,
+        });
+        await load();
+      }
+      setEditing((old) => (old?.id === draft.id ? null : old));
+      setMessage("");
+    } catch (e) {
+      setMessage((e as Error).message);
+    } finally {
+      editPending.current = false;
+      setEditBusy(false);
+    }
+  };
+  const editTab = (
+    id: string,
+    name: string,
+    isSpecial = false,
+    revision?: number,
+  ) => {
+    editCancelled.current = false;
+    setEditing({ id, name, special: isSpecial, revision });
+  };
+  const tabEditor = (id: string) =>
+    editing?.id === id ? (
+      <input
+        autoFocus
+        aria-label="Nombre de pestaña"
+        maxLength={100}
+        value={editing.name}
+        disabled={editBusy}
+        onFocus={(e) => e.target.select()}
+        onChange={(e) =>
+          setEditing((old) => (old ? { ...old, name: e.target.value } : old))
+        }
+        onClick={(e) => e.stopPropagation()}
+        onBlur={() => void saveTab()}
+        onKeyDown={(e) => {
+          if (e.key === "Escape") {
+            editCancelled.current = true;
+            setEditing(null);
+          } else if (e.key === "Enter") {
+            e.preventDefault();
+            void saveTab();
+          } else if (e.key === "Tab") void saveTab();
+        }}
+      />
+    ) : null;
+  const addSpecial = async (kind: Special["kind"]) => {
+    setBusy(true);
+    setMessage("");
+    try {
+      const created = await api("meta-ads/workbook-sheets", "POST", { kind });
+      setSpecials((old) => [...old, created]);
+      setSpecialId(created.id);
+      editTab(created.id, created.name, true, created.revision);
+    } catch (e) {
+      setMessage((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+  useEffect(() => {
+    let active = true;
+    void api("meta-ads/workbook-sheets")
+      .then((v) => {
+        if (active) setSpecials(v);
+      })
+      .catch((e) => {
+        if (active) setMessage(e.message);
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
   const load = async () => {
     const v: CatalogTable[] = await api("meta-ads/alias-tables");
     setTables(v);
@@ -73,7 +194,7 @@ export function ProductsCatalog() {
       setTables(v);
       if (selected === id || !v.some((t) => t.id === selected))
         setSelected(v[0]?.id ?? "");
-      if (!v.length) setTotals(false);
+
       setMessage("Tabla eliminada.");
     } catch {
       setMessage(
@@ -85,10 +206,9 @@ export function ProductsCatalog() {
     }
   };
   const [view, setView] = useState<"manual" | "automatic">("manual");
-  const [totals, setTotals] = useState(false);
-  const [inventorySheet, setInventorySheet] = useState(false);
-  const [advisorSheet, setAdvisorSheet] = useState(false),
-    [advisors, setAdvisors] = useState<{ id: string; name: string }[]>([]);
+  const [advisors, setAdvisors] = useState<
+    { id: string; name: string; label?: string }[]
+  >([]);
   const loadAdvisors = async () => setAdvisors(await api("meta-ads/advisors"));
   useEffect(() => {
     let active = true;
@@ -131,90 +251,101 @@ export function ProductsCatalog() {
         aria-label="Tablas de efectividad"
       >
         {orderedTables.map((t) => (
-          <button
-            key={t.id}
-            role="tab"
-            aria-selected={
-              !totals && !advisorSheet && !inventorySheet && selected === t.id
-            }
-            className="sheet-tab-alias"
-            draggable
-            data-sheet-id={t.id}
-            onContextMenu={(e) => {
-              e.preventDefault();
-              openMenu(t, e.clientX, e.clientY);
-            }}
-            data-dragging={dragging === t.id || undefined}
-            data-drop-edge={
-              drop?.id === t.id ? (drop.after ? "after" : "before") : undefined
-            }
-            title="Arrastra para ordenar; Alt + flecha izquierda/derecha también mueve la hoja"
-            onDragStart={(e) => {
-              dragged.current = t.id;
-              setDragging(t.id);
-              e.dataTransfer.effectAllowed = "move";
-              e.dataTransfer.setData("text/plain", t.id);
-            }}
-            onDragOver={(e) => {
-              if (!dragged.current) return;
-              e.preventDefault();
-              e.dataTransfer.dropEffect = "move";
-              const rect = e.currentTarget.getBoundingClientRect(),
-                after = e.clientX > rect.left + rect.width / 2;
-              setDrop((old) =>
-                old?.id === t.id && old.after === after
-                  ? old
-                  : { id: t.id, after },
-              );
-            }}
-            onDrop={(e) => {
-              e.preventDefault();
-              const rect = e.currentTarget.getBoundingClientRect();
-              if (dragged.current)
-                reorder(
-                  dragged.current,
-                  t.id,
-                  e.clientX > rect.left + rect.width / 2,
-                );
-              dragged.current = null;
-              setDragging(null);
-              setDrop(null);
-            }}
-            onDragEnd={() => {
-              dragged.current = null;
-              setDragging(null);
-              setDrop(null);
-            }}
-            onKeyDown={(e) => {
-              if (e.key === "ContextMenu" || (e.shiftKey && e.key === "F10")) {
+          <span key={t.id} className="sheet-tab-wrap">
+            <button
+              role="tab"
+              aria-selected={
+                !totals && !advisorSheet && !inventorySheet && selected === t.id
+              }
+              className={
+                "sheet-tab-alias" + (editing?.id === t.id ? " sr-only" : "")
+              }
+              draggable
+              data-sheet-id={t.id}
+              onContextMenu={(e) => {
                 e.preventDefault();
-                const r = e.currentTarget.getBoundingClientRect();
-                openMenu(t, r.left, r.bottom);
-                return;
+                openMenu(t, e.clientX, e.clientY);
+              }}
+              data-dragging={dragging === t.id || undefined}
+              data-drop-edge={
+                drop?.id === t.id
+                  ? drop.after
+                    ? "after"
+                    : "before"
+                  : undefined
               }
-              if (!e.altKey || !["ArrowLeft", "ArrowRight"].includes(e.key))
-                return;
-              e.preventDefault();
-              const index = sheetOrder.indexOf(t.id),
-                target = sheetOrder[index + (e.key === "ArrowRight" ? 1 : -1)];
-              if (target) {
-                const button = e.currentTarget;
-                reorder(t.id, target, e.key === "ArrowRight");
-                requestAnimationFrame(() =>
-                  button.focus({ preventScroll: true }),
+              title="Arrastra para ordenar; Alt + flecha izquierda/derecha también mueve la hoja"
+              onDragStart={(e) => {
+                dragged.current = t.id;
+                setDragging(t.id);
+                e.dataTransfer.effectAllowed = "move";
+                e.dataTransfer.setData("text/plain", t.id);
+              }}
+              onDragOver={(e) => {
+                if (!dragged.current) return;
+                e.preventDefault();
+                e.dataTransfer.dropEffect = "move";
+                const rect = e.currentTarget.getBoundingClientRect(),
+                  after = e.clientX > rect.left + rect.width / 2;
+                setDrop((old) =>
+                  old?.id === t.id && old.after === after
+                    ? old
+                    : { id: t.id, after },
                 );
-              }
-            }}
-            onClick={() => {
-              setSelected(t.id);
-              setTotals(false);
-              setAdvisorSheet(false);
-              setInventorySheet(false);
-              setMessage("");
-            }}
-          >
-            {t.name} ({t.aliases.length})
-          </button>
+              }}
+              onDrop={(e) => {
+                e.preventDefault();
+                const rect = e.currentTarget.getBoundingClientRect();
+                if (dragged.current)
+                  reorder(
+                    dragged.current,
+                    t.id,
+                    e.clientX > rect.left + rect.width / 2,
+                  );
+                dragged.current = null;
+                setDragging(null);
+                setDrop(null);
+              }}
+              onDragEnd={() => {
+                dragged.current = null;
+                setDragging(null);
+                setDrop(null);
+              }}
+              onKeyDown={(e) => {
+                if (
+                  e.key === "ContextMenu" ||
+                  (e.shiftKey && e.key === "F10")
+                ) {
+                  e.preventDefault();
+                  const r = e.currentTarget.getBoundingClientRect();
+                  openMenu(t, r.left, r.bottom);
+                  return;
+                }
+                if (!e.altKey || !["ArrowLeft", "ArrowRight"].includes(e.key))
+                  return;
+                e.preventDefault();
+                const index = sheetOrder.indexOf(t.id),
+                  target =
+                    sheetOrder[index + (e.key === "ArrowRight" ? 1 : -1)];
+                if (target) {
+                  const button = e.currentTarget;
+                  reorder(t.id, target, e.key === "ArrowRight");
+                  requestAnimationFrame(() =>
+                    button.focus({ preventScroll: true }),
+                  );
+                }
+              }}
+              onClick={() => {
+                setSelected(t.id);
+                setSpecialId(null);
+                editTab(t.id, t.name);
+                setMessage("");
+              }}
+            >
+              {t.name} ({t.aliases.length})
+            </button>
+            {tabEditor(t.id)}
+          </span>
         ))}
         <button
           className="sheet-add-tab"
@@ -223,46 +354,49 @@ export function ProductsCatalog() {
         >
           + Tabla
         </button>
-        <button
-          role="tab"
-          aria-selected={totals && !advisorSheet && !inventorySheet}
-          className="sheet-tab-totals"
-          disabled={!tables.length}
-          onClick={() => {
-            setTotals(true);
-            setAdvisorSheet(false);
-            setInventorySheet(false);
-            setMessage("");
-          }}
-        >
-          Totales
-        </button>
-        <button
-          role="tab"
-          className="sheet-tab-advisors"
-          aria-selected={advisorSheet && !inventorySheet}
-          onClick={() => {
-            setAdvisorSheet(true);
-            setInventorySheet(false);
-            setTotals(false);
-            setMessage("");
-          }}
-        >
-          Asesores
-        </button>
-        <button
-          role="tab"
-          className="sheet-tab-inventory"
-          aria-selected={inventorySheet}
-          onClick={() => {
-            setInventorySheet(true);
-            setTotals(false);
-            setAdvisorSheet(false);
-            setMessage("");
-          }}
-        >
-          Inventario
-        </button>
+        {(["TOTALS", "ADVISORS", "INVENTORY"] as const).map((kind) => (
+          <span className="sheet-tab-group" key={kind}>
+            {specials
+              .filter((s) => s.kind === kind)
+              .map((t) => (
+                <span key={t.id} className="sheet-tab-wrap">
+                  <button
+                    role="tab"
+                    className={
+                      "sheet-tab-" +
+                      (kind === "TOTALS"
+                        ? "totals"
+                        : kind === "ADVISORS"
+                          ? "advisors"
+                          : "inventory") +
+                      (editing?.id === t.id ? " sr-only" : "")
+                    }
+                    aria-selected={specialId === t.id}
+                    onClick={() => {
+                      setSpecialId(t.id);
+                      setMessage("");
+                      editTab(t.id, t.name, true, t.revision);
+                    }}
+                  >
+                    {t.name}
+                  </button>
+                  {tabEditor(t.id)}
+                </span>
+              ))}
+            <button
+              className="sheet-add-tab"
+              disabled={busy || !specials.length}
+              onClick={() => void addSpecial(kind)}
+            >
+              +{" "}
+              {kind === "TOTALS"
+                ? "Totales"
+                : kind === "ADVISORS"
+                  ? "Asesores"
+                  : "Inventario"}
+            </button>
+          </span>
+        ))}
       </div>
     </nav>
   );
@@ -331,9 +465,7 @@ export function ProductsCatalog() {
               appendSheet(t.id);
               await load();
               setSelected(t.id);
-              setTotals(false);
-              setAdvisorSheet(false);
-              setInventorySheet(false);
+              setSpecialId(null);
               setAdding(false);
             } catch (error) {
               setMessage(
@@ -370,7 +502,7 @@ export function ProductsCatalog() {
       <span className="sr-only" role="status">
         {orderMessage}
       </span>
-      {!loading && !tables.length && !advisorSheet && !inventorySheet && (
+      {!loading && !tables.length && !special && (
         <div className="sheet-empty-workbook">
           {sheetTabs}
           <p>
@@ -381,6 +513,8 @@ export function ProductsCatalog() {
       )}
       {inventorySheet && (
         <InventoryCatalog
+          key={special!.id}
+          listId={special!.id}
           tables={orderedTables}
           initialTableId={table?.id ?? ""}
           sheetTabs={sheetTabs}
@@ -389,16 +523,20 @@ export function ProductsCatalog() {
       )}
       {advisorSheet && !inventorySheet && (
         <AdvisorsSheet
+          key={special!.id}
+          listId={special!.id}
           tables={orderedTables}
           initialTableId={table?.id ?? "all"}
           sheetTabs={sheetTabs}
           onChanged={loadAdvisors}
         />
       )}
-      {totals && !advisorSheet && !inventorySheet && table && (
+      {totals && !advisorSheet && !inventorySheet && (
         <EffectivenessTotals
+          key={special!.id}
+          listId={special!.id}
           tables={orderedTables}
-          initialTableId={table.id}
+          initialTableId={table?.id ?? ""}
           sheetTabs={sheetTabs}
         />
       )}

@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useWorkbookPreference } from "./use-workbook-preference";
 import { engineRequest as api } from "./generation-engine";
 import { MetaDateRange } from "./meta-date-range";
 import { SheetMultiFilter } from "./sheet-multi-filter";
@@ -37,9 +38,11 @@ const autoColumns = [
 const names = new Intl.DisplayNames(["es"], { type: "currency" });
 export function EffectivenessTotals({
   tables,
+  listId = "default-totals",
   initialTableId,
   sheetTabs,
 }: {
+  listId?: string;
   sheetTabs: ReactNode;
   tables: { id: string; name: string }[];
   initialTableId: string;
@@ -50,14 +53,32 @@ export function EffectivenessTotals({
     month: "2-digit",
     day: "2-digit",
   }).format(new Date());
-  const [since, setSince] = useState(
+  const [since, setSince] = useWorkbookPreference<string>(
+      listId,
+      "since",
       today.slice(0, 8) + (Number(today.slice(8)) >= 20 ? "20" : "01"),
     ),
-    [until, setUntil] = useState(today);
-  const [mode, setMode] = useState<"manual" | "automatic">("manual"),
-    [selected, setSelected] = useState<string[] | null>([initialTableId]);
-  const [country, setCountry] = useState(""),
-    [currency, setCurrency] = useState(""),
+    [until, setUntil] = useWorkbookPreference<string>(listId, "until", today);
+  const [mode, setMode] = useWorkbookPreference<"manual" | "automatic">(
+      listId,
+      "mode",
+      "manual",
+    ),
+    [selected, setSelected] = useWorkbookPreference<string[] | null>(
+      listId,
+      "selected",
+      listId === "default-totals" && initialTableId ? [initialTableId] : [],
+    );
+  const [country, setCountry] = useWorkbookPreference<string>(
+      listId,
+      "country",
+      "",
+    ),
+    [currency, setCurrency] = useWorkbookPreference<string>(
+      listId,
+      "currency",
+      "",
+    ),
     [data, setData] = useState<TotalSheet[]>([]),
     [message, setMessage] = useState(""),
     [loading, setLoading] = useState(false),
@@ -84,14 +105,17 @@ export function EffectivenessTotals({
         for (let i = 0; i < list.length; i += 4)
           next.push(
             ...(await Promise.all(
-              list
-                .slice(i, i + 4)
-                .map((tableId) =>
-                  api(
-                    "meta-ads/effectiveness/totals?" +
-                      new URLSearchParams({ tableId, since, until }),
-                  ),
+              list.slice(i, i + 4).map((tableId) =>
+                api(
+                  "meta-ads/effectiveness/totals?" +
+                    new URLSearchParams({
+                      sheetId: listId,
+                      tableId,
+                      since,
+                      until,
+                    }),
                 ),
+              ),
             )),
           );
         if (active && version === seq.current) {
@@ -181,6 +205,7 @@ export function EffectivenessTotals({
       .catch(() => {})
       .then(async () => {
         const result = await api("meta-ads/effectiveness/totals", "PATCH", {
+          sheetId: listId,
           tableId: t.tableId,
           ...g,
           day,

@@ -122,7 +122,7 @@ export function MetaEffectiveness({
   advisors,
 }: {
   sheetTabs: ReactNode;
-  advisors: { id: string; name: string }[];
+  advisors: { id: string; name: string; label?: string }[];
   tables: { id: string; name: string }[];
   view: "manual" | "automatic";
   tableId: string;
@@ -1498,7 +1498,7 @@ export function MetaEffectiveness({
                             { value: "", label: "Sin asesor" },
                             ...advisors.map((a) => ({
                               value: a.id,
-                              label: a.name,
+                              label: a.label ?? a.name,
                             })),
                           ]}
                           onError={setMessage}
@@ -1716,7 +1716,10 @@ export function MetaEffectiveness({
                     value={newAdvisor}
                     options={[
                       { value: "", label: "Sin asesor" },
-                      ...advisors.map((a) => ({ value: a.id, label: a.name })),
+                      ...advisors.map((a) => ({
+                        value: a.id,
+                        label: a.label ?? a.name,
+                      })),
                     ]}
                     onSelect={(id) => {
                       if (!id) {

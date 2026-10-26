@@ -1,7 +1,14 @@
 "use client";
 import { useState } from "react";
 import { engineRequest as api } from "./generation-engine";
-export type MetaAliasOption = { id: string; name: string; tableId?:string; table?:{id:string;name:string} };
+export type MetaAliasOption = {
+  id: string;
+  name: string;
+  inventorySheetId?: string;
+  inventorySheet?: { id: string; name: string };
+  tableId?: string;
+  table?: { id: string; name: string };
+};
 export function MetaAliasDirectory({
   aliases,
   onSaved,
@@ -38,8 +45,8 @@ export function MetaAliasDirectory({
     <section className="panel stack meta-alias-directory">
       <h2>Inventario de diplomados</h2>
       <p>
-        Organiza tus campañas, conjuntos y anuncios con nombres comunes. Los elementos
-        del inventario son internos y no cambian los nombres en Meta.
+        Organiza tus campañas, conjuntos y anuncios con nombres comunes. Los
+        elementos del inventario son internos y no cambian los nombres en Meta.
       </p>
       <form
         className="row"
