@@ -1,3 +1,4 @@
+import { limaDay } from "./advisor-attribution";
 import { createHash } from "node:crypto";
 import { sheetMetrics, type SheetMetric } from "./period-summary";
 import { db } from "../db";
@@ -536,8 +537,20 @@ export async function changeEffectivenessIdentity(
       "La fila cambió. Recarga antes de editar.",
       409,
     );
-    if (b.country !== b.fromCountry)
+    if (b.country !== b.fromCountry) {
+      demand(
+        !(await tx.metaAdvisorAssignment.count({
+          where: { aliasId: b.aliasId, country: b.country },
+        })),
+        "El país de destino ya tiene historial de asesores. No se pueden mezclar ambos historiales.",
+        409,
+      );
       await emptyHiddenDestination(tx, b.aliasId, b.country);
+      await tx.metaAdvisorAssignment.updateMany({
+        where: { aliasId: b.aliasId, country: b.fromCountry },
+        data: { country: b.country },
+      });
+    }
     const row = old
       ? await tx.metaEffectivenessRow.update({
           where: { id: old.id },
@@ -586,6 +599,7 @@ export async function importEffectiveness(
   tableId: string,
   entries: { name: string; country: string; currency: string }[],
   advisorId?: string,
+  advisorTiming?: { day: string; mode: "DAY" | "CLOCK"; time?: string },
 ) {
   ownerOnly(actor);
   return db.$transaction(
@@ -596,6 +610,25 @@ export async function importEffectiveness(
         "Tabla no disponible.",
         404,
       );
+      let advisorStart = new Date(limaDay() + "T00:00:00-05:00");
+      if (advisorTiming) {
+        demand(!!advisorId, "Elige el asesor para definir el inicio.");
+        demand(
+          advisorTiming.mode !== "CLOCK" || !!advisorTiming.time,
+          "Indica la hora de inicio.",
+        );
+        advisorStart = new Date(
+          advisorTiming.day +
+            "T" +
+            (advisorTiming.mode === "CLOCK" ? advisorTiming.time : "00:00") +
+            ":00-05:00",
+        );
+        demand(
+          Number.isFinite(advisorStart.getTime()) &&
+            advisorStart.getTime() <= Date.now(),
+          "El inicio del asesor no puede estar en el futuro.",
+        );
+      }
       if (advisorId) {
         demand(
           await tx.metaAdvisor.findUnique({ where: { id: advisorId } }),
@@ -665,6 +698,7 @@ export async function importEffectiveness(
         });
       }
       const imported = [...unique.values()];
+      let existingAdvisorRows: { aliasId: string; country: string }[] = [];
       if (advisorId) {
         const existing = await tx.metaEffectivenessRow.findMany({
           where: {
@@ -676,6 +710,7 @@ export async function importEffectiveness(
             })),
           },
         });
+        existingAdvisorRows = existing;
         demand(
           existing.every((r) => r.advisorId === advisorId),
           "Una fila ya existe con otro asesor o sin asignar. Cámbialo desde su columna Asesor.",
@@ -689,6 +724,24 @@ export async function importEffectiveness(
         })),
         skipDuplicates: true,
       });
+      if (advisorId)
+        for (const r of imported)
+          if (
+            !existingAdvisorRows.some(
+              (e) => e.aliasId === r.aliasId && e.country === r.country,
+            )
+          )
+            await tx.metaAdvisorAssignment.create({
+              data: {
+                aliasId: r.aliasId,
+                country: r.country,
+                advisorId,
+                previousAdvisorId: null,
+                mode: advisorTiming?.mode ?? "DAY",
+                effectiveAt: advisorStart,
+                cutoffSales: advisorTiming?.mode === "CLOCK" ? 0 : null,
+              },
+            });
       const units = new Set(imported.map((r) => r.displayCurrency));
       for (const unit of units)
         await tx.metaEffectivenessRow.updateMany({

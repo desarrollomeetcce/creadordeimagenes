@@ -12,6 +12,7 @@ const labels: Record<string, string> = {
   days: "Días con datos manuales",
   events: "Cambios de activación",
   assignments: "Asignaciones internas en Meta",
+  advisorHistory: "Cambios de asesor",
   totals: "Días de totales manuales",
   colorRules: "Reglas de colores",
   links: "Configuraciones de sincronización",

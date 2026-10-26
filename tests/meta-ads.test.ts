@@ -297,3 +297,39 @@ test('Alias: barras de estado por fecha Lima respetan eventos, base previa y fut
  v=aliasStateTimeline('2026-10-20','2026-10-21',null,changes,'2026-10-21T17:00:00.000Z');assert.equal(v.days[0].knownHours,12);assert.equal(v.days[0].activeHours,0);assert.equal(v.days[1].activeHours,6);assert.equal(v.days[1].knownHours,12);
  v=aliasStateTimeline('2026-10-22','2026-10-23',prior,[],'2026-10-21T17:00:00.000Z');assert(v.days.every(d=>d.knownHours===0));assert.equal(v.events.length,0);
 });
+
+test('Asesores: tramos diarios conservan ventas al cambiar A→B→A, sin mezclar días previos',async()=>{
+ const {attributeDailySales}=await import('../lib/meta-ads/advisor-attribution');
+ const change=(id:string,day:string,previousAdvisorId:string|null,advisorId:string|null)=>({id,advisorId,previousAdvisorId,effectiveAt:new Date(day+'T00:00:00-05:00'),createdAt:new Date(day+'T10:00:00-05:00'),mode:'DAY',cutoffSales:null});
+ const history=[change('1','2026-08-07',null,'A'),change('2','2026-08-11','A','B'),change('3','2026-08-15','B','A')];
+ assert.deepEqual(attributeDailySales('A',history,'2026-08-06',3,false),[]);
+ assert.equal(attributeDailySales('A',history,'2026-08-07',3,false)[0].advisorId,'A');
+ assert.equal(attributeDailySales('A',history,'2026-08-10',4,false)[0].advisorId,'A');
+ assert.equal(attributeDailySales('A',history,'2026-08-11',5,false)[0].advisorId,'B');
+ assert.equal(attributeDailySales('A',history,'2026-08-15',2,false)[0].advisorId,'A');
+});
+test('Asesores: cortes acumulados por hora, regreso a asesor previo y conservación exacta del total',async()=>{
+ const {attributeDailySales}=await import('../lib/meta-ads/advisor-attribution');
+ const history=[{id:'1',advisorId:'B',previousAdvisorId:'A',effectiveAt:new Date('2026-08-11T12:00:00-05:00'),createdAt:new Date('2026-08-11T12:01:00-05:00'),mode:'CLOCK',cutoffSales:5},{id:'2',advisorId:'A',previousAdvisorId:'B',effectiveAt:new Date('2026-08-11T16:00:00-05:00'),createdAt:new Date('2026-08-11T16:01:00-05:00'),mode:'CLOCK',cutoffSales:8}];
+ const result=attributeDailySales('A',history,'2026-08-11',12,false);
+ assert.equal(result.find(x=>x.advisorId==='A')!.sales,9);assert.equal(result.find(x=>x.advisorId==='B')!.sales,3);assert.equal(result.reduce((s,x)=>s+(x.sales??0),0),12);
+ assert.equal(attributeDailySales('A',history,'2026-08-10',4,false)[0].advisorId,'A');
+ assert.equal(attributeDailySales('A',history,'2026-08-12',2,false)[0].sales,2);
+});
+test('Asesores: día completo sustituye cortes de esa fecha, conserva baseline y permite cortes posteriores',async()=>{
+ const {attributeDailySales,assignmentTimeline}=await import('../lib/meta-ads/advisor-attribution');
+ const history=[{id:'1',advisorId:'B',previousAdvisorId:'A',effectiveAt:new Date('2026-08-11T13:00:00-05:00'),createdAt:new Date('2026-08-11T13:01:00-05:00'),mode:'CLOCK',cutoffSales:5},{id:'2',advisorId:'C',previousAdvisorId:'B',effectiveAt:new Date('2026-08-11T00:00:00-05:00'),createdAt:new Date('2026-08-11T14:01:00-05:00'),mode:'DAY',cutoffSales:null}];
+ assert.deepEqual(assignmentTimeline(history).map(x=>x.id),['2']);
+ assert.equal(attributeDailySales('C',history,'2026-08-10',4,false)[0].advisorId,'A');
+ assert.equal(attributeDailySales('C',history,'2026-08-11',12,false)[0].advisorId,'C');
+ history.push({id:'3',advisorId:'A',previousAdvisorId:'C',effectiveAt:new Date('2026-08-11T15:00:00-05:00'),createdAt:new Date('2026-08-11T15:01:00-05:00'),mode:'CLOCK',cutoffSales:9});
+ const result=attributeDailySales('A',history,'2026-08-11',12,false);assert.equal(result.find(x=>x.advisorId==='C')!.sales,9);assert.equal(result.find(x=>x.advisorId==='A')!.sales,3);
+});
+test('Asesores: cortes incompatibles no generan ventas negativas ni convierten faltantes en ceros',async()=>{
+ const {attributeDailySales,assignmentTimingSchema}=await import('../lib/meta-ads/advisor-attribution');
+ const e={id:'1',advisorId:'B',previousAdvisorId:'A',effectiveAt:new Date('2026-08-11T12:00:00-05:00'),createdAt:new Date('2026-08-11T12:01:00-05:00'),mode:'CLOCK',cutoffSales:5};
+ assert(attributeDailySales('B',[e],'2026-08-11',3,false).every(x=>x.sales===null&&x.partial));
+ const pending=attributeDailySales('B',[e],'2026-08-11',null,false);assert.equal(pending.find(x=>x.advisorId==='A')!.sales,5);assert.equal(pending.find(x=>x.advisorId==='B')!.sales,null);
+ assert.equal(attributeDailySales('A',[],'2026-08-11',0,false)[0].sales,0);assert.equal(attributeDailySales('A',[],'2026-08-11',null,false)[0].sales,null);assert.equal(attributeDailySales('A',[],'2026-08-11',null,true)[0].na,true);
+ assert(!assignmentTimingSchema.safeParse({day:'2026-02-30',mode:'DAY'}).success);assert(!assignmentTimingSchema.safeParse({day:'2026-08-11',mode:'CLOCK',time:'25:01'}).success);
+});

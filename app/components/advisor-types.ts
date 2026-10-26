@@ -37,4 +37,15 @@ export type AdvisorSheetData = {
   country: string;
   rows: AdvisorPerson[];
   breakdown: AdvisorSource[];
+  assignmentHistory?: {
+    id: string;
+    alias: string;
+    country: string;
+    tableName: string;
+    effectiveAt: string;
+    advisorId: string | null;
+    previousAdvisorId: string | null;
+    mode: string;
+    cutoffSales: number | null;
+  }[];
 };

@@ -724,6 +724,7 @@ model MetaAliasTable {
   aliases MetaAlias[]
 }
 model MetaAlias {
+ advisorAssignments MetaAdvisorAssignment[]
   id String @id @default(cuid())
   name String
   @@unique([tableId,name])
@@ -960,6 +961,8 @@ model MetaEffectivenessSync {
 }
 
 model MetaAdvisor {
+ assignments MetaAdvisorAssignment[] @relation("AssignmentIncoming")
+ previousAssignments MetaAdvisorAssignment[] @relation("AssignmentOutgoing")
  absences MetaAdvisorAbsence[]
  id String @id @default(cuid())
  name String @unique
@@ -993,4 +996,21 @@ model MetaAdvisorAbsence {
  intervals Json @default("[]")
  revision Int @default(1)
  @@id([advisorId,day])
+}
+
+model MetaAdvisorAssignment {
+ id String @id @default(cuid())
+ aliasId String
+ alias MetaAlias @relation(fields:[aliasId],references:[id],onDelete:Cascade)
+ country String
+ advisorId String?
+ advisor MetaAdvisor? @relation("AssignmentIncoming",fields:[advisorId],references:[id],onDelete:Restrict)
+ previousAdvisorId String?
+ previousAdvisor MetaAdvisor? @relation("AssignmentOutgoing",fields:[previousAdvisorId],references:[id],onDelete:Restrict)
+ effectiveAt DateTime
+ cutoffSales Int?
+ mode String
+ createdAt DateTime @default(now())
+ @@index([aliasId,country,effectiveAt])
+ @@index([advisorId,effectiveAt])
 }

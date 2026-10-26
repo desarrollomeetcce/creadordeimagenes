@@ -33,6 +33,8 @@ import {
   sheetCellColor,
   type SheetColorRule,
 } from "../../lib/meta-ads/sheet-colors";
+import { AdvisorAssignment } from "./advisor-assignment";
+import { AdvisorDetail } from "./advisor-detail";
 import { EffectivenessCell } from "./effectiveness-cell";
 const countries = countryOptions.map((c) => ({
   value: c.code,
@@ -123,6 +125,23 @@ export function MetaEffectiveness({
   onNamesChanged: () => Promise<void>;
 }) {
   const [syncOpen, setSyncOpen] = useState(false);
+  const [assignment, setAssignment] = useState<{
+    row: Row;
+    advisorId: string | null;
+    name: string;
+  } | null>(null);
+  const [newAssignment, setNewAssignment] = useState<string | null>(null);
+  const [newTiming, setNewTiming] = useState<{
+    day: string;
+    mode: "DAY" | "CLOCK";
+    time?: string;
+  } | null>(null);
+  const [advisorDetail, setAdvisorDetail] = useState<{
+    id: string;
+    name: string;
+    aliasId: string;
+    country: string;
+  } | null>(null);
   const [colorRules, setColorRules] = useState<SheetColorRule[]>([]);
   const [aliasSearch, setAliasSearch] = useState("");
   const [selectedPairs, setSelectedPairs] = useState<string[]>([]);
@@ -479,7 +498,16 @@ export function MetaEffectiveness({
       await mutate(
         "meta-ads/effectiveness/import",
         "POST",
-        { tableId, rows, ...(newAdvisor ? { advisorId: newAdvisor } : {}) },
+        {
+          tableId,
+          rows,
+          ...(newAdvisor
+            ? {
+                advisorId: newAdvisor,
+                ...(newTiming ? { advisorTiming: newTiming } : {}),
+              }
+            : {}),
+        },
         true,
       );
       setNewName("");
@@ -659,6 +687,63 @@ export function MetaEffectiveness({
       className="effectiveness sheet-view"
       aria-label="Efectividad diaria"
     >
+      {newAssignment && (
+        <AdvisorAssignment
+          initial
+          aliasId="new-alias"
+          country={newCountry || "País por definir"}
+          name={newName.trim() || "Nuevo alias"}
+          advisorId={newAssignment}
+          revision={0}
+          advisors={advisors}
+          onClose={() => setNewAssignment(null)}
+          onSave={async (body) => {
+            const b = body as {
+              day: string;
+              mode: "DAY" | "CLOCK";
+              time?: string;
+            };
+            setNewAdvisor(newAssignment);
+            setNewTiming({
+              day: b.day,
+              mode: b.mode,
+              ...(b.time ? { time: b.time } : {}),
+            });
+          }}
+        />
+      )}
+      {assignment && (
+        <AdvisorAssignment
+          aliasId={assignment.row.aliasId}
+          country={assignment.row.country}
+          name={assignment.name}
+          advisorId={assignment.advisorId}
+          revision={assignment.row.rowRevision}
+          advisors={advisors}
+          onClose={() => setAssignment(null)}
+          onSave={(body) =>
+            mutate("meta-ads/effectiveness/advisor", "PATCH", body)
+          }
+        />
+      )}
+      {advisorDetail && (
+        <AdvisorDetail
+          person={{
+            id: advisorDetail.id,
+            name: advisorDetail.name,
+            revision: 0,
+            days: {},
+          }}
+          tables={tables}
+          initialTableId={tableId}
+          initialAliasId={advisorDetail.aliasId}
+          initialCountry={advisorDetail.country}
+          initialSince={since}
+          initialUntil={until}
+          onClose={() => setAdvisorDetail(null)}
+        />
+      )}
+
       <div className="row sheet-toolbar">
         <SheetColorsControl
           tableId={tableId}
@@ -1357,37 +1442,56 @@ export function MetaEffectiveness({
                       </div>
                     </td>
                     <td className="effectiveness-advisor">
-                      <SheetSearchSelect
-                        compact
-                        displayLabel
-                        placeholder="Sin asesor"
-                        label={`Asesor de ${name} ${r.country}`}
-                        value={r.advisorId ?? ""}
-                        options={[
-                          { value: "", label: "Sin asesor" },
-                          ...advisors.map((a) => ({
-                            value: a.id,
-                            label: a.name,
-                          })),
-                        ]}
-                        onError={setMessage}
-                        onSelect={async (advisorId) => {
-                          if (!r.country)
-                            throw Error(
-                              "Elige primero el país de esta fila para asignar el asesor.",
-                            );
-                          await mutate(
-                            "meta-ads/effectiveness/advisor",
-                            "PATCH",
-                            {
-                              aliasId: r.aliasId,
-                              country: r.country,
-                              advisorId: advisorId || null,
-                              revision: r.rowRevision,
-                            },
-                          );
-                        }}
-                      />
+                      <div className="alias-advisor-actions">
+                        <SheetSearchSelect
+                          compact
+                          displayLabel
+                          placeholder="Sin asesor"
+                          label={`Asesor de ${name} ${r.country}`}
+                          value={r.advisorId ?? ""}
+                          options={[
+                            { value: "", label: "Sin asesor" },
+                            ...advisors.map((a) => ({
+                              value: a.id,
+                              label: a.name,
+                            })),
+                          ]}
+                          onError={setMessage}
+                          onSelect={async (advisorId) => {
+                            if (!r.country)
+                              throw Error(
+                                "Elige primero el país de esta fila para asignar el asesor.",
+                              );
+                            if ((advisorId || null) !== r.advisorId)
+                              setAssignment({
+                                row: r,
+                                advisorId: advisorId || null,
+                                name,
+                              });
+                          }}
+                        />
+                        {r.advisorId && r.country && (
+                          <button
+                            type="button"
+                            className="advisor-detail-trigger"
+                            aria-label={`Detalle del asesor de ${name} ${r.country}`}
+                            title="Ver progreso del asesor"
+                            onClick={() => {
+                              const p = advisors.find(
+                                (a) => a.id === r.advisorId,
+                              );
+                              if (p)
+                                setAdvisorDetail({
+                                  ...p,
+                                  aliasId: r.aliasId,
+                                  country: r.country,
+                                });
+                            }}
+                          >
+                            ↗
+                          </button>
+                        )}
+                      </div>
                     </td>
                     <td className="effectiveness-country">
                       <SheetSearchSelect
@@ -1537,9 +1641,25 @@ export function MetaEffectiveness({
                       { value: "", label: "Sin asesor" },
                       ...advisors.map((a) => ({ value: a.id, label: a.name })),
                     ]}
-                    onSelect={setNewAdvisor}
+                    onSelect={(id) => {
+                      if (!id) {
+                        setNewAdvisor("");
+                        setNewTiming(null);
+                      } else setNewAssignment(id);
+                    }}
                     onError={setMessage}
                   />
+                  {newAdvisor && (
+                    <button
+                      type="button"
+                      className="advisor-start-trigger"
+                      title="Cambiar inicio de la asignación"
+                      onClick={() => setNewAssignment(newAdvisor)}
+                    >
+                      {newTiming?.day.slice(5) ?? "Hoy"} ·{" "}
+                      {newTiming?.mode === "CLOCK" ? newTiming.time : "00:00"}
+                    </button>
+                  )}
                 </td>
                 <td className="effectiveness-country">
                   <SheetSearchSelect

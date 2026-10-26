@@ -233,9 +233,10 @@ export function AdvisorsSheet({
       <p className="sheet-help">
         A = Asistencia. V = Ventas por coincidencia exacta de alias + asesor +
         país. H = Horas ausentes (0,5 = 30 minutos). A y H corresponden a la
-        persona y no se reparten por producto. La asignación actual también se
-        aplica al histórico. * Total parcial; — sin datos; N.A. no es cero.
-        Todas las hojas incluye también las copias sincronizadas.
+        persona y no se reparten por producto. Las ventas respetan los tramos de
+        asignación y sus cortes. Las asignaciones antiguas sin historial
+        conservan su atribución previa. * Total parcial; — sin datos; N.A. no es
+        cero. Todas las hojas incluye también las copias sincronizadas.
       </p>
       {message && (
         <p className="sheet-message" role="status">
@@ -292,7 +293,7 @@ export function AdvisorsSheet({
                           title="Ver evolución y detalle de ventas"
                           onClick={() => setDetail(p)}
                         >
-                          ⓘ
+                          Detalle ↗
                         </button>
                         <EffectivenessCell
                           label={`Nombre del asesor ${p.name}`}

@@ -299,9 +299,41 @@ export function AdvisorDetail({
             Escalas independientes. A: 1 = Presente, 0 = Ausente; N.A. y vacío
             dejan un hueco. V y H no imputan ceros a los días sin datos. H
             muestra solo horas confirmadas; + indica regreso pendiente. *
-            Cobertura parcial. La asignación actual se aplica también al
-            histórico.
+            Cobertura parcial. Las ventas respetan cada tramo de asignación y
+            los cortes registrados; no se reparten por horas. Las asignaciones
+            antiguas sin historial conservan su atribución previa.
           </p>
+          {!!data.assignmentHistory?.length && (
+            <details className="advisor-assignment-history">
+              <summary>Tramos y cortes de asignación</summary>
+              <ul>
+                {data.assignmentHistory.map((e) => (
+                  <li key={e.id}>
+                    <b>
+                      {new Intl.DateTimeFormat("es-PE", {
+                        timeZone: "America/Lima",
+                        dateStyle: "short",
+                        timeStyle: "short",
+                      }).format(new Date(e.effectiveAt))}
+                    </b>{" "}
+                    · {e.alias} · {e.country} · {e.tableName} ·{" "}
+                    {e.advisorId === person.id
+                      ? "Inicio de tramo"
+                      : "Fin de tramo"}{" "}
+                    ·{" "}
+                    {e.mode === "DAY"
+                      ? "día completo"
+                      : `corte acumulado ${e.cutoffSales} V`}
+                  </li>
+                ))}
+              </ul>
+              <p className="hint">
+                Se incluye el inicio previo al período para identificar el
+                responsable. Los días completos reemplazan los cortes previos de
+                esa fecha.
+              </p>
+            </details>
+          )}
           <h3>Histórico por día</h3>
           <div className="table-scroll">
             <table className="advisor-detail-days">

@@ -1,0 +1,262 @@
+"use client";
+import { useEffect, useRef, useState } from "react";
+import { engineRequest as api } from "./generation-engine";
+type Review = {
+  sales: number | null;
+  rowRevision: number;
+  advisorId: string | null;
+  token: string;
+  changes: {
+    id: string;
+    advisorId: string | null;
+    previousAdvisorId: string | null;
+    effectiveAt: string;
+    mode: string;
+    cutoffSales: number | null;
+  }[];
+};
+export function AdvisorAssignment({
+  aliasId,
+  country,
+  name,
+  advisorId,
+  revision,
+  advisors,
+  onClose,
+  onSave,
+  initial = false,
+}: {
+  aliasId: string;
+  country: string;
+  name: string;
+  advisorId: string | null;
+  revision: number;
+  advisors: { id: string; name: string }[];
+  onClose: () => void;
+  onSave: (body: unknown) => Promise<void>;
+  initial?: boolean;
+}) {
+  const local = new Date(Date.now() - 5 * 3600000).toISOString();
+  const dialog = useRef<HTMLDialogElement>(null);
+  const [day, setDay] = useState(local.slice(0, 10)),
+    [time, setTime] = useState(local.slice(11, 16)),
+    [mode, setMode] = useState<"DAY" | "CLOCK">("DAY");
+  const [review, setReview] = useState<Review | null>(null),
+    [cut, setCut] = useState(""),
+    [message, setMessage] = useState(""),
+    [busy, setBusy] = useState(false),
+    [version, setVersion] = useState(0);
+  useEffect(() => {
+    dialog.current?.showModal();
+  }, []);
+  useEffect(() => {
+    if (!day) return;
+    if (initial) {
+      setReview({
+        sales: 0,
+        rowRevision: revision,
+        advisorId: null,
+        token: "",
+        changes: [],
+      });
+      setCut("0");
+      return;
+    }
+    let active = true;
+    setReview(null);
+    setMessage("");
+    void api(
+      "meta-ads/effectiveness/advisor-review?" +
+        new URLSearchParams({ aliasId, country, day }),
+    )
+      .then((v: Review) => {
+        if (active) {
+          setReview(v);
+          setCut(v.sales === null ? "" : String(v.sales));
+        }
+      })
+      .catch((e) => {
+        if (active) setMessage(e.message);
+      });
+    return () => {
+      active = false;
+    };
+  }, [aliasId, country, day, version, initial, revision]);
+  const label = (id: string | null) =>
+    advisors.find((a) => a.id === id)?.name ?? "Sin asesor";
+  return (
+    <dialog
+      ref={dialog}
+      className="meta-detail advisor-assignment"
+      aria-label="Asignar asesor con fecha de inicio"
+      onCancel={(e) => {
+        if (busy) e.preventDefault();
+        else onClose();
+      }}
+    >
+      <header className="row">
+        <h2>{initial ? "Inicio del asesor" : "Cambiar asesor"}</h2>
+        <button type="button" disabled={busy} onClick={onClose}>
+          Cancelar
+        </button>
+      </header>
+      <p>
+        <b>
+          {name} · {country}
+        </b>
+      </p>
+      <p>
+        {review ? label(review.advisorId) : "…"} → <b>{label(advisorId)}</b>
+      </p>
+      <form
+        onSubmit={async (e) => {
+          e.preventDefault();
+          if (!review) return;
+          setBusy(true);
+          setMessage("");
+          try {
+            if (review.rowRevision !== revision)
+              throw Error(
+                "La fila cambió. Cierra esta ventana y vuelve a elegir el asesor.",
+              );
+            if (
+              mode === "CLOCK" &&
+              (!/^\d+$/.test(cut) || !Number.isSafeInteger(Number(cut)))
+            )
+              throw Error(
+                "Indica el número entero de ventas acumuladas en el corte.",
+              );
+            await onSave({
+              aliasId,
+              country,
+              advisorId,
+              revision,
+              day,
+              mode,
+              token: review.token,
+              ...(mode === "CLOCK" ? { time, cutoffSales: Number(cut) } : {}),
+            });
+            onClose();
+          } catch (error) {
+            setMessage((error as Error).message);
+          } finally {
+            setBusy(false);
+          }
+        }}
+      >
+        <fieldset disabled={busy}>
+          <legend>¿Desde cuándo cuenta para el nuevo asesor?</legend>
+          <label>
+            Fecha de inicio (Lima)
+            <input
+              type="date"
+              required
+              value={day}
+              max={local.slice(0, 10)}
+              onChange={(e) => setDay(e.target.value)}
+            />
+          </label>
+          <div className="row assignment-modes">
+            <label>
+              <input
+                type="radio"
+                name="assignment-mode"
+                checked={mode === "DAY"}
+                onChange={() => setMode("DAY")}
+              />{" "}
+              Todo el día · desde las 00:00
+            </label>
+            <label>
+              <input
+                type="radio"
+                name="assignment-mode"
+                checked={mode === "CLOCK"}
+                onChange={() => setMode("CLOCK")}
+              />{" "}
+              Desde una hora
+            </label>
+          </div>
+          {mode === "CLOCK" ? (
+            <>
+              <label>
+                Hora del cambio (Lima)
+                <input
+                  type="time"
+                  required
+                  value={time}
+                  onChange={(e) => setTime(e.target.value)}
+                />
+              </label>
+              <label>
+                Ventas acumuladas al corte
+                <input
+                  aria-label="Ventas acumuladas al corte"
+                  type="number"
+                  step="1"
+                  min="0"
+                  required
+                  value={cut}
+                  readOnly={initial}
+                  onChange={(e) => setCut(e.target.value)}
+                />
+              </label>
+              <p>
+                {initial
+                  ? "Asignación inicial: no existen ventas previas para este alias nuevo. "
+                  : ""}
+                Registradas ese día: <b>{review?.sales ?? "Sin datos"}</b>. El
+                corte queda para los tramos anteriores; solo las ventas
+                siguientes corresponden al nuevo asesor. No se reparten por
+                horas. Puedes corregir el corte antes de confirmar.
+              </p>
+            </>
+          ) : (
+            <p>
+              El nuevo asesor recibe todas las ventas de esta fecha. Reemplaza
+              los cortes anteriores de este mismo día; las fechas previas
+              mantienen su responsable.
+            </p>
+          )}
+        </fieldset>
+        {message && (
+          <p role="alert" className="sheet-message">
+            {message}
+          </p>
+        )}
+        {!review && !message && (
+          <p role="status">Revisando asignación y ventas…</p>
+        )}
+        <div className="row">
+          <button type="submit" disabled={busy || !review}>
+            {busy ? "Guardando…" : "Confirmar asignación"}
+          </button>
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => setVersion((v) => v + 1)}
+          >
+            Revisar de nuevo
+          </button>
+        </div>
+      </form>
+      {!!review?.changes.length && (
+        <details>
+          <summary>Historial de asignaciones ({review.changes.length})</summary>
+          <ul>
+            {review.changes.map((c) => (
+              <li key={c.id}>
+                {new Intl.DateTimeFormat("es-PE", {
+                  timeZone: "America/Lima",
+                  dateStyle: "short",
+                  timeStyle: "short",
+                }).format(new Date(c.effectiveAt))}{" "}
+                · {label(c.previousAdvisorId)} → {label(c.advisorId)} ·{" "}
+                {c.mode === "DAY" ? "día completo" : `corte ${c.cutoffSales} V`}
+              </li>
+            ))}
+          </ul>
+        </details>
+      )}
+    </dialog>
+  );
+}

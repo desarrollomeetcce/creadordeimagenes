@@ -1,3 +1,4 @@
+import { assignmentTimingSchema } from "./advisor-attribution";
 import { advisorAbsenceSchema } from "./advisor-absence";
 import { colorRulesSchema } from "./sheet-colors";
 import { NextRequest, NextResponse } from "next/server";
@@ -184,6 +185,21 @@ export async function metaRoutes(
       method === "POST" ? 201 : 200,
     );
   }
+  if (path === "effectiveness/advisor-review" && method === "GET") {
+    ownerOnly(actor);
+    const q = z
+      .object({
+        aliasId: z.string().min(1).max(80),
+        country: z.string().refine(isCountryCode),
+        day: z.string().date(),
+      })
+      .parse(Object.fromEntries(req.nextUrl.searchParams));
+    return send(
+      await (
+        await import("./advisors")
+      ).assignmentReview(actor, q.aliasId, q.country, q.day),
+    );
+  }
   if (path === "effectiveness/advisor" && method === "PATCH") {
     ownerOnly(actor);
     const b = z
@@ -192,6 +208,7 @@ export async function metaRoutes(
         country: z.string().refine(isCountryCode, "Elige un país válido."),
         advisorId: z.string().min(1).max(80).nullable(),
         revision: z.number().int().nonnegative(),
+        ...assignmentTimingSchema.partial().shape,
       })
       .strict()
       .parse(await body());
@@ -559,6 +576,10 @@ export async function metaRoutes(
       .object({
         tableId: z.string().min(1).max(100),
         advisorId: z.string().min(1).max(80).optional(),
+        advisorTiming: assignmentTimingSchema
+          .omit({ cutoffSales: true, token: true })
+          .strict()
+          .optional(),
         rows: z
           .array(
             z
@@ -577,7 +598,13 @@ export async function metaRoutes(
     return send(
       await (
         await import("./effectiveness")
-      ).importEffectiveness(actor, b.tableId, b.rows, b.advisorId),
+      ).importEffectiveness(
+        actor,
+        b.tableId,
+        b.rows,
+        b.advisorId,
+        b.advisorTiming,
+      ),
     );
   }
   if (path === "effectiveness/identity" && method === "PATCH") {

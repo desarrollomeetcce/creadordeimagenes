@@ -1,3 +1,9 @@
+import { createHash } from "node:crypto";
+import {
+  attributeDailySales,
+  assignmentTimeline,
+  limaDay,
+} from "./advisor-attribution";
 import {
   advisorAbsenceSchema,
   absenceClockSummary,
@@ -65,6 +71,55 @@ export async function saveAdvisor(
     return row;
   });
 }
+export async function assignmentReview(
+  actor: Actor,
+  aliasId: string,
+  country: string,
+  day: string,
+) {
+  ownerOnly(actor);
+  return db.$transaction(
+    async (tx) => {
+      await effectivenessLock(tx, actor);
+      return reviewAssignment(tx, actor, aliasId, country, day);
+    },
+    { timeout: 60000 },
+  );
+}
+async function reviewAssignment(
+  tx: import("@prisma/client").Prisma.TransactionClient,
+  actor: Actor,
+  aliasId: string,
+  country: string,
+  day: string,
+) {
+  const alias = await tx.metaAlias.findUnique({ where: { id: aliasId } });
+  demand(alias, "Alias no disponible.", 404);
+  const sheet = await effectiveness(actor, alias.tableId, day, day, tx);
+  const row = sheet.rows.find(
+    (r) => r.aliasId === aliasId && r.country === country,
+  );
+  demand(row, "Fila no disponible.", 404);
+  const changes = await tx.metaAdvisorAssignment.findMany({
+    where: { aliasId, country },
+    orderBy: [{ effectiveAt: "asc" }, { createdAt: "asc" }, { id: "asc" }],
+  });
+  const cell = row.days[day];
+  const sales = cell?.na.includes("sales") ? null : (cell?.sales ?? null);
+  return {
+    sales,
+    rowRevision: row.rowRevision,
+    advisorId: row.advisorId,
+    changes: changes.map((c) => ({
+      ...c,
+      effectiveAt: c.effectiveAt.toISOString(),
+      createdAt: c.createdAt.toISOString(),
+    })),
+    token: createHash("sha256")
+      .update(JSON.stringify([aliasId, country, day, row, changes]))
+      .digest("hex"),
+  };
+}
 export async function assignRowAdvisor(
   actor: Actor,
   b: {
@@ -72,61 +127,153 @@ export async function assignRowAdvisor(
     country: string;
     advisorId: string | null;
     revision: number;
+    day?: string;
+    mode?: "DAY" | "CLOCK";
+    time?: string;
+    cutoffSales?: number;
+    token?: string;
   },
 ) {
   ownerOnly(actor);
-  return db.$transaction(async (tx) => {
-    await effectivenessLock(tx, actor);
-    const alias = await tx.metaAlias.findUnique({
-      where: { id: b.aliasId },
-      include: { table: true },
-    });
-    demand(alias, "Alias no disponible.", 404);
-    if (b.advisorId)
+  return db.$transaction(
+    async (tx) => {
+      await effectivenessLock(tx, actor);
+      const alias = await tx.metaAlias.findUnique({
+        where: { id: b.aliasId },
+        include: { table: true },
+      });
+      demand(alias, "Alias no disponible.", 404);
+      if (b.advisorId)
+        demand(
+          await tx.metaAdvisor.findUnique({ where: { id: b.advisorId } }),
+          "Asesor no disponible.",
+          404,
+        );
+      const where = {
+        aliasId_country_currency: {
+          aliasId: b.aliasId,
+          country: b.country,
+          currency: "",
+        },
+      };
+      const old = await tx.metaEffectivenessRow.findUnique({ where });
       demand(
-        await tx.metaAdvisor.findUnique({ where: { id: b.advisorId } }),
-        "Asesor no disponible.",
-        404,
+        !old?.hidden && (old?.revision ?? 0) === b.revision,
+        "La fila cambió. Recarga antes de asignar.",
+        409,
       );
-    const where = {
-      aliasId_country_currency: {
-        aliasId: b.aliasId,
-        country: b.country,
-        currency: "",
-      },
-    };
-    const old = await tx.metaEffectivenessRow.findUnique({ where });
-    demand(
-      !old?.hidden && (old?.revision ?? 0) === b.revision,
-      "La fila cambió. Recarga antes de asignar.",
-      409,
-    );
-    const row = await tx.metaEffectivenessRow.upsert({
-      where,
-      create: {
-        aliasId: b.aliasId,
-        country: b.country,
-        currency: "",
-        displayCurrency: alias.table.defaultCurrency,
-        advisorId: b.advisorId,
-        revision: 1,
-      },
-      update: { advisorId: b.advisorId, revision: { increment: 1 } },
-    });
-    await recordActivity(tx, {
-      data: {
-        actorId: actor.id,
-        action: "META_EFECTIVIDAD_ASESOR",
-        resourceId: row.id,
-        detail: {
+      if ((old?.advisorId ?? null) === b.advisorId) return { ok: true };
+      const day = b.day ?? limaDay(),
+        mode = b.mode ?? "DAY";
+      demand(mode !== "CLOCK" || !!b.time, "Indica la hora del cambio.");
+      const at = new Date(
+        day + "T" + (mode === "DAY" ? "00:00" : b.time) + ":00-05:00",
+      );
+      demand(
+        Number.isFinite(at.getTime()) && at.getTime() <= Date.now(),
+        "La asignación no puede comenzar en el futuro.",
+      );
+      const history = await tx.metaAdvisorAssignment.findMany({
+        where: { aliasId: b.aliasId, country: b.country },
+      });
+      const last = assignmentTimeline(history).at(-1);
+      demand(
+        !last ||
+          at > last.effectiveAt ||
+          (mode === "DAY" && day === limaDay(last.effectiveAt)),
+        "El inicio debe ser posterior al último cambio. Solo un cambio de día completo puede reemplazar los cortes de esa misma fecha.",
+        409,
+      );
+      demand(history.length < 1000, "Máximo1000 cambios por alias y país.");
+      if (b.token && mode === "DAY") {
+        const review = await reviewAssignment(
+          tx,
+          actor,
+          b.aliasId,
+          b.country,
+          day,
+        );
+        demand(
+          review.token === b.token,
+          "La fila cambió desde la revisión. Revisa de nuevo.",
+          409,
+        );
+      }
+      let cutoff: number | null = null;
+      if (mode === "CLOCK") {
+        demand(
+          !!b.token && b.cutoffSales !== undefined,
+          "Revisa las ventas acumuladas del corte antes de guardar.",
+        );
+        const review = await reviewAssignment(
+          tx,
+          actor,
+          b.aliasId,
+          b.country,
+          day,
+        );
+        demand(
+          review.token === b.token,
+          "Las ventas o la asignación cambiaron. Revisa de nuevo el corte.",
+          409,
+        );
+        cutoff = b.cutoffSales!;
+        demand(
+          review.sales === null || cutoff <= review.sales,
+          "El corte no puede superar las ventas registradas del día.",
+        );
+        const previousCut =
+          last && limaDay(last.effectiveAt) === day
+            ? (last.cutoffSales ?? 0)
+            : 0;
+        demand(
+          cutoff >= previousCut,
+          "El corte no puede ser menor que el corte anterior de ese día.",
+        );
+      }
+      const row = await tx.metaEffectivenessRow.upsert({
+        where,
+        create: {
+          aliasId: b.aliasId,
+          country: b.country,
+          currency: "",
+          displayCurrency: alias.table.defaultCurrency,
+          advisorId: b.advisorId,
+          revision: 1,
+        },
+        update: { advisorId: b.advisorId, revision: { increment: 1 } },
+      });
+      const change = await tx.metaAdvisorAssignment.create({
+        data: {
+          aliasId: b.aliasId,
+          country: b.country,
           advisorId: b.advisorId,
           previousAdvisorId: old?.advisorId ?? null,
-          country: b.country,
+          effectiveAt: at,
+          mode,
+          cutoffSales: cutoff,
         },
-      },
-    });
-    return { ok: true };
-  });
+      });
+      await recordActivity(tx, {
+        data: {
+          actorId: actor.id,
+          action: "META_EFECTIVIDAD_ASESOR",
+          resourceId: row.id,
+          detail: {
+            advisorId: b.advisorId,
+            previousAdvisorId: old?.advisorId ?? null,
+            country: b.country,
+            effectiveAt: at.toISOString(),
+            mode,
+            cutoffSales: cutoff,
+            assignmentId: change.id,
+          },
+        },
+      });
+      return { ok: true };
+    },
+    { timeout: 60000 },
+  );
 }
 export async function saveAttendance(
   actor: Actor,
@@ -330,56 +477,109 @@ export async function advisorSheet(
           { sales: number | null; na: boolean; partial: boolean }
         >;
       }[] = [];
+      const assignmentHistory: {
+        id: string;
+        alias: string;
+        country: string;
+        tableName: string;
+        effectiveAt: string;
+        advisorId: string | null;
+        previousAdvisorId: string | null;
+        mode: string;
+        cutoffSales: number | null;
+      }[] = [];
       for (const table of tables) {
         const sheet = await effectiveness(actor, table.id, since, until, tx),
           names = new Map(sheet.table.aliases.map((a) => [a.id, a.name]));
+        const assignments = await tx.metaAdvisorAssignment.findMany({
+          where: { alias: { tableId: table.id } },
+          orderBy: [
+            { effectiveAt: "asc" },
+            { createdAt: "asc" },
+            { id: "asc" },
+          ],
+        });
         for (const row of sheet.rows) {
           if (
-            !row.advisorId ||
             !row.country ||
-            (filters.advisorId && row.advisorId !== filters.advisorId) ||
             (filters.aliasId && row.aliasId !== filters.aliasId) ||
             (filters.country && row.country !== filters.country)
           )
             continue;
-          if (!totals.has(row.advisorId)) totals.set(row.advisorId, new Map());
-          const byDay = totals.get(row.advisorId)!;
-          const source = {
-            tableId: table.id,
-            tableName: table.name,
-            aliasId: row.aliasId,
-            alias: names.get(row.aliasId) ?? "Alias",
-            country: row.country,
-            advisorId: row.advisorId,
-            days: {} as Record<
-              string,
-              { sales: number | null; na: boolean; partial: boolean }
-            >,
-          };
+          const changes = assignments.filter(
+            (e) => e.aliasId === row.aliasId && e.country === row.country,
+          );
+          if (filters.advisorId)
+            for (const e of assignmentTimeline(changes))
+              if (
+                (e.advisorId === filters.advisorId ||
+                  e.previousAdvisorId === filters.advisorId) &&
+                limaDay(e.effectiveAt) <= until
+              )
+                assignmentHistory.push({
+                  id: e.id,
+                  alias: names.get(row.aliasId) ?? "Alias",
+                  country: row.country,
+                  tableName: table.name,
+                  effectiveAt: e.effectiveAt.toISOString(),
+                  advisorId: e.advisorId,
+                  previousAdvisorId: e.previousAdvisorId,
+                  mode: e.mode,
+                  cutoffSales: e.cutoffSales,
+                });
+          const sources = new Map<string, (typeof breakdown)[number]>();
           for (const day of dates) {
-            const c = row.days[day],
-              na = !!c?.na.includes("sales"),
-              partial = !!c?.partialMetrics.includes("sales"),
-              value = na ? null : (c?.sales ?? null);
-            const sum = byDay.get(day) ?? {
-              sales: null,
-              known: 0,
-              expected: 0,
-              na: 0,
-              partial: false,
-            };
-            sum.expected++;
-            if (na) sum.na++;
-            else if (value !== null) {
-              sum.sales = (sum.sales ?? 0) + value;
-              sum.known++;
-              if (partial) sum.partial = true;
+            const c = row.days[day];
+            const portions = attributeDailySales(
+              row.advisorId,
+              changes,
+              day,
+              c?.sales ?? null,
+              !!c?.na.includes("sales"),
+            );
+            for (const portion of portions) {
+              if (filters.advisorId && portion.advisorId !== filters.advisorId)
+                continue;
+              if (!totals.has(portion.advisorId))
+                totals.set(portion.advisorId, new Map());
+              const byDay = totals.get(portion.advisorId)!;
+              const sum = byDay.get(day) ?? {
+                sales: null,
+                known: 0,
+                expected: 0,
+                na: 0,
+                partial: false,
+              };
+              sum.expected++;
+              if (portion.na) sum.na++;
+              else if (portion.sales !== null) {
+                sum.sales = (sum.sales ?? 0) + portion.sales;
+                sum.known++;
+              }
+              sum.partial ||=
+                portion.partial || !!c?.partialMetrics.includes("sales");
+              byDay.set(day, sum);
+              if (filters.advisorId) {
+                if (!sources.has(portion.advisorId))
+                  sources.set(portion.advisorId, {
+                    tableId: table.id,
+                    tableName: table.name,
+                    aliasId: row.aliasId,
+                    alias: names.get(row.aliasId) ?? "Alias",
+                    country: row.country,
+                    advisorId: portion.advisorId,
+                    days: {},
+                  });
+                sources.get(portion.advisorId)!.days[day] = {
+                  sales: portion.sales,
+                  na: portion.na,
+                  partial:
+                    portion.partial || !!c?.partialMetrics.includes("sales"),
+                };
+              }
             }
-            byDay.set(day, sum);
-            if (filters.advisorId)
-              source.days[day] = { sales: value, na, partial };
           }
-          if (filters.advisorId) breakdown.push(source);
+          breakdown.push(...sources.values());
         }
       }
       return {
@@ -389,6 +589,7 @@ export async function advisorSheet(
         aliasId: filters.aliasId ?? "",
         country: filters.country ?? "",
         breakdown,
+        assignmentHistory,
         rows: people.map((p) => ({
           ...p,
           days: Object.fromEntries(
