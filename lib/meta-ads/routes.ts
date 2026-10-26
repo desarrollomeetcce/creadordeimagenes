@@ -76,6 +76,77 @@ export async function metaRoutes(
       ).setMetaStatus(actor, parts[2], b.status, b.expectedStatus),
     );
   }
+  if (path === "advisors" && method === "GET")
+    return send(await (await import("./advisors")).advisors(actor));
+  if (path === "advisors" && (method === "POST" || method === "PATCH")) {
+    ownerOnly(actor);
+    const data = await body();
+    const b =
+      method === "POST"
+        ? z
+            .object({ name: z.string().trim().min(1).max(100) })
+            .strict()
+            .parse(data)
+        : z
+            .object({
+              name: z.string().trim().min(1).max(100),
+              id: z.string().min(1).max(80),
+              revision: z.number().int().nonnegative(),
+            })
+            .strict()
+            .parse(data);
+    return send(
+      await (await import("./advisors")).saveAdvisor(actor, b),
+      method === "POST" ? 201 : 200,
+    );
+  }
+  if (path === "effectiveness/advisor" && method === "PATCH") {
+    ownerOnly(actor);
+    const b = z
+      .object({
+        aliasId: z.string().min(1).max(80),
+        country: z.string().refine(isCountryCode, "Elige un país válido."),
+        advisorId: z.string().min(1).max(80).nullable(),
+        revision: z.number().int().nonnegative(),
+      })
+      .strict()
+      .parse(await body());
+    return send(await (await import("./advisors")).assignRowAdvisor(actor, b));
+  }
+  if (path === "advisors/attendance" && method === "PATCH") {
+    ownerOnly(actor);
+    const b = z
+      .object({
+        advisorId: z.string().min(1).max(80),
+        day: z.string().date(),
+        status: z.enum(["PRESENT", "ABSENT", "NA"]).nullable(),
+        revision: z.number().int().nonnegative(),
+      })
+      .strict()
+      .parse(await body());
+    return send(await (await import("./advisors")).saveAttendance(actor, b));
+  }
+  if (path === "advisors/sheet" && method === "GET") {
+    ownerOnly(actor);
+    const q = z
+      .object({
+        tableId: z.string().min(1).max(100),
+        since: z.string().date(),
+        until: z.string().date(),
+      })
+      .strict()
+      .parse(Object.fromEntries(req.nextUrl.searchParams));
+    demand(
+      q.since <= q.until &&
+        (Date.parse(q.until) - Date.parse(q.since)) / 86400000 < 31,
+      "Elige hasta 31 días.",
+    );
+    return send(
+      await (
+        await import("./advisors")
+      ).advisorSheet(actor, q.tableId, q.since, q.until),
+    );
+  }
   if (path === "effectiveness/sync" && method === "GET") {
     ownerOnly(actor);
     const q = z
@@ -521,6 +592,7 @@ export async function metaRoutes(
           .min(1)
           .max(100),
         aliasId: z.string().min(1).max(80).nullable(),
+        advisorId: z.string().min(1).max(80).nullable().optional(),
         country: z
           .string()
           .refine(isCountryCode, "País no válido.")
@@ -532,7 +604,7 @@ export async function metaRoutes(
     return send(
       await (
         await import("./aliases")
-      ).assignAliases(actor, b.objectIds, b.aliasId, b.country),
+      ).assignAliases(actor, b.objectIds, b.aliasId, b.country, b.advisorId),
     );
   }
   if (
@@ -546,6 +618,7 @@ export async function metaRoutes(
     const b = z
       .object({
         aliasId: z.string().max(80).nullable(),
+        advisorId: z.string().min(1).max(80).nullable().optional(),
         country: z
           .string()
           .refine(isCountryCode, "País no válido.")
@@ -557,7 +630,7 @@ export async function metaRoutes(
     return send(
       await (
         await import("./aliases")
-      ).assignAlias(actor, parts[2], b.aliasId, b.country),
+      ).assignAlias(actor, parts[2], b.aliasId, b.country, b.advisorId),
     );
   }
   if (path === "marketing-oauth-config" && method === "GET") {

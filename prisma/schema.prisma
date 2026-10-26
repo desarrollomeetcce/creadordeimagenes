@@ -734,6 +734,9 @@ model MetaAlias {
   @@index([tableId])
 }
 model MetaAdObject {
+  advisorId String?
+  advisor MetaAdvisor? @relation(fields:[advisorId],references:[id],onDelete:Restrict)
+  @@index([aliasId,aliasCountry,advisorId])
   id String @id
   accountId String
   account MetaAdAccount @relation(fields:[accountId],references:[id],onDelete:Cascade)
@@ -871,6 +874,9 @@ model MetaRecommendationSource {
 }
 
 model MetaEffectivenessRow {
+ advisorId String?
+ advisor MetaAdvisor? @relation(fields:[advisorId],references:[id],onDelete:Restrict)
+ @@index([advisorId])
  legacy Boolean @default(false)
  displayCurrency String @default("")
  presentationRowId String?
@@ -950,4 +956,21 @@ model MetaEffectivenessSync {
  columns Json
  revision Int @default(1)
  lastSyncAt DateTime @default(now())
+}
+
+model MetaAdvisor {
+ id String @id @default(cuid())
+ name String @unique
+ revision Int @default(0)
+ objects MetaAdObject[]
+ rows MetaEffectivenessRow[]
+ attendance MetaAdvisorAttendance[]
+}
+model MetaAdvisorAttendance {
+ advisorId String
+ advisor MetaAdvisor @relation(fields:[advisorId],references:[id],onDelete:Restrict)
+ day String
+ status String?
+ revision Int @default(1)
+ @@id([advisorId,day])
 }

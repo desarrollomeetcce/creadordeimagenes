@@ -64,6 +64,7 @@ type Cell = {
 };
 type Row = {
   aliasId: string;
+  advisorId: string | null;
   country: string;
   currency: string;
   rowRevision: number;
@@ -103,8 +104,10 @@ export function MetaEffectiveness({
   view,
   tables,
   sheetTabs,
+  advisors,
 }: {
   sheetTabs: ReactNode;
+  advisors: { id: string; name: string }[];
   tables: { id: string; name: string }[];
   view: "manual" | "automatic";
   tableId: string;
@@ -842,9 +845,9 @@ export function MetaEffectiveness({
       )}
       <div className="sheet-help">
         Edita y pulsa Enter o Tab para guardar; Escape descarta. V, P y CF
-        manuales; B/G de Meta por alias + país, con ajustes manuales
-        identificados. N.A. no es cero. P, G y CF se muestran en la moneda
-        elegida con la tasa de cada fecha.{" "}
+        manuales; B/G de Meta por coincidencia exacta de alias + país + asesor,
+        con ajustes manuales identificados. N.A. no es cero. P, G y CF se
+        muestran en la moneda elegida con la tasa de cada fecha.{" "}
         {data?.missingFxDays.length ? (
           <span> Tasas pendientes: {data.missingFxDays.join(", ")}. </span>
         ) : null}
@@ -962,6 +965,7 @@ export function MetaEffectiveness({
                 ...(columnWidths.alias
                   ? { "--sheet-alias-width": `${columnWidths.alias}px` }
                   : {}),
+                "--sheet-advisor-width": `${columnWidths.advisor ?? 100}px`,
                 ...(columnWidths.country
                   ? { "--sheet-country-width": `${columnWidths.country}px` }
                   : {}),
@@ -977,6 +981,7 @@ export function MetaEffectiveness({
             </caption>
             <colgroup>
               <col className="sheet-alias-col" />
+              <col className="sheet-advisor-col" />
               <col className="sheet-country-col" />
               <col className="sheet-currency-col" />
               {days.flatMap((day) =>
@@ -1057,6 +1062,18 @@ export function MetaEffectiveness({
                     label={settings.aliasColumnName}
                     onResize={(w) => resizeColumn("alias", w)}
                     onReset={() => resizeColumn("alias")}
+                  />
+                </th>
+                <th
+                  rowSpan={visibleMetrics.length ? 2 : 1}
+                  scope="col"
+                  className="effectiveness-advisor"
+                >
+                  Asesor
+                  <SheetColumnResizer
+                    label="Asesor"
+                    onResize={(w) => resizeColumn("advisor", w)}
+                    onReset={() => resizeColumn("advisor")}
                   />
                 </th>
                 <th
@@ -1289,6 +1306,41 @@ export function MetaEffectiveness({
                         />
                       </div>
                     </td>
+                    <td className="effectiveness-advisor">
+                      {r.country ? (
+                        <SheetSearchSelect
+                          compact
+                          displayLabel
+                          placeholder="Sin asesor"
+                          label={`Asesor de ${name} ${r.country}`}
+                          value={r.advisorId ?? ""}
+                          options={[
+                            { value: "", label: "Sin asesor" },
+                            ...advisors.map((a) => ({
+                              value: a.id,
+                              label: a.name,
+                            })),
+                          ]}
+                          onError={setMessage}
+                          onSelect={async (advisorId) => {
+                            await mutate(
+                              "meta-ads/effectiveness/advisor",
+                              "PATCH",
+                              {
+                                aliasId: r.aliasId,
+                                country: r.country,
+                                advisorId: advisorId || null,
+                                revision: r.rowRevision,
+                              },
+                            );
+                          }}
+                        />
+                      ) : (
+                        <span title="Elige primero el país de esta fila">
+                          Elige país
+                        </span>
+                      )}
+                    </td>
                     <td className="effectiveness-country">
                       <SheetSearchSelect
                         compact
@@ -1404,6 +1456,11 @@ export function MetaEffectiveness({
                       }
                     }}
                   />
+                </td>
+                <td className="effectiveness-advisor">
+                  <span title="Guarda el alias y país para asignar un asesor">
+                    —
+                  </span>
                 </td>
                 <td className="effectiveness-country">
                   <SheetSearchSelect

@@ -50,6 +50,7 @@ export async function effectiveness(
       select: {
         aliasId: true,
         aliasCountry: true,
+        advisorId: true,
         account: { select: { currency: true, timezone: true } },
         daily: {
           where: {
@@ -129,6 +130,7 @@ export async function effectiveness(
     string,
     {
       aliasId: string;
+      advisorId: string | null;
       country: string;
       currency: string;
       rowRevision: number;
@@ -147,6 +149,7 @@ export async function effectiveness(
     if (!r) {
       r = {
         aliasId: a,
+        advisorId: null,
         country: p,
         currency: table!.defaultCurrency,
         rowRevision: 0,
@@ -190,6 +193,7 @@ export async function effectiveness(
   for (const s of stored) {
     if (s.hidden) continue;
     const r = get(s.aliasId, s.country);
+    r.advisorId = s.advisorId;
     r.currency = s.displayCurrency;
     r.rowRevision = s.revision;
     for (const legacy of s.legacySources)
@@ -221,6 +225,7 @@ export async function effectiveness(
   for (const c of campaigns) {
     if (hidden.has(key(c.aliasId!, c.aliasCountry!))) continue;
     const r = get(c.aliasId!, c.aliasCountry!);
+    if (!r.advisorId || c.advisorId !== r.advisorId) continue;
     r.campaigns++;
     if (!r.timezones.includes(c.account.timezone))
       r.timezones.push(c.account.timezone);

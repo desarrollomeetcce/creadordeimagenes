@@ -103,6 +103,7 @@ type Period = {
 export type Item = {
   aliasId: string | null;
   aliasCountry?: string | null;
+  advisorId?: string | null;
   alias: MetaAliasOption | null;
   id: string;
   name: string;
@@ -420,6 +421,7 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
     [campaign, setCampaign] = useState(""),
     [adset, setAdset] = useState(""),
     [aliases, setAliases] = useState<MetaAliasOption[]>([]),
+    [advisors, setAdvisors] = useState<{ id: string; name: string }[]>([]),
     [aliasTables, setAliasTables] = useState<{ id: string; name: string }[]>(
       [],
     ),
@@ -453,10 +455,15 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
     [sharing, setSharing] = useState<Account | null>(null);
   useEffect(() => {
     let active = true;
-    Promise.all([api("meta-ads/aliases"), api("meta-ads/alias-table-options")])
-      .then(([rows, tables]) => {
+    Promise.all([
+      api("meta-ads/aliases"),
+      api("meta-ads/alias-table-options"),
+      api("meta-ads/advisors"),
+    ])
+      .then(([rows, tables, advisors]) => {
         if (active) {
           setAliases(rows);
+          setAdvisors(advisors);
           setAliasTables(tables);
           setAliasFilter((current) =>
             current &&
@@ -479,16 +486,19 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
       name={o.name}
       value={o.aliasId}
       country={o.aliasCountry}
+      advisorId={o.advisorId}
+      advisors={advisors}
       aliases={aliases}
       tables={aliasTables}
       disabled={busy}
       readOnly={!owner}
-      onAssign={(aliasId, country) =>
+      onAssign={(aliasId, country, advisorId) =>
         void run(
           () =>
             api(`meta-ads/objects/${o.id}/alias`, "PATCH", {
               aliasId,
               country,
+              advisorId,
             }),
           "Alias actualizado.",
         )
@@ -1112,19 +1122,21 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
       {owner && (
         <MetaAliasAction
           name="selección"
+          advisors={advisors}
           aliases={aliases}
           tables={aliasTables}
           disabled={busy}
           bulkCount={
             summarySelectionKey ? summarySelectionKey.split(",").length : 0
           }
-          onAssign={(aliasId, country) =>
+          onAssign={(aliasId, country, advisorId) =>
             void run(
               () =>
                 api("meta-ads/objects/alias", "PATCH", {
                   objectIds: summarySelectionKey.split(",").filter(Boolean),
                   aliasId,
                   country,
+                  advisorId,
                 }),
               "Alias asignado a la selección.",
             )

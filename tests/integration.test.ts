@@ -50,6 +50,18 @@ const config = {
   imageReserveMicros: "1000000",
   maxGenerations: 150,
 };
+// Existing financial fixtures now explicitly configure the advisor on BOTH sides.
+async function fixtureAdvisor(tableId:string, countries?:string[]){
+ const advisor=await db.metaAdvisor.create({data:{name:"Fixture asesor "+tableId}});
+ await db.metaAdObject.updateMany({where:{alias:{tableId}},data:{advisorId:advisor.id}});
+ const objects=await db.metaAdObject.findMany({where:{alias:{tableId},aliasCountry:{not:null}}});
+ const table=await db.metaAliasTable.findUniqueOrThrow({where:{id:tableId}});
+ for(const o of objects){if(countries&&!countries.includes(o.aliasCountry!))continue;
+ const key={aliasId:o.aliasId!,country:o.aliasCountry!,currency:""};
+ await db.metaEffectivenessRow.upsert({where:{aliasId_country_currency:key},create:{...key,advisorId:advisor.id,displayCurrency:table.defaultCurrency},update:{advisorId:advisor.id}});
+ }
+ return advisor;
+}
 test("Integración HTTP + PostgreSQL (base exclusiva de pruebas, sin llamadas externas)", async (t) => {
   try {
     await t.test(
@@ -11464,6 +11476,7 @@ test("Integración HTTP + PostgreSQL (base exclusiva de pruebas, sin llamadas ex
        for(const [id,accountId,aliasId,country,level,spend,base] of [['9625011','962501',alias.id,'PE','campaign',10,4],['9625021','962502',alias.id,'PE','campaign',20,6],['9625012','962501',alias.id,'AR','campaign',99,9],['9625013','962501',other.id,'PE','campaign',200,20],['9625014','962501',alias.id,'PE','adset',900,90],['9625015','962501',alias.id,'PE','ad',800,80],['9625016','962501',alias.id,null,'campaign',700,70],['9625031','962503',alias.id,'US','campaign',5,2]] as const){await db.metaAdObject.create({data:{id,accountId,aliasId,aliasCountry:country,level,name:id,status:'PAUSED'}});await db.metaAdDaily.create({data:{objectId:id,accountId,day,scope,spend,actions:{'onsite_conversion.messaging_conversation_started_7d':base}}});}
        await db.metaAdDaily.create({data:{objectId:'9625011',accountId:'962501',day,scope:'other',spend:999,actions:{'onsite_conversion.messaging_conversation_started_7d':999}}});
        assert.equal((await owner.call('meta-ads/effectiveness/import','POST',{tableId:table.id,rows:[{name:alias.name,country:'PE',currency:'PEN'},{name:alias.name,country:'AR',currency:'PEN'},{name:alias.name,country:'US',currency:'USD'},{name:other.name,country:'PE',currency:'PEN'}]})).status,200);
+       await fixtureAdvisor(table.id);
        let r=await owner.call(root);assert.equal(r.status,200,JSON.stringify(r.body));assert.equal(r.body.rows.length,4);
        const pair=(data:any,country='PE',currency='PEN')=>data.rows.find((x:any)=>x.aliasId===alias.id&&x.country===country&&x.currency===currency);
        assert.equal(pair(r.body).days[day].spend,30);assert.equal(pair(r.body).days[day].base,10);assert.equal(pair(r.body).campaigns,2);assert.equal(pair(r.body,'AR').days[day].spend,99);assert.equal(pair(r.body,'US','USD').days[day].spend,5);assert.equal(pair(r.body).days['2026-10-21'],undefined);
@@ -11496,6 +11509,7 @@ test("Integración HTTP + PostgreSQL (base exclusiva de pruebas, sin llamadas ex
        assert.equal((await upload([{name:'Inválido',country:'ZZ',currency}])).status,400);assert.equal((await admin.call('meta-ads/effectiveness/import','POST',{tableId:table.id,rows:[{name:'No',country:'PE',currency}]})).status,403);
        await db.metaAdAccount.create({data:{id:'962601',connectionId:conn.id,name:'Hoja',currency,timezone:'America/Lima'}});
        for(const [id,country,spend]of [['9626011','PE',10],['9626012','CO',7],['9626013','AR',99]] as const){await db.metaAdObject.create({data:{id,accountId:'962601',level:'campaign',name:id,aliasId,aliasCountry:country,status:'ACTIVE'}});await db.metaAdDaily.create({data:{objectId:id,accountId:'962601',day,scope,spend,actions:{'onsite_conversion.messaging_conversation_started_7d':spend}}});}
+       const advisor=await fixtureAdvisor(table.id,['PE','AR']);
        let r=await owner.call(root);assert.equal(r.status,200);assert(r.body.rows.some((x:any)=>x.country===''));const pair=(data:any,country:string)=>data.rows.find((x:any)=>x.aliasId===aliasId&&x.country===country&&x.currency===currency);
        const pe=pair(r.body,'PE');assert.equal((await owner.call('meta-ads/effectiveness','PATCH',{aliasId,country:'PE',currency,day,sales:3,fixedCost:12.5,revision:0,rowRevision:pe.rowRevision})).status,200);
        const change={aliasId,fromCountry:'PE',fromCurrency:currency,country:'CO',currency,revision:pe.rowRevision};assert.equal((await owner.call('meta-ads/effectiveness/identity','PATCH',change)).status,200);
@@ -11504,7 +11518,7 @@ test("Integración HTTP + PostgreSQL (base exclusiva de pruebas, sin llamadas ex
        const co=pair(r.body,'CO');assert.equal((await owner.call('meta-ads/effectiveness/identity','PATCH',{...change,fromCountry:'CO',country:'AR',revision:co.rowRevision})).status,409);
        assert.equal((await owner.call('meta-ads/effectiveness/identity','PATCH',{...change,fromCountry:'CO',country:'',revision:co.rowRevision})).status,200);
        r=await owner.call(root);assert.equal(pair(r.body,'').days[day].sales,3);assert.equal(pair(r.body,'').days[day].spend,null);
-       assert.equal((await upload([{name,country:'PE',currency}])).status,200);r=await owner.call(root);assert.equal(pair(r.body,'PE').days[day].spend,10);assert.equal(pair(r.body,'PE').days[day].sales,null);
+       assert.equal((await upload([{name,country:'PE',currency}])).status,200);await db.metaEffectivenessRow.updateMany({where:{aliasId,country:'PE',legacy:false},data:{advisorId:advisor.id}});r=await owner.call(root);assert.equal(pair(r.body,'PE').days[day].spend,10);assert.equal(pair(r.body,'PE').days[day].sales,null);
       }finally{await db.metaEffectivenessRow.deleteMany({where:{alias:{tableId:{in:[table.id,foreign.id]}}}});await db.metaAdAccount.deleteMany({where:{connectionId:conn.id}});await db.metaConnection.delete({where:{id:conn.id}});await db.metaAlias.deleteMany({where:{tableId:{in:[table.id,foreign.id]}}});await db.metaAliasTable.deleteMany({where:{id:{in:[table.id,foreign.id]}}});}
     });
     await t.test('Efectividad FX: columna A por tabla, cabeceras globales, monedas vacías y conversión diaria sin alterar originales',async()=>{
@@ -11516,6 +11530,7 @@ test("Integración HTTP + PostgreSQL (base exclusiva de pruebas, sin llamadas ex
        for(const [id,currency]of [['962701','PEN'],['962702','USD']])await db.metaAdAccount.create({data:{id,connectionId:conn.id,name:id,currency,timezone:'America/Lima'}});
        for(const [id,accountId]of [['9627011','962701'],['9627021','962702']]){await db.metaAdObject.create({data:{id,accountId,name:'FX',level:'campaign',aliasId:alias.id,aliasCountry:'PE'}});for(const day of [d1,d2,d3])await db.metaAdDaily.create({data:{accountId,objectId:id,day,scope,spend:accountId==='962701'?100:10,actions:{'onsite_conversion.messaging_conversation_started_7d':4}}});}
        for(const [day,rates]of [[d1,{EUR:1,PEN:4,USD:2}],[d2,{EUR:1,PEN:5,USD:1}]] as const)await db.metaFxDay.upsert({where:{day},create:{day,rates,source:'Prueba sintética',sourceUrl:'https://example.test/fx/'+day},update:{rates,source:'Prueba sintética',sourceUrl:'https://example.test/fx/'+day,lastError:null}});
+       await fixtureAdvisor(table.id);
        let r=await owner.call(query);assert.equal(r.status,200);assert.equal(r.body.rows.length,1);assert.equal(r.body.rows[0].currency,'');assert.equal(r.body.rows[0].days[d1].spend,null);assert.equal(r.body.rows[0].days[d1].base,8);assert.equal(r.body.table.aliasColumnName,'Alias');
        assert.equal((await columns({aliasColumnName:'Producto',currency:'PEN'})).status,200);r=await owner.call(query);let row=r.body.rows[0];assert.equal(row.days[d1].spend,120);assert.equal(row.days[d2].spend,150);
        assert.equal((await owner.call('meta-ads/effectiveness','PATCH',{aliasId:alias.id,country:'PE',currency:'PEN',day:d1,sales:3,fixedCost:8,revision:0,rowRevision:row.rowRevision})).status,200);
@@ -11866,6 +11881,55 @@ test("Integración HTTP + PostgreSQL (base exclusiva de pruebas, sin llamadas ex
         const results=await Promise.all([call(on),call(on)]);assert.deepEqual(results.map(x=>x.status).sort(),[200,409]);v=await read();assert(row(v).active&&row(v,b.id).active&&row(v,a.id,'CL').active);h=(await owner.call(history)).body;assert.equal(h.events.length,2);assert.equal(h.events[0].snapshot.values.sales.total,9);assert.equal(row(v).days[since].fixedCost,12);
         assert.equal((await call({...request(v,false),metrics:['sales','sales']})).status,400);assert.equal((await call({...request(v,false),until:'2026-12-01'})).status,400);assert.equal((await owner.call('meta-ads/alias-tables')).body.find((t:any)=>t.id===table.id).aliases.length,2);
       }finally{await db.metaEffectivenessRow.deleteMany({where:{aliasId:{in:[a.id,b.id]}}});await db.metaAlias.deleteMany({where:{id:{in:[a.id,b.id]}}});await db.metaAliasTable.delete({where:{id:table.id}});}
+    });
+    await t.test('Efectividad: asesores, triple coincidencia, asistencia y ventas diarias por hoja con revisiones',async()=>{
+      const actor=await db.user.findFirstOrThrow({where:{role:'OWNER'}}),since='2026-10-20',until='2026-10-21';
+      const t1=(await owner.call('meta-ads/alias-tables','POST',{name:'Asesores origen '+tag})).body,t2=(await owner.call('meta-ads/alias-tables','POST',{name:'Asesores tienda '+tag})).body;
+      const a=(await owner.call('meta-ads/aliases','POST',{name:'Alias asesor '+tag,tableId:t1.id})).body,b=(await owner.call('meta-ads/aliases','POST',{name:'Segundo asesor '+tag,tableId:t1.id})).body,c=(await owner.call('meta-ads/aliases','POST',{name:'Alias asesor '+tag,tableId:t2.id})).body;
+      const a1=(await owner.call('meta-ads/advisors','POST',{name:'Ana '+tag})).body,a2=(await owner.call('meta-ads/advisors','POST',{name:'Luis '+tag})).body;
+      const conn=await db.metaConnection.create({data:{ownerId:actor.id,name:'Asesor sintético',transport:'API'}});
+      const read=(tableId=t1.id)=>owner.call('meta-ads/effectiveness?'+new URLSearchParams({tableId,since,until}));
+      const sheet=(tableId=t1.id)=>owner.call('meta-ads/advisors/sheet?'+new URLSearchParams({tableId,since,until}));
+      const row=(v:any,id=a.id,country='PE')=>v.body.rows.find((r:any)=>r.aliasId===id&&r.country===country);
+      const assign=(r:any,advisorId:string|null)=>owner.call('meta-ads/effectiveness/advisor','PATCH',{aliasId:r.aliasId,country:r.country,advisorId,revision:r.rowRevision});
+      try{
+        assert(a1.id&&a2.id);assert.equal((await admin.call('meta-ads/advisors','POST',{name:'Sin permiso'})).status,403);
+        assert.equal((await owner.call('meta-ads/advisors','POST',{name:'ANA '+tag})).status,409);
+        assert.equal((await anonymous.call('meta-ads/advisors')).status,401);
+        assert.equal((await admin.call('meta-ads/advisors/sheet?'+new URLSearchParams({tableId:t1.id,since,until}))).status,403);
+        for(const [tableId,names]of [[t1.id,[{name:a.name,country:'PE',currency:'PEN'},{name:a.name,country:'CL',currency:'PEN'},{name:b.name,country:'PE',currency:'PEN'}]],[t2.id,[{name:c.name,country:'PE',currency:'PEN'}]]]as const)assert.equal((await owner.call('meta-ads/effectiveness/import','POST',{tableId,rows:names})).status,200);
+        for(const id of ['963001','963002'])await db.metaAdAccount.create({data:{id,connectionId:conn.id,name:id,currency:'PEN',timezone:'America/Lima'}});
+        for(const [id,accountId,aliasId,country,advisorId,level,spend]of [
+          ['9630011','963001',a.id,'PE',a1.id,'campaign',10],['9630021','963002',a.id,'PE',a1.id,'campaign',20],
+          ['9630012','963001',a.id,'PE',a2.id,'campaign',99],['9630013','963001',a.id,'PE',null,'campaign',88],
+          ['9630014','963001',a.id,'CL',a2.id,'campaign',7],['9630015','963001',b.id,'PE',a1.id,'campaign',6],
+          ['9630016','963001',a.id,'PE',a1.id,'adset',900],['9630017','963001',a.id,'PE',a1.id,'ad',800],
+        ]as const){await db.metaAdObject.create({data:{id,accountId,aliasId,aliasCountry:country,advisorId,level,name:id,status:'PAUSED'}});await db.metaAdDaily.create({data:{objectId:id,accountId,day:since,scope:'7d_click,1d_view|impression',spend,actions:{'onsite_conversion.messaging_conversation_started_7d':spend}}});}
+        let v=await read(),r=row(v);assert.equal(r.advisorId,null);assert.equal(r.days[since],undefined);
+        const stale={aliasId:a.id,country:'PE',advisorId:a1.id,revision:r.rowRevision};
+        assert.equal((await admin.call('meta-ads/effectiveness/advisor','PATCH',stale)).status,403);
+        assert.equal((await owner.call('meta-ads/effectiveness/advisor','PATCH',{...stale,country:''})).status,400);
+        assert.equal((await owner.call('meta-ads/effectiveness/advisor','PATCH',{...stale,advisorId:'missing'})).status,404);
+        assert.equal((await assign(r,a1.id)).status,200);assert.equal((await owner.call('meta-ads/effectiveness/advisor','PATCH',stale)).status,409);
+        v=await read();r=row(v);assert.equal(r.days[since].spend,30);assert.equal(r.days[since].base,30);assert.equal(r.campaigns,2);
+        assert.equal((await assign(row(v,a.id,'CL'),a2.id)).status,200);assert.equal((await assign(row(v,b.id),a1.id)).status,200);assert.equal((await assign(row(await read(t2.id),c.id),a1.id)).status,200);
+        for(const [tableId,aliasId,country,sales]of [[t1.id,a.id,'PE',3],[t1.id,b.id,'PE',4],[t1.id,a.id,'CL',2],[t2.id,c.id,'PE',9]]as const){const current=row(await read(tableId),aliasId,country);assert.equal((await owner.call('meta-ads/effectiveness','PATCH',{aliasId,country,currency:'PEN',day:since,sales,revision:current.days[since]?.revision??0,rowRevision:current.rowRevision})).status,200);}
+        let totals=await sheet();assert.equal(totals.status,200);let p=totals.body.rows.find((p:any)=>p.id===a1.id);assert.equal(p.days[since].sales,7);assert.equal(p.days[until].sales,null);assert.equal(p.days[since].status,null);
+        const attendance={advisorId:a1.id,day:since,status:'PRESENT',revision:0};assert.equal((await owner.call('meta-ads/advisors/attendance','PATCH',attendance)).status,200);assert.equal((await owner.call('meta-ads/advisors/attendance','PATCH',attendance)).status,409);assert.equal((await admin.call('meta-ads/advisors/attendance','PATCH',attendance)).status,403);
+        totals=await sheet();p=totals.body.rows.find((p:any)=>p.id===a1.id);assert.equal(p.days[since].status,'PRESENT');assert.equal(p.days[since].sales,7);
+        assert.equal((await owner.call('meta-ads/advisors/attendance','PATCH',{...attendance,status:'ABSENT',revision:1})).status,200);assert.equal((await owner.call('meta-ads/advisors/attendance','PATCH',{...attendance,day:'2026-02-30'})).status,400);assert.equal((await owner.call('meta-ads/advisors/attendance','PATCH',{...attendance,status:'invalid'})).status,400);
+        assert.equal((await sheet('all')).body.rows.find((p:any)=>p.id===a1.id).days[since].sales,16);assert.equal((await sheet(t2.id)).body.rows.find((p:any)=>p.id===a1.id).days[since].sales,9);
+        assert.equal((await owner.call('meta-ads/advisors','PATCH',{id:a1.id,name:'Ana nueva '+tag,revision:0})).status,200);assert.equal((await owner.call('meta-ads/advisors','PATCH',{id:a1.id,name:'Stale',revision:0})).status,409);assert.equal(row(await read()).days[since].spend,30);
+        assert.equal((await owner.call('meta-ads/objects/9630012/alias','PATCH',{aliasId:a.id,country:'PE',advisorId:a1.id})).status,200);assert.equal(row(await read()).days[since].spend,129);
+        assert.equal((await owner.call('meta-ads/objects/alias','PATCH',{objectIds:['9630012','missing'],aliasId:a.id,country:'PE',advisorId:a2.id})).status,400);
+        assert.equal((await owner.call('meta-ads/objects/alias','PATCH',{objectIds:['9630012','9999999'],aliasId:a.id,country:'PE',advisorId:a2.id})).status,404);assert.equal((await db.metaAdObject.findUniqueOrThrow({where:{id:'9630012'}})).advisorId,a1.id);
+        assert.equal((await owner.call('meta-ads/objects/9630012/alias','PATCH',{aliasId:null})).status,200);assert.equal((await db.metaAdObject.findUniqueOrThrow({where:{id:'9630012'}})).advisorId,null);assert.equal(row(await read()).days[since].spend,30);
+        v=await read();r=row(v);assert.equal((await assign(r,null)).status,200);v=await read();assert.equal(row(v).days[since].sales,3);assert.equal(row(v).days[since].spend,null);assert.equal((await sheet()).body.rows.find((p:any)=>p.id===a1.id).days[since].sales,4);
+        const allObjects=await db.metaAdObject.findMany({where:{account:{connectionId:conn.id}}});assert(allObjects.every(o=>o.status==='PAUSED'));
+        assert.equal((await owner.call('meta-ads/advisors/sheet?'+new URLSearchParams({tableId:t1.id,since,until:'2026-12-01'}))).status,400);
+      }finally{
+        await db.metaAdAccount.deleteMany({where:{connectionId:conn.id}});await db.metaConnection.delete({where:{id:conn.id}});await db.metaEffectivenessRow.deleteMany({where:{alias:{tableId:{in:[t1.id,t2.id]}}}});await db.metaAlias.deleteMany({where:{tableId:{in:[t1.id,t2.id]}}});await db.metaAliasTable.deleteMany({where:{id:{in:[t1.id,t2.id]}}});await db.metaAdvisorAttendance.deleteMany({where:{advisorId:{in:[a1.id,a2.id]}}});await db.metaAdvisor.deleteMany({where:{id:{in:[a1.id,a2.id]}}});
+      }
     });
     await t.test("cierre de sesión invalida el token", async () => {
       assert.equal((await user.call("auth/logout", "POST")).status, 200);

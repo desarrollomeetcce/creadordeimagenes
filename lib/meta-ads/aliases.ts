@@ -81,14 +81,16 @@ export async function assignAlias(
   objectId: string,
   aliasId: string | null,
   country?: string | null,
+  advisorId?: string | null,
 ) {
-  return assignAliases(actor, [objectId], aliasId, country);
+  return assignAliases(actor, [objectId], aliasId, country, advisorId);
 }
 export async function assignAliases(
   actor: Actor,
   objectIds: string[],
   aliasId: string | null,
   country?: string | null,
+  advisorId?: string | null,
 ) {
   ownerOnly(actor);
   demand(
@@ -126,10 +128,19 @@ export async function assignAliases(
         "Alias no disponible.",
         404,
       );
+    if (advisorId) {
+      demand(aliasId && country, "El asesor requiere alias y país.");
+      demand(
+        await tx.metaAdvisor.findUnique({ where: { id: advisorId } }),
+        "Asesor no disponible.",
+        404,
+      );
+    }
     await tx.metaAdObject.updateMany({
       where: { id: { in: ids } },
       data: {
         aliasId,
+        advisorId: aliasId ? (advisorId ?? null) : null,
         ...(!aliasId
           ? { aliasCountry: null }
           : country !== undefined
@@ -145,6 +156,7 @@ export async function assignAliases(
           resourceId: id,
           detail: {
             aliasId,
+            advisorId: aliasId ? (advisorId ?? null) : null,
             country: aliasId
               ? country === undefined
                 ? "unchanged"

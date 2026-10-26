@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { engineRequest as api } from "./generation-engine";
 import { useSheetOrder } from "./use-sheet-order";
 import { MetaEffectiveness } from "./meta-effectiveness";
+import { AdvisorsSheet } from "./advisors-sheet";
 import { EffectivenessTotals } from "./effectiveness-totals";
 import { EffectivenessCell } from "./effectiveness-cell";
 import type { MetaAliasOption } from "./meta-alias-directory";
@@ -43,6 +44,22 @@ export function ProductsCatalog() {
   }, []);
   const [view, setView] = useState<"manual" | "automatic">("manual");
   const [totals, setTotals] = useState(false);
+  const [advisorSheet, setAdvisorSheet] = useState(false),
+    [advisors, setAdvisors] = useState<{ id: string; name: string }[]>([]);
+  const loadAdvisors = async () => setAdvisors(await api("meta-ads/advisors"));
+  useEffect(() => {
+    let active = true;
+    void api("meta-ads/advisors")
+      .then((v) => {
+        if (active) setAdvisors(v);
+      })
+      .catch((e) => {
+        if (active) setMessage(e.message);
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
   const {
     ids: sheetOrder,
     move: moveSheet,
@@ -74,7 +91,7 @@ export function ProductsCatalog() {
           <button
             key={t.id}
             role="tab"
-            aria-selected={!totals && selected === t.id}
+            aria-selected={!totals && !advisorSheet && selected === t.id}
             className="sheet-tab-alias"
             draggable
             data-sheet-id={t.id}
@@ -136,12 +153,25 @@ export function ProductsCatalog() {
             onClick={() => {
               setSelected(t.id);
               setTotals(false);
+              setAdvisorSheet(false);
               setMessage("");
             }}
           >
             {t.name} ({t.aliases.length})
           </button>
         ))}
+        <button
+          role="tab"
+          className="sheet-tab-advisors"
+          aria-selected={advisorSheet}
+          onClick={() => {
+            setAdvisorSheet(true);
+            setTotals(false);
+            setMessage("");
+          }}
+        >
+          Asesores
+        </button>
         <button
           className="sheet-add-tab"
           aria-expanded={adding}
@@ -151,10 +181,11 @@ export function ProductsCatalog() {
         </button>
         <button
           role="tab"
-          aria-selected={totals}
+          aria-selected={totals && !advisorSheet}
           className="sheet-tab-totals"
           onClick={() => {
             setTotals(true);
+            setAdvisorSheet(false);
             setMessage("");
           }}
         >
@@ -165,9 +196,9 @@ export function ProductsCatalog() {
   );
   return (
     <section className="products-catalog effectiveness-workbook">
-      {!totals && (
+      {!totals && !advisorSheet && (
         <div className="sheet-book-bar">
-          {!totals && (
+          {!totals && !advisorSheet && (
             <div
               className="row sheet-view-buttons"
               aria-label="Vista de la hoja"
@@ -193,7 +224,7 @@ export function ProductsCatalog() {
               </button>
             </div>
           )}
-          {table && !totals && (
+          {table && !totals && !advisorSheet && (
             <label className="sheet-table-title">
               Nombre de tabla
               <EffectivenessCell
@@ -229,6 +260,7 @@ export function ProductsCatalog() {
               await load();
               setSelected(t.id);
               setTotals(false);
+              setAdvisorSheet(false);
               setAdding(false);
             } catch (error) {
               setMessage(
@@ -265,17 +297,26 @@ export function ProductsCatalog() {
       <span className="sr-only" role="status">
         {orderMessage}
       </span>
-      {totals && table && (
+      {advisorSheet && table && (
+        <AdvisorsSheet
+          tables={orderedTables}
+          initialTableId={table.id}
+          sheetTabs={sheetTabs}
+          onChanged={loadAdvisors}
+        />
+      )}
+      {totals && !advisorSheet && table && (
         <EffectivenessTotals
           tables={orderedTables}
           initialTableId={table.id}
           sheetTabs={sheetTabs}
         />
       )}
-      {table && !totals && (
+      {table && !totals && !advisorSheet && (
         <MetaEffectiveness
           key={table.id}
           view={view}
+          advisors={advisors}
           sheetTabs={sheetTabs}
           tables={orderedTables}
           tableId={table.id}

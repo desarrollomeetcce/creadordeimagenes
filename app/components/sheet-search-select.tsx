@@ -16,6 +16,7 @@ export function SheetSearchSelect({
   onError,
   className = "",
   compact = false,
+  displayLabel = false,
 }: {
   label: string;
   value: string;
@@ -25,6 +26,7 @@ export function SheetSearchSelect({
   onError?: (message: string) => void;
   className?: string;
   compact?: boolean;
+  displayLabel?: boolean;
 }) {
   const id = useId(),
     popover = useRef<HTMLDivElement>(null),
@@ -82,7 +84,7 @@ export function SheetSearchSelect({
       >
         <span>
           {value
-            ? compact
+            ? compact && !displayLabel
               ? value
               : options.find((o) => o.value === value)?.label || value
             : placeholder}
