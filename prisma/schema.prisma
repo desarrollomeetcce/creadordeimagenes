@@ -712,6 +712,7 @@ model MetaAccountGrant {
   @@index([userId])
 }
 model MetaAliasTable {
+  colors MetaEffectivenessColors?
   syncTarget MetaEffectivenessSync? @relation("SyncDestination")
   syncSources MetaEffectivenessSync[] @relation("SyncSource")
   totals MetaEffectivenessTotalDay[]
@@ -973,4 +974,11 @@ model MetaAdvisorAttendance {
  status String?
  revision Int @default(1)
  @@id([advisorId,day])
+}
+
+model MetaEffectivenessColors {
+ tableId String @id
+ table MetaAliasTable @relation(fields:[tableId],references:[id],onDelete:Cascade)
+ rules Json @default("[]")
+ revision Int @default(1)
 }

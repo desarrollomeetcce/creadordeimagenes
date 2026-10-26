@@ -11931,6 +11931,42 @@ test("Integración HTTP + PostgreSQL (base exclusiva de pruebas, sin llamadas ex
         await db.metaAdAccount.deleteMany({where:{connectionId:conn.id}});await db.metaConnection.delete({where:{id:conn.id}});await db.metaEffectivenessRow.deleteMany({where:{alias:{tableId:{in:[t1.id,t2.id]}}}});await db.metaAlias.deleteMany({where:{tableId:{in:[t1.id,t2.id]}}});await db.metaAliasTable.deleteMany({where:{id:{in:[t1.id,t2.id]}}});await db.metaAdvisorAttendance.deleteMany({where:{advisorId:{in:[a1.id,a2.id]}}});await db.metaAdvisor.deleteMany({where:{id:{in:[a1.id,a2.id]}}});
       }
     });
+    await t.test('Efectividad: N.A. automático reversible preserva originales y colores persistentes sincronizados sin tocar cifras',async()=>{
+      const table=(await owner.call('meta-ads/alias-tables','POST',{name:'Color origen '+tag})).body,target=(await owner.call('meta-ads/alias-tables','POST',{name:'Color destino '+tag})).body;
+      const a=(await owner.call('meta-ads/aliases','POST',{name:'Alias colores '+tag,tableId:table.id})).body;
+      const since='2026-11-10',until='2026-11-12';
+      const read=()=>owner.call('meta-ads/effectiveness?'+new URLSearchParams({tableId:table.id,since,until})),row=(v:any)=>v.body.rows.find((r:any)=>r.aliasId===a.id&&r.country==='PE');
+      const colors=(tableId=table.id)=>owner.call('meta-ads/effectiveness/colors?tableId='+tableId);
+      const rule={id:'zero',value:0,color:'purple',metrics:['sales','budget'],since,until,pinned:true};
+      const save=(rules:any[],revision=0)=>owner.call('meta-ads/effectiveness/colors','PATCH',{tableId:table.id,rules,revision});
+      try{
+        await owner.call('meta-ads/effectiveness/import','POST',{tableId:table.id,rows:[{name:a.name,country:'PE',currency:'PEN'}]});
+        let r=row(await read());await owner.call('meta-ads/effectiveness','PATCH',{aliasId:a.id,country:'PE',currency:'PEN',day:since,sales:4,fixedCost:3,revision:0,rowRevision:r.rowRevision});
+        r=row(await read());const fill={tableId:table.id,since,until,days:[since],metrics:['budget'],value:0,targets:[{aliasId:a.id,country:'PE',token:r.token}]};assert.equal((await owner.call('meta-ads/effectiveness/cells','PATCH',fill)).status,200);
+        const originals=await db.metaEffectivenessDay.findMany({where:{row:{aliasId:a.id}}});r=row(await read());
+        const state=(active:boolean,revision:number)=>({tableId:table.id,aliasId:a.id,country:'PE',active,revision,since,until,metrics:['sales','budget']});
+        const staleToken=r.token;assert.equal((await owner.call('meta-ads/effectiveness/state','PATCH',state(false,r.stateRevision))).status,200);r=row(await read());
+        assert.equal(r.days[since].sales,4);assert.equal(r.days[since].budget,0);assert.equal(r.days[since].fixedCost,3);assert(!r.days[since].na.includes('sales'));assert.deepEqual(r.days[until].automaticNa,['sales','budget','base','spend','fixedCost']);
+        assert.deepEqual(await db.metaEffectivenessDay.findMany({where:{row:{aliasId:a.id}}}),originals);assert.equal((await owner.call('meta-ads/effectiveness/cells','PATCH',{...fill,targets:[{aliasId:a.id,country:'PE',token:staleToken}]})).status,409);
+        const sync=await owner.call('meta-ads/effectiveness/sync/preview','POST',{tableId:target.id,sourceTableId:table.id,since,until,columns:['alias','sales','budget','base','spend','fixedCost']});assert.equal(sync.status,200);assert.equal(sync.body.summary.cells,3);
+        assert.equal((await owner.call('meta-ads/effectiveness/state','PATCH',state(true,r.stateRevision))).status,200);r=row(await read());assert.equal(r.days[until],undefined);assert.equal(r.days[since].budget,0);assert.equal(r.days[since].sales,4);
+        assert.equal((await owner.call('meta-ads/effectiveness/cells','PATCH',{...fill,metrics:['sales'],value:'NA',targets:[{aliasId:a.id,country:'PE',token:r.token}]})).status,200);r=row(await read());
+        await owner.call('meta-ads/effectiveness/state','PATCH',state(false,r.stateRevision));r=row(await read());await owner.call('meta-ads/effectiveness/state','PATCH',state(true,r.stateRevision));r=row(await read());assert(r.days[since].na.includes('sales'));assert(!r.days[since].automaticNa.includes('sales'));assert.equal(r.days[since].budget,0);
+        // A known monetary original with missing FX remains pending, not N.A.
+        const stored=await db.metaEffectivenessRow.findFirstOrThrow({where:{aliasId:a.id,country:'PE',legacy:false}});await db.metaEffectivenessDay.update({where:{rowId_day:{rowId:stored.id,day:since}},data:{annotations:{sales:{value:'NA'},budget:{value:0},spend:{value:5,currency:'EUR'}},revision:{increment:1}}});r=row(await read());await owner.call('meta-ads/effectiveness/state','PATCH',state(false,r.stateRevision));r=row(await read());assert.equal(r.days[since].spend,null);assert(r.days[since].fxMissing);assert(!r.days[since].na.includes('spend'));
+        assert.equal((await colors()).body.revision,0);assert.deepEqual((await colors()).body.rules,[]);assert.equal((await admin.call('meta-ads/effectiveness/colors?tableId='+table.id)).status,403);
+        assert.equal((await admin.call('meta-ads/effectiveness/colors','PATCH',{tableId:table.id,revision:0,rules:[rule]})).status,403);assert.equal((await save([rule])).status,200);assert.deepEqual((await colors()).body.rules,[rule]);assert.equal((await save([rule])).status,409);
+        const before=await db.metaEffectivenessDay.findMany({where:{row:{aliasId:a.id}}});const syncColors={tableId:target.id,revision:0,sourceTableId:table.id,sourceRevision:1};
+        assert.equal((await owner.call('meta-ads/effectiveness/colors/sync','POST',{...syncColors,sourceRevision:0})).status,409);assert.equal((await colors(target.id)).body.revision,0);
+        assert.equal((await owner.call('meta-ads/effectiveness/colors/sync','POST',syncColors)).status,200);assert.deepEqual((await colors(target.id)).body.rules,[rule]);assert.equal((await owner.call('meta-ads/effectiveness/colors/sync','POST',syncColors)).status,409);
+        assert.deepEqual(await db.metaEffectivenessDay.findMany({where:{row:{aliasId:a.id}}}),before);assert.equal((await colors()).body.revision,1);
+        const second={...rule,id:'na',value:'NA',color:'gray'};assert.equal((await save([rule,second],1)).status,200);assert.equal((await colors()).body.rules.length,2);
+        for(const patch of [{color:'bad'},{value:-1},{metrics:['sales','sales']},{until:'2027-01-01'}])assert.equal((await save([{...rule,...patch}],2)).status,400);
+        assert.equal((await save([rule,rule],2)).status,400);assert.equal((await owner.call('meta-ads/effectiveness/colors/sync','POST',{tableId:table.id,revision:2,sourceTableId:table.id,sourceRevision:2})).status,400);
+        assert.equal((await owner.call('meta-ads/effectiveness/colors/sync','POST',{tableId:table.id,revision:2,sourceTableId:'missing',sourceRevision:1})).status,404);
+        assert.equal((await save([],2)).status,200);assert.deepEqual((await colors()).body.rules,[]);assert.equal((await colors(target.id)).body.rules.length,1);
+      }finally{await db.metaEffectivenessRow.deleteMany({where:{aliasId:a.id}});await db.metaAlias.delete({where:{id:a.id}});await db.metaAliasTable.deleteMany({where:{id:{in:[table.id,target.id]}}});}
+    });
     await t.test("cierre de sesión invalida el token", async () => {
       assert.equal((await user.call("auth/logout", "POST")).status, 200);
       assert.equal((await user.call("projects")).status, 401);

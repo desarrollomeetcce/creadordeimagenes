@@ -114,6 +114,7 @@ export async function effectiveness(
     sourceFixedCost: Amount[];
     fxMissing: boolean;
     na: SheetMetric[];
+    automaticNa: SheetMetric[];
     manual: SheetMetric[];
     synced: Partial<Record<SheetMetric, string>>;
     partialMetrics: SheetMetric[];
@@ -186,6 +187,7 @@ export async function effectiveness(
       fxMissing: false,
       fx: [],
       na: [],
+      automaticNa: [],
       manual: [],
       synced: {},
       partialMetrics: [],
@@ -322,6 +324,31 @@ export async function effectiveness(
               : override.value;
       }
     }
+  // State-derived N.A. never writes annotations or clears real values on reactivation.
+  for (const r of rows.values())
+    if (!r.active) {
+      for (
+        let date = Date.parse(since);
+        date <= Date.parse(until);
+        date += 86400000
+      ) {
+        const day = new Date(date).toISOString().slice(0, 10),
+          c = cell(r, day),
+          overrides =
+            annotations.get(key(r.aliasId, r.country))?.get(day) ?? {};
+        for (const m of sheetMetrics) {
+          if (c[m.key] !== null || c.na.includes(m.key)) continue;
+          if (
+            (m.key === "spend" && c.sourceSpend.length) ||
+            (m.key === "fixedCost" && c.sourceFixedCost.length) ||
+            (overrides[m.key] && overrides[m.key].value !== "NA")
+          )
+            continue;
+          c.na.push(m.key);
+          c.automaticNa.push(m.key);
+        }
+      }
+    }
   for (const r of rows.values())
     r.token = createHash("sha256")
       .update(
@@ -330,6 +357,8 @@ export async function effectiveness(
           r.country,
           r.currency,
           r.rowRevision,
+          r.stateRevision,
+          r.active,
           since,
           until,
           Object.entries(r.days)

@@ -1,3 +1,4 @@
+import { colorRulesSchema } from "./sheet-colors";
 import { NextRequest, NextResponse } from "next/server";
 import { isCurrency, syncFxDays } from "./exchange-rates";
 import { isCountryCode } from "./countries";
@@ -74,6 +75,51 @@ export async function metaRoutes(
       await (
         await import("./manage")
       ).setMetaStatus(actor, parts[2], b.status, b.expectedStatus),
+    );
+  }
+  if (path === "effectiveness/colors" && method === "GET") {
+    ownerOnly(actor);
+    const q = z
+      .object({ tableId: z.string().min(1).max(100) })
+      .strict()
+      .parse(Object.fromEntries(req.nextUrl.searchParams));
+    return send(
+      await (
+        await import("./effectiveness-colors")
+      ).effectivenessColors(actor, q.tableId),
+    );
+  }
+  if (path === "effectiveness/colors" && method === "PATCH") {
+    ownerOnly(actor);
+    const b = z
+      .object({
+        tableId: z.string().min(1).max(100),
+        revision: z.number().int().nonnegative(),
+        rules: colorRulesSchema,
+      })
+      .strict()
+      .parse(await body());
+    return send(
+      await (
+        await import("./effectiveness-colors")
+      ).saveEffectivenessColors(actor, b),
+    );
+  }
+  if (path === "effectiveness/colors/sync" && method === "POST") {
+    ownerOnly(actor);
+    const b = z
+      .object({
+        tableId: z.string().min(1).max(100),
+        revision: z.number().int().nonnegative(),
+        sourceTableId: z.string().min(1).max(100),
+        sourceRevision: z.number().int().nonnegative(),
+      })
+      .strict()
+      .parse(await body());
+    return send(
+      await (
+        await import("./effectiveness-colors")
+      ).saveEffectivenessColors(actor, b),
     );
   }
   if (path === "advisors" && method === "GET")

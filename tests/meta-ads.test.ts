@@ -249,3 +249,16 @@ test('Efectividad: totales diarios por parámetro, N.A., cero y conversión pend
 });
 
  test('Efectividad: sincronización mantiene la cobertura parcial en sumas e histórico',async()=>{const {sumEffectivenessDay}=await import('../lib/meta-ads/effectiveness-total-values');const {summarizePeriod}=await import('../lib/meta-ads/period-summary');const day='2026-10-20',days:any={[day]:{sales:2,base:4,spend:10,fixedCost:null,budget:null,campaigns:0,manual:['spend'],partialMetrics:['spend']}};assert(sumEffectivenessDay([{days,campaigns:0}],day).spend.partial);assert(summarizePeriod(days,[day],'spend').partial);});
+
+test('Efectividad: reglas de color por valor exacto, parámetro y fechas; validación y prioridad',async()=>{
+ const {sheetPalette,sheetCellColor,colorRulesSchema}=await import('../lib/meta-ads/sheet-colors');
+ assert.equal(sheetPalette.length,10);assert.equal(new Set(sheetPalette.map(c=>c.hex)).size,10);
+ const rule:any={id:'r1',value:0,color:'purple',metrics:['sales','budget'],since:'2026-10-20',until:'2026-10-22',pinned:true};
+ assert(colorRulesSchema.safeParse([rule]).success);
+ assert.equal(sheetCellColor([rule],'sales','2026-10-20',0),'#a78bfa');assert.equal(sheetCellColor([rule],'budget','2026-10-22',0),'#a78bfa');
+ for(const [metric,day,value]of [['sales','2026-10-19',0],['sales','2026-10-23',0],['base','2026-10-21',0],['sales','2026-10-21',null],['sales','2026-10-21','NA'],['sales','2026-10-21',1]]as const)assert.equal(sheetCellColor([rule],metric,day,value),undefined);
+ const cents:any={...rule,id:'money',value:2.35,metrics:['budget']};assert.equal(sheetCellColor([cents],'budget','2026-10-20',2.346,'PEN'),'#a78bfa');assert.equal(sheetCellColor([cents],'budget','2026-10-20',2.346),undefined);
+ const later:any={...rule,id:'r2',color:'green'};assert.equal(sheetCellColor([rule,later],'sales','2026-10-21',0),'#4ade80');assert.equal(sheetCellColor([rule,{...later,value:'NA',color:'gray'}],'sales','2026-10-21','NA'),'#94a3b8');
+ for(const patch of [{color:'#fff'},{value:-1},{value:Infinity},{since:'2026-02-30'},{until:'2026-12-01'},{metrics:[]},{metrics:['sales','sales']}])assert(!colorRulesSchema.safeParse([{...rule,...patch}]).success);
+ assert(!colorRulesSchema.safeParse([rule,rule]).success);assert(!colorRulesSchema.safeParse(Array.from({length:31},(_,i)=>({...rule,id:String(i)}))).success);
+});

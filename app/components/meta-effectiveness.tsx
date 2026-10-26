@@ -27,6 +27,11 @@ import { useSheetWidths } from "./use-sheet-widths";
 import { EffectivenessSync } from "./effectiveness-sync";
 import { EffectivenessHistory } from "./effectiveness-history";
 import { useSheetTextFit } from "./use-sheet-text-fit";
+import { SheetColorsControl } from "./sheet-colors-control";
+import {
+  sheetCellColor,
+  type SheetColorRule,
+} from "../../lib/meta-ads/sheet-colors";
 import { EffectivenessCell } from "./effectiveness-cell";
 const countries = countryOptions.map((c) => ({
   value: c.code,
@@ -50,6 +55,7 @@ type Cell = {
   sourceFixedCost: { currency: string; amount: number }[];
   fxMissing: boolean;
   na: SheetMetric[];
+  automaticNa?: SheetMetric[];
   manual: SheetMetric[];
   synced?: Partial<Record<SheetMetric, string>>;
   partialMetrics?: SheetMetric[];
@@ -116,6 +122,7 @@ export function MetaEffectiveness({
   onNamesChanged: () => Promise<void>;
 }) {
   const [syncOpen, setSyncOpen] = useState(false);
+  const [colorRules, setColorRules] = useState<SheetColorRule[]>([]);
   const [aliasSearch, setAliasSearch] = useState("");
   const [selectedPairs, setSelectedPairs] = useState<string[]>([]);
   const grid = useRef<HTMLTableElement>(null);
@@ -535,6 +542,7 @@ export function MetaEffectiveness({
           )),
     )
     .sort((a, b) => {
+      if (a.active !== b.active) return a.active ? -1 : 1;
       let result = 0;
       if (activeSort.kind === "text") {
         const av =
@@ -646,6 +654,15 @@ export function MetaEffectiveness({
       aria-label="Efectividad diaria"
     >
       <div className="row sheet-toolbar">
+        <SheetColorsControl
+          tableId={tableId}
+          tables={tables}
+          since={since}
+          until={until}
+          metrics={visibleMetrics.map((m) => m.key)}
+          onRules={setColorRules}
+          onError={setMessage}
+        />
         <button
           className={syncOpen ? "primary" : ""}
           aria-expanded={syncOpen}
@@ -1220,6 +1237,36 @@ export function MetaEffectiveness({
                             direction: "asc",
                           })}
                         </button>
+                        <SheetSearchSelect
+                          compact
+                          label={`Completar ${m.name} ${d}`}
+                          value=""
+                          placeholder="Todas"
+                          options={[
+                            {
+                              value: "0",
+                              label: "0 · Todas las filas visibles",
+                            },
+                            {
+                              value: "NA",
+                              label: "N.A. · Todas las filas visibles",
+                            },
+                          ]}
+                          onError={setMessage}
+                          onSelect={async (value) => {
+                            setBusy(true);
+                            try {
+                              await fill(
+                                rows,
+                                [m.key],
+                                value === "NA" ? "NA" : 0,
+                                [d],
+                              );
+                            } finally {
+                              setBusy(false);
+                            }
+                          }}
+                        />
                         <SheetColumnResizer
                           label={`${m.name} ${d}`}
                           onResize={(w) => resizeColumn(d + m.key, w)}
@@ -1372,65 +1419,86 @@ export function MetaEffectiveness({
                     {days.flatMap((d) => {
                       const c = r.days[d],
                         partial = c && c.campaigns < r.campaigns;
-                      const cells = sheetMetrics.map((m) => (
-                        <td
-                          key={d + m.label}
-                          className={
-                            m.key === "base" || m.key === "spend"
-                              ? "sheet-derived" +
-                                ((partial && !c?.manual?.includes(m.key)) ||
-                                c?.partialMetrics?.includes(m.key)
-                                  ? " sheet-partial"
-                                  : "")
-                              : c?.synced?.[m.key]
-                                ? "sheet-synced-cell"
-                                : ""
-                          }
-                        >
-                          <EffectivenessCell
-                            allowNA
-                            manual={c?.manual?.includes(m.key)}
-                            placeholder={
-                              m.money &&
-                              c?.fxMissing &&
-                              c[m.key] === null &&
-                              !c.na?.includes(m.key)
-                                ? "Sin tasa"
-                                : "—"
+                      const cells = sheetMetrics.map((m) => {
+                        const cellColor = sheetCellColor(
+                          colorRules,
+                          m.key,
+                          d,
+                          c?.na?.includes(m.key) ? "NA" : (c?.[m.key] ?? null),
+                          r.currency || "USD",
+                        );
+                        return (
+                          <td
+                            key={d + m.label}
+                            data-na={c?.na?.includes(m.key) || undefined}
+                            data-auto-na={
+                              c?.automaticNa?.includes(m.key) || undefined
                             }
-                            label={`${m.label} ${name} ${r.country} ${d}`}
-                            value={
-                              c?.na?.includes(m.key)
-                                ? "N.A."
-                                : c?.[m.key] === null ||
-                                    c?.[m.key] === undefined
-                                  ? ""
-                                  : m.money
-                                    ? c[m.key]!.toFixed(
-                                        new Intl.NumberFormat("en", {
-                                          style: "currency",
-                                          currency: r.currency || "USD",
-                                        }).resolvedOptions()
-                                          .maximumFractionDigits,
-                                      )
-                                    : String(c[m.key])
+                            style={
+                              cellColor
+                                ? ({
+                                    "--sheet-rule-color": cellColor,
+                                  } as CSSProperties)
+                                : undefined
                             }
-                            onError={setMessage}
-                            onSave={(v) => editCell(r, d, m.key, v)}
-                            hint={`${c?.synced?.[m.key] ? "Sincronizado desde «" + c.synced[m.key] + "». " : ""}${c?.manual?.includes(m.key) ? "Ajuste manual de Efectividad. Originales conservados. " : ""}${m.key === "spend" ? "Original Meta: " + (c?.sourceSpend.map((x) => x.currency + " " + x.amount).join(" + ") || "sin datos") + ". " : ""}${c?.fxMissing && c?.[m.key] === null && !c.na?.includes(m.key) ? "Sin tasa. " : ""}${partial || c?.partialMetrics?.includes(m.key) ? "Cobertura parcial. " : ""}${m.key === "fixedCost" ? "Original CF: " + (c?.sourceFixedCost.map((x) => x.currency + " " + x.amount).join(" + ") || "sin datos") + ". " : ""}${m.money ? c?.fx.map((f) => `${f.date}: 1 ${f.from} = ${f.rate} ${f.to} · ${f.source}`).join("; ") || "" : ""} Escribe un número o N.A.; vacío restaura el importado en B/G; en P borra el presupuesto.`}
-                          />
-                          {(c?.partialMetrics?.includes(m.key) ||
-                            (partial && !c?.manual?.includes(m.key))) &&
-                            (m.key === "base" || m.key === "spend") && (
-                              <span
-                                className="sheet-partial-marker"
-                                title="Cobertura parcial"
-                              >
-                                *
-                              </span>
-                            )}
-                        </td>
-                      ));
+                            data-colored={!!cellColor || undefined}
+                            className={
+                              m.key === "base" || m.key === "spend"
+                                ? "sheet-derived" +
+                                  ((partial && !c?.manual?.includes(m.key)) ||
+                                  c?.partialMetrics?.includes(m.key)
+                                    ? " sheet-partial"
+                                    : "")
+                                : c?.synced?.[m.key]
+                                  ? "sheet-synced-cell"
+                                  : ""
+                            }
+                          >
+                            <EffectivenessCell
+                              allowNA
+                              manual={c?.manual?.includes(m.key)}
+                              placeholder={
+                                m.money &&
+                                c?.fxMissing &&
+                                c[m.key] === null &&
+                                !c.na?.includes(m.key)
+                                  ? "Sin tasa"
+                                  : "—"
+                              }
+                              label={`${m.label} ${name} ${r.country} ${d}`}
+                              value={
+                                c?.na?.includes(m.key)
+                                  ? "N.A."
+                                  : c?.[m.key] === null ||
+                                      c?.[m.key] === undefined
+                                    ? ""
+                                    : m.money
+                                      ? c[m.key]!.toFixed(
+                                          new Intl.NumberFormat("en", {
+                                            style: "currency",
+                                            currency: r.currency || "USD",
+                                          }).resolvedOptions()
+                                            .maximumFractionDigits,
+                                        )
+                                      : String(c[m.key])
+                              }
+                              onError={setMessage}
+                              onSave={(v) => editCell(r, d, m.key, v)}
+                              hint={`${c?.automaticNa?.includes(m.key) ? "N.A. automático por desactivación; vuelve a vacío al activar. " : ""}${c?.synced?.[m.key] ? "Sincronizado desde «" + c.synced[m.key] + "». " : ""}${c?.manual?.includes(m.key) ? "Ajuste manual de Efectividad. Originales conservados. " : ""}${m.key === "spend" ? "Original Meta: " + (c?.sourceSpend.map((x) => x.currency + " " + x.amount).join(" + ") || "sin datos") + ". " : ""}${c?.fxMissing && c?.[m.key] === null && !c.na?.includes(m.key) ? "Sin tasa. " : ""}${partial || c?.partialMetrics?.includes(m.key) ? "Cobertura parcial. " : ""}${m.key === "fixedCost" ? "Original CF: " + (c?.sourceFixedCost.map((x) => x.currency + " " + x.amount).join(" + ") || "sin datos") + ". " : ""}${m.money ? c?.fx.map((f) => `${f.date}: 1 ${f.from} = ${f.rate} ${f.to} · ${f.source}`).join("; ") || "" : ""} Escribe un número o N.A.; vacío restaura el importado en B/G; en P borra el presupuesto.`}
+                            />
+                            {(c?.partialMetrics?.includes(m.key) ||
+                              (partial && !c?.manual?.includes(m.key))) &&
+                              (m.key === "base" || m.key === "spend") && (
+                                <span
+                                  className="sheet-partial-marker"
+                                  title="Cobertura parcial"
+                                >
+                                  *
+                                </span>
+                              )}
+                          </td>
+                        );
+                      });
                       return cells.filter((_, i) =>
                         visibleMetricKeys.has(sheetMetrics[i].key),
                       );

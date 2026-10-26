@@ -161,18 +161,6 @@ export function ProductsCatalog() {
           </button>
         ))}
         <button
-          role="tab"
-          className="sheet-tab-advisors"
-          aria-selected={advisorSheet}
-          onClick={() => {
-            setAdvisorSheet(true);
-            setTotals(false);
-            setMessage("");
-          }}
-        >
-          Asesores
-        </button>
-        <button
           className="sheet-add-tab"
           aria-expanded={adding}
           onClick={() => setAdding((v) => !v)}
@@ -190,6 +178,18 @@ export function ProductsCatalog() {
           }}
         >
           Totales
+        </button>
+        <button
+          role="tab"
+          className="sheet-tab-advisors"
+          aria-selected={advisorSheet}
+          onClick={() => {
+            setAdvisorSheet(true);
+            setTotals(false);
+            setMessage("");
+          }}
+        >
+          Asesores
         </button>
       </div>
     </nav>

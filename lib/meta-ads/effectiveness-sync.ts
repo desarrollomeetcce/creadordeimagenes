@@ -120,6 +120,10 @@ async function planSync(
           }
         > = {};
       for (const m of metrics) {
+        if (cell?.automaticNa.includes(m.key)) {
+          missing++;
+          continue;
+        }
         const value = cell?.[m.key];
         if (cell?.na.includes(m.key)) patch[m.key] = { value: "NA" };
         else if (
