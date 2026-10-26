@@ -1,3 +1,4 @@
+import { advisorSalesPlan } from "./advisor-sales-plan";
 import { createHash } from "node:crypto";
 import {
   attributeDailySales,
@@ -94,7 +95,7 @@ async function reviewAssignment(
   day: string,
 ) {
   const alias = await tx.metaAlias.findUnique({ where: { id: aliasId } });
-  demand(alias, "Alias no disponible.", 404);
+  demand(alias, "Inventario no disponible.", 404);
   const sheet = await effectiveness(actor, alias.tableId, day, day, tx);
   const row = sheet.rows.find(
     (r) => r.aliasId === aliasId && r.country === country,
@@ -106,7 +107,19 @@ async function reviewAssignment(
   });
   const cell = row.days[day];
   const sales = cell?.na.includes("sales") ? null : (cell?.sales ?? null);
+  const salesApproval = await tx.metaAdvisorSalesApproval.findFirst({
+    where: { row: { aliasId, country, currency: "" }, day },
+  });
+  const salesApprovalValid = advisorSalesPlan(
+    row.advisorId,
+    changes,
+    day,
+    sales,
+    !!cell?.na.includes("sales"),
+    salesApproval,
+  ).reconciled;
   return {
+    salesApprovalValid,
     sales,
     rowRevision: row.rowRevision,
     advisorId: row.advisorId,
@@ -142,7 +155,7 @@ export async function assignRowAdvisor(
         where: { id: b.aliasId },
         include: { table: true },
       });
-      demand(alias, "Alias no disponible.", 404);
+      demand(alias, "Inventario no disponible.", 404);
       if (b.advisorId)
         demand(
           await tx.metaAdvisor.findUnique({ where: { id: b.advisorId } }),
@@ -179,32 +192,19 @@ export async function assignRowAdvisor(
       const last = assignmentTimeline(history).at(-1);
       demand(
         !last ||
-          at > last.effectiveAt ||
+          at >= last.effectiveAt ||
           (mode === "DAY" && day === limaDay(last.effectiveAt)),
-        "El inicio debe ser posterior al último cambio. Solo un cambio de día completo puede reemplazar los cortes de esa misma fecha.",
+        "El inicio debe ser igual o posterior al último cambio. Solo un cambio de día completo puede reemplazar los cortes de esa misma fecha.",
         409,
       );
-      demand(history.length < 1000, "Máximo1000 cambios por alias y país.");
-      if (b.token && mode === "DAY") {
-        const review = await reviewAssignment(
-          tx,
-          actor,
-          b.aliasId,
-          b.country,
-          day,
-        );
-        demand(
-          review.token === b.token,
-          "La fila cambió desde la revisión. Revisa de nuevo.",
-          409,
-        );
-      }
+      demand(
+        history.length < 1000,
+        "Máximo1000 cambios por inventario y país.",
+      );
       let cutoff: number | null = null;
       if (mode === "CLOCK") {
-        demand(
-          !!b.token && b.cutoffSales !== undefined,
-          "Revisa las ventas acumuladas del corte antes de guardar.",
-        );
+        // Capture the latest registered daily sales under the same lock as the transfer.
+        // Legacy client cutoff/token fields never decide ownership of sales.
         const review = await reviewAssignment(
           tx,
           actor,
@@ -212,23 +212,15 @@ export async function assignRowAdvisor(
           b.country,
           day,
         );
-        demand(
-          review.token === b.token,
-          "Las ventas o la asignación cambiaron. Revisa de nuevo el corte.",
-          409,
-        );
-        cutoff = b.cutoffSales!;
-        demand(
-          review.sales === null || cutoff <= review.sales,
-          "El corte no puede superar las ventas registradas del día.",
-        );
+        cutoff = review.sales ?? 0;
         const previousCut =
           last && limaDay(last.effectiveAt) === day
             ? (last.cutoffSales ?? 0)
             : 0;
         demand(
-          cutoff >= previousCut,
-          "El corte no puede ser menor que el corte anterior de ese día.",
+          cutoff >= previousCut || review.salesApprovalValid,
+          "Las ventas registradas son menores que un corte anterior. Corrige el total del día o elige Todo el día.",
+          409,
         );
       }
       const row = await tx.metaEffectivenessRow.upsert({
@@ -437,7 +429,7 @@ export async function advisorSheet(
         });
         demand(
           a && tables.some((t) => t.id === a.tableId),
-          "Alias no disponible en las hojas elegidas.",
+          "Inventario no disponible en las hojas elegidas.",
           404,
         );
       }
@@ -499,6 +491,13 @@ export async function advisorSheet(
             { id: "asc" },
           ],
         });
+        const approvals = await tx.metaAdvisorSalesApproval.findMany({
+          where: {
+            row: { alias: { tableId: table.id } },
+            day: { gte: since, lte: until },
+          },
+          include: { row: { select: { aliasId: true, country: true } } },
+        });
         for (const row of sheet.rows) {
           if (
             !row.country ||
@@ -518,7 +517,7 @@ export async function advisorSheet(
               )
                 assignmentHistory.push({
                   id: e.id,
-                  alias: names.get(row.aliasId) ?? "Alias",
+                  alias: names.get(row.aliasId) ?? "Inventario",
                   country: row.country,
                   tableName: table.name,
                   effectiveAt: e.effectiveAt.toISOString(),
@@ -530,14 +529,22 @@ export async function advisorSheet(
           const sources = new Map<string, (typeof breakdown)[number]>();
           for (const day of dates) {
             const c = row.days[day];
-            const portions = attributeDailySales(
+            const approval = approvals.find(
+              (a) =>
+                a.row.aliasId === row.aliasId &&
+                a.row.country === row.country &&
+                a.day === day,
+            );
+            const plan = advisorSalesPlan(
               row.advisorId,
               changes,
               day,
               c?.sales ?? null,
               !!c?.na.includes("sales"),
+              approval,
             );
-            for (const portion of portions) {
+            for (const portion of plan.portions) {
+              if (!portion.advisorId) continue;
               if (filters.advisorId && portion.advisorId !== filters.advisorId)
                 continue;
               if (!totals.has(portion.advisorId))
@@ -557,7 +564,9 @@ export async function advisorSheet(
                 sum.known++;
               }
               sum.partial ||=
-                portion.partial || !!c?.partialMetrics.includes("sales");
+                portion.partial ||
+                !!c?.partialMetrics.includes("sales") ||
+                plan.status === "PENDING";
               byDay.set(day, sum);
               if (filters.advisorId) {
                 if (!sources.has(portion.advisorId))
@@ -565,7 +574,7 @@ export async function advisorSheet(
                     tableId: table.id,
                     tableName: table.name,
                     aliasId: row.aliasId,
-                    alias: names.get(row.aliasId) ?? "Alias",
+                    alias: names.get(row.aliasId) ?? "Inventario",
                     country: row.country,
                     advisorId: portion.advisorId,
                     days: {},

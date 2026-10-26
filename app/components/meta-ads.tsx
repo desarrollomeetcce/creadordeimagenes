@@ -500,7 +500,7 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
               country,
               advisorId,
             }),
-          "Alias actualizado.",
+          "Inventario actualizado.",
         )
       }
     />
@@ -1138,7 +1138,7 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
                   country,
                   advisorId,
                 }),
-              "Alias asignado a la selección.",
+              "Inventario asignado a la selección.",
             )
           }
         />
@@ -2613,17 +2613,17 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
                     />
                   </label>
                   <div className="meta-alias-country-filter">
-                    <span>Buscar por alias y país</span>
+                    <span>Buscar por inventario y país</span>
                     <div>
                       <select
-                        aria-label="Buscar por alias"
+                        aria-label="Buscar por inventario"
                         value={aliasFilter}
                         onChange={(e) =>
                           resetPage(() => setAliasFilter(e.target.value))
                         }
                       >
-                        <option value="">Todos los alias</option>
-                        <option value="__none">Sin alias</option>
+                        <option value="">Todo el inventario</option>
+                        <option value="__none">Sin inventario</option>
                         {aliases.map((a) => (
                           <option key={a.id} value={a.id}>
                             {a.name}
@@ -2631,7 +2631,7 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
                         ))}
                       </select>
                       <select
-                        aria-label="Filtrar por país del alias"
+                        aria-label="Filtrar por país del inventario"
                         value={countryFilter}
                         onChange={(e) =>
                           resetPage(() => setCountryFilter(e.target.value))
@@ -2964,7 +2964,7 @@ function MetaDetail({ item: o, onClose }: { item: Item; onClose: () => void }) {
         {o.metricName} · {o.timezone}
       </p>
       <p className="meta-detail-alias">
-        Alias: <strong>{o.alias?.name ?? "Sin alias"}</strong> · País:{" "}
+        Inventario: <strong>{o.alias?.name ?? "Sin inventario"}</strong> · País:{" "}
         <strong>{countryName(o.aliasCountry)}</strong>
       </p>
       <MetaDailyDetail key={o.id} item={o} />

@@ -339,7 +339,7 @@ export function EffectivenessTotals({
       </div>
       <p className="sheet-help">
         {mode === "manual"
-          ? "V/P: suma de alias. BM, GD y CF: valores manuales de esta hoja, por tabla, país, moneda y fecha."
+          ? "V/P: suma de inventario. BM, GD y CF: valores manuales de esta hoja, por tabla, país, moneda y fecha."
           : "V/B/G/CF: suma de los valores de la vista automática."}{" "}
         Países y monedas separados; N.A. no suma, — sin dato, * suma parcial.
         Las ventas se suman únicamente desde la hoja de origen indicada en cada
@@ -422,7 +422,7 @@ export function EffectivenessTotals({
                               <span
                                 title={
                                   sum
-                                    ? `${sum.known}/${sum.expected} alias con dato; ${sum.na} N.A.${sum.pending ? " Falta conversión." : ""}`
+                                    ? `${sum.known}/${sum.expected} inventario con dato; ${sum.na} N.A.${sum.pending ? " Falta conversión." : ""}`
                                     : "Sin datos"
                                 }
                               >

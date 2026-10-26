@@ -2,6 +2,7 @@
 import { useEffect, useRef, useState, useId } from "react";
 import { engineRequest as api } from "./generation-engine";
 import { useSheetOrder } from "./use-sheet-order";
+import { InventoryCatalog } from "./inventory-catalog";
 import { MetaEffectiveness } from "./meta-effectiveness";
 import { DeleteAliasTable } from "./delete-alias-table";
 import { AdvisorsSheet } from "./advisors-sheet";
@@ -85,6 +86,7 @@ export function ProductsCatalog() {
   };
   const [view, setView] = useState<"manual" | "automatic">("manual");
   const [totals, setTotals] = useState(false);
+  const [inventorySheet, setInventorySheet] = useState(false);
   const [advisorSheet, setAdvisorSheet] = useState(false),
     [advisors, setAdvisors] = useState<{ id: string; name: string }[]>([]);
   const loadAdvisors = async () => setAdvisors(await api("meta-ads/advisors"));
@@ -132,7 +134,9 @@ export function ProductsCatalog() {
           <button
             key={t.id}
             role="tab"
-            aria-selected={!totals && !advisorSheet && selected === t.id}
+            aria-selected={
+              !totals && !advisorSheet && !inventorySheet && selected === t.id
+            }
             className="sheet-tab-alias"
             draggable
             data-sheet-id={t.id}
@@ -205,6 +209,7 @@ export function ProductsCatalog() {
               setSelected(t.id);
               setTotals(false);
               setAdvisorSheet(false);
+              setInventorySheet(false);
               setMessage("");
             }}
           >
@@ -220,12 +225,13 @@ export function ProductsCatalog() {
         </button>
         <button
           role="tab"
-          aria-selected={totals && !advisorSheet}
+          aria-selected={totals && !advisorSheet && !inventorySheet}
           className="sheet-tab-totals"
           disabled={!tables.length}
           onClick={() => {
             setTotals(true);
             setAdvisorSheet(false);
+            setInventorySheet(false);
             setMessage("");
           }}
         >
@@ -234,23 +240,37 @@ export function ProductsCatalog() {
         <button
           role="tab"
           className="sheet-tab-advisors"
-          aria-selected={advisorSheet}
+          aria-selected={advisorSheet && !inventorySheet}
           onClick={() => {
             setAdvisorSheet(true);
+            setInventorySheet(false);
             setTotals(false);
             setMessage("");
           }}
         >
           Asesores
         </button>
+        <button
+          role="tab"
+          className="sheet-tab-inventory"
+          aria-selected={inventorySheet}
+          onClick={() => {
+            setInventorySheet(true);
+            setTotals(false);
+            setAdvisorSheet(false);
+            setMessage("");
+          }}
+        >
+          Inventario
+        </button>
       </div>
     </nav>
   );
   return (
     <section className="products-catalog effectiveness-workbook">
-      {!totals && !advisorSheet && (
+      {!totals && !advisorSheet && !inventorySheet && (
         <div className="sheet-book-bar">
-          {!totals && !advisorSheet && (
+          {!totals && !advisorSheet && !inventorySheet && (
             <div
               className="row sheet-view-buttons"
               aria-label="Vista de la hoja"
@@ -276,7 +296,7 @@ export function ProductsCatalog() {
               </button>
             </div>
           )}
-          {table && !totals && !advisorSheet && (
+          {table && !totals && !advisorSheet && !inventorySheet && (
             <label className="sheet-table-title">
               Nombre de tabla
               <EffectivenessCell
@@ -313,6 +333,7 @@ export function ProductsCatalog() {
               setSelected(t.id);
               setTotals(false);
               setAdvisorSheet(false);
+              setInventorySheet(false);
               setAdding(false);
             } catch (error) {
               setMessage(
@@ -349,7 +370,7 @@ export function ProductsCatalog() {
       <span className="sr-only" role="status">
         {orderMessage}
       </span>
-      {!loading && !tables.length && !advisorSheet && (
+      {!loading && !tables.length && !advisorSheet && !inventorySheet && (
         <div className="sheet-empty-workbook">
           {sheetTabs}
           <p>
@@ -358,7 +379,15 @@ export function ProductsCatalog() {
           </p>
         </div>
       )}
-      {advisorSheet && (
+      {inventorySheet && (
+        <InventoryCatalog
+          tables={orderedTables}
+          initialTableId={table?.id ?? ""}
+          sheetTabs={sheetTabs}
+          onChanged={load}
+        />
+      )}
+      {advisorSheet && !inventorySheet && (
         <AdvisorsSheet
           tables={orderedTables}
           initialTableId={table?.id ?? "all"}
@@ -366,14 +395,14 @@ export function ProductsCatalog() {
           onChanged={loadAdvisors}
         />
       )}
-      {totals && !advisorSheet && table && (
+      {totals && !advisorSheet && !inventorySheet && table && (
         <EffectivenessTotals
           tables={orderedTables}
           initialTableId={table.id}
           sheetTabs={sheetTabs}
         />
       )}
-      {table && !totals && !advisorSheet && (
+      {table && !totals && !advisorSheet && !inventorySheet && (
         <MetaEffectiveness
           key={table.id}
           view={view}

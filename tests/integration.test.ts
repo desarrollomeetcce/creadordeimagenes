@@ -11908,7 +11908,7 @@ test("Integración HTTP + PostgreSQL (base exclusiva de pruebas, sin llamadas ex
         let v=await read(),r=row(v);assert.equal(r.advisorId,null);assert.equal(r.days[since],undefined);
         const stale={aliasId:a.id,country:'PE',advisorId:a1.id,revision:r.rowRevision};
         assert.equal((await admin.call('meta-ads/effectiveness/advisor','PATCH',stale)).status,403);
-        assert.equal((await owner.call('meta-ads/effectiveness/advisor','PATCH',{...stale,country:''})).status,400);
+        assert.equal((await owner.call('meta-ads/effectiveness/advisor','PATCH',{...stale,country:'INVALID'})).status,400);
         assert.equal((await owner.call('meta-ads/effectiveness/advisor','PATCH',{...stale,advisorId:'missing'})).status,404);
         assert.equal((await assign(r,a1.id)).status,200);assert.equal((await owner.call('meta-ads/effectiveness/advisor','PATCH',stale)).status,409);
         v=await read();r=row(v);assert.equal(r.days[since].spend,30);assert.equal(r.days[since].base,30);assert.equal(r.campaigns,2);
@@ -11961,10 +11961,15 @@ test("Integración HTTP + PostgreSQL (base exclusiva de pruebas, sin llamadas ex
         assert.equal((await owner.call('meta-ads/effectiveness/colors/sync','POST',syncColors)).status,200);assert.deepEqual((await colors(target.id)).body.rules,[rule]);assert.equal((await owner.call('meta-ads/effectiveness/colors/sync','POST',syncColors)).status,409);
         assert.deepEqual(await db.metaEffectivenessDay.findMany({where:{row:{aliasId:a.id}}}),before);assert.equal((await colors()).body.revision,1);
         const second={...rule,id:'na',value:'NA',color:'gray'};assert.equal((await save([rule,second],1)).status,200);assert.equal((await colors()).body.rules.length,2);
-        for(const patch of [{color:'bad'},{value:-1},{metrics:['sales','sales']},{until:'2027-01-01'}])assert.equal((await save([{...rule,...patch}],2)).status,400);
+        for(const patch of [{color:'bad'},{value:-1},{metrics:['sales','sales']},{until:'2027-01-01'},{enabled:'false'}])assert.equal((await save([{...rule,...patch}],2)).status,400);
         assert.equal((await save([rule,rule],2)).status,400);assert.equal((await owner.call('meta-ads/effectiveness/colors/sync','POST',{tableId:table.id,revision:2,sourceTableId:table.id,sourceRevision:2})).status,400);
         assert.equal((await owner.call('meta-ads/effectiveness/colors/sync','POST',{tableId:table.id,revision:2,sourceTableId:'missing',sourceRevision:1})).status,404);
-        assert.equal((await save([],2)).status,200);assert.deepEqual((await colors()).body.rules,[]);assert.equal((await colors(target.id)).body.rules.length,1);
+        const disabled={...rule,enabled:false};assert.equal((await save([disabled,second],2)).status,200);assert.deepEqual((await colors()).body.rules,[disabled,second]);assert.equal((await colors()).body.rules[0].pinned,true);
+        assert.equal((await save([rule],2)).status,409);
+        assert.equal((await owner.call('meta-ads/effectiveness/colors/sync','POST',{tableId:target.id,revision:1,sourceTableId:table.id,sourceRevision:3})).status,200);assert.deepEqual((await colors(target.id)).body.rules,[disabled,second]);
+        assert.equal((await save([{...disabled,enabled:true},second],3)).status,200);assert.equal((await colors()).body.rules[0].enabled,true);assert.equal((await colors()).body.rules[0].id,rule.id);
+        assert.deepEqual(await db.metaEffectivenessDay.findMany({where:{row:{aliasId:a.id}}}),before);
+        assert.equal((await save([],4)).status,200);assert.deepEqual((await colors()).body.rules,[]);assert.equal((await colors(target.id)).body.rules.length,2);
       }finally{await db.metaEffectivenessRow.deleteMany({where:{aliasId:a.id}});await db.metaAlias.delete({where:{id:a.id}});await db.metaAliasTable.deleteMany({where:{id:{in:[table.id,target.id]}}});}
     });
     await t.test('Efectividad: cabecera numérica exige todos los activos de la hoja, excluye desactivados y rechaza conjuntos obsoletos',async()=>{
@@ -12044,47 +12049,85 @@ test("Integración HTTP + PostgreSQL (base exclusiva de pruebas, sin llamadas ex
         assert.equal((await owner.call(query('PE',{since:'2026-10-21'}))).body.timeline.events.length,1);assert.equal((await db.metaEffectivenessDay.findFirstOrThrow({where:{row:{aliasId:alias.id,country:'PE'}}})).sales,5);
       }finally{await db.metaEffectivenessRow.deleteMany({where:{aliasId:alias.id}});await db.metaAlias.delete({where:{id:alias.id}});await db.metaAliasTable.delete({where:{id:table.id}});}
     });
-    await t.test('Asesores: historial A→B→A por fecha/hora, corte revisado, país aislado y día completo reversible',async()=>{
+    await t.test('Asesores: historial A→B→A por fecha/hora y captura automática de ventas al confirmar',async()=>{
       const table=(await owner.call('meta-ads/alias-tables','POST',{name:'Tramos '+tag})).body;
       const a=(await owner.call('meta-ads/advisors','POST',{name:'Tramo A '+tag})).body,b=(await owner.call('meta-ads/advisors','POST',{name:'Tramo B '+tag})).body;
       const alias=(await owner.call('meta-ads/aliases','POST',{tableId:table.id,name:'Alias tramos '+tag})).body;
-      const since='2026-08-07',until='2026-08-16';
+      const since='2026-08-07',until='2026-08-16',split='2026-08-15';
       const read=()=>owner.call('meta-ads/effectiveness?'+new URLSearchParams({tableId:table.id,since,until}));
       const row=async(country='PE')=>(await read()).body.rows.find((r:any)=>r.aliasId===alias.id&&r.country===country);
       const sales=async(day:string,value:number,country='PE')=>{const r=await row(country);return owner.call('meta-ads/effectiveness','PATCH',{aliasId:alias.id,country,currency:'PEN',day,sales:value,rowRevision:r.rowRevision,revision:r.days[day]?.revision??0});};
-      const review=(day:string)=>owner.call('meta-ads/effectiveness/advisor-review?'+new URLSearchParams({aliasId:alias.id,country:'PE',day}));
       const assign=async(advisorId:string|null,day:string,mode='DAY',extra:any={})=>owner.call('meta-ads/effectiveness/advisor','PATCH',{aliasId:alias.id,country:'PE',advisorId,revision:(await row()).rowRevision,day,mode,...extra});
       const sheet=(advisorId?:string)=>owner.call('meta-ads/advisors/'+(advisorId?'detail':'sheet')+'?'+new URLSearchParams({tableId:table.id,since,until,...(advisorId?{advisorId}:{} )}));
       const v=async(id:string,day:string)=>(await sheet()).body.rows.find((p:any)=>p.id===id).days[day].sales;
+      const stored=()=>db.metaEffectivenessDay.findMany({where:{row:{aliasId:alias.id}},orderBy:[{rowId:'asc'},{day:'asc'}]});
       try{
         assert.equal((await owner.call('meta-ads/effectiveness/import','POST',{tableId:table.id,rows:[{name:alias.name,country:'PE',currency:'PEN'},{name:alias.name,country:'CO',currency:'PEN'}]})).status,200);
-        for(const day of ['2026-08-07','2026-08-10','2026-08-11','2026-08-14','2026-08-15'])assert.equal((await sales(day,10)).status,200);
+        for(const day of [since,'2026-08-10','2026-08-11','2026-08-14',split])assert.equal((await sales(day,10)).status,200);
         assert.equal((await sales('2026-08-11',99,'CO')).status,200);
-        assert.equal((await assign(a.id,since)).status,200);
-        assert.equal((await assign(b.id,'2026-08-11')).status,200);
-        assert.equal((await assign(a.id,'2026-08-15')).status,200);
-        assert.equal(await v(a.id,'2026-08-10'),10);assert.equal(await v(a.id,'2026-08-11'),null);assert.equal(await v(b.id,'2026-08-11'),10);assert.equal(await v(a.id,'2026-08-15'),10);
-        assert.equal((await assign(b.id,'2026-08-14')).status,409);
-        let cut=await review('2026-08-15');assert.equal(cut.body.sales,10);
-        assert.equal((await assign(b.id,'2026-08-15','CLOCK',{time:'12:00',cutoffSales:5,token:cut.body.token})).status,200);
-        assert.equal(await v(a.id,'2026-08-15'),5);assert.equal(await v(b.id,'2026-08-15'),5);
-        assert.equal((await assign(a.id,'2026-08-15','CLOCK',{time:'16:00',cutoffSales:8,token:cut.body.token})).status,409);
-        cut=await review('2026-08-15');assert.equal((await assign(a.id,'2026-08-15','CLOCK',{time:'16:00',cutoffSales:4,token:cut.body.token})).status,400);
-        assert.equal((await assign(a.id,'2026-08-15','CLOCK',{time:'16:00',cutoffSales:11,token:cut.body.token})).status,400);
-        assert.equal((await assign(a.id,'2026-08-15','CLOCK',{time:'16:00',cutoffSales:8,token:cut.body.token})).status,200);
-        assert.equal(await v(a.id,'2026-08-15'),7);assert.equal(await v(b.id,'2026-08-15'),3);
-        const before=await db.metaEffectivenessDay.findMany({where:{row:{aliasId:alias.id}}});
-        let d=await sheet(a.id);assert.equal(d.status,200);assert(d.body.assignmentHistory.some((e:any)=>e.mode==='CLOCK'&&e.cutoffSales===8));assert(d.body.breakdown.every((s:any)=>s.country==='PE'&&s.advisorId===a.id));
-        assert.equal((await assign(b.id,'2026-08-15')).status,200);assert.equal(await v(a.id,'2026-08-15'),null);assert.equal(await v(b.id,'2026-08-15'),10);assert.equal(await v(a.id,'2026-08-10'),10);
-        cut=await review('2026-08-15');assert.equal((await assign(a.id,'2026-08-15','CLOCK',{time:'14:00',cutoffSales:6,token:cut.body.token})).status,200);assert.equal(await v(a.id,'2026-08-15'),4);assert.equal(await v(b.id,'2026-08-15'),6);
-        assert.deepEqual(await db.metaEffectivenessDay.findMany({where:{row:{aliasId:alias.id}}}),before);
-        cut=await review('2026-08-15');assert.equal((await sales('2026-08-15',12)).status,200);assert.equal((await assign(b.id,'2026-08-15','CLOCK',{time:'17:00',cutoffSales:10,token:cut.body.token})).status,409);
-        cut=await review('2026-08-15');assert.equal((await assign(b.id,'2026-08-15','CLOCK',{time:'17:00',cutoffSales:10,token:cut.body.token})).status,200);assert.equal(await v(a.id,'2026-08-15'),4);assert.equal(await v(b.id,'2026-08-15'),8);
-        assert.equal((await sales('2026-08-15',2)).status,200);d=await sheet(a.id);assert.equal(d.body.rows[0].days['2026-08-15'].sales,null);assert.equal(d.body.rows[0].days['2026-08-15'].partial,true);
+        assert.equal((await assign(a.id,since)).status,200);assert.equal((await assign(b.id,'2026-08-11')).status,200);assert.equal((await assign(a.id,split)).status,200);
+        assert.equal(await v(a.id,'2026-08-10'),10);assert.equal(await v(a.id,'2026-08-11'),null);assert.equal(await v(b.id,'2026-08-11'),10);assert.equal((await assign(b.id,'2026-08-14')).status,409);
+        // Four registered before the change, six more afterwards: no manual cutoff input/token.
+        assert.equal((await sales(split,4)).status,200);let before=await stored();const staleRevision=(await row()).rowRevision;
+        assert.equal((await assign(b.id,split,'CLOCK',{time:'12:00',cutoffSales:999})).status,200);assert.deepEqual(await stored(),before);
+        let event=await db.metaAdvisorAssignment.findFirstOrThrow({where:{aliasId:alias.id,mode:'CLOCK'},orderBy:{effectiveAt:'desc'}});assert.equal(event.cutoffSales,4);
+        assert.equal((await sales(split,10)).status,200);assert.equal(await v(a.id,split),4);assert.equal(await v(b.id,split),6);
+        assert.equal((await owner.call('meta-ads/effectiveness/advisor','PATCH',{aliasId:alias.id,country:'PE',advisorId:a.id,revision:staleRevision,day:split,mode:'CLOCK',time:'16:00'})).status,409);
+        // Counts changing while the window is open are captured fresh, not rejected or taken from a client token.
+        const oldReview=(await owner.call('meta-ads/effectiveness/advisor-review?'+new URLSearchParams({aliasId:alias.id,country:'PE',day:split}))).body;
+        assert.equal((await sales(split,8)).status,200);before=await stored();assert.equal((await assign(a.id,split,'CLOCK',{time:'16:00',token:oldReview.token,cutoffSales:1})).status,200);assert.deepEqual(await stored(),before);
+        event=await db.metaAdvisorAssignment.findFirstOrThrow({where:{aliasId:alias.id,mode:'CLOCK'},orderBy:{effectiveAt:'desc'}});assert.equal(event.cutoffSales,8);
+        assert.equal((await sales(split,10)).status,200);assert.equal(await v(a.id,split),6);assert.equal(await v(b.id,split),4);
+        assert.equal((await assign(b.id,split,'CLOCK',{time:'16:00'})).status,200);assert.equal((await assign(a.id,split,'CLOCK',{time:'16:00'})).status,200);assert.equal(await v(a.id,split),6);assert.equal(await v(b.id,split),4);
+        let d=await sheet(a.id);assert.equal(d.status,200);assert(d.body.assignmentHistory.some((e:any)=>e.cutoffSales===8));assert(d.body.breakdown.every((s:any)=>s.country==='PE'&&s.advisorId===a.id));
+        before=await stored();assert.equal((await assign(b.id,split)).status,200);assert.deepEqual(await stored(),before);assert.equal(await v(a.id,split),null);assert.equal(await v(b.id,split),10);assert.equal(await v(a.id,'2026-08-10'),10);
+        assert.equal((await sales(split,6)).status,200);assert.equal((await assign(a.id,split,'CLOCK',{time:'14:00'})).status,200);assert.equal((await sales(split,12)).status,200);assert.equal(await v(a.id,split),6);assert.equal(await v(b.id,split),6);
+        assert.equal((await sales(split,10)).status,200);assert.equal((await assign(b.id,split,'CLOCK',{time:'17:00'})).status,200);assert.equal((await sales(split,12)).status,200);assert.equal(await v(a.id,split),4);assert.equal(await v(b.id,split),8);
+        assert.equal((await sales(split,2)).status,200);d=await sheet(a.id);assert.equal(d.body.rows[0].days[split].sales,null);assert.equal(d.body.rows[0].days[split].partial,true);assert.equal((await assign(a.id,split,'CLOCK',{time:'18:00'})).status,409);
         assert.equal((await assign(a.id,'2099-08-15')).status,400);assert.equal((await assign(a.id,'2026-02-30')).status,400);
+        before=await stored();assert.equal((await assign(a.id,'2026-08-16','CLOCK',{time:'09:00'})).status,200);assert.deepEqual(await stored(),before);event=await db.metaAdvisorAssignment.findFirstOrThrow({where:{aliasId:alias.id,mode:'CLOCK'},orderBy:{effectiveAt:'desc'}});assert.equal(event.cutoffSales,0);assert.equal((await sales('2026-08-16',3)).status,200);assert.equal(await v(a.id,'2026-08-16'),3);assert.equal(await v(b.id,'2026-08-16'),0);
         assert.equal((await admin.call('meta-ads/effectiveness/advisor-review?'+new URLSearchParams({aliasId:alias.id,country:'PE',day:since}))).status,403);
         const remove=(await owner.call('meta-ads/alias-tables/'+table.id+'/delete-preview')).body;assert(remove.counts.advisorHistory>=7);
       }finally{await db.metaEffectivenessRow.deleteMany({where:{aliasId:alias.id}});await db.metaAlias.delete({where:{id:alias.id}});await db.metaAliasTable.delete({where:{id:table.id}});await db.metaAdvisor.deleteMany({where:{id:{in:[a.id,b.id]}}});}
+    });
+    await t.test('Reparto aprobado: pago tardío 3+2→4+2 actualiza V y asesores por combinación exacta sin perder nuevas ventas',async()=>{
+      const t1=(await owner.call('meta-ads/alias-tables','POST',{name:'Reparto '+tag})).body,t2=(await owner.call('meta-ads/alias-tables','POST',{name:'Reparto otra '+tag})).body;
+      const a=(await owner.call('meta-ads/advisors','POST',{name:'Reparto A '+tag})).body,b=(await owner.call('meta-ads/advisors','POST',{name:'Reparto B '+tag})).body;
+      const day='2026-10-20',name='Monitoreo reparto '+tag;
+      const read=(tableId=t1.id)=>owner.call('meta-ads/effectiveness?'+new URLSearchParams({tableId,since:day,until:day}));
+      const rows=async()=>(await read()).body.rows;
+      const value=async(aliasId:string,country:string,sales:number,tableId=t1.id)=>{const r=(await read(tableId)).body.rows.find((r:any)=>r.aliasId===aliasId&&r.country===country);return owner.call('meta-ads/effectiveness','PATCH',{aliasId,country,day,currency:'PEN',sales,rowRevision:r.rowRevision,revision:r.days[day]?.revision??0});};
+      let alias:any,other:any,copy:any;
+      try{
+        const init=(tableId:string,entries:any[])=>owner.call('meta-ads/effectiveness/import','POST',{tableId,advisorId:a.id,advisorTiming:{day,mode:'DAY'},rows:entries.map(e=>({...e,currency:'PEN'}))});
+        assert.equal((await init(t1.id,[{name,country:'PE'},{name,country:'CO'},{name:'Segundo reparto '+tag,country:'PE'}])).status,200);
+        assert.equal((await init(t2.id,[{name,country:'PE'}])).status,200);
+        const catalog=await db.metaAlias.findMany({where:{tableId:{in:[t1.id,t2.id]}}});alias=catalog.find(x=>x.tableId===t1.id&&x.name===name)!;other=catalog.find(x=>x.name==='Segundo reparto '+tag)!;copy=catalog.find(x=>x.tableId===t2.id)!;
+        assert.equal((await value(alias.id,'PE',3)).status,200);await value(alias.id,'CO',100);await value(other.id,'PE',5);await value(copy.id,'PE',9,t2.id);
+        const storedRow=await db.metaEffectivenessRow.findUniqueOrThrow({where:{aliasId_country_currency:{aliasId:alias.id,country:'PE',currency:''}}});
+        await db.metaEffectivenessDay.update({where:{rowId_day:{rowId:storedRow.id,day}},data:{fixedCost:2,fixedCostOverridden:true,fixedCostCurrency:'PEN',annotations:{budget:{value:20,currency:'PEN'}}}});
+        const assign=async(id:string,time:string)=>owner.call('meta-ads/effectiveness/advisor','PATCH',{aliasId:alias.id,country:'PE',advisorId:id,day,mode:'CLOCK',time,revision:(await rows()).find((r:any)=>r.aliasId===alias.id&&r.country==='PE').rowRevision});
+        assert.equal((await assign(b.id,'12:00')).status,200);await value(alias.id,'PE',5);
+        const query={aliasId:alias.id,country:'PE',day};
+        const review=()=>owner.call('meta-ads/effectiveness/advisor-sales?'+new URLSearchParams(query));
+        const approve=(r:any,allocations:any[])=>owner.call('meta-ads/effectiveness/advisor-sales','POST',{...query,token:r.token,revision:r.revision,allocations});
+        const totals=async(id:string,scope:any={aliasId:alias.id,country:'PE'},tableId=t1.id)=>{const v=await owner.call('meta-ads/advisors/sheet?'+new URLSearchParams({tableId,since:day,until:day,...scope}));assert.equal(v.status,200);return v.body.rows.find((p:any)=>p.id===id).days[day].sales;};
+        assert.equal(await totals(a.id),3);assert.equal(await totals(b.id),2);
+        let r=(await review()).body;assert.equal(r.status,'PENDING');assert.equal((await admin.call('meta-ads/effectiveness/advisor-sales?'+new URLSearchParams(query))).status,403);
+        const allocation=[{advisorId:a.id,sales:4},{advisorId:b.id,sales:2}];
+        assert.equal((await approve(r,[{advisorId:'missing',sales:6}])).status,404);assert.equal((await approve(r,[{advisorId:a.id,sales:3},{advisorId:a.id,sales:3}])).status,400);
+        assert.equal((await approve(r,allocation)).status,200);assert.equal(await totals(a.id),4);assert.equal(await totals(b.id),2);assert.equal(await totals(a.id,{country:'PE'}),9);assert.equal(await totals(a.id,{}),109);assert.equal(await totals(a.id,{country:'PE'},'all'),18);
+        let saved=await db.metaEffectivenessDay.findUniqueOrThrow({where:{rowId_day:{rowId:storedRow.id,day}}});assert.equal(saved.sales,6);assert.equal(Number(saved.fixedCost),2);assert.deepEqual(saved.annotations,{budget:{value:20,currency:'PEN'}});
+        assert.equal((await approve(r,allocation)).status,409);assert.equal((await read()).body.rows.find((x:any)=>x.aliasId===alias.id&&x.country==='PE').advisorChanges[day].status,'APPROVED');
+        await value(alias.id,'PE',7);assert.equal(await totals(a.id),4);assert.equal(await totals(b.id),3);
+        r=(await review()).body;await value(alias.id,'PE',8);assert.equal((await approve(r,allocation)).status,409);assert.equal(await totals(a.id),4);assert.equal(await totals(b.id),4);
+        assert.equal((await assign(a.id,'16:00')).status,200);await value(alias.id,'PE',9);assert.equal(await totals(a.id),5);assert.equal(await totals(b.id),4);
+        r=(await review()).body;assert.equal(r.status,'PENDING');assert.equal((await approve(r,[{advisorId:a.id,sales:6},{advisorId:b.id,sales:4}])).status,200);await value(alias.id,'PE',11);assert.equal(await totals(a.id),7);assert.equal(await totals(b.id),4);
+        // An approved correction can lower a historic cutoff; later transfers still reconcile without negatives.
+        r=(await review()).body;assert.equal((await approve(r,[{advisorId:a.id,sales:1},{advisorId:b.id,sales:1}])).status,200);assert.equal((await assign(b.id,'18:00')).status,200);await value(alias.id,'PE',3);assert.equal(await totals(a.id),1);assert.equal(await totals(b.id),2);
+        assert.equal((await read()).body.rows.find((x:any)=>x.aliasId===alias.id&&x.country==='CO').days[day].sales,100);assert.equal((await read(t2.id)).body.rows.find((x:any)=>x.aliasId===copy.id).days[day].sales,9);
+        const deletion=(await owner.call('meta-ads/alias-tables/'+t1.id+'/delete-preview')).body;assert.equal(deletion.counts.salesApprovals,1);
+      }finally{await db.metaEffectivenessRow.deleteMany({where:{alias:{tableId:{in:[t1.id,t2.id]}}}});await db.metaAlias.deleteMany({where:{tableId:{in:[t1.id,t2.id]}}});await db.metaAliasTable.deleteMany({where:{id:{in:[t1.id,t2.id]}}});await db.metaAdvisor.deleteMany({where:{id:{in:[a.id,b.id]}}});}
     });
     await t.test('Eliminar tabla: revisión y nombre exacto, conflicto atómico, originales Meta/asesores/copias conservados',async()=>{
       const actor=(await owner.call('auth/me')).body.id,table=(await owner.call('meta-ads/alias-tables','POST',{name:'Eliminar completa '+tag})).body,other=(await owner.call('meta-ads/alias-tables','POST',{name:'Conservar copia '+tag})).body;

@@ -58,12 +58,12 @@ async function planSync(
       !target.table.aliases.some(
         (a) => a.name.toLocaleLowerCase("es") === name.toLocaleLowerCase("es"),
       ),
-      `El alias «${name}» difiere solo en mayúsculas del destino. Corrige el nombre para coincidir exactamente.`,
+      `El elemento del inventario «${name}» difiere solo en mayúsculas del destino. Corrige el nombre para coincidir exactamente.`,
       409,
     );
   demand(
     count + newAliases.length <= 1000,
-    "La sincronización excede el límite de 1000 alias.",
+    "La sincronización excede el límite de 1000 elementos de inventario.",
   );
   const newRows: { name: string; country: string; currency: string }[] = [],
     patches: {

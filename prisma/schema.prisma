@@ -876,6 +876,7 @@ model MetaRecommendationSource {
 }
 
 model MetaEffectivenessRow {
+ salesApprovals MetaAdvisorSalesApproval[]
  advisorId String?
  advisor MetaAdvisor? @relation(fields:[advisorId],references:[id],onDelete:Restrict)
  @@index([advisorId])
@@ -1013,4 +1014,17 @@ model MetaAdvisorAssignment {
  createdAt DateTime @default(now())
  @@index([aliasId,country,effectiveAt])
  @@index([advisorId,effectiveAt])
+}
+
+model MetaAdvisorSalesApproval {
+ rowId String
+ row MetaEffectivenessRow @relation(fields:[rowId],references:[id],onDelete:Cascade)
+ day String
+ salesTotal Int
+ allocations Json
+ basis Json
+ revision Int @default(1)
+ approvedAt DateTime @default(now())
+ actorId String
+ @@id([rowId,day])
 }

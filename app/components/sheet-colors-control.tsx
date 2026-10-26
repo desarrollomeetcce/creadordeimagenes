@@ -110,6 +110,7 @@ export function SheetColorsControl({
       color,
       metrics: selected,
       pinned,
+      enabled: true,
     });
   };
   const label = (r: SheetColorRule) =>
@@ -139,18 +140,39 @@ export function SheetColorsControl({
               } as CSSProperties
             }
           >
-            <span
-              className="sheet-color-dot"
-              style={{
-                background: sheetPalette.find((c) => c.id === r.color)?.hex,
-              }}
-            />
-            <span>{label(r)}</span>
+            <button
+              type="button"
+              className="sheet-pinned-toggle"
+              disabled={busy}
+              aria-label={`Mostrar color ${label(r)}`}
+              aria-pressed={r.enabled !== false}
+              title={
+                r.enabled === false
+                  ? "Mostrar color sin cambiar el fijado"
+                  : "Ocultar color y mantenerlo fijado"
+              }
+              onClick={() =>
+                void save(
+                  config.rules.map((x) =>
+                    x.id === r.id ? { ...x, enabled: x.enabled === false } : x,
+                  ),
+                )
+              }
+            >
+              <span
+                className="sheet-color-dot"
+                style={{
+                  background: sheetPalette.find((c) => c.id === r.color)?.hex,
+                }}
+              />
+              <span aria-hidden="true">{r.enabled !== false ? "✓" : "○"}</span>
+              <span>{label(r)}</span>
+            </button>
             <button
               type="button"
               disabled={busy}
               aria-label={`Desfijar color ${label(r)}`}
-              title="Retirar este color de la vista"
+              title="Desfijar y eliminar esta regla de color"
               onClick={() =>
                 void save(config.rules.filter((x) => x.id !== r.id))
               }
@@ -171,8 +193,9 @@ export function SheetColorsControl({
           <p>
             Elige un valor y los parámetros. El formato se aplica a todas las
             fechas, independientemente del calendario. Fijar deja el color a
-            mano; la X lo retira de la vista sin cambiar datos. N.A. es gris por
-            defecto.
+            mano. Pulsa el color fijado para mostrarlo u ocultarlo sin
+            desfijarlo; la X elimina su configuración. La selección se guarda y
+            se puede sincronizar con otras tablas. N.A. es gris por defecto.
           </p>
           {!config && (
             <p role="status">
@@ -288,9 +311,28 @@ export function SheetColorsControl({
                     {label(r)}
                   </span>
                   <button
+                    type="button"
+                    disabled={busy}
+                    aria-pressed={r.enabled !== false}
+                    aria-label={`Mostrar regla de color ${label(r)}`}
+                    onClick={() =>
+                      void save(
+                        config.rules.map((x) =>
+                          x.id === r.id
+                            ? { ...x, enabled: x.enabled === false }
+                            : x,
+                        ),
+                      )
+                    }
+                  >
+                    {r.enabled !== false
+                      ? "✓ Seleccionado"
+                      : "○ Sin seleccionar"}
+                  </button>
+                  <button
                     disabled={busy}
                     aria-label={`${r.pinned ? "Desfijar" : "Retirar"} color ${label(r)}`}
-                    title="Retirar este color de la vista"
+                    title="Desfijar y eliminar esta regla de color"
                     onClick={() =>
                       void save(config.rules.filter((x) => x.id !== r.id))
                     }
@@ -341,8 +383,9 @@ export function SheetColorsControl({
                 Se reemplazarán las reglas de esta tabla por{" "}
                 {preview.rules.length} reglas de «
                 {tables.find((t) => t.id === source)?.name}», para todas las
-                fechas, incluidos sus colores fijados. No modifica celdas ni
-                otras tablas. Los cambios futuros requieren otra sincronización.
+                fechas, incluidos sus colores fijados y su selección. No
+                modifica celdas ni otras tablas. Los cambios futuros requieren
+                otra sincronización.
               </p>
               <button
                 disabled={busy || !config || !preview.revision}

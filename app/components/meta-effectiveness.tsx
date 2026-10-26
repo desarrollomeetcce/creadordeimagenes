@@ -1,4 +1,6 @@
 "use client";
+import { notifyAdvisorSalesChanged } from "./advisor-sales-events";
+import { AdvisorSalesApproval } from "./advisor-sales-approval";
 import {
   useEffect,
   useMemo,
@@ -81,6 +83,10 @@ type Row = {
   stateRevision: number;
   lastStateChange: string | null;
   token: string;
+  advisorChanges?: Record<
+    string,
+    { status: "PENDING" | "APPROVED" | "AUTOMATIC" }
+  >;
   days: Record<string, Cell>;
   campaigns: number;
   timezones: string[];
@@ -124,6 +130,15 @@ export function MetaEffectiveness({
   aliases: { id: string; name: string }[];
   onNamesChanged: () => Promise<void>;
 }) {
+  const inventoryColumnName =
+    settings.aliasColumnName.trim().toLowerCase() === "alias"
+      ? "Inventario"
+      : settings.aliasColumnName;
+  const [salesReview, setSalesReview] = useState<{
+    aliasId: string;
+    country: string;
+    day: string;
+  } | null>(null);
   const [syncOpen, setSyncOpen] = useState(false);
   const [assignment, setAssignment] = useState<{
     row: Row;
@@ -136,6 +151,7 @@ export function MetaEffectiveness({
     mode: "DAY" | "CLOCK";
     time?: string;
   } | null>(null);
+  const [detailVersion, setDetailVersion] = useState(0);
   const [advisorDetail, setAdvisorDetail] = useState<{
     id: string;
     name: string;
@@ -270,6 +286,7 @@ export function MetaEffectiveness({
     names = false,
   ) => {
     await api(path, method, body);
+    notifyAdvisorSalesChanged();
     try {
       if (names) await onNamesChanged();
       await refresh();
@@ -435,6 +452,7 @@ export function MetaEffectiveness({
           rowRevision: r.rowRevision,
         });
         manualVersions.current.set(key, revision + 1);
+        notifyAdvisorSalesChanged();
         try {
           await refresh();
           setMessage("");
@@ -471,7 +489,7 @@ export function MetaEffectiveness({
       await refresh();
       setPaste(null);
       setMessage(
-        `${result.rows} filas listas; ${result.created} alias nuevos.`,
+        `${result.rows} filas listas; ${result.created} elementos nuevos de inventario.`,
       );
     } catch (e) {
       setMessage(e instanceof Error ? e.message : "No se pudo importar.");
@@ -494,7 +512,7 @@ export function MetaEffectiveness({
       if (code === null) throw Error("País no reconocido.");
       const rows = parseEffectivenessPaste(newName, code, newCurrency);
       if (newAdvisor && rows.some((r) => !r.country))
-        throw Error("Elige el país antes de guardar el alias con asesor.");
+        throw Error("Elige el país antes de guardar el inventario con asesor.");
       await mutate(
         "meta-ads/effectiveness/import",
         "POST",
@@ -687,12 +705,19 @@ export function MetaEffectiveness({
       className="effectiveness sheet-view"
       aria-label="Efectividad diaria"
     >
+      {salesReview && (
+        <AdvisorSalesApproval
+          {...salesReview}
+          onClose={() => setSalesReview(null)}
+          onApproved={refresh}
+        />
+      )}
       {newAssignment && (
         <AdvisorAssignment
           initial
           aliasId="new-alias"
           country={newCountry || "País por definir"}
-          name={newName.trim() || "Nuevo alias"}
+          name={newName.trim() || "Nuevo inventario"}
           advisorId={newAssignment}
           revision={0}
           advisors={advisors}
@@ -728,6 +753,8 @@ export function MetaEffectiveness({
       )}
       {advisorDetail && (
         <AdvisorDetail
+          key={`${advisorDetail.id}:${advisorDetail.aliasId}:${advisorDetail.country}`}
+          openRequest={detailVersion}
           person={{
             id: advisorDetail.id,
             name: advisorDetail.name,
@@ -745,20 +772,6 @@ export function MetaEffectiveness({
       )}
 
       <div className="row sheet-toolbar">
-        <SheetColorsControl
-          tableId={tableId}
-          tables={tables}
-          metrics={visibleMetrics.map((m) => m.key)}
-          onRules={setColorRules}
-          onError={setMessage}
-        />
-        <button
-          className={syncOpen ? "primary" : ""}
-          aria-expanded={syncOpen}
-          onClick={() => setSyncOpen((v) => !v)}
-        >
-          ⇄ Sincronizar columnas
-        </button>
         <MetaDateRange
           from={since}
           to={until}
@@ -771,8 +784,9 @@ export function MetaEffectiveness({
             setUntil(b);
           }}
         />
+        <span className="sheet-filter-label">Filtros:</span>
         <label>
-          Filtrar país
+          País
           <SheetSearchSelect
             label="País de efectividad"
             value={country}
@@ -851,7 +865,7 @@ export function MetaEffectiveness({
         <label>
           Estado
           <SheetSearchSelect
-            label="Estado de alias"
+            label="Estado de inventario"
             value={stateFilter}
             placeholder="Todos"
             options={[
@@ -862,9 +876,23 @@ export function MetaEffectiveness({
             onSelect={setStateFilter}
           />
         </label>
+        <SheetColorsControl
+          tableId={tableId}
+          tables={tables}
+          metrics={visibleMetrics.map((m) => m.key)}
+          onRules={setColorRules}
+          onError={setMessage}
+        />
+        <button
+          className={syncOpen ? "primary" : ""}
+          aria-expanded={syncOpen}
+          onClick={() => setSyncOpen((v) => !v)}
+        >
+          ⇄ Sincronizar columnas
+        </button>
         <div
           className="sheet-activation-actions"
-          title="Aplica solo a las filas seleccionadas visibles, por alias y país. No modifica Meta Ads."
+          title="Aplica solo a las filas seleccionadas visibles, por inventario y país. No modifica Meta Ads."
         >
           <span>Selección ({selectedVisibleRows.length})</span>
           <button
@@ -883,7 +911,7 @@ export function MetaEffectiveness({
           </button>
           {selectedPairs.length > 0 && (
             <button
-              aria-label="Limpiar selección de alias"
+              aria-label="Limpiar selección de inventario"
               disabled={busy}
               onClick={() => setSelectedPairs([])}
             >
@@ -897,13 +925,13 @@ export function MetaEffectiveness({
             setPaste("");
           }}
         >
-          Pegar alias
+          Pegar inventario
         </button>
         <label className="sheet-file">
           Subir archivo
           <input
             type="file"
-            aria-label="Subir lista de alias"
+            aria-label="Subir lista de inventario"
             accept=".txt,.tsv,.csv,text/plain,text/csv"
             onChange={async (e) => {
               const f = e.target.files?.[0];
@@ -937,16 +965,16 @@ export function MetaEffectiveness({
       )}
       <div className="sheet-help">
         Edita y pulsa Enter o Tab para guardar; Escape descarta. V, P y CF
-        manuales; B/G de Meta por coincidencia exacta de alias + país + asesor,
-        con ajustes manuales identificados. N.A. no es cero. P, G y CF se
-        muestran en la moneda elegida con la tasa de cada fecha.{" "}
+        manuales; B/G de Meta por coincidencia exacta de inventario + país +
+        asesor, con ajustes manuales identificados. N.A. no es cero. P, G y CF
+        se muestran en la moneda elegida con la tasa de cada fecha.{" "}
         {data?.missingFxDays.length ? (
           <span> Tasas pendientes: {data.missingFxDays.join(", ")}. </span>
         ) : null}
         <details>
           <summary>Cómo se calcula</summary> Filtro de parámetros elige las
-          columnas visibles de cada fecha; Filtro de alias elige las filas. Se
-          cruzan con el país y el rango de fechas; Todos incluye la lista
+          columnas visibles de cada fecha; Filtro de inventario elige las filas.
+          Se cruzan con el país y el rango de fechas; Todos incluye la lista
           completa, aunque haya una búsqueda escrita. Ocultar una columna no
           borra sus datos. Los importes de monedas distintas se ordenan en
           grupos separados. Solo campañas, incluidas apagadas; nunca suma sus
@@ -954,9 +982,9 @@ export function MetaEffectiveness({
           parcial y cada cuenta conserva su zona horaria. — sin dato, *
           cobertura parcial. Cambiar país consulta B/G de ese país sin cambiar
           las etiquetas de Meta Ads. Cambiar moneda convierte importes sin
-          alterar los originales. Un alias puede tener una fila por país. La
-          tasa diaria de referencia proviene de Currency API; no es una
-          cotización bancaria de compra/venta.
+          alterar los originales. Un elemento del inventario puede tener una
+          fila por país. La tasa diaria de referencia proviene de Currency API;
+          no es una cotización bancaria de compra/venta.
         </details>
       </div>
       {widthWarning && (
@@ -986,10 +1014,10 @@ export function MetaEffectiveness({
           }}
         >
           <label>
-            Pega una columna de nombres o tres columnas: Alias, País y Moneda
-            (sin encabezados).
+            Pega una columna de nombres o tres columnas: Inventario, País y
+            Moneda (sin encabezados).
             <textarea
-              aria-label="Lista de alias"
+              aria-label="Lista de inventario"
               value={paste}
               onChange={(e) => setPaste(e.target.value)}
               placeholder={
@@ -1037,7 +1065,7 @@ export function MetaEffectiveness({
       )}
       {data && rows.length === 0 && (
         <p className="sheet-message" role="status">
-          No hay alias que coincidan con los filtros.
+          No hay inventario que coincidan con los filtros.
         </p>
       )}
       {visibleMetrics.length === 0 && (
@@ -1073,8 +1101,8 @@ export function MetaEffectiveness({
             </caption>
             <colgroup>
               <col className="sheet-alias-col" />
-              <col className="sheet-advisor-col" />
               <col className="sheet-country-col" />
+              <col className="sheet-advisor-col" />
               <col className="sheet-currency-col" />
               {days.flatMap((day) =>
                 visibleMetrics.map((metric) => (
@@ -1105,7 +1133,7 @@ export function MetaEffectiveness({
                     <input
                       type="checkbox"
                       className="sheet-alias-select"
-                      aria-label="Seleccionar alias visibles"
+                      aria-label="Seleccionar inventario visibles"
                       checked={allVisibleSelected}
                       disabled={busy || !eligibleRows.length}
                       title="Selecciona las filas visibles con país para activar o desactivar en bloque"
@@ -1126,14 +1154,14 @@ export function MetaEffectiveness({
                     />
                     <EffectivenessCell
                       label="Nombre de columna A"
-                      value={settings.aliasColumnName}
+                      value={inventoryColumnName}
                       onError={setMessage}
                       onSave={(v) => columns({ aliasColumnName: v })}
                     />
                     <button
                       type="button"
                       className="sheet-sort-button"
-                      aria-label="Ordenar alias"
+                      aria-label="Ordenar inventario"
                       title="Ordenar alfabéticamente ascendente o descendente"
                       onClick={() =>
                         order({
@@ -1155,14 +1183,14 @@ export function MetaEffectiveness({
                     <input
                       className="sheet-alias-search"
                       type="search"
-                      aria-label="Buscar alias por palabra"
-                      placeholder="Buscar alias…"
+                      aria-label="Buscar inventario por palabra"
+                      placeholder="Buscar inventario…"
                       value={aliasSearch}
                       onChange={(e) => setAliasSearch(e.target.value)}
                     />
                     <SheetMultiFilter
                       compact
-                      label="Filtro de alias"
+                      label="Filtro de inventario"
                       options={aliases.map((a) => ({
                         value: a.id,
                         label: a.name,
@@ -1172,21 +1200,9 @@ export function MetaEffectiveness({
                     />
                   </div>
                   <SheetColumnResizer
-                    label={settings.aliasColumnName}
+                    label={inventoryColumnName}
                     onResize={(w) => resizeColumn("alias", w)}
                     onReset={() => resizeColumn("alias")}
-                  />
-                </th>
-                <th
-                  rowSpan={visibleMetrics.length ? 2 : 1}
-                  scope="col"
-                  className="effectiveness-advisor"
-                >
-                  Asesor
-                  <SheetColumnResizer
-                    label="Asesor"
-                    onResize={(w) => resizeColumn("advisor", w)}
-                    onReset={() => resizeColumn("advisor")}
                   />
                 </th>
                 <th
@@ -1232,6 +1248,19 @@ export function MetaEffectiveness({
                     onReset={() => resizeColumn("country")}
                   />
                 </th>
+                <th
+                  rowSpan={visibleMetrics.length ? 2 : 1}
+                  scope="col"
+                  className="effectiveness-advisor"
+                >
+                  Asesor
+                  <SheetColumnResizer
+                    label="Asesor"
+                    onResize={(w) => resizeColumn("advisor", w)}
+                    onReset={() => resizeColumn("advisor")}
+                  />
+                </th>
+
                 <th
                   rowSpan={visibleMetrics.length ? 2 : 1}
                   scope="col"
@@ -1344,7 +1373,9 @@ export function MetaEffectiveness({
                               (r) => r.active,
                             );
                             if (!targets.length)
-                              throw Error("No hay alias activos en esta hoja.");
+                              throw Error(
+                                "No hay elementos activos en el inventario en esta hoja.",
+                              );
                             setBusy(true);
                             try {
                               await fill(targets, [m.key], value, [d], true);
@@ -1366,7 +1397,7 @@ export function MetaEffectiveness({
             </thead>
             <tbody>
               {rows.map((r) => {
-                const name = names.get(r.aliasId) ?? "Alias";
+                const name = names.get(r.aliasId) ?? "Inventario";
                 return (
                   <tr
                     key={JSON.stringify([r.aliasId, r.country])}
@@ -1415,7 +1446,7 @@ export function MetaEffectiveness({
                           <span aria-hidden="true" />
                         </button>
                         <EffectivenessCell
-                          label={`Alias ${name} ${r.country || "sin país"}`}
+                          label={`Inventario ${name} ${r.country || "sin país"}`}
                           value={name}
                           onError={setMessage}
                           onPaste={openPaste}
@@ -1440,6 +1471,20 @@ export function MetaEffectiveness({
                           initialUntil={until}
                         />
                       </div>
+                    </td>
+                    <td className="effectiveness-country">
+                      <SheetSearchSelect
+                        compact
+                        placeholder="—"
+                        label={`País de ${name} ${r.country || "sin país"}`}
+                        value={r.country}
+                        options={[
+                          { value: "", label: "Sin asignar" },
+                          ...countries,
+                        ]}
+                        onSelect={(v) => identity(r, "country", v)}
+                        onError={setMessage}
+                      />
                     </td>
                     <td className="effectiveness-advisor">
                       <div className="alias-advisor-actions">
@@ -1480,12 +1525,14 @@ export function MetaEffectiveness({
                               const p = advisors.find(
                                 (a) => a.id === r.advisorId,
                               );
-                              if (p)
+                              if (p) {
+                                setDetailVersion((v) => v + 1);
                                 setAdvisorDetail({
                                   ...p,
                                   aliasId: r.aliasId,
                                   country: r.country,
                                 });
+                              }
                             }}
                           >
                             ↗
@@ -1493,20 +1540,7 @@ export function MetaEffectiveness({
                         )}
                       </div>
                     </td>
-                    <td className="effectiveness-country">
-                      <SheetSearchSelect
-                        compact
-                        placeholder="—"
-                        label={`País de ${name} ${r.country || "sin país"}`}
-                        value={r.country}
-                        options={[
-                          { value: "", label: "Sin asignar" },
-                          ...countries,
-                        ]}
-                        onSelect={(v) => identity(r, "country", v)}
-                        onError={setMessage}
-                      />
-                    </td>
+
                     <td className="effectiveness-currency">
                       <SheetSearchSelect
                         compact
@@ -1591,6 +1625,36 @@ export function MetaEffectiveness({
                               onSave={(v) => editCell(r, d, m.key, v)}
                               hint={`${c?.automaticNa?.includes(m.key) ? "N.A. automático por desactivación; vuelve a vacío al activar. " : ""}${c?.synced?.[m.key] ? "Sincronizado desde «" + c.synced[m.key] + "». " : ""}${c?.manual?.includes(m.key) ? "Ajuste manual de Efectividad. Originales conservados. " : ""}${m.key === "spend" ? "Original Meta: " + (c?.sourceSpend.map((x) => x.currency + " " + x.amount).join(" + ") || "sin datos") + ". " : ""}${c?.fxMissing && c?.[m.key] === null && !c.na?.includes(m.key) ? "Sin tasa. " : ""}${partial || c?.partialMetrics?.includes(m.key) ? "Cobertura parcial. " : ""}${m.key === "fixedCost" ? "Original CF: " + (c?.sourceFixedCost.map((x) => x.currency + " " + x.amount).join(" + ") || "sin datos") + ". " : ""}${m.money ? c?.fx.map((f) => `${f.date}: 1 ${f.from} = ${f.rate} ${f.to} · ${f.source}`).join("; ") || "" : ""} Escribe un número o N.A.; vacío restaura el importado en B/G; en P borra el presupuesto.`}
                             />
+                            {m.key === "sales" && r.advisorChanges?.[d] && (
+                              <button
+                                type="button"
+                                className="sheet-advisor-change"
+                                data-approved={
+                                  r.advisorChanges[d].status === "APPROVED"
+                                }
+                                aria-label={`Reparto de ventas ${name} ${r.country} ${d}`}
+                                title={
+                                  (d === today
+                                    ? "Hoy hubo cambio de asesor"
+                                    : "Hubo cambio de asesor") +
+                                  " · " +
+                                  (r.advisorChanges[d].status === "APPROVED"
+                                    ? "Reparto aprobado"
+                                    : "Revisar y aprobar reparto")
+                                }
+                                onClick={() =>
+                                  setSalesReview({
+                                    aliasId: r.aliasId,
+                                    country: r.country,
+                                    day: d,
+                                  })
+                                }
+                              >
+                                {r.advisorChanges[d].status === "APPROVED"
+                                  ? "✓ Aprobado"
+                                  : "↔ Cambio asesor"}
+                              </button>
+                            )}
                             {(c?.partialMetrics?.includes(m.key) ||
                               (partial && !c?.manual?.includes(m.key))) &&
                               (m.key === "base" || m.key === "spend") && (
@@ -1614,8 +1678,8 @@ export function MetaEffectiveness({
               <tr className="sheet-new-row">
                 <td className="effectiveness-name">
                   <input
-                    aria-label="Nuevo alias"
-                    placeholder="+ Escribe o pega alias…"
+                    aria-label="Nuevo inventario"
+                    placeholder="+ Escribe o pega inventario…"
                     value={newName}
                     onChange={(e) => setNewName(e.target.value)}
                     onPaste={(e) => {
@@ -1630,11 +1694,24 @@ export function MetaEffectiveness({
                     }}
                   />
                 </td>
+                <td className="effectiveness-country">
+                  <SheetSearchSelect
+                    compact
+                    placeholder="—"
+                    label="País del nuevo inventario"
+                    value={newCountry}
+                    options={[
+                      { value: "", label: "Sin asignar" },
+                      ...countries,
+                    ]}
+                    onSelect={setNewCountry}
+                  />
+                </td>
                 <td className="effectiveness-advisor">
                   <SheetSearchSelect
                     compact
                     displayLabel
-                    label="Asesor del nuevo alias"
+                    label="Asesor del nuevo inventario"
                     placeholder="Sin asesor"
                     value={newAdvisor}
                     options={[
@@ -1661,24 +1738,12 @@ export function MetaEffectiveness({
                     </button>
                   )}
                 </td>
-                <td className="effectiveness-country">
-                  <SheetSearchSelect
-                    compact
-                    placeholder="—"
-                    label="País del nuevo alias"
-                    value={newCountry}
-                    options={[
-                      { value: "", label: "Sin asignar" },
-                      ...countries,
-                    ]}
-                    onSelect={setNewCountry}
-                  />
-                </td>
+
                 <td className="effectiveness-currency">
                   <SheetSearchSelect
                     compact
                     placeholder="—"
-                    label="Moneda del nuevo alias"
+                    label="Moneda del nuevo inventario"
                     value={newCurrency}
                     options={[
                       { value: "", label: "Sin asignar" },

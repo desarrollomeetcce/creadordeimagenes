@@ -55,6 +55,7 @@ export function attributeDailySales(
   day: string,
   total: number | null,
   na: boolean,
+  includeUnassigned = false,
 ) {
   const start = Date.parse(day + "T00:00:00-05:00"),
     end = start + 86400000;
@@ -68,15 +69,21 @@ export function attributeDailySales(
     : currentAdvisorId;
   let legacy = !!advisor;
   for (const e of ordered)
-    if (e.effectiveAt.getTime() <= start) {
+    if (
+      e.effectiveAt.getTime() < start ||
+      (e.effectiveAt.getTime() === start && e.mode === "DAY")
+    ) {
       advisor = e.advisorId;
       legacy = false;
     }
   const inside = ordered.filter(
-    (e) => e.effectiveAt.getTime() > start && e.effectiveAt.getTime() < end,
+    (e) =>
+      e.effectiveAt.getTime() >= start &&
+      e.effectiveAt.getTime() < end &&
+      e.mode !== "DAY",
   );
   const portions = new Map<
-    string,
+    string | null,
     { sales: number | null; na: boolean; partial: boolean; legacy: boolean }
   >();
   const add = (
@@ -86,7 +93,7 @@ export function attributeDailySales(
     partial: boolean,
     old: boolean,
   ) => {
-    if (!id) return;
+    if (!id && !includeUnassigned) return;
     const previous = portions.get(id);
     if (!previous)
       portions.set(id, { sales: value, na: isNa, partial, legacy: old });

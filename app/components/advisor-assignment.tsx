@@ -40,9 +40,8 @@ export function AdvisorAssignment({
   const dialog = useRef<HTMLDialogElement>(null);
   const [day, setDay] = useState(local.slice(0, 10)),
     [time, setTime] = useState(local.slice(11, 16)),
-    [mode, setMode] = useState<"DAY" | "CLOCK">("DAY");
+    [mode, setMode] = useState<"DAY" | "CLOCK">(initial ? "DAY" : "CLOCK");
   const [review, setReview] = useState<Review | null>(null),
-    [cut, setCut] = useState(""),
     [message, setMessage] = useState(""),
     [busy, setBusy] = useState(false),
     [version, setVersion] = useState(0);
@@ -59,7 +58,6 @@ export function AdvisorAssignment({
         token: "",
         changes: [],
       });
-      setCut("0");
       return;
     }
     let active = true;
@@ -72,7 +70,6 @@ export function AdvisorAssignment({
       .then((v: Review) => {
         if (active) {
           setReview(v);
-          setCut(v.sales === null ? "" : String(v.sales));
         }
       })
       .catch((e) => {
@@ -102,7 +99,7 @@ export function AdvisorAssignment({
       </header>
       <p>
         <b>
-          {name} · {country}
+          {name} · {country || "Sin país"}
         </b>
       </p>
       <p>
@@ -119,13 +116,6 @@ export function AdvisorAssignment({
               throw Error(
                 "La fila cambió. Cierra esta ventana y vuelve a elegir el asesor.",
               );
-            if (
-              mode === "CLOCK" &&
-              (!/^\d+$/.test(cut) || !Number.isSafeInteger(Number(cut)))
-            )
-              throw Error(
-                "Indica el número entero de ventas acumuladas en el corte.",
-              );
             await onSave({
               aliasId,
               country,
@@ -133,8 +123,7 @@ export function AdvisorAssignment({
               revision,
               day,
               mode,
-              token: review.token,
-              ...(mode === "CLOCK" ? { time, cutoffSales: Number(cut) } : {}),
+              ...(mode === "CLOCK" ? { time } : {}),
             });
             onClose();
           } catch (error) {
@@ -187,27 +176,13 @@ export function AdvisorAssignment({
                   onChange={(e) => setTime(e.target.value)}
                 />
               </label>
-              <label>
-                Ventas acumuladas al corte
-                <input
-                  aria-label="Ventas acumuladas al corte"
-                  type="number"
-                  step="1"
-                  min="0"
-                  required
-                  value={cut}
-                  readOnly={initial}
-                  onChange={(e) => setCut(e.target.value)}
-                />
-              </label>
-              <p>
-                {initial
-                  ? "Asignación inicial: no existen ventas previas para este alias nuevo. "
-                  : ""}
-                Registradas ese día: <b>{review?.sales ?? "Sin datos"}</b>. El
-                corte queda para los tramos anteriores; solo las ventas
-                siguientes corresponden al nuevo asesor. No se reparten por
-                horas. Puedes corregir el corte antes de confirmar.
+              <p className="advisor-auto-cut" role="status">
+                Ventas registradas de esta fecha:{" "}
+                <b>{review?.sales ?? "Sin ventas registradas"}</b>. El sistema
+                tomará automáticamente el total registrado al confirmar el
+                cambio. Esas ventas quedan para los tramos anteriores y solo las
+                que registres después se suman al nuevo asesor. No necesitas
+                escribir otro valor.
               </p>
             </>
           ) : (
@@ -235,7 +210,7 @@ export function AdvisorAssignment({
             disabled={busy}
             onClick={() => setVersion((v) => v + 1)}
           >
-            Revisar de nuevo
+            Actualizar información
           </button>
         </div>
       </form>

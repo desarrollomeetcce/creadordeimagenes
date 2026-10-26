@@ -1,3 +1,4 @@
+import { salesAllocationsSchema } from "./advisor-sales-plan";
 import { assignmentTimingSchema } from "./advisor-attribution";
 import { advisorAbsenceSchema } from "./advisor-absence";
 import { colorRulesSchema } from "./sheet-colors";
@@ -183,6 +184,41 @@ export async function metaRoutes(
     return send(
       await (await import("./advisors")).saveAdvisor(actor, b),
       method === "POST" ? 201 : 200,
+    );
+  }
+  if (
+    path === "effectiveness/advisor-sales" &&
+    (method === "GET" || method === "POST")
+  ) {
+    ownerOnly(actor);
+    const scope = {
+      aliasId: z.string().min(1).max(80),
+      country: z.string().refine(isCountryCode),
+      day: z.string().date(),
+    };
+    if (method === "GET") {
+      const q = z
+        .object(scope)
+        .parse(Object.fromEntries(req.nextUrl.searchParams));
+      return send(
+        await (
+          await import("./advisor-sales-approval")
+        ).advisorSalesReview(actor, q),
+      );
+    }
+    const b = z
+      .object({
+        ...scope,
+        token: z.string().length(64),
+        revision: z.number().int().nonnegative(),
+        allocations: salesAllocationsSchema,
+      })
+      .strict()
+      .parse(await body());
+    return send(
+      await (
+        await import("./advisor-sales-approval")
+      ).approveAdvisorSales(actor, b),
     );
   }
   if (path === "effectiveness/advisor-review" && method === "GET") {

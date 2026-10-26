@@ -26,6 +26,7 @@ async function deletionReview(tx: Prisma.TransactionClient, tableId: string) {
  UNION ALL SELECT 'rows',id,jsonb_build_array(revision,country,currency,"displayCurrency","advisorId",hidden,legacy,"presentationRowId")::text FROM r
  UNION ALL SELECT 'days',d."rowId"||'/'||d.day,d.revision::text FROM "MetaEffectivenessDay" d JOIN r ON r.id=d."rowId"
  UNION ALL SELECT 'states',id,jsonb_build_array(country,active,revision)::text FROM s
+ UNION ALL SELECT 'salesApprovals',x."rowId"||'/'||x.day,to_jsonb(x)::text FROM "MetaAdvisorSalesApproval" x JOIN r ON r.id=x."rowId"
  UNION ALL SELECT 'events',e.id,jsonb_build_array(e.active,e."createdAt")::text FROM "MetaEffectivenessEvent" e JOIN s ON s.id=e."stateId"
  UNION ALL SELECT 'assignments',o.id,jsonb_build_array(o."aliasId",o."aliasCountry",o."advisorId")::text FROM "MetaAdObject" o JOIN a ON a.id=o."aliasId"
  UNION ALL SELECT 'totals',jsonb_build_array(t.country,t.currency,t.day)::text,t.revision::text FROM "MetaEffectivenessTotalDay" t WHERE t."tableId"=${tableId}
@@ -44,6 +45,7 @@ async function deletionReview(tx: Prisma.TransactionClient, tableId: string) {
       "states",
       "events",
       "advisorHistory",
+      "salesApprovals",
       "assignments",
       "totals",
       "links",

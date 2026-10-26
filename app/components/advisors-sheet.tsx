@@ -4,6 +4,7 @@ import { engineRequest as api } from "./generation-engine";
 import { MetaDateRange } from "./meta-date-range";
 import { EffectivenessCell } from "./effectiveness-cell";
 import { AdvisorAbsenceCell } from "./advisor-absence-cell";
+import { subscribeAdvisorSalesChanged } from "./advisor-sales-events";
 import { AdvisorDetail } from "./advisor-detail";
 import type {
   AdvisorDayData as Day,
@@ -36,6 +37,7 @@ export function AdvisorsSheet({
     month: "2-digit",
     day: "2-digit",
   }).format(new Date());
+  const [detailVersion, setDetailVersion] = useState(0);
   const [since, setSince] = useState(today.slice(0, 8) + "01"),
     [until, setUntil] = useState(today),
     [tableId, setTableId] = useState(initialTableId),
@@ -67,10 +69,10 @@ export function AdvisorsSheet({
     since <= until && (Date.parse(until) - Date.parse(since)) / 86400000 < 31;
   const key = JSON.stringify([tableId, since, until, aliasId, country]);
   context.current = key;
-  const load = async (saved = false) => {
+  const load = async (saved = false, quiet = false) => {
     const token = ++sequence.current,
       requested = key;
-    setLoading(true);
+    if (!quiet) setLoading(true);
     try {
       const data = await api(
         "meta-ads/advisors/sheet?" +
@@ -99,7 +101,15 @@ export function AdvisorsSheet({
   useEffect(() => {
     if (valid) void load();
     else setLoading(false);
+    const stop = subscribeAdvisorSalesChanged(() => {
+      if (valid) void load(false, true);
+    });
+    const timer = setInterval(() => {
+      if (valid && !document.hidden) void load(false, true);
+    }, 5000);
     return () => {
+      stop();
+      clearInterval(timer);
       sequence.current++;
     };
   }, [key, valid, reload]);
@@ -164,11 +174,11 @@ export function AdvisorsSheet({
           />
         </label>
         <SheetSearchSelect
-          label="Alias de ventas por asesor"
+          label="Inventario de ventas por asesor"
           value={aliasId}
-          placeholder="Todos los alias"
+          placeholder="Todo el inventario"
           options={[
-            { value: "", label: "Todos los alias" },
+            { value: "", label: "Todo el inventario" },
             ...tables
               .filter((t) => tableId === "all" || t.id === tableId)
               .flatMap((t) =>
@@ -231,12 +241,13 @@ export function AdvisorsSheet({
         </button>
       </div>
       <p className="sheet-help">
-        A = Asistencia. V = Ventas por coincidencia exacta de alias + asesor +
-        país. H = Horas ausentes (0,5 = 30 minutos). A y H corresponden a la
-        persona y no se reparten por producto. Las ventas respetan los tramos de
-        asignación y sus cortes. Las asignaciones antiguas sin historial
-        conservan su atribución previa. * Total parcial; — sin datos; N.A. no es
-        cero. Todas las hojas incluye también las copias sincronizadas.
+        A = Asistencia. V = Ventas por coincidencia exacta de inventario +
+        asesor + país. H = Horas ausentes (0,5 = 30 minutos). A y H corresponden
+        a la persona y no se reparten por producto. Las ventas respetan los
+        tramos de asignación y sus cortes. Las asignaciones antiguas sin
+        historial conservan su atribución previa. * Total parcial o reparto
+        pendiente de aprobar; — sin datos; N.A. no es cero. Todas las hojas
+        incluye también las copias sincronizadas.
       </p>
       {message && (
         <p className="sheet-message" role="status">
@@ -291,7 +302,10 @@ export function AdvisorsSheet({
                           className="advisor-detail-trigger"
                           aria-label={`Detalle de ${p.name}`}
                           title="Ver evolución y detalle de ventas"
-                          onClick={() => setDetail(p)}
+                          onClick={() => {
+                            setDetail(p);
+                            setDetailVersion((v) => v + 1);
+                          }}
                         >
                           Detalle ↗
                         </button>
@@ -358,6 +372,8 @@ export function AdvisorsSheet({
       )}
       {detail && (
         <AdvisorDetail
+          key={detail.id}
+          openRequest={detailVersion}
           person={detail}
           tables={tables}
           initialTableId={tableId}

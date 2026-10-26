@@ -15,7 +15,7 @@ export async function effectivenessDetail(
         where: { id: b.aliasId },
         include: { table: { select: { id: true, name: true } } },
       });
-      demand(alias, "Alias no disponible.", 404);
+      demand(alias, "Inventario no disponible.", 404);
       const since = new Date(b.since + "T00:00:00-05:00"),
         until = new Date(
           Math.min(
@@ -55,7 +55,7 @@ export async function effectivenessDetail(
       const row = sheet.rows.find(
         (r) => r.aliasId === b.aliasId && r.country === b.country,
       );
-      demand(row, "Fila de alias y país no disponible.", 404);
+      demand(row, "Fila de inventario y país no disponible.", 404);
       const serialize = (e: {
         id: string;
         active: boolean;

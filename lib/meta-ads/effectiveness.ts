@@ -1,3 +1,4 @@
+import { advisorSalesPlan } from "./advisor-sales-plan";
 import { limaDay } from "./advisor-attribution";
 import { createHash } from "node:crypto";
 import { sheetMetrics, type SheetMetric } from "./period-summary";
@@ -143,6 +144,10 @@ export async function effectiveness(
       stateRevision: number;
       lastStateChange: string | null;
       token: string;
+      advisorChanges: Record<
+        string,
+        { status: "PENDING" | "APPROVED" | "AUTOMATIC" }
+      >;
     }
   >();
   const get = (a: string, p: string) => {
@@ -168,6 +173,7 @@ export async function effectiveness(
             .find((s) => s.aliasId === a && s.country === p)
             ?.events[0]?.createdAt.toISOString() ?? null,
         token: "",
+        advisorChanges: {},
       };
       rows.set(k, r);
     }
@@ -369,6 +375,38 @@ export async function effectiveness(
       )
       .digest("hex")
       .slice(0, 32);
+  const [advisorHistory, approvals] = await Promise.all([
+    client.metaAdvisorAssignment.findMany({ where: { alias: { tableId } } }),
+    client.metaAdvisorSalesApproval.findMany({
+      where: { row: { alias: { tableId } }, day: { gte: since, lte: until } },
+      include: { row: { select: { aliasId: true, country: true } } },
+    }),
+  ]);
+  for (const r of rows.values()) {
+    const changes = advisorHistory.filter(
+      (e) => e.aliasId === r.aliasId && e.country === r.country,
+    );
+    if (!changes.length) continue;
+    for (let at = Date.parse(since); at <= Date.parse(until); at += 86400000) {
+      const day = new Date(at).toISOString().slice(0, 10),
+        c = r.days[day];
+      const approval = approvals.find(
+        (a) =>
+          a.row.aliasId === r.aliasId &&
+          a.row.country === r.country &&
+          a.day === day,
+      );
+      const plan = advisorSalesPlan(
+        r.advisorId,
+        changes,
+        day,
+        c?.sales ?? null,
+        !!c?.na.includes("sales"),
+        approval,
+      );
+      if (plan.hasChange) r.advisorChanges[day] = { status: plan.status };
+    }
+  }
   return {
     table,
     rows: [...rows.values()],
@@ -395,7 +433,7 @@ export async function saveEffectiveness(
     await effectivenessLock(tx, actor);
     demand(
       await tx.metaAlias.findUnique({ where: { id: b.aliasId } }),
-      "Alias no disponible.",
+      "Inventario no disponible.",
       404,
     );
     const old = await tx.metaEffectivenessRow.findUnique({
@@ -498,7 +536,7 @@ async function emptyHiddenDestination(
       target.hidden &&
         !target._count.days &&
         target.legacySources.every((s) => !s._count.days),
-      "Ya existe una fila de este alias y país. No se sobrescribieron sus datos.",
+      "Ya existe una fila de este inventario y país. No se sobrescribieron sus datos.",
       409,
     );
     await tx.metaEffectivenessRow.delete({ where: { id: target.id } });
@@ -522,7 +560,7 @@ export async function changeEffectivenessIdentity(
       where: { id: b.aliasId },
       include: { table: true },
     });
-    demand(a, "Alias no disponible.", 404);
+    demand(a, "Inventario no disponible.", 404);
     const old = await tx.metaEffectivenessRow.findUnique({
       where: {
         aliasId_country_currency: {
@@ -637,7 +675,7 @@ export async function importEffectiveness(
         );
         demand(
           entries.every((e) => !!e.country),
-          "Elige el país de cada alias antes de asignar asesor.",
+          "Elige el país de cada elemento del inventario antes de asignar asesor.",
         );
       }
       const aliases = await tx.metaAlias.findMany({
@@ -654,14 +692,14 @@ export async function importEffectiveness(
           a = byName.get(k);
         demand(
           !a || a.tableId === tableId,
-          `El alias «${e.name}» ya pertenece a otra tabla.`,
+          `El elemento del inventario «${e.name}» ya pertenece a otra tabla.`,
           409,
         );
         if (!a && !fresh.has(k)) fresh.set(k, e.name);
       }
       demand(
         aliases.length + fresh.size <= 1000,
-        "El catálogo admite hasta 1000 alias.",
+        "El catálogo admite hasta 1000 elementos de inventario.",
       );
       if (fresh.size)
         await tx.metaAlias.createMany({
@@ -688,7 +726,7 @@ export async function importEffectiveness(
           k = key(aliasId, e.country);
         demand(
           !unique.has(k) || unique.get(k)!.displayCurrency === e.currency,
-          "El mismo alias y país no puede tener dos monedas de visualización en un lote.",
+          "El mismo inventario y país no puede tener dos monedas de visualización en un lote.",
         );
         unique.set(k, {
           aliasId,
@@ -844,7 +882,7 @@ export async function setEffectivenessColumns(
         for (const r of rows.values()) {
           demand(
             !seen.has(r.aliasId),
-            "Hay varias filas del mismo alias con distintos países. Edita esos países por fila para evitar combinar sus datos.",
+            "Hay varias filas del mismo inventario con distintos países. Edita esos países por fila para evitar combinar sus datos.",
             409,
           );
           seen.add(r.aliasId);

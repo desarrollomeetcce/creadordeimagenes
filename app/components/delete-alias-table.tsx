@@ -7,12 +7,13 @@ type Review = {
   token: string;
 };
 const labels: Record<string, string> = {
-  aliases: "Alias",
-  rows: "Filas de alias y país",
+  aliases: "Inventario",
+  rows: "Filas de inventario y país",
   days: "Días con datos manuales",
   events: "Cambios de activación",
   assignments: "Asignaciones internas en Meta",
   advisorHistory: "Cambios de asesor",
+  salesApprovals: "Repartos aprobados de ventas",
   totals: "Días de totales manuales",
   colorRules: "Reglas de colores",
   links: "Configuraciones de sincronización",
@@ -77,7 +78,7 @@ export function DeleteAliasTable({
       {review && (
         <>
           <p>
-            Se eliminará esta tabla completa con sus alias, datos manuales,
+            Se eliminará esta tabla completa con su inventario, datos manuales,
             totales, historial de activación y colores. Esta acción no se puede
             deshacer.
           </p>
@@ -91,7 +92,7 @@ export function DeleteAliasTable({
           </dl>
           <p>
             Los anuncios y estadísticas originales de Meta se conservan; se
-            retira su asignación a estos alias. Los asesores, asistencias y
+            retira su asignación a estos elementos del inventario. Los asesores, asistencias y
             horas ausentes no se borran. Las copias ya guardadas en otras tablas
             se conservan; sus conexiones de sincronización con esta tabla se
             retiran.

@@ -333,3 +333,52 @@ test('Asesores: cortes incompatibles no generan ventas negativas ni convierten f
  assert.equal(attributeDailySales('A',[],'2026-08-11',0,false)[0].sales,0);assert.equal(attributeDailySales('A',[],'2026-08-11',null,false)[0].sales,null);assert.equal(attributeDailySales('A',[],'2026-08-11',null,true)[0].na,true);
  assert(!assignmentTimingSchema.safeParse({day:'2026-02-30',mode:'DAY'}).success);assert(!assignmentTimingSchema.safeParse({day:'2026-08-11',mode:'CLOCK',time:'25:01'}).success);
 });
+
+test('Colores fijados: deseleccionar conserva regla/pin y revela solo otras reglas activas',async()=>{
+ const {sheetCellColor,colorRulesSchema}=await import('../lib/meta-ads/sheet-colors');
+ const old={id:'old',value:0,color:'blue' as const,metrics:['sales' as const],pinned:true};
+ const pinned={...old,id:'pin',color:'purple' as const,enabled:true};
+ assert.equal(sheetCellColor([old,pinned],'sales','2026-10-20',0),'#a78bfa');
+ const disabled={...pinned,enabled:false};assert.equal(disabled.pinned,true);
+ assert.equal(sheetCellColor([old,disabled],'sales','2026-10-20',0),'#60a5fa');assert.equal(sheetCellColor([disabled],'sales','2030-01-01',0),undefined);
+ assert.deepEqual(colorRulesSchema.parse([old,disabled]),[old,disabled]);assert(!colorRulesSchema.safeParse([{...old,enabled:'false'}]).success);
+});
+test('Asesor I: cuenta inasistencia confirmada, conserva cero presente y huecos sin registrar/N.A.',async()=>{
+ const {advisorAttendanceValue}=await import('../lib/meta-ads/advisor-metrics');
+ assert.equal(advisorAttendanceValue('ABSENT','absences'),1);assert.equal(advisorAttendanceValue('PRESENT','absences'),0);
+ for(const status of [null,undefined,'NA'])assert.equal(advisorAttendanceValue(status,'absences'),null);
+ assert.equal(advisorAttendanceValue('ABSENT','attendance'),0);assert.equal(advisorAttendanceValue('PRESENT','attendance'),1);
+});
+
+test('Reparto aprobado: pago tardío del primer asesor cambia 3+2 a4+2 y mantiene nuevos incrementos',async()=>{
+ const {advisorSalesPlan}=await import('../lib/meta-ads/advisor-sales-plan');
+ const e={id:'change',advisorId:'B',previousAdvisorId:'A',effectiveAt:new Date('2026-10-20T12:00:00-05:00'),createdAt:new Date('2026-10-20T12:00:01-05:00'),mode:'CLOCK',cutoffSales:3};
+ let p=advisorSalesPlan('B',[e],'2026-10-20',5,false);assert.equal(p.status,'PENDING');assert.equal(p.portions.find(x=>x.advisorId==='A')!.sales,3);assert.equal(p.portions.find(x=>x.advisorId==='B')!.sales,2);
+ const approval={salesTotal:6,allocations:[{advisorId:'A',sales:4},{advisorId:'B',sales:2}],basis:{events:['change'],activeAdvisorId:'B'},revision:1,approvedAt:new Date()};
+ p=advisorSalesPlan('B',[e],'2026-10-20',6,false,approval);assert.equal(p.status,'APPROVED');assert.equal(p.portions.find(x=>x.advisorId==='A')!.sales,4);assert.equal(p.portions.find(x=>x.advisorId==='B')!.sales,2);
+ p=advisorSalesPlan('B',[e],'2026-10-20',7,false,approval);assert.equal(p.portions.find(x=>x.advisorId==='A')!.sales,4);assert.equal(p.portions.find(x=>x.advisorId==='B')!.sales,3);
+ const back={...e,id:'return',advisorId:'A',previousAdvisorId:'B',effectiveAt:new Date('2026-10-20T16:00:00-05:00'),createdAt:new Date('2026-10-20T16:00:01-05:00'),cutoffSales:7};
+ p=advisorSalesPlan('A',[e,back],'2026-10-20',9,false,approval);assert.equal(p.status,'PENDING');assert.equal(p.portions.find(x=>x.advisorId==='A')!.sales,6);assert.equal(p.portions.find(x=>x.advisorId==='B')!.sales,3);assert.equal(p.portions.reduce((s,x)=>s+(x.sales??0),0),9);
+});
+test('Reparto: corrección bajo un corte anterior sigue aprobada sin negativos; día completo invalida la base previa',async()=>{
+ const {advisorSalesPlan,salesAllocationsSchema}=await import('../lib/meta-ads/advisor-sales-plan');
+ const e={id:'change',advisorId:'B',previousAdvisorId:'A',effectiveAt:new Date('2026-10-20T12:00:00-05:00'),createdAt:new Date('2026-10-20T12:00:01-05:00'),mode:'CLOCK',cutoffSales:3};
+ const approval={salesTotal:2,allocations:[{advisorId:'A',sales:1},{advisorId:'B',sales:1}],basis:{events:['change'],activeAdvisorId:'B'},revision:1,approvedAt:new Date()};
+ let p=advisorSalesPlan('B',[e],'2026-10-20',3,false,approval);assert.equal(p.status,'APPROVED');assert.equal(p.portions.find(x=>x.advisorId==='A')!.sales,1);assert.equal(p.portions.find(x=>x.advisorId==='B')!.sales,2);
+ const day={...e,id:'day',advisorId:'C',previousAdvisorId:'B',mode:'DAY',cutoffSales:null,effectiveAt:new Date('2026-10-20T00:00:00-05:00'),createdAt:new Date('2026-10-20T17:00:00-05:00')};
+ p=advisorSalesPlan('C',[e,day],'2026-10-20',3,false,approval);assert.equal(p.status,'PENDING');assert.equal(p.reconciled,false);assert.equal(p.portions.find(x=>x.advisorId==='C')!.sales,3);assert(!p.portions.some(x=>x.advisorId==='A'));
+ assert(!salesAllocationsSchema.safeParse([{advisorId:'A',sales:1},{advisorId:'A',sales:2}]).success);assert(!salesAllocationsSchema.safeParse([{advisorId:'A',sales:-1}]).success);
+});
+test('Reparto: no inventa cambios al asignar inicialmente sin ventas y conserva ventas sin asesor',async()=>{
+ const {advisorSalesPlan}=await import('../lib/meta-ads/advisor-sales-plan');
+ const e={id:'first',advisorId:'A',previousAdvisorId:null,effectiveAt:new Date('2026-10-20T12:00:00-05:00'),createdAt:new Date('2026-10-20T12:00:01-05:00'),mode:'CLOCK',cutoffSales:0};
+ assert.equal(advisorSalesPlan('A',[e],'2026-10-20',3,false).hasChange,false);
+ const p=advisorSalesPlan('A',[{...e,cutoffSales:4}],'2026-10-20',6,false);assert.equal(p.hasChange,true);assert.equal(p.portions.find(x=>x.advisorId===null)!.sales,4);assert.equal(p.portions.find(x=>x.advisorId==='A')!.sales,2);
+});
+
+test('Ventas: cambios sucesivos en el mismo minuto y a medianoche conservan el registro acumulado',async()=>{
+ const {attributeDailySales}=await import('../lib/meta-ads/advisor-attribution');
+ const base={effectiveAt:new Date('2026-10-20T00:00:00-05:00'),mode:'CLOCK'};
+ const changes=[{...base,id:'first',advisorId:'B',previousAdvisorId:'A',cutoffSales:3,createdAt:new Date('2026-10-20T00:00:10-05:00')},{...base,id:'second',advisorId:'A',previousAdvisorId:'B',cutoffSales:5,createdAt:new Date('2026-10-20T00:00:20-05:00')}];
+ const p=attributeDailySales('A',changes,'2026-10-20',7,false);assert.equal(p.find(x=>x.advisorId==='A')!.sales,5);assert.equal(p.find(x=>x.advisorId==='B')!.sales,2);assert.equal(p.reduce((s,x)=>s+(x.sales??0),0),7);
+});

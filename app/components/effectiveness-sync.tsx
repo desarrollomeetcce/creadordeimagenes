@@ -17,7 +17,7 @@ type Preview = {
   sourceName: string;
   targetName: string;
 };
-const options = [{ key: "alias", name: "Alias", label: "A" }, ...sheetMetrics];
+const options = [{ key: "alias", name: "Inventario", label: "A" }, ...sheetMetrics];
 export function EffectivenessSync({
   tableId,
   tables,
@@ -85,7 +85,7 @@ export function EffectivenessSync({
         setLast(result.lastSyncAt);
         setSuccess(true);
         setMessage(
-          `Sincronización completada: ${result.summary.cells} celdas y ${result.summary.aliasesAdded} alias nuevos.`,
+          `Sincronización completada: ${result.summary.cells} celdas y ${result.summary.aliasesAdded} elementos nuevos de inventario.`,
         );
         try {
           await onSynced();
@@ -167,8 +167,8 @@ export function EffectivenessSync({
         </div>
       </fieldset>
       <p>
-        Coincidencia exacta de alias + país + fecha. Las monedas se convierten
-        con la tasa de cada día. «Alias» añade los nombres y países del origen
+        Coincidencia exacta de inventario + país + fecha. Las monedas se convierten
+        con la tasa de cada día. «Inventario» añade los nombres y países del origen
         sin borrar los existentes. Las celdas elegidas con datos reemplazarán la
         vista del destino; los vacíos del origen no borran datos. No cambia Meta
         Ads.
@@ -198,7 +198,7 @@ export function EffectivenessSync({
           </strong>
           <div className="sheet-sync-counts">
             <span>
-              <b>{currentPreview.summary.aliasesAdded}</b> alias nuevos
+              <b>{currentPreview.summary.aliasesAdded}</b> elementos nuevos de inventario
             </span>
             <span>
               <b>{currentPreview.summary.rowsAdded}</b> filas nuevas

@@ -48,10 +48,10 @@ export function MetaAliasAction({
   ];
   const bulk = bulkCount !== undefined,
     label = bulk
-      ? "Asignar alias"
+      ? "Asignar inventario"
       : value
-        ? `Con alias${country ? ` · ${country}` : ""} · ${advisors.find((a) => a.id === advisorId)?.name ?? "Sin asesor"}`
-        : "Sin alias";
+        ? `Con inventario${country ? ` · ${country}` : ""} · ${advisors.find((a) => a.id === advisorId)?.name ?? "Sin asesor"}`
+        : "Sin inventario";
   if (readOnly)
     return (
       <span className="meta-alias-indicator" title={countryName(country)}>
@@ -71,12 +71,12 @@ export function MetaAliasAction({
         popoverTarget={id}
         title={
           value
-            ? `${aliases.find((a) => a.id === value)?.name ?? "Alias"} · ${countryName(country)}`
+            ? `${aliases.find((a) => a.id === value)?.name ?? "Inventario"} · ${countryName(country)}`
             : undefined
         }
         aria-label={
           bulk
-            ? `Asignar alias a ${bulkCount} seleccionados`
+            ? `Asignar inventario a ${bulkCount} seleccionados`
             : `${label} de ${name}`
         }
         onClick={(e) => {
@@ -117,7 +117,7 @@ export function MetaAliasAction({
           <label>
             Tabla
             <select
-              aria-label="Tabla de alias"
+              aria-label="Tabla de inventario"
               value={draftTable}
               disabled={disabled}
               onChange={(e) => {
@@ -134,10 +134,10 @@ export function MetaAliasAction({
             </select>
           </label>
           <label>
-            {bulk ? `Alias para ${bulkCount} seleccionados` : "Alias"}
+            {bulk ? `Inventario para ${bulkCount} seleccionados` : "Inventario"}
             <select
               aria-label={
-                bulk ? "Alias para seleccionados" : `Alias de ${name}`
+                bulk ? "Inventario para seleccionados" : `Inventario de ${name}`
               }
               value={draftAlias}
               disabled={disabled || !draftTable}
@@ -146,7 +146,7 @@ export function MetaAliasAction({
                 if (!e.target.value) setDraftCountry("");
               }}
             >
-              <option value="">{"Elige un alias"}</option>
+              <option value="">{"Elige un elemento del inventario"}</option>
               {aliases
                 .filter((a) => (a.tableId ?? "diplomados") === draftTable)
                 .map((a) => (
@@ -159,7 +159,7 @@ export function MetaAliasAction({
           <label>
             País
             <select
-              aria-label="País del alias"
+              aria-label="País del inventario"
               value={draftCountry}
               required={!!draftAlias}
               disabled={disabled || !draftAlias}
@@ -176,7 +176,7 @@ export function MetaAliasAction({
           <label>
             Asesor
             <select
-              aria-label="Asesor del alias"
+              aria-label="Asesor del inventario"
               value={draftAdvisor}
               required={!!draftAlias}
               disabled={disabled || !draftAlias}
@@ -191,7 +191,7 @@ export function MetaAliasAction({
             </select>
           </label>
           <small>
-            Alias, país y asesor deben coincidir exactamente con Efectividad.
+            Inventario, país y asesor deben coincidir exactamente con Efectividad.
             Crea los asesores en la hoja «Asesores». No cambia la segmentación
             en Meta.
           </small>
@@ -210,7 +210,7 @@ export function MetaAliasAction({
                 !draftAdvisor
               }
             >
-              Guardar alias, país y asesor
+              Guardar inventario, país y asesor
             </button>
             <button
               type="button"
@@ -226,7 +226,7 @@ export function MetaAliasAction({
             disabled={disabled}
             onClick={() => assign(null, null)}
           >
-            Quitar alias de esta fila
+            Quitar inventario de esta fila
           </button>
         )}
         {bulk && (
@@ -235,7 +235,7 @@ export function MetaAliasAction({
             disabled={disabled}
             onClick={() => assign(null, null)}
           >
-            Quitar alias de la selección
+            Quitar inventario de la selección
           </button>
         )}
       </div>

@@ -46,7 +46,7 @@ export async function fillEffectiveness(
           expected.length === b.targets.length &&
             submitted.size === expected.length &&
             expected.every((k) => submitted.has(k)),
-          "Los alias activos cambiaron. Recarga antes de completar la columna.",
+          "Los elementos activos del inventario cambiaron. Recarga antes de completar la columna.",
           409,
         );
       }
@@ -237,7 +237,7 @@ export async function effectivenessHistory(
   ownerOnly(actor);
   demand(
     await db.metaAlias.findUnique({ where: { id: aliasId } }),
-    "Alias no disponible.",
+    "Inventario no disponible.",
     404,
   );
   const state = await db.metaEffectivenessState.findUnique({

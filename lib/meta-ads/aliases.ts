@@ -33,7 +33,7 @@ export async function saveAlias(
       await tx.user.findFirst({
         where: { id: actor.id, role: "OWNER", status: "APPROVED" },
       }),
-      "Sin permiso para editar alias.",
+      "Sin permiso para editar inventario.",
       403,
     );
     if (!id)
@@ -45,11 +45,11 @@ export async function saveAlias(
     if (!id)
       demand(
         (await tx.metaAlias.count()) < 1000,
-        "El catálogo admite hasta 1000 alias.",
+        "El catálogo admite hasta 1000 elementos de inventario.",
       );
     if (id) {
       const existing = await tx.metaAlias.findUnique({ where: { id } });
-      demand(existing, "Alias no disponible.", 404);
+      demand(existing, "Inventario no disponible.", 404);
       tableId = existing.tableId;
     }
     demand(
@@ -60,7 +60,7 @@ export async function saveAlias(
           ...(id ? { id: { not: id } } : {}),
         },
       })),
-      "Ya existe un alias con ese nombre.",
+      "Ya existe un elemento del inventario con ese nombre.",
       409,
     );
     const row = id
@@ -97,13 +97,13 @@ export async function assignAliases(
     country === undefined || country === null || isCountryCode(country),
     "País no válido.",
   );
-  demand(aliasId !== null || !country, "El país debe acompañar a un alias.");
+  demand(aliasId !== null || !country, "El país debe acompañar a un elemento del inventario.");
   const ids = [...new Set(objectIds)];
   demand(
     ids.length > 0 &&
       ids.length <= 100 &&
       ids.every((id) => /^\d{1,40}$/.test(id)),
-    "Selección de alias inválida.",
+    "Selección de inventario inválida.",
   );
   return db.$transaction(async (tx) => {
     await tx.$executeRaw`SELECT pg_advisory_xact_lock(884411)`;
@@ -111,7 +111,7 @@ export async function assignAliases(
       await tx.user.findFirst({
         where: { id: actor.id, role: "OWNER", status: "APPROVED" },
       }),
-      "Sin permiso para asignar alias.",
+      "Sin permiso para asignar inventario.",
       403,
     );
     const count = await tx.metaAdObject.count({
@@ -125,11 +125,11 @@ export async function assignAliases(
     if (aliasId)
       demand(
         await tx.metaAlias.findUnique({ where: { id: aliasId } }),
-        "Alias no disponible.",
+        "Inventario no disponible.",
         404,
       );
     if (advisorId) {
-      demand(aliasId && country, "El asesor requiere alias y país.");
+      demand(aliasId && country, "El asesor requiere inventario y país.");
       demand(
         await tx.metaAdvisor.findUnique({ where: { id: advisorId } }),
         "Asesor no disponible.",

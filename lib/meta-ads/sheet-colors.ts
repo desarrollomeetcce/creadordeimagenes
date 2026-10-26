@@ -35,6 +35,7 @@ export const colorRulesSchema = z
           .max(5)
           .refine((v) => new Set(v).size === v.length, "Parámetro repetido."),
         pinned: z.boolean(),
+        enabled: z.boolean().optional(),
       })
       .strict(),
   )
@@ -65,6 +66,7 @@ export function sheetCellColor(
   for (let i = rules.length - 1; i >= 0; i--) {
     const r = rules[i];
     if (
+      r.enabled !== false &&
       r.metrics.includes(metric as SheetColorRule["metrics"][number]) &&
       r.value === value
     )

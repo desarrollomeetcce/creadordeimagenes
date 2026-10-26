@@ -117,7 +117,7 @@ export function EffectivenessHistory({
         ref={pop}
         popover="auto"
         className="sheet-state-history alias-state-detail"
-        aria-label={`Detalle del alias ${name} ${country}`}
+        aria-label={`Detalle del inventario ${name} ${country}`}
         style={{
           ...position,
           maxHeight: `calc(100dvh - ${position.top + 8}px)`,
@@ -160,7 +160,7 @@ export function EffectivenessHistory({
                 <p>
                   Estado actual:{" "}
                   <b>{data.active ? "Activado" : "Desactivado"}</b>. Historial
-                  de Efectividad de este alias y país; no cambia estados en Meta
+                  de Efectividad de este inventario y país; no cambia estados en Meta
                   Ads.
                 </p>
                 <h3>Estado por fecha · horas de Lima</h3>
@@ -247,7 +247,7 @@ export function EffectivenessHistory({
                   <label>
                     1 · Barras
                     <select
-                      aria-label="Barras del detalle del alias"
+                      aria-label="Barras del detalle del inventario"
                       value={bars}
                       onChange={(e) => {
                         const v = e.target.value as SheetMetric;
@@ -266,7 +266,7 @@ export function EffectivenessHistory({
                   <label>
                     2 · Línea con puntos
                     <select
-                      aria-label="Línea del detalle del alias"
+                      aria-label="Línea del detalle del inventario"
                       value={line}
                       onChange={(e) => {
                         const v = e.target.value as SheetMetric;

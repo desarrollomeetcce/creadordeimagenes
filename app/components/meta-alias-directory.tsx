@@ -24,11 +24,11 @@ export function MetaAliasDirectory({
       if (!id) form.reset();
       onSaved();
       setMessage(
-        "Alias guardado. Puedes asignarlo desde las campañas, conjuntos o anuncios.",
+        "Inventario guardado. Puedes asignarlo desde las campañas, conjuntos o anuncios.",
       );
     } catch (e) {
       setMessage(
-        e instanceof Error ? e.message : "No se pudo guardar el alias.",
+        e instanceof Error ? e.message : "No se pudo guardar el inventario.",
       );
     } finally {
       setBusy(false);
@@ -36,10 +36,10 @@ export function MetaAliasDirectory({
   };
   return (
     <section className="panel stack meta-alias-directory">
-      <h2>Alias de diplomados</h2>
+      <h2>Inventario de diplomados</h2>
       <p>
-        Organiza tus campañas, conjuntos y anuncios con nombres comunes. Los
-        alias son internos y no cambian los nombres en Meta.
+        Organiza tus campañas, conjuntos y anuncios con nombres comunes. Los elementos
+        del inventario son internos y no cambian los nombres en Meta.
       </p>
       <form
         className="row"
@@ -54,10 +54,10 @@ export function MetaAliasDirectory({
             name="name"
             required
             maxLength={150}
-            placeholder="Escribe un alias"
+            placeholder="Escribe un elemento del inventario"
           />
         </label>
-        <button disabled={busy}>Agregar alias</button>
+        <button disabled={busy}>Agregar inventario</button>
       </form>
       {message && (
         <p role="status" className="notice">
@@ -66,7 +66,7 @@ export function MetaAliasDirectory({
       )}
       {!aliases.length ? (
         <p className="hint">
-          Todavía no hay alias. Aquí podrás cargar la lista de diplomados.
+          Todavía no hay inventario. Aquí podrás cargar la lista de diplomados.
         </p>
       ) : (
         aliases.map((a) => (
@@ -79,7 +79,7 @@ export function MetaAliasDirectory({
             }}
           >
             <label>
-              Alias
+              Inventario
               <input
                 name="name"
                 defaultValue={a.name}
