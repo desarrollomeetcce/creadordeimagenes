@@ -1059,3 +1059,11 @@ Cierre de verificación:152/152 unitarias,172/172 integraciones, typecheck/build
 - Chromium contra compilación probada: buscador por palabras y desplegable buscable en thead, Todo el inventario, filtro de hoja en la tabla, check por grupo y select-all visible/indeterminado. Ítem marcado y luego ocultado por búsqueda excluido de la revisión; cancelar conserva; desmarcar una hoja conserva V4 y elimina únicamente la otra; otro lote con cambio de V produce409 sin pérdida parcial, Revisar de nuevo permite confirmarlo. Ítem no seleccionado conserva V7. X individual disponible. Checks compactos14px, popup oscuro, tema claro/móvil390px sin desbordamiento del documento.
 - Evidencias externas: /workspace/work/inventory-checks-{unit,integration,typecheck,build,browser}.txt y capturas inventory-checks-{table-dark,review-dark,mobile-light}.png. Base sintética local, no producción.
 - Publicación de main dispara el mecanismo GitHub existente; no acredita finalización del Docker Manager de Hostinger, al que esta sesión no tiene acceso directo.
+
+
+### Menú contextual y colores de sincronización —26/10/2026
+
+- npm test152/152; typecheck y build aprobados. Cambio solo de interfaz/CSS sobre rutas existentes, sin migración.
+- Chromium en compilación final: clic normal cambia hoja sin editor, clic derecho muestra Editar nombre/Eliminar tabla en tablas financieras, edición explícita Enter/Escape/reload, ContextMenu/Shift+F10 y flechas con foco restaurado al cerrar; renombrado de hoja especial desde menú y alta sin edición automática. Eliminar tabla abre revisión, cancelar conserva y confirmar con nombre exacto elimina solo su tabla sintética.
+- Sincronización real por panel Revisar→Sincronizar ahora copia V3/V0 y conserva procedencia; ambos inputs sin fondo morado ni data-colored antes de elegir reglas. Fijar morado para0 activa solo esa coincidencia, deseleccionar retira color sin morado residual, reactivar lo restaura y desfijar lo elimina. Recarga conserva cifras y vista neutral. Temas oscuro/claro y móvil390px sin desbordamiento del documento. Sin solicitudes externas.
+- Evidencias externas: /workspace/work/tab-menu-{unit,typecheck,build,browser}.txt; capturas tab-menu-dark.png, tab-menu-light.png, tab-menu-synced-neutral-dark.png. Base exclusiva sintética. Integración175/175 de versión anterior conserva su evidencia; no se modificó backend.

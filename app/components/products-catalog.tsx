@@ -125,7 +125,6 @@ export function ProductsCatalog() {
       const created = await api("meta-ads/workbook-sheets", "POST", { kind });
       setSpecials((old) => [...old, created]);
       setSpecialId(created.id);
-      editTab(created.id, created.name, true, created.revision);
     } catch (e) {
       setMessage((e as Error).message);
     } finally {
@@ -172,14 +171,26 @@ export function ProductsCatalog() {
   }, []);
   const menuId = useId(),
     menu = useRef<HTMLDivElement>(null);
-  const [contextTable, setContextTable] = useState<CatalogTable | null>(null),
+  const [contextTable, setContextTable] = useState<{
+      id: string;
+      name: string;
+      kind?: Special["kind"];
+      revision?: number;
+    } | null>(null),
     [menuPosition, setMenuPosition] = useState({ left: 8, top: 8 }),
     [deleting, setDeleting] = useState<string | null>(null);
-  const openMenu = (t: CatalogTable, x: number, y: number) => {
+  const contextTrigger = useRef<HTMLButtonElement | null>(null);
+  const openMenu = (
+    t: { id: string; name: string; kind?: Special["kind"]; revision?: number },
+    x: number,
+    y: number,
+    trigger?: HTMLButtonElement,
+  ) => {
+    contextTrigger.current = trigger ?? null;
     setContextTable(t);
     setMenuPosition({
       left: Math.max(8, Math.min(x, innerWidth - 210)),
-      top: Math.max(8, Math.min(y, innerHeight - 90)),
+      top: Math.max(8, Math.min(y, innerHeight - 120)),
     });
     requestAnimationFrame(() => {
       menu.current?.showPopover();
@@ -264,7 +275,7 @@ export function ProductsCatalog() {
               data-sheet-id={t.id}
               onContextMenu={(e) => {
                 e.preventDefault();
-                openMenu(t, e.clientX, e.clientY);
+                openMenu(t, e.clientX, e.clientY, e.currentTarget);
               }}
               data-dragging={dragging === t.id || undefined}
               data-drop-edge={
@@ -274,7 +285,7 @@ export function ProductsCatalog() {
                     : "before"
                   : undefined
               }
-              title="Arrastra para ordenar; Alt + flecha izquierda/derecha también mueve la hoja"
+              title="Clic derecho para editar o eliminar; arrastra o usa Alt + flecha izquierda/derecha para ordenar"
               onDragStart={(e) => {
                 dragged.current = t.id;
                 setDragging(t.id);
@@ -318,7 +329,7 @@ export function ProductsCatalog() {
                 ) {
                   e.preventDefault();
                   const r = e.currentTarget.getBoundingClientRect();
-                  openMenu(t, r.left, r.bottom);
+                  openMenu(t, r.left, r.bottom, e.currentTarget);
                   return;
                 }
                 if (!e.altKey || !["ArrowLeft", "ArrowRight"].includes(e.key))
@@ -338,7 +349,7 @@ export function ProductsCatalog() {
               onClick={() => {
                 setSelected(t.id);
                 setSpecialId(null);
-                editTab(t.id, t.name);
+                setEditing(null);
                 setMessage("");
               }}
             >
@@ -372,10 +383,25 @@ export function ProductsCatalog() {
                       (editing?.id === t.id ? " sr-only" : "")
                     }
                     aria-selected={specialId === t.id}
+                    title="Clic derecho para editar el nombre"
+                    onContextMenu={(e) => {
+                      e.preventDefault();
+                      openMenu(t, e.clientX, e.clientY, e.currentTarget);
+                    }}
+                    onKeyDown={(e) => {
+                      if (
+                        e.key === "ContextMenu" ||
+                        (e.shiftKey && e.key === "F10")
+                      ) {
+                        e.preventDefault();
+                        const r = e.currentTarget.getBoundingClientRect();
+                        openMenu(t, r.left, r.bottom, e.currentTarget);
+                      }
+                    }}
                     onClick={() => {
                       setSpecialId(t.id);
                       setMessage("");
-                      editTab(t.id, t.name, true, t.revision);
+                      setEditing(null);
                     }}
                   >
                     {t.name}
@@ -561,18 +587,69 @@ export function ProductsCatalog() {
         role="menu"
         aria-label="Opciones de tabla"
         style={menuPosition}
+        onKeyDown={(e) => {
+          if (e.key === "Escape") {
+            e.preventDefault();
+            e.stopPropagation();
+            menu.current?.hidePopover();
+            contextTrigger.current?.focus({ preventScroll: true });
+            return;
+          }
+          if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(e.key)) return;
+          e.preventDefault();
+          const buttons = [
+              ...e.currentTarget.querySelectorAll<HTMLButtonElement>(
+                'button[role="menuitem"]:not(:disabled)',
+              ),
+            ],
+            index = buttons.indexOf(
+              document.activeElement as HTMLButtonElement,
+            );
+          const next =
+            e.key === "Home"
+              ? 0
+              : e.key === "End"
+                ? buttons.length - 1
+                : (index + (e.key === "ArrowDown" ? 1 : -1) + buttons.length) %
+                  buttons.length;
+          buttons[next]?.focus();
+        }}
       >
         <button
           type="button"
           role="menuitem"
-          className="danger"
           onClick={() => {
             menu.current?.hidePopover();
-            if (contextTable) setDeleting(contextTable.id);
+            if (!contextTable) return;
+            if (contextTable.kind) setSpecialId(contextTable.id);
+            else {
+              setSelected(contextTable.id);
+              setSpecialId(null);
+            }
+            setMessage("");
+            editTab(
+              contextTable.id,
+              contextTable.name,
+              !!contextTable.kind,
+              contextTable.revision,
+            );
           }}
         >
-          Eliminar tabla
+          Editar nombre
         </button>
+        {contextTable && !contextTable.kind && (
+          <button
+            type="button"
+            role="menuitem"
+            className="danger"
+            onClick={() => {
+              menu.current?.hidePopover();
+              if (contextTable) setDeleting(contextTable.id);
+            }}
+          >
+            Eliminar tabla
+          </button>
+        )}
       </div>
       {deleting && (
         <DeleteAliasTable
