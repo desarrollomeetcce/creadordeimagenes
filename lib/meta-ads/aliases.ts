@@ -1,3 +1,4 @@
+import { activeWorkbookSheetId } from "./workbook-scope";
 import { isCountryCode } from "./countries";
 import { db } from "../db";
 import { ownerOnly } from "../auth";
@@ -27,7 +28,7 @@ export async function saveAlias(
   name: string,
   id?: string,
   tableId = "diplomados",
-  inventorySheetId = "default-inventory",
+  inventorySheetId?: string,
 ) {
   ownerOnly(actor);
   return db.$transaction(async (tx) => {
@@ -40,12 +41,10 @@ export async function saveAlias(
       403,
     );
     if (!id)
-      demand(
-        await tx.metaEffectivenessSheet.findFirst({
-          where: { id: inventorySheetId, kind: "INVENTORY" },
-        }),
-        "Lista de inventario no disponible.",
-        404,
+      inventorySheetId = await activeWorkbookSheetId(
+        tx,
+        "INVENTORY",
+        inventorySheetId,
       );
     if (!id)
       demand(

@@ -4,6 +4,7 @@ import { engineRequest as api } from "./generation-engine";
 import { useSheetOrder } from "./use-sheet-order";
 import { InventoryCatalog } from "./inventory-catalog";
 import { MetaEffectiveness } from "./meta-effectiveness";
+import { DeleteWorkbookSheet } from "./delete-workbook-sheet";
 import { DeleteAliasTable } from "./delete-alias-table";
 import { AdvisorsSheet } from "./advisors-sheet";
 import { EffectivenessTotals } from "./effectiveness-totals";
@@ -30,6 +31,8 @@ export function ProductsCatalog() {
     name: string;
     revision: number;
   };
+  const [specialsLoaded, setSpecialsLoaded] = useState(false);
+  const [deletingSpecial, setDeletingSpecial] = useState<string | null>(null);
   const [specials, setSpecials] = useState<Special[]>([]),
     [specialId, setSpecialId] = useState<string | null>(null);
   const special = specials.find((s) => s.id === specialId);
@@ -135,7 +138,10 @@ export function ProductsCatalog() {
     let active = true;
     void api("meta-ads/workbook-sheets")
       .then((v) => {
-        if (active) setSpecials(v);
+        if (active) {
+          setSpecials(v);
+          setSpecialsLoaded(true);
+        }
       })
       .catch((e) => {
         if (active) setMessage(e.message);
@@ -145,8 +151,12 @@ export function ProductsCatalog() {
     };
   }, []);
   const load = async () => {
-    const v: CatalogTable[] = await api("meta-ads/alias-tables");
+    const [v, sheets]: [CatalogTable[], Special[]] = await Promise.all([
+      api("meta-ads/alias-tables"),
+      api("meta-ads/workbook-sheets"),
+    ]);
     setTables(v);
+    setSpecials(sheets);
   };
   useEffect(() => {
     let active = true;
@@ -383,7 +393,7 @@ export function ProductsCatalog() {
                       (editing?.id === t.id ? " sr-only" : "")
                     }
                     aria-selected={specialId === t.id}
-                    title="Clic derecho para editar el nombre"
+                    title="Clic derecho para editar el nombre o eliminar la pestaña"
                     onContextMenu={(e) => {
                       e.preventDefault();
                       openMenu(t, e.clientX, e.clientY, e.currentTarget);
@@ -411,7 +421,7 @@ export function ProductsCatalog() {
               ))}
             <button
               className="sheet-add-tab"
-              disabled={busy || !specials.length}
+              disabled={busy || !specialsLoaded}
               onClick={() => void addSpecial(kind)}
             >
               +{" "}
@@ -637,20 +647,48 @@ export function ProductsCatalog() {
         >
           Editar nombre
         </button>
-        {contextTable && !contextTable.kind && (
+        {contextTable && (
           <button
             type="button"
             role="menuitem"
             className="danger"
             onClick={() => {
               menu.current?.hidePopover();
-              if (contextTable) setDeleting(contextTable.id);
+              if (contextTable?.kind) setDeletingSpecial(contextTable.id);
+              else if (contextTable) setDeleting(contextTable.id);
             }}
           >
-            Eliminar tabla
+            {contextTable.kind ? "Eliminar pestaña" : "Eliminar tabla"}
           </button>
         )}
       </div>
+      {deletingSpecial && (
+        <DeleteWorkbookSheet
+          sheetId={deletingSpecial}
+          onClose={() => setDeletingSpecial(null)}
+          onDeleted={async (id) => {
+            const kind = specials.find((s) => s.id === id)?.kind,
+              next = specials.filter((s) => s.id !== id);
+            setSpecials(next);
+            setSpecialId((old) =>
+              old === id
+                ? (next.find((s) => s.kind === kind)?.id ?? next[0]?.id ?? null)
+                : old,
+            );
+            try {
+              setSpecials(await api("meta-ads/workbook-sheets"));
+              setMessage("Pestaña eliminada. Sus registros se conservaron.");
+            } catch {
+              setMessage(
+                "Pestaña eliminada. Recarga para actualizar el libro.",
+              );
+            } finally {
+              setDeletingSpecial(null);
+              setContextTable(null);
+            }
+          }}
+        />
+      )}
       {deleting && (
         <DeleteAliasTable
           tableId={deleting}

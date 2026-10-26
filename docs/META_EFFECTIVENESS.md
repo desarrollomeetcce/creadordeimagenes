@@ -163,7 +163,7 @@ Detalle del alias presenta solo cambios reales Activado/Desactivado con fecha/ho
 
 ### Eliminar una tabla completa
 
-Clic derecho sobre una pestaña de alias (o tecla de menú/Shift+F10) abre Eliminar tabla. Revisión muestra alias, filas/días, estados, asignaciones, totales, colores y conexiones afectadas. Confirmar exige escribir el nombre exacto. Token de contenido impide borrar una revisión obsoleta; eliminación atómica bajo884411 y OWNER aprobado, con auditoría. Borra la tabla y contenido propio; desvincula alias/país/asesor en asociaciones internas Meta y retira sincronizaciones vinculadas. No envía solicitudes a Meta ni borra sus objetos/estadísticas originales; conserva asesores/asistencias/horas y valores ya copiados en otras tablas. Asesores y Totales no tienen este menú. Si se elimina la última tabla se puede crear otra y seguir abriendo Asesores.
+Clic derecho sobre una pestaña de alias (o tecla de menú/Shift+F10) abre Eliminar tabla. Revisión muestra alias, filas/días, estados, asignaciones, totales, colores y conexiones afectadas. Confirmar exige escribir el nombre exacto. Token de contenido impide borrar una revisión obsoleta; eliminación atómica bajo884411 y OWNER aprobado, con auditoría. Borra la tabla y contenido propio; desvincula alias/país/asesor en asociaciones internas Meta y retira sincronizaciones vinculadas. No envía solicitudes a Meta ni borra sus objetos/estadísticas originales; conserva asesores/asistencias/horas y valores ya copiados en otras tablas. Totales, Asesores e Inventario también tienen menú contextual, con Eliminar pestaña: quita su pestaña conservando registros e historial, como indica su revisión. Si se elimina la última tabla se puede crear otra y seguir abriendo Asesores.
 
 ### Atribución histórica de ventas por asesor (sustituye la asignación actual aplicada al pasado)
 
@@ -223,3 +223,12 @@ El check de una fila selecciona sus hojas asociadas; el check superior marca o d
 
 
 Los datos sincronizados y ajustes manuales conservan su procedencia en el detalle de la celda, sin fondo morado automático. El formato por valor depende de las reglas activadas en Colores: deseleccionar un fijado oculta su formato manteniendo la regla; la X la elimina. N.A. conserva el gris por defecto. La selección de una pestaña y la creación de nuevas pestañas no abren el editor del nombre. El menú contextual también se abre con Shift+F10 o la tecla de menú, permite navegar con flechas y Escape devuelve el foco a la pestaña.
+
+
+### Eliminar pestañas de Totales, Asesores e Inventario
+
+Clic derecho → Eliminar pestaña abre una revisión del nombre y de los registros que contiene. Confirmar exige escribir el nombre exacto. La pestaña deja de aparecer también al recargar; sus registros e historial se conservan para mantener las referencias, ventas, asistencias y datos de otras hojas. La eliminación completa de una tabla financiera conserva su revisión diferenciada.
+
+Se puede quitar incluso la última pestaña de una clase: sus botones + siguen disponibles y crean otra lista vacía. Reutilizar un nombre crea una identidad nueva; no recupera ni mezcla los registros anteriores. Altas de inventario/importaciones/sincronización y las llamadas antiguas sin ID eligen una pestaña activa; si no queda ninguna, crean una nueva. Los asesores de pestañas retiradas conservan sus créditos históricos y se identifican como «pestaña eliminada» cuando corresponde.
+
+Migración requerida:202610260010_remove_workbook_tabs. Añade archivedAt a MetaEffectivenessSheet y limita la unicidad de nombres a las pestañas activas; no elimina ni mueve datos financieros. Debe aplicarse con npm run db:deploy antes de iniciar la versión nueva.

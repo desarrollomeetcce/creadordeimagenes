@@ -94,11 +94,13 @@ export function MetaAliasAction({
             : `${label} de ${name}`
         }
         onClick={(e) => {
+          const currentList =
+            aliases.find((a) => a.id === value)?.inventorySheetId ??
+            "default-inventory";
           setDraftList(
-            bulk || !value
+            bulk || !value || !inventories.some((i) => i.id === currentList)
               ? ""
-              : (aliases.find((a) => a.id === value)?.inventorySheetId ??
-                  "default-inventory"),
+              : currentList,
           );
           setDraftAlias(bulk ? "" : (value ?? ""));
           setDraftTable(

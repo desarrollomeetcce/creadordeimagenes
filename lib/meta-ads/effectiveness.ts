@@ -1,3 +1,4 @@
+import { activeWorkbookSheetId } from "./workbook-scope";
 import { advisorSalesPlan } from "./advisor-sales-plan";
 import { limaDay } from "./advisor-attribution";
 import { createHash } from "node:crypto";
@@ -701,10 +702,16 @@ export async function importEffectiveness(
         aliases.length + fresh.size <= 1000,
         "El catálogo admite hasta 1000 elementos de inventario.",
       );
-      if (fresh.size)
+      if (fresh.size) {
+        const inventorySheetId = await activeWorkbookSheetId(tx, "INVENTORY");
         await tx.metaAlias.createMany({
-          data: [...fresh.values()].map((name) => ({ name, tableId })),
+          data: [...fresh.values()].map((name) => ({
+            name,
+            tableId,
+            inventorySheetId,
+          })),
         });
+      }
       const catalogue = await tx.metaAlias.findMany({
           where: { tableId },
           select: { id: true, name: true },

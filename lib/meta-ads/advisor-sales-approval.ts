@@ -39,7 +39,7 @@ async function review(
         id: true,
         name: true,
         sheetId: true,
-        sheet: { select: { name: true } },
+        sheet: { select: { name: true, archivedAt: true } },
       },
       orderBy: { name: "asc" },
     }),
@@ -91,8 +91,9 @@ async function review(
     status: plan.status,
     advisors: advisors.map((p) => ({
       ...p,
-      label:
-        p.sheetId === "default-advisors"
+      label: p.sheet.archivedAt
+        ? p.name + " · " + p.sheet.name + " (pestaña eliminada)"
+        : p.sheetId === "default-advisors"
           ? p.name
           : p.name + " · " + p.sheet.name,
     })),

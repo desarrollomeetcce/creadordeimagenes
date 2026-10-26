@@ -12247,6 +12247,40 @@ test("Integración HTTP + PostgreSQL (base exclusiva de pruebas, sin llamadas ex
       if(object)assert.equal((await db.metaAdObject.findUniqueOrThrow({where:{id:object.id}})).aliasId,null);
       const events=await db.auditEvent.count({where:{action:'META_INVENTARIO_SELECCION_ELIMINADA',resourceId:listId}});assert.equal(events,2);
     });
+    await t.test('Pestañas: eliminar Totales/Asesores/Inventario conserva referencias e historial y permite borrar la última',async()=>{
+      const create=async(kind:string)=>{const r=await owner.call('meta-ads/workbook-sheets','POST',{kind});assert.equal(r.status,201);return r.body;};
+      const people=await create('ADVISORS'),inventory=await create('INVENTORY'),totals=await create('TOTALS');
+      const table=await db.metaAliasTable.create({data:{name:'Conservar referencias '+tag}});
+      const person=(await owner.call('meta-ads/advisors','POST',{name:'Historial conservado '+tag,sheetId:people.id})).body;
+      const alias=(await owner.call('meta-ads/aliases','POST',{name:'Inventario conservado '+tag,tableId:table.id,inventorySheetId:inventory.id})).body;
+      const day='2026-10-20',row=await db.metaEffectivenessRow.create({data:{aliasId:alias.id,country:'PE',currency:'',displayCurrency:'PEN',advisorId:person.id,days:{create:{day,sales:7,salesOverridden:true}}}});
+      await db.metaAdvisorAttendance.create({data:{advisorId:person.id,day,status:'PRESENT'}});
+      await db.metaEffectivenessTotalDay.create({data:{sheetId:totals.id,tableId:table.id,country:'PE',currency:'PEN',day,values:{baseManual:3,totalSpend:9}}});
+      const preview=(id:string,who=owner)=>who.call('meta-ads/workbook-sheets/'+id+'/delete-preview');
+      const remove=(r:any,who=owner)=>who.call('meta-ads/workbook-sheets/'+r.sheet.id,'DELETE',{token:r.token,confirmedName:r.sheet.name});
+      assert.equal((await preview(people.id,admin)).status,403);
+      let r=(await preview(people.id)).body;assert.equal(r.counts.advisors,1);
+      assert.equal((await owner.call('meta-ads/workbook-sheets/'+people.id,'DELETE',{token:r.token,confirmedName:'Incorrecto'})).status,400);
+      assert.equal((await remove(r,observer)).status,403);
+      await owner.call('meta-ads/advisors','POST',{name:'Otro asesor conservado '+tag,sheetId:people.id});
+      assert.equal((await remove(r)).status,409);assert.equal((await db.metaEffectivenessSheet.findUniqueOrThrow({where:{id:people.id}})).archivedAt,null);
+      for(const s of [people,inventory,totals]){r=(await preview(s.id)).body;assert.equal((await remove(r)).status,200);assert.equal((await remove(r)).status,404);assert((await db.metaEffectivenessSheet.findUniqueOrThrow({where:{id:s.id}})).archivedAt);assert.equal((await owner.call('meta-ads/workbook-sheets/'+s.id,'PATCH',{name:'No reabrir',revision:s.revision})).status,404);}
+      const active=(await owner.call('meta-ads/workbook-sheets')).body;assert([people.id,inventory.id,totals.id].every(id=>!active.some((s:any)=>s.id===id)));
+      const replacement=await owner.call('meta-ads/workbook-sheets','POST',{kind:'INVENTORY',name:inventory.name});assert.equal(replacement.status,201);assert.notEqual(replacement.body.id,inventory.id);
+      assert.equal((await owner.call('meta-ads/aliases','POST',{name:'No entra oculto',tableId:table.id,inventorySheetId:inventory.id})).status,404);
+      assert.equal((await owner.call('meta-ads/advisors','POST',{name:'No entra oculto',sheetId:people.id})).status,404);
+      assert.equal((await db.metaEffectivenessDay.findUniqueOrThrow({where:{rowId_day:{rowId:row.id,day}}})).sales,7);assert.equal(await db.metaAdvisorAttendance.count({where:{advisorId:person.id}}),1);
+      assert.deepEqual((await db.metaEffectivenessTotalDay.findUniqueOrThrow({where:{sheetId_tableId_country_currency_day:{sheetId:totals.id,tableId:table.id,country:'PE',currency:'PEN',day}}})).values,{baseManual:3,totalSpend:9});
+      const detail=await owner.call('meta-ads/advisors/detail?'+new URLSearchParams({tableId:table.id,since:day,until:day,advisorId:person.id}));assert.equal(detail.status,200);assert.equal(detail.body.rows[0].days[day].sales,7);
+      // All navigation can be empty; implicit legacy writes create active scopes instead of resurrecting archived IDs.
+      for(const s of (await owner.call('meta-ads/workbook-sheets')).body){const review=(await preview(s.id)).body;assert.equal((await remove(review)).status,200);}
+      assert.deepEqual((await owner.call('meta-ads/workbook-sheets')).body,[]);
+      const newAlias=await owner.call('meta-ads/aliases','POST',{tableId:table.id,name:'Nuevo después de eliminar '+tag});assert.equal(newAlias.status,201);assert.notEqual(newAlias.body.inventorySheetId,'default-inventory');
+      const newPerson=await owner.call('meta-ads/advisors','POST',{name:'Nuevo después de eliminar '+tag});assert.equal(newPerson.status,201);assert.notEqual(newPerson.body.sheetId,'default-advisors');
+      const saved=await owner.call('meta-ads/effectiveness/totals','PATCH',{tableId:table.id,country:'PE',currency:'PEN',day,metric:'baseManual',value:5,revision:0});assert.equal(saved.status,200);
+      const read=await owner.call('meta-ads/effectiveness/totals?'+new URLSearchParams({tableId:table.id,since:day,until:day}));assert.equal(read.status,200);assert.equal(read.body.groups.find((g:any)=>g.country==='PE'&&g.currency==='PEN').days[day].manual.baseManual,5);
+      assert.equal((await owner.call('meta-ads/workbook-sheets')).body.length,3);assert((await db.metaEffectivenessSheet.findUniqueOrThrow({where:{id:'default-inventory'}})).archivedAt);
+    });
     await t.test("cierre de sesión invalida el token", async () => {
       assert.equal((await user.call("auth/logout", "POST")).status, 200);
       assert.equal((await user.call("projects")).status, 401);

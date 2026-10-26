@@ -1038,6 +1038,8 @@ model MetaAdvisorSalesApproval {
 }
 
 model MetaEffectivenessSheet {
+ archivedAt DateTime?
+ @@index([kind,archivedAt,createdAt])
  advisors MetaAdvisor[]
  inventory MetaAlias[]
  totals MetaEffectivenessTotalDay[]

@@ -1,3 +1,4 @@
+import { activeWorkbookSheetId } from "./workbook-scope";
 import { db } from "../db";
 import { ownerOnly } from "../auth";
 import { demand } from "../errors";
@@ -11,12 +12,19 @@ export async function effectivenessTotals(
   tableId: string,
   since: string,
   until: string,
-  sheetId = "default-totals",
+  sheetId?: string,
 ) {
   ownerOnly(actor);
+  sheetId ??= (
+    await db.metaEffectivenessSheet.findFirst({
+      where: { kind: "TOTALS", archivedAt: null },
+      orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+    })
+  )?.id;
+  demand(sheetId, "Hoja de totales no disponible.", 404);
   demand(
     await db.metaEffectivenessSheet.findFirst({
-      where: { id: sheetId, kind: "TOTALS" },
+      where: { id: sheetId, kind: "TOTALS", archivedAt: null },
     }),
     "Hoja de totales no disponible.",
     404,
@@ -95,10 +103,10 @@ export async function saveEffectivenessTotal(
         b.currency,
       "Elige moneda antes de registrar importes.",
     );
-    const sheetId = b.sheetId ?? "default-totals";
+    const sheetId = await activeWorkbookSheetId(tx, "TOTALS", b.sheetId);
     demand(
       await tx.metaEffectivenessSheet.findFirst({
-        where: { id: sheetId, kind: "TOTALS" },
+        where: { id: sheetId, kind: "TOTALS", archivedAt: null },
       }),
       "Hoja de totales no disponible.",
       404,

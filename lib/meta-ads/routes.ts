@@ -167,6 +167,38 @@ export async function metaRoutes(
       ).removeInventory(actor, parts[2], b.token),
     );
   }
+  if (
+    parts[1] === "workbook-sheets" &&
+    parts[2] &&
+    parts[3] === "delete-preview" &&
+    parts.length === 4 &&
+    method === "GET"
+  )
+    return send(
+      await (
+        await import("./delete-workbook-sheet")
+      ).previewDeleteWorkbookSheet(actor, parts[2]),
+    );
+  if (
+    parts[1] === "workbook-sheets" &&
+    parts[2] &&
+    parts.length === 3 &&
+    method === "DELETE"
+  ) {
+    ownerOnly(actor);
+    const b = z
+      .object({
+        token: z.string().regex(/^[a-f0-9]{64}$/),
+        confirmedName: z.string().min(1).max(100),
+      })
+      .strict()
+      .parse(await body());
+    return send(
+      await (
+        await import("./delete-workbook-sheet")
+      ).deleteWorkbookSheet(actor, parts[2], b),
+    );
+  }
   if (path === "workbook-sheets" && method === "GET")
     return send(
       await (await import("./workbook-sheets")).workbookSheets(actor),

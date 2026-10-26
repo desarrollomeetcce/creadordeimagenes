@@ -1,3 +1,4 @@
+import { activeWorkbookSheetId } from "./workbook-scope";
 import { createHash } from "node:crypto";
 import { db } from "../db";
 import type { Prisma } from "@prisma/client";
@@ -243,10 +244,16 @@ export async function applyEffectivenessSync(
         p.summary.cells + p.summary.aliasesAdded + p.summary.rowsAdded > 0,
         "No hay coincidencias ni datos para sincronizar.",
       );
-      if (p.newAliases.length)
+      if (p.newAliases.length) {
+        const inventorySheetId = await activeWorkbookSheetId(tx, "INVENTORY");
         await tx.metaAlias.createMany({
-          data: p.newAliases.map((name) => ({ name, tableId: b.tableId })),
+          data: p.newAliases.map((name) => ({
+            name,
+            tableId: b.tableId,
+            inventorySheetId,
+          })),
         });
+      }
       const aliases = await tx.metaAlias.findMany({
           where: { tableId: b.tableId },
           select: { id: true, name: true },

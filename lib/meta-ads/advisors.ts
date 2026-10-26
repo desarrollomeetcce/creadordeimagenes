@@ -1,3 +1,4 @@
+import { activeWorkbookSheetId } from "./workbook-scope";
 import { advisorSalesPlan } from "./advisor-sales-plan";
 import { createHash } from "node:crypto";
 import {
@@ -29,15 +30,18 @@ export async function advisors(actor: Actor) {
       name: true,
       revision: true,
       sheetId: true,
-      sheet: { select: { id: true, name: true } },
+      sheet: { select: { id: true, name: true, archivedAt: true } },
     },
     orderBy: { name: "asc" },
     take: 1000,
   });
   return people.map((p) => ({
     ...p,
-    label:
-      p.sheetId === "default-advisors" ? p.name : p.name + " · " + p.sheet.name,
+    label: p.sheet.archivedAt
+      ? p.name + " · " + p.sheet.name + " (pestaña eliminada)"
+      : p.sheetId === "default-advisors"
+        ? p.name
+        : p.name + " · " + p.sheet.name,
   }));
 }
 export async function saveAdvisor(
@@ -47,7 +51,9 @@ export async function saveAdvisor(
   ownerOnly(actor);
   return db.$transaction(async (tx) => {
     await effectivenessLock(tx, actor);
-    let sheetId = b.sheetId ?? "default-advisors";
+    let sheetId = b.id
+      ? ""
+      : await activeWorkbookSheetId(tx, "ADVISORS", b.sheetId);
     if (b.id) {
       const old = await tx.metaAdvisor.findUnique({ where: { id: b.id } });
       demand(old, "Asesor no disponible.", 404);
@@ -448,7 +454,7 @@ export async function advisorSheet(
             name: true,
             revision: true,
             sheetId: true,
-            sheet: { select: { id: true, name: true } },
+            sheet: { select: { id: true, name: true, archivedAt: true } },
           },
           orderBy: { name: "asc" },
         }),

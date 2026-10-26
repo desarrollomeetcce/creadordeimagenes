@@ -61,6 +61,7 @@ export function parseWorkbookConfig(
 export async function workbookSheets(actor: Actor) {
   ownerOnly(actor);
   return db.metaEffectivenessSheet.findMany({
+    where: { archivedAt: null },
     orderBy: [{ createdAt: "asc" }, { id: "asc" }],
   });
 }
@@ -76,7 +77,7 @@ export async function createWorkbookSheet(
   return db.$transaction(async (tx) => {
     await effectivenessLock(tx, actor);
     const existing = await tx.metaEffectivenessSheet.findMany({
-      where: { kind: b.kind },
+      where: { kind: b.kind, archivedAt: null },
       select: { name: true },
     });
     demand(existing.length < 30, "Máximo30 pestañas de cada tipo.");
@@ -87,6 +88,7 @@ export async function createWorkbookSheet(
           ? "Asesores"
           : "Inventario";
     let name = b.name?.trim();
+    if (!name && !existing.length) name = label;
     if (!name) {
       let number = 2;
       while (
@@ -130,7 +132,7 @@ export async function updateWorkbookSheet(
   return db.$transaction(async (tx) => {
     await effectivenessLock(tx, actor);
     const old = await tx.metaEffectivenessSheet.findUnique({ where: { id } });
-    demand(old, "Pestaña no disponible.", 404);
+    demand(old && !old.archivedAt, "Pestaña no disponible.", 404);
     demand(
       old.revision === b.revision,
       "Esta pestaña cambió en otra ventana. Recarga antes de guardar.",
@@ -140,6 +142,7 @@ export async function updateWorkbookSheet(
     demand(
       !(await tx.metaEffectivenessSheet.findFirst({
         where: {
+          archivedAt: null,
           kind: old.kind,
           id: { not: id },
           name: { equals: name, mode: "insensitive" },
