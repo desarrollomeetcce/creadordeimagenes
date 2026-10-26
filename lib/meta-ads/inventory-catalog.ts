@@ -129,3 +129,81 @@ export async function removeInventory(actor: Actor, id: string, token: string) {
     return { ok: true, tableId: r.table.id };
   });
 }
+
+async function scopedRemovalIds(
+  tx: Prisma.TransactionClient,
+  listId: string,
+  ids: string[],
+) {
+  demand(
+    ids.length > 0 && ids.length <= 1000 && new Set(ids).size === ids.length,
+    "Selección inválida.",
+  );
+  const found = await tx.metaAlias.count({
+    where: { id: { in: ids }, inventorySheetId: listId },
+  });
+  demand(
+    found === ids.length,
+    "La selección cambió o contiene inventario de otra lista. Recarga antes de continuar.",
+    409,
+  );
+}
+export async function previewRemoveInventorySelection(
+  actor: Actor,
+  listId: string,
+  ids: string[],
+) {
+  ownerOnly(actor);
+  return db.$transaction(
+    async (tx) => {
+      await effectivenessLock(tx, actor);
+      await scopedRemovalIds(tx, listId, ids);
+      const items = [];
+      for (const id of [...ids].sort()) items.push(await review(tx, id));
+      return { listId, items };
+    },
+    { timeout: 60000 },
+  );
+}
+export async function removeInventorySelection(
+  actor: Actor,
+  b: { listId: string; entries: { id: string; token: string }[] },
+) {
+  ownerOnly(actor);
+  return db.$transaction(
+    async (tx) => {
+      await effectivenessLock(tx, actor);
+      const ids = b.entries.map((e) => e.id);
+      await scopedRemovalIds(tx, b.listId, ids);
+      const items = [];
+      for (const entry of b.entries) {
+        const r = await review(tx, entry.id);
+        demand(
+          r.token === entry.token,
+          "Uno de los ítems cambió. Revisa de nuevo antes de eliminar la selección.",
+          409,
+        );
+        items.push(r);
+      }
+      // Validate the complete selection before deleting any leaf or association.
+      await tx.metaAdObject.updateMany({
+        where: { aliasId: { in: ids } },
+        data: { aliasId: null, aliasCountry: null, advisorId: null },
+      });
+      await tx.metaEffectivenessRow.deleteMany({
+        where: { aliasId: { in: ids } },
+      });
+      await tx.metaAlias.deleteMany({ where: { id: { in: ids } } });
+      await recordActivity(tx, {
+        data: {
+          actorId: actor.id,
+          action: "META_INVENTARIO_SELECCION_ELIMINADA",
+          resourceId: b.listId,
+          detail: { items },
+        },
+      });
+      return { ok: true, removed: ids };
+    },
+    { timeout: 60000 },
+  );
+}

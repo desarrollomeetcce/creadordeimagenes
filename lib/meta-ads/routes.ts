@@ -81,6 +81,46 @@ export async function metaRoutes(
       ).setMetaStatus(actor, parts[2], b.status, b.expectedStatus),
     );
   }
+  if (path === "inventory/remove-preview" && method === "POST") {
+    ownerOnly(actor);
+    const b = z
+      .object({
+        listId: z.string().min(1).max(100),
+        ids: z.array(z.string().min(1).max(100)).min(1).max(1000),
+      })
+      .strict()
+      .parse(await body());
+    return send(
+      await (
+        await import("./inventory-catalog")
+      ).previewRemoveInventorySelection(actor, b.listId, b.ids),
+    );
+  }
+  if (path === "inventory/remove" && method === "POST") {
+    ownerOnly(actor);
+    const b = z
+      .object({
+        listId: z.string().min(1).max(100),
+        entries: z
+          .array(
+            z
+              .object({
+                id: z.string().min(1).max(100),
+                token: z.string().regex(/^[a-f0-9]{64}$/),
+              })
+              .strict(),
+          )
+          .min(1)
+          .max(1000),
+      })
+      .strict()
+      .parse(await body());
+    return send(
+      await (
+        await import("./inventory-catalog")
+      ).removeInventorySelection(actor, b),
+    );
+  }
   if (path === "inventory/rename" && method === "POST") {
     ownerOnly(actor);
     const b = z

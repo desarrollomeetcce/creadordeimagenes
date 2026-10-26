@@ -1050,3 +1050,12 @@ Cierre de verificación:152/152 unitarias,172/172 integraciones, typecheck/build
 - Regresión Chromium con dos pestañas: transferencia automática, corrección aprobada4+2/V6 y actualización inmediata por inventario+país+asesor, otras hojas, nuevas ventas, pagos tardíos y retornoA→B→A. Sin solicitudes externas/escrituras Meta.
 - Evidencias externas: /workspace/work/tabs-unit.txt, tabs-integration.txt, tabs-typecheck.txt, tabs-build.txt, tabs-migration.txt, tabs-browser.txt, tabs-live-browser.txt; capturas tabs-catalog-compact-dark.png, tabs-own-inventory-dark.png, tabs-catalog-mobile-light.png. DB local sintética, no producción.
 - Migraciones008/009 requeridas con npm run db:deploy antes de iniciar el contenedor nuevo. Publicar main no acredita reconstrucción ni migración del Docker Manager de Hostinger; no hay herramientas/credenciales Hostinger conectadas en esta sesión.
+
+
+### Inventario con checks y filtros en cabecera —26/10/2026
+
+- npm test152/152; npm run typecheck y npm run build aprobados.
+- Integración HTTP+PostgreSQL exclusiva175/175. Caso nuevo verifica revisión del lote, permisos OWNER, IDs únicos, rechazo de otra lista, selección de una sola hoja de un grupo, borrado conjunto de varios ítems, conservación de otros ítems/hojas/cifras, retirada de clasificación interna Meta, auditoría solo tras éxito y rechazo completo cuando cambia V después de revisar. Sin migración nueva, sin llamadas a Meta o IA.
+- Chromium contra compilación probada: buscador por palabras y desplegable buscable en thead, Todo el inventario, filtro de hoja en la tabla, check por grupo y select-all visible/indeterminado. Ítem marcado y luego ocultado por búsqueda excluido de la revisión; cancelar conserva; desmarcar una hoja conserva V4 y elimina únicamente la otra; otro lote con cambio de V produce409 sin pérdida parcial, Revisar de nuevo permite confirmarlo. Ítem no seleccionado conserva V7. X individual disponible. Checks compactos14px, popup oscuro, tema claro/móvil390px sin desbordamiento del documento.
+- Evidencias externas: /workspace/work/inventory-checks-{unit,integration,typecheck,build,browser}.txt y capturas inventory-checks-{table-dark,review-dark,mobile-light}.png. Base sintética local, no producción.
+- Publicación de main dispara el mecanismo GitHub existente; no acredita finalización del Docker Manager de Hostinger, al que esta sesión no tiene acceso directo.

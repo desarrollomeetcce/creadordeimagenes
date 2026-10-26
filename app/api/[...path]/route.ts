@@ -121,7 +121,7 @@ async function bounded(req: NextRequest, max: number) {
   return Buffer.concat(chunks);
 }
 async function body(req: NextRequest) {
-  const raw = (await bounded(req, ["/api/meta-ads/effectiveness/cells","/api/meta-ads/effectiveness/states"].includes(req.nextUrl.pathname) ? 1000000 : 100000)).toString("utf8");
+  const raw = (await bounded(req, ["/api/meta-ads/effectiveness/cells","/api/meta-ads/effectiveness/states","/api/meta-ads/inventory/remove","/api/meta-ads/inventory/remove-preview"].includes(req.nextUrl.pathname) ? 1000000 : 100000)).toString("utf8");
   try {
     return JSON.parse(raw);
   } catch {

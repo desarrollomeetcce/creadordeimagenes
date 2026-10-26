@@ -3,6 +3,7 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useWorkbookPreference } from "./use-workbook-preference";
 import { engineRequest as api } from "./generation-engine";
 import { SheetSearchSelect } from "./sheet-search-select";
+import { InventorySelectionDelete } from "./inventory-selection-delete";
 import { EffectivenessCell } from "./effectiveness-cell";
 type Table = {
   id: string;
@@ -14,6 +15,32 @@ const normalize = (s: string) =>
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
     .toLocaleLowerCase("es");
+function InventoryCheck({
+  label,
+  checked,
+  mixed = false,
+  disabled,
+  onChange,
+}: {
+  label: string;
+  checked: boolean;
+  mixed?: boolean;
+  disabled: boolean;
+  onChange: (checked: boolean) => void;
+}) {
+  return (
+    <input
+      type="checkbox"
+      aria-label={label}
+      checked={checked}
+      disabled={disabled}
+      ref={(el) => {
+        if (el) el.indeterminate = mixed;
+      }}
+      onChange={(e) => onChange(e.target.checked)}
+    />
+  );
+}
 export function InventoryCatalog({
   tables,
   listId = "default-inventory",
@@ -73,6 +100,19 @@ export function InventoryCatalog({
       (!item || g.name === items.find((a) => a.id === item)?.name) &&
       words.every((w) => normalize(g.name).includes(w)),
   );
+  const [selected, setSelected] = useState<string[]>([]),
+    [bulkIds, setBulkIds] = useState<string[] | null>(null);
+  const visibleIds = visible.flatMap((g) => g.links.map((a) => a.id)),
+    selectedVisible = visibleIds.filter((id) => selected.includes(id)),
+    selectedGroups = visible.filter((g) =>
+      g.links.some((a) => selected.includes(a.id)),
+    ).length;
+  const choose = (ids: string[], checked: boolean) =>
+    setSelected((old) =>
+      checked
+        ? [...new Set([...old, ...ids])]
+        : old.filter((id) => !ids.includes(id)),
+    );
   const [removing, setRemoving] = useState(false),
     [review, setReview] = useState<{
       id: string;
@@ -105,61 +145,6 @@ export function InventoryCatalog({
       className="inventory-catalog sheet-view"
       aria-label="Inventario sin países"
     >
-      <div className="row sheet-toolbar">
-        <strong>Inventario</strong>
-        <input
-          aria-label="Buscar inventario en catálogo"
-          placeholder="Buscar por palabra…"
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-        />
-        <SheetSearchSelect
-          label="Hoja del inventario"
-          value={sheet}
-          placeholder="Todas las hojas"
-          options={[
-            { value: "", label: "Todas las hojas" },
-            ...tables.map((t) => ({ value: t.id, label: t.name })),
-          ]}
-          onSelect={(id) => {
-            setSheet(id);
-            setItem("");
-          }}
-        />
-        <SheetSearchSelect
-          label="Inventario del catálogo"
-          value={item}
-          placeholder="Todo el inventario"
-          options={[
-            { value: "", label: "Todo el inventario" },
-            ...available.map((g) => ({ value: g.links[0].id, label: g.name })),
-          ]}
-          onSelect={setItem}
-        />
-        <button
-          type="button"
-          onClick={() => {
-            setQuery("");
-            setItem("");
-            setSheet("");
-          }}
-        >
-          Todos
-        </button>
-        <button
-          type="button"
-          className={removing ? "danger" : ""}
-          aria-pressed={removing}
-          onClick={() => setRemoving((v) => !v)}
-        >
-          Eliminar de las hojas
-        </button>
-        {removing && (
-          <span className="sheet-help">
-            Pulsa × junto a la hoja que quieres quitar.
-          </span>
-        )}
-      </div>
       <form
         className="row sheet-toolbar"
         onSubmit={async (e) => {
@@ -217,28 +202,140 @@ export function InventoryCatalog({
         <table className="inventory-catalog-grid">
           <thead>
             <tr>
-              <th>Inventario ({visible.length})</th>
-              <th>Hojas</th>
+              <th scope="col">
+                <div className="inventory-header-title">
+                  <InventoryCheck
+                    label="Seleccionar todo el inventario visible"
+                    checked={
+                      !!visibleIds.length &&
+                      selectedVisible.length === visibleIds.length
+                    }
+                    mixed={
+                      selectedVisible.length > 0 &&
+                      selectedVisible.length < visibleIds.length
+                    }
+                    disabled={busy || !visibleIds.length}
+                    onChange={(checked) => choose(visibleIds, checked)}
+                  />
+                  <span>Inventario ({visible.length})</span>
+                </div>
+                <div className="inventory-header-filters">
+                  {" "}
+                  <input
+                    aria-label="Buscar inventario en catálogo"
+                    placeholder="Buscar por palabra…"
+                    value={query}
+                    onChange={(e) => setQuery(e.target.value)}
+                  />
+                  <SheetSearchSelect
+                    label="Inventario del catálogo"
+                    value={item}
+                    placeholder="Todo el inventario"
+                    options={[
+                      { value: "", label: "Todo el inventario" },
+                      ...available.map((g) => ({
+                        value: g.links[0].id,
+                        label: g.name,
+                      })),
+                    ]}
+                    onSelect={setItem}
+                  />
+                </div>
+                <div className="inventory-header-actions">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setQuery("");
+                      setItem("");
+                      setSheet("");
+                    }}
+                  >
+                    Todos
+                  </button>
+                  <span role="status">{selectedGroups} seleccionados</span>
+                  <button
+                    type="button"
+                    className="danger"
+                    disabled={busy || !selectedVisible.length}
+                    onClick={() => setBulkIds([...selectedVisible])}
+                  >
+                    Eliminar seleccionados
+                  </button>
+                </div>
+              </th>
+              <th scope="col">
+                <div className="inventory-header-title">Hojas</div>
+                <div className="inventory-header-filters">
+                  {" "}
+                  <SheetSearchSelect
+                    label="Hoja del inventario"
+                    value={sheet}
+                    placeholder="Todas las hojas"
+                    options={[
+                      { value: "", label: "Todas las hojas" },
+                      ...tables.map((t) => ({ value: t.id, label: t.name })),
+                    ]}
+                    onSelect={(id) => {
+                      setSheet(id);
+                      setItem("");
+                    }}
+                  />
+                  <button
+                    type="button"
+                    className={removing ? "danger" : ""}
+                    aria-pressed={removing}
+                    onClick={() => setRemoving((v) => !v)}
+                  >
+                    Eliminar de las hojas
+                  </button>
+                </div>
+                {removing && (
+                  <small>Pulsa × junto a la hoja que quieres quitar.</small>
+                )}
+              </th>
             </tr>
           </thead>
           <tbody>
             {visible.map((g) => (
-              <tr key={g.name} data-inventory-name={g.name}>
+              <tr
+                key={g.name}
+                data-inventory-name={g.name}
+                data-selected={
+                  g.links.some((a) => selected.includes(a.id)) || undefined
+                }
+              >
                 <td>
-                  <EffectivenessCell
-                    label={`Nombre de inventario ${g.name}`}
-                    value={g.name}
-                    onError={setMessage}
-                    onSave={async (value) => {
-                      await api("meta-ads/inventory/rename", "POST", {
-                        listId,
-                        expectedName: g.name,
-                        name: value.trim(),
-                        ids: g.links.map((a) => a.id),
-                      });
-                      await onChanged();
-                    }}
-                  />
+                  <div className="inventory-name-cell">
+                    <InventoryCheck
+                      label={`Seleccionar inventario ${g.name}`}
+                      checked={g.links.every((a) => selected.includes(a.id))}
+                      mixed={
+                        g.links.some((a) => selected.includes(a.id)) &&
+                        !g.links.every((a) => selected.includes(a.id))
+                      }
+                      disabled={busy}
+                      onChange={(checked) =>
+                        choose(
+                          g.links.map((a) => a.id),
+                          checked,
+                        )
+                      }
+                    />
+                    <EffectivenessCell
+                      label={`Nombre de inventario ${g.name}`}
+                      value={g.name}
+                      onError={setMessage}
+                      onSave={async (value) => {
+                        await api("meta-ads/inventory/rename", "POST", {
+                          listId,
+                          expectedName: g.name,
+                          name: value.trim(),
+                          ids: g.links.map((a) => a.id),
+                        });
+                        await onChanged();
+                      }}
+                    />
+                  </div>
                 </td>
                 <td>
                   <div className="inventory-sheet-links">
@@ -275,6 +372,19 @@ export function InventoryCatalog({
           </p>
         )}
       </div>
+      {bulkIds && (
+        <InventorySelectionDelete
+          listId={listId}
+          ids={bulkIds}
+          onClose={() => setBulkIds(null)}
+          onRemoved={async (ids) => {
+            await onChanged();
+            setSelected((old) => old.filter((id) => !bulkIds.includes(id)));
+            setBulkIds(null);
+            setMessage("Selección eliminada de las hojas confirmadas.");
+          }}
+        />
+      )}
       <dialog
         ref={dialog}
         className="meta-detail inventory-delete-dialog"

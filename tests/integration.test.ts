@@ -12220,6 +12220,33 @@ test("Integración HTTP + PostgreSQL (base exclusiva de pruebas, sin llamadas ex
       assert.equal(await db.metaAdvisorAttendance.count({where:{advisorId:person.id}}),1);
       assert.equal((await owner.call('meta-ads/aliases/'+a.id,'DELETE',{token:review.token})).status,404);
     });
+    await t.test('Inventario: eliminación masiva revisada, selección por hoja y rechazo atómico de cambios o listas ajenas',async()=>{
+      const createList=await owner.call('meta-ads/workbook-sheets','POST',{kind:'INVENTORY'});assert.equal(createList.status,201);const listId=createList.body.id;
+      const tables=await Promise.all(['Selección uno ','Selección dos '].map(name=>db.metaAliasTable.create({data:{name:name+tag}})));
+      const a=await db.metaAlias.create({data:{name:'Seleccionado '+tag,tableId:tables[0].id,inventorySheetId:listId}}),b=await db.metaAlias.create({data:{name:a.name,tableId:tables[1].id,inventorySheetId:listId}}),other=await db.metaAlias.create({data:{name:'Lista ajena '+tag,tableId:tables[0].id}}),hidden=await db.metaAlias.create({data:{name:'No seleccionado '+tag,tableId:tables[0].id,inventorySheetId:listId}});
+      const day='2026-10-20';
+      const row=await db.metaEffectivenessRow.create({data:{aliasId:b.id,country:'CO',currency:'',days:{create:{day,sales:8,salesOverridden:true}}}});
+      const preview=(ids:string[],who=owner)=>who.call('meta-ads/inventory/remove-preview','POST',{listId,ids});
+      const remove=(entries:any[],who=owner)=>who.call('meta-ads/inventory/remove','POST',{listId,entries});
+      assert.equal((await preview([a.id],admin)).status,403);assert.equal((await remove([{id:a.id,token:'0'.repeat(64)}],observer)).status,403);
+      assert.equal((await preview([])).status,400);assert.equal((await preview([a.id,a.id])).status,400);assert.equal((await preview([a.id,other.id])).status,409);
+      let r=await preview([a.id,b.id]);assert.equal(r.status,200);assert.equal(r.body.items.length,2);
+      let entries=r.body.items.map((i:any)=>({id:i.id,token:i.token}));
+      await db.metaEffectivenessDay.update({where:{rowId_day:{rowId:row.id,day}},data:{sales:9,revision:{increment:1}}});
+      assert.equal((await remove(entries)).status,409);assert.equal(await db.metaAlias.count({where:{id:{in:[a.id,b.id]}}}),2);
+      assert.equal((await remove([entries[0],entries[0]])).status,400);
+      r=await preview([a.id,b.id]);entries=r.body.items.map((i:any)=>({id:i.id,token:i.token}));
+      // Deselect the second source sheet in the review; its data must remain.
+      assert.equal((await remove(entries.filter((i:any)=>i.id===a.id))).status,200);
+      assert.equal(await db.metaAlias.count({where:{id:a.id}}),0);assert.equal((await db.metaEffectivenessDay.findUniqueOrThrow({where:{rowId_day:{rowId:row.id,day}}})).sales,9);
+      const c=await db.metaAlias.create({data:{name:'Otro seleccionado '+tag,tableId:tables[0].id,inventorySheetId:listId}});
+      const object=await db.metaAdObject.findFirst();if(object)await db.metaAdObject.update({where:{id:object.id},data:{aliasId:c.id,aliasCountry:'PE'}});
+      r=await preview([b.id,c.id]);entries=r.body.items.map((i:any)=>({id:i.id,token:i.token}));
+      assert.equal((await remove(entries)).status,200);assert.equal(await db.metaAlias.count({where:{id:{in:[b.id,c.id]}}}),0);assert.equal(await db.metaEffectivenessRow.count({where:{id:row.id}}),0);
+      assert.equal(await db.metaAlias.count({where:{id:{in:[other.id,hidden.id]}}}),2);assert.equal(await db.metaAliasTable.count({where:{id:{in:tables.map(t=>t.id)}}}),2);
+      if(object)assert.equal((await db.metaAdObject.findUniqueOrThrow({where:{id:object.id}})).aliasId,null);
+      const events=await db.auditEvent.count({where:{action:'META_INVENTARIO_SELECCION_ELIMINADA',resourceId:listId}});assert.equal(events,2);
+    });
     await t.test("cierre de sesión invalida el token", async () => {
       assert.equal((await user.call("auth/logout", "POST")).status, 200);
       assert.equal((await user.call("projects")).status, 401);
