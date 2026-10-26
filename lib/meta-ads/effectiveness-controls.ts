@@ -17,6 +17,7 @@ export async function fillEffectiveness(
     since: string;
     until: string;
     days?: string[];
+    allActive?: boolean;
     metrics: SheetMetric[];
     value: number | "NA" | null;
     targets: { aliasId: string; country: string; token: string }[];
@@ -30,6 +31,25 @@ export async function fillEffectiveness(
         byKey = new Map(
           view.rows.map((r) => [JSON.stringify([r.aliasId, r.country]), r]),
         );
+      if (b.allActive) {
+        demand(
+          b.days?.length === 1 && b.metrics.length === 1 && b.value !== null,
+          "El llenado de activos requiere una sola fecha y un parámetro.",
+        );
+        const expected = view.rows
+          .filter((r) => r.active)
+          .map((r) => JSON.stringify([r.aliasId, r.country]));
+        const submitted = new Set(
+          b.targets.map((t) => JSON.stringify([t.aliasId, t.country])),
+        );
+        demand(
+          expected.length === b.targets.length &&
+            submitted.size === expected.length &&
+            expected.every((k) => submitted.has(k)),
+          "Los alias activos cambiaron. Recarga antes de completar la columna.",
+          409,
+        );
+      }
       const seen = new Set<string>(),
         dates: string[] = [];
       for (let d = Date.parse(b.since); d <= Date.parse(b.until); d += 86400000)

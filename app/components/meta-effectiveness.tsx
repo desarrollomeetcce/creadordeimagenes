@@ -27,6 +27,7 @@ import { useSheetWidths } from "./use-sheet-widths";
 import { EffectivenessSync } from "./effectiveness-sync";
 import { EffectivenessHistory } from "./effectiveness-history";
 import { useSheetTextFit } from "./use-sheet-text-fit";
+import { SheetActiveFill } from "./sheet-active-fill";
 import { SheetColorsControl } from "./sheet-colors-control";
 import {
   sheetCellColor,
@@ -264,6 +265,7 @@ export function MetaEffectiveness({
     metrics: SheetMetric[],
     value: number | "NA" | null,
     onlyDays?: string[],
+    allActive = false,
   ) => {
     if (!targets.length || !metrics.length) return;
     await mutate("meta-ads/effectiveness/cells", "PATCH", {
@@ -273,6 +275,7 @@ export function MetaEffectiveness({
       metrics,
       value,
       ...(onlyDays ? { days: onlyDays } : {}),
+      ...(allActive ? { allActive: true } : {}),
       targets: targets.map((r) => ({
         aliasId: r.aliasId,
         country: r.country,
@@ -657,8 +660,6 @@ export function MetaEffectiveness({
         <SheetColorsControl
           tableId={tableId}
           tables={tables}
-          since={since}
-          until={until}
           metrics={visibleMetrics.map((m) => m.key)}
           onRules={setColorRules}
           onError={setMessage}
@@ -704,20 +705,6 @@ export function MetaEffectiveness({
           }))}
           value={selectedMetrics}
           onChange={setSelectedMetrics}
-        />
-        <input
-          className="sheet-alias-search"
-          type="search"
-          aria-label="Buscar alias por palabra"
-          placeholder="Buscar alias por palabra…"
-          value={aliasSearch}
-          onChange={(e) => setAliasSearch(e.target.value)}
-        />
-        <SheetMultiFilter
-          label="Filtro de alias"
-          options={aliases.map((a) => ({ value: a.id, label: a.name }))}
-          value={selectedAliases}
-          onChange={setSelectedAliases}
         />
         <SheetMultiFilter
           label="Filtro de valores"
@@ -1075,6 +1062,27 @@ export function MetaEffectiveness({
                       })}
                     </button>
                   </div>
+                  <div className="sheet-alias-filters">
+                    {" "}
+                    <input
+                      className="sheet-alias-search"
+                      type="search"
+                      aria-label="Buscar alias por palabra"
+                      placeholder="Buscar alias…"
+                      value={aliasSearch}
+                      onChange={(e) => setAliasSearch(e.target.value)}
+                    />
+                    <SheetMultiFilter
+                      compact
+                      label="Filtro de alias"
+                      options={aliases.map((a) => ({
+                        value: a.id,
+                        label: a.name,
+                      }))}
+                      value={selectedAliases}
+                      onChange={setSelectedAliases}
+                    />
+                  </div>
                   <SheetColumnResizer
                     label={settings.aliasColumnName}
                     onResize={(w) => resizeColumn("alias", w)}
@@ -1237,31 +1245,21 @@ export function MetaEffectiveness({
                             direction: "asc",
                           })}
                         </button>
-                        <SheetSearchSelect
-                          compact
-                          label={`Completar ${m.name} ${d}`}
-                          value=""
-                          placeholder="Todas"
-                          options={[
-                            {
-                              value: "0",
-                              label: "0 · Todas las filas visibles",
-                            },
-                            {
-                              value: "NA",
-                              label: "N.A. · Todas las filas visibles",
-                            },
-                          ]}
+                        <SheetActiveFill
+                          metric={m.key}
+                          name={m.name}
+                          day={d}
+                          disabled={busy || !data}
                           onError={setMessage}
-                          onSelect={async (value) => {
+                          onApply={async (value) => {
+                            const targets = (data?.rows ?? []).filter(
+                              (r) => r.active,
+                            );
+                            if (!targets.length)
+                              throw Error("No hay alias activos en esta hoja.");
                             setBusy(true);
                             try {
-                              await fill(
-                                rows,
-                                [m.key],
-                                value === "NA" ? "NA" : 0,
-                                [d],
-                              );
+                              await fill(targets, [m.key], value, [d], true);
                             } finally {
                               setBusy(false);
                             }

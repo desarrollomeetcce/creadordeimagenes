@@ -34,17 +34,9 @@ export const colorRulesSchema = z
           .min(1)
           .max(5)
           .refine((v) => new Set(v).size === v.length, "Parámetro repetido."),
-        since: z.string().date(),
-        until: z.string().date(),
         pinned: z.boolean(),
       })
-      .strict()
-      .refine(
-        (v) =>
-          v.since <= v.until &&
-          (Date.parse(v.until) - Date.parse(v.since)) / 86400000 < 31,
-        "Elige hasta 31 días.",
-      ),
+      .strict(),
   )
   .max(30)
   .refine(
@@ -55,7 +47,7 @@ export type SheetColorRule = z.infer<typeof colorRulesSchema>[number];
 export function sheetCellColor(
   rules: SheetColorRule[],
   metric: string,
-  day: string,
+  _day: string,
   value: number | "NA" | null,
   currency?: string,
 ) {
@@ -74,8 +66,6 @@ export function sheetCellColor(
     const r = rules[i];
     if (
       r.metrics.includes(metric as SheetColorRule["metrics"][number]) &&
-      r.since <= day &&
-      day <= r.until &&
       r.value === value
     )
       return sheetPalette.find((c) => c.id === r.color)?.hex;

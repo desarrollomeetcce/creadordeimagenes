@@ -302,6 +302,7 @@ export async function metaRoutes(
         since: z.string().date(),
         until: z.string().date(),
         days: z.array(z.string().date()).min(1).max(31).optional(),
+        allActive: z.boolean().optional(),
         metrics: z
           .array(z.enum(["sales", "budget", "base", "spend", "fixedCost"]))
           .min(1)

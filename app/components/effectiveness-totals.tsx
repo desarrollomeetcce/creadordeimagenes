@@ -25,7 +25,7 @@ const manualColumns = [
   { key: "sales", label: "V", name: "Ventas", sum: true },
   { key: "budget", label: "P", name: "Presupuesto", sum: true },
   { key: "baseManual", label: "BM", name: "Base manual", sum: false },
-  { key: "totalSpend", label: "GT", name: "Gasto total", sum: false },
+  { key: "totalSpend", label: "GD", name: "Gasto diario", sum: false },
   { key: "fixedCost", label: "CF", name: "Costos fijos", sum: false },
 ] as const;
 const autoColumns = [
@@ -339,7 +339,7 @@ export function EffectivenessTotals({
       </div>
       <p className="sheet-help">
         {mode === "manual"
-          ? "V/P: suma de alias. BM, GT y CF: valores manuales de esta hoja, por tabla, país, moneda y fecha."
+          ? "V/P: suma de alias. BM, GD y CF: valores manuales de esta hoja, por tabla, país, moneda y fecha."
           : "V/B/G/CF: suma de los valores de la vista automática."}{" "}
         Países y monedas separados; N.A. no suma, — sin dato, * suma parcial.
         Las ventas se suman únicamente desde la hoja de origen indicada en cada

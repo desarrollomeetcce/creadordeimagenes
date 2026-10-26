@@ -176,11 +176,11 @@ export function AdvisorsSheet({
         </button>
       </div>
       <p className="sheet-help">
-        Asistencia manual por día. V = suma de ventas de las filas asignadas al
-        asesor en las hojas elegidas; ambas vistas comparten las mismas ventas.
-        La asignación actual también se aplica al histórico. * Total parcial; —
-        sin datos; N.A. no es cero. Todas las hojas incluye también las copias
-        sincronizadas.
+        A = Asistencia manual por día. V = suma de ventas de las filas asignadas
+        al asesor en las hojas elegidas; ambas vistas comparten las mismas
+        ventas. La asignación actual también se aplica al histórico. * Total
+        parcial; — sin datos; N.A. no es cero. Todas las hojas incluye también
+        las copias sincronizadas.
       </p>
       {message && (
         <p className="sheet-message" role="status">
@@ -287,8 +287,12 @@ export function AdvisorsSheet({
 function FragmentHeaders() {
   return (
     <>
-      <th scope="col">Asistencia</th>
-      <th scope="col">Ventas (V)</th>
+      <th scope="col" title="Asistencia" aria-label="Asistencia">
+        A
+      </th>
+      <th scope="col" title="Ventas" aria-label="Ventas">
+        V
+      </th>
     </>
   );
 }

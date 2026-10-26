@@ -13,12 +13,14 @@ export function SheetMultiFilter({
   value,
   onChange,
   children,
+  compact = false,
 }: {
   label: string;
   options: SheetOption[];
   value: string[] | null;
   onChange: (value: string[] | null) => void;
   children?: ReactNode;
+  compact?: boolean;
 }) {
   const id = useId(),
     popover = useRef<HTMLDivElement>(null),
@@ -74,8 +76,11 @@ export function SheetMultiFilter({
           setQuery("");
         }}
       >
-        <span>{label}</span>
-        <small> · {all ? "Todos" : count || "Ninguno"}</small>
+        {!compact && <span>{label}</span>}
+        <small>
+          {compact ? "" : " · "}
+          {all ? "Todos" : count || "Ninguno"}
+        </small>
         <span aria-hidden="true"> ⌄</span>
       </button>
       <div

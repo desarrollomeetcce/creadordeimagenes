@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useState, type CSSProperties } from "react";
 import { engineRequest as api } from "./generation-engine";
 import { SheetSearchSelect } from "./sheet-search-select";
 import {
@@ -14,16 +14,12 @@ type Config = { revision: number; rules: SheetColorRule[] };
 export function SheetColorsControl({
   tableId,
   tables,
-  since,
-  until,
   metrics,
   onRules,
   onError,
 }: {
   tableId: string;
   tables: { id: string; name: string }[];
-  since: string;
-  until: string;
   metrics: SheetMetric[];
   onRules: (r: SheetColorRule[]) => void;
   onError: (v: string) => void;
@@ -113,8 +109,6 @@ export function SheetColorsControl({
       value: na ? "NA" : numeric,
       color,
       metrics: selected,
-      since,
-      until,
       pinned,
     });
   };
@@ -132,21 +126,53 @@ export function SheetColorsControl({
       >
         ◉ Colores
       </button>
+      {config?.rules
+        .filter((r) => r.pinned)
+        .map((r) => (
+          <span
+            key={r.id}
+            className="sheet-pinned-color"
+            style={
+              {
+                "--pinned-color": sheetPalette.find((c) => c.id === r.color)
+                  ?.hex,
+              } as CSSProperties
+            }
+          >
+            <span
+              className="sheet-color-dot"
+              style={{
+                background: sheetPalette.find((c) => c.id === r.color)?.hex,
+              }}
+            />
+            <span>{label(r)}</span>
+            <button
+              type="button"
+              disabled={busy}
+              aria-label={`Desfijar color ${label(r)}`}
+              title="Retirar este color de la vista"
+              onClick={() =>
+                void save(config.rules.filter((x) => x.id !== r.id))
+              }
+            >
+              ×
+            </button>
+          </span>
+        ))}
       {open && (
         <section className="sheet-colors-panel" aria-label="Reglas de colores">
           <div className="row">
             <strong>Colores por valor</strong>
-            <span>
-              {since} — {until}
-            </span>
+            <span>Todas las fechas</span>
             <button type="button" onClick={() => setOpen(false)}>
               Cerrar
             </button>
           </div>
           <p>
-            Elige un valor y los parámetros. Aplicar usa el período del
-            calendario; Fijar conserva un acceso para reutilizarlo. Solo cambia
-            la presentación, no los datos. N.A. es gris por defecto.
+            Elige un valor y los parámetros. El formato se aplica a todas las
+            fechas, independientemente del calendario. Fijar deja el color a
+            mano; la X lo retira de la vista sin cambiar datos. N.A. es gris por
+            defecto.
           </p>
           {!config && (
             <p role="status">
@@ -259,24 +285,17 @@ export function SheetColorsControl({
                   />
                   <span>
                     {r.pinned ? "📌 " : ""}
-                    {label(r)} · {r.since} — {r.until}
+                    {label(r)}
                   </span>
-                  {r.pinned && (
-                    <button
-                      disabled={busy}
-                      onClick={() => apply({ ...r, since, until })}
-                    >
-                      Aplicar fijado {label(r)}
-                    </button>
-                  )}
                   <button
                     disabled={busy}
-                    aria-label={`Quitar color ${label(r)}`}
+                    aria-label={`${r.pinned ? "Desfijar" : "Retirar"} color ${label(r)}`}
+                    title="Retirar este color de la vista"
                     onClick={() =>
                       void save(config.rules.filter((x) => x.id !== r.id))
                     }
                   >
-                    Quitar
+                    ×
                   </button>
                 </div>
               ))}
@@ -321,9 +340,9 @@ export function SheetColorsControl({
               <p>
                 Se reemplazarán las reglas de esta tabla por{" "}
                 {preview.rules.length} reglas de «
-                {tables.find((t) => t.id === source)?.name}», con sus fechas y
-                colores fijados. No modifica celdas ni otras tablas. Los cambios
-                futuros requieren otra sincronización.
+                {tables.find((t) => t.id === source)?.name}», para todas las
+                fechas, incluidos sus colores fijados. No modifica celdas ni
+                otras tablas. Los cambios futuros requieren otra sincronización.
               </p>
               <button
                 disabled={busy || !config || !preview.revision}
