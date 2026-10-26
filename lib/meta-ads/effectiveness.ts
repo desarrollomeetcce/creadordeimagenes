@@ -585,6 +585,7 @@ export async function importEffectiveness(
   actor: Actor,
   tableId: string,
   entries: { name: string; country: string; currency: string }[],
+  advisorId?: string,
 ) {
   ownerOnly(actor);
   return db.$transaction(
@@ -595,6 +596,17 @@ export async function importEffectiveness(
         "Tabla no disponible.",
         404,
       );
+      if (advisorId) {
+        demand(
+          await tx.metaAdvisor.findUnique({ where: { id: advisorId } }),
+          "Asesor no disponible.",
+          404,
+        );
+        demand(
+          entries.every((e) => !!e.country),
+          "Elige el país de cada alias antes de asignar asesor.",
+        );
+      }
       const aliases = await tx.metaAlias.findMany({
           select: { id: true, name: true, tableId: true },
         }),
@@ -653,8 +665,28 @@ export async function importEffectiveness(
         });
       }
       const imported = [...unique.values()];
+      if (advisorId) {
+        const existing = await tx.metaEffectivenessRow.findMany({
+          where: {
+            legacy: false,
+            currency: "",
+            OR: imported.map((r) => ({
+              aliasId: r.aliasId,
+              country: r.country,
+            })),
+          },
+        });
+        demand(
+          existing.every((r) => r.advisorId === advisorId),
+          "Una fila ya existe con otro asesor o sin asignar. Cámbialo desde su columna Asesor.",
+          409,
+        );
+      }
       await tx.metaEffectivenessRow.createMany({
-        data: imported,
+        data: imported.map((r) => ({
+          ...r,
+          ...(advisorId ? { advisorId } : {}),
+        })),
         skipDuplicates: true,
       });
       const units = new Set(imported.map((r) => r.displayCurrency));
@@ -678,7 +710,11 @@ export async function importEffectiveness(
           actorId: actor.id,
           action: "META_EFECTIVIDAD_IMPORTADA",
           resourceId: tableId,
-          detail: { rows: unique.size, created: fresh.size },
+          detail: {
+            rows: unique.size,
+            created: fresh.size,
+            advisorId: advisorId ?? null,
+          },
         },
       });
       return { ok: true, rows: unique.size, created: fresh.size };

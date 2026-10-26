@@ -1,8 +1,9 @@
 "use client";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useId } from "react";
 import { engineRequest as api } from "./generation-engine";
 import { useSheetOrder } from "./use-sheet-order";
 import { MetaEffectiveness } from "./meta-effectiveness";
+import { DeleteAliasTable } from "./delete-alias-table";
 import { AdvisorsSheet } from "./advisors-sheet";
 import { EffectivenessTotals } from "./effectiveness-totals";
 import { EffectivenessCell } from "./effectiveness-cell";
@@ -30,7 +31,12 @@ export function ProductsCatalog() {
     let active = true;
     void api("meta-ads/alias-tables")
       .then((v: CatalogTable[]) => {
-        if (active) setTables(v);
+        if (active) {
+          setTables(v);
+          setSelected((old) =>
+            v.some((t) => t.id === old) ? old : (v[0]?.id ?? ""),
+          );
+        }
       })
       .catch((e) => {
         if (active) setMessage(e.message);
@@ -42,6 +48,41 @@ export function ProductsCatalog() {
       active = false;
     };
   }, []);
+  const menuId = useId(),
+    menu = useRef<HTMLDivElement>(null);
+  const [contextTable, setContextTable] = useState<CatalogTable | null>(null),
+    [menuPosition, setMenuPosition] = useState({ left: 8, top: 8 }),
+    [deleting, setDeleting] = useState<string | null>(null);
+  const openMenu = (t: CatalogTable, x: number, y: number) => {
+    setContextTable(t);
+    setMenuPosition({
+      left: Math.max(8, Math.min(x, innerWidth - 210)),
+      top: Math.max(8, Math.min(y, innerHeight - 90)),
+    });
+    requestAnimationFrame(() => {
+      menu.current?.showPopover();
+      menu.current
+        ?.querySelector<HTMLButtonElement>("button")
+        ?.focus({ preventScroll: true });
+    });
+  };
+  const deleted = async (id: string) => {
+    try {
+      const v: CatalogTable[] = await api("meta-ads/alias-tables");
+      setTables(v);
+      if (selected === id || !v.some((t) => t.id === selected))
+        setSelected(v[0]?.id ?? "");
+      if (!v.length) setTotals(false);
+      setMessage("Tabla eliminada.");
+    } catch {
+      setMessage(
+        "La tabla se eliminó, pero no se pudo recargar la lista. Actualiza la página.",
+      );
+    } finally {
+      setDeleting(null);
+      setContextTable(null);
+    }
+  };
   const [view, setView] = useState<"manual" | "automatic">("manual");
   const [totals, setTotals] = useState(false);
   const [advisorSheet, setAdvisorSheet] = useState(false),
@@ -95,6 +136,10 @@ export function ProductsCatalog() {
             className="sheet-tab-alias"
             draggable
             data-sheet-id={t.id}
+            onContextMenu={(e) => {
+              e.preventDefault();
+              openMenu(t, e.clientX, e.clientY);
+            }}
             data-dragging={dragging === t.id || undefined}
             data-drop-edge={
               drop?.id === t.id ? (drop.after ? "after" : "before") : undefined
@@ -137,6 +182,12 @@ export function ProductsCatalog() {
               setDrop(null);
             }}
             onKeyDown={(e) => {
+              if (e.key === "ContextMenu" || (e.shiftKey && e.key === "F10")) {
+                e.preventDefault();
+                const r = e.currentTarget.getBoundingClientRect();
+                openMenu(t, r.left, r.bottom);
+                return;
+              }
               if (!e.altKey || !["ArrowLeft", "ArrowRight"].includes(e.key))
                 return;
               e.preventDefault();
@@ -171,6 +222,7 @@ export function ProductsCatalog() {
           role="tab"
           aria-selected={totals && !advisorSheet}
           className="sheet-tab-totals"
+          disabled={!tables.length}
           onClick={() => {
             setTotals(true);
             setAdvisorSheet(false);
@@ -297,10 +349,19 @@ export function ProductsCatalog() {
       <span className="sr-only" role="status">
         {orderMessage}
       </span>
-      {advisorSheet && table && (
+      {!loading && !tables.length && !advisorSheet && (
+        <div className="sheet-empty-workbook">
+          {sheetTabs}
+          <p>
+            No hay tablas. Usa + Tabla para crear una; Asesores sigue
+            disponible.
+          </p>
+        </div>
+      )}
+      {advisorSheet && (
         <AdvisorsSheet
           tables={orderedTables}
-          initialTableId={table.id}
+          initialTableId={table?.id ?? "all"}
           sheetTabs={sheetTabs}
           onChanged={loadAdvisors}
         />
@@ -323,6 +384,34 @@ export function ProductsCatalog() {
           aliases={table.aliases}
           settings={table}
           onNamesChanged={load}
+        />
+      )}
+      <div
+        id={menuId}
+        ref={menu}
+        popover="auto"
+        className="sheet-table-context-menu"
+        role="menu"
+        aria-label="Opciones de tabla"
+        style={menuPosition}
+      >
+        <button
+          type="button"
+          role="menuitem"
+          className="danger"
+          onClick={() => {
+            menu.current?.hidePopover();
+            if (contextTable) setDeleting(contextTable.id);
+          }}
+        >
+          Eliminar tabla
+        </button>
+      </div>
+      {deleting && (
+        <DeleteAliasTable
+          tableId={deleting}
+          onClose={() => setDeleting(null)}
+          onDeleted={deleted}
         />
       )}
     </section>

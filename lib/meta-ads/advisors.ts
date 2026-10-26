@@ -1,3 +1,9 @@
+import {
+  advisorAbsenceSchema,
+  absenceClockSummary,
+  absenceSummary,
+  type AbsenceInput,
+} from "./advisor-absence";
 import { db } from "../db";
 import { ownerOnly } from "../auth";
 import { demand } from "../errors";
@@ -162,27 +168,113 @@ export async function saveAttendance(
     return row;
   });
 }
-/** Sales are the same V used in both views. Attribution follows the explicitly chosen row advisor. */
+export async function saveAdvisorAbsence(actor: Actor, input: AbsenceInput) {
+  ownerOnly(actor);
+  const b = advisorAbsenceSchema.parse(input);
+  return db.$transaction(async (tx) => {
+    await effectivenessLock(tx, actor);
+    demand(
+      await tx.metaAdvisor.findUnique({ where: { id: b.advisorId } }),
+      "Asesor no disponible.",
+      404,
+    );
+    const where = { advisorId_day: { advisorId: b.advisorId, day: b.day } };
+    const old = await tx.metaAdvisorAbsence.findUnique({ where });
+    demand(
+      (old?.revision ?? 0) === b.revision,
+      "Las horas de ausencia cambiaron. Recarga antes de guardar.",
+      409,
+    );
+    if (b.mode === "CLOCK") {
+      const current = absenceClockSummary(b.intervals),
+        day = Date.parse(b.day) / 60000;
+      const neighbors = await tx.metaAdvisorAbsence.findMany({
+        where: {
+          advisorId: b.advisorId,
+          mode: "CLOCK",
+          day: {
+            in: [
+              new Date(Date.parse(b.day) - 86400000).toISOString().slice(0, 10),
+              new Date(Date.parse(b.day) + 86400000).toISOString().slice(0, 10),
+            ],
+          },
+        },
+      });
+      for (const neighbor of neighbors) {
+        const other = absenceSummary(neighbor),
+          offset = Date.parse(neighbor.day) / 60000;
+        for (const a of current.ranges)
+          for (const c of absenceClockSummary(other.intervals).ranges)
+            demand(
+              !(
+                day + a.start < offset + c.end && offset + c.start < day + a.end
+              ),
+              "La ausencia se superpone con un horario del día anterior o siguiente.",
+            );
+      }
+    }
+    const data =
+      b.mode === "MANUAL"
+        ? { mode: b.mode, manualHours: b.hours, intervals: [] }
+        : { mode: b.mode, manualHours: null, intervals: b.intervals };
+    const row = await tx.metaAdvisorAbsence.upsert({
+      where,
+      create: { advisorId: b.advisorId, day: b.day, ...data },
+      update: { ...data, revision: { increment: 1 } },
+    });
+    const summary = absenceSummary(row);
+    await recordActivity(tx, {
+      data: {
+        actorId: actor.id,
+        action: "META_ASESOR_HORAS_AUSENTES",
+        resourceId: b.advisorId,
+        detail: {
+          day: b.day,
+          mode: b.mode,
+          hours: summary.hours,
+          pending: summary.pending,
+          intervals: summary.intervals.length,
+          before: absenceSummary(old),
+          after: summary,
+        },
+      },
+    });
+    return summary;
+  });
+}
+/** V is shared by both views, attributed only to exact alias+advisor+country rows. */
 export async function advisorSheet(
   actor: Actor,
   tableId: string,
   since: string,
   until: string,
+  filters: { aliasId?: string; country?: string; advisorId?: string } = {},
 ) {
   ownerOnly(actor);
   return db.$transaction(
     async (tx) => {
-      const [people, attendance, tables] = await Promise.all([
+      const personWhere = filters.advisorId ? { id: filters.advisorId } : {};
+      const [people, attendance, absences, tables] = await Promise.all([
         tx.metaAdvisor.findMany({
+          where: personWhere,
           select: { id: true, name: true, revision: true },
           orderBy: { name: "asc" },
         }),
         tx.metaAdvisorAttendance.findMany({
-          where: { day: { gte: since, lte: until } },
+          where: {
+            ...(filters.advisorId ? { advisorId: filters.advisorId } : {}),
+            day: { gte: since, lte: until },
+          },
+        }),
+        tx.metaAdvisorAbsence.findMany({
+          where: {
+            ...(filters.advisorId ? { advisorId: filters.advisorId } : {}),
+            day: { gte: since, lte: until },
+          },
         }),
         tx.metaAliasTable.findMany({
           where: tableId === "all" ? {} : { id: tableId },
-          select: { id: true },
+          select: { id: true, name: true },
         }),
       ]);
       demand(
@@ -190,9 +282,29 @@ export async function advisorSheet(
         "Tabla no disponible.",
         404,
       );
+      if (filters.advisorId)
+        demand(people.length === 1, "Asesor no disponible.", 404);
+      if (filters.aliasId) {
+        const a = await tx.metaAlias.findUnique({
+          where: { id: filters.aliasId },
+        });
+        demand(
+          a && tables.some((t) => t.id === a.tableId),
+          "Alias no disponible en las hojas elegidas.",
+          404,
+        );
+      }
+      const dates: string[] = [];
+      for (let d = Date.parse(since); d <= Date.parse(until); d += 86400000)
+        dates.push(new Date(d).toISOString().slice(0, 10));
+      const key = (advisorId: string, day: string) =>
+        JSON.stringify([advisorId, day]);
       const attendanceByDay = new Map(
-        attendance.map((a) => [JSON.stringify([a.advisorId, a.day]), a]),
-      );
+          attendance.map((a) => [key(a.advisorId, a.day), a]),
+        ),
+        absenceByDay = new Map(
+          absences.map((a) => [key(a.advisorId, a.day), a]),
+        );
       const totals = new Map<
         string,
         Map<
@@ -206,19 +318,49 @@ export async function advisorSheet(
           }
         >
       >();
+      const breakdown: {
+        tableId: string;
+        tableName: string;
+        aliasId: string;
+        alias: string;
+        country: string;
+        advisorId: string;
+        days: Record<
+          string,
+          { sales: number | null; na: boolean; partial: boolean }
+        >;
+      }[] = [];
       for (const table of tables) {
-        const sheet = await effectiveness(actor, table.id, since, until, tx);
+        const sheet = await effectiveness(actor, table.id, since, until, tx),
+          names = new Map(sheet.table.aliases.map((a) => [a.id, a.name]));
         for (const row of sheet.rows) {
-          if (!row.advisorId) continue;
+          if (
+            !row.advisorId ||
+            !row.country ||
+            (filters.advisorId && row.advisorId !== filters.advisorId) ||
+            (filters.aliasId && row.aliasId !== filters.aliasId) ||
+            (filters.country && row.country !== filters.country)
+          )
+            continue;
           if (!totals.has(row.advisorId)) totals.set(row.advisorId, new Map());
           const byDay = totals.get(row.advisorId)!;
-          for (
-            let d = Date.parse(since);
-            d <= Date.parse(until);
-            d += 86400000
-          ) {
-            const day = new Date(d).toISOString().slice(0, 10),
-              c = row.days[day];
+          const source = {
+            tableId: table.id,
+            tableName: table.name,
+            aliasId: row.aliasId,
+            alias: names.get(row.aliasId) ?? "Alias",
+            country: row.country,
+            advisorId: row.advisorId,
+            days: {} as Record<
+              string,
+              { sales: number | null; na: boolean; partial: boolean }
+            >,
+          };
+          for (const day of dates) {
+            const c = row.days[day],
+              na = !!c?.na.includes("sales"),
+              partial = !!c?.partialMetrics.includes("sales"),
+              value = na ? null : (c?.sales ?? null);
             const sum = byDay.get(day) ?? {
               sales: null,
               known: 0,
@@ -227,39 +369,33 @@ export async function advisorSheet(
               partial: false,
             };
             sum.expected++;
-            if (c?.na.includes("sales")) sum.na++;
-            else if (c?.sales !== null && c?.sales !== undefined) {
-              sum.sales = (sum.sales ?? 0) + c.sales;
+            if (na) sum.na++;
+            else if (value !== null) {
+              sum.sales = (sum.sales ?? 0) + value;
               sum.known++;
-              if (c.partialMetrics?.includes("sales")) sum.partial = true;
+              if (partial) sum.partial = true;
             }
             byDay.set(day, sum);
+            if (filters.advisorId)
+              source.days[day] = { sales: value, na, partial };
           }
+          if (filters.advisorId) breakdown.push(source);
         }
       }
       return {
         tableId,
         since,
         until,
+        aliasId: filters.aliasId ?? "",
+        country: filters.country ?? "",
+        breakdown,
         rows: people.map((p) => ({
           ...p,
           days: Object.fromEntries(
-            [
-              ...Array.from(
-                {
-                  length:
-                    Math.round(
-                      (Date.parse(until) - Date.parse(since)) / 86400000,
-                    ) + 1,
-                },
-                (_, i) =>
-                  new Date(Date.parse(since) + i * 86400000)
-                    .toISOString()
-                    .slice(0, 10),
-              ),
-            ].map((day) => {
-              const att = attendanceByDay.get(JSON.stringify([p.id, day])),
-                sum = totals.get(p.id)?.get(day);
+            dates.map((day) => {
+              const att = attendanceByDay.get(key(p.id, day)),
+                sum = totals.get(p.id)?.get(day),
+                absence = absenceSummary(absenceByDay.get(key(p.id, day)));
               return [
                 day,
                 {
@@ -271,6 +407,7 @@ export async function advisorSheet(
                     (sum.partial ||
                       (sum.known > 0 && sum.known + sum.na < sum.expected)),
                   na: !!sum && sum.na === sum.expected,
+                  absence,
                 },
               ];
             }),

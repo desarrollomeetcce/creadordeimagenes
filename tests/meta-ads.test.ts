@@ -262,3 +262,38 @@ test('Efectividad: colores de vista sin fecha, valor exacto, prioridad y validac
  for(const patch of [{color:'#fff'},{value:-1},{value:Infinity},{since:'2026-10-20'},{until:'2026-10-22'},{metrics:[]},{metrics:['sales','sales']}])assert(!colorRulesSchema.safeParse([{...rule,...patch}]).success);
  assert(!colorRulesSchema.safeParse([rule,rule]).success);assert(!colorRulesSchema.safeParse(Array.from({length:31},(_,i)=>({...rule,id:String(i)}))).success);
 });
+
+test('Asesores H: horas decimales preservan cero, fracciones y vacío',async()=>{
+ const {advisorAbsenceSchema,absenceSummary}=await import('../lib/meta-ads/advisor-absence');
+ for(const hours of [0,0.1,0.25,0.5,1.333333,1.5,24]){assert(advisorAbsenceSchema.safeParse({advisorId:'a',day:'2026-10-26',revision:0,mode:'MANUAL',hours}).success);assert.equal(absenceSummary({mode:'MANUAL',manualHours:hours,intervals:[],revision:1}).hours,hours);}
+ assert.equal(absenceSummary(null).hours,null);assert.equal(absenceSummary({mode:'MANUAL',manualHours:null,intervals:[],revision:1}).hours,null);
+ for(const hours of [-1,24.000001,Infinity,0.0000001])assert(!advisorAbsenceSchema.safeParse({advisorId:'a',day:'2026-10-26',revision:0,mode:'MANUAL',hours}).success);
+});
+test('Asesores H: reloj usa 60 minutos, regreso pendiente y varios intervalos',async()=>{
+ const {absenceClockSummary}=await import('../lib/meta-ads/advisor-absence');
+ const make=(id:string,start:string,end:string|null,nextDay=false)=>({id,start,end,nextDay});
+ assert.equal(absenceClockSummary([make('a','09:00','09:30')]).hours,0.5);assert.equal(absenceClockSummary([make('a','09:00','09:15')]).hours,0.25);
+ let v=absenceClockSummary([make('a','09:00',null)]);assert.equal(v.hours,null);assert.equal(v.pending,1);assert.equal(v.minutes,0);
+ v=absenceClockSummary([make('a','09:00','09:30'),make('b','10:00',null)]);assert.equal(v.hours,0.5);assert.equal(v.pending,1);
+ assert.equal(absenceClockSummary([make('a','09:00','09:30'),make('b','10:00','11:00')]).hours,1.5);
+ assert.equal(absenceClockSummary([make('a','23:40','00:10',true)]).hours,0.5);assert.equal(absenceClockSummary([make('a','00:00','00:00',true)]).hours,24);assert.equal(absenceClockSummary([make('a','00:00','00:00')]).hours,0);
+ assert.equal(absenceClockSummary([]).hours,null);
+});
+test('Asesores H: horarios inválidos, duplicados y superpuestos no se suman',async()=>{
+ const {absenceClockSummary}=await import('../lib/meta-ads/advisor-absence');const make=(id:string,start:string,end:string|null,nextDay=false)=>({id,start,end,nextDay});
+ for(const intervals of [[make('a','25:00','26:00')],[make('a','09:00','08:00')],[make('a','09:00','10:00',true)],[make('a','09:00',null,true)],[make('a','09:00','10:00'),make('b','09:30','11:00')],[make('a','09:00',null),make('b','10:00','11:00')],[make('a','09:00','10:00'),make('a','11:00','12:00')]])assert.throws(()=>absenceClockSummary(intervals));
+});
+test('Asesores detalle: gráfico conserva horas fraccionarias y asistencia desconocida sin inventar cero',async()=>{
+ const {dailyChartLayout}=await import('../lib/meta-ads/daily-chart');const rows=[{day:'2026-10-20',results:3,cost:0.5,spend:1},{day:'2026-10-21',results:0,cost:null,spend:null},{day:'2026-10-22',results:null,cost:1.25,spend:0}];
+ let plot=dailyChartLayout(rows,'results','cost');assert.equal(plot.points[0].dot,0.5);assert.equal(plot.points[1].y,null);assert.equal(plot.points[1].bar,0);assert.equal(plot.points[2].bar,null);
+ plot=dailyChartLayout(rows,'spend','results');assert.equal(plot.points[1].bar,null);assert.equal(plot.points[2].bar,0);
+});
+
+test('Alias: barras de estado por fecha Lima respetan eventos, base previa y futuro desconocido',async()=>{
+ const {aliasStateTimeline}=await import('../lib/meta-ads/alias-state-timeline');
+ const changes=[{id:'off',active:false,createdAt:'2026-10-20T17:00:00.000Z'},{id:'on',active:true,createdAt:'2026-10-21T11:00:00.000Z'}];
+ const prior={id:'prior',active:true,createdAt:'2026-10-19T15:00:00.000Z'};
+ let v=aliasStateTimeline('2026-10-20','2026-10-21',prior,changes,'2026-10-22T10:00:00.000Z');assert.equal(v.days[0].day,'2026-10-20');assert.equal(v.days[0].activeHours,12);assert.equal(v.days[0].inactiveHours,12);assert.equal(v.days[1].activeHours,18);assert.equal(v.days[1].inactiveHours,6);
+ v=aliasStateTimeline('2026-10-20','2026-10-21',null,changes,'2026-10-21T17:00:00.000Z');assert.equal(v.days[0].knownHours,12);assert.equal(v.days[0].activeHours,0);assert.equal(v.days[1].activeHours,6);assert.equal(v.days[1].knownHours,12);
+ v=aliasStateTimeline('2026-10-22','2026-10-23',prior,[],'2026-10-21T17:00:00.000Z');assert(v.days.every(d=>d.knownHours===0));assert.equal(v.events.length,0);
+});

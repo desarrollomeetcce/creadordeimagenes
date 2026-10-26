@@ -13,6 +13,8 @@ export function MetaDailyChart({
   metricName,
   since,
   until,
+  labels,
+  units,
 }: {
   rows: DailyChartRow[];
   bars: DailyChartMetric;
@@ -21,24 +23,28 @@ export function MetaDailyChart({
   metricName: string;
   since?: string;
   until?: string;
+  labels?: Partial<Record<DailyChartMetric, string>>;
+  units?: Partial<Record<DailyChartMetric, "count" | "hours" | "currency">>;
 }) {
   const [active, setActive] = useState<string | null>(null);
   const layout = dailyChartLayout(rows, bars, line, since, until);
   const name = (key: DailyChartMetric) =>
-    key === "cost"
+    labels?.[key] ??
+    (key === "cost"
       ? "Costo por resultado"
       : key === "spend"
         ? "Gasto"
-        : metricName;
+        : metricName);
   const format = (value: number | null, key: DailyChartMetric) =>
     value === null
       ? "Sin dato"
       : new Intl.NumberFormat(
           "es-PE",
-          key === "results"
-            ? { maximumFractionDigits: 2 }
+          (units?.[key] ?? (key === "results" ? "count" : "currency")) !==
+            "currency"
+            ? { maximumFractionDigits: units?.[key] === "hours" ? 8 : 2 }
             : { style: "currency", currency, maximumFractionDigits: 2 },
-        ).format(value);
+        ).format(value) + (units?.[key] === "hours" ? " h" : "");
   const date = (value: string) =>
     new Date(value + "T12:00:00Z").toLocaleDateString("es-PE", {
       timeZone: "UTC",

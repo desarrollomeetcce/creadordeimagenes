@@ -3,21 +3,16 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { engineRequest as api } from "./generation-engine";
 import { MetaDateRange } from "./meta-date-range";
 import { EffectivenessCell } from "./effectiveness-cell";
+import { AdvisorAbsenceCell } from "./advisor-absence-cell";
+import { AdvisorDetail } from "./advisor-detail";
+import type {
+  AdvisorDayData as Day,
+  AdvisorPerson as Person,
+  Attendance,
+  AdvisorTable,
+} from "./advisor-types";
+import { countryOptions } from "../../lib/meta-ads/countries";
 import { SheetSearchSelect } from "./sheet-search-select";
-type Attendance = "PRESENT" | "ABSENT" | "NA" | null;
-type Day = {
-  status: Attendance;
-  revision: number;
-  sales: number | null;
-  partial: boolean;
-  na: boolean;
-};
-type Person = {
-  id: string;
-  name: string;
-  revision: number;
-  days: Record<string, Day>;
-};
 const statuses = [
   { value: "", label: "Sin registrar" },
   { value: "PRESENT", label: "Presente" },
@@ -30,7 +25,7 @@ export function AdvisorsSheet({
   sheetTabs,
   onChanged,
 }: {
-  tables: { id: string; name: string }[];
+  tables: AdvisorTable[];
   initialTableId: string;
   sheetTabs: ReactNode;
   onChanged: () => Promise<void>;
@@ -44,32 +39,58 @@ export function AdvisorsSheet({
   const [since, setSince] = useState(today.slice(0, 8) + "01"),
     [until, setUntil] = useState(today),
     [tableId, setTableId] = useState(initialTableId),
+    [aliasId, setAliasId] = useState(""),
+    [country, setCountry] = useState(""),
+    [detail, setDetail] = useState<Person | null>(null),
     [rows, setRows] = useState<Person[]>([]),
     [message, setMessage] = useState(""),
+    [reload, setReload] = useState(0),
     [loading, setLoading] = useState(true),
     [busy, setBusy] = useState(false),
     [name, setName] = useState(""),
     [query, setQuery] = useState("");
+  useEffect(() => {
+    if (tableId !== "all" && !tables.some((t) => t.id === tableId)) {
+      setTableId(tables[0]?.id ?? "all");
+      setAliasId("");
+    } else if (
+      aliasId &&
+      !tables
+        .filter((t) => tableId === "all" || t.id === tableId)
+        .some((t) => (t.aliases ?? []).some((a) => a.id === aliasId))
+    )
+      setAliasId("");
+  }, [tables, tableId, aliasId]);
   const sequence = useRef(0),
     context = useRef("");
   const valid =
     since <= until && (Date.parse(until) - Date.parse(since)) / 86400000 < 31;
-  const key = JSON.stringify([tableId, since, until]);
+  const key = JSON.stringify([tableId, since, until, aliasId, country]);
   context.current = key;
-  const load = async () => {
+  const load = async (saved = false) => {
     const token = ++sequence.current,
       requested = key;
     setLoading(true);
     try {
       const data = await api(
         "meta-ads/advisors/sheet?" +
-          new URLSearchParams({ tableId, since, until }),
+          new URLSearchParams({
+            tableId,
+            since,
+            until,
+            ...(aliasId ? { aliasId } : {}),
+            ...(country ? { country } : {}),
+          }),
       );
       if (token === sequence.current && context.current === requested)
         setRows(data.rows);
     } catch (e) {
       if (token === sequence.current && context.current === requested)
-        setMessage((e as Error).message);
+        setMessage(
+          saved
+            ? "Guardado, pero no se pudo recargar. Pulsa Actualizar antes de seguir editando."
+            : (e as Error).message,
+        );
     } finally {
       if (token === sequence.current && context.current === requested)
         setLoading(false);
@@ -81,15 +102,16 @@ export function AdvisorsSheet({
     return () => {
       sequence.current++;
     };
-  }, [key, valid]);
+  }, [key, valid, reload]);
   const write = async (path: string, method: string, body: unknown) => {
     const requested = key;
     setBusy(true);
     setMessage("");
     try {
       await api(path, method, body);
-      await onChanged();
-      if (context.current === requested) await load();
+      if (path === "meta-ads/advisors") await onChanged();
+      if (context.current === requested) await load(true);
+      else setReload((v) => v + 1);
     } finally {
       setBusy(false);
     }
@@ -135,9 +157,42 @@ export function AdvisorsSheet({
               ...tables.map((t) => ({ value: t.id, label: t.name })),
               { value: "all", label: "Todas las hojas" },
             ]}
-            onSelect={setTableId}
+            onSelect={(id) => {
+              setTableId(id);
+              setAliasId("");
+            }}
           />
         </label>
+        <SheetSearchSelect
+          label="Alias de ventas por asesor"
+          value={aliasId}
+          placeholder="Todos los alias"
+          options={[
+            { value: "", label: "Todos los alias" },
+            ...tables
+              .filter((t) => tableId === "all" || t.id === tableId)
+              .flatMap((t) =>
+                (t.aliases ?? []).map((a) => ({
+                  value: a.id,
+                  label: a.name + (tableId === "all" ? " · " + t.name : ""),
+                })),
+              ),
+          ]}
+          onSelect={setAliasId}
+        />
+        <SheetSearchSelect
+          label="País de ventas por asesor"
+          value={country}
+          placeholder="Todos los países"
+          options={[
+            { value: "", label: "Todos los países" },
+            ...countryOptions.map((c) => ({
+              value: c.code,
+              label: c.name + " · " + c.code,
+            })),
+          ]}
+          onSelect={setCountry}
+        />
         <input
           type="search"
           aria-label="Buscar asesor"
@@ -176,11 +231,11 @@ export function AdvisorsSheet({
         </button>
       </div>
       <p className="sheet-help">
-        A = Asistencia manual por día. V = suma de ventas de las filas asignadas
-        al asesor en las hojas elegidas; ambas vistas comparten las mismas
-        ventas. La asignación actual también se aplica al histórico. * Total
-        parcial; — sin datos; N.A. no es cero. Todas las hojas incluye también
-        las copias sincronizadas.
+        A = Asistencia. V = Ventas por coincidencia exacta de alias + asesor +
+        país. H = Horas ausentes (0,5 = 30 minutos). A y H corresponden a la
+        persona y no se reparten por producto. La asignación actual también se
+        aplica al histórico. * Total parcial; — sin datos; N.A. no es cero.
+        Todas las hojas incluye también las copias sincronizadas.
       </p>
       {message && (
         <p className="sheet-message" role="status">
@@ -194,13 +249,14 @@ export function AdvisorsSheet({
         <div className="table-scroll effectiveness-scroll">
           <table
             className="effectiveness-grid advisor-grid"
-            style={{ width: 180 + days.length * 132 }}
+            style={{ width: 180 + days.length * 188 }}
           >
             <colgroup>
               <col style={{ width: 180 }} />
               {days.flatMap((d) => [
                 <col key={d + "attendance"} style={{ width: 84 }} />,
                 <col key={d + "sales"} style={{ width: 48 }} />,
+                <col key={d + "absence"} style={{ width: 56 }} />,
               ])}
             </colgroup>
             <caption className="sr-only">
@@ -212,7 +268,7 @@ export function AdvisorsSheet({
                   Asesor
                 </th>
                 {days.map((d) => (
-                  <th key={d} colSpan={2} scope="colgroup">
+                  <th key={d} colSpan={3} scope="colgroup">
                     {d.slice(8)}.{d.slice(5, 7)}
                   </th>
                 ))}
@@ -228,20 +284,31 @@ export function AdvisorsSheet({
                 filtered.map((p) => (
                   <tr key={p.id} data-advisor-id={p.id}>
                     <td className="advisor-name">
-                      <EffectivenessCell
-                        label={`Nombre del asesor ${p.name}`}
-                        value={p.name}
-                        onError={setMessage}
-                        onSave={async (name) => {
-                          if (!name.trim() || name.length > 100)
-                            throw Error("Nombre de 1 a 100 caracteres.");
-                          await write("meta-ads/advisors", "PATCH", {
-                            id: p.id,
-                            name: name.trim(),
-                            revision: p.revision,
-                          });
-                        }}
-                      />
+                      <div className="advisor-name-actions">
+                        <button
+                          type="button"
+                          className="advisor-detail-trigger"
+                          aria-label={`Detalle de ${p.name}`}
+                          title="Ver evolución y detalle de ventas"
+                          onClick={() => setDetail(p)}
+                        >
+                          ⓘ
+                        </button>
+                        <EffectivenessCell
+                          label={`Nombre del asesor ${p.name}`}
+                          value={p.name}
+                          onError={setMessage}
+                          onSave={async (name) => {
+                            if (!name.trim() || name.length > 100)
+                              throw Error("Nombre de 1 a 100 caracteres.");
+                            await write("meta-ads/advisors", "PATCH", {
+                              id: p.id,
+                              name: name.trim(),
+                              revision: p.revision,
+                            });
+                          }}
+                        />
+                      </div>
                     </td>
                     {days.map((d) => {
                       const c = p.days[d];
@@ -253,6 +320,13 @@ export function AdvisorsSheet({
                           cell={c}
                           disabled={busy || loading}
                           onError={setMessage}
+                          onAbsenceSave={async (input) => {
+                            await write(
+                              "meta-ads/advisors/absence",
+                              "PATCH",
+                              input,
+                            );
+                          }}
                           onSave={async (status) => {
                             await write(
                               "meta-ads/advisors/attendance",
@@ -281,6 +355,18 @@ export function AdvisorsSheet({
           )}
         </div>
       )}
+      {detail && (
+        <AdvisorDetail
+          person={detail}
+          tables={tables}
+          initialTableId={tableId}
+          initialAliasId={aliasId}
+          initialCountry={country}
+          initialSince={since}
+          initialUntil={until}
+          onClose={() => setDetail(null)}
+        />
+      )}
     </section>
   );
 }
@@ -293,6 +379,9 @@ function FragmentHeaders() {
       <th scope="col" title="Ventas" aria-label="Ventas">
         V
       </th>
+      <th scope="col" title="Horas ausentes" aria-label="Horas ausentes">
+        H
+      </th>
     </>
   );
 }
@@ -303,6 +392,7 @@ function AdvisorDay({
   disabled,
   onError,
   onSave,
+  onAbsenceSave,
 }: {
   person: Person;
   day: string;
@@ -310,6 +400,9 @@ function AdvisorDay({
   disabled: boolean;
   onError: (v: string) => void;
   onSave: (v: Attendance) => Promise<void>;
+  onAbsenceSave: (
+    v: import("../../lib/meta-ads/advisor-absence").AbsenceInput,
+  ) => Promise<void>;
 }) {
   return (
     <>
@@ -344,6 +437,17 @@ function AdvisorDay({
             ? "—"
             : new Intl.NumberFormat("es-PE").format(cell.sales)}
         {cell.partial ? " *" : ""}
+      </td>
+      <td className="advisor-hours">
+        <AdvisorAbsenceCell
+          advisorId={person.id}
+          name={person.name}
+          day={day}
+          value={cell.absence}
+          disabled={disabled}
+          onSave={onAbsenceSave}
+          onError={onError}
+        />
       </td>
     </>
   );

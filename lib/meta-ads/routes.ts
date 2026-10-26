@@ -1,3 +1,4 @@
+import { advisorAbsenceSchema } from "./advisor-absence";
 import { colorRulesSchema } from "./sheet-colors";
 import { NextRequest, NextResponse } from "next/server";
 import { isCurrency, syncFxDays } from "./exchange-rates";
@@ -122,6 +123,43 @@ export async function metaRoutes(
       ).saveEffectivenessColors(actor, b),
     );
   }
+  if (
+    parts[1] === "alias-tables" &&
+    parts[2] &&
+    parts[3] === "delete-preview" &&
+    parts.length === 4 &&
+    method === "GET"
+  ) {
+    ownerOnly(actor);
+    return send(
+      await (
+        await import("./delete-alias-table")
+      ).previewDeleteAliasTable(
+        actor,
+        z.string().min(1).max(100).parse(parts[2]),
+      ),
+    );
+  }
+  if (
+    parts[1] === "alias-tables" &&
+    parts[2] &&
+    parts.length === 3 &&
+    method === "DELETE"
+  ) {
+    ownerOnly(actor);
+    const b = z
+      .object({
+        token: z.string().regex(/^[a-f0-9]{64}$/),
+        confirmedName: z.string().min(1).max(100),
+      })
+      .strict()
+      .parse(await body());
+    return send(
+      await (
+        await import("./delete-alias-table")
+      ).deleteAliasTable(actor, z.string().min(1).max(100).parse(parts[2]), b),
+    );
+  }
   if (path === "advisors" && method === "GET")
     return send(await (await import("./advisors")).advisors(actor));
   if (path === "advisors" && (method === "POST" || method === "PATCH")) {
@@ -159,6 +197,13 @@ export async function metaRoutes(
       .parse(await body());
     return send(await (await import("./advisors")).assignRowAdvisor(actor, b));
   }
+  if (path === "advisors/absence" && method === "PATCH") {
+    ownerOnly(actor);
+    const b = advisorAbsenceSchema.parse(await body());
+    return send(
+      await (await import("./advisors")).saveAdvisorAbsence(actor, b),
+    );
+  }
   if (path === "advisors/attendance" && method === "PATCH") {
     ownerOnly(actor);
     const b = z
@@ -172,11 +217,20 @@ export async function metaRoutes(
       .parse(await body());
     return send(await (await import("./advisors")).saveAttendance(actor, b));
   }
-  if (path === "advisors/sheet" && method === "GET") {
+  if (
+    (path === "advisors/sheet" || path === "advisors/detail") &&
+    method === "GET"
+  ) {
     ownerOnly(actor);
     const q = z
       .object({
         tableId: z.string().min(1).max(100),
+        aliasId: z.string().min(1).max(100).optional(),
+        country: z
+          .string()
+          .refine((v) => v === "" || isCountryCode(v), "País no válido.")
+          .optional(),
+        advisorId: z.string().min(1).max(80).optional(),
         since: z.string().date(),
         until: z.string().date(),
       })
@@ -187,10 +241,15 @@ export async function metaRoutes(
         (Date.parse(q.until) - Date.parse(q.since)) / 86400000 < 31,
       "Elige hasta 31 días.",
     );
+    demand(path !== "advisors/detail" || !!q.advisorId, "Elige un asesor.");
     return send(
       await (
         await import("./advisors")
-      ).advisorSheet(actor, q.tableId, q.since, q.until),
+      ).advisorSheet(actor, q.tableId, q.since, q.until, {
+        aliasId: q.aliasId,
+        country: q.country,
+        advisorId: q.advisorId,
+      }),
     );
   }
   if (path === "effectiveness/sync" && method === "GET") {
@@ -414,6 +473,28 @@ export async function metaRoutes(
       ).setEffectivenessState(actor, b),
     );
   }
+  if (path === "effectiveness/detail" && method === "GET") {
+    ownerOnly(actor);
+    const q = z
+      .object({
+        aliasId: z.string().min(1).max(100),
+        country: z.string().refine(isCountryCode),
+        since: z.string().date(),
+        until: z.string().date(),
+      })
+      .strict()
+      .parse(Object.fromEntries(req.nextUrl.searchParams));
+    demand(
+      q.since <= q.until &&
+        (Date.parse(q.until) - Date.parse(q.since)) / 86400000 < 31,
+      "Elige hasta 31 días.",
+    );
+    return send(
+      await (
+        await import("./effectiveness-detail")
+      ).effectivenessDetail(actor, q),
+    );
+  }
   if (path === "effectiveness/history" && method === "GET") {
     ownerOnly(actor);
     const q = z
@@ -477,6 +558,7 @@ export async function metaRoutes(
     const b = z
       .object({
         tableId: z.string().min(1).max(100),
+        advisorId: z.string().min(1).max(80).optional(),
         rows: z
           .array(
             z
@@ -495,7 +577,7 @@ export async function metaRoutes(
     return send(
       await (
         await import("./effectiveness")
-      ).importEffectiveness(actor, b.tableId, b.rows),
+      ).importEffectiveness(actor, b.tableId, b.rows, b.advisorId),
     );
   }
   if (path === "effectiveness/identity" && method === "PATCH") {

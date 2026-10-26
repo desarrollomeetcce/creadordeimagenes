@@ -153,6 +153,7 @@ export function MetaEffectiveness({
     [csv, setCsv] = useState(false);
   const [newName, setNewName] = useState(""),
     [newCountry, setNewCountry] = useState(settings.defaultCountry),
+    [newAdvisor, setNewAdvisor] = useState(""),
     [newCurrency, setNewCurrency] = useState(settings.defaultCurrency);
   const [metricsByView, setMetricsByView] = useState<{
     manual: string[] | null;
@@ -473,10 +474,12 @@ export function MetaEffectiveness({
       const code = resolveCountry(newCountry);
       if (code === null) throw Error("País no reconocido.");
       const rows = parseEffectivenessPaste(newName, code, newCurrency);
+      if (newAdvisor && rows.some((r) => !r.country))
+        throw Error("Elige el país antes de guardar el alias con asesor.");
       await mutate(
         "meta-ads/effectiveness/import",
         "POST",
-        { tableId, rows },
+        { tableId, rows, ...(newAdvisor ? { advisorId: newAdvisor } : {}) },
         true,
       );
       setNewName("");
@@ -1348,43 +1351,43 @@ export function MetaEffectiveness({
                           aliasId={r.aliasId}
                           country={r.country}
                           name={name}
+                          initialSince={since}
+                          initialUntil={until}
                         />
                       </div>
                     </td>
                     <td className="effectiveness-advisor">
-                      {r.country ? (
-                        <SheetSearchSelect
-                          compact
-                          displayLabel
-                          placeholder="Sin asesor"
-                          label={`Asesor de ${name} ${r.country}`}
-                          value={r.advisorId ?? ""}
-                          options={[
-                            { value: "", label: "Sin asesor" },
-                            ...advisors.map((a) => ({
-                              value: a.id,
-                              label: a.name,
-                            })),
-                          ]}
-                          onError={setMessage}
-                          onSelect={async (advisorId) => {
-                            await mutate(
-                              "meta-ads/effectiveness/advisor",
-                              "PATCH",
-                              {
-                                aliasId: r.aliasId,
-                                country: r.country,
-                                advisorId: advisorId || null,
-                                revision: r.rowRevision,
-                              },
+                      <SheetSearchSelect
+                        compact
+                        displayLabel
+                        placeholder="Sin asesor"
+                        label={`Asesor de ${name} ${r.country}`}
+                        value={r.advisorId ?? ""}
+                        options={[
+                          { value: "", label: "Sin asesor" },
+                          ...advisors.map((a) => ({
+                            value: a.id,
+                            label: a.name,
+                          })),
+                        ]}
+                        onError={setMessage}
+                        onSelect={async (advisorId) => {
+                          if (!r.country)
+                            throw Error(
+                              "Elige primero el país de esta fila para asignar el asesor.",
                             );
-                          }}
-                        />
-                      ) : (
-                        <span title="Elige primero el país de esta fila">
-                          Elige país
-                        </span>
-                      )}
+                          await mutate(
+                            "meta-ads/effectiveness/advisor",
+                            "PATCH",
+                            {
+                              aliasId: r.aliasId,
+                              country: r.country,
+                              advisorId: advisorId || null,
+                              revision: r.rowRevision,
+                            },
+                          );
+                        }}
+                      />
                     </td>
                     <td className="effectiveness-country">
                       <SheetSearchSelect
@@ -1524,9 +1527,19 @@ export function MetaEffectiveness({
                   />
                 </td>
                 <td className="effectiveness-advisor">
-                  <span title="Guarda el alias y país para asignar un asesor">
-                    —
-                  </span>
+                  <SheetSearchSelect
+                    compact
+                    displayLabel
+                    label="Asesor del nuevo alias"
+                    placeholder="Sin asesor"
+                    value={newAdvisor}
+                    options={[
+                      { value: "", label: "Sin asesor" },
+                      ...advisors.map((a) => ({ value: a.id, label: a.name })),
+                    ]}
+                    onSelect={setNewAdvisor}
+                    onError={setMessage}
+                  />
                 </td>
                 <td className="effectiveness-country">
                   <SheetSearchSelect

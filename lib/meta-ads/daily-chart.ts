@@ -1,7 +1,7 @@
 export type DailyChartMetric = "cost" | "spend" | "results";
 export type DailyChartRow = {
   day: string;
-  spend: number;
+  spend: number | null;
   cost: number | null;
   results: number | null;
 };

@@ -150,3 +150,17 @@ El antiguo Todas de cada parámetro diario se llama Activos. Se puede escribir u
 El buscador por palabras y el multiselector de alias están ahora en la cabecera de la columna Alias/Diplomado. Se intersectan con los demás filtros; Todos vuelve a incluir el catálogo completo, y cambiar el filtro no escribe datos. Se retiraron las dos copias de la barra superior. Nombre de columna y orden siguen editables.
 
 En Totales la etiqueta GT ahora es GD (Gasto diario); el almacenamiento conserva totalSpend para no perder importes anteriores ni crear otro campo. En Asesores las dos cabeceras diarias son A y V, manteniendo nombres completos accesibles y al pasar el cursor. La ayuda local explica A=Asistencia y V=Ventas.
+
+### Horas ausentes y detalles
+
+Asesores presenta A (Asistencia), V (Ventas) y H (Horas ausentes). H acepta horas decimales (0,5=30 minutos) o intervalos de reloj: guardar salida sin regreso y completar después. Un intervalo abierto se marca pendiente; no se estima su duración. Se suman solo intervalos cerrados, hasta24h/día, sin solapamientos incluso con el día contiguo. Regreso al día siguiente exige casilla explícita. Modos manual/reloj sustituyen H de ese día; A se guarda por separado. Revisiones evitan sobrescrituras silenciosas. La migración202610260004 añade MetaAdvisorAbsence sin inventar registros antiguos.
+
+El catálogo de asesores es global y se ofrece en cualquier hoja y en su fila nueva antes de guardar. Si se elige asesor al importar/agregar, cada alias requiere país; asignación y creación se confirman atómicamente. Una pareja existente con otro asesor no se reasigna al importar: se cambia desde su columna.
+
+Detalle del asesor incluye calendario, filtros de hojas/alias/país, barras/línea V/H/A y desglose diario por alias+país+asesor. Todos es inicial para alias/país. V es compartida entre vistas y solo suma filas con país y asesor coincidentes; asistencia/horas siguen siendo por persona/día, independientes del producto. La asignación actual también se aplica al histórico; Todas las hojas incluye copias sincronizadas y puede contarlas, como indica la interfaz. Vacío, cero y N.A. permanecen distintos.
+
+Detalle del alias presenta solo cambios reales Activado/Desactivado con fecha/hora Lima, barras por día y métricas seleccionables V/P/B/G/CF en gráfico y tabla diaria. Tiene calendario propio hasta31d. La línea base proviene del último evento previo; no se inventa estado antes del primer evento ni duración futura. Snapshots históricos se conservan para auditoría, aunque ya no se repiten en la vista.
+
+### Eliminar una tabla completa
+
+Clic derecho sobre una pestaña de alias (o tecla de menú/Shift+F10) abre Eliminar tabla. Revisión muestra alias, filas/días, estados, asignaciones, totales, colores y conexiones afectadas. Confirmar exige escribir el nombre exacto. Token de contenido impide borrar una revisión obsoleta; eliminación atómica bajo884411 y OWNER aprobado, con auditoría. Borra la tabla y contenido propio; desvincula alias/país/asesor en asociaciones internas Meta y retira sincronizaciones vinculadas. No envía solicitudes a Meta ni borra sus objetos/estadísticas originales; conserva asesores/asistencias/horas y valores ya copiados en otras tablas. Asesores y Totales no tienen este menú. Si se elimina la última tabla se puede crear otra y seguir abriendo Asesores.
