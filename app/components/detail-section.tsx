@@ -7,6 +7,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
+import { DetailModuleHandle } from "./detail-module-layout";
 const SectionState = createContext<{
   closed: Record<string, boolean>;
   setClosed: (key: string, value: boolean) => void;
@@ -62,6 +63,7 @@ export function DetailSection({
         className={`detail-fold-summary detail-section-${tone}`}
         title="Pulsa para plegar o desplegar esta sección"
       >
+        <DetailModuleHandle id={stateKey} title={title} />
         <h3 className={`detail-section-title detail-section-${tone}`}>
           {title}
         </h3>

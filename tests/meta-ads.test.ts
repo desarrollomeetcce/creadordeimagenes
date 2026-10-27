@@ -643,3 +643,19 @@ test('Períodos por calendario: conserva accesos relativos y fechas personalizad
  for(const key of ['range:2026-02-30:2026-10-27','range:2026-10-28:2026-10-27','range:2026-10-20:2026-10-28','range:2000-01-01:2026-10-27','calendar:unknown'])assert.equal(detailPeriodPreset(key,'2026-10-27'),null);
  assert.equal(savedCalendarPeriod('2026-10-20','2026-10-27','7','2026-10-27'),null);
 });
+
+test('Distribución del asesor: valida preferencias y conserva todos los módulos sin duplicados',async()=>{
+ const {normalizeAdvisorLayout,defaultAdvisorLayout,advisorModuleIds}=await import('../lib/meta-ads/advisor-detail-layout');
+ for(const raw of [null,{},[],['desconocido'],[123]])assert.deepEqual(normalizeAdvisorLayout(raw),defaultAdvisorLayout);
+ const rows=normalizeAdvisorLayout(['chart|chart|invalid','products|days|sold-days','assignments']);
+ assert.deepEqual([...rows.flat()].sort(),[...advisorModuleIds].sort());assert(rows.every(r=>r.length<=2));assert.equal(rows[0][0],'chart');
+});
+test('Distribución del asesor: mover verticalmente y emparejar horizontalmente no pierde bloques',async()=>{
+ const {moveAdvisorModule,defaultAdvisorLayout,advisorModuleIds}=await import('../lib/meta-ads/advisor-detail-layout');
+ const original=JSON.stringify(defaultAdvisorLayout);
+ assert.deepEqual(moveAdvisorModule(defaultAdvisorLayout,'chart','assignments','after'),[['inventory-analysis'],['sold-days','days'],['assignments'],['chart'],['products']]);
+ assert.deepEqual(moveAdvisorModule(defaultAdvisorLayout,'days','sold-days','left')[1],['days','sold-days']);
+ assert(moveAdvisorModule(defaultAdvisorLayout,'products','chart','right').some(r=>r.join('|')==='chart|products'));
+ for(const source of advisorModuleIds)for(const target of advisorModuleIds)for(const placement of ['before','after','left','right']as const){const rows=moveAdvisorModule(defaultAdvisorLayout,source,target,placement);assert.deepEqual([...rows.flat()].sort(),[...advisorModuleIds].sort());assert(rows.every(r=>r.length>0&&r.length<=2));if(source!==target){const flat=rows.flat();assert(placement==='before'||placement==='left'?flat.indexOf(source)<flat.indexOf(target):flat.indexOf(source)>flat.indexOf(target));if(placement==='left'||placement==='right')assert(rows.some(r=>r.includes(source)&&r.includes(target)));}}
+ assert.equal(JSON.stringify(defaultAdvisorLayout),original);
+});

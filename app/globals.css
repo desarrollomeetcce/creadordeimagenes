@@ -2172,3 +2172,20 @@ button.ui-close-button:disabled, button.window-close:disabled { opacity: .55; }
 .detail-fold>.detail-fold-summary { padding:7px 9px; background:color-mix(in srgb,var(--detail-section-color) 9%,var(--surface)); color:var(--detail-section-color); border-color:transparent; }
 .detail-fold-summary>.detail-section-title { background:transparent; color:inherit; padding:.45rem .65rem; }
 .detail-fold-summary::before { color:inherit; }
+.advisor-module-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; align-items:start; margin:12px 0; }
+.detail-module-slot { position:relative; min-width:0; border-radius:6px; }
+.detail-module-slot>.detail-fold { margin:0; }
+.detail-module-slot .table-scroll { max-height:380px; }
+.detail-module-handle { flex:0 0 30px; width:30px; min-height:30px; padding:2px; font-size:22px; line-height:1; border:1px solid color-mix(in srgb,currentColor 28%,transparent); border-radius:5px; background:transparent; color:inherit; cursor:grab; touch-action:none; user-select:none; }
+.detail-module-handle:hover { background:color-mix(in srgb,currentColor 12%,transparent); }
+.detail-module-handle:active { cursor:grabbing; }
+.detail-module-handle:focus-visible { outline:2px solid var(--selection); outline-offset:2px; }
+.detail-module-slot[data-dragging] { opacity:.55; }
+.detail-module-slot[data-drop-placement] { outline:2px dashed var(--accent); outline-offset:3px; }
+.detail-module-slot[data-drop-placement="left"] { box-shadow:-5px 0 0 var(--accent); }
+.detail-module-slot[data-drop-placement="right"] { box-shadow:5px 0 0 var(--accent); }
+.detail-module-slot[data-drop-placement="before"] { box-shadow:0 -5px 0 var(--accent); }
+.detail-module-slot[data-drop-placement="after"] { box-shadow:0 5px 0 var(--accent); }
+.detail-module-drop-label { position:absolute; z-index:6; top:3px; right:8px; padding:4px 8px; border:1px solid var(--accent); border-radius:5px; background:var(--surface); color:var(--ink); font-size:11px; pointer-events:none; }
+.detail-layout-reset { margin-right:auto; }
+@media(max-width:850px) { .advisor-module-grid { grid-template-columns:minmax(0,1fr); } .detail-module-slot { grid-column:1/-1!important; } }
