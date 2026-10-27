@@ -98,7 +98,7 @@ export function DeleteEffectivenessRows({
           {selection.targets.length === 1 ? "fila" : "filas"}
           {review ? ` de «${review.table.name}»` : ""}
         </h2>
-        <button
+        <button className="ui-close-button"
           type="button"
           aria-label="Cerrar revisión de filas"
           disabled={busy}
@@ -137,7 +137,7 @@ export function DeleteEffectivenessRows({
       )}
       {error && <p role="alert">{error}</p>}
       <footer className="row">
-        <button type="button" disabled={busy} onClick={onClose}>
+        <button className={committed ? "ui-close-button" : undefined} type="button" disabled={busy} onClick={onClose}>
           {committed ? "Cerrar" : "Cancelar"}
         </button>
         {error && !committed && (

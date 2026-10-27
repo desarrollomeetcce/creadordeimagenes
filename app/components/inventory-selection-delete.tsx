@@ -129,7 +129,7 @@ export function InventorySelectionDelete({
       )}
       {error && <p role="alert">{error}</p>}
       <div className="row">
-        <button type="button" disabled={busy} onClick={onClose}>
+        <button className={committed ? "ui-close-button" : undefined} type="button" disabled={busy} onClick={onClose}>
           {committed ? "Cerrar" : "Cancelar"}
         </button>
         {error && !committed && (

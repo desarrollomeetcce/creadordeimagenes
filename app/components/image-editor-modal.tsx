@@ -37,7 +37,7 @@ export function ImageEditorModal({
         <button type="button" onClick={() => setFull(!full)}>
           {full ? "Restaurar tamaño" : "Ampliar a pantalla completa"}
         </button>
-        <button type="button" className="window-close" aria-label="Cerrar editor de imagen" onClick={onClose}>×</button>
+        <button type="button" className="window-close ui-close-button" aria-label="Cerrar editor de imagen" onClick={onClose}>×</button>
       </div>
       <VariationEditor id={id} onClose={onClose} />
     </dialog>,

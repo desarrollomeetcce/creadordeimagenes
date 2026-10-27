@@ -16,7 +16,7 @@ export function ExpandablePanel({ title, children }: { title: string; children: 
     aria-label={title} aria-modal={expanded || undefined} onCancel={event => { event.preventDefault(); setExpanded(false); }}>
     <div className="row spread expandable-panel-bar">
       <h2>{title}</h2>
-      <div className="row"><button type="button" onClick={() => setExpanded(!expanded)}>{expanded ? "Volver a la página" : "Abrir ventana amplia"}</button>{expanded&&<button type="button" className="window-close" aria-label="Cerrar ventana de marca" onClick={()=>setExpanded(false)}>×</button>}</div>
+      <div className="row"><button type="button" onClick={() => setExpanded(!expanded)}>{expanded ? "Volver a la página" : "Abrir ventana amplia"}</button>{expanded&&<button type="button" className="window-close ui-close-button" aria-label="Cerrar ventana de marca" onClick={()=>setExpanded(false)}>×</button>}</div>
     </div>
     {children}
   </dialog>;

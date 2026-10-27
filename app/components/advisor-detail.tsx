@@ -330,7 +330,7 @@ export function AdvisorDetail({
       >
         <header className="row">
           <h2>{row?.name ?? person.name}</h2>
-          <button type="button" onClick={onClose}>
+          <button className="ui-close-button" type="button" onClick={onClose}>
             Cerrar detalle
           </button>
         </header>

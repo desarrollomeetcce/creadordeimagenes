@@ -1382,7 +1382,7 @@ export function MetaEffectiveness({
       {message && (
         <p className="sheet-message" role="status">
           {message}
-          <button
+          <button className="ui-close-button"
             type="button"
             aria-label="Cerrar aviso"
             onClick={() => setMessage("")}

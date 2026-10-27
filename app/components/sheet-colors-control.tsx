@@ -186,7 +186,7 @@ export function SheetColorsControl({
           <div className="row">
             <strong>Colores por valor</strong>
             <span>Todas las fechas</span>
-            <button type="button" onClick={() => setOpen(false)}>
+            <button className="ui-close-button" type="button" onClick={() => setOpen(false)}>
               Cerrar
             </button>
           </div>

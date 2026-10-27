@@ -166,7 +166,7 @@ export function SheetMultiFilter({
           <small>
             {count}/{options.length} seleccionados
           </small>
-          <button
+          <button className="ui-close-button"
             type="button"
             onClick={() => {
               popover.current?.hidePopover();

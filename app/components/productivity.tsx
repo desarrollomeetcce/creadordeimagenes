@@ -320,7 +320,7 @@ function PresetDetails({
             <button className="primary" disabled={busy}>
               Guardar cambios
             </button>
-            <button type="button" disabled={busy} onClick={close}>
+            <button className="ui-close-button" type="button" disabled={busy} onClick={close}>
               Cerrar edición
             </button>
           </div>
@@ -421,6 +421,7 @@ function PresetRow({
             <button
               type="button"
               disabled={busy}
+              className={mode === "view" ? "ui-close-button" : undefined}
               aria-expanded={mode === "view"}
               aria-controls={detailId}
               onClick={() => setMode(mode === "view" ? null : "view")}

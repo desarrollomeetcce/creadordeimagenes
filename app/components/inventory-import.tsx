@@ -64,7 +64,7 @@ export function InventoryImport({
         <h2>Pegar inventario</h2>
         <button
           type="button"
-          className="inventory-dialog-close"
+          className="inventory-dialog-close ui-close-button"
           aria-label="Cerrar Pegar inventario"
           title="Cerrar sin guardar"
           disabled={busy}

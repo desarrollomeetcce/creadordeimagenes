@@ -46,7 +46,7 @@ export function InventoryCategoryManager({
     >
       <header className="row">
         <h2>Categorías del inventario</h2>
-        <button type="button" disabled={busy} onClick={onClose}>
+        <button className="ui-close-button" type="button" disabled={busy} onClick={onClose}>
           Cerrar
         </button>
       </header>

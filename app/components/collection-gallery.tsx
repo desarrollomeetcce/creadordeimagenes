@@ -296,7 +296,7 @@ export function CollectionGallery({
               </figure>
             ))}
           </div>
-          <button onClick={() => setCompare(false)}>Cerrar comparación</button>
+          <button className="ui-close-button" onClick={() => setCompare(false)}>Cerrar comparación</button>
         </section>
       )}
       {preview && current >= 0 && (

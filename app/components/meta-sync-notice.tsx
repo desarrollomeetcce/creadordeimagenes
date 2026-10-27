@@ -54,7 +54,7 @@ export function MetaSyncNotice({
         <strong>
           {waiting ? "En espera de Meta" : "El último intento no se completó"}
         </strong>
-        <button
+        <button className="ui-close-button"
           type="button"
           aria-label={`Cerrar aviso de ${account.name}`}
           title="Cerrar este aviso"

@@ -190,7 +190,7 @@ export function SystemResourcePicker({
           <button type="button" onClick={() => setFull(!full)}>
             {full ? "Reducir ventana" : "Pantalla completa"}
           </button>
-          <button type="button" disabled={busy} onClick={close}>
+          <button className="ui-close-button" type="button" disabled={busy} onClick={close}>
             Cerrar
           </button>
         </div>

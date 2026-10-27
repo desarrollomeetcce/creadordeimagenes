@@ -1977,7 +1977,7 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
       {message && (
         <aside className="notice meta-feedback" role="status">
           <span>{message}</span>
-          <button
+          <button className="ui-close-button"
             type="button"
             aria-label="Cerrar aviso"
             onClick={() => setMessage("")}
@@ -3147,7 +3147,7 @@ function MetaDetail({ item: o, onClose }: { item: Item; onClose: () => void }) {
     >
       <div className="row spread">
         <h2>{o.name}</h2>
-        <button type="button" onClick={onClose}>
+        <button className="ui-close-button" type="button" onClick={onClose}>
           Cerrar
         </button>
       </div>
@@ -3290,7 +3290,7 @@ function MetaSharing({
         >
           Guardar permisos
         </button>
-        <button type="button" disabled={busy} onClick={onClose}>
+        <button className="ui-close-button" type="button" disabled={busy} onClick={onClose}>
           Cerrar
         </button>
       </div>

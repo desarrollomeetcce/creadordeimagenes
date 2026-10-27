@@ -36,7 +36,7 @@ function DuplicateReview({
     >
       <header>
         <h2>Ya hay nombres similares</h2>
-        <button
+        <button className="ui-close-button"
           type="button"
           aria-label="Cerrar revisión de nombres"
           onClick={() => onChoose(null)}

@@ -121,7 +121,7 @@ export function VariationEditor({
       <section className="panel">
         <p>Cargando editor…</p>
         <p role="status">{message}</p>
-        <button onClick={onClose}>Cerrar</button>
+        <button className="ui-close-button" onClick={onClose}>Cerrar</button>
       </section>
     );
   return (
@@ -153,7 +153,7 @@ export function VariationEditor({
           >
             Eliminar imagen
           </button>
-          <button onClick={onClose}>Cerrar editor</button>
+          <button className="ui-close-button" onClick={onClose}>Cerrar editor</button>
         </div>
       </div>
       {contextMenu&&<div ref={menuRef} role="menu" aria-label="Orden de capas" className="editor-context-menu" style={{left:Math.max(4,contextMenu.x),top:Math.max(4,contextMenu.y)}} onKeyDown={e=>{if(["ArrowDown","ArrowUp","Home","End"].includes(e.key)){e.preventDefault();const buttons=[...e.currentTarget.querySelectorAll<HTMLButtonElement>("button")],i=buttons.indexOf(document.activeElement as HTMLButtonElement);buttons[e.key==="Home"?0:e.key==="End"?buttons.length-1:(i+(e.key==="ArrowDown"?1:buttons.length-1))%buttons.length]?.focus();}}}>{([["front","Traer al frente"],["up","Subir una capa"],["down","Bajar una capa"],["back","Enviar al fondo"]] as const).map(([direction,label])=><button type="button" role="menuitem" key={direction} onClick={()=>reorder(contextMenu.id,direction)}>{label}</button>)}</div>}

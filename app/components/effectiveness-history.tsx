@@ -149,7 +149,7 @@ export function EffectivenessHistory({
               <strong>
                 {name} · {country}
               </strong>
-              <button type="button" onClick={() => pop.current?.hidePopover()}>
+              <button className="ui-close-button" type="button" onClick={() => pop.current?.hidePopover()}>
                 Cerrar
               </button>
             </header>

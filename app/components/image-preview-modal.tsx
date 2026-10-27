@@ -61,7 +61,7 @@ export function ImagePreviewModal({
         <button
           ref={closeButton}
           type="button"
-          className="window-close"
+          className="window-close ui-close-button"
           aria-label="Cerrar imagen ampliada"
           onClick={onClose}
         >

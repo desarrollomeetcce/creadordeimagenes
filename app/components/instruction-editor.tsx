@@ -101,7 +101,7 @@ export function InstructionEditor({
         <div className="instruction-editor-modal-content">
           <div className="instruction-editor-heading">
             <h2 id={id + "-title"}>{label}</h2>
-            <button type="button" className="window-close" aria-label="Cerrar ventana de instrucciones" title="Cerrar y continuar" onClick={() => dialog.current?.close()}>
+            <button type="button" className="window-close ui-close-button" aria-label="Cerrar ventana de instrucciones" title="Cerrar y continuar" onClick={() => dialog.current?.close()}>
               ×
             </button>
           </div>

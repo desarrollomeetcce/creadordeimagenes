@@ -2022,3 +2022,20 @@ select option, select optgroup { background:var(--surface); color:var(--ink); }
 .advisor-sheet .advisor-name-edit { flex:0 0 auto; padding:3px 5px; font-size:12px; }
 .advisor-sheet .advisor-name-editor { flex-wrap:wrap; gap:4px; padding:5px 0; }
 .advisor-sheet .advisor-name-editor input { flex:1; min-width:90px; }
+
+/* Cerrar: acción visible y situada al extremo derecho de su contenedor. */
+button.ui-close-button, button.window-close {
+  display: flex; align-items: center; justify-content: center;
+  width: max-content; max-width: 100%; flex: 0 0 auto;
+  margin-inline-start: auto; order: 100; justify-self: end;
+  background: #9f2437 !important; color: #fff !important;
+  border: 2px solid #ff91a0 !important; border-radius: 8px;
+  font-weight: 800 !important; min-height: 36px; padding: 6px 14px;
+}
+button.ui-close-button:not(:disabled):hover, button.window-close:not(:disabled):hover {
+  background: #7e1c2c !important; border-color: #ffc0c8 !important;
+}
+button.ui-close-button:focus-visible, button.window-close:focus-visible {
+  outline: 3px solid #ffcb66; outline-offset: 3px;
+}
+button.ui-close-button:disabled, button.window-close:disabled { opacity: .55; }

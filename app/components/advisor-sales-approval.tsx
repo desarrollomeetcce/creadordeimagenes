@@ -269,7 +269,7 @@ export function AdvisorSalesApproval({
     >
       <header className="row">
         <h2>Ventas por asesor</h2>
-        <button
+        <button className="ui-close-button"
           type="button"
           disabled={busy}
           onClick={() => {
