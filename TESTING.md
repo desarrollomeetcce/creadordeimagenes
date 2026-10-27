@@ -1176,3 +1176,7 @@ Se verifica botón Actualizar cuenta contiguo a Cancelar en tarjetas/cuentas, pe
 ### Tipo de categoría por estado
 
 168/168 unitarias, typecheck y build correctos. Regresión de inactivo con preferencia temporal, principales actuales, preferencia intacta y franjas homónimas de distinto tipo. Chromium sobre PostgreSQL exclusivo verifica etiquetas Categoría principal/Categoría temporal, inactivos bajo su principal del inventario con selector temporal deshabilitado, transición al desactivar y recarga, valores/asignaciones intactos y móvil sin errores JS/API. Evidencia `/workspace/work/category-kind-{unit,typecheck,build,browser}.txt`. Sin cambios de backend:185/185 de integración previa; sin llamadas reales a Meta.
+
+### Orden de barra y navegación de Inventario
+
+168/168 unitarias, typecheck y build correctos. Chromium mide barra antes de Pestañas, Hojas contigua a la tabla (distancia≤1px), escritorio/móvil/recarga y diálogo de pegado funcional sin peticiones de mutación, errores JS/API ni desbordamiento. Evidencia `/workspace/work/inventory-toolbar-order-{unit,typecheck,build,browser}.txt`. Solo reordenación JSX; sin cambios de servidor/esquema, integración185/185 previa vigente.

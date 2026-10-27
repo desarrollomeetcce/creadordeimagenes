@@ -1351,3 +1351,7 @@ Validación:167/167 unitarias, TypeScript y compilación de producción. Chromiu
 Las filas desactivadas dejan de aplicar su selección temporal y vuelven a las principales actuales del inventario, debajo de Desactivados. Su selector temporal queda deshabilitado. Franjas activas identifican Categoría principal o Categoría temporal y no se mezclan aunque sus nombres coincidan. Las preferencias personales se conservan para la vista activa; ninguna asignación del catálogo ni cifra se modifica.
 
 168/168 unitarias, typecheck/build y Chromium local aprobados: preferencias temporales guardadas ignoradas en inactivos, categorías homónimas claramente separadas, transición y recarga, catálogo/ventas intactos y móvil. No cambia backend/esquema ni incorpora llamadas a proveedores; integración185/185 de backend anterior vigente.
+
+### Barra de inventario encima de las pestañas
+
+La barra Pegar inventario/Importar/Ver categorías/Eliminar/Limpiar filtros aparece antes de Pestañas. La fila Hojas queda inmediatamente junto a la tabla. Solo se reordena JSX; acciones, datos y dimensiones no cambian.168/168 unitarias, typecheck/build y comprobación Chromium de posición exacta en escritorio/móvil/recarga y apertura/cierre de pegado sin escrituras. Backend sin cambios; integración185/185 previa vigente.

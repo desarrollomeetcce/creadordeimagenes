@@ -721,7 +721,6 @@ export function InventoryCatalog({
           {warning || rowsLayout.warning}
         </p>
       )}
-      {sheetTabs}
       <div
         className="row inventory-actions-toolbar"
         aria-label="Acciones del inventario"
@@ -792,6 +791,7 @@ export function InventoryCatalog({
           Limpiar filtros
         </button>
       </div>
+      {sheetTabs}
       <div className="table-scroll">
         <table
           className="inventory-catalog-grid inventory-categorized-grid sheet-resizable-table"
