@@ -51,7 +51,7 @@ export function financialRowCategories(
   };
 }
 export function groupFinancialRows<
-  T extends { aliasId: string; country: string },
+  T extends { aliasId: string; country: string; active?: boolean },
 >(
   rows: T[],
   entries: FinancialCatalogEntry[],
@@ -59,7 +59,7 @@ export function groupFinancialRows<
 ) {
   const bands = new Map<
     string,
-    { names: string[]; rows: T[]; temporaryCount: number }
+    { active: boolean; names: string[]; rows: T[]; temporaryCount: number }
   >();
   for (const row of rows) {
     const category = financialRowCategories(
@@ -67,21 +67,26 @@ export function groupFinancialRows<
         entries.find((a) => a.id === row.aliasId),
         temporary,
       ),
-      key = JSON.stringify(category.names);
+      active = row.active !== false,
+      key = JSON.stringify([active, category.names]);
     let band = bands.get(key);
     if (!band) {
-      band = { names: category.names, rows: [], temporaryCount: 0 };
+      band = { active, names: category.names, rows: [], temporaryCount: 0 };
       bands.set(key, band);
     }
     band.rows.push(row);
     if (category.temporary) band.temporaryCount++;
   }
   return [...bands.values()].sort((a, b) =>
-    !a.names.length
-      ? 1
-      : !b.names.length
+    a.active !== b.active
+      ? a.active
         ? -1
-        : a.names.join(" · ").localeCompare(b.names.join(" · "), "es"),
+        : 1
+      : !a.names.length
+        ? 1
+        : !b.names.length
+          ? -1
+          : a.names.join(" · ").localeCompare(b.names.join(" · "), "es"),
   );
 }
 export function parseTemporaryCategories(

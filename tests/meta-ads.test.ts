@@ -490,3 +490,13 @@ test('Totales: bloques horizontales conservan fuente/país/moneda separados y pl
  const {totalSourceBlocks}=await import('../lib/meta-ads/total-source-blocks');const sources=[{tableId:'a',groups:[{country:'PE',currency:'PEN'},{country:'CO',currency:'COP'},{country:'PE',currency:'PEN'}]},{tableId:'b',groups:[{country:'PE',currency:'USD'}]}];
  const blocks=totalSourceBlocks(sources);assert.equal(blocks.length,3);assert.equal(new Set(blocks.map(b=>b.key)).size,3);assert(blocks.every(b=>/^[a-zA-Z0-9:_-]{1,240}$/.test(b.key+":totalSpend")));assert.deepEqual(blocks.map(b=>[b.table.tableId,b.country,b.currency]),[['a','CO','COP'],['a','PE','PEN'],['b','PE','USD']]);assert.equal(totalSourceBlocks([{tableId:'empty',groups:[]}])[0].country,'');assert.equal(totalSourceBlocks(sources,'PE','PEN').length,2);assert.equal(sources[0].groups.length,3);
 });
+
+test('Efectividad: desactivados al final y categorizados sin mezclar estados ni duplicar filas', async()=>{
+ const {groupFinancialRows,financialRowKey}=await import('../lib/meta-ads/financial-categories');
+ const entries=[{id:'a',name:'A',categoryAssignments:[{category:{id:'p',name:'Ambiental',kind:'PRIMARY' as const}},{category:{id:'s',name:'Civil',kind:'SECONDARY' as const}}]},{id:'b',name:'B',categoryAssignments:[{category:{id:'z',name:'Salud',kind:'PRIMARY' as const}}]}];
+ const rows=[{aliasId:'a',country:'CO',active:false,sales:2},{aliasId:'b',country:'PE',active:true,sales:3},{aliasId:'a',country:'PE',active:true,sales:4},{aliasId:'none',country:'PE',active:true,sales:1},{aliasId:'none',country:'CO',active:false,sales:5}];
+ const bands=groupFinancialRows(rows,entries,{[financialRowKey(rows[0])]:['s']});
+ assert.deepEqual(bands.map(b=>[b.active,b.names]),[[true,['Ambiental']],[true,['Salud']],[true,[]],[false,['Civil']],[false,[]]]);
+ const ordered=bands.flatMap(b=>b.rows);assert.deepEqual(ordered.map(r=>r.active),[true,true,true,false,false]);assert.equal(new Set(ordered.map(financialRowKey)).size,5);assert.equal(ordered.reduce((n,r)=>n+r.sales,0),15);
+ const reactivated=groupFinancialRows(rows.map(r=>({...r,active:true})),entries,{});assert(reactivated.every(b=>b.active));assert.equal(reactivated.flatMap(b=>b.rows).length,5);
+});

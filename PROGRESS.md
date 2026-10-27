@@ -1339,3 +1339,9 @@ Efectividad permite eliminar filas seleccionadas (incluido sin país) con revisi
 Meta Ads añade vistas personales de cuentas principales/secundarias y actualización explícita del grupo. La auditoría corrigió consulta de progreso superior a100 cuentas y validación de históricos maximum retomados otro día. Una acción procesada seguida de fallo de recarga se distingue de una solicitud fallida y no se repite automáticamente.
 
 Validación local:166 pruebas unitarias,185 de integración, TypeScript y compilación de producción. Navegador con PostgreSQL exclusivo y dobles explícitos de Meta: grupos306 cuentas, navegación, filtros, selección, asignaciones y fechas; tablas, categorías, altas y eliminación. Sin llamadas reales a Meta/IA. Publicación por main; estado de Hostinger se registra por separado y no se acredita solo por el push.
+
+### Desactivados categorizados al final
+
+Se separan las franjas por estado antes de agrupar categorías: activos arriba, una franja Desactivados y debajo sus propias categorías principales/temporales o Sin categoría principal. Ordenar no mezcla estados ni duplica filas/cifras. El borrador de fila nueva inicia gris/desactivado y se restablece así al guardar; se conserva la activación explícita y los estados existentes. Sin cambios de API/esquema/persistencia; se reutiliza initialActive.
+
+Validación:167/167 unitarias, TypeScript y compilación de producción. Chromium con PostgreSQL exclusivo comprueba orden asc/desc, franjas de desactivados con/sin categorías, categoría temporal, nueva fila inactiva persistida, reactivación/desactivación, recarga y móvil. Integración de backend185/185 de la versión anterior vigente; no se repite al no cambiar servidor. Sin llamadas al proveedor.

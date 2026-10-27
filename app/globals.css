@@ -1998,3 +1998,7 @@ select option, select optgroup { background:var(--surface); color:var(--ink); }
 .products-catalog .sheet-view .effectiveness-grid tbody tr:not(.sheet-category-band):not(.sheet-new-row):hover>td,.inventory-catalog-grid tbody tr:hover>td{background-image:linear-gradient(color-mix(in srgb,var(--accent) 5%,transparent),color-mix(in srgb,var(--accent) 5%,transparent));}
 .sheet-scroll:focus-visible{outline:2px solid var(--accent);outline-offset:-2px;}
 @media(max-width:700px){.sheet-financial-toolbar{padding:8px;gap:10px;}.sheet-financial-toolbar>.sheet-control-group,.sheet-financial-toolbar>.sheet-activation-actions{width:100%;border-left:0;padding-left:0;}.sheet-financial-toolbar>.sheet-control-group+.sheet-control-group,.sheet-financial-toolbar>.sheet-activation-actions{border-left:0;padding-left:0;border-top:1px solid var(--line);padding-top:8px;}.sheet-financial-toolbar label>.sheet-search-trigger{width:130px;}.sheet-financial-toolbar .sheet-activation-actions button{flex:1 1 auto;}}
+
+.products-catalog .sheet-view .effectiveness-grid .financial-inactive-band th{height:34px;padding:6px 8px;text-align:left;background:color-mix(in srgb,var(--muted) 16%,var(--surface));color:var(--ink);border-top:2px solid var(--line);}
+.financial-inactive-band th>span{position:sticky;left:7px;display:inline-flex;align-items:center;gap:10px;}
+.financial-inactive-band small{font-size:10px;font-weight:normal;color:var(--muted);}

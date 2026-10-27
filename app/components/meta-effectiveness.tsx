@@ -263,7 +263,7 @@ export function MetaEffectiveness({
     [pasteCountry, setPasteCountry] = useState(settings.defaultCountry),
     [pasteCurrency, setPasteCurrency] = useState(settings.defaultCurrency),
     [csv, setCsv] = useState(false);
-  const [newActive, setNewActive] = useState(true);
+  const [newActive, setNewActive] = useState(false);
   const [newName, setNewName] = useState(""),
     [newCountry, setNewCountry] = useState(settings.defaultCountry),
     [newAdvisor, setNewAdvisor] = useState(""),
@@ -620,7 +620,7 @@ export function MetaEffectiveness({
         true,
       );
       setNewName("");
-      setNewActive(true);
+      setNewActive(false);
     } catch (e) {
       setMessage(
         e instanceof Error ? e.message : "No se pudo agregar la fila.",
@@ -720,6 +720,10 @@ export function MetaEffectiveness({
   const displayedRows = showCategoryBands
     ? categoryBands.flatMap((b) => b.rows)
     : rows;
+  const inactiveRows = displayedRows.filter((r) => !r.active);
+  const firstInactiveKey = inactiveRows.length
+    ? activationKey(inactiveRows[0])
+    : null;
   const firstBands = new Map(
     categoryBands
       .filter((b) => b.rows.length)
@@ -1604,6 +1608,19 @@ export function MetaEffectiveness({
                   : undefined;
                 return (
                   <Fragment key={activationKey(r)}>
+                    {activationKey(r) === firstInactiveKey && (
+                      <tr className="financial-inactive-band">
+                        <th colSpan={4 + days.length * visibleMetrics.length}>
+                          <span>
+                            <strong>Desactivados</strong>
+                            <small>
+                              {inactiveRows.length}{" "}
+                              {inactiveRows.length === 1 ? "fila" : "filas"}
+                            </small>
+                          </span>
+                        </th>
+                      </tr>
+                    )}
                     {band && (
                       <tr className="financial-category-band">
                         <th colSpan={4 + days.length * visibleMetrics.length}>
@@ -1979,7 +1996,7 @@ export function MetaEffectiveness({
                     ]}
                     onSelect={(value) => {
                       setNewCountry(value);
-                      if (!value) setNewActive(true);
+                      if (!value) setNewActive(false);
                     }}
                   />
                 </td>
