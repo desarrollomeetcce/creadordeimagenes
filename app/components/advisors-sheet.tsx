@@ -182,11 +182,13 @@ export function AdvisorsSheet({
       (p) => p.name.localeCompare(name, "es", { sensitivity: "accent" }) === 0,
     );
     if (existing) {
-      showAdvisor(existing.id);
+      setQuery("");
+      setMessage("");
+      setEditingName(null);
       return;
     }
     await write("meta-ads/advisors", "POST", { name, sheetId: listId });
-    setQuery(name);
+    setQuery("");
     setEditingName(null);
   };
   useEffect(() => {
@@ -281,34 +283,6 @@ export function AdvisorsSheet({
           ]}
           onSelect={setCountry}
         />
-        <SheetSearchSelect
-          label="Buscar o añadir asesor"
-          value={
-            (rowsContext === key ? rows : []).find((p) => p.name === query)
-              ?.id ?? ""
-          }
-          placeholder="Buscar o añadir asesor…"
-          options={(rowsContext === key ? rows : []).map((p) => ({
-            value: p.id,
-            label: p.name,
-          }))}
-          disabled={busy || loading || !valid}
-          onSelect={showAdvisor}
-          onCreate={addAdvisor}
-          onError={setMessage}
-        />
-        {query && (
-          <button
-            type="button"
-            onClick={() => {
-              setQuery("");
-              setMessage("");
-            }}
-            title={`Borrar búsqueda: ${query}`}
-          >
-            Ver todos los asesores ×
-          </button>
-        )}
         <button
           disabled={busy || loading || !valid}
           onClick={() => void load()}
@@ -384,7 +358,40 @@ export function AdvisorsSheet({
             <thead>
               <tr>
                 <th className="advisor-name" rowSpan={2}>
-                  Asesor{handle("advisor", "Asesor")}
+                  <div className="advisor-column-title">
+                    Asesor{handle("advisor", "Asesor")}
+                  </div>
+                  <div className="advisor-column-tools">
+                    <SheetSearchSelect
+                      label="Buscar o añadir asesor"
+                      value={
+                        (rowsContext === key ? rows : []).find(
+                          (p) => p.name === query,
+                        )?.id ?? ""
+                      }
+                      placeholder="Buscar o añadir…"
+                      options={(rowsContext === key ? rows : []).map((p) => ({
+                        value: p.id,
+                        label: p.name,
+                      }))}
+                      disabled={busy || loading || !valid}
+                      onSelect={showAdvisor}
+                      onCreate={addAdvisor}
+                      onError={setMessage}
+                    />
+                    {query && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setQuery("");
+                          setMessage("");
+                        }}
+                        title={`Borrar búsqueda: ${query}`}
+                      >
+                        Ver todos los asesores ×
+                      </button>
+                    )}
+                  </div>
                 </th>
                 {days.map((d) => (
                   <th key={d} colSpan={3} scope="colgroup">
@@ -423,18 +430,7 @@ export function AdvisorsSheet({
                       >
                         Detalle ↗
                       </button>
-                      <SheetSearchSelect
-                        label={`Buscar o añadir desde ${p.name}`}
-                        value={p.id}
-                        options={rows.map((person) => ({
-                          value: person.id,
-                          label: person.name,
-                        }))}
-                        disabled={busy || loading}
-                        onSelect={showAdvisor}
-                        onCreate={addAdvisor}
-                        onError={setMessage}
-                      />
+                      <span className="advisor-name-label">{p.name}</span>
                       <button
                         type="button"
                         className="advisor-name-edit"

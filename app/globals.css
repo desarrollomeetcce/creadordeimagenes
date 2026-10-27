@@ -2039,3 +2039,9 @@ button.ui-close-button:focus-visible, button.window-close:focus-visible {
   outline: 3px solid #ffcb66; outline-offset: 3px;
 }
 button.ui-close-button:disabled, button.window-close:disabled { opacity: .55; }
+
+.advisor-sheet .advisor-column-title { display:flex; align-items:center; justify-content:space-between; gap:4px; }
+.advisor-sheet .advisor-column-tools { display:flex; flex-direction:column; gap:5px; margin-top:7px; min-width:0; }
+.advisor-sheet .advisor-column-tools>.sheet-search-trigger { width:100%; max-width:100%; min-width:0; text-align:left; padding:5px; }
+.advisor-sheet .advisor-column-tools>button { max-width:100%; padding:4px; font-size:11px; white-space:normal; }
+.advisor-sheet .advisor-name-label { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; text-align:left; }
