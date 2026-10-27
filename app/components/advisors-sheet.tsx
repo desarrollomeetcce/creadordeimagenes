@@ -87,7 +87,7 @@ export function AdvisorsSheet({
     [reload, setReload] = useState(0),
     [loading, setLoading] = useState(true),
     [busy, setBusy] = useState(false),
-    [name, setName] = useState(""),
+    [editingName, setEditingName] = useState<string | null>(null),
     [query, setQuery] = useWorkbookPreference<string>(listId, "query", "");
   useEffect(() => {
     if (tableId !== "all" && !tables.some((t) => t.id === tableId)) {
@@ -167,6 +167,39 @@ export function AdvisorsSheet({
       setBusy(false);
     }
   };
+  const showAdvisor = (id: string) => {
+    const found = rows.find((p) => p.id === id);
+    if (!found) return;
+    setQuery(found.name);
+    setEditingName(null);
+    setMessage("");
+  };
+  const addAdvisor = async (input: string) => {
+    const name = input.trim();
+    if (!name || name.length > 100)
+      throw Error("Escribe un nombre de 1 a 100 caracteres.");
+    const existing = rows.find(
+      (p) => p.name.localeCompare(name, "es", { sensitivity: "accent" }) === 0,
+    );
+    if (existing) {
+      showAdvisor(existing.id);
+      return;
+    }
+    await write("meta-ads/advisors", "POST", { name, sheetId: listId });
+    setQuery(name);
+    setEditingName(null);
+  };
+  useEffect(() => {
+    if (!editingName) return;
+    const frame = requestAnimationFrame(() => {
+      const input = document.querySelector<HTMLInputElement>(
+        `tr[data-advisor-id="${CSS.escape(editingName)}"] .advisor-name-editor input`,
+      );
+      input?.focus({ preventScroll: true });
+      input?.select();
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [editingName]);
   const days: string[] = [];
   if (valid)
     for (let d = Date.parse(since); d <= Date.parse(until); d += 86400000)
@@ -248,39 +281,34 @@ export function AdvisorsSheet({
           ]}
           onSelect={setCountry}
         />
-        <input
-          type="search"
-          aria-label="Buscar asesor"
-          placeholder="Buscar asesor…"
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
+        <SheetSearchSelect
+          label="Buscar o añadir asesor"
+          value={
+            (rowsContext === key ? rows : []).find((p) => p.name === query)
+              ?.id ?? ""
+          }
+          placeholder="Buscar o añadir asesor…"
+          options={(rowsContext === key ? rows : []).map((p) => ({
+            value: p.id,
+            label: p.name,
+          }))}
+          disabled={busy || loading || !valid}
+          onSelect={showAdvisor}
+          onCreate={addAdvisor}
+          onError={setMessage}
         />
-        <form
-          className="row"
-          onSubmit={async (e) => {
-            e.preventDefault();
-            try {
-              await write("meta-ads/advisors", "POST", {
-                name: name.trim(),
-                sheetId: listId,
-              });
-              setName("");
-            } catch (e) {
-              setMessage((e as Error).message);
-            }
-          }}
-        >
-          <input
-            aria-label="Nombre del nuevo asesor"
-            placeholder="Nombre del asesor"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            required
-            maxLength={100}
-            disabled={busy}
-          />
-          <button disabled={busy || !name.trim()}>+ Asesor</button>
-        </form>
+        {query && (
+          <button
+            type="button"
+            onClick={() => {
+              setQuery("");
+              setMessage("");
+            }}
+            title={`Borrar búsqueda: ${query}`}
+          >
+            Ver todos los asesores ×
+          </button>
+        )}
         <button
           disabled={busy || loading || !valid}
           onClick={() => void load()}
@@ -395,21 +423,56 @@ export function AdvisorsSheet({
                       >
                         Detalle ↗
                       </button>
-                      <EffectivenessCell
-                        label={`Nombre del asesor ${p.name}`}
-                        value={p.name}
+                      <SheetSearchSelect
+                        label={`Buscar o añadir desde ${p.name}`}
+                        value={p.id}
+                        options={rows.map((person) => ({
+                          value: person.id,
+                          label: person.name,
+                        }))}
+                        disabled={busy || loading}
+                        onSelect={showAdvisor}
+                        onCreate={addAdvisor}
                         onError={setMessage}
-                        onSave={async (name) => {
-                          if (!name.trim() || name.length > 100)
-                            throw Error("Nombre de 1 a 100 caracteres.");
-                          await write("meta-ads/advisors", "PATCH", {
-                            id: p.id,
-                            name: name.trim(),
-                            revision: p.revision,
-                          });
-                        }}
                       />
+                      <button
+                        type="button"
+                        className="advisor-name-edit"
+                        disabled={busy || loading}
+                        aria-label={`Editar nombre de ${p.name}`}
+                        title="Editar este nombre"
+                        onClick={() => setEditingName(p.id)}
+                      >
+                        ✎
+                      </button>
                     </div>
+                    {editingName === p.id && (
+                      <div className="row advisor-name-editor">
+                        <EffectivenessCell
+                          label={`Nombre del asesor ${p.name}`}
+                          value={p.name}
+                          onError={setMessage}
+                          onSave={async (name) => {
+                            if (!name.trim() || name.length > 100)
+                              throw Error("Nombre de 1 a 100 caracteres.");
+                            await write("meta-ads/advisors", "PATCH", {
+                              id: p.id,
+                              name: name.trim(),
+                              revision: p.revision,
+                            });
+                            setEditingName(null);
+                            setQuery(name.trim());
+                          }}
+                        />
+                        <button
+                          type="button"
+                          disabled={busy}
+                          onClick={() => setEditingName(null)}
+                        >
+                          Cancelar
+                        </button>
+                      </div>
+                    )}
                   </td>
                   {days.map((d) => {
                     const c = p.days[d];

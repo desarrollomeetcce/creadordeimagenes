@@ -2017,3 +2017,8 @@ select option, select optgroup { background:var(--surface); color:var(--ink); }
 .advisor-sales-detail-trigger:hover, .advisor-sales-detail-trigger:focus-visible { border-color: var(--accent, #66c7ad); background: #66c7ad18; }
 .advisor-sales-by-day { margin: 14px 0; }
 .advisor-sales-by-day summary { padding: 10px 0; cursor: pointer; font-weight: 600; }
+
+.advisor-sheet .advisor-name-actions>.sheet-search-trigger { flex:1; min-width:65px; max-width:none; text-align:left; padding:4px; }
+.advisor-sheet .advisor-name-edit { flex:0 0 auto; padding:3px 5px; font-size:12px; }
+.advisor-sheet .advisor-name-editor { flex-wrap:wrap; gap:4px; padding:5px 0; }
+.advisor-sheet .advisor-name-editor input { flex:1; min-width:90px; }
