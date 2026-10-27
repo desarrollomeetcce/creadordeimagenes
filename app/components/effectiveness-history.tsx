@@ -1,7 +1,9 @@
 "use client";
 import { useEffect, useId, useRef, useState } from "react";
 import { subscribeAdvisorSalesChanged } from "./advisor-sales-events";
-import { engineRequest as api } from "./generation-engine";
+import { periodTableUrl } from "../../lib/meta-ads/period-table-link";
+import { readRangePages } from "./workbook-range-request";
+import { useReportDayPages } from "./report-day-pages";
 import {
   sheetMetrics,
   type SheetMetric,
@@ -26,6 +28,7 @@ const stamp = (s: string) =>
   new Date(s).toLocaleString("es-PE", { timeZone: "America/Lima" });
 export function EffectivenessHistory({
   aliasId,
+  tableId,
   country,
   name,
   initialSince,
@@ -33,6 +36,7 @@ export function EffectivenessHistory({
   onPeriod,
 }: {
   aliasId: string;
+  tableId: string;
   country: string;
   name: string;
   initialSince: string;
@@ -56,7 +60,8 @@ export function EffectivenessHistory({
       "meta-ads/effectiveness/detail?" +
       new URLSearchParams({ aliasId, country, since, until }),
     valid =
-      since <= until && (Date.parse(until) - Date.parse(since)) / 86400000 < 31;
+      since <= until &&
+      (Date.parse(until) - Date.parse(since)) / 86400000 < 3660;
   useEffect(() => {
     if (!open || !valid) return;
     let active = true;
@@ -64,17 +69,28 @@ export function EffectivenessHistory({
     setData(null);
     setMessage("");
     let version = 0;
+    let inFlight = false;
     const load = () => {
-      if (document.hidden) return;
+      if (document.hidden || inFlight) return;
+      inFlight = true;
       const request = ++version;
-      void api(query)
-        .then((v: Detail) => {
+      void readRangePages<Detail>(
+        "meta-ads/effectiveness/detail",
+        { aliasId, country, since, until },
+        () => active && request === version,
+      )
+        .then((pages) => {
+          const v: Detail = {
+            ...pages[0],
+            days: Object.assign({}, ...pages.map((p) => p.days)),
+          };
           if (active && request === version) setData(v);
         })
         .catch((e) => {
           if (active && request === version) setMessage(e.message);
         })
         .finally(() => {
+          inFlight = false;
           if (active && request === version) setLoading(false);
         });
     };
@@ -96,6 +112,7 @@ export function EffectivenessHistory({
   if (valid)
     for (let d = Date.parse(since); d <= Date.parse(until); d += 86400000)
       dates.push(new Date(d).toISOString().slice(0, 10));
+  const { visibleDays, navigation } = useReportDayPages(dates);
   const metric = (key: SheetMetric) => sheetMetrics.find((m) => m.key === key)!,
     bar = metric(bars),
     dot = metric(line),
@@ -149,12 +166,17 @@ export function EffectivenessHistory({
               <strong>
                 {name} · {country}
               </strong>
-              <button className="ui-close-button" type="button" onClick={() => pop.current?.hidePopover()}>
+              <button
+                className="ui-close-button"
+                type="button"
+                onClick={() => pop.current?.hidePopover()}
+              >
                 Cerrar
               </button>
             </header>
             <div className="row alias-detail-controls">
               <MetaDateRange
+                maxDays={3660}
                 from={since}
                 to={until}
                 onChange={(a, b) => {
@@ -171,7 +193,9 @@ export function EffectivenessHistory({
                 Actualizar detalle
               </button>
             </div>
-            {!valid && <p role="alert">Elige hasta 31 días.</p>}
+            {!valid && (
+              <p role="alert">Elige un período válido de hasta diez años.</p>
+            )}
             {message && <p role="alert">{message}</p>}
             {loading && <p role="status">Cargando detalle…</p>}
             {data && (
@@ -182,11 +206,9 @@ export function EffectivenessHistory({
                   de Efectividad de este inventario y país; no cambia estados en
                   Meta Ads.
                 </p>
-                <h3>Últimas activaciones</h3>
-                <p className="hint">
-                  Historial completo, de más reciente a más antiguo. Fechas
-                  guardadas automáticamente (Lima).
-                </p>
+                <h3 className="detail-section-title detail-section-activity">
+                  Últimas activaciones
+                </h3>
                 {data.activePeriods.length ? (
                   <ol className="alias-active-periods">
                     {data.activePeriods
@@ -207,17 +229,22 @@ export function EffectivenessHistory({
                                 : `Activo al ${stamp(data.asOf)} (Lima).`}
                             </small>
                           </div>
-                          <button
-                            type="button"
-                            className="alias-period-link"
+                          <a
+                            className="button alias-period-link"
+                            href={periodTableUrl({
+                              tableId,
+                              aliasId,
+                              country,
+                              since: period.since,
+                              until: period.through,
+                            })}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            title="Abrir los datos del período en una nueva ventana"
                             aria-label={`Ir al período activo ${period.since} — ${period.through}`}
-                            onClick={() => {
-                              pop.current?.hidePopover();
-                              onPeriod(period);
-                            }}
                           >
                             Ir al período
-                          </button>
+                          </a>
                         </li>
                       ))}
                   </ol>
@@ -254,7 +281,9 @@ export function EffectivenessHistory({
                     </div>
                   </nav>
                 )}
-                <h3>Evolución de parámetros</h3>
+                <h3 className="detail-section-title detail-section-parameters">
+                  Evolución de parámetros
+                </h3>
                 <div className="row alias-detail-controls">
                   <label>
                     1 · Barras
@@ -312,6 +341,7 @@ export function EffectivenessHistory({
                     cost: dot.money && data.currency ? "currency" : "count",
                   }}
                 />
+                {navigation}
                 <div className="table-scroll">
                   <table className="alias-parameter-days">
                     <thead>
@@ -325,7 +355,7 @@ export function EffectivenessHistory({
                       </tr>
                     </thead>
                     <tbody>
-                      {dates.map((day) => (
+                      {visibleDays.map((day) => (
                         <tr key={day}>
                           <th>{day}</th>
                           {sheetMetrics.map((m) => (

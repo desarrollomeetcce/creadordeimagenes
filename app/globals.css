@@ -2045,3 +2045,36 @@ button.ui-close-button:disabled, button.window-close:disabled { opacity: .55; }
 .advisor-sheet .advisor-column-tools>.sheet-search-trigger { width:100%; max-width:100%; min-width:0; text-align:left; padding:5px; }
 .advisor-sheet .advisor-column-tools>button { max-width:100%; padding:4px; font-size:11px; white-space:normal; }
 .advisor-sheet .advisor-name-label { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; text-align:left; }
+
+/* Financial details: compact saved periods and explicit daily-page navigation. */
+.detail-period-presets { display: grid; gap: .65rem; padding: .85rem; margin: .75rem 0; border: 1px solid var(--line); border-radius: .65rem; }
+.detail-period-presets .row { flex-wrap: wrap; align-items: center; gap: .5rem; }
+.detail-period-chip { display: inline-flex; align-items: stretch; }
+.detail-period-chip button:first-child { border-radius: .45rem 0 0 .45rem; }
+.detail-period-chip button:last-child { border-radius: 0 .45rem .45rem 0; padding-inline: .6rem; }
+.detail-period-presets input { width: 6rem; display: inline-block; margin-inline: .3rem; }
+.detail-period-presets small { color: var(--muted); }
+.report-day-pages { display: flex; flex-direction: row; flex-wrap: wrap; align-items: center; gap: .6rem; padding-block: .7rem; }
+.report-day-pages button { border: 1px solid var(--line); border-radius: .4rem; background: var(--surface); color: var(--ink); font-weight: 600; padding: .55rem .75rem; }
+.report-day-pages button:disabled { opacity: .45; }
+.report-day-pages span { flex: 1; min-width: 12rem; }
+.totals-detail .advisor-detail-controls { flex-wrap: wrap; align-items: end; gap: .7rem; }
+.totals-detail .advisor-detail-controls label { display: grid; gap: .35rem; }
+.totals-detail .sheet-search-select { min-width: min(25rem, 100%); }
+.totals-detail button[aria-pressed="true"] { background: var(--soft); color: var(--accent); border-color: var(--accent); }
+@media (max-width: 600px) { .detail-period-presets form label { width: 100%; } .report-day-pages button { border: 1px solid var(--line); border-radius: .4rem; background: var(--surface); color: var(--ink); font-weight: 600; padding: .55rem .75rem; }
+.report-day-pages button:disabled { opacity: .45; }
+.report-day-pages span { order: -1; flex-basis: 100%; } }
+
+/* The words identify each module; color adds a second, accessible visual cue. */
+.detail-section-title { --detail-section-color:#006775; color:var(--detail-section-color); border-left:3px solid currentColor; border-radius:0 .35rem .35rem 0; padding:.55rem .7rem; background:color-mix(in srgb, currentColor 7%, transparent); margin-block:1rem .65rem; font-weight:700; line-height:1.45; }
+.detail-section-activity { --detail-section-color:#805200; }
+.detail-section-assignments { --detail-section-color:#175d99; }
+.detail-section-sales { --detail-section-color:#126249; }
+.detail-section-daily,.detail-section-periods { --detail-section-color:#6a3e98; }
+:root[data-theme="dark"] .detail-section-title { --detail-section-color:#7cdce7; }
+:root[data-theme="dark"] .detail-section-activity { --detail-section-color:#f1c36b; }
+:root[data-theme="dark"] .detail-section-assignments { --detail-section-color:#8acbff; }
+:root[data-theme="dark"] .detail-section-sales { --detail-section-color:#80ddbe; }
+:root[data-theme="dark"] .detail-section-daily,:root[data-theme="dark"] .detail-section-periods { --detail-section-color:#ceabff; }
+.detail-period-presets>.detail-section-title { margin:0; }

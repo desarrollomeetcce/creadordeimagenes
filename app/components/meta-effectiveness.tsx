@@ -1,4 +1,5 @@
 "use client";
+import type { PeriodTableLink } from "../../lib/meta-ads/period-table-link";
 import {
   notifyAdvisorSalesChanged,
   subscribeAdvisorSalesChanged,
@@ -160,7 +161,9 @@ export function MetaEffectiveness({
   onOpenAdvisorPeriod,
   advisorPeriodRequest,
   onAdvisorPeriodHandled,
+  initialPeriodLink,
 }: {
+  initialPeriodLink?: PeriodTableLink | null;
   inventoryLists: { id: string; name: string }[];
   onOpenAdvisorPeriod?: (period: AdvisorPeriodView) => void;
   advisorPeriodRequest?: { key: number; period: AdvisorPeriodView } | null;
@@ -305,6 +308,26 @@ export function MetaEffectiveness({
       metrics: { manual: string[] | null; automatic: string[] | null };
     };
   }>(null);
+  const [reportRange, setReportRange] = useState<{
+    since: string;
+    until: string;
+  } | null>(null);
+  const reportWindow = reportRange
+    ? activePeriodWindow(reportRange.since, reportRange.until, since)
+    : null;
+  useEffect(() => {
+    const p = initialPeriodLink;
+    if (!p || p.tableId !== tableId) return;
+    const w = activePeriodWindow(p.since, p.until);
+    setReportRange(w.next ? { since: p.since, until: p.until } : null);
+    setSince(w.since);
+    setUntil(w.until);
+    setCountry(p.country);
+    setSelectedAliases(p.aliasId ? [p.aliasId] : null);
+    setStateFilter("");
+    setValueFilter(null);
+    setSelectedMetrics(null);
+  }, [initialPeriodLink, tableId]);
   const [newActive, setNewActive] = useState(false);
   const [newName, setNewName] = useState(""),
     [newCountry, setNewCountry] = useState(settings.defaultCountry),
@@ -789,6 +812,7 @@ export function MetaEffectiveness({
     row: Pick<Row, "aliasId" | "country">,
     name: string,
   ) => {
+    setReportRange(null);
     setHistoryPeriod({
       name,
       aliasId: row.aliasId,
@@ -1060,20 +1084,24 @@ export function MetaEffectiveness({
           aria-label="Período y filtros"
         >
           <MetaDateRange
-            from={since}
-            to={until}
+            maxDays={3660}
+            from={reportRange?.since ?? since}
+            to={reportRange?.until ?? until}
             onChange={(a, b) => {
               if (
                 !a ||
                 !b ||
-                (Date.parse(b) - Date.parse(a)) / 86400000 >= 31
+                a > b ||
+                (Date.parse(b) - Date.parse(a)) / 86400000 >= 3660
               ) {
-                setMessage("Elige un rango de hasta 31 días.");
+                setMessage("Elige un período válido de hasta diez años.");
                 return;
               }
               setHistoryPeriod(null);
-              setSince(a);
-              setUntil(b);
+              const window = activePeriodWindow(a, b);
+              setReportRange(window.next ? { since: a, until: b } : null);
+              setSince(window.since);
+              setUntil(window.until);
             }}
           />
           <span className="sheet-filter-label">Filtros:</span>
@@ -1293,6 +1321,50 @@ export function MetaEffectiveness({
             await refresh();
           }}
         />
+      )}
+      {reportRange && reportWindow && (
+        <nav
+          className="sheet-period-nav"
+          aria-label="Período de consulta de la hoja"
+        >
+          <span>
+            Período completo: {reportRange.since} — {reportRange.until}.
+            Mostrando {since} — {until}. Las ediciones y acciones se aplican a
+            las fechas visibles.
+          </span>
+          <div className="row">
+            <button
+              type="button"
+              disabled={!reportWindow.previous}
+              onClick={() => {
+                const w = activePeriodWindow(
+                  reportRange.since,
+                  reportRange.until,
+                  reportWindow.previous!,
+                );
+                setSince(w.since);
+                setUntil(w.until);
+              }}
+            >
+              ← Fechas anteriores
+            </button>
+            <button
+              type="button"
+              disabled={!reportWindow.next}
+              onClick={() => {
+                const w = activePeriodWindow(
+                  reportRange.since,
+                  reportRange.until,
+                  reportWindow.next!,
+                );
+                setSince(w.since);
+                setUntil(w.until);
+              }}
+            >
+              Fechas siguientes →
+            </button>
+          </div>
+        </nav>
       )}
       {historyPeriod && historyWindow && (
         <div
@@ -1943,6 +2015,7 @@ export function MetaEffectiveness({
                             </span>
                           )}
                           <EffectivenessHistory
+                            tableId={tableId}
                             aliasId={r.aliasId}
                             country={r.country}
                             name={name}

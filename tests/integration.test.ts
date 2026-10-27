@@ -11936,6 +11936,14 @@ test("Integración HTTP + PostgreSQL (base exclusiva de pruebas, sin llamadas ex
         assert.equal((await assign(row(await read()),a2.id)).status,200);assert.deepEqual(await values(),[118,118,6]);
         const queryDetail=(advisorId:string)=>owner.call('meta-ads/advisors/detail?'+new URLSearchParams({tableId:t1.id,aliasId:a.id,country:'PE',advisorId,since,until}));
         const da=await queryDetail(a1.id),dbb=await queryDetail(a2.id);assert.equal(da.status,200);assert.equal(dbb.status,200);assert.equal(da.body.rows[0].days[since].sales,4);assert.equal(dbb.body.rows[0].days[since].sales,2);assert.equal(da.body.rows[0].days[since].base,null);assert.equal(da.body.baseContext.scope,'INVENTORY_COUNTRY');assert.equal(da.body.baseContext.days[since].value,118);assert.deepEqual(da.body.baseContext,dbb.body.baseContext);
+        // The daily base estimate uses full-day inventory B for everyone who held the assignment; V remains explicit.
+        await db.metaAdvisorAssignment.deleteMany({where:{aliasId:a.id,country:'PE'}});
+        for(const [id,advisorId,previousAdvisorId,time,mode] of [['base-a',a1.id,null,'05:00:00','DAY'],['base-b',a2.id,a1.id,'20:00:00','CLOCK'],['base-c',a1.id,a2.id,'21:00:00','CLOCK']] as const)
+          await db.metaAdvisorAssignment.create({data:{id:id+tag,aliasId:a.id,country:'PE',advisorId,previousAdvisorId,effectiveAt:new Date(since+'T'+time+'Z'),createdAt:new Date(since+'T'+time+'Z'),mode,cutoffSales:mode==='DAY'?null:4}});
+        const estimatedA=await queryDetail(a1.id),estimatedB=await queryDetail(a2.id);
+        assert.equal(estimatedA.status,200);assert.equal(estimatedB.status,200);
+        for(const r of [estimatedA,estimatedB]){assert.equal(r.body.assignedBaseEstimate.scope,'ASSIGNED_FULL_DAY_ESTIMATE');assert.equal(r.body.assignedBaseEstimate.days[since].value,118);}
+        assert.equal(estimatedA.body.rows[0].days[since].sales,4);assert.equal(estimatedB.body.rows[0].days[since].sales,2);
         const beforeAssign=await db.metaAdObject.findUniqueOrThrow({where:{id:'9630011'}});assert.equal((await owner.call('meta-ads/objects/9630011/alias','PATCH',{aliasId:a.id,country:'PE'})).status,200);assert.equal((await db.metaAdObject.findUniqueOrThrow({where:{id:'9630011'}})).advisorId,beforeAssign.advisorId);assert.deepEqual(await values(),[118,118,6]);
         const allObjects=await db.metaAdObject.findMany({where:{account:{connectionId:conn.id}}});assert(allObjects.every(o=>o.status==='PAUSED'));
         assert.equal((await owner.call('meta-ads/advisors/sheet?'+new URLSearchParams({tableId:t1.id,since,until:'2026-12-01'}))).status,400);
@@ -12207,6 +12215,8 @@ test("Integración HTTP + PostgreSQL (base exclusiva de pruebas, sin llamadas ex
       assert.equal((await owner.call('meta-ads/workbook-sheets/'+people.id,'PATCH',{name:'No vigente',revision:people.revision})).status,409);
       assert.equal((await owner.call('meta-ads/workbook-sheets/'+people.id,'PATCH',{name:'Asesores',revision:rename.body.revision})).status,409);
       assert.equal((await owner.call('meta-ads/workbook-sheets/'+people.id,'PATCH',{config:{unknown:true},revision:rename.body.revision})).status,400);
+      const extended=await owner.call('meta-ads/workbook-sheets/'+people.id,'PATCH',{config:{since:'2026-01-01',until:'2026-10-27'},revision:rename.body.revision});assert.equal(extended.status,200);assert.equal(extended.body.config.since,'2026-01-01');
+
       const a=(await owner.call('meta-ads/advisors','POST',{name:'Persona compartida '+tag})).body;
       const created=await owner.call('meta-ads/advisors','POST',{name:a.name,sheetId:people.id});assert.equal(created.status,201);const b=created.body;assert.notEqual(a.id,b.id);
       assert.equal((await owner.call('meta-ads/advisors','POST',{name:a.name,sheetId:people.id})).status,409);

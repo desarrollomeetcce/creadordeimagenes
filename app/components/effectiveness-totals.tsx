@@ -17,31 +17,16 @@ import { countryOptions } from "../../lib/meta-ads/countries";
 import { currencyCodes } from "../../lib/meta-ads/currency-codes";
 import type { TotalValue } from "../../lib/meta-ads/effectiveness-total-values";
 import type { SheetMetric } from "../../lib/meta-ads/period-summary";
-type ManualMetric = "baseManual" | "totalSpend" | "fixedCost";
-type Day = {
-  sums: Record<SheetMetric, TotalValue>;
-  manual: Partial<Record<ManualMetric, number | "NA">>;
-  revision: number;
-};
-type TotalSheet = {
-  tableId: string;
-  name: string;
-  missingFxDays: string[];
-  groups: { country: string; currency: string; days: Record<string, Day> }[];
-};
-const manualColumns = [
-  { key: "sales", label: "V", name: "Ventas", sum: true },
-  { key: "budget", label: "P", name: "Presupuesto", sum: true },
-  { key: "baseManual", label: "BM", name: "Base manual", sum: false },
-  { key: "totalSpend", label: "GM", name: "Gasto manual", sum: false },
-  { key: "fixedCost", label: "CF", name: "Costos fijos", sum: false },
-] as const;
-const autoColumns = [
-  { key: "sales", label: "V", name: "Ventas", sum: true },
-  { key: "base", label: "B", name: "Base", sum: true },
-  { key: "spend", label: "G", name: "Gasto", sum: true },
-  { key: "fixedCost", label: "CF", name: "Costos fijos", sum: true },
-] as const;
+import {
+  manualTotalColumns as manualColumns,
+  automaticTotalColumns as autoColumns,
+  type ManualTotalMetric as ManualMetric,
+  type TotalDay as Day,
+  type TotalSheet,
+} from "../../lib/meta-ads/totals-detail";
+import { readTotalsRange } from "./workbook-range-request";
+import { useReportDayPages } from "./report-day-pages";
+import { TotalsDetail } from "./totals-detail";
 const names = new Intl.DisplayNames(["es"], { type: "currency" });
 export function EffectivenessTotals({
   tables,
@@ -99,6 +84,7 @@ export function EffectivenessTotals({
     [message, setMessage] = useState(""),
     [loading, setLoading] = useState(false),
     [reload, setReload] = useState(0);
+  const [detailOpen, setDetailOpen] = useState(false);
   const seq = useRef(0),
     queues = useRef(new Map<string, Promise<void>>()),
     versions = useRef(new Map<string, number>());
@@ -112,8 +98,11 @@ export function EffectivenessTotals({
   const activeContext = useRef(context);
   activeContext.current = context;
   useEffect(() => {
-    let active = true;
+    let active = true,
+      inFlight = false;
     const load = async () => {
+      if (inFlight) return;
+      inFlight = true;
       const version = ++seq.current;
       setLoading(true);
       try {
@@ -122,17 +111,14 @@ export function EffectivenessTotals({
         for (let i = 0; i < list.length; i += 4)
           next.push(
             ...(await Promise.all(
-              list.slice(i, i + 4).map((tableId) =>
-                api(
-                  "meta-ads/effectiveness/totals?" +
-                    new URLSearchParams({
-                      sheetId: listId,
-                      tableId,
-                      since,
-                      until,
-                    }),
+              list
+                .slice(i, i + 4)
+                .map((tableId) =>
+                  readTotalsRange(
+                    { sheetId: listId, tableId, since, until },
+                    () => active && version === seq.current,
+                  ),
                 ),
-              ),
             )),
           );
         if (active && version === seq.current) {
@@ -147,6 +133,7 @@ export function EffectivenessTotals({
               : "No se pudieron cargar los totales.",
           );
       } finally {
+        inFlight = false;
         if (active && version === seq.current) setLoading(false);
       }
     };
@@ -172,6 +159,7 @@ export function EffectivenessTotals({
       result.push(new Date(d).toISOString().slice(0, 10));
     return result;
   }, [since, until]);
+  const { visibleDays, navigation } = useReportDayPages(days);
   const blocks = useMemo(
     () => totalSourceBlocks(data, country, currency),
     [data, country, currency],
@@ -300,6 +288,7 @@ export function EffectivenessTotals({
           </button>
         </div>
         <MetaDateRange
+          maxDays={3660}
           from={since}
           to={until}
           onChange={(a, b) => {
@@ -307,9 +296,9 @@ export function EffectivenessTotals({
               !a ||
               !b ||
               a > b ||
-              (Date.parse(b) - Date.parse(a)) / 86400000 >= 31
+              (Date.parse(b) - Date.parse(a)) / 86400000 >= 3660
             ) {
-              setMessage("Elige hasta 31 días.");
+              setMessage("Elige un período válido de hasta diez años.");
               return;
             }
             setSince(a);
@@ -373,10 +362,23 @@ export function EffectivenessTotals({
             onSelect={setCurrency}
           />
         </label>
+        <button type="button" onClick={() => setDetailOpen(true)}>
+          Ver detalle
+        </button>
         <button disabled={loading} onClick={() => setReload((v) => v + 1)}>
           Actualizar totales
         </button>
       </div>
+      {detailOpen && (
+        <TotalsDetail
+          blocks={blocks}
+          days={days}
+          initialMode={mode}
+          loading={loading}
+          message={message}
+          onClose={() => setDetailOpen(false)}
+        />
+      )}
       <p className="sheet-help">
         {mode === "manual"
           ? "V/P: suma de inventario. BM, GM y CF: valores manuales de esta hoja, por tabla, país, moneda y fecha."
@@ -395,6 +397,7 @@ export function EffectivenessTotals({
           Cargando totales…
         </p>
       )}
+      {navigation}
       {data.some((t) => t.missingFxDays.length > 0) && (
         <p className="sheet-help">
           Hay tasas pendientes. Actualiza las tasas desde la hoja de cada tabla;
@@ -522,7 +525,7 @@ export function EffectivenessTotals({
               </tr>
             </thead>
             <tbody>
-              {days.map((day) => (
+              {visibleDays.map((day) => (
                 <SheetSizedRow
                   key={day}
                   data-total-day={day}

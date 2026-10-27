@@ -8,6 +8,8 @@ import { SheetSizedRow } from "./sheet-sized-row";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useWorkbookPreference } from "./use-workbook-preference";
 import { engineRequest as api } from "./generation-engine";
+import { useReportDayPages } from "./report-day-pages";
+import { readAdvisorRange } from "./workbook-range-request";
 import { MetaDateRange } from "./meta-date-range";
 import { EffectivenessCell } from "./effectiveness-cell";
 import { AdvisorAbsenceCell } from "./advisor-absence-cell";
@@ -101,27 +103,30 @@ export function AdvisorsSheet({
     )
       setAliasId("");
   }, [tables, tableId, aliasId]);
+  const flight = useRef(0);
   const sequence = useRef(0),
     context = useRef("");
   const valid =
-    since <= until && (Date.parse(until) - Date.parse(since)) / 86400000 < 31;
+    since <= until && (Date.parse(until) - Date.parse(since)) / 86400000 < 3660;
   const key = JSON.stringify([listId, tableId, since, until, aliasId, country]);
   context.current = key;
   const load = async (saved = false, quiet = false) => {
+    if (quiet && flight.current) return;
     const token = ++sequence.current,
       requested = key;
+    flight.current = token;
     if (!quiet) setLoading(true);
     try {
-      const data = await api(
-        "meta-ads/advisors/sheet?" +
-          new URLSearchParams({
-            advisorListId: listId,
-            tableId,
-            since,
-            until,
-            ...(aliasId ? { aliasId } : {}),
-            ...(country ? { country } : {}),
-          }),
+      const data = await readAdvisorRange(
+        {
+          advisorListId: listId,
+          tableId,
+          since,
+          until,
+          ...(aliasId ? { aliasId } : {}),
+          ...(country ? { country } : {}),
+        },
+        () => token === sequence.current && context.current === requested,
       );
       if (token === sequence.current && context.current === requested) {
         setRows(data.rows);
@@ -135,6 +140,7 @@ export function AdvisorsSheet({
             : (e as Error).message,
         );
     } finally {
+      if (flight.current === token) flight.current = 0;
       if (token === sequence.current && context.current === requested)
         setLoading(false);
     }
@@ -147,7 +153,7 @@ export function AdvisorsSheet({
     });
     const timer = setInterval(() => {
       if (valid && !document.hidden) void load(false, true);
-    }, 5000);
+    }, 30000);
     return () => {
       stop();
       clearInterval(timer);
@@ -206,6 +212,7 @@ export function AdvisorsSheet({
   if (valid)
     for (let d = Date.parse(since); d <= Date.parse(until); d += 86400000)
       days.push(new Date(d).toISOString().slice(0, 10));
+  const { visibleDays, navigation } = useReportDayPages(days);
   const words = query
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
@@ -231,6 +238,7 @@ export function AdvisorsSheet({
       <div className="row sheet-toolbar">
         <strong>Asesores</strong>
         <MetaDateRange
+          maxDays={3660}
           from={since}
           to={until}
           onChange={(a, b) => {
@@ -306,7 +314,10 @@ export function AdvisorsSheet({
           {message}
         </p>
       )}
-      {!valid && <p role="alert">Elige un período de hasta 31 días.</p>}
+      {navigation}
+      {!valid && (
+        <p role="alert">Elige un período válido de hasta diez años.</p>
+      )}
       {loading && (
         <p role="status" className="sheet-loading-status">
           Cargando asesores…
@@ -325,7 +336,7 @@ export function AdvisorsSheet({
             style={{
               width:
                 (widths.advisor ?? 180) +
-                days.reduce(
+                visibleDays.reduce(
                   (n, d) =>
                     n +
                     (widths[d + "attendance"] ?? 84) +
@@ -337,7 +348,7 @@ export function AdvisorsSheet({
           >
             <colgroup>
               <col style={{ width: widths.advisor ?? 180 }} />
-              {days.flatMap((d) => [
+              {visibleDays.flatMap((d) => [
                 <col
                   key={d + "attendance"}
                   style={{ width: widths[d + "attendance"] ?? 84 }}
@@ -393,14 +404,14 @@ export function AdvisorsSheet({
                     )}
                   </div>
                 </th>
-                {days.map((d) => (
+                {visibleDays.map((d) => (
                   <th key={d} colSpan={3} scope="colgroup">
                     {d.slice(8)}.{d.slice(5, 7)}
                   </th>
                 ))}
               </tr>
               <tr>
-                {days.map((d) => (
+                {visibleDays.map((d) => (
                   <FragmentHeaders key={d} day={d} handle={handle} />
                 ))}
               </tr>
@@ -470,7 +481,7 @@ export function AdvisorsSheet({
                       </div>
                     )}
                   </td>
-                  {days.map((d) => {
+                  {visibleDays.map((d) => {
                     const c = p.days[d];
                     return (
                       <AdvisorDay

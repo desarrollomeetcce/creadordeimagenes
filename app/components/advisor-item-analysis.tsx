@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
-import { engineRequest as api } from "./generation-engine";
+import { readRangePages } from "./workbook-range-request";
 import { subscribeAdvisorSalesChanged } from "./advisor-sales-events";
 type Row = {
   advisorId: string | null;
@@ -40,15 +40,49 @@ export function AdvisorItemAnalysis({
       version = 0;
     setData(null);
     setMessage("");
+    let inFlight = false;
     const load = () => {
-      if (document.hidden) return;
+      if (document.hidden || inFlight) return;
+      inFlight = true;
       const seq = ++version;
-      void api(query)
-        .then((v) => {
+      void readRangePages<{ rows: Row[]; total: number | null }>(
+        "meta-ads/advisors/item-analysis",
+        { tableId, aliasId, country, since, until },
+        () => active && seq === version,
+      )
+        .then((pages) => {
+          const people = new Map<string | null, Row>();
+          for (const page of pages)
+            for (const r of page.rows) {
+              const old = people.get(r.advisorId);
+              people.set(r.advisorId, {
+                ...r,
+                sales:
+                  r.sales === null && (old?.sales ?? null) === null
+                    ? null
+                    : (r.sales ?? 0) + (old?.sales ?? 0),
+                knownDays: r.knownDays + (old?.knownDays ?? 0),
+                pending: r.pending || !!old?.pending,
+                na: r.na + (old?.na ?? 0),
+              });
+            }
+          const rows = [...people.values()].sort(
+            (a, b) =>
+              (b.sales ?? -1) - (a.sales ?? -1) || a.name.localeCompare(b.name),
+          );
+          const v = {
+            rows,
+            total: rows.some((r) => r.sales !== null)
+              ? rows.reduce((s, r) => s + (r.sales ?? 0), 0)
+              : null,
+          };
           if (active && seq === version) setData(v);
         })
         .catch((e) => {
           if (active && seq === version) setMessage(e.message);
+        })
+        .finally(() => {
+          inFlight = false;
         });
     };
     load();
@@ -65,7 +99,9 @@ export function AdvisorItemAnalysis({
       className="advisor-item-analysis"
       aria-label="Análisis del inventario por asesor"
     >
-      <h3>Ventas de este inventario por asesor</h3>
+      <h3 className="detail-section-title detail-section-sales">
+        Ventas de este inventario por asesor
+      </h3>
       <p className="hint">
         Incluye ventas registradas aunque el ítem estuviera desactivado o el
         asesor no fuera su responsable.

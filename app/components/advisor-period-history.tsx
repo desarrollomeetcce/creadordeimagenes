@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
+import { periodTableUrl } from "../../lib/meta-ads/period-table-link";
 import { engineRequest as api } from "./generation-engine";
 import { subscribeAdvisorSalesChanged } from "./advisor-sales-events";
 import type { AdvisorPeriodView } from "../../lib/meta-ads/advisor-period-history";
@@ -15,14 +16,12 @@ export function AdvisorPeriodHistory({
   aliasId,
   country,
   onStatistics,
-  onPeriod,
 }: {
   advisorId: string;
   tableId: string;
   aliasId: string;
   country: string;
   onStatistics: (p: AdvisorPeriodView) => void;
-  onPeriod: (p: AdvisorPeriodView) => void;
 }) {
   const [periods, setPeriods] = useState<AdvisorPeriodView[]>([]),
     [page, setPage] = useState(0),
@@ -76,7 +75,9 @@ export function AdvisorPeriodHistory({
       className="advisor-tenure-history"
       aria-label="Histórico de asignaciones de asesores"
     >
-      <h3>Últimas asignaciones de asesores</h3>
+      <h3 className="detail-section-title detail-section-assignments">
+        Últimas asignaciones de asesores
+      </h3>
       <p className="hint">
         {aliasId && country
           ? "Todos los asesores de este inventario y país."
@@ -117,14 +118,25 @@ export function AdvisorPeriodHistory({
               >
                 Estadísticas
               </button>
-              <button
-                type="button"
-                className="alias-period-link"
-                disabled={!p.from || !p.since}
-                onClick={() => onPeriod(p)}
-              >
-                Ir al período
-              </button>
+              {p.from && p.since ? (
+                <a
+                  className="button alias-period-link"
+                  href={periodTableUrl({
+                    tableId: p.tableId,
+                    aliasId: p.aliasId,
+                    country: p.country,
+                    since: p.since,
+                    until: p.through,
+                  })}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  title="Abrir los datos del período en una nueva ventana"
+                >
+                  Ir al período
+                </a>
+              ) : (
+                <span>Período sin fecha de inicio</span>
+              )}
             </div>
           </li>
         ))}

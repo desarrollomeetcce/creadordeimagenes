@@ -9,6 +9,10 @@ import { DeleteAliasTable } from "./delete-alias-table";
 import { AdvisorsSheet } from "./advisors-sheet";
 import { EffectivenessTotals } from "./effectiveness-totals";
 import { EffectivenessCell } from "./effectiveness-cell";
+import {
+  parsePeriodTableLink,
+  type PeriodTableLink,
+} from "../../lib/meta-ads/period-table-link";
 import type { AdvisorPeriodView } from "../../lib/meta-ads/advisor-period-history";
 import type { MetaAliasOption } from "./meta-alias-directory";
 type CatalogTable = {
@@ -39,6 +43,7 @@ export function ProductsCatalog() {
     name: string;
     revision: number;
   };
+  const [periodLink, setPeriodLink] = useState<PeriodTableLink | null>(null);
   const periodSequence = useRef(0);
   const [advisorPeriodRequest, setAdvisorPeriodRequest] = useState<{
     key: number;
@@ -329,6 +334,24 @@ export function ProductsCatalog() {
       setLocationWarning(
         "No se pudo recuperar la última pestaña de este navegador.",
       );
+    }
+    const requested = parsePeriodTableLink(
+      new URLSearchParams(window.location.search),
+    );
+    if (requested) {
+      const linkedTable = tables.find((t) => t.id === requested.tableId);
+      if (
+        linkedTable &&
+        (!requested.aliasId ||
+          linkedTable.aliases.some((a) => a.id === requested.aliasId))
+      ) {
+        setSelected(requested.tableId);
+        setSpecialId(null);
+        setPeriodLink(requested);
+      } else
+        setMessage(
+          "La hoja o el inventario del período ya no están disponibles.",
+        );
     }
     setRestoredLocationKey(locationKey);
   }, [loading, specialsLoaded, locationReady, locationKey, tables, specials]);
@@ -750,6 +773,7 @@ export function ProductsCatalog() {
           onOpenAdvisorPeriod={openAdvisorPeriod}
           advisorPeriodRequest={advisorPeriodRequest}
           onAdvisorPeriodHandled={() => setAdvisorPeriodRequest(null)}
+          initialPeriodLink={periodLink}
         />
       )}
       <div

@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import { engineRequest as api } from "./generation-engine";
+import { DetailPeriodPresets } from "./detail-period-presets";
 import { MetaDateRange } from "./meta-date-range";
 import { SheetSearchSelect } from "./sheet-search-select";
 import { AdvisorPeriodHistory } from "./advisor-period-history";
@@ -31,7 +32,7 @@ const attendance = (v: string | null) =>
 type AdvisorMetric = DailyChartMetric | "absences" | "base";
 const options = [
   { value: "results", label: "Ventas (V)" },
-  { value: "base", label: "Base del inventario (B)" },
+  { value: "base", label: "Base aproximada del asesor (B)" },
   { value: "cost", label: "Horas ausentes (H)" },
   { value: "spend", label: "Asistencia (A)" },
   { value: "absences", label: "Inasistencias (I)" },
@@ -142,9 +143,7 @@ export function AdvisorDetail({
     setDayPage(0);
   };
   const valid =
-    since <= until &&
-    (Date.parse(until) - Date.parse(since)) / 86400000 <
-      (selectedPeriod ? 3660 : 31);
+    since <= until && (Date.parse(until) - Date.parse(since)) / 86400000 < 3660;
   const query =
     "meta-ads/advisors/detail?" +
     new URLSearchParams({
@@ -176,8 +175,10 @@ export function AdvisorDetail({
     setMessage("");
     setDayPage(0);
     if (acceptedQuery.current !== query) setData(null);
+    let inFlight = false;
     const load = async () => {
-      if (document.hidden) return;
+      if (document.hidden || inFlight) return;
+      inFlight = true;
       const seq = ++version;
       try {
         const windows: { since: string; until: string }[] = [];
@@ -189,9 +190,10 @@ export function AdvisorDetail({
           first = w.next;
         }
         const pages: AdvisorSheetData[] = [];
-        for (let i = 0; i < windows.length; i += 4) {
+        for (let i = 0; i < windows.length; i += 2) {
+          if (!active || seq !== version) return;
           const next = await Promise.all(
-            windows.slice(i, i + 4).map((w) =>
+            windows.slice(i, i + 2).map((w) =>
               api(
                 "meta-ads/advisors/detail?" +
                   new URLSearchParams({
@@ -235,6 +237,14 @@ export function AdvisorDetail({
             until,
             rows: base.rows[0] ? [{ ...base.rows[0], days }] : [],
             breakdown: [...sources.values()],
+            assignedBaseEstimate: {
+              scope: "ASSIGNED_FULL_DAY_ESTIMATE",
+              advisorId: analysisAdvisor,
+              days: Object.assign(
+                {},
+                ...pages.map((p) => p.assignedBaseEstimate?.days ?? {}),
+              ),
+            },
             baseContext: {
               scope: "INVENTORY_COUNTRY",
               days: Object.assign(
@@ -252,6 +262,7 @@ export function AdvisorDetail({
             e instanceof Error ? e.message : "No se pudo cargar el detalle.",
           );
       } finally {
+        inFlight = false;
         if (active && seq === version) setLoading(false);
       }
     };
@@ -285,7 +296,7 @@ export function AdvisorDetail({
   const metricValue = (metric: AdvisorMetric, day: string) => {
     const c = row!.days[day];
     return metric === "base"
-      ? (data?.baseContext?.days[day]?.value ?? null)
+      ? (data?.assignedBaseEstimate?.days[day]?.value ?? null)
       : metric === "results"
         ? c.sales
         : metric === "cost"
@@ -306,12 +317,17 @@ export function AdvisorDetail({
 
   const baseDays = days.filter(
       (d) =>
-        data?.baseContext?.days[d]?.value !== null &&
-        data?.baseContext?.days[d]?.value !== undefined,
+        data?.assignedBaseEstimate?.days[d]?.value !== null &&
+        data?.assignedBaseEstimate?.days[d]?.value !== undefined,
     ),
-    basePartial = days.some((d) => data?.baseContext?.days[d]?.partial),
+    basePartial = days.some(
+      (d) => data?.assignedBaseEstimate?.days[d]?.partial,
+    ),
     baseTotal = baseDays.length
-      ? baseDays.reduce((sum, d) => sum + data!.baseContext!.days[d].value!, 0)
+      ? baseDays.reduce(
+          (sum, d) => sum + data!.assignedBaseEstimate!.days[d].value!,
+          0,
+        )
       : null;
   const pageCount = Math.max(1, Math.ceil(days.length / 31)),
     currentDayPage = Math.min(dayPage, pageCount - 1),
@@ -344,6 +360,7 @@ export function AdvisorDetail({
         </header>
         <div className="row advisor-detail-controls">
           <MetaDateRange
+            maxDays={3660}
             from={since}
             to={until}
             onChange={(a, b) => {
@@ -414,18 +431,23 @@ export function AdvisorDetail({
             Actualizar detalle
           </button>
         </div>
+        <DetailPeriodPresets
+          key={analysisAdvisor}
+          scope={"advisor-detail:" + analysisAdvisor}
+          onSelect={(a, b) => {
+            setSelectedPeriod(null);
+            previousView.current = null;
+            setDayPage(0);
+            setSince(a);
+            setUntil(b);
+          }}
+        />
         <AdvisorPeriodHistory
           advisorId={person.id}
           tableId={tableId}
           aliasId={aliasId}
           country={country}
           onStatistics={selectPeriod}
-          onPeriod={(p) => {
-            if (onOpenPeriod) {
-              onClose();
-              onOpenPeriod(p);
-            } else selectPeriod(p);
-          }}
         />
         {selectedPeriod ? (
           <div
@@ -486,8 +508,7 @@ export function AdvisorDetail({
         </p>
         {!valid && (
           <p role="alert">
-            Elige hasta 31 días para el análisis general o un período registrado
-            de hasta diez años.
+            Elige un período válido de hasta diez años, sin fechas futuras.
           </p>
         )}
         {message && (
@@ -504,14 +525,14 @@ export function AdvisorDetail({
           <>
             <div className="advisor-detail-summary">
               <span>
-                Base del inventario (B)
+                Base aproximada del asesor (B)
                 <b>
                   {baseTotal === null ? "—" : number(baseTotal)}
                   {basePartial ? " *" : ""}
                 </b>
                 <small>
-                  {baseDays.length}/{days.length} días con base del inventario y
-                  país elegidos
+                  {baseDays.length}/{days.length} días con base de los
+                  diplomados asignados
                 </small>
               </span>
               <span>
@@ -553,6 +574,9 @@ export function AdvisorDetail({
                 </small>
               </span>
             </div>
+            <h3 className="detail-section-title detail-section-parameters">
+              Estadísticas del período
+            </h3>
             <div
               className="row advisor-chart-modes"
               role="group"
@@ -655,13 +679,19 @@ export function AdvisorDetail({
               conservan su atribución previa.
             </p>
             <p className="hint">
-              B es la base del inventario y país elegidos, por días completos;
-              es contexto del diplomado, no una cantidad atribuida al asesor.
-              Las ventas V corresponden al reparto registrado para cada persona.
-              A/I/H son registros diarios del asesor; no se distribuyen por
-              minutos.
+              B es una estimación: suma la base completa de cada día de los
+              diplomados que tuvo asignados, aunque el cambio fuera por la
+              tarde. No se reparte por horas; un mismo diplomado cuenta una sola
+              vez por día y asesor. Puede coincidir entre asesores que
+              compartieron el día y no debe sumarse entre personas. Las
+              asignaciones heredadas sin fecha usan su responsabilidad conocida
+              como aproximación. Las ventas V corresponden al reparto registrado
+              para cada persona. A/I/H son registros diarios del asesor; no se
+              distribuyen por minutos.
             </p>
-            <h3>Histórico por día · ventas de {row.name}</h3>
+            <h3 className="detail-section-title detail-section-daily">
+              Histórico por día · ventas de {row.name}
+            </h3>
             {pageCount > 1 && (
               <nav
                 className="alias-period-pagination"
@@ -721,8 +751,10 @@ export function AdvisorDetail({
                           {c.partial ? " *" : ""}
                         </td>
                         <td>
-                          {data?.baseContext?.days[day]?.value ?? "—"}
-                          {data?.baseContext?.days[day]?.partial ? " *" : ""}
+                          {data?.assignedBaseEstimate?.days[day]?.value ?? "—"}
+                          {data?.assignedBaseEstimate?.days[day]?.partial
+                            ? " *"
+                            : ""}
                         </td>
                         <td>
                           {c.absence.hours === null
@@ -748,7 +780,9 @@ export function AdvisorDetail({
                 </tbody>
               </table>
             </div>
-            <h3>Ventas por producto y país · origen de la suma</h3>
+            <h3 className="detail-section-title detail-section-sales">
+              Ventas por producto y país · origen de la suma
+            </h3>
             <div className="table-scroll advisor-source-scroll">
               <table className="advisor-source-breakdown">
                 <thead>
@@ -812,7 +846,7 @@ export function AdvisorDetail({
             </div>
             {!!data!.breakdown.length && (
               <details className="advisor-sales-by-day">
-                <summary>
+                <summary className="detail-section-title detail-section-sales">
                   Qué vendió cada día · {visibleDays[0]} — {visibleDays.at(-1)}
                 </summary>
                 <div className="table-scroll">

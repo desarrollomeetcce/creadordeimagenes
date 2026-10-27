@@ -53,8 +53,8 @@ export function parseWorkbookConfig(
   if ("since" in c && c.since && c.until)
     demand(
       c.since <= c.until &&
-        (Date.parse(c.until) - Date.parse(c.since)) / 86400000 < 31,
-      "Elige un período de hasta31 días.",
+        (Date.parse(c.until) - Date.parse(c.since)) / 86400000 < 3660,
+      "Elige un período válido de hasta diez años.",
     );
   return c;
 }

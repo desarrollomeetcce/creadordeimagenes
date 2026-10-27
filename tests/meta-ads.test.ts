@@ -543,3 +543,75 @@ test('Base de contexto: se agrega por inventario y país sin atribuirla a cada a
  const rows=[{campaigns:2,days:{[day]:{base:12,campaigns:1}}},{campaigns:1,days:{[day]:{base:8,campaigns:1}}}] as any;
  const result=inventoryBaseContext(rows,[day,'2026-10-21']);assert.equal(result.scope,'INVENTORY_COUNTRY');assert.equal(result.days[day].value,20);assert.equal(result.days[day].partial,true);assert.equal(result.days['2026-10-21'].value,null);assert.equal(result.days['2026-10-21'].known,0);assert(!JSON.stringify(result).includes('advisorId'));
 });
+
+test('Base aproximada: cuenta el día entero por asignación, deduplica relevos y no atribuye ventas ni inventa base faltante', async () => {
+  const { advisorBaseEstimate } = await import('../lib/meta-ads/advisor-base-estimate');
+  const day = '2026-10-20';
+  const e = (id: string, advisorId: string | null, previousAdvisorId: string | null, at: string, mode = 'CLOCK') => ({ id, advisorId, previousAdvisorId, effectiveAt: new Date(at), createdAt: new Date(at), mode, cutoffSales: null });
+  const rows = [
+    { advisorId: 'a', campaigns: 1, days: { [day]: { base: 12, campaigns: 1 } }, changes: [e('1', 'a', null, day + 'T20:00:00Z'), e('2', 'b', 'a', day + 'T21:00:00Z'), e('3', 'a', 'b', day + 'T22:00:00Z')] },
+    { advisorId: 'a', campaigns: 1, days: { [day]: { base: 8, campaigns: 1 } }, changes: [e('4', 'a', null, day + 'T23:00:00Z')] },
+    { advisorId: 'unrelated', campaigns: 1, days: { [day]: { base: 999, campaigns: 1 } }, changes: [] },
+  ] as any;
+  const asOf = new Date('2026-10-27T12:00:00Z');
+  const a = advisorBaseEstimate(rows, ['2026-10-19', day, '2026-10-21'], 'a', asOf);
+  assert.equal(a.scope, 'ASSIGNED_FULL_DAY_ESTIMATE');
+  assert.equal(a.days[day].value, 20); assert.equal(a.days[day].expected, 2);
+  assert.equal(a.days['2026-10-19'].value, null); assert.equal(a.days['2026-10-19'].expected, 0);
+  assert.equal(a.days['2026-10-21'].value, null); assert.equal(a.days['2026-10-21'].partial, true);
+  assert.equal(advisorBaseEstimate(rows, [day], 'b', asOf).days[day].value, 12);
+  rows[0].changes.push(e('5', null, 'a', '2026-10-21T05:00:00Z'));
+  assert.equal(advisorBaseEstimate(rows.slice(0,1), ['2026-10-21'], 'a', asOf).days['2026-10-21'].expected, 0);
+});
+
+test('Períodos guardados: relativos a Lima, cruces de año/mes bisiesto y consultas mayores a31 días', async () => {
+  const { detailPeriodPreset } = await import('../lib/meta-ads/detail-period-presets');
+  assert.deepEqual(detailPeriodPreset('days:60', '2026-10-27'), { label: 'Últimos 60 días', since: '2026-08-29', until: '2026-10-27' });
+  assert.equal(detailPeriodPreset('days:15', '2026-01-05')?.since, '2025-12-22');
+  assert.deepEqual(detailPeriodPreset('last-month', '2024-03-15'), { label: 'Mes anterior', since: '2024-02-01', until: '2024-02-29' });
+  assert.equal(detailPeriodPreset('last-month', '2026-01-10')?.since, '2025-12-01');
+  assert.equal(detailPeriodPreset('today', '2026-10-27')?.since, '2026-10-27');
+  assert.equal(detailPeriodPreset('month', '2026-10-27')?.since, '2026-10-01');
+  for (const key of ['days:0','days:3661','days:1.5','random']) assert.equal(detailPeriodPreset(key,'2026-10-27'),null);
+});
+
+test('Detalle de Totales: manual y automático conservan sus fuentes, cero, N.A., faltantes y conversión pendiente', async () => {
+  const { manualTotalColumns, automaticTotalColumns, totalDetailValue, totalDetailSummary } = await import('../lib/meta-ads/totals-detail');
+  const good = (value: number | null) => ({ value, known: value === null ? 0 : 1, expected: 1, na: 0, partial: value === null, pending: false });
+  const day = { revision: 0, manual: { baseManual: 3, totalSpend: 0, fixedCost: 'NA' }, sums: { sales: good(6), budget: good(10), base: good(12), spend: good(15), fixedCost: good(2) } } as any;
+  assert.deepEqual(manualTotalColumns.map(c => totalDetailValue(day,c).value), [6,10,3,0,null]);
+  assert.deepEqual(automaticTotalColumns.map(c => totalDetailValue(day,c).value), [6,12,15,2]);
+  assert.equal(totalDetailValue(day,manualTotalColumns[4]).na,1);
+  const summary = totalDetailSummary([good(6),good(0),good(null)]); assert.equal(summary.value,6); assert.equal(summary.known,2); assert(summary.partial);
+  assert.equal(totalDetailSummary([good(6),{...good(null),pending:true}]).value,null);
+  assert.equal(totalDetailSummary([good(null)]).value,null);
+});
+
+test('Enlaces de períodos: fechas e identidades explícitas, consultas extensas y rechazo de referencias inválidas', async () => {
+  const { periodTableUrl, parsePeriodTableLink } = await import('../lib/meta-ads/period-table-link');
+  const p = { tableId: 'hoja-1', aliasId: 'item-1', country: 'PE', since: '2026-09-01', until: '2026-10-27' };
+  const url = new URL(periodTableUrl(p), 'http://localhost');
+  assert.equal(url.searchParams.get('view'),'products'); assert.deepEqual(parsePeriodTableLink(url.searchParams),p);
+  url.searchParams.set('periodSince','2026-02-30'); assert.equal(parsePeriodTableLink(url.searchParams),null);
+  url.searchParams.set('periodSince','2026-09-01'); url.searchParams.set('periodCountry','invalid'); assert.equal(parsePeriodTableLink(url.searchParams),null);
+});
+
+test('Consultas extensas: tramos contiguos, datos de primera/última fecha, identidades y cancelación del contexto anterior', async () => {
+  const { readAdvisorRange, readTotalsRange, readRangePages } = await import('../app/components/workbook-range-request');
+  const original = globalThis.fetch, calls: URL[] = [];
+  globalThis.fetch = (async (path: string) => {
+    const url = new URL(path,'http://localhost'); calls.push(url);
+    const first = url.searchParams.get('since')!, last = url.searchParams.get('until')!;
+    const days = { [first]: { sales: first === '2026-09-01' ? null : 3 }, [last]: { sales: 4 } };
+    const body = url.pathname.endsWith('/sheet') ? { rows: [{ id: 'a', name: 'A', days }], breakdown: [] } : { tableId: 't', name: 'T', missingFxDays: [], groups: [{country:'PE',currency:'PEN',days}, {country:'CO',currency:'COP',days}] };
+    return new Response(JSON.stringify(body),{status:200});
+  }) as typeof fetch;
+  try {
+    const params = { tableId: 't', since: '2026-09-01', until: '2026-10-27' };
+    const a = await readAdvisorRange(params);
+    assert.equal(calls.length,2); assert.equal(calls[0].searchParams.get('until'),'2026-10-01'); assert.equal(calls[1].searchParams.get('since'),'2026-10-02');
+    assert.equal(a.rows.length,1); assert.equal(a.rows[0].days['2026-09-01'].sales,null); assert.equal(a.rows[0].days['2026-10-27'].sales,4);
+    const total = await readTotalsRange(params); assert.equal(total.groups.length,2); assert(total.groups.every(g => g.days['2026-09-01'] && g.days['2026-10-27']));
+    const before = calls.length; await assert.rejects(readRangePages('unused',params,()=>false)); assert.equal(calls.length,before);
+  } finally { globalThis.fetch = original; }
+});

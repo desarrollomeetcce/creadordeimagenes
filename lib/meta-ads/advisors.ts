@@ -1,3 +1,4 @@
+import { advisorBaseEstimate } from "./advisor-base-estimate";
 import { inventoryBaseContext } from "./inventory-base-context";
 import {
   advisorAssignmentPeriods,
@@ -500,6 +501,7 @@ export async function advisorSheet(
         );
       }
       const contextRows: Parameters<typeof inventoryBaseContext>[0] = [];
+      const estimateRows: Parameters<typeof advisorBaseEstimate>[0] = [];
       const dates: string[] = [];
       for (let d = Date.parse(since); d <= Date.parse(until); d += 86400000)
         dates.push(new Date(d).toISOString().slice(0, 10));
@@ -577,6 +579,7 @@ export async function advisorSheet(
           const changes = assignments.filter(
             (e) => e.aliasId === row.aliasId && e.country === row.country,
           );
+          if (filters.advisorId) estimateRows.push({ ...row, changes });
           if (filters.advisorId)
             for (const e of assignmentTimeline(changes))
               if (
@@ -738,6 +741,9 @@ export async function advisorSheet(
         breakdown,
         assignmentHistory,
         baseContext: inventoryBaseContext(contextRows, dates),
+        assignedBaseEstimate: filters.advisorId
+          ? advisorBaseEstimate(estimateRows, dates, filters.advisorId)
+          : undefined,
         rows: people.map((p) => ({
           ...p,
           days: Object.fromEntries(
