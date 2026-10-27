@@ -1,9 +1,8 @@
-import { advisorBaseByDay } from "./advisor-base";
+import { inventoryBaseContext } from "./inventory-base-context";
 import {
   advisorAssignmentPeriods,
   assignmentPeriodSales,
   salesDayPeriodId,
-  type AssignmentPeriod,
 } from "./advisor-periods";
 import { activeWorkbookSheetId } from "./workbook-scope";
 import { advisorSalesPlan, salesAllocationsSchema } from "./advisor-sales-plan";
@@ -500,15 +499,7 @@ export async function advisorSheet(
           404,
         );
       }
-      const baseByDay = await advisorBaseByDay(tx, actor, {
-        tableIds: tables.map((t) => t.id),
-        advisorIds: people.map((p) => p.id),
-        aliasId: filters.aliasId,
-        country: filters.country,
-        since,
-        until,
-      });
-      let statsPeriod: AssignmentPeriod | null = null;
+      const contextRows: Parameters<typeof inventoryBaseContext>[0] = [];
       const dates: string[] = [];
       for (let d = Date.parse(since); d <= Date.parse(until); d += 86400000)
         dates.push(new Date(d).toISOString().slice(0, 10));
@@ -582,6 +573,7 @@ export async function advisorSheet(
             (filters.country && row.country !== filters.country)
           )
             continue;
+          contextRows.push(row);
           const changes = assignments.filter(
             (e) => e.aliasId === row.aliasId && e.country === row.country,
           );
@@ -645,7 +637,6 @@ export async function advisorSheet(
               );
             }
           }
-          statsPeriod = period ?? null;
           const sources = new Map<string, (typeof breakdown)[number]>();
           for (const day of dates) {
             const c = row.days[day];
@@ -746,6 +737,7 @@ export async function advisorSheet(
         country: filters.country ?? "",
         breakdown,
         assignmentHistory,
+        baseContext: inventoryBaseContext(contextRows, dates),
         rows: people.map((p) => ({
           ...p,
           days: Object.fromEntries(
@@ -756,29 +748,9 @@ export async function advisorSheet(
               return [
                 day,
                 {
-                  base: (() => {
-                    const base = baseByDay.get(key(p.id, day));
-                    const start = Date.parse(day + "T00:00:00-05:00"),
-                      end = start + 86400000;
-                    if (
-                      statsPeriod &&
-                      ((statsPeriod.from &&
-                        Date.parse(statsPeriod.from) > start) ||
-                        (statsPeriod.until &&
-                          Date.parse(statsPeriod.until) < end))
-                    )
-                      return null;
-                    return base?.base ?? null;
-                  })(),
-                  basePartial: baseByDay.get(key(p.id, day))?.partial ?? false,
-                  baseTimeUnavailable:
-                    !!statsPeriod &&
-                    ((!!statsPeriod.from &&
-                      Date.parse(statsPeriod.from) >
-                        Date.parse(day + "T00:00:00-05:00")) ||
-                      (!!statsPeriod.until &&
-                        Date.parse(statsPeriod.until) <
-                          Date.parse(day + "T00:00:00-05:00") + 86400000)),
+                  base: null,
+                  basePartial: false,
+                  baseTimeUnavailable: false,
                   status: att?.status ?? null,
                   revision: att?.revision ?? 0,
                   sales: sum?.sales ?? null,

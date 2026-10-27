@@ -31,7 +31,7 @@ const attendance = (v: string | null) =>
 type AdvisorMetric = DailyChartMetric | "absences" | "base";
 const options = [
   { value: "results", label: "Ventas (V)" },
-  { value: "base", label: "Base (B)" },
+  { value: "base", label: "Base del inventario (B)" },
   { value: "cost", label: "Horas ausentes (H)" },
   { value: "spend", label: "Asistencia (A)" },
   { value: "absences", label: "Inasistencias (I)" },
@@ -235,6 +235,13 @@ export function AdvisorDetail({
             until,
             rows: base.rows[0] ? [{ ...base.rows[0], days }] : [],
             breakdown: [...sources.values()],
+            baseContext: {
+              scope: "INVENTORY_COUNTRY",
+              days: Object.assign(
+                {},
+                ...pages.map((p) => p.baseContext?.days ?? {}),
+              ),
+            },
           });
           acceptedQuery.current = query;
           setMessage("");
@@ -278,7 +285,7 @@ export function AdvisorDetail({
   const metricValue = (metric: AdvisorMetric, day: string) => {
     const c = row!.days[day];
     return metric === "base"
-      ? (c.base ?? null)
+      ? (data?.baseContext?.days[day]?.value ?? null)
       : metric === "results"
         ? c.sales
         : metric === "cost"
@@ -298,13 +305,14 @@ export function AdvisorDetail({
   }));
 
   const baseDays = days.filter(
-      (d) => row!.days[d].base !== null && row!.days[d].base !== undefined,
+      (d) =>
+        data?.baseContext?.days[d]?.value !== null &&
+        data?.baseContext?.days[d]?.value !== undefined,
     ),
-    baseUnavailable = days.some((d) => row!.days[d].baseTimeUnavailable),
-    baseTotal =
-      !baseUnavailable && baseDays.length
-        ? baseDays.reduce((sum, d) => sum + row!.days[d].base!, 0)
-        : null;
+    basePartial = days.some((d) => data?.baseContext?.days[d]?.partial),
+    baseTotal = baseDays.length
+      ? baseDays.reduce((sum, d) => sum + data!.baseContext!.days[d].value!, 0)
+      : null;
   const pageCount = Math.max(1, Math.ceil(days.length / 31)),
     currentDayPage = Math.min(dayPage, pageCount - 1),
     visibleDays = days.slice(currentDayPage * 31, currentDayPage * 31 + 31);
@@ -470,7 +478,7 @@ export function AdvisorDetail({
           </>
         )}
         <p className="hint">
-          Ventas de coincidencias exactas de inventario + asesor + país. Todos
+          Ventas registradas por asesor en el inventario y país elegidos. Todos
           suma las combinaciones de las hojas elegidas; el desglose identifica
           cada producto. A, I y H corresponden al asesor, independientemente del
           producto. Las ausencias abiertas no se suman hasta registrar el
@@ -496,17 +504,14 @@ export function AdvisorDetail({
           <>
             <div className="advisor-detail-summary">
               <span>
-                Base (B)
+                Base del inventario (B)
                 <b>
-                  {baseUnavailable
-                    ? "Sin corte horario"
-                    : baseTotal === null
-                      ? "—"
-                      : number(baseTotal)}
+                  {baseTotal === null ? "—" : number(baseTotal)}
+                  {basePartial ? " *" : ""}
                 </b>
                 <small>
-                  {baseDays.length}/{days.length} días con base vinculada al
-                  asesor
+                  {baseDays.length}/{days.length} días con base del inventario y
+                  país elegidos
                 </small>
               </span>
               <span>
@@ -650,10 +655,10 @@ export function AdvisorDetail({
               conservan su atribución previa.
             </p>
             <p className="hint">
-              B es la base importada de campañas vinculadas exactamente a este
-              asesor, inventario y país. Si el tramo corta una fecha por hora, B
-              no se imputa a esa fracción. A/I/H son registros diarios globales
-              del asesor; los valores manuales sin hora no se distribuyen por
+              B es la base del inventario y país elegidos, por días completos;
+              es contexto del diplomado, no una cantidad atribuida al asesor.
+              Las ventas V corresponden al reparto registrado para cada persona.
+              A/I/H son registros diarios del asesor; no se distribuyen por
               minutos.
             </p>
             <h3>Histórico por día · ventas de {row.name}</h3>
@@ -716,10 +721,8 @@ export function AdvisorDetail({
                           {c.partial ? " *" : ""}
                         </td>
                         <td>
-                          {c.baseTimeUnavailable
-                            ? "Sin corte horario"
-                            : (c.base ?? "—")}
-                          {c.basePartial ? " *" : ""}
+                          {data?.baseContext?.days[day]?.value ?? "—"}
+                          {data?.baseContext?.days[day]?.partial ? " *" : ""}
                         </td>
                         <td>
                           {c.absence.hours === null

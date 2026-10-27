@@ -1,4 +1,3 @@
-import { advisorBaseByDay } from "./advisor-base";
 import { db } from "../db";
 import { ownerOnly } from "../auth";
 import { demand } from "../errors";
@@ -110,43 +109,10 @@ export async function advisorItemAnalysis(
             sums.set(p.advisorId, sum);
           }
         }
-      const baseByDay = await advisorBaseByDay(tx, actor, {
-        tableIds: [alias.tableId],
-        advisorIds: people.map((p) => p.id),
-        aliasId: b.aliasId,
-        country: b.country,
-        since: b.since,
-        until: b.until,
-      });
-      for (const [key, base] of baseByDay) {
-        const [id, day] = JSON.parse(key);
-        if (!sums.has(id))
-          sums.set(id, {
-            advisorId: id,
-            name: names.get(id) ?? "Asesor no disponible",
-            sales: null,
-            known: new Set<string>(),
-            pending: false,
-            na: 0,
-          });
-      }
       const rows = [...sums.values()]
-        .filter(
-          (s) =>
-            s.known.size ||
-            s.na ||
-            [...baseByDay.keys()].some((k) => JSON.parse(k)[0] === s.advisorId),
-        )
+        .filter((s) => s.known.size || s.na)
         .map((s) => ({
           ...s,
-          base: (() => {
-            const found = [...baseByDay].filter(
-              ([k]) => JSON.parse(k)[0] === s.advisorId,
-            );
-            return found.length
-              ? found.reduce((sum, [, v]) => sum + v.base, 0)
-              : null;
-          })(),
           knownDays: s.known.size,
           known: undefined,
         }))

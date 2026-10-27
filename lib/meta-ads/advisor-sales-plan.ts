@@ -64,14 +64,14 @@ export function advisorSalesPlan(
   const portions = attributeDailySales(current, changes, day, total, na, true);
   const events = dayEvents.map((e) => e.id);
   let approved = false,
-    reconciled = false;
+    reconciled = false,
+    allocationConflict = false;
   if (total !== null && !na && approval) {
     const saved = salesAllocationsSchema.safeParse(approval.allocations),
       basis = basisSchema.safeParse(approval.basis);
     if (
       saved.success &&
       basis.success &&
-      basis.data.events.every((id) => events.includes(id)) &&
       saved.data.reduce((s, p) => s + p.sales, 0) === approval.salesTotal
     ) {
       const adjusted = new Map(
@@ -91,17 +91,26 @@ export function advisorSalesPlan(
         p.sales += value;
         adjusted.set(id, p);
       };
-      let cursor = approval.salesTotal,
-        active = basis.data.activeAdvisorId;
-      for (const e of dayEvents.filter(
-        (e) => !basis.data.events.includes(e.id),
-      )) {
-        const next = e.cutoffSales ?? 0;
-        add(active, next - cursor);
-        cursor = next;
-        active = e.advisorId;
+      const sameTotal = total === approval.salesTotal,
+        sameTimeline = basis.data.events.every((id) => events.includes(id));
+      if (!sameTotal) {
+        if (sameTimeline) {
+          let cursor = approval.salesTotal,
+            active = basis.data.activeAdvisorId;
+          for (const e of dayEvents.filter(
+            (e) => !basis.data.events.includes(e.id),
+          )) {
+            const next = e.cutoffSales ?? 0;
+            add(active, next - cursor);
+            cursor = next;
+            active = e.advisorId;
+          }
+          add(active, total - cursor);
+        } else {
+          // Manual daily ownership survives a replacement of the responsibility timeline.
+          add(activeAdvisorId, total - approval.salesTotal);
+        }
       }
-      add(active, total - cursor);
       const values = [...adjusted.values()];
       if (
         values.every((p) => p.sales >= 0) &&
@@ -109,7 +118,22 @@ export function advisorSalesPlan(
       ) {
         portions.splice(0, portions.length, ...values);
         reconciled = true;
-        approved = basis.data.events.length === events.length;
+        approved =
+          sameTotal ||
+          (sameTimeline && basis.data.events.length === events.length);
+      } else if (!sameTimeline) {
+        allocationConflict = true;
+        portions.splice(
+          0,
+          portions.length,
+          ...saved.data.map((p) => ({
+            ...p,
+            sales: null,
+            na: false,
+            partial: true,
+            legacy: false,
+          })),
+        );
       }
     }
   }
@@ -133,7 +157,7 @@ export function advisorSalesPlan(
     suggestions,
     status: approved
       ? ("APPROVED" as const)
-      : hasChange
+      : hasChange || allocationConflict
         ? ("PENDING" as const)
         : ("AUTOMATIC" as const),
     revision: approval?.revision ?? 0,

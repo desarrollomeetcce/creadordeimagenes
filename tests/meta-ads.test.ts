@@ -360,13 +360,15 @@ test('Reparto aprobado: pago tardío del primer asesor cambia 3+2 a4+2 y mantien
  const back={...e,id:'return',advisorId:'A',previousAdvisorId:'B',effectiveAt:new Date('2026-10-20T16:00:00-05:00'),createdAt:new Date('2026-10-20T16:00:01-05:00'),cutoffSales:7};
  p=advisorSalesPlan('A',[e,back],'2026-10-20',9,false,approval);assert.equal(p.status,'PENDING');assert.equal(p.portions.find(x=>x.advisorId==='A')!.sales,6);assert.equal(p.portions.find(x=>x.advisorId==='B')!.sales,3);assert.equal(p.portions.reduce((s,x)=>s+(x.sales??0),0),9);
 });
-test('Reparto: corrección bajo un corte anterior sigue aprobada sin negativos; día completo invalida la base previa',async()=>{
+test('Reparto: corrección bajo un corte anterior sigue aprobada sin negativos; día completo conserva el reparto explícito',async()=>{
  const {advisorSalesPlan,salesAllocationsSchema}=await import('../lib/meta-ads/advisor-sales-plan');
  const e={id:'change',advisorId:'B',previousAdvisorId:'A',effectiveAt:new Date('2026-10-20T12:00:00-05:00'),createdAt:new Date('2026-10-20T12:00:01-05:00'),mode:'CLOCK',cutoffSales:3};
  const approval={salesTotal:2,allocations:[{advisorId:'A',sales:1},{advisorId:'B',sales:1}],basis:{events:['change'],activeAdvisorId:'B'},revision:1,approvedAt:new Date()};
  let p=advisorSalesPlan('B',[e],'2026-10-20',3,false,approval);assert.equal(p.status,'APPROVED');assert.equal(p.portions.find(x=>x.advisorId==='A')!.sales,1);assert.equal(p.portions.find(x=>x.advisorId==='B')!.sales,2);
  const day={...e,id:'day',advisorId:'C',previousAdvisorId:'B',mode:'DAY',cutoffSales:null,effectiveAt:new Date('2026-10-20T00:00:00-05:00'),createdAt:new Date('2026-10-20T17:00:00-05:00')};
- p=advisorSalesPlan('C',[e,day],'2026-10-20',3,false,approval);assert.equal(p.status,'PENDING');assert.equal(p.reconciled,false);assert.equal(p.portions.find(x=>x.advisorId==='C')!.sales,3);assert(!p.portions.some(x=>x.advisorId==='A'));
+ p=advisorSalesPlan('C',[e,day],'2026-10-20',2,false,approval);assert.equal(p.status,'APPROVED');assert.equal(p.reconciled,true);assert.equal(p.portions.find(x=>x.advisorId==='A')!.sales,1);assert.equal(p.portions.find(x=>x.advisorId==='B')!.sales,1);assert(!p.portions.some(x=>x.advisorId==='C'));
+ p=advisorSalesPlan('C',[e,day],'2026-10-20',5,false,approval);assert.equal(p.portions.find(x=>x.advisorId==='A')!.sales,1);assert.equal(p.portions.find(x=>x.advisorId==='B')!.sales,1);assert.equal(p.portions.find(x=>x.advisorId==='C')!.sales,3);
+ p=advisorSalesPlan('C',[e,day],'2026-10-20',1,false,approval);assert.equal(p.status,'PENDING');assert(p.portions.every(x=>x.sales===null&&x.partial));
  assert(!salesAllocationsSchema.safeParse([{advisorId:'A',sales:1},{advisorId:'A',sales:2}]).success);assert(!salesAllocationsSchema.safeParse([{advisorId:'A',sales:-1}]).success);
 });
 test('Reparto: no inventa cambios al asignar inicialmente sin ventas y conserva ventas sin asesor',async()=>{
@@ -536,8 +538,8 @@ test('Asesores: ventas de cada tramo por cortes reales incluso cambios simultán
  const p=advisorAssignmentPeriods('a',changes,new Date(day+'T20:00:00Z'));
  assert.deepEqual(p.map(x=>assignmentPeriodSales('a',changes,x,day,9,false).sales),[3,2,4]);assert.equal(assignmentPeriodSales('a',changes,p[0],day,2,false).partial,true);
 });
-test('Asesores: Base importada usa conversaciones exactas y conserva faltantes sin atribuir ventas',async()=>{
- const {advisorBaseByDay}=await import('../lib/meta-ads/advisor-base');let query:any;
- const tx={metaAdObject:{findMany:async(q:any)=>{query=q;return [{advisorId:'a',daily:[{day:'2026-10-20',actions:{'onsite_conversion.messaging_conversation_started_7d':12}}]},{advisorId:'a',daily:[]}];}}};
- const result=await advisorBaseByDay(tx as any,{id:'owner',role:'OWNER'} as any,{tableIds:['table'],advisorIds:['a'],aliasId:'item',country:'PE',since:'2026-10-20',until:'2026-10-20'});assert.deepEqual(result.get(JSON.stringify(['a','2026-10-20'])),{base:12,known:1,partial:true});assert.equal(query.where.aliasId,'item');assert.equal(query.where.aliasCountry,'PE');assert.equal(query.where.level,'campaign');assert.equal(query.select.daily.where.scope,'7d_click,1d_view|impression');
+test('Base de contexto: se agrega por inventario y país sin atribuirla a cada asesor ni inventar faltantes',async()=>{
+ const {inventoryBaseContext}=await import('../lib/meta-ads/inventory-base-context');const day='2026-10-20';
+ const rows=[{campaigns:2,days:{[day]:{base:12,campaigns:1}}},{campaigns:1,days:{[day]:{base:8,campaigns:1}}}] as any;
+ const result=inventoryBaseContext(rows,[day,'2026-10-21']);assert.equal(result.scope,'INVENTORY_COUNTRY');assert.equal(result.days[day].value,20);assert.equal(result.days[day].partial,true);assert.equal(result.days['2026-10-21'].value,null);assert.equal(result.days['2026-10-21'].known,0);assert(!JSON.stringify(result).includes('advisorId'));
 });

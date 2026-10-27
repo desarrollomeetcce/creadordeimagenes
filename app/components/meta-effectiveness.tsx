@@ -1352,9 +1352,10 @@ export function MetaEffectiveness({
       )}
       <div className="sheet-help">
         Edita y pulsa Enter o Tab para guardar; Escape descarta. V, P y CF
-        manuales; B/G de Meta por coincidencia exacta de inventario + país +
-        asesor, con ajustes manuales identificados. N.A. no es cero. P, G y CF
-        se muestran en la moneda elegida con la tasa de cada fecha.{" "}
+        manuales; B/G de Meta por inventario + país, con ajustes manuales
+        identificados. El asesor es opcional y no condiciona B/G. N.A. no es
+        cero. P, G y CF se muestran en la moneda elegida con la tasa de cada
+        fecha.{" "}
         {data?.missingFxDays.length ? (
           <span> Tasas pendientes: {data.missingFxDays.join(", ")}. </span>
         ) : null}
@@ -1382,7 +1383,8 @@ export function MetaEffectiveness({
       {message && (
         <p className="sheet-message" role="status">
           {message}
-          <button className="ui-close-button"
+          <button
+            className="ui-close-button"
             type="button"
             aria-label="Cerrar aviso"
             onClick={() => setMessage("")}

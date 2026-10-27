@@ -155,7 +155,11 @@ export async function assignAliases(
       where: { id: { in: ids } },
       data: {
         aliasId,
-        advisorId: aliasId ? (advisorId ?? null) : null,
+        ...(aliasId
+          ? advisorId === undefined
+            ? {}
+            : { advisorId }
+          : { advisorId: null }),
         ...(!aliasId
           ? { aliasCountry: null }
           : country !== undefined
@@ -171,7 +175,9 @@ export async function assignAliases(
           resourceId: id,
           detail: {
             aliasId,
-            advisorId: aliasId ? (advisorId ?? null) : null,
+            ...(aliasId && advisorId === undefined
+              ? {}
+              : { advisorId: aliasId ? (advisorId ?? null) : null }),
             country: aliasId
               ? country === undefined
                 ? "unchanged"

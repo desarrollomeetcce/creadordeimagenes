@@ -1,3 +1,4 @@
+import type { InventoryBaseContext } from "../../lib/meta-ads/inventory-base-context";
 import type { absenceSummary } from "../../lib/meta-ads/advisor-absence";
 export type AbsenceView = ReturnType<typeof absenceSummary>;
 export type Attendance = "PRESENT" | "ABSENT" | "NA" | null;
@@ -40,6 +41,7 @@ export type AdvisorSheetData = {
   country: string;
   rows: AdvisorPerson[];
   breakdown: AdvisorSource[];
+  baseContext?: InventoryBaseContext;
   assignmentHistory?: {
     id: string;
     alias: string;

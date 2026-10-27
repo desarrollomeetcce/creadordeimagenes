@@ -6,8 +6,6 @@ export function MetaAliasAction({
   name,
   value,
   country,
-  advisorId,
-  advisors,
   aliases,
   tables: providedTables,
   inventories: providedInventories,
@@ -20,25 +18,18 @@ export function MetaAliasAction({
   value?: string | null;
   country?: string | null;
   aliases: MetaAliasOption[];
-  advisorId?: string | null;
-  advisors: { id: string; name: string; label?: string }[];
   tables?: { id: string; name: string }[];
   inventories?: { id: string; name: string }[];
   disabled?: boolean;
   readOnly?: boolean;
   bulkCount?: number;
-  onAssign: (
-    id: string | null,
-    country: string | null,
-    advisorId: string | null,
-  ) => void;
+  onAssign: (id: string | null, country: string | null) => void;
 }) {
   const id = useId(),
     popover = useRef<HTMLDivElement>(null);
   const [position, setPosition] = useState({ top: 0, left: 0 }),
     [draftAlias, setDraftAlias] = useState(""),
     [draftCountry, setDraftCountry] = useState(""),
-    [draftAdvisor, setDraftAdvisor] = useState(""),
     [draftList, setDraftList] = useState(""),
     [draftTable, setDraftTable] = useState("");
   const tables = providedTables ?? [
@@ -64,7 +55,7 @@ export function MetaAliasAction({
     label = bulk
       ? "Asignar inventario"
       : value
-        ? `Con inventario${country ? ` · ${country}` : ""} · ${advisors.find((a) => a.id === advisorId)?.name ?? "Sin asesor"}`
+        ? `Con inventario${country ? ` · ${country}` : ""}`
         : "Sin inventario";
   if (readOnly)
     return (
@@ -74,7 +65,7 @@ export function MetaAliasAction({
     );
   const assign = (aliasId: string | null, code: string | null) => {
     popover.current?.hidePopover();
-    onAssign(aliasId, code, aliasId ? draftAdvisor || null : null);
+    onAssign(aliasId, code);
   };
   return (
     <>
@@ -109,7 +100,6 @@ export function MetaAliasAction({
               : (aliases.find((a) => a.id === value)?.tableId ?? "diplomados"),
           );
           setDraftCountry(bulk ? "" : (country ?? ""));
-          setDraftAdvisor(bulk ? "" : (advisorId ?? ""));
           const r = e.currentTarget.getBoundingClientRect();
           setPosition({
             left: Math.max(8, Math.min(r.left, window.innerWidth - 280)),
@@ -220,26 +210,9 @@ export function MetaAliasAction({
               ))}
             </select>
           </label>
-          <label>
-            Asesor
-            <select
-              aria-label="Asesor del inventario"
-              value={draftAdvisor}
-              required={!!draftAlias}
-              disabled={disabled || !draftAlias}
-              onChange={(e) => setDraftAdvisor(e.target.value)}
-            >
-              <option value="">Selecciona un asesor</option>
-              {advisors.map((a) => (
-                <option key={a.id} value={a.id}>
-                  {a.label ?? a.name}
-                </option>
-              ))}
-            </select>
-          </label>
           <small>
-            Inventario, país y asesor deben coincidir exactamente con
-            Efectividad. Crea los asesores en la hoja «Asesores». No cambia la
+            Inventario y país vinculan la base y el gasto con Efectividad. Las
+            ventas por asesor se registran en V de cada hoja. No cambia la
             segmentación en Meta.
           </small>
           {!aliases.length && (
@@ -249,15 +222,9 @@ export function MetaAliasAction({
             <button
               type="submit"
               className="primary"
-              disabled={
-                disabled ||
-                !draftTable ||
-                !draftAlias ||
-                !draftCountry ||
-                !draftAdvisor
-              }
+              disabled={disabled || !draftTable || !draftAlias || !draftCountry}
             >
-              Guardar inventario, país y asesor
+              Guardar inventario y país
             </button>
             <button
               type="button"

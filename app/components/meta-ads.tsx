@@ -465,9 +465,6 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
     [campaign, setCampaign] = useState(""),
     [adset, setAdset] = useState(""),
     [aliases, setAliases] = useState<MetaAliasOption[]>([]),
-    [advisors, setAdvisors] = useState<
-      { id: string; name: string; label?: string }[]
-    >([]),
     [aliasTables, setAliasTables] = useState<{ id: string; name: string }[]>(
       [],
     ),
@@ -507,16 +504,14 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
     Promise.all([
       api("meta-ads/aliases"),
       api("meta-ads/alias-table-options"),
-      api("meta-ads/advisors"),
       owner ? api("meta-ads/workbook-sheets") : Promise.resolve([]),
     ])
-      .then(([rows, tables, advisors, sheets]) => {
+      .then(([rows, tables, sheets]) => {
         if (active) {
           setInventories(
             sheets.filter((s: { kind: string }) => s.kind === "INVENTORY"),
           );
           setAliases(rows);
-          setAdvisors(advisors);
           setAliasTables(tables);
           setAliasFilter((current) =>
             current &&
@@ -539,20 +534,17 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
       name={o.name}
       value={o.aliasId}
       country={o.aliasCountry}
-      advisorId={o.advisorId}
-      advisors={advisors}
       aliases={aliases}
       inventories={inventories}
       tables={aliasTables}
       disabled={busy}
       readOnly={!owner}
-      onAssign={(aliasId, country, advisorId) =>
+      onAssign={(aliasId, country) =>
         void run(
           () =>
             api(`meta-ads/objects/${o.id}/alias`, "PATCH", {
               aliasId,
               country,
-              advisorId,
             }),
           "Inventario actualizado.",
         )
@@ -1321,7 +1313,6 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
       {owner && (
         <MetaAliasAction
           name="selección"
-          advisors={advisors}
           aliases={aliases}
           inventories={inventories}
           tables={aliasTables}
@@ -1329,14 +1320,13 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
           bulkCount={
             summarySelectionKey ? summarySelectionKey.split(",").length : 0
           }
-          onAssign={(aliasId, country, advisorId) =>
+          onAssign={(aliasId, country) =>
             void run(
               () =>
                 api("meta-ads/objects/alias", "PATCH", {
                   objectIds: summarySelectionKey.split(",").filter(Boolean),
                   aliasId,
                   country,
-                  advisorId,
                 }),
               "Inventario asignado a la selección.",
             )
@@ -1977,7 +1967,8 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
       {message && (
         <aside className="notice meta-feedback" role="status">
           <span>{message}</span>
-          <button className="ui-close-button"
+          <button
+            className="ui-close-button"
             type="button"
             aria-label="Cerrar aviso"
             onClick={() => setMessage("")}
@@ -3290,7 +3281,12 @@ function MetaSharing({
         >
           Guardar permisos
         </button>
-        <button className="ui-close-button" type="button" disabled={busy} onClick={onClose}>
+        <button
+          className="ui-close-button"
+          type="button"
+          disabled={busy}
+          onClick={onClose}
+        >
           Cerrar
         </button>
       </div>

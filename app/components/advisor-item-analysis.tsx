@@ -6,7 +6,6 @@ type Row = {
   advisorId: string | null;
   name: string;
   sales: number | null;
-  base: number | null;
   knownDays: number;
   pending: boolean;
   na: number;
@@ -86,7 +85,6 @@ export function AdvisorItemAnalysis({
               <tr>
                 <th>Asesor</th>
                 <th>Ventas (V)</th>
-                <th>Base (B)</th>
                 <th>Días con registro</th>
                 <th></th>
               </tr>
@@ -102,7 +100,6 @@ export function AdvisorItemAnalysis({
                     {r.sales === null ? (r.na ? "N.A." : "—") : r.sales}
                     {r.pending ? " *" : ""}
                   </td>
-                  <td>{r.base ?? "—"}</td>
                   <td>{r.knownDays}</td>
                   <td>
                     <button
