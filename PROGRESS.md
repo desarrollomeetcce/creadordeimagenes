@@ -1463,3 +1463,9 @@ Por la última indicación, los accesos pequeños quedan junto al calendario, si
 Los seis módulos reciben colores distintos y coherentes con su botón superior: verde, ámbar, violeta, turquesa, azul y rosa. La franja completa conserva ese color al abrirse, anulando el fondo morado genérico de details[open]. Encabezados más bajos, contraste en ambos temas y foco visible conservado.
 
 La revisión compacta final pasa TypeScript/build y Chromium en ambos temas: seis colores distintos con navegación concordante, períodos junto al calendario, resumen integrado, diarios al costado, gráficos por fecha y X/Y con parámetros seleccionables, calendario persistente y móvil; cero escrituras financieras/errores/llamadas externas. Totales diario vuelve a pasar en el build final. La CLI de publicación perdió autenticación; la conexión GitHub de la aplicación está disponible como alternativa para publicar el árbol exacto verificado con control del commit padre.
+
+### Estado vacío de Qué vendió cada día
+
+El bloque permanece visible aunque el asesor no tenga desglose. Si no hay ventas positivas registradas en las fechas/filtros elegidos, muestra «No vendió nada en este período.». Si el período sí contiene ventas pero la página de31 días actual no, informa que hay ventas en otras fechas y remite a los controles del histórico. Conserva tabla de diplomados/fechas/cantidades y diseño actual; no cambia asignaciones, repartos ni cifras.
+
+TypeScript/build y183/183 unitarias aprobados. Chromium verifica ausencia de desglose, ventas registradas en0, mensaje siempre visible, página vacía de un rango57 días con ventas en otra página y regreso al diplomado/fecha al paginar. Conserva los seis colores, distribución compacta, navegación, calendario, gráficos por fecha/X/Y y móvil. Sin errores JS/API, escrituras financieras ni llamadas externas. Backend/esquema sin cambios;194/194 integraciones previas siguen aplicables.

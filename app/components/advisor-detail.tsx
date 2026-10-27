@@ -349,6 +349,15 @@ export function AdvisorDetail({
   const pageCount = Math.max(1, Math.ceil(days.length / 31)),
     currentDayPage = Math.min(dayPage, pageCount - 1),
     visibleDays = days.slice(currentDayPage * 31, currentDayPage * 31 + 31);
+  const hasSales = (range: string[]) =>
+    !!data?.breakdown.some((source) =>
+      range.some((day) => {
+        const cell = source.days[day];
+        return !!cell && !cell.na && cell.sales !== null && cell.sales > 0;
+      }),
+    );
+  const periodHasSales = hasSales(days);
+  const pageHasSales = hasSales(visibleDays);
   const partial = days.some((d) => row!.days[d].partial);
   const summary = row ? (
     <div className="advisor-detail-summary" aria-label="Resumen del asesor">
@@ -651,14 +660,22 @@ export function AdvisorDetail({
         {row && (
           <>
             <div className="advisor-daily-columns">
-              {!!data!.breakdown.length && (
-                <DetailSection
-                  id={sectionId + "sold-days"}
-                  stateKey="sold-days"
-                  className="advisor-sales-by-day"
-                  title={`Qué vendió cada día · ${visibleDays[0]} — ${visibleDays.at(-1)}`}
-                  tone="sold"
-                >
+              <DetailSection
+                id={sectionId + "sold-days"}
+                stateKey="sold-days"
+                className="advisor-sales-by-day"
+                title={`Qué vendió cada día · ${visibleDays[0]} — ${visibleDays.at(-1)}`}
+                tone="sold"
+              >
+                {!periodHasSales ? (
+                  <p role="status">No vendió nada en este período.</p>
+                ) : !pageHasSales ? (
+                  <p role="status">
+                    No hay ventas en estos días. Hay ventas en otras fechas del
+                    período; usa Días anteriores o Días siguientes en el
+                    histórico.
+                  </p>
+                ) : (
                   <div className="table-scroll">
                     <table>
                       <thead>
@@ -706,8 +723,8 @@ export function AdvisorDetail({
                       </tbody>
                     </table>
                   </div>
-                </DetailSection>
-              )}
+                )}
+              </DetailSection>
               <DetailSection
                 id={sectionId + "days"}
                 stateKey="days"
