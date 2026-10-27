@@ -660,10 +660,10 @@ test('Distribución del asesor: mover verticalmente y emparejar horizontalmente 
  assert.equal(JSON.stringify(defaultAdvisorLayout),original);
 });
 
-test('BA es un conteo manual independiente de B de Meta y de BM en ambas vistas de Totales',async()=>{
+test('BC es un conteo manual independiente de B de Meta y de BM en ambas vistas de Totales',async()=>{
  const {manualTotalColumns,automaticTotalColumns,totalDetailValue}=await import('../lib/meta-ads/totals-detail');
  const empty={value:40,known:1,expected:1,na:0,pending:false,partial:false};
  const day:any={sums:{base:empty},manual:{baseManual:999},revision:0};
- for(const columns of [manualTotalColumns,automaticTotalColumns]){const ba=columns.find(c=>c.key==='advisorBase')!;assert.equal(ba.label,'BA');assert.equal(ba.sum,false);assert.equal(totalDetailValue(day,ba).value,null);day.manual.advisorBase=0;assert.equal(totalDetailValue(day,ba).value,0);day.manual.advisorBase=300;assert.equal(totalDetailValue(day,ba).value,300);day.manual.advisorBase='NA';assert.equal(totalDetailValue(day,ba).na,1);delete day.manual.advisorBase;}
+ for(const columns of [manualTotalColumns,automaticTotalColumns]){const ba=columns.find(c=>c.key==='advisorBase')!;assert.equal(ba.label,'BC');assert.equal(ba.name,'Base por contactar');assert.equal(ba.sum,false);assert.equal(totalDetailValue(day,ba).value,null);day.manual.advisorBase=0;assert.equal(totalDetailValue(day,ba).value,0);day.manual.advisorBase=300;assert.equal(totalDetailValue(day,ba).value,300);day.manual.advisorBase='NA';assert.equal(totalDetailValue(day,ba).na,1);delete day.manual.advisorBase;}
  assert.equal(day.sums.base.value,40);assert.equal(day.manual.baseManual,999);
 });

@@ -44,7 +44,7 @@ type AdvisorMetric =
 const options = [
   { value: "results", label: "Ventas (V)" },
   { value: "manualBase", label: "Base manual (BM)" },
-  { value: "advisorBase", label: "Base aproximada del asesor (BA)" },
+  { value: "advisorBase", label: "Base por contactar (BC)" },
   { value: "cost", label: "Horas ausentes (H)" },
   { value: "spend", label: "Asistencia (A)" },
   { value: "absences", label: "Inasistencias (I)" },
@@ -389,13 +389,13 @@ export function AdvisorDetail({
         </small>
       </span>
       <span>
-        Base aproximada del asesor (BA)
+        Base por contactar (BC)
         <b>
           {baseTotal === null ? "—" : number(baseTotal)}
           {basePartial ? " *" : ""}
         </b>
         <small>
-          {baseDays.length}/{days.length} días con BA registrada manualmente en
+          {baseDays.length}/{days.length} días con BC registrada manualmente en
           Totales
         </small>
       </span>
@@ -546,7 +546,7 @@ export function AdvisorDetail({
                 <th title="Inasistencias">I</th>
                 <th>V</th>
                 <th>BM</th>
-                <th title="Base aproximada del asesor">BA</th>
+                <th title="Base por contactar">BC</th>
                 <th>Salidas y regresos · Lima</th>
               </tr>
             </thead>
@@ -701,11 +701,11 @@ export function AdvisorDetail({
           asignaciones antiguas sin historial conservan su atribución previa.
         </p>
         <p className="hint">
-          BA es la base aproximada del asesor registrada manualmente en Totales
-          por hoja, país y fecha. No se calcula por asignaciones ni se copia de
-          B de Meta Ads o BM. BA no se atribuye a un diplomado concreto y no
-          cambia al filtrar productos. Las ventas V corresponden al reparto
-          registrado para cada persona; A/I/H son registros diarios del asesor.
+          BC es la base por contactar registrada manualmente en Totales por
+          hoja, país y fecha. No se calcula por asignaciones ni se copia de B de
+          Meta Ads o BM. BC no se atribuye a un diplomado concreto y no cambia
+          al filtrar productos. Las ventas V corresponden al reparto registrado
+          para cada persona; A/I/H son registros diarios del asesor.
         </p>
       </DetailSection>
     ) : null,
@@ -811,9 +811,9 @@ export function AdvisorDetail({
       >
         {row && (
           <>
-            <h4>BM y BA por hoja y país</h4>
+            <h4>BM y BC por hoja y país</h4>
             <p className="hint">
-              BM y BA son repartos manuales independientes de esta persona. No
+              BM y BC son repartos manuales independientes de esta persona. No
               se calculan por asignaciones ni se convierten por moneda; no
               dependen del filtro de diplomado.
             </p>
@@ -855,13 +855,13 @@ export function AdvisorDetail({
             {!!data?.advisorBaseBreakdown?.length && (
               <div className="table-scroll advisor-source-scroll">
                 <table>
-                  <caption>Base aproximada del asesor (BA)</caption>
+                  <caption>Base por contactar (BC)</caption>
                   <thead>
                     <tr>
                       <th>Fecha</th>
                       <th>Hoja</th>
                       <th>País</th>
-                      <th>BA</th>
+                      <th>BC</th>
                     </tr>
                   </thead>
                   <tbody>

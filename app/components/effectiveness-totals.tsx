@@ -419,8 +419,8 @@ export function EffectivenessTotals({
       )}
       <p className="sheet-help">
         {mode === "manual"
-          ? "V/P: suma de inventario. BM y BA: repartos manuales independientes por asesor, hoja, país y día (sin moneda). GM y CF: valores manuales por bloque."
-          : "V/B/G/CF: suma de los valores de la vista automática. BA se registra manualmente por asesor."}{" "}
+          ? "V/P: suma de inventario. BM y BC: repartos manuales independientes por asesor, hoja, país y día (sin moneda). GM y CF: valores manuales por bloque."
+          : "V/B/G/CF: suma de los valores de la vista automática. BC se registra manualmente por asesor."}{" "}
         Países y monedas separados; N.A. no suma, — sin dato, * suma parcial.
         Las ventas se suman únicamente desde la hoja de origen indicada en cada
         bloque, sin combinar tablas. No modifica Meta Ads.

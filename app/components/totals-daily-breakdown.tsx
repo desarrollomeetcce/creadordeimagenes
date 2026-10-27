@@ -80,11 +80,11 @@ export function TotalsDailyBreakdown({
       <DetailSection
         id={sectionId + "advisors"}
         stateKey="daily-advisors"
-        title="Ventas, BM y BA por asesor"
+        title="Ventas, BM y BC por asesor"
         tone="sales"
       >
         <p className="hint">
-          {day} · BM y BA son independientes y corresponden a toda la hoja y
+          {day} · BM y BC son independientes y corresponden a toda la hoja y
           país, sin separar monedas ni asignarlas a productos. Las ventas
           respetan el reparto registrado, aunque el asesor no estuviera asignado
           o el producto esté desactivado. — sin dato; * cobertura parcial.
@@ -97,7 +97,7 @@ export function TotalsDailyBreakdown({
                   <th>Asesor</th>
                   <th>Ventas (V)</th>
                   <th>Base manual (BM)</th>
-                  <th>Base aproximada del asesor (BA)</th>
+                  <th>Base por contactar (BC)</th>
                   <th>Ventas / BM</th>
                 </tr>
               </thead>
@@ -145,7 +145,7 @@ export function TotalsDailyBreakdown({
         )}
         <p className="hint">
           Si el país tiene varios bloques de moneda, V pertenece al bloque
-          elegido y BM y BA son bases independientes compartidas del país.
+          elegido y BM y BC son bases independientes compartidas del país.
         </p>
       </DetailSection>
       <DetailSection

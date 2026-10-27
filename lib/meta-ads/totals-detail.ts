@@ -35,8 +35,8 @@ export const manualTotalColumns = [
   { key: "fixedCost", label: "CF", name: "Costos fijos", sum: false },
   {
     key: "advisorBase",
-    label: "BA",
-    name: "Base aproximada del asesor",
+    label: "BC",
+    name: "Base por contactar",
     sum: false,
   },
 ] as const;
@@ -47,8 +47,8 @@ export const automaticTotalColumns = [
   { key: "fixedCost", label: "CF", name: "Costos fijos", sum: true },
   {
     key: "advisorBase",
-    label: "BA",
-    name: "Base aproximada del asesor",
+    label: "BC",
+    name: "Base por contactar",
     sum: false,
   },
 ] as const;

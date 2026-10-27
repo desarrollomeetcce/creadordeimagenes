@@ -21,7 +21,7 @@ export function EffectivenessLegend() {
         <b>BM</b> Base manual
       </span>
       <span>
-        <b>BA</b> Base aproximada del asesor
+        <b>BC</b> Base por contactar
       </span>
       <span>
         <b>GM</b> Gasto manual

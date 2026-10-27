@@ -306,9 +306,9 @@ export function AdvisorsSheet({
       </div>
       <p className="sheet-help">
         A y H son asistencia y horas ausentes. BM suma la base manual repartida
-        a cada asesor, por hoja, país y día; pulsa BM para editarla. BA es la
-        base aproximada del asesor ingresada en Totales, independiente de BM y B
-        de Meta Ads. Es independiente del diplomado filtrado. V suma las ventas
+        a cada asesor, por hoja, país y día; pulsa BM para editarla. BC es la
+        base por contactar ingresada en Totales, independiente de BM y B de Meta
+        Ads. Es independiente del diplomado filtrado. V suma las ventas
         registradas a nombre de cada asesor en las hojas elegidas, aunque no sea
         el responsable de la fila. Pulsa una venta para ver qué diplomados
         vendió ese día. H = Horas ausentes (0,5 = 30 minutos): puedes registrar
@@ -608,10 +608,10 @@ function FragmentHeaders({
       </th>
       <th
         scope="col"
-        title="Base aproximada del asesor: registrada en Totales"
-        aria-label="Base aproximada del asesor"
+        title="Base por contactar: registrada en Totales"
+        aria-label="Base por contactar"
       >
-        BA{handle(day + "advisorBase", "Base aproximada del asesor " + day)}
+        BC{handle(day + "advisorBase", "Base por contactar " + day)}
       </th>
     </>
   );
@@ -699,8 +699,8 @@ function AdvisorDay({
         </button>
       </td>
       <td
-        aria-label={`BA ${person.name} ${day}`}
-        title="BA se registra y reparte por asesor en Totales"
+        aria-label={`BC ${person.name} ${day}`}
+        title="BC se registra y reparte por asesor en Totales"
       >
         {cell.advisorBase === null || cell.advisorBase === undefined
           ? "—"

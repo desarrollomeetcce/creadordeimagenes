@@ -46,8 +46,8 @@ export function ManualBaseEditor({
   onClose: () => void;
   onChanged: () => Promise<void>;
 }) {
-  const baseName =
-    metric === "BA" ? "Base aproximada del asesor" : "Base manual";
+  const displayMetric = metric === "BA" ? "BC" : "BM";
+  const baseName = metric === "BA" ? "Base por contactar" : "Base manual";
   const endpoint = metric === "BA" ? "advisor-base" : "manual-base";
   const dialog = useRef<HTMLDialogElement>(null),
     pending = useRef(false),
@@ -409,7 +409,7 @@ export function ManualBaseEditor({
         <h2>
           {context.kind === "total"
             ? metric === "BA"
-              ? "Base aproximada del asesor (BA)"
+              ? "Base por contactar (BC)"
               : "Base manual por asesor"
             : `${baseName} de ${context.name}`}
         </h2>
@@ -430,9 +430,9 @@ export function ManualBaseEditor({
       </p>
       <p className="hint">
         Cantidades absolutas: para pasar de 300 a 500, escribe 500. Totales y
-        Asesores comparten estos registros. {metric} cuenta datos, sin
+        Asesores comparten estos registros. {displayMetric} cuenta datos, sin
         conversión de moneda; es distinta de B de Meta Ads, de{" "}
-        {metric === "BA" ? "BM" : "BA"} y de las ventas V. Las cantidades sin
+        {metric === "BA" ? "BM" : "BC"} y de las ventas V. Las cantidades sin
         asesor no se atribuyen a ninguna persona.
       </p>
       {context.kind === "advisor" && context.country && (
@@ -460,7 +460,7 @@ export function ManualBaseEditor({
                 {entries.map((entry) => (
                   <div className="manual-base-line" key={entry.id}>
                     <SheetSearchSelect
-                      label={`Asesor de ${metric} ${entry.id}`}
+                      label={`Asesor de ${displayMetric} ${entry.id}`}
                       value={entry.advisorId ?? "__unassigned"}
                       placeholder="Seleccionar asesor"
                       disabled={busy}
@@ -490,9 +490,9 @@ export function ManualBaseEditor({
                       }}
                     />
                     <label>
-                      Datos {metric}
+                      Datos {displayMetric}
                       <input
-                        aria-label={`Cantidad ${metric} ${entry.id}`}
+                        aria-label={`Cantidad ${displayMetric} ${entry.id}`}
                         type="number"
                         min="0"
                         max="100000000"
@@ -516,7 +516,7 @@ export function ManualBaseEditor({
                     <button
                       type="button"
                       disabled={busy}
-                      aria-label={`Quitar reparto ${metric} ${entry.id}`}
+                      aria-label={`Quitar reparto ${displayMetric} ${entry.id}`}
                       onClick={() => {
                         setEntries((v) => v.filter((r) => r.id !== entry.id));
                         setSaved(false);
@@ -660,7 +660,7 @@ export function ManualBaseEditor({
           <div className="manual-base-total">
             <span>
               {context.kind === "total"
-                ? `Total ${metric} del día`
+                ? `Total ${displayMetric} del día`
                 : `BM de ${context.name} en esta selección`}
             </span>
             <strong>
@@ -672,7 +672,7 @@ export function ManualBaseEditor({
             </strong>
             <small>
               {busy
-                ? `Guardando ${metric}…`
+                ? `Guardando ${displayMetric}…`
                 : saved
                   ? "Guardado"
                   : "Se guarda al salir de la cantidad o al pulsar Guardar"}
