@@ -10,6 +10,7 @@ import { AdvisorItemAnalysis } from "./advisor-item-analysis";
 import { AdvisorScatter } from "./advisor-scatter";
 import { activePeriodWindow } from "../../lib/meta-ads/active-periods";
 import type { AdvisorPeriodView } from "../../lib/meta-ads/advisor-period-history";
+import { DetailSection, DetailSections } from "./detail-section";
 import { DetailNavigation } from "./detail-navigation";
 import { MetaDailyChart } from "./meta-daily-chart";
 import { countryOptions } from "../../lib/meta-ads/countries";
@@ -350,7 +351,7 @@ export function AdvisorDetail({
     visibleDays = days.slice(currentDayPage * 31, currentDayPage * 31 + 31);
   const partial = days.some((d) => row!.days[d].partial);
   return (
-    <>
+    <DetailSections>
       {minimized && (
         <button
           type="button"
@@ -374,12 +375,12 @@ export function AdvisorDetail({
         <DetailNavigation
           onClose={onClose}
           items={[
-            { target: sectionId + "summary", label: "Resumen", tone: "sales" },
             {
-              target: sectionId + "assignments",
-              label: "Asignaciones",
-              tone: "assignments",
+              target: sectionId + "products",
+              label: "Diplomados vendidos",
+              tone: "sales",
             },
+            { target: sectionId + "summary", label: "Resumen", tone: "sales" },
             {
               target: sectionId + "chart",
               label: "Estadísticas",
@@ -392,8 +393,13 @@ export function AdvisorDetail({
               tone: "activity",
             },
             {
-              target: sectionId + "products",
-              label: "Diplomados vendidos",
+              target: sectionId + "assignments",
+              label: "Asignaciones",
+              tone: "assignments",
+            },
+            {
+              target: sectionId + "sold-days",
+              label: "Qué vendió cada día",
               tone: "sales",
             },
           ]}
@@ -475,6 +481,8 @@ export function AdvisorDetail({
         <DetailPeriodPresets
           key={analysisAdvisor}
           scope={"advisor-detail:" + analysisAdvisor}
+          since={since}
+          until={until}
           onSelect={(a, b) => {
             setSelectedPeriod(null);
             previousView.current = null;
@@ -483,14 +491,101 @@ export function AdvisorDetail({
             setUntil(b);
           }}
         />
-        <AdvisorPeriodHistory
-          sectionId={sectionId + "assignments"}
-          advisorId={person.id}
-          tableId={tableId}
-          aliasId={aliasId}
-          country={country}
-          onStatistics={selectPeriod}
-        />
+        {row && (
+          <>
+            <DetailSection
+              id={sectionId + "products"}
+              stateKey="products"
+              title="Ventas por producto y país · origen de la suma"
+              tone="sales"
+            >
+              <div className="table-scroll advisor-source-scroll">
+                <table className="advisor-source-breakdown">
+                  <thead>
+                    <tr>
+                      <th>Hoja</th>
+                      <th>Inventario</th>
+                      <th>País</th>
+                      <th>Asesor</th>
+                      <th>V del período</th>
+                      <th></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {data!.breakdown.map((source) => {
+                      const cells = Object.values(source.days),
+                        known = cells.filter((c) => c.sales !== null && !c.na);
+                      return (
+                        <tr
+                          key={JSON.stringify([
+                            source.tableId,
+                            source.aliasId,
+                            source.country,
+                          ])}
+                          data-source-alias={source.aliasId}
+                          data-source-country={source.country}
+                        >
+                          <td>{source.tableName}</td>
+                          <td>{source.alias}</td>
+                          <td>{source.country}</td>
+                          <td>{row.name}</td>
+                          <td>
+                            {known.length
+                              ? number(known.reduce((s, c) => s + c.sales!, 0))
+                              : cells.every((c) => c.na)
+                                ? "N.A."
+                                : "—"}
+                            {known.length &&
+                            cells.some(
+                              (c) => c.partial || (!c.na && c.sales === null),
+                            )
+                              ? " *"
+                              : ""}
+                          </td>
+                          <td>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setTableId(source.tableId);
+                                setAliasId(source.aliasId);
+                                setCountry(source.country);
+                              }}
+                            >
+                              Ver esta combinación
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+              {!data!.breakdown.length && (
+                <p>
+                  No hay filas con esa coincidencia de inventario, asesor y
+                  país.
+                </p>
+              )}
+            </DetailSection>
+          </>
+        )}
+        {!selectedPeriod && (
+          <>
+            {valid && (
+              <AdvisorItemAnalysis
+                tableId={tableId}
+                aliasId={aliasId}
+                country={country}
+                since={since}
+                until={until}
+                onAdvisor={(id) => {
+                  setAnalysisAdvisor(id);
+                  setSelectedPeriod(null);
+                }}
+              />
+            )}
+          </>
+        )}
         {selectedPeriod ? (
           <div
             className="sheet-period-nav"
@@ -514,19 +609,6 @@ export function AdvisorDetail({
           </div>
         ) : (
           <>
-            {valid && (
-              <AdvisorItemAnalysis
-                tableId={tableId}
-                aliasId={aliasId}
-                country={country}
-                since={since}
-                until={until}
-                onAdvisor={(id) => {
-                  setAnalysisAdvisor(id);
-                  setSelectedPeriod(null);
-                }}
-              />
-            )}
             <SheetSearchSelect
               label="Asesor del análisis"
               value={analysisAdvisor}
@@ -565,414 +647,378 @@ export function AdvisorDetail({
         )}
         {row && (
           <>
-            <div id={sectionId + "summary"} className="advisor-detail-summary">
-              <span>
-                Base manual (BM)
-                <strong>{bmTotal === null ? "—" : number(bmTotal)}</strong>
-                <small>Registrada en Totales y Asesores por hoja y país</small>
-              </span>
-              <span>
-                Ventas / BM
-                <strong>
-                  {!aliasId && sales !== null && bmTotal !== null && bmTotal > 0
-                    ? performanceRatio(sales, bmTotal, 100)!.toLocaleString(
-                        "es-PE",
-                        { maximumFractionDigits: 2 },
-                      ) + " %"
-                    : "—"}
-                </strong>
-                <small>
-                  {aliasId
-                    ? "BM corresponde a la hoja completa; quita el filtro de inventario para comparar."
-                    : "Ventas registradas respecto a la base manual del período"}
-                </small>
-              </span>
-              <span>
-                Base aproximada del asesor (B)
-                <b>
-                  {baseTotal === null ? "—" : number(baseTotal)}
-                  {basePartial ? " *" : ""}
-                </b>
-                <small>
-                  {baseDays.length}/{days.length} días con base de los
-                  diplomados asignados
-                </small>
-              </span>
-              <span>
-                Ventas (V)
-                <strong>
-                  {sales === null ? "—" : number(sales)}
-                  {partial ? " *" : ""}
-                </strong>
-              </span>
-              <span>
-                Promedio por día con V
-                <strong>
-                  {sales === null ? "—" : number(sales / known.length)}
-                </strong>
-                <small>
-                  {known.length}/{days.length} días con ventas registradas
-                </small>
-              </span>
-              <span>
-                Horas ausentes (H)
-                <strong>
-                  {hours === null ? "—" : number(hours) + " h"}
-                  {pending ? " +" : ""}
-                </strong>
-                <small>{pending} regreso(s) pendiente(s)</small>
-              </span>
-              <span>
-                Asistencia (A)
-                <strong>
-                  {present} presente(s) · {absent} ausente(s)
-                </strong>
-              </span>
-              <span data-advisor-summary="absences">
-                Inasistencias (I)
-                <strong>{recordedAttendance ? absent : "—"}</strong>
-                <small>
-                  {recordedAttendance}/{days.length} días con asistencia
-                  registrada
-                </small>
-              </span>
-            </div>
-            <h3
-              id={sectionId + "chart"}
-              className="detail-section-title detail-section-parameters"
+            <DetailSection
+              id={sectionId + "summary"}
+              stateKey="summary"
+              title="Resumen"
+              tone="sales"
             >
-              Estadísticas del período
-            </h3>
-            <div
-              className="row advisor-chart-modes"
-              role="group"
-              aria-label="Vista de estadísticas"
-            >
-              <button
-                aria-pressed={chartMode === "date"}
-                onClick={() => setChartMode("date")}
-              >
-                Por fecha: barras y línea
-              </button>
-              <button
-                aria-pressed={chartMode === "xy"}
-                onClick={() => setChartMode("xy")}
-              >
-                Comparar parámetros X/Y
-              </button>
-            </div>
-            <div className="row advisor-detail-controls">
-              <label>
-                {chartMode === "date" ? "1 · Barras" : "Eje X"}
-                <select
-                  aria-label="Barras del detalle del asesor"
-                  value={bars}
-                  onChange={(e) => {
-                    const v = e.target.value as AdvisorMetric;
-                    setBars(v);
-                    if (v === line)
-                      setLine(v === "results" ? "cost" : "results");
-                  }}
-                >
-                  {options.map((o) => (
-                    <option key={o.value} value={o.value}>
-                      {o.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label>
-                {chartMode === "date" ? "2 · Línea con puntos" : "Eje Y"}
-                <select
-                  aria-label="Línea del detalle del asesor"
-                  value={line}
-                  onChange={(e) => {
-                    const v = e.target.value as AdvisorMetric;
-                    setLine(v);
-                    if (v === bars)
-                      setBars(v === "results" ? "cost" : "results");
-                  }}
-                >
-                  {options.map((o) => (
-                    <option key={o.value} value={o.value}>
-                      {o.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            </div>
-            {chartMode === "xy" ? (
-              <AdvisorScatter
-                rows={days.map((day) => ({
-                  day,
-                  x: metricValue(bars, day),
-                  y: metricValue(line, day),
-                }))}
-                xLabel={metricLabel(bars)}
-                yLabel={metricLabel(line)}
-              />
-            ) : (
-              <>
-                {" "}
-                <MetaDailyChart
-                  rows={chart}
-                  bars="results"
-                  line="cost"
-                  currency="PEN"
-                  metricName="Ventas"
-                  since={since}
-                  until={until}
-                  labels={{
-                    results: metricLabel(bars),
-                    cost: metricLabel(line),
-                    spend: "Asistencia (A)",
-                  }}
-                  units={{
-                    results: bars === "cost" ? "hours" : "count",
-                    cost: line === "cost" ? "hours" : "count",
-                    spend: "count",
-                  }}
-                />
-              </>
-            )}
-            <p className="hint">
-              Escalas independientes. A: 1 = Presente, 0 = Ausente. I: 1 =
-              Ausente, 0 = Presente; N.A. y vacío dejan un hueco. V y H no
-              imputan ceros a los días sin datos. H muestra solo horas
-              confirmadas; + indica regreso pendiente. * Cobertura parcial. Las
-              ventas respetan cada tramo de asignación y los cortes registrados;
-              no se reparten por horas. Las asignaciones antiguas sin historial
-              conservan su atribución previa.
-            </p>
-            <p className="hint">
-              B es una estimación: suma la base completa de cada día de los
-              diplomados que tuvo asignados, aunque el cambio fuera por la
-              tarde. No se reparte por horas; un mismo diplomado cuenta una sola
-              vez por día y asesor. Puede coincidir entre asesores que
-              compartieron el día y no debe sumarse entre personas. Las
-              asignaciones heredadas sin fecha usan su responsabilidad conocida
-              como aproximación. Las ventas V corresponden al reparto registrado
-              para cada persona. A/I/H son registros diarios del asesor; no se
-              distribuyen por minutos.
-            </p>
-            <h3
-              id={sectionId + "days"}
-              className="detail-section-title detail-section-daily"
-            >
-              Histórico por día · ventas de {row.name}
-            </h3>
-            {pageCount > 1 && (
-              <nav
-                className="alias-period-pagination"
-                aria-label="Páginas del histórico diario"
-              >
+              <div className="advisor-detail-summary">
                 <span>
-                  {currentDayPage * 31 + 1}–
-                  {Math.min((currentDayPage + 1) * 31, days.length)} de{" "}
-                  {days.length} días; totales y gráficos de todo el período
+                  Base manual (BM)
+                  <strong>{bmTotal === null ? "—" : number(bmTotal)}</strong>
+                  <small>
+                    Registrada en Totales y Asesores por hoja y país
+                  </small>
                 </span>
-                <div className="row">
-                  <button
-                    disabled={currentDayPage === 0}
-                    onClick={() => setDayPage(currentDayPage - 1)}
-                  >
-                    Días anteriores
-                  </button>
-                  <button
-                    disabled={currentDayPage + 1 >= pageCount}
-                    onClick={() => setDayPage(currentDayPage + 1)}
-                  >
-                    Días siguientes
-                  </button>
-                </div>
-              </nav>
-            )}
-            <div className="table-scroll">
-              <table className="advisor-detail-days">
-                <thead>
-                  <tr>
-                    <th>Fecha</th>
-                    <th>A</th>
-                    <th>H</th>
-                    <th title="Inasistencias">I</th>
-                    <th>V</th>
-                    <th>BM</th>
-                    <th>B aproximada</th>
-                    <th>Salidas y regresos · Lima</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {visibleDays.map((day) => {
-                    const c = row.days[day];
-                    return (
-                      <tr key={day}>
-                        <th>{day}</th>
-                        <td>{attendance(c.status)}</td>
-                        <td>
-                          {c.absence.hours === null
-                            ? "—"
-                            : number(c.absence.hours)}
-                          {c.absence.pending ? " +" : ""}
-                        </td>
-                        <td>
-                          {advisorAttendanceValue(c.status, "absences") ??
-                            (c.status === "NA" ? "N.A." : "—")}
-                        </td>
-                        <td>
-                          {c.na
-                            ? "N.A."
-                            : c.sales === null
-                              ? "—"
-                              : number(c.sales)}
-                          {c.partial ? " *" : ""}
-                        </td>
-                        <td>
-                          {c.manualBase === null || c.manualBase === undefined
-                            ? "—"
-                            : number(c.manualBase)}
-                        </td>
-                        <td>
-                          {data?.assignedBaseEstimate?.days[day]?.value ?? "—"}
-                          {data?.assignedBaseEstimate?.days[day]?.partial
-                            ? " *"
-                            : ""}
-                        </td>
-                        <td>
-                          {c.absence.mode === "CLOCK"
-                            ? c.absence.intervals
-                                .map(
-                                  (i) =>
-                                    `${i.start} → ${i.end ?? "regreso pendiente"}${i.nextDay ? " (+1 día)" : ""}`,
-                                )
-                                .join("; ")
-                            : c.absence.hours === null
-                              ? "—"
-                              : "Horas decimales manuales"}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-            <h3
-              id={sectionId + "bm"}
-              className="detail-section-title detail-section-sales"
+                <span>
+                  Ventas / BM
+                  <strong>
+                    {!aliasId &&
+                    sales !== null &&
+                    bmTotal !== null &&
+                    bmTotal > 0
+                      ? performanceRatio(sales, bmTotal, 100)!.toLocaleString(
+                          "es-PE",
+                          { maximumFractionDigits: 2 },
+                        ) + " %"
+                      : "—"}
+                  </strong>
+                  <small>
+                    {aliasId
+                      ? "BM corresponde a la hoja completa; quita el filtro de inventario para comparar."
+                      : "Ventas registradas respecto a la base manual del período"}
+                  </small>
+                </span>
+                <span>
+                  Base aproximada del asesor (B)
+                  <b>
+                    {baseTotal === null ? "—" : number(baseTotal)}
+                    {basePartial ? " *" : ""}
+                  </b>
+                  <small>
+                    {baseDays.length}/{days.length} días con base de los
+                    diplomados asignados
+                  </small>
+                </span>
+                <span>
+                  Ventas (V)
+                  <strong>
+                    {sales === null ? "—" : number(sales)}
+                    {partial ? " *" : ""}
+                  </strong>
+                </span>
+                <span>
+                  Promedio por día con V
+                  <strong>
+                    {sales === null ? "—" : number(sales / known.length)}
+                  </strong>
+                  <small>
+                    {known.length}/{days.length} días con ventas registradas
+                  </small>
+                </span>
+                <span>
+                  Horas ausentes (H)
+                  <strong>
+                    {hours === null ? "—" : number(hours) + " h"}
+                    {pending ? " +" : ""}
+                  </strong>
+                  <small>{pending} regreso(s) pendiente(s)</small>
+                </span>
+                <span>
+                  Asistencia (A)
+                  <strong>
+                    {present} presente(s) · {absent} ausente(s)
+                  </strong>
+                </span>
+                <span data-advisor-summary="absences">
+                  Inasistencias (I)
+                  <strong>{recordedAttendance ? absent : "—"}</strong>
+                  <small>
+                    {recordedAttendance}/{days.length} días con asistencia
+                    registrada
+                  </small>
+                </span>
+              </div>
+            </DetailSection>
+            <DetailSection
+              id={sectionId + "chart"}
+              stateKey="chart"
+              title="Estadísticas del período"
+              tone="parameters"
             >
-              Base manual por hoja y país
-            </h3>
-            <p className="hint">
-              BM es el reparto manual guardado para esta persona. No se estima
-              por asignaciones ni se convierte por moneda; no depende del filtro
-              de diplomado.
-            </p>
-            <div className="table-scroll advisor-source-scroll">
-              <table>
-                <thead>
-                  <tr>
-                    <th>Fecha</th>
-                    <th>Hoja</th>
-                    <th>País</th>
-                    <th>BM</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {(data?.manualBaseBreakdown ?? [])
-                    .filter(
-                      (r) =>
-                        r.advisorId === analysisAdvisor &&
-                        visibleDays.includes(r.day),
-                    )
-                    .map((r) => (
-                      <tr
-                        key={JSON.stringify([
-                          r.tableId,
-                          r.country,
-                          r.day,
-                          r.advisorId,
-                        ])}
-                      >
-                        <th>{r.day}</th>
-                        <td>{r.tableName}</td>
-                        <td>{r.country || "Sin país"}</td>
-                        <td>{number(r.quantity)}</td>
-                      </tr>
+              <div
+                className="row advisor-chart-modes"
+                role="group"
+                aria-label="Vista de estadísticas"
+              >
+                <button
+                  aria-pressed={chartMode === "date"}
+                  onClick={() => setChartMode("date")}
+                >
+                  Por fecha: barras y línea
+                </button>
+                <button
+                  aria-pressed={chartMode === "xy"}
+                  onClick={() => setChartMode("xy")}
+                >
+                  Comparar parámetros X/Y
+                </button>
+              </div>
+              <div className="row advisor-detail-controls">
+                <label>
+                  {chartMode === "date" ? "1 · Barras" : "Eje X"}
+                  <select
+                    aria-label="Barras del detalle del asesor"
+                    value={bars}
+                    onChange={(e) => {
+                      const v = e.target.value as AdvisorMetric;
+                      setBars(v);
+                      if (v === line)
+                        setLine(v === "results" ? "cost" : "results");
+                    }}
+                  >
+                    {options.map((o) => (
+                      <option key={o.value} value={o.value}>
+                        {o.label}
+                      </option>
                     ))}
-                </tbody>
-              </table>
-            </div>
-            <h3
-              id={sectionId + "products"}
-              className="detail-section-title detail-section-sales"
+                  </select>
+                </label>
+                <label>
+                  {chartMode === "date" ? "2 · Línea con puntos" : "Eje Y"}
+                  <select
+                    aria-label="Línea del detalle del asesor"
+                    value={line}
+                    onChange={(e) => {
+                      const v = e.target.value as AdvisorMetric;
+                      setLine(v);
+                      if (v === bars)
+                        setBars(v === "results" ? "cost" : "results");
+                    }}
+                  >
+                    {options.map((o) => (
+                      <option key={o.value} value={o.value}>
+                        {o.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+              {chartMode === "xy" ? (
+                <AdvisorScatter
+                  rows={days.map((day) => ({
+                    day,
+                    x: metricValue(bars, day),
+                    y: metricValue(line, day),
+                  }))}
+                  xLabel={metricLabel(bars)}
+                  yLabel={metricLabel(line)}
+                />
+              ) : (
+                <>
+                  {" "}
+                  <MetaDailyChart
+                    rows={chart}
+                    bars="results"
+                    line="cost"
+                    currency="PEN"
+                    metricName="Ventas"
+                    since={since}
+                    until={until}
+                    labels={{
+                      results: metricLabel(bars),
+                      cost: metricLabel(line),
+                      spend: "Asistencia (A)",
+                    }}
+                    units={{
+                      results: bars === "cost" ? "hours" : "count",
+                      cost: line === "cost" ? "hours" : "count",
+                      spend: "count",
+                    }}
+                  />
+                </>
+              )}
+              <p className="hint">
+                Escalas independientes. A: 1 = Presente, 0 = Ausente. I: 1 =
+                Ausente, 0 = Presente; N.A. y vacío dejan un hueco. V y H no
+                imputan ceros a los días sin datos. H muestra solo horas
+                confirmadas; + indica regreso pendiente. * Cobertura parcial.
+                Las ventas respetan cada tramo de asignación y los cortes
+                registrados; no se reparten por horas. Las asignaciones antiguas
+                sin historial conservan su atribución previa.
+              </p>
+              <p className="hint">
+                B es una estimación: suma la base completa de cada día de los
+                diplomados que tuvo asignados, aunque el cambio fuera por la
+                tarde. No se reparte por horas; un mismo diplomado cuenta una
+                sola vez por día y asesor. Puede coincidir entre asesores que
+                compartieron el día y no debe sumarse entre personas. Las
+                asignaciones heredadas sin fecha usan su responsabilidad
+                conocida como aproximación. Las ventas V corresponden al reparto
+                registrado para cada persona. A/I/H son registros diarios del
+                asesor; no se distribuyen por minutos.
+              </p>
+            </DetailSection>
+            <DetailSection
+              id={sectionId + "days"}
+              stateKey="days"
+              title={`Histórico por día · ventas de ${row.name}`}
+              tone="daily"
             >
-              Ventas por producto y país · origen de la suma
-            </h3>
-            <div className="table-scroll advisor-source-scroll">
-              <table className="advisor-source-breakdown">
-                <thead>
-                  <tr>
-                    <th>Hoja</th>
-                    <th>Inventario</th>
-                    <th>País</th>
-                    <th>Asesor</th>
-                    <th>V del período</th>
-                    <th></th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {data!.breakdown.map((source) => {
-                    const cells = Object.values(source.days),
-                      known = cells.filter((c) => c.sales !== null && !c.na);
-                    return (
-                      <tr
-                        key={JSON.stringify([
-                          source.tableId,
-                          source.aliasId,
-                          source.country,
-                        ])}
-                        data-source-alias={source.aliasId}
-                        data-source-country={source.country}
-                      >
-                        <td>{source.tableName}</td>
-                        <td>{source.alias}</td>
-                        <td>{source.country}</td>
-                        <td>{row.name}</td>
-                        <td>
-                          {known.length
-                            ? number(known.reduce((s, c) => s + c.sales!, 0))
-                            : cells.every((c) => c.na)
+              {pageCount > 1 && (
+                <nav
+                  className="alias-period-pagination"
+                  aria-label="Páginas del histórico diario"
+                >
+                  <span>
+                    {currentDayPage * 31 + 1}–
+                    {Math.min((currentDayPage + 1) * 31, days.length)} de{" "}
+                    {days.length} días; totales y gráficos de todo el período
+                  </span>
+                  <div className="row">
+                    <button
+                      disabled={currentDayPage === 0}
+                      onClick={() => setDayPage(currentDayPage - 1)}
+                    >
+                      Días anteriores
+                    </button>
+                    <button
+                      disabled={currentDayPage + 1 >= pageCount}
+                      onClick={() => setDayPage(currentDayPage + 1)}
+                    >
+                      Días siguientes
+                    </button>
+                  </div>
+                </nav>
+              )}
+              <div className="table-scroll">
+                <table className="advisor-detail-days">
+                  <thead>
+                    <tr>
+                      <th>Fecha</th>
+                      <th>A</th>
+                      <th>H</th>
+                      <th title="Inasistencias">I</th>
+                      <th>V</th>
+                      <th>BM</th>
+                      <th>B aproximada</th>
+                      <th>Salidas y regresos · Lima</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {visibleDays.map((day) => {
+                      const c = row.days[day];
+                      return (
+                        <tr key={day}>
+                          <th>{day}</th>
+                          <td>{attendance(c.status)}</td>
+                          <td>
+                            {c.absence.hours === null
+                              ? "—"
+                              : number(c.absence.hours)}
+                            {c.absence.pending ? " +" : ""}
+                          </td>
+                          <td>
+                            {advisorAttendanceValue(c.status, "absences") ??
+                              (c.status === "NA" ? "N.A." : "—")}
+                          </td>
+                          <td>
+                            {c.na
                               ? "N.A."
-                              : "—"}
-                          {known.length &&
-                          cells.some(
-                            (c) => c.partial || (!c.na && c.sales === null),
-                          )
-                            ? " *"
-                            : ""}
-                        </td>
-                        <td>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setTableId(source.tableId);
-                              setAliasId(source.aliasId);
-                              setCountry(source.country);
-                            }}
-                          >
-                            Ver esta combinación
-                          </button>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
+                              : c.sales === null
+                                ? "—"
+                                : number(c.sales)}
+                            {c.partial ? " *" : ""}
+                          </td>
+                          <td>
+                            {c.manualBase === null || c.manualBase === undefined
+                              ? "—"
+                              : number(c.manualBase)}
+                          </td>
+                          <td>
+                            {data?.assignedBaseEstimate?.days[day]?.value ??
+                              "—"}
+                            {data?.assignedBaseEstimate?.days[day]?.partial
+                              ? " *"
+                              : ""}
+                          </td>
+                          <td>
+                            {c.absence.mode === "CLOCK"
+                              ? c.absence.intervals
+                                  .map(
+                                    (i) =>
+                                      `${i.start} → ${i.end ?? "regreso pendiente"}${i.nextDay ? " (+1 día)" : ""}`,
+                                  )
+                                  .join("; ")
+                              : c.absence.hours === null
+                                ? "—"
+                                : "Horas decimales manuales"}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </DetailSection>
+            <DetailSection
+              id={sectionId + "bm"}
+              stateKey="bm"
+              title="Base manual por hoja y país"
+              tone="sales"
+            >
+              <p className="hint">
+                BM es el reparto manual guardado para esta persona. No se estima
+                por asignaciones ni se convierte por moneda; no depende del
+                filtro de diplomado.
+              </p>
+              <div className="table-scroll advisor-source-scroll">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Fecha</th>
+                      <th>Hoja</th>
+                      <th>País</th>
+                      <th>BM</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(data?.manualBaseBreakdown ?? [])
+                      .filter(
+                        (r) =>
+                          r.advisorId === analysisAdvisor &&
+                          visibleDays.includes(r.day),
+                      )
+                      .map((r) => (
+                        <tr
+                          key={JSON.stringify([
+                            r.tableId,
+                            r.country,
+                            r.day,
+                            r.advisorId,
+                          ])}
+                        >
+                          <th>{r.day}</th>
+                          <td>{r.tableName}</td>
+                          <td>{r.country || "Sin país"}</td>
+                          <td>{number(r.quantity)}</td>
+                        </tr>
+                      ))}
+                  </tbody>
+                </table>
+              </div>
+            </DetailSection>
+          </>
+        )}
+        <AdvisorPeriodHistory
+          sectionId={sectionId + "assignments"}
+          advisorId={person.id}
+          tableId={tableId}
+          aliasId={aliasId}
+          country={country}
+          onStatistics={selectPeriod}
+        />
+        {row && (
+          <>
             {!!data!.breakdown.length && (
-              <details className="advisor-sales-by-day">
-                <summary className="detail-section-title detail-section-sales">
-                  Qué vendió cada día · {visibleDays[0]} — {visibleDays.at(-1)}
-                </summary>
+              <DetailSection
+                id={sectionId + "sold-days"}
+                stateKey="sold-days"
+                className="advisor-sales-by-day"
+                title={`Qué vendió cada día · ${visibleDays[0]} — ${visibleDays.at(-1)}`}
+                tone="sales"
+              >
                 <div className="table-scroll">
                   <table>
                     <thead>
@@ -1020,12 +1066,7 @@ export function AdvisorDetail({
                     </tbody>
                   </table>
                 </div>
-              </details>
-            )}
-            {!data!.breakdown.length && (
-              <p>
-                No hay filas con esa coincidencia de inventario, asesor y país.
-              </p>
+              </DetailSection>
             )}
           </>
         )}
@@ -1041,6 +1082,6 @@ export function AdvisorDetail({
           </button>
         </footer>
       </dialog>
-    </>
+    </DetailSections>
   );
 }

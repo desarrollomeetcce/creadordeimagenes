@@ -9,6 +9,7 @@ import {
   type SheetMetric,
 } from "../../lib/meta-ads/period-summary";
 import { MetaDateRange } from "./meta-date-range";
+import { DetailSection, DetailSections } from "./detail-section";
 import { DetailNavigation } from "./detail-navigation";
 import { MetaDailyChart } from "./meta-daily-chart";
 import type { ActivePeriod } from "../../lib/meta-ads/active-periods";
@@ -128,7 +129,7 @@ export function EffectivenessHistory({
     spend: null,
   }));
   return (
-    <>
+    <DetailSections>
       <button
         type="button"
         className="sheet-history-trigger"
@@ -222,206 +223,214 @@ export function EffectivenessHistory({
                   de Efectividad de este inventario y país; no cambia estados en
                   Meta Ads.
                 </p>
-                <h3
+                <DetailSection
                   id={id + "activity"}
-                  className="detail-section-title detail-section-activity"
+                  stateKey="activity"
+                  title="Últimas activaciones"
+                  tone="activity"
                 >
-                  Últimas activaciones
-                </h3>
-                {data.activePeriods.length ? (
-                  <ol className="alias-active-periods">
-                    {data.activePeriods
-                      .slice(currentPage * 5, currentPage * 5 + 5)
-                      .map((period) => (
-                        <li key={period.id}>
-                          <div>
-                            <strong
-                              title={`Activado el ${stamp(period.from)} (Lima)`}
+                  {data.activePeriods.length ? (
+                    <ol className="alias-active-periods">
+                      {data.activePeriods
+                        .slice(currentPage * 5, currentPage * 5 + 5)
+                        .map((period) => (
+                          <li key={period.id}>
+                            <div>
+                              <strong
+                                title={`Activado el ${stamp(period.from)} (Lima)`}
+                              >
+                                {period.until
+                                  ? `Del ${new Date(period.since + "T12:00:00Z").toLocaleDateString("es-PE", { dateStyle: "long", timeZone: "America/Lima" })} al ${new Date(period.through + "T12:00:00Z").toLocaleDateString("es-PE", { dateStyle: "long", timeZone: "America/Lima" })}`
+                                  : `Desde el ${new Date(period.since + "T12:00:00Z").toLocaleDateString("es-PE", { dateStyle: "long", timeZone: "America/Lima" })} hasta la fecha`}
+                              </strong>
+                              <small>
+                                {period.until
+                                  ? `Se desactivó el ${stamp(period.until)} (Lima).`
+                                  : `Activo al ${stamp(data.asOf)} (Lima).`}
+                              </small>
+                            </div>
+                            <a
+                              className="button alias-period-link"
+                              href={periodTableUrl({
+                                tableId,
+                                aliasId,
+                                country,
+                                since: period.since,
+                                until: period.through,
+                              })}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              title="Abrir los datos del período en una nueva ventana"
+                              aria-label={`Ir al período activo ${period.since} — ${period.through}`}
                             >
-                              {period.until
-                                ? `Del ${new Date(period.since + "T12:00:00Z").toLocaleDateString("es-PE", { dateStyle: "long", timeZone: "America/Lima" })} al ${new Date(period.through + "T12:00:00Z").toLocaleDateString("es-PE", { dateStyle: "long", timeZone: "America/Lima" })}`
-                                : `Desde el ${new Date(period.since + "T12:00:00Z").toLocaleDateString("es-PE", { dateStyle: "long", timeZone: "America/Lima" })} hasta la fecha`}
-                            </strong>
-                            <small>
-                              {period.until
-                                ? `Se desactivó el ${stamp(period.until)} (Lima).`
-                                : `Activo al ${stamp(data.asOf)} (Lima).`}
-                            </small>
-                          </div>
-                          <a
-                            className="button alias-period-link"
-                            href={periodTableUrl({
-                              tableId,
-                              aliasId,
-                              country,
-                              since: period.since,
-                              until: period.through,
-                            })}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            title="Abrir los datos del período en una nueva ventana"
-                            aria-label={`Ir al período activo ${period.since} — ${period.through}`}
-                          >
-                            Ir al período
-                          </a>
-                        </li>
-                      ))}
-                  </ol>
-                ) : (
-                  <p>
-                    No hay períodos activos registrados. Se registrarán
-                    automáticamente cuando actives esta fila.
-                  </p>
-                )}
-                {data.activePeriods.length > 5 && (
-                  <nav
-                    className="alias-period-pagination"
-                    aria-label="Páginas de activaciones"
-                  >
-                    <span>
-                      {currentPage * 5 + 1}–
-                      {Math.min(currentPage * 5 + 5, data.activePeriods.length)}{" "}
-                      de {data.activePeriods.length} activaciones · Página{" "}
-                      {currentPage + 1} de {pageCount}
-                    </span>
-                    <div className="row">
-                      <button
-                        disabled={currentPage === 0}
-                        onClick={() => setPage(currentPage - 1)}
-                      >
-                        Más recientes
-                      </button>
-                      <button
-                        disabled={currentPage + 1 >= pageCount}
-                        onClick={() => setPage(currentPage + 1)}
-                      >
-                        Anteriores
-                      </button>
-                    </div>
-                  </nav>
-                )}
-                <h3
-                  id={id + "chart"}
-                  className="detail-section-title detail-section-parameters"
-                >
-                  Evolución de parámetros
-                </h3>
-                <div className="row alias-detail-controls">
-                  <label>
-                    1 · Barras
-                    <select
-                      aria-label="Barras del detalle del inventario"
-                      value={bars}
-                      onChange={(e) => {
-                        const v = e.target.value as SheetMetric;
-                        setBars(v);
-                        if (v === line)
-                          setLine(v === "sales" ? "budget" : "sales");
-                      }}
-                    >
-                      {sheetMetrics.map((m) => (
-                        <option key={m.key} value={m.key}>
-                          {m.key === "base" ? "Base" : m.name} ({m.label})
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <label>
-                    2 · Línea con puntos
-                    <select
-                      aria-label="Línea del detalle del inventario"
-                      value={line}
-                      onChange={(e) => {
-                        const v = e.target.value as SheetMetric;
-                        setLine(v);
-                        if (v === bars)
-                          setBars(v === "sales" ? "budget" : "sales");
-                      }}
-                    >
-                      {sheetMetrics.map((m) => (
-                        <option key={m.key} value={m.key}>
-                          {m.key === "base" ? "Base" : m.name} ({m.label})
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                </div>
-                <MetaDailyChart
-                  rows={chart}
-                  bars="results"
-                  line="cost"
-                  currency={data.currency || "PEN"}
-                  metricName="Ventas"
-                  since={since}
-                  until={until}
-                  labels={{
-                    results: `${bar.name} (${bar.label})`,
-                    cost: `${dot.name} (${dot.label})`,
-                  }}
-                  units={{
-                    results: bar.money && data.currency ? "currency" : "count",
-                    cost: dot.money && data.currency ? "currency" : "count",
-                  }}
-                />
-                <h3
-                  id={id + "days"}
-                  className="detail-section-title detail-section-daily"
-                >
-                  Histórico por día
-                </h3>
-                {navigation}
-                <div className="table-scroll">
-                  <table className="alias-parameter-days">
-                    <thead>
-                      <tr>
-                        <th>Fecha</th>
-                        {sheetMetrics.map((m) => (
-                          <th key={m.key} title={m.name}>
-                            {m.label}
-                          </th>
+                              Ir al período
+                            </a>
+                          </li>
                         ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {visibleDays.map((day) => (
-                        <tr key={day}>
-                          <th>{day}</th>
+                    </ol>
+                  ) : (
+                    <p>
+                      No hay períodos activos registrados. Se registrarán
+                      automáticamente cuando actives esta fila.
+                    </p>
+                  )}
+                  {data.activePeriods.length > 5 && (
+                    <nav
+                      className="alias-period-pagination"
+                      aria-label="Páginas de activaciones"
+                    >
+                      <span>
+                        {currentPage * 5 + 1}–
+                        {Math.min(
+                          currentPage * 5 + 5,
+                          data.activePeriods.length,
+                        )}{" "}
+                        de {data.activePeriods.length} activaciones · Página{" "}
+                        {currentPage + 1} de {pageCount}
+                      </span>
+                      <div className="row">
+                        <button
+                          disabled={currentPage === 0}
+                          onClick={() => setPage(currentPage - 1)}
+                        >
+                          Más recientes
+                        </button>
+                        <button
+                          disabled={currentPage + 1 >= pageCount}
+                          onClick={() => setPage(currentPage + 1)}
+                        >
+                          Anteriores
+                        </button>
+                      </div>
+                    </nav>
+                  )}
+                </DetailSection>
+                <DetailSection
+                  id={id + "chart"}
+                  stateKey="chart"
+                  title="Evolución de parámetros"
+                  tone="parameters"
+                >
+                  <div className="row alias-detail-controls">
+                    <label>
+                      1 · Barras
+                      <select
+                        aria-label="Barras del detalle del inventario"
+                        value={bars}
+                        onChange={(e) => {
+                          const v = e.target.value as SheetMetric;
+                          setBars(v);
+                          if (v === line)
+                            setLine(v === "sales" ? "budget" : "sales");
+                        }}
+                      >
+                        {sheetMetrics.map((m) => (
+                          <option key={m.key} value={m.key}>
+                            {m.key === "base" ? "Base" : m.name} ({m.label})
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label>
+                      2 · Línea con puntos
+                      <select
+                        aria-label="Línea del detalle del inventario"
+                        value={line}
+                        onChange={(e) => {
+                          const v = e.target.value as SheetMetric;
+                          setLine(v);
+                          if (v === bars)
+                            setBars(v === "sales" ? "budget" : "sales");
+                        }}
+                      >
+                        {sheetMetrics.map((m) => (
+                          <option key={m.key} value={m.key}>
+                            {m.key === "base" ? "Base" : m.name} ({m.label})
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  </div>
+                  <MetaDailyChart
+                    rows={chart}
+                    bars="results"
+                    line="cost"
+                    currency={data.currency || "PEN"}
+                    metricName="Ventas"
+                    since={since}
+                    until={until}
+                    labels={{
+                      results: `${bar.name} (${bar.label})`,
+                      cost: `${dot.name} (${dot.label})`,
+                    }}
+                    units={{
+                      results:
+                        bar.money && data.currency ? "currency" : "count",
+                      cost: dot.money && data.currency ? "currency" : "count",
+                    }}
+                  />
+                </DetailSection>
+                <DetailSection
+                  id={id + "days"}
+                  stateKey="days"
+                  title="Histórico por día"
+                  tone="daily"
+                >
+                  {navigation}
+                  <div className="table-scroll">
+                    <table className="alias-parameter-days">
+                      <thead>
+                        <tr>
+                          <th>Fecha</th>
                           {sheetMetrics.map((m) => (
-                            <td
-                              key={m.key}
-                              data-na={
-                                data.days[day]?.na.includes(m.key) || undefined
-                              }
-                            >
-                              {data.days[day]?.na.includes(m.key)
-                                ? "N.A."
-                                : value(day, m.key) === null
-                                  ? "—"
-                                  : new Intl.NumberFormat("es-PE", {
-                                      maximumFractionDigits: m.money ? 2 : 0,
-                                    }).format(value(day, m.key)!)}
-                              {m.money &&
-                              value(day, m.key) !== null &&
-                              data.currency
-                                ? " " + data.currency
-                                : ""}
-                            </td>
+                            <th key={m.key} title={m.name}>
+                              {m.label}
+                            </th>
                           ))}
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-                <p className="hint">
-                  Los parámetros corresponden a los datos actuales guardados por
-                  día; el historial de estados conserva las fechas reales de
-                  cada cambio. N.A. y los vacíos no se convierten en cero.
-                </p>
+                      </thead>
+                      <tbody>
+                        {visibleDays.map((day) => (
+                          <tr key={day}>
+                            <th>{day}</th>
+                            {sheetMetrics.map((m) => (
+                              <td
+                                key={m.key}
+                                data-na={
+                                  data.days[day]?.na.includes(m.key) ||
+                                  undefined
+                                }
+                              >
+                                {data.days[day]?.na.includes(m.key)
+                                  ? "N.A."
+                                  : value(day, m.key) === null
+                                    ? "—"
+                                    : new Intl.NumberFormat("es-PE", {
+                                        maximumFractionDigits: m.money ? 2 : 0,
+                                      }).format(value(day, m.key)!)}
+                                {m.money &&
+                                value(day, m.key) !== null &&
+                                data.currency
+                                  ? " " + data.currency
+                                  : ""}
+                              </td>
+                            ))}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  <p className="hint">
+                    Los parámetros corresponden a los datos actuales guardados
+                    por día; el historial de estados conserva las fechas reales
+                    de cada cambio. N.A. y los vacíos no se convierten en cero.
+                  </p>
+                </DetailSection>
               </>
             )}
           </>
         )}
       </div>
-    </>
+    </DetailSections>
   );
 }

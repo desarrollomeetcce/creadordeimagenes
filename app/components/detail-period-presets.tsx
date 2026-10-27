@@ -1,15 +1,22 @@
 "use client";
+import { DetailSection } from "./detail-section";
 import { useState } from "react";
 import { useWorkbookPreference } from "./use-workbook-preference";
+import { MetaDateRange } from "./meta-date-range";
 import {
   defaultDetailPeriods,
   detailPeriodPreset,
+  savedCalendarPeriod,
 } from "../../lib/meta-ads/detail-period-presets";
 export function DetailPeriodPresets({
   scope,
+  since,
+  until,
   onSelect,
 }: {
   scope: string;
+  since: string;
+  until: string;
   onSelect: (since: string, until: string) => void;
 }) {
   const [saved, setSaved] = useWorkbookPreference<string[]>(
@@ -17,8 +24,7 @@ export function DetailPeriodPresets({
     "detail-periods",
     defaultDetailPeriods,
   );
-  const [count, setCount] = useState("7"),
-    [message, setMessage] = useState("");
+  const [message, setMessage] = useState("");
   const today = () =>
     new Intl.DateTimeFormat("en-CA", {
       timeZone: "America/Lima",
@@ -26,78 +32,81 @@ export function DetailPeriodPresets({
       month: "2-digit",
       day: "2-digit",
     }).format(new Date());
-  return (
-    <section className="detail-period-presets" aria-label="Períodos guardados">
-      <strong className="detail-section-title detail-section-periods">
-        Períodos guardados
-      </strong>
-      <div className="row">
-        {saved.map((key) => {
-          const preset = detailPeriodPreset(key, today());
-          return preset ? (
-            <span className="detail-period-chip" key={key}>
-              <button
-                type="button"
-                onClick={() => {
-                  const current = detailPeriodPreset(key, today())!;
-                  onSelect(current.since, current.until);
-                }}
-              >
-                {preset.label}
-              </button>
-              <button
-                type="button"
-                aria-label={`Quitar período ${preset.label}`}
-                onClick={() => setSaved((old) => old.filter((v) => v !== key))}
-              >
-                ×
-              </button>
-            </span>
-          ) : null;
-        })}
-      </div>
-      <form
-        className="row"
-        onSubmit={(e) => {
-          e.preventDefault();
-          const preset = detailPeriodPreset("days:" + count, today());
-          if (!preset) {
-            setMessage("Elige entre 1 y 3660 días.");
-            return;
-          }
-          setSaved((old) => [...new Set([...old, "days:" + count])]);
-          setMessage("Período guardado. Pulsa su botón para consultarlo.");
-        }}
-      >
-        <label>
-          Guardar últimos{" "}
-          <input
-            aria-label="Cantidad de días del período guardado"
-            type="number"
-            min="1"
-            max="3660"
-            required
-            value={count}
-            onChange={(e) => setCount(e.target.value)}
-          />{" "}
-          días
-        </label>
-        <button type="submit">Guardar período</button>
+  const chip = (key: string) => {
+    const preset = detailPeriodPreset(key, today());
+    return preset ? (
+      <span className="detail-period-chip" key={key}>
         <button
           type="button"
+          onClick={() => {
+            const p = detailPeriodPreset(key, today())!;
+            onSelect(p.since, p.until);
+          }}
+        >
+          {preset.label}
+        </button>
+        <button
+          type="button"
+          aria-label={`Quitar período ${preset.label}`}
+          onClick={() => setSaved((old) => old.filter((v) => v !== key))}
+        >
+          ×
+        </button>
+      </span>
+    ) : null;
+  };
+  return (
+    <DetailSection
+      stateKey="periods"
+      title="Períodos guardados"
+      tone="periods"
+      className="detail-period-presets"
+    >
+      <div className="row detail-period-accesses">
+        {defaultDetailPeriods
+          .filter((key) => key !== "last-month" && saved.includes(key))
+          .map(chip)}
+        <div className="detail-period-add-group">
+          {saved.includes("last-month") && chip("last-month")}
+          <MetaDateRange
+            from={since}
+            to={until}
+            maxDays={3660}
+            triggerLabel="+"
+            triggerAriaLabel="Añadir período guardado"
+            applyLabel="Guardar período"
+            onChange={(a, b, preset) => {
+              const key = savedCalendarPeriod(a, b, preset, today());
+              if (!key) {
+                setMessage(
+                  "Elige un período válido de hasta diez años, sin fechas futuras.",
+                );
+                return;
+              }
+              setSaved((old) => [...new Set([...old, key])].slice(-100));
+              setMessage("Período guardado. Pulsa su acceso para consultarlo.");
+            }}
+          />
+        </div>
+        {saved.filter((key) => !defaultDetailPeriods.includes(key)).map(chip)}
+        <button
+          type="button"
+          className="detail-period-reset"
+          aria-label="Restablecer accesos de períodos"
+          title="Restablecer accesos"
           onClick={() => {
             setSaved(defaultDetailPeriods);
             setMessage("");
           }}
         >
-          Restablecer accesos
+          ↺
         </button>
-      </form>
+      </div>
       <small>
-        Guardados en este navegador para esta vista. Se calculan hasta hoy al
-        pulsarlos; al abrir se usa el período de la pestaña.
+        Los accesos rápidos se calculan al pulsarlos. Los rangos personalizados
+        conservan sus fechas. Guardados en este navegador para este asesor.
       </small>
       {message && <small role="status">{message}</small>}
-    </section>
+    </DetailSection>
   );
 }

@@ -1245,3 +1245,13 @@ Evidencia local: /workspace/work/totals-details-{unit,integration,typecheck,buil
 - Tema claro/oscuro, indicadores manuales/Meta diferenciados, cabecera/footer de editor persistentes al desplazar, cierre rojo/derecha y móvil sin desbordamiento. Consultar/cerrar sin cambios no escribe BM. Regresión V4+2→6+2, cinco asignaciones/página, estadísticas/ventana independiente, ventas diarias por producto y H1,5→2 con dos intervalos. Vinculación automática entre ventanas, vacío/cero, recarga/desvinculación y edición posterior independiente. Sin errores JS/API ni llamadas a proveedores externos en los recorridos normales; el único fallo de transporte se induce y verifica en la prueba de respuesta perdida.
 
 Evidencia local: /workspace/work/manual-base-{unit,integration,typecheck,build,migrate,browser,dark-browser,advisors-browser,links-browser}.txt. Capturas: manual-base-{totals-desktop,advisor-desktop,mobile,dark,dark-mobile}.png. La migración se aplica mediante el servicio migrate previo a web de compose.yaml. Publicar main y comprobar el despliegue efectivo de Hostinger son pasos distintos; no se acredita producción solo por push.
+
+### Accesos con calendario Meta y plegado de módulos (27/10/2026)
+
+183/183 unitarias, TypeScript y compilación de producción aprobados. Prueba nueva de claves relativas/calendario/fechas fijas, compatibilidad days:N, cambios de hoy y rechazo de fechas imposibles/futuras/invertidas o mayores3660 días.
+
+Chromium con PostgreSQL exclusivo: + adyacente a Mes anterior y sin fila numérica; orden de nueve secciones incluyendo las dos finales indicadas; todas abiertas inicialmente. Clic/Enter pliega y reabre, actualización y cambio de fechas conservan cierres, navegación revela el destino. Calendario compartido guarda rápido7 días y personalizado01/09–27/10, guardar no altera la consulta hasta pulsar el acceso; persistencia tras recarga y fechas iniciales de la pestaña conservadas. Calendario móvil390px sin desbordamiento. Totales mantiene módulo plegado al cambiar manual/automático; inventario al actualizar. Recorrido sin escrituras financieras, errores JS/API ni llamadas externas.
+
+Regresión existente de V4+2→6+2, reparto sin responsabilidad, asignaciones cinco/página, gráfico X/Y, navegación en ventana independiente, desglose diario y H con dos intervalos1,5→2 aprobada. Backend y esquema sin modificaciones;193/193 integraciones de la versión anterior permanecen vigentes.
+
+Evidencia local: /workspace/work/period-calendar-{unit,typecheck,build,browser,advisors-browser}.txt; capturas period-calendar-{desktop,mobile}.png. Publicación en main no equivale a verificación del contenedor activo en Hostinger.

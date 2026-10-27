@@ -631,3 +631,15 @@ test('Desempeño: ratios distinguen cantidades e inversión, denominadores cero 
  assert.equal(performanceRatio(5,500,100),1);assert.equal(performanceRatio(100,5),20);assert.equal(performanceRatio(0,500,100),0);assert.equal(performanceRatio(0,5),0);
  for(const [n,d]of [[5,0],[null,500],[5,null],[NaN,5],[5,Infinity]])assert.equal(performanceRatio(n,d),null);
 });
+
+test('Períodos por calendario: conserva accesos relativos y fechas personalizadas, sin duplicar ni aceptar rangos inválidos',async()=>{
+ const {savedCalendarPeriod,detailPeriodPreset}=await import('../lib/meta-ads/detail-period-presets');
+ assert.equal(savedCalendarPeriod('2026-10-21','2026-10-27','7','2026-10-27'),'days:7');
+ assert.equal(detailPeriodPreset('days:7','2026-10-28')?.since,'2026-10-22');
+ assert.equal(savedCalendarPeriod('2026-10-01','2026-10-27','month','2026-10-27'),'month');
+ assert.equal(savedCalendarPeriod('2026-09-01','2026-09-30','last-month','2026-10-27'),'last-month');
+ const fixed=savedCalendarPeriod('2026-09-01','2026-10-27','custom','2026-10-27');assert.equal(fixed,'range:2026-09-01:2026-10-27');assert.equal(detailPeriodPreset(fixed!,'2026-10-28')?.until,'2026-10-27');
+ assert.equal(savedCalendarPeriod('2026-10-19','2026-10-25','last-week','2026-10-27'),'calendar:last-week');
+ for(const key of ['range:2026-02-30:2026-10-27','range:2026-10-28:2026-10-27','range:2026-10-20:2026-10-28','range:2000-01-01:2026-10-27','calendar:unknown'])assert.equal(detailPeriodPreset(key,'2026-10-27'),null);
+ assert.equal(savedCalendarPeriod('2026-10-20','2026-10-27','7','2026-10-27'),null);
+});

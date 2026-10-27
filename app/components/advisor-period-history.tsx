@@ -1,4 +1,5 @@
 "use client";
+import { DetailSection } from "./detail-section";
 import { useEffect, useState } from "react";
 import { periodTableUrl } from "../../lib/meta-ads/period-table-link";
 import { engineRequest as api } from "./generation-engine";
@@ -73,14 +74,13 @@ export function AdvisorPeriodHistory({
   const count = Math.max(1, Math.ceil(periods.length / 5)),
     current = Math.min(page, count - 1);
   return (
-    <section
-      id={sectionId}
+    <DetailSection
+      stateKey="assignments"
+      title="Últimas asignaciones de asesores"
+      tone="assignments"
       className="advisor-tenure-history"
-      aria-label="Histórico de asignaciones de asesores"
+      id={sectionId}
     >
-      <h3 className="detail-section-title detail-section-assignments">
-        Últimas asignaciones de asesores
-      </h3>
       <p className="hint">
         {aliasId && country
           ? "Todos los asesores de este inventario y país."
@@ -177,6 +177,6 @@ export function AdvisorPeriodHistory({
           </div>
         </nav>
       )}
-    </section>
+    </DetailSection>
   );
 }

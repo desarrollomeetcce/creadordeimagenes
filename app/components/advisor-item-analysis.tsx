@@ -1,4 +1,5 @@
 "use client";
+import { DetailSection } from "./detail-section";
 import { useEffect, useState } from "react";
 import { readRangePages } from "./workbook-range-request";
 import { subscribeAdvisorSalesChanged } from "./advisor-sales-events";
@@ -95,13 +96,12 @@ export function AdvisorItemAnalysis({
     };
   }, [query]);
   return (
-    <section
+    <DetailSection
+      stateKey="inventory-analysis"
+      title="Ventas de este inventario por asesor"
+      tone="sales"
       className="advisor-item-analysis"
-      aria-label="Análisis del inventario por asesor"
     >
-      <h3 className="detail-section-title detail-section-sales">
-        Ventas de este inventario por asesor
-      </h3>
       <p className="hint">
         Incluye ventas registradas aunque el ítem estuviera desactivado o el
         asesor no fuera su responsable.
@@ -152,6 +152,6 @@ export function AdvisorItemAnalysis({
           </table>
         </div>
       )}
-    </section>
+    </DetailSection>
   );
 }

@@ -22,9 +22,16 @@ export function DetailNavigation({
             className={`detail-section-${item.tone ?? "parameters"}`}
             aria-pressed={active === item.target}
             disabled={disabled}
-            onClick={() => {
+            onClick={(e) => {
               const target = document.getElementById(item.target);
               if (!target) return;
+              let current: HTMLElement | null = target;
+              while (current) {
+                if (current instanceof HTMLDetailsElement) current.open = true;
+                current = current.parentElement;
+              }
+              const navigation = e.currentTarget.closest(".detail-navigation");
+              target.style.scrollMarginTop = `${(navigation?.getBoundingClientRect().height ?? 0) + 12}px`;
               setActive(item.target);
               target.scrollIntoView({
                 behavior: matchMedia("(prefers-reduced-motion: reduce)").matches

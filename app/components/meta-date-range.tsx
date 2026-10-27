@@ -20,10 +20,16 @@ export function MetaDateRange({
   to,
   onChange,
   maxDays = 31,
+  triggerLabel,
+  triggerAriaLabel,
+  applyLabel = "Actualizar",
 }: {
   from: string;
   to: string;
-  onChange: (a: string, b: string) => void;
+  onChange: (a: string, b: string, preset?: string) => void;
+  triggerLabel?: string;
+  triggerAriaLabel?: string;
+  applyLabel?: string;
   maxDays?: number;
 }) {
   const today = limaToday(),
@@ -192,6 +198,7 @@ export function MetaDateRange({
       <button
         type="button"
         ref={trigger}
+        aria-label={triggerAriaLabel}
         aria-controls={id}
         aria-expanded={open}
         onClick={() => {
@@ -219,7 +226,7 @@ export function MetaDateRange({
           setOpen(true);
         }}
       >
-        ▦ {human(from)} — {human(to)} ▾
+        {triggerLabel ?? `▦ ${human(from)} — ${human(to)} ▾`}
       </button>
       {open && (
         <section
@@ -355,7 +362,7 @@ export function MetaDateRange({
                 className="primary"
                 disabled={!valid}
                 onClick={() => {
-                  onChange(start, end);
+                  onChange(start, end, chosen);
                   if (chosen !== "custom")
                     setRecent((v) =>
                       [chosen, ...v.filter((k) => k !== chosen)].slice(0, 3),
@@ -363,7 +370,7 @@ export function MetaDateRange({
                   close();
                 }}
               >
-                Actualizar
+                {applyLabel}
               </button>
             </footer>
           </div>
