@@ -5,6 +5,7 @@ export type AbsenceView = ReturnType<typeof absenceSummary>;
 export type Attendance = "PRESENT" | "ABSENT" | "NA" | null;
 export type AdvisorDayData = {
   manualBase?: number | null;
+  advisorBase?: number | null;
   base?: number | null;
   basePartial?: boolean;
   baseTimeUnavailable?: boolean;
@@ -44,6 +45,14 @@ export type AdvisorSheetData = {
   rows: AdvisorPerson[];
   breakdown: AdvisorSource[];
   manualBaseBreakdown?: {
+    tableId: string;
+    tableName: string;
+    country: string;
+    day: string;
+    advisorId: string;
+    quantity: number;
+  }[];
+  advisorBaseBreakdown?: {
     tableId: string;
     tableName: string;
     country: string;

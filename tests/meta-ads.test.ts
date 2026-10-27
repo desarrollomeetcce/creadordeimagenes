@@ -579,8 +579,8 @@ test('Detalle de Totales: manual y automático conservan sus fuentes, cero, N.A.
   const { manualTotalColumns, automaticTotalColumns, totalDetailValue, totalDetailSummary } = await import('../lib/meta-ads/totals-detail');
   const good = (value: number | null) => ({ value, known: value === null ? 0 : 1, expected: 1, na: 0, partial: value === null, pending: false });
   const day = { revision: 0, manual: { baseManual: 3, totalSpend: 0, fixedCost: 'NA' }, sums: { sales: good(6), budget: good(10), base: good(12), spend: good(15), fixedCost: good(2) } } as any;
-  assert.deepEqual(manualTotalColumns.map(c => totalDetailValue(day,c).value), [6,10,3,0,null]);
-  assert.deepEqual(automaticTotalColumns.map(c => totalDetailValue(day,c).value), [6,12,15,2]);
+  assert.deepEqual(manualTotalColumns.map(c => totalDetailValue(day,c).value), [6,10,3,0,null,null]);
+  assert.deepEqual(automaticTotalColumns.map(c => totalDetailValue(day,c).value), [6,12,15,2,null]);
   assert.equal(totalDetailValue(day,manualTotalColumns[4]).na,1);
   const summary = totalDetailSummary([good(6),good(0),good(null)]); assert.equal(summary.value,6); assert.equal(summary.known,2); assert(summary.partial);
   assert.equal(totalDetailSummary([good(6),{...good(null),pending:true}]).value,null);
@@ -658,4 +658,12 @@ test('Distribución del asesor: mover verticalmente y emparejar horizontalmente 
  assert(moveAdvisorModule(defaultAdvisorLayout,'products','chart','right').some(r=>r.join('|')==='chart|products'));
  for(const source of advisorModuleIds)for(const target of advisorModuleIds)for(const placement of ['before','after','left','right']as const){const rows=moveAdvisorModule(defaultAdvisorLayout,source,target,placement);assert.deepEqual([...rows.flat()].sort(),[...advisorModuleIds].sort());assert(rows.every(r=>r.length>0&&r.length<=2));if(source!==target){const flat=rows.flat();assert(placement==='before'||placement==='left'?flat.indexOf(source)<flat.indexOf(target):flat.indexOf(source)>flat.indexOf(target));if(placement==='left'||placement==='right')assert(rows.some(r=>r.includes(source)&&r.includes(target)));}}
  assert.equal(JSON.stringify(defaultAdvisorLayout),original);
+});
+
+test('BA es un conteo manual independiente de B de Meta y de BM en ambas vistas de Totales',async()=>{
+ const {manualTotalColumns,automaticTotalColumns,totalDetailValue}=await import('../lib/meta-ads/totals-detail');
+ const empty={value:40,known:1,expected:1,na:0,pending:false,partial:false};
+ const day:any={sums:{base:empty},manual:{baseManual:999},revision:0};
+ for(const columns of [manualTotalColumns,automaticTotalColumns]){const ba=columns.find(c=>c.key==='advisorBase')!;assert.equal(ba.label,'BA');assert.equal(ba.sum,false);assert.equal(totalDetailValue(day,ba).value,null);day.manual.advisorBase=0;assert.equal(totalDetailValue(day,ba).value,0);day.manual.advisorBase=300;assert.equal(totalDetailValue(day,ba).value,300);day.manual.advisorBase='NA';assert.equal(totalDetailValue(day,ba).na,1);delete day.manual.advisorBase;}
+ assert.equal(day.sums.base.value,40);assert.equal(day.manual.baseManual,999);
 });

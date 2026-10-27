@@ -306,16 +306,17 @@ export function AdvisorsSheet({
       </div>
       <p className="sheet-help">
         A y H son asistencia y horas ausentes. BM suma la base manual repartida
-        a cada asesor, por hoja, país y día; pulsa BM para editarla. Es
-        independiente del diplomado filtrado. V suma las ventas registradas a
-        nombre de cada asesor en las hojas elegidas, aunque no sea el
-        responsable de la fila. Pulsa una venta para ver qué diplomados vendió
-        ese día. H = Horas ausentes (0,5 = 30 minutos): puedes registrar varias
-        salidas y regresos. A y H corresponden a la persona y no se reparten por
-        producto. Los registros anteriores sin reparto conservan su atribución
-        por asignaciones y cortes. * Total parcial o reparto pendiente de
-        aprobar; — sin datos; N.A. no es cero. Todas las hojas incluye también
-        las copias sincronizadas.
+        a cada asesor, por hoja, país y día; pulsa BM para editarla. BA es la
+        base aproximada del asesor ingresada en Totales, independiente de BM y B
+        de Meta Ads. Es independiente del diplomado filtrado. V suma las ventas
+        registradas a nombre de cada asesor en las hojas elegidas, aunque no sea
+        el responsable de la fila. Pulsa una venta para ver qué diplomados
+        vendió ese día. H = Horas ausentes (0,5 = 30 minutos): puedes registrar
+        varias salidas y regresos. A y H corresponden a la persona y no se
+        reparten por producto. Los registros anteriores sin reparto conservan su
+        atribución por asignaciones y cortes. * Total parcial o reparto
+        pendiente de aprobar; — sin datos; N.A. no es cero. Todas las hojas
+        incluye también las copias sincronizadas.
       </p>
       {message && (
         <p className="sheet-message" role="status">
@@ -350,7 +351,8 @@ export function AdvisorsSheet({
                     (widths[d + "attendance"] ?? 84) +
                     (widths[d + "sales"] ?? 48) +
                     (widths[d + "absence"] ?? 56) +
-                    (widths[d + "manualBase"] ?? 64),
+                    (widths[d + "manualBase"] ?? 64) +
+                    (widths[d + "advisorBase"] ?? 64),
                   0,
                 ),
             }}
@@ -373,6 +375,10 @@ export function AdvisorsSheet({
                 <col
                   key={d + "manualBase"}
                   style={{ width: widths[d + "manualBase"] ?? 64 }}
+                />,
+                <col
+                  key={d + "advisorBase"}
+                  style={{ width: widths[d + "advisorBase"] ?? 64 }}
                 />,
               ])}
             </colgroup>
@@ -418,7 +424,7 @@ export function AdvisorsSheet({
                   </div>
                 </th>
                 {visibleDays.map((d) => (
-                  <th key={d} colSpan={4} scope="colgroup">
+                  <th key={d} colSpan={5} scope="colgroup">
                     {d.slice(8)}.{d.slice(5, 7)}
                   </th>
                 ))}
@@ -600,6 +606,13 @@ function FragmentHeaders({
       >
         BM{handle(day + "manualBase", "Base manual " + day)}
       </th>
+      <th
+        scope="col"
+        title="Base aproximada del asesor: registrada en Totales"
+        aria-label="Base aproximada del asesor"
+      >
+        BA{handle(day + "advisorBase", "Base aproximada del asesor " + day)}
+      </th>
     </>
   );
 }
@@ -684,6 +697,14 @@ function AdvisorDay({
             ? "—"
             : cell.manualBase.toLocaleString("es-PE")}
         </button>
+      </td>
+      <td
+        aria-label={`BA ${person.name} ${day}`}
+        title="BA se registra y reparte por asesor en Totales"
+      >
+        {cell.advisorBase === null || cell.advisorBase === undefined
+          ? "—"
+          : cell.advisorBase.toLocaleString("es-PE")}
       </td>
     </>
   );

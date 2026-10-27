@@ -713,6 +713,7 @@ model MetaAccountGrant {
 }
 model MetaAliasTable {
   manualBaseDays MetaManualBaseDay[]
+  advisorBaseDays MetaAdvisorBaseDay[]
   columnLinkTarget MetaEffectivenessLink? @relation("ColumnLinkDestination")
   columnLinkSources MetaEffectivenessLink[] @relation("ColumnLinkSource")
   colors MetaEffectivenessColors?
@@ -1121,6 +1122,19 @@ model MetaEffectivenessLink {
 }
 
 model MetaManualBaseDay {
+ tableId String
+ table MetaAliasTable @relation(fields:[tableId],references:[id],onDelete:Restrict)
+ country String
+ day String
+ state String @default("VALUE")
+ allocations Json @default("[]")
+ revision Int @default(1)
+ updatedAt DateTime @updatedAt @default(now())
+ @@id([tableId,country,day])
+ @@index([day])
+}
+
+model MetaAdvisorBaseDay {
  tableId String
  table MetaAliasTable @relation(fields:[tableId],references:[id],onDelete:Restrict)
  country String

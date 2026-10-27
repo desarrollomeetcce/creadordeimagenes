@@ -12,6 +12,7 @@ import {
   type ManualBaseAllocation,
 } from "./manual-base-policy";
 import type { Actor } from "./service";
+export type ManualBaseKind = "BM" | "BA";
 export type ManualBaseScope = {
   tableId: string;
   country: string;
@@ -24,6 +25,7 @@ async function readReview(
   tx: Prisma.TransactionClient,
   scope: ManualBaseScope,
   includeAdvisors = true,
+  kind: ManualBaseKind = "BM",
 ) {
   const { tableId, country, day } = scope;
   const table = await tx.metaAliasTable.findUnique({
@@ -40,14 +42,20 @@ async function readReview(
       404,
     );
   const [stored, previous, people] = await Promise.all([
-    tx.metaManualBaseDay.findUnique({
-      where: { tableId_country_day: { tableId, country, day } },
-    }),
-    tx.metaEffectivenessTotalDay.findMany({
-      where: { tableId, country, day },
-      include: { sheet: { select: { name: true } } },
-      orderBy: [{ sheetId: "asc" }, { currency: "asc" }],
-    }),
+    kind === "BA"
+      ? tx.metaAdvisorBaseDay.findUnique({
+          where: { tableId_country_day: { tableId, country, day } },
+        })
+      : tx.metaManualBaseDay.findUnique({
+          where: { tableId_country_day: { tableId, country, day } },
+        }),
+    kind === "BA"
+      ? Promise.resolve([])
+      : tx.metaEffectivenessTotalDay.findMany({
+          where: { tableId, country, day },
+          include: { sheet: { select: { name: true } } },
+          orderBy: [{ sheetId: "asc" }, { currency: "asc" }],
+        }),
     includeAdvisors
       ? tx.metaAdvisor.findMany({
           select: {
@@ -87,7 +95,13 @@ async function readReview(
     stored?.state ??
     (preferred?.value === "NA" ? "NA" : allocations.length ? "VALUE" : "EMPTY");
   const token = createHash("sha256")
-    .update(JSON.stringify([tableId, country, day, stored, legacy]))
+    .update(
+      JSON.stringify(
+        kind === "BA"
+          ? [kind, tableId, country, day, stored, legacy]
+          : [tableId, country, day, stored, legacy],
+      ),
+    )
     .digest("hex");
   return {
     ...scope,
@@ -110,12 +124,16 @@ async function readReview(
     })),
   };
 }
-export async function manualBaseReview(actor: Actor, scope: ManualBaseScope) {
+export async function manualBaseReview(
+  actor: Actor,
+  scope: ManualBaseScope,
+  kind: ManualBaseKind = "BM",
+) {
   ownerOnly(actor);
   return db.$transaction(
     async (tx) => {
       await effectivenessLock(tx, actor);
-      return readReview(tx, scope);
+      return readReview(tx, scope, true, kind);
     },
     { timeout: 60000 },
   );
@@ -128,11 +146,12 @@ async function persist(
   entries: ManualBaseAllocation[],
   token: string,
   includeAdvisors = true,
+  kind: ManualBaseKind = "BM",
 ) {
-  const old = await readReview(tx, scope, false);
+  const old = await readReview(tx, scope, false, kind);
   demand(
     old.token === token,
-    "La base manual cambió. Actualiza el reparto antes de guardar.",
+    `La base ${kind} cambió. Actualiza el reparto antes de guardar.`,
     409,
   );
   const allocations = manualBaseAllocationsSchema.parse(entries);
@@ -150,7 +169,7 @@ async function persist(
     "Uno de los asesores ya no está disponible.",
     404,
   );
-  await tx.metaManualBaseDay.upsert({
+  const data = {
     where: {
       tableId_country_day: {
         tableId: scope.tableId,
@@ -170,11 +189,16 @@ async function persist(
       allocations: allocations as Prisma.InputJsonValue,
       revision: { increment: 1 },
     },
-  });
+  };
+  if (kind === "BA") await tx.metaAdvisorBaseDay.upsert(data);
+  else await tx.metaManualBaseDay.upsert(data);
   await recordActivity(tx, {
     data: {
       actorId: actor.id,
-      action: "META_BASE_MANUAL_REPARTIDA",
+      action:
+        kind === "BA"
+          ? "META_BASE_APROXIMADA_REPARTIDA"
+          : "META_BASE_MANUAL_REPARTIDA",
       resourceId: scope.tableId,
       detail: {
         day: scope.day,
@@ -185,7 +209,7 @@ async function persist(
       },
     },
   });
-  return readReview(tx, scope, includeAdvisors);
+  return readReview(tx, scope, includeAdvisors, kind);
 }
 export async function saveManualBase(
   actor: Actor,
@@ -194,12 +218,13 @@ export async function saveManualBase(
     state: "VALUE" | "EMPTY" | "NA";
     allocations: ManualBaseAllocation[];
   },
+  kind: ManualBaseKind = "BM",
 ) {
   ownerOnly(actor);
   return db.$transaction(
     async (tx) => {
       await effectivenessLock(tx, actor);
-      return persist(tx, actor, b, b.state, b.allocations, b.token);
+      return persist(tx, actor, b, b.state, b.allocations, b.token, true, kind);
     },
     { timeout: 60000 },
   );

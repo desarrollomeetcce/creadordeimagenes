@@ -511,22 +511,20 @@ export async function advisorSheet(
         orderBy: [{ tableId: "asc" }, { country: "asc" }, { day: "asc" }],
       });
       const manualBaseBreakdown = baseDays.flatMap((r) =>
-        manualBaseAllocationsSchema
-          .parse(r.allocations)
-          .flatMap((e) =>
-            e.advisorId && people.some((p) => p.id === e.advisorId)
-              ? [
-                  {
-                    tableId: r.tableId,
-                    tableName: tables.find((t) => t.id === r.tableId)!.name,
-                    country: r.country,
-                    day: r.day,
-                    advisorId: e.advisorId,
-                    quantity: e.quantity,
-                  },
-                ]
-              : [],
-          ),
+        manualBaseAllocationsSchema.parse(r.allocations).flatMap((e) =>
+          e.advisorId && people.some((p) => p.id === e.advisorId)
+            ? [
+                {
+                  tableId: r.tableId,
+                  tableName: tables.find((t) => t.id === r.tableId)!.name,
+                  country: r.country,
+                  day: r.day,
+                  advisorId: e.advisorId,
+                  quantity: e.quantity,
+                },
+              ]
+            : [],
+        ),
       );
       const manualBaseByPersonDay = new Map<string, number>();
       for (const r of manualBaseBreakdown) {
@@ -534,6 +532,39 @@ export async function advisorSheet(
         manualBaseByPersonDay.set(
           key,
           (manualBaseByPersonDay.get(key) ?? 0) + r.quantity,
+        );
+      }
+      const advisorBaseDays = await tx.metaAdvisorBaseDay.findMany({
+        where: {
+          tableId: { in: tables.map((t) => t.id) },
+          day: { gte: since, lte: until },
+          ...(filters.country ? { country: filters.country } : {}),
+          state: "VALUE",
+        },
+        orderBy: [{ tableId: "asc" }, { country: "asc" }, { day: "asc" }],
+      });
+      const advisorBaseBreakdown = advisorBaseDays.flatMap((r) =>
+        manualBaseAllocationsSchema.parse(r.allocations).flatMap((e) =>
+          e.advisorId && people.some((p) => p.id === e.advisorId)
+            ? [
+                {
+                  tableId: r.tableId,
+                  tableName: tables.find((t) => t.id === r.tableId)!.name,
+                  country: r.country,
+                  day: r.day,
+                  advisorId: e.advisorId,
+                  quantity: e.quantity,
+                },
+              ]
+            : [],
+        ),
+      );
+      const advisorBaseByPersonDay = new Map<string, number>();
+      for (const r of advisorBaseBreakdown) {
+        const key = JSON.stringify([r.advisorId, r.day]);
+        advisorBaseByPersonDay.set(
+          key,
+          (advisorBaseByPersonDay.get(key) ?? 0) + r.quantity,
         );
       }
       const contextRows: Parameters<typeof inventoryBaseContext>[0] = [];
@@ -776,6 +807,7 @@ export async function advisorSheet(
         country: filters.country ?? "",
         breakdown,
         manualBaseBreakdown,
+        advisorBaseBreakdown,
         assignmentHistory,
         baseContext: inventoryBaseContext(contextRows, dates),
         assignedBaseEstimate: filters.advisorId
@@ -793,6 +825,9 @@ export async function advisorSheet(
                 {
                   manualBase:
                     manualBaseByPersonDay.get(JSON.stringify([p.id, day])) ??
+                    null,
+                  advisorBase:
+                    advisorBaseByPersonDay.get(JSON.stringify([p.id, day])) ??
                     null,
                   base: null,
                   basePartial: false,

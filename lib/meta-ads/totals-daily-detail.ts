@@ -14,22 +14,26 @@ export async function totalsDailyDetail(
   ownerOnly(actor);
   return db.$transaction(
     async (tx) => {
-      const [sheet, assignments, approvals, base] = await Promise.all([
-        effectiveness(actor, q.tableId, q.day, q.day, tx),
-        tx.metaAdvisorAssignment.findMany({
-          where: { alias: { tableId: q.tableId }, country: q.country },
-        }),
-        tx.metaAdvisorSalesApproval.findMany({
-          where: {
-            row: { alias: { tableId: q.tableId }, country: q.country },
-            day: q.day,
-          },
-          include: { row: { select: { aliasId: true } } },
-        }),
-        tx.metaManualBaseDay.findFirst({
-          where: { tableId: q.tableId, country: q.country, day: q.day },
-        }),
-      ]);
+      const [sheet, assignments, approvals, base, advisorBase] =
+        await Promise.all([
+          effectiveness(actor, q.tableId, q.day, q.day, tx),
+          tx.metaAdvisorAssignment.findMany({
+            where: { alias: { tableId: q.tableId }, country: q.country },
+          }),
+          tx.metaAdvisorSalesApproval.findMany({
+            where: {
+              row: { alias: { tableId: q.tableId }, country: q.country },
+              day: q.day,
+            },
+            include: { row: { select: { aliasId: true } } },
+          }),
+          tx.metaManualBaseDay.findFirst({
+            where: { tableId: q.tableId, country: q.country, day: q.day },
+          }),
+          tx.metaAdvisorBaseDay.findFirst({
+            where: { tableId: q.tableId, country: q.country, day: q.day },
+          }),
+        ]);
       const people = new Map<
         string | null,
         {
@@ -38,6 +42,7 @@ export async function totalsDailyDetail(
           partial: boolean;
           na: boolean;
           manualBase: number | null;
+          advisorBase: number | null;
         }
       >();
       const person = (advisorId: string | null) => {
@@ -46,6 +51,7 @@ export async function totalsDailyDetail(
             advisorId,
             sales: null,
             manualBase: null,
+            advisorBase: null,
             partial: false,
             na: false,
           });
@@ -54,6 +60,11 @@ export async function totalsDailyDetail(
       if (base?.state === "VALUE")
         for (const entry of manualBaseAllocationsSchema.parse(base.allocations))
           person(entry.advisorId).manualBase = entry.quantity;
+      if (advisorBase?.state === "VALUE")
+        for (const entry of manualBaseAllocationsSchema.parse(
+          advisorBase.allocations,
+        ))
+          person(entry.advisorId).advisorBase = entry.quantity;
       const products = sheet.rows
         .filter((r) => r.country === q.country && r.currency === q.currency)
         .map((r) => {
@@ -102,6 +113,7 @@ export async function totalsDailyDetail(
       return {
         ...q,
         baseState: base?.state ?? null,
+        advisorBaseState: advisorBase?.state ?? null,
         advisors: [...people.values()]
           .map((p) => ({
             ...p,

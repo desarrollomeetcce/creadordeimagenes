@@ -90,6 +90,7 @@ export function EffectivenessTotals({
     { blockKey: string; day: string } | undefined
   >();
   const [baseEditor, setBaseEditor] = useState<{
+    metric: "BM" | "BA";
     tableId: string;
     country: string;
     currency: string;
@@ -387,7 +388,17 @@ export function EffectivenessTotals({
       </div>
       {baseEditor && (
         <ManualBaseEditor
-          context={{ kind: "total", scope: { ...baseEditor, sheetId: listId } }}
+          metric={baseEditor.metric}
+          context={{
+            kind: "total",
+            scope: {
+              tableId: baseEditor.tableId,
+              country: baseEditor.country,
+              currency: baseEditor.currency,
+              day: baseEditor.day,
+              sheetId: listId,
+            },
+          }}
           tables={tables}
           onClose={() => setBaseEditor(null)}
           onChanged={async () => {
@@ -408,8 +419,8 @@ export function EffectivenessTotals({
       )}
       <p className="sheet-help">
         {mode === "manual"
-          ? "V/P: suma de inventario. BM: reparto compartido por asesor, hoja, país y día (sin moneda). GM y CF: valores manuales por bloque."
-          : "V/B/G/CF: suma de los valores de la vista automática."}{" "}
+          ? "V/P: suma de inventario. BM y BA: repartos manuales independientes por asesor, hoja, país y día (sin moneda). GM y CF: valores manuales por bloque."
+          : "V/B/G/CF: suma de los valores de la vista automática. BA se registra manualmente por asesor."}{" "}
         Países y monedas separados; N.A. no suma, — sin dato, * suma parcial.
         Las ventas se suman únicamente desde la hoja de origen indicada en cada
         bloque, sin combinar tablas. No modifica Meta Ads.
@@ -641,14 +652,17 @@ export function EffectivenessTotals({
                                       maximumFractionDigits: 2,
                                     }) + (sum.partial ? " *" : "")}
                               </span>
-                            ) : m.key === "baseManual" ? (
+                            ) : m.key === "baseManual" ||
+                              m.key === "advisorBase" ? (
                               <button
                                 type="button"
                                 className="manual-base-cell"
-                                aria-label={`BM total ${t.name} ${g.country} ${g.currency} ${day}`}
-                                title="Repartir base manual por asesor"
+                                aria-label={`${m.label} total ${t.name} ${g.country} ${g.currency} ${day}`}
+                                title={`Repartir ${m.name.toLowerCase()} por asesor`}
                                 onClick={() =>
                                   setBaseEditor({
+                                    metric:
+                                      m.key === "advisorBase" ? "BA" : "BM",
                                     tableId: t.tableId,
                                     country: g.country,
                                     currency: g.currency,
@@ -656,9 +670,9 @@ export function EffectivenessTotals({
                                   })
                                 }
                               >
-                                {cell?.manual.baseManual === "NA"
+                                {cell?.manual[m.key] === "NA"
                                   ? "N.A."
-                                  : (cell?.manual.baseManual?.toLocaleString(
+                                  : (cell?.manual[m.key]?.toLocaleString(
                                       "es-PE",
                                     ) ?? "—")}
                               </button>

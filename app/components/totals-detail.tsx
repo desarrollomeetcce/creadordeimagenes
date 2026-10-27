@@ -80,15 +80,17 @@ export function TotalsDetail({
   const value = (day: string, column: TotalColumn) =>
     totalDetailValue(group?.days[day], column);
   const monetary = (column: TotalColumn) =>
-    !["sales", "base", "baseManual"].includes(column.key);
+    !["sales", "base", "baseManual", "advisorBase"].includes(column.key);
   const summarize = (column: TotalColumn) =>
     totalDetailSummary(focusDays.map((day) => value(day, column)));
   const sold = summarize(manualTotalColumns[0]),
     bm = summarize(manualTotalColumns[2]),
+    ba = summarize(manualTotalColumns[5]),
     gm = summarize(manualTotalColumns[3]),
     base = summarize(automaticTotalColumns[1]),
     spend = summarize(automaticTotalColumns[2]);
   const ratios = [
+    { name: "Ventas / BA", numerator: sold, denominator: ba, percent: true },
     { name: "Ventas / BM", numerator: sold, denominator: bm, percent: true },
     {
       name: "Costo por venta · GM",
@@ -236,8 +238,8 @@ export function TotalsDetail({
           Cada hoja, país y moneda se consulta por separado. V es la misma suma
           en ambas vistas.{" "}
           {mode === "manual"
-            ? "P suma el presupuesto digitado en las hojas; BM es el reparto manual por asesor y país, compartido con Asesores. GM y CF son manuales."
-            : "B y G proceden de la vista automática; CF suma los costos fijos de la hoja."}{" "}
+            ? "P suma el presupuesto digitado en las hojas; BM y BA son repartos manuales independientes por asesor y país, compartidos con Asesores. GM y CF son manuales."
+            : "B y G proceden de la vista automática; BA se ingresa manualmente por asesor; CF suma los costos fijos de la hoja."}{" "}
           — sin dato; N.A. no suma; * cobertura parcial.
         </p>
         {message && <p role="alert">{message}</p>}
@@ -346,12 +348,12 @@ export function TotalsDetail({
                 })}
               </div>
               <p className="hint">
-                Manual: BM y GM digitadas. Meta: B y G de la vista automática.
-                No se reemplaza una fuente por la otra cuando falta un dato. V
-                cuenta ventas; sin un importe de ingresos no se calcula ganancia
-                monetaria. GM y G son fuentes distintas: no se suman
-                automáticamente. Indicadores del día o período seleccionado; *
-                cobertura parcial.
+                Manual: BM, BA y GM digitadas. Meta: B y G de la vista
+                automática. No se reemplaza una fuente por la otra cuando falta
+                un dato. V cuenta ventas; sin un importe de ingresos no se
+                calcula ganancia monetaria. GM y G son fuentes distintas: no se
+                suman automáticamente. Indicadores del día o período
+                seleccionado; * cobertura parcial.
               </p>
             </DetailSection>
             {selectedDay && (

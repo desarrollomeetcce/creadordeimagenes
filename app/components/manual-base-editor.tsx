@@ -35,15 +35,20 @@ const amount = (text: string) =>
   Number(text) <= 100000000;
 export function ManualBaseEditor({
   context,
+  metric = "BM",
   tables,
   onClose,
   onChanged,
 }: {
   context: Context;
+  metric?: "BM" | "BA";
   tables: Table[];
   onClose: () => void;
   onChanged: () => Promise<void>;
 }) {
+  const baseName =
+    metric === "BA" ? "Base aproximada del asesor" : "Base manual";
+  const endpoint = metric === "BA" ? "advisor-base" : "manual-base";
   const dialog = useRef<HTMLDialogElement>(null),
     pending = useRef(false),
     nextId = useRef(1),
@@ -89,7 +94,7 @@ export function ManualBaseEditor({
     quantity: "",
     initialUnassigned: "0",
   });
-  const contextKey = JSON.stringify(context);
+  const contextKey = JSON.stringify([context, metric]);
   useEffect(() => {
     dialog.current?.showModal();
     return () => {
@@ -106,7 +111,9 @@ export function ManualBaseEditor({
     lastSaved.current = "";
     const request =
       context.kind === "total"
-        ? "meta-ads/manual-base?" +
+        ? "meta-ads/" +
+          endpoint +
+          "?" +
           new URLSearchParams(
             Object.entries(context.scope).filter(
               ([, v]) => v !== undefined,
@@ -217,7 +224,7 @@ export function ManualBaseEditor({
     const current = latest.current;
     try {
       if (context.kind === "total") {
-        const v: ManualBaseReview = await api("meta-ads/manual-base", "POST", {
+        const v: ManualBaseReview = await api("meta-ads/" + endpoint, "POST", {
           ...context.scope,
           token: current.review!.token,
           state: state ?? "VALUE",
@@ -308,6 +315,13 @@ export function ManualBaseEditor({
     if (!dirty.current || autoPaused.current) return;
     if (autoTimer.current) clearTimeout(autoTimer.current);
     autoTimer.current = setTimeout(() => {
+      const focused = document.activeElement;
+      if (
+        focused instanceof HTMLInputElement &&
+        focused.type === "number" &&
+        dialog.current?.contains(focused)
+      )
+        return;
       void save();
     }, 250);
   };
@@ -369,7 +383,23 @@ export function ManualBaseEditor({
       ref={dialog}
       className="meta-detail manual-base-editor"
       aria-busy={busy}
-      aria-label="Repartir base manual"
+      aria-label={`Repartir ${baseName.toLowerCase()}`}
+      onFocusCapture={(e) => {
+        if (
+          e.target instanceof HTMLInputElement &&
+          e.target.type === "number" &&
+          autoTimer.current
+        )
+          clearTimeout(autoTimer.current);
+      }}
+      onChangeCapture={(e) => {
+        if (
+          e.target instanceof HTMLInputElement &&
+          e.target.type === "number" &&
+          autoTimer.current
+        )
+          clearTimeout(autoTimer.current);
+      }}
       onCancel={(e) => {
         if (busy) e.preventDefault();
         else close();
@@ -378,8 +408,10 @@ export function ManualBaseEditor({
       <header className="row">
         <h2>
           {context.kind === "total"
-            ? "Base manual por asesor"
-            : `Base manual de ${context.name}`}
+            ? metric === "BA"
+              ? "Base aproximada del asesor (BA)"
+              : "Base manual por asesor"
+            : `${baseName} de ${context.name}`}
         </h2>
         <button
           className="ui-close-button"
@@ -398,9 +430,10 @@ export function ManualBaseEditor({
       </p>
       <p className="hint">
         Cantidades absolutas: para pasar de 300 a 500, escribe 500. Totales y
-        Asesores comparten estos registros. BM cuenta datos, sin conversión de
-        moneda; es distinta de B automática y de las ventas V. Las cantidades
-        sin asesor no se atribuyen a ninguna persona.
+        Asesores comparten estos registros. {metric} cuenta datos, sin
+        conversión de moneda; es distinta de B de Meta Ads, de{" "}
+        {metric === "BA" ? "BM" : "BA"} y de las ventas V. Las cantidades sin
+        asesor no se atribuyen a ninguna persona.
       </p>
       {context.kind === "advisor" && context.country && (
         <p className="hint">
@@ -427,7 +460,7 @@ export function ManualBaseEditor({
                 {entries.map((entry) => (
                   <div className="manual-base-line" key={entry.id}>
                     <SheetSearchSelect
-                      label={`Asesor de BM ${entry.id}`}
+                      label={`Asesor de ${metric} ${entry.id}`}
                       value={entry.advisorId ?? "__unassigned"}
                       placeholder="Seleccionar asesor"
                       disabled={busy}
@@ -457,9 +490,9 @@ export function ManualBaseEditor({
                       }}
                     />
                     <label>
-                      Datos BM
+                      Datos {metric}
                       <input
-                        aria-label={`Cantidad BM ${entry.id}`}
+                        aria-label={`Cantidad ${metric} ${entry.id}`}
                         type="number"
                         min="0"
                         max="100000000"
@@ -483,7 +516,7 @@ export function ManualBaseEditor({
                     <button
                       type="button"
                       disabled={busy}
-                      aria-label={`Quitar reparto BM ${entry.id}`}
+                      aria-label={`Quitar reparto ${metric} ${entry.id}`}
                       onClick={() => {
                         setEntries((v) => v.filter((r) => r.id !== entry.id));
                         setSaved(false);
@@ -627,7 +660,7 @@ export function ManualBaseEditor({
           <div className="manual-base-total">
             <span>
               {context.kind === "total"
-                ? "Total BM del día"
+                ? `Total ${metric} del día`
                 : `BM de ${context.name} en esta selección`}
             </span>
             <strong>
@@ -639,7 +672,7 @@ export function ManualBaseEditor({
             </strong>
             <small>
               {busy
-                ? "Guardando base manual…"
+                ? `Guardando ${metric}…`
                 : saved
                   ? "Guardado"
                   : "Se guarda al salir de la cantidad o al pulsar Guardar"}

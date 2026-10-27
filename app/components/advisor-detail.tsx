@@ -39,11 +39,12 @@ const attendance = (v: string | null) =>
       : v === "NA"
         ? "N.A."
         : "—";
-type AdvisorMetric = DailyChartMetric | "absences" | "base" | "manualBase";
+type AdvisorMetric =
+  DailyChartMetric | "absences" | "advisorBase" | "manualBase";
 const options = [
   { value: "results", label: "Ventas (V)" },
   { value: "manualBase", label: "Base manual (BM)" },
-  { value: "base", label: "Base aproximada del asesor (B)" },
+  { value: "advisorBase", label: "Base aproximada del asesor (BA)" },
   { value: "cost", label: "Horas ausentes (H)" },
   { value: "spend", label: "Asistencia (A)" },
   { value: "absences", label: "Inasistencias (I)" },
@@ -253,6 +254,9 @@ export function AdvisorDetail({
             manualBaseBreakdown: pages.flatMap(
               (p) => p.manualBaseBreakdown ?? [],
             ),
+            advisorBaseBreakdown: pages.flatMap(
+              (p) => p.advisorBaseBreakdown ?? [],
+            ),
             assignedBaseEstimate: {
               scope: "ASSIGNED_FULL_DAY_ESTIMATE",
               advisorId: analysisAdvisor,
@@ -313,8 +317,8 @@ export function AdvisorDetail({
     const c = row!.days[day];
     return metric === "manualBase"
       ? (c.manualBase ?? null)
-      : metric === "base"
-        ? (data?.assignedBaseEstimate?.days[day]?.value ?? null)
+      : metric === "advisorBase"
+        ? (c.advisorBase ?? null)
         : metric === "results"
           ? c.sales
           : metric === "cost"
@@ -341,19 +345,14 @@ export function AdvisorDetail({
     ? bmDays.reduce((n, d) => n + (row!.days[d].manualBase ?? 0), 0)
     : null;
   const baseDays = days.filter(
-      (d) =>
-        data?.assignedBaseEstimate?.days[d]?.value !== null &&
-        data?.assignedBaseEstimate?.days[d]?.value !== undefined,
-    ),
-    basePartial = days.some(
-      (d) => data?.assignedBaseEstimate?.days[d]?.partial,
-    ),
-    baseTotal = baseDays.length
-      ? baseDays.reduce(
-          (sum, d) => sum + data!.assignedBaseEstimate!.days[d].value!,
-          0,
-        )
-      : null;
+    (d) =>
+      row?.days[d].advisorBase !== null &&
+      row?.days[d].advisorBase !== undefined,
+  );
+  const basePartial = baseDays.length > 0 && baseDays.length < days.length;
+  const baseTotal = baseDays.length
+    ? baseDays.reduce((sum, d) => sum + (row!.days[d].advisorBase ?? 0), 0)
+    : null;
   const pageCount = Math.max(1, Math.ceil(days.length / 31)),
     currentDayPage = Math.min(dayPage, pageCount - 1),
     visibleDays = days.slice(currentDayPage * 31, currentDayPage * 31 + 31);
@@ -390,14 +389,14 @@ export function AdvisorDetail({
         </small>
       </span>
       <span>
-        Base aproximada del asesor (B)
+        Base aproximada del asesor (BA)
         <b>
           {baseTotal === null ? "—" : number(baseTotal)}
           {basePartial ? " *" : ""}
         </b>
         <small>
-          {baseDays.length}/{days.length} días con base de los diplomados
-          asignados
+          {baseDays.length}/{days.length} días con BA registrada manualmente en
+          Totales
         </small>
       </span>
       <span>
@@ -547,7 +546,7 @@ export function AdvisorDetail({
                 <th title="Inasistencias">I</th>
                 <th>V</th>
                 <th>BM</th>
-                <th>B aproximada</th>
+                <th title="Base aproximada del asesor">BA</th>
                 <th>Salidas y regresos · Lima</th>
               </tr>
             </thead>
@@ -575,12 +574,7 @@ export function AdvisorDetail({
                         ? "—"
                         : number(c.manualBase)}
                     </td>
-                    <td>
-                      {data?.assignedBaseEstimate?.days[day]?.value ?? "—"}
-                      {data?.assignedBaseEstimate?.days[day]?.partial
-                        ? " *"
-                        : ""}
-                    </td>
+                    <td>{c.advisorBase ?? "—"}</td>
                     <td>
                       {c.absence.mode === "CLOCK"
                         ? c.absence.intervals
@@ -707,14 +701,11 @@ export function AdvisorDetail({
           asignaciones antiguas sin historial conservan su atribución previa.
         </p>
         <p className="hint">
-          B es una estimación: suma la base completa de cada día de los
-          diplomados que tuvo asignados, aunque el cambio fuera por la tarde. No
-          se reparte por horas; un mismo diplomado cuenta una sola vez por día y
-          asesor. Puede coincidir entre asesores que compartieron el día y no
-          debe sumarse entre personas. Las asignaciones heredadas sin fecha usan
-          su responsabilidad conocida como aproximación. Las ventas V
-          corresponden al reparto registrado para cada persona. A/I/H son
-          registros diarios del asesor; no se distribuyen por minutos.
+          BA es la base aproximada del asesor registrada manualmente en Totales
+          por hoja, país y fecha. No se calcula por asignaciones ni se copia de
+          B de Meta Ads o BM. BA no se atribuye a un diplomado concreto y no
+          cambia al filtrar productos. Las ventas V corresponden al reparto
+          registrado para cada persona; A/I/H son registros diarios del asesor.
         </p>
       </DetailSection>
     ) : null,
@@ -820,11 +811,11 @@ export function AdvisorDetail({
       >
         {row && (
           <>
-            <h4>Base manual por hoja y país</h4>
+            <h4>BM y BA por hoja y país</h4>
             <p className="hint">
-              BM es el reparto manual guardado para esta persona. No se estima
-              por asignaciones ni se convierte por moneda; no depende del filtro
-              de diplomado.
+              BM y BA son repartos manuales independientes de esta persona. No
+              se calculan por asignaciones ni se convierten por moneda; no
+              dependen del filtro de diplomado.
             </p>
             <div className="table-scroll advisor-source-scroll">
               <table>
@@ -861,6 +852,37 @@ export function AdvisorDetail({
                 </tbody>
               </table>
             </div>
+            {!!data?.advisorBaseBreakdown?.length && (
+              <div className="table-scroll advisor-source-scroll">
+                <table>
+                  <caption>Base aproximada del asesor (BA)</caption>
+                  <thead>
+                    <tr>
+                      <th>Fecha</th>
+                      <th>Hoja</th>
+                      <th>País</th>
+                      <th>BA</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {data.advisorBaseBreakdown
+                      .filter(
+                        (r) =>
+                          r.advisorId === analysisAdvisor &&
+                          visibleDays.includes(r.day),
+                      )
+                      .map((r) => (
+                        <tr key={JSON.stringify([r.tableId, r.country, r.day])}>
+                          <th>{r.day}</th>
+                          <td>{r.tableName}</td>
+                          <td>{r.country || "Sin país"}</td>
+                          <td>{number(r.quantity)}</td>
+                        </tr>
+                      ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </>
         )}
       </AdvisorPeriodHistory>

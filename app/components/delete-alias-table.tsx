@@ -16,6 +16,7 @@ const labels: Record<string, string> = {
   advisorHistory: "Cambios de asesor",
   salesApprovals: "Repartos aprobados de ventas",
   totals: "Días de totales manuales",
+  advisorBaseDays: "Días de BA repartida por asesor",
   manualBaseDays: "Días de base manual repartida por asesor",
   colorRules: "Reglas de colores",
   links: "Configuraciones de sincronización",

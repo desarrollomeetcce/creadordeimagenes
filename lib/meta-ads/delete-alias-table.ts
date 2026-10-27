@@ -31,6 +31,7 @@ async function deletionReview(tx: Prisma.TransactionClient, tableId: string) {
  UNION ALL SELECT 'events',e.id,jsonb_build_array(e.active,e."createdAt")::text FROM "MetaEffectivenessEvent" e JOIN s ON s.id=e."stateId"
  UNION ALL SELECT 'assignments',o.id,jsonb_build_array(o."aliasId",o."aliasCountry",o."advisorId")::text FROM "MetaAdObject" o JOIN a ON a.id=o."aliasId"
  UNION ALL SELECT 'totals',jsonb_build_array(t."sheetId",t.country,t.currency,t.day)::text,t.revision::text FROM "MetaEffectivenessTotalDay" t WHERE t."tableId"=${tableId}
+ UNION ALL SELECT 'advisorBaseDays',jsonb_build_array(m.country,m.day)::text,to_jsonb(m)::text FROM "MetaAdvisorBaseDay" m WHERE m."tableId"=${tableId}
  UNION ALL SELECT 'manualBaseDays',jsonb_build_array(m.country,m.day)::text,to_jsonb(m)::text FROM "MetaManualBaseDay" m WHERE m."tableId"=${tableId}
  UNION ALL SELECT 'colors',c."tableId",jsonb_build_array(c.revision,c.rules)::text FROM "MetaEffectivenessColors" c WHERE c."tableId"=${tableId}
  UNION ALL SELECT 'columnLinks',l."tableId",to_jsonb(l)::text FROM "MetaEffectivenessLink" l WHERE l."tableId"=${tableId} OR l."sourceTableId"=${tableId}
@@ -53,6 +54,7 @@ async function deletionReview(tx: Prisma.TransactionClient, tableId: string) {
       "assignments",
       "totals",
       "manualBaseDays",
+      "advisorBaseDays",
       "links",
       "columnLinks",
     ].map((kind) => [kind, stats.find((s) => s.kind === kind)?.count ?? 0]),
@@ -108,6 +110,7 @@ export async function deleteAliasTable(
       });
       await tx.metaEffectivenessTotalDay.deleteMany({ where: { tableId } });
       await tx.metaManualBaseDay.deleteMany({ where: { tableId } });
+      await tx.metaAdvisorBaseDay.deleteMany({ where: { tableId } });
       await tx.metaEffectivenessRow.deleteMany({
         where: { alias: { tableId } },
       });

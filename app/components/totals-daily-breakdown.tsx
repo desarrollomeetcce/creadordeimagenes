@@ -80,14 +80,14 @@ export function TotalsDailyBreakdown({
       <DetailSection
         id={sectionId + "advisors"}
         stateKey="daily-advisors"
-        title="Ventas y base manual por asesor"
+        title="Ventas, BM y BA por asesor"
         tone="sales"
       >
         <p className="hint">
-          {day} · BM corresponde a toda la hoja y país, sin separar monedas ni
-          asignarla a productos. Las ventas respetan el reparto registrado,
-          aunque el asesor no estuviera asignado o el producto esté desactivado.
-          — sin dato; * cobertura parcial.
+          {day} · BM y BA son independientes y corresponden a toda la hoja y
+          país, sin separar monedas ni asignarlas a productos. Las ventas
+          respetan el reparto registrado, aunque el asesor no estuviera asignado
+          o el producto esté desactivado. — sin dato; * cobertura parcial.
         </p>
         {data && (
           <div className="table-scroll">
@@ -97,6 +97,7 @@ export function TotalsDailyBreakdown({
                   <th>Asesor</th>
                   <th>Ventas (V)</th>
                   <th>Base manual (BM)</th>
+                  <th>Base aproximada del asesor (BA)</th>
                   <th>Ventas / BM</th>
                 </tr>
               </thead>
@@ -111,6 +112,7 @@ export function TotalsDailyBreakdown({
                         {p.partial ? " *" : ""}
                       </td>
                       <td>{p.manualBase ?? "—"}</td>
+                      <td>{p.advisorBase ?? "—"}</td>
                       <td>
                         {ratio === null
                           ? "—"
@@ -125,7 +127,7 @@ export function TotalsDailyBreakdown({
                 })}
                 {!data.advisors.length && (
                   <tr>
-                    <td colSpan={4}>
+                    <td colSpan={5}>
                       No hay repartos de ventas o base manual para este día.
                     </td>
                   </tr>
@@ -143,7 +145,7 @@ export function TotalsDailyBreakdown({
         )}
         <p className="hint">
           Si el país tiene varios bloques de moneda, V pertenece al bloque
-          elegido y BM es la base compartida del país.
+          elegido y BM y BA son bases independientes compartidas del país.
         </p>
       </DetailSection>
       <DetailSection

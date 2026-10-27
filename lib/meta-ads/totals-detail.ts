@@ -9,7 +9,8 @@ export const formatTotalDetail = (v: TotalValue) =>
         : "—"
       : v.value.toLocaleString("es-PE", { maximumFractionDigits: 2 }) +
         (v.partial ? " *" : "");
-export type ManualTotalMetric = "baseManual" | "totalSpend" | "fixedCost";
+export type ManualTotalMetric =
+  "baseManual" | "advisorBase" | "totalSpend" | "fixedCost";
 export type TotalDay = {
   sharedManualBase?: boolean;
   sums: Record<SheetMetric, TotalValue>;
@@ -32,12 +33,24 @@ export const manualTotalColumns = [
   { key: "baseManual", label: "BM", name: "Base manual", sum: false },
   { key: "totalSpend", label: "GM", name: "Gasto manual", sum: false },
   { key: "fixedCost", label: "CF", name: "Costos fijos", sum: false },
+  {
+    key: "advisorBase",
+    label: "BA",
+    name: "Base aproximada del asesor",
+    sum: false,
+  },
 ] as const;
 export const automaticTotalColumns = [
   { key: "sales", label: "V", name: "Ventas", sum: true },
   { key: "base", label: "B", name: "Base", sum: true },
   { key: "spend", label: "G", name: "Gasto", sum: true },
   { key: "fixedCost", label: "CF", name: "Costos fijos", sum: true },
+  {
+    key: "advisorBase",
+    label: "BA",
+    name: "Base aproximada del asesor",
+    sum: false,
+  },
 ] as const;
 export type TotalColumn =
   (typeof manualTotalColumns)[number] | (typeof automaticTotalColumns)[number];

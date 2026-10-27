@@ -758,7 +758,11 @@ export async function metaRoutes(
         : await service.previewEffectivenessSync(actor, b),
     );
   }
-  if (path === "manual-base" || path === "manual-base/advisor") {
+  if (
+    path === "manual-base" ||
+    path === "manual-base/advisor" ||
+    path === "advisor-base"
+  ) {
     ownerOnly(actor);
     const {
       manualBaseReview,
@@ -779,14 +783,18 @@ export async function metaRoutes(
       sheetId: id.optional(),
       currency: z.string().max(10).optional(),
     });
-    if (path === "manual-base" && method === "GET")
+    if ((path === "manual-base" || path === "advisor-base") && method === "GET")
       return send(
         await manualBaseReview(
           actor,
           scope.strict().parse(Object.fromEntries(req.nextUrl.searchParams)),
+          path === "advisor-base" ? "BA" : "BM",
         ),
       );
-    if (path === "manual-base" && method === "POST") {
+    if (
+      (path === "manual-base" || path === "advisor-base") &&
+      method === "POST"
+    ) {
       const { manualBaseAllocationsSchema } =
         await import("./manual-base-policy");
       const b = scope
@@ -797,7 +805,9 @@ export async function metaRoutes(
         })
         .strict()
         .parse(await body());
-      return send(await saveManualBase(actor, b));
+      return send(
+        await saveManualBase(actor, b, path === "advisor-base" ? "BA" : "BM"),
+      );
     }
     if (path === "manual-base/advisor" && method === "GET") {
       const b = z

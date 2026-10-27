@@ -9,7 +9,7 @@ export function EffectivenessLegend() {
         <b>P</b> Presupuesto
       </span>
       <span>
-        <b>B</b> Base
+        <b>B</b> Base (Meta Ads)
       </span>
       <span>
         <b>G</b> Gasto
@@ -19,6 +19,9 @@ export function EffectivenessLegend() {
       </span>
       <span>
         <b>BM</b> Base manual
+      </span>
+      <span>
+        <b>BA</b> Base aproximada del asesor
       </span>
       <span>
         <b>GM</b> Gasto manual

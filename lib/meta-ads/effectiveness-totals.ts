@@ -33,7 +33,7 @@ export async function effectivenessTotals(
     "Hoja de totales no disponible.",
     404,
   );
-  const [sheet, stored, manualBase] = await Promise.all([
+  const [sheet, stored, manualBase, advisorBase] = await Promise.all([
     effectiveness(actor, tableId, since, until),
     db.metaEffectivenessTotalDay.findMany({
       where: { sheetId, tableId, day: { gte: since, lte: until } },
@@ -41,9 +41,15 @@ export async function effectivenessTotals(
     db.metaManualBaseDay.findMany({
       where: { tableId, day: { gte: since, lte: until } },
     }),
+    db.metaAdvisorBaseDay.findMany({
+      where: { tableId, day: { gte: since, lte: until } },
+    }),
   ]);
   const assigned = new Map(
     manualBase.map((r) => [JSON.stringify([r.country, r.day]), r]),
+  );
+  const assignedBA = new Map(
+    advisorBase.map((r) => [JSON.stringify([r.country, r.day]), r]),
   );
   const groups = new Map<
     string,
@@ -56,7 +62,7 @@ export async function effectivenessTotals(
   };
   for (const r of sheet.rows) group(r.country, r.currency).rows.push(r);
   for (const r of stored) group(r.country, r.currency);
-  for (const r of manualBase)
+  for (const r of [...manualBase, ...advisorBase])
     if (![...groups.values()].some((g) => g.country === r.country))
       group(r.country, sheet.table.defaultCurrency || "");
   const saved = new Map(
@@ -86,6 +92,16 @@ export async function effectivenessTotals(
             );
             if (value === null) delete manual.baseManual;
             else manual.baseManual = value;
+          }
+          delete manual.advisorBase;
+          const ba = assignedBA.get(JSON.stringify([g.country, day]));
+          if (ba) {
+            const value = manualBaseValue(
+              ba.state,
+              manualBaseAllocationsSchema.parse(ba.allocations),
+            );
+            if (value === null) delete manual.advisorBase;
+            else manual.advisorBase = value;
           }
           return [
             day,
