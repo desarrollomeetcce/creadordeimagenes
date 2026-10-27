@@ -26,13 +26,14 @@ export function financialCategoryChoices(entry?: FinancialCatalogEntry) {
   );
 }
 export function financialRowCategories(
-  row: { aliasId: string; country: string },
+  row: { aliasId: string; country: string; active?: boolean },
   entry: FinancialCatalogEntry | undefined,
   temporary: TemporaryCategoryMap,
 ) {
   const choices = financialCategoryChoices(entry),
     defaults = choices.filter((c) => c.kind === "PRIMARY").map((c) => c.id);
-  const requested = temporary[financialRowKey(row)] ?? [],
+  const requested =
+      row.active === false ? [] : (temporary[financialRowKey(row)] ?? []),
     valid = requested.filter((id) => choices.some((c) => c.id === id));
   const ids = valid.length ? valid : defaults;
   const isTemporary =
@@ -59,7 +60,13 @@ export function groupFinancialRows<
 ) {
   const bands = new Map<
     string,
-    { active: boolean; names: string[]; rows: T[]; temporaryCount: number }
+    {
+      active: boolean;
+      temporary: boolean;
+      names: string[];
+      rows: T[];
+      temporaryCount: number;
+    }
   >();
   for (const row of rows) {
     const category = financialRowCategories(
@@ -68,10 +75,16 @@ export function groupFinancialRows<
         temporary,
       ),
       active = row.active !== false,
-      key = JSON.stringify([active, category.names]);
+      key = JSON.stringify([active, category.temporary, category.names]);
     let band = bands.get(key);
     if (!band) {
-      band = { active, names: category.names, rows: [], temporaryCount: 0 };
+      band = {
+        active,
+        temporary: category.temporary,
+        names: category.names,
+        rows: [],
+        temporaryCount: 0,
+      };
       bands.set(key, band);
     }
     band.rows.push(row);
@@ -86,7 +99,8 @@ export function groupFinancialRows<
         ? 1
         : !b.names.length
           ? -1
-          : a.names.join(" · ").localeCompare(b.names.join(" · "), "es"),
+          : a.names.join(" · ").localeCompare(b.names.join(" · "), "es") ||
+            Number(a.temporary) - Number(b.temporary),
   );
 }
 export function parseTemporaryCategories(

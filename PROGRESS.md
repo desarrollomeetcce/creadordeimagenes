@@ -1345,3 +1345,9 @@ Validación local:166 pruebas unitarias,185 de integración, TypeScript y compil
 Se separan las franjas por estado antes de agrupar categorías: activos arriba, una franja Desactivados y debajo sus propias categorías principales/temporales o Sin categoría principal. Ordenar no mezcla estados ni duplica filas/cifras. El borrador de fila nueva inicia gris/desactivado y se restablece así al guardar; se conserva la activación explícita y los estados existentes. Sin cambios de API/esquema/persistencia; se reutiliza initialActive.
 
 Validación:167/167 unitarias, TypeScript y compilación de producción. Chromium con PostgreSQL exclusivo comprueba orden asc/desc, franjas de desactivados con/sin categorías, categoría temporal, nueva fila inactiva persistida, reactivación/desactivación, recarga y móvil. Integración de backend185/185 de la versión anterior vigente; no se repite al no cambiar servidor. Sin llamadas al proveedor.
+
+### Categoría principal del inventario para desactivados
+
+Las filas desactivadas dejan de aplicar su selección temporal y vuelven a las principales actuales del inventario, debajo de Desactivados. Su selector temporal queda deshabilitado. Franjas activas identifican Categoría principal o Categoría temporal y no se mezclan aunque sus nombres coincidan. Las preferencias personales se conservan para la vista activa; ninguna asignación del catálogo ni cifra se modifica.
+
+168/168 unitarias, typecheck/build y Chromium local aprobados: preferencias temporales guardadas ignoradas en inactivos, categorías homónimas claramente separadas, transición y recarga, catálogo/ventas intactos y móvil. No cambia backend/esquema ni incorpora llamadas a proveedores; integración185/185 de backend anterior vigente.

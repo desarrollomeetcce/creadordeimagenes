@@ -1172,3 +1172,7 @@ Se verifica botón Actualizar cuenta contiguo a Cancelar en tarjetas/cuentas, pe
 ### Desactivados al final y borrador gris
 
 `npm test`:167/167; `npm run typecheck` y `npm run build` correctos. Nueva regresión verifica agrupación por estado antes de categoría, temporal secundaria, sin categoría, reactivación, unicidad y suma intacta. Navegador local valida franja única Desactivados, ambas direcciones de orden, categorías debajo, borrador gris/inactivo y alta guardada inactiva, recarga, activación explícita y móvil sin errores JS/API. Evidencia `/workspace/work/inactive-{unit,typecheck,build,browser}.txt`. Sin cambios de backend:185/185 de integración de la publicación previa, sin nuevas migraciones ni llamadas reales a Meta.
+
+### Tipo de categoría por estado
+
+168/168 unitarias, typecheck y build correctos. Regresión de inactivo con preferencia temporal, principales actuales, preferencia intacta y franjas homónimas de distinto tipo. Chromium sobre PostgreSQL exclusivo verifica etiquetas Categoría principal/Categoría temporal, inactivos bajo su principal del inventario con selector temporal deshabilitado, transición al desactivar y recarga, valores/asignaciones intactos y móvil sin errores JS/API. Evidencia `/workspace/work/category-kind-{unit,typecheck,build,browser}.txt`. Sin cambios de backend:185/185 de integración previa; sin llamadas reales a Meta.

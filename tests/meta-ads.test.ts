@@ -496,7 +496,16 @@ test('Efectividad: desactivados al final y categorizados sin mezclar estados ni 
  const entries=[{id:'a',name:'A',categoryAssignments:[{category:{id:'p',name:'Ambiental',kind:'PRIMARY' as const}},{category:{id:'s',name:'Civil',kind:'SECONDARY' as const}}]},{id:'b',name:'B',categoryAssignments:[{category:{id:'z',name:'Salud',kind:'PRIMARY' as const}}]}];
  const rows=[{aliasId:'a',country:'CO',active:false,sales:2},{aliasId:'b',country:'PE',active:true,sales:3},{aliasId:'a',country:'PE',active:true,sales:4},{aliasId:'none',country:'PE',active:true,sales:1},{aliasId:'none',country:'CO',active:false,sales:5}];
  const bands=groupFinancialRows(rows,entries,{[financialRowKey(rows[0])]:['s']});
- assert.deepEqual(bands.map(b=>[b.active,b.names]),[[true,['Ambiental']],[true,['Salud']],[true,[]],[false,['Civil']],[false,[]]]);
+ assert.deepEqual(bands.map(b=>[b.active,b.names]),[[true,['Ambiental']],[true,['Salud']],[true,[]],[false,['Ambiental']],[false,[]]]);
  const ordered=bands.flatMap(b=>b.rows);assert.deepEqual(ordered.map(r=>r.active),[true,true,true,false,false]);assert.equal(new Set(ordered.map(financialRowKey)).size,5);assert.equal(ordered.reduce((n,r)=>n+r.sales,0),15);
  const reactivated=groupFinancialRows(rows.map(r=>({...r,active:true})),entries,{});assert(reactivated.every(b=>b.active));assert.equal(reactivated.flatMap(b=>b.rows).length,5);
+});
+
+test('Efectividad: inactivos ignoran temporal y franjas homónimas distinguen principal/temporal sin tocar preferencias',async()=>{
+ const {financialRowCategories,groupFinancialRows,financialRowKey}=await import('../lib/meta-ads/financial-categories');
+ const a={id:'a',name:'A',categoryAssignments:[{category:{id:'p',name:'Ambiental',kind:'PRIMARY' as const}},{category:{id:'s',name:'Civil',kind:'SECONDARY' as const}}]},b={id:'b',name:'B',categoryAssignments:[{category:{id:'p2',name:'Civil',kind:'PRIMARY' as const}}]};
+ const row={aliasId:'a',country:'PE',active:false},prefs={[financialRowKey(row)]:['s']},before=JSON.stringify(prefs);
+ const inactive=financialRowCategories(row,a,prefs);assert.deepEqual(inactive.names,['Ambiental']);assert.equal(inactive.temporary,false);assert.deepEqual(inactive.ids,['p']);assert.equal(JSON.stringify(prefs),before);
+ const active={...row,active:true};assert.deepEqual(financialRowCategories(active,a,prefs).names,['Civil']);assert.equal(financialRowCategories(active,a,prefs).temporary,true);
+ const bands=groupFinancialRows([active,{aliasId:'b',country:'PE',active:true},row],[a,b],prefs);assert.deepEqual(bands.map(b=>[b.active,b.temporary,b.names]),[[true,false,['Civil']],[true,true,['Civil']],[false,false,['Ambiental']]]);assert.equal(bands.flatMap(b=>b.rows).length,3);
 });

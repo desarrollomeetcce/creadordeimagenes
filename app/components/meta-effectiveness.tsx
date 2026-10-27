@@ -1630,11 +1630,10 @@ export function MetaEffectiveness({
                                 "Sin categoría principal"}
                             </strong>
                             <small>
+                              {band.names.length > 0 &&
+                                `${band.temporary ? "Categoría temporal" : "Categoría principal"} · `}
                               {band.rows.length}{" "}
                               {band.rows.length === 1 ? "fila" : "filas"}
-                              {band.temporaryCount
-                                ? ` · ${band.temporaryCount} con categoría temporal`
-                                : ""}
                             </small>
                           </span>
                         </th>
@@ -1716,15 +1715,15 @@ export function MetaEffectiveness({
                               <InventoryMultiSelect
                                 compact
                                 all={false}
-                                label={`Categoría temporal de ${name} ${r.country || "sin país"}`}
+                                label={`${r.active ? "Categoría temporal" : "Categoría principal del inventario"} de ${name} ${r.country || "sin país"}`}
                                 placeholder="▤"
                                 options={category.choices.map((c) => ({
                                   value: c.id,
                                   label: c.name,
                                 }))}
                                 values={category.ids}
-                                disabled={busy}
-                                description="Solo categorías ya asignadas a este inventario. Puedes elegir varias, incluidas las secundarias. Vacío restaura las principales del inventario."
+                                disabled={busy || !r.active}
+                                description="Solo categorías ya asignadas a este inventario. Puedes elegir varias, incluidas las secundarias. Vacío restaura las principales del inventario. Los desactivados siempre usan las principales del inventario."
                                 onChange={(ids) =>
                                   temporaryCategories.choose(
                                     activationKey(r),
