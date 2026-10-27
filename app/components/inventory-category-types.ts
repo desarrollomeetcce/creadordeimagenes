@@ -24,5 +24,21 @@ export type InventoryCategoryAction =
       expectedName: string;
       categoryIds: string[];
     }
+  | {
+      action: "MOVE";
+      ids: string[];
+      expectedName: string;
+      categoryId: string;
+      toKind: "PRIMARY" | "SECONDARY";
+      decisions?: import("../../lib/meta-ads/inventory-duplicates").InventoryNameDecision[];
+    }
+  | {
+      action: "ASSIGN_LEVEL";
+      ids: string[];
+      expectedName: string;
+      kind: "PRIMARY" | "SECONDARY";
+      names: string[];
+      decisions?: import("../../lib/meta-ads/inventory-duplicates").InventoryNameDecision[];
+    }
   | { action: "DELETE"; categoryId: string }
   | { action: "DELETE_MANY"; categoryIds: string[] };

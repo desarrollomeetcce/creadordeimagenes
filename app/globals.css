@@ -1905,3 +1905,8 @@ select option, select optgroup { background:var(--surface); color:var(--ink); }
 .inventory-duplicate-list section { border: 1px solid var(--line); border-radius: 5px; padding: 10px; margin: 10px 0; background: var(--paper); }
 .inventory-duplicate-list p { margin: 5px 0; overflow-wrap: anywhere; }
 .inventory-duplicate-review footer { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.inventory-category-draggable { cursor: grab; touch-action: auto; }
+.inventory-category-draggable:active { cursor: grabbing; }
+.inventory-category-draggable[data-dragging="true"] { opacity: .45; }
+.inventory-category-cell[data-drop-active="true"] { background: var(--soft); outline: 2px dashed var(--accent); outline-offset: -3px; }
+.inventory-category-draggable:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }

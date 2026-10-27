@@ -3,17 +3,18 @@ import { useEffect, useRef, useState } from "react";
 import { engineRequest as api } from "./generation-engine";
 import {
   inventoryRows,
+  inventoryImportFields,
   parseInventoryGrid,
   type InventoryImportRow,
 } from "../../lib/meta-ads/inventory-paste";
 import { useInventoryDuplicateReview } from "./inventory-duplicate-review";
 import type { InventoryCategoryState } from "./inventory-category-types";
 import { splitCategoryNames } from "../../lib/meta-ads/category-paste";
-const fields = ["primary", "secondary", "name", "sheets"] as const;
+const fields = inventoryImportFields;
 const titles = [
+  "Inventario",
   "Categoría principal",
   "Categorías secundarias",
-  "Inventario",
   "Hojas",
 ];
 const blank = () => ({ primary: "", secondary: "", name: "", sheets: "" });

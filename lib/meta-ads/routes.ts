@@ -185,6 +185,28 @@ export async function metaRoutes(
         z
           .object({
             ...base,
+            action: z.literal("ASSIGN_LEVEL"),
+            ids,
+            expectedName: z.string().min(1).max(150),
+            kind: z.enum(["PRIMARY", "SECONDARY"]),
+            names: z.array(z.string().min(1).max(80)).max(20),
+            decisions: nameDecisions,
+          })
+          .strict(),
+        z
+          .object({
+            ...base,
+            action: z.literal("MOVE"),
+            ids,
+            expectedName: z.string().min(1).max(150),
+            categoryId: z.string().min(1).max(100),
+            toKind: z.enum(["PRIMARY", "SECONDARY"]),
+            decisions: nameDecisions,
+          })
+          .strict(),
+        z
+          .object({
+            ...base,
             action: z.literal("ASSIGN"),
             ids,
             expectedName: z.string().min(1).max(150),

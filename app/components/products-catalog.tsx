@@ -1,5 +1,6 @@
 "use client";
-import { useEffect, useRef, useState, useId } from "react";
+import { useEffect, useRef, useState, useId, useContext } from "react";
+import { CurrentUserId } from "./role-guide";
 import { engineRequest as api } from "./generation-engine";
 import { useSheetOrder } from "./use-sheet-order";
 import { InventoryCatalog } from "./inventory-catalog";
@@ -19,6 +20,13 @@ type CatalogTable = {
   defaultCurrency: string;
 };
 export function ProductsCatalog() {
+  const userId = useContext(CurrentUserId),
+    locationKey = `effectiveness-location:v1:${userId}`;
+  const [restoredLocationKey, setRestoredLocationKey] = useState<string | null>(
+      null,
+    ),
+    [locationWarning, setLocationWarning] = useState("");
+  const locationReady = restoredLocationKey === locationKey;
   const [tables, setTables] = useState<CatalogTable[]>([]),
     [selected, setSelected] = useState("diplomados"),
     [message, setMessage] = useState(""),
@@ -227,6 +235,76 @@ export function ProductsCatalog() {
     }
   };
   const [view, setView] = useState<"manual" | "automatic">("manual");
+  useEffect(() => {
+    if (loading || !specialsLoaded || locationReady) return;
+    try {
+      let saved: string | null = null;
+      try {
+        saved = sessionStorage.getItem(locationKey);
+      } catch {}
+      if (saved === null)
+        try {
+          saved = localStorage.getItem(locationKey);
+        } catch {}
+      const raw = JSON.parse(saved || "null");
+      if (raw && typeof raw === "object" && !Array.isArray(raw)) {
+        const tableId =
+          typeof raw.tableId === "string" &&
+          tables.some((t) => t.id === raw.tableId)
+            ? raw.tableId
+            : (tables[0]?.id ?? "");
+        const storedSpecial =
+          typeof raw.specialId === "string"
+            ? specials.find((t) => t.id === raw.specialId)
+            : undefined;
+        const replacement =
+          !storedSpecial && typeof raw.specialId === "string"
+            ? specials.find((t) => t.kind === raw.kind)
+            : undefined;
+        setSelected(tableId);
+        setSpecialId(storedSpecial?.id ?? replacement?.id ?? null);
+        if (raw.view === "manual" || raw.view === "automatic")
+          setView(raw.view);
+      }
+    } catch {
+      setLocationWarning(
+        "No se pudo recuperar la última pestaña de este navegador.",
+      );
+    }
+    setRestoredLocationKey(locationKey);
+  }, [loading, specialsLoaded, locationReady, locationKey, tables, specials]);
+  useEffect(() => {
+    if (!locationReady || loading || !specialsLoaded) return;
+    const saved = JSON.stringify({
+      tableId: selected,
+      specialId: special?.id ?? null,
+      kind: special?.kind ?? "TABLE",
+      view,
+    });
+    let stored = false;
+    try {
+      sessionStorage.setItem(locationKey, saved);
+      stored = true;
+    } catch {}
+    try {
+      localStorage.setItem(locationKey, saved);
+      stored = true;
+    } catch {}
+    setLocationWarning(
+      stored
+        ? ""
+        : "El navegador no permite guardar la pestaña abierta; al recargar podría abrir otra hoja.",
+    );
+  }, [
+    locationReady,
+    loading,
+    specialsLoaded,
+    locationKey,
+    selected,
+    special?.id,
+    special?.kind,
+    view,
+  ]);
   const [advisors, setAdvisors] = useState<
     { id: string; name: string; label?: string }[]
   >([]);
@@ -438,7 +516,7 @@ export function ProductsCatalog() {
   );
   return (
     <section className="products-catalog effectiveness-workbook">
-      {!totals && !advisorSheet && !inventorySheet && (
+      {locationReady && !totals && !advisorSheet && !inventorySheet && (
         <div className="sheet-book-bar">
           {!totals && !advisorSheet && !inventorySheet && (
             <div
@@ -466,27 +544,31 @@ export function ProductsCatalog() {
               </button>
             </div>
           )}
-          {table && !totals && !advisorSheet && !inventorySheet && (
-            <label className="sheet-table-title">
-              Nombre de tabla
-              <EffectivenessCell
-                key={table.id}
-                value={table.name}
-                label="Nombre de la tabla"
-                onError={setMessage}
-                onSave={async (name) => {
-                  if (!name || name.length > 100)
-                    throw Error(
-                      "El nombre de la tabla admite de 1 a 100 caracteres.",
-                    );
-                  await api("meta-ads/alias-tables/" + table.id, "PATCH", {
-                    name,
-                  });
-                  await load();
-                }}
-              />
-            </label>
-          )}
+          {locationReady &&
+            table &&
+            !totals &&
+            !advisorSheet &&
+            !inventorySheet && (
+              <label className="sheet-table-title">
+                Nombre de tabla
+                <EffectivenessCell
+                  key={table.id}
+                  value={table.name}
+                  label="Nombre de la tabla"
+                  onError={setMessage}
+                  onSave={async (name) => {
+                    if (!name || name.length > 100)
+                      throw Error(
+                        "El nombre de la tabla admite de 1 a 100 caracteres.",
+                      );
+                    await api("meta-ads/alias-tables/" + table.id, "PATCH", {
+                      name,
+                    });
+                    await load();
+                  }}
+                />
+              </label>
+            )}
         </div>
       )}
       {adding && (
@@ -530,6 +612,14 @@ export function ProductsCatalog() {
         </p>
       )}
       {loading && <p role="status">Cargando tablas…</p>}
+      {!loading && !locationReady && (
+        <p role="status">Abriendo la última hoja…</p>
+      )}
+      {locationWarning && (
+        <p className="sheet-message" role="status">
+          {locationWarning}
+        </p>
+      )}
       {orderWarning && (
         <p className="sheet-message" role="status">
           {orderWarning}
@@ -538,7 +628,7 @@ export function ProductsCatalog() {
       <span className="sr-only" role="status">
         {orderMessage}
       </span>
-      {!loading && !tables.length && !special && (
+      {locationReady && !loading && !tables.length && !special && (
         <div className="sheet-empty-workbook">
           {sheetTabs}
           <p>
@@ -547,7 +637,7 @@ export function ProductsCatalog() {
           </p>
         </div>
       )}
-      {inventorySheet && (
+      {locationReady && inventorySheet && (
         <InventoryCatalog
           key={special!.id}
           listId={special!.id}
@@ -557,7 +647,7 @@ export function ProductsCatalog() {
           onChanged={load}
         />
       )}
-      {advisorSheet && !inventorySheet && (
+      {locationReady && advisorSheet && !inventorySheet && (
         <AdvisorsSheet
           key={special!.id}
           listId={special!.id}
@@ -567,7 +657,7 @@ export function ProductsCatalog() {
           onChanged={loadAdvisors}
         />
       )}
-      {totals && !advisorSheet && !inventorySheet && (
+      {locationReady && totals && !advisorSheet && !inventorySheet && (
         <EffectivenessTotals
           key={special!.id}
           listId={special!.id}

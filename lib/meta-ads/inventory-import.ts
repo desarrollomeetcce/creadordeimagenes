@@ -29,7 +29,7 @@ export async function importInventory(
   let rows: InventoryImportRow[];
   try {
     rows = inventoryRows(
-      b.rows.map((r) => [r.primary, r.secondary, r.name, r.sheets]),
+      b.rows.map((r) => [r.name, r.primary, r.secondary, r.sheets]),
     );
   } catch (e) {
     throw new AppError((e as Error).message);

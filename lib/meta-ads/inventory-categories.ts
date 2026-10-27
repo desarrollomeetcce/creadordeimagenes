@@ -78,6 +78,22 @@ type Action =
       expectedName: string;
       categoryIds: string[];
     }
+  | {
+      action: "MOVE";
+      ids: string[];
+      expectedName: string;
+      categoryId: string;
+      toKind: Kind;
+      decisions?: InventoryNameDecision[];
+    }
+  | {
+      action: "ASSIGN_LEVEL";
+      ids: string[];
+      expectedName: string;
+      kind: Kind;
+      names: string[];
+      decisions?: InventoryNameDecision[];
+    }
   | { action: "DELETE"; categoryId: string }
   | { action: "DELETE_MANY"; categoryIds: string[] };
 async function fullGroups(
@@ -273,6 +289,138 @@ export async function saveInventoryCategories(
             await writeInventoryTags(tx, b.targetIds, [...added]);
           affected = b.targetIds.length;
         }
+      } else if (b.action === "ASSIGN_LEVEL") {
+        const found = await fullGroups(tx, b.listId, b.ids);
+        demand(
+          found.every((a) => a.name === b.expectedName),
+          "El inventario cambió. Recarga.",
+          409,
+        );
+        demand(
+          new Set(b.names).size === b.names.length &&
+            b.names.every((name) =>
+              before.categories.some((c) => c.name === name),
+            ),
+          "Categoría no disponible en esta lista.",
+          404,
+        );
+        const definitions = [...before.categories],
+          selected: string[] = [];
+        for (const value of b.names) {
+          const name = resolveInventoryName(
+            b.kind,
+            value,
+            definitions.filter((c) => c.kind === b.kind).map((c) => c.name),
+            b.decisions,
+          );
+          let target = definitions.find(
+            (c) => c.kind === b.kind && c.name === name,
+          );
+          if (!target) {
+            demand(
+              definitions.length < 1000,
+              "Se admiten hasta 1000 categorías por lista.",
+            );
+            target = await tx.metaInventoryCategory.create({
+              data: {
+                sheetId: b.listId,
+                kind: b.kind,
+                name,
+                key: categoryIdentity(name),
+              },
+            });
+            definitions.push(target);
+          }
+          selected.push(target.id);
+        }
+        const kinds = new Map(definitions.map((c) => [c.id, c.kind]));
+        const updates = b.ids.map((id) => ({
+          id,
+          tags: [
+            ...new Set([
+              ...(before.assignments[id] ?? []).filter(
+                (c) => kinds.get(c) !== b.kind,
+              ),
+              ...selected,
+            ]),
+          ],
+        }));
+        for (const row of updates)
+          for (const kind of ["PRIMARY", "SECONDARY"])
+            demand(
+              row.tags.filter((id) => kinds.get(id) === kind).length <= 20,
+              "Un ítem admite hasta 20 categorías de cada nivel.",
+            );
+        for (const row of updates)
+          await writeInventoryTags(tx, [row.id], row.tags, true);
+        affected = b.ids.length;
+      } else if (b.action === "MOVE") {
+        const found = await fullGroups(tx, b.listId, b.ids);
+        demand(
+          found.every((a) => a.name === b.expectedName),
+          "El inventario cambió. Recarga.",
+          409,
+        );
+        const source = before.categories.find((c) => c.id === b.categoryId);
+        demand(source, "Categoría no disponible en esta lista.", 404);
+        demand(
+          source.kind !== b.toKind,
+          "La categoría ya está en esa columna.",
+        );
+        demand(
+          b.ids.some((id) =>
+            (before.assignments[id] ?? []).includes(source.id),
+          ),
+          "La categoría ya no está asignada a este ítem. Recarga.",
+          409,
+        );
+        const name = resolveInventoryName(
+          b.toKind,
+          source.name,
+          before.categories
+            .filter((c) => c.kind === b.toKind)
+            .map((c) => c.name),
+          b.decisions,
+        );
+        let target = before.categories.find(
+          (c) => c.kind === b.toKind && c.name === name,
+        );
+        if (!target) {
+          demand(
+            before.categories.length < 1000,
+            "Se admiten hasta 1000 categorías por lista.",
+          );
+          target = await tx.metaInventoryCategory.create({
+            data: {
+              sheetId: b.listId,
+              kind: b.toKind,
+              name,
+              key: categoryIdentity(name),
+            },
+          });
+        }
+        const kinds = new Map([
+          ...before.categories.map((c) => [c.id, c.kind] as const),
+          [target.id, target.kind] as const,
+        ]);
+        const updates = b.ids.map((id) => ({
+          id,
+          tags: [
+            ...new Set([
+              ...(before.assignments[id] ?? []).filter((c) => c !== source.id),
+              target.id,
+            ]),
+          ],
+        }));
+        for (const row of updates)
+          for (const kind of ["PRIMARY", "SECONDARY"])
+            demand(
+              row.tags.filter((id) => kinds.get(id) === kind).length <= 20,
+              "Un ítem admite hasta 20 categorías de cada nivel.",
+            );
+        for (const row of updates)
+          await writeInventoryTags(tx, [row.id], row.tags, true);
+        affected = b.ids.length;
       } else if (b.action === "ASSIGN") {
         const found = await fullGroups(tx, b.listId, b.ids);
         demand(
@@ -336,6 +484,12 @@ export async function saveInventoryCategories(
             action: b.action,
             affected,
             ...(b.action === "DELETE" ? { categoryId: b.categoryId } : {}),
+            ...(b.action === "ASSIGN_LEVEL"
+              ? { kind: b.kind, names: b.names, ids: b.ids }
+              : {}),
+            ...(b.action === "MOVE"
+              ? { categoryId: b.categoryId, toKind: b.toKind, ids: b.ids }
+              : {}),
           },
         },
       });

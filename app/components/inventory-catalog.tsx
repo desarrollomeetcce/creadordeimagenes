@@ -62,13 +62,25 @@ export function InventoryCatalog({
   sheetTabs: ReactNode;
   onChanged: () => Promise<void>;
 }) {
+  const categoryDrag = useRef<{
+      name: string;
+      categoryId: string;
+      kind: "PRIMARY" | "SECONDARY";
+    } | null>(null),
+    [draggingCategory, setDraggingCategory] = useState<string | null>(null),
+    [categoryDrop, setCategoryDrop] = useState<string | null>(null);
+  const clearCategoryDrag = () => {
+    categoryDrag.current = null;
+    setDraggingCategory(null);
+    setCategoryDrop(null);
+  };
   const duplicateReview = useInventoryDuplicateReview();
   const { widths, resize, warning } = useSheetWidths("inventory:" + listId),
     rowsLayout = useSheetHeights("inventory:" + listId);
   const columns = [
+    { key: "inventory", label: "Inventario", width: 340 },
     { key: "primary", label: "Categoría principal", width: 174 },
     { key: "secondary", label: "Categorías secundarias", width: 202 },
-    { key: "inventory", label: "Inventario", width: 340 },
     { key: "sheets", label: "Hojas", width: 380 },
   ];
   const columnHandle = (key: string, label: string) => (
@@ -167,13 +179,39 @@ export function InventoryCatalog({
                 name: c.name,
               })),
             )
-          : [];
+          : action.action === "MOVE"
+            ? await duplicateReview.review(
+                [
+                  {
+                    kind: action.toKind,
+                    name:
+                      categories.categories.find(
+                        (c) => c.id === action.categoryId,
+                      )?.name ?? "",
+                  },
+                ],
+                categories.categories.map((c) => ({
+                  kind: c.kind,
+                  name: c.name,
+                })),
+              )
+            : action.action === "ASSIGN_LEVEL"
+              ? await duplicateReview.review(
+                  action.names.map((name) => ({ kind: action.kind, name })),
+                  categories.categories.map((c) => ({
+                    kind: c.kind,
+                    name: c.name,
+                  })),
+                )
+              : [];
       setCategories(
         await api("meta-ads/inventory/categories", "POST", {
           listId,
           revision: categories.revision,
           ...action,
-          ...(action.action === "IMPORT" ? { decisions } : {}),
+          ...(["IMPORT", "MOVE", "ASSIGN_LEVEL"].includes(action.action)
+            ? { decisions }
+            : {}),
         }),
       );
     } finally {
@@ -184,6 +222,19 @@ export function InventoryCatalog({
     ...new Set(g.links.flatMap((a) => categories?.assignments[a.id] ?? [])),
   ];
   const categoryById = new Map(categories?.categories.map((c) => [c.id, c]));
+  const directoryNames = [
+    ...new Set(categories?.categories.map((c) => c.name) ?? []),
+  ].sort((a, b) => a.localeCompare(b, "es"));
+  const categoryFilterNames = (values: string[]) => [
+    ...new Set(
+      values.flatMap((value) => {
+        const c = categoryById.get(value);
+        return c ? [c.name] : directoryNames.includes(value) ? [value] : [];
+      }),
+    ),
+  ];
+  const primaryNames = categoryFilterNames(filters.primary),
+    secondaryNames = categoryFilterNames(filters.secondary);
   const groupCategories = (g: { links: { id: string }[] }) =>
     categoryIds(g)
       .flatMap((id) => {
@@ -236,13 +287,13 @@ export function InventoryCatalog({
         g.links.some((a) => filters.items.includes(a.id))) &&
       (!filters.sheets.length ||
         g.links.some((a) => filters.sheets.includes(a.tableId))) &&
-      (!filters.primary.length ||
+      (!primaryNames.length ||
         groupCategories(g).some(
-          (c) => c.kind === "PRIMARY" && filters.primary.includes(c.id),
+          (c) => c.kind === "PRIMARY" && primaryNames.includes(c.name),
         )) &&
-      (!filters.secondary.length ||
+      (!secondaryNames.length ||
         groupCategories(g).some(
-          (c) => c.kind === "SECONDARY" && filters.secondary.includes(c.id),
+          (c) => c.kind === "SECONDARY" && secondaryNames.includes(c.name),
         )),
   );
   const bands = new Map<string, { title: string; groups: typeof visible }>();
@@ -269,12 +320,98 @@ export function InventoryCatalog({
   ) => {
     const assigned = groupCategories(g).filter((c) => c.kind === kind);
     return (
-      <td className="inventory-category-cell">
+      <td
+        className="inventory-category-cell"
+        data-category-kind={kind}
+        data-drop-active={categoryDrop === g.name + "|" + kind || undefined}
+        onDragOver={(e) => {
+          const from = categoryDrag.current;
+          if (!busy && from?.name === g.name && from.kind !== kind) {
+            e.preventDefault();
+            e.dataTransfer.dropEffect = "move";
+            setCategoryDrop(g.name + "|" + kind);
+          }
+        }}
+        onDragLeave={(e) => {
+          if (
+            !(e.relatedTarget instanceof Node) ||
+            !e.currentTarget.contains(e.relatedTarget)
+          )
+            setCategoryDrop(null);
+        }}
+        onDrop={(e) => {
+          const from = categoryDrag.current;
+          if (!from || from.name !== g.name || from.kind === kind || busy)
+            return;
+          e.preventDefault();
+          e.stopPropagation();
+          clearCategoryDrag();
+          void saveCategory({
+            action: "MOVE",
+            ids: g.links.map((a) => a.id),
+            expectedName: g.name,
+            categoryId: from.categoryId,
+            toKind: kind,
+          })
+            .then(() =>
+              setMessage(
+                "Categoría movida a " +
+                  (kind === "PRIMARY" ? "Principal" : "Secundaria") +
+                  ".",
+              ),
+            )
+            .catch((e) => setMessage(e.message));
+        }}
+      >
         <div className="inventory-category-chips">
           {assigned.map((c) => (
             <span
               key={c.id}
-              className={"inventory-category-chip " + kind.toLowerCase()}
+              className={
+                "inventory-category-chip inventory-category-draggable " +
+                kind.toLowerCase()
+              }
+              draggable={!busy}
+              role="group"
+              tabIndex={0}
+              aria-label={`${c.name}. Mover a ${kind === "PRIMARY" ? "Secundaria" : "Principal"} con Alt y flecha ${kind === "PRIMARY" ? "derecha" : "izquierda"}`}
+              title={`Arrastra a ${kind === "PRIMARY" ? "Secundaria" : "Principal"} · Alt+${kind === "PRIMARY" ? "→" : "←"}`}
+              data-dragging={
+                draggingCategory === g.name + "|" + c.id || undefined
+              }
+              onDragStart={(e) => {
+                if (busy) {
+                  e.preventDefault();
+                  return;
+                }
+                e.stopPropagation();
+                categoryDrag.current = { name: g.name, categoryId: c.id, kind };
+                e.dataTransfer.effectAllowed = "move";
+                e.dataTransfer.setData(
+                  "application/x-inventory-category",
+                  JSON.stringify({ categoryId: c.id, listId, name: g.name }),
+                );
+                setDraggingCategory(g.name + "|" + c.id);
+              }}
+              onDragEnd={clearCategoryDrag}
+              onKeyDown={(e) => {
+                if (
+                  e.target !== e.currentTarget ||
+                  busy ||
+                  !e.altKey ||
+                  e.key !== (kind === "PRIMARY" ? "ArrowRight" : "ArrowLeft")
+                )
+                  return;
+                e.preventDefault();
+                e.stopPropagation();
+                void saveCategory({
+                  action: "MOVE",
+                  ids: g.links.map((a) => a.id),
+                  expectedName: g.name,
+                  categoryId: c.id,
+                  toKind: kind === "PRIMARY" ? "SECONDARY" : "PRIMARY",
+                }).catch((e) => setMessage(e.message));
+              }}
             >
               {c.name}
               {
@@ -298,7 +435,7 @@ export function InventoryCatalog({
           ))}
           <InventoryMultiSelect
             label={`Categorías ${kind === "PRIMARY" ? "principales" : "secundarias"} de ${g.name}`}
-            values={assigned.map((c) => c.id)}
+            values={assigned.map((c) => c.name)}
             placeholder={
               assigned.length
                 ? "+"
@@ -307,50 +444,37 @@ export function InventoryCatalog({
                   : "+ Secundaria"
             }
             compact
-            onCreate={async (name, ids) => {
+            onCreate={async (name, selectedNames) => {
               await saveCategory({
                 action: "IMPORT",
                 rows: [
                   {
                     primary:
                       kind === "PRIMARY"
-                        ? [
-                            ...(categories?.categories
-                              .filter((c) => ids.includes(c.id))
-                              .map((c) => c.name) ?? []),
-                            name,
-                          ].join(", ")
+                        ? [...selectedNames, name].join(", ")
                         : "",
                     secondary:
                       kind === "SECONDARY"
-                        ? [
-                            ...(categories?.categories
-                              .filter((c) => ids.includes(c.id))
-                              .map((c) => c.name) ?? []),
-                            name,
-                          ].join(", ")
+                        ? [...selectedNames, name].join(", ")
                         : "",
                   },
                 ],
                 targetIds: g.links.map((a) => a.id),
               });
             }}
-            options={(
-              categories?.categories.filter((c) => c.kind === kind) ?? []
-            ).map((c) => ({ value: c.id, label: c.name }))}
+            options={directoryNames.map((name) => ({
+              value: name,
+              label: name,
+            }))}
             disabled={busy || !categories}
             all={false}
-            onChange={async (ids) => {
+            onChange={async (names) => {
               await saveCategory({
-                action: "ASSIGN",
+                action: "ASSIGN_LEVEL",
                 ids: g.links.map((a) => a.id),
                 expectedName: g.name,
-                categoryIds: [
-                  ...categoryIds(g).filter(
-                    (id) => categoryById.get(id)?.kind !== kind,
-                  ),
-                  ...ids,
-                ],
+                kind,
+                names,
               });
             }}
             onError={setMessage}
@@ -557,42 +681,6 @@ export function InventoryCatalog({
           </colgroup>
           <thead>
             <tr>
-              {(["PRIMARY", "SECONDARY"] as const).map((kind) => (
-                <th key={kind} scope="col">
-                  {columnHandle(
-                    kind === "PRIMARY" ? "primary" : "secondary",
-                    kind === "PRIMARY"
-                      ? "Categoría principal"
-                      : "Categorías secundarias",
-                  )}
-                  <div>
-                    {kind === "PRIMARY"
-                      ? "Categoría principal"
-                      : "Categorías secundarias"}
-                  </div>
-                  <InventoryMultiSelect
-                    label={
-                      kind === "PRIMARY"
-                        ? "Filtro de categorías principales"
-                        : "Filtro de categorías secundarias"
-                    }
-                    placeholder="Todas"
-                    options={(
-                      categories?.categories.filter((c) => c.kind === kind) ??
-                      []
-                    ).map((c) => ({ value: c.id, label: c.name }))}
-                    values={
-                      kind === "PRIMARY" ? filters.primary : filters.secondary
-                    }
-                    onChange={(v) =>
-                      setFilters({
-                        ...filters,
-                        [kind === "PRIMARY" ? "primary" : "secondary"]: v,
-                      })
-                    }
-                  />
-                </th>
-              ))}
               <th scope="col">
                 {columnHandle("inventory", "Inventario")}
                 <div className="inventory-header-title">
@@ -622,6 +710,40 @@ export function InventoryCatalog({
                   onChange={(v) => setFilters({ ...filters, items: v })}
                 />
               </th>
+              {(["PRIMARY", "SECONDARY"] as const).map((kind) => (
+                <th key={kind} scope="col">
+                  {columnHandle(
+                    kind === "PRIMARY" ? "primary" : "secondary",
+                    kind === "PRIMARY"
+                      ? "Categoría principal"
+                      : "Categorías secundarias",
+                  )}
+                  <div>
+                    {kind === "PRIMARY"
+                      ? "Categoría principal"
+                      : "Categorías secundarias"}
+                  </div>
+                  <InventoryMultiSelect
+                    label={
+                      kind === "PRIMARY"
+                        ? "Filtro de categorías principales"
+                        : "Filtro de categorías secundarias"
+                    }
+                    placeholder="Todas"
+                    options={directoryNames.map((name) => ({
+                      value: name,
+                      label: name,
+                    }))}
+                    values={kind === "PRIMARY" ? primaryNames : secondaryNames}
+                    onChange={(v) =>
+                      setFilters({
+                        ...filters,
+                        [kind === "PRIMARY" ? "primary" : "secondary"]: v,
+                      })
+                    }
+                  />
+                </th>
+              ))}
               <th scope="col">
                 {columnHandle("sheets", "Hojas")}
                 <div>Hojas</div>
@@ -659,8 +781,6 @@ export function InventoryCatalog({
                       g.links.some((a) => selected.includes(a.id)) || undefined
                     }
                   >
-                    {categoryCell(g, "PRIMARY")}
-                    {categoryCell(g, "SECONDARY")}
                     <td>
                       <div className="inventory-name-cell">
                         <InventoryCheck
@@ -697,6 +817,8 @@ export function InventoryCatalog({
                         />
                       </div>
                     </td>
+                    {categoryCell(g, "PRIMARY")}
+                    {categoryCell(g, "SECONDARY")}
                     <td>
                       <div className="inventory-sheet-links">
                         {g.links

@@ -9,17 +9,23 @@ export type InventoryImportRow = {
   name: string;
   sheets: string;
 };
-const fields = ["primary", "secondary", "name", "sheets"] as const;
+export const inventoryImportFields = [
+  "name",
+  "primary",
+  "secondary",
+  "sheets",
+] as const;
+const fields = inventoryImportFields;
 const header = (v: string) => {
   const k = categoryKey(v)
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "");
   return /^(categorias? principal(es)?|principal(es)?)$/.test(k)
-    ? 0
+    ? 1
     : /^(categorias? secundarias?|secundarias?)$/.test(k)
-      ? 1
+      ? 2
       : /^(inventario|item|nombre)$/.test(k)
-        ? 2
+        ? 0
         : /^hojas?$/.test(k)
           ? 3
           : -1;
@@ -36,7 +42,7 @@ export function inventoryRows(records: string[][]): InventoryImportRow[] {
   return rows.map((r, i) => {
     if (r.slice(4).some((v) => v.trim()))
       throw Error(`Fila ${i + 1}: usa solo cuatro columnas.`);
-    const [primary, secondary, name, sheets] = [0, 1, 2, 3].map((n) =>
+    const [name, primary, secondary, sheets] = [0, 1, 2, 3].map((n) =>
       (r[n] ?? "").trim(),
     );
     splitCategoryNames(primary);

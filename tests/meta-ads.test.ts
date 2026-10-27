@@ -414,8 +414,8 @@ test('Categorías: límites de archivo y codificación Unicode de Excel',async()
 test('Inventario: cuatro columnas, etiquetas con comas, CSV y validación por fila',async()=>{
  const {parseInventoryText,inventoryRows}=await import('../lib/meta-ads/inventory-paste');
  const rows=parseInventoryText('Categoría principal\tCategorías secundarias\tInventario\tHojas\nAmbiental, Civil\tAgua, Suelos\tMonitoreo ambiental\tDiplomados, Colombia');assert.equal(rows.length,1);assert.equal(rows[0].name,'Monitoreo ambiental');assert.deepEqual(splitCategoryNames(rows[0].primary),['Ambiental','Civil']);assert.deepEqual(splitCategoryNames(rows[0].sheets),['Diplomados','Colombia']);
- assert.deepEqual(parseInventoryText('Ambiental, Civil;Agua, Suelos;Monitoreo ambiental;Diplomados, Colombia',true),rows);
- assert.equal(inventoryRows([['A','B','','']])[0].name,'');assert.equal(inventoryRows([['','','Producto','']])[0].sheets,'');assert.throws(()=>inventoryRows([['A','B','Producto','Diplomados','extra']]),/cuatro/);
+ assert.deepEqual(parseInventoryText('Monitoreo ambiental;Ambiental, Civil;Agua, Suelos;Diplomados, Colombia',true),rows);
+ assert.equal(inventoryRows([['','A','B','']])[0].name,'');assert.equal(inventoryRows([['Producto','','','']])[0].sheets,'');assert.throws(()=>inventoryRows([['Producto','A','B','Diplomados','extra']]),/cuatro/);
 });
 test('Inventario: archivo XLSX cuatro columnas y rechazo de quinta/fórmulas',async()=>{
  const {parseInventoryFile}=await import('../lib/meta-ads/category-file');
@@ -426,12 +426,12 @@ test('Inventario: archivo XLSX cuatro columnas y rechazo de quinta/fórmulas',as
 
 test('Inventario: columnas opcionales y pegado desde la columna enfocada, sin inventar categorías/hojas',async()=>{
  const {parseInventoryGrid,parseInventoryText,inventoryRows}=await import('../lib/meta-ads/inventory-paste');
- assert.deepEqual(parseInventoryGrid('Monitoreo ambiental\nTratamiento de aguas',false,2),{rows:[{primary:'',secondary:'',name:'Monitoreo ambiental',sheets:''},{primary:'',secondary:'',name:'Tratamiento de aguas',sheets:''}],columns:['name']});
+ assert.deepEqual(parseInventoryGrid('Monitoreo ambiental\nTratamiento de aguas',false,0),{rows:[{primary:'',secondary:'',name:'Monitoreo ambiental',sheets:''},{primary:'',secondary:'',name:'Tratamiento de aguas',sheets:''}],columns:['name']});
  assert.deepEqual(parseInventoryText('Categoría principal\nAmbiental, Civil'),[{primary:'Ambiental, Civil',secondary:'',name:'',sheets:''}]);
  assert.deepEqual(parseInventoryText('Categorías secundarias\nAgua, Suelos'),[{primary:'',secondary:'Agua, Suelos',name:'',sheets:''}]);
  assert.deepEqual(parseInventoryText('Inventario\nMonitoreo'),[{primary:'',secondary:'',name:'Monitoreo',sheets:''}]);
- assert.deepEqual(parseInventoryText('Agua\nSuelos',false,1).map(r=>r.secondary),['Agua','Suelos']);
- assert.deepEqual(inventoryRows([['','','Solo inventario','']]),[{primary:'',secondary:'',name:'Solo inventario',sheets:''}]);
+ assert.deepEqual(parseInventoryText('Agua\nSuelos',false,2).map(r=>r.secondary),['Agua','Suelos']);
+ assert.deepEqual(inventoryRows([['Solo inventario','','','']]),[{primary:'',secondary:'',name:'Solo inventario',sheets:''}]);
  assert.throws(()=>parseInventoryGrid('A\tB',false,3),/cuatro/);assert.throws(()=>inventoryRows([['','','','']]),/Incluye/);
 });
 test('Inventario: archivo de una columna con encabezado de categoría o inventario conserva su tipo',async()=>{
@@ -450,4 +450,16 @@ test('Nombres similares: pide elección por tipo, reutiliza el elegido o conserv
  assert.throws(()=>resolveInventoryName('PRIMARY','AMBIENTAL',['Ambiental'],[{kind:'PRIMARY',name:'AMBIENTAL',useName:'Ajena'}]),/similar/);
  assert.equal(inventoryNameConflicts([{kind:'PRIMARY',name:'Ambiental'}],existing).length,0);
  assert.equal(inventoryNameConflicts([{kind:'PRIMARY',name:'Civil'},{kind:'PRIMARY',name:'CIVIL'}],[]).length,1);
+});
+
+test('Inventario: orden inventario/principal/secundaria/hojas en pegado y filas, con encabezados anteriores compatibles',async()=>{
+ const {parseInventoryText,parseInventoryGrid,inventoryImportFields}=await import('../lib/meta-ads/inventory-paste');
+ assert.deepEqual(inventoryImportFields,['name','primary','secondary','sheets']);
+ const expected=[{name:'Monitoreo',primary:'Ambiental',secondary:'Agua',sheets:'Diplomados'}];
+ assert.deepEqual(parseInventoryText('Monitoreo\tAmbiental\tAgua\tDiplomados'),expected);
+ assert.deepEqual(parseInventoryText('Inventario\tCategoría principal\tCategorías secundarias\tHojas\nMonitoreo\tAmbiental\tAgua\tDiplomados'),expected);
+ assert.deepEqual(parseInventoryText('Categoría principal\tCategorías secundarias\tInventario\tHojas\nAmbiental\tAgua\tMonitoreo\tDiplomados'),expected);
+ assert.deepEqual(parseInventoryGrid('Solo nombre\nOtro',false,0).rows.map(r=>r.name),['Solo nombre','Otro']);
+ assert.deepEqual(parseInventoryGrid('Civil\nAmbiental',false,1).rows.map(r=>r.primary),['Civil','Ambiental']);
+ assert.deepEqual(parseInventoryGrid('Agua\nSuelos',false,2).rows.map(r=>r.secondary),['Agua','Suelos']);
 });
