@@ -20,6 +20,7 @@ export function useSheetTextFit(ref: RefObject<HTMLTableElement | null>) {
           "input.sheet-cell, .sheet-new-row > td > input, .sheet-derived, .sheet-search-trigger > span:first-child, th > .sheet-sort-button, .sheet-date-heading, .sheet-new-row button:not(.sheet-search-trigger)",
         )
         .forEach((element) => {
+          if (element.closest(".sheet-search-popover")) return;
           if (!element.clientWidth) return;
           const style = getComputedStyle(element);
           let maximum = maximums.get(element);

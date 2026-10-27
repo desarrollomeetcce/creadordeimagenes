@@ -957,6 +957,8 @@ export async function metaRoutes(
     const b = z
       .object({
         tableId: z.string().min(1).max(100),
+        inventorySheetId: z.string().min(1).max(100).optional(),
+        decisions: nameDecisions,
         advisorId: z.string().min(1).max(80).optional(),
         advisorTiming: assignmentTimingSchema
           .omit({ cutoffSales: true, token: true })
@@ -986,6 +988,8 @@ export async function metaRoutes(
         b.rows,
         b.advisorId,
         b.advisorTiming,
+        b.inventorySheetId,
+        b.decisions,
       ),
     );
   }

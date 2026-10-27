@@ -17,6 +17,8 @@ export function SheetSearchSelect({
   className = "",
   compact = false,
   displayLabel = false,
+  onCreate,
+  disabled = false,
 }: {
   label: string;
   value: string;
@@ -27,6 +29,8 @@ export function SheetSearchSelect({
   className?: string;
   compact?: boolean;
   displayLabel?: boolean;
+  onCreate?: (name: string) => void | Promise<void>;
+  disabled?: boolean;
 }) {
   const id = useId(),
     popover = useRef<HTMLDivElement>(null),
@@ -44,12 +48,13 @@ export function SheetSearchSelect({
         normalize(o.label + " " + o.value).includes(normalize(query.trim())),
       )
     : [];
-  const choose = async (v: string) => {
+  const choose = async (v: string, create = false) => {
     if (pending.current) return;
     pending.current = true;
     setBusy(true);
     try {
-      await action.current(v);
+      if (create) await onCreate?.(v);
+      else await action.current(v);
       popover.current?.hidePopover();
       trigger.current?.focus({ preventScroll: true });
     } catch (e) {
@@ -66,7 +71,7 @@ export function SheetSearchSelect({
         type="button"
         className={"sheet-search-trigger " + className}
         aria-label={label}
-        disabled={busy}
+        disabled={busy || disabled}
         aria-haspopup="listbox"
         aria-expanded={open}
         popoverTarget={id}
@@ -170,6 +175,17 @@ export function SheetSearchSelect({
           ))}
           {!filtered.length && <p role="status">Sin coincidencias</p>}
         </div>
+        {onCreate &&
+          query.trim() &&
+          !options.some((o) => o.label === query.trim()) && (
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => void choose(query.trim(), true)}
+            >
+              + Añadir nuevo «{query.trim()}»
+            </button>
+          )}
         {busy && <small role="status">Guardando…</small>}
       </div>
     </>

@@ -1,4 +1,6 @@
 import { activeWorkbookSheetId } from "./workbook-scope";
+import { linkFinancialInventory } from "./financial-inventory";
+import type { InventoryNameDecision } from "./inventory-duplicates";
 import { advisorSalesPlan } from "./advisor-sales-plan";
 import { limaDay } from "./advisor-attribution";
 import { createHash } from "node:crypto";
@@ -639,6 +641,8 @@ export async function importEffectiveness(
   entries: { name: string; country: string; currency: string }[],
   advisorId?: string,
   advisorTiming?: { day: string; mode: "DAY" | "CLOCK"; time?: string },
+  inventorySheetId?: string,
+  decisions?: InventoryNameDecision[],
 ) {
   ownerOnly(actor);
   return db.$transaction(
@@ -679,17 +683,31 @@ export async function importEffectiveness(
           "Elige el país de cada elemento del inventario antes de asignar asesor.",
         );
       }
+      let inventoryCreated = 0;
+      if (inventorySheetId) {
+        const linked = await linkFinancialInventory(
+          tx,
+          tableId,
+          inventorySheetId,
+          entries,
+          decisions,
+        );
+        entries = linked.entries;
+        inventoryCreated = linked.created;
+      }
+      const nameKey = (name: string) =>
+        inventorySheetId ? name : name.toLocaleLowerCase("es");
       const aliases = await tx.metaAlias.findMany({
           select: { id: true, name: true, tableId: true },
         }),
         byName = new Map(
           aliases
             .filter((a) => a.tableId === tableId)
-            .map((a) => [a.name.toLocaleLowerCase("es"), a]),
+            .map((a) => [nameKey(a.name), a]),
         );
       const fresh = new Map<string, string>();
       for (const e of entries) {
-        const k = e.name.toLocaleLowerCase("es"),
+        const k = nameKey(e.name),
           a = byName.get(k);
         demand(
           !a || a.tableId === tableId,
@@ -716,9 +734,7 @@ export async function importEffectiveness(
           where: { tableId },
           select: { id: true, name: true },
         }),
-        ids = new Map(
-          catalogue.map((a) => [a.name.toLocaleLowerCase("es"), a.id]),
-        );
+        ids = new Map(catalogue.map((a) => [nameKey(a.name), a.id]));
       const unique = new Map<
         string,
         {
@@ -729,7 +745,7 @@ export async function importEffectiveness(
         }
       >();
       for (const e of entries) {
-        const aliasId = ids.get(e.name.toLocaleLowerCase("es"))!,
+        const aliasId = ids.get(nameKey(e.name))!,
           k = key(aliasId, e.country);
         demand(
           !unique.has(k) || unique.get(k)!.displayCurrency === e.currency,
@@ -810,12 +826,17 @@ export async function importEffectiveness(
           resourceId: tableId,
           detail: {
             rows: unique.size,
-            created: fresh.size,
+            created: fresh.size + inventoryCreated,
+            inventorySheetId: inventorySheetId ?? null,
             advisorId: advisorId ?? null,
           },
         },
       });
-      return { ok: true, rows: unique.size, created: fresh.size };
+      return {
+        ok: true,
+        rows: unique.size,
+        created: fresh.size + inventoryCreated,
+      };
     },
     { timeout: 30000 },
   );

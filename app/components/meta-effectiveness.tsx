@@ -24,6 +24,10 @@ import {
 } from "../../lib/meta-ads/period-summary";
 import { SheetSearchSelect } from "./sheet-search-select";
 import { SheetMultiFilter } from "./sheet-multi-filter";
+import { InventoryMultiSelect } from "./inventory-multi-select";
+import { useWorkbookPreference } from "./use-workbook-preference";
+import { useInventoryDuplicateReview } from "./inventory-duplicate-review";
+import type { InventoryCategoryState } from "./inventory-category-types";
 import { SheetColumnResizer } from "./sheet-column-resizer";
 import { SheetSizedRow } from "./sheet-sized-row";
 import { useSheetHeights } from "./use-sheet-heights";
@@ -122,10 +126,16 @@ export function MetaEffectiveness({
   tables,
   sheetTabs,
   advisors,
+  inventoryLists,
 }: {
+  inventoryLists: { id: string; name: string }[];
   sheetTabs: ReactNode;
   advisors: { id: string; name: string; label?: string }[];
-  tables: { id: string; name: string }[];
+  tables: {
+    id: string;
+    name: string;
+    aliases: { id: string; name: string; inventorySheetId?: string }[];
+  }[];
   view: "manual" | "automatic";
   tableId: string;
   settings: Settings;
@@ -162,7 +172,52 @@ export function MetaEffectiveness({
     country: string;
   } | null>(null);
   const [colorRules, setColorRules] = useState<SheetColorRule[]>([]);
-  const [aliasSearch, setAliasSearch] = useState("");
+  const duplicateReview = useInventoryDuplicateReview();
+  const [inventoryPreference, setInventoryPreference] =
+    useWorkbookPreference<string>(tableId, "inventory-source", "");
+  const inventoryId = inventoryLists.some((s) => s.id === inventoryPreference)
+    ? inventoryPreference
+    : (inventoryLists[0]?.id ?? "");
+  const [inventoryState, setInventoryState] =
+    useState<InventoryCategoryState | null>(null);
+  const [inventoryError, setInventoryError] = useState("");
+  useEffect(() => {
+    let cancelled = false;
+    setInventoryState(null);
+    setInventoryError("");
+    if (inventoryId)
+      void api(
+        "meta-ads/inventory/categories?listId=" +
+          encodeURIComponent(inventoryId),
+      )
+        .then((state) => {
+          if (!cancelled) setInventoryState(state as InventoryCategoryState);
+        })
+        .catch((e) => {
+          if (!cancelled)
+            setInventoryError(
+              e instanceof Error
+                ? e.message
+                : "No se pudo cargar el inventario.",
+            );
+        });
+    return () => {
+      cancelled = true;
+    };
+  }, [inventoryId, aliases]);
+  const inventoryNames = [
+    ...new Set([
+      ...(inventoryState?.listId === inventoryId
+        ? (inventoryState.items ?? [])
+        : []
+      ).map((i) => i.name),
+      ...tables.flatMap((t) =>
+        t.aliases
+          .filter((a) => a.inventorySheetId === inventoryId)
+          .map((a) => a.name),
+      ),
+    ]),
+  ].sort((a, b) => a.localeCompare(b, "es"));
   const [selectedPairs, setSelectedPairs] = useState<string[]>([]);
   const grid = useRef<HTMLTableElement>(null);
   useSheetTextFit(grid);
@@ -507,7 +562,12 @@ export function MetaEffectiveness({
     return true;
   };
   const addRow = async () => {
-    if (!newName.trim()) return;
+    if (
+      !newName.trim() ||
+      !inventoryId ||
+      inventoryState?.listId !== inventoryId
+    )
+      return;
     setBusy(true);
     setMessage("");
     try {
@@ -516,12 +576,19 @@ export function MetaEffectiveness({
       const rows = parseEffectivenessPaste(newName, code, newCurrency);
       if (newAdvisor && rows.some((r) => !r.country))
         throw Error("Elige el país antes de guardar el inventario con asesor.");
+      const decisions = await duplicateReview.review(
+        rows.map((r) => ({ kind: "INVENTORY", name: r.name })),
+        inventoryNames.map((name) => ({ kind: "INVENTORY", name })),
+      );
+      if (!decisions) return;
       await mutate(
         "meta-ads/effectiveness/import",
         "POST",
         {
           tableId,
           rows,
+          inventorySheetId: inventoryId,
+          decisions,
           ...(newAdvisor
             ? {
                 advisorId: newAdvisor,
@@ -558,23 +625,9 @@ export function MetaEffectiveness({
       !visibleMetricKeys.has(sheetSort.metric))
       ? { kind: "text", field: "alias", direction: "asc" }
       : sheetSort;
-  const searchWords = aliasSearch
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .toLocaleLowerCase("es")
-    .trim()
-    .split(/\s+/)
-    .filter(Boolean);
   const rows = (data?.rows ?? [])
     .filter(
       (r) =>
-        searchWords.every((word) =>
-          (names.get(r.aliasId) ?? "")
-            .normalize("NFD")
-            .replace(/[\u0300-\u036f]/g, "")
-            .toLocaleLowerCase("es")
-            .includes(word),
-        ) &&
         (country === "__none"
           ? !r.country
           : !country || r.country === country) &&
@@ -708,6 +761,8 @@ export function MetaEffectiveness({
       className="effectiveness sheet-view"
       aria-label="Efectividad diaria"
     >
+      {duplicateReview.dialog}
+      {inventoryError && <p role="alert">{inventoryError}</p>}
       {salesReview && (
         <AdvisorSalesApproval
           {...salesReview}
@@ -1186,26 +1241,37 @@ export function MetaEffectiveness({
                       })}
                     </button>
                   </div>
-                  <div className="sheet-alias-filters">
-                    {" "}
-                    <input
-                      className="sheet-alias-search"
-                      type="search"
-                      aria-label="Buscar inventario por palabra"
+                  <div className="financial-inventory-controls">
+                    <InventoryMultiSelect
+                      label="Buscar y filtrar inventario de la hoja"
                       placeholder="Buscar inventario…"
-                      value={aliasSearch}
-                      onChange={(e) => setAliasSearch(e.target.value)}
-                    />
-                    <SheetMultiFilter
-                      compact
-                      label="Filtro de inventario"
                       options={aliases.map((a) => ({
                         value: a.id,
                         label: a.name,
                       }))}
-                      value={selectedAliases}
-                      onChange={setSelectedAliases}
+                      values={selectedAliases ?? []}
+                      onChange={(v) => setSelectedAliases(v.length ? v : null)}
                     />
+                    <small>Seleccionar inventario</small>
+                    <SheetSearchSelect
+                      label="Seleccionar inventario"
+                      placeholder="Seleccionar inventario"
+                      value={inventoryId}
+                      options={inventoryLists.map((s) => ({
+                        value: s.id,
+                        label: s.name,
+                      }))}
+                      disabled={busy}
+                      onSelect={(id) => {
+                        setInventoryPreference(id);
+                        setNewName("");
+                      }}
+                    />
+                    {!inventoryId && (
+                      <small>
+                        Crea una pestaña Inventario para añadir ítems.
+                      </small>
+                    )}
                   </div>
                   <SheetColumnResizer
                     label={inventoryColumnName}
@@ -1693,21 +1759,18 @@ export function MetaEffectiveness({
               })}
               <tr className="sheet-new-row">
                 <td className="effectiveness-name">
-                  <input
-                    aria-label="Nuevo inventario"
-                    placeholder="+ Escribe o pega inventario…"
+                  <SheetSearchSelect
+                    key={inventoryId}
+                    label="Seleccionar o crear inventario para añadir"
+                    placeholder="Selecciona o escribe uno nuevo…"
                     value={newName}
-                    onChange={(e) => setNewName(e.target.value)}
-                    onPaste={(e) => {
-                      if (openPaste(e.clipboardData.getData("text")))
-                        e.preventDefault();
-                    }}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") {
-                        e.preventDefault();
-                        void addRow();
-                      }
-                    }}
+                    options={inventoryNames.map((name) => ({
+                      value: name,
+                      label: name,
+                    }))}
+                    disabled={busy || inventoryState?.listId !== inventoryId}
+                    onSelect={setNewName}
+                    onCreate={setNewName}
                   />
                 </td>
                 <td className="effectiveness-country">
@@ -1772,7 +1835,11 @@ export function MetaEffectiveness({
                   />
                   {visibleMetrics.length === 0 && (
                     <button
-                      disabled={busy || !newName.trim()}
+                      disabled={
+                        busy ||
+                        !newName.trim() ||
+                        inventoryState?.listId !== inventoryId
+                      }
                       onClick={() => void addRow()}
                     >
                       Agregar fila
@@ -1782,7 +1849,11 @@ export function MetaEffectiveness({
                 {visibleMetrics.length > 0 && (
                   <td colSpan={days.length * visibleMetrics.length}>
                     <button
-                      disabled={busy || !newName.trim()}
+                      disabled={
+                        busy ||
+                        !newName.trim() ||
+                        inventoryState?.listId !== inventoryId
+                      }
                       onClick={() => void addRow()}
                     >
                       Agregar fila

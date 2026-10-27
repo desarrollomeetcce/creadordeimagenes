@@ -21,7 +21,7 @@ export function EffectivenessLegend() {
         <b>BM</b> Base manual
       </span>
       <span>
-        <b>GD</b> Gasto diario
+        <b>GM</b> Gasto manual
       </span>
     </span>
   );

@@ -31,7 +31,7 @@ const manualColumns = [
   { key: "sales", label: "V", name: "Ventas", sum: true },
   { key: "budget", label: "P", name: "Presupuesto", sum: true },
   { key: "baseManual", label: "BM", name: "Base manual", sum: false },
-  { key: "totalSpend", label: "GD", name: "Gasto diario", sum: false },
+  { key: "totalSpend", label: "GM", name: "Gasto manual", sum: false },
   { key: "fixedCost", label: "CF", name: "Costos fijos", sum: false },
 ] as const;
 const autoColumns = [
@@ -331,22 +331,24 @@ export function EffectivenessTotals({
           onChange={setSelected}
           options={tables.map((t) => ({ value: t.id, label: t.name }))}
         />
-        {selected !== null && tables.some((t) => !selected.includes(t.id)) && (
-          <SheetSearchSelect
-            label="Agregar hoja a Totales"
-            className="sheet-add-source"
-            value=""
-            placeholder="+ Agregar hoja"
-            options={tables
-              .filter((t) => !selected.includes(t.id))
-              .map((t) => ({ value: t.id, label: t.name }))}
-            onSelect={(id) =>
-              setSelected((old) =>
-                old === null ? null : [...new Set([...old, id])],
-              )
-            }
-          />
-        )}
+        {!data.length &&
+          selected !== null &&
+          tables.some((t) => !selected.includes(t.id)) && (
+            <SheetSearchSelect
+              label="Agregar hoja a Totales"
+              className="sheet-add-source"
+              value=""
+              placeholder="+ Agregar hoja"
+              options={tables
+                .filter((t) => !selected.includes(t.id))
+                .map((t) => ({ value: t.id, label: t.name }))}
+              onSelect={(id) =>
+                setSelected((old) =>
+                  old === null ? null : [...new Set([...old, id])],
+                )
+              }
+            />
+          )}
         <label>
           País
           <SheetSearchSelect
@@ -386,7 +388,7 @@ export function EffectivenessTotals({
       </div>
       <p className="sheet-help">
         {mode === "manual"
-          ? "V/P: suma de inventario. BM, GD y CF: valores manuales de esta hoja, por tabla, país, moneda y fecha."
+          ? "V/P: suma de inventario. BM, GM y CF: valores manuales de esta hoja, por tabla, país, moneda y fecha."
           : "V/B/G/CF: suma de los valores de la vista automática."}{" "}
         Países y monedas separados; N.A. no suma, — sin dato, * suma parcial.
         Las ventas se suman únicamente desde la hoja de origen indicada en cada
@@ -438,9 +440,36 @@ export function EffectivenessTotals({
                 <th rowSpan={2}>Fecha{handle("date", "Fecha")}</th>
                 <th rowSpan={2}>País{handle("country", "País")}</th>
                 <th rowSpan={2}>Moneda{handle("currency", "Moneda")}</th>
-                {data.map((t) => (
+                {data.map((t, index) => (
                   <th key={t.tableId} colSpan={columns.length}>
-                    {t.name}
+                    <div className="totals-source-heading">
+                      <span>{t.name}</span>
+                      {index === data.length - 1 &&
+                        selected !== null &&
+                        tables.some(
+                          (source) => !selected.includes(source.id),
+                        ) && (
+                          <SheetSearchSelect
+                            label="Agregar hoja junto a las hojas de Totales"
+                            className="totals-source-add"
+                            value=""
+                            placeholder="+"
+                            options={tables
+                              .filter((source) => !selected.includes(source.id))
+                              .map((source) => ({
+                                value: source.id,
+                                label: source.name,
+                              }))}
+                            onSelect={(id) =>
+                              setSelected((old) =>
+                                old === null
+                                  ? null
+                                  : [...new Set([...old, id])],
+                              )
+                            }
+                          />
+                        )}
+                    </div>
                   </th>
                 ))}
               </tr>

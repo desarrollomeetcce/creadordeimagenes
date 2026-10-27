@@ -11115,7 +11115,8 @@ test("Integración HTTP + PostgreSQL (base exclusiva de pruebas, sin llamadas ex
     });
     await t.test('Adjuntos del sistema: tres niveles, carpetas mixtas, imagen/versiones, herencia, permisos y revocación',async()=>withOrderProvider(async()=>{
       const {p,c,s}=await hierarchyForReview(),actor=await db.user.findFirstOrThrow({where:{role:'OWNER'}}),{previewSubproduct,generateBatch}=await import('../lib/generation'),{boundSystemReferences,resolveSystemReferences}=await import('../lib/system-resources');
-      const source=await db.variation.findFirstOrThrow({where:{deletedAt:null,expired:false,expiresAt:{gt:new Date()}}});
+      // Use a valid image owned by this fixture, rather than an arbitrary asset from another test.
+      const source={path:await (await import('../lib/storage')).store(await (await import('sharp')).default({create:{width:1024,height:1024,channels:3,background:'#9fbccc'}}).png().toBuffer())};
       const job=await db.generationJob.create({data:{actorId:actor.id,projectId:p.id,subproductId:s.id,idempotencyKey:randomUUID(),status:'COMPLETED',snapshot:{prompt:'Secreto origen'},reservedMicros:0n}});
       const image=await db.variation.create({data:{jobId:job.id,subproductId:s.id,path:source.path,model:'synthetic-resource',reviewStatus:'APPROVED',expiresAt:new Date(Date.now()+86400000)}}),version=await db.imageVersion.create({data:{variationId:image.id,path:source.path,actorId:actor.id,number:1}});
       const target=await hierarchyForReview(),folder=(await owner.call('library/folder-actions','POST',{action:'create',name:'Referencias personales'})).body;
@@ -11331,6 +11332,8 @@ test("Integración HTTP + PostgreSQL (base exclusiva de pruebas, sin llamadas ex
         let current;for(let i=0;i<20;i++){current=await db.metaAdAccount.findUniqueOrThrow({where:{id}});if((current.syncState as any).recentReady)break;assert(await syncStep(id));}assert((current!.syncState as any).recentReady);assert.equal((current!.syncState as any).phase,10);assert(current!.syncedAt);assert(current!.selectionSince);
         const ready=await owner.call('meta-ads/dashboard?accounts='+id+'&level=ad&metric=MESSAGES');assert.equal(ready.status,200,JSON.stringify(ready.body));assert.equal(ready.body.total,2);const ad=ready.body.items.find((o:any)=>o.id==='910013');assert.equal(ad.periods['30'].cost,0.5);assert.equal(ad.periods['15'].cost,0.5);assert.equal(ad.periods.lifetime.state,'UNAVAILABLE');assert.equal(ad.historyPending,true);assert.equal(ready.body.items.find((o:any)=>o.id==='910023').effectiveStatus,'ACTIVE');
         await db.metaAdObject.update({where:{id:'910013'},data:{status:'ACTIVE'}});const pausedView=await owner.call('meta-ads/dashboard?accounts='+id+'&level=ad&metric=MESSAGES&state=paused');assert.equal(pausedView.status,200);assert.equal(pausedView.body.total,1);assert.equal(pausedView.body.items[0].id,'910013');assert.equal(pausedView.body.items[0].effectiveStatus,'PAUSED');await db.metaAdObject.update({where:{id:'910013'},data:{status:'PAUSED'}});
+        // Exercise the synthetic history error, rather than racing the previous read's quota delay.
+        await db.metaApiQuota.updateMany({data:{blockedUntil:new Date(0),nextReadAt:new Date(0)}});
         assert.equal(await syncStep(id),false);current=await db.metaAdAccount.findUniqueOrThrow({where:{id}});const beforePause=current.syncState;assert(current.syncError?.includes('código 4'));await assert.rejects(()=>controlSync({id:uid,role:'USER'},id,'pause'),/permiso|disponible/);await controlSync(actor,id,'pause');current=await db.metaAdAccount.findUniqueOrThrow({where:{id}});assert.equal(current.enabled,false);assert.equal((current.syncState as any).phase,(beforePause as any).phase);assert.equal((current.syncState as any).stop,'paused');assert.equal(await syncStep(id),false);
         await db.metaApiQuota.updateMany({data:{blockedUntil:new Date(0),nextReadAt:new Date(0)}});assert.equal((await queueSync(actor,id,false,7,true)).resumed,true);historyFail=false;for(let i=0;i<5;i++){assert(await syncStep(id));current=await db.metaAdAccount.findUniqueOrThrow({where:{id}});if((current.syncState as any).phase===undefined)break;}
         assert.equal(await db.metaAdObject.count({where:{id:'910088'}}),0);assert.equal((await db.metaAdObject.findUniqueOrThrow({where:{id:'910013'}})).effectiveStatus,'PAUSED');assert(calls.some(u=>u.pathname.endsWith('/adsets')&&u.searchParams.get('after')==='synthetic-active-page'));
@@ -12365,6 +12368,47 @@ test("Integración HTTP + PostgreSQL (base exclusiva de pruebas, sin llamadas ex
       const old=state.revision;r=await write(assign);assert.equal(r.status,200);state=r.body;assert(state.assignments[item.id].includes(cat('CONSTRUCCION','PRIMARY')));assert(state.assignments[item.id].includes(cat('Salud','SECONDARY')));assert.deepEqual(state.assignments[other.id],[cat('CONSTRUCCION','SECONDARY')]);assert.equal((await write(assign,old)).status,409);
       r=await write({...assign,kind:'SECONDARY',names:['Ambiental']});assert.equal(r.status,200);state=r.body;assert(state.assignments[item.id].includes(cat('Ambiental','SECONDARY')));assert(state.assignments[item.id].includes(cat('CONSTRUCCION','PRIMARY')));assert(!state.assignments[item.id].includes(cat('Salud','SECONDARY')));assert.equal(state.categories.find((c:any)=>c.id===cat('Ambiental','PRIMARY')).kind,'PRIMARY');
       r=await write({...assign,names:[]});assert.equal(r.status,200);state=r.body;assert.deepEqual(state.assignments[item.id],[cat('Ambiental','SECONDARY')]);assert.deepEqual(state.assignments[other.id],[cat('CONSTRUCCION','SECONDARY')]);
+    });
+    await t.test('Efectividad: añadir desde inventario elegido conserva catálogo, categorías, identidad y revisa similitudes',async()=>{
+      const list=await db.metaEffectivenessSheet.create({data:{kind:'INVENTORY',name:'Origen selector '+tag}}),other=await db.metaEffectivenessSheet.create({data:{kind:'INVENTORY',name:'Otro selector '+tag}});
+      const table=await db.metaAliasTable.create({data:{name:'Hoja selector '+tag}}),second=await db.metaAliasTable.create({data:{name:'Hoja selector segunda '+tag}});
+      const name='Curso seleccionado '+tag,item=await db.metaInventoryItem.create({data:{sheetId:list.id,name}});
+      const category=await db.metaInventoryCategory.create({data:{sheetId:list.id,kind:'PRIMARY',name:'Ambiental',key:'Ambiental'}});
+      await db.metaInventoryItemCategory.create({data:{itemId:item.id,categoryId:category.id}});
+      const save=(rows:any[],scope=list.id,decisions:any[]=[],who=owner,target=table.id)=>who.call('meta-ads/effectiveness/import','POST',{tableId:target,inventorySheetId:scope,rows,decisions});
+      const row=(n:string,country='PE')=>({name:n,country,currency:'PEN'});
+      assert.equal((await save([row(name)],list.id,[],admin)).status,403);
+      assert.equal((await save([row(name)],list.id,[],observer)).status,403);
+      assert.equal((await save([row(name)])).status,200);
+      const alias=await db.metaAlias.findFirstOrThrow({where:{tableId:table.id,name}});
+      assert.equal(alias.inventorySheetId,list.id);assert.equal(await db.metaInventoryItem.count({where:{sheetId:list.id,name}}),1);
+      assert.equal(await db.metaInventoryCategoryAssignment.count({where:{aliasId:alias.id,categoryId:category.id}}),1);
+      const stored=await db.metaEffectivenessRow.findFirstOrThrow({where:{aliasId:alias.id,country:'PE',legacy:false}});
+      await db.metaEffectivenessDay.create({data:{rowId:stored.id,day:'2026-10-20',sales:7,salesOverridden:true}});
+      assert.equal((await save([row(name),row(name,'CO')])).status,200);
+      assert.equal(await db.metaAlias.count({where:{tableId:table.id,name}}),1);
+      assert.equal((await db.metaEffectivenessDay.findUniqueOrThrow({where:{rowId_day:{rowId:stored.id,day:'2026-10-20'}}})).sales,7);
+      assert.equal((await save([row(name)],list.id,[],owner,second.id)).status,200);
+      const linked=await db.metaAlias.findFirstOrThrow({where:{tableId:second.id,name}});assert.notEqual(linked.id,alias.id);
+      assert.equal(await db.metaInventoryCategoryAssignment.count({where:{aliasId:linked.id,categoryId:category.id}}),1);
+      const rev=(await db.metaEffectivenessSheet.findUniqueOrThrow({where:{id:other.id}})).categoryRevision;
+      assert.equal((await save([row('No crear por fallo '+tag),row(name)],other.id)).status,409);
+      assert.equal(await db.metaInventoryItem.count({where:{sheetId:other.id}}),0);assert.equal(await db.metaAlias.count({where:{tableId:table.id,name:'No crear por fallo '+tag}}),0);
+      assert.equal((await db.metaEffectivenessSheet.findUniqueOrThrow({where:{id:other.id}})).categoryRevision,rev);
+      const variant=name.toUpperCase();assert.equal((await save([row(variant)])).status,409);
+      assert.equal((await save([row(variant)],list.id,[{kind:'INVENTORY',name:variant,useName:name}])).status,200);
+      assert.equal(await db.metaAlias.count({where:{tableId:table.id}}),1);
+      assert.equal((await save([row(variant)],list.id,[{kind:'INVENTORY',name:variant,useName:variant}])).status,200);
+      assert.equal(await db.metaAlias.count({where:{tableId:table.id}}),2);
+      const fresh='Nuevo desde hoja '+tag;assert.equal((await save([row(fresh,'')],other.id)).status,200);
+      assert.equal(await db.metaInventoryItem.count({where:{sheetId:other.id,name:fresh}}),1);
+      assert.equal(await db.metaAlias.count({where:{tableId:table.id,name:fresh,inventorySheetId:other.id}}),1);
+      const pending=await db.user.findUniqueOrThrow({where:{id:(await owner.call('auth/me')).body.id}});
+      await db.user.update({where:{id:pending.id},data:{status:'PENDING'}});
+      try{assert.equal((await save([row('No permiso '+tag)])).status,401);}finally{await db.user.update({where:{id:pending.id},data:{status:pending.status}});}
+      await db.metaEffectivenessSheet.update({where:{id:other.id},data:{archivedAt:new Date()}});
+      assert.equal((await save([row('No crear archivado '+tag)],other.id)).status,404);
+      assert.equal(await db.metaInventoryItem.count({where:{name:'No crear archivado '+tag}}),0);
     });
     await t.test('Pestañas: eliminar Totales/Asesores/Inventario conserva referencias e historial y permite borrar la última',async()=>{
       const create=async(kind:string)=>{const r=await owner.call('meta-ads/workbook-sheets','POST',{kind});assert.equal(r.status,201);return r.body;};

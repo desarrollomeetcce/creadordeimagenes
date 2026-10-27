@@ -669,6 +669,7 @@ export function ProductsCatalog() {
       {table && !totals && !advisorSheet && !inventorySheet && (
         <MetaEffectiveness
           key={table.id}
+          inventoryLists={specials.filter((s) => s.kind === "INVENTORY")}
           view={view}
           advisors={advisors}
           sheetTabs={sheetTabs}

@@ -1931,3 +1931,14 @@ select option, select optgroup { background:var(--surface); color:var(--ink); }
 :root[data-theme=dark] .inventory-actions-toolbar { --inventory-danger: #ffadb5; }
 @media(max-width:650px) { .products-catalog .inventory-actions-toolbar { gap: 8px; padding: 8px; } .inventory-toolbar-main { width: 100%; } .inventory-toolbar-delete { padding-left: 0; border-left: 0; } .products-catalog .inventory-actions-toolbar button { padding: 6px 8px; font-size: 11px; } }
 @media(max-width:650px) { .inventory-toolbar-main { gap: 6px; } .products-catalog .inventory-actions-toolbar button { gap: 5px; padding: 6px 7px; } .inventory-actions-toolbar button svg { flex-basis: 14px; width: 14px; height: 14px; } }
+
+/* Financial inventory: one filter, explicit source catalog, one add selector. */
+.financial-inventory-controls{display:grid;gap:4px;margin-top:4px;min-width:0;}
+.products-catalog .effectiveness-grid .financial-inventory-controls .sheet-search-trigger{width:100%;min-width:0;min-height:24px;font-size:10px;padding:3px 5px;}
+.financial-inventory-controls small{font-size:9px;color:var(--muted);font-weight:normal;white-space:normal;}
+.products-catalog .effectiveness-grid .sheet-new-row .effectiveness-name .sheet-search-trigger{width:100%;min-width:0;text-align:left;}
+.totals-source-heading{display:flex;align-items:center;justify-content:center;gap:8px;}
+.products-catalog .effectiveness-grid .totals-source-add{width:30px;min-width:30px;min-height:24px;padding:2px 6px;flex:none;justify-content:center;}
+.totals-source-add > span:last-child{display:none;}
+.products-catalog .sheet-view .effectiveness-grid .sheet-new-row .sheet-search-popover button{float:none;display:block;width:100%;max-width:none;white-space:normal;font-size:12px;padding:7px;text-align:left;}
+.products-catalog .sheet-view .effectiveness-grid .sheet-new-row .sheet-search-popover input{font-size:12px;padding:7px;height:auto;white-space:normal;background:var(--paper);}
