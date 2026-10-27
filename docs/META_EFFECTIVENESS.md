@@ -276,3 +276,11 @@ Actualizar o salir y volver a Efectividad conserva la pestaña abierta y la vist
 Los desplegables de ambos niveles y sus filtros usan el directorio común de nombres de la lista: crear CONSTRUCCION en Secundaria permite elegirla también en Principal de otro ítem. Los nombres literales repetidos entre niveles aparecen una sola vez por selector; variantes elegidas se conservan. ASSIGN_LEVEL crea/reutiliza la definición de ese nivel y cambia solo el nivel seleccionado en la ficha/hojas del grupo, sin reclasificar los demás ítems. La revisión de parecidos continúa. Filtros guardados antes por ID se traducen a sus nombres al cargar.
 
 Orden definitivo de las cuatro columnas: **Inventario | Categoría principal | Categorías secundarias | Hojas**, en tabla, pegado y archivos sin encabezados. El pegado desde una celda respeta su posición nueva; con encabezados, se reconoce cada campo por nombre incluso si el archivo usa un orden anterior. Las anchuras guardadas siguen su columna lógica al reordenar.
+
+## Agregar desde la franja, la tabla y sus buscadores
+
+El + de cada franja permite añadir principales existentes (varias) o crearlas. Se aplican a los ítems visibles de ese grupo y sus hojas, conservando etiquetas previas/secundarias y demás ítems; el desplegable indica alcance. Selección vacía no guarda.
+
++Agregar fila al pie abre un borrador Inventario/Principal/Secundarias/Hojas, con Guardar fila y cancelar/Escape. Categorías y hojas son opcionales; categorías solas crean catálogo. Eliminar es botón directo de selección con revisión, sin menú; X individuales siempre visibles. Barra agrupada con altura/alineación uniforme, iconos y contador por selección/tema.
+
+Los buscadores de las tres primeras cabeceras ofrecen crear un nombre nuevo. Si es inventario, se guarda sin hoja/categorías y se muestra; si es categoría, queda en el catálogo común. Nombre exacto permite elegir el existente, sin botón de creación duplicada. Parecidos muestran existente/nuevo para reutilizar o conservar ambos; en cabeceras de categorías se consideran nombres de ambos niveles. Crear desde cabecera conserva cualquier fila que estuviera a medio llenar.

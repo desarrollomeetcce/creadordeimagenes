@@ -9,6 +9,10 @@ import { SheetColumnResizer } from "./sheet-column-resizer";
 import { SheetSizedRow } from "./sheet-sized-row";
 import { useInventoryDuplicateReview } from "./inventory-duplicate-review";
 import { splitCategoryNames } from "../../lib/meta-ads/category-paste";
+import {
+  InventoryNewRow,
+  type InventoryNewRowValue,
+} from "./inventory-new-row";
 import { InventoryImport } from "./inventory-import";
 import { SheetSearchSelect } from "./sheet-search-select";
 import { InventorySelectionDelete } from "./inventory-selection-delete";
@@ -23,6 +27,36 @@ type Table = {
   name: string;
   aliases: { id: string; name: string; inventorySheetId?: string }[];
 };
+function InventoryActionIcon({
+  name,
+}: {
+  name: "paste" | "import" | "categories" | "delete" | "filters";
+}) {
+  const paths = {
+    paste:
+      "M9 5H6a2 2 0 0 0-2 2v13h16V7a2 2 0 0 0-2-2h-3M9 3h6v4H9zM8 11h8M8 15h6",
+    import: "M12 15V3m-4 4 4-4 4 4M4 14v6h16v-6",
+    categories: "M3 3h8l10 10-8 8L3 11V3zm5 4h.01",
+    delete: "M4 7h16M9 3h6l1 4H8l1-4zm-3 4 1 14h10l1-14M10 11v6m4-6v6",
+    filters: "M3 4h18l-7 8v6l-4 2v-8L3 4m14 13 4 4m0-4-4 4",
+  };
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      width="16"
+      height="16"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.7"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+      focusable="false"
+    >
+      <path d={paths[name]} />
+    </svg>
+  );
+}
 function InventoryCheck({
   label,
   checked,
@@ -74,6 +108,7 @@ export function InventoryCatalog({
     setDraggingCategory(null);
     setCategoryDrop(null);
   };
+  const [newRowOpen, setNewRowOpen] = useState(false);
   const duplicateReview = useInventoryDuplicateReview();
   const { widths, resize, warning } = useSheetWidths("inventory:" + listId),
     rowsLayout = useSheetHeights("inventory:" + listId);
@@ -137,12 +172,13 @@ export function InventoryCatalog({
     setItemFilter(v.items);
     setSheetFilter(v.sheets);
   };
-  const reloadCategories = async () =>
-    setCategories(
-      await api(
-        "meta-ads/inventory/categories?" + new URLSearchParams({ listId }),
-      ),
-    );
+  const reloadCategories = async () => {
+    const next = (await api(
+      "meta-ads/inventory/categories?" + new URLSearchParams({ listId }),
+    )) as InventoryCategoryState;
+    setCategories(next);
+    return next;
+  };
   useEffect(() => {
     let active = true;
     setCategories(null);
@@ -314,6 +350,166 @@ export function InventoryCatalog({
         ? -1
         : x.title.localeCompare(y.title, "es"),
   );
+  const bandCategorySelector = (section: {
+    title: string;
+    groups: typeof visible;
+  }) => {
+    const current = groupCategories(section.groups[0])
+      .filter((c) => c.kind === "PRIMARY")
+      .map((c) => c.name);
+    const ids = [
+      ...new Set(section.groups.flatMap((g) => g.links.map((a) => a.id))),
+    ];
+    const add = async (names: string[]) => {
+      if (!names.length) return;
+      await saveCategory({
+        action: "IMPORT",
+        rows: [{ primary: names.join(", "), secondary: "" }],
+        targetIds: ids,
+      });
+      setMessage(
+        `Categorías principales añadidas a ${section.groups.length} ${section.groups.length === 1 ? "ítem" : "ítems"} de esta franja.`,
+      );
+    };
+    return (
+      <InventoryMultiSelect
+        label={`Añadir categorías principales a la franja ${section.title}`}
+        placeholder={current.length ? "+" : "+ Principal"}
+        compact
+        all={false}
+        values={[]}
+        options={directoryNames
+          .filter((name) => !current.includes(name))
+          .map((name) => ({ value: name, label: name }))}
+        disabled={busy || !categories}
+        description={`Se añadirán a ${section.groups.length} ${section.groups.length === 1 ? "ítem visible" : "ítems visibles"} de esta franja. Se conservan sus categorías actuales.`}
+        onChange={add}
+        onCreate={async (name, selectedNames) => add([...selectedNames, name])}
+        onError={setMessage}
+      />
+    );
+  };
+  const saveNewRow = async (
+    value: InventoryNewRowValue,
+    behavior: { closeDraft?: boolean; selectItem?: boolean } = {},
+  ) => {
+    if (!categories) throw Error("Recarga las categorías antes de guardar.");
+    setBusy(true);
+    let committed = false;
+    try {
+      const decisions = await duplicateReview.review(
+        [
+          ...value.primary.map((name) => ({ kind: "PRIMARY" as const, name })),
+          ...value.secondary.map((name) => ({
+            kind: "SECONDARY" as const,
+            name,
+          })),
+          ...(value.name.trim()
+            ? [{ kind: "INVENTORY" as const, name: value.name.trim() }]
+            : []),
+        ],
+        [
+          ...categories.categories.map((c) => ({ kind: c.kind, name: c.name })),
+          ...available.map((g) => ({
+            kind: "INVENTORY" as const,
+            name: g.name,
+          })),
+        ],
+      );
+      await api("meta-ads/inventory/import", "POST", {
+        listId,
+        revision: categories.revision,
+        decisions,
+        rows: [
+          {
+            name: value.name.trim(),
+            primary: value.primary.join(", "),
+            secondary: value.secondary.join(", "),
+            sheets: value.sheets
+              .map((id) => {
+                const table = tables.find((t) => t.id === id);
+                if (!table)
+                  throw Error(
+                    "Una hoja ya no está disponible. Revisa la selección.",
+                  );
+                return table.name;
+              })
+              .join(", "),
+          },
+        ],
+      });
+      committed = true;
+      await onChanged();
+      const next = await reloadCategories();
+      const savedName =
+        decisions.find(
+          (d) => d.kind === "INVENTORY" && d.name === value.name.trim(),
+        )?.useName ?? value.name.trim();
+      const savedItem = next.items?.find((i) => i.name === savedName);
+      setFilters({
+        primary: [],
+        secondary: [],
+        items: behavior.selectItem && savedItem ? [savedItem.id] : [],
+        sheets: [],
+      });
+      if (behavior.closeDraft !== false) setNewRowOpen(false);
+      setMessage(
+        behavior.selectItem
+          ? `Inventario «${savedName}» disponible en la tabla.`
+          : value.name.trim()
+            ? "Fila de inventario guardada."
+            : "Categorías guardadas. Están disponibles en Ver categorías.",
+      );
+    } catch (e) {
+      if (!committed) throw e;
+      if (behavior.closeDraft !== false) setNewRowOpen(false);
+      setMessage("La fila se guardó. Recarga para ver la lista actualizada.");
+    } finally {
+      setBusy(false);
+    }
+  };
+  const createHeaderCategory = async (
+    kind: "PRIMARY" | "SECONDARY",
+    text: string,
+  ) => {
+    if (!categories) throw Error("Recarga las categorías antes de guardar.");
+    const names = splitCategoryNames(text);
+    setBusy(true);
+    try {
+      const decisions = await duplicateReview.review(
+        names.map((name) => ({ kind, name })),
+        directoryNames.map((name) => ({ kind, name })),
+      );
+      const chosen = [
+        ...new Set(
+          names.map(
+            (name) =>
+              decisions.find((d) => d.kind === kind && d.name === name)
+                ?.useName ?? name,
+          ),
+        ),
+      ];
+      setCategories(
+        await api("meta-ads/inventory/categories", "POST", {
+          listId,
+          revision: categories.revision,
+          action: "IMPORT",
+          decisions,
+          rows: [
+            {
+              primary: kind === "PRIMARY" ? chosen.join(", ") : "",
+              secondary: kind === "SECONDARY" ? chosen.join(", ") : "",
+            },
+          ],
+        }),
+      );
+      setMessage(
+        `Categoría${chosen.length === 1 ? "" : "s"} «${chosen.join(" · ")}» disponible${chosen.length === 1 ? "" : "s"} en el catálogo. Puedes asignarla${chosen.length === 1 ? "" : "s"} a los ítems.`,
+      );
+    } finally {
+      setBusy(false);
+    }
+  };
   const categoryCell = (
     g: (typeof visible)[number],
     kind: "PRIMARY" | "SECONDARY",
@@ -496,8 +692,7 @@ export function InventoryCatalog({
         ? [...new Set([...old, ...ids])]
         : old.filter((id) => !ids.includes(id)),
     );
-  const [removing, setRemoving] = useState(false),
-    [review, setReview] = useState<{
+  const [review, setReview] = useState<{
       id: string;
       name: string;
       table: { id: string; name: string };
@@ -608,64 +803,71 @@ export function InventoryCatalog({
         className="row inventory-actions-toolbar"
         aria-label="Acciones del inventario"
       >
-        <button
-          type="button"
-          disabled={busy || !categories}
-          onClick={() => setImportView("paste")}
+        <div
+          className="inventory-toolbar-main"
+          role="group"
+          aria-label="Añadir y organizar inventario"
         >
-          Pegar inventario
-        </button>
-        <button
-          type="button"
-          disabled={busy || !categories}
-          onClick={() => setImportView("file")}
+          <button
+            type="button"
+            className="inventory-action-primary"
+            disabled={busy || !categories}
+            onClick={() => setImportView("paste")}
+          >
+            <InventoryActionIcon name="paste" />
+            Pegar inventario
+          </button>
+          <button
+            type="button"
+            disabled={busy || !categories}
+            onClick={() => setImportView("file")}
+          >
+            <InventoryActionIcon name="import" />
+            Importar inventario
+          </button>
+          <button
+            type="button"
+            disabled={busy || !categories}
+            onClick={() => setCategoryManager("catalog")}
+          >
+            <InventoryActionIcon name="categories" />
+            Ver categorías
+          </button>
+        </div>
+        <div
+          className="inventory-toolbar-delete"
+          role="group"
+          aria-label="Eliminar inventario seleccionado"
         >
-          Importar inventario
-        </button>
+          <button
+            type="button"
+            className="danger"
+            disabled={busy || !selectedVisible.length}
+            onClick={() => setBulkIds([...selectedVisible])}
+            title="Eliminar los ítems marcados después de revisar sus hojas"
+          >
+            <InventoryActionIcon name="delete" />
+            Eliminar
+          </button>
+          <span
+            className="inventory-selected-count"
+            data-selected={selectedGroups > 0 || undefined}
+            role="status"
+          >
+            {selectedGroups}{" "}
+            {selectedGroups === 1 ? "seleccionado" : "seleccionados"}
+          </span>
+        </div>
         <button
           type="button"
-          disabled={busy || !categories}
-          onClick={() => setCategoryManager("catalog")}
-        >
-          Ver categorías
-        </button>
-        <details className="inventory-delete-menu">
-          <summary>Eliminar</summary>
-          <div className="inventory-delete-choices">
-            <button
-              type="button"
-              className="danger"
-              disabled={busy || !selectedVisible.length}
-              onClick={() => setBulkIds([...selectedVisible])}
-            >
-              Ítems seleccionados ({selectedGroups})
-            </button>
-            <button
-              type="button"
-              disabled={busy || !categories}
-              onClick={() => setCategoryManager("catalog")}
-            >
-              Categorías principales y secundarias
-            </button>
-            <button
-              type="button"
-              aria-pressed={removing}
-              onClick={() => setRemoving((v) => !v)}
-            >
-              Vínculos con hojas {removing ? "✓" : ""}
-            </button>
-          </div>
-        </details>
-        <span role="status">{selectedGroups} seleccionados</span>
-        <button
-          type="button"
+          className="inventory-clear-filters"
           onClick={() =>
             setFilters({ primary: [], secondary: [], items: [], sheets: [] })
           }
         >
+          <InventoryActionIcon name="filters" />
           Limpiar filtros
         </button>
-        {removing && <small>Pulsa × junto a la hoja que quieres quitar.</small>}
       </div>
       <div className="table-scroll">
         <table
@@ -707,6 +909,15 @@ export function InventoryCatalog({
                     label: g.name,
                   }))}
                   values={filters.items}
+                  disabled={busy || !categories}
+                  description="Busca un inventario o escribe uno nuevo para agregarlo sin categorías ni hojas."
+                  onCreate={async (name) =>
+                    saveNewRow(
+                      { name, primary: [], secondary: [], sheets: [] },
+                      { closeDraft: false, selectItem: true },
+                    )
+                  }
+                  onError={setMessage}
                   onChange={(v) => setFilters({ ...filters, items: v })}
                 />
               </th>
@@ -735,6 +946,10 @@ export function InventoryCatalog({
                       label: name,
                     }))}
                     values={kind === "PRIMARY" ? primaryNames : secondaryNames}
+                    disabled={busy || !categories}
+                    description="Busca una categoría o escribe una nueva para añadirla al catálogo."
+                    onCreate={async (name) => createHeaderCategory(kind, name)}
+                    onError={setMessage}
                     onChange={(v) =>
                       setFilters({
                         ...filters,
@@ -765,8 +980,14 @@ export function InventoryCatalog({
                   data-category-group={section.title}
                 >
                   <th colSpan={4} scope="rowgroup">
-                    {section.title}
-                    <small>{section.groups.length} ítems</small>
+                    <div className="inventory-band-heading">
+                      <span>{section.title}</span>
+                      <small>
+                        {section.groups.length}{" "}
+                        {section.groups.length === 1 ? "ítem" : "ítems"}
+                      </small>
+                      {bandCategorySelector(section)}
+                    </div>
                   </th>
                 </tr>
                 {section.groups.map((g) => (
@@ -830,18 +1051,16 @@ export function InventoryCatalog({
                               data-inventory-id={a.id}
                             >
                               {a.tableName}
-                              {removing && (
-                                <button
-                                  type="button"
-                                  className="inventory-remove"
-                                  aria-label={`Eliminar ${g.name} de ${a.tableName}`}
-                                  title={`Eliminar solo de ${a.tableName}`}
-                                  disabled={busy}
-                                  onClick={() => void prepareRemoval(a.id)}
-                                >
-                                  ×
-                                </button>
-                              )}
+                              <button
+                                type="button"
+                                className="inventory-remove"
+                                aria-label={`Eliminar ${g.name} de ${a.tableName}`}
+                                title={`Eliminar solo de ${a.tableName}`}
+                                disabled={busy}
+                                onClick={() => void prepareRemoval(a.id)}
+                              >
+                                ×
+                              </button>
                             </span>
                           ))}
                       </div>
@@ -851,6 +1070,28 @@ export function InventoryCatalog({
               </Fragment>
             ))}
           </tbody>
+          <tfoot>
+            {newRowOpen && (
+              <InventoryNewRow
+                directory={directoryNames}
+                tables={tables}
+                disabled={busy}
+                onSave={saveNewRow}
+                onCancel={() => setNewRowOpen(false)}
+              />
+            )}
+            <tr className="inventory-add-row">
+              <td colSpan={4}>
+                <button
+                  type="button"
+                  disabled={busy || !categories || newRowOpen}
+                  onClick={() => setNewRowOpen(true)}
+                >
+                  + Agregar fila
+                </button>
+              </td>
+            </tr>
+          </tfoot>
         </table>
         {!visible.length && (
           <p className="sheet-help">
@@ -884,7 +1125,9 @@ export function InventoryCatalog({
           initialView={categoryManager}
           onClose={() => setCategoryManager(null)}
           onSave={saveCategory}
-          onRefresh={reloadCategories}
+          onRefresh={async () => {
+            await reloadCategories();
+          }}
         />
       )}
       {bulkIds && (

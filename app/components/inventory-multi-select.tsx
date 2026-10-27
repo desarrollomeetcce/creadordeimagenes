@@ -18,6 +18,7 @@ export function InventoryMultiSelect({
   all = true,
   onCreate,
   compact = false,
+  description,
 }: {
   label: string;
   options: SheetOption[];
@@ -29,6 +30,7 @@ export function InventoryMultiSelect({
   all?: boolean;
   onCreate?: (name: string, selected: string[]) => Promise<void>;
   compact?: boolean;
+  description?: string;
 }) {
   const id = useId(),
     popover = useRef<HTMLDivElement>(null),
@@ -127,6 +129,9 @@ export function InventoryMultiSelect({
             }
           }}
         />
+        {description && (
+          <p className="inventory-selection-description">{description}</p>
+        )}
         <fieldset disabled={busy || disabled} aria-label={label}>
           {all && (
             <label>
@@ -156,29 +161,31 @@ export function InventoryMultiSelect({
           ))}
           {!filtered.length && <p role="status">Sin coincidencias</p>}
         </fieldset>
-        {onCreate && query.trim() && (
-          <button
-            type="button"
-            disabled={busy || disabled}
-            onClick={async () => {
-              if (pending.current) return;
-              pending.current = true;
-              setBusy(true);
-              try {
-                await onCreate(query.trim(), draft);
-                popover.current?.hidePopover();
-                setQuery("");
-              } catch (e) {
-                onError?.((e as Error).message);
-              } finally {
-                setBusy(false);
-                pending.current = false;
-              }
-            }}
-          >
-            + Crear «{query.trim()}»
-          </button>
-        )}
+        {onCreate &&
+          query.trim() &&
+          !options.some((o) => o.label === query.trim()) && (
+            <button
+              type="button"
+              disabled={busy || disabled}
+              onClick={async () => {
+                if (pending.current) return;
+                pending.current = true;
+                setBusy(true);
+                try {
+                  await onCreate(query.trim(), draft);
+                  popover.current?.hidePopover();
+                  setQuery("");
+                } catch (e) {
+                  onError?.((e as Error).message);
+                } finally {
+                  setBusy(false);
+                  pending.current = false;
+                }
+              }}
+            >
+              + Crear «{query.trim()}»
+            </button>
+          )}
         <button
           type="button"
           disabled={busy || disabled}
