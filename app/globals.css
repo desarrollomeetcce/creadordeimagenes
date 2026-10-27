@@ -1945,3 +1945,13 @@ select option, select optgroup { background:var(--surface); color:var(--ink); }
 
 /* Loading feedback must not insert/remove space above or inside a working sheet. */
 .sheet-loading-status{position:fixed;inset:auto 16px 16px auto;z-index:80;margin:0;padding:8px 12px;max-width:calc(100vw - 32px);border:1px solid var(--line);border-radius:8px;background:var(--surface);color:var(--muted);box-shadow:0 3px 12px #0002;font:12px/1.4 Arial,sans-serif;pointer-events:none;white-space:normal;}
+
+/* Each sync card keeps its account name and actions readable on narrow screens. */
+.meta-progress-heading{flex-direction:column;align-items:stretch;}
+.meta-progress-heading>.meta-progress-controls{flex-wrap:wrap;justify-content:flex-end;}
+.meta-sync-notice-heading{display:flex;align-items:flex-start;justify-content:space-between;gap:8px;}
+.meta-sync-notice-heading>strong{min-width:0;}
+.meta-sync-notice-heading>button{flex:none;min-width:24px;min-height:24px;padding:1px 5px;font-size:16px;line-height:1;background:transparent;color:inherit;}
+.meta-sync-notice>p{margin:6px 0;font-size:inherit;}
+.meta-sync-notice details{margin-top:6px;min-width:0;}
+.meta-sync-notice details p{overflow-wrap:anywhere;white-space:normal;}

@@ -21,6 +21,7 @@ import { MetaAnalysisPeriod } from "./meta-analysis-period";
 import { type MetaAliasOption } from "./meta-alias-directory";
 import { MetaStatusSwitch } from "./meta-status-switch";
 import { MetaDataFreshness } from "./meta-data-freshness";
+import { MetaSyncNotice } from "./meta-sync-notice";
 import { MetaDailyDetail } from "./meta-daily-detail";
 import { MetaAliasAction } from "./meta-alias-action";
 import { MetaSummaryCounters } from "./meta-summary-counters";
@@ -231,6 +232,7 @@ function SyncIndicator({
   busy = false,
   onControl,
   onResume,
+  onRefresh,
   onAnalyze,
   compactHeader = false,
 }: {
@@ -239,6 +241,7 @@ function SyncIndicator({
   busy?: boolean;
   onControl?: (action: "pause" | "cancel") => void;
   onResume?: () => void;
+  onRefresh?: () => void;
   onAnalyze?: () => void;
 }) {
   const p = account.progress;
@@ -254,7 +257,7 @@ function SyncIndicator({
   const controls =
     onControl && ongoing ? (
       <div className="row meta-progress-controls">
-        {p.status === "paused" && onResume && (
+        {p.status === "paused" && onResume && !onRefresh && (
           <button type="button" disabled={busy} onClick={onResume}>
             {compactHeader ? "Reanudar" : "Reanudar sincronización"}
           </button>
@@ -276,6 +279,27 @@ function SyncIndicator({
         >
           {compactHeader ? "Cancelar" : "Cancelar sincronización"}
         </button>
+        {onRefresh && (
+          <button
+            type="button"
+            className="meta-account-update"
+            aria-label={`Actualizar cuenta ${account.name}`}
+            disabled={
+              busy ||
+              p.status === "waiting" ||
+              !account.connection?.verifiedAt ||
+              !!account.connection?.disconnectedAt
+            }
+            title={
+              p.status === "waiting"
+                ? "Se actualizará al terminar la espera indicada por Meta."
+                : "Actualizar esta cuenta conservando el avance recibido."
+            }
+            onClick={onRefresh}
+          >
+            Actualizar cuenta
+          </button>
+        )}
       </div>
     ) : null;
   return (
@@ -1106,6 +1130,35 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
       } catch {}
     } finally {
       setBusy(false);
+    }
+  };
+  const accountUpdatePending = useRef(false);
+  const updateAccount = async (account: Account) => {
+    if (accountUpdatePending.current || busy) return;
+    accountUpdatePending.current = true;
+    try {
+      await run(async () => {
+        const result = await api(
+          `meta-ads/accounts/${account.id}/sync`,
+          "POST",
+          {
+            focused: true,
+            inventory: "all",
+            recentDays: account.progress?.focused
+              ? account.progress.recentDays
+              : 7,
+          },
+        );
+        setMessage(
+          result.waiting
+            ? "La cuenta espera el turno indicado por Meta. El avance se conserva."
+            : result.resumed
+              ? "Actualización de cuenta retomada."
+              : "Actualización de cuenta iniciada.",
+        );
+      });
+    } finally {
+      accountUpdatePending.current = false;
     }
   };
   const reload = () =>
@@ -2293,6 +2346,9 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
                 {a.progress && (
                   <SyncIndicator
                     account={a}
+                    onRefresh={
+                      a.canSync ? () => void updateAccount(a) : undefined
+                    }
                     onAnalyze={() => {
                       chooseAccounts([a.id]);
                       setBusiness("");
@@ -2335,19 +2391,7 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
                     }
                   />
                 )}
-                {a.syncError && (
-                  <details
-                    className="notice"
-                    open={a.progress?.status !== "waiting"}
-                  >
-                    <summary>
-                      {a.progress?.status === "waiting"
-                        ? "Detalle del límite de Meta"
-                        : "No se completó la sincronización"}
-                    </summary>
-                    <p>{a.syncError}</p>
-                  </details>
-                )}
+                <MetaSyncNotice userId={userId} account={a} />
                 {a.canSync && (
                   <form
                     className="row meta-sync-actions"
@@ -2501,6 +2545,9 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
                         <SyncIndicator
                           compactHeader
                           account={a}
+                          onRefresh={
+                            a.canSync ? () => void updateAccount(a) : undefined
+                          }
                           busy={busy}
                           onResume={
                             a.canSync
@@ -2539,7 +2586,7 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
                               : undefined
                           }
                         />
-                        {a.syncError && <p className="notice">{a.syncError}</p>}
+                        <MetaSyncNotice userId={userId} account={a} />
                       </div>
                     ))}
                 </div>
