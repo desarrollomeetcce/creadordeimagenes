@@ -53,6 +53,12 @@ async function review(tx: Prisma.TransactionClient, id: string) {
   const alias = await tx.metaAlias.findUnique({
     where: { id },
     include: {
+      categoryAssignments: {
+        select: {
+          categoryId: true,
+          category: { select: { name: true, kind: true } },
+        },
+      },
       table: { select: { id: true, name: true } },
       effectivenessRows: { include: { days: true, salesApprovals: true } },
       effectivenessStates: { include: { events: true } },

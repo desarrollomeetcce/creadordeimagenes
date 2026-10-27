@@ -724,6 +724,7 @@ model MetaAliasTable {
   aliases MetaAlias[]
 }
 model MetaAlias {
+ categoryAssignments MetaInventoryCategoryAssignment[]
  inventorySheetId String @default("default-inventory")
  inventorySheet MetaEffectivenessSheet @relation(fields:[inventorySheetId],references:[id],onDelete:Restrict)
  @@index([inventorySheetId])
@@ -1038,6 +1039,8 @@ model MetaAdvisorSalesApproval {
 }
 
 model MetaEffectivenessSheet {
+ categoryRevision Int @default(0)
+ categories MetaInventoryCategory[]
  archivedAt DateTime?
  @@index([kind,archivedAt,createdAt])
  advisors MetaAdvisor[]
@@ -1051,4 +1054,33 @@ model MetaEffectivenessSheet {
  createdAt DateTime @default(now())
  updatedAt DateTime @updatedAt
  @@index([kind,createdAt])
+}
+
+model MetaInventoryCategory {
+ id String @id @default(cuid())
+ sheetId String
+ sheet MetaEffectivenessSheet @relation(fields:[sheetId],references:[id],onDelete:Cascade)
+ kind String
+ name String
+ key String
+ primaryLinks MetaInventoryCategoryRelation[] @relation("CategoryPrimary")
+ secondaryLinks MetaInventoryCategoryRelation[] @relation("CategorySecondary")
+ assignments MetaInventoryCategoryAssignment[]
+ @@unique([sheetId,kind,key])
+}
+model MetaInventoryCategoryRelation {
+ primaryId String
+ primary MetaInventoryCategory @relation("CategoryPrimary",fields:[primaryId],references:[id],onDelete:Cascade)
+ secondaryId String
+ secondary MetaInventoryCategory @relation("CategorySecondary",fields:[secondaryId],references:[id],onDelete:Cascade)
+ @@id([primaryId,secondaryId])
+ @@index([secondaryId])
+}
+model MetaInventoryCategoryAssignment {
+ aliasId String
+ alias MetaAlias @relation(fields:[aliasId],references:[id],onDelete:Cascade)
+ categoryId String
+ category MetaInventoryCategory @relation(fields:[categoryId],references:[id],onDelete:Cascade)
+ @@id([aliasId,categoryId])
+ @@index([categoryId])
 }

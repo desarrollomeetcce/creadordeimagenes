@@ -22,7 +22,8 @@ async function deletionReview(tx: Prisma.TransactionClient, tableId: string) {
     { kind: string; count: number; hash: string }[]
   >`WITH a AS (SELECT id,name FROM "MetaAlias" WHERE "tableId"=${tableId}),r AS (SELECT x.* FROM "MetaEffectivenessRow" x JOIN a ON a.id=x."aliasId"),s AS (SELECT x.* FROM "MetaEffectivenessState" x JOIN a ON a.id=x."aliasId"),items(kind,k,v) AS (
  SELECT 'aliases',id,name FROM a
- UNION ALL SELECT 'advisorHistory',x.id,to_jsonb(x)::text FROM "MetaAdvisorAssignment" x JOIN a ON a.id=x."aliasId"
+ UNION ALL SELECT 'categories',x."aliasId"||'/'||x."categoryId",jsonb_build_array(c.name,c.kind)::text FROM "MetaInventoryCategoryAssignment" x JOIN a ON a.id=x."aliasId" JOIN "MetaInventoryCategory" c ON c.id=x."categoryId"
+ UNION ALL SELECT 'advisorHistory' ,x.id,to_jsonb(x)::text FROM "MetaAdvisorAssignment" x JOIN a ON a.id=x."aliasId"
  UNION ALL SELECT 'rows',id,jsonb_build_array(revision,country,currency,"displayCurrency","advisorId",hidden,legacy,"presentationRowId")::text FROM r
  UNION ALL SELECT 'days',d."rowId"||'/'||d.day,d.revision::text FROM "MetaEffectivenessDay" d JOIN r ON r.id=d."rowId"
  UNION ALL SELECT 'states',id,jsonb_build_array(country,active,revision)::text FROM s
@@ -40,6 +41,7 @@ async function deletionReview(tx: Prisma.TransactionClient, tableId: string) {
   const counts = Object.fromEntries(
     [
       "aliases",
+      "categories",
       "rows",
       "days",
       "states",

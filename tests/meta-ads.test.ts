@@ -382,3 +382,31 @@ test('Ventas: cambios sucesivos en el mismo minuto y a medianoche conservan el r
  const changes=[{...base,id:'first',advisorId:'B',previousAdvisorId:'A',cutoffSales:3,createdAt:new Date('2026-10-20T00:00:10-05:00')},{...base,id:'second',advisorId:'A',previousAdvisorId:'B',cutoffSales:5,createdAt:new Date('2026-10-20T00:00:20-05:00')}];
  const p=attributeDailySales('A',changes,'2026-10-20',7,false);assert.equal(p.find(x=>x.advisorId==='A')!.sales,5);assert.equal(p.find(x=>x.advisorId==='B')!.sales,2);assert.equal(p.reduce((s,x)=>s+(x.sales??0),0),7);
 });
+
+import {parseCategoryText,splitCategoryNames,categoryRows,categoryKey} from '../lib/meta-ads/category-paste';
+import {parseCategoryFile} from '../lib/meta-ads/category-file';
+import JSZip from 'jszip';
+test('Categorías: TSV de Excel, encabezados y comas dentro de cada celda',()=>{
+ const rows=parseCategoryText('Categoría principal\tCategorías secundarias\r\nAmbiental, Civil\tAgua, Suelos\r\nConstrucción\tObras\r\n');assert.equal(rows.length,2);assert.deepEqual(splitCategoryNames(rows[0].primary),['Ambiental','Civil']);assert.deepEqual(splitCategoryNames(rows[0].secondary),['Agua','Suelos']);assert.deepEqual(splitCategoryNames(' Ambiental, ambiental, Civil ; civil '),['ambiental','civil']);assert.equal(categoryKey('  CIVIL  y  OBRAS '),'civil y obras');
+ assert.deepEqual(parseCategoryText('ambiental, civil'),[{primary:'ambiental, civil',secondary:''}]);
+});
+test('Categorías: CSV citado y separador regional preservan las listas de una celda',()=>{
+ assert.deepEqual(parseCategoryText('"Categoría principal","Categorías secundarias"\n"Ambiental, Civil","Agua, Suelos"',true),[{primary:'Ambiental, Civil',secondary:'Agua, Suelos'}]);
+ assert.deepEqual(parseCategoryText('Categoría principal;Categorías secundarias\nAmbiental, Civil;Agua, Suelos',true),[{primary:'Ambiental, Civil',secondary:'Agua, Suelos'}]);assert.deepEqual(parseCategoryText('Ambiental, Civil;Agua, Suelos',true),[{primary:'Ambiental, Civil',secondary:'Agua, Suelos'}]);
+ assert.throws(()=>parseCategoryText('"Sin cerrar\tAgua'),/comillas/);assert.throws(()=>categoryRows([['A','B','C']]),/solo/);assert.throws(()=>splitCategoryNames('x'.repeat(81)),/80/);assert.throws(()=>splitCategoryNames(Array.from({length:21},(_,i)=>'C'+i).join(',')),/20/);assert.throws(()=>categoryRows(Array.from({length:502},()=>['A','B'])),/500/);
+});
+async function categoryXlsx(sheet:string,shared='<sst><si><t>Categoría principal</t></si><si><t>Categorías secundarias</t></si><si><t>Ambiental, Civil</t></si></sst>'){
+ const zip=new JSZip();zip.file('xl/workbook.xml','<workbook xmlns:r="urn:test"><sheets><sheet name="Categorías" sheetId="1" r:id="rId1"/></sheets></workbook>');zip.file('xl/_rels/workbook.xml.rels','<Relationships><Relationship Id="rId1" Target="worksheets/sheet1.xml"/></Relationships>');zip.file('xl/sharedStrings.xml',shared);zip.file('xl/worksheets/sheet1.xml',sheet);return (await zip.generateAsync({type:'nodebuffer',compression:'DEFLATE'})).toString('base64');
+}
+test('Categorías: XLSX real con sharedStrings e inlineStr, sin ejecutar fórmulas',async()=>{
+ const encoded=await categoryXlsx('<worksheet><sheetData><row r="1"><c r="A1" t="s"><v>0</v></c><c r="B1" t="s"><v>1</v></c></row><row r="2"><c r="A2" t="s"><v>2</v></c><c r="B2" t="inlineStr"><is><t>Agua, Suelos</t></is></c></row></sheetData></worksheet>');const result=await parseCategoryFile('categorias.xlsx',encoded);assert.equal(result.sheetName,'Categorías');assert.deepEqual(result.rows,[{primary:'Ambiental, Civil',secondary:'Agua, Suelos'}]);
+ await assert.rejects(()=>parseCategoryFile('categorias.xlsx','%%%'),/Archivo inválido/);
+ const formula=await categoryXlsx('<worksheet><row><c r="A1"><f>1+1</f><v>2</v></c></row></worksheet>');await assert.rejects(()=>parseCategoryFile('formula.xlsx',formula),/fórmulas/);
+ const outside=await categoryXlsx('<worksheet><row><c r="C1"><v>Otra</v></c></row></worksheet>');await assert.rejects(()=>parseCategoryFile('tres.xlsx',outside),/columnas A y B/);
+ const entity=await categoryXlsx('<!DOCTYPE x [<!ENTITY e SYSTEM "file:///etc/passwd">]><worksheet/>');await assert.rejects(()=>parseCategoryFile('invalido.xlsx',entity),/XML/);
+});
+test('Categorías: límites de archivo y codificación Unicode de Excel',async()=>{
+ const text='Categoría principal\tCategorías secundarias\nAmbiental\tGestión';const utf16=Buffer.concat([Buffer.from([255,254]),Buffer.from(text,'utf16le')]);assert.deepEqual((await parseCategoryFile('categorias.tsv',utf16.toString('base64'))).rows,[{primary:'Ambiental',secondary:'Gestión'}]);
+ await assert.rejects(()=>parseCategoryFile('categorias.exe',Buffer.from('A\tB').toString('base64')),/xlsx/);await assert.rejects(()=>parseCategoryFile('grande.csv',Buffer.alloc(2000001,65).toString('base64')),/2 MB/);
+ const huge=await categoryXlsx('<worksheet>'+ ' '.repeat(8000001)+'</worksheet>');await assert.rejects(()=>parseCategoryFile('expandido.xlsx',huge),/8 MB/);
+});

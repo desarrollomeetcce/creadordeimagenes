@@ -12247,6 +12247,37 @@ test("Integración HTTP + PostgreSQL (base exclusiva de pruebas, sin llamadas ex
       if(object)assert.equal((await db.metaAdObject.findUniqueOrThrow({where:{id:object.id}})).aliasId,null);
       const events=await db.auditEvent.count({where:{action:'META_INVENTARIO_SELECCION_ELIMINADA',resourceId:listId}});assert.equal(events,2);
     });
+    await t.test('Categorías de inventario: catálogo/selección, etiquetas múltiples, límites exactos y conservación financiera',async()=>{
+      const makeList=async()=>{const r=await owner.call('meta-ads/workbook-sheets','POST',{kind:'INVENTORY'});assert.equal(r.status,201);return r.body;};const list=await makeList(),foreign=await makeList();
+      const t1=await db.metaAliasTable.create({data:{name:'Categorías Perú '+tag}}),t2=await db.metaAliasTable.create({data:{name:'Categorías Colombia '+tag}}),t3=await db.metaAliasTable.create({data:{name:'Categorías otra lista '+tag}});
+      const a=await db.metaAlias.create({data:{name:'Estudio Ambiental '+tag,tableId:t1.id,inventorySheetId:list.id}}),a2=await db.metaAlias.create({data:{name:a.name,tableId:t2.id,inventorySheetId:list.id}}),b=await db.metaAlias.create({data:{name:'Monitoreo Ambiental '+tag,tableId:t1.id,inventorySheetId:list.id}}),c=await db.metaAlias.create({data:{name:'Construcción '+tag,tableId:t1.id,inventorySheetId:list.id}}),outside=await db.metaAlias.create({data:{name:a.name,tableId:t3.id,inventorySheetId:foreign.id}});
+      const day='2026-10-20',row=await db.metaEffectivenessRow.create({data:{aliasId:a.id,country:'PE',currency:'',days:{create:{day,sales:7,salesOverridden:true}}}});
+      const get=(id=list.id,who=owner)=>who.call('meta-ads/inventory/categories?'+new URLSearchParams({listId:id}));
+      const write=(revision:number,action:any,id=list.id,who=owner)=>who.call('meta-ads/inventory/categories','POST',{listId:id,revision,...action});
+      let state=(await get()).body;assert.equal(state.revision,0);assert.deepEqual(state.categories,[]);assert.equal((await get(list.id,admin)).status,403);
+      const parsed=await owner.call('meta-ads/inventory/categories/file','POST',{name:'categorias.csv',content:Buffer.from('Categoría principal;Categorías secundarias\nAmbiental, Civil;Agua, Suelos').toString('base64')});assert.equal(parsed.status,200);assert.equal(parsed.body.rows[0].primary,'Ambiental, Civil');assert.deepEqual((await get()).body.categories,[]);
+      assert.equal((await admin.call('meta-ads/inventory/categories/file','POST',{name:'x.csv',content:'QQ=='})).status,403);assert.equal((await owner.call('meta-ads/inventory/categories/file','POST',{name:'x.exe',content:'QQ=='})).status,400);
+      const imported=await write(0,{action:'IMPORT',rows:parsed.body.rows});assert.equal(imported.status,200);state=imported.body;assert.equal(state.categories.length,4);assert.equal(state.relations.length,4);assert.deepEqual(state.assignments,{});
+      const id=(name:string)=>state.categories.find((x:any)=>x.name===name).id;
+      assert.equal((await write(0,{action:'IMPORT',rows:[{primary:'Otra',secondary:''}]})).status,409);
+      assert.equal((await write(state.revision,{action:'ASSIGN',ids:[a.id],expectedName:a.name,categoryIds:[id('Ambiental')]})).status,409);
+      assert.equal((await write(state.revision,{action:'ASSIGN',ids:[outside.id],expectedName:a.name,categoryIds:[id('Ambiental')]})).status,409);
+      const foreignState=(await write(0,{action:'IMPORT',rows:[{primary:'Ajena',secondary:''}]},foreign.id)).body;
+      assert.equal((await write(state.revision,{action:'ASSIGN',ids:[a.id,a2.id],expectedName:a.name,categoryIds:[foreignState.categories[0].id]})).status,404);
+      const assign=async(ids:string[],name:string,tags:string[])=>{const r=await write(state.revision,{action:'ASSIGN',ids,expectedName:name,categoryIds:tags.map(id)});assert.equal(r.status,200);state=r.body;};
+      await assign([a.id,a2.id],a.name,['Ambiental','Civil','Agua']);await assign([b.id],b.name,['Ambiental','Suelos']);await assign([c.id],c.name,['Civil']);
+      assert.deepEqual(state.assignments[a.id].sort(),state.assignments[a2.id].sort());
+      const pending=(await owner.call('meta-ads/aliases/'+a2.id+'/delete-preview')).body;
+      const bulk=await write(state.revision,{action:'IMPORT',rows:[{primary:'AMBIENTAL',secondary:'Gestión, Residuos'}],targetIds:[a.id,a2.id,b.id]});assert.equal(bulk.status,200);state=bulk.body;assert.equal(state.categories.filter((x:any)=>x.name.toLowerCase()==='ambiental').length,1);assert(state.assignments[b.id].includes(id('Gestión')));assert.deepEqual(state.assignments[c.id],[id('Civil')]);
+      assert.equal((await owner.call('meta-ads/aliases/'+a2.id,'DELETE',{token:pending.token})).status,409);
+      await assign([a.id,a2.id],a.name,['Ambiental','Civil','Gestión','Residuos']);assert(!state.assignments[a.id].includes(id('Agua')));assert(state.assignments[b.id].includes(id('Suelos')));
+      const removed=await write(state.revision,{action:'DELETE',categoryId:id('Ambiental')});assert.equal(removed.status,200);state=removed.body;assert(!state.categories.some((x:any)=>x.name==='Ambiental'));assert(state.categories.some((x:any)=>x.name==='Agua'));assert(state.assignments[a.id].includes(id('Civil')));
+      assert.equal((await db.metaEffectivenessDay.findUniqueOrThrow({where:{rowId_day:{rowId:row.id,day}}})).sales,7);assert.equal(await db.metaAlias.count({where:{id:{in:[a.id,a2.id,b.id,c.id,outside.id]}}}),5);
+      const tooMany=await write(state.revision,{action:'IMPORT',rows:[{primary:Array.from({length:21},(_,i)=>'C'+i).join(','),secondary:''}]});assert.equal(tooMany.status,400);assert.equal((await get()).body.revision,state.revision);
+      const preview=(await owner.call('meta-ads/aliases/'+a2.id+'/delete-preview')).body;assert.equal((await owner.call('meta-ads/aliases/'+a2.id,'DELETE',{token:preview.token})).status,200);assert.equal(await db.metaInventoryCategoryAssignment.count({where:{aliasId:a2.id}}),0);assert(await db.metaInventoryCategoryAssignment.count({where:{aliasId:a.id}}));
+      assert.equal((await get(foreign.id)).body.categories.length,1);
+      const archived=(await owner.call('meta-ads/workbook-sheets/'+list.id+'/delete-preview')).body;assert.equal(archived.counts.categories,state.categories.length);assert.equal((await owner.call('meta-ads/workbook-sheets/'+list.id,'DELETE',{token:archived.token,confirmedName:archived.sheet.name})).status,200);assert.equal((await get()).status,404);assert.equal((await write(state.revision,{action:'DELETE',categoryId:state.categories[0].id})).status,404);assert.equal(await db.metaInventoryCategory.count({where:{sheetId:list.id}}),state.categories.length);
+    });
     await t.test('Pestañas: eliminar Totales/Asesores/Inventario conserva referencias e historial y permite borrar la última',async()=>{
       const create=async(kind:string)=>{const r=await owner.call('meta-ads/workbook-sheets','POST',{kind});assert.equal(r.status,201);return r.body;};
       const people=await create('ADVISORS'),inventory=await create('INVENTORY'),totals=await create('TOTALS');

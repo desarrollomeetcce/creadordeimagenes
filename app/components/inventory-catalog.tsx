@@ -1,9 +1,14 @@
 "use client";
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { Fragment, useEffect, useRef, useState, type ReactNode } from "react";
 import { useWorkbookPreference } from "./use-workbook-preference";
 import { engineRequest as api } from "./generation-engine";
 import { SheetSearchSelect } from "./sheet-search-select";
 import { InventorySelectionDelete } from "./inventory-selection-delete";
+import { InventoryCategoryManager } from "./inventory-category-manager";
+import type {
+  InventoryCategoryState,
+  InventoryCategoryAction,
+} from "./inventory-category-types";
 import { EffectivenessCell } from "./effectiveness-cell";
 type Table = {
   id: string;
@@ -65,6 +70,59 @@ export function InventoryCatalog({
     [name, setName] = useState(""),
     [busy, setBusy] = useState(false),
     [message, setMessage] = useState("");
+  const [categories, setCategories] = useState<InventoryCategoryState | null>(
+      null,
+    ),
+    [categoryManager, setCategoryManager] = useState<
+      "paste" | "catalog" | null
+    >(null),
+    [removeCategories, setRemoveCategories] = useState(false);
+  const reloadCategories = async () =>
+    setCategories(
+      await api(
+        "meta-ads/inventory/categories?" + new URLSearchParams({ listId }),
+      ),
+    );
+  useEffect(() => {
+    let active = true;
+    setCategories(null);
+    void api("meta-ads/inventory/categories?" + new URLSearchParams({ listId }))
+      .then((v) => {
+        if (active) setCategories(v);
+      })
+      .catch((e) => {
+        if (active) setMessage(e.message);
+      });
+    return () => {
+      active = false;
+    };
+  }, [listId]);
+  const saveCategory = async (action: InventoryCategoryAction) => {
+    if (!categories) throw Error("Recarga las categorías antes de guardar.");
+    setBusy(true);
+    try {
+      setCategories(
+        await api("meta-ads/inventory/categories", "POST", {
+          listId,
+          revision: categories.revision,
+          ...action,
+        }),
+      );
+    } finally {
+      setBusy(false);
+    }
+  };
+  const categoryIds = (g: { links: { id: string }[] }) => [
+    ...new Set(g.links.flatMap((a) => categories?.assignments[a.id] ?? [])),
+  ];
+  const categoryById = new Map(categories?.categories.map((c) => [c.id, c]));
+  const groupCategories = (g: { links: { id: string }[] }) =>
+    categoryIds(g)
+      .flatMap((id) => {
+        const c = categoryById.get(id);
+        return c ? [c] : [];
+      })
+      .sort((a, b) => a.name.localeCompare(b.name, "es"));
   const items = tables
     .flatMap((t) =>
       t.aliases
@@ -98,8 +156,92 @@ export function InventoryCatalog({
   const visible = available.filter(
     (g) =>
       (!item || g.name === items.find((a) => a.id === item)?.name) &&
-      words.every((w) => normalize(g.name).includes(w)),
+      words.every((w) =>
+        normalize(
+          g.name +
+            " " +
+            groupCategories(g)
+              .map((c) => c.name)
+              .join(" "),
+        ).includes(w),
+      ),
   );
+  const bands = new Map<string, { title: string; groups: typeof visible }>();
+  for (const g of visible) {
+    const primary = groupCategories(g)
+        .filter((c) => c.kind === "PRIMARY")
+        .sort((a, b) => a.name.localeCompare(b.name, "es")),
+      title =
+        primary.map((c) => c.name).join(" · ") || "Sin categoría principal";
+    const key = primary.map((c) => c.id).join("|") || "__none";
+    if (!bands.has(key)) bands.set(key, { title, groups: [] });
+    bands.get(key)!.groups.push(g);
+  }
+  const sections = [...bands.entries()].sort(([a, x], [b, y]) =>
+    a === "__none"
+      ? 1
+      : b === "__none"
+        ? -1
+        : x.title.localeCompare(y.title, "es"),
+  );
+  const categoryCell = (
+    g: (typeof visible)[number],
+    kind: "PRIMARY" | "SECONDARY",
+  ) => {
+    const assigned = groupCategories(g).filter((c) => c.kind === kind),
+      available =
+        categories?.categories.filter(
+          (c) => c.kind === kind && !assigned.some((a) => a.id === c.id),
+        ) ?? [];
+    return (
+      <td className="inventory-category-cell">
+        <div className="inventory-category-chips">
+          {assigned.map((c) => (
+            <span
+              key={c.id}
+              className={"inventory-category-chip " + kind.toLowerCase()}
+            >
+              {c.name}
+              {removeCategories && (
+                <button
+                  type="button"
+                  disabled={busy}
+                  aria-label={`Quitar categoría ${c.name} de ${g.name}`}
+                  onClick={() =>
+                    void saveCategory({
+                      action: "ASSIGN",
+                      ids: g.links.map((a) => a.id),
+                      expectedName: g.name,
+                      categoryIds: categoryIds(g).filter((id) => id !== c.id),
+                    }).catch((e) => setMessage(e.message))
+                  }
+                >
+                  ×
+                </button>
+              )}
+            </span>
+          ))}
+        </div>
+        <fieldset disabled={busy || !categories}>
+          <SheetSearchSelect
+            label={`Añadir categoría ${kind === "PRIMARY" ? "principal" : "secundaria"} a ${g.name}`}
+            value=""
+            placeholder={kind === "PRIMARY" ? "+ Principal" : "+ Secundaria"}
+            options={available.map((c) => ({ value: c.id, label: c.name }))}
+            onSelect={async (id) => {
+              await saveCategory({
+                action: "ASSIGN",
+                ids: g.links.map((a) => a.id),
+                expectedName: g.name,
+                categoryIds: [...categoryIds(g), id],
+              });
+            }}
+            onError={setMessage}
+          />
+        </fieldset>
+      </td>
+    );
+  };
   const [selected, setSelected] = useState<string[]>([]),
     [bulkIds, setBulkIds] = useState<string[] | null>(null);
   const visibleIds = visible.flatMap((g) => g.links.map((a) => a.id)),
@@ -199,9 +341,51 @@ export function InventoryCatalog({
       )}
       {sheetTabs}
       <div className="table-scroll">
-        <table className="inventory-catalog-grid">
+        <table className="inventory-catalog-grid inventory-categorized-grid">
           <thead>
             <tr>
+              <th scope="col">
+                <div>Categoría principal</div>
+                <div className="inventory-header-actions">
+                  <button
+                    type="button"
+                    disabled={!categories || busy}
+                    onClick={() => setCategoryManager("paste")}
+                  >
+                    Pegar categorías
+                  </button>
+                  <button
+                    type="button"
+                    disabled={!categories || busy}
+                    onClick={() => setCategoryManager("catalog")}
+                  >
+                    Catálogo
+                  </button>
+                  {!categories && (
+                    <button
+                      type="button"
+                      onClick={() =>
+                        void reloadCategories().catch((e) =>
+                          setMessage(e.message),
+                        )
+                      }
+                    >
+                      Recargar categorías
+                    </button>
+                  )}
+                </div>
+              </th>
+              <th scope="col">
+                <div>Categorías secundarias</div>
+                <button
+                  type="button"
+                  className="category-remove-toggle"
+                  aria-pressed={removeCategories}
+                  onClick={() => setRemoveCategories((v) => !v)}
+                >
+                  Eliminar categorías
+                </button>
+              </th>
               <th scope="col">
                 <div className="inventory-header-title">
                   <InventoryCheck
@@ -296,73 +480,90 @@ export function InventoryCatalog({
             </tr>
           </thead>
           <tbody>
-            {visible.map((g) => (
-              <tr
-                key={g.name}
-                data-inventory-name={g.name}
-                data-selected={
-                  g.links.some((a) => selected.includes(a.id)) || undefined
-                }
-              >
-                <td>
-                  <div className="inventory-name-cell">
-                    <InventoryCheck
-                      label={`Seleccionar inventario ${g.name}`}
-                      checked={g.links.every((a) => selected.includes(a.id))}
-                      mixed={
-                        g.links.some((a) => selected.includes(a.id)) &&
-                        !g.links.every((a) => selected.includes(a.id))
-                      }
-                      disabled={busy}
-                      onChange={(checked) =>
-                        choose(
-                          g.links.map((a) => a.id),
-                          checked,
-                        )
-                      }
-                    />
-                    <EffectivenessCell
-                      label={`Nombre de inventario ${g.name}`}
-                      value={g.name}
-                      onError={setMessage}
-                      onSave={async (value) => {
-                        await api("meta-ads/inventory/rename", "POST", {
-                          listId,
-                          expectedName: g.name,
-                          name: value.trim(),
-                          ids: g.links.map((a) => a.id),
-                        });
-                        await onChanged();
-                      }}
-                    />
-                  </div>
-                </td>
-                <td>
-                  <div className="inventory-sheet-links">
-                    {g.links.map((a) => (
-                      <span
-                        key={a.id}
-                        className="inventory-sheet-chip"
-                        data-inventory-id={a.id}
-                      >
-                        {a.tableName}
-                        {removing && (
-                          <button
-                            type="button"
-                            className="inventory-remove"
-                            aria-label={`Eliminar ${g.name} de ${a.tableName}`}
-                            title={`Eliminar solo de ${a.tableName}`}
-                            disabled={busy}
-                            onClick={() => void prepareRemoval(a.id)}
+            {sections.map(([key, section]) => (
+              <Fragment key={key}>
+                <tr
+                  className="inventory-group-band"
+                  data-category-group={section.title}
+                >
+                  <th colSpan={4} scope="rowgroup">
+                    {section.title}
+                    <small>{section.groups.length} ítems</small>
+                  </th>
+                </tr>
+                {section.groups.map((g) => (
+                  <tr
+                    key={g.name}
+                    data-inventory-name={g.name}
+                    data-selected={
+                      g.links.some((a) => selected.includes(a.id)) || undefined
+                    }
+                  >
+                    {categoryCell(g, "PRIMARY")}
+                    {categoryCell(g, "SECONDARY")}
+                    <td>
+                      <div className="inventory-name-cell">
+                        <InventoryCheck
+                          label={`Seleccionar inventario ${g.name}`}
+                          checked={g.links.every((a) =>
+                            selected.includes(a.id),
+                          )}
+                          mixed={
+                            g.links.some((a) => selected.includes(a.id)) &&
+                            !g.links.every((a) => selected.includes(a.id))
+                          }
+                          disabled={busy}
+                          onChange={(checked) =>
+                            choose(
+                              g.links.map((a) => a.id),
+                              checked,
+                            )
+                          }
+                        />
+                        <EffectivenessCell
+                          label={`Nombre de inventario ${g.name}`}
+                          value={g.name}
+                          onError={setMessage}
+                          onSave={async (value) => {
+                            await api("meta-ads/inventory/rename", "POST", {
+                              listId,
+                              expectedName: g.name,
+                              name: value.trim(),
+                              ids: g.links.map((a) => a.id),
+                            });
+                            await onChanged();
+                          }}
+                        />
+                      </div>
+                    </td>
+                    <td>
+                      <div className="inventory-sheet-links">
+                        {g.links.map((a) => (
+                          <span
+                            key={a.id}
+                            className="inventory-sheet-chip"
+                            data-inventory-id={a.id}
                           >
-                            ×
-                          </button>
-                        )}
-                      </span>
-                    ))}
-                  </div>
-                </td>
-              </tr>
+                            {a.tableName}
+                            {removing && (
+                              <button
+                                type="button"
+                                className="inventory-remove"
+                                aria-label={`Eliminar ${g.name} de ${a.tableName}`}
+                                title={`Eliminar solo de ${a.tableName}`}
+                                disabled={busy}
+                                onClick={() => void prepareRemoval(a.id)}
+                              >
+                                ×
+                              </button>
+                            )}
+                          </span>
+                        ))}
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </Fragment>
             ))}
           </tbody>
         </table>
@@ -372,6 +573,17 @@ export function InventoryCatalog({
           </p>
         )}
       </div>
+      {categoryManager && categories && (
+        <InventoryCategoryManager
+          config={categories}
+          selectedIds={selectedVisible}
+          selectedCount={selectedGroups}
+          initialView={categoryManager}
+          onClose={() => setCategoryManager(null)}
+          onSave={saveCategory}
+          onRefresh={reloadCategories}
+        />
+      )}
       {bulkIds && (
         <InventorySelectionDelete
           listId={listId}

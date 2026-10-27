@@ -81,6 +81,91 @@ export async function metaRoutes(
       ).setMetaStatus(actor, parts[2], b.status, b.expectedStatus),
     );
   }
+  if (path === "inventory/categories" && method === "GET") {
+    ownerOnly(actor);
+    const q = z
+      .object({ listId: z.string().min(1).max(100) })
+      .strict()
+      .parse(Object.fromEntries(req.nextUrl.searchParams));
+    return send(
+      await (
+        await import("./inventory-categories")
+      ).inventoryCategories(actor, q.listId),
+    );
+  }
+  if (path === "inventory/categories" && method === "POST") {
+    ownerOnly(actor);
+    const base = {
+      listId: z.string().min(1).max(100),
+      revision: z.number().int().nonnegative(),
+    };
+    const ids = z.array(z.string().min(1).max(100)).min(1).max(1000);
+    const b = z
+      .discriminatedUnion("action", [
+        z
+          .object({
+            ...base,
+            action: z.literal("IMPORT"),
+            rows: z
+              .array(
+                z
+                  .object({
+                    primary: z.string().max(2000),
+                    secondary: z.string().max(2000),
+                  })
+                  .strict(),
+              )
+              .min(1)
+              .max(500),
+            targetIds: ids.optional(),
+          })
+          .strict(),
+        z
+          .object({
+            ...base,
+            action: z.literal("ASSIGN"),
+            ids,
+            expectedName: z.string().min(1).max(150),
+            categoryIds: z.array(z.string().min(1).max(100)).max(40),
+          })
+          .strict(),
+        z
+          .object({
+            ...base,
+            action: z.literal("DELETE"),
+            categoryId: z.string().min(1).max(100),
+          })
+          .strict(),
+      ])
+      .parse(await body());
+    return send(
+      await (
+        await import("./inventory-categories")
+      ).saveInventoryCategories(actor, b),
+    );
+  }
+  if (path === "inventory/categories/file" && method === "POST") {
+    ownerOnly(actor);
+    const b = z
+      .object({
+        name: z.string().min(1).max(255),
+        content: z.string().min(1).max(2700000),
+      })
+      .strict()
+      .parse(await body());
+    try {
+      return send(
+        await (
+          await import("./category-file")
+        ).parseCategoryFile(b.name, b.content),
+      );
+    } catch (e) {
+      if (e instanceof (await import("../errors")).AppError) throw e;
+      throw new (await import("../errors")).AppError(
+        "No se pudo leer el archivo. Usa Excel .xlsx sin fórmulas o CSV/TSV con dos columnas válidas.",
+      );
+    }
+  }
   if (path === "inventory/remove-preview" && method === "POST") {
     ownerOnly(actor);
     const b = z

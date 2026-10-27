@@ -3,7 +3,12 @@ import { useEffect, useRef, useState } from "react";
 import { engineRequest as api } from "./generation-engine";
 type Review = {
   sheet: { id: string; name: string; kind: string };
-  counts: { inventory: number; advisors: number; totals: number };
+  counts: {
+    inventory: number;
+    advisors: number;
+    totals: number;
+    categories: number;
+  };
   token: string;
 };
 export function DeleteWorkbookSheet({
@@ -66,6 +71,10 @@ export function DeleteWorkbookSheet({
             conservarán, incluidas las referencias que ya usan otras hojas.
           </p>
           <dl>
+            <div>
+              <dt>Categorías conservadas</dt>
+              <dd>{review.counts.categories}</dd>
+            </div>
             <div>
               <dt>Ítems de inventario conservados</dt>
               <dd>{review.counts.inventory}</dd>

@@ -232,3 +232,17 @@ Clic derecho → Eliminar pestaña abre una revisión del nombre y de los regist
 Se puede quitar incluso la última pestaña de una clase: sus botones + siguen disponibles y crean otra lista vacía. Reutilizar un nombre crea una identidad nueva; no recupera ni mezcla los registros anteriores. Altas de inventario/importaciones/sincronización y las llamadas antiguas sin ID eligen una pestaña activa; si no queda ninguna, crean una nueva. Los asesores de pestañas retiradas conservan sus créditos históricos y se identifican como «pestaña eliminada» cuando corresponde.
 
 Migración requerida:202610260010_remove_workbook_tabs. Añade archivedAt a MetaEffectivenessSheet y limita la unicidad de nombres a las pestañas activas; no elimina ni mueve datos financieros. Debe aplicarse con npm run db:deploy antes de iniciar la versión nueva.
+
+### Categorías principales y secundarias del Inventario
+
+La pestaña Inventario muestra, en este orden: Categoría principal, Categorías secundarias, Inventario y Hojas. Cada ítem admite varias etiquetas. Los que comparten principales aparecen bajo una franja visible; si tiene varias principales, se muestran juntas en una única franja, sin duplicar el ítem ni sus cifras. Sin categoría principal queda al final. El buscador encuentra tanto nombres de inventario como categorías.
+
+Pegar categorías abre una cuadrícula de dos columnas para copiar desde Excel, editar celdas y moverse con Tab o Enter. Una celda como `Ambiental, Civil` crea dos etiquetas independientes. Se puede guardar solo el catálogo o marcar «También añadir a N ítems marcados»: todas las etiquetas pegadas se añaden a cada ítem de esa selección visible. No se emparejan filas de archivo e ítems por su posición. Para asignar distintas categorías a distintos ítems, guardar el catálogo y usar +Principal/+Secundaria en cada fila.
+
+Subir archivo, dentro de esa ventana, prepara una revisión editable: .xlsx, .csv, .tsv o .txt, hasta2MB/500 filas. Se admiten encabezados Categoría principal y Categorías secundarias. En CSV con coma como separador de columnas, citar las celdas que contienen listas, por ejemplo `"Ambiental, Civil","Agua, Suelos"`; también se admite CSV regional con punto y coma. En Excel se lee la primera hoja visible y se requieren valores, no fórmulas. Elegir el archivo no guarda categorías hasta pulsar Guardar.
+
+Eliminar categorías activa X en las etiquetas de cada ítem: quita solo esa etiqueta de ese ítem agrupado y sus hojas. El catálogo sigue disponible para otros ítems. Desde Catálogo se puede eliminar una definición completa; una revisión explica sus referencias afectadas antes de confirmar. Borrar una principal conserva sus secundarias como etiquetas independientes. Ninguna de estas acciones modifica ventas, presupuestos, gastos, países, asesores ni datos de Meta.
+
+Categorías y revisiones están aisladas por lista de Inventario. Cambios simultáneos rechazan guardados antiguos; Recargar categorías permite revisar otra vez sin reintento automático. Archivar la pestaña conserva el catálogo y las asignaciones históricas. Migración requerida202610270001_inventory_categories, con npm run db:deploy antes de iniciar la aplicación nueva.
+
+Las celdas coloreadas por una regla muestran su fondo elegido sin el subrayado adicional azul. El foco de edición se conserva para navegar con teclado; no se cambian las reglas guardadas ni las cifras.

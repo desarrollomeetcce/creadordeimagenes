@@ -10,6 +10,9 @@ async function review(tx: Prisma.TransactionClient, id: string) {
   const sheet = await tx.metaEffectivenessSheet.findUnique({ where: { id } });
   demand(sheet && !sheet.archivedAt, "Pestaña no disponible.", 404);
   const counts = {
+    categories: await tx.metaInventoryCategory.count({
+      where: { sheetId: id },
+    }),
     inventory: await tx.metaAlias.count({ where: { inventorySheetId: id } }),
     advisors: await tx.metaAdvisor.count({ where: { sheetId: id } }),
     totals: await tx.metaEffectivenessTotalDay.count({
