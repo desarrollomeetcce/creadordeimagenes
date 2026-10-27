@@ -1858,7 +1858,11 @@ export function MetaEffectiveness({
                     >
                       Agregar fila
                     </button>
-                    {!data && <span role="status"> Cargando datos…</span>}
+                    {!data && (
+                      <span role="status" className="sheet-loading-status">
+                        Cargando datos…
+                      </span>
+                    )}
                   </td>
                 )}
               </tr>

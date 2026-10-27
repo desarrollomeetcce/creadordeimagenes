@@ -111,7 +111,8 @@ export function InventoryMultiSelect({
         }}
         onToggle={(e) => {
           setOpen(e.newState === "open");
-          if (e.newState === "open") search.current?.focus();
+          if (e.newState === "open")
+            search.current?.focus({ preventScroll: true });
         }}
       >
         <input
@@ -125,7 +126,7 @@ export function InventoryMultiSelect({
             if (e.key === "Escape") {
               e.preventDefault();
               popover.current?.hidePopover();
-              trigger.current?.focus();
+              trigger.current?.focus({ preventScroll: true });
             }
           }}
         />
@@ -196,7 +197,7 @@ export function InventoryMultiSelect({
             try {
               if (!all) await onChange(draft);
               popover.current?.hidePopover();
-              trigger.current?.focus();
+              trigger.current?.focus({ preventScroll: true });
             } catch (e) {
               onError?.((e as Error).message);
             } finally {

@@ -1942,3 +1942,6 @@ select option, select optgroup { background:var(--surface); color:var(--ink); }
 .totals-source-add > span:last-child{display:none;}
 .products-catalog .sheet-view .effectiveness-grid .sheet-new-row .sheet-search-popover button{float:none;display:block;width:100%;max-width:none;white-space:normal;font-size:12px;padding:7px;text-align:left;}
 .products-catalog .sheet-view .effectiveness-grid .sheet-new-row .sheet-search-popover input{font-size:12px;padding:7px;height:auto;white-space:normal;background:var(--paper);}
+
+/* Loading feedback must not insert/remove space above or inside a working sheet. */
+.sheet-loading-status{position:fixed;inset:auto 16px 16px auto;z-index:80;margin:0;padding:8px 12px;max-width:calc(100vw - 32px);border:1px solid var(--line);border-radius:8px;background:var(--surface);color:var(--muted);box-shadow:0 3px 12px #0002;font:12px/1.4 Arial,sans-serif;pointer-events:none;white-space:normal;}

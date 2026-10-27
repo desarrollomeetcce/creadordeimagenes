@@ -105,7 +105,8 @@ export function EffectivenessTotals({
       ? tables.map((t) => t.id)
       : selected.filter((id) => tables.some((t) => t.id === id))
   ).join(",");
-  const context = JSON.stringify([ids, since, until]);
+  const context = JSON.stringify([listId, ids, since, until]);
+  const requestedContext = useRef("");
   const activeContext = useRef(context);
   activeContext.current = context;
   useEffect(() => {
@@ -147,7 +148,11 @@ export function EffectivenessTotals({
         if (active && version === seq.current) setLoading(false);
       }
     };
-    setData([]);
+    // Reload the same cells in place; only a different source/range starts an empty view.
+    if (requestedContext.current !== context) {
+      requestedContext.current = context;
+      setData([]);
+    }
     void load();
     const timer = setInterval(() => {
       if (!document.hidden) void load();
@@ -156,7 +161,7 @@ export function EffectivenessTotals({
       active = false;
       clearInterval(timer);
     };
-  }, [ids, since, until, reload]);
+  }, [listId, ids, since, until, reload]);
   const days = useMemo(() => {
     const result: string[] = [];
     for (let d = Date.parse(since); d <= Date.parse(until); d += 86400000)
@@ -286,6 +291,7 @@ export function EffectivenessTotals({
     <section
       className="effectiveness sheet-view"
       aria-label="Totales de efectividad"
+      aria-busy={loading}
     >
       <div className="row sheet-toolbar">
         <div className="row sheet-view-buttons" aria-label="Vista de totales">
@@ -399,8 +405,8 @@ export function EffectivenessTotals({
           {message}
         </p>
       )}
-      {loading && (
-        <p role="status" className="sheet-help">
+      {loading && !data.length && (
+        <p role="status" className="sheet-loading-status">
           Cargando totales…
         </p>
       )}

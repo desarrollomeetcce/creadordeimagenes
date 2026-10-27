@@ -658,7 +658,11 @@ export function ProductsCatalog() {
           {message}
         </p>
       )}
-      {loading && <p role="status">Cargando tablas…</p>}
+      {loading && (
+        <p role="status" className="sheet-loading-status">
+          Cargando tablas…
+        </p>
+      )}
       {!loading && !locationReady && (
         <p role="status">Abriendo la última hoja…</p>
       )}

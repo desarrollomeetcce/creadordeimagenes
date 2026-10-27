@@ -78,6 +78,7 @@ export function AdvisorsSheet({
     ),
     [detail, setDetail] = useState<Person | null>(null),
     [rows, setRows] = useState<Person[]>([]),
+    [rowsContext, setRowsContext] = useState(""),
     [message, setMessage] = useState(""),
     [reload, setReload] = useState(0),
     [loading, setLoading] = useState(true),
@@ -100,7 +101,7 @@ export function AdvisorsSheet({
     context = useRef("");
   const valid =
     since <= until && (Date.parse(until) - Date.parse(since)) / 86400000 < 31;
-  const key = JSON.stringify([tableId, since, until, aliasId, country]);
+  const key = JSON.stringify([listId, tableId, since, until, aliasId, country]);
   context.current = key;
   const load = async (saved = false, quiet = false) => {
     const token = ++sequence.current,
@@ -118,8 +119,10 @@ export function AdvisorsSheet({
             ...(country ? { country } : {}),
           }),
       );
-      if (token === sequence.current && context.current === requested)
+      if (token === sequence.current && context.current === requested) {
         setRows(data.rows);
+        setRowsContext(requested);
+      }
     } catch (e) {
       if (token === sequence.current && context.current === requested)
         setMessage(
@@ -171,7 +174,7 @@ export function AdvisorsSheet({
     .trim()
     .split(/\s+/)
     .filter(Boolean);
-  const filtered = rows.filter((p) =>
+  const filtered = (rowsContext === key ? rows : []).filter((p) =>
     words.every((w) =>
       p.name
         .normalize("NFD")
@@ -181,7 +184,11 @@ export function AdvisorsSheet({
     ),
   );
   return (
-    <section className="sheet-view advisor-sheet" aria-label="Hoja Asesores">
+    <section
+      className="sheet-view advisor-sheet"
+      aria-label="Hoja Asesores"
+      aria-busy={loading}
+    >
       <div className="row sheet-toolbar">
         <strong>Asesores</strong>
         <MetaDateRange
@@ -292,7 +299,11 @@ export function AdvisorsSheet({
         </p>
       )}
       {!valid && <p role="alert">Elige un período de hasta 31 días.</p>}
-      {loading && <p role="status">Cargando asesores…</p>}
+      {loading && (
+        <p role="status" className="sheet-loading-status">
+          Cargando asesores…
+        </p>
+      )}
       {(warning || rowsLayout.warning) && (
         <p className="sheet-message" role="status">
           {warning || rowsLayout.warning}
@@ -354,80 +365,75 @@ export function AdvisorsSheet({
               </tr>
             </thead>
             <tbody>
-              {!loading &&
-                filtered.map((p) => (
-                  <SheetSizedRow
-                    key={p.id}
-                    data-advisor-id={p.id}
-                    label={p.name}
-                    height={rowsLayout.heights[p.id]}
-                    onResize={(v) => rowsLayout.resize(p.id, v)}
-                    onReset={() => rowsLayout.resize(p.id)}
-                  >
-                    <td className="advisor-name">
-                      <div className="advisor-name-actions">
-                        <button
-                          type="button"
-                          className="advisor-detail-trigger"
-                          aria-label={`Detalle de ${p.name}`}
-                          title="Ver evolución y detalle de ventas"
-                          onClick={() => {
-                            setDetail(p);
-                            setDetailVersion((v) => v + 1);
-                          }}
-                        >
-                          Detalle ↗
-                        </button>
-                        <EffectivenessCell
-                          label={`Nombre del asesor ${p.name}`}
-                          value={p.name}
-                          onError={setMessage}
-                          onSave={async (name) => {
-                            if (!name.trim() || name.length > 100)
-                              throw Error("Nombre de 1 a 100 caracteres.");
-                            await write("meta-ads/advisors", "PATCH", {
-                              id: p.id,
-                              name: name.trim(),
-                              revision: p.revision,
-                            });
-                          }}
-                        />
-                      </div>
-                    </td>
-                    {days.map((d) => {
-                      const c = p.days[d];
-                      return (
-                        <AdvisorDay
-                          key={d}
-                          person={p}
-                          day={d}
-                          cell={c}
-                          disabled={busy || loading}
-                          onError={setMessage}
-                          onAbsenceSave={async (input) => {
-                            await write(
-                              "meta-ads/advisors/absence",
-                              "PATCH",
-                              input,
-                            );
-                          }}
-                          onSave={async (status) => {
-                            await write(
-                              "meta-ads/advisors/attendance",
-                              "PATCH",
-                              {
-                                advisorId: p.id,
-                                day: d,
-                                status,
-                                revision: c.revision,
-                              },
-                            );
-                          }}
-                        />
-                      );
-                    })}
-                  </SheetSizedRow>
-                ))}
+              {filtered.map((p) => (
+                <SheetSizedRow
+                  key={p.id}
+                  data-advisor-id={p.id}
+                  label={p.name}
+                  height={rowsLayout.heights[p.id]}
+                  onResize={(v) => rowsLayout.resize(p.id, v)}
+                  onReset={() => rowsLayout.resize(p.id)}
+                >
+                  <td className="advisor-name">
+                    <div className="advisor-name-actions">
+                      <button
+                        type="button"
+                        className="advisor-detail-trigger"
+                        aria-label={`Detalle de ${p.name}`}
+                        title="Ver evolución y detalle de ventas"
+                        onClick={() => {
+                          setDetail(p);
+                          setDetailVersion((v) => v + 1);
+                        }}
+                      >
+                        Detalle ↗
+                      </button>
+                      <EffectivenessCell
+                        label={`Nombre del asesor ${p.name}`}
+                        value={p.name}
+                        onError={setMessage}
+                        onSave={async (name) => {
+                          if (!name.trim() || name.length > 100)
+                            throw Error("Nombre de 1 a 100 caracteres.");
+                          await write("meta-ads/advisors", "PATCH", {
+                            id: p.id,
+                            name: name.trim(),
+                            revision: p.revision,
+                          });
+                        }}
+                      />
+                    </div>
+                  </td>
+                  {days.map((d) => {
+                    const c = p.days[d];
+                    return (
+                      <AdvisorDay
+                        key={d}
+                        person={p}
+                        day={d}
+                        cell={c}
+                        disabled={busy || loading}
+                        onError={setMessage}
+                        onAbsenceSave={async (input) => {
+                          await write(
+                            "meta-ads/advisors/absence",
+                            "PATCH",
+                            input,
+                          );
+                        }}
+                        onSave={async (status) => {
+                          await write("meta-ads/advisors/attendance", "PATCH", {
+                            advisorId: p.id,
+                            day: d,
+                            status,
+                            revision: c.revision,
+                          });
+                        }}
+                      />
+                    );
+                  })}
+                </SheetSizedRow>
+              ))}
             </tbody>
           </table>
           {!loading && !filtered.length && (
