@@ -5,7 +5,6 @@ import { engineRequest as api } from "./generation-engine";
 import { useSheetOrder } from "./use-sheet-order";
 import { InventoryCatalog } from "./inventory-catalog";
 import { MetaEffectiveness } from "./meta-effectiveness";
-import { DeleteWorkbookSheet } from "./delete-workbook-sheet";
 import { DeleteAliasTable } from "./delete-alias-table";
 import { AdvisorsSheet } from "./advisors-sheet";
 import { EffectivenessTotals } from "./effectiveness-totals";
@@ -40,7 +39,7 @@ export function ProductsCatalog() {
     revision: number;
   };
   const [specialsLoaded, setSpecialsLoaded] = useState(false);
-  const [deletingSpecial, setDeletingSpecial] = useState<string | null>(null);
+  const specialDeletePending = useRef(false);
   const [specials, setSpecials] = useState<Special[]>([]),
     [specialId, setSpecialId] = useState<string | null>(null);
   const special = specials.find((s) => s.id === specialId);
@@ -216,6 +215,54 @@ export function ProductsCatalog() {
         ?.querySelector<HTMLButtonElement>("button")
         ?.focus({ preventScroll: true });
     });
+  };
+  const deleteSpecial = async (
+    id: string,
+    name: string,
+    kind: Special["kind"],
+  ) => {
+    if (specialDeletePending.current) return;
+    specialDeletePending.current = true;
+    setBusy(true);
+    setMessage("");
+    try {
+      const review = await api(
+        "meta-ads/workbook-sheets/" + id + "/delete-preview",
+      );
+      if (
+        review.sheet.id !== id ||
+        review.sheet.name !== name ||
+        review.sheet.kind !== kind
+      )
+        throw Error(
+          "La pestaña cambió. Actualiza la página antes de eliminarla.",
+        );
+      await api("meta-ads/workbook-sheets/" + id, "DELETE", {
+        token: review.token,
+        confirmedName: review.sheet.name,
+      });
+      const next = specials.filter((s) => s.id !== id);
+      setSpecials((old) => old.filter((s) => s.id !== id));
+      setSpecialId((old) =>
+        old === id
+          ? (next.find((s) => s.kind === kind)?.id ?? next[0]?.id ?? null)
+          : old,
+      );
+      setContextTable(null);
+      try {
+        setSpecials(await api("meta-ads/workbook-sheets"));
+        setMessage("Pestaña eliminada. Sus registros se conservaron.");
+      } catch {
+        setMessage("Pestaña eliminada. Recarga para actualizar el libro.");
+      }
+    } catch (e) {
+      setMessage(
+        e instanceof Error ? e.message : "No se pudo eliminar la pestaña.",
+      );
+    } finally {
+      specialDeletePending.current = false;
+      setBusy(false);
+    }
   };
   const deleted = async (id: string) => {
     try {
@@ -743,9 +790,15 @@ export function ProductsCatalog() {
             type="button"
             role="menuitem"
             className="danger"
+            disabled={busy}
             onClick={() => {
               menu.current?.hidePopover();
-              if (contextTable?.kind) setDeletingSpecial(contextTable.id);
+              if (contextTable?.kind)
+                void deleteSpecial(
+                  contextTable.id,
+                  contextTable.name,
+                  contextTable.kind,
+                );
               else if (contextTable) setDeleting(contextTable.id);
             }}
           >
@@ -753,33 +806,6 @@ export function ProductsCatalog() {
           </button>
         )}
       </div>
-      {deletingSpecial && (
-        <DeleteWorkbookSheet
-          sheetId={deletingSpecial}
-          onClose={() => setDeletingSpecial(null)}
-          onDeleted={async (id) => {
-            const kind = specials.find((s) => s.id === id)?.kind,
-              next = specials.filter((s) => s.id !== id);
-            setSpecials(next);
-            setSpecialId((old) =>
-              old === id
-                ? (next.find((s) => s.kind === kind)?.id ?? next[0]?.id ?? null)
-                : old,
-            );
-            try {
-              setSpecials(await api("meta-ads/workbook-sheets"));
-              setMessage("Pestaña eliminada. Sus registros se conservaron.");
-            } catch {
-              setMessage(
-                "Pestaña eliminada. Recarga para actualizar el libro.",
-              );
-            } finally {
-              setDeletingSpecial(null);
-              setContextTable(null);
-            }
-          }}
-        />
-      )}
       {deleting && (
         <DeleteAliasTable
           tableId={deleting}

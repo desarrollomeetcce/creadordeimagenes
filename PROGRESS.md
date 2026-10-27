@@ -1303,3 +1303,9 @@ Totales cambia las etiquetas GD/Gasto diario por GM/Gasto manual, incluida la le
 Los desplegables abiertos dentro del pie financiero quedan excluidos del ajuste automático de texto de celdas. Sus opciones conservan ancho completo, lectura normal y salto de línea; no heredan el ancho reducido ni el float de Agregar fila.
 
 Verificación final:162/162 unitarias,183/183 integración HTTP/PostgreSQL exclusivo, typecheck y build aprobados. Chromium verifica ambos flujos y persistencia con cifras existentes, sin errores JS/API ni solicitudes externas. Se estabilizan únicamente dos fixtures antiguos de pruebas (PNG propio y espera de cuota sintética) descritos en TESTING. Publicación en main mediante índice aislado, separada de la comprobación del despliegue Hostinger.
+
+### Eliminar pestaña sin confirmar por escrito
+
+Por instrucción posterior, Eliminar pestaña del menú contextual retira directamente Totales/Asesores/Inventario, sin modal ni nombre escrito. La interfaz obtiene revisión/token y envía el nombre esperado internamente; si el nombre/tipo cambió desde abrir el menú se detiene y pide recargar, y si el contenido cambia entre revisión y DELETE sigue vigente el rechazo del servidor. No hay reintento automático. Se bloquea el doble clic en curso, se retira la navegación local al confirmar el servidor y se elige otra pestaña disponible, preservando registros/historial/referencias mediante archivedAt. Mensajes distinguen fallo al eliminar de eliminación confirmada seguida de fallo al recargar. Se retira el componente modal sin uso; API, datos, permisos, auditoría y esquema no cambian. Eliminación de tablas financieras conserva su comportamiento anterior.
+
+Verificación:162/162 unitarias, typecheck/build y flujo Chromium/API/BD exclusiva aprobados; eliminación directa de los tres tipos, doble clic único, conservación de datos, recarga y rechazo de nombre concurrente. Backend sin cambios y183/183 de regresión previa vigentes.
