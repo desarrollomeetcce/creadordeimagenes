@@ -1,5 +1,14 @@
 import type { TotalValue } from "./effectiveness-total-values";
 import type { SheetMetric } from "./period-summary";
+export const formatTotalDetail = (v: TotalValue) =>
+  v.pending
+    ? "Sin tasa"
+    : v.value === null
+      ? v.na
+        ? "N.A."
+        : "—"
+      : v.value.toLocaleString("es-PE", { maximumFractionDigits: 2 }) +
+        (v.partial ? " *" : "");
 export type ManualTotalMetric = "baseManual" | "totalSpend" | "fixedCost";
 export type TotalDay = {
   sharedManualBase?: boolean;

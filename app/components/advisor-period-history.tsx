@@ -1,6 +1,6 @@
 "use client";
 import { DetailSection } from "./detail-section";
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { periodTableUrl } from "../../lib/meta-ads/period-table-link";
 import { engineRequest as api } from "./generation-engine";
 import { subscribeAdvisorSalesChanged } from "./advisor-sales-events";
@@ -18,8 +18,12 @@ export function AdvisorPeriodHistory({
   country,
   onStatistics,
   sectionId,
+  title = "Últimas asignaciones de asesores",
+  children,
 }: {
   sectionId?: string;
+  title?: string;
+  children?: ReactNode;
   advisorId: string;
   tableId: string;
   aliasId: string;
@@ -76,7 +80,7 @@ export function AdvisorPeriodHistory({
   return (
     <DetailSection
       stateKey="assignments"
-      title="Últimas asignaciones de asesores"
+      title={title}
       tone="assignments"
       className="advisor-tenure-history"
       id={sectionId}
@@ -177,6 +181,7 @@ export function AdvisorPeriodHistory({
           </div>
         </nav>
       )}
+      {children}
     </DetailSection>
   );
 }

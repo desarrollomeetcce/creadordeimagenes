@@ -1,6 +1,6 @@
 "use client";
 import { DetailSection } from "./detail-section";
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { readRangePages } from "./workbook-range-request";
 import { subscribeAdvisorSalesChanged } from "./advisor-sales-events";
 type Row = {
@@ -19,6 +19,7 @@ export function AdvisorItemAnalysis({
   since,
   until,
   onAdvisor,
+  children,
 }: {
   tableId: string;
   sectionId?: string;
@@ -27,6 +28,7 @@ export function AdvisorItemAnalysis({
   since: string;
   until: string;
   onAdvisor: (id: string) => void;
+  children?: ReactNode;
 }) {
   const [data, setData] = useState<{
       rows: Row[];
@@ -155,6 +157,7 @@ export function AdvisorItemAnalysis({
           </table>
         </div>
       )}
+      {children}
     </DetailSection>
   );
 }

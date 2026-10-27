@@ -1272,6 +1272,21 @@ export async function metaRoutes(
       ).changeEffectivenessIdentity(actor, b),
     );
   }
+  if (path === "effectiveness/totals/daily-detail" && method === "GET") {
+    ownerOnly(actor);
+    const q = z
+      .object({
+        tableId: z.string().min(1).max(100),
+        country: z.string().refine((v) => v === "" || isCountryCode(v)),
+        currency: z.string().regex(/^([A-Z]{3})?$/),
+        day: z.string().date(),
+      })
+      .strict()
+      .parse(Object.fromEntries(req.nextUrl.searchParams));
+    return send(
+      await (await import("./totals-daily-detail")).totalsDailyDetail(actor, q),
+    );
+  }
   if (path === "effectiveness" && method === "GET") {
     ownerOnly(actor);
     const q = z

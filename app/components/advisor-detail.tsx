@@ -350,6 +350,76 @@ export function AdvisorDetail({
     currentDayPage = Math.min(dayPage, pageCount - 1),
     visibleDays = days.slice(currentDayPage * 31, currentDayPage * 31 + 31);
   const partial = days.some((d) => row!.days[d].partial);
+  const summary = row ? (
+    <div className="advisor-detail-summary" aria-label="Resumen del asesor">
+      <span>
+        Base manual (BM)
+        <strong>{bmTotal === null ? "—" : number(bmTotal)}</strong>
+        <small>Registrada en Totales y Asesores por hoja y país</small>
+      </span>
+      <span>
+        Ventas / BM
+        <strong>
+          {!aliasId && sales !== null && bmTotal !== null && bmTotal > 0
+            ? performanceRatio(sales, bmTotal, 100)!.toLocaleString("es-PE", {
+                maximumFractionDigits: 2,
+              }) + " %"
+            : "—"}
+        </strong>
+        <small>
+          {aliasId
+            ? "BM corresponde a la hoja completa; quita el filtro de inventario para comparar."
+            : "Ventas registradas respecto a la base manual del período"}
+        </small>
+      </span>
+      <span>
+        Base aproximada del asesor (B)
+        <b>
+          {baseTotal === null ? "—" : number(baseTotal)}
+          {basePartial ? " *" : ""}
+        </b>
+        <small>
+          {baseDays.length}/{days.length} días con base de los diplomados
+          asignados
+        </small>
+      </span>
+      <span>
+        Ventas (V)
+        <strong>
+          {sales === null ? "—" : number(sales)}
+          {partial ? " *" : ""}
+        </strong>
+      </span>
+      <span>
+        Promedio por día con V
+        <strong>{sales === null ? "—" : number(sales / known.length)}</strong>
+        <small>
+          {known.length}/{days.length} días con ventas registradas
+        </small>
+      </span>
+      <span>
+        Horas ausentes (H)
+        <strong>
+          {hours === null ? "—" : number(hours) + " h"}
+          {pending ? " +" : ""}
+        </strong>
+        <small>{pending} regreso(s) pendiente(s)</small>
+      </span>
+      <span>
+        Asistencia (A)
+        <strong>
+          {present} presente(s) · {absent} ausente(s)
+        </strong>
+      </span>
+      <span data-advisor-summary="absences">
+        Inasistencias (I)
+        <strong>{recordedAttendance ? absent : "—"}</strong>
+        <small>
+          {recordedAttendance}/{days.length} días con asistencia registrada
+        </small>
+      </span>
+    </div>
+  ) : null;
   return (
     <DetailSections>
       {minimized && (
@@ -369,17 +439,12 @@ export function AdvisorDetail({
         aria-label={`Detalle de asesor ${person.name}`}
         onCancel={onClose}
       >
-        <header className="row">
+        <header className="row advisor-detail-heading">
           <h2>{row?.name ?? person.name}</h2>
         </header>
         <DetailNavigation
           onClose={onClose}
           items={[
-            {
-              target: sectionId + "periods",
-              label: "Períodos",
-              tone: "periods",
-            },
             {
               target: sectionId + "inventory-analysis",
               label: "Ventas por asesor",
@@ -388,7 +453,7 @@ export function AdvisorDetail({
             {
               target: sectionId + "sold-days",
               label: "Qué vendió cada día",
-              tone: "sales",
+              tone: "sold",
             },
             {
               target: sectionId + "days",
@@ -402,30 +467,46 @@ export function AdvisorDetail({
             },
             {
               target: sectionId + "assignments",
-              label: "Asignaciones",
+              label: "Estadísticas de asesores",
               tone: "assignments",
             },
             {
               target: sectionId + "products",
               label: "Ventas por producto",
-              tone: "sales",
+              tone: "products",
             },
           ]}
           disabled={!row}
         />
         <div className="row advisor-detail-controls">
-          <MetaDateRange
-            maxDays={3660}
-            from={since}
-            to={until}
-            onChange={(a, b) => {
-              setSelectedPeriod(null);
-              previousView.current = null;
-              setDayPage(0);
-              setSince(a);
-              setUntil(b);
-            }}
-          />
+          <div className="advisor-period-controls">
+            <MetaDateRange
+              maxDays={3660}
+              from={since}
+              to={until}
+              onChange={(a, b) => {
+                setSelectedPeriod(null);
+                previousView.current = null;
+                setDayPage(0);
+                setSince(a);
+                setUntil(b);
+              }}
+            />
+            <DetailPeriodPresets
+              key={analysisAdvisor}
+              scope={"advisor-detail:" + analysisAdvisor}
+              sectionId={sectionId + "periods"}
+              since={since}
+              until={until}
+              onSelect={(a, b) => {
+                setSelectedPeriod(null);
+                previousView.current = null;
+                setDayPage(0);
+                setSince(a);
+                setUntil(b);
+              }}
+            />
+          </div>
           <SheetSearchSelect
             label="Hoja del detalle del asesor"
             value={tableId}
@@ -546,21 +627,6 @@ export function AdvisorDetail({
           </p>
         )}
 
-        <DetailPeriodPresets
-          key={analysisAdvisor}
-          scope={"advisor-detail:" + analysisAdvisor}
-          sectionId={sectionId + "periods"}
-          since={since}
-          until={until}
-          onSelect={(a, b) => {
-            setSelectedPeriod(null);
-            previousView.current = null;
-            setDayPage(0);
-            setSince(a);
-            setUntil(b);
-          }}
-        />
-
         {!selectedPeriod && (
           <>
             {valid && (
@@ -575,261 +641,183 @@ export function AdvisorDetail({
                   setAnalysisAdvisor(id);
                   setSelectedPeriod(null);
                 }}
-              />
+              >
+                {summary}
+              </AdvisorItemAnalysis>
             )}
           </>
         )}
+        {selectedPeriod && summary}
         {row && (
           <>
-            {!!data!.breakdown.length && (
+            <div className="advisor-daily-columns">
+              {!!data!.breakdown.length && (
+                <DetailSection
+                  id={sectionId + "sold-days"}
+                  stateKey="sold-days"
+                  className="advisor-sales-by-day"
+                  title={`Qué vendió cada día · ${visibleDays[0]} — ${visibleDays.at(-1)}`}
+                  tone="sold"
+                >
+                  <div className="table-scroll">
+                    <table>
+                      <thead>
+                        <tr>
+                          <th>Fecha</th>
+                          <th>Hoja</th>
+                          <th>Diplomado / inventario</th>
+                          <th>País</th>
+                          <th>Asesor</th>
+                          <th>Ventas (V)</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {visibleDays.flatMap((day) =>
+                          data!.breakdown.map((source) => {
+                            const c = source.days[day];
+                            if (!c || (c.sales === null && !c.na && !c.partial))
+                              return null;
+                            return (
+                              <tr
+                                key={JSON.stringify([
+                                  day,
+                                  source.tableId,
+                                  source.aliasId,
+                                  source.country,
+                                ])}
+                              >
+                                <td>{day}</td>
+                                <td>{source.tableName}</td>
+                                <td>{source.alias}</td>
+                                <td>{source.country}</td>
+                                <td>{row.name}</td>
+                                <td>
+                                  {c.na
+                                    ? "N.A."
+                                    : c.sales === null
+                                      ? "—"
+                                      : number(c.sales)}
+                                  {c.partial ? " *" : ""}
+                                </td>
+                              </tr>
+                            );
+                          }),
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </DetailSection>
+              )}
               <DetailSection
-                id={sectionId + "sold-days"}
-                stateKey="sold-days"
-                className="advisor-sales-by-day"
-                title={`Qué vendió cada día · ${visibleDays[0]} — ${visibleDays.at(-1)}`}
-                tone="sales"
+                id={sectionId + "days"}
+                stateKey="days"
+                title={`Histórico diario de ventas · ${row.name}`}
+                tone="daily"
               >
+                {pageCount > 1 && (
+                  <nav
+                    className="alias-period-pagination"
+                    aria-label="Páginas del histórico diario"
+                  >
+                    <span>
+                      {currentDayPage * 31 + 1}–
+                      {Math.min((currentDayPage + 1) * 31, days.length)} de{" "}
+                      {days.length} días; totales y gráficos de todo el período
+                    </span>
+                    <div className="row">
+                      <button
+                        disabled={currentDayPage === 0}
+                        onClick={() => setDayPage(currentDayPage - 1)}
+                      >
+                        Días anteriores
+                      </button>
+                      <button
+                        disabled={currentDayPage + 1 >= pageCount}
+                        onClick={() => setDayPage(currentDayPage + 1)}
+                      >
+                        Días siguientes
+                      </button>
+                    </div>
+                  </nav>
+                )}
                 <div className="table-scroll">
-                  <table>
+                  <table className="advisor-detail-days">
                     <thead>
                       <tr>
                         <th>Fecha</th>
-                        <th>Hoja</th>
-                        <th>Diplomado / inventario</th>
-                        <th>País</th>
-                        <th>Asesor</th>
-                        <th>Ventas (V)</th>
+                        <th>A</th>
+                        <th>H</th>
+                        <th title="Inasistencias">I</th>
+                        <th>V</th>
+                        <th>BM</th>
+                        <th>B aproximada</th>
+                        <th>Salidas y regresos · Lima</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {visibleDays.flatMap((day) =>
-                        data!.breakdown.map((source) => {
-                          const c = source.days[day];
-                          if (!c || (c.sales === null && !c.na && !c.partial))
-                            return null;
-                          return (
-                            <tr
-                              key={JSON.stringify([
-                                day,
-                                source.tableId,
-                                source.aliasId,
-                                source.country,
-                              ])}
-                            >
-                              <td>{day}</td>
-                              <td>{source.tableName}</td>
-                              <td>{source.alias}</td>
-                              <td>{source.country}</td>
-                              <td>{row.name}</td>
-                              <td>
-                                {c.na
-                                  ? "N.A."
-                                  : c.sales === null
-                                    ? "—"
-                                    : number(c.sales)}
-                                {c.partial ? " *" : ""}
-                              </td>
-                            </tr>
-                          );
-                        }),
-                      )}
+                      {visibleDays.map((day) => {
+                        const c = row.days[day];
+                        return (
+                          <tr key={day}>
+                            <th>{day}</th>
+                            <td>{attendance(c.status)}</td>
+                            <td>
+                              {c.absence.hours === null
+                                ? "—"
+                                : number(c.absence.hours)}
+                              {c.absence.pending ? " +" : ""}
+                            </td>
+                            <td>
+                              {advisorAttendanceValue(c.status, "absences") ??
+                                (c.status === "NA" ? "N.A." : "—")}
+                            </td>
+                            <td>
+                              {c.na
+                                ? "N.A."
+                                : c.sales === null
+                                  ? "—"
+                                  : number(c.sales)}
+                              {c.partial ? " *" : ""}
+                            </td>
+                            <td>
+                              {c.manualBase === null ||
+                              c.manualBase === undefined
+                                ? "—"
+                                : number(c.manualBase)}
+                            </td>
+                            <td>
+                              {data?.assignedBaseEstimate?.days[day]?.value ??
+                                "—"}
+                              {data?.assignedBaseEstimate?.days[day]?.partial
+                                ? " *"
+                                : ""}
+                            </td>
+                            <td>
+                              {c.absence.mode === "CLOCK"
+                                ? c.absence.intervals
+                                    .map(
+                                      (i) =>
+                                        `${i.start} → ${i.end ?? "regreso pendiente"}${i.nextDay ? " (+1 día)" : ""}`,
+                                    )
+                                    .join("; ")
+                                : c.absence.hours === null
+                                  ? "—"
+                                  : "Horas decimales manuales"}
+                            </td>
+                          </tr>
+                        );
+                      })}
                     </tbody>
                   </table>
                 </div>
               </DetailSection>
-            )}
-            <DetailSection
-              id={sectionId + "days"}
-              stateKey="days"
-              title={`Histórico por día · ventas de ${row.name}`}
-              tone="daily"
-            >
-              {pageCount > 1 && (
-                <nav
-                  className="alias-period-pagination"
-                  aria-label="Páginas del histórico diario"
-                >
-                  <span>
-                    {currentDayPage * 31 + 1}–
-                    {Math.min((currentDayPage + 1) * 31, days.length)} de{" "}
-                    {days.length} días; totales y gráficos de todo el período
-                  </span>
-                  <div className="row">
-                    <button
-                      disabled={currentDayPage === 0}
-                      onClick={() => setDayPage(currentDayPage - 1)}
-                    >
-                      Días anteriores
-                    </button>
-                    <button
-                      disabled={currentDayPage + 1 >= pageCount}
-                      onClick={() => setDayPage(currentDayPage + 1)}
-                    >
-                      Días siguientes
-                    </button>
-                  </div>
-                </nav>
-              )}
-              <div className="table-scroll">
-                <table className="advisor-detail-days">
-                  <thead>
-                    <tr>
-                      <th>Fecha</th>
-                      <th>A</th>
-                      <th>H</th>
-                      <th title="Inasistencias">I</th>
-                      <th>V</th>
-                      <th>BM</th>
-                      <th>B aproximada</th>
-                      <th>Salidas y regresos · Lima</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {visibleDays.map((day) => {
-                      const c = row.days[day];
-                      return (
-                        <tr key={day}>
-                          <th>{day}</th>
-                          <td>{attendance(c.status)}</td>
-                          <td>
-                            {c.absence.hours === null
-                              ? "—"
-                              : number(c.absence.hours)}
-                            {c.absence.pending ? " +" : ""}
-                          </td>
-                          <td>
-                            {advisorAttendanceValue(c.status, "absences") ??
-                              (c.status === "NA" ? "N.A." : "—")}
-                          </td>
-                          <td>
-                            {c.na
-                              ? "N.A."
-                              : c.sales === null
-                                ? "—"
-                                : number(c.sales)}
-                            {c.partial ? " *" : ""}
-                          </td>
-                          <td>
-                            {c.manualBase === null || c.manualBase === undefined
-                              ? "—"
-                              : number(c.manualBase)}
-                          </td>
-                          <td>
-                            {data?.assignedBaseEstimate?.days[day]?.value ??
-                              "—"}
-                            {data?.assignedBaseEstimate?.days[day]?.partial
-                              ? " *"
-                              : ""}
-                          </td>
-                          <td>
-                            {c.absence.mode === "CLOCK"
-                              ? c.absence.intervals
-                                  .map(
-                                    (i) =>
-                                      `${i.start} → ${i.end ?? "regreso pendiente"}${i.nextDay ? " (+1 día)" : ""}`,
-                                  )
-                                  .join("; ")
-                              : c.absence.hours === null
-                                ? "—"
-                                : "Horas decimales manuales"}
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            </DetailSection>
+            </div>
             <DetailSection
               id={sectionId + "chart"}
               stateKey="chart"
               title="Estadísticas del período"
               tone="parameters"
             >
-              <DetailSection
-                id={sectionId + "summary"}
-                stateKey="summary"
-                title="Resumen"
-                tone="sales"
-              >
-                <div className="advisor-detail-summary">
-                  <span>
-                    Base manual (BM)
-                    <strong>{bmTotal === null ? "—" : number(bmTotal)}</strong>
-                    <small>
-                      Registrada en Totales y Asesores por hoja y país
-                    </small>
-                  </span>
-                  <span>
-                    Ventas / BM
-                    <strong>
-                      {!aliasId &&
-                      sales !== null &&
-                      bmTotal !== null &&
-                      bmTotal > 0
-                        ? performanceRatio(sales, bmTotal, 100)!.toLocaleString(
-                            "es-PE",
-                            { maximumFractionDigits: 2 },
-                          ) + " %"
-                        : "—"}
-                    </strong>
-                    <small>
-                      {aliasId
-                        ? "BM corresponde a la hoja completa; quita el filtro de inventario para comparar."
-                        : "Ventas registradas respecto a la base manual del período"}
-                    </small>
-                  </span>
-                  <span>
-                    Base aproximada del asesor (B)
-                    <b>
-                      {baseTotal === null ? "—" : number(baseTotal)}
-                      {basePartial ? " *" : ""}
-                    </b>
-                    <small>
-                      {baseDays.length}/{days.length} días con base de los
-                      diplomados asignados
-                    </small>
-                  </span>
-                  <span>
-                    Ventas (V)
-                    <strong>
-                      {sales === null ? "—" : number(sales)}
-                      {partial ? " *" : ""}
-                    </strong>
-                  </span>
-                  <span>
-                    Promedio por día con V
-                    <strong>
-                      {sales === null ? "—" : number(sales / known.length)}
-                    </strong>
-                    <small>
-                      {known.length}/{days.length} días con ventas registradas
-                    </small>
-                  </span>
-                  <span>
-                    Horas ausentes (H)
-                    <strong>
-                      {hours === null ? "—" : number(hours) + " h"}
-                      {pending ? " +" : ""}
-                    </strong>
-                    <small>{pending} regreso(s) pendiente(s)</small>
-                  </span>
-                  <span>
-                    Asistencia (A)
-                    <strong>
-                      {present} presente(s) · {absent} ausente(s)
-                    </strong>
-                  </span>
-                  <span data-advisor-summary="absences">
-                    Inasistencias (I)
-                    <strong>{recordedAttendance ? absent : "—"}</strong>
-                    <small>
-                      {recordedAttendance}/{days.length} días con asistencia
-                      registrada
-                    </small>
-                  </span>
-                </div>
-              </DetailSection>
               <div
                 className="row advisor-chart-modes"
                 role="group"
@@ -942,70 +930,70 @@ export function AdvisorDetail({
                 registrado para cada persona. A/I/H son registros diarios del
                 asesor; no se distribuyen por minutos.
               </p>
-              <DetailSection
-                id={sectionId + "bm"}
-                stateKey="bm"
-                title="Base manual por hoja y país"
-                tone="sales"
-              >
-                <p className="hint">
-                  BM es el reparto manual guardado para esta persona. No se
-                  estima por asignaciones ni se convierte por moneda; no depende
-                  del filtro de diplomado.
-                </p>
-                <div className="table-scroll advisor-source-scroll">
-                  <table>
-                    <thead>
-                      <tr>
-                        <th>Fecha</th>
-                        <th>Hoja</th>
-                        <th>País</th>
-                        <th>BM</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {(data?.manualBaseBreakdown ?? [])
-                        .filter(
-                          (r) =>
-                            r.advisorId === analysisAdvisor &&
-                            visibleDays.includes(r.day),
-                        )
-                        .map((r) => (
-                          <tr
-                            key={JSON.stringify([
-                              r.tableId,
-                              r.country,
-                              r.day,
-                              r.advisorId,
-                            ])}
-                          >
-                            <th>{r.day}</th>
-                            <td>{r.tableName}</td>
-                            <td>{r.country || "Sin país"}</td>
-                            <td>{number(r.quantity)}</td>
-                          </tr>
-                        ))}
-                    </tbody>
-                  </table>
-                </div>
-              </DetailSection>
             </DetailSection>
           </>
         )}
         <AdvisorPeriodHistory
           sectionId={sectionId + "assignments"}
-          advisorId={person.id}
+          advisorId={analysisAdvisor}
+          title="Estadísticas de asesores"
           tableId={tableId}
           aliasId={aliasId}
           country={country}
           onStatistics={selectPeriod}
-        />
+        >
+          {row && (
+            <>
+              <h4>Base manual por hoja y país</h4>
+              <p className="hint">
+                BM es el reparto manual guardado para esta persona. No se estima
+                por asignaciones ni se convierte por moneda; no depende del
+                filtro de diplomado.
+              </p>
+              <div className="table-scroll advisor-source-scroll">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Fecha</th>
+                      <th>Hoja</th>
+                      <th>País</th>
+                      <th>BM</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(data?.manualBaseBreakdown ?? [])
+                      .filter(
+                        (r) =>
+                          r.advisorId === analysisAdvisor &&
+                          visibleDays.includes(r.day),
+                      )
+                      .map((r) => (
+                        <tr
+                          key={JSON.stringify([
+                            r.tableId,
+                            r.country,
+                            r.day,
+                            r.advisorId,
+                          ])}
+                        >
+                          <th>{r.day}</th>
+                          <td>{r.tableName}</td>
+                          <td>{r.country || "Sin país"}</td>
+                          <td>{number(r.quantity)}</td>
+                        </tr>
+                      ))}
+                  </tbody>
+                </table>
+              </div>
+            </>
+          )}
+        </AdvisorPeriodHistory>
         {row && (
           <DetailSection
             id={sectionId + "products"}
             stateKey="products"
             title="Ventas por producto y país · origen de la suma"
-            tone="sales"
+            tone="products"
           >
             <div className="table-scroll advisor-source-scroll">
               <table className="advisor-source-breakdown">

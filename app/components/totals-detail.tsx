@@ -2,12 +2,14 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { performanceRatio } from "../../lib/meta-ads/performance-metrics";
 import { periodTableUrl } from "../../lib/meta-ads/period-table-link";
+import { TotalsDailyBreakdown } from "./totals-daily-breakdown";
 import { useReportDayPages } from "./report-day-pages";
 import { DetailSection, DetailSections } from "./detail-section";
 import { DetailNavigation } from "./detail-navigation";
 import { MetaDailyChart } from "./meta-daily-chart";
 import { SheetSearchSelect } from "./sheet-search-select";
 import {
+  formatTotalDetail as format,
   manualTotalColumns,
   automaticTotalColumns,
   totalDetailSummary,
@@ -16,21 +18,12 @@ import {
   type TotalColumn,
 } from "../../lib/meta-ads/totals-detail";
 import type { totalSourceBlocks } from "../../lib/meta-ads/total-source-blocks";
-import type { TotalValue } from "../../lib/meta-ads/effectiveness-total-values";
 type Block = ReturnType<typeof totalSourceBlocks<TotalSheet>>[number];
-const format = (v: TotalValue) =>
-  v.pending
-    ? "Sin tasa"
-    : v.value === null
-      ? v.na
-        ? "N.A."
-        : "—"
-      : v.value.toLocaleString("es-PE", { maximumFractionDigits: 2 }) +
-        (v.partial ? " *" : "");
 export function TotalsDetail({
   blocks,
   days,
   initialMode,
+  initialSelection,
   loading,
   message,
   onClose,
@@ -38,6 +31,7 @@ export function TotalsDetail({
   blocks: Block[];
   days: string[];
   initialMode: "manual" | "automatic";
+  initialSelection?: { blockKey: string; day: string };
   loading: boolean;
   message: string;
   onClose: () => void;
@@ -45,7 +39,10 @@ export function TotalsDetail({
   const dialog = useRef<HTMLDialogElement>(null);
   const sectionId = useId();
   const [mode, setMode] = useState(initialMode),
-    [blockKey, setBlockKey] = useState(blocks[0]?.key ?? ""),
+    [blockKey, setBlockKey] = useState(
+      initialSelection?.blockKey ?? blocks[0]?.key ?? "",
+    ),
+    [selectedDay, setSelectedDay] = useState(initialSelection?.day ?? ""),
     [bars, setBars] = useState("sales"),
     [line, setLine] = useState(initialMode === "manual" ? "budget" : "base");
   useEffect(() => {
@@ -53,6 +50,9 @@ export function TotalsDetail({
   }, []);
   const { visibleDays, navigation } = useReportDayPages(days);
   const block = blocks.find((b) => b.key === blockKey) ?? blocks[0];
+  const focusDays =
+    selectedDay && days.includes(selectedDay) ? [selectedDay] : days;
+  const dayIndex = days.indexOf(selectedDay);
   const columns =
     mode === "manual" ? manualTotalColumns : automaticTotalColumns;
   const comparisonColumns =
@@ -82,7 +82,7 @@ export function TotalsDetail({
   const monetary = (column: TotalColumn) =>
     !["sales", "base", "baseManual"].includes(column.key);
   const summarize = (column: TotalColumn) =>
-    totalDetailSummary(days.map((day) => value(day, column)));
+    totalDetailSummary(focusDays.map((day) => value(day, column)));
   const sold = summarize(manualTotalColumns[0]),
     bm = summarize(manualTotalColumns[2]),
     gm = summarize(manualTotalColumns[3]),
@@ -132,7 +132,12 @@ export function TotalsDetail({
         onCancel={onClose}
       >
         <header className="row">
-          <h2>Detalle de Totales</h2>
+          <h2>
+            Detalle de Totales
+            {block
+              ? ` · ${block.table.name} · ${block.country || "Sin país"} · ${block.currency || "Sin moneda"}${selectedDay ? ` · ${selectedDay}` : ""}`
+              : ""}
+          </h2>
         </header>
         <DetailNavigation
           onClose={onClose}
@@ -153,6 +158,20 @@ export function TotalsDetail({
               label: "Histórico por día",
               tone: "daily",
             },
+            ...(selectedDay
+              ? [
+                  {
+                    target: sectionId + "advisors",
+                    label: "Asesores",
+                    tone: "sales" as const,
+                  },
+                  {
+                    target: sectionId + "products",
+                    label: "Productos",
+                    tone: "parameters" as const,
+                  },
+                ]
+              : []),
           ]}
           disabled={!block}
         />
@@ -180,13 +199,42 @@ export function TotalsDetail({
             }))}
             onSelect={setBlockKey}
           />
-          <span>
-            {days[0]} — {days.at(-1)}
-          </span>
+          <label>
+            Fecha del detalle
+            <select
+              aria-label="Fecha del detalle de Totales"
+              value={selectedDay}
+              onChange={(e) => setSelectedDay(e.target.value)}
+            >
+              <option value="">Todo el período</option>
+              {days.map((day) => (
+                <option key={day} value={day}>
+                  {day.slice(8)}.{day.slice(5, 7)}.{day.slice(0, 4)}
+                </option>
+              ))}
+            </select>
+          </label>
+          <button
+            type="button"
+            disabled={dayIndex <= 0}
+            onClick={() => setSelectedDay(days[dayIndex - 1])}
+          >
+            ← Día anterior
+          </button>
+          <button
+            type="button"
+            disabled={dayIndex < 0 || dayIndex >= days.length - 1}
+            onClick={() => setSelectedDay(days[dayIndex + 1])}
+          >
+            Día siguiente →
+          </button>
         </div>
         <p className="hint">
-          Detalle del período y filtros de la pestaña. Cada hoja, país y moneda
-          se consulta por separado. V es la misma suma en ambas vistas.{" "}
+          {selectedDay
+            ? "Resumen e indicadores del día elegido. El gráfico y el histórico conservan todo el período para comparar."
+            : "Detalle del período y filtros de la pestaña."}{" "}
+          Cada hoja, país y moneda se consulta por separado. V es la misma suma
+          en ambas vistas.{" "}
           {mode === "manual"
             ? "P suma el presupuesto digitado en las hojas; BM es el reparto manual por asesor y país, compartido con Asesores. GM y CF son manuales."
             : "B y G proceden de la vista automática; CF suma los costos fijos de la hoja."}{" "}
@@ -204,8 +252,8 @@ export function TotalsDetail({
                 tableId: block.table.tableId,
                 aliasId: "",
                 country: block.country,
-                since: days[0],
-                until: days.at(-1)!,
+                since: focusDays[0],
+                until: focusDays.at(-1)!,
               })}
               target="_blank"
               rel="noopener noreferrer"
@@ -216,16 +264,29 @@ export function TotalsDetail({
             <DetailSection
               id={sectionId + "summary"}
               stateKey="summary"
-              title="Resumen"
+              title={
+                selectedDay
+                  ? `Resumen del día · ${selectedDay}`
+                  : "Resumen del período"
+              }
               tone="sales"
             >
-              <div className="advisor-detail-summary">
-                {columns.map((c) => {
+              <div className="advisor-detail-summary totals-performance-summary">
+                {comparisonColumns.map((c) => {
                   const v = totalDetailSummary(
-                    days.map((day) => value(day, c)),
+                    focusDays.map((day) => value(day, c)),
                   );
                   return (
-                    <span key={c.key}>
+                    <span
+                      key={c.key}
+                      data-source={
+                        c.key === "base" ||
+                        c.key === "spend" ||
+                        (c.key === "fixedCost" && c.sum)
+                          ? "automatic"
+                          : "manual"
+                      }
+                    >
                       {c.name} ({c.label})
                       <strong>
                         {format(v)}
@@ -288,10 +349,20 @@ export function TotalsDetail({
                 Manual: BM y GM digitadas. Meta: B y G de la vista automática.
                 No se reemplaza una fuente por la otra cuando falta un dato. V
                 cuenta ventas; sin un importe de ingresos no se calcula ganancia
-                monetaria. Indicadores del período completo; * cobertura
-                parcial.
+                monetaria. GM y G son fuentes distintas: no se suman
+                automáticamente. Indicadores del día o período seleccionado; *
+                cobertura parcial.
               </p>
             </DetailSection>
+            {selectedDay && (
+              <TotalsDailyBreakdown
+                tableId={block.table.tableId}
+                country={block.country}
+                currency={block.currency}
+                day={selectedDay}
+                sectionId={sectionId}
+              />
+            )}
             <DetailSection
               id={sectionId + "chart"}
               stateKey="chart"
@@ -382,7 +453,16 @@ export function TotalsDetail({
                   <tbody>
                     {visibleDays.map((day) => (
                       <tr key={day}>
-                        <th>{day}</th>
+                        <th>
+                          <button
+                            type="button"
+                            aria-pressed={selectedDay === day}
+                            onClick={() => setSelectedDay(day)}
+                            title="Consultar asesores y productos de este día"
+                          >
+                            {day}
+                          </button>
+                        </th>
                         {comparisonColumns.map((c) => (
                           <td key={c.key}>{format(value(day, c))}</td>
                         ))}

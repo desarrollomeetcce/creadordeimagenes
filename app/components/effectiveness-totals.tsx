@@ -86,6 +86,9 @@ export function EffectivenessTotals({
     [loading, setLoading] = useState(false),
     [reload, setReload] = useState(0);
   const [detailOpen, setDetailOpen] = useState(false);
+  const [detailSelection, setDetailSelection] = useState<
+    { blockKey: string; day: string } | undefined
+  >();
   const [baseEditor, setBaseEditor] = useState<{
     tableId: string;
     country: string;
@@ -369,7 +372,13 @@ export function EffectivenessTotals({
             onSelect={setCurrency}
           />
         </label>
-        <button type="button" onClick={() => setDetailOpen(true)}>
+        <button
+          type="button"
+          onClick={() => {
+            setDetailSelection(undefined);
+            setDetailOpen(true);
+          }}
+        >
           Ver detalle
         </button>
         <button disabled={loading} onClick={() => setReload((v) => v + 1)}>
@@ -391,6 +400,7 @@ export function EffectivenessTotals({
           blocks={blocks}
           days={days}
           initialMode={mode}
+          initialSelection={detailSelection}
           loading={loading}
           message={message}
           onClose={() => setDetailOpen(false)}
@@ -580,7 +590,17 @@ export function EffectivenessTotals({
                         data-currency={g.currency}
                         data-metric="country"
                       >
-                        {g.country || "—"}
+                        <button
+                          type="button"
+                          className="totals-country-detail"
+                          aria-label={`Ver detalle de ${t.name}, ${g.country || "sin país"}, ${g.currency || "sin moneda"}, ${day}`}
+                          onClick={() => {
+                            setDetailSelection({ blockKey: block.key, day });
+                            setDetailOpen(true);
+                          }}
+                        >
+                          {g.country || "—"} <small aria-hidden="true">↗</small>
+                        </button>
                       </td>,
                       <td
                         key={block.key + ":currency"}

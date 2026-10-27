@@ -1,5 +1,4 @@
 "use client";
-import { DetailSection } from "./detail-section";
 import { useState } from "react";
 import { useWorkbookPreference } from "./use-workbook-preference";
 import { MetaDateRange } from "./meta-date-range";
@@ -58,12 +57,12 @@ export function DetailPeriodPresets({
     ) : null;
   };
   return (
-    <DetailSection
+    <div
       id={sectionId}
-      stateKey="periods"
-      title="Períodos guardados"
-      tone="periods"
       className="detail-period-presets"
+      role="group"
+      aria-label="Períodos guardados del asesor"
+      title="Los accesos rápidos se calculan al pulsarlos. Los rangos personalizados conservan sus fechas y se guardan en este navegador para este asesor."
     >
       <div className="row detail-period-accesses">
         {defaultDetailPeriods
@@ -105,11 +104,7 @@ export function DetailPeriodPresets({
           ↺
         </button>
       </div>
-      <small>
-        Los accesos rápidos se calculan al pulsarlos. Los rangos personalizados
-        conservan sus fechas. Guardados en este navegador para este asesor.
-      </small>
       {message && <small role="status">{message}</small>}
-    </DetailSection>
+    </div>
   );
 }

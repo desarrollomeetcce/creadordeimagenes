@@ -59,7 +59,7 @@ export function DetailSection({
       }}
     >
       <summary
-        className="detail-fold-summary"
+        className={`detail-fold-summary detail-section-${tone}`}
         title="Pulsa para plegar o desplegar esta sección"
       >
         <h3 className={`detail-section-title detail-section-${tone}`}>

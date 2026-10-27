@@ -12579,6 +12579,29 @@ test("Integración HTTP + PostgreSQL (base exclusiva de pruebas, sin llamadas ex
       const read=await owner.call('meta-ads/effectiveness/totals?'+new URLSearchParams({tableId:table.id,since:day,until:day}));assert.equal(read.status,200);assert.equal(read.body.groups.find((g:any)=>g.country==='PE'&&g.currency==='PEN').days[day].manual.baseManual,5);
       assert.equal((await owner.call('meta-ads/workbook-sheets')).body.length,3);assert((await db.metaEffectivenessSheet.findUniqueOrThrow({where:{id:'default-inventory'}})).archivedAt);
     });
+    await t.test("Totales diario: reparto explícito sin asignación, BM por país, productos y permisos sin escrituras", async () => {
+      const table = await db.metaAliasTable.create({data:{name:'Diario '+tag,defaultCurrency:'COP'}});
+      const team = await db.metaEffectivenessSheet.create({data:{kind:'ADVISORS',name:'Diario equipo '+tag}});
+      const k = await db.metaAdvisor.create({data:{name:'Diario Kevin '+tag,sheetId:team.id}});
+      const d = await db.metaAdvisor.create({data:{name:'Diario Donasis '+tag,sheetId:team.id}});
+      const alias = await db.metaAlias.create({data:{name:'Diario curso '+tag,tableId:table.id}});
+      const row = await db.metaEffectivenessRow.create({data:{aliasId:alias.id,country:'CO',currency:'',displayCurrency:'COP'}});
+      const day='2026-10-20';
+      await db.metaEffectivenessDay.create({data:{rowId:row.id,day,sales:7,salesOverridden:true,annotations:{budget:{value:80,currency:'COP'},base:{value:40},spend:{value:60,currency:'COP'}}}});
+      await db.metaAdvisorSalesApproval.create({data:{rowId:row.id,day,salesTotal:7,allocations:[{advisorId:k.id,sales:4},{advisorId:d.id,sales:2},{advisorId:null,sales:1}],basis:{events:[],activeAdvisorId:null},actorId:(await owner.call('auth/me')).body.id}});
+      await db.metaManualBaseDay.create({data:{tableId:table.id,country:'CO',day,state:'VALUE',allocations:[{advisorId:k.id,quantity:300},{advisorId:d.id,quantity:200},{advisorId:null,quantity:50}]}});
+      await db.metaManualBaseDay.create({data:{tableId:table.id,country:'PE',day,state:'VALUE',allocations:[{advisorId:k.id,quantity:999}]}});
+      const path='meta-ads/effectiveness/totals/daily-detail?'+new URLSearchParams({tableId:table.id,country:'CO',currency:'COP',day});
+      const before=await db.metaEffectivenessDay.findMany({where:{rowId:row.id}});
+      assert.equal((await admin.call(path)).status,403);assert.equal((await observer.call(path)).status,403);
+      const r=await owner.call(path);assert.equal(r.status,200);
+      assert.deepEqual(r.body.advisors.map((p:any)=>[p.advisorId,p.sales,p.manualBase]),[[k.id,4,300],[d.id,2,200],[null,1,50]]);
+      assert.equal(r.body.products.length,1);const product=r.body.products[0];assert.equal(product.aliasId,alias.id);assert.equal(product.sums.sales.value,7);assert.equal(product.sums.base.value,40);assert.equal(product.sums.spend.value,60);assert.equal(product.sums.budget.value,80);assert.equal(product.sums.fixedCost.value,null);assert(!('manualBase' in product));
+      const other=await owner.call(path.replace('currency=COP','currency=PEN'));assert.equal(other.body.products.length,0);assert(other.body.advisors.every((p:any)=>p.sales===null));assert.equal(other.body.advisors.find((p:any)=>p.advisorId===k.id).manualBase,300);
+      const earlier=await owner.call(path.replace(day,'2026-10-19'));assert(earlier.body.advisors.every((p:any)=>p.sales===null&&p.manualBase===null));
+      assert.equal((await owner.call(path.replace('2026-10-20','invalid'))).status,400);assert.equal((await owner.call(path.replace('tableId='+table.id,'tableId=missing'))).status,404);
+      assert.deepEqual(await db.metaEffectivenessDay.findMany({where:{rowId:row.id}}),before);assert.equal(await db.metaAdvisorAssignment.count({where:{aliasId:alias.id}}),0);
+    });
     await t.test("BM compartida: reparto absoluto Totales/Asesores por hoja, país y día, permisos y conflictos atómicos",async()=>{
       const team=await db.metaEffectivenessSheet.create({data:{kind:'ADVISORS',name:'BM equipo '+tag}}),one=await db.metaEffectivenessSheet.create({data:{kind:'TOTALS',name:'BM totales uno '+tag}}),two=await db.metaEffectivenessSheet.create({data:{kind:'TOTALS',name:'BM totales dos '+tag}});
       const table=await db.metaAliasTable.create({data:{name:'BM Colombia '+tag,defaultCurrency:'COP'}}),other=await db.metaAliasTable.create({data:{name:'BM otra hoja '+tag}});
