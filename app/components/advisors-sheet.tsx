@@ -14,6 +14,7 @@ import { MetaDateRange } from "./meta-date-range";
 import { EffectivenessCell } from "./effectiveness-cell";
 import { AdvisorAbsenceCell } from "./advisor-absence-cell";
 import { subscribeAdvisorSalesChanged } from "./advisor-sales-events";
+import { ManualBaseEditor } from "./manual-base-editor";
 import { AdvisorDetail } from "./advisor-detail";
 import type {
   AdvisorDayData as Day,
@@ -59,6 +60,11 @@ export function AdvisorsSheet({
     month: "2-digit",
     day: "2-digit",
   }).format(new Date());
+  const [baseEditor, setBaseEditor] = useState<{
+    advisorId: string;
+    name: string;
+    day: string;
+  } | null>(null);
   const [detailVersion, setDetailVersion] = useState(0);
   const [detailDay, setDetailDay] = useState<string | null>(null);
   const [since, setSince] = useWorkbookPreference<string>(
@@ -299,15 +305,17 @@ export function AdvisorsSheet({
         </button>
       </div>
       <p className="sheet-help">
-        A = Asistencia. V suma las ventas registradas a nombre de cada asesor en
-        las hojas elegidas, aunque no sea el responsable de la fila. Pulsa una
-        venta para ver qué diplomados vendió ese día. H = Horas ausentes (0,5 =
-        30 minutos): puedes registrar varias salidas y regresos. A y H
-        corresponden a la persona y no se reparten por producto. Los registros
-        anteriores sin reparto conservan su atribución por asignaciones y
-        cortes. * Total parcial o reparto pendiente de aprobar; — sin datos;
-        N.A. no es cero. Todas las hojas incluye también las copias
-        sincronizadas.
+        A y H son asistencia y horas ausentes. BM suma la base manual repartida
+        a cada asesor, por hoja, país y día; pulsa BM para editarla. Es
+        independiente del diplomado filtrado. V suma las ventas registradas a
+        nombre de cada asesor en las hojas elegidas, aunque no sea el
+        responsable de la fila. Pulsa una venta para ver qué diplomados vendió
+        ese día. H = Horas ausentes (0,5 = 30 minutos): puedes registrar varias
+        salidas y regresos. A y H corresponden a la persona y no se reparten por
+        producto. Los registros anteriores sin reparto conservan su atribución
+        por asignaciones y cortes. * Total parcial o reparto pendiente de
+        aprobar; — sin datos; N.A. no es cero. Todas las hojas incluye también
+        las copias sincronizadas.
       </p>
       {message && (
         <p className="sheet-message" role="status">
@@ -341,7 +349,8 @@ export function AdvisorsSheet({
                     n +
                     (widths[d + "attendance"] ?? 84) +
                     (widths[d + "sales"] ?? 48) +
-                    (widths[d + "absence"] ?? 56),
+                    (widths[d + "absence"] ?? 56) +
+                    (widths[d + "manualBase"] ?? 64),
                   0,
                 ),
             }}
@@ -354,12 +363,16 @@ export function AdvisorsSheet({
                   style={{ width: widths[d + "attendance"] ?? 84 }}
                 />,
                 <col
+                  key={d + "absence"}
+                  style={{ width: widths[d + "absence"] ?? 56 }}
+                />,
+                <col
                   key={d + "sales"}
                   style={{ width: widths[d + "sales"] ?? 48 }}
                 />,
                 <col
-                  key={d + "absence"}
-                  style={{ width: widths[d + "absence"] ?? 56 }}
+                  key={d + "manualBase"}
+                  style={{ width: widths[d + "manualBase"] ?? 64 }}
                 />,
               ])}
             </colgroup>
@@ -405,7 +418,7 @@ export function AdvisorsSheet({
                   </div>
                 </th>
                 {visibleDays.map((d) => (
-                  <th key={d} colSpan={3} scope="colgroup">
+                  <th key={d} colSpan={4} scope="colgroup">
                     {d.slice(8)}.{d.slice(5, 7)}
                   </th>
                 ))}
@@ -491,6 +504,13 @@ export function AdvisorsSheet({
                         cell={c}
                         disabled={busy || loading}
                         onError={setMessage}
+                        onBase={() =>
+                          setBaseEditor({
+                            advisorId: p.id,
+                            name: p.name,
+                            day: d,
+                          })
+                        }
                         onDetail={() => {
                           setDetailDay(d);
                           setDetail(p);
@@ -527,6 +547,16 @@ export function AdvisorsSheet({
           )}
         </div>
       )}
+      {baseEditor && (
+        <ManualBaseEditor
+          context={{ kind: "advisor", ...baseEditor, tableId, country }}
+          tables={tables}
+          onClose={() => setBaseEditor(null)}
+          onChanged={async () => {
+            await load(true);
+          }}
+        />
+      )}
       {detail && (
         <AdvisorDetail
           key={detail.id + ":" + (detailDay ?? "range")}
@@ -557,11 +587,18 @@ function FragmentHeaders({
       <th scope="col" title="Asistencia" aria-label="Asistencia">
         A{handle(day + "attendance", "Asistencia " + day)}
       </th>
+      <th scope="col" title="Horas ausentes" aria-label="Horas ausentes">
+        H{handle(day + "absence", "Horas ausentes " + day)}
+      </th>
       <th scope="col" title="Ventas" aria-label="Ventas">
         V{handle(day + "sales", "Ventas " + day)}
       </th>
-      <th scope="col" title="Horas ausentes" aria-label="Horas ausentes">
-        H{handle(day + "absence", "Horas ausentes " + day)}
+      <th
+        scope="col"
+        title="Base manual compartida con Totales"
+        aria-label="Base manual"
+      >
+        BM{handle(day + "manualBase", "Base manual " + day)}
       </th>
     </>
   );
@@ -575,6 +612,7 @@ function AdvisorDay({
   onSave,
   onAbsenceSave,
   onDetail,
+  onBase,
 }: {
   person: Person;
   day: string;
@@ -582,6 +620,7 @@ function AdvisorDay({
   disabled: boolean;
   onError: (v: string) => void;
   onDetail: () => void;
+  onBase: () => void;
   onSave: (v: Attendance) => Promise<void>;
   onAbsenceSave: (
     v: import("../../lib/meta-ads/advisor-absence").AbsenceInput,
@@ -607,6 +646,17 @@ function AdvisorDay({
           />
         )}
       </td>
+      <td className="advisor-hours">
+        <AdvisorAbsenceCell
+          advisorId={person.id}
+          name={person.name}
+          day={day}
+          value={cell.absence}
+          disabled={disabled}
+          onSave={onAbsenceSave}
+          onError={onError}
+        />
+      </td>
       <td title="Ventas registradas a nombre del asesor, independientemente del responsable">
         <button
           type="button"
@@ -622,16 +672,18 @@ function AdvisorDay({
           {cell.partial ? " *" : ""}
         </button>
       </td>
-      <td className="advisor-hours">
-        <AdvisorAbsenceCell
-          advisorId={person.id}
-          name={person.name}
-          day={day}
-          value={cell.absence}
+      <td>
+        <button
+          type="button"
+          className="manual-base-cell"
+          aria-label={`BM ${person.name} ${day}`}
           disabled={disabled}
-          onSave={onAbsenceSave}
-          onError={onError}
-        />
+          onClick={onBase}
+        >
+          {cell.manualBase === null || cell.manualBase === undefined
+            ? "—"
+            : cell.manualBase.toLocaleString("es-PE")}
+        </button>
       </td>
     </>
   );

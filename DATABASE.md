@@ -99,3 +99,9 @@ MembershipPlan.customUserId nullable referencia User, archivedAt nullable e índ
 ## Explorador y aprobación (020–023)
 
 LibraryDocument guarda metadatos de archivos personales con folderId nullable; sus bytes usan StoredAsset/local con la cuota existente. LibraryFolder añade anchorScope/anchorId nullable para carpetas personales bajo nodos automáticos, con exclusión de parentId por CHECK. LibraryExclusion recuerda imágenes retiradas por cuenta; no borra Variation ni altera bibliotecas ajenas. El índice parcial GenerationJob_preview_group_idx acelera la búsqueda de muestras aprobadas. La coordinación de muestra usa snapshot.previewFirst/approvalGroup/index, el reviewStatus existente de Variation y el bloqueo728291; no introduce una cola ni copias de imagen adicionales.
+
+### 202610270005 · Base manual compartida por asesor
+
+MetaManualBaseDay incorpora la clave hoja financiera (`tableId`) + país + día, estado VALUE/EMPTY/NA, cantidades absolutas JSON por advisorId (null = sin distribuir), revisión y updatedAt. Los datos son cantidades, no importes de moneda. No se infieren nombres/asignaciones ni se migran automáticamente valores anteriores de Totales. Los registros MetaEffectivenessTotalDay y demás parámetros se conservan. Si existe la nueva identidad, las vistas de Totales usan su suma y Asesores sus cantidades por persona, independientemente de moneda/pestaña/responsable/estado de campaña.
+
+FK restrict a MetaAliasTable y borrado financiero completo explícito con revisión/token que incluye estos días. Archivar Totales/Asesores o retirar un inventario no borra BM. Las escrituras se serializan con884411 y OWNER aprobado, token de contenido y validación de todo el lote antes de mutar; cantidades/cambio de estado auditadas. Los importes antiguos se pueden consultar en los editores y el no distribuido se mantiene separado. La migración aditiva se probó en PostgreSQL exclusivo con el migrador versionado, sin modificar migraciones aplicadas.

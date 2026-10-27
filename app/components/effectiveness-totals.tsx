@@ -26,6 +26,7 @@ import {
 } from "../../lib/meta-ads/totals-detail";
 import { readTotalsRange } from "./workbook-range-request";
 import { useReportDayPages } from "./report-day-pages";
+import { ManualBaseEditor } from "./manual-base-editor";
 import { TotalsDetail } from "./totals-detail";
 const names = new Intl.DisplayNames(["es"], { type: "currency" });
 export function EffectivenessTotals({
@@ -85,6 +86,12 @@ export function EffectivenessTotals({
     [loading, setLoading] = useState(false),
     [reload, setReload] = useState(0);
   const [detailOpen, setDetailOpen] = useState(false);
+  const [baseEditor, setBaseEditor] = useState<{
+    tableId: string;
+    country: string;
+    currency: string;
+    day: string;
+  } | null>(null);
   const seq = useRef(0),
     queues = useRef(new Map<string, Promise<void>>()),
     versions = useRef(new Map<string, number>());
@@ -369,6 +376,16 @@ export function EffectivenessTotals({
           Actualizar totales
         </button>
       </div>
+      {baseEditor && (
+        <ManualBaseEditor
+          context={{ kind: "total", scope: { ...baseEditor, sheetId: listId } }}
+          tables={tables}
+          onClose={() => setBaseEditor(null)}
+          onChanged={async () => {
+            setReload((v) => v + 1);
+          }}
+        />
+      )}
       {detailOpen && (
         <TotalsDetail
           blocks={blocks}
@@ -381,7 +398,7 @@ export function EffectivenessTotals({
       )}
       <p className="sheet-help">
         {mode === "manual"
-          ? "V/P: suma de inventario. BM, GM y CF: valores manuales de esta hoja, por tabla, país, moneda y fecha."
+          ? "V/P: suma de inventario. BM: reparto compartido por asesor, hoja, país y día (sin moneda). GM y CF: valores manuales por bloque."
           : "V/B/G/CF: suma de los valores de la vista automática."}{" "}
         Países y monedas separados; N.A. no suma, — sin dato, * suma parcial.
         Las ventas se suman únicamente desde la hoja de origen indicada en cada
@@ -604,6 +621,27 @@ export function EffectivenessTotals({
                                       maximumFractionDigits: 2,
                                     }) + (sum.partial ? " *" : "")}
                               </span>
+                            ) : m.key === "baseManual" ? (
+                              <button
+                                type="button"
+                                className="manual-base-cell"
+                                aria-label={`BM total ${t.name} ${g.country} ${g.currency} ${day}`}
+                                title="Repartir base manual por asesor"
+                                onClick={() =>
+                                  setBaseEditor({
+                                    tableId: t.tableId,
+                                    country: g.country,
+                                    currency: g.currency,
+                                    day,
+                                  })
+                                }
+                              >
+                                {cell?.manual.baseManual === "NA"
+                                  ? "N.A."
+                                  : (cell?.manual.baseManual?.toLocaleString(
+                                      "es-PE",
+                                    ) ?? "—")}
+                              </button>
                             ) : (
                               <EffectivenessCell
                                 allowNA

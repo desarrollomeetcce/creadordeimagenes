@@ -2,6 +2,7 @@ import type { TotalValue } from "./effectiveness-total-values";
 import type { SheetMetric } from "./period-summary";
 export type ManualTotalMetric = "baseManual" | "totalSpend" | "fixedCost";
 export type TotalDay = {
+  sharedManualBase?: boolean;
   sums: Record<SheetMetric, TotalValue>;
   manual: Partial<Record<ManualTotalMetric, number | "NA">>;
   revision: number;

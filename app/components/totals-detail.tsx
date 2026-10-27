@@ -1,7 +1,9 @@
 "use client";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
+import { performanceRatio } from "../../lib/meta-ads/performance-metrics";
 import { periodTableUrl } from "../../lib/meta-ads/period-table-link";
 import { useReportDayPages } from "./report-day-pages";
+import { DetailNavigation } from "./detail-navigation";
 import { MetaDailyChart } from "./meta-daily-chart";
 import { SheetSearchSelect } from "./sheet-search-select";
 import {
@@ -40,6 +42,7 @@ export function TotalsDetail({
   onClose: () => void;
 }) {
   const dialog = useRef<HTMLDialogElement>(null);
+  const sectionId = useId();
   const [mode, setMode] = useState(initialMode),
     [blockKey, setBlockKey] = useState(blocks[0]?.key ?? ""),
     [bars, setBars] = useState("sales"),
@@ -51,8 +54,25 @@ export function TotalsDetail({
   const block = blocks.find((b) => b.key === blockKey) ?? blocks[0];
   const columns =
     mode === "manual" ? manualTotalColumns : automaticTotalColumns;
-  const barColumn = columns.find((c) => c.key === bars) ?? columns[0],
-    lineColumn = columns.find((c) => c.key === line) ?? columns[1];
+  const comparisonColumns =
+    mode === "manual"
+      ? [
+          ...manualTotalColumns,
+          ...automaticTotalColumns.filter(
+            (c) => c.key === "base" || c.key === "spend",
+          ),
+        ]
+      : [
+          ...automaticTotalColumns,
+          ...manualTotalColumns.filter(
+            (c) =>
+              c.key === "budget" ||
+              c.key === "baseManual" ||
+              c.key === "totalSpend",
+          ),
+        ];
+  const barColumn = comparisonColumns.find((c) => c.key === bars) ?? columns[0],
+    lineColumn = comparisonColumns.find((c) => c.key === line) ?? columns[1];
   const group = block?.table.groups.find(
     (g) => g.country === block.country && g.currency === block.currency,
   );
@@ -60,6 +80,46 @@ export function TotalsDetail({
     totalDetailValue(group?.days[day], column);
   const monetary = (column: TotalColumn) =>
     !["sales", "base", "baseManual"].includes(column.key);
+  const summarize = (column: TotalColumn) =>
+    totalDetailSummary(days.map((day) => value(day, column)));
+  const sold = summarize(manualTotalColumns[0]),
+    bm = summarize(manualTotalColumns[2]),
+    gm = summarize(manualTotalColumns[3]),
+    base = summarize(automaticTotalColumns[1]),
+    spend = summarize(automaticTotalColumns[2]);
+  const ratios = [
+    { name: "Ventas / BM", numerator: sold, denominator: bm, percent: true },
+    {
+      name: "Costo por venta · GM",
+      numerator: gm,
+      denominator: sold,
+      percent: false,
+    },
+    {
+      name: "Costo por dato · GM/BM",
+      numerator: gm,
+      denominator: bm,
+      percent: false,
+    },
+    {
+      name: "Ventas / B Meta",
+      numerator: sold,
+      denominator: base,
+      percent: true,
+    },
+    {
+      name: "Costo por venta · G Meta",
+      numerator: spend,
+      denominator: sold,
+      percent: false,
+    },
+    {
+      name: "Costo por dato · G/B Meta",
+      numerator: spend,
+      denominator: base,
+      percent: false,
+    },
+  ];
   const chartValue = (day: string, column: TotalColumn) =>
     value(day, column).value;
   return (
@@ -71,10 +131,29 @@ export function TotalsDetail({
     >
       <header className="row">
         <h2>Detalle de Totales</h2>
-        <button className="ui-close-button" type="button" onClick={onClose}>
-          Cerrar detalle
-        </button>
       </header>
+      <DetailNavigation
+        onClose={onClose}
+        items={[
+          { target: sectionId + "summary", label: "Resumen", tone: "sales" },
+          {
+            target: sectionId + "performance",
+            label: "Desempeño",
+            tone: "activity",
+          },
+          {
+            target: sectionId + "chart",
+            label: "Estadísticas",
+            tone: "parameters",
+          },
+          {
+            target: sectionId + "days",
+            label: "Histórico por día",
+            tone: "daily",
+          },
+        ]}
+        disabled={!block}
+      />
       <div className="row advisor-detail-controls">
         <button
           type="button"
@@ -107,7 +186,7 @@ export function TotalsDetail({
         Detalle del período y filtros de la pestaña. Cada hoja, país y moneda se
         consulta por separado. V es la misma suma en ambas vistas.{" "}
         {mode === "manual"
-          ? "P suma los presupuestos; BM, GM y CF son los valores manuales de Totales."
+          ? "P suma el presupuesto digitado en las hojas; BM es el reparto manual por asesor y país, compartido con Asesores. GM y CF son manuales."
           : "B y G proceden de la vista automática; CF suma los costos fijos de la hoja."}{" "}
         — sin dato; N.A. no suma; * cobertura parcial.
       </p>
@@ -132,7 +211,7 @@ export function TotalsDetail({
           >
             Ir al período
           </a>
-          <div className="advisor-detail-summary">
+          <div id={sectionId + "summary"} className="advisor-detail-summary">
             {columns.map((c) => {
               const v = totalDetailSummary(days.map((day) => value(day, c)));
               return (
@@ -151,7 +230,56 @@ export function TotalsDetail({
               );
             })}
           </div>
-          <h3 className="detail-section-title detail-section-parameters">
+          <h3
+            id={sectionId + "performance"}
+            className="detail-section-title detail-section-sales"
+          >
+            Desempeño de esta hoja y país
+          </h3>
+          <div className="advisor-detail-summary totals-performance-summary">
+            {ratios.map((r) => {
+              const result = performanceRatio(
+                r.numerator.value,
+                r.denominator.value,
+                r.percent ? 100 : 1,
+              );
+              return (
+                <span
+                  key={r.name}
+                  data-metric={r.name}
+                  data-source={r.name.includes("Meta") ? "automatic" : "manual"}
+                >
+                  {r.name}
+                  <strong>
+                    {result === null
+                      ? "—"
+                      : result.toLocaleString("es-PE", {
+                          maximumFractionDigits: 2,
+                        }) + (r.percent ? " %" : " " + (block.currency || ""))}
+                    {result !== null &&
+                    (r.numerator.partial || r.denominator.partial)
+                      ? " *"
+                      : ""}
+                  </strong>
+                  <small>
+                    {r.percent
+                      ? "Ventas registradas respecto a datos recibidos"
+                      : "Inversión por resultado; no representa utilidad"}
+                  </small>
+                </span>
+              );
+            })}
+          </div>
+          <p className="hint">
+            Manual: BM y GM digitadas. Meta: B y G de la vista automática. No se
+            reemplaza una fuente por la otra cuando falta un dato. V cuenta
+            ventas; sin un importe de ingresos no se calcula ganancia monetaria.
+            Indicadores del período completo; * cobertura parcial.
+          </p>
+          <h3
+            id={sectionId + "chart"}
+            className="detail-section-title detail-section-parameters"
+          >
             Evolución de parámetros
           </h3>
           <div className="row advisor-detail-controls">
@@ -162,7 +290,7 @@ export function TotalsDetail({
                 value={barColumn.key}
                 onChange={(e) => setBars(e.target.value)}
               >
-                {columns.map((c) => (
+                {comparisonColumns.map((c) => (
                   <option key={c.key} value={c.key}>
                     {c.name} ({c.label})
                   </option>
@@ -176,7 +304,7 @@ export function TotalsDetail({
                 value={lineColumn.key}
                 onChange={(e) => setLine(e.target.value)}
               >
-                {columns.map((c) => (
+                {comparisonColumns.map((c) => (
                   <option key={c.key} value={c.key}>
                     {c.name} ({c.label})
                   </option>
@@ -210,7 +338,10 @@ export function TotalsDetail({
               }}
             />
           )}
-          <h3 className="detail-section-title detail-section-daily">
+          <h3
+            id={sectionId + "days"}
+            className="detail-section-title detail-section-daily"
+          >
             Histórico por día · {block.table.name} ·{" "}
             {block.country || "Sin país"} · {block.currency || "Sin moneda"}
           </h3>
@@ -220,20 +351,65 @@ export function TotalsDetail({
               <thead>
                 <tr>
                   <th>Fecha</th>
-                  {columns.map((c) => (
+                  {comparisonColumns.map((c) => (
                     <th key={c.key}>
                       {c.name} ({c.label})
                     </th>
                   ))}
+                  <th>Ventas / BM</th>
+                  <th>Ventas / B Meta</th>
+                  <th>Costo por venta · GM</th>
+                  <th>Costo por venta · G Meta</th>
                 </tr>
               </thead>
               <tbody>
                 {visibleDays.map((day) => (
                   <tr key={day}>
                     <th>{day}</th>
-                    {columns.map((c) => (
+                    {comparisonColumns.map((c) => (
                       <td key={c.key}>{format(value(day, c))}</td>
                     ))}
+                    {[
+                      {
+                        n: manualTotalColumns[0],
+                        d: manualTotalColumns[2],
+                        percent: true,
+                      },
+                      {
+                        n: manualTotalColumns[0],
+                        d: automaticTotalColumns[1],
+                        percent: true,
+                      },
+                      {
+                        n: manualTotalColumns[3],
+                        d: manualTotalColumns[0],
+                        percent: false,
+                      },
+                      {
+                        n: automaticTotalColumns[2],
+                        d: manualTotalColumns[0],
+                        percent: false,
+                      },
+                    ].map((r, i) => {
+                      const n = value(day, r.n),
+                        d = value(day, r.d),
+                        v = performanceRatio(
+                          n.value,
+                          d.value,
+                          r.percent ? 100 : 1,
+                        );
+                      return (
+                        <td key={"ratio" + i}>
+                          {v === null
+                            ? "—"
+                            : v.toLocaleString("es-PE", {
+                                maximumFractionDigits: 2,
+                              }) +
+                              (r.percent ? " %" : " " + block.currency) +
+                              (n.partial || d.partial ? " *" : "")}
+                        </td>
+                      );
+                    })}
                   </tr>
                 ))}
               </tbody>

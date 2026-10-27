@@ -4,6 +4,7 @@ import type { absenceSummary } from "../../lib/meta-ads/advisor-absence";
 export type AbsenceView = ReturnType<typeof absenceSummary>;
 export type Attendance = "PRESENT" | "ABSENT" | "NA" | null;
 export type AdvisorDayData = {
+  manualBase?: number | null;
   base?: number | null;
   basePartial?: boolean;
   baseTimeUnavailable?: boolean;
@@ -42,6 +43,14 @@ export type AdvisorSheetData = {
   country: string;
   rows: AdvisorPerson[];
   breakdown: AdvisorSource[];
+  manualBaseBreakdown?: {
+    tableId: string;
+    tableName: string;
+    country: string;
+    day: string;
+    advisorId: string;
+    quantity: number;
+  }[];
   baseContext?: InventoryBaseContext;
   assignedBaseEstimate?: AdvisorBaseEstimate;
   assignmentHistory?: {

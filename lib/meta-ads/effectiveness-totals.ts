@@ -1,3 +1,7 @@
+import {
+  manualBaseValue,
+  manualBaseAllocationsSchema,
+} from "./manual-base-policy";
 import { activeWorkbookSheetId } from "./workbook-scope";
 import { db } from "../db";
 import { ownerOnly } from "../auth";
@@ -29,12 +33,18 @@ export async function effectivenessTotals(
     "Hoja de totales no disponible.",
     404,
   );
-  const [sheet, stored] = await Promise.all([
+  const [sheet, stored, manualBase] = await Promise.all([
     effectiveness(actor, tableId, since, until),
     db.metaEffectivenessTotalDay.findMany({
       where: { sheetId, tableId, day: { gte: since, lte: until } },
     }),
+    db.metaManualBaseDay.findMany({
+      where: { tableId, day: { gte: since, lte: until } },
+    }),
   ]);
+  const assigned = new Map(
+    manualBase.map((r) => [JSON.stringify([r.country, r.day]), r]),
+  );
   const groups = new Map<
     string,
     { country: string; currency: string; rows: typeof sheet.rows }
@@ -46,6 +56,9 @@ export async function effectivenessTotals(
   };
   for (const r of sheet.rows) group(r.country, r.currency).rows.push(r);
   for (const r of stored) group(r.country, r.currency);
+  for (const r of manualBase)
+    if (![...groups.values()].some((g) => g.country === r.country))
+      group(r.country, sheet.table.defaultCurrency || "");
   const saved = new Map(
     stored.map((r) => [JSON.stringify([r.country, r.currency, r.day]), r]),
   );
@@ -62,11 +75,24 @@ export async function effectivenessTotals(
       days: Object.fromEntries(
         days.map((day) => {
           const entry = saved.get(JSON.stringify([g.country, g.currency, day]));
+          const base = assigned.get(JSON.stringify([g.country, day]));
+          const manual = {
+            ...((entry?.values as Record<string, number | "NA">) ?? {}),
+          };
+          if (base) {
+            const value = manualBaseValue(
+              base.state,
+              manualBaseAllocationsSchema.parse(base.allocations),
+            );
+            if (value === null) delete manual.baseManual;
+            else manual.baseManual = value;
+          }
           return [
             day,
             {
               sums: sumEffectivenessDay(g.rows, day),
-              manual: entry?.values ?? {},
+              manual,
+              sharedManualBase: !!base,
               revision: entry?.revision ?? 0,
             },
           ];
@@ -111,6 +137,20 @@ export async function saveEffectivenessTotal(
       "Hoja de totales no disponible.",
       404,
     );
+    if (b.metric === "baseManual")
+      demand(
+        !(await tx.metaManualBaseDay.findUnique({
+          where: {
+            tableId_country_day: {
+              tableId: b.tableId,
+              country: b.country,
+              day: b.day,
+            },
+          },
+        })),
+        "BM ya tiene un reparto compartido. Edita sus asesores en el recuadro BM.",
+        409,
+      );
     const key = {
       sheetId,
       tableId: b.tableId,

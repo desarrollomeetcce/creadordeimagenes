@@ -1,3 +1,4 @@
+import { manualBaseAllocationsSchema } from "./manual-base-policy";
 import { advisorBaseEstimate } from "./advisor-base-estimate";
 import { inventoryBaseContext } from "./inventory-base-context";
 import {
@@ -500,6 +501,41 @@ export async function advisorSheet(
           404,
         );
       }
+      const baseDays = await tx.metaManualBaseDay.findMany({
+        where: {
+          tableId: { in: tables.map((t) => t.id) },
+          day: { gte: since, lte: until },
+          ...(filters.country ? { country: filters.country } : {}),
+          state: "VALUE",
+        },
+        orderBy: [{ tableId: "asc" }, { country: "asc" }, { day: "asc" }],
+      });
+      const manualBaseBreakdown = baseDays.flatMap((r) =>
+        manualBaseAllocationsSchema
+          .parse(r.allocations)
+          .flatMap((e) =>
+            e.advisorId && people.some((p) => p.id === e.advisorId)
+              ? [
+                  {
+                    tableId: r.tableId,
+                    tableName: tables.find((t) => t.id === r.tableId)!.name,
+                    country: r.country,
+                    day: r.day,
+                    advisorId: e.advisorId,
+                    quantity: e.quantity,
+                  },
+                ]
+              : [],
+          ),
+      );
+      const manualBaseByPersonDay = new Map<string, number>();
+      for (const r of manualBaseBreakdown) {
+        const key = JSON.stringify([r.advisorId, r.day]);
+        manualBaseByPersonDay.set(
+          key,
+          (manualBaseByPersonDay.get(key) ?? 0) + r.quantity,
+        );
+      }
       const contextRows: Parameters<typeof inventoryBaseContext>[0] = [];
       const estimateRows: Parameters<typeof advisorBaseEstimate>[0] = [];
       const dates: string[] = [];
@@ -739,6 +775,7 @@ export async function advisorSheet(
         aliasId: filters.aliasId ?? "",
         country: filters.country ?? "",
         breakdown,
+        manualBaseBreakdown,
         assignmentHistory,
         baseContext: inventoryBaseContext(contextRows, dates),
         assignedBaseEstimate: filters.advisorId
@@ -754,6 +791,9 @@ export async function advisorSheet(
               return [
                 day,
                 {
+                  manualBase:
+                    manualBaseByPersonDay.get(JSON.stringify([p.id, day])) ??
+                    null,
                   base: null,
                   basePartial: false,
                   baseTimeUnavailable: false,

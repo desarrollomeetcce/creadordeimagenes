@@ -758,6 +758,84 @@ export async function metaRoutes(
         : await service.previewEffectivenessSync(actor, b),
     );
   }
+  if (path === "manual-base" || path === "manual-base/advisor") {
+    ownerOnly(actor);
+    const {
+      manualBaseReview,
+      saveManualBase,
+      advisorManualBaseReview,
+      saveAdvisorManualBase,
+    } = await import("./manual-base");
+    const country = z
+      .string()
+      .refine((v) => v === "" || isCountryCode(v), "País inválido.");
+    const id = z.string().min(1).max(100),
+      day = z.string().date(),
+      quantity = z.number().int().min(0).max(100000000);
+    const scope = z.object({
+      tableId: id,
+      country,
+      day,
+      sheetId: id.optional(),
+      currency: z.string().max(10).optional(),
+    });
+    if (path === "manual-base" && method === "GET")
+      return send(
+        await manualBaseReview(
+          actor,
+          scope.strict().parse(Object.fromEntries(req.nextUrl.searchParams)),
+        ),
+      );
+    if (path === "manual-base" && method === "POST") {
+      const { manualBaseAllocationsSchema } =
+        await import("./manual-base-policy");
+      const b = scope
+        .extend({
+          token: z.string().length(64),
+          state: z.enum(["VALUE", "EMPTY", "NA"]),
+          allocations: manualBaseAllocationsSchema,
+        })
+        .strict()
+        .parse(await body());
+      return send(await saveManualBase(actor, b));
+    }
+    if (path === "manual-base/advisor" && method === "GET") {
+      const b = z
+        .object({
+          advisorId: id,
+          day,
+          tableId: id,
+          country: country.optional(),
+        })
+        .strict()
+        .parse(Object.fromEntries(req.nextUrl.searchParams));
+      return send(await advisorManualBaseReview(actor, b));
+    }
+    if (path === "manual-base/advisor" && method === "POST") {
+      const b = z
+        .object({
+          advisorId: id,
+          day,
+          changes: z
+            .array(
+              z
+                .object({
+                  tableId: id,
+                  country,
+                  token: z.string().length(64),
+                  quantity: quantity.nullable(),
+                  initialUnassigned: quantity.optional(),
+                })
+                .strict(),
+            )
+            .min(1)
+            .max(100),
+        })
+        .strict()
+        .parse(await body());
+      return send(await saveAdvisorManualBase(actor, b));
+    }
+  }
   if (path === "effectiveness/totals" && method === "GET") {
     ownerOnly(actor);
     const q = z

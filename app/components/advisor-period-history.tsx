@@ -16,7 +16,9 @@ export function AdvisorPeriodHistory({
   aliasId,
   country,
   onStatistics,
+  sectionId,
 }: {
+  sectionId?: string;
   advisorId: string;
   tableId: string;
   aliasId: string;
@@ -72,6 +74,7 @@ export function AdvisorPeriodHistory({
     current = Math.min(page, count - 1);
   return (
     <section
+      id={sectionId}
       className="advisor-tenure-history"
       aria-label="Histórico de asignaciones de asesores"
     >

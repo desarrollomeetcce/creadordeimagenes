@@ -615,3 +615,19 @@ test('Consultas extensas: tramos contiguos, datos de primera/última fecha, iden
     const before = calls.length; await assert.rejects(readRangePages('unused',params,()=>false)); assert.equal(calls.length,before);
   } finally { globalThis.fetch = original; }
 });
+
+test('BM manual: reemplazos absolutos por asesor conservan el resto y separan cero, vacío y N.A.',async()=>{
+ const {manualBaseAllocationsSchema,manualBaseValue,replaceManualBaseAdvisor}=await import('../lib/meta-ads/manual-base-policy');
+ const entries=[{advisorId:'kevin',quantity:300},{advisorId:'donasis',quantity:200}];
+ assert.equal(manualBaseValue('VALUE',entries),500);
+ const changed=replaceManualBaseAdvisor(entries,'kevin',500);assert.equal(manualBaseValue('VALUE',changed),700);assert.equal(changed.find(r=>r.advisorId==='donasis')?.quantity,200);assert.equal(entries[0].quantity,300);
+ assert.deepEqual(replaceManualBaseAdvisor(changed,'kevin',null),[{advisorId:'donasis',quantity:200}]);
+ assert.equal(manualBaseValue('VALUE',[{advisorId:'kevin',quantity:0}]),0);assert.equal(manualBaseValue('EMPTY',[]),null);assert.equal(manualBaseValue('NA',[]),'NA');
+ for(const invalid of [[...entries,entries[0]],[{advisorId:'kevin',quantity:-1}],[{advisorId:'kevin',quantity:1.5}],[{advisorId:'kevin',quantity:100000001}]])assert(!manualBaseAllocationsSchema.safeParse(invalid).success);
+ assert(!manualBaseAllocationsSchema.safeParse([{advisorId:null,quantity:1},{advisorId:null,quantity:2}]).success);
+});
+test('Desempeño: ratios distinguen cantidades e inversión, denominadores cero y datos faltantes',async()=>{
+ const {performanceRatio}=await import('../lib/meta-ads/performance-metrics');
+ assert.equal(performanceRatio(5,500,100),1);assert.equal(performanceRatio(100,5),20);assert.equal(performanceRatio(0,500,100),0);assert.equal(performanceRatio(0,5),0);
+ for(const [n,d]of [[5,0],[null,500],[5,null],[NaN,5],[5,Infinity]])assert.equal(performanceRatio(n,d),null);
+});

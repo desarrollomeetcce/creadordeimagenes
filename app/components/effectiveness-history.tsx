@@ -9,6 +9,7 @@ import {
   type SheetMetric,
 } from "../../lib/meta-ads/period-summary";
 import { MetaDateRange } from "./meta-date-range";
+import { DetailNavigation } from "./detail-navigation";
 import { MetaDailyChart } from "./meta-daily-chart";
 import type { ActivePeriod } from "../../lib/meta-ads/active-periods";
 type Cell = Record<SheetMetric, number | null> & {
@@ -166,14 +167,29 @@ export function EffectivenessHistory({
               <strong>
                 {name} · {country}
               </strong>
-              <button
-                className="ui-close-button"
-                type="button"
-                onClick={() => pop.current?.hidePopover()}
-              >
-                Cerrar
-              </button>
             </header>
+            <DetailNavigation
+              closeLabel="Cerrar"
+              onClose={() => pop.current?.hidePopover()}
+              items={[
+                {
+                  target: id + "activity",
+                  label: "Activaciones",
+                  tone: "activity",
+                },
+                {
+                  target: id + "chart",
+                  label: "Estadísticas",
+                  tone: "parameters",
+                },
+                {
+                  target: id + "days",
+                  label: "Histórico por día",
+                  tone: "daily",
+                },
+              ]}
+              disabled={!data}
+            />
             <div className="row alias-detail-controls">
               <MetaDateRange
                 maxDays={3660}
@@ -206,7 +222,10 @@ export function EffectivenessHistory({
                   de Efectividad de este inventario y país; no cambia estados en
                   Meta Ads.
                 </p>
-                <h3 className="detail-section-title detail-section-activity">
+                <h3
+                  id={id + "activity"}
+                  className="detail-section-title detail-section-activity"
+                >
                   Últimas activaciones
                 </h3>
                 {data.activePeriods.length ? (
@@ -281,7 +300,10 @@ export function EffectivenessHistory({
                     </div>
                   </nav>
                 )}
-                <h3 className="detail-section-title detail-section-parameters">
+                <h3
+                  id={id + "chart"}
+                  className="detail-section-title detail-section-parameters"
+                >
                   Evolución de parámetros
                 </h3>
                 <div className="row alias-detail-controls">
@@ -341,6 +363,12 @@ export function EffectivenessHistory({
                     cost: dot.money && data.currency ? "currency" : "count",
                   }}
                 />
+                <h3
+                  id={id + "days"}
+                  className="detail-section-title detail-section-daily"
+                >
+                  Histórico por día
+                </h3>
                 {navigation}
                 <div className="table-scroll">
                   <table className="alias-parameter-days">

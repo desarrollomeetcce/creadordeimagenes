@@ -1,6 +1,7 @@
 "use client";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { engineRequest as api } from "./generation-engine";
+import { performanceRatio } from "../../lib/meta-ads/performance-metrics";
 import { DetailPeriodPresets } from "./detail-period-presets";
 import { MetaDateRange } from "./meta-date-range";
 import { SheetSearchSelect } from "./sheet-search-select";
@@ -9,6 +10,7 @@ import { AdvisorItemAnalysis } from "./advisor-item-analysis";
 import { AdvisorScatter } from "./advisor-scatter";
 import { activePeriodWindow } from "../../lib/meta-ads/active-periods";
 import type { AdvisorPeriodView } from "../../lib/meta-ads/advisor-period-history";
+import { DetailNavigation } from "./detail-navigation";
 import { MetaDailyChart } from "./meta-daily-chart";
 import { countryOptions } from "../../lib/meta-ads/countries";
 import { subscribeAdvisorSalesChanged } from "./advisor-sales-events";
@@ -29,9 +31,10 @@ const attendance = (v: string | null) =>
       : v === "NA"
         ? "N.A."
         : "—";
-type AdvisorMetric = DailyChartMetric | "absences" | "base";
+type AdvisorMetric = DailyChartMetric | "absences" | "base" | "manualBase";
 const options = [
   { value: "results", label: "Ventas (V)" },
+  { value: "manualBase", label: "Base manual (BM)" },
   { value: "base", label: "Base aproximada del asesor (B)" },
   { value: "cost", label: "Horas ausentes (H)" },
   { value: "spend", label: "Asistencia (A)" },
@@ -61,6 +64,7 @@ export function AdvisorDetail({
   onOpenPeriod?: (period: AdvisorPeriodView) => void;
 }) {
   const dialog = useRef<HTMLDialogElement>(null);
+  const sectionId = useId();
   const [minimized, setMinimized] = useState(false);
   const restore = () => {
     setMinimized(false);
@@ -237,6 +241,9 @@ export function AdvisorDetail({
             until,
             rows: base.rows[0] ? [{ ...base.rows[0], days }] : [],
             breakdown: [...sources.values()],
+            manualBaseBreakdown: pages.flatMap(
+              (p) => p.manualBaseBreakdown ?? [],
+            ),
             assignedBaseEstimate: {
               scope: "ASSIGNED_FULL_DAY_ESTIMATE",
               advisorId: analysisAdvisor,
@@ -295,16 +302,18 @@ export function AdvisorDetail({
   ).length;
   const metricValue = (metric: AdvisorMetric, day: string) => {
     const c = row!.days[day];
-    return metric === "base"
-      ? (data?.assignedBaseEstimate?.days[day]?.value ?? null)
-      : metric === "results"
-        ? c.sales
-        : metric === "cost"
-          ? c.absence.hours
-          : advisorAttendanceValue(
-              c.status,
-              metric === "absences" ? "absences" : "attendance",
-            );
+    return metric === "manualBase"
+      ? (c.manualBase ?? null)
+      : metric === "base"
+        ? (data?.assignedBaseEstimate?.days[day]?.value ?? null)
+        : metric === "results"
+          ? c.sales
+          : metric === "cost"
+            ? c.absence.hours
+            : advisorAttendanceValue(
+                c.status,
+                metric === "absences" ? "absences" : "attendance",
+              );
   };
   const metricLabel = (metric: AdvisorMetric) =>
     options.find((o) => o.value === metric)!.label;
@@ -315,6 +324,13 @@ export function AdvisorDetail({
     spend: null,
   }));
 
+  const bmDays = days.filter(
+    (d) =>
+      row?.days[d].manualBase !== null && row?.days[d].manualBase !== undefined,
+  );
+  const bmTotal = bmDays.length
+    ? bmDays.reduce((n, d) => n + (row!.days[d].manualBase ?? 0), 0)
+    : null;
   const baseDays = days.filter(
       (d) =>
         data?.assignedBaseEstimate?.days[d]?.value !== null &&
@@ -354,10 +370,35 @@ export function AdvisorDetail({
       >
         <header className="row">
           <h2>{row?.name ?? person.name}</h2>
-          <button className="ui-close-button" type="button" onClick={onClose}>
-            Cerrar detalle
-          </button>
         </header>
+        <DetailNavigation
+          onClose={onClose}
+          items={[
+            { target: sectionId + "summary", label: "Resumen", tone: "sales" },
+            {
+              target: sectionId + "assignments",
+              label: "Asignaciones",
+              tone: "assignments",
+            },
+            {
+              target: sectionId + "chart",
+              label: "Estadísticas",
+              tone: "parameters",
+            },
+            { target: sectionId + "days", label: "Histórico", tone: "daily" },
+            {
+              target: sectionId + "bm",
+              label: "BM por país",
+              tone: "activity",
+            },
+            {
+              target: sectionId + "products",
+              label: "Diplomados vendidos",
+              tone: "sales",
+            },
+          ]}
+          disabled={!row}
+        />
         <div className="row advisor-detail-controls">
           <MetaDateRange
             maxDays={3660}
@@ -443,6 +484,7 @@ export function AdvisorDetail({
           }}
         />
         <AdvisorPeriodHistory
+          sectionId={sectionId + "assignments"}
           advisorId={person.id}
           tableId={tableId}
           aliasId={aliasId}
@@ -523,7 +565,28 @@ export function AdvisorDetail({
         )}
         {row && (
           <>
-            <div className="advisor-detail-summary">
+            <div id={sectionId + "summary"} className="advisor-detail-summary">
+              <span>
+                Base manual (BM)
+                <strong>{bmTotal === null ? "—" : number(bmTotal)}</strong>
+                <small>Registrada en Totales y Asesores por hoja y país</small>
+              </span>
+              <span>
+                Ventas / BM
+                <strong>
+                  {!aliasId && sales !== null && bmTotal !== null && bmTotal > 0
+                    ? performanceRatio(sales, bmTotal, 100)!.toLocaleString(
+                        "es-PE",
+                        { maximumFractionDigits: 2 },
+                      ) + " %"
+                    : "—"}
+                </strong>
+                <small>
+                  {aliasId
+                    ? "BM corresponde a la hoja completa; quita el filtro de inventario para comparar."
+                    : "Ventas registradas respecto a la base manual del período"}
+                </small>
+              </span>
               <span>
                 Base aproximada del asesor (B)
                 <b>
@@ -574,7 +637,10 @@ export function AdvisorDetail({
                 </small>
               </span>
             </div>
-            <h3 className="detail-section-title detail-section-parameters">
+            <h3
+              id={sectionId + "chart"}
+              className="detail-section-title detail-section-parameters"
+            >
               Estadísticas del período
             </h3>
             <div
@@ -689,7 +755,10 @@ export function AdvisorDetail({
               para cada persona. A/I/H son registros diarios del asesor; no se
               distribuyen por minutos.
             </p>
-            <h3 className="detail-section-title detail-section-daily">
+            <h3
+              id={sectionId + "days"}
+              className="detail-section-title detail-section-daily"
+            >
               Histórico por día · ventas de {row.name}
             </h3>
             {pageCount > 1 && (
@@ -724,10 +793,11 @@ export function AdvisorDetail({
                   <tr>
                     <th>Fecha</th>
                     <th>A</th>
+                    <th>H</th>
                     <th title="Inasistencias">I</th>
                     <th>V</th>
-                    <th>B</th>
-                    <th>H</th>
+                    <th>BM</th>
+                    <th>B aproximada</th>
                     <th>Salidas y regresos · Lima</th>
                   </tr>
                 </thead>
@@ -738,6 +808,12 @@ export function AdvisorDetail({
                       <tr key={day}>
                         <th>{day}</th>
                         <td>{attendance(c.status)}</td>
+                        <td>
+                          {c.absence.hours === null
+                            ? "—"
+                            : number(c.absence.hours)}
+                          {c.absence.pending ? " +" : ""}
+                        </td>
                         <td>
                           {advisorAttendanceValue(c.status, "absences") ??
                             (c.status === "NA" ? "N.A." : "—")}
@@ -751,16 +827,15 @@ export function AdvisorDetail({
                           {c.partial ? " *" : ""}
                         </td>
                         <td>
+                          {c.manualBase === null || c.manualBase === undefined
+                            ? "—"
+                            : number(c.manualBase)}
+                        </td>
+                        <td>
                           {data?.assignedBaseEstimate?.days[day]?.value ?? "—"}
                           {data?.assignedBaseEstimate?.days[day]?.partial
                             ? " *"
                             : ""}
-                        </td>
-                        <td>
-                          {c.absence.hours === null
-                            ? "—"
-                            : number(c.absence.hours)}
-                          {c.absence.pending ? " +" : ""}
                         </td>
                         <td>
                           {c.absence.mode === "CLOCK"
@@ -780,7 +855,56 @@ export function AdvisorDetail({
                 </tbody>
               </table>
             </div>
-            <h3 className="detail-section-title detail-section-sales">
+            <h3
+              id={sectionId + "bm"}
+              className="detail-section-title detail-section-sales"
+            >
+              Base manual por hoja y país
+            </h3>
+            <p className="hint">
+              BM es el reparto manual guardado para esta persona. No se estima
+              por asignaciones ni se convierte por moneda; no depende del filtro
+              de diplomado.
+            </p>
+            <div className="table-scroll advisor-source-scroll">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Fecha</th>
+                    <th>Hoja</th>
+                    <th>País</th>
+                    <th>BM</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {(data?.manualBaseBreakdown ?? [])
+                    .filter(
+                      (r) =>
+                        r.advisorId === analysisAdvisor &&
+                        visibleDays.includes(r.day),
+                    )
+                    .map((r) => (
+                      <tr
+                        key={JSON.stringify([
+                          r.tableId,
+                          r.country,
+                          r.day,
+                          r.advisorId,
+                        ])}
+                      >
+                        <th>{r.day}</th>
+                        <td>{r.tableName}</td>
+                        <td>{r.country || "Sin país"}</td>
+                        <td>{number(r.quantity)}</td>
+                      </tr>
+                    ))}
+                </tbody>
+              </table>
+            </div>
+            <h3
+              id={sectionId + "products"}
+              className="detail-section-title detail-section-sales"
+            >
               Ventas por producto y país · origen de la suma
             </h3>
             <div className="table-scroll advisor-source-scroll">
