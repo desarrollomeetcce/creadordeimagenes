@@ -2189,3 +2189,15 @@ button.ui-close-button:disabled, button.window-close:disabled { opacity: .55; }
 .detail-module-drop-label { position:absolute; z-index:6; top:3px; right:8px; padding:4px 8px; border:1px solid var(--accent); border-radius:5px; background:var(--surface); color:var(--ink); font-size:11px; pointer-events:none; }
 .detail-layout-reset { margin-right:auto; }
 @media(max-width:850px) { .advisor-module-grid { grid-template-columns:minmax(0,1fr); } .detail-module-slot { grid-column:1/-1!important; } }
+
+/* Compact daily BM/BC allocation: one advisor and amount per line. */
+.manual-base-editor[data-context="total"] { width:min(640px,calc(100vw - 24px)); padding:16px; }
+.manual-base-editor[data-context="total"]>p { margin:8px 0; }
+.manual-base-editor[data-context="total"] h2 { font-size:18px; margin:0; }
+.manual-base-editor[data-context="total"] .manual-base-line { grid-template-columns:minmax(0,1fr) 112px 40px; gap:8px; margin-block:8px; }
+.manual-base-editor[data-context="total"] .sheet-search-trigger { min-width:0; width:100%; }
+.manual-base-editor[data-context="total"] .manual-base-total { gap:8px 14px; padding:10px 12px; margin:12px 0; }
+.manual-base-editor[data-context="total"] .manual-base-total small { flex-basis:auto; margin-left:auto; font-size:11px; }
+.manual-base-editor[data-context="total"] footer { gap:6px; }
+.manual-base-editor[data-context="total"] footer button { padding:8px 10px; }
+@media(max-width:480px) { .manual-base-editor[data-context="total"] { padding:12px; } .manual-base-editor[data-context="total"] .manual-base-line { grid-template-columns:minmax(0,1fr) 90px 36px; gap:6px; } .manual-base-editor[data-context="total"] .manual-base-total small { flex-basis:100%; margin-left:0; } }

@@ -382,6 +382,7 @@ export function ManualBaseEditor({
     <dialog
       ref={dialog}
       className="meta-detail manual-base-editor"
+      data-context={context.kind}
       aria-busy={busy}
       aria-label={`Repartir ${baseName.toLowerCase()}`}
       onFocusCapture={(e) => {
@@ -410,7 +411,7 @@ export function ManualBaseEditor({
           {context.kind === "total"
             ? metric === "BA"
               ? "Base por contactar (BC)"
-              : "Base manual por asesor"
+              : "Base manual (BM)"
             : `${baseName} de ${context.name}`}
         </h2>
         <button
@@ -429,11 +430,9 @@ export function ManualBaseEditor({
           : " · reparto por hoja y país"}
       </p>
       <p className="hint">
-        Cantidades absolutas: para pasar de 300 a 500, escribe 500. Totales y
-        Asesores comparten estos registros. {displayMetric} cuenta datos, sin
-        conversión de moneda; es distinta de B de Meta Ads, de{" "}
-        {metric === "BA" ? "BM" : "BC"} y de las ventas V. Las cantidades sin
-        asesor no se atribuyen a ninguna persona.
+        {context.kind === "total"
+          ? "Busca un asesor y escribe su cantidad. Añade los que necesites: la celda muestra la suma y cada asesor recibe su parte."
+          : "Cada asesor suma sus cantidades de las hojas y países elegidos. Edita el total de cada línea; BM y BC son independientes."}
       </p>
       {context.kind === "advisor" && context.country && (
         <p className="hint">
@@ -461,18 +460,30 @@ export function ManualBaseEditor({
                   <div className="manual-base-line" key={entry.id}>
                     <SheetSearchSelect
                       label={`Asesor de ${displayMetric} ${entry.id}`}
-                      value={entry.advisorId ?? "__unassigned"}
-                      placeholder="Seleccionar asesor"
+                      value={
+                        entry.advisorId === "__choose"
+                          ? ""
+                          : (entry.advisorId ?? "__unassigned")
+                      }
+                      placeholder="Buscar asesor…"
                       disabled={busy}
                       options={[
                         {
                           value: "__unassigned",
                           label: "Sin asesor / pendiente de distribuir",
                         },
-                        ...review.advisors.map((a) => ({
-                          value: a.id,
-                          label: a.label,
-                        })),
+                        ...review.advisors
+                          .filter(
+                            (a) =>
+                              !entries.some(
+                                (r) =>
+                                  r.id !== entry.id && r.advisorId === a.id,
+                              ),
+                          )
+                          .map((a) => ({
+                            value: a.id,
+                            label: a.label,
+                          })),
                       ]}
                       onSelect={(id) => {
                         setEntries((v) =>

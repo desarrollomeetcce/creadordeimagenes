@@ -1300,3 +1300,9 @@ Validación de la revisión compacta definitiva: `/workspace/work/advisor-compac
 - Chromium `/workspace/work/base-contact-browser.txt` verifica columna/leyenda/editor/detalles/gráficos BC, reparto300+200, edición500+200 y país100; cada asesor solo recibe su parte. Conserva BM999/B40, móvil, digitación lenta y respuesta perdida tras COMMIT sin repetir.
 - `/workspace/work/base-contact-bm-browser.txt` verifica el selector/reparto BM en Totales, actualización por asesor y fecha entre ventanas, países/hojas independientes, detalle BM450/V7 y cifras manual/Meta separadas, originales/referencias preservados, móvil y respuesta BM perdida sin reintentos. Sin errores JS/API o llamadas externas. Ambos parámetros mantienen sus registros independientes; sin migración ni llamadas pagadas.
 - Evidencia adicional `/workspace/work/base-contact-{unit,typecheck,build}.txt`. La actualización de main activa publicación automática; Hostinger se verifica por separado.
+
+### Registro compacto BM/BC por varios asesores
+
+-186/186 unitarias, TypeScript/build aprobados. Sin cambios de servidor/esquema;195/195 integraciones anteriores aplicables.
+- Chromium (`/workspace/work/base-compact-browser.txt`, `/workspace/work/base-compact-bm-browser.txt`) comprueba búsqueda escribiendo el nombre, placeholder Buscar asesor sin __choose, ancho máximo640px y móvil390px. Ambos repartos300+200 muestran500 y edición absoluta500+200 muestra700. Asesores conserva su cantidad propia, consolida países/hojas y detalle/gráficos, sin mezclar BM/BC/B ni distribuir conteos por moneda.
+- Conserva referencias previas, respuesta perdida tras COMMIT sin reintentos, digitación lenta sin guardar números parciales y cierres sin duplicados. Cero errores JS/API o llamadas externas. Captura `/workspace/work/base-compact-mobile.png`; logs unit/typecheck/build del mismo prefijo. Main activa publicación automática; Hostinger no se considera verificado solo por el push.
