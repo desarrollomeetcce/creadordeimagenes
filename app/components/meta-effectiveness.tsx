@@ -25,6 +25,8 @@ import {
 import { SheetSearchSelect } from "./sheet-search-select";
 import { SheetMultiFilter } from "./sheet-multi-filter";
 import { SheetColumnResizer } from "./sheet-column-resizer";
+import { SheetSizedRow } from "./sheet-sized-row";
+import { useSheetHeights } from "./use-sheet-heights";
 import { useSheetWidths } from "./use-sheet-widths";
 import { EffectivenessSync } from "./effectiveness-sync";
 import { EffectivenessHistory } from "./effectiveness-history";
@@ -134,6 +136,7 @@ export function MetaEffectiveness({
     settings.aliasColumnName.trim().toLowerCase() === "alias"
       ? "Inventario"
       : settings.aliasColumnName;
+  const rowsLayout = useSheetHeights("financial:" + tableId);
   const [salesReview, setSalesReview] = useState<{
     aliasId: string;
     country: string;
@@ -1074,6 +1077,11 @@ export function MetaEffectiveness({
           columnas por fecha.
         </p>
       )}
+      {rowsLayout.warning && (
+        <p className="sheet-message" role="status">
+          {rowsLayout.warning}
+        </p>
+      )}
       {sheetTabs}
       {valid && (
         <div className="table-scroll effectiveness-scroll sheet-scroll">
@@ -1399,7 +1407,15 @@ export function MetaEffectiveness({
               {rows.map((r) => {
                 const name = names.get(r.aliasId) ?? "Inventario";
                 return (
-                  <tr
+                  <SheetSizedRow
+                    label={`${name} ${r.country}`}
+                    height={rowsLayout.heights[r.aliasId + ":" + r.country]}
+                    onResize={(v) =>
+                      rowsLayout.resize(r.aliasId + ":" + r.country, v)
+                    }
+                    onReset={() =>
+                      rowsLayout.resize(r.aliasId + ":" + r.country)
+                    }
                     key={JSON.stringify([r.aliasId, r.country])}
                     data-alias-id={r.aliasId}
                     data-country={r.country}
@@ -1672,7 +1688,7 @@ export function MetaEffectiveness({
                         visibleMetricKeys.has(sheetMetrics[i].key),
                       );
                     })}
-                  </tr>
+                  </SheetSizedRow>
                 );
               })}
               <tr className="sheet-new-row">

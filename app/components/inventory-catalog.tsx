@@ -3,6 +3,10 @@ import { Fragment, useEffect, useRef, useState, type ReactNode } from "react";
 import { useWorkbookPreference } from "./use-workbook-preference";
 import { engineRequest as api } from "./generation-engine";
 import { InventoryMultiSelect } from "./inventory-multi-select";
+import { useSheetWidths } from "./use-sheet-widths";
+import { useSheetHeights } from "./use-sheet-heights";
+import { SheetColumnResizer } from "./sheet-column-resizer";
+import { SheetSizedRow } from "./sheet-sized-row";
 import { InventoryImport } from "./inventory-import";
 import { SheetSearchSelect } from "./sheet-search-select";
 import { InventorySelectionDelete } from "./inventory-selection-delete";
@@ -56,6 +60,21 @@ export function InventoryCatalog({
   sheetTabs: ReactNode;
   onChanged: () => Promise<void>;
 }) {
+  const { widths, resize, warning } = useSheetWidths("inventory:" + listId),
+    rowsLayout = useSheetHeights("inventory:" + listId);
+  const columns = [
+    { key: "primary", label: "Categoría principal", width: 174 },
+    { key: "secondary", label: "Categorías secundarias", width: 202 },
+    { key: "inventory", label: "Inventario", width: 340 },
+    { key: "sheets", label: "Hojas", width: 380 },
+  ];
+  const columnHandle = (key: string, label: string) => (
+    <SheetColumnResizer
+      label={label}
+      onResize={(v) => resize(key, v)}
+      onReset={() => resize(key)}
+    />
+  );
   const [target, setTarget] = useWorkbookPreference<string>(
       listId,
       "target",
@@ -400,6 +419,11 @@ export function InventoryCatalog({
           {message}
         </p>
       )}
+      {(warning || rowsLayout.warning) && (
+        <p className="sheet-message" role="status">
+          {warning || rowsLayout.warning}
+        </p>
+      )}
       {sheetTabs}
       <div
         className="row inventory-actions-toolbar"
@@ -465,11 +489,27 @@ export function InventoryCatalog({
         {removing && <small>Pulsa × junto a la hoja que quieres quitar.</small>}
       </div>
       <div className="table-scroll">
-        <table className="inventory-catalog-grid inventory-categorized-grid">
+        <table
+          className="inventory-catalog-grid inventory-categorized-grid sheet-resizable-table"
+          style={{
+            width: columns.reduce((n, c) => n + (widths[c.key] ?? c.width), 0),
+          }}
+        >
+          <colgroup>
+            {columns.map((c) => (
+              <col key={c.key} style={{ width: widths[c.key] ?? c.width }} />
+            ))}
+          </colgroup>
           <thead>
             <tr>
               {(["PRIMARY", "SECONDARY"] as const).map((kind) => (
                 <th key={kind} scope="col">
+                  {columnHandle(
+                    kind === "PRIMARY" ? "primary" : "secondary",
+                    kind === "PRIMARY"
+                      ? "Categoría principal"
+                      : "Categorías secundarias",
+                  )}
                   <div>
                     {kind === "PRIMARY"
                       ? "Categoría principal"
@@ -499,6 +539,7 @@ export function InventoryCatalog({
                 </th>
               ))}
               <th scope="col">
+                {columnHandle("inventory", "Inventario")}
                 <div className="inventory-header-title">
                   <InventoryCheck
                     label="Seleccionar todo el inventario visible"
@@ -527,6 +568,7 @@ export function InventoryCatalog({
                 />
               </th>
               <th scope="col">
+                {columnHandle("sheets", "Hojas")}
                 <div>Hojas</div>
                 <InventoryMultiSelect
                   label="Hojas del inventario"
@@ -551,7 +593,11 @@ export function InventoryCatalog({
                   </th>
                 </tr>
                 {section.groups.map((g) => (
-                  <tr
+                  <SheetSizedRow
+                    label={g.name}
+                    height={rowsLayout.heights[g.links[0].id]}
+                    onResize={(v) => rowsLayout.resize(g.links[0].id, v)}
+                    onReset={() => rowsLayout.resize(g.links[0].id)}
                     key={g.name}
                     data-inventory-name={g.name}
                     data-selected={
@@ -620,7 +666,7 @@ export function InventoryCatalog({
                         ))}
                       </div>
                     </td>
-                  </tr>
+                  </SheetSizedRow>
                 ))}
               </Fragment>
             ))}

@@ -1,4 +1,9 @@
 "use client";
+import { useSheetWidths } from "./use-sheet-widths";
+import { useSheetHeights } from "./use-sheet-heights";
+import { SheetColumnResizer } from "./sheet-column-resizer";
+import { SheetSizedRow } from "./sheet-sized-row";
+
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useWorkbookPreference } from "./use-workbook-preference";
 import { engineRequest as api } from "./generation-engine";
@@ -34,6 +39,15 @@ export function AdvisorsSheet({
   sheetTabs: ReactNode;
   onChanged: () => Promise<void>;
 }) {
+  const { widths, resize, warning } = useSheetWidths("advisors:" + listId),
+    rowsLayout = useSheetHeights("advisors:" + listId);
+  const handle = (key: string, label: string) => (
+    <SheetColumnResizer
+      label={label}
+      onResize={(v) => resize(key, v)}
+      onReset={() => resize(key)}
+    />
+  );
   const today = new Intl.DateTimeFormat("en-CA", {
     timeZone: "America/Lima",
     year: "numeric",
@@ -279,19 +293,44 @@ export function AdvisorsSheet({
       )}
       {!valid && <p role="alert">Elige un período de hasta 31 días.</p>}
       {loading && <p role="status">Cargando asesores…</p>}
+      {(warning || rowsLayout.warning) && (
+        <p className="sheet-message" role="status">
+          {warning || rowsLayout.warning}
+        </p>
+      )}
       {sheetTabs}
       {valid && (
         <div className="table-scroll effectiveness-scroll">
           <table
-            className="effectiveness-grid advisor-grid"
-            style={{ width: 180 + days.length * 188 }}
+            className="effectiveness-grid advisor-grid sheet-resizable-table"
+            style={{
+              width:
+                (widths.advisor ?? 180) +
+                days.reduce(
+                  (n, d) =>
+                    n +
+                    (widths[d + "attendance"] ?? 84) +
+                    (widths[d + "sales"] ?? 48) +
+                    (widths[d + "absence"] ?? 56),
+                  0,
+                ),
+            }}
           >
             <colgroup>
-              <col style={{ width: 180 }} />
+              <col style={{ width: widths.advisor ?? 180 }} />
               {days.flatMap((d) => [
-                <col key={d + "attendance"} style={{ width: 84 }} />,
-                <col key={d + "sales"} style={{ width: 48 }} />,
-                <col key={d + "absence"} style={{ width: 56 }} />,
+                <col
+                  key={d + "attendance"}
+                  style={{ width: widths[d + "attendance"] ?? 84 }}
+                />,
+                <col
+                  key={d + "sales"}
+                  style={{ width: widths[d + "sales"] ?? 48 }}
+                />,
+                <col
+                  key={d + "absence"}
+                  style={{ width: widths[d + "absence"] ?? 56 }}
+                />,
               ])}
             </colgroup>
             <caption className="sr-only">
@@ -300,7 +339,7 @@ export function AdvisorsSheet({
             <thead>
               <tr>
                 <th className="advisor-name" rowSpan={2}>
-                  Asesor
+                  Asesor{handle("advisor", "Asesor")}
                 </th>
                 {days.map((d) => (
                   <th key={d} colSpan={3} scope="colgroup">
@@ -310,14 +349,21 @@ export function AdvisorsSheet({
               </tr>
               <tr>
                 {days.map((d) => (
-                  <FragmentHeaders key={d} />
+                  <FragmentHeaders key={d} day={d} handle={handle} />
                 ))}
               </tr>
             </thead>
             <tbody>
               {!loading &&
                 filtered.map((p) => (
-                  <tr key={p.id} data-advisor-id={p.id}>
+                  <SheetSizedRow
+                    key={p.id}
+                    data-advisor-id={p.id}
+                    label={p.name}
+                    height={rowsLayout.heights[p.id]}
+                    onResize={(v) => rowsLayout.resize(p.id, v)}
+                    onReset={() => rowsLayout.resize(p.id)}
+                  >
                     <td className="advisor-name">
                       <div className="advisor-name-actions">
                         <button
@@ -380,7 +426,7 @@ export function AdvisorsSheet({
                         />
                       );
                     })}
-                  </tr>
+                  </SheetSizedRow>
                 ))}
             </tbody>
           </table>
@@ -410,17 +456,23 @@ export function AdvisorsSheet({
     </section>
   );
 }
-function FragmentHeaders() {
+function FragmentHeaders({
+  day,
+  handle,
+}: {
+  day: string;
+  handle: (key: string, label: string) => ReactNode;
+}) {
   return (
     <>
       <th scope="col" title="Asistencia" aria-label="Asistencia">
-        A
+        A{handle(day + "attendance", "Asistencia " + day)}
       </th>
       <th scope="col" title="Ventas" aria-label="Ventas">
-        V
+        V{handle(day + "sales", "Ventas " + day)}
       </th>
       <th scope="col" title="Horas ausentes" aria-label="Horas ausentes">
-        H
+        H{handle(day + "absence", "Horas ausentes " + day)}
       </th>
     </>
   );

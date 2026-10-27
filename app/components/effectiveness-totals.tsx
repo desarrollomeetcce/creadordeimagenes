@@ -1,4 +1,9 @@
 "use client";
+import { useSheetWidths } from "./use-sheet-widths";
+import { useSheetHeights } from "./use-sheet-heights";
+import { SheetColumnResizer } from "./sheet-column-resizer";
+import { SheetSizedRow } from "./sheet-sized-row";
+
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useWorkbookPreference } from "./use-workbook-preference";
 import { engineRequest as api } from "./generation-engine";
@@ -47,6 +52,15 @@ export function EffectivenessTotals({
   tables: { id: string; name: string }[];
   initialTableId: string;
 }) {
+  const { widths, resize, warning } = useSheetWidths("totals:" + listId),
+    rowsLayout = useSheetHeights("totals:" + listId);
+  const handle = (key: string, label: string) => (
+    <SheetColumnResizer
+      label={label}
+      onResize={(v) => resize(key, v)}
+      onReset={() => resize(key)}
+    />
+  );
   const today = new Intl.DateTimeFormat("en-CA", {
     timeZone: "America/Lima",
     year: "numeric",
@@ -176,6 +190,14 @@ export function EffectivenessTotals({
       );
   }, [data, country, currency]);
   const columns = mode === "manual" ? manualColumns : autoColumns;
+  const layoutColumns = [
+    { key: "date", width: 100 },
+    { key: "country", width: 66 },
+    { key: "currency", width: 66 },
+    ...data.flatMap((t) =>
+      columns.map((m) => ({ key: t.tableId + ":" + m.key, width: 76 })),
+    ),
+  ];
   const save = (
     t: TotalSheet,
     g: { country: string; currency: string },
@@ -389,15 +411,33 @@ export function EffectivenessTotals({
       {!data.length && !loading && (
         <p className="sheet-help">Selecciona al menos una tabla.</p>
       )}
+      {(warning || rowsLayout.warning) && (
+        <p className="sheet-message" role="status">
+          {warning || rowsLayout.warning}
+        </p>
+      )}
       {sheetTabs}
       {!!data.length && (
         <div className="table-scroll effectiveness-scroll sheet-scroll">
-          <table className="effectiveness-grid sheet-totals-grid">
+          <table
+            className="effectiveness-grid sheet-totals-grid sheet-resizable-table"
+            style={{
+              width: layoutColumns.reduce(
+                (n, c) => n + (widths[c.key] ?? c.width),
+                0,
+              ),
+            }}
+          >
+            <colgroup>
+              {layoutColumns.map((c) => (
+                <col key={c.key} style={{ width: widths[c.key] ?? c.width }} />
+              ))}
+            </colgroup>
             <thead>
               <tr>
-                <th rowSpan={2}>Fecha</th>
-                <th rowSpan={2}>País</th>
-                <th rowSpan={2}>Moneda</th>
+                <th rowSpan={2}>Fecha{handle("date", "Fecha")}</th>
+                <th rowSpan={2}>País{handle("country", "País")}</th>
+                <th rowSpan={2}>Moneda{handle("currency", "Moneda")}</th>
                 {data.map((t) => (
                   <th key={t.tableId} colSpan={columns.length}>
                     {t.name}
@@ -414,6 +454,7 @@ export function EffectivenessTotals({
                     >
                       {m.label}
                       {m.sum ? " Σ" : ""}
+                      {handle(t.tableId + ":" + m.key, t.name + " " + m.label)}
                     </th>
                   )),
                 )}
@@ -422,7 +463,26 @@ export function EffectivenessTotals({
             <tbody>
               {days.flatMap((day) =>
                 groups.map((g) => (
-                  <tr key={day + JSON.stringify(g)}>
+                  <SheetSizedRow
+                    key={day + JSON.stringify(g)}
+                    label={day + " " + g.country + " " + g.currency}
+                    height={
+                      rowsLayout.heights[
+                        day + ":" + g.country + ":" + g.currency
+                      ]
+                    }
+                    onResize={(v) =>
+                      rowsLayout.resize(
+                        day + ":" + g.country + ":" + g.currency,
+                        v,
+                      )
+                    }
+                    onReset={() =>
+                      rowsLayout.resize(
+                        day + ":" + g.country + ":" + g.currency,
+                      )
+                    }
+                  >
                     <th>
                       {day.slice(8)}.{day.slice(5, 7)}.{day.slice(0, 4)}
                     </th>
@@ -491,7 +551,7 @@ export function EffectivenessTotals({
                         );
                       });
                     })}
-                  </tr>
+                  </SheetSizedRow>
                 )),
               )}
               {!groups.length && (

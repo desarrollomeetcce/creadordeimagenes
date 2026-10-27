@@ -1882,3 +1882,18 @@ select option, select optgroup { background:var(--surface); color:var(--ink); }
 .inventory-category-manager .inventory-category-select-all { display: flex; gap: 8px; align-items: center; margin-top: 12px; }
 .inventory-category-manager input[type="checkbox"] { width: 15px; height: 15px; flex: 0 0 15px; margin: 0; }
 @media(max-width:600px) { .inventory-category-manager form.row { grid-template-columns: 1fr 110px; } .inventory-category-manager form.row button { grid-column: 1 / -1; } }
+
+/* Manual worksheet sizes: stable colgroups and first-cell row handles. */
+.products-catalog table.sheet-resizable-table { table-layout: fixed; min-width: 0; max-width: none; }
+.products-catalog table.sheet-resizable-table th,.products-catalog table.sheet-resizable-table td { min-width: 0; max-width: none; width: auto; overflow-wrap: anywhere; }
+.products-catalog table.sheet-resizable-table thead th { position: relative; padding-right: 8px; }
+.products-catalog table.sheet-resizable-table .advisor-name { width: auto; max-width: none; }
+.products-catalog table.sheet-resizable-table input.sheet-cell { min-width: 0; max-width: 100%; }
+.sheet-height-cell { position: relative; }
+.sheet-row-resizer { position: absolute; bottom: -2px; left: 0; width: calc(100% - 7px); height: 6px; min-height: 0; padding: 0; margin: 0; border: 0; border-radius: 0; background: transparent; cursor: row-resize; touch-action: none; z-index: 6; }
+.sheet-row-resizer:hover,.sheet-row-resizer:focus-visible { background: var(--accent); outline: 0; }
+.products-catalog .sheet-view .effectiveness-grid button.sheet-row-resizer { height: 6px; min-height: 0; padding: 0; font-size: 0; width: calc(100% - 7px); }
+.products-catalog table.sheet-resizable-table th .sheet-column-resizer { height: 100%; width: 7px; min-height: 0; padding: 0; }
+.products-catalog .sheet-view table.sheet-resizable-table th,.products-catalog .sheet-view table.sheet-resizable-table td,.products-catalog .sheet-view table.sheet-resizable-table th:first-child,.products-catalog .sheet-view table.sheet-resizable-table td:first-child { width: auto; min-width: 0; max-width: none; }
+.products-catalog table.sheet-resizable-table .sheet-column-resizer { position: absolute; top: 0; right: -2px; bottom: 0; width: 7px; min-width: 0; max-width: none; height: auto; min-height: 0; margin: 0; padding: 0; border: 0; border-radius: 0; background: transparent; cursor: col-resize; touch-action: none; user-select: none; z-index: 8; }
+.products-catalog table.sheet-resizable-table .sheet-column-resizer:hover,.products-catalog table.sheet-resizable-table .sheet-column-resizer:focus-visible { background: var(--accent); }

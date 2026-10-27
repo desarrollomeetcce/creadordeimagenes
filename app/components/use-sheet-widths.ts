@@ -14,9 +14,8 @@ export function useSheetWidths(tableId: string) {
       if (raw && typeof raw === "object" && !Array.isArray(raw))
         for (const [k, v] of Object.entries(raw).slice(0, 4000))
           if (
-            /^(alias|advisor|country|currency|\d{4}-\d{2}-\d{2}(sales|budget|base|spend|fixedCost))$/.test(
-              k,
-            ) &&
+            /^[a-zA-Z0-9:_-]{1,240}$/.test(k) &&
+            !["__proto__", "constructor", "prototype"].includes(k) &&
             typeof v === "number" &&
             Number.isFinite(v) &&
             v >= 24 &&
