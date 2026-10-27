@@ -10,11 +10,13 @@ import {
 } from "../../lib/meta-ads/detail-period-presets";
 export function DetailPeriodPresets({
   scope,
+  sectionId,
   since,
   until,
   onSelect,
 }: {
   scope: string;
+  sectionId?: string;
   since: string;
   until: string;
   onSelect: (since: string, until: string) => void;
@@ -57,6 +59,7 @@ export function DetailPeriodPresets({
   };
   return (
     <DetailSection
+      id={sectionId}
       stateKey="periods"
       title="Períodos guardados"
       tone="periods"

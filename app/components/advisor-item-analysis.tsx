@@ -13,6 +13,7 @@ type Row = {
 };
 export function AdvisorItemAnalysis({
   tableId,
+  sectionId,
   aliasId,
   country,
   since,
@@ -20,6 +21,7 @@ export function AdvisorItemAnalysis({
   onAdvisor,
 }: {
   tableId: string;
+  sectionId?: string;
   aliasId: string;
   country: string;
   since: string;
@@ -97,6 +99,7 @@ export function AdvisorItemAnalysis({
   }, [query]);
   return (
     <DetailSection
+      id={sectionId}
       stateKey="inventory-analysis"
       title="Ventas de este inventario por asesor"
       tone="sales"

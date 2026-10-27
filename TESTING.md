@@ -1255,3 +1255,9 @@ Chromium con PostgreSQL exclusivo: + adyacente a Mes anterior y sin fila numéri
 Regresión existente de V4+2→6+2, reparto sin responsabilidad, asignaciones cinco/página, gráfico X/Y, navegación en ventana independiente, desglose diario y H con dos intervalos1,5→2 aprobada. Backend y esquema sin modificaciones;193/193 integraciones de la versión anterior permanecen vigentes.
 
 Evidencia local: /workspace/work/period-calendar-{unit,typecheck,build,browser,advisors-browser}.txt; capturas period-calendar-{desktop,mobile}.png. Publicación en main no equivale a verificación del contenedor activo en Hostinger.
+
+### Orden definitivo del detalle de asesor (27/10/2026)
+
+183/183 unitarias, TypeScript y build aprobados. Chromium verifica la secuencia exacta de siete módulos principales: períodos → ventas por asesor → qué vendió cada día → histórico → estadísticas → asignaciones → ventas por producto. Resumen y BM siguen presentes dentro de Estadísticas. Repite plegado por clic/Enter, conservación al refrescar/cambiar fechas, navegación que abre destinos, calendario7/57 días y persistencia al recargar, móvil390px, y plegado en Totales/inventario. Sin escrituras financieras, errores JS/API ni llamadas externas. Backend/esquema sin cambios;193 integraciones previas vigentes.
+
+Evidencia: /workspace/work/advisor-order-{unit,typecheck,build,browser}.txt. La publicación del commit no acredita el despliegue activo en Hostinger.
