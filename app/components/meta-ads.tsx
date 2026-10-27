@@ -2452,40 +2452,11 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
                       disabled={busy}
                       onClick={() => setSharing(a)}
                     >
-                      Accesos por usuario
+                      Permisos de esta cuenta
                     </button>
-                    <details>
-                      <summary>Costo objetivo · opcional</summary>
-                      <form
-                        className="row"
-                        onSubmit={(e) => {
-                          e.preventDefault();
-                          const value = new FormData(e.currentTarget).get(
-                            "target",
-                          );
-                          void run(
-                            () =>
-                              api(`meta-ads/accounts/${a.id}`, "PATCH", {
-                                targetCost: value ? Number(value) : null,
-                              }),
-                            "Costo objetivo actualizado.",
-                          );
-                        }}
-                      >
-                        <label>
-                          Meta de costo · {a.currency}
-                          <input
-                            name="target"
-                            type="number"
-                            min="0.000001"
-                            step="any"
-                            defaultValue={a.targetCost ?? ""}
-                            placeholder="Sin meta"
-                          />
-                        </label>
-                        <button disabled={busy}>Guardar</button>
-                      </form>
-                    </details>
+                    <small>
+                      Elige quién puede ver esta cuenta o actualizar sus datos.
+                    </small>
                   </div>
                 )}
               </article>
@@ -3033,8 +3004,8 @@ function MetaDetail({ item: o, onClose }: { item: Item; onClose: () => void }) {
         la circulación real.
       </p>
       <p>
-        Las clasificaciones son cálculos internos, según el costo objetivo y
-        volumen de resultados disponible. No son puntuaciones oficiales de Meta.
+        Las clasificaciones son cálculos internos, según los criterios de
+        evaluación y el volumen de resultados disponible. No son puntuaciones oficiales de Meta.
         Un estado efectivo activo no garantiza entrega actual.
       </p>
       <MetaObjectLink item={o} />
@@ -3090,11 +3061,11 @@ function MetaSharing({
           onClose();
       }}
     >
-      <h2>Accesos · {account.name}</h2>
+      <h2>Permisos · {account.name}</h2>
       <p>
-        Lectura de resultados y gasto publicitario. Solo ADMIN puede recibir
-        permiso adicional para sincronizar. No concede permisos sobre proyectos
-        ni claves de IA.
+        Selecciona quién puede ver los resultados y el gasto de esta cuenta. A
+        los administradores también puedes permitirles actualizar sus datos
+        desde Meta. Tu acceso como OWNER se conserva siempre.
       </p>
       <div className="stack">
         {users.map((u) => (
@@ -3102,6 +3073,7 @@ function MetaSharing({
             <label className="check">
               <input
                 type="checkbox"
+                aria-label={`Permitir ver esta cuenta a ${u.name}`}
                 checked={grants.some((g) => g.userId === u.id)}
                 disabled={busy || u.role === "OWNER"}
                 onChange={(e) =>
@@ -3131,7 +3103,7 @@ function MetaSharing({
                     )
                   }
                 />
-                Puede sincronizar
+                Puede actualizar datos desde Meta
               </label>
             )}
           </div>
@@ -3150,7 +3122,7 @@ function MetaSharing({
               .finally(() => setBusy(false));
           }}
         >
-          Guardar accesos
+          Guardar permisos
         </button>
         <button type="button" disabled={busy} onClick={onClose}>
           Cerrar
