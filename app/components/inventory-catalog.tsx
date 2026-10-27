@@ -7,6 +7,8 @@ import { useSheetWidths } from "./use-sheet-widths";
 import { useSheetHeights } from "./use-sheet-heights";
 import { SheetColumnResizer } from "./sheet-column-resizer";
 import { SheetSizedRow } from "./sheet-sized-row";
+import { useInventoryDuplicateReview } from "./inventory-duplicate-review";
+import { splitCategoryNames } from "../../lib/meta-ads/category-paste";
 import { InventoryImport } from "./inventory-import";
 import { SheetSearchSelect } from "./sheet-search-select";
 import { InventorySelectionDelete } from "./inventory-selection-delete";
@@ -60,6 +62,7 @@ export function InventoryCatalog({
   sheetTabs: ReactNode;
   onChanged: () => Promise<void>;
 }) {
+  const duplicateReview = useInventoryDuplicateReview();
   const { widths, resize, warning } = useSheetWidths("inventory:" + listId),
     rowsLayout = useSheetHeights("inventory:" + listId);
   const columns = [
@@ -146,11 +149,31 @@ export function InventoryCatalog({
     if (!categories) throw Error("Recarga las categorías antes de guardar.");
     setBusy(true);
     try {
+      const decisions =
+        action.action === "IMPORT"
+          ? await duplicateReview.review(
+              action.rows.flatMap((r) => [
+                ...splitCategoryNames(r.primary).map((name) => ({
+                  kind: "PRIMARY" as const,
+                  name,
+                })),
+                ...splitCategoryNames(r.secondary).map((name) => ({
+                  kind: "SECONDARY" as const,
+                  name,
+                })),
+              ]),
+              categories.categories.map((c) => ({
+                kind: c.kind,
+                name: c.name,
+              })),
+            )
+          : [];
       setCategories(
         await api("meta-ads/inventory/categories", "POST", {
           listId,
           revision: categories.revision,
           ...action,
+          ...(action.action === "IMPORT" ? { decisions } : {}),
         }),
       );
     } finally {
@@ -168,17 +191,35 @@ export function InventoryCatalog({
         return c ? [c] : [];
       })
       .sort((a, b) => a.name.localeCompare(b.name, "es"));
-  const items = tables
-    .flatMap((t) =>
+  const items: {
+    id: string;
+    name: string;
+    tableId: string;
+    tableName: string;
+    inventorySheetId?: string;
+    standalone: boolean;
+  }[] = [
+    ...tables.flatMap((t) =>
       t.aliases
         .filter((a) => (a.inventorySheetId ?? "default-inventory") === listId)
-        .map((a) => ({ ...a, tableId: t.id, tableName: t.name })),
-    )
-    .sort(
-      (a, b) =>
-        a.name.localeCompare(b.name, "es") ||
-        a.tableName.localeCompare(b.tableName, "es"),
-    );
+        .map((a) => ({
+          ...a,
+          tableId: t.id,
+          tableName: t.name,
+          standalone: false,
+        })),
+    ),
+    ...(categories?.items ?? []).map((a) => ({
+      ...a,
+      tableId: "",
+      tableName: "",
+      standalone: true,
+    })),
+  ].sort(
+    (a, b) =>
+      a.name.localeCompare(b.name, "es") ||
+      a.tableName.localeCompare(b.tableName, "es"),
+  );
   useEffect(() => {
     if (target && !tables.some((t) => t.id === target))
       setTarget(tables[0]?.id ?? "");
@@ -371,17 +412,31 @@ export function InventoryCatalog({
           setBusy(true);
           setMessage("");
           try {
-            const created = await api("meta-ads/aliases", "POST", {
-              inventorySheetId: listId,
-              tableId: target,
-              name: name.trim(),
+            if (!categories)
+              throw Error("Recarga el inventario antes de guardar.");
+            const decisions = await duplicateReview.review(
+              [{ kind: "INVENTORY", name: name.trim() }],
+              available.map((g) => ({ kind: "INVENTORY", name: g.name })),
+            );
+            await api("meta-ads/inventory/import", "POST", {
+              listId,
+              revision: categories.revision,
+              decisions,
+              rows: [
+                {
+                  primary: "",
+                  secondary: "",
+                  name: name.trim(),
+                  sheets: tables.find((t) => t.id === target)!.name,
+                },
+              ],
             });
             await onChanged();
-
+            await reloadCategories();
             setFilters({
               primary: [],
               secondary: [],
-              items: [created.id],
+              items: [],
               sheets: [target],
             });
             setName("");
@@ -637,33 +692,36 @@ export function InventoryCatalog({
                               ids: g.links.map((a) => a.id),
                             });
                             await onChanged();
+                            await reloadCategories();
                           }}
                         />
                       </div>
                     </td>
                     <td>
                       <div className="inventory-sheet-links">
-                        {g.links.map((a) => (
-                          <span
-                            key={a.id}
-                            className="inventory-sheet-chip"
-                            data-inventory-id={a.id}
-                          >
-                            {a.tableName}
-                            {removing && (
-                              <button
-                                type="button"
-                                className="inventory-remove"
-                                aria-label={`Eliminar ${g.name} de ${a.tableName}`}
-                                title={`Eliminar solo de ${a.tableName}`}
-                                disabled={busy}
-                                onClick={() => void prepareRemoval(a.id)}
-                              >
-                                ×
-                              </button>
-                            )}
-                          </span>
-                        ))}
+                        {g.links
+                          .filter((a) => !a.standalone)
+                          .map((a) => (
+                            <span
+                              key={a.id}
+                              className="inventory-sheet-chip"
+                              data-inventory-id={a.id}
+                            >
+                              {a.tableName}
+                              {removing && (
+                                <button
+                                  type="button"
+                                  className="inventory-remove"
+                                  aria-label={`Eliminar ${g.name} de ${a.tableName}`}
+                                  title={`Eliminar solo de ${a.tableName}`}
+                                  disabled={busy}
+                                  onClick={() => void prepareRemoval(a.id)}
+                                >
+                                  ×
+                                </button>
+                              )}
+                            </span>
+                          ))}
                       </div>
                     </td>
                   </SheetSizedRow>
@@ -682,11 +740,16 @@ export function InventoryCatalog({
         <InventoryImport
           listId={listId}
           revision={categories.revision}
+          config={categories}
+          inventoryNames={available.map((g) => g.name)}
           upload={importView === "file"}
           onClose={() => setImportView(null)}
           onSaved={async () => {
             await onChanged();
             await reloadCategories();
+            setMessage(
+              "Guardado. Las categorías sin ítems se consultan en «Ver categorías».",
+            );
             setFilters({ primary: [], secondary: [], items: [], sheets: [] });
           }}
         />
@@ -709,12 +772,14 @@ export function InventoryCatalog({
           onClose={() => setBulkIds(null)}
           onRemoved={async (ids) => {
             await onChanged();
+            await reloadCategories();
             setSelected((old) => old.filter((id) => !bulkIds.includes(id)));
             setBulkIds(null);
             setMessage("Selección eliminada de las hojas confirmadas.");
           }}
         />
       )}
+      {duplicateReview.dialog}
       <dialog
         ref={dialog}
         className="meta-detail inventory-delete-dialog"

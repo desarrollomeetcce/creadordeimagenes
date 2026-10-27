@@ -1,6 +1,8 @@
 export type CategoryImportRow = { primary: string; secondary: string };
 export const categoryKey = (s: string) =>
   s.normalize("NFKC").trim().replace(/\s+/g, " ").toLocaleLowerCase("es");
+export const categoryIdentity = (s: string) =>
+  s.trim().replace(/\s+/g, " ");
 export function splitCategoryNames(text: string) {
   const names = [
     ...new Map(
@@ -8,7 +10,7 @@ export function splitCategoryNames(text: string) {
         .split(/[,;\n]+/)
         .map((s) => s.trim().replace(/\s+/g, " "))
         .filter(Boolean)
-        .map((s) => [categoryKey(s), s]),
+        .map((s) => [categoryIdentity(s), s]),
     ).values(),
   ];
   if (

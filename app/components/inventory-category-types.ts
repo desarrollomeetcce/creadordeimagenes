@@ -9,12 +9,14 @@ export type InventoryCategoryState = {
   categories: InventoryCategory[];
   relations: { primaryId: string; secondaryId: string }[];
   assignments: Record<string, string[]>;
+  items?: { id: string; name: string }[];
 };
 export type InventoryCategoryAction =
   | {
       action: "IMPORT";
       rows: { primary: string; secondary: string }[];
       targetIds?: string[];
+      decisions?: import("../../lib/meta-ads/inventory-duplicates").InventoryNameDecision[];
     }
   | {
       action: "ASSIGN";

@@ -3,9 +3,11 @@ import { useEffect, useRef, useState } from "react";
 import { engineRequest as api } from "./generation-engine";
 import {
   inventoryRows,
-  parseInventoryText,
+  parseInventoryGrid,
   type InventoryImportRow,
 } from "../../lib/meta-ads/inventory-paste";
+import { useInventoryDuplicateReview } from "./inventory-duplicate-review";
+import type { InventoryCategoryState } from "./inventory-category-types";
 import { splitCategoryNames } from "../../lib/meta-ads/category-paste";
 const fields = ["primary", "secondary", "name", "sheets"] as const;
 const titles = [
@@ -18,16 +20,21 @@ const blank = () => ({ primary: "", secondary: "", name: "", sheets: "" });
 export function InventoryImport({
   listId,
   revision,
+  config,
+  inventoryNames,
   upload = false,
   onClose,
   onSaved,
 }: {
   listId: string;
   revision: number;
+  config: InventoryCategoryState;
+  inventoryNames: string[];
   upload?: boolean;
   onClose: () => void;
   onSaved: () => Promise<void>;
 }) {
+  const duplicates = useInventoryDuplicateReview();
   const dialog = useRef<HTMLDialogElement>(null),
     file = useRef<HTMLInputElement>(null),
     [rows, setRows] = useState<InventoryImportRow[]>(() =>
@@ -54,14 +61,22 @@ export function InventoryImport({
     >
       <header className="row">
         <h2>Pegar inventario</h2>
-        <button type="button" disabled={busy} onClick={onClose}>
-          Cerrar
+        <button
+          type="button"
+          className="inventory-dialog-close"
+          aria-label="Cerrar Pegar inventario"
+          title="Cerrar sin guardar"
+          disabled={busy}
+          onClick={onClose}
+        >
+          ×
         </button>
       </header>
       <p>
-        Pega las cuatro columnas desde Excel. Las comas separan categorías y
-        hojas; el nombre del inventario queda en una sola celda. Usa nombres de
-        hojas existentes.
+        Completa solo las columnas que necesites. Puedes pegar una columna de
+        categorías o inventario. Las categorías vacías quedan sin categoría; sin
+        Hojas, el ítem se guarda sin asignación. Las comas separan categorías y
+        hojas.
       </p>
       <button
         type="button"
@@ -129,18 +144,19 @@ export function InventoryImport({
                         if (!/[\t\r\n]/.test(text)) return;
                         e.preventDefault();
                         try {
-                          if (col !== 0)
-                            throw Error(
-                              "Pega las cuatro columnas desde Categoría principal.",
-                            );
-                          const parsed = parseInventoryText(text);
-                          if (i + parsed.length > 500)
+                          const parsed = parseInventoryGrid(text, false, col);
+                          if (i + parsed.rows.length > 500)
                             throw Error("Máximo 500 filas.");
                           setRows((old) => {
                             const next = [...old];
-                            while (next.length < i + parsed.length)
+                            while (next.length < i + parsed.rows.length)
                               next.push(blank());
-                            parsed.forEach((r, n) => (next[i + n] = r));
+                            parsed.rows.forEach((r, n) => {
+                              const row = { ...next[i + n] };
+                              for (const key of parsed.columns)
+                                row[key] = r[key];
+                              next[i + n] = row;
+                            });
                             return next;
                           });
                           setError("");
@@ -207,8 +223,34 @@ export function InventoryImport({
               const parsed = inventoryRows(
                 rows.map((r) => fields.map((k) => r[k])),
               );
+              const decisions = await duplicates.review(
+                parsed.flatMap((r) => [
+                  ...splitCategoryNames(r.primary).map((name) => ({
+                    kind: "PRIMARY" as const,
+                    name,
+                  })),
+                  ...splitCategoryNames(r.secondary).map((name) => ({
+                    kind: "SECONDARY" as const,
+                    name,
+                  })),
+                  ...(r.name
+                    ? [{ kind: "INVENTORY" as const, name: r.name }]
+                    : []),
+                ]),
+                [
+                  ...config.categories.map((c) => ({
+                    kind: c.kind,
+                    name: c.name,
+                  })),
+                  ...inventoryNames.map((name) => ({
+                    kind: "INVENTORY" as const,
+                    name,
+                  })),
+                ],
+              );
               await api("meta-ads/inventory/import", "POST", {
                 listId,
+                decisions,
                 revision,
                 rows: parsed,
               });
@@ -230,9 +272,11 @@ export function InventoryImport({
         </button>
       </footer>
       <small>
-        Se añaden los ítems y las categorías sin reemplazar cifras existentes.
-        Hasta 500 filas; XLSX, CSV, TSV y TXT.
+        Solo categorías: se añaden al listado de categorías. Solo inventario: se
+        guarda sin categorías ni hojas. Las celdas vacías no se completan
+        automáticamente. Hasta 500 filas; XLSX, CSV, TSV y TXT.
       </small>
+      {duplicates.dialog}
     </dialog>
   );
 }

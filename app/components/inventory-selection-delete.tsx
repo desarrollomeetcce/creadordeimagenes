@@ -9,6 +9,7 @@ type Leaf = {
   days: number;
   assignments: number;
   token: string;
+  standalone?: boolean;
 };
 export function InventorySelectionDelete({
   listId,
@@ -67,8 +68,9 @@ export function InventorySelectionDelete({
     >
       <h2>Eliminar inventario seleccionado</h2>
       <p>
-        Marca las hojas de las que quieres quitar cada ítem. Las hojas sin
-        marcar conservarán sus datos.
+        Revisa los ítems y sus vínculos con hojas. «Ficha de inventario» es el
+        registro del catálogo, aunque no tenga hoja asignada. Los registros sin
+        marcar se conservarán.
       </p>
       {loading && <p role="status">Revisando la selección…</p>}
       {!loading && !!items.length && (
@@ -115,7 +117,7 @@ export function InventorySelectionDelete({
             ))}
           </div>
           <p>
-            {chosen.length} asociaciones seleccionadas ·{" "}
+            {chosen.length} registros seleccionados ·{" "}
             {chosen.reduce((n, i) => n + i.rows, 0)} filas ·{" "}
             {chosen.reduce((n, i) => n + i.days, 0)} días con datos manuales.
           </p>

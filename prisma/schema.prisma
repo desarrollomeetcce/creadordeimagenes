@@ -1039,6 +1039,7 @@ model MetaAdvisorSalesApproval {
 }
 
 model MetaEffectivenessSheet {
+ inventoryItems MetaInventoryItem[]
  categoryRevision Int @default(0)
  categories MetaInventoryCategory[]
  archivedAt DateTime?
@@ -1057,6 +1058,7 @@ model MetaEffectivenessSheet {
 }
 
 model MetaInventoryCategory {
+ itemAssignments MetaInventoryItemCategory[]
  id String @id @default(cuid())
  sheetId String
  sheet MetaEffectivenessSheet @relation(fields:[sheetId],references:[id],onDelete:Cascade)
@@ -1082,5 +1084,22 @@ model MetaInventoryCategoryAssignment {
  categoryId String
  category MetaInventoryCategory @relation(fields:[categoryId],references:[id],onDelete:Cascade)
  @@id([aliasId,categoryId])
+ @@index([categoryId])
+}
+
+model MetaInventoryItem {
+ id String @id @default(cuid())
+ sheetId String
+ sheet MetaEffectivenessSheet @relation(fields:[sheetId],references:[id],onDelete:Restrict)
+ name String
+ categories MetaInventoryItemCategory[]
+ @@unique([sheetId,name])
+}
+model MetaInventoryItemCategory {
+ itemId String
+ item MetaInventoryItem @relation(fields:[itemId],references:[id],onDelete:Cascade)
+ categoryId String
+ category MetaInventoryCategory @relation(fields:[categoryId],references:[id],onDelete:Cascade)
+ @@id([itemId,categoryId])
  @@index([categoryId])
 }

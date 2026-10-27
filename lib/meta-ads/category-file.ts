@@ -1,7 +1,7 @@
 import JSZip from "jszip";
 import { DOMParser } from "@xmldom/xmldom";
 import { categoryRows, parseCategoryText } from "./category-paste";
-import { inventoryRows, parseInventoryText } from "./inventory-paste";
+import { inventoryGrid, parseInventoryText } from "./inventory-paste";
 import { AppError, demand } from "../errors";
 function decodeText(bytes: Uint8Array) {
   if (bytes[0] === 0xff && bytes[1] === 0xfe)
@@ -173,7 +173,15 @@ async function parseFile(name: string, encoded: string, inventory: boolean) {
     demand(records.length <= 501, "Se admiten hasta 500 filas.");
   }
   return {
-    rows: inventory ? inventoryRows(records) : categoryRows(records),
+    rows: inventory
+      ? inventoryGrid(
+          records.map((r) => {
+            const next = [...r];
+            while (next.length > 1 && !next[next.length - 1]) next.pop();
+            return next;
+          }),
+        ).rows
+      : categoryRows(records),
     sheetName: sheet.getAttribute("name") ?? "Hoja 1",
   };
 }

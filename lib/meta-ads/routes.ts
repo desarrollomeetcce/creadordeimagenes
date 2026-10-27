@@ -81,20 +81,33 @@ export async function metaRoutes(
       ).setMetaStatus(actor, parts[2], b.status, b.expectedStatus),
     );
   }
+  const nameDecisions = z
+    .array(
+      z
+        .object({
+          kind: z.enum(["PRIMARY", "SECONDARY", "INVENTORY"]),
+          name: z.string().min(1).max(150),
+          useName: z.string().min(1).max(150),
+        })
+        .strict(),
+    )
+    .max(2000)
+    .optional();
   if (path === "inventory/import" && method === "POST") {
     ownerOnly(actor);
     const b = z
       .object({
         listId: z.string().min(1).max(100),
         revision: z.number().int().nonnegative(),
+        decisions: nameDecisions,
         rows: z
           .array(
             z
               .object({
                 primary: z.string().max(2000),
                 secondary: z.string().max(2000),
-                name: z.string().min(1).max(150),
-                sheets: z.string().min(1).max(2000),
+                name: z.string().max(150),
+                sheets: z.string().max(2000),
               })
               .strict(),
           )
@@ -166,6 +179,7 @@ export async function metaRoutes(
               .min(1)
               .max(500),
             targetIds: ids.optional(),
+            decisions: nameDecisions,
           })
           .strict(),
         z

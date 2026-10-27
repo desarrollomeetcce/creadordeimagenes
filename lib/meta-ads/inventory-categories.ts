@@ -6,10 +6,14 @@ import { recordActivity } from "../activity";
 import { effectivenessLock } from "./effectiveness";
 import {
   categoryRows,
-  categoryKey,
+  categoryIdentity,
   splitCategoryNames,
   type CategoryImportRow,
 } from "./category-paste";
+import {
+  resolveInventoryName,
+  type InventoryNameDecision,
+} from "./inventory-duplicates";
 import type { Actor } from "./service";
 type Kind = "PRIMARY" | "SECONDARY";
 async function state(tx: Prisma.TransactionClient, listId: string) {
@@ -35,12 +39,24 @@ async function state(tx: Prisma.TransactionClient, listId: string) {
   });
   const byAlias: Record<string, string[]> = {};
   for (const a of assignments) (byAlias[a.aliasId] ??= []).push(a.categoryId);
+  const items = await tx.metaInventoryItem.findMany({
+    where: { sheetId: listId },
+    select: {
+      id: true,
+      name: true,
+      categories: { select: { categoryId: true } },
+    },
+    orderBy: { name: "asc" },
+  });
+  for (const item of items)
+    byAlias[item.id] = item.categories.map((c) => c.categoryId);
   return {
     listId,
     revision: sheet.categoryRevision,
     categories,
     relations,
     assignments: byAlias,
+    items: items.map(({ id, name }) => ({ id, name })),
   };
 }
 export async function inventoryCategories(actor: Actor, listId: string) {
@@ -50,7 +66,12 @@ export async function inventoryCategories(actor: Actor, listId: string) {
   });
 }
 type Action =
-  | { action: "IMPORT"; rows: CategoryImportRow[]; targetIds?: string[] }
+  | {
+      action: "IMPORT";
+      rows: CategoryImportRow[];
+      targetIds?: string[];
+      decisions?: InventoryNameDecision[];
+    }
   | {
       action: "ASSIGN";
       ids: string[];
@@ -68,28 +89,83 @@ async function fullGroups(
     ids.length > 0 && ids.length <= 1000 && new Set(ids).size === ids.length,
     "Selección de inventario inválida.",
   );
-  const found = await tx.metaAlias.findMany({
+  const aliases = await tx.metaAlias.findMany({
     where: { id: { in: ids }, inventorySheetId: listId },
     select: { id: true, name: true },
   });
+  const items = await tx.metaInventoryItem.findMany({
+    where: { id: { in: ids }, sheetId: listId },
+    select: { id: true, name: true },
+  });
+  const found = [...aliases, ...items];
   demand(
     found.length === ids.length,
     "La selección cambió o incluye otra lista.",
     409,
   );
-  const all = await tx.metaAlias.findMany({
+  const allAliases = await tx.metaAlias.findMany({
     where: {
       inventorySheetId: listId,
       name: { in: [...new Set(found.map((a) => a.name))] },
     },
     select: { id: true },
   });
+  const allItems = await tx.metaInventoryItem.findMany({
+    where: {
+      sheetId: listId,
+      name: { in: [...new Set(found.map((a) => a.name))] },
+    },
+    select: { id: true },
+  });
+  const all = [...allAliases, ...allItems];
   demand(
     all.length === ids.length && all.every((a) => ids.includes(a.id)),
     "La agrupación de inventario cambió. Recarga antes de guardar.",
     409,
   );
   return found;
+}
+export async function writeInventoryTags(
+  tx: Prisma.TransactionClient,
+  ids: string[],
+  categoryIds: string[],
+  replace = false,
+) {
+  const aliases = await tx.metaAlias.findMany({
+      where: { id: { in: ids } },
+      select: { id: true },
+    }),
+    items = await tx.metaInventoryItem.findMany({
+      where: { id: { in: ids } },
+      select: { id: true },
+    });
+  demand(
+    aliases.length + items.length === ids.length,
+    "El inventario cambió. Recarga.",
+    409,
+  );
+  if (replace) {
+    await tx.metaInventoryCategoryAssignment.deleteMany({
+      where: { aliasId: { in: ids } },
+    });
+    await tx.metaInventoryItemCategory.deleteMany({
+      where: { itemId: { in: ids } },
+    });
+  }
+  if (aliases.length && categoryIds.length)
+    await tx.metaInventoryCategoryAssignment.createMany({
+      data: aliases.flatMap((a) =>
+        categoryIds.map((categoryId) => ({ aliasId: a.id, categoryId })),
+      ),
+      skipDuplicates: true,
+    });
+  if (items.length && categoryIds.length)
+    await tx.metaInventoryItemCategory.createMany({
+      data: items.flatMap((a) =>
+        categoryIds.map((categoryId) => ({ itemId: a.id, categoryId })),
+      ),
+      skipDuplicates: true,
+    });
 }
 export async function saveInventoryCategories(
   actor: Actor,
@@ -116,19 +192,32 @@ export async function saveInventoryCategories(
         if (b.targetIds?.length) await fullGroups(tx, b.listId, b.targetIds);
         const map = new Map(
           before.categories.map((c) => [
-            c.kind + "|" + categoryKey(c.name),
+            c.kind + "|" + categoryIdentity(c.name),
             c.id,
           ]),
         );
         const resolve = async (kind: Kind, name: string) => {
-          const key = kind + "|" + categoryKey(name);
+          name = resolveInventoryName(
+            kind,
+            name,
+            [...map.entries()]
+              .filter(([k]) => k.startsWith(kind + "|"))
+              .map(([k]) => k.slice(kind.length + 1)),
+            b.decisions,
+          );
+          const key = kind + "|" + categoryIdentity(name);
           if (map.has(key)) return map.get(key)!;
           demand(
             map.size < 1000,
             "Se admiten hasta 1000 categorías por lista.",
           );
           const row = await tx.metaInventoryCategory.create({
-            data: { sheetId: b.listId, kind, name, key: categoryKey(name) },
+            data: {
+              sheetId: b.listId,
+              kind,
+              name,
+              key: categoryIdentity(name),
+            },
           });
           map.set(key, row.id);
           return row.id;
@@ -181,10 +270,7 @@ export async function saveInventoryCategories(
               data.push({ aliasId: id, categoryId });
           }
           if (data.length)
-            await tx.metaInventoryCategoryAssignment.createMany({
-              data,
-              skipDuplicates: true,
-            });
+            await writeInventoryTags(tx, b.targetIds, [...added]);
           affected = b.targetIds.length;
         }
       } else if (b.action === "ASSIGN") {
@@ -211,15 +297,12 @@ export async function saveInventoryCategories(
             chosen.filter((c) => c.kind === kind).length <= 20,
             "Un ítem admite hasta 20 categorías de cada nivel.",
           );
-        await tx.metaInventoryCategoryAssignment.deleteMany({
-          where: { aliasId: { in: b.ids } },
-        });
-        if (chosen.length)
-          await tx.metaInventoryCategoryAssignment.createMany({
-            data: b.ids.flatMap((aliasId) =>
-              chosen.map((c) => ({ aliasId, categoryId: c.id })),
-            ),
-          });
+        await writeInventoryTags(
+          tx,
+          b.ids,
+          chosen.map((c) => c.id),
+          true,
+        );
         affected = b.ids.length;
       } else {
         const ids = b.action === "DELETE" ? [b.categoryId] : b.categoryIds;
@@ -231,6 +314,9 @@ export async function saveInventoryCategories(
           404,
         );
         affected = await tx.metaInventoryCategoryAssignment.count({
+          where: { categoryId: { in: ids } },
+        });
+        affected += await tx.metaInventoryItemCategory.count({
           where: { categoryId: { in: ids } },
         });
         await tx.metaInventoryCategory.deleteMany({

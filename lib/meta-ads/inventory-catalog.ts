@@ -14,12 +14,23 @@ export async function renameInventoryGroup(
   ownerOnly(actor);
   return db.$transaction(async (tx) => {
     await effectivenessLock(tx, actor);
+    demand(
+      await tx.metaEffectivenessSheet.findFirst({
+        where: { id: b.listId, kind: "INVENTORY", archivedAt: null },
+      }),
+      "Inventario no disponible.",
+      404,
+    );
     const ids = [...new Set(b.ids)];
     const rows = await tx.metaAlias.findMany({
       where: { inventorySheetId: b.listId, name: b.expectedName },
     });
+    const items = await tx.metaInventoryItem.findMany({
+      where: { sheetId: b.listId, name: b.expectedName },
+    });
     demand(
-      rows.length === ids.length && rows.every((r) => ids.includes(r.id)),
+      rows.length + items.length === ids.length &&
+        [...rows, ...items].every((r) => ids.includes(r.id)),
       "El inventario cambió. Recarga antes de renombrar.",
       409,
     );
@@ -34,6 +45,21 @@ export async function renameInventoryGroup(
       "Ese nombre ya existe en una de las hojas.",
       409,
     );
+    demand(
+      !(await tx.metaInventoryItem.findFirst({
+        where: {
+          sheetId: b.listId,
+          id: { notIn: ids },
+          name: { equals: b.name, mode: "insensitive" },
+        },
+      })),
+      "Ese nombre ya existe en el inventario.",
+      409,
+    );
+    await tx.metaInventoryItem.updateMany({
+      where: { id: { in: ids } },
+      data: { name: b.name },
+    });
     await tx.metaAlias.updateMany({
       where: { id: { in: ids } },
       data: { name: b.name },
@@ -73,7 +99,29 @@ async function review(tx: Prisma.TransactionClient, id: string) {
       },
     },
   });
-  demand(alias, "Inventario no disponible en esa hoja.", 404);
+  if (!alias) {
+    const item = await tx.metaInventoryItem.findUnique({
+      where: { id },
+      include: {
+        categories: {
+          include: { category: { select: { name: true, kind: true } } },
+          orderBy: { categoryId: "asc" },
+        },
+      },
+    });
+    demand(item, "Inventario no disponible.", 404);
+    return {
+      id: item.id,
+      name: item.name,
+      table: { id: "", name: "Ficha de inventario" },
+      listId: item.sheetId,
+      rows: 0,
+      days: 0,
+      assignments: 0,
+      standalone: true,
+      token: createHash("sha256").update(JSON.stringify(item)).digest("hex"),
+    };
+  }
   // Deterministic ordering protects review from unrelated database query order.
   const canonical = (v: unknown): unknown =>
     Array.isArray(v)
@@ -99,6 +147,7 @@ async function review(tx: Prisma.TransactionClient, id: string) {
     days: alias.effectivenessRows.reduce((n, r) => n + r.days.length, 0),
     assignments: alias.objects.length,
     token,
+    standalone: false,
   };
 }
 export async function previewRemoveInventory(actor: Actor, id: string) {
@@ -123,7 +172,8 @@ export async function removeInventory(actor: Actor, id: string, token: string) {
       data: { aliasId: null, aliasCountry: null, advisorId: null },
     });
     await tx.metaEffectivenessRow.deleteMany({ where: { aliasId: id } });
-    await tx.metaAlias.delete({ where: { id } });
+    if (r.standalone) await tx.metaInventoryItem.delete({ where: { id } });
+    else await tx.metaAlias.delete({ where: { id } });
     await recordActivity(tx, {
       data: {
         actorId: actor.id,
@@ -145,9 +195,13 @@ async function scopedRemovalIds(
     ids.length > 0 && ids.length <= 1000 && new Set(ids).size === ids.length,
     "Selección inválida.",
   );
-  const found = await tx.metaAlias.count({
-    where: { id: { in: ids }, inventorySheetId: listId },
-  });
+  const found =
+    (await tx.metaAlias.count({
+      where: { id: { in: ids }, inventorySheetId: listId },
+    })) +
+    (await tx.metaInventoryItem.count({
+      where: { id: { in: ids }, sheetId: listId },
+    }));
   demand(
     found === ids.length,
     "La selección cambió o contiene inventario de otra lista. Recarga antes de continuar.",
@@ -200,6 +254,7 @@ export async function removeInventorySelection(
         where: { aliasId: { in: ids } },
       });
       await tx.metaAlias.deleteMany({ where: { id: { in: ids } } });
+      await tx.metaInventoryItem.deleteMany({ where: { id: { in: ids } } });
       await recordActivity(tx, {
         data: {
           actorId: actor.id,

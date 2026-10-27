@@ -5,6 +5,7 @@ type Review = {
   sheet: { id: string; name: string; kind: string };
   counts: {
     inventory: number;
+    inventoryItems: number;
     advisors: number;
     totals: number;
     categories: number;
@@ -78,6 +79,8 @@ export function DeleteWorkbookSheet({
             <div>
               <dt>Ítems de inventario conservados</dt>
               <dd>{review.counts.inventory}</dd>
+              <dt>Fichas de inventario conservadas</dt>
+              <dd>{review.counts.inventoryItems}</dd>
             </div>
             <div>
               <dt>Asesores conservados</dt>

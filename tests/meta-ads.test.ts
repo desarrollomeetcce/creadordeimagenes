@@ -387,7 +387,7 @@ import {parseCategoryText,splitCategoryNames,categoryRows,categoryKey} from '../
 import {parseCategoryFile} from '../lib/meta-ads/category-file';
 import JSZip from 'jszip';
 test('Categorías: TSV de Excel, encabezados y comas dentro de cada celda',()=>{
- const rows=parseCategoryText('Categoría principal\tCategorías secundarias\r\nAmbiental, Civil\tAgua, Suelos\r\nConstrucción\tObras\r\n');assert.equal(rows.length,2);assert.deepEqual(splitCategoryNames(rows[0].primary),['Ambiental','Civil']);assert.deepEqual(splitCategoryNames(rows[0].secondary),['Agua','Suelos']);assert.deepEqual(splitCategoryNames(' Ambiental, ambiental, Civil ; civil '),['ambiental','civil']);assert.equal(categoryKey('  CIVIL  y  OBRAS '),'civil y obras');
+ const rows=parseCategoryText('Categoría principal\tCategorías secundarias\r\nAmbiental, Civil\tAgua, Suelos\r\nConstrucción\tObras\r\n');assert.equal(rows.length,2);assert.deepEqual(splitCategoryNames(rows[0].primary),['Ambiental','Civil']);assert.deepEqual(splitCategoryNames(rows[0].secondary),['Agua','Suelos']);assert.deepEqual(splitCategoryNames(' Ambiental, ambiental, Civil ; civil '),['Ambiental','ambiental','Civil','civil']);assert.equal(categoryKey('  CIVIL  y  OBRAS '),'civil y obras');
  assert.deepEqual(parseCategoryText('ambiental, civil'),[{primary:'ambiental, civil',secondary:''}]);
 });
 test('Categorías: CSV citado y separador regional preservan las listas de una celda',()=>{
@@ -415,11 +415,39 @@ test('Inventario: cuatro columnas, etiquetas con comas, CSV y validación por fi
  const {parseInventoryText,inventoryRows}=await import('../lib/meta-ads/inventory-paste');
  const rows=parseInventoryText('Categoría principal\tCategorías secundarias\tInventario\tHojas\nAmbiental, Civil\tAgua, Suelos\tMonitoreo ambiental\tDiplomados, Colombia');assert.equal(rows.length,1);assert.equal(rows[0].name,'Monitoreo ambiental');assert.deepEqual(splitCategoryNames(rows[0].primary),['Ambiental','Civil']);assert.deepEqual(splitCategoryNames(rows[0].sheets),['Diplomados','Colombia']);
  assert.deepEqual(parseInventoryText('Ambiental, Civil;Agua, Suelos;Monitoreo ambiental;Diplomados, Colombia',true),rows);
- assert.throws(()=>inventoryRows([['A','B','','Diplomados']]),/inventario válido/);assert.throws(()=>inventoryRows([['A','B','Producto','']]),/hoja/);assert.throws(()=>inventoryRows([['A','B','Producto','Diplomados','extra']]),/cuatro/);
+ assert.equal(inventoryRows([['A','B','','']])[0].name,'');assert.equal(inventoryRows([['','','Producto','']])[0].sheets,'');assert.throws(()=>inventoryRows([['A','B','Producto','Diplomados','extra']]),/cuatro/);
 });
 test('Inventario: archivo XLSX cuatro columnas y rechazo de quinta/fórmulas',async()=>{
  const {parseInventoryFile}=await import('../lib/meta-ads/category-file');
  const content=await categoryXlsx('<worksheet><row><c r="A1" t="inlineStr"><is><t>Ambiental, Civil</t></is></c><c r="B1" t="inlineStr"><is><t>Agua</t></is></c><c r="C1" t="inlineStr"><is><t>Monitoreo</t></is></c><c r="D1" t="inlineStr"><is><t>Diplomados, Colombia</t></is></c></row></worksheet>');assert.equal((await parseInventoryFile('inventario.xlsx',content)).rows[0].sheets,'Diplomados, Colombia');
  const extra=await categoryXlsx('<worksheet><row><c r="E1"><v>Extra</v></c></row></worksheet>');await assert.rejects(()=>parseInventoryFile('extra.xlsx',extra),/A a D/);
  const formula=await categoryXlsx('<worksheet><row><c r="C1"><f>1+1</f><v>2</v></c></row></worksheet>');await assert.rejects(()=>parseInventoryFile('formula.xlsx',formula),/fórmulas/);
+});
+
+test('Inventario: columnas opcionales y pegado desde la columna enfocada, sin inventar categorías/hojas',async()=>{
+ const {parseInventoryGrid,parseInventoryText,inventoryRows}=await import('../lib/meta-ads/inventory-paste');
+ assert.deepEqual(parseInventoryGrid('Monitoreo ambiental\nTratamiento de aguas',false,2),{rows:[{primary:'',secondary:'',name:'Monitoreo ambiental',sheets:''},{primary:'',secondary:'',name:'Tratamiento de aguas',sheets:''}],columns:['name']});
+ assert.deepEqual(parseInventoryText('Categoría principal\nAmbiental, Civil'),[{primary:'Ambiental, Civil',secondary:'',name:'',sheets:''}]);
+ assert.deepEqual(parseInventoryText('Categorías secundarias\nAgua, Suelos'),[{primary:'',secondary:'Agua, Suelos',name:'',sheets:''}]);
+ assert.deepEqual(parseInventoryText('Inventario\nMonitoreo'),[{primary:'',secondary:'',name:'Monitoreo',sheets:''}]);
+ assert.deepEqual(parseInventoryText('Agua\nSuelos',false,1).map(r=>r.secondary),['Agua','Suelos']);
+ assert.deepEqual(inventoryRows([['','','Solo inventario','']]),[{primary:'',secondary:'',name:'Solo inventario',sheets:''}]);
+ assert.throws(()=>parseInventoryGrid('A\tB',false,3),/cuatro/);assert.throws(()=>inventoryRows([['','','','']]),/Incluye/);
+});
+test('Inventario: archivo de una columna con encabezado de categoría o inventario conserva su tipo',async()=>{
+ const {parseInventoryFile}=await import('../lib/meta-ads/category-file');
+ for(const [title,key]of [['Categoría principal','primary'],['Categorías secundarias','secondary'],['Inventario','name']] as const){const encoded=await categoryXlsx(`<worksheet><row><c r="A1" t="inlineStr"><is><t>${title}</t></is></c></row><row><c r="A2" t="inlineStr"><is><t>Solo nombre</t></is></c></row></worksheet>`);const r=(await parseInventoryFile('una.xlsx',encoded)).rows[0];assert.equal(r[key],'Solo nombre');assert.equal(r.sheets,'');}
+});
+
+test('Nombres similares: pide elección por tipo, reutiliza el elegido o conserva variantes independientes',async()=>{
+ const {inventoryNameConflicts,resolveInventoryName}=await import('../lib/meta-ads/inventory-duplicates');
+ const existing=[{kind:'PRIMARY' as const,name:'Ambiental'},{kind:'INVENTORY' as const,name:'Monitoreo Ambiental'}];
+ const next=[{kind:'PRIMARY' as const,name:'AMBIENTAL'},{kind:'SECONDARY' as const,name:'AMBIENTAL'},{kind:'INVENTORY' as const,name:'MONITOREO AMBIENTAL'}];
+ const conflicts=inventoryNameConflicts(next,existing);assert.equal(conflicts.length,2);assert.deepEqual(conflicts[0].similar,['Ambiental']);
+ assert.throws(()=>resolveInventoryName('PRIMARY','AMBIENTAL',['Ambiental']),/Ambiental/);
+ assert.equal(resolveInventoryName('PRIMARY','AMBIENTAL',['Ambiental'],[{kind:'PRIMARY',name:'AMBIENTAL',useName:'Ambiental'}]),'Ambiental');
+ assert.equal(resolveInventoryName('PRIMARY','AMBIENTAL',['Ambiental'],[{kind:'PRIMARY',name:'AMBIENTAL',useName:'AMBIENTAL'}]),'AMBIENTAL');
+ assert.throws(()=>resolveInventoryName('PRIMARY','AMBIENTAL',['Ambiental'],[{kind:'PRIMARY',name:'AMBIENTAL',useName:'Ajena'}]),/similar/);
+ assert.equal(inventoryNameConflicts([{kind:'PRIMARY',name:'Ambiental'}],existing).length,0);
+ assert.equal(inventoryNameConflicts([{kind:'PRIMARY',name:'Civil'},{kind:'PRIMARY',name:'CIVIL'}],[]).length,1);
 });

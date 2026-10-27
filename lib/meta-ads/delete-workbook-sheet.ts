@@ -14,6 +14,9 @@ async function review(tx: Prisma.TransactionClient, id: string) {
       where: { sheetId: id },
     }),
     inventory: await tx.metaAlias.count({ where: { inventorySheetId: id } }),
+    inventoryItems: await tx.metaInventoryItem.count({
+      where: { sheetId: id },
+    }),
     advisors: await tx.metaAdvisor.count({ where: { sheetId: id } }),
     totals: await tx.metaEffectivenessTotalDay.count({
       where: { sheetId: id },

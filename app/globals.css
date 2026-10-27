@@ -1897,3 +1897,11 @@ select option, select optgroup { background:var(--surface); color:var(--ink); }
 .products-catalog .sheet-view table.sheet-resizable-table th,.products-catalog .sheet-view table.sheet-resizable-table td,.products-catalog .sheet-view table.sheet-resizable-table th:first-child,.products-catalog .sheet-view table.sheet-resizable-table td:first-child { width: auto; min-width: 0; max-width: none; }
 .products-catalog table.sheet-resizable-table .sheet-column-resizer { position: absolute; top: 0; right: -2px; bottom: 0; width: 7px; min-width: 0; max-width: none; height: auto; min-height: 0; margin: 0; padding: 0; border: 0; border-radius: 0; background: transparent; cursor: col-resize; touch-action: none; user-select: none; z-index: 8; }
 .products-catalog table.sheet-resizable-table .sheet-column-resizer:hover,.products-catalog table.sheet-resizable-table .sheet-column-resizer:focus-visible { background: var(--accent); }
+.inventory-import-dialog header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.inventory-import-dialog .inventory-dialog-close { align-self: flex-start; flex: 0 0 34px; width: 34px; height: 34px; min-height: 34px; padding: 0; font-size: 24px; line-height: 1; }
+.inventory-duplicate-review { width: min(700px, calc(100vw - 24px)); max-height: 90dvh; overflow: auto; }
+.inventory-duplicate-review header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.inventory-duplicate-list { max-height: 55dvh; overflow: auto; }
+.inventory-duplicate-list section { border: 1px solid var(--line); border-radius: 5px; padding: 10px; margin: 10px 0; background: var(--paper); }
+.inventory-duplicate-list p { margin: 5px 0; overflow-wrap: anywhere; }
+.inventory-duplicate-review footer { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
