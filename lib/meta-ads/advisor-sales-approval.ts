@@ -1,3 +1,4 @@
+import { assertUnlinkedColumns } from "./column-link-policy";
 import { createHash } from "node:crypto";
 import type { Prisma } from "@prisma/client";
 import { db } from "../db";
@@ -28,12 +29,14 @@ async function review(
   const stored = await tx.metaEffectivenessRow.findUnique({
     where: { aliasId_country_currency: { aliasId, country, currency: "" } },
   });
-  demand(stored && !stored.hidden, "Fila no disponible.", 404);
+  demand(!stored?.hidden, "Fila no disponible.", 404);
   const [changes, approval, advisors] = await Promise.all([
     tx.metaAdvisorAssignment.findMany({ where: { aliasId, country } }),
-    tx.metaAdvisorSalesApproval.findUnique({
-      where: { rowId_day: { rowId: stored.id, day } },
-    }),
+    stored
+      ? tx.metaAdvisorSalesApproval.findUnique({
+          where: { rowId_day: { rowId: stored.id, day } },
+        })
+      : null,
     tx.metaAdvisor.findMany({
       select: {
         id: true,
@@ -55,7 +58,7 @@ async function review(
     na,
     approval,
   );
-  demand(plan.hasChange, "No hay un cambio de asesor en esta fecha.", 409);
+
   const token = createHash("sha256")
     .update(
       JSON.stringify([
@@ -65,6 +68,7 @@ async function review(
         total,
         na,
         c?.revision ?? 0,
+        row.token,
         changes
           .map((e) => [
             e.id,
@@ -83,7 +87,9 @@ async function review(
     country,
     day,
     name: alias.name,
-    rowId: stored.id,
+    rowId: stored?.id ?? null,
+    currency: row.currency,
+    linked: !!c?.linked.sales,
     total,
     na,
     token,
@@ -99,7 +105,10 @@ async function review(
     })),
     events: plan.events,
     activeAdvisorId: plan.activeAdvisorId,
-    allocations: plan.suggestions
+    allocations: (plan.suggestions.length
+      ? plan.suggestions
+      : [{ advisorId: row.advisorId, sales: total }]
+    )
       .filter((p) => p.advisorId !== null || (p.sales ?? 0) > 0)
       .map((p) => ({ advisorId: p.advisorId, sales: p.sales })),
   };
@@ -125,11 +134,18 @@ export async function approveAdvisorSales(
     day: string;
     token: string;
     revision: number;
-    allocations: SalesAllocation[];
+    allocations?: SalesAllocation[];
+    value?: "NA" | null;
   },
 ) {
   ownerOnly(actor);
-  const allocations = salesAllocationsSchema.parse(b.allocations);
+  const allocations = b.allocations
+    ? salesAllocationsSchema.parse(b.allocations)
+    : null;
+  demand(
+    (allocations !== null) !== (b.value !== undefined),
+    "Indica un reparto o un valor N.A./sin dato.",
+  );
   return db.$transaction(
     async (tx) => {
       await effectivenessLock(tx, actor);
@@ -139,6 +155,73 @@ export async function approveAdvisorSales(
         "Las ventas o el reparto cambiaron. Actualiza el reparto antes de aprobar.",
         409,
       );
+      const alias = await tx.metaAlias.findUniqueOrThrow({
+        where: { id: b.aliasId },
+      });
+      await assertUnlinkedColumns(tx, alias.tableId, ["sales"], [b.day]);
+      const stored = old.rowId
+        ? { id: old.rowId }
+        : await tx.metaEffectivenessRow.upsert({
+            where: {
+              aliasId_country_currency: {
+                aliasId: b.aliasId,
+                country: b.country,
+                currency: "",
+              },
+            },
+            create: {
+              aliasId: b.aliasId,
+              country: b.country,
+              currency: "",
+              displayCurrency: old.currency,
+            },
+            update: {},
+          });
+      const rowId = stored.id;
+      if (!allocations) {
+        const previous = await tx.metaEffectivenessDay.findUnique({
+          where: { rowId_day: { rowId, day: b.day } },
+        });
+        const annotations = {
+          ...((previous?.annotations as Record<string, Prisma.JsonValue>) ??
+            {}),
+        };
+        delete annotations.sales;
+        if (b.value === "NA") annotations.sales = { value: "NA" };
+        await tx.metaEffectivenessDay.upsert({
+          where: { rowId_day: { rowId, day: b.day } },
+          create: {
+            rowId,
+            day: b.day,
+            sales: null,
+            salesOverridden: true,
+            annotations: annotations as Prisma.InputJsonValue,
+          },
+          update: {
+            sales: null,
+            salesOverridden: true,
+            annotations: annotations as Prisma.InputJsonValue,
+            revision: { increment: 1 },
+          },
+        });
+        await tx.metaAdvisorSalesApproval.deleteMany({
+          where: { rowId, day: b.day },
+        });
+        await recordActivity(tx, {
+          data: {
+            actorId: actor.id,
+            action: "META_VENTAS_POR_ASESOR_VACIADAS",
+            resourceId: rowId,
+            detail: {
+              aliasId: b.aliasId,
+              country: b.country,
+              day: b.day,
+              value: b.value ?? null,
+            },
+          },
+        });
+        return { ok: true, total: null };
+      }
       demand(
         allocations.every(
           (a) =>
@@ -154,16 +237,16 @@ export async function approveAdvisorSales(
         "El total de ventas supera el límite permitido.",
       );
       const previous = await tx.metaEffectivenessDay.findUnique({
-        where: { rowId_day: { rowId: old.rowId, day: b.day } },
+        where: { rowId_day: { rowId: rowId, day: b.day } },
       });
       const annotations = {
         ...((previous?.annotations as Record<string, Prisma.JsonValue>) ?? {}),
       };
       delete annotations.sales;
       await tx.metaEffectivenessDay.upsert({
-        where: { rowId_day: { rowId: old.rowId, day: b.day } },
+        where: { rowId_day: { rowId: rowId, day: b.day } },
         create: {
-          rowId: old.rowId,
+          rowId: rowId,
           day: b.day,
           sales: total,
           salesOverridden: true,
@@ -181,9 +264,9 @@ export async function approveAdvisorSales(
         activeAdvisorId: old.activeAdvisorId,
       };
       const result = await tx.metaAdvisorSalesApproval.upsert({
-        where: { rowId_day: { rowId: old.rowId, day: b.day } },
+        where: { rowId_day: { rowId: rowId, day: b.day } },
         create: {
-          rowId: old.rowId,
+          rowId: rowId,
           day: b.day,
           salesTotal: total,
           allocations,
@@ -203,7 +286,7 @@ export async function approveAdvisorSales(
         data: {
           actorId: actor.id,
           action: "META_REPARTO_VENTAS_APROBADO",
-          resourceId: old.rowId,
+          resourceId: rowId,
           detail: {
             aliasId: b.aliasId,
             country: b.country,
@@ -215,7 +298,14 @@ export async function approveAdvisorSales(
           },
         },
       });
-      return { ok: true, total, revision: result.revision };
+      const fresh = await review(tx, actor, b.aliasId, b.country, b.day);
+      return {
+        ok: true,
+        total,
+        revision: result.revision,
+        token: fresh.token,
+        status: fresh.status,
+      };
     },
     { timeout: 60000 },
   );

@@ -523,3 +523,21 @@ test('Períodos activos: fechas automáticas reales, cierres y medianoche Lima s
 test('Ir al período activo: páginas contiguas de31 días cubren todo el intervalo y permiten volver',async()=>{
  const {activePeriodWindow}=await import('../lib/meta-ads/active-periods');const first=activePeriodWindow('2026-08-01','2026-10-27');assert.deepEqual(first,{since:'2026-08-01',until:'2026-08-31',previous:null,next:'2026-09-01'});const second=activePeriodWindow('2026-08-01','2026-10-27',first.next!);assert.deepEqual(second,{since:'2026-09-01',until:'2026-10-01',previous:'2026-08-01',next:'2026-10-02'});const last=activePeriodWindow('2026-08-01','2026-10-27',second.next!);assert.equal(last.until,'2026-10-27');assert.equal(last.next,null);assert.equal(last.previous,second.since);assert.deepEqual(activePeriodWindow('2026-10-27','2026-10-27'),{since:'2026-10-27',until:'2026-10-27',previous:null,next:null});
 });
+
+test('Asesores: períodos observados recientes, sin inventar inicio heredado y con cierre exclusivo a medianoche',async()=>{
+ const {advisorAssignmentPeriods}=await import('../lib/meta-ads/advisor-periods');
+ const e=(id:string,advisorId:string|null,previousAdvisorId:string|null,at:string,mode='CLOCK')=>({id,advisorId,previousAdvisorId,effectiveAt:new Date(at),createdAt:new Date(at),mode,cutoffSales:0});
+ const changes=[e('a','kevin',null,'2026-10-12T05:00:00Z','DAY'),e('b','donasis','kevin','2026-10-16T15:00:00Z'),e('c','kevin','donasis','2026-10-17T05:00:00Z','DAY'),e('d',null,'kevin','2026-10-25T05:00:00Z'),e('future','kevin',null,'2027-01-01T05:00:00Z')];
+ const p=advisorAssignmentPeriods(null,changes,new Date('2026-10-27T12:00:00Z'));assert.deepEqual(p.map(x=>[x.id,x.advisorId,x.since,x.through]),[['c','kevin','2026-10-17','2026-10-24'],['b','donasis','2026-10-16','2026-10-16'],['a','kevin','2026-10-12','2026-10-16']]);assert.equal(advisorAssignmentPeriods('legacy',[])[0].from,null);assert.equal(advisorAssignmentPeriods('legacy',[])[0].since,null);assert.deepEqual(advisorAssignmentPeriods(null,[]),[]);
+});
+test('Asesores: ventas de cada tramo por cortes reales incluso cambios simultáneos, sin dividir por horas',async()=>{
+ const {advisorAssignmentPeriods,assignmentPeriodSales}=await import('../lib/meta-ads/advisor-periods');
+ const day='2026-10-20';const changes=[{id:'a',advisorId:'a',previousAdvisorId:null,effectiveAt:new Date(day+'T05:00:00Z'),createdAt:new Date(day+'T05:00:00Z'),mode:'DAY',cutoffSales:0},{id:'b',advisorId:'b',previousAdvisorId:'a',effectiveAt:new Date(day+'T15:00:00Z'),createdAt:new Date(day+'T15:00:00Z'),mode:'CLOCK',cutoffSales:4},{id:'c',advisorId:'a',previousAdvisorId:'b',effectiveAt:new Date(day+'T15:00:00Z'),createdAt:new Date(day+'T15:00:01Z'),mode:'CLOCK',cutoffSales:6}];
+ const p=advisorAssignmentPeriods('a',changes,new Date(day+'T20:00:00Z'));
+ assert.deepEqual(p.map(x=>assignmentPeriodSales('a',changes,x,day,9,false).sales),[3,2,4]);assert.equal(assignmentPeriodSales('a',changes,p[0],day,2,false).partial,true);
+});
+test('Asesores: Base importada usa conversaciones exactas y conserva faltantes sin atribuir ventas',async()=>{
+ const {advisorBaseByDay}=await import('../lib/meta-ads/advisor-base');let query:any;
+ const tx={metaAdObject:{findMany:async(q:any)=>{query=q;return [{advisorId:'a',daily:[{day:'2026-10-20',actions:{'onsite_conversion.messaging_conversation_started_7d':12}}]},{advisorId:'a',daily:[]}];}}};
+ const result=await advisorBaseByDay(tx as any,{id:'owner',role:'OWNER'} as any,{tableIds:['table'],advisorIds:['a'],aliasId:'item',country:'PE',since:'2026-10-20',until:'2026-10-20'});assert.deepEqual(result.get(JSON.stringify(['a','2026-10-20'])),{base:12,known:1,partial:true});assert.equal(query.where.aliasId,'item');assert.equal(query.where.aliasCountry,'PE');assert.equal(query.where.level,'campaign');assert.equal(query.select.daily.where.scope,'7d_click,1d_view|impression');
+});

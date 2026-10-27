@@ -2,6 +2,9 @@ import type { absenceSummary } from "../../lib/meta-ads/advisor-absence";
 export type AbsenceView = ReturnType<typeof absenceSummary>;
 export type Attendance = "PRESENT" | "ABSENT" | "NA" | null;
 export type AdvisorDayData = {
+  base?: number | null;
+  basePartial?: boolean;
+  baseTimeUnavailable?: boolean;
   status: Attendance;
   revision: number;
   sales: number | null;

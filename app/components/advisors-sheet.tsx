@@ -1,4 +1,5 @@
 "use client";
+import type { AdvisorPeriodView } from "../../lib/meta-ads/advisor-period-history";
 import { useSheetWidths } from "./use-sheet-widths";
 import { useSheetHeights } from "./use-sheet-heights";
 import { SheetColumnResizer } from "./sheet-column-resizer";
@@ -32,12 +33,14 @@ export function AdvisorsSheet({
   initialTableId,
   sheetTabs,
   onChanged,
+  onOpenPeriod,
 }: {
   listId?: string;
   tables: AdvisorTable[];
   initialTableId: string;
   sheetTabs: ReactNode;
   onChanged: () => Promise<void>;
+  onOpenPeriod?: (period: AdvisorPeriodView) => void;
 }) {
   const { widths, resize, warning } = useSheetWidths("advisors:" + listId),
     rowsLayout = useSheetHeights("advisors:" + listId);
@@ -55,6 +58,7 @@ export function AdvisorsSheet({
     day: "2-digit",
   }).format(new Date());
   const [detailVersion, setDetailVersion] = useState(0);
+  const [detailDay, setDetailDay] = useState<string | null>(null);
   const [since, setSince] = useWorkbookPreference<string>(
       listId,
       "since",
@@ -285,13 +289,15 @@ export function AdvisorsSheet({
         </button>
       </div>
       <p className="sheet-help">
-        A = Asistencia. V = Ventas por coincidencia exacta de inventario +
-        asesor + país. H = Horas ausentes (0,5 = 30 minutos). A y H corresponden
-        a la persona y no se reparten por producto. Las ventas respetan los
-        tramos de asignación y sus cortes. Las asignaciones antiguas sin
-        historial conservan su atribución previa. * Total parcial o reparto
-        pendiente de aprobar; — sin datos; N.A. no es cero. Todas las hojas
-        incluye también las copias sincronizadas.
+        A = Asistencia. V suma las ventas registradas a nombre de cada asesor en
+        las hojas elegidas, aunque no sea el responsable de la fila. Pulsa una
+        venta para ver qué diplomados vendió ese día. H = Horas ausentes (0,5 =
+        30 minutos): puedes registrar varias salidas y regresos. A y H
+        corresponden a la persona y no se reparten por producto. Los registros
+        anteriores sin reparto conservan su atribución por asignaciones y
+        cortes. * Total parcial o reparto pendiente de aprobar; — sin datos;
+        N.A. no es cero. Todas las hojas incluye también las copias
+        sincronizadas.
       </p>
       {message && (
         <p className="sheet-message" role="status">
@@ -382,6 +388,7 @@ export function AdvisorsSheet({
                         aria-label={`Detalle de ${p.name}`}
                         title="Ver evolución y detalle de ventas"
                         onClick={() => {
+                          setDetailDay(null);
                           setDetail(p);
                           setDetailVersion((v) => v + 1);
                         }}
@@ -414,6 +421,11 @@ export function AdvisorsSheet({
                         cell={c}
                         disabled={busy || loading}
                         onError={setMessage}
+                        onDetail={() => {
+                          setDetailDay(d);
+                          setDetail(p);
+                          setDetailVersion((v) => v + 1);
+                        }}
                         onAbsenceSave={async (input) => {
                           await write(
                             "meta-ads/advisors/absence",
@@ -447,16 +459,17 @@ export function AdvisorsSheet({
       )}
       {detail && (
         <AdvisorDetail
-          key={detail.id}
+          key={detail.id + ":" + (detailDay ?? "range")}
           openRequest={detailVersion}
           person={detail}
           tables={tables}
           initialTableId={tableId}
           initialAliasId={aliasId}
           initialCountry={country}
-          initialSince={since}
-          initialUntil={until}
+          initialSince={detailDay ?? since}
+          initialUntil={detailDay ?? until}
           onClose={() => setDetail(null)}
+          onOpenPeriod={onOpenPeriod}
         />
       )}
     </section>
@@ -491,12 +504,14 @@ function AdvisorDay({
   onError,
   onSave,
   onAbsenceSave,
+  onDetail,
 }: {
   person: Person;
   day: string;
   cell: Day;
   disabled: boolean;
   onError: (v: string) => void;
+  onDetail: () => void;
   onSave: (v: Attendance) => Promise<void>;
   onAbsenceSave: (
     v: import("../../lib/meta-ads/advisor-absence").AbsenceInput,
@@ -522,19 +537,20 @@ function AdvisorDay({
           />
         )}
       </td>
-      <td
-        title={
-          cell.partial
-            ? "Faltan ventas en algunas filas asignadas"
-            : "Ventas de las filas asignadas"
-        }
-      >
-        {cell.na
-          ? "N.A."
-          : cell.sales === null
-            ? "—"
-            : new Intl.NumberFormat("es-PE").format(cell.sales)}
-        {cell.partial ? " *" : ""}
+      <td title="Ventas registradas a nombre del asesor, independientemente del responsable">
+        <button
+          type="button"
+          className="advisor-sales-detail-trigger"
+          aria-label={`Detalle de ventas ${person.name} ${day}`}
+          onClick={onDetail}
+        >
+          {cell.na
+            ? "N.A."
+            : cell.sales === null
+              ? "—"
+              : new Intl.NumberFormat("es-PE").format(cell.sales)}
+          {cell.partial ? " *" : ""}
+        </button>
       </td>
       <td className="advisor-hours">
         <AdvisorAbsenceCell

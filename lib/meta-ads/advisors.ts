@@ -1,5 +1,12 @@
+import { advisorBaseByDay } from "./advisor-base";
+import {
+  advisorAssignmentPeriods,
+  assignmentPeriodSales,
+  salesDayPeriodId,
+  type AssignmentPeriod,
+} from "./advisor-periods";
 import { activeWorkbookSheetId } from "./workbook-scope";
-import { advisorSalesPlan } from "./advisor-sales-plan";
+import { advisorSalesPlan, salesAllocationsSchema } from "./advisor-sales-plan";
 import { createHash } from "node:crypto";
 import {
   attributeDailySales,
@@ -419,6 +426,7 @@ export async function advisorSheet(
     country?: string;
     advisorId?: string;
     advisorListId?: string;
+    periodId?: string;
   } = {},
 ) {
   ownerOnly(actor);
@@ -492,6 +500,15 @@ export async function advisorSheet(
           404,
         );
       }
+      const baseByDay = await advisorBaseByDay(tx, actor, {
+        tableIds: tables.map((t) => t.id),
+        advisorIds: people.map((p) => p.id),
+        aliasId: filters.aliasId,
+        country: filters.country,
+        since,
+        until,
+      });
+      let statsPeriod: AssignmentPeriod | null = null;
       const dates: string[] = [];
       for (let d = Date.parse(since); d <= Date.parse(until); d += 86400000)
         dates.push(new Date(d).toISOString().slice(0, 10));
@@ -586,6 +603,49 @@ export async function advisorSheet(
                   mode: e.mode,
                   cutoffSales: e.cutoffSales,
                 });
+          const dailyPeriod = !!filters.periodId?.startsWith("sales:");
+          const period =
+            filters.periodId && !dailyPeriod
+              ? advisorAssignmentPeriods(row.advisorId, changes).find(
+                  (p) => p.id === filters.periodId,
+                )
+              : null;
+          if (filters.periodId) {
+            if (dailyPeriod) {
+              const saved = approvals.find(
+                (a) =>
+                  a.row.aliasId === row.aliasId &&
+                  a.row.country === row.country &&
+                  salesDayPeriodId(a.rowId, a.day, filters.advisorId!) ===
+                    filters.periodId,
+              );
+              demand(
+                saved &&
+                  since === saved.day &&
+                  until === saved.day &&
+                  salesAllocationsSchema.safeParse(saved.allocations).success &&
+                  salesAllocationsSchema
+                    .parse(saved.allocations)
+                    .some((a) => a.advisorId === filters.advisorId),
+                "Registro diario no disponible para este asesor y fecha.",
+                404,
+              );
+            } else {
+              demand(
+                period &&
+                  period.from &&
+                  period.since &&
+                  period.advisorId === filters.advisorId,
+                "Asignación no disponible o modificada.",
+                409,
+              );
+              demand(
+                since >= period.since && until <= period.through,
+                "Las fechas están fuera de la asignación.",
+              );
+            }
+          }
+          statsPeriod = period ?? null;
           const sources = new Map<string, (typeof breakdown)[number]>();
           for (const day of dates) {
             const c = row.days[day];
@@ -603,7 +663,23 @@ export async function advisorSheet(
               !!c?.na.includes("sales"),
               approval,
             );
-            for (const portion of plan.portions) {
+            const portions = period
+              ? [
+                  {
+                    advisorId: period.advisorId,
+                    ...assignmentPeriodSales(
+                      row.advisorId,
+                      changes,
+                      period,
+                      day,
+                      c?.sales ?? null,
+                      !!c?.na.includes("sales"),
+                      approval,
+                    ),
+                  },
+                ]
+              : plan.portions;
+            for (const portion of portions) {
               if (!portion.advisorId || !personIds.has(portion.advisorId))
                 continue;
               if (filters.advisorId && portion.advisorId !== filters.advisorId)
@@ -652,6 +728,16 @@ export async function advisorSheet(
           breakdown.push(...sources.values());
         }
       }
+      if (filters.periodId)
+        demand(
+          filters.aliasId &&
+            filters.country &&
+            filters.advisorId &&
+            tableId !== "all" &&
+            breakdown.length > 0,
+          "Selecciona una asignación válida con hoja, inventario, país y asesor.",
+          404,
+        );
       return {
         tableId,
         since,
@@ -670,6 +756,29 @@ export async function advisorSheet(
               return [
                 day,
                 {
+                  base: (() => {
+                    const base = baseByDay.get(key(p.id, day));
+                    const start = Date.parse(day + "T00:00:00-05:00"),
+                      end = start + 86400000;
+                    if (
+                      statsPeriod &&
+                      ((statsPeriod.from &&
+                        Date.parse(statsPeriod.from) > start) ||
+                        (statsPeriod.until &&
+                          Date.parse(statsPeriod.until) < end))
+                    )
+                      return null;
+                    return base?.base ?? null;
+                  })(),
+                  basePartial: baseByDay.get(key(p.id, day))?.partial ?? false,
+                  baseTimeUnavailable:
+                    !!statsPeriod &&
+                    ((!!statsPeriod.from &&
+                      Date.parse(statsPeriod.from) >
+                        Date.parse(day + "T00:00:00-05:00")) ||
+                      (!!statsPeriod.until &&
+                        Date.parse(statsPeriod.until) <
+                          Date.parse(day + "T00:00:00-05:00") + 86400000)),
                   status: att?.status ?? null,
                   revision: att?.revision ?? 0,
                   sales: sum?.sales ?? null,

@@ -2010,3 +2010,10 @@ select option, select optgroup { background:var(--surface); color:var(--ink); }
 
 .alias-period-pagination{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:8px;margin:8px 0 14px;font-size:11px;color:var(--muted);}.alias-period-pagination .row{gap:6px;}.alias-period-pagination button{min-height:30px;font-size:11px;}
 .alias-active-periods{max-height:240px;margin:8px 0;}.alias-active-periods li{padding:6px 0;gap:8px;}.alias-active-periods li>div{gap:3px;}.alias-period-pagination{flex-direction:row;border:0;padding:0;margin:6px 0 10px;}
+
+.products-catalog input.sheet-cell[data-openable=true]{cursor:pointer;}.advisor-period-list{max-height:300px;}.advisor-period-actions{gap:6px;flex-wrap:wrap;flex:0 0 auto;}.advisor-tenure-history,.advisor-item-analysis{border-top:1px solid var(--line);border-bottom:1px solid var(--line);padding:8px 0;margin:8px 0;}.advisor-chart-modes{gap:8px;flex-wrap:wrap;margin:10px 0;}.advisor-chart-modes button[aria-pressed=true]{background:var(--soft);border-color:var(--accent);}.advisor-scatter svg{display:block;width:100%;color:var(--muted);font-size:11px;}.advisor-scatter circle{fill:var(--accent);stroke:var(--surface);stroke-width:1;}.advisor-scatter circle:focus{outline:2px solid var(--ink);}.advisor-scatter text{fill:currentColor;}.advisor-period-list li>div:first-child{flex:1 1 240px;}.sales-saved-review{font-size:12px;}@media(max-width:600px){.advisor-period-list li{flex-wrap:wrap;}.advisor-period-actions{width:100%;}.advisor-sales-approval .row{flex-wrap:wrap;}}
+
+.advisor-sales-detail-trigger { min-height: 30px; width: 100%; padding: 3px 8px; color: inherit; background: transparent; border: 1px solid transparent; font-variant-numeric: tabular-nums; }
+.advisor-sales-detail-trigger:hover, .advisor-sales-detail-trigger:focus-visible { border-color: var(--accent, #66c7ad); background: #66c7ad18; }
+.advisor-sales-by-day { margin: 14px 0; }
+.advisor-sales-by-day summary { padding: 10px 0; cursor: pointer; font-weight: 600; }

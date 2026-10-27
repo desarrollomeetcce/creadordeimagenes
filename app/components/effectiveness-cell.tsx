@@ -15,6 +15,7 @@ export function EffectivenessCell({
   allowNA = false,
   manual = false,
   placeholder,
+  onOpen,
 }: {
   value: string;
   label: string;
@@ -29,6 +30,7 @@ export function EffectivenessCell({
   allowNA?: boolean;
   manual?: boolean;
   placeholder?: string;
+  onOpen?: () => void;
 }) {
   const [draft, setDraft] = useState(value),
     [state, setState] = useState<"idle" | "saving" | "error">("idle");
@@ -77,6 +79,10 @@ export function EffectivenessCell({
       className="sheet-cell"
       data-state={state}
       data-manual={manual || undefined}
+      data-openable={!!onOpen || undefined}
+      aria-haspopup={onOpen ? "dialog" : undefined}
+      onClick={onOpen}
+      onDoubleClick={onOpen}
       placeholder={placeholder}
       aria-label={label}
       aria-invalid={state === "error" || undefined}
@@ -94,7 +100,7 @@ export function EffectivenessCell({
       min={type === "number" ? 0 : undefined}
       step={step}
       value={draft}
-      readOnly={locked || state === "saving"}
+      readOnly={locked || !!onOpen || state === "saving"}
       onFocus={() => {
         focused.current = true;
         if (!dirty.current) {
@@ -111,6 +117,11 @@ export function EffectivenessCell({
         void commit();
       }}
       onKeyDown={(e) => {
+        if (onOpen && (e.key === "Enter" || e.key === " ")) {
+          e.preventDefault();
+          onOpen();
+          return;
+        }
         if (e.key === "Escape") {
           e.preventDefault();
           escape.current = true;

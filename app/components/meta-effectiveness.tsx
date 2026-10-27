@@ -57,6 +57,7 @@ import {
   type SheetColorRule,
 } from "../../lib/meta-ads/sheet-colors";
 import { AdvisorAssignment } from "./advisor-assignment";
+import type { AdvisorPeriodView } from "../../lib/meta-ads/advisor-period-history";
 import { AdvisorDetail } from "./advisor-detail";
 import { EffectivenessCell } from "./effectiveness-cell";
 const countries = countryOptions.map((c) => ({
@@ -156,8 +157,14 @@ export function MetaEffectiveness({
   sheetTabs,
   advisors,
   inventoryLists,
+  onOpenAdvisorPeriod,
+  advisorPeriodRequest,
+  onAdvisorPeriodHandled,
 }: {
   inventoryLists: { id: string; name: string }[];
+  onOpenAdvisorPeriod?: (period: AdvisorPeriodView) => void;
+  advisorPeriodRequest?: { key: number; period: AdvisorPeriodView } | null;
+  onAdvisorPeriodHandled?: () => void;
   sheetTabs: ReactNode;
   advisors: { id: string; name: string; label?: string }[];
   tables: {
@@ -282,6 +289,8 @@ export function MetaEffectiveness({
     [csv, setCsv] = useState(false);
   const [historyPeriod, setHistoryPeriod] = useState<null | {
     name: string;
+    heading?: string;
+    detail?: string;
     aliasId: string;
     country: string;
     since: string;
@@ -775,7 +784,11 @@ export function MetaEffectiveness({
   const historyWindow = historyPeriod
     ? activePeriodWindow(historyPeriod.since, historyPeriod.through, since)
     : null;
-  const openActivePeriod = (period: ActivePeriod, row: Row, name: string) => {
+  const openActivePeriod = (
+    period: ActivePeriod,
+    row: Pick<Row, "aliasId" | "country">,
+    name: string,
+  ) => {
     setHistoryPeriod({
       name,
       aliasId: row.aliasId,
@@ -803,6 +816,36 @@ export function MetaEffectiveness({
     setSyncOpen(false);
     setMessage("");
   };
+  useEffect(() => {
+    const p = advisorPeriodRequest?.period;
+    if (!p || p.tableId !== tableId || !p.from || !p.since) return;
+    openActivePeriod(
+      {
+        id: p.id,
+        from: p.from,
+        until: p.until,
+        since: p.since,
+        through: p.through,
+      },
+      { aliasId: p.aliasId, country: p.country },
+      `${p.advisorName} · ${p.alias}`,
+    );
+    setAdvisorDetail(null);
+    setHistoryPeriod((old) =>
+      old
+        ? {
+            ...old,
+            heading:
+              p.kind === "SALES_DAY"
+                ? "Registro de ventas"
+                : "Asignación de asesor",
+            detail:
+              "V muestra la sumatoria diaria del ítem. Consulta Estadísticas del asesor para su cantidad exacta.",
+          }
+        : old,
+    );
+    onAdvisorPeriodHandled?.();
+  }, [advisorPeriodRequest?.key, tableId]);
   const closeActivePeriod = () => {
     if (!historyPeriod) return;
     const old = historyPeriod.previous;
@@ -1006,6 +1049,7 @@ export function MetaEffectiveness({
           initialSince={since}
           initialUntil={until}
           onClose={() => setAdvisorDetail(null)}
+          onOpenPeriod={onOpenAdvisorPeriod}
         />
       )}
 
@@ -1258,12 +1302,14 @@ export function MetaEffectiveness({
         >
           <div>
             <strong>
-              Período activo de {historyPeriod.name} · {historyPeriod.country}:{" "}
+              {historyPeriod.heading ?? "Período activo"} de{" "}
+              {historyPeriod.name} · {historyPeriod.country}:{" "}
               {historyPeriod.since} — {historyPeriod.through}
             </strong>
             <small>
-              Mostrando {since} — {until}. Las cifras corresponden a estas
-              fechas; el interruptor muestra el estado actual.
+              Mostrando {since} — {until}.{" "}
+              {historyPeriod.detail ??
+                "Las cifras corresponden a estas fechas; el interruptor muestra el estado actual."}
             </small>
           </div>
           <div className="row">
@@ -2032,6 +2078,23 @@ export function MetaEffectiveness({
                               <EffectivenessCell
                                 allowNA
                                 locked={!!c?.linked?.[m.key]}
+                                onOpen={
+                                  m.key === "sales" && !c?.linked?.sales
+                                    ? () => {
+                                        if (!r.country) {
+                                          setMessage(
+                                            "Elige el país antes de registrar ventas por asesor.",
+                                          );
+                                          return;
+                                        }
+                                        setSalesReview({
+                                          aliasId: r.aliasId,
+                                          country: r.country,
+                                          day: d,
+                                        });
+                                      }
+                                    : undefined
+                                }
                                 manual={
                                   c?.manual?.includes(m.key) &&
                                   !c?.linked?.[m.key]
@@ -2063,7 +2126,7 @@ export function MetaEffectiveness({
                                 }
                                 onError={setMessage}
                                 onSave={(v) => editCell(r, d, m.key, v)}
-                                hint={`${c?.linked?.[m.key] ? "Vinculada a «" + c.linked[m.key]!.name + "». Edita el origen o desvincula para editar aquí. " + (!c.linked[m.key]!.matched ? "Sin coincidencia exacta de inventario y país. " : "") : ""}${c?.automaticNa?.includes(m.key) ? "N.A. automático por desactivación; vuelve a vacío al activar. " : ""}${c?.synced?.[m.key] ? "Sincronizado desde «" + c.synced[m.key] + "». " : ""}${c?.manual?.includes(m.key) && !c?.linked?.[m.key] ? "Ajuste manual de Efectividad. Originales conservados. " : ""}${m.key === "spend" && !c?.linked?.[m.key] ? "Original Meta: " + (c?.sourceSpend.map((x) => x.currency + " " + x.amount).join(" + ") || "sin datos") + ". " : ""}${c?.fxMissing && c?.[m.key] === null && !c.na?.includes(m.key) ? "Sin tasa. " : ""}${partial || c?.partialMetrics?.includes(m.key) ? "Cobertura parcial. " : ""}${m.key === "fixedCost" && !c?.linked?.[m.key] ? "Original CF: " + (c?.sourceFixedCost.map((x) => x.currency + " " + x.amount).join(" + ") || "sin datos") + ". " : ""}${m.money && !c?.linked?.[m.key] ? c?.fx.map((f) => `${f.date}: 1 ${f.from} = ${f.rate} ${f.to} · ${f.source}`).join("; ") || "" : ""} ${c?.linked?.[m.key] ? "Edita el valor en la hoja de origen." : "Escribe un número o N.A.; vacío restaura el importado en B/G; en P borra el presupuesto."}`}
+                                hint={`${c?.linked?.[m.key] ? "Vinculada a «" + c.linked[m.key]!.name + "». Edita el origen o desvincula para editar aquí. " + (!c.linked[m.key]!.matched ? "Sin coincidencia exacta de inventario y país. " : "") : ""}${c?.automaticNa?.includes(m.key) ? "N.A. automático por desactivación; vuelve a vacío al activar. " : ""}${c?.synced?.[m.key] ? "Sincronizado desde «" + c.synced[m.key] + "». " : ""}${c?.manual?.includes(m.key) && !c?.linked?.[m.key] ? "Ajuste manual de Efectividad. Originales conservados. " : ""}${m.key === "spend" && !c?.linked?.[m.key] ? "Original Meta: " + (c?.sourceSpend.map((x) => x.currency + " " + x.amount).join(" + ") || "sin datos") + ". " : ""}${c?.fxMissing && c?.[m.key] === null && !c.na?.includes(m.key) ? "Sin tasa. " : ""}${partial || c?.partialMetrics?.includes(m.key) ? "Cobertura parcial. " : ""}${m.key === "fixedCost" && !c?.linked?.[m.key] ? "Original CF: " + (c?.sourceFixedCost.map((x) => x.currency + " " + x.amount).join(" + ") || "sin datos") + ". " : ""}${m.money && !c?.linked?.[m.key] ? c?.fx.map((f) => `${f.date}: 1 ${f.from} = ${f.rate} ${f.to} · ${f.source}`).join("; ") || "" : ""} ${c?.linked?.[m.key] ? "Edita el valor en la hoja de origen." : m.key === "sales" ? "Clic o Enter para elegir asesor y cantidad de ventas." : "Escribe un número o N.A.; vacío restaura el importado en B/G; en P borra el presupuesto."}`}
                               />
                               {m.key === "sales" && r.advisorChanges?.[d] && (
                                 <button

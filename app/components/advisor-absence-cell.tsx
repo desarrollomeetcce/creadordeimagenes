@@ -1,5 +1,6 @@
 "use client";
 import { useId, useRef, useState } from "react";
+import { absenceClockSummary } from "../../lib/meta-ads/advisor-absence";
 import type {
   AbsenceInput,
   AbsenceInterval,
@@ -79,6 +80,12 @@ export function AdvisorAbsenceCell({
       setBusy(false);
     }
   };
+  let preview: ReturnType<typeof absenceClockSummary> | null = null;
+  if (mode === "CLOCK") {
+    try {
+      preview = absenceClockSummary(intervals);
+    } catch {}
+  }
   return (
     <>
       <button
@@ -91,11 +98,23 @@ export function AdvisorAbsenceCell({
         onClick={(e) => {
           action.current = onSave;
           revision.current = value.revision;
-          setMode(value.mode);
+          const fresh = value.manualHours === null && !value.intervals.length;
+          setMode(fresh ? "CLOCK" : value.mode);
           setManual(
             value.manualHours === null ? "" : String(value.manualHours),
           );
-          setIntervals(value.intervals.map((i) => ({ ...i })));
+          setIntervals(
+            fresh
+              ? [
+                  {
+                    id: crypto.randomUUID(),
+                    start: "",
+                    end: null,
+                    nextDay: false,
+                  },
+                ]
+              : value.intervals.map((i) => ({ ...i })),
+          );
           setError("");
           const r = e.currentTarget.getBoundingClientRect();
           setPosition({
@@ -257,6 +276,15 @@ export function AdvisorAbsenceCell({
           {error && (
             <p className="sheet-message" role="alert">
               {error}
+            </p>
+          )}
+          {mode === "CLOCK" && preview && (
+            <p role="status">
+              Total confirmado:{" "}
+              <strong>
+                {preview.hours === null ? "—" : hours(preview.hours)} h
+              </strong>
+              {preview.pending ? " · Falta registrar el regreso" : ""}
             </p>
           )}
           <div className="row">

@@ -9,6 +9,7 @@ import { DeleteAliasTable } from "./delete-alias-table";
 import { AdvisorsSheet } from "./advisors-sheet";
 import { EffectivenessTotals } from "./effectiveness-totals";
 import { EffectivenessCell } from "./effectiveness-cell";
+import type { AdvisorPeriodView } from "../../lib/meta-ads/advisor-period-history";
 import type { MetaAliasOption } from "./meta-alias-directory";
 type CatalogTable = {
   id: string;
@@ -37,6 +38,17 @@ export function ProductsCatalog() {
     kind: "TOTALS" | "ADVISORS" | "INVENTORY";
     name: string;
     revision: number;
+  };
+  const periodSequence = useRef(0);
+  const [advisorPeriodRequest, setAdvisorPeriodRequest] = useState<{
+    key: number;
+    period: AdvisorPeriodView;
+  } | null>(null);
+  const openAdvisorPeriod = (period: AdvisorPeriodView) => {
+    if (!period.from || !period.since) return;
+    setSpecialId(null);
+    setSelected(period.tableId);
+    setAdvisorPeriodRequest({ key: ++periodSequence.current, period });
   };
   const [specialsLoaded, setSpecialsLoaded] = useState(false);
   const specialDeletePending = useRef(false);
@@ -711,6 +723,7 @@ export function ProductsCatalog() {
           initialTableId={table?.id ?? "all"}
           sheetTabs={sheetTabs}
           onChanged={loadAdvisors}
+          onOpenPeriod={openAdvisorPeriod}
         />
       )}
       {locationReady && totals && !advisorSheet && !inventorySheet && (
@@ -734,6 +747,9 @@ export function ProductsCatalog() {
           aliases={table.aliases}
           settings={table}
           onNamesChanged={load}
+          onOpenAdvisorPeriod={openAdvisorPeriod}
+          advisorPeriodRequest={advisorPeriodRequest}
+          onAdvisorPeriodHandled={() => setAdvisorPeriodRequest(null)}
         />
       )}
       <div

@@ -553,7 +553,8 @@ export async function metaRoutes(
         ...scope,
         token: z.string().length(64),
         revision: z.number().int().nonnegative(),
-        allocations: salesAllocationsSchema,
+        allocations: salesAllocationsSchema.optional(),
+        value: z.union([z.literal("NA"), z.null()]).optional(),
       })
       .strict()
       .parse(await body());
@@ -612,6 +613,52 @@ export async function metaRoutes(
       .parse(await body());
     return send(await (await import("./advisors")).saveAttendance(actor, b));
   }
+  if (path === "advisors/item-analysis" && method === "GET") {
+    ownerOnly(actor);
+    const q = z
+      .object({
+        tableId: z.string().min(1).max(100),
+        aliasId: z.string().min(1).max(100),
+        country: z
+          .string()
+          .refine((v) => v === "" || isCountryCode(v))
+          .optional(),
+        since: z.string().date(),
+        until: z.string().date(),
+      })
+      .strict()
+      .parse(Object.fromEntries(req.nextUrl.searchParams));
+    demand(
+      q.since <= q.until &&
+        (Date.parse(q.until) - Date.parse(q.since)) / 86400000 < 31,
+      "Elige hasta31 días.",
+    );
+    return send(
+      await (
+        await import("./advisor-item-analysis")
+      ).advisorItemAnalysis(actor, q),
+    );
+  }
+  if (path === "advisors/periods" && method === "GET") {
+    ownerOnly(actor);
+    const q = z
+      .object({
+        tableId: z.string().min(1).max(100),
+        advisorId: z.string().min(1).max(80),
+        aliasId: z.string().min(1).max(100).optional(),
+        country: z
+          .string()
+          .refine((v) => v === "" || isCountryCode(v))
+          .optional(),
+      })
+      .strict()
+      .parse(Object.fromEntries(req.nextUrl.searchParams));
+    return send(
+      await (
+        await import("./advisor-period-history")
+      ).advisorPeriodHistory(actor, q),
+    );
+  }
   if (
     (path === "advisors/sheet" || path === "advisors/detail") &&
     method === "GET"
@@ -619,6 +666,7 @@ export async function metaRoutes(
     ownerOnly(actor);
     const q = z
       .object({
+        periodId: z.string().min(1).max(100).optional(),
         advisorListId: z.string().min(1).max(100).optional(),
         tableId: z.string().min(1).max(100),
         aliasId: z.string().min(1).max(100).optional(),
@@ -638,6 +686,15 @@ export async function metaRoutes(
       "Elige hasta 31 días.",
     );
     demand(path !== "advisors/detail" || !!q.advisorId, "Elige un asesor.");
+    demand(
+      !q.periodId ||
+        (path === "advisors/detail" &&
+          q.advisorId &&
+          q.aliasId &&
+          q.country &&
+          q.tableId !== "all"),
+      "Selecciona la combinación exacta de la asignación.",
+    );
     return send(
       await (
         await import("./advisors")
@@ -646,6 +703,7 @@ export async function metaRoutes(
         country: q.country,
         advisorId: q.advisorId,
         advisorListId: q.advisorListId,
+        periodId: q.periodId,
       }),
     );
   }
