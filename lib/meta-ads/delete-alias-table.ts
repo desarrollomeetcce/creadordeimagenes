@@ -32,6 +32,7 @@ async function deletionReview(tx: Prisma.TransactionClient, tableId: string) {
  UNION ALL SELECT 'assignments',o.id,jsonb_build_array(o."aliasId",o."aliasCountry",o."advisorId")::text FROM "MetaAdObject" o JOIN a ON a.id=o."aliasId"
  UNION ALL SELECT 'totals',jsonb_build_array(t."sheetId",t.country,t.currency,t.day)::text,t.revision::text FROM "MetaEffectivenessTotalDay" t WHERE t."tableId"=${tableId}
  UNION ALL SELECT 'colors',c."tableId",jsonb_build_array(c.revision,c.rules)::text FROM "MetaEffectivenessColors" c WHERE c."tableId"=${tableId}
+ UNION ALL SELECT 'columnLinks',l."tableId",to_jsonb(l)::text FROM "MetaEffectivenessLink" l WHERE l."tableId"=${tableId} OR l."sourceTableId"=${tableId}
  UNION ALL SELECT 'links',l."tableId",jsonb_build_array(l."sourceTableId",l.revision,l.columns)::text FROM "MetaEffectivenessSync" l WHERE l."tableId"=${tableId} OR l."sourceTableId"=${tableId}
  ) SELECT kind,COUNT(*)::int AS count,md5(COALESCE(string_agg(md5(k||'|'||v),'' ORDER BY k),'')) AS hash FROM items GROUP BY kind ORDER BY kind`;
   const colors = await tx.metaEffectivenessColors.findUnique({
@@ -51,6 +52,7 @@ async function deletionReview(tx: Prisma.TransactionClient, tableId: string) {
       "assignments",
       "totals",
       "links",
+      "columnLinks",
     ].map((kind) => [kind, stats.find((s) => s.kind === kind)?.count ?? 0]),
   );
   counts.colorRules = Array.isArray(colors?.rules) ? colors.rules.length : 0;
@@ -87,6 +89,13 @@ export async function deleteAliasTable(
       demand(
         b.confirmedName === review.table.name,
         "Escribe el nombre exacto de la tabla para confirmar.",
+      );
+      demand(
+        !(await tx.metaEffectivenessLink.findFirst({
+          where: { sourceTableId: tableId },
+        })),
+        "Esta hoja es origen de columnas vinculadas. Desvincúlalas en las hojas de destino antes de eliminarla.",
+        409,
       );
       await tx.metaAdObject.updateMany({
         where: { alias: { tableId } },

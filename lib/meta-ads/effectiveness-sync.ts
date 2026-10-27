@@ -1,3 +1,4 @@
+import { assertUnlinkedColumns } from "./column-link-policy";
 import { activeWorkbookSheetId } from "./workbook-scope";
 import { createHash } from "node:crypto";
 import { db } from "../db";
@@ -90,6 +91,12 @@ async function planSync(
   for (let d = Date.parse(b.since); d <= Date.parse(b.until); d += 86400000)
     dates.push(new Date(d).toISOString().slice(0, 10));
   const metrics = sheetMetrics.filter((m) => b.columns.includes(m.key));
+  await assertUnlinkedColumns(
+    tx,
+    b.tableId,
+    metrics.map((m) => m.key),
+    dates,
+  );
   for (const r of source.rows) {
     const name = sourceNames.get(r.aliasId)!,
       key = pair(name, r.country),

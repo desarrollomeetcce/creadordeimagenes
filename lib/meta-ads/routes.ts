@@ -752,6 +752,84 @@ export async function metaRoutes(
       ).saveEffectivenessTotal(actor, b),
     );
   }
+  if (path === "effectiveness/links" && method === "GET") {
+    ownerOnly(actor);
+    const q = z
+      .object({ tableId: z.string().min(1).max(100) })
+      .strict()
+      .parse(Object.fromEntries(req.nextUrl.searchParams));
+    return send(
+      await (
+        await import("./effectiveness-links")
+      ).effectivenessLinkConfig(actor, q.tableId),
+    );
+  }
+  if (
+    (path === "effectiveness/links" ||
+      path === "effectiveness/links/preview") &&
+    method === "POST"
+  ) {
+    ownerOnly(actor);
+    const b = z
+      .object({
+        tableId: z.string().min(1).max(100),
+        sourceTableId: z.string().min(1).max(100),
+        columns: z
+          .array(z.enum(["sales", "budget", "base", "spend", "fixedCost"]))
+          .min(1)
+          .max(5),
+        scope: z.enum(["all", "period"]),
+        since: z.string().date(),
+        until: z.string().date(),
+        ...(path === "effectiveness/links"
+          ? { token: z.string().regex(/^[a-f0-9]{64}$/) }
+          : {}),
+      })
+      .strict()
+      .parse(await body());
+    demand(
+      b.since <= b.until &&
+        (Date.parse(b.until) - Date.parse(b.since)) / 86400000 < 31,
+      "Revisa un período de hasta 31 días.",
+    );
+    demand(new Set(b.columns).size === b.columns.length, "Columna repetida.");
+    const service = await import("./effectiveness-links");
+    return send(
+      path.endsWith("/preview")
+        ? await service.previewEffectivenessLink(actor, b)
+        : await service.createEffectivenessLink(actor, {
+            ...b,
+            token: String(b.token),
+          }),
+    );
+  }
+  if (path === "effectiveness/links/unlink-preview" && method === "POST") {
+    ownerOnly(actor);
+    const b = z
+      .object({ tableId: z.string().min(1).max(100) })
+      .strict()
+      .parse(await body());
+    return send(
+      await (
+        await import("./effectiveness-links")
+      ).previewUnlinkEffectiveness(actor, b.tableId),
+    );
+  }
+  if (path === "effectiveness/links" && method === "DELETE") {
+    ownerOnly(actor);
+    const b = z
+      .object({
+        tableId: z.string().min(1).max(100),
+        token: z.string().regex(/^[a-f0-9]{64}$/),
+      })
+      .strict()
+      .parse(await body());
+    return send(
+      await (
+        await import("./effectiveness-links")
+      ).unlinkEffectiveness(actor, b),
+    );
+  }
   if (path === "effectiveness/cells" && method === "PATCH") {
     ownerOnly(actor);
     const b = z

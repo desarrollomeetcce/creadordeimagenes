@@ -1,7 +1,14 @@
 "use client";
-import { notifyAdvisorSalesChanged } from "./advisor-sales-events";
+import {
+  notifyAdvisorSalesChanged,
+  subscribeAdvisorSalesChanged,
+} from "./advisor-sales-events";
 import { AdvisorSalesApproval } from "./advisor-sales-approval";
 import { DeleteEffectivenessRows } from "./delete-effectiveness-rows";
+import {
+  activePeriodWindow,
+  type ActivePeriod,
+} from "../../lib/meta-ads/active-periods";
 import { useFinancialCategories } from "./use-financial-categories";
 import {
   groupFinancialRows,
@@ -78,6 +85,9 @@ type Cell = {
   manual: SheetMetric[];
   synced?: Partial<Record<SheetMetric, string>>;
   partialMetrics?: SheetMetric[];
+  linked?: Partial<
+    Record<SheetMetric, { tableId: string; name: string; matched: boolean }>
+  >;
   fx: {
     from: string;
     to: string;
@@ -125,6 +135,13 @@ type SheetSort =
       direction: "asc" | "desc";
     };
 type Data = {
+  columnLink?: {
+    sourceTableId: string;
+    sourceName: string;
+    columns: SheetMetric[];
+    since: string | null;
+    until: string | null;
+  } | null;
   rows: Row[];
   table: Settings & { aliases?: FinancialCatalogEntry[] };
   missingFxDays: string[];
@@ -263,6 +280,22 @@ export function MetaEffectiveness({
     [pasteCountry, setPasteCountry] = useState(settings.defaultCountry),
     [pasteCurrency, setPasteCurrency] = useState(settings.defaultCurrency),
     [csv, setCsv] = useState(false);
+  const [historyPeriod, setHistoryPeriod] = useState<null | {
+    name: string;
+    aliasId: string;
+    country: string;
+    since: string;
+    through: string;
+    previous: {
+      since: string;
+      until: string;
+      country: string;
+      aliases: string[] | null;
+      values: string[] | null;
+      state: string;
+      metrics: { manual: string[] | null; automatic: string[] | null };
+    };
+  }>(null);
   const [newActive, setNewActive] = useState(false);
   const [newName, setNewName] = useState(""),
     [newCountry, setNewCountry] = useState(settings.defaultCountry),
@@ -334,9 +367,11 @@ export function MetaEffectiveness({
     };
     load();
     const timer = setInterval(load, 30000);
+    const unsubscribe = subscribeAdvisorSalesChanged(load);
     return () => {
       active = false;
       clearInterval(timer);
+      unsubscribe();
     };
   }, [query, valid]);
   const refresh = async () => {
@@ -729,6 +764,67 @@ export function MetaEffectiveness({
       .filter((b) => b.rows.length)
       .map((b) => [activationKey(b.rows[0]), b]),
   );
+  const linkedColumn = (metric: SheetMetric, day: string) =>
+    !!data?.columnLink &&
+    data.columnLink.columns.includes(metric) &&
+    (!data.columnLink.since || day >= data.columnLink.since) &&
+    (!data.columnLink.until || day <= data.columnLink.until);
+  const hasLinkedVisibleColumns = visibleMetrics.some((m) =>
+    days.some((day) => linkedColumn(m.key, day)),
+  );
+  const historyWindow = historyPeriod
+    ? activePeriodWindow(historyPeriod.since, historyPeriod.through, since)
+    : null;
+  const openActivePeriod = (period: ActivePeriod, row: Row, name: string) => {
+    setHistoryPeriod({
+      name,
+      aliasId: row.aliasId,
+      country: row.country,
+      since: period.since,
+      through: period.through,
+      previous: historyPeriod?.previous ?? {
+        since,
+        until,
+        country,
+        aliases: selectedAliases,
+        values: valueFilter,
+        state: stateFilter,
+        metrics: metricsByView,
+      },
+    });
+    const page = activePeriodWindow(period.since, period.through);
+    setSince(page.since);
+    setUntil(page.until);
+    setSelectedAliases([row.aliasId]);
+    setCountry(row.country);
+    setStateFilter("");
+    setValueFilter(null);
+    setSelectedMetrics(null);
+    setSyncOpen(false);
+    setMessage("");
+  };
+  const closeActivePeriod = () => {
+    if (!historyPeriod) return;
+    const old = historyPeriod.previous;
+    setSince(old.since);
+    setUntil(old.until);
+    setCountry(old.country);
+    setSelectedAliases(old.aliases);
+    setValueFilter(old.values);
+    setStateFilter(old.state);
+    setMetricsByView(old.metrics);
+    setHistoryPeriod(null);
+  };
+  const pageActivePeriod = (first: string) => {
+    if (!historyPeriod) return;
+    const page = activePeriodWindow(
+      historyPeriod.since,
+      historyPeriod.through,
+      first,
+    );
+    setSince(page.since);
+    setUntil(page.until);
+  };
   const selectedPairSet = new Set(selectedPairs),
     eligibleRows = rows;
   const selectedVisibleRows = eligibleRows.filter((r) =>
@@ -931,6 +1027,7 @@ export function MetaEffectiveness({
                 setMessage("Elige un rango de hasta 31 días.");
                 return;
               }
+              setHistoryPeriod(null);
               setSince(a);
               setUntil(b);
             }}
@@ -947,7 +1044,10 @@ export function MetaEffectiveness({
                 ...countries,
               ]}
               placeholder="Todos"
-              onSelect={setCountry}
+              onSelect={(v) => {
+                setHistoryPeriod(null);
+                setCountry(v);
+              }}
             />
           </label>
           <SheetMultiFilter
@@ -983,7 +1083,8 @@ export function MetaEffectiveness({
                   busy ||
                   !rows.length ||
                   !visibleMetrics.length ||
-                  rows.length > 1000
+                  rows.length > 1000 ||
+                  hasLinkedVisibleColumns
                 }
                 onClick={() => void fillVisible(0)}
               >
@@ -994,7 +1095,8 @@ export function MetaEffectiveness({
                   busy ||
                   !rows.length ||
                   !visibleMetrics.length ||
-                  rows.length > 1000
+                  rows.length > 1000 ||
+                  hasLinkedVisibleColumns
                 }
                 onClick={() => void fillVisible("NA")}
               >
@@ -1005,7 +1107,8 @@ export function MetaEffectiveness({
                   busy ||
                   !rows.length ||
                   !visibleMetrics.length ||
-                  rows.length > 1000
+                  rows.length > 1000 ||
+                  hasLinkedVisibleColumns
                 }
                 onClick={() => void fillVisible(null)}
               >
@@ -1045,7 +1148,7 @@ export function MetaEffectiveness({
             aria-expanded={syncOpen}
             onClick={() => setSyncOpen((v) => !v)}
           >
-            ⇄ Sincronizar columnas
+            ⇄ Sincronizar o vincular columnas
           </button>
         </div>
         <div
@@ -1146,6 +1249,60 @@ export function MetaEffectiveness({
             await refresh();
           }}
         />
+      )}
+      {historyPeriod && historyWindow && (
+        <div
+          className="sheet-period-nav"
+          role="region"
+          aria-label="Tabla del período activo"
+        >
+          <div>
+            <strong>
+              Período activo de {historyPeriod.name} · {historyPeriod.country}:{" "}
+              {historyPeriod.since} — {historyPeriod.through}
+            </strong>
+            <small>
+              Mostrando {since} — {until}. Las cifras corresponden a estas
+              fechas; el interruptor muestra el estado actual.
+            </small>
+          </div>
+          <div className="row">
+            <button
+              disabled={!historyWindow.previous}
+              onClick={() =>
+                historyWindow.previous &&
+                pageActivePeriod(historyWindow.previous)
+              }
+            >
+              31 días anteriores
+            </button>
+            <button
+              disabled={!historyWindow.next}
+              onClick={() =>
+                historyWindow.next && pageActivePeriod(historyWindow.next)
+              }
+            >
+              31 días siguientes
+            </button>
+            <button onClick={closeActivePeriod}>
+              Volver a la vista anterior
+            </button>
+          </div>
+        </div>
+      )}
+      {data?.columnLink && (
+        <p className="sheet-link-status" role="status">
+          🔗 Columnas vinculadas a «{data.columnLink.sourceName}»:{" "}
+          {data.columnLink.columns
+            .map((m) => sheetMetrics.find((x) => x.key === m)?.label)
+            .join(", ")}
+          .{" "}
+          {data.columnLink.since
+            ? `${data.columnLink.since} — ${data.columnLink.until}.`
+            : "Todas las fechas."}{" "}
+          Edita las cifras en el origen. Actualización automática; puedes
+          desvincular desde «Sincronizar o vincular columnas».
+        </p>
       )}
       <div className="sheet-help">
         Edita y pulsa Enter o Tab para guardar; Escape descarta. V, P y CF
@@ -1376,7 +1533,10 @@ export function MetaEffectiveness({
                         label: a.name,
                       }))}
                       values={selectedAliases ?? []}
-                      onChange={(v) => setSelectedAliases(v.length ? v : null)}
+                      onChange={(v) => {
+                        setHistoryPeriod(null);
+                        setSelectedAliases(v.length ? v : null);
+                      }}
                     />
                     <small>Seleccionar inventario</small>
                     <SheetSearchSelect
@@ -1566,7 +1726,7 @@ export function MetaEffectiveness({
                           metric={m.key}
                           name={m.name}
                           day={d}
-                          disabled={busy || !data}
+                          disabled={busy || !data || linkedColumn(m.key, d)}
                           onError={setMessage}
                           onApply={async (value) => {
                             const targets = (data?.rows ?? []).filter(
@@ -1740,6 +1900,9 @@ export function MetaEffectiveness({
                             name={name}
                             initialSince={since}
                             initialUntil={until}
+                            onPeriod={(period) =>
+                              openActivePeriod(period, r, name)
+                            }
                           />
                         </div>
                       </td>
@@ -1868,7 +2031,11 @@ export function MetaEffectiveness({
                             >
                               <EffectivenessCell
                                 allowNA
-                                manual={c?.manual?.includes(m.key)}
+                                locked={!!c?.linked?.[m.key]}
+                                manual={
+                                  c?.manual?.includes(m.key) &&
+                                  !c?.linked?.[m.key]
+                                }
                                 placeholder={
                                   m.money &&
                                   c?.fxMissing &&
@@ -1896,7 +2063,7 @@ export function MetaEffectiveness({
                                 }
                                 onError={setMessage}
                                 onSave={(v) => editCell(r, d, m.key, v)}
-                                hint={`${c?.automaticNa?.includes(m.key) ? "N.A. automático por desactivación; vuelve a vacío al activar. " : ""}${c?.synced?.[m.key] ? "Sincronizado desde «" + c.synced[m.key] + "». " : ""}${c?.manual?.includes(m.key) ? "Ajuste manual de Efectividad. Originales conservados. " : ""}${m.key === "spend" ? "Original Meta: " + (c?.sourceSpend.map((x) => x.currency + " " + x.amount).join(" + ") || "sin datos") + ". " : ""}${c?.fxMissing && c?.[m.key] === null && !c.na?.includes(m.key) ? "Sin tasa. " : ""}${partial || c?.partialMetrics?.includes(m.key) ? "Cobertura parcial. " : ""}${m.key === "fixedCost" ? "Original CF: " + (c?.sourceFixedCost.map((x) => x.currency + " " + x.amount).join(" + ") || "sin datos") + ". " : ""}${m.money ? c?.fx.map((f) => `${f.date}: 1 ${f.from} = ${f.rate} ${f.to} · ${f.source}`).join("; ") || "" : ""} Escribe un número o N.A.; vacío restaura el importado en B/G; en P borra el presupuesto.`}
+                                hint={`${c?.linked?.[m.key] ? "Vinculada a «" + c.linked[m.key]!.name + "». Edita el origen o desvincula para editar aquí. " + (!c.linked[m.key]!.matched ? "Sin coincidencia exacta de inventario y país. " : "") : ""}${c?.automaticNa?.includes(m.key) ? "N.A. automático por desactivación; vuelve a vacío al activar. " : ""}${c?.synced?.[m.key] ? "Sincronizado desde «" + c.synced[m.key] + "». " : ""}${c?.manual?.includes(m.key) && !c?.linked?.[m.key] ? "Ajuste manual de Efectividad. Originales conservados. " : ""}${m.key === "spend" && !c?.linked?.[m.key] ? "Original Meta: " + (c?.sourceSpend.map((x) => x.currency + " " + x.amount).join(" + ") || "sin datos") + ". " : ""}${c?.fxMissing && c?.[m.key] === null && !c.na?.includes(m.key) ? "Sin tasa. " : ""}${partial || c?.partialMetrics?.includes(m.key) ? "Cobertura parcial. " : ""}${m.key === "fixedCost" && !c?.linked?.[m.key] ? "Original CF: " + (c?.sourceFixedCost.map((x) => x.currency + " " + x.amount).join(" + ") || "sin datos") + ". " : ""}${m.money && !c?.linked?.[m.key] ? c?.fx.map((f) => `${f.date}: 1 ${f.from} = ${f.rate} ${f.to} · ${f.source}`).join("; ") || "" : ""} ${c?.linked?.[m.key] ? "Edita el valor en la hoja de origen." : "Escribe un número o N.A.; vacío restaura el importado en B/G; en P borra el presupuesto."}`}
                               />
                               {m.key === "sales" && r.advisorChanges?.[d] && (
                                 <button

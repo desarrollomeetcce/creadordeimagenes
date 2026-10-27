@@ -18,6 +18,7 @@ const labels: Record<string, string> = {
   totals: "Días de totales manuales",
   colorRules: "Reglas de colores",
   links: "Configuraciones de sincronización",
+  columnLinks: "Vinculaciones automáticas de columnas",
 };
 export function DeleteAliasTable({
   tableId,

@@ -1355,3 +1355,17 @@ Las filas desactivadas dejan de aplicar su selección temporal y vuelven a las p
 ### Barra de inventario encima de las pestañas
 
 La barra Pegar inventario/Importar/Ver categorías/Eliminar/Limpiar filtros aparece antes de Pestañas. La fila Hojas queda inmediatamente junto a la tabla. Solo se reordena JSX; acciones, datos y dimensiones no cambian.168/168 unitarias, typecheck/build y comprobación Chromium de posición exacta en escritorio/móvil/recarga y apertura/cierre de pegado sin escrituras. Backend sin cambios; integración185/185 previa vigente.
+
+## 27/10/2026 — Vinculación automática de columnas
+
+Se incorpora vinculación persistente junto a la copia manual existente. Origen→destino por nombre literal de inventario+país+fecha; todas las fechas por defecto o período delimitado. Lectura efectiva sin escrituras de GET, FX diario, vacíos/0/N.A./pendientes diferenciados, cadenas acotadas y rechazo de ciclos. El destino bloquea edición de las métricas vinculadas tanto en UI como en guardado individual/lotes/copia. Cambios entre pestañas/foco notifican recarga y el sondeo pasivo mantiene datos actualizados; Totales/Asesores consumen la misma vista.
+
+Desvincular ofrece revisión de todo el alcance y congela últimos valores mediante overlays atómicos, conservando originales y métricas ajenas. Un vacío explícito se guarda con empty:true para sobrevivir jsonb_strip_nulls. Se revisa contenido/configuración antes de confirmar, sin reintentos de escrituras; borrado de origen requiere retirar vínculos. Migración202610270004 aditiva; aplicada solo a PostgreSQL exclusivo local. En pruebas se corrigieron revisiones iniciales de nuevos fixtures y la fecha de ejecución de un error de cuota sintético para no depender de la velocidad del equipo. Sin cambios al proveedor Meta.
+
+Validación:170 unitarias,188 integraciones, TypeScript, compilación y Chromium de dos pestañas. Revisa vínculo confirmado una sola vez, edición/vacío/cero reflejados automáticamente, persistencia, bloqueo de destino, desvinculación conservando datos y ediciones posteriores independientes; escritorio/móvil sin errores JS/API ni llamadas externas. El entorno se reinició tras agotarse la caché; se recuperó PostgreSQL sintético y se repitió la validación limpia. No se acredita despliegue efectivo en Hostinger por enviar main.
+
+### Histórico textual y navegación de períodos activos
+
+El detalle ahora lista períodos observados de activación, del más reciente al más antiguo, solo cinco por página con navegación a anteriores. Sustituye las barras horarias de estado y conserva las demás estadísticas. La lista incluye el historial completo aunque el calendario del gráfico sea más corto; hasta la fecha representa un tramo abierto real. Cierres a medianoche, cambios del mismo día y estados sin inicio conocido no generan días inventados. Crear una fila explícitamente activa registra su inicio una sola vez.
+
+Ir al período filtra la tabla por ítem/país/fechas y permite volver a los filtros previos. Intervalos largos tienen páginas contiguas de31 días, con rango completo indicado. Estado visible actual y cifras diarias conservados. Validación conjunta con vinculación:172/172 unitarias,190/190 integraciones, TypeScript/build y Chromium; pruebas de cinco activaciones por página, orden descendente, tabla/rango real, navegación larga, vuelta a vista anterior, activación/desactivación automática, vacío heredado y móvil. No se modificaron anuncios ni se hicieron llamadas reales a proveedores.

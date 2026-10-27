@@ -1,4 +1,5 @@
 "use client";
+import { EffectivenessLinks } from "./effectiveness-links";
 import { useEffect, useState } from "react";
 import { engineRequest as api } from "./generation-engine";
 import { SheetSearchSelect } from "./sheet-search-select";
@@ -17,8 +18,11 @@ type Preview = {
   sourceName: string;
   targetName: string;
 };
-const options = [{ key: "alias", name: "Inventario", label: "A" }, ...sheetMetrics];
-export function EffectivenessSync({
+const options = [
+  { key: "alias", name: "Inventario", label: "A" },
+  ...sheetMetrics,
+];
+function EffectivenessCopy({
   tableId,
   tables,
   since,
@@ -167,11 +171,11 @@ export function EffectivenessSync({
         </div>
       </fieldset>
       <p>
-        Coincidencia exacta de inventario + país + fecha. Las monedas se convierten
-        con la tasa de cada día. «Inventario» añade los nombres y países del origen
-        sin borrar los existentes. Las celdas elegidas con datos reemplazarán la
-        vista del destino; los vacíos del origen no borran datos. No cambia Meta
-        Ads.
+        Coincidencia exacta de inventario + país + fecha. Las monedas se
+        convierten con la tasa de cada día. «Inventario» añade los nombres y
+        países del origen sin borrar los existentes. Las celdas elegidas con
+        datos reemplazarán la vista del destino; los vacíos del origen no borran
+        datos. No cambia Meta Ads.
       </p>
       <p className="sheet-sync-timing">
         Se actualiza al pulsar «Sincronizar ahora».{" "}
@@ -198,7 +202,8 @@ export function EffectivenessSync({
           </strong>
           <div className="sheet-sync-counts">
             <span>
-              <b>{currentPreview.summary.aliasesAdded}</b> elementos nuevos de inventario
+              <b>{currentPreview.summary.aliasesAdded}</b> elementos nuevos de
+              inventario
             </span>
             <span>
               <b>{currentPreview.summary.rowsAdded}</b> filas nuevas
@@ -236,5 +241,36 @@ export function EffectivenessSync({
         </p>
       )}
     </section>
+  );
+}
+
+export function EffectivenessSync(props: {
+  tableId: string;
+  tables: { id: string; name: string }[];
+  since: string;
+  until: string;
+  onSynced: () => Promise<void>;
+}) {
+  const [mode, setMode] = useState<"copy" | "link">("copy");
+  return (
+    <div className="sheet-transfer-panel">
+      <div
+        className="row sheet-transfer-modes"
+        role="group"
+        aria-label="Tipo de actualización de columnas"
+      >
+        <button aria-pressed={mode === "copy"} onClick={() => setMode("copy")}>
+          Copiar columnas una vez
+        </button>
+        <button aria-pressed={mode === "link"} onClick={() => setMode("link")}>
+          Vincular columnas automáticamente
+        </button>
+      </div>
+      {mode === "copy" ? (
+        <EffectivenessCopy {...props} />
+      ) : (
+        <EffectivenessLinks {...props} />
+      )}
+    </div>
   );
 }

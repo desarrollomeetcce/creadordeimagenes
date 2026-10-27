@@ -18,6 +18,7 @@ export type PeriodCell = {
   na?: readonly SheetMetric[];
   manual?: readonly SheetMetric[];
   partialMetrics?: readonly SheetMetric[];
+  fxPending?: readonly SheetMetric[];
   sourceSpend?: unknown[];
   sourceFixedCost?: unknown[];
 };
@@ -49,13 +50,16 @@ export function summarizePeriod(
       if (c.partialMetrics?.includes(metric)) incomplete = true;
       if (
         (metric === "base" || metric === "spend") &&
+        !c.manual?.includes(metric) &&
         expectedCampaigns > 0 &&
         (c.campaigns ?? 0) < expectedCampaigns
       )
         incomplete = true;
     } else if (
-      (metric === "spend" && c?.sourceSpend?.length) ||
-      (metric === "fixedCost" && c?.sourceFixedCost?.length)
+      c?.fxPending
+        ? c.fxPending.includes(metric)
+        : (metric === "spend" && c?.sourceSpend?.length) ||
+          (metric === "fixedCost" && c?.sourceFixedCost?.length)
     )
       pending = true;
   }

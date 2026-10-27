@@ -1,3 +1,4 @@
+import { activePeriods } from "./active-periods";
 import { db } from "../db";
 import { ownerOnly } from "../auth";
 import { demand } from "../errors";
@@ -27,7 +28,7 @@ export async function effectivenessDetail(
       const state = await tx.metaEffectivenessState.findUnique({
         where: { aliasId_country: { aliasId: b.aliasId, country: b.country } },
       });
-      const [sheet, prior, events] = await Promise.all([
+      const [sheet, prior, events, fullEvents] = await Promise.all([
         effectiveness(actor, alias.tableId, b.since, b.until, tx),
         state
           ? tx.metaEffectivenessEvent.findFirst({
@@ -47,7 +48,19 @@ export async function effectivenessDetail(
               take: 10001,
             })
           : [],
+        state
+          ? tx.metaEffectivenessEvent.findMany({
+              where: { stateId: state.id, createdAt: { lte: new Date(asOf) } },
+              select: { id: true, active: true, createdAt: true },
+              orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+              take: 10001,
+            })
+          : [],
       ]);
+      demand(
+        fullEvents.length <= 10000,
+        "El historial supera el límite de 10000 cambios que se pueden consultar a la vez.",
+      );
       demand(
         events.length <= 10000,
         "El período tiene demasiados cambios de estado. Elige menos días.",
@@ -69,6 +82,8 @@ export async function effectivenessDetail(
         country: b.country,
         currency: row.currency,
         active: row.active,
+        activePeriods: activePeriods(fullEvents.map(serialize), asOf),
+        asOf,
         days: row.days,
         timeline: aliasStateTimeline(
           b.since,

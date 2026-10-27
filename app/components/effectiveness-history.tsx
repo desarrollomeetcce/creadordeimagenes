@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useId, useRef, useState } from "react";
+import { subscribeAdvisorSalesChanged } from "./advisor-sales-events";
 import { engineRequest as api } from "./generation-engine";
 import {
   sheetMetrics,
@@ -7,7 +8,7 @@ import {
 } from "../../lib/meta-ads/period-summary";
 import { MetaDateRange } from "./meta-date-range";
 import { MetaDailyChart } from "./meta-daily-chart";
-import type { aliasStateTimeline } from "../../lib/meta-ads/alias-state-timeline";
+import type { ActivePeriod } from "../../lib/meta-ads/active-periods";
 type Cell = Record<SheetMetric, number | null> & {
   na: SheetMetric[];
   fxMissing: boolean;
@@ -18,7 +19,8 @@ type Detail = {
   currency: string;
   active: boolean;
   days: Record<string, Cell>;
-  timeline: ReturnType<typeof aliasStateTimeline>;
+  activePeriods: ActivePeriod[];
+  asOf: string;
 };
 const stamp = (s: string) =>
   new Date(s).toLocaleString("es-PE", { timeZone: "America/Lima" });
@@ -28,12 +30,14 @@ export function EffectivenessHistory({
   name,
   initialSince,
   initialUntil,
+  onPeriod,
 }: {
   aliasId: string;
   country: string;
   name: string;
   initialSince: string;
   initialUntil: string;
+  onPeriod: (period: ActivePeriod) => void;
 }) {
   const id = useId(),
     pop = useRef<HTMLDivElement>(null);
@@ -45,7 +49,7 @@ export function EffectivenessHistory({
     [loading, setLoading] = useState(false),
     [bars, setBars] = useState<SheetMetric>("sales"),
     [line, setLine] = useState<SheetMetric>("budget"),
-    [limit, setLimit] = useState(50),
+    [page, setPage] = useState(0),
     [reload, setReload] = useState(0),
     [position, setPosition] = useState({ top: 8, left: 8 });
   const query =
@@ -59,20 +63,35 @@ export function EffectivenessHistory({
     setLoading(true);
     setData(null);
     setMessage("");
-    void api(query)
-      .then((v: Detail) => {
-        if (active) setData(v);
-      })
-      .catch((e) => {
-        if (active) setMessage(e.message);
-      })
-      .finally(() => {
-        if (active) setLoading(false);
-      });
+    let version = 0;
+    const load = () => {
+      if (document.hidden) return;
+      const request = ++version;
+      void api(query)
+        .then((v: Detail) => {
+          if (active && request === version) setData(v);
+        })
+        .catch((e) => {
+          if (active && request === version) setMessage(e.message);
+        })
+        .finally(() => {
+          if (active && request === version) setLoading(false);
+        });
+    };
+    load();
+    const timer = setInterval(load, 30000),
+      unsubscribe = subscribeAdvisorSalesChanged(load);
     return () => {
       active = false;
+      clearInterval(timer);
+      unsubscribe();
     };
   }, [query, open, valid, reload]);
+  const pageCount = Math.max(
+      1,
+      Math.ceil((data?.activePeriods.length ?? 0) / 5),
+    ),
+    currentPage = Math.min(page, pageCount - 1);
   const dates: string[] = [];
   if (valid)
     for (let d = Date.parse(since); d <= Date.parse(until); d += 86400000)
@@ -102,7 +121,7 @@ export function EffectivenessHistory({
         onClick={(e) => {
           setSince(initialSince);
           setUntil(initialUntil);
-          setLimit(50);
+          setPage(0);
           const r = e.currentTarget.getBoundingClientRect();
           setPosition({
             left: Math.max(8, Math.min(r.left, innerWidth - 920)),
@@ -141,7 +160,7 @@ export function EffectivenessHistory({
                 onChange={(a, b) => {
                   setSince(a);
                   setUntil(b);
-                  setLimit(50);
+                  setPage(0);
                 }}
               />
               <button
@@ -160,88 +179,81 @@ export function EffectivenessHistory({
                 <p>
                   Estado actual:{" "}
                   <b>{data.active ? "Activado" : "Desactivado"}</b>. Historial
-                  de Efectividad de este inventario y país; no cambia estados en Meta
-                  Ads.
+                  de Efectividad de este inventario y país; no cambia estados en
+                  Meta Ads.
                 </p>
-                <h3>Estado por fecha · horas de Lima</h3>
-                <div className="row alias-state-legend">
-                  <span>● Activado</span>
-                  <span>● Desactivado</span>
-                </div>
-                <small>
-                  Solo se dibujan tramos respaldados por cambios registrados.
-                  Los espacios sin registro quedan vacíos; hoy llega hasta la
-                  última consulta.
-                </small>
-                <div className="alias-state-bars">
-                  <div className="alias-state-scale">
-                    <span>Fecha</span>
-                    <span>00:00</span>
-                    <span>12:00</span>
-                    <span>24:00</span>
-                  </div>
-                  {data.timeline.days.map((day) => (
-                    <div className="alias-state-day" key={day.day}>
-                      <span>
-                        {day.day.slice(8)}.{day.day.slice(5, 7)}
-                      </span>
-                      <div
-                        className="alias-state-daybar"
-                        role="img"
-                        aria-label={`${day.day}: ${day.activeHours.toFixed(2)} h activado, ${day.inactiveHours.toFixed(2)} h desactivado; ${day.knownHours.toFixed(2)} h con registro`}
-                      >
-                        {day.parts.map((part, i) => (
-                          <span
-                            key={i}
-                            data-state={part.active ? "active" : "inactive"}
-                            style={{
-                              left: (part.offsetHours / 24) * 100 + "%",
-                              width: (part.hours / 24) * 100 + "%",
+                <h3>Últimas activaciones</h3>
+                <p className="hint">
+                  Historial completo, de más reciente a más antiguo. Fechas
+                  guardadas automáticamente (Lima).
+                </p>
+                {data.activePeriods.length ? (
+                  <ol className="alias-active-periods">
+                    {data.activePeriods
+                      .slice(currentPage * 5, currentPage * 5 + 5)
+                      .map((period) => (
+                        <li key={period.id}>
+                          <div>
+                            <strong
+                              title={`Activado el ${stamp(period.from)} (Lima)`}
+                            >
+                              {period.until
+                                ? `Del ${new Date(period.since + "T12:00:00Z").toLocaleDateString("es-PE", { dateStyle: "long", timeZone: "America/Lima" })} al ${new Date(period.through + "T12:00:00Z").toLocaleDateString("es-PE", { dateStyle: "long", timeZone: "America/Lima" })}`
+                                : `Desde el ${new Date(period.since + "T12:00:00Z").toLocaleDateString("es-PE", { dateStyle: "long", timeZone: "America/Lima" })} hasta la fecha`}
+                            </strong>
+                            <small>
+                              {period.until
+                                ? `Se desactivó el ${stamp(period.until)} (Lima).`
+                                : `Activo al ${stamp(data.asOf)} (Lima).`}
+                            </small>
+                          </div>
+                          <button
+                            type="button"
+                            className="alias-period-link"
+                            aria-label={`Ir al período activo ${period.since} — ${period.through}`}
+                            onClick={() => {
+                              pop.current?.hidePopover();
+                              onPeriod(period);
                             }}
-                            title={`${part.active ? "Activado" : "Desactivado"}: ${stamp(part.from)} — ${stamp(part.until)}`}
-                          />
-                        ))}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-                <div className="alias-state-events">
-                  {data.timeline.baseline && (
-                    <p>
-                      Al inicio del período:{" "}
-                      <b>
-                        {data.timeline.baseline.active
-                          ? "Activado"
-                          : "Desactivado"}
-                      </b>{" "}
-                      · último cambio {stamp(data.timeline.baseline.createdAt)}{" "}
-                      (Lima)
-                    </p>
-                  )}
-                  {[...data.timeline.events]
-                    .reverse()
-                    .slice(0, limit)
-                    .map((e) => (
-                      <p
-                        key={e.id}
-                        data-state={e.active ? "active" : "inactive"}
+                          >
+                            Ir al período
+                          </button>
+                        </li>
+                      ))}
+                  </ol>
+                ) : (
+                  <p>
+                    No hay períodos activos registrados. Se registrarán
+                    automáticamente cuando actives esta fila.
+                  </p>
+                )}
+                {data.activePeriods.length > 5 && (
+                  <nav
+                    className="alias-period-pagination"
+                    aria-label="Páginas de activaciones"
+                  >
+                    <span>
+                      {currentPage * 5 + 1}–
+                      {Math.min(currentPage * 5 + 5, data.activePeriods.length)}{" "}
+                      de {data.activePeriods.length} activaciones · Página{" "}
+                      {currentPage + 1} de {pageCount}
+                    </span>
+                    <div className="row">
+                      <button
+                        disabled={currentPage === 0}
+                        onClick={() => setPage(currentPage - 1)}
                       >
-                        <b>{e.active ? "Activado" : "Desactivado"}</b> ·{" "}
-                        {stamp(e.createdAt)} (Lima)
-                      </p>
-                    ))}
-                  {!data.timeline.events.length && (
-                    <p>Sin cambios registrados dentro de estas fechas.</p>
-                  )}
-                  {limit < data.timeline.events.length && (
-                    <button
-                      type="button"
-                      onClick={() => setLimit((v) => v + 50)}
-                    >
-                      Ver más cambios
-                    </button>
-                  )}
-                </div>
+                        Más recientes
+                      </button>
+                      <button
+                        disabled={currentPage + 1 >= pageCount}
+                        onClick={() => setPage(currentPage + 1)}
+                      >
+                        Anteriores
+                      </button>
+                    </div>
+                  </nav>
+                )}
                 <h3>Evolución de parámetros</h3>
                 <div className="row alias-detail-controls">
                   <label>

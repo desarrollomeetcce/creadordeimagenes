@@ -712,6 +712,8 @@ model MetaAccountGrant {
   @@index([userId])
 }
 model MetaAliasTable {
+  columnLinkTarget MetaEffectivenessLink? @relation("ColumnLinkDestination")
+  columnLinkSources MetaEffectivenessLink[] @relation("ColumnLinkSource")
   colors MetaEffectivenessColors?
   syncTarget MetaEffectivenessSync? @relation("SyncDestination")
   syncSources MetaEffectivenessSync[] @relation("SyncSource")
@@ -1102,4 +1104,17 @@ model MetaInventoryItemCategory {
  category MetaInventoryCategory @relation(fields:[categoryId],references:[id],onDelete:Cascade)
  @@id([itemId,categoryId])
  @@index([categoryId])
+}
+
+model MetaEffectivenessLink {
+ tableId String @id
+ target MetaAliasTable @relation("ColumnLinkDestination",fields:[tableId],references:[id],onDelete:Cascade)
+ sourceTableId String
+ source MetaAliasTable @relation("ColumnLinkSource",fields:[sourceTableId],references:[id],onDelete:Restrict)
+ columns Json
+ since String?
+ until String?
+ revision Int @default(1)
+ createdAt DateTime @default(now())
+ @@index([sourceTableId])
 }

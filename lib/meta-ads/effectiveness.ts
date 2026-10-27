@@ -1,3 +1,8 @@
+import {
+  assertUnlinkedColumns,
+  linkCoversDay,
+  linkMetrics,
+} from "./column-link-policy";
 import { activeWorkbookSheetId } from "./workbook-scope";
 import { linkFinancialInventory } from "./financial-inventory";
 import type { InventoryNameDecision } from "./inventory-duplicates";
@@ -24,14 +29,98 @@ export async function effectivenessLock(tx: Tx, actor: Actor) {
     403,
   );
 }
+type Amount = { currency: string; amount: number };
+export type EffectivenessCell = {
+  budget: number | null;
+  spend: number | null;
+  base: number | null;
+  sales: number | null;
+  fixedCost: number | null;
+  campaigns: number;
+  updatedAt: string | null;
+  revision: number;
+  sourceSpend: Amount[];
+  sourceFixedCost: Amount[];
+  fxMissing: boolean;
+  fxPending: SheetMetric[];
+  linked: Partial<
+    Record<SheetMetric, { tableId: string; name: string; matched: boolean }>
+  >;
+  na: SheetMetric[];
+  automaticNa: SheetMetric[];
+  manual: SheetMetric[];
+  synced: Partial<Record<SheetMetric, string>>;
+  partialMetrics: SheetMetric[];
+  fx: {
+    from: string;
+    to: string;
+    rate: number;
+    date: string;
+    source: string;
+    url: string;
+  }[];
+};
+
+export type EffectivenessRow = {
+  aliasId: string;
+  advisorId: string | null;
+  country: string;
+  currency: string;
+  rowRevision: number;
+  days: Record<string, EffectivenessCell>;
+  campaigns: number;
+  timezones: string[];
+  active: boolean;
+  stateRevision: number;
+  lastStateChange: string | null;
+  token: string;
+  advisorChanges: Record<
+    string,
+    { status: "PENDING" | "APPROVED" | "AUTOMATIC" }
+  >;
+};
+export type EffectivenessSheet = {
+  table: {
+    id: string;
+    name: string;
+    aliasColumnName: string;
+    defaultCountry: string;
+    defaultCurrency: string;
+    aliases: {
+      id: string;
+      name: string;
+      categoryAssignments: {
+        category: { id: string; name: string; kind: string };
+      }[];
+    }[];
+  };
+  rows: EffectivenessRow[];
+  since: string;
+  until: string;
+  missingFxDays: string[];
+  columnLink: {
+    sourceTableId: string;
+    sourceName: string;
+    columns: SheetMetric[];
+    since: string | null;
+    until: string | null;
+  } | null;
+};
 export async function effectiveness(
   actor: Actor,
   tableId: string,
   since: string,
   until: string,
   client: Prisma.TransactionClient = db,
-) {
+  path: string[] = [],
+  ignoreLink = false,
+): Promise<EffectivenessSheet> {
   ownerOnly(actor);
+  demand(
+    !path.includes(tableId) && path.length < 9,
+    "La vinculación de hojas contiene un ciclo o demasiados niveles.",
+    409,
+  );
   const table = await client.metaAliasTable.findUnique({
     where: { id: tableId },
     select: {
@@ -54,7 +143,7 @@ export async function effectiveness(
     },
   });
   demand(table, "Tabla no disponible.", 404);
-  const [campaigns, stored, snapshots, states] = await Promise.all([
+  const [campaigns, stored, snapshots, states, columnLink] = await Promise.all([
     client.metaAdObject.findMany({
       where: {
         level: "campaign",
@@ -110,59 +199,15 @@ export async function effectiveness(
         },
       },
     }),
+    ignoreLink
+      ? Promise.resolve(null)
+      : client.metaEffectivenessLink.findUnique({ where: { tableId } }),
   ]);
   const hidden = new Set(
       stored.filter((s) => s.hidden).map((s) => key(s.aliasId, s.country)),
     ),
     fx = new Map(snapshots.map((s) => [s.day, s]));
-  type Amount = { currency: string; amount: number };
-  type InternalCell = {
-    budget: number | null;
-    spend: number | null;
-    base: number | null;
-    sales: number | null;
-    fixedCost: number | null;
-    campaigns: number;
-    updatedAt: string | null;
-    revision: number;
-    sourceSpend: Amount[];
-    sourceFixedCost: Amount[];
-    fxMissing: boolean;
-    na: SheetMetric[];
-    automaticNa: SheetMetric[];
-    manual: SheetMetric[];
-    synced: Partial<Record<SheetMetric, string>>;
-    partialMetrics: SheetMetric[];
-    fx: {
-      from: string;
-      to: string;
-      rate: number;
-      date: string;
-      source: string;
-      url: string;
-    }[];
-  };
-  const rows = new Map<
-    string,
-    {
-      aliasId: string;
-      advisorId: string | null;
-      country: string;
-      currency: string;
-      rowRevision: number;
-      days: Record<string, InternalCell>;
-      campaigns: number;
-      timezones: string[];
-      active: boolean;
-      stateRevision: number;
-      lastStateChange: string | null;
-      token: string;
-      advisorChanges: Record<
-        string,
-        { status: "PENDING" | "APPROVED" | "AUTOMATIC" }
-      >;
-    }
-  >();
+  const rows = new Map<string, EffectivenessRow>();
   const get = (a: string, p: string) => {
     const k = key(a, p);
     let r = rows.get(k);
@@ -205,6 +250,8 @@ export async function effectiveness(
       sourceSpend: [],
       sourceFixedCost: [],
       fxMissing: false,
+      fxPending: [],
+      linked: {},
       fx: [],
       na: [],
       automaticNa: [],
@@ -282,7 +329,9 @@ export async function effectiveness(
           d.annotations as Record<
             string,
             {
-              value: number | "NA";
+              value: number | "NA" | null;
+              pending?: boolean;
+              empty?: boolean;
               currency?: string;
               sourceTableName?: string;
               partial?: boolean;
@@ -296,13 +345,20 @@ export async function effectiveness(
     for (const [day, c] of Object.entries(r.days)) {
       const snapshot = fx.get(day),
         rates = snapshot?.rates as FxRates | undefined;
-      const project = (amounts: Amount[]) => {
-        if (!amounts.length || !r.currency) return null;
+      const project = (amounts: Amount[], metric: SheetMetric) => {
+        if (!amounts.length) return null;
+        if (!r.currency) {
+          c.fxMissing = true;
+          if (!c.fxPending.includes(metric)) c.fxPending.push(metric);
+          missing.add(day);
+          return null;
+        }
         let total = 0;
         for (const a of amounts) {
           const v = convertMoney(a.amount, a.currency, r.currency, rates);
           if (v === null) {
             c.fxMissing = true;
+            if (!c.fxPending.includes(metric)) c.fxPending.push(metric);
             missing.add(day);
             return null;
           }
@@ -326,8 +382,10 @@ export async function effectiveness(
       };
       const overrides =
         annotations.get(key(r.aliasId, r.country))?.get(day) ?? {};
-      c.spend = overrides.spend ? null : project(c.sourceSpend);
-      c.fixedCost = overrides.fixedCost ? null : project(c.sourceFixedCost);
+      c.spend = overrides.spend ? null : project(c.sourceSpend, "spend");
+      c.fixedCost = overrides.fixedCost
+        ? null
+        : project(c.sourceFixedCost, "fixedCost");
       for (const m of sheetMetrics) {
         const override = overrides[m.key];
         if (!override) continue;
@@ -338,15 +396,115 @@ export async function effectiveness(
         if (override.value === "NA") {
           c[m.key] = null;
           c.na.push(m.key);
+        } else if (override.value === null || override.empty) {
+          c[m.key] = null;
+          if (override.pending) {
+            c.fxMissing = true;
+            c.fxPending.push(m.key);
+          }
         } else
           c[m.key] =
             m.money && override.value !== 0
-              ? project([
-                  { amount: override.value, currency: override.currency || "" },
-                ])
+              ? project(
+                  [
+                    {
+                      amount: override.value,
+                      currency: override.currency || "",
+                    },
+                  ],
+                  m.key,
+                )
               : override.value;
       }
     }
+  let linkedSourceName = "";
+  if (columnLink) {
+    const source = await effectiveness(
+      actor,
+      columnLink.sourceTableId,
+      since,
+      until,
+      client,
+      [...path, tableId],
+    );
+    linkedSourceName = source.table.name;
+    const names = new Map(source.table.aliases.map((a) => [a.id, a.name]));
+    const sources = new Map(
+      source.rows.map((r) => [key(names.get(r.aliasId)!, r.country), r]),
+    );
+    const metrics = linkMetrics(columnLink);
+    for (const r of rows.values()) {
+      const name = table.aliases.find((a) => a.id === r.aliasId)!.name;
+      const origin = r.country ? sources.get(key(name, r.country)) : undefined;
+      for (
+        let at = Date.parse(since);
+        at <= Date.parse(until);
+        at += 86400000
+      ) {
+        const day = new Date(at).toISOString().slice(0, 10);
+        if (!linkCoversDay(columnLink, day)) continue;
+        const c = cell(r, day),
+          original = origin?.days[day];
+        for (const metric of metrics) {
+          const m = sheetMetrics.find((m) => m.key === metric)!;
+          c.na = c.na.filter((x) => x !== metric);
+          c.automaticNa = c.automaticNa.filter((x) => x !== metric);
+          c.partialMetrics = c.partialMetrics.filter((x) => x !== metric);
+          c.fxPending = c.fxPending.filter((x) => x !== metric);
+          delete c.synced[metric];
+          if (!c.manual.includes(metric)) c.manual.push(metric);
+          c.linked[metric] = {
+            tableId: source.table.id,
+            name: source.table.name,
+            matched: !!origin,
+          };
+          const automatic = original?.automaticNa.includes(metric);
+          const value = automatic ? null : (original?.[metric] ?? null);
+          c[metric] =
+            m.money && value !== null && value !== 0
+              ? convertMoney(
+                  value,
+                  origin!.currency,
+                  r.currency,
+                  fx.get(day)?.rates as FxRates | undefined,
+                )
+              : value;
+          if (original?.na.includes(metric) && !automatic) c.na.push(metric);
+          if (
+            m.money &&
+            (original?.fxPending.includes(metric) ||
+              (value !== null && c[metric] === null))
+          )
+            c.fxPending.push(metric);
+          if (
+            original?.partialMetrics.includes(metric) ||
+            ((metric === "base" || metric === "spend") &&
+              origin &&
+              original &&
+              !original.manual.includes(metric) &&
+              original.campaigns < origin.campaigns)
+          )
+            c.partialMetrics.push(metric);
+          if (metric === "spend")
+            c.sourceSpend =
+              value !== null
+                ? [{ currency: origin!.currency, amount: value }]
+                : (original?.sourceSpend ?? []);
+          if (metric === "fixedCost")
+            c.sourceFixedCost =
+              value !== null
+                ? [{ currency: origin!.currency, amount: value }]
+                : (original?.sourceFixedCost ?? []);
+          if (
+            original?.updatedAt &&
+            (!c.updatedAt || original.updatedAt > c.updatedAt)
+          )
+            c.updatedAt = original.updatedAt;
+        }
+        c.fxMissing = c.fxPending.length > 0;
+      }
+    }
+  }
   // State-derived N.A. never writes annotations or clears real values on reactivation.
   for (const r of rows.values())
     if (!r.active) {
@@ -382,6 +540,25 @@ export async function effectiveness(
           r.rowRevision,
           r.stateRevision,
           r.active,
+          columnLink
+            ? [
+                columnLink.createdAt,
+                columnLink.revision,
+                columnLink.columns,
+                columnLink.since,
+                columnLink.until,
+                Object.entries(r.days).map(([d, c]) => [
+                  d,
+                  linkMetrics(columnLink).map((m) => [
+                    m,
+                    c[m],
+                    c.na.includes(m),
+                    c.fxPending.includes(m),
+                    c.partialMetrics.includes(m),
+                  ]),
+                ]),
+              ]
+            : null,
           since,
           until,
           Object.entries(r.days)
@@ -425,10 +602,27 @@ export async function effectiveness(
   }
   return {
     table,
+    columnLink: columnLink
+      ? {
+          sourceTableId: columnLink.sourceTableId,
+          sourceName: linkedSourceName,
+          columns: linkMetrics(columnLink),
+          since: columnLink.since,
+          until: columnLink.until,
+        }
+      : null,
     rows: [...rows.values()],
     since,
     until,
-    missingFxDays: [...missing].sort(),
+    missingFxDays: [
+      ...new Set(
+        [...rows.values()].flatMap((r) =>
+          Object.entries(r.days)
+            .filter(([, c]) => c.fxPending.length)
+            .map(([day]) => day),
+        ),
+      ),
+    ].sort(),
   };
 }
 export async function saveEffectiveness(
@@ -447,11 +641,18 @@ export async function saveEffectiveness(
   ownerOnly(actor);
   return db.$transaction(async (tx) => {
     await effectivenessLock(tx, actor);
-    demand(
-      await tx.metaAlias.findUnique({ where: { id: b.aliasId } }),
-      "Inventario no disponible.",
-      404,
-    );
+    const alias = await tx.metaAlias.findUnique({ where: { id: b.aliasId } });
+    demand(alias, "Inventario no disponible.", 404);
+    if (b.day)
+      await assertUnlinkedColumns(
+        tx,
+        alias.tableId,
+        [
+          ...(b.sales !== undefined ? ["sales" as const] : []),
+          ...(b.fixedCost !== undefined ? ["fixedCost" as const] : []),
+        ],
+        [b.day],
+      );
     const old = await tx.metaEffectivenessRow.findUnique({
       where: {
         aliasId_country_currency: {
@@ -859,7 +1060,16 @@ export async function importEffectiveness(
               (old) => old.aliasId === r.aliasId && old.country === r.country,
             ),
         );
-        if (newTargets.length)
+        if (newTargets.length) {
+          const priorStates = await tx.metaEffectivenessState.findMany({
+            where: {
+              OR: newTargets.map((r) => ({
+                aliasId: r.aliasId,
+                country: r.country,
+              })),
+            },
+            select: { id: true },
+          });
           await tx.metaEffectivenessState.createMany({
             data: newTargets.map((r) => ({
               aliasId: r.aliasId,
@@ -869,6 +1079,41 @@ export async function importEffectiveness(
             })),
             skipDuplicates: true,
           });
+          if (initialActive) {
+            const activated = await tx.metaEffectivenessState.findMany({
+              where: {
+                OR: newTargets.map((r) => ({
+                  aliasId: r.aliasId,
+                  country: r.country,
+                })),
+                id: { notIn: priorStates.map((r) => r.id) },
+              },
+            });
+            if (activated.length)
+              await tx.metaEffectivenessEvent.createMany({
+                data: activated.map((state) => ({
+                  stateId: state.id,
+                  active: true,
+                  actorId: actor.id,
+                  snapshot: {
+                    initial: true,
+                    reason: "ROW_CREATED_ACTIVE",
+                    since: limaDay(),
+                    until: limaDay(),
+                    currency:
+                      imported.find(
+                        (r) =>
+                          r.aliasId === state.aliasId &&
+                          r.country === state.country,
+                      )?.displayCurrency ?? "",
+                    metrics: [],
+                    parameterCount: 0,
+                    values: {},
+                  },
+                })),
+              });
+          }
+        }
       }
       await recordActivity(tx, {
         data: {

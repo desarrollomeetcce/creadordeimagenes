@@ -43,9 +43,11 @@ export function sumEffectivenessDay(
         } else if (
           m.money &&
           c &&
-          ((m.key === "spend" && c.sourceSpend?.length) ||
-            (m.key === "fixedCost" && c.sourceFixedCost?.length) ||
-            c.manual?.includes(m.key))
+          (c.fxPending
+            ? c.fxPending.includes(m.key)
+            : (m.key === "spend" && c.sourceSpend?.length) ||
+              (m.key === "fixedCost" && c.sourceFixedCost?.length) ||
+              c.manual?.includes(m.key))
         )
           pending = true;
       }

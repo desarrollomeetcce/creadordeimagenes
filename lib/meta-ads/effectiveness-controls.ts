@@ -1,3 +1,4 @@
+import { assertUnlinkedColumns } from "./column-link-policy";
 import { randomUUID } from "node:crypto";
 import { db } from "../db";
 import { ownerOnly } from "../auth";
@@ -62,6 +63,7 @@ export async function fillEffectiveness(
         );
         dates.splice(0, dates.length, ...b.days);
       }
+      await assertUnlinkedColumns(tx, b.tableId, b.metrics, dates);
       const targets = b.targets.map((t) => {
         const k = JSON.stringify([t.aliasId, t.country]),
           r = byKey.get(k);

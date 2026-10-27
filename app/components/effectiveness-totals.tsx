@@ -1,4 +1,5 @@
 "use client";
+import { subscribeAdvisorSalesChanged } from "./advisor-sales-events";
 import { useSheetWidths } from "./use-sheet-widths";
 import { totalSourceBlocks } from "../../lib/meta-ads/total-source-blocks";
 import { useSheetHeights } from "./use-sheet-heights";
@@ -158,9 +159,11 @@ export function EffectivenessTotals({
     const timer = setInterval(() => {
       if (!document.hidden) void load();
     }, 30000);
+    const unsubscribe = subscribeAdvisorSalesChanged(() => void load());
     return () => {
       active = false;
       clearInterval(timer);
+      unsubscribe();
     };
   }, [listId, ids, since, until, reload]);
   const days = useMemo(() => {
