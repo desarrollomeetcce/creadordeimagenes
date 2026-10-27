@@ -8,6 +8,8 @@ export type MetaSelection = {
 export const metaDefaults = {
   accountIds: [] as string[],
   pinnedAccountIds: [] as string[],
+  primaryAccountIds: [] as string[],
+  accountGroup: "secondary" as "primary" | "secondary",
   selectedObjects: [] as MetaSelection[],
   campaignScope: [] as string[],
   adsetScope: [] as string[],
@@ -40,8 +42,12 @@ export const metaDefaults = {
 };
 export type MetaPreferences = typeof metaDefaults;
 export function parseMetaPreferences(raw: string | null): MetaPreferences {
-  const result = { ...metaDefaults, accountIds: [] as string[] };
-  if (!raw || raw.length > 50000) return result;
+  const result = {
+    ...metaDefaults,
+    accountIds: [] as string[],
+    primaryAccountIds: [] as string[],
+  };
+  if (!raw || raw.length > 200000) return result;
   let data: Record<string, unknown>;
   try {
     data = JSON.parse(raw);
@@ -51,6 +57,7 @@ export function parseMetaPreferences(raw: string | null): MetaPreferences {
   if (!data || typeof data !== "object" || Array.isArray(data)) return result;
   const choices: Record<string, string[]> = {
     tab: ["panel", "alerts", "accounts", "connections"],
+    accountGroup: ["primary", "secondary"],
     level: ["campaign", "adset", "ad"],
     metric: ["", "MESSAGES", "LEADS", "PURCHASES", "LINK_CLICKS", "UNKNOWN"],
     sort: ["today", "7", "15", "30", "lifetime", "custom", "newest", "age"],
@@ -140,7 +147,7 @@ export function parseMetaPreferences(raw: string | null): MetaPreferences {
     result.adset = "";
   }
   if (["newest", "age"].includes(result.sort)) result.sort = "7";
-  const ids = (v: unknown) =>
+  const ids = (v: unknown, limit = 100) =>
     Array.isArray(v)
       ? [
           ...new Set(
@@ -149,8 +156,9 @@ export function parseMetaPreferences(raw: string | null): MetaPreferences {
                 typeof id === "string" && /^\d{1,40}$/.test(id),
             ),
           ),
-        ].slice(0, 100)
+        ].slice(0, limit)
       : [];
+  result.primaryAccountIds = ids(data.primaryAccountIds, 1000);
   result.pinnedAccountIds = ids(data.pinnedAccountIds ?? result.accountIds);
   result.campaignScope = ids(data.campaignScope);
   result.adsetScope = ids(data.adsetScope);

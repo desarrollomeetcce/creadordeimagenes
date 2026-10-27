@@ -1329,3 +1329,13 @@ MetaSyncNotice reemplaza el volcado naranja por explicación breve y detalle té
 Se retira el formulario Costo objetivo de Cuentas publicitarias y la referencia confusa a ese parámetro en la ayuda visible. Accesos por usuario pasa a Permisos de esta cuenta, con explicación breve bajo el botón y texto del diálogo que distingue ver resultados/gasto de actualizar datos desde Meta para administradores. Etiquetas de checkbox accesibles por persona, opción Puede actualizar datos desde Meta y Guardar permisos; se aclara que el OWNER conserva su acceso. No se cambian concesiones, comprobaciones de servidor, esquema, configuración histórica ni cálculos.
 
 162/162 unitarias, typecheck/build y Chromium aprobados. Verifica ausencia del formulario/rótulo antiguo, apertura y explicación de permisos, opción adicional al seleccionar ADMIN y cierre sin PUT de concesiones. Se repite la comprobación de actualizar/avisos por cuenta, permisos/límites, escritorio/móvil, sin errores JS/API ni llamadas externas; APIs Meta de acciones/datos son dobles explícitos. Backend sin cambios,183/183 de regresión previa vigentes. Enviar main no acredita Hostinger.
+
+## 27/10/2026 — Libro, tablas y revisión Meta Ads
+
+Se reorganizó el libro en Pestañas/Hojas; se retiraron los subrayados automáticos de sincronización conservando procedencia y formato elegido. La barra financiera agrupa filtros, formato, selección e importación. Inventario ya no presenta el formulario superior redundante de nombre/hoja.
+
+Efectividad permite eliminar filas seleccionadas (incluido sin país) con revisión completa y operación atómica, conservando catálogo/otras hojas/Meta/personas. Incorpora franjas y categorías temporales personales sin duplicar hechos, y activador visible con estado inicial persistido para filas nuevas. Totales dispone países/monedas en bloques horizontales por origen, una fila por fecha, con compatibilidad de dimensiones guardadas.
+
+Meta Ads añade vistas personales de cuentas principales/secundarias y actualización explícita del grupo. La auditoría corrigió consulta de progreso superior a100 cuentas y validación de históricos maximum retomados otro día. Una acción procesada seguida de fallo de recarga se distingue de una solicitud fallida y no se repite automáticamente.
+
+Validación local:166 pruebas unitarias,185 de integración, TypeScript y compilación de producción. Navegador con PostgreSQL exclusivo y dobles explícitos de Meta: grupos306 cuentas, navegación, filtros, selección, asignaciones y fechas; tablas, categorías, altas y eliminación. Sin llamadas reales a Meta/IA. Publicación por main; estado de Hostinger se registra por separado y no se acredita solo por el push.

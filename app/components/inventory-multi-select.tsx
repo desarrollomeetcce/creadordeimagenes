@@ -86,7 +86,7 @@ export function InventoryMultiSelect({
         aria-expanded={open}
         popoverTarget={id}
         disabled={disabled || busy}
-        title={text}
+        title={compact ? label : text}
         onClick={(e) => {
           const r = e.currentTarget.getBoundingClientRect();
           setPosition({

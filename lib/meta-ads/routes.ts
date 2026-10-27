@@ -805,6 +805,49 @@ export async function metaRoutes(
       ).fillEffectiveness(actor, b),
     );
   }
+  if (
+    (path === "effectiveness/rows/delete-preview" && method === "POST") ||
+    (path === "effectiveness/rows" && method === "DELETE")
+  ) {
+    ownerOnly(actor);
+    const shape = {
+      tableId: z.string().min(1).max(100),
+      since: z.string().date(),
+      until: z.string().date(),
+      targets: z
+        .array(
+          z
+            .object({
+              aliasId: z.string().min(1).max(100),
+              country: z.string().refine((v) => v === "" || isCountryCode(v)),
+            })
+            .strict(),
+        )
+        .min(1)
+        .max(1000),
+    };
+    const schema =
+      method === "DELETE"
+        ? z
+            .object({ ...shape, token: z.string().regex(/^[a-f0-9]{64}$/) })
+            .strict()
+        : z.object(shape).strict();
+    const b = schema.parse(await body());
+    demand(
+      b.since <= b.until &&
+        (Date.parse(b.until) - Date.parse(b.since)) / 86400000 < 31,
+      "Elige hasta31 días.",
+    );
+    const handlers = await import("./delete-effectiveness-rows");
+    return send(
+      method === "DELETE"
+        ? await handlers.deleteEffectivenessRows(
+            actor,
+            b as typeof b & { token: string },
+          )
+        : await handlers.previewDeleteEffectivenessRows(actor, b),
+    );
+  }
   if (path === "effectiveness/states" && method === "PATCH") {
     ownerOnly(actor);
     const b = z
@@ -959,6 +1002,7 @@ export async function metaRoutes(
         tableId: z.string().min(1).max(100),
         inventorySheetId: z.string().min(1).max(100).optional(),
         decisions: nameDecisions,
+        initialActive: z.boolean().optional(),
         advisorId: z.string().min(1).max(80).optional(),
         advisorTiming: assignmentTimingSchema
           .omit({ cutoffSales: true, token: true })
@@ -990,6 +1034,7 @@ export async function metaRoutes(
         b.advisorTiming,
         b.inventorySheetId,
         b.decisions,
+        b.initialActive,
       ),
     );
   }

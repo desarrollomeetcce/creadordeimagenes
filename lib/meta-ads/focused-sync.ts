@@ -330,7 +330,8 @@ export async function focusedSyncStep(
           objectId: { in: batch.map((o) => o.id) },
           accountId: a.id,
           scope,
-          until: state.until,
+          // Maximum-history reports can be newer than a resumed run's recent cutoff.
+          until: { gte: state.until, lte: localDay(a.timezone) },
           updatedAt: { gte: new Date(Date.now() - 6 * 3600000) },
         },
       });
@@ -351,6 +352,7 @@ export async function focusedSyncStep(
         ),
       );
       pages += reads.length;
+      const maximumReportDay = localDay(a.timezone);
       reads.forEach((page, i) => {
         const group = groups[i],
           seen = new Map<string, Record<string, unknown>>();
@@ -365,7 +367,7 @@ export async function focusedSyncStep(
             id(row.account_id) === a.id &&
               group.some((o) => o.id === oid) &&
               !seen.has(oid) &&
-              day(row.date_stop) <= state.until &&
+              day(row.date_stop) <= maximumReportDay &&
               day(row.date_start) <= day(row.date_stop),
             "Meta devolvió un acumulado ajeno, repetido o con fechas inválidas.",
             502,

@@ -1,5 +1,6 @@
 "use client";
 import { useSheetWidths } from "./use-sheet-widths";
+import { totalSourceBlocks } from "../../lib/meta-ads/total-source-blocks";
 import { useSheetHeights } from "./use-sheet-heights";
 import { SheetColumnResizer } from "./sheet-column-resizer";
 import { SheetSizedRow } from "./sheet-sized-row";
@@ -54,11 +55,11 @@ export function EffectivenessTotals({
 }) {
   const { widths, resize, warning } = useSheetWidths("totals:" + listId),
     rowsLayout = useSheetHeights("totals:" + listId);
-  const handle = (key: string, label: string) => (
+  const handle = (key: string, label: string, resetWidth?: number) => (
     <SheetColumnResizer
       label={label}
       onResize={(v) => resize(key, v)}
-      onReset={() => resize(key)}
+      onReset={() => resize(key, resetWidth)}
     />
   );
   const today = new Intl.DateTimeFormat("en-CA", {
@@ -168,40 +169,21 @@ export function EffectivenessTotals({
       result.push(new Date(d).toISOString().slice(0, 10));
     return result;
   }, [since, until]);
-  const groups = useMemo(() => {
-    const map = new Map<string, { country: string; currency: string }>();
-    for (const t of data)
-      for (const g of t.groups)
-        map.set(JSON.stringify([g.country, g.currency]), {
-          country: g.country,
-          currency: g.currency,
-        });
-    // Explicit country/currency can start a new manual daily total, including an empty table.
-    if (country && currency)
-      map.set(JSON.stringify([country === "__none" ? "" : country, currency]), {
-        country: country === "__none" ? "" : country,
-        currency,
-      });
-    return [...map.values()]
-      .filter(
-        (g) =>
-          (!country || g.country === (country === "__none" ? "" : country)) &&
-          (!currency || g.currency === currency),
-      )
-      .sort(
-        (a, b) =>
-          a.country.localeCompare(b.country) ||
-          a.currency.localeCompare(b.currency),
-      );
-  }, [data, country, currency]);
+  const blocks = useMemo(
+    () => totalSourceBlocks(data, country, currency),
+    [data, country, currency],
+  );
   const columns = mode === "manual" ? manualColumns : autoColumns;
   const layoutColumns = [
     { key: "date", width: 100 },
-    { key: "country", width: 66 },
-    { key: "currency", width: 66 },
-    ...data.flatMap((t) =>
-      columns.map((m) => ({ key: t.tableId + ":" + m.key, width: 76 })),
-    ),
+    ...blocks.flatMap((block) => [
+      { key: block.key + ":country", width: widths.country ?? 66 },
+      { key: block.key + ":currency", width: widths.currency ?? 66 },
+      ...columns.map((m) => ({
+        key: block.key + ":" + m.key,
+        width: widths[block.table.tableId + ":" + m.key] ?? 76,
+      })),
+    ]),
   ];
   const save = (
     t: TotalSheet,
@@ -444,10 +426,15 @@ export function EffectivenessTotals({
             <thead>
               <tr>
                 <th rowSpan={2}>Fecha{handle("date", "Fecha")}</th>
-                <th rowSpan={2}>País{handle("country", "País")}</th>
-                <th rowSpan={2}>Moneda{handle("currency", "Moneda")}</th>
                 {data.map((t, index) => (
-                  <th key={t.tableId} colSpan={columns.length}>
+                  <th
+                    key={t.tableId}
+                    colSpan={
+                      blocks.filter((b) => b.table.tableId === t.tableId)
+                        .length *
+                      (columns.length + 2)
+                    }
+                  >
                     <div className="totals-source-heading">
                       <span>{t.name}</span>
                       {index === data.length - 1 &&
@@ -480,61 +467,118 @@ export function EffectivenessTotals({
                 ))}
               </tr>
               <tr>
-                {data.flatMap((t) =>
-                  columns.map((m) => (
+                {blocks.flatMap((block) => [
+                  <th key={block.key + ":country"}>
+                    País
+                    {handle(
+                      block.key + ":country",
+                      block.table.name +
+                        " " +
+                        block.country +
+                        " " +
+                        block.currency +
+                        " País",
+                      66,
+                    )}
+                  </th>,
+                  <th key={block.key + ":currency"}>
+                    Moneda
+                    {handle(
+                      block.key + ":currency",
+                      block.table.name +
+                        " " +
+                        block.country +
+                        " " +
+                        block.currency +
+                        " Moneda",
+                      66,
+                    )}
+                  </th>,
+                  ...columns.map((m) => (
                     <th
-                      key={t.tableId + m.key}
+                      key={block.key + ":" + m.key}
                       data-entry={m.sum ? "derived" : "manual"}
                       title={`${m.name} (${m.label})${m.sum ? " · suma" : " · manual"}`}
                     >
                       {m.label}
                       {m.sum ? " Σ" : ""}
-                      {handle(t.tableId + ":" + m.key, t.name + " " + m.label)}
+                      {handle(
+                        block.key + ":" + m.key,
+                        block.table.name +
+                          " " +
+                          block.country +
+                          " " +
+                          block.currency +
+                          " " +
+                          m.label,
+                        76,
+                      )}
                     </th>
                   )),
-                )}
+                ])}
               </tr>
             </thead>
             <tbody>
-              {days.flatMap((day) =>
-                groups.map((g) => (
-                  <SheetSizedRow
-                    key={day + JSON.stringify(g)}
-                    label={day + " " + g.country + " " + g.currency}
-                    height={
-                      rowsLayout.heights[
-                        day + ":" + g.country + ":" + g.currency
-                      ]
-                    }
-                    onResize={(v) =>
-                      rowsLayout.resize(
-                        day + ":" + g.country + ":" + g.currency,
-                        v,
-                      )
-                    }
-                    onReset={() =>
-                      rowsLayout.resize(
-                        day + ":" + g.country + ":" + g.currency,
-                      )
-                    }
-                  >
-                    <th>
-                      {day.slice(8)}.{day.slice(5, 7)}.{day.slice(0, 4)}
-                    </th>
-                    <td>{g.country || "—"}</td>
-                    <td>{g.currency || "—"}</td>
-                    {data.flatMap((t) => {
-                      const cell = t.groups.find(
+              {days.map((day) => (
+                <SheetSizedRow
+                  key={day}
+                  data-total-day={day}
+                  label={day}
+                  height={
+                    rowsLayout.heights["date:" + day] ??
+                    Math.max(
+                      0,
+                      ...blocks.map(
+                        (b) =>
+                          rowsLayout.heights[
+                            day + ":" + b.country + ":" + b.currency
+                          ] ?? 0,
+                      ),
+                    )
+                  }
+                  onResize={(value) => rowsLayout.resize("date:" + day, value)}
+                  onReset={() => rowsLayout.resize("date:" + day, 30)}
+                >
+                  <th>
+                    {day.slice(8)}.{day.slice(5, 7)}.{day.slice(0, 4)}
+                  </th>
+                  {blocks.flatMap((block) => {
+                    const t = block.table,
+                      g = { country: block.country, currency: block.currency },
+                      cell = t.groups.find(
                         (x) =>
                           x.country === g.country && x.currency === g.currency,
                       )?.days[day];
-                      return columns.map((m) => {
+                    return [
+                      <td
+                        key={block.key + ":country"}
+                        data-source-table={t.tableId}
+                        data-country={g.country}
+                        data-currency={g.currency}
+                        data-metric="country"
+                      >
+                        {g.country || "—"}
+                      </td>,
+                      <td
+                        key={block.key + ":currency"}
+                        data-source-table={t.tableId}
+                        data-country={g.country}
+                        data-currency={g.currency}
+                        data-metric="currency"
+                      >
+                        {g.currency || "—"}
+                      </td>,
+                      ...columns.map((m) => {
                         const sum = m.sum
                           ? cell?.sums?.[m.key as SheetMetric]
                           : undefined;
                         return (
                           <td
-                            key={t.tableId + m.key}
+                            key={block.key + m.key}
+                            data-source-table={t.tableId}
+                            data-country={g.country}
+                            data-currency={g.currency}
+                            data-metric={m.key}
                             className={m.sum ? "sheet-derived" : ""}
                             data-entry={m.sum ? "derived" : "manual"}
                           >
@@ -584,19 +628,11 @@ export function EffectivenessTotals({
                             )}
                           </td>
                         );
-                      });
-                    })}
-                  </SheetSizedRow>
-                )),
-              )}
-              {!groups.length && (
-                <tr>
-                  <td colSpan={3 + data.length * columns.length}>
-                    Sin datos. Elige país y moneda para ingresar totales
-                    manuales.
-                  </td>
-                </tr>
-              )}
+                      }),
+                    ];
+                  })}
+                </SheetSizedRow>
+              ))}
             </tbody>
           </table>
         </div>

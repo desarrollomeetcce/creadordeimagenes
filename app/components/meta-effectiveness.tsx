@@ -1,7 +1,15 @@
 "use client";
 import { notifyAdvisorSalesChanged } from "./advisor-sales-events";
 import { AdvisorSalesApproval } from "./advisor-sales-approval";
+import { DeleteEffectivenessRows } from "./delete-effectiveness-rows";
+import { useFinancialCategories } from "./use-financial-categories";
 import {
+  groupFinancialRows,
+  financialRowCategories,
+  type FinancialCatalogEntry,
+} from "../../lib/meta-ads/financial-categories";
+import {
+  Fragment,
   useEffect,
   useMemo,
   useRef,
@@ -116,7 +124,11 @@ type SheetSort =
       day: string;
       direction: "asc" | "desc";
     };
-type Data = { rows: Row[]; table: Settings; missingFxDays: string[] };
+type Data = {
+  rows: Row[];
+  table: Settings & { aliases?: FinancialCatalogEntry[] };
+  missingFxDays: string[];
+};
 export function MetaEffectiveness({
   tableId,
   aliases,
@@ -147,6 +159,7 @@ export function MetaEffectiveness({
       ? "Inventario"
       : settings.aliasColumnName;
   const rowsLayout = useSheetHeights("financial:" + tableId);
+  const temporaryCategories = useFinancialCategories(tableId);
   const [salesReview, setSalesReview] = useState<{
     aliasId: string;
     country: string;
@@ -219,6 +232,12 @@ export function MetaEffectiveness({
     ]),
   ].sort((a, b) => a.localeCompare(b, "es"));
   const [selectedPairs, setSelectedPairs] = useState<string[]>([]);
+  const [rowDeletion, setRowDeletion] = useState<{
+    tableId: string;
+    since: string;
+    until: string;
+    targets: { aliasId: string; country: string }[];
+  } | null>(null);
   const grid = useRef<HTMLTableElement>(null);
   useSheetTextFit(grid);
   const {
@@ -244,6 +263,7 @@ export function MetaEffectiveness({
     [pasteCountry, setPasteCountry] = useState(settings.defaultCountry),
     [pasteCurrency, setPasteCurrency] = useState(settings.defaultCurrency),
     [csv, setCsv] = useState(false);
+  const [newActive, setNewActive] = useState(true);
   const [newName, setNewName] = useState(""),
     [newCountry, setNewCountry] = useState(settings.defaultCountry),
     [newAdvisor, setNewAdvisor] = useState(""),
@@ -589,6 +609,7 @@ export function MetaEffectiveness({
           rows,
           inventorySheetId: inventoryId,
           decisions,
+          ...(code ? { initialActive: newActive } : {}),
           ...(newAdvisor
             ? {
                 advisorId: newAdvisor,
@@ -599,6 +620,7 @@ export function MetaEffectiveness({
         true,
       );
       setNewName("");
+      setNewActive(true);
     } catch (e) {
       setMessage(
         e instanceof Error ? e.message : "No se pudo agregar la fila.",
@@ -614,9 +636,10 @@ export function MetaEffectiveness({
         result.push(new Date(d).toISOString().slice(0, 10));
     return result;
   }, [since, until, valid]);
+  const financialAliases = data?.table.aliases ?? aliases;
   const names = useMemo(
-    () => new Map(aliases.map((a) => [a.id, a.name])),
-    [aliases],
+    () => new Map(financialAliases.map((a) => [a.id, a.name])),
+    [financialAliases],
   );
   const activeSort: SheetSort =
     sheetSort.kind === "day" &&
@@ -686,8 +709,24 @@ export function MetaEffectiveness({
         a.country.localeCompare(b.country)
       );
     });
+  const categoryBands = groupFinancialRows(
+    rows,
+    financialAliases,
+    temporaryCategories.temporary,
+  );
+  const showCategoryBands = financialAliases.some(
+    (a) => (a as FinancialCatalogEntry).categoryAssignments?.length,
+  );
+  const displayedRows = showCategoryBands
+    ? categoryBands.flatMap((b) => b.rows)
+    : rows;
+  const firstBands = new Map(
+    categoryBands
+      .filter((b) => b.rows.length)
+      .map((b) => [activationKey(b.rows[0]), b]),
+  );
   const selectedPairSet = new Set(selectedPairs),
-    eligibleRows = rows.filter((r) => !!r.country);
+    eligibleRows = rows;
   const selectedVisibleRows = eligibleRows.filter((r) =>
     selectedPairSet.has(activationKey(r)),
   );
@@ -705,11 +744,14 @@ export function MetaEffectiveness({
   };
   const bulkState = async (active: boolean) => {
     if (!selectedVisibleRows.length) return;
-    const targets = selectedVisibleRows.map((r) => ({
-      aliasId: r.aliasId,
-      country: r.country,
-      revision: r.stateRevision,
-    }));
+    const targets = selectedVisibleRows
+      .filter((r) => !!r.country)
+      .map((r) => ({
+        aliasId: r.aliasId,
+        country: r.country,
+        revision: r.stateRevision,
+      }));
+    if (!targets.length) return;
     setBusy(true);
     try {
       const result = await api("meta-ads/effectiveness/states", "PATCH", {
@@ -762,7 +804,45 @@ export function MetaEffectiveness({
       aria-label="Efectividad diaria"
     >
       {duplicateReview.dialog}
+      {rowDeletion && (
+        <DeleteEffectivenessRows
+          selection={rowDeletion}
+          onClose={() => setRowDeletion(null)}
+          onDeleted={async () => {
+            const keys = new Set(rowDeletion.targets.map(activationKey));
+            temporaryCategories.forget([...keys]);
+            setSelectedPairs((old) => old.filter((k) => !keys.has(k)));
+            setData((old) =>
+              old
+                ? {
+                    ...old,
+                    rows: old.rows.filter(
+                      (row) => !keys.has(activationKey(row)),
+                    ),
+                  }
+                : old,
+            );
+            notifyAdvisorSalesChanged();
+            try {
+              await refresh();
+              setMessage(
+                `${rowDeletion.targets.length} filas eliminadas de esta hoja.`,
+              );
+            } catch {
+              setMessage(
+                "Filas eliminadas. No se pudo recargar la hoja; actualiza la página antes de continuar.",
+              );
+            }
+            setRowDeletion(null);
+          }}
+        />
+      )}
       {inventoryError && <p role="alert">{inventoryError}</p>}
+      {temporaryCategories.warning && (
+        <p className="sheet-message" role="status">
+          {temporaryCategories.warning}
+        </p>
+      )}
       {salesReview && (
         <AdvisorSalesApproval
           {...salesReview}
@@ -829,143 +909,179 @@ export function MetaEffectiveness({
         />
       )}
 
-      <div className="row sheet-toolbar">
-        <MetaDateRange
-          from={since}
-          to={until}
-          onChange={(a, b) => {
-            if (!a || !b || (Date.parse(b) - Date.parse(a)) / 86400000 >= 31) {
-              setMessage("Elige un rango de hasta 31 días.");
-              return;
-            }
-            setSince(a);
-            setUntil(b);
-          }}
-        />
-        <span className="sheet-filter-label">Filtros:</span>
-        <label>
-          País
-          <SheetSearchSelect
-            label="País de efectividad"
-            value={country}
-            options={[
-              { value: "", label: "Todos" },
-              { value: "__none", label: "Sin país" },
-              ...countries,
-            ]}
-            placeholder="Todos"
-            onSelect={setCountry}
-          />
-        </label>
-        <SheetMultiFilter
-          label="Filtro de parámetros"
-          options={viewMetrics.map((m) => ({
-            value: m.key,
-            label: `${m.key === "base" ? "Base" : m.name} (${m.label})`,
-          }))}
-          value={selectedMetrics}
-          onChange={setSelectedMetrics}
-        />
-        <SheetMultiFilter
-          label="Filtro de valores"
-          options={[
-            { value: "zero", label: "Igual a 0" },
-            { value: "positive", label: "Mayor que 0" },
-            { value: "na", label: "N.A. (no aplica)" },
-          ]}
-          value={valueFilter}
-          onChange={setValueFilter}
+      <div className="row sheet-toolbar sheet-financial-toolbar">
+        <div
+          className="sheet-control-group"
+          role="group"
+          aria-label="Período y filtros"
         >
-          <div className="sheet-fill-controls">
-            <small>
-              Muestra filas con algún valor coincidente en las columnas y fechas
-              visibles.
-            </small>
-            <p>
-              Completar: {rows.length} filas × {days.length} días ×{" "}
-              {visibleMetrics.length} parámetros.
-            </p>
-            <button
-              disabled={
-                busy ||
-                !rows.length ||
-                !visibleMetrics.length ||
-                rows.length > 1000
+          <MetaDateRange
+            from={since}
+            to={until}
+            onChange={(a, b) => {
+              if (
+                !a ||
+                !b ||
+                (Date.parse(b) - Date.parse(a)) / 86400000 >= 31
+              ) {
+                setMessage("Elige un rango de hasta 31 días.");
+                return;
               }
-              onClick={() => void fillVisible(0)}
-            >
-              Poner 0 a todos los visibles
-            </button>
-            <button
-              disabled={
-                busy ||
-                !rows.length ||
-                !visibleMetrics.length ||
-                rows.length > 1000
-              }
-              onClick={() => void fillVisible("NA")}
-            >
-              Poner N.A. a todos los visibles
-            </button>
-            <button
-              disabled={
-                busy ||
-                !rows.length ||
-                !visibleMetrics.length ||
-                rows.length > 1000
-              }
-              onClick={() => void fillVisible(null)}
-            >
-              Restaurar valores originales
-            </button>
-          </div>
-        </SheetMultiFilter>
-        <label>
-          Estado
-          <SheetSearchSelect
-            label="Estado de inventario"
-            value={stateFilter}
-            placeholder="Todos"
-            options={[
-              { value: "", label: "Todos" },
-              { value: "active", label: "Activados" },
-              { value: "inactive", label: "Desactivados" },
-            ]}
-            onSelect={setStateFilter}
+              setSince(a);
+              setUntil(b);
+            }}
           />
-        </label>
-        <SheetColorsControl
-          tableId={tableId}
-          tables={tables}
-          metrics={visibleMetrics.map((m) => m.key)}
-          onRules={setColorRules}
-          onError={setMessage}
-        />
-        <button
-          className={syncOpen ? "primary" : ""}
-          aria-expanded={syncOpen}
-          onClick={() => setSyncOpen((v) => !v)}
+          <span className="sheet-filter-label">Filtros:</span>
+          <label>
+            País
+            <SheetSearchSelect
+              label="País de efectividad"
+              value={country}
+              options={[
+                { value: "", label: "Todos" },
+                { value: "__none", label: "Sin país" },
+                ...countries,
+              ]}
+              placeholder="Todos"
+              onSelect={setCountry}
+            />
+          </label>
+          <SheetMultiFilter
+            label="Filtro de parámetros"
+            options={viewMetrics.map((m) => ({
+              value: m.key,
+              label: `${m.key === "base" ? "Base" : m.name} (${m.label})`,
+            }))}
+            value={selectedMetrics}
+            onChange={setSelectedMetrics}
+          />
+          <SheetMultiFilter
+            label="Filtro de valores"
+            options={[
+              { value: "zero", label: "Igual a 0" },
+              { value: "positive", label: "Mayor que 0" },
+              { value: "na", label: "N.A. (no aplica)" },
+            ]}
+            value={valueFilter}
+            onChange={setValueFilter}
+          >
+            <div className="sheet-fill-controls">
+              <small>
+                Muestra filas con algún valor coincidente en las columnas y
+                fechas visibles.
+              </small>
+              <p>
+                Completar: {rows.length} filas × {days.length} días ×{" "}
+                {visibleMetrics.length} parámetros.
+              </p>
+              <button
+                disabled={
+                  busy ||
+                  !rows.length ||
+                  !visibleMetrics.length ||
+                  rows.length > 1000
+                }
+                onClick={() => void fillVisible(0)}
+              >
+                Poner 0 a todos los visibles
+              </button>
+              <button
+                disabled={
+                  busy ||
+                  !rows.length ||
+                  !visibleMetrics.length ||
+                  rows.length > 1000
+                }
+                onClick={() => void fillVisible("NA")}
+              >
+                Poner N.A. a todos los visibles
+              </button>
+              <button
+                disabled={
+                  busy ||
+                  !rows.length ||
+                  !visibleMetrics.length ||
+                  rows.length > 1000
+                }
+                onClick={() => void fillVisible(null)}
+              >
+                Restaurar valores originales
+              </button>
+            </div>
+          </SheetMultiFilter>
+          <label>
+            Estado
+            <SheetSearchSelect
+              label="Estado de inventario"
+              value={stateFilter}
+              placeholder="Todos"
+              options={[
+                { value: "", label: "Todos" },
+                { value: "active", label: "Activados" },
+                { value: "inactive", label: "Desactivados" },
+              ]}
+              onSelect={setStateFilter}
+            />
+          </label>
+        </div>
+        <div
+          className="sheet-control-group"
+          role="group"
+          aria-label="Formato y sincronización"
         >
-          ⇄ Sincronizar columnas
-        </button>
+          <SheetColorsControl
+            tableId={tableId}
+            tables={tables}
+            metrics={visibleMetrics.map((m) => m.key)}
+            onRules={setColorRules}
+            onError={setMessage}
+          />
+          <button
+            className={syncOpen ? "primary" : ""}
+            aria-expanded={syncOpen}
+            onClick={() => setSyncOpen((v) => !v)}
+          >
+            ⇄ Sincronizar columnas
+          </button>
+        </div>
         <div
           className="sheet-activation-actions"
+          role="group"
+          aria-label="Acciones de las filas seleccionadas"
           title="Aplica solo a las filas seleccionadas visibles, por inventario y país. No modifica Meta Ads."
         >
           <span>Selección ({selectedVisibleRows.length})</span>
           <button
             className="sheet-activate-bulk"
-            disabled={busy || !selectedVisibleRows.length}
+            disabled={busy || !selectedVisibleRows.some((r) => !!r.country)}
             onClick={() => void bulkState(true)}
           >
             Activar
           </button>
           <button
             className="sheet-deactivate-bulk"
-            disabled={busy || !selectedVisibleRows.length}
+            disabled={busy || !selectedVisibleRows.some((r) => !!r.country)}
             onClick={() => void bulkState(false)}
           >
             Desactivar
+          </button>
+          <button
+            type="button"
+            className="danger"
+            disabled={busy || !valid || !selectedVisibleRows.length}
+            onClick={() =>
+              setRowDeletion({
+                tableId,
+                since,
+                until,
+                targets: selectedVisibleRows.map((r) => ({
+                  aliasId: r.aliasId,
+                  country: r.country,
+                })),
+              })
+            }
+          >
+            Eliminar filas seleccionadas ({selectedVisibleRows.length})
           </button>
           {selectedPairs.length > 0 && (
             <button
@@ -977,37 +1093,43 @@ export function MetaEffectiveness({
             </button>
           )}
         </div>
-        <button
-          onClick={() => {
-            setCsv(false);
-            setPaste("");
-          }}
+        <div
+          className="sheet-control-group sheet-import-actions"
+          role="group"
+          aria-label="Añadir inventario"
         >
-          Pegar inventario
-        </button>
-        <label className="sheet-file">
-          Subir archivo
-          <input
-            type="file"
-            aria-label="Subir lista de inventario"
-            accept=".txt,.tsv,.csv,text/plain,text/csv"
-            onChange={async (e) => {
-              const f = e.target.files?.[0];
-              e.target.value = "";
-              if (!f) return;
-              if (f.size > 100000) {
-                setMessage("El archivo admite hasta 100 KB.");
-                return;
-              }
-              try {
-                setCsv(f.name.toLowerCase().endsWith(".csv"));
-                setPaste(await f.text());
-              } catch {
-                setMessage("No se pudo leer el archivo.");
-              }
+          <button
+            onClick={() => {
+              setCsv(false);
+              setPaste("");
             }}
-          />
-        </label>
+          >
+            Pegar inventario
+          </button>
+          <label className="sheet-file">
+            Subir archivo
+            <input
+              type="file"
+              aria-label="Subir lista de inventario"
+              accept=".txt,.tsv,.csv,text/plain,text/csv"
+              onChange={async (e) => {
+                const f = e.target.files?.[0];
+                e.target.value = "";
+                if (!f) return;
+                if (f.size > 100000) {
+                  setMessage("El archivo admite hasta 100 KB.");
+                  return;
+                }
+                try {
+                  setCsv(f.name.toLowerCase().endsWith(".csv"));
+                  setPaste(await f.text());
+                } catch {
+                  setMessage("No se pudo leer el archivo.");
+                }
+              }}
+            />
+          </label>
+        </div>
       </div>
       {syncOpen && (
         <EffectivenessSync
@@ -1196,7 +1318,7 @@ export function MetaEffectiveness({
                     <input
                       type="checkbox"
                       className="sheet-alias-select"
-                      aria-label="Seleccionar inventario visibles"
+                      aria-label="Seleccionar todas las filas visibles"
                       checked={allVisibleSelected}
                       disabled={busy || !eligibleRows.length}
                       title="Selecciona las filas visibles con país para activar o desactivar en bloque"
@@ -1245,7 +1367,7 @@ export function MetaEffectiveness({
                     <InventoryMultiSelect
                       label="Buscar y filtrar inventario de la hoja"
                       placeholder="Buscar inventario…"
-                      options={aliases.map((a) => ({
+                      options={financialAliases.map((a) => ({
                         value: a.id,
                         label: a.name,
                       }))}
@@ -1470,308 +1592,380 @@ export function MetaEffectiveness({
               )}
             </thead>
             <tbody>
-              {rows.map((r) => {
+              {displayedRows.map((r) => {
                 const name = names.get(r.aliasId) ?? "Inventario";
+                const category = financialRowCategories(
+                  r,
+                  financialAliases.find((a) => a.id === r.aliasId),
+                  temporaryCategories.temporary,
+                );
+                const band = showCategoryBands
+                  ? firstBands.get(activationKey(r))
+                  : undefined;
                 return (
-                  <SheetSizedRow
-                    label={`${name} ${r.country}`}
-                    height={rowsLayout.heights[r.aliasId + ":" + r.country]}
-                    onResize={(v) =>
-                      rowsLayout.resize(r.aliasId + ":" + r.country, v)
-                    }
-                    onReset={() =>
-                      rowsLayout.resize(r.aliasId + ":" + r.country)
-                    }
-                    key={JSON.stringify([r.aliasId, r.country])}
-                    data-alias-id={r.aliasId}
-                    data-country={r.country}
-                    data-currency={r.currency}
-                    data-active={r.active}
-                  >
-                    <td className="effectiveness-name">
-                      <div className="sheet-alias-row">
-                        <input
-                          type="checkbox"
-                          className="sheet-alias-select"
-                          aria-label={`Seleccionar ${name} ${r.country || "sin país"}`}
-                          checked={selectedPairSet.has(activationKey(r))}
-                          disabled={busy || !r.country}
-                          title={
-                            !r.country
-                              ? "Elige un país para activar o desactivar esta fila"
-                              : `Seleccionar ${name} en ${r.country} para activación masiva`
-                          }
-                          onChange={() =>
-                            choosePairs(
-                              selectedPairSet.has(activationKey(r))
-                                ? selectedPairs.filter(
-                                    (k) => k !== activationKey(r),
-                                  )
-                                : [...selectedPairs, activationKey(r)],
-                            )
-                          }
-                        />
-                        <button
-                          type="button"
-                          role="switch"
-                          aria-checked={r.active}
-                          className="meta-status-switch sheet-alias-switch"
-                          disabled={busy || !r.country}
-                          aria-label={`${r.active ? "Desactivar" : "Activar"} ${name} ${r.country || "sin país"}`}
-                          title={
-                            !r.country
-                              ? "Elige un país para activar o desactivar esta fila"
-                              : `${r.active ? "Activado" : "Desactivado"} · ${r.country}${r.lastStateChange ? " · " + new Date(r.lastStateChange).toLocaleString("es-PE", { timeZone: "America/Lima" }) : " · por defecto"}. Solo Efectividad.`
-                          }
-                          onClick={() => void toggleState(r)}
-                        >
-                          <span aria-hidden="true" />
-                        </button>
-                        <EffectivenessCell
-                          label={`Inventario ${name} ${r.country || "sin país"}`}
-                          value={name}
-                          onError={setMessage}
-                          onPaste={openPaste}
-                          onSave={async (v) => {
-                            if (!v || v.length > 150)
-                              throw Error(
-                                "El nombre debe tener entre 1 y 150 caracteres.",
-                              );
-                            await mutate(
-                              "meta-ads/aliases/" + r.aliasId,
-                              "PATCH",
-                              { name: v },
-                              true,
-                            );
-                          }}
-                        />
-                        <EffectivenessHistory
-                          aliasId={r.aliasId}
-                          country={r.country}
-                          name={name}
-                          initialSince={since}
-                          initialUntil={until}
-                        />
-                      </div>
-                    </td>
-                    <td className="effectiveness-country">
-                      <SheetSearchSelect
-                        compact
-                        placeholder="—"
-                        label={`País de ${name} ${r.country || "sin país"}`}
-                        value={r.country}
-                        options={[
-                          { value: "", label: "Sin asignar" },
-                          ...countries,
-                        ]}
-                        onSelect={(v) => identity(r, "country", v)}
-                        onError={setMessage}
-                      />
-                    </td>
-                    <td className="effectiveness-advisor">
-                      <div className="alias-advisor-actions">
-                        <SheetSearchSelect
-                          compact
-                          displayLabel
-                          placeholder="Sin asesor"
-                          label={`Asesor de ${name} ${r.country}`}
-                          value={r.advisorId ?? ""}
-                          options={[
-                            { value: "", label: "Sin asesor" },
-                            ...advisors.map((a) => ({
-                              value: a.id,
-                              label: a.label ?? a.name,
-                            })),
-                          ]}
-                          onError={setMessage}
-                          onSelect={async (advisorId) => {
-                            if (!r.country)
-                              throw Error(
-                                "Elige primero el país de esta fila para asignar el asesor.",
-                              );
-                            if ((advisorId || null) !== r.advisorId)
-                              setAssignment({
-                                row: r,
-                                advisorId: advisorId || null,
-                                name,
-                              });
-                          }}
-                        />
-                        {r.advisorId && r.country && (
+                  <Fragment key={activationKey(r)}>
+                    {band && (
+                      <tr className="financial-category-band">
+                        <th colSpan={4 + days.length * visibleMetrics.length}>
+                          <span>
+                            <strong>
+                              {band.names.join(" · ") ||
+                                "Sin categoría principal"}
+                            </strong>
+                            <small>
+                              {band.rows.length}{" "}
+                              {band.rows.length === 1 ? "fila" : "filas"}
+                              {band.temporaryCount
+                                ? ` · ${band.temporaryCount} con categoría temporal`
+                                : ""}
+                            </small>
+                          </span>
+                        </th>
+                      </tr>
+                    )}
+                    <SheetSizedRow
+                      label={`${name} ${r.country}`}
+                      height={rowsLayout.heights[r.aliasId + ":" + r.country]}
+                      onResize={(v) =>
+                        rowsLayout.resize(r.aliasId + ":" + r.country, v)
+                      }
+                      onReset={() =>
+                        rowsLayout.resize(r.aliasId + ":" + r.country)
+                      }
+                      key={JSON.stringify([r.aliasId, r.country])}
+                      data-alias-id={r.aliasId}
+                      data-country={r.country}
+                      data-currency={r.currency}
+                      data-active={r.active}
+                    >
+                      <td className="effectiveness-name">
+                        <div className="sheet-alias-row">
+                          <input
+                            type="checkbox"
+                            className="sheet-alias-select"
+                            aria-label={`Seleccionar ${name} ${r.country || "sin país"}`}
+                            checked={selectedPairSet.has(activationKey(r))}
+                            disabled={busy}
+                            title={`Seleccionar ${name} en ${r.country || "sin país"} para acciones de esta hoja`}
+                            onChange={() =>
+                              choosePairs(
+                                selectedPairSet.has(activationKey(r))
+                                  ? selectedPairs.filter(
+                                      (k) => k !== activationKey(r),
+                                    )
+                                  : [...selectedPairs, activationKey(r)],
+                              )
+                            }
+                          />
                           <button
                             type="button"
-                            className="advisor-detail-trigger"
-                            aria-label={`Detalle del asesor de ${name} ${r.country}`}
-                            title="Ver progreso del asesor"
-                            onClick={() => {
-                              const p = advisors.find(
-                                (a) => a.id === r.advisorId,
-                              );
-                              if (p) {
-                                setDetailVersion((v) => v + 1);
-                                setAdvisorDetail({
-                                  ...p,
-                                  aliasId: r.aliasId,
-                                  country: r.country,
-                                });
-                              }
-                            }}
+                            role="switch"
+                            aria-checked={r.active}
+                            className="meta-status-switch sheet-alias-switch"
+                            disabled={busy || !r.country}
+                            aria-label={`${r.active ? "Desactivar" : "Activar"} ${name} ${r.country || "sin país"}`}
+                            title={
+                              !r.country
+                                ? "Elige un país para activar o desactivar esta fila"
+                                : `${r.active ? "Activado" : "Desactivado"} · ${r.country}${r.lastStateChange ? " · " + new Date(r.lastStateChange).toLocaleString("es-PE", { timeZone: "America/Lima" }) : " · por defecto"}. Solo Efectividad.`
+                            }
+                            onClick={() => void toggleState(r)}
                           >
-                            ↗
+                            <span aria-hidden="true" />
                           </button>
-                        )}
-                      </div>
-                    </td>
-
-                    <td className="effectiveness-currency">
-                      <SheetSearchSelect
-                        compact
-                        placeholder="—"
-                        label={`Moneda de ${name} ${r.country || "sin país"}`}
-                        value={r.currency}
-                        options={[
-                          { value: "", label: "Sin asignar" },
-                          ...currencies,
-                        ]}
-                        onSelect={(v) => identity(r, "currency", v)}
-                        onError={setMessage}
-                      />
-                    </td>
-                    {days.flatMap((d) => {
-                      const c = r.days[d],
-                        partial = c && c.campaigns < r.campaigns;
-                      const cells = sheetMetrics.map((m) => {
-                        const cellColor = sheetCellColor(
-                          colorRules,
-                          m.key,
-                          d,
-                          c?.na?.includes(m.key) ? "NA" : (c?.[m.key] ?? null),
-                          r.currency || "USD",
-                        );
-                        return (
-                          <td
-                            key={d + m.label}
-                            data-na={c?.na?.includes(m.key) || undefined}
-                            data-auto-na={
-                              c?.automaticNa?.includes(m.key) || undefined
-                            }
-                            style={
-                              cellColor
-                                ? ({
-                                    "--sheet-rule-color": cellColor,
-                                  } as CSSProperties)
-                                : undefined
-                            }
-                            data-colored={!!cellColor || undefined}
-                            className={
-                              m.key === "base" || m.key === "spend"
-                                ? "sheet-derived" +
-                                  ((partial && !c?.manual?.includes(m.key)) ||
-                                  c?.partialMetrics?.includes(m.key)
-                                    ? " sheet-partial"
-                                    : "")
-                                : c?.synced?.[m.key]
-                                  ? "sheet-synced-cell"
-                                  : ""
-                            }
-                          >
-                            <EffectivenessCell
-                              allowNA
-                              manual={c?.manual?.includes(m.key)}
-                              placeholder={
-                                m.money &&
-                                c?.fxMissing &&
-                                c[m.key] === null &&
-                                !c.na?.includes(m.key)
-                                  ? "Sin tasa"
-                                  : "—"
-                              }
-                              label={`${m.label} ${name} ${r.country} ${d}`}
-                              value={
-                                c?.na?.includes(m.key)
-                                  ? "N.A."
-                                  : c?.[m.key] === null ||
-                                      c?.[m.key] === undefined
-                                    ? ""
-                                    : m.money
-                                      ? c[m.key]!.toFixed(
-                                          new Intl.NumberFormat("en", {
-                                            style: "currency",
-                                            currency: r.currency || "USD",
-                                          }).resolvedOptions()
-                                            .maximumFractionDigits,
-                                        )
-                                      : String(c[m.key])
-                              }
-                              onError={setMessage}
-                              onSave={(v) => editCell(r, d, m.key, v)}
-                              hint={`${c?.automaticNa?.includes(m.key) ? "N.A. automático por desactivación; vuelve a vacío al activar. " : ""}${c?.synced?.[m.key] ? "Sincronizado desde «" + c.synced[m.key] + "». " : ""}${c?.manual?.includes(m.key) ? "Ajuste manual de Efectividad. Originales conservados. " : ""}${m.key === "spend" ? "Original Meta: " + (c?.sourceSpend.map((x) => x.currency + " " + x.amount).join(" + ") || "sin datos") + ". " : ""}${c?.fxMissing && c?.[m.key] === null && !c.na?.includes(m.key) ? "Sin tasa. " : ""}${partial || c?.partialMetrics?.includes(m.key) ? "Cobertura parcial. " : ""}${m.key === "fixedCost" ? "Original CF: " + (c?.sourceFixedCost.map((x) => x.currency + " " + x.amount).join(" + ") || "sin datos") + ". " : ""}${m.money ? c?.fx.map((f) => `${f.date}: 1 ${f.from} = ${f.rate} ${f.to} · ${f.source}`).join("; ") || "" : ""} Escribe un número o N.A.; vacío restaura el importado en B/G; en P borra el presupuesto.`}
-                            />
-                            {m.key === "sales" && r.advisorChanges?.[d] && (
-                              <button
-                                type="button"
-                                className="sheet-advisor-change"
-                                data-approved={
-                                  r.advisorChanges[d].status === "APPROVED"
+                          <EffectivenessCell
+                            label={`Inventario ${name} ${r.country || "sin país"}`}
+                            value={name}
+                            onError={setMessage}
+                            onPaste={openPaste}
+                            onSave={async (v) => {
+                              if (!v || v.length > 150)
+                                throw Error(
+                                  "El nombre debe tener entre 1 y 150 caracteres.",
+                                );
+                              await mutate(
+                                "meta-ads/aliases/" + r.aliasId,
+                                "PATCH",
+                                { name: v },
+                                true,
+                              );
+                            }}
+                          />
+                          {!!category.choices.length && (
+                            <span
+                              className="financial-temporary-category"
+                              data-temporary={category.temporary || undefined}
+                            >
+                              <InventoryMultiSelect
+                                compact
+                                all={false}
+                                label={`Categoría temporal de ${name} ${r.country || "sin país"}`}
+                                placeholder="▤"
+                                options={category.choices.map((c) => ({
+                                  value: c.id,
+                                  label: c.name,
+                                }))}
+                                values={category.ids}
+                                disabled={busy}
+                                description="Solo categorías ya asignadas a este inventario. Puedes elegir varias, incluidas las secundarias. Vacío restaura las principales del inventario."
+                                onChange={(ids) =>
+                                  temporaryCategories.choose(
+                                    activationKey(r),
+                                    ids,
+                                    category.defaults,
+                                  )
                                 }
-                                aria-label={`Reparto de ventas ${name} ${r.country} ${d}`}
-                                title={
-                                  (d === today
-                                    ? "Hoy hubo cambio de asesor"
-                                    : "Hubo cambio de asesor") +
-                                  " · " +
-                                  (r.advisorChanges[d].status === "APPROVED"
-                                    ? "Reparto aprobado"
-                                    : "Revisar y aprobar reparto")
-                                }
-                                onClick={() =>
-                                  setSalesReview({
+                              />
+                            </span>
+                          )}
+                          <EffectivenessHistory
+                            aliasId={r.aliasId}
+                            country={r.country}
+                            name={name}
+                            initialSince={since}
+                            initialUntil={until}
+                          />
+                        </div>
+                      </td>
+                      <td className="effectiveness-country">
+                        <SheetSearchSelect
+                          compact
+                          placeholder="—"
+                          label={`País de ${name} ${r.country || "sin país"}`}
+                          value={r.country}
+                          options={[
+                            { value: "", label: "Sin asignar" },
+                            ...countries,
+                          ]}
+                          onSelect={(v) => identity(r, "country", v)}
+                          onError={setMessage}
+                        />
+                      </td>
+                      <td className="effectiveness-advisor">
+                        <div className="alias-advisor-actions">
+                          <SheetSearchSelect
+                            compact
+                            displayLabel
+                            placeholder="Sin asesor"
+                            label={`Asesor de ${name} ${r.country}`}
+                            value={r.advisorId ?? ""}
+                            options={[
+                              { value: "", label: "Sin asesor" },
+                              ...advisors.map((a) => ({
+                                value: a.id,
+                                label: a.label ?? a.name,
+                              })),
+                            ]}
+                            onError={setMessage}
+                            onSelect={async (advisorId) => {
+                              if (!r.country)
+                                throw Error(
+                                  "Elige primero el país de esta fila para asignar el asesor.",
+                                );
+                              if ((advisorId || null) !== r.advisorId)
+                                setAssignment({
+                                  row: r,
+                                  advisorId: advisorId || null,
+                                  name,
+                                });
+                            }}
+                          />
+                          {r.advisorId && r.country && (
+                            <button
+                              type="button"
+                              className="advisor-detail-trigger"
+                              aria-label={`Detalle del asesor de ${name} ${r.country}`}
+                              title="Ver progreso del asesor"
+                              onClick={() => {
+                                const p = advisors.find(
+                                  (a) => a.id === r.advisorId,
+                                );
+                                if (p) {
+                                  setDetailVersion((v) => v + 1);
+                                  setAdvisorDetail({
+                                    ...p,
                                     aliasId: r.aliasId,
                                     country: r.country,
-                                    day: d,
-                                  })
+                                  });
                                 }
-                              >
-                                {r.advisorChanges[d].status === "APPROVED"
-                                  ? "✓ Aprobado"
-                                  : "↔ Cambio asesor"}
-                              </button>
-                            )}
-                            {(c?.partialMetrics?.includes(m.key) ||
-                              (partial && !c?.manual?.includes(m.key))) &&
-                              (m.key === "base" || m.key === "spend") && (
-                                <span
-                                  className="sheet-partial-marker"
-                                  title="Cobertura parcial"
+                              }}
+                            >
+                              ↗
+                            </button>
+                          )}
+                        </div>
+                      </td>
+
+                      <td className="effectiveness-currency">
+                        <SheetSearchSelect
+                          compact
+                          placeholder="—"
+                          label={`Moneda de ${name} ${r.country || "sin país"}`}
+                          value={r.currency}
+                          options={[
+                            { value: "", label: "Sin asignar" },
+                            ...currencies,
+                          ]}
+                          onSelect={(v) => identity(r, "currency", v)}
+                          onError={setMessage}
+                        />
+                      </td>
+                      {days.flatMap((d) => {
+                        const c = r.days[d],
+                          partial = c && c.campaigns < r.campaigns;
+                        const cells = sheetMetrics.map((m) => {
+                          const cellColor = sheetCellColor(
+                            colorRules,
+                            m.key,
+                            d,
+                            c?.na?.includes(m.key)
+                              ? "NA"
+                              : (c?.[m.key] ?? null),
+                            r.currency || "USD",
+                          );
+                          return (
+                            <td
+                              key={d + m.label}
+                              data-na={c?.na?.includes(m.key) || undefined}
+                              data-auto-na={
+                                c?.automaticNa?.includes(m.key) || undefined
+                              }
+                              style={
+                                cellColor
+                                  ? ({
+                                      "--sheet-rule-color": cellColor,
+                                    } as CSSProperties)
+                                  : undefined
+                              }
+                              data-colored={!!cellColor || undefined}
+                              className={
+                                m.key === "base" || m.key === "spend"
+                                  ? "sheet-derived" +
+                                    ((partial && !c?.manual?.includes(m.key)) ||
+                                    c?.partialMetrics?.includes(m.key)
+                                      ? " sheet-partial"
+                                      : "")
+                                  : c?.synced?.[m.key]
+                                    ? "sheet-synced-cell"
+                                    : ""
+                              }
+                            >
+                              <EffectivenessCell
+                                allowNA
+                                manual={c?.manual?.includes(m.key)}
+                                placeholder={
+                                  m.money &&
+                                  c?.fxMissing &&
+                                  c[m.key] === null &&
+                                  !c.na?.includes(m.key)
+                                    ? "Sin tasa"
+                                    : "—"
+                                }
+                                label={`${m.label} ${name} ${r.country} ${d}`}
+                                value={
+                                  c?.na?.includes(m.key)
+                                    ? "N.A."
+                                    : c?.[m.key] === null ||
+                                        c?.[m.key] === undefined
+                                      ? ""
+                                      : m.money
+                                        ? c[m.key]!.toFixed(
+                                            new Intl.NumberFormat("en", {
+                                              style: "currency",
+                                              currency: r.currency || "USD",
+                                            }).resolvedOptions()
+                                              .maximumFractionDigits,
+                                          )
+                                        : String(c[m.key])
+                                }
+                                onError={setMessage}
+                                onSave={(v) => editCell(r, d, m.key, v)}
+                                hint={`${c?.automaticNa?.includes(m.key) ? "N.A. automático por desactivación; vuelve a vacío al activar. " : ""}${c?.synced?.[m.key] ? "Sincronizado desde «" + c.synced[m.key] + "». " : ""}${c?.manual?.includes(m.key) ? "Ajuste manual de Efectividad. Originales conservados. " : ""}${m.key === "spend" ? "Original Meta: " + (c?.sourceSpend.map((x) => x.currency + " " + x.amount).join(" + ") || "sin datos") + ". " : ""}${c?.fxMissing && c?.[m.key] === null && !c.na?.includes(m.key) ? "Sin tasa. " : ""}${partial || c?.partialMetrics?.includes(m.key) ? "Cobertura parcial. " : ""}${m.key === "fixedCost" ? "Original CF: " + (c?.sourceFixedCost.map((x) => x.currency + " " + x.amount).join(" + ") || "sin datos") + ". " : ""}${m.money ? c?.fx.map((f) => `${f.date}: 1 ${f.from} = ${f.rate} ${f.to} · ${f.source}`).join("; ") || "" : ""} Escribe un número o N.A.; vacío restaura el importado en B/G; en P borra el presupuesto.`}
+                              />
+                              {m.key === "sales" && r.advisorChanges?.[d] && (
+                                <button
+                                  type="button"
+                                  className="sheet-advisor-change"
+                                  data-approved={
+                                    r.advisorChanges[d].status === "APPROVED"
+                                  }
+                                  aria-label={`Reparto de ventas ${name} ${r.country} ${d}`}
+                                  title={
+                                    (d === today
+                                      ? "Hoy hubo cambio de asesor"
+                                      : "Hubo cambio de asesor") +
+                                    " · " +
+                                    (r.advisorChanges[d].status === "APPROVED"
+                                      ? "Reparto aprobado"
+                                      : "Revisar y aprobar reparto")
+                                  }
+                                  onClick={() =>
+                                    setSalesReview({
+                                      aliasId: r.aliasId,
+                                      country: r.country,
+                                      day: d,
+                                    })
+                                  }
                                 >
-                                  *
-                                </span>
+                                  {r.advisorChanges[d].status === "APPROVED"
+                                    ? "✓ Aprobado"
+                                    : "↔ Cambio asesor"}
+                                </button>
                               )}
-                          </td>
+                              {(c?.partialMetrics?.includes(m.key) ||
+                                (partial && !c?.manual?.includes(m.key))) &&
+                                (m.key === "base" || m.key === "spend") && (
+                                  <span
+                                    className="sheet-partial-marker"
+                                    title="Cobertura parcial"
+                                  >
+                                    *
+                                  </span>
+                                )}
+                            </td>
+                          );
+                        });
+                        return cells.filter((_, i) =>
+                          visibleMetricKeys.has(sheetMetrics[i].key),
                         );
-                      });
-                      return cells.filter((_, i) =>
-                        visibleMetricKeys.has(sheetMetrics[i].key),
-                      );
-                    })}
-                  </SheetSizedRow>
+                      })}
+                    </SheetSizedRow>
+                  </Fragment>
                 );
               })}
               <tr className="sheet-new-row">
                 <td className="effectiveness-name">
-                  <SheetSearchSelect
-                    key={inventoryId}
-                    label="Seleccionar o crear inventario para añadir"
-                    placeholder="Selecciona o escribe uno nuevo…"
-                    value={newName}
-                    options={inventoryNames.map((name) => ({
-                      value: name,
-                      label: name,
-                    }))}
-                    disabled={busy || inventoryState?.listId !== inventoryId}
-                    onSelect={setNewName}
-                    onCreate={setNewName}
-                  />
+                  <div className="sheet-alias-row">
+                    <button
+                      type="button"
+                      role="switch"
+                      className="meta-status-switch sheet-alias-switch"
+                      aria-label="Estado de la nueva fila"
+                      aria-checked={newActive}
+                      disabled={busy || !newCountry}
+                      title={
+                        newCountry
+                          ? "Estado inicial de la nueva fila"
+                          : "Elige un país para cambiar el estado inicial"
+                      }
+                      onClick={() => setNewActive((active) => !active)}
+                    >
+                      <span aria-hidden="true" />
+                    </button>
+                    <SheetSearchSelect
+                      key={inventoryId}
+                      label="Seleccionar o crear inventario para añadir"
+                      placeholder="Selecciona o escribe uno nuevo…"
+                      value={newName}
+                      options={inventoryNames.map((name) => ({
+                        value: name,
+                        label: name,
+                      }))}
+                      disabled={busy || inventoryState?.listId !== inventoryId}
+                      onSelect={setNewName}
+                      onCreate={setNewName}
+                    />
+                  </div>
                 </td>
                 <td className="effectiveness-country">
                   <SheetSearchSelect
@@ -1783,7 +1977,10 @@ export function MetaEffectiveness({
                       { value: "", label: "Sin asignar" },
                       ...countries,
                     ]}
-                    onSelect={setNewCountry}
+                    onSelect={(value) => {
+                      setNewCountry(value);
+                      if (!value) setNewActive(true);
+                    }}
                   />
                 </td>
                 <td className="effectiveness-advisor">

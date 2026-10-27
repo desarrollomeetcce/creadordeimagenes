@@ -1750,7 +1750,6 @@ select option, select optgroup { background:var(--surface); color:var(--ink); }
 [data-theme="dark"] .sheet-sync-error { color: #ffadad; }
 .sheet-view-buttons button.primary { box-shadow: inset 0 -2px 0 color-mix(in srgb, var(--accent) 50%, white); }
 @media(max-width:600px) { .sheet-sync-route { gap: 6px; }.sheet-sync-origin,.sheet-sync-destination { padding: 7px; }.sheet-sync-columns label { max-width: 100%; }.sheet-sync-columns span { overflow-wrap: anywhere; } }
-.products-catalog .sheet-view .effectiveness-grid td:has(input[title^="Sincronizado desde"]) { box-shadow: inset 0 -2px 0 #79a9e8; }
 .sheet-sync-panel fieldset.sheet-sync-route { margin: 8px 0 12px; }
 .products-catalog .sheet-view .sheet-totals-grid [data-entry="manual"] { background: color-mix(in srgb,#d3a94c 8%,var(--surface)); }
 .products-catalog .sheet-view .sheet-totals-grid thead [data-entry="manual"] { background: color-mix(in srgb,#d3a94c 20%,var(--surface)); }
@@ -1955,3 +1954,47 @@ select option, select optgroup { background:var(--surface); color:var(--ink); }
 .meta-sync-notice>p{margin:6px 0;font-size:inherit;}
 .meta-sync-notice details{margin-top:6px;min-width:0;}
 .meta-sync-notice details p{overflow-wrap:anywhere;white-space:normal;}
+
+.meta-account-groups{display:flex;align-items:center;flex-wrap:wrap;gap:8px;margin:4px 0 8px;}
+.meta-account-groups button{display:inline-flex;align-items:center;gap:6px;min-height:36px;}
+.meta-account-groups button[aria-pressed=true]{background:var(--accent);color:var(--paper);border-color:var(--accent);}
+.meta-account-groups button span{font-size:11px;opacity:.85;}
+.meta-update-group{margin:0 0 8px;min-height:34px;}
+.meta-account-primary{display:inline-flex;align-items:center;gap:6px;font-size:11px;white-space:normal;}
+.meta-account-primary input[type=checkbox]{width:16px;height:16px;min-height:0;margin:0;flex:0 0 16px;}
+
+.products-catalog .sheet-tabs{display:flex;flex-direction:column;align-items:stretch;gap:0;}
+.products-catalog .sheet-tabs>.sheet-tab-list{flex:none;align-items:flex-end;flex-wrap:nowrap;width:100%;min-height:40px;overflow-x:auto;overflow-y:hidden;padding:5px 6px 0;scrollbar-width:thin;}
+.products-catalog .sheet-tabs>.sheet-special-tabs{border-bottom:1px solid var(--line);background:var(--surface);}
+.sheet-tab-row-label{position:sticky;left:0;z-index:1;background:var(--surface);align-self:center;flex:none;min-width:62px;padding:5px 4px;font-size:11px;font-weight:700;color:var(--muted);}
+.sheet-special-tabs .sheet-tab-group>.sheet-add-tab{min-width:30px;min-height:32px;padding:4px 8px;font-size:17px;}
+.products-catalog .sheet-tab-list .sheet-tab-group{flex:0 0 auto;flex-wrap:nowrap;max-width:none;}
+@media(max-width:550px){.sheet-tab-row-label{padding:3px 2px;}.products-catalog .sheet-tabs>.sheet-tab-list{gap:3px;}}
+.effectiveness-row-delete{width:min(700px,calc(100vw - 24px));max-height:90dvh;overflow:auto;}
+.effectiveness-delete-list{max-height:35dvh;overflow:auto;margin:10px 0;padding-left:22px;}
+.effectiveness-delete-list li{padding:4px 0;overflow-wrap:anywhere;}
+.effectiveness-row-delete footer{gap:8px;flex-wrap:wrap;margin-top:14px;}
+.products-catalog .sheet-view .effectiveness-grid .financial-category-band th{height:28px;min-height:28px;text-align:left;padding:4px 7px;background:color-mix(in srgb,var(--accent) 20%,var(--surface));font-size:12px;width:auto;min-width:0;max-width:none;}
+.financial-category-band th>span{position:sticky;left:7px;display:inline-flex;align-items:center;gap:10px;}
+.financial-category-band small{font-size:10px;font-weight:normal;color:var(--muted);}
+.financial-temporary-category{flex:0 0 22px;width:22px;}
+.products-catalog .financial-temporary-category .sheet-search-trigger{width:22px;min-width:22px;min-height:22px;padding:2px;border:0;background:transparent;font-size:14px;}
+.financial-temporary-category[data-temporary=true] .sheet-search-trigger{color:var(--accent);background:var(--soft);}
+
+.products-catalog .sheet-view .effectiveness-grid .sheet-new-row .sheet-alias-row>.meta-status-switch{width:30px;min-width:30px;min-height:18px;height:18px;flex:0 0 30px;padding:0;border-radius:20px;float:none;}
+.products-catalog .sheet-totals-grid tbody tr>th:first-child,.products-catalog .sheet-totals-grid thead tr:first-child>th:first-child{position:sticky;left:0;z-index:2;background:var(--soft);}
+
+/* Table controls keep their own rhythm without changing saved grid sizes. */
+.sheet-financial-toolbar{align-items:center;gap:8px 12px;padding:10px 12px;}
+.sheet-financial-toolbar .sheet-control-group{display:flex;align-items:center;flex-wrap:wrap;gap:8px;min-width:0;}
+.sheet-financial-toolbar>.sheet-control-group+.sheet-control-group,.sheet-financial-toolbar>.sheet-activation-actions{border-left:1px solid var(--line);padding-left:12px;}
+.sheet-financial-toolbar button,.sheet-financial-toolbar .date-range>button,.sheet-financial-toolbar .sheet-search-trigger{min-height:34px;border-radius:6px;font-size:12px;padding:6px 10px;}
+.sheet-financial-toolbar label{font-size:11px;gap:6px;}
+.sheet-financial-toolbar .sheet-filter-label{color:var(--muted);font-weight:600;}
+.sheet-financial-toolbar .sheet-activation-actions{gap:6px;font-size:12px;}
+.sheet-financial-toolbar .sheet-activation-actions>span{font-variant-numeric:tabular-nums;white-space:nowrap;}
+.sheet-financial-toolbar .sheet-file{display:flex;flex-wrap:wrap;gap:6px;max-width:260px;}
+.sheet-financial-toolbar .sheet-file input{max-width:200px;font-size:11px;}
+.products-catalog .sheet-view .effectiveness-grid tbody tr:not(.sheet-category-band):not(.sheet-new-row):hover>td,.inventory-catalog-grid tbody tr:hover>td{background-image:linear-gradient(color-mix(in srgb,var(--accent) 5%,transparent),color-mix(in srgb,var(--accent) 5%,transparent));}
+.sheet-scroll:focus-visible{outline:2px solid var(--accent);outline-offset:-2px;}
+@media(max-width:700px){.sheet-financial-toolbar{padding:8px;gap:10px;}.sheet-financial-toolbar>.sheet-control-group,.sheet-financial-toolbar>.sheet-activation-actions{width:100%;border-left:0;padding-left:0;}.sheet-financial-toolbar>.sheet-control-group+.sheet-control-group,.sheet-financial-toolbar>.sheet-activation-actions{border-left:0;padding-left:0;border-top:1px solid var(--line);padding-top:8px;}.sheet-financial-toolbar label>.sheet-search-trigger{width:130px;}.sheet-financial-toolbar .sheet-activation-actions button{flex:1 1 auto;}}

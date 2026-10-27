@@ -14,7 +14,6 @@ import {
   type InventoryNewRowValue,
 } from "./inventory-new-row";
 import { InventoryImport } from "./inventory-import";
-import { SheetSearchSelect } from "./sheet-search-select";
 import { InventorySelectionDelete } from "./inventory-selection-delete";
 import { InventoryCategoryManager } from "./inventory-category-manager";
 import type {
@@ -86,7 +85,6 @@ function InventoryCheck({
 export function InventoryCatalog({
   tables,
   listId = "default-inventory",
-  initialTableId,
   sheetTabs,
   onChanged,
 }: {
@@ -125,13 +123,7 @@ export function InventoryCatalog({
       onReset={() => resize(key)}
     />
   );
-  const [target, setTarget] = useWorkbookPreference<string>(
-      listId,
-      "target",
-      initialTableId || tables[0]?.id || "",
-    ),
-    [name, setName] = useState(""),
-    [busy, setBusy] = useState(false),
+  const [busy, setBusy] = useState(false),
     [message, setMessage] = useState("");
   const [categories, setCategories] = useState<InventoryCategoryState | null>(
       null,
@@ -307,10 +299,6 @@ export function InventoryCatalog({
       a.name.localeCompare(b.name, "es") ||
       a.tableName.localeCompare(b.tableName, "es"),
   );
-  useEffect(() => {
-    if (target && !tables.some((t) => t.id === target))
-      setTarget(tables[0]?.id ?? "");
-  }, [tables, target]);
   const grouped = new Map<string, { name: string; links: typeof items }>();
   for (const a of items) {
     if (!grouped.has(a.name)) grouped.set(a.name, { name: a.name, links: [] });
@@ -723,71 +711,6 @@ export function InventoryCatalog({
       className="inventory-catalog sheet-view"
       aria-label="Inventario sin países"
     >
-      <form
-        className="row sheet-toolbar"
-        onSubmit={async (e) => {
-          e.preventDefault();
-          if (!target || !name.trim()) return;
-          setBusy(true);
-          setMessage("");
-          try {
-            if (!categories)
-              throw Error("Recarga el inventario antes de guardar.");
-            const decisions = await duplicateReview.review(
-              [{ kind: "INVENTORY", name: name.trim() }],
-              available.map((g) => ({ kind: "INVENTORY", name: g.name })),
-            );
-            await api("meta-ads/inventory/import", "POST", {
-              listId,
-              revision: categories.revision,
-              decisions,
-              rows: [
-                {
-                  primary: "",
-                  secondary: "",
-                  name: name.trim(),
-                  sheets: tables.find((t) => t.id === target)!.name,
-                },
-              ],
-            });
-            await onChanged();
-            await reloadCategories();
-            setFilters({
-              primary: [],
-              secondary: [],
-              items: [],
-              sheets: [target],
-            });
-            setName("");
-            setMessage(
-              "Inventario agregado. El país se configura en la hoja correspondiente.",
-            );
-          } catch (error) {
-            setMessage((error as Error).message);
-          } finally {
-            setBusy(false);
-          }
-        }}
-      >
-        <input
-          aria-label="Nuevo ítem del inventario"
-          value={name}
-          maxLength={150}
-          placeholder="Nombre del diplomado o ítem…"
-          onChange={(e) => setName(e.target.value)}
-          disabled={busy}
-        />
-        <SheetSearchSelect
-          label="Agregar inventario a la hoja"
-          value={target}
-          placeholder="Elige una hoja"
-          options={tables.map((t) => ({ value: t.id, label: t.name }))}
-          onSelect={setTarget}
-        />
-        <button disabled={busy || !target || !name.trim()}>
-          Agregar al inventario
-        </button>
-      </form>
       {message && (
         <p role="status" className="sheet-message">
           {message}

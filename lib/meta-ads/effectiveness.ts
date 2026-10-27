@@ -40,7 +40,17 @@ export async function effectiveness(
       aliasColumnName: true,
       defaultCountry: true,
       defaultCurrency: true,
-      aliases: { select: { id: true, name: true } },
+      aliases: {
+        select: {
+          id: true,
+          name: true,
+          categoryAssignments: {
+            select: {
+              category: { select: { id: true, name: true, kind: true } },
+            },
+          },
+        },
+      },
     },
   });
   demand(table, "Tabla no disponible.", 404);
@@ -257,7 +267,10 @@ export async function effectiveness(
     }
   }
   for (const a of table!.aliases)
-    if (![...rows.values()].some((r) => r.aliasId === a.id))
+    if (
+      ![...rows.values()].some((r) => r.aliasId === a.id) &&
+      !stored.some((r) => r.aliasId === a.id && r.hidden)
+    )
       get(a.id, table!.defaultCountry);
   const missing = new Set<string>();
   const annotations = new Map(
@@ -643,6 +656,7 @@ export async function importEffectiveness(
   advisorTiming?: { day: string; mode: "DAY" | "CLOCK"; time?: string },
   inventorySheetId?: string,
   decisions?: InventoryNameDecision[],
+  initialActive?: boolean,
 ) {
   ownerOnly(actor);
   return db.$transaction(
@@ -653,6 +667,11 @@ export async function importEffectiveness(
         "Tabla no disponible.",
         404,
       );
+      if (initialActive !== undefined)
+        demand(
+          entries.every((e) => !!e.country),
+          "Elige el país antes de establecer el estado inicial.",
+        );
       let advisorStart = new Date(limaDay() + "T00:00:00-05:00");
       if (advisorTiming) {
         demand(!!advisorId, "Elige el asesor para definir el inicio.");
@@ -759,6 +778,20 @@ export async function importEffectiveness(
         });
       }
       const imported = [...unique.values()];
+      const existingStateRows =
+        initialActive === undefined
+          ? []
+          : await tx.metaEffectivenessRow.findMany({
+              where: {
+                legacy: false,
+                hidden: false,
+                OR: imported.map((r) => ({
+                  aliasId: r.aliasId,
+                  country: r.country,
+                })),
+              },
+              select: { aliasId: true, country: true },
+            });
       let existingAdvisorRows: { aliasId: string; country: string }[] = [];
       if (advisorId) {
         const existing = await tx.metaEffectivenessRow.findMany({
@@ -819,6 +852,24 @@ export async function importEffectiveness(
             revision: { increment: 1 },
           },
         });
+      if (initialActive !== undefined) {
+        const newTargets = imported.filter(
+          (r) =>
+            !existingStateRows.some(
+              (old) => old.aliasId === r.aliasId && old.country === r.country,
+            ),
+        );
+        if (newTargets.length)
+          await tx.metaEffectivenessState.createMany({
+            data: newTargets.map((r) => ({
+              aliasId: r.aliasId,
+              country: r.country,
+              active: initialActive,
+              revision: 1,
+            })),
+            skipDuplicates: true,
+          });
+      }
       await recordActivity(tx, {
         data: {
           actorId: actor.id,
@@ -828,6 +879,7 @@ export async function importEffectiveness(
             rows: unique.size,
             created: fresh.size + inventoryCreated,
             inventorySheetId: inventorySheetId ?? null,
+            initialActive: initialActive ?? null,
             advisorId: advisorId ?? null,
           },
         },

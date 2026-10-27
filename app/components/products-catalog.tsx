@@ -392,10 +392,73 @@ export function ProductsCatalog() {
   const sheetTabs = (
     <nav className="sheet-tabs" aria-label="Hojas del libro de efectividad">
       <div
-        className="sheet-tab-list"
+        className="sheet-tab-list sheet-special-tabs"
         role="tablist"
-        aria-label="Tablas de efectividad"
+        aria-label="Pestañas del libro"
       >
+        <span className="sheet-tab-row-label">Pestañas:</span>
+        {(["TOTALS", "ADVISORS", "INVENTORY"] as const).map((kind) => (
+          <span className="sheet-tab-group" key={kind}>
+            {specials
+              .filter((s) => s.kind === kind)
+              .map((t) => (
+                <span key={t.id} className="sheet-tab-wrap">
+                  <button
+                    role="tab"
+                    className={
+                      "sheet-tab-" +
+                      (kind === "TOTALS"
+                        ? "totals"
+                        : kind === "ADVISORS"
+                          ? "advisors"
+                          : "inventory") +
+                      (editing?.id === t.id ? " sr-only" : "")
+                    }
+                    aria-selected={specialId === t.id}
+                    title="Clic derecho para editar el nombre o eliminar la pestaña"
+                    onContextMenu={(e) => {
+                      e.preventDefault();
+                      openMenu(t, e.clientX, e.clientY, e.currentTarget);
+                    }}
+                    onKeyDown={(e) => {
+                      if (
+                        e.key === "ContextMenu" ||
+                        (e.shiftKey && e.key === "F10")
+                      ) {
+                        e.preventDefault();
+                        const r = e.currentTarget.getBoundingClientRect();
+                        openMenu(t, r.left, r.bottom, e.currentTarget);
+                      }
+                    }}
+                    onClick={() => {
+                      setSpecialId(t.id);
+                      setMessage("");
+                      setEditing(null);
+                    }}
+                  >
+                    {t.name}
+                  </button>
+                  {tabEditor(t.id)}
+                </span>
+              ))}
+            <button
+              className="sheet-add-tab"
+              disabled={busy || !specialsLoaded}
+              aria-label={`Agregar pestaña de ${kind === "TOTALS" ? "Totales" : kind === "ADVISORS" ? "Asesores" : "Inventario"}`}
+              title={`Agregar ${kind === "TOTALS" ? "Totales" : kind === "ADVISORS" ? "Asesores" : "Inventario"}`}
+              onClick={() => void addSpecial(kind)}
+            >
+              +
+            </button>
+          </span>
+        ))}
+      </div>
+      <div
+        className="sheet-tab-list sheet-financial-tabs"
+        role="tablist"
+        aria-label="Hojas de datos"
+      >
+        <span className="sheet-tab-row-label">Hojas:</span>
         {orderedTables.map((t) => (
           <span key={t.id} className="sheet-tab-wrap">
             <button
@@ -500,64 +563,6 @@ export function ProductsCatalog() {
         >
           + Tabla
         </button>
-        {(["TOTALS", "ADVISORS", "INVENTORY"] as const).map((kind) => (
-          <span className="sheet-tab-group" key={kind}>
-            {specials
-              .filter((s) => s.kind === kind)
-              .map((t) => (
-                <span key={t.id} className="sheet-tab-wrap">
-                  <button
-                    role="tab"
-                    className={
-                      "sheet-tab-" +
-                      (kind === "TOTALS"
-                        ? "totals"
-                        : kind === "ADVISORS"
-                          ? "advisors"
-                          : "inventory") +
-                      (editing?.id === t.id ? " sr-only" : "")
-                    }
-                    aria-selected={specialId === t.id}
-                    title="Clic derecho para editar el nombre o eliminar la pestaña"
-                    onContextMenu={(e) => {
-                      e.preventDefault();
-                      openMenu(t, e.clientX, e.clientY, e.currentTarget);
-                    }}
-                    onKeyDown={(e) => {
-                      if (
-                        e.key === "ContextMenu" ||
-                        (e.shiftKey && e.key === "F10")
-                      ) {
-                        e.preventDefault();
-                        const r = e.currentTarget.getBoundingClientRect();
-                        openMenu(t, r.left, r.bottom, e.currentTarget);
-                      }
-                    }}
-                    onClick={() => {
-                      setSpecialId(t.id);
-                      setMessage("");
-                      setEditing(null);
-                    }}
-                  >
-                    {t.name}
-                  </button>
-                  {tabEditor(t.id)}
-                </span>
-              ))}
-            <button
-              className="sheet-add-tab"
-              disabled={busy || !specialsLoaded}
-              onClick={() => void addSpecial(kind)}
-            >
-              +{" "}
-              {kind === "TOTALS"
-                ? "Totales"
-                : kind === "ADVISORS"
-                  ? "Asesores"
-                  : "Inventario"}
-            </button>
-          </span>
-        ))}
       </div>
     </nav>
   );

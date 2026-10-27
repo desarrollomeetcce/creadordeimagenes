@@ -233,6 +233,8 @@ function SyncIndicator({
   onControl,
   onResume,
   onRefresh,
+  primary = false,
+  onPrimaryChange,
   onAnalyze,
   compactHeader = false,
 }: {
@@ -242,6 +244,8 @@ function SyncIndicator({
   onControl?: (action: "pause" | "cancel") => void;
   onResume?: () => void;
   onRefresh?: () => void;
+  primary?: boolean;
+  onPrimaryChange?: (value: boolean) => void;
   onAnalyze?: () => void;
 }) {
   const p = account.progress;
@@ -307,6 +311,18 @@ function SyncIndicator({
       {compactHeader && (
         <div className="meta-progress-heading">
           <strong title={account.name}>{account.name}</strong>
+          {onPrimaryChange && (
+            <label className="check meta-account-primary">
+              <input
+                type="checkbox"
+                checked={primary}
+                disabled={busy}
+                aria-label={`Cuenta principal ${account.name}`}
+                onChange={(e) => onPrimaryChange(e.target.checked)}
+              />
+              Cuenta principal
+            </label>
+          )}
           {controls}
         </div>
       )}
@@ -438,6 +454,10 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
     [level, setLevel] = useState("ad"),
     [accountIds, setAccountIds] = useState<string[]>([]),
     [pinnedAccountIds, setPinnedAccountIds] = useState<string[]>([]),
+    [primaryAccountIds, setPrimaryAccountIds] = useState<string[]>([]),
+    [accountGroup, setAccountGroup] = useState<"primary" | "secondary">(
+      "secondary",
+    ),
     [selectedObjects, setSelectedObjects] = useState<MetaSelection[]>([]),
     [campaignScope, setCampaignScope] = useState<string[]>([]),
     [adsetScope, setAdsetScope] = useState<string[]>([]),
@@ -720,6 +740,8 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
     const p = parseMetaPreferences(stored);
     setAccountIds(p.accountIds);
     setPinnedAccountIds(p.pinnedAccountIds);
+    setPrimaryAccountIds(p.primaryAccountIds);
+    setAccountGroup(p.accountGroup);
     setSelectedObjects(p.selectedObjects);
     setCampaignScope(p.campaignScope);
     setAdsetScope(p.adsetScope);
@@ -768,6 +790,8 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
           layoutRevision: 2,
           accountIds,
           pinnedAccountIds,
+          primaryAccountIds,
+          accountGroup,
           selectedObjects,
           campaignScope,
           adsetScope,
@@ -806,6 +830,8 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
     preferencesKey,
     accountIds,
     pinnedAccountIds,
+    primaryAccountIds,
+    accountGroup,
     selectedObjects,
     campaignScope,
     adsetScope,
@@ -843,7 +869,49 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
         .map((a) => [a.businessId!, a.businessName ?? a.businessId!]),
     ).entries(),
   ];
-  const filteredAccounts = accounts.filter((a) =>
+  const primarySet = new Set(primaryAccountIds);
+  const isInAccountGroup = (a: Account) =>
+    accountGroup === "primary" ? primarySet.has(a.id) : !primarySet.has(a.id);
+  const groupAccounts = accounts.filter(isInAccountGroup);
+  const primaryCount = accounts.filter((a) => primarySet.has(a.id)).length;
+  const setPrimaryAccount = (id: string, value: boolean) => {
+    if (value && primaryAccountIds.length >= 1000 && !primarySet.has(id)) {
+      setMessage("Puedes marcar hasta 1000 cuentas principales.");
+      return;
+    }
+    setPrimaryAccountIds((old) =>
+      value ? [...new Set([...old, id])] : old.filter((v) => v !== id),
+    );
+  };
+  const accountGroupControls = () => (
+    <div
+      className="meta-account-groups"
+      role="group"
+      aria-label="Vistas de cuentas"
+    >
+      {(["primary", "secondary"] as const).map((group) => (
+        <button
+          key={group}
+          type="button"
+          aria-pressed={accountGroup === group}
+          onClick={() => {
+            setAccountGroup(group);
+            setAccountListPage(1);
+          }}
+        >
+          {group === "primary" ? "Cuentas principales" : "Cuentas secundarias"}{" "}
+          <span>
+            (
+            {group === "primary"
+              ? primaryCount
+              : accounts.length - primaryCount}
+            )
+          </span>
+        </button>
+      ))}
+    </div>
+  );
+  const filteredAccounts = groupAccounts.filter((a) =>
     matchesAccount(
       a,
       accountListQuery,
@@ -877,6 +945,7 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
     setAccounts(rows);
     const allowed = new Set(rows.map((a) => a.id));
     setPinnedAccountIds((ids) => ids.filter((id) => allowed.has(id)));
+    setPrimaryAccountIds((ids) => ids.filter((id) => allowed.has(id)));
     setSelectedObjects((old) => old.filter((o) => allowed.has(o.accountId)));
     setAccountIds((ids) => ids.filter((id) => rows.some((a) => a.id === id)));
     setAccountsLoaded(true);
@@ -1005,10 +1074,12 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
     .filter(
       (a) =>
         a.enabled &&
-        (syncOpen || !accountIds.length || accountIds.includes(a.id)),
+        (syncOpen || tab === "accounts"
+          ? isInAccountGroup(a)
+          : !accountIds.length || accountIds.includes(a.id)),
     )
     .map((a) => a.id)
-    .slice(0, 100)
+    .slice(0, 1000)
     .join(",");
   useEffect(() => {
     if (!preferencesReady || !pendingKey) return;
@@ -1023,43 +1094,51 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
         return;
       }
       try {
-        const response = await fetch(
-          "/api/meta-ads/sync-status?" +
-            new URLSearchParams({ accounts: pendingKey }),
-          {
-            cache: "no-store",
-            signal: AbortSignal.any([
-              controller.signal,
-              AbortSignal.timeout(20000),
-            ]),
-          },
-        );
-        if (!response.ok) {
-          if (response.status === 404) await refresh();
-          else {
-            let detail = "";
-            try {
-              await readJsonResponse(
-                response,
-                "No se pudo consultar el progreso.",
-              );
-            } catch (error) {
-              detail =
-                error instanceof Error ? error.message.slice(0, 300) : "";
-            }
-            throw Error(
-              `No se pudo consultar el progreso (HTTP ${response.status}). ${detail}`,
-            );
-          }
-          return;
-        }
         const updates: Pick<
           Account,
           "id" | "syncedAt" | "syncError" | "syncState" | "progress"
-        >[] = await readJsonResponse(
-          response,
-          "No se pudo consultar el progreso.",
-        );
+        >[] = [];
+        const ids = pendingKey.split(",");
+        for (let i = 0; i < ids.length; i += 100) {
+          const response = await fetch(
+            "/api/meta-ads/sync-status?" +
+              new URLSearchParams({
+                accounts: ids.slice(i, i + 100).join(","),
+              }),
+            {
+              cache: "no-store",
+              signal: AbortSignal.any([
+                controller.signal,
+                AbortSignal.timeout(20000),
+              ]),
+            },
+          );
+          if (!response.ok) {
+            if (response.status === 404) await refresh();
+            else {
+              let detail = "";
+              try {
+                await readJsonResponse(
+                  response,
+                  "No se pudo consultar el progreso.",
+                );
+              } catch (error) {
+                detail =
+                  error instanceof Error ? error.message.slice(0, 300) : "";
+              }
+              throw Error(
+                `No se pudo consultar el progreso (HTTP ${response.status}). ${detail}`,
+              );
+            }
+            return;
+          }
+          updates.push(
+            ...(await readJsonResponse(
+              response,
+              "No se pudo consultar el progreso.",
+            )),
+          );
+        }
         if (stopped) return;
         setProgressError("");
         delay = updates.some((u) =>
@@ -1117,38 +1196,46 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
   const run = async (fn: () => Promise<unknown>, success?: string) => {
     setBusy(true);
     setMessage("");
+    let processed = false;
     try {
       await fn();
-      await refresh();
+      processed = true;
+      try {
+        await refresh();
+      } catch {
+        await refresh();
+      }
       setRevision((r) => r + 1);
       if (success) setMessage(success);
     } catch (e) {
-      setMessage((e as Error).message);
-      // Read persisted diagnostics without repeating the verification request.
-      try {
-        await refresh();
-      } catch {}
+      setMessage(
+        processed
+          ? "La solicitud se procesó, pero no se pudo recargar la vista. Actualiza los datos guardados antes de repetir la acción."
+          : (e as Error).message,
+      );
+      // Failed mutations only re-read diagnostics; never repeat the provider action.
+      if (!processed) {
+        try {
+          await refresh();
+        } catch {}
+      }
     } finally {
       setBusy(false);
     }
   };
+  const requestAccountUpdate = (account: Account) =>
+    api(`meta-ads/accounts/${account.id}/sync`, "POST", {
+      focused: true,
+      inventory: "all",
+      recentDays: account.progress?.focused ? account.progress.recentDays : 7,
+    });
   const accountUpdatePending = useRef(false);
   const updateAccount = async (account: Account) => {
     if (accountUpdatePending.current || busy) return;
     accountUpdatePending.current = true;
     try {
       await run(async () => {
-        const result = await api(
-          `meta-ads/accounts/${account.id}/sync`,
-          "POST",
-          {
-            focused: true,
-            inventory: "all",
-            recentDays: account.progress?.focused
-              ? account.progress.recentDays
-              : 7,
-          },
-        );
+        const result = await requestAccountUpdate(account);
         setMessage(
           result.waiting
             ? "La cuenta espera el turno indicado por Meta. El avance se conserva."
@@ -1160,6 +1247,55 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
     } finally {
       accountUpdatePending.current = false;
     }
+  };
+  const updateAccountGroup = async (targets: Account[]) => {
+    if (accountUpdatePending.current || busy || !targets.length) return;
+    accountUpdatePending.current = true;
+    try {
+      await run(async () => {
+        let queued = 0,
+          waiting = 0;
+        const failed: string[] = [];
+        for (const account of targets) {
+          try {
+            const result = await requestAccountUpdate(account);
+            if (result.waiting) waiting++;
+            else queued++;
+          } catch (e) {
+            failed.push(
+              `${account.name}: ${e instanceof Error ? e.message : "No se pudo solicitar"}`,
+            );
+          }
+        }
+        setMessage(
+          `${queued} ${queued === 1 ? "cuenta con actualización solicitada" : "cuentas con actualización solicitada"}${waiting ? ` · ${waiting} en espera de Meta` : ""}${failed.length ? ` · ${failed.length} ${failed.length === 1 ? "solicitud sin confirmar" : "solicitudes sin confirmar"}: ${failed.join("; ")}` : ""}.`,
+        );
+        setTab("panel");
+        setSyncOpen(true);
+      });
+    } finally {
+      accountUpdatePending.current = false;
+    }
+  };
+  const groupUpdateButton = (list: Account[]) => {
+    const eligible = list.filter(
+      (a) =>
+        a.canSync &&
+        a.connection?.verifiedAt &&
+        !a.connection.disconnectedAt &&
+        a.progress?.status !== "waiting",
+    );
+    return (
+      <button
+        type="button"
+        className="meta-update-group"
+        disabled={busy || !eligible.length}
+        onClick={() => void updateAccountGroup(eligible)}
+      >
+        Actualizar {accountGroup === "primary" ? "principales" : "secundarias"}{" "}
+        ({eligible.length})
+      </button>
+    );
   };
   const reload = () =>
     void run(
@@ -2220,8 +2356,11 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
                 Actualizar vista
               </button>
             </div>
+            {accountGroupControls()}
+            {groupUpdateButton(filteredAccounts)}
             <p className="hint">
-              Busca tus cuentas publicitarias por nombre o ID.
+              Marca Cuenta principal para tenerla a mano. Las demás aparecen en
+              Cuentas secundarias.
             </p>
             <div className="fields meta-filters panel">
               <label>
@@ -2272,14 +2411,16 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
               </label>
             </div>
             <small>
-              {filteredAccounts.length} de {accounts.length} cuentas · actividad
-              basada en la última importación completa de hoy. Antes de
-              sincronizar, el gasto y las campañas activas son desconocidos.
+              {filteredAccounts.length} de {groupAccounts.length} cuentas{" "}
+              {accountGroup === "primary" ? "principales" : "secundarias"} ·
+              actividad basada en la última importación completa de hoy. Antes
+              de sincronizar, el gasto y las campañas activas son desconocidos.
             </small>
             {!!accounts.length && !filteredAccounts.length && (
               <p className="panel">
-                No hay cuentas que coincidan. Prueba otro nombre o ID, o elige
-                Toda la actividad para incluir cuentas sin sincronizar.
+                {accountGroup === "primary" && !primaryCount
+                  ? "Todavía no has marcado cuentas principales. Abre Cuentas secundarias y marca Cuenta principal."
+                  : "No hay cuentas que coincidan en esta vista. Prueba otro nombre o revisa los filtros."}
               </p>
             )}
             {!accounts.length && (
@@ -2291,9 +2432,23 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
             )}
             {visibleAccounts.map((a) => (
               <article className="panel stack" key={a.id}>
-                <h3>
-                  {a.name} <small>act_{a.id}</small>
-                </h3>
+                <div className="row spread">
+                  <h3>
+                    {a.name} <small>act_{a.id}</small>
+                  </h3>
+                  <label className="check meta-account-primary">
+                    <input
+                      type="checkbox"
+                      checked={primarySet.has(a.id)}
+                      disabled={busy}
+                      aria-label={`Cuenta principal ${a.name}`}
+                      onChange={(e) =>
+                        setPrimaryAccount(a.id, e.target.checked)
+                      }
+                    />
+                    Cuenta principal
+                  </label>
+                </div>
                 <p>
                   {a.businessName ? `${a.businessName} · ` : ""}
                   {a.currency} · {a.timezone}
@@ -2502,8 +2657,10 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
                     Minimizar
                   </button>
                 </div>
+                {accountGroupControls()}
+                {groupUpdateButton(groupAccounts)}
                 <div className="meta-sync-grid">
-                  {accounts
+                  {groupAccounts
                     .filter(
                       (a) =>
                         a.progress &&
@@ -2516,6 +2673,10 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
                         <SyncIndicator
                           compactHeader
                           account={a}
+                          primary={primarySet.has(a.id)}
+                          onPrimaryChange={(value) =>
+                            setPrimaryAccount(a.id, value)
+                          }
                           onRefresh={
                             a.canSync ? () => void updateAccount(a) : undefined
                           }
@@ -2561,13 +2722,17 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
                       </div>
                     ))}
                 </div>
-                {!accounts.some(
+                {!groupAccounts.some(
                   (a) =>
                     a.progress &&
                     !["complete", "disabled", "cancelled"].includes(
                       a.progress.status,
                     ),
-                ) && <p className="hint">No hay sincronizaciones en curso.</p>}
+                ) && (
+                  <p className="hint">
+                    No hay sincronizaciones en curso en esta vista.
+                  </p>
+                )}
                 <button type="button" onClick={minimizeSync}>
                   Minimizar y volver a Rendimiento
                 </button>
@@ -3005,8 +3170,9 @@ function MetaDetail({ item: o, onClose }: { item: Item; onClose: () => void }) {
       </p>
       <p>
         Las clasificaciones son cálculos internos, según los criterios de
-        evaluación y el volumen de resultados disponible. No son puntuaciones oficiales de Meta.
-        Un estado efectivo activo no garantiza entrega actual.
+        evaluación y el volumen de resultados disponible. No son puntuaciones
+        oficiales de Meta. Un estado efectivo activo no garantiza entrega
+        actual.
       </p>
       <MetaObjectLink item={o} />
     </dialog>

@@ -463,3 +463,30 @@ test('Inventario: orden inventario/principal/secundaria/hojas en pegado y filas,
  assert.deepEqual(parseInventoryGrid('Civil\nAmbiental',false,1).rows.map(r=>r.primary),['Civil','Ambiental']);
  assert.deepEqual(parseInventoryGrid('Agua\nSuelos',false,2).rows.map(r=>r.secondary),['Agua','Suelos']);
 });
+
+test('Meta: vistas principales/secundarias conservan más de100 cuentas sin confundir fijadas ni permisos',async()=>{
+ const {parseMetaPreferences}=await import('../lib/meta-ads/preferences');
+ const ids=Array.from({length:306},(_,i)=>String(700000+i));
+ const p=parseMetaPreferences(JSON.stringify({layoutRevision:2,primaryAccountIds:[...ids,ids[0],'act_123','invalid',null],accountGroup:'primary',pinnedAccountIds:['123'],accountIds:['456'],token:'not-a-real-secret'}));
+ assert.deepEqual(p.primaryAccountIds,ids);assert.equal(p.accountGroup,'primary');assert.deepEqual(p.pinnedAccountIds,['123']);assert.deepEqual(p.accountIds,['456']);assert(!JSON.stringify(p).includes('not-a-real-secret'));
+ const restored=parseMetaPreferences(JSON.stringify({...p,layoutRevision:2}));assert.deepEqual(restored.primaryAccountIds,ids);assert.equal(restored.accountGroup,'primary');
+ assert.equal(parseMetaPreferences(JSON.stringify({primaryAccountIds:ids,accountGroup:'admin'})).accountGroup,'secondary');assert.deepEqual(parseMetaPreferences(JSON.stringify({pinnedAccountIds:['123']})).primaryAccountIds,[]);
+ assert.equal(parseMetaPreferences(JSON.stringify({primaryAccountIds:Array.from({length:1100},(_,i)=>String(i+1))})).primaryAccountIds.length,1000);
+ assert.deepEqual(parseMetaPreferences(' '.repeat(200001)).primaryAccountIds,[]);
+});
+
+test('Efectividad: franjas temporales usan solo categorías asignadas y no duplican filas ni alteran el catálogo',async()=>{
+ const {financialRowCategories,groupFinancialRows,financialRowKey}=await import('../lib/meta-ads/financial-categories');
+ const a={id:'a',name:'A',categoryAssignments:[{category:{id:'p',name:'Ambiental',kind:'PRIMARY' as const}},{category:{id:'s',name:'Civil',kind:'SECONDARY' as const}}]},b={id:'b',name:'B',categoryAssignments:[{category:{id:'p2',name:'Ambiental',kind:'PRIMARY' as const}}]};
+ const rows=[{aliasId:'a',country:'PE',sales:4},{aliasId:'a',country:'CO',sales:2},{aliasId:'b',country:'PE',sales:3}],original=JSON.stringify([a,b]),temporary={[financialRowKey(rows[0])]:['s','p','foreign-category']};
+ const category=financialRowCategories(rows[0],a,temporary);assert.deepEqual(category.names,['Ambiental','Civil']);assert(category.temporary);assert.equal(financialRowCategories(rows[1],a,temporary).temporary,false);
+ const bands=groupFinancialRows(rows,[a,b],temporary);assert.equal(bands.flatMap(b=>b.rows).length,3);assert.equal(bands.flatMap(b=>b.rows).reduce((n,r)=>n+r.sales,0),9);assert.equal(new Set(bands.flatMap(b=>b.rows.map(financialRowKey))).size,3);assert.equal(JSON.stringify([a,b]),original);assert.deepEqual(financialRowCategories(rows[0],a,{[financialRowKey(rows[0])]:['foreign-category']}).names,['Ambiental']);
+});
+test('Efectividad: preferencias temporales acotadas no aceptan claves ni categorías inválidas',async()=>{
+ const {parseTemporaryCategories}=await import('../lib/meta-ads/financial-categories');assert.deepEqual(parseTemporaryCategories('invalid'),{});const key=JSON.stringify(['alias-1','PE']);const parsed=parseTemporaryCategories(JSON.stringify({[key]:['cat-1','cat-1','bad/id',null],__proto__:{polluted:true},invalid:['cat']}));assert.deepEqual(parsed,{[key]:['cat-1']});assert.equal(({} as any).polluted,undefined);
+});
+
+test('Totales: bloques horizontales conservan fuente/país/moneda separados y plantillas vacías sin duplicar pares',async()=>{
+ const {totalSourceBlocks}=await import('../lib/meta-ads/total-source-blocks');const sources=[{tableId:'a',groups:[{country:'PE',currency:'PEN'},{country:'CO',currency:'COP'},{country:'PE',currency:'PEN'}]},{tableId:'b',groups:[{country:'PE',currency:'USD'}]}];
+ const blocks=totalSourceBlocks(sources);assert.equal(blocks.length,3);assert.equal(new Set(blocks.map(b=>b.key)).size,3);assert(blocks.every(b=>/^[a-zA-Z0-9:_-]{1,240}$/.test(b.key+":totalSpend")));assert.deepEqual(blocks.map(b=>[b.table.tableId,b.country,b.currency]),[['a','CO','COP'],['a','PE','PEN'],['b','PE','USD']]);assert.equal(totalSourceBlocks([{tableId:'empty',groups:[]}])[0].country,'');assert.equal(totalSourceBlocks(sources,'PE','PEN').length,2);assert.equal(sources[0].groups.length,3);
+});
