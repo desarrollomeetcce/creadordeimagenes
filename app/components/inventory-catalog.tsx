@@ -2,6 +2,8 @@
 import { Fragment, useEffect, useRef, useState, type ReactNode } from "react";
 import { useWorkbookPreference } from "./use-workbook-preference";
 import { engineRequest as api } from "./generation-engine";
+import { InventoryMultiSelect } from "./inventory-multi-select";
+import { InventoryImport } from "./inventory-import";
 import { SheetSearchSelect } from "./sheet-search-select";
 import { InventorySelectionDelete } from "./inventory-selection-delete";
 import { InventoryCategoryManager } from "./inventory-category-manager";
@@ -15,11 +17,6 @@ type Table = {
   name: string;
   aliases: { id: string; name: string; inventorySheetId?: string }[];
 };
-const normalize = (s: string) =>
-  s
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .toLocaleLowerCase("es");
 function InventoryCheck({
   label,
   checked,
@@ -59,10 +56,7 @@ export function InventoryCatalog({
   sheetTabs: ReactNode;
   onChanged: () => Promise<void>;
 }) {
-  const [sheet, setSheet] = useWorkbookPreference<string>(listId, "sheet", ""),
-    [item, setItem] = useWorkbookPreference<string>(listId, "item", ""),
-    [query, setQuery] = useWorkbookPreference<string>(listId, "query", ""),
-    [target, setTarget] = useWorkbookPreference<string>(
+  const [target, setTarget] = useWorkbookPreference<string>(
       listId,
       "target",
       initialTableId || tables[0]?.id || "",
@@ -76,7 +70,39 @@ export function InventoryCatalog({
     [categoryManager, setCategoryManager] = useState<
       "paste" | "catalog" | null
     >(null),
-    [removeCategories, setRemoveCategories] = useState(false);
+    [importView, setImportView] = useState<"paste" | "file" | null>(null),
+    [primaryFilter, setPrimaryFilter] = useWorkbookPreference<string[]>(
+      listId,
+      "primaryFilter",
+      [],
+    ),
+    [secondaryFilter, setSecondaryFilter] = useWorkbookPreference<string[]>(
+      listId,
+      "secondaryFilter",
+      [],
+    ),
+    [itemFilter, setItemFilter] = useWorkbookPreference<string[]>(
+      listId,
+      "itemFilter",
+      [],
+    ),
+    [sheetFilter, setSheetFilter] = useWorkbookPreference<string[]>(
+      listId,
+      "sheetFilter",
+      [],
+    );
+  const filters = {
+    primary: primaryFilter,
+    secondary: secondaryFilter,
+    items: itemFilter,
+    sheets: sheetFilter,
+  };
+  const setFilters = (v: typeof filters) => {
+    setPrimaryFilter(v.primary);
+    setSecondaryFilter(v.secondary);
+    setItemFilter(v.items);
+    setSheetFilter(v.sheets);
+  };
   const reloadCategories = async () =>
     setCategories(
       await api(
@@ -137,34 +163,27 @@ export function InventoryCatalog({
   useEffect(() => {
     if (target && !tables.some((t) => t.id === target))
       setTarget(tables[0]?.id ?? "");
-    if (sheet && !tables.some((t) => t.id === sheet)) {
-      setSheet("");
-      setItem("");
-    }
-    if (item && !tables.some((t) => t.aliases.some((a) => a.id === item)))
-      setItem("");
-  }, [tables, target, sheet, item]);
+  }, [tables, target]);
   const grouped = new Map<string, { name: string; links: typeof items }>();
   for (const a of items) {
     if (!grouped.has(a.name)) grouped.set(a.name, { name: a.name, links: [] });
     grouped.get(a.name)!.links.push(a);
   }
-  const available = [...grouped.values()].filter(
-      (g) => !sheet || g.links.some((a) => a.tableId === sheet),
-    ),
-    words = normalize(query).trim().split(/\s+/).filter(Boolean);
+  const available = [...grouped.values()];
   const visible = available.filter(
     (g) =>
-      (!item || g.name === items.find((a) => a.id === item)?.name) &&
-      words.every((w) =>
-        normalize(
-          g.name +
-            " " +
-            groupCategories(g)
-              .map((c) => c.name)
-              .join(" "),
-        ).includes(w),
-      ),
+      (!filters.items.length ||
+        g.links.some((a) => filters.items.includes(a.id))) &&
+      (!filters.sheets.length ||
+        g.links.some((a) => filters.sheets.includes(a.tableId))) &&
+      (!filters.primary.length ||
+        groupCategories(g).some(
+          (c) => c.kind === "PRIMARY" && filters.primary.includes(c.id),
+        )) &&
+      (!filters.secondary.length ||
+        groupCategories(g).some(
+          (c) => c.kind === "SECONDARY" && filters.secondary.includes(c.id),
+        )),
   );
   const bands = new Map<string, { title: string; groups: typeof visible }>();
   for (const g of visible) {
@@ -188,11 +207,7 @@ export function InventoryCatalog({
     g: (typeof visible)[number],
     kind: "PRIMARY" | "SECONDARY",
   ) => {
-    const assigned = groupCategories(g).filter((c) => c.kind === kind),
-      available =
-        categories?.categories.filter(
-          (c) => c.kind === kind && !assigned.some((a) => a.id === c.id),
-        ) ?? [];
+    const assigned = groupCategories(g).filter((c) => c.kind === kind);
     return (
       <td className="inventory-category-cell">
         <div className="inventory-category-chips">
@@ -202,7 +217,7 @@ export function InventoryCatalog({
               className={"inventory-category-chip " + kind.toLowerCase()}
             >
               {c.name}
-              {removeCategories && (
+              {
                 <button
                   type="button"
                   disabled={busy}
@@ -218,27 +233,69 @@ export function InventoryCatalog({
                 >
                   ×
                 </button>
-              )}
+              }
             </span>
           ))}
-        </div>
-        <fieldset disabled={busy || !categories}>
-          <SheetSearchSelect
-            label={`Añadir categoría ${kind === "PRIMARY" ? "principal" : "secundaria"} a ${g.name}`}
-            value=""
-            placeholder={kind === "PRIMARY" ? "+ Principal" : "+ Secundaria"}
-            options={available.map((c) => ({ value: c.id, label: c.name }))}
-            onSelect={async (id) => {
+          <InventoryMultiSelect
+            label={`Categorías ${kind === "PRIMARY" ? "principales" : "secundarias"} de ${g.name}`}
+            values={assigned.map((c) => c.id)}
+            placeholder={
+              assigned.length
+                ? "+"
+                : kind === "PRIMARY"
+                  ? "+ Principal"
+                  : "+ Secundaria"
+            }
+            compact
+            onCreate={async (name, ids) => {
+              await saveCategory({
+                action: "IMPORT",
+                rows: [
+                  {
+                    primary:
+                      kind === "PRIMARY"
+                        ? [
+                            ...(categories?.categories
+                              .filter((c) => ids.includes(c.id))
+                              .map((c) => c.name) ?? []),
+                            name,
+                          ].join(", ")
+                        : "",
+                    secondary:
+                      kind === "SECONDARY"
+                        ? [
+                            ...(categories?.categories
+                              .filter((c) => ids.includes(c.id))
+                              .map((c) => c.name) ?? []),
+                            name,
+                          ].join(", ")
+                        : "",
+                  },
+                ],
+                targetIds: g.links.map((a) => a.id),
+              });
+            }}
+            options={(
+              categories?.categories.filter((c) => c.kind === kind) ?? []
+            ).map((c) => ({ value: c.id, label: c.name }))}
+            disabled={busy || !categories}
+            all={false}
+            onChange={async (ids) => {
               await saveCategory({
                 action: "ASSIGN",
                 ids: g.links.map((a) => a.id),
                 expectedName: g.name,
-                categoryIds: [...categoryIds(g), id],
+                categoryIds: [
+                  ...categoryIds(g).filter(
+                    (id) => categoryById.get(id)?.kind !== kind,
+                  ),
+                  ...ids,
+                ],
               });
             }}
             onError={setMessage}
           />
-        </fieldset>
+        </div>
       </td>
     );
   };
@@ -301,9 +358,13 @@ export function InventoryCatalog({
               name: name.trim(),
             });
             await onChanged();
-            setQuery("");
-            setSheet(target);
-            setItem(created.id);
+
+            setFilters({
+              primary: [],
+              secondary: [],
+              items: [created.id],
+              sheets: [target],
+            });
             setName("");
             setMessage(
               "Inventario agregado. El país se configura en la hoja correspondiente.",
@@ -340,52 +401,103 @@ export function InventoryCatalog({
         </p>
       )}
       {sheetTabs}
+      <div
+        className="row inventory-actions-toolbar"
+        aria-label="Acciones del inventario"
+      >
+        <button
+          type="button"
+          disabled={busy || !categories}
+          onClick={() => setImportView("paste")}
+        >
+          Pegar inventario
+        </button>
+        <button
+          type="button"
+          disabled={busy || !categories}
+          onClick={() => setImportView("file")}
+        >
+          Importar inventario
+        </button>
+        <button
+          type="button"
+          disabled={busy || !categories}
+          onClick={() => setCategoryManager("catalog")}
+        >
+          Ver categorías
+        </button>
+        <details className="inventory-delete-menu">
+          <summary>Eliminar</summary>
+          <div className="inventory-delete-choices">
+            <button
+              type="button"
+              className="danger"
+              disabled={busy || !selectedVisible.length}
+              onClick={() => setBulkIds([...selectedVisible])}
+            >
+              Ítems seleccionados ({selectedGroups})
+            </button>
+            <button
+              type="button"
+              disabled={busy || !categories}
+              onClick={() => setCategoryManager("catalog")}
+            >
+              Categorías principales y secundarias
+            </button>
+            <button
+              type="button"
+              aria-pressed={removing}
+              onClick={() => setRemoving((v) => !v)}
+            >
+              Vínculos con hojas {removing ? "✓" : ""}
+            </button>
+          </div>
+        </details>
+        <span role="status">{selectedGroups} seleccionados</span>
+        <button
+          type="button"
+          onClick={() =>
+            setFilters({ primary: [], secondary: [], items: [], sheets: [] })
+          }
+        >
+          Limpiar filtros
+        </button>
+        {removing && <small>Pulsa × junto a la hoja que quieres quitar.</small>}
+      </div>
       <div className="table-scroll">
         <table className="inventory-catalog-grid inventory-categorized-grid">
           <thead>
             <tr>
-              <th scope="col">
-                <div>Categoría principal</div>
-                <div className="inventory-header-actions">
-                  <button
-                    type="button"
-                    disabled={!categories || busy}
-                    onClick={() => setCategoryManager("paste")}
-                  >
-                    Pegar categorías
-                  </button>
-                  <button
-                    type="button"
-                    disabled={!categories || busy}
-                    onClick={() => setCategoryManager("catalog")}
-                  >
-                    Catálogo
-                  </button>
-                  {!categories && (
-                    <button
-                      type="button"
-                      onClick={() =>
-                        void reloadCategories().catch((e) =>
-                          setMessage(e.message),
-                        )
-                      }
-                    >
-                      Recargar categorías
-                    </button>
-                  )}
-                </div>
-              </th>
-              <th scope="col">
-                <div>Categorías secundarias</div>
-                <button
-                  type="button"
-                  className="category-remove-toggle"
-                  aria-pressed={removeCategories}
-                  onClick={() => setRemoveCategories((v) => !v)}
-                >
-                  Eliminar categorías
-                </button>
-              </th>
+              {(["PRIMARY", "SECONDARY"] as const).map((kind) => (
+                <th key={kind} scope="col">
+                  <div>
+                    {kind === "PRIMARY"
+                      ? "Categoría principal"
+                      : "Categorías secundarias"}
+                  </div>
+                  <InventoryMultiSelect
+                    label={
+                      kind === "PRIMARY"
+                        ? "Filtro de categorías principales"
+                        : "Filtro de categorías secundarias"
+                    }
+                    placeholder="Todas"
+                    options={(
+                      categories?.categories.filter((c) => c.kind === kind) ??
+                      []
+                    ).map((c) => ({ value: c.id, label: c.name }))}
+                    values={
+                      kind === "PRIMARY" ? filters.primary : filters.secondary
+                    }
+                    onChange={(v) =>
+                      setFilters({
+                        ...filters,
+                        [kind === "PRIMARY" ? "primary" : "secondary"]: v,
+                      })
+                    }
+                  />
+                </th>
+              ))}
               <th scope="col">
                 <div className="inventory-header-title">
                   <InventoryCheck
@@ -403,79 +515,26 @@ export function InventoryCatalog({
                   />
                   <span>Inventario ({visible.length})</span>
                 </div>
-                <div className="inventory-header-filters">
-                  {" "}
-                  <input
-                    aria-label="Buscar inventario en catálogo"
-                    placeholder="Buscar por palabra…"
-                    value={query}
-                    onChange={(e) => setQuery(e.target.value)}
-                  />
-                  <SheetSearchSelect
-                    label="Inventario del catálogo"
-                    value={item}
-                    placeholder="Todo el inventario"
-                    options={[
-                      { value: "", label: "Todo el inventario" },
-                      ...available.map((g) => ({
-                        value: g.links[0].id,
-                        label: g.name,
-                      })),
-                    ]}
-                    onSelect={setItem}
-                  />
-                </div>
-                <div className="inventory-header-actions">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setQuery("");
-                      setItem("");
-                      setSheet("");
-                    }}
-                  >
-                    Todos
-                  </button>
-                  <span role="status">{selectedGroups} seleccionados</span>
-                  <button
-                    type="button"
-                    className="danger"
-                    disabled={busy || !selectedVisible.length}
-                    onClick={() => setBulkIds([...selectedVisible])}
-                  >
-                    Eliminar seleccionados
-                  </button>
-                </div>
+                <InventoryMultiSelect
+                  label="Inventario del catálogo"
+                  placeholder="Todo el inventario"
+                  options={available.map((g) => ({
+                    value: g.links[0].id,
+                    label: g.name,
+                  }))}
+                  values={filters.items}
+                  onChange={(v) => setFilters({ ...filters, items: v })}
+                />
               </th>
               <th scope="col">
-                <div className="inventory-header-title">Hojas</div>
-                <div className="inventory-header-filters">
-                  {" "}
-                  <SheetSearchSelect
-                    label="Hoja del inventario"
-                    value={sheet}
-                    placeholder="Todas las hojas"
-                    options={[
-                      { value: "", label: "Todas las hojas" },
-                      ...tables.map((t) => ({ value: t.id, label: t.name })),
-                    ]}
-                    onSelect={(id) => {
-                      setSheet(id);
-                      setItem("");
-                    }}
-                  />
-                  <button
-                    type="button"
-                    className={removing ? "danger" : ""}
-                    aria-pressed={removing}
-                    onClick={() => setRemoving((v) => !v)}
-                  >
-                    Eliminar de las hojas
-                  </button>
-                </div>
-                {removing && (
-                  <small>Pulsa × junto a la hoja que quieres quitar.</small>
-                )}
+                <div>Hojas</div>
+                <InventoryMultiSelect
+                  label="Hojas del inventario"
+                  placeholder="Todas las hojas"
+                  options={tables.map((t) => ({ value: t.id, label: t.name }))}
+                  values={filters.sheets}
+                  onChange={(v) => setFilters({ ...filters, sheets: v })}
+                />
               </th>
             </tr>
           </thead>
@@ -573,6 +632,19 @@ export function InventoryCatalog({
           </p>
         )}
       </div>
+      {importView && categories && (
+        <InventoryImport
+          listId={listId}
+          revision={categories.revision}
+          upload={importView === "file"}
+          onClose={() => setImportView(null)}
+          onSaved={async () => {
+            await onChanged();
+            await reloadCategories();
+            setFilters({ primary: [], secondary: [], items: [], sheets: [] });
+          }}
+        />
+      )}
       {categoryManager && categories && (
         <InventoryCategoryManager
           config={categories}

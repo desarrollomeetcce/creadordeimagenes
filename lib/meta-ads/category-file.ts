@@ -1,6 +1,7 @@
 import JSZip from "jszip";
 import { DOMParser } from "@xmldom/xmldom";
 import { categoryRows, parseCategoryText } from "./category-paste";
+import { inventoryRows, parseInventoryText } from "./inventory-paste";
 import { AppError, demand } from "../errors";
 function decodeText(bytes: Uint8Array) {
   if (bytes[0] === 0xff && bytes[1] === 0xfe)
@@ -13,7 +14,7 @@ function decodeText(bytes: Uint8Array) {
     return new TextDecoder("windows-1252").decode(bytes);
   }
 }
-export async function parseCategoryFile(name: string, encoded: string) {
+async function parseFile(name: string, encoded: string, inventory: boolean) {
   demand(
     /\.(xlsx|csv|tsv|txt)$/i.test(name),
     "Usa un archivo Excel .xlsx, CSV, TSV o TXT.",
@@ -26,7 +27,9 @@ export async function parseCategoryFile(name: string, encoded: string) {
   );
   if (!/\.xlsx$/i.test(name))
     return {
-      rows: parseCategoryText(decodeText(bytes), /\.csv$/i.test(name)),
+      rows: inventory
+        ? parseInventoryText(decodeText(bytes), /\.csv$/i.test(name))
+        : parseCategoryText(decodeText(bytes), /\.csv$/i.test(name)),
       sheetName: null,
     };
   const zip = await JSZip.loadAsync(bytes);
@@ -155,15 +158,33 @@ export async function parseCategoryFile(name: string, encoded: string) {
         "Convierte las fórmulas a valores antes de importar categorías.",
       );
       if (!content.trim()) continue;
-      demand(column < 2, "Usa solo las columnas A y B para las categorías.");
+      demand(
+        column < (inventory ? 4 : 2),
+        inventory
+          ? "Usa solo las columnas A a D del inventario."
+          : "Usa solo las columnas A y B para las categorías.",
+      );
       values[column] = content;
     }
     if (values.some((v) => v?.trim()))
-      records.push([values[0] ?? "", values[1] ?? ""]);
+      records.push(
+        Array.from({ length: inventory ? 4 : 2 }, (_, i) => values[i] ?? ""),
+      );
     demand(records.length <= 501, "Se admiten hasta 500 filas.");
   }
   return {
-    rows: categoryRows(records),
+    rows: inventory ? inventoryRows(records) : categoryRows(records),
     sheetName: sheet.getAttribute("name") ?? "Hoja 1",
   };
 }
+
+export const parseCategoryFile = (name: string, encoded: string) =>
+  parseFile(name, encoded, false) as Promise<{
+    rows: import("./category-paste").CategoryImportRow[];
+    sheetName: string | null;
+  }>;
+export const parseInventoryFile = (name: string, encoded: string) =>
+  parseFile(name, encoded, true) as Promise<{
+    rows: import("./inventory-paste").InventoryImportRow[];
+    sheetName: string | null;
+  }>;

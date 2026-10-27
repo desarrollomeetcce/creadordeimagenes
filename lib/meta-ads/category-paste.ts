@@ -59,10 +59,7 @@ export function categoryRows(records: string[][]): CategoryImportRow[] {
     return { primary, secondary };
   });
 }
-export function parseCategoryText(
-  text: string,
-  csv = false,
-): CategoryImportRow[] {
+export function parseDelimitedRecords(text: string, csv = false): string[][] {
   if (text.length > 200000)
     throw Error("La lista admite hasta 200 000 caracteres.");
   text = text.replace(/^\uFEFF/, "");
@@ -111,5 +108,12 @@ export function parseCategoryText(
   if (quoted) throw Error("Hay comillas sin cerrar.");
   row.push(field);
   records.push(row);
-  return categoryRows(records);
+  return records;
+}
+
+export function parseCategoryText(
+  text: string,
+  csv = false,
+): CategoryImportRow[] {
+  return categoryRows(parseDelimitedRecords(text, csv));
 }

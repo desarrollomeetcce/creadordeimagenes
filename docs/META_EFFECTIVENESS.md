@@ -246,3 +246,11 @@ Eliminar categorías activa X en las etiquetas de cada ítem: quita solo esa eti
 Categorías y revisiones están aisladas por lista de Inventario. Cambios simultáneos rechazan guardados antiguos; Recargar categorías permite revisar otra vez sin reintento automático. Archivar la pestaña conserva el catálogo y las asignaciones históricas. Migración requerida202610270001_inventory_categories, con npm run db:deploy antes de iniciar la aplicación nueva.
 
 Las celdas coloreadas por una regla muestran su fondo elegido sin el subrayado adicional azul. El foco de edición se conserva para navegar con teclado; no se cambian las reglas guardadas ni las cifras.
+
+## Inventario: edición compacta y cuatro columnas
+
+- Cabeceras principal/secundaria/inventario/hojas con un solo desplegable buscable y checks múltiples. Todos limpia el criterio; criterios de distintas columnas se cruzan. Preferencias por pestaña.
+- Etiquetas con × permanente. + junto a la última, o +Principal/+Secundaria sin etiquetas. Checks se confirman juntos con Listo; crear desde la búsqueda añade la etiqueta al ítem. Ver categorías permite consultar, crear por nivel y revisar eliminación de una o varias.
+- Barra inmediatamente encima de la tabla: Pegar inventario, Importar inventario, Ver categorías y Eliminar (ítems seleccionados, categorías o vínculos con hojas). Eliminar ítem incluye todas sus hojas inicialmente y revisa el impacto antes de confirmar.
+- Pegado/archivo: Categoría principal | Categorías secundarias | Inventario | Hojas. Comas dentro de categoría/hojas crean etiquetas; nombre de inventario literal único por celda. Hojas deben existir. La selección de archivo prepara la revisión, sin guardar. Hasta500 filas/2MB, XLSX/CSV/TSV/TXT.
+- POST inventory/import añade hojas/ítems/categorías sin reemplazar valores, asigna al grupo literal completo y rechaza colisiones con otra lista o escritura distinta. Revisión categoryRevision, lock884411, OWNER aprobado y auditoría en transacción. Deshacer un lote fallido no deja altas parciales. POST inventory/file solo prepara datos. DELETE_MANY de categorías valida todas antes de borrar.

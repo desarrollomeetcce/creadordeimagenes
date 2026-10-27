@@ -57,7 +57,8 @@ type Action =
       expectedName: string;
       categoryIds: string[];
     }
-  | { action: "DELETE"; categoryId: string };
+  | { action: "DELETE"; categoryId: string }
+  | { action: "DELETE_MANY"; categoryIds: string[] };
 async function fullGroups(
   tx: Prisma.TransactionClient,
   listId: string,
@@ -221,15 +222,20 @@ export async function saveInventoryCategories(
           });
         affected = b.ids.length;
       } else {
+        const ids = b.action === "DELETE" ? [b.categoryId] : b.categoryIds;
         demand(
-          before.categories.some((c) => c.id === b.categoryId),
+          ids.length > 0 &&
+            new Set(ids).size === ids.length &&
+            ids.every((id) => before.categories.some((c) => c.id === id)),
           "Categoría no disponible.",
           404,
         );
         affected = await tx.metaInventoryCategoryAssignment.count({
-          where: { categoryId: b.categoryId },
+          where: { categoryId: { in: ids } },
         });
-        await tx.metaInventoryCategory.delete({ where: { id: b.categoryId } });
+        await tx.metaInventoryCategory.deleteMany({
+          where: { id: { in: ids } },
+        });
       }
       await tx.metaEffectivenessSheet.update({
         where: { id: b.listId },

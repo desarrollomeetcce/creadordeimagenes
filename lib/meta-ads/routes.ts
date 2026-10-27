@@ -81,6 +81,54 @@ export async function metaRoutes(
       ).setMetaStatus(actor, parts[2], b.status, b.expectedStatus),
     );
   }
+  if (path === "inventory/import" && method === "POST") {
+    ownerOnly(actor);
+    const b = z
+      .object({
+        listId: z.string().min(1).max(100),
+        revision: z.number().int().nonnegative(),
+        rows: z
+          .array(
+            z
+              .object({
+                primary: z.string().max(2000),
+                secondary: z.string().max(2000),
+                name: z.string().min(1).max(150),
+                sheets: z.string().min(1).max(2000),
+              })
+              .strict(),
+          )
+          .min(1)
+          .max(500),
+      })
+      .strict()
+      .parse(await body());
+    return send(
+      await (await import("./inventory-import")).importInventory(actor, b),
+    );
+  }
+  if (path === "inventory/file" && method === "POST") {
+    ownerOnly(actor);
+    const b = z
+      .object({
+        name: z.string().min(1).max(255),
+        content: z.string().min(1).max(2700000),
+      })
+      .strict()
+      .parse(await body());
+    try {
+      return send(
+        await (
+          await import("./category-file")
+        ).parseInventoryFile(b.name, b.content),
+      );
+    } catch (e) {
+      if (e instanceof (await import("../errors")).AppError) throw e;
+      throw new (await import("../errors")).AppError(
+        "No se pudo leer el archivo. Usa XLSX sin fórmulas o CSV/TSV con cuatro columnas válidas.",
+      );
+    }
+  }
   if (path === "inventory/categories" && method === "GET") {
     ownerOnly(actor);
     const q = z
@@ -134,6 +182,13 @@ export async function metaRoutes(
             ...base,
             action: z.literal("DELETE"),
             categoryId: z.string().min(1).max(100),
+          })
+          .strict(),
+        z
+          .object({
+            ...base,
+            action: z.literal("DELETE_MANY"),
+            categoryIds: z.array(z.string().min(1).max(100)).min(1).max(1000),
           })
           .strict(),
       ])

@@ -410,3 +410,16 @@ test('Categorías: límites de archivo y codificación Unicode de Excel',async()
  await assert.rejects(()=>parseCategoryFile('categorias.exe',Buffer.from('A\tB').toString('base64')),/xlsx/);await assert.rejects(()=>parseCategoryFile('grande.csv',Buffer.alloc(2000001,65).toString('base64')),/2 MB/);
  const huge=await categoryXlsx('<worksheet>'+ ' '.repeat(8000001)+'</worksheet>');await assert.rejects(()=>parseCategoryFile('expandido.xlsx',huge),/8 MB/);
 });
+
+test('Inventario: cuatro columnas, etiquetas con comas, CSV y validación por fila',async()=>{
+ const {parseInventoryText,inventoryRows}=await import('../lib/meta-ads/inventory-paste');
+ const rows=parseInventoryText('Categoría principal\tCategorías secundarias\tInventario\tHojas\nAmbiental, Civil\tAgua, Suelos\tMonitoreo ambiental\tDiplomados, Colombia');assert.equal(rows.length,1);assert.equal(rows[0].name,'Monitoreo ambiental');assert.deepEqual(splitCategoryNames(rows[0].primary),['Ambiental','Civil']);assert.deepEqual(splitCategoryNames(rows[0].sheets),['Diplomados','Colombia']);
+ assert.deepEqual(parseInventoryText('Ambiental, Civil;Agua, Suelos;Monitoreo ambiental;Diplomados, Colombia',true),rows);
+ assert.throws(()=>inventoryRows([['A','B','','Diplomados']]),/inventario válido/);assert.throws(()=>inventoryRows([['A','B','Producto','']]),/hoja/);assert.throws(()=>inventoryRows([['A','B','Producto','Diplomados','extra']]),/cuatro/);
+});
+test('Inventario: archivo XLSX cuatro columnas y rechazo de quinta/fórmulas',async()=>{
+ const {parseInventoryFile}=await import('../lib/meta-ads/category-file');
+ const content=await categoryXlsx('<worksheet><row><c r="A1" t="inlineStr"><is><t>Ambiental, Civil</t></is></c><c r="B1" t="inlineStr"><is><t>Agua</t></is></c><c r="C1" t="inlineStr"><is><t>Monitoreo</t></is></c><c r="D1" t="inlineStr"><is><t>Diplomados, Colombia</t></is></c></row></worksheet>');assert.equal((await parseInventoryFile('inventario.xlsx',content)).rows[0].sheets,'Diplomados, Colombia');
+ const extra=await categoryXlsx('<worksheet><row><c r="E1"><v>Extra</v></c></row></worksheet>');await assert.rejects(()=>parseInventoryFile('extra.xlsx',extra),/A a D/);
+ const formula=await categoryXlsx('<worksheet><row><c r="C1"><f>1+1</f><v>2</v></c></row></worksheet>');await assert.rejects(()=>parseInventoryFile('formula.xlsx',formula),/fórmulas/);
+});

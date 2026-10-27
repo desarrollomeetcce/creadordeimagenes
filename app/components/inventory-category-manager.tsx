@@ -1,24 +1,12 @@
 "use client";
-import { useEffect, useMemo, useRef, useState } from "react";
-import { engineRequest as api } from "./generation-engine";
-import {
-  parseCategoryText,
-  categoryRows,
-  splitCategoryNames,
-  type CategoryImportRow,
-} from "../../lib/meta-ads/category-paste";
+import { useEffect, useRef, useState } from "react";
 import type {
   InventoryCategoryState,
   InventoryCategoryAction,
-  InventoryCategory,
 } from "./inventory-category-types";
-const blanks = () =>
-  Array.from({ length: 6 }, () => ({ primary: "", secondary: "" }));
+import { InventoryMultiSelect } from "./inventory-multi-select";
 export function InventoryCategoryManager({
   config,
-  selectedIds,
-  selectedCount,
-  initialView = "paste",
   onClose,
   onSave,
   onRefresh,
@@ -32,131 +20,20 @@ export function InventoryCategoryManager({
   onRefresh: () => Promise<void>;
 }) {
   const dialog = useRef<HTMLDialogElement>(null),
-    file = useRef<HTMLInputElement>(null);
-  const [view, setView] = useState(initialView),
-    [rows, setRows] = useState<CategoryImportRow[]>(blanks),
+    [selected, setSelected] = useState<string[]>([]),
+    [review, setReview] = useState<string[] | null>(null),
+    [filter, setFilter] = useState<string[]>([]),
     [busy, setBusy] = useState(false),
     [error, setError] = useState(""),
-    [message, setMessage] = useState(""),
-    [remove, setRemove] = useState(false),
-    [apply, setApply] = useState(false),
-    [deleting, setDeleting] = useState<InventoryCategory | null>(null);
+    [name, setName] = useState(""),
+    [kind, setKind] = useState("PRIMARY");
   useEffect(() => {
     dialog.current?.showModal();
   }, []);
-  const names = (text: string) => {
-    try {
-      return splitCategoryNames(text);
-    } catch {
-      return [];
-    }
-  };
-  const update = (index: number, key: "primary" | "secondary", value: string) =>
-    setRows((old) =>
-      old.map((r, i) => (i === index ? { ...r, [key]: value } : r)),
-    );
-  const paste = (text: string, index: number, key: "primary" | "secondary") => {
-    if (!/[\t\n\r]/.test(text)) return false;
-    try {
-      const next = parseCategoryText(text);
-      if (index + next.length > 500) throw Error("Se admiten hasta 500 filas.");
-      if (key === "secondary" && next.some((r) => r.secondary))
-        throw Error("Pega las dos columnas comenzando en Categoría principal.");
-      setRows((old) => {
-        const out = [...old];
-        while (out.length < index + next.length)
-          out.push({ primary: "", secondary: "" });
-        next.forEach((r, n) => {
-          out[index + n] =
-            key === "primary" ? r : { ...out[index + n], secondary: r.primary };
-        });
-        return out;
-      });
-      setError("");
-    } catch (e) {
-      setError((e as Error).message);
-    }
-    return true;
-  };
-  const importFile = async (f: File) => {
-    setBusy(true);
-    setError("");
-    setMessage("");
-    try {
-      if (f.size > 2000000) throw Error("El archivo admite hasta 2 MB.");
-      const content = await new Promise<string>((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () =>
-          resolve(String(reader.result).split(",")[1] ?? "");
-        reader.onerror = () => reject(Error("No se pudo leer el archivo."));
-        reader.readAsDataURL(f);
-      });
-      const result = await api("meta-ads/inventory/categories/file", "POST", {
-        name: f.name,
-        content,
-      });
-      setRows(result.rows);
-      setView("paste");
-      setMessage(
-        `Archivo preparado: ${f.name}${result.sheetName ? " · " + result.sheetName : ""}. Revisa las categorías y pulsa Guardar.`,
-      );
-    } catch (e) {
-      setError((e as Error).message);
-    } finally {
-      setBusy(false);
-      if (file.current) file.current.value = "";
-    }
-  };
-  const run = async (action: InventoryCategoryAction) => {
-    setBusy(true);
-    setError("");
-    try {
-      await onSave(action);
-      setDeleting(null);
-      if (action.action === "IMPORT") {
-        setView("catalog");
-        setRows(blanks());
-        setMessage(
-          apply
-            ? `Categorías añadidas a ${selectedCount} ítems marcados.`
-            : "Catálogo guardado. Ahora puedes asignar sus categorías a cada ítem.",
-        );
-      } else setMessage("Categoría eliminada del catálogo.");
-    } catch (e) {
-      setError((e as Error).message);
-    } finally {
-      setBusy(false);
-    }
-  };
-  const related = useMemo(() => {
-    const map = new Map<string, Set<string>>();
-    for (const r of config.relations) {
-      if (!map.has(r.primaryId)) map.set(r.primaryId, new Set());
-      map.get(r.primaryId)!.add(r.secondaryId);
-    }
-    return map;
-  }, [config.relations]);
-  const primary = config.categories.filter((c) => c.kind === "PRIMARY"),
-    secondary = config.categories.filter((c) => c.kind === "SECONDARY"),
-    linked = new Set(config.relations.map((r) => r.secondaryId));
-  const chip = (c: InventoryCategory) => (
-    <span
-      className={"inventory-category-chip " + c.kind.toLowerCase()}
-      key={c.id}
-    >
-      {c.name}
-      {remove && (
-        <button
-          type="button"
-          disabled={busy}
-          aria-label={`Eliminar categoría ${c.name} del catálogo`}
-          onClick={() => setDeleting(c)}
-        >
-          ×
-        </button>
-      )}
-    </span>
+  const visible = config.categories.filter(
+    (c) => !filter.length || filter.includes(c.id),
   );
+  const chosen = selected.filter((id) => visible.some((c) => c.id === id));
   return (
     <dialog
       ref={dialog}
@@ -173,49 +50,122 @@ export function InventoryCategoryManager({
           Cerrar
         </button>
       </header>
-      <div className="row category-manager-tabs">
-        <button
-          type="button"
-          aria-pressed={view === "paste"}
-          onClick={() => setView("paste")}
-        >
-          Pegar categorías
-        </button>
-        <button
-          type="button"
-          aria-pressed={view === "catalog"}
-          onClick={() => setView("catalog")}
-        >
-          Catálogo ({config.categories.length})
-        </button>
-        <button
-          type="button"
-          aria-pressed={remove}
-          onClick={() => setRemove((v) => !v)}
-        >
-          Eliminar categorías
-        </button>
-        <button
-          type="button"
-          disabled={busy}
-          onClick={() => file.current?.click()}
-        >
-          Subir archivo
-        </button>
+      <p>
+        Elige categorías principales o secundarias. Al eliminarlas se retiran de
+        los ítems de esta lista; los inventarios y sus cifras se conservan.
+      </p>
+      <form
+        className="row"
+        onSubmit={async (e) => {
+          e.preventDefault();
+          if (!name.trim() || busy) return;
+          setBusy(true);
+          setError("");
+          try {
+            await onSave({
+              action: "IMPORT",
+              rows: [
+                {
+                  primary: kind === "PRIMARY" ? name.trim() : "",
+                  secondary: kind === "SECONDARY" ? name.trim() : "",
+                },
+              ],
+            });
+            setName("");
+          } catch (e) {
+            setError((e as Error).message);
+          } finally {
+            setBusy(false);
+          }
+        }}
+      >
         <input
-          ref={file}
-          type="file"
-          hidden
-          aria-label="Archivo de categorías"
-          accept=".xlsx,.csv,.tsv,.txt"
-          onChange={(e) => {
-            const f = e.target.files?.[0];
-            if (f) void importFile(f);
-          }}
+          aria-label="Nueva categoría"
+          placeholder="Nombre de la categoría…"
+          value={name}
+          maxLength={80}
+          disabled={busy}
+          onChange={(e) => setName(e.target.value)}
         />
+        <select
+          aria-label="Tipo de categoría"
+          value={kind}
+          disabled={busy}
+          onChange={(e) => setKind(e.target.value)}
+        >
+          <option value="PRIMARY">Principal</option>
+          <option value="SECONDARY">Secundaria</option>
+        </select>
+        <button disabled={busy || !name.trim()}>Añadir categoría</button>
+      </form>
+      <InventoryMultiSelect
+        label="Categorías para buscar"
+        options={config.categories.map((c) => ({
+          value: c.id,
+          label: `${c.name} · ${c.kind === "PRIMARY" ? "Principal" : "Secundaria"}`,
+        }))}
+        values={filter}
+        onChange={setFilter}
+      />
+      <label className="inventory-category-select-all">
+        <input
+          type="checkbox"
+          checked={!!visible.length && chosen.length === visible.length}
+          disabled={busy}
+          onChange={(e) =>
+            setSelected(
+              e.target.checked
+                ? [...new Set([...selected, ...visible.map((c) => c.id)])]
+                : selected.filter((id) => !visible.some((c) => c.id === id)),
+            )
+          }
+        />
+        Seleccionar todas las categorías visibles
+      </label>
+      <div className="inventory-category-delete-list">
+        {visible.map((c) => (
+          <div key={c.id} className="inventory-category-delete-item">
+            <label>
+              <input
+                type="checkbox"
+                checked={selected.includes(c.id)}
+                disabled={busy}
+                onChange={(e) =>
+                  setSelected(
+                    e.target.checked
+                      ? [...selected, c.id]
+                      : selected.filter((id) => id !== c.id),
+                  )
+                }
+              />
+              <span>
+                {c.name}
+                <small>
+                  {c.kind === "PRIMARY" ? "Principal" : "Secundaria"}
+                </small>
+              </span>
+            </label>
+            <button
+              type="button"
+              disabled={busy}
+              aria-label={`Eliminar categoría ${c.name}`}
+              onClick={() => setReview([c.id])}
+            >
+              ×
+            </button>
+          </div>
+        ))}
       </div>
+      <button
+        type="button"
+        className="danger"
+        disabled={busy || !chosen.length}
+        onClick={() => setReview(chosen)}
+      >
+        Eliminar seleccionadas ({chosen.length})
+      </button>
       {error && (
-        <p role="alert" className="sheet-message">
+        <p role="alert">
           {error}
           <button
             type="button"
@@ -224,6 +174,7 @@ export function InventoryCategoryManager({
               setBusy(true);
               try {
                 await onRefresh();
+                setReview(null);
                 setError("");
               } catch (e) {
                 setError((e as Error).message);
@@ -232,241 +183,57 @@ export function InventoryCategoryManager({
               }
             }}
           >
-            Recargar categorías
+            Recargar
           </button>
         </p>
       )}
-      {message && (
-        <p role="status" className="sheet-message">
-          {message}
-        </p>
-      )}
-      {view === "paste" ? (
-        <>
-          <p>
-            Pega desde Excel: primera columna, categorías principales; segunda,
-            secundarias. Separa varias categorías de una celda con comas.
-            También puedes editar las celdas antes de guardar.
-          </p>
-          <div className="table-scroll category-paste-scroll">
-            <table className="category-paste-grid">
-              <thead>
-                <tr>
-                  <th>Categoría principal</th>
-                  <th>Categorías secundarias</th>
-                </tr>
-              </thead>
-              <tbody>
-                {rows.map((r, index) => (
-                  <tr key={index}>
-                    {(["primary", "secondary"] as const).map((key) => (
-                      <td key={key}>
-                        <input
-                          aria-label={`${key === "primary" ? "Categoría principal" : "Categorías secundarias"} fila ${index + 1}`}
-                          value={r[key]}
-                          disabled={busy}
-                          maxLength={2000}
-                          placeholder={
-                            key === "primary"
-                              ? "Ambiental, Civil"
-                              : "Agua, Estructuras"
-                          }
-                          onChange={(e) => update(index, key, e.target.value)}
-                          onPaste={(e) => {
-                            if (
-                              paste(
-                                e.clipboardData.getData("text/plain"),
-                                index,
-                                key,
-                              )
-                            )
-                              e.preventDefault();
-                          }}
-                          onKeyDown={(e) => {
-                            if (
-                              ["Enter", "ArrowDown", "ArrowUp"].includes(e.key)
-                            ) {
-                              const next =
-                                index + (e.key === "ArrowUp" ? -1 : 1);
-                              if (next < 0 || next >= 500) return;
-                              e.preventDefault();
-                              if (next >= rows.length)
-                                setRows((old) => [
-                                  ...old,
-                                  { primary: "", secondary: "" },
-                                ]);
-                              requestAnimationFrame(() =>
-                                dialog.current
-                                  ?.querySelector<HTMLInputElement>(
-                                    `[aria-label="${key === "primary" ? "Categoría principal" : "Categorías secundarias"} fila ${next + 1}"]`,
-                                  )
-                                  ?.focus(),
-                              );
-                            }
-                          }}
-                        />
-                        <div className="inventory-category-chips">
-                          {names(r[key]).map((name) => (
-                            <span
-                              className="inventory-category-chip"
-                              key={name}
-                            >
-                              {name}
-                              {remove && (
-                                <button
-                                  type="button"
-                                  disabled={busy}
-                                  aria-label={`Quitar ${name} de fila ${index + 1} ${key}`}
-                                  onClick={() =>
-                                    update(
-                                      index,
-                                      key,
-                                      names(r[key])
-                                        .filter((n) => n !== name)
-                                        .join(", "),
-                                    )
-                                  }
-                                >
-                                  ×
-                                </button>
-                              )}
-                            </span>
-                          ))}
-                        </div>
-                      </td>
-                    ))}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-          <div className="row category-manager-actions">
-            <button
-              type="button"
-              disabled={busy || rows.length >= 500}
-              onClick={() =>
-                setRows((old) => [...old, { primary: "", secondary: "" }])
-              }
-            >
-              + Fila
-            </button>
-            <label>
-              <input
-                type="checkbox"
-                checked={apply}
-                disabled={busy || !selectedIds.length}
-                onChange={(e) => setApply(e.target.checked)}
-              />
-              También añadir a {selectedCount} ítems marcados
-            </label>
-            <button
-              type="button"
-              className="primary"
-              disabled={busy}
-              onClick={() => {
-                try {
-                  const parsed = categoryRows(
-                    rows.map((r) => [r.primary, r.secondary]),
-                  );
-                  void run({
-                    action: "IMPORT",
-                    rows: parsed,
-                    ...(apply && selectedIds.length
-                      ? { targetIds: selectedIds }
-                      : {}),
-                  });
-                } catch (e) {
-                  setError((e as Error).message);
-                }
-              }}
-            >
-              Guardar categorías
-            </button>
-          </div>
-          <small>
-            Sin marcar esta opción, se crea solo el catálogo. Si la marcas,
-            todas las categorías pegadas se añaden a cada ítem seleccionado.
-            Formatos: Excel .xlsx, CSV, TSV y TXT; hasta 500 filas.
-          </small>
-        </>
-      ) : (
-        <>
-          <p>
-            Estas categorías están disponibles para asignarlas a los ítems de
-            esta lista.
-          </p>
-          <div className="table-scroll">
-            <table className="category-catalog-grid">
-              <thead>
-                <tr>
-                  <th>Categoría principal</th>
-                  <th>Categorías secundarias</th>
-                </tr>
-              </thead>
-              <tbody>
-                {primary.map((p) => (
-                  <tr key={p.id}>
-                    <td>{chip(p)}</td>
-                    <td>
-                      <div className="inventory-category-chips">
-                        {secondary
-                          .filter((s) => related.get(p.id)?.has(s.id))
-                          .map(chip)}
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-                {secondary.some((s) => !linked.has(s.id)) && (
-                  <tr>
-                    <td>Sin principal</td>
-                    <td>
-                      <div className="inventory-category-chips">
-                        {secondary.filter((s) => !linked.has(s.id)).map(chip)}
-                      </div>
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-          {!config.categories.length && (
-            <p>
-              Todavía no hay categorías. Usa Pegar categorías o Subir archivo.
-            </p>
-          )}
-        </>
-      )}
-      {deleting && (
+      {review && (
         <section
           className="category-delete-review"
-          aria-label="Confirmar eliminación de categoría"
+          aria-label="Confirmar eliminación de categorías"
         >
           <p>
-            Se eliminará «{deleting.name}» del catálogo y de{" "}
+            Se eliminarán {review.length} categorías:{" "}
+            {config.categories
+              .filter((c) => review.includes(c.id))
+              .map((c) => c.name)
+              .join(", ")}
+            . Se retirarán de{" "}
             {
               Object.values(config.assignments).filter((ids) =>
-                ids.includes(deleting.id),
+                ids.some((id) => review.includes(id)),
               ).length
             }{" "}
-            registros del inventario. Los ítems y sus cifras se conservarán.
+            registros. Los ítems y las cifras se conservarán.
           </p>
           <div className="row">
             <button
               type="button"
               disabled={busy}
-              onClick={() => setDeleting(null)}
+              onClick={() => setReview(null)}
             >
-              Cancelar eliminación
+              Cancelar
             </button>
             <button
               type="button"
-              className="danger"
               disabled={busy}
-              onClick={() =>
-                void run({ action: "DELETE", categoryId: deleting.id })
-              }
+              className="danger"
+              onClick={async () => {
+                setBusy(true);
+                setError("");
+                try {
+                  await onSave({ action: "DELETE_MANY", categoryIds: review });
+                  setSelected(selected.filter((id) => !review.includes(id)));
+                  setFilter(filter.filter((id) => !review.includes(id)));
+                  setReview(null);
+                } catch (e) {
+                  setError((e as Error).message);
+                } finally {
+                  setBusy(false);
+                }
+              }}
             >
-              Eliminar categoría del catálogo
+              Confirmar eliminación
             </button>
           </div>
         </section>

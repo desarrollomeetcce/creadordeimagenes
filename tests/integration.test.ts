@@ -12278,6 +12278,29 @@ test("Integración HTTP + PostgreSQL (base exclusiva de pruebas, sin llamadas ex
       assert.equal((await get(foreign.id)).body.categories.length,1);
       const archived=(await owner.call('meta-ads/workbook-sheets/'+list.id+'/delete-preview')).body;assert.equal(archived.counts.categories,state.categories.length);assert.equal((await owner.call('meta-ads/workbook-sheets/'+list.id,'DELETE',{token:archived.token,confirmedName:archived.sheet.name})).status,200);assert.equal((await get()).status,404);assert.equal((await write(state.revision,{action:'DELETE',categoryId:state.categories[0].id})).status,404);assert.equal(await db.metaInventoryCategory.count({where:{sheetId:list.id}}),state.categories.length);
     });
+    await t.test('Inventario cuatro columnas: importación atómica, grupos exactos, cifras y eliminación múltiple de categorías',async()=>{
+      const list=(await owner.call('meta-ads/workbook-sheets','POST',{kind:'INVENTORY'})).body;
+      const foreign=(await owner.call('meta-ads/workbook-sheets','POST',{kind:'INVENTORY'})).body;
+      const t1=await db.metaAliasTable.create({data:{name:'Importación Perú '+tag}}),t2=await db.metaAliasTable.create({data:{name:'Importación Colombia '+tag}});
+      const original=await db.metaAlias.create({data:{name:'Monitoreo '+tag,tableId:t1.id,inventorySheetId:list.id}});
+      const row=await db.metaEffectivenessRow.create({data:{aliasId:original.id,country:'PE',currency:'',days:{create:{day:'2026-10-20',sales:7,salesOverridden:true}}}});
+      const get=async()=>(await owner.call('meta-ads/inventory/categories?listId='+list.id)).body;
+      const run=(rows:any[],revision:number,who=owner)=>who.call('meta-ads/inventory/import','POST',{listId:list.id,revision,rows});
+      const data={primary:'Ambiental, Civil',secondary:'Agua, Suelos',name:original.name,sheets:t1.name+', '+t2.name};
+      const file=await owner.call('meta-ads/inventory/file','POST',{name:'inventario.csv',content:Buffer.from(`Categoría principal;Categorías secundarias;Inventario;Hojas\n${data.primary};${data.secondary};${data.name};${data.sheets}`).toString('base64')});assert.equal(file.status,200);assert.equal(await db.metaInventoryCategory.count({where:{sheetId:list.id}}),0);
+      assert.equal((await run(file.body.rows,0,admin)).status,403);assert.equal((await run(file.body.rows,0)).status,200);
+      let state=await get();assert.equal(state.categories.length,4);assert.equal(state.relations.length,4);
+      const leaves=await db.metaAlias.findMany({where:{name:original.name,inventorySheetId:list.id}});assert.equal(leaves.length,2);assert.deepEqual(state.assignments[leaves[0].id].sort(),state.assignments[leaves[1].id].sort());assert.equal((await db.metaEffectivenessDay.findUniqueOrThrow({where:{rowId_day:{rowId:row.id,day:'2026-10-20'}}})).sales,7);
+      assert.equal((await run([data],0)).status,409);assert.equal((await run([data],state.revision)).status,200);assert.equal(await db.metaAlias.count({where:{name:original.name}}),2);state=await get();
+      const bad=[{...data,name:'Debe revertirse '+tag},{...data,name:'Otro '+tag,sheets:'No existe '+tag}];assert.equal((await run(bad,state.revision)).status,400);assert.equal(await db.metaAlias.count({where:{name:bad[0].name}}),0);assert.equal((await get()).revision,state.revision);
+      const blocked=await db.metaAlias.create({data:{name:'Ajeno '+tag,tableId:t1.id,inventorySheetId:foreign.id}});assert.equal((await run([{...data,name:blocked.name,sheets:t1.name}],state.revision)).status,409);assert.equal((await get()).revision,state.revision);
+      assert.equal((await run([{...data,name:data.name.toUpperCase()}],state.revision)).status,409);
+      const catIds=state.categories.slice(0,2).map((c:any)=>c.id);
+      const stale=(await owner.call('meta-ads/aliases/'+original.id+'/delete-preview')).body;
+      const removed=await owner.call('meta-ads/inventory/categories','POST',{listId:list.id,revision:state.revision,action:'DELETE_MANY',categoryIds:catIds});assert.equal(removed.status,200);assert.equal(removed.body.categories.length,2);assert.equal(await db.metaAlias.count({where:{name:original.name}}),2);assert.equal((await owner.call('meta-ads/aliases/'+original.id,'DELETE',{token:stale.token})).status,409);
+      assert.equal((await owner.call('meta-ads/inventory/categories','POST',{listId:list.id,revision:removed.body.revision,action:'DELETE_MANY',categoryIds:[removed.body.categories[0].id,'missing']})).status,404);assert.equal((await get()).categories.length,2);
+      const archived=(await owner.call('meta-ads/workbook-sheets/'+list.id+'/delete-preview')).body;assert.equal((await owner.call('meta-ads/workbook-sheets/'+list.id,'DELETE',{token:archived.token,confirmedName:archived.sheet.name})).status,200);assert.equal((await run([data],removed.body.revision)).status,404);
+    });
     await t.test('Pestañas: eliminar Totales/Asesores/Inventario conserva referencias e historial y permite borrar la última',async()=>{
       const create=async(kind:string)=>{const r=await owner.call('meta-ads/workbook-sheets','POST',{kind});assert.equal(r.status,201);return r.body;};
       const people=await create('ADVISORS'),inventory=await create('INVENTORY'),totals=await create('TOTALS');

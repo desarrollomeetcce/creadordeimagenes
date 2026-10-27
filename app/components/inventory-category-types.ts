@@ -22,4 +22,5 @@ export type InventoryCategoryAction =
       expectedName: string;
       categoryIds: string[];
     }
-  | { action: "DELETE"; categoryId: string };
+  | { action: "DELETE"; categoryId: string }
+  | { action: "DELETE_MANY"; categoryIds: string[] };
