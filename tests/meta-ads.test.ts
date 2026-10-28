@@ -579,9 +579,9 @@ test('Detalle de Totales: manual y automático conservan sus fuentes, cero, N.A.
   const { manualTotalColumns, automaticTotalColumns, totalDetailValue, totalDetailSummary } = await import('../lib/meta-ads/totals-detail');
   const good = (value: number | null) => ({ value, known: value === null ? 0 : 1, expected: 1, na: 0, partial: value === null, pending: false });
   const day = { revision: 0, manual: { baseManual: 3, totalSpend: 0, fixedCost: 'NA' }, sums: { sales: good(6), budget: good(10), base: good(12), spend: good(15), fixedCost: good(2) } } as any;
-  assert.deepEqual(manualTotalColumns.map(c => totalDetailValue(day,c).value), [6,10,3,0,null,null]);
+  assert.deepEqual(manualTotalColumns.map(c => totalDetailValue(day,c).value), [6,10,3,null,0,null]);
   assert.deepEqual(automaticTotalColumns.map(c => totalDetailValue(day,c).value), [6,12,15,2,null]);
-  assert.equal(totalDetailValue(day,manualTotalColumns[4]).na,1);
+  assert.equal(totalDetailValue(day,manualTotalColumns[5]).na,1);
   const summary = totalDetailSummary([good(6),good(0),good(null)]); assert.equal(summary.value,6); assert.equal(summary.known,2); assert(summary.partial);
   assert.equal(totalDetailSummary([good(6),{...good(null),pending:true}]).value,null);
   assert.equal(totalDetailSummary([good(null)]).value,null);

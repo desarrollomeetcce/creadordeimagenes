@@ -31,14 +31,14 @@ export const manualTotalColumns = [
   { key: "sales", label: "V", name: "Ventas", sum: true },
   { key: "budget", label: "P", name: "Presupuesto", sum: true },
   { key: "baseManual", label: "BM", name: "Base manual", sum: false },
-  { key: "totalSpend", label: "GM", name: "Gasto manual", sum: false },
-  { key: "fixedCost", label: "CF", name: "Costos fijos", sum: false },
   {
     key: "advisorBase",
     label: "BC",
     name: "Base por contactar",
     sum: false,
   },
+  { key: "totalSpend", label: "GM", name: "Gasto manual", sum: false },
+  { key: "fixedCost", label: "CF", name: "Costos fijos", sum: false },
 ] as const;
 export const automaticTotalColumns = [
   { key: "sales", label: "V", name: "Ventas", sum: true },

@@ -1495,3 +1495,9 @@ La última propuesta mantiene tanto BM como BC con selección de asesores y cant
 Editor de Totales de640px máximo, una línea por asesor y cantidad y botón + Asesor; explicación breve del total y atribución individual. Búsqueda muestra Buscar asesor en lugar del identificador técnico y no ofrece personas elegidas en otras líneas. Conserva sumatoria diaria en la celda y cantidades individuales consolidadas por asesor/hojas/países, independencia BM/BC, edición absoluta y controles de guardado. Estilo móvil mantiene búsqueda/cantidad juntas; el editor por país de Asesores conserva su distribución. Sin cambios al servidor, persistencia ni cifras existentes.
 
 186/186 unitarias, TypeScript/build y Chromium aprobados: búsqueda escrita, placeholder legible, compacto640px/móvil, reparto de varios asesores con total500/700 en la celda, consolidación individual por país/hoja, gráficos, referencias históricas, digitación y pérdidas de respuesta sin reintentos. Sin errores JS/API, cambios de servidor/migración o llamadas externas. Publicación automática separada de verificación externa de Hostinger.
+
+### BC contigua a BM
+
+Totales manual ordena V/P/BM/BC/GM/CF. Asesores y desglose diario mantienen BM/BC contiguas; el histórico comparativo automático coloca también ambas juntas. Se ajustan las referencias de los indicadores para seguir usando GM, BM y BC correctos después del cambio de posición. Sin cambios a valores, asignaciones, APIs o esquema; anchos y editores permanecen por clave de columna.
+
+186/186 unitarias, TypeScript/build y ambos recorridos Chromium aprobados. El encabezado real confirma BM seguida de BC; GM/V y GM/BM conservan valores y fuentes, al igual que repartos, consolidación de asesores, gráficos, móvil y guardados inciertos sin reintentos. Sin errores JS/API o solicitudes externas. Main activa publicación automática; Hostinger se verifica separadamente.

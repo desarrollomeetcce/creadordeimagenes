@@ -64,11 +64,12 @@ export function TotalsDetail({
           ),
         ]
       : [
-          ...automaticTotalColumns,
+          ...automaticTotalColumns.filter((c) => c.key !== "advisorBase"),
           ...manualTotalColumns.filter(
             (c) =>
               c.key === "budget" ||
               c.key === "baseManual" ||
+              c.key === "advisorBase" ||
               c.key === "totalSpend",
           ),
         ];
@@ -85,8 +86,8 @@ export function TotalsDetail({
     totalDetailSummary(focusDays.map((day) => value(day, column)));
   const sold = summarize(manualTotalColumns[0]),
     bm = summarize(manualTotalColumns[2]),
-    ba = summarize(manualTotalColumns[5]),
-    gm = summarize(manualTotalColumns[3]),
+    ba = summarize(manualTotalColumns[3]),
+    gm = summarize(manualTotalColumns[4]),
     base = summarize(automaticTotalColumns[1]),
     spend = summarize(automaticTotalColumns[2]);
   const ratios = [
@@ -480,7 +481,7 @@ export function TotalsDetail({
                             percent: true,
                           },
                           {
-                            n: manualTotalColumns[3],
+                            n: manualTotalColumns[4],
                             d: manualTotalColumns[0],
                             percent: false,
                           },

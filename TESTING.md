@@ -1306,3 +1306,9 @@ Validación de la revisión compacta definitiva: `/workspace/work/advisor-compac
 -186/186 unitarias, TypeScript/build aprobados. Sin cambios de servidor/esquema;195/195 integraciones anteriores aplicables.
 - Chromium (`/workspace/work/base-compact-browser.txt`, `/workspace/work/base-compact-bm-browser.txt`) comprueba búsqueda escribiendo el nombre, placeholder Buscar asesor sin __choose, ancho máximo640px y móvil390px. Ambos repartos300+200 muestran500 y edición absoluta500+200 muestra700. Asesores conserva su cantidad propia, consolida países/hojas y detalle/gráficos, sin mezclar BM/BC/B ni distribuir conteos por moneda.
 - Conserva referencias previas, respuesta perdida tras COMMIT sin reintentos, digitación lenta sin guardar números parciales y cierres sin duplicados. Cero errores JS/API o llamadas externas. Captura `/workspace/work/base-compact-mobile.png`; logs unit/typecheck/build del mismo prefijo. Main activa publicación automática; Hostinger no se considera verificado solo por el push.
+
+### BC inmediatamente después de BM
+
+-186/186 unitarias, TypeScript y build aprobados; se actualizan expectativas de orden sin cambiar fuentes/cifras. Backend/esquema intactos;195/195 integraciones anteriores aplicables.
+- Chromium (`/workspace/work/bc-order-browser.txt`) comprueba en el encabezado real que BM va seguida de BC, además de reparto/suma, edición, columna individual, gráficos y móvil. Recorrido BM (`/workspace/work/bc-order-bm-browser.txt`) vuelve a verificar indicadores manuales/Meta (GM/V, GM/BM), consolidación y referencias antiguas, para detectar confusión de índices tras mover la columna.
+- Evidencias unit/typecheck/build con prefijo `/workspace/work/bc-order-`. Sin errores JS/API o llamadas externas. Publicación automática separada de verificación de Hostinger.
