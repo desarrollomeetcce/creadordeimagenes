@@ -1561,3 +1561,10 @@ Nuevo Ver detalle de la hoja en cabecera de inventario de todas las hojas financ
 El detalle de Totales ahora utiliza exclusivamente V/P/BC/BM/GM/CF en manual y V/B/BC/G/CF en automático: resumen, indicadores, selectores de gráfico e histórico sin columnas cruzadas. Hoy fija fecha de Lima y V/P/BC; ayer fija el día previo y V/BM/GM/CF. Tablas de productos filtran por origen y nunca asignan a diplomados importes manuales de bloque; detalle diario de asesores muestra únicamente las bases de la vista. Motor de movimiento vertical compartido para Totales y análisis de toda la hoja, con preferencias independientes, navegación en el mismo orden, teclado/restablecer y cabecera fija conservados. Sin nuevas rutas ni esquema.
 
 195/195 unitarias y TypeScript/build aprobados. Tres suites de navegador en TESTING verifican inventario, hoja completa y Totales, sin escrituras financieras ni llamadas externas.
+
+
+### Cifras grandes, contraste y opción Sin color
+
+Números de las tablas a16px en negrita, manteniendo cabeceras compactas y ajuste de tamaño cuando una columna se estrecha. Contraste negro/blanco calculado sobre el fondo efectivo, incluidas transparencias/colores personalizados; responde a cambio de tema, color y foco. Observadores de tablas tardías se activan después de la carga sin cambiar valores ni formatos. Auto/Hoy/D+1 permiten Sin color como preferencia explícita persistente, independiente de Restablecer. Tablas en detalles recuperan fondo normal; barras/subtítulos conservan su color. La celda explica por tooltip si el fondo viene de una regla de valor o de su procedencia; no se inventa una regla especial para el1 ni se borran configuraciones existentes.
+
+195 unitarias, TypeScript/build y Chromium aprobados. Verifica lectura16px, contraste≥4.5 claro/oscuro y fondos extremos, Sin color en tres categorías/persistencia/reset, fondo neutro en detalle y números intactos en Asesores/hojas financieras; móvil y cero escrituras/errores/llamadas externas. Evidencia en TESTING. Main y despliegue externo se registran por separado.

@@ -1,4 +1,5 @@
 "use client";
+import { useSheetTextFit } from "./use-sheet-text-fit";
 import { subscribeAdvisorSalesChanged } from "./advisor-sales-events";
 import { useSheetWidths } from "./use-sheet-widths";
 import { totalSourceBlocks } from "../../lib/meta-ads/total-source-blocks";
@@ -49,6 +50,11 @@ export function EffectivenessTotals({
   tables: { id: string; name: string }[];
   initialTableId: string;
 }) {
+  const numbersTable = useRef<HTMLTableElement>(null);
+  useSheetTextFit(
+    numbersTable,
+    "td[data-metric].sheet-derived, td[data-metric] input.sheet-cell, td[data-metric] .manual-base-cell",
+  );
   const { widths, resize, warning } = useSheetWidths("totals:" + listId),
     rowsLayout = useSheetHeights("totals:" + listId);
   const handle = (key: string, label: string, resetWidth?: number) => (
@@ -475,6 +481,7 @@ export function EffectivenessTotals({
       {!!data.length && (
         <div className="table-scroll effectiveness-scroll sheet-scroll">
           <table
+            ref={numbersTable}
             className="effectiveness-grid sheet-totals-grid sheet-resizable-table"
             style={{
               width: layoutColumns.reduce(

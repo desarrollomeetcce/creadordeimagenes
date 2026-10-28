@@ -1,4 +1,5 @@
 "use client";
+import { useSheetTextFit } from "./use-sheet-text-fit";
 import { SheetDataFillBadge } from "./sheet-data-fill-badge";
 import type { AdvisorPeriodView } from "../../lib/meta-ads/advisor-period-history";
 import { useSheetWidths } from "./use-sheet-widths";
@@ -45,6 +46,11 @@ export function AdvisorsSheet({
   onChanged: () => Promise<void>;
   onOpenPeriod?: (period: AdvisorPeriodView) => void;
 }) {
+  const numbersTable = useRef<HTMLTableElement>(null);
+  useSheetTextFit(
+    numbersTable,
+    "td[data-readonly=true], td[aria-label^='BC '], .advisor-absence-trigger, .advisor-sales-detail-trigger",
+  );
   const { widths, resize, warning } = useSheetWidths("advisors:" + listId),
     rowsLayout = useSheetHeights("advisors:" + listId);
   const handle = (key: string, label: string) => (
@@ -336,6 +342,7 @@ export function AdvisorsSheet({
       {valid && (
         <div className="table-scroll effectiveness-scroll">
           <table
+            ref={numbersTable}
             className="effectiveness-grid advisor-grid sheet-resizable-table"
             style={{
               width:

@@ -14,10 +14,15 @@ export function EffectivenessLegend() {
     for (const key of keys) {
       const color = palette.colors[key];
       if (color) {
-        root.style.setProperty(`--fill-${key}`, color);
+        root.style.setProperty(
+          `--fill-${key}`,
+          color === "none" ? "transparent" : color,
+        );
         root.style.setProperty(
           `--fill-${key}-ink`,
-          `color-mix(in srgb,${color} 45%,var(--ink))`,
+          color === "none"
+            ? "var(--ink)"
+            : `color-mix(in srgb,${color} 45%,var(--ink))`,
         );
       }
     }
@@ -119,7 +124,7 @@ export function EffectivenessLegend() {
         <SheetTabColorDialog
           key={editing}
           title="Color de los datos"
-          resetLabel={editing === "manual" ? "Sin color" : "Restablecer color"}
+          onClear={() => palette.setColor(editing, "none")}
           name={names[editing]}
           color={palette.colors[editing]}
           description="Se aplica a esta categoría en todas las tablas. Se recuerda en este navegador para tu cuenta; los fondos personalizados de columnas o reglas conservan su prioridad."

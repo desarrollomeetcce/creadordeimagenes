@@ -15,17 +15,26 @@ export function useSheetTabColors(userId: string, scope = "tab") {
       const colors: Record<string, string> = {};
       if (raw && typeof raw === "object" && !Array.isArray(raw))
         for (const [id, c] of Object.entries(raw).slice(0, 1000))
-          if (id.length <= 100 && valid(c)) colors[id] = c;
+          if (
+            id.length <= 100 &&
+            (valid(c) || (scope === "data" && c === "none"))
+          )
+            colors[id] = c;
       setState({ key, colors });
       setWarning("");
     } catch {
       setState({ key, colors: {} });
       setWarning("No se pudieron recuperar los colores de las pestañas.");
     }
-  }, [key]);
+  }, [key, scope]);
   const colors = state.key === key ? state.colors : {};
   const setColor = (id: string, color?: string) => {
-    if (color !== undefined && !valid(color)) return;
+    if (
+      color !== undefined &&
+      !valid(color) &&
+      !(scope === "data" && color === "none")
+    )
+      return;
     const next = { ...colors };
     if (color) next[id] = color;
     else delete next[id];
@@ -70,10 +79,12 @@ export function SheetTabColorDialog({
   color,
   onApply,
   onClose,
+  onClear,
   title = "Color de pestaña",
   resetLabel = "Restablecer color",
   description = "Se recuerda en este navegador para tu cuenta. La pestaña abierta conserva una marca de selección.",
 }: {
+  onClear?: () => void;
   resetLabel?: string;
   title?: string;
   description?: string;
@@ -83,7 +94,7 @@ export function SheetTabColorDialog({
   onClose: () => void;
 }) {
   const dialog = useRef<HTMLDialogElement>(null),
-    [draft, setDraft] = useState(color || "#276699");
+    [draft, setDraft] = useState(valid(color) ? color : "#276699");
   useEffect(() => {
     dialog.current?.showModal();
   }, []);
@@ -102,6 +113,7 @@ export function SheetTabColorDialog({
         </button>
       </div>
       <p>{name}</p>
+      {color === "none" && <p className="hint">Sin color aplicado</p>}
       <div
         className="sheet-tab-color-swatches"
         role="group"
@@ -148,6 +160,17 @@ export function SheetTabColorDialog({
         >
           Aplicar color
         </button>
+        {onClear && (
+          <button
+            type="button"
+            onClick={() => {
+              onClear();
+              onClose();
+            }}
+          >
+            Sin color
+          </button>
+        )}
         <button
           type="button"
           onClick={() => {

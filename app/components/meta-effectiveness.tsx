@@ -1,7 +1,10 @@
 "use client";
 import { SheetSalesDetail } from "./sheet-sales-detail";
 import { SheetDataFillBadge } from "./sheet-data-fill-badge";
-import { sheetMetricDataFill } from "../../lib/meta-ads/sheet-data-fill";
+import {
+  sheetMetricDataFill,
+  sheetDataFillLabels,
+} from "../../lib/meta-ads/sheet-data-fill";
 import type { PeriodTableLink } from "../../lib/meta-ads/period-table-link";
 import {
   notifyAdvisorSalesChanged,
@@ -2146,19 +2149,20 @@ export function MetaEffectiveness({
                               : (c?.[m.key] ?? null),
                             r.currency || "USD",
                           );
+                          const fillKind = sheetMetricDataFill(m.key, {
+                            linked: !!c?.linked?.[m.key],
+                            synced: !!c?.synced?.[m.key],
+                            manual: !!c?.manual?.includes(m.key),
+                            automaticNa: !!c?.automaticNa?.includes(m.key),
+                            received:
+                              m.key === "fixedCost" &&
+                              !c?.manual?.includes(m.key) &&
+                              !!c?.sourceFixedCost?.length,
+                          });
                           return (
                             <td
                               key={d + m.label}
-                              data-fill-kind={sheetMetricDataFill(m.key, {
-                                linked: !!c?.linked?.[m.key],
-                                synced: !!c?.synced?.[m.key],
-                                manual: !!c?.manual?.includes(m.key),
-                                automaticNa: !!c?.automaticNa?.includes(m.key),
-                                received:
-                                  m.key === "fixedCost" &&
-                                  !c?.manual?.includes(m.key) &&
-                                  !!c?.sourceFixedCost?.length,
-                              })}
+                              data-fill-kind={fillKind}
                               data-na={c?.na?.includes(m.key) || undefined}
                               data-auto-na={
                                 c?.automaticNa?.includes(m.key) || undefined
@@ -2234,7 +2238,7 @@ export function MetaEffectiveness({
                                 }
                                 onError={setMessage}
                                 onSave={(v) => editCell(r, d, m.key, v)}
-                                hint={`${c?.linked?.[m.key] ? "Vinculada a «" + c.linked[m.key]!.name + "». Edita el origen o desvincula para editar aquí. " + (!c.linked[m.key]!.matched ? "Sin coincidencia exacta de inventario y país. " : "") : ""}${c?.automaticNa?.includes(m.key) ? "N.A. automático por desactivación; vuelve a vacío al activar. " : ""}${c?.synced?.[m.key] ? "Sincronizado desde «" + c.synced[m.key] + "». " : ""}${c?.manual?.includes(m.key) && !c?.linked?.[m.key] ? "Ajuste manual de Efectividad. Originales conservados. " : ""}${m.key === "spend" && !c?.linked?.[m.key] ? "Original Meta: " + (c?.sourceSpend.map((x) => x.currency + " " + x.amount).join(" + ") || "sin datos") + ". " : ""}${c?.fxMissing && c?.[m.key] === null && !c.na?.includes(m.key) ? "Sin tasa. " : ""}${partial || c?.partialMetrics?.includes(m.key) ? "Cobertura parcial. " : ""}${m.key === "fixedCost" && !c?.linked?.[m.key] ? "Original CF: " + (c?.sourceFixedCost.map((x) => x.currency + " " + x.amount).join(" + ") || "sin datos") + ". " : ""}${m.money && !c?.linked?.[m.key] ? c?.fx.map((f) => `${f.date}: 1 ${f.from} = ${f.rate} ${f.to} · ${f.source}`).join("; ") || "" : ""} ${c?.linked?.[m.key] ? "Edita el valor en la hoja de origen." : m.key === "sales" ? "Clic o Enter para elegir asesor y cantidad de ventas." : "Escribe un número o N.A.; vacío restaura el importado en B/G; en P borra el presupuesto."}`}
+                                hint={`${cellColor ? "Fondo por una regla de Colores para este valor. " : sheetDataFillLabels[fillKind] + ". "}${c?.linked?.[m.key] ? "Vinculada a «" + c.linked[m.key]!.name + "». Edita el origen o desvincula para editar aquí. " + (!c.linked[m.key]!.matched ? "Sin coincidencia exacta de inventario y país. " : "") : ""}${c?.automaticNa?.includes(m.key) ? "N.A. automático por desactivación; vuelve a vacío al activar. " : ""}${c?.synced?.[m.key] ? "Sincronizado desde «" + c.synced[m.key] + "». " : ""}${c?.manual?.includes(m.key) && !c?.linked?.[m.key] ? "Ajuste manual de Efectividad. Originales conservados. " : ""}${m.key === "spend" && !c?.linked?.[m.key] ? "Original Meta: " + (c?.sourceSpend.map((x) => x.currency + " " + x.amount).join(" + ") || "sin datos") + ". " : ""}${c?.fxMissing && c?.[m.key] === null && !c.na?.includes(m.key) ? "Sin tasa. " : ""}${partial || c?.partialMetrics?.includes(m.key) ? "Cobertura parcial. " : ""}${m.key === "fixedCost" && !c?.linked?.[m.key] ? "Original CF: " + (c?.sourceFixedCost.map((x) => x.currency + " " + x.amount).join(" + ") || "sin datos") + ". " : ""}${m.money && !c?.linked?.[m.key] ? c?.fx.map((f) => `${f.date}: 1 ${f.from} = ${f.rate} ${f.to} · ${f.source}`).join("; ") || "" : ""} ${c?.linked?.[m.key] ? "Edita el valor en la hoja de origen." : m.key === "sales" ? "Clic o Enter para elegir asesor y cantidad de ventas." : "Escribe un número o N.A.; vacío restaura el importado en B/G; en P borra el presupuesto."}`}
                               />
                               {(c?.partialMetrics?.includes(m.key) ||
                                 (partial && !c?.manual?.includes(m.key))) &&

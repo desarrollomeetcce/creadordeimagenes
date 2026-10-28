@@ -2267,8 +2267,6 @@ button.ui-close-button:disabled, button.window-close:disabled { opacity: .55; }
 .sheet-fill-legend .sheet-fill-badge { display:inline-block; margin:0; }
 .sheet-fill-timing-note { flex-basis:100%; color:var(--muted); font-size:10px; line-height:1.3; }
 .sheet-fill-palette-hint { display:block; color:var(--muted); font-size:10px; }
-/* Detail tables display results received from the source sheets. Module/status accents stay distinct. */
-.detail-fold-body .table-scroll td { background-color:color-mix(in srgb,var(--fill-automatic) 20%,var(--surface)); }
 .products-catalog .sheet-view .effectiveness-grid td[data-fill-kind]:not([data-colored="true"]) { background-color:color-mix(in srgb,var(--sheet-fill-color) 30%,var(--surface)); }
 .products-catalog .sheet-view .effectiveness-grid th[data-fill-kind] { background-color:color-mix(in srgb,var(--sheet-fill-color) 42%,var(--surface)); }
 .products-catalog .sheet-view .effectiveness-grid td[data-fill-kind="automatic"] { color:var(--fill-automatic-ink); }
@@ -2359,3 +2357,24 @@ button.ui-close-button:disabled, button.window-close:disabled { opacity: .55; }
 .sheet-sales-detail-controls .detail-period-chip,.sheet-sales-detail-controls .detail-period-add-group,.sheet-sales-detail-controls .detail-period-reset { flex:0 0 auto; }
 .sheet-sales-detail-controls .detail-period-chip button { padding:5px 7px; min-height:30px; font-size:11px; }
 .sheet-sales-detail-controls>.sheet-search-trigger { flex:1 1 170px; min-width:0; width:auto; max-width:300px; }
+/* Larger values keep the labels compact; fitting preserves full numbers in narrow columns. */
+.products-catalog .sheet-view .effectiveness-grid td.sheet-derived,
+.products-catalog .sheet-view .effectiveness-grid td[data-metric][data-fill-kind],
+.products-catalog .sheet-view .effectiveness-grid td[data-fill-kind] input.sheet-cell,
+.products-catalog .sheet-view .effectiveness-grid.sheet-totals-grid td[data-metric] input.sheet-cell,
+.products-catalog .sheet-view .effectiveness-grid .manual-base-cell,
+.products-catalog .sheet-view .effectiveness-grid.advisor-grid td[data-fill-kind="automatic"],
+.products-catalog .sheet-view .effectiveness-grid .advisor-absence-trigger,
+.products-catalog .sheet-view .effectiveness-grid .advisor-sales-detail-trigger { font-size:16px; line-height:1.35; font-weight:700; font-variant-numeric:tabular-nums; }
+/* Text contrast is independent of the category tint, including custom backgrounds. */
+.products-catalog .sheet-view .effectiveness-grid td.sheet-derived,
+.products-catalog .sheet-view .effectiveness-grid td[data-metric][data-fill-kind],
+.products-catalog .sheet-view .effectiveness-grid td[data-fill-kind] input.sheet-cell,
+.products-catalog .sheet-view .effectiveness-grid.sheet-totals-grid td[data-metric] input.sheet-cell,
+.products-catalog .sheet-view .effectiveness-grid .manual-base-cell,
+.products-catalog .sheet-view .effectiveness-grid.advisor-grid td[data-fill-kind="automatic"],
+.products-catalog .sheet-view .effectiveness-grid .advisor-absence-trigger,
+.products-catalog .sheet-view .effectiveness-grid .advisor-sales-detail-trigger { color:var(--sheet-value-ink,var(--ink)); }
+
+/* Detail tables use the normal surface; section and chart colors retain their meaning. */
+:is(.advisor-detail,.totals-detail,.alias-state-detail,.sheet-sales-detail) .detail-fold-body .table-scroll :is(td,th) { background-color:var(--surface); }
