@@ -1568,3 +1568,10 @@ El detalle de Totales ahora utiliza exclusivamente V/P/BC/BM/GM/CF en manual y V
 Números de las tablas a16px en negrita, manteniendo cabeceras compactas y ajuste de tamaño cuando una columna se estrecha. Contraste negro/blanco calculado sobre el fondo efectivo, incluidas transparencias/colores personalizados; responde a cambio de tema, color y foco. Observadores de tablas tardías se activan después de la carga sin cambiar valores ni formatos. Auto/Hoy/D+1 permiten Sin color como preferencia explícita persistente, independiente de Restablecer. Tablas en detalles recuperan fondo normal; barras/subtítulos conservan su color. La celda explica por tooltip si el fondo viene de una regla de valor o de su procedencia; no se inventa una regla especial para el1 ni se borran configuraciones existentes.
 
 195 unitarias, TypeScript/build y Chromium aprobados. Verifica lectura16px, contraste≥4.5 claro/oscuro y fondos extremos, Sin color en tres categorías/persistencia/reset, fondo neutro en detalle y números intactos en Asesores/hojas financieras; móvil y cero escrituras/errores/llamadas externas. Evidencia en TESTING. Main y despliegue externo se registran por separado.
+
+
+### Análisis de hoy y ayer en el detalle del asesor
+
+Cabecera fija con tres vistas: período, hoy y ayer. Hoy consulta fecha Lima y presenta V/BC con porcentaje; ayer fecha anterior y V/BM. Conserva promedio, A/I/H; histórico y opciones de gráfico filtran la base correspondiente. Período restaura su rango, calendario/accesos pasan a período. Explica BC declarada para contactar y BM del día completo ingresada al siguiente. Sin porcentaje por producto ni datos ausentes/cero, cobertura parcial visible y sin mostrar resumen de una consulta anterior mientras carga. Reusa APIs de lectura y repartos de Totales, sin cambios de esquema.
+
+195 unitarias, TypeScript/build y seis comprobaciones Chromium aprobadas; evidencia en TESTING. Publicación main y verificación externa se registran por separado.

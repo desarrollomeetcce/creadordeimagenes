@@ -4,6 +4,7 @@ import { engineRequest as api } from "./generation-engine";
 import { performanceRatio } from "../../lib/meta-ads/performance-metrics";
 import { DetailPeriodPresets } from "./detail-period-presets";
 import { MetaDateRange } from "./meta-date-range";
+import { limaToday, shiftDay } from "./date-range";
 import { SheetSearchSelect } from "./sheet-search-select";
 import { AdvisorPeriodHistory } from "./advisor-period-history";
 import { AdvisorItemAnalysis } from "./advisor-item-analysis";
@@ -93,6 +94,41 @@ export function AdvisorDetail({
     [message, setMessage] = useState(""),
     [loading, setLoading] = useState(true),
     [reload, setReload] = useState(0);
+  const [analysisView, setAnalysisView] = useState<
+    "period" | "today" | "yesterday"
+  >("period");
+  const customRange = useRef({ since: initialSince, until: initialUntil });
+  const selectAnalysis = (view: "period" | "today" | "yesterday") => {
+    if (analysisView === "period") customRange.current = { since, until };
+    const range =
+      view === "period"
+        ? customRange.current
+        : {
+            since: view === "today" ? limaToday() : shiftDay(limaToday(), -1),
+            until: view === "today" ? limaToday() : shiftDay(limaToday(), -1),
+          };
+    setAnalysisView(view);
+    setSince(range.since);
+    setUntil(range.until);
+    setSelectedPeriod(null);
+    previousView.current = null;
+    setDayPage(0);
+    setBars("results");
+    setLine(
+      view === "today"
+        ? "advisorBase"
+        : view === "yesterday"
+          ? "manualBase"
+          : "cost",
+    );
+  };
+  const showBM = analysisView !== "today",
+    showBC = analysisView !== "yesterday";
+  const metricOptions = options.filter(
+    (o) =>
+      (showBM || o.value !== "manualBase") &&
+      (showBC || o.value !== "advisorBase"),
+  );
   const [selectedPeriod, setSelectedPeriod] =
       useState<AdvisorPeriodView | null>(null),
     [analysisAdvisor, setAnalysisAdvisor] = useState(person.id),
@@ -125,6 +161,7 @@ export function AdvisorDetail({
   }, []);
   const selectPeriod = (p: AdvisorPeriodView) => {
     if (!p.since || !p.from) return;
+    setAnalysisView("period");
     previousView.current ??= {
       tableId,
       aliasId,
@@ -302,7 +339,10 @@ export function AdvisorDetail({
       unsubscribe();
     };
   }, [query, valid, reload, minimized]);
-  const row = data?.rows.find((p) => p.id === analysisAdvisor),
+  const row =
+      acceptedQuery.current === query
+        ? data?.rows.find((p) => p.id === analysisAdvisor)
+        : undefined,
     days = row ? Object.keys(row.days).sort() : [];
   const advisorName =
     row?.name ??
@@ -379,39 +419,82 @@ export function AdvisorDetail({
   const partial = days.some((d) => row!.days[d].partial);
   const summary = row ? (
     <div className="advisor-detail-summary" aria-label="Resumen del asesor">
-      <span>
-        Base manual (BM)
-        <strong>{bmTotal === null ? "—" : number(bmTotal)}</strong>
-        <small>
-          Recibida del reparto de Totales por hoja y país · solo lectura
-        </small>
-      </span>
-      <span>
-        Ventas / BM
-        <strong>
-          {!aliasId && sales !== null && bmTotal !== null && bmTotal > 0
-            ? performanceRatio(sales, bmTotal, 100)!.toLocaleString("es-PE", {
-                maximumFractionDigits: 2,
-              }) + " %"
-            : "—"}
-        </strong>
-        <small>
-          {aliasId
-            ? "BM corresponde a la hoja completa; quita el filtro de inventario para comparar."
-            : "Ventas registradas respecto a la base manual del período"}
-        </small>
-      </span>
-      <span>
-        Base por contactar (BC)
-        <b>
-          {baseTotal === null ? "—" : number(baseTotal)}
-          {basePartial ? " *" : ""}
-        </b>
-        <small>
-          {baseDays.length}/{days.length} días con BC registrada manualmente en
-          Totales
-        </small>
-      </span>
+      {showBM && (
+        <span>
+          Base manual (BM)
+          <strong>
+            {bmTotal === null ? "—" : number(bmTotal)}
+            {bmDays.length > 0 && bmDays.length < days.length ? " *" : ""}
+          </strong>
+          <small>
+            Recibida de Totales por hoja y país · solo lectura. Base del día
+            completo, registrada al día siguiente. {bmDays.length}/{days.length}{" "}
+            días con BM registrada.
+          </small>
+        </span>
+      )}
+      {showBM && (
+        <span>
+          Ventas / BM
+          <strong>
+            {!aliasId && sales !== null && bmTotal !== null && bmTotal > 0
+              ? performanceRatio(sales, bmTotal, 100)!.toLocaleString("es-PE", {
+                  maximumFractionDigits: 2,
+                }) + " %"
+              : "—"}
+            {!aliasId &&
+            sales !== null &&
+            bmTotal !== null &&
+            bmTotal > 0 &&
+            (partial || bmDays.length < days.length)
+              ? " *"
+              : ""}
+          </strong>
+          <small>
+            {aliasId
+              ? "BM corresponde a la hoja completa; quita el filtro de inventario para comparar."
+              : "Ventas registradas respecto a la base manual del período"}
+          </small>
+        </span>
+      )}
+      {showBC && (
+        <span>
+          Base por contactar (BC)
+          <b>
+            {baseTotal === null ? "—" : number(baseTotal)}
+            {basePartial ? " *" : ""}
+          </b>
+          <small>
+            {baseDays.length}/{days.length} días con BC registrada manualmente
+            en Totales. Es la base que el asesor declara disponible para
+            contactar; no equivale necesariamente a los ingresos de 00:00 a
+            00:00.
+          </small>
+        </span>
+      )}
+      {showBC && (
+        <span>
+          Ventas / BC
+          <strong>
+            {!aliasId && performanceRatio(sales, baseTotal, 100) !== null
+              ? performanceRatio(sales, baseTotal, 100)!.toLocaleString(
+                  "es-PE",
+                  { maximumFractionDigits: 2 },
+                ) + " %"
+              : "—"}
+            {!aliasId &&
+            performanceRatio(sales, baseTotal, 100) !== null &&
+            (partial || basePartial)
+              ? " *"
+              : ""}
+          </strong>
+          <small>
+            {aliasId
+              ? "BC corresponde a la hoja completa; quita el filtro de inventario para comparar."
+              : "Ventas registradas respecto a la base disponible para contactar"}
+          </small>
+        </span>
+      )}
       <span>
         Ventas (V)
         <strong>
@@ -558,8 +641,8 @@ export function AdvisorDetail({
                 <th>H</th>
                 <th title="Inasistencias">I</th>
                 <th>V</th>
-                <th>BM</th>
-                <th title="Base por contactar">BC</th>
+                {showBM && <th>BM</th>}
+                {showBC && <th title="Base por contactar">BC</th>}
                 <th>Salidas y regresos · Lima</th>
               </tr>
             </thead>
@@ -582,12 +665,20 @@ export function AdvisorDetail({
                       {c.na ? "N.A." : c.sales === null ? "—" : number(c.sales)}
                       {c.partial ? " *" : ""}
                     </td>
-                    <td>
-                      {c.manualBase === null || c.manualBase === undefined
-                        ? "—"
-                        : number(c.manualBase)}
-                    </td>
-                    <td>{c.advisorBase ?? "—"}</td>
+                    {showBM && (
+                      <td>
+                        {c.manualBase === null || c.manualBase === undefined
+                          ? "—"
+                          : number(c.manualBase)}
+                      </td>
+                    )}
+                    {showBC && (
+                      <td>
+                        {c.advisorBase === null || c.advisorBase === undefined
+                          ? "—"
+                          : number(c.advisorBase)}
+                      </td>
+                    )}
                     <td>
                       {c.absence.mode === "CLOCK"
                         ? c.absence.intervals
@@ -645,7 +736,7 @@ export function AdvisorDetail({
                 if (v === line) setLine(v === "results" ? "cost" : "results");
               }}
             >
-              {options.map((o) => (
+              {metricOptions.map((o) => (
                 <option key={o.value} value={o.value}>
                   {o.label}
                 </option>
@@ -663,7 +754,7 @@ export function AdvisorDetail({
                 if (v === bars) setBars(v === "results" ? "cost" : "results");
               }}
             >
-              {options.map((o) => (
+              {metricOptions.map((o) => (
                 <option key={o.value} value={o.value}>
                   {o.label}
                 </option>
@@ -976,6 +1067,37 @@ export function AdvisorDetail({
               )}
               disabled={!row}
             />
+            <div
+              className="row"
+              role="group"
+              aria-label="Vista de análisis del asesor"
+            >
+              {(
+                [
+                  ["period", "Análisis del período"],
+                  ["today", "Análisis de hoy"],
+                  ["yesterday", "Análisis de ayer"],
+                ] as const
+              ).map(([value, label]) => (
+                <button
+                  key={value}
+                  type="button"
+                  aria-pressed={analysisView === value}
+                  onClick={() => selectAnalysis(value)}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+            <p className="hint" role="status">
+              {analysisView === "today"
+                ? `Hoy · ${since} · Lima. Ventas / BC: base declarada para contactar hoy.`
+                : analysisView === "yesterday"
+                  ? `Ayer · ${since} · Lima. Ventas / BM: base del día completo, registrada al día siguiente.`
+                  : "Período seleccionado: compara ventas con BM o BC, sin mezclar ambas bases."}{" "}
+              * Cobertura parcial; — sin dato. Las bases se reciben de Totales y
+              no se reparten por diplomado.
+            </p>
             <div className="row advisor-detail-controls">
               <div className="advisor-period-controls">
                 <MetaDateRange
@@ -983,6 +1105,8 @@ export function AdvisorDetail({
                   from={since}
                   to={until}
                   onChange={(a, b) => {
+                    setAnalysisView("period");
+                    customRange.current = { since: a, until: b };
                     setSelectedPeriod(null);
                     previousView.current = null;
                     setDayPage(0);
@@ -997,6 +1121,8 @@ export function AdvisorDetail({
                   since={since}
                   until={until}
                   onSelect={(a, b) => {
+                    setAnalysisView("period");
+                    customRange.current = { since: a, until: b };
                     setSelectedPeriod(null);
                     previousView.current = null;
                     setDayPage(0);
