@@ -2247,15 +2247,15 @@ button.ui-close-button:disabled, button.window-close:disabled { opacity: .55; }
 .totals-product-history-controls>.sheet-search-trigger { flex:1 1 220px; min-width:0; width:auto; }
 
 /* Data origin and the team's expected recording day; these never change values or edit permissions. */
-:root { --fill-automatic:var(--accent); --fill-manual:#326fb4; --fill-next-day:#ad7720; --fill-manual-ink:#23558c; --fill-next-day-ink:#845716; }
-:root[data-theme="dark"] { --fill-manual:#75aaff; --fill-next-day:#e7bb69; --fill-manual-ink:#b5d4ff; --fill-next-day-ink:#f4d393; }
+:root { --fill-automatic:var(--accent); --fill-automatic-ink:var(--accent); --fill-manual:transparent; --fill-next-day:#ad7720; --fill-manual-ink:var(--ink); --fill-next-day-ink:#845716; }
+:root[data-theme="dark"] { --fill-next-day:#e7bb69; --fill-next-day-ink:#f4d393; }
 [data-fill-kind="automatic"] { --sheet-fill-color:var(--fill-automatic); }
 [data-fill-kind="manual"] { --sheet-fill-color:var(--fill-manual); }
 [data-fill-kind="next-day"] { --sheet-fill-color:var(--fill-next-day); }
 .products-catalog .sheet-view td[data-fill-kind],.products-catalog .sheet-view th[data-fill-kind] { background-color:color-mix(in srgb,var(--sheet-fill-color) 8%,var(--surface)); }
 .products-catalog .sheet-view th[data-fill-kind] { background-color:color-mix(in srgb,var(--sheet-fill-color) 20%,var(--surface)); }
 .products-catalog .sheet-view td[data-fill-kind] { box-shadow:inset 2px 0 var(--sheet-fill-color); }
-.products-catalog .sheet-view td[data-fill-kind="automatic"] { color:var(--accent); }
+.products-catalog .sheet-view td[data-fill-kind="automatic"] { color:var(--fill-automatic-ink); }
 .products-catalog .sheet-view td[data-fill-kind="manual"] { color:var(--fill-manual-ink); }
 .products-catalog .sheet-view td[data-fill-kind="next-day"] { color:var(--fill-next-day-ink); }
 .products-catalog .sheet-view td[data-fill-kind] .sheet-cell,.products-catalog .sheet-view td[data-fill-kind] .manual-base-cell,.products-catalog .sheet-view td[data-fill-kind] .advisor-sales-detail-trigger { color:inherit; }
@@ -2272,8 +2272,27 @@ button.ui-close-button:disabled, button.window-close:disabled { opacity: .55; }
 .detail-fold-body .table-scroll td { background-color:color-mix(in srgb,var(--fill-automatic) 5%,var(--surface)); }
 .products-catalog .sheet-view .effectiveness-grid td[data-fill-kind]:not([data-colored="true"]) { background-color:color-mix(in srgb,var(--sheet-fill-color) 8%,var(--surface)); }
 .products-catalog .sheet-view .effectiveness-grid th[data-fill-kind] { background-color:color-mix(in srgb,var(--sheet-fill-color) 20%,var(--surface)); }
-.products-catalog .sheet-view .effectiveness-grid td[data-fill-kind="automatic"] { color:var(--accent); }
+.products-catalog .sheet-view .effectiveness-grid td[data-fill-kind="automatic"] { color:var(--fill-automatic-ink); }
 .products-catalog .sheet-view .effectiveness-grid td[data-fill-kind="manual"] { color:var(--fill-manual-ink); }
 .products-catalog .sheet-view .effectiveness-grid td[data-fill-kind="next-day"] { color:var(--fill-next-day-ink); }
 .products-catalog .sheet-view .effectiveness-grid td[data-fill-kind][data-na="true"] { color:var(--muted); }
 .effectiveness-topbar .sheet-legend .sheet-fill-timing-note { white-space:normal; min-width:0; }
+/* Personal tab colors retain a clear selected marker independently of the chosen color. */
+.sheet-tabs [role="tab"][data-custom-tab-color][aria-selected="true"] { box-shadow:inset 0 -4px 0 currentColor; outline:2px solid var(--selection); outline-offset:-2px; }
+.sheet-tab-color-dialog { width:min(420px,calc(100vw - 24px)); max-height:90dvh; overflow:auto; border:1px solid var(--line); border-radius:10px; padding:16px; background:var(--surface); color:var(--ink); }
+.sheet-tab-color-dialog::backdrop { background:#0008; }
+.sheet-tab-color-heading { display:flex; align-items:center; justify-content:space-between; gap:12px; }
+.sheet-tab-color-heading h2 { margin:0; font-size:18px; }
+.sheet-tab-color-dialog>p { overflow-wrap:anywhere; }
+.sheet-tab-color-swatches { display:flex; flex-wrap:wrap; gap:8px; margin:14px 0; }
+.sheet-tab-color-swatches button { width:36px; height:36px; padding:0; color:white; border:2px solid transparent; }
+.sheet-tab-color-swatches button[aria-pressed="true"] { outline:2px solid var(--ink); outline-offset:2px; }
+.sheet-tab-color-custom { display:flex; flex-wrap:wrap; align-items:center; gap:8px; }
+.sheet-tab-color-custom input[type="color"] { width:44px; height:36px; padding:2px; }
+.sheet-tab-color-custom input:not([type="color"]) { width:100px; }
+.sheet-tab-color-actions { display:flex; flex-wrap:wrap; gap:8px; margin-top:16px; }
+.sheet-tab-color-heading .detail-close { margin-left:auto; background:#a52b43; color:#fff; border:2px solid #eb9aad; font-weight:700; }
+
+.sheet-fill-edit { display:inline-flex; padding:0; border:0; background:transparent; color:inherit; cursor:pointer; }
+.sheet-fill-edit:hover .sheet-fill-badge { outline:1px solid var(--ink); }
+.sheet-fill-edit:focus-visible { outline:2px solid var(--selection); outline-offset:3px; }

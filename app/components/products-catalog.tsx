@@ -2,6 +2,7 @@
 import { useEffect, useRef, useState, useId, useContext } from "react";
 import { CurrentUserId } from "./role-guide";
 import { engineRequest as api } from "./generation-engine";
+import { SheetTabColorDialog, useSheetTabColors } from "./sheet-tab-colors";
 import { useSheetOrder } from "./use-sheet-order";
 import { InventoryCatalog } from "./inventory-catalog";
 import { MetaEffectiveness } from "./meta-effectiveness";
@@ -30,6 +31,10 @@ export function ProductsCatalog() {
       null,
     ),
     [locationWarning, setLocationWarning] = useState("");
+  const tabColors = useSheetTabColors(userId);
+  const [colorTab, setColorTab] = useState<{ id: string; name: string } | null>(
+    null,
+  );
   const locationReady = restoredLocationKey === locationKey;
   const [tables, setTables] = useState<CatalogTable[]>([]),
     [selected, setSelected] = useState("diplomados"),
@@ -224,7 +229,7 @@ export function ProductsCatalog() {
     setContextTable(t);
     setMenuPosition({
       left: Math.max(8, Math.min(x, innerWidth - 210)),
-      top: Math.max(8, Math.min(y, innerHeight - 120)),
+      top: Math.max(8, Math.min(y, innerHeight - 170)),
     });
     requestAnimationFrame(() => {
       menu.current?.showPopover();
@@ -439,6 +444,10 @@ export function ProductsCatalog() {
               .map((t) => (
                 <span key={t.id} className="sheet-tab-wrap">
                   <button
+                    style={tabColors.style(t.id)}
+                    data-custom-tab-color={
+                      !!tabColors.colors[t.id] || undefined
+                    }
                     role="tab"
                     className={
                       "sheet-tab-" +
@@ -450,7 +459,7 @@ export function ProductsCatalog() {
                       (editing?.id === t.id ? " sr-only" : "")
                     }
                     aria-selected={specialId === t.id}
-                    title="Clic derecho para editar el nombre o eliminar la pestaña"
+                    title="Clic derecho para cambiar color, editar nombre o eliminar la pestaña"
                     onContextMenu={(e) => {
                       e.preventDefault();
                       openMenu(t, e.clientX, e.clientY, e.currentTarget);
@@ -498,6 +507,8 @@ export function ProductsCatalog() {
           <span key={t.id} className="sheet-tab-wrap">
             <button
               role="tab"
+              style={tabColors.style(t.id)}
+              data-custom-tab-color={!!tabColors.colors[t.id] || undefined}
               aria-selected={
                 !totals && !advisorSheet && !inventorySheet && selected === t.id
               }
@@ -518,7 +529,7 @@ export function ProductsCatalog() {
                     : "before"
                   : undefined
               }
-              title="Clic derecho para editar o eliminar; arrastra o usa Alt + flecha izquierda/derecha para ordenar"
+              title="Clic derecho para cambiar color, editar o eliminar; arrastra o usa Alt + flecha izquierda/derecha para ordenar"
               onDragStart={(e) => {
                 dragged.current = t.id;
                 setDragging(t.id);
@@ -834,6 +845,17 @@ export function ProductsCatalog() {
         >
           Editar nombre
         </button>
+        <button
+          type="button"
+          role="menuitem"
+          onClick={() => {
+            menu.current?.hidePopover();
+            if (contextTable)
+              setColorTab({ id: contextTable.id, name: contextTable.name });
+          }}
+        >
+          Cambiar color
+        </button>
         {contextTable && (
           <button
             type="button"
@@ -855,6 +877,25 @@ export function ProductsCatalog() {
           </button>
         )}
       </div>
+      {tabColors.warning && (
+        <p role="status" className="notice">
+          {tabColors.warning}
+        </p>
+      )}
+      {colorTab && (
+        <SheetTabColorDialog
+          key={colorTab.id}
+          name={colorTab.name}
+          color={tabColors.colors[colorTab.id]}
+          onApply={(color) => tabColors.setColor(colorTab.id, color)}
+          onClose={() => {
+            setColorTab(null);
+            requestAnimationFrame(() =>
+              contextTrigger.current?.focus({ preventScroll: true }),
+            );
+          }}
+        />
+      )}
       {deleting && (
         <DeleteAliasTable
           tableId={deleting}

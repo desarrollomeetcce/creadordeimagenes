@@ -1528,3 +1528,10 @@ BM en Asesores pasa a solo lectura, igual que BC; se alimenta de Totales por ase
 Tres colores comunes en Totales, Asesores, hojas financieras e Inventario: verde automático/recibido, azul manual del mismo día y ámbar BM/GM del día siguiente. BC se registra hoy; BM en Asesores conserva solo lectura y añade Auto · D+1. Cabeceras, cifras y leyenda explican el origen sin depender solo del color. Reglas y colores personalizados se conservan; clasificación por celda distingue Meta/vínculo/copia de ajustes manuales. Sin cambios en datos, APIs, horarios, bloqueos ni esquema.
 
 191 pruebas unitarias y TypeScript/build aprobados. Chromium valida los tres colores, BM/BC de solo lectura, guía móvil y tema oscuro, sin escrituras financieras ni llamadas externas. Evidencia data-fill en TESTING. Publicación a main y comprobación efectiva del alojamiento se registran por separado.
+
+
+### Colores de pestañas y leyenda editables
+
+El menú contextual de pestañas y hojas incorpora Cambiar color. Paleta y hexadecimal personalizados, aplicar/cancelar/restablecer; contraste automático y marca de pestaña abierta. Auto/Hoy/D+1 en la leyenda abren el mismo selector para cambiar los colores de procedencia en todas las tablas, conservando prioridad de fondos personalizados de columnas/reglas. Preferencias locales por cuenta/identidad y namespaces independientes, sin escrituras financieras ni cambios de esquema. Cierre rojo a la derecha, Escape, teclado y móvil. Pruebas en TESTING; envío a main no acredita despliegue efectivo externo.
+
+Corrección del usuario: manual del mismo día sin color por defecto, también BC/A/H/V/P editables; Hoy conserva su etiqueta neutra. Leyenda permite elegir un color opcional y volver con Sin color, sin afectar automáticos/D+1 ni datos.

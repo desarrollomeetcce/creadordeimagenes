@@ -1337,3 +1337,11 @@ Validación de la revisión compacta definitiva: `/workspace/work/advisor-compac
 -191/191 unitarias (`/workspace/work/data-fill-unit.txt`), TypeScript y build aprobados. Clasificación de sumas, BC/CF manuales, BM/GM D+1, Meta, ajustes, vínculos/copias e importes recibidos; no transforma cifras ni fechas. Sin cambios backend: las195 integraciones de advisor-isolation siguen siendo la evidencia aplicable.
 - Chromium (`/workspace/work/data-fill-browser.txt`): colores y etiquetas Auto/Hoy/D+1 en Totales, BC mismo día, BM/GM día siguiente; V/BM/BC en Asesores recibidos y BM/BC sin controles de escritura, A/H manuales; venta de hoja manual y guía móvil, diferenciación en oscuro. Cero escrituras financieras, errores JS/API o solicitudes externas. Capturas `/workspace/work/data-fill-{totals,advisors,mobile}.png`. El texto móvil de la guía permite salto de línea.
 - Preferencias de colores/orden, reglas por valor y permisos conservados; no migración ni nuevas consultas financieras. Los distintivos permanecen aun con fondos personalizados. D+1 indica el momento esperado de captura, sin bloquear ediciones ni inferir demoras.
+
+
+### Colores editables de pestañas y procedencia
+
+-191/191 unitarias y TypeScript/build (`/workspace/work/tab-color-{unit,typecheck,build}.txt`). Cambios de presentación/localStorage sin API ni esquema; integraciones195 anteriores aplicables.
+- Chromium `/workspace/work/tab-color-browser.txt`: menú de clic derecho, Shift+F10, aplicar paleta, recarga, Escape/cancelar y restablecer; colores personalizados de hojas con contraste y marca activa, diálogo móvil oscuro. Leyenda Auto/Hoy/D+1 actualiza variables globales, persiste/restablece categorías independientemente de pestañas, sin cambiar las cifras. Sin escrituras financieras, errores JS/API o llamadas externas. Captura `/workspace/work/tab-color-mobile.png`.
+
+- Corrección final: Chromium también comprueba manual mismo día transparente de forma predeterminada y Sin color después de personalizar la leyenda. Este comportamiento sustituye el azul predeterminado de la versión anterior.
