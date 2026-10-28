@@ -1,10 +1,12 @@
 "use client";
+import { summaryPeriod } from "../../lib/meta-ads/summary-period";
+import { SummaryPeriodNotice } from "./summary-period-notice";
 import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { engineRequest as api } from "./generation-engine";
 import { periodComparison } from "../../lib/meta-ads/period-comparison";
 import { DetailPeriodPresets } from "./detail-period-presets";
 import { MetaDateRange } from "./meta-date-range";
-import { limaToday, shiftDay } from "./date-range";
+import { limaToday } from "./date-range";
 import { SheetSearchSelect } from "./sheet-search-select";
 import { AdvisorPeriodHistory } from "./advisor-period-history";
 import { AdvisorItemAnalysis } from "./advisor-item-analysis";
@@ -345,20 +347,25 @@ export function AdvisorDetail({
     row?.name ??
     people.find((p) => p.id === analysisAdvisor)?.name ??
     person.name;
-  const known = days.filter(
+  const summaryDays = summaryPeriod(days, analysisView, limaToday()).days;
+  const known = summaryDays.filter(
       (d) => row!.days[d].sales !== null && !row!.days[d].na,
     ),
     sales = known.length
       ? known.reduce((s, d) => s + row!.days[d].sales!, 0)
       : null;
-  const hourDays = days.filter((d) => row!.days[d].absence.hours !== null),
+  const hourDays = summaryDays.filter(
+      (d) => row!.days[d].absence.hours !== null,
+    ),
     hours = hourDays.length
       ? hourDays.reduce((s, d) => s + row!.days[d].absence.hours!, 0)
       : null,
-    pending = days.reduce((s, d) => s + row!.days[d].absence.pending, 0);
-  const present = days.filter((d) => row!.days[d].status === "PRESENT").length,
-    absent = days.filter((d) => row!.days[d].status === "ABSENT").length;
-  const recordedAttendance = days.filter(
+    pending = summaryDays.reduce((s, d) => s + row!.days[d].absence.pending, 0);
+  const present = summaryDays.filter(
+      (d) => row!.days[d].status === "PRESENT",
+    ).length,
+    absent = summaryDays.filter((d) => row!.days[d].status === "ABSENT").length;
+  const recordedAttendance = summaryDays.filter(
     (d) => advisorAttendanceValue(row!.days[d].status, "attendance") !== null,
   ).length;
   const metricValue = (metric: AdvisorMetric, day: string) => {
@@ -385,30 +392,31 @@ export function AdvisorDetail({
     spend: null,
   }));
 
-  const bmDays = days.filter(
+  const bmDays = summaryDays.filter(
     (d) =>
       row?.days[d].manualBase !== null && row?.days[d].manualBase !== undefined,
   );
   const bmTotal = bmDays.length
     ? bmDays.reduce((n, d) => n + (row!.days[d].manualBase ?? 0), 0)
     : null;
-  const baseDays = days.filter(
+  const baseDays = summaryDays.filter(
     (d) =>
       row?.days[d].advisorBase !== null &&
       row?.days[d].advisorBase !== undefined,
   );
-  const basePartial = baseDays.length > 0 && baseDays.length < days.length;
+  const basePartial =
+    baseDays.length > 0 && baseDays.length < summaryDays.length;
   const baseTotal = baseDays.length
     ? baseDays.reduce((sum, d) => sum + (row!.days[d].advisorBase ?? 0), 0)
     : null;
   const bmComparison = periodComparison(
-    days.map((day) => ({
+    summaryDays.map((day) => ({
       numerator: row!.days[day].na ? null : row!.days[day].sales,
       denominator: row!.days[day].manualBase ?? null,
     })),
   );
   const bcComparison = periodComparison(
-    days.map((day) => ({
+    summaryDays.map((day) => ({
       numerator: row!.days[day].na ? null : row!.days[day].sales,
       denominator: row!.days[day].advisorBase ?? null,
     })),
@@ -425,10 +433,20 @@ export function AdvisorDetail({
     );
   const periodHasSales = hasSales(days);
   const pageHasSales = hasSales(visibleDays);
-  const partial = days.some((d) => row!.days[d].partial);
+  const partial = summaryDays.some((d) => row!.days[d].partial);
   const summary = row ? (
     <div className="advisor-detail-summary" aria-label="Resumen del asesor">
-      <h4>Productividad · {since === until ? since : `${since} — ${until}`}</h4>
+      <SummaryPeriodNotice
+        days={days}
+        view={analysisView}
+        today={limaToday()}
+      />
+      <h4>
+        Productividad ·{" "}
+        {summaryDays.length
+          ? `${summaryDays[0]} — ${summaryDays.at(-1)}`
+          : "Sin fechas incluidas"}
+      </h4>
       <div
         className="advisor-productivity-values"
         aria-label="Productividad del asesor"
@@ -448,8 +466,8 @@ export function AdvisorDetail({
               {basePartial ? " *" : ""}
             </b>
             <small>
-              {baseDays.length}/{days.length} días con BC · declarada por el
-              asesor en Totales.
+              {baseDays.length}/{summaryDays.length} días con BC · declarada por
+              el asesor en Totales.
             </small>
           </span>
         )}
@@ -482,11 +500,13 @@ export function AdvisorDetail({
             Base manual (BM)
             <strong>
               {bmTotal === null ? "—" : number(bmTotal)}
-              {bmDays.length > 0 && bmDays.length < days.length ? " *" : ""}
+              {bmDays.length > 0 && bmDays.length < summaryDays.length
+                ? " *"
+                : ""}
             </strong>
             <small>
-              {bmDays.length}/{days.length} días con BM · recibida de Totales al
-              día siguiente.
+              {bmDays.length}/{summaryDays.length} días con BM · recibida de
+              Totales al día siguiente.
             </small>
           </span>
         )}
@@ -503,7 +523,7 @@ export function AdvisorDetail({
               sales !== null &&
               bmTotal !== null &&
               bmTotal > 0 &&
-              (partial || bmDays.length < days.length)
+              (partial || bmDays.length < summaryDays.length)
                 ? " *"
                 : ""}
             </strong>
@@ -520,7 +540,7 @@ export function AdvisorDetail({
           Promedio por día con V
           <strong>{sales === null ? "—" : number(sales / known.length)}</strong>
           <small>
-            {known.length}/{days.length} días con ventas registradas
+            {known.length}/{summaryDays.length} días con ventas registradas
           </small>
         </span>
       </div>
@@ -532,14 +552,17 @@ export function AdvisorDetail({
         <span>
           Asistencia (A)
           <strong>
-            {present} presente(s) · {absent} ausente(s)
+            {summaryDays.length
+              ? `${present} presente(s) · ${absent} ausente(s)`
+              : "—"}
           </strong>
         </span>
         <span data-advisor-summary="absences">
           Inasistencias (I)
           <strong>{recordedAttendance ? absent : "—"}</strong>
           <small>
-            {recordedAttendance}/{days.length} días con asistencia registrada
+            {recordedAttendance}/{summaryDays.length} días con asistencia
+            registrada
           </small>
         </span>{" "}
         <span>

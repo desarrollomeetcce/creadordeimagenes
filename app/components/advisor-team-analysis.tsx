@@ -1,4 +1,6 @@
 "use client";
+import { summaryPeriod } from "../../lib/meta-ads/summary-period";
+import { SummaryPeriodNotice } from "./summary-period-notice";
 import { useEffect, useRef, useState } from "react";
 import { AdvisorDetail } from "./advisor-detail";
 import { DetailStickyHeader } from "./detail-sticky-header";
@@ -6,7 +8,7 @@ import { MetaDateRange } from "./meta-date-range";
 import { SheetSearchSelect } from "./sheet-search-select";
 import { readAdvisorRange } from "./workbook-range-request";
 import { subscribeAdvisorSalesChanged } from "./advisor-sales-events";
-import { limaToday, shiftDay } from "./date-range";
+import { limaToday } from "./date-range";
 import { advisorTeamRows } from "../../lib/meta-ads/advisor-team-summary";
 import type { AdvisorSheetData, AdvisorTable } from "./advisor-types";
 const fmt = (v: number | null) =>
@@ -98,8 +100,18 @@ export function AdvisorTeamAnalysis({
       document.removeEventListener("visibilitychange", load);
     };
   }, [key, reload, listId, tableId, country, since, until]);
+  const periodPeople = data?.key === key ? data.value.rows : [];
+  const periodDays = Object.keys(periodPeople[0]?.days ?? {}).sort();
+  const summaryDaySet = new Set(
+    summaryPeriod(periodDays, view, limaToday()).days,
+  );
   const rows = advisorTeamRows(
-    data?.key === key ? data.value.rows : [],
+    periodPeople.map((person) => ({
+      ...person,
+      days: Object.fromEntries(
+        Object.entries(person.days).filter(([day]) => summaryDaySet.has(day)),
+      ),
+    })),
     basis,
   ).sort(
     (a, b) =>
@@ -196,6 +208,11 @@ export function AdvisorTeamAnalysis({
         ) : null}
         {data?.key === key && (
           <>
+            <SummaryPeriodNotice
+              days={periodDays}
+              view={view}
+              today={limaToday()}
+            />
             <div className="team-comparison-summary">
               <span>
                 Asesores<strong>{rows.length}</strong>

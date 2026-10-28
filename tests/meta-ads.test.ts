@@ -778,3 +778,12 @@ test('Resumen del período: ventas y bases de las mismas fechas, sin mezclar hoy
  assert.equal(periodComparison([{numerator:null,denominator:null},{numerator:0,denominator:10}]).value,0);
  assert.equal(periodComparison([{numerator:5,denominator:0}]).value,null);
 });
+
+import {summaryPeriod} from '../lib/meta-ads/summary-period';
+test('Corte del resumen: ayer excluye hoy sin quitar filas del histórico, hoy incluye avance provisional',()=>{
+ const days=['2026-10-26','2026-10-27','2026-10-28','2026-10-29'];
+ assert.deepEqual(summaryPeriod(days,'yesterday','2026-10-28'),{days:['2026-10-26','2026-10-27'],cutoff:'2026-10-27',end:'2026-10-27',excluded:2});assert.equal(days.length,4);
+ assert.deepEqual(summaryPeriod(days,'today','2026-10-28').days,['2026-10-26','2026-10-27','2026-10-28']);assert.deepEqual(summaryPeriod(days,'manual','2026-10-28').days,days);
+ assert.equal(summaryPeriod(['2026-10-28'],'yesterday','2026-10-28').end,null);assert.equal(summaryPeriod(['2026-10-20'],'yesterday','2026-10-28').end,'2026-10-20');
+ assert.equal(summaryPeriod(['2024-02-29','2024-03-01'],'yesterday','2024-03-01').end,'2024-02-29');
+});

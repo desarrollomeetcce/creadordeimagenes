@@ -1,4 +1,7 @@
 "use client";
+import { summaryPeriod } from "../../lib/meta-ads/summary-period";
+import { SummaryPeriodNotice } from "./summary-period-notice";
+import { limaToday } from "./date-range";
 import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import {
   totalViewColumns,
@@ -166,7 +169,7 @@ export function TotalsDetail({
     setSelectedDay("");
   };
   const loading = parentLoading || rangeLoading;
-  const focusDays = days;
+  const focusDays = summaryPeriod(days, mode, limaToday()).days;
   const dayIndex = days.indexOf(selectedDay);
   const columns = totalViewColumns(mode);
   const comparisonColumns = columns;
@@ -399,8 +402,8 @@ export function TotalsDetail({
               </div>
               <p className="hint">
                 {selectedDay
-                  ? "Resumen e indicadores de todo el período. El día elegido solo filtra los desgloses diarios de asesores y productos."
-                  : "Resumen e indicadores de todo el período seleccionado."}{" "}
+                  ? "Resumen e indicadores del período, con el corte indicado en la franja. El día elegido solo filtra los desgloses diarios de asesores y productos."
+                  : "Resumen e indicadores del período seleccionado, con el corte indicado en la franja."}{" "}
                 Cada hoja, país y moneda se consulta por separado. V es la misma
                 suma en ambas vistas.{" "}
                 {mode === "automatic"
@@ -426,8 +429,8 @@ export function TotalsDetail({
                     tableId: block.table.tableId,
                     aliasId: "",
                     country: block.country,
-                    since: focusDays[0],
-                    until: focusDays.at(-1)!,
+                    since: days[0],
+                    until: days.at(-1)!,
                   })}
                   target="_blank"
                   rel="noopener noreferrer"
@@ -447,6 +450,11 @@ export function TotalsDetail({
                         tone="sales"
                       >
                         <div className="advisor-detail-summary totals-performance-summary">
+                          <SummaryPeriodNotice
+                            days={days}
+                            view={mode}
+                            today={limaToday()}
+                          />
                           {comparisonColumns.map((c) => {
                             const v = totalDetailSummary(
                               focusDays.map((day) => value(day, c)),
@@ -486,9 +494,14 @@ export function TotalsDetail({
                         tone="sales"
                       >
                         <div className="advisor-detail-summary totals-performance-summary">
+                          <SummaryPeriodNotice
+                            days={days}
+                            view={mode}
+                            today={limaToday()}
+                          />
                           {ratios.map((r) => {
                             const comparison = periodComparison(
-                              days.map((day) => ({
+                              focusDays.map((day) => ({
                                 numerator: value(day, ratioColumn(r.numerator))
                                   .value,
                                 denominator: value(

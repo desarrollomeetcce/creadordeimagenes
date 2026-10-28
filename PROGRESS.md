@@ -1604,3 +1604,10 @@ Corrección confirmada por el usuario: los botones Hoy · avance provisional / A
 Comparaciones por fechas coincidentes: ninguna venta de hoy se divide entre una BM de ayer. Si faltan parámetros en una de las fechas con datos, el ratio queda pendiente con explicación; las sumas registradas se conservan con cobertura. Helper compartido para resumen individual, Totales y equipo. Los detalles de diplomado y de toda la hoja bloquean respuestas del rango anterior durante cambios de calendario, conservando históricos completos. Sin nuevas API, modelos ni escrituras financieras.
 
 198 unitarias, TypeScript/build,7 integraciones HTTP y4 comprobaciones Chromium aprobadas. Datos diarios intencionalmente distintos: ayer5 ventas/BM358, hoy3/BM150; 1.4% ayer y1.57% para8/508 en el período, sin mezclar fechas. Ver TESTING. Publicación y alojamiento externo se registran por separado.
+
+
+### Corte resaltado de los resúmenes al último día completo
+
+Última precisión del usuario: las tablas e históricos mantienen todo el calendario; la franja verde suma el período elegible hasta hoy en provisional y hasta ayer en día completo. Se aplica de forma coherente a ventas, bases, ratios, promedios y asistencias de resúmenes personales, Totales e indicadores, así como al comparativo del equipo. Aviso resaltado de corte real con borde2px/fondo contrastado y explicación de exclusión de hoy por sus24 horas aún abiertas. Si el rango es histórico, respeta su final; si solo contiene fechas no completas, explica que no hay días completos y muestra—.
+
+No se cambian fechas de las filas ni los datos editables, no se descartan registros del histórico y no se modifica manual/automático ni las tarjetas diarias de Mi desempeño. Helper puro compartido conserva cero, fechas futuras y límites de mes/año/Lima.199 unitarias, TypeScript/build y4 flujos Chromium aprobados; ver TESTING. Main y comprobación del alojamiento se registran por separado.
