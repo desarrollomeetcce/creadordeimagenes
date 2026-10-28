@@ -1575,3 +1575,14 @@ Números de las tablas a16px en negrita, manteniendo cabeceras compactas y ajust
 Cabecera fija con tres vistas: período, hoy y ayer. Hoy consulta fecha Lima y presenta V/BC con porcentaje; ayer fecha anterior y V/BM. Conserva promedio, A/I/H; histórico y opciones de gráfico filtran la base correspondiente. Período restaura su rango, calendario/accesos pasan a período. Explica BC declarada para contactar y BM del día completo ingresada al siguiente. Sin porcentaje por producto ni datos ausentes/cero, cobertura parcial visible y sin mostrar resumen de una consulta anterior mientras carga. Reusa APIs de lectura y repartos de Totales, sin cambios de esquema.
 
 195 unitarias, TypeScript/build y seis comprobaciones Chromium aprobadas; evidencia en TESTING. Publicación main y verificación externa se registran por separado.
+
+
+### Mi desempeño, objetivos y comparativo del equipo
+
+Nuevo módulo entre las primeras opciones; cuentas vinculadas entran directamente a su panel y OWNER elige a quién previsualizar. Vinculación explícita de cuenta aprobada/asesor, única, revocable y auditada. Hoy muestra V/BC y avance provisional; ayer V/BM del día completo, fecha Lima. Objetivos diarios separados por base y período, porcentaje y ventas opcionales, edición/eliminación con revisión y sin solapes. Gráfico, histórico y productos exclusivamente propios, promedio y asistencia; cero y falta de base no generan porcentajes inventados. Cambiar el rango histórico no cambia las fechas de Hoy/Ayer.
+
+Se reutiliza el lector canónico de Efectividad mediante un camino interno autorizado al asesor vinculado; las rutas completas anteriores siguen exclusivas OWNER. El panel solo serializa datos propios y vuelve a comprobar el vínculo antes de devolverlos. Configuración con bloqueo884411/auditoría, migración aditiva202610280001_advisor_performance y sin cambios de ventas, bases, Meta, credenciales ni permisos comerciales.
+
+Resumen de todos los detalles personales reorganizado dentro de la misma franja: Productividad primero ventas, BC y V/BC (BM y V/BM ayer), promedio; Asistencias A/I/H abajo. Aplica tanto desde Asesores como desde cualquier hoja financiera. En cabecera Asesor, Ver análisis del equipo compara todos los integrantes de esa pestaña con calendario, hoy/ayer/período, barras verticales, orden por ventas/efectividad, base/cobertura y asistencia. Se puede abrir el detalle personal del mismo período y regresar al comparativo. Valores ausentes/ceros separados y porcentajes contextualizados por la cantidad de base.
+
+Validación y evidencias en TESTING. Publicación a main, migración y comprobación del alojamiento se registran por separado.

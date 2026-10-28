@@ -116,6 +116,50 @@ export async function effectiveness(
   ignoreLink = false,
 ): Promise<EffectivenessSheet> {
   ownerOnly(actor);
+  return readEffectiveness(
+    actor,
+    tableId,
+    since,
+    until,
+    client,
+    path,
+    ignoreLink,
+  );
+}
+/** Internal canonical source. Only a linked advisor may request this path; raw rows never leave the portal service. */
+export async function advisorEffectivenessSource(
+  actor: Actor,
+  advisorId: string,
+  tableId: string,
+  since: string,
+  until: string,
+  client: Prisma.TransactionClient,
+) {
+  const link = await client.metaAdvisorPortal.findFirst({
+    where: { advisorId, userId: actor.id },
+  });
+  demand(link, "No tienes acceso a este asesor.", 403);
+  return readEffectiveness(
+    actor,
+    tableId,
+    since,
+    until,
+    client,
+    [],
+    false,
+    advisorId,
+  );
+}
+async function readEffectiveness(
+  actor: Actor,
+  tableId: string,
+  since: string,
+  until: string,
+  client: Prisma.TransactionClient = db,
+  path: string[] = [],
+  ignoreLink = false,
+  advisorScope?: string,
+): Promise<EffectivenessSheet> {
   demand(
     !path.includes(tableId) && path.length < 9,
     "La vinculación de hojas contiene un ciclo o demasiados niveles.",
@@ -149,7 +193,7 @@ export async function effectiveness(
         level: "campaign",
         alias: { tableId },
         aliasCountry: { not: null },
-        account: accountWhere(actor),
+        account: advisorScope ? {} : accountWhere(actor),
       },
       select: {
         aliasId: true,
@@ -417,13 +461,15 @@ export async function effectiveness(
     }
   let linkedSourceName = "";
   if (columnLink) {
-    const source = await effectiveness(
+    const source = await readEffectiveness(
       actor,
       columnLink.sourceTableId,
       since,
       until,
       client,
       [...path, tableId],
+      false,
+      advisorScope,
     );
     linkedSourceName = source.table.name;
     const names = new Map(source.table.aliases.map((a) => [a.id, a.name]));

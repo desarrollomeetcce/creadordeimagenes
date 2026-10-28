@@ -16,6 +16,7 @@ import { MetaDateRange } from "./meta-date-range";
 import { EffectivenessCell } from "./effectiveness-cell";
 import { AdvisorAbsenceCell } from "./advisor-absence-cell";
 import { subscribeAdvisorSalesChanged } from "./advisor-sales-events";
+import { AdvisorTeamAnalysis } from "./advisor-team-analysis";
 import { AdvisorDetail } from "./advisor-detail";
 import type {
   AdvisorDayData as Day,
@@ -66,6 +67,7 @@ export function AdvisorsSheet({
     month: "2-digit",
     day: "2-digit",
   }).format(new Date());
+  const [teamAnalysis, setTeamAnalysis] = useState(false);
   const [detailVersion, setDetailVersion] = useState(0);
   const [detailDay, setDetailDay] = useState<string | null>(null);
   const [since, setSince] = useWorkbookPreference<string>(
@@ -393,6 +395,13 @@ export function AdvisorsSheet({
                   <div className="advisor-column-title">
                     Asesor{handle("advisor", "Asesor")}
                   </div>
+                  <button
+                    type="button"
+                    className="advisor-team-trigger"
+                    onClick={() => setTeamAnalysis(true)}
+                  >
+                    Ver análisis del equipo
+                  </button>
                   <div className="advisor-column-tools">
                     <SheetSearchSelect
                       label="Buscar o añadir asesor"
@@ -547,6 +556,17 @@ export function AdvisorsSheet({
             </p>
           )}
         </div>
+      )}
+      {teamAnalysis && (
+        <AdvisorTeamAnalysis
+          listId={listId}
+          tables={tables}
+          initialTableId={tableId}
+          initialCountry={country}
+          initialSince={since}
+          initialUntil={until}
+          onClose={() => setTeamAnalysis(false)}
+        />
       )}
       {detail && (
         <AdvisorDetail

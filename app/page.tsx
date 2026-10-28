@@ -2,6 +2,7 @@
 import dynamic from "next/dynamic";
 import {EffectivenessLegend} from "./components/effectiveness-legend";
 const ProductsCatalog=dynamic(()=>import("./components/products-catalog").then(m=>m.ProductsCatalog),{loading:()=> <p role="status">Cargando efectividad…</p>});
+const AdvisorPerformance=dynamic(()=>import("./components/advisor-performance").then(m=>m.AdvisorPerformance),{loading:()=> <p role="status">Cargando desempeño…</p>});
 const MetaAds=dynamic(()=>import("./components/meta-ads").then(m=>m.MetaAds),{loading:()=> <p role="status">Cargando Meta Ads…</p>});
 import { reasoningLevel } from "../lib/creative-level";
 import {useGenerationChoices} from "./components/generation-choices";
@@ -69,7 +70,7 @@ const Library = LibraryWorkspace;
 const Presets = dynamic(() => import("./components/productivity").then(m => m.Presets));
 const PresetTools = dynamic(() => import("./components/productivity").then(m => m.PresetTools));
 import type { FormEvent } from "react";
-type User = { id: string; name: string; email: string; role: string };
+type User = { id: string; name: string; email: string; role: string; advisorLinked?: boolean };
 type Settings = {
   count: number;
   textCount: number;
@@ -240,8 +241,9 @@ export default function Home() {
       setCollection(null);
       try {
         const params = new URLSearchParams(location);
-        const requested = params.get("view") ?? "projects";
+        const requested = params.get("view") ?? (user.advisorLinked ? "performance" : "projects");
         const allowed = [
+          "performance",
           "projects",
           "library",
           "metaads",
@@ -277,6 +279,7 @@ export default function Home() {
               "account",
               "plans",
               "collection",
+              "performance",
             ].includes(requested))
             ? requested
             : "projects";
@@ -426,6 +429,7 @@ export default function Home() {
     library: "Biblioteca",
     metaads: "Meta Ads",
     products: "Efectividad",
+    performance: "Mi desempeño",
     presets: "Configuraciones guardadas",
     ai: "Ajustes de IA",
     mail: "Ajustes de correo",
@@ -464,6 +468,7 @@ export default function Home() {
           <div className="eyebrow">Espacio de trabajo</div>
           <nav aria-label="Menú principal">
             {[
+              ...(user.role === "OWNER" || user.advisorLinked ? [["performance", "◎", "Mi desempeño"]] : []),
               ["projects", "▦", "Proyectos"],
               ["library", "▧", "Biblioteca"],
               ["metaads", "▥", "Meta Ads"],
@@ -482,7 +487,7 @@ export default function Home() {
               .filter(
                 ([v]) =>
                   user.role !== "OBSERVER" ||
-                  ["projects", "library", "presets", "account"].includes(v),
+                  ["projects", "library", "presets", "account", "performance"].includes(v),
               )
               .map(([v, icon, label]) => (
                 <button
@@ -506,11 +511,11 @@ export default function Home() {
           <header className={view === "products" ? "topbar effectiveness-topbar" : "topbar"}>
             {view === "products" ? <div className="effectiveness-topbar-title"><h1>Efectividad</h1><EffectivenessLegend /></div> : <span className="muted">{view === "metaads" ? "Análisis y control de Meta" : titles[view]}</span>}
             {view === "metaads" && <span className="meta-topbar-role">Rol: <strong>{user.role}</strong></span>}
-            <span className="badge">Producción publicitaria</span>
+            {view !== "performance" && <span className="badge">Producción publicitaria</span>}
 
           </header>
           <main className={view === "products" ? "effectiveness-main" : undefined}>
-            {!["metaads", "products"].includes(view) && <><RoleGuide name={user.name} role={user.role} /><VisualAuditNotice key={user.id} /></>}
+            {!["metaads", "products", "performance"].includes(view) && <><RoleGuide name={user.name} role={user.role} /><VisualAuditNotice key={user.id} /></>}
             {project && view === "projects" && (
               <HierarchyBreadcrumbs
                 project={project}
@@ -555,6 +560,8 @@ export default function Home() {
                   </>
                 )}
               </>
+            ) : view === "performance" ? (
+              <AdvisorPerformance owner={user.role === "OWNER"} />
             ) : view === "products" && user.role === "OWNER" ? (
               <ProductsCatalog />
             ) : view === "metaads" ? (

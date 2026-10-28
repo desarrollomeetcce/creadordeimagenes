@@ -629,6 +629,7 @@ async function handle(
         name: user.name,
         email: user.email,
         role: user.role,
+        advisorLinked: !!(await db.metaAdvisorPortal.findUnique({where:{userId:user.id},select:{advisorId:true}})),
       });
     if (route === "auth/logout" && method === "POST") {
       const c = await cookies(),

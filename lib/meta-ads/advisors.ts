@@ -25,7 +25,11 @@ import { ownerOnly } from "../auth";
 import { demand } from "../errors";
 import { recordActivity } from "../activity";
 import { accountWhere, type Actor } from "./service";
-import { effectiveness, effectivenessLock } from "./effectiveness";
+import {
+  advisorEffectivenessSource,
+  effectiveness,
+  effectivenessLock,
+} from "./effectiveness";
 
 export async function advisors(actor: Actor) {
   const people = await db.metaAdvisor.findMany({
@@ -431,8 +435,42 @@ export async function advisorSheet(
   } = {},
 ) {
   ownerOnly(actor);
+  return readAdvisorSheet(actor, tableId, since, until, filters);
+}
+export async function personalAdvisorSheet(
+  actor: Actor,
+  advisorId: string,
+  since: string,
+  until: string,
+) {
+  return readAdvisorSheet(actor, "all", since, until, { advisorId }, true);
+}
+async function readAdvisorSheet(
+  actor: Actor,
+  tableId: string,
+  since: string,
+  until: string,
+  filters: {
+    aliasId?: string;
+    country?: string;
+    advisorId?: string;
+    advisorListId?: string;
+    periodId?: string;
+  } = {},
+  personal = false,
+) {
   return db.$transaction(
     async (tx) => {
+      if (personal) {
+        demand(
+          filters.advisorId &&
+            (await tx.metaAdvisorPortal.findFirst({
+              where: { advisorId: filters.advisorId, userId: actor.id },
+            })),
+          "No tienes acceso a este asesor.",
+          403,
+        );
+      } else ownerOnly(actor);
       const sheetId =
         filters.advisorListId ??
         (filters.advisorId
@@ -618,7 +656,16 @@ export async function advisorSheet(
         cutoffSales: number | null;
       }[] = [];
       for (const table of tables) {
-        const sheet = await effectiveness(actor, table.id, since, until, tx),
+        const sheet = personal
+            ? await advisorEffectivenessSource(
+                actor,
+                filters.advisorId!,
+                table.id,
+                since,
+                until,
+                tx,
+              )
+            : await effectiveness(actor, table.id, since, until, tx),
           names = new Map(sheet.table.aliases.map((a) => [a.id, a.name]));
         const assignments = await tx.metaAdvisorAssignment.findMany({
           where: { alias: { tableId: table.id } },

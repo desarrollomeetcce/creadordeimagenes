@@ -29,6 +29,7 @@ model User {
   plan MembershipPlan? @relation(fields:[planId],references:[id])
   customPlans MembershipPlan[] @relation("CustomPlanRecipient")
   planValidUntil DateTime?
+  advisorPortal MetaAdvisorPortal?
   sessions Session[]
   projects Project[]
   memberships ProjectMember[]
@@ -972,6 +973,8 @@ model MetaEffectivenessSync {
 }
 
 model MetaAdvisor {
+ portal MetaAdvisorPortal?
+ goals MetaAdvisorGoal[]
  sheetId String @default("default-advisors")
  sheet MetaEffectivenessSheet @relation(fields:[sheetId],references:[id],onDelete:Restrict)
  @@unique([sheetId,name])
@@ -1145,4 +1148,26 @@ model MetaAdvisorBaseDay {
  updatedAt DateTime @updatedAt @default(now())
  @@id([tableId,country,day])
  @@index([day])
+}
+
+model MetaAdvisorPortal {
+ advisorId String @id
+ advisor MetaAdvisor @relation(fields:[advisorId],references:[id],onDelete:Restrict)
+ userId String? @unique
+ user User? @relation(fields:[userId],references:[id],onDelete:SetNull)
+ revision Int @default(1)
+ updatedAt DateTime @updatedAt
+}
+model MetaAdvisorGoal {
+ id String @id @default(cuid())
+ advisorId String
+ advisor MetaAdvisor @relation(fields:[advisorId],references:[id],onDelete:Restrict)
+ basis String
+ since String
+ until String
+ percent Float
+ salesTarget Int?
+ revision Int @default(1)
+ updatedAt DateTime @updatedAt
+ @@index([advisorId,since,until])
 }

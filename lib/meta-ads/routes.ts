@@ -81,6 +81,34 @@ export async function metaRoutes(
       ).setMetaStatus(actor, parts[2], b.status, b.expectedStatus),
     );
   }
+  if (path === "my-performance" && method === "GET")
+    return send(
+      await (
+        await import("./advisor-performance")
+      ).advisorPerformance(actor, Object.fromEntries(req.nextUrl.searchParams)),
+    );
+  if (path === "my-performance/settings" && method === "GET")
+    return send(
+      await (await import("./advisor-performance")).performanceSettings(actor),
+    );
+  if (path === "my-performance/link" && method === "PUT")
+    return send(
+      await (
+        await import("./advisor-performance")
+      ).savePortalLink(actor, await body()),
+    );
+  if (path === "my-performance/goals" && method === "PUT")
+    return send(
+      await (
+        await import("./advisor-performance")
+      ).saveAdvisorGoal(actor, await body()),
+    );
+  if (path === "my-performance/goals" && method === "DELETE")
+    return send(
+      await (
+        await import("./advisor-performance")
+      ).deleteAdvisorGoal(actor, await body()),
+    );
   const nameDecisions = z
     .array(
       z
@@ -1284,9 +1312,26 @@ export async function metaRoutes(
   }
   if (path === "effectiveness/totals/product-detail" && method === "GET") {
     ownerOnly(actor);
-    const q=z.object({tableId:z.string().min(1).max(100),country:z.string().refine(v=>v===""||isCountryCode(v)),currency:z.string().regex(/^([A-Z]{3})?$/),since:z.string().date(),until:z.string().date()}).strict().parse(Object.fromEntries(req.nextUrl.searchParams));
-    demand(q.since<=q.until&&(Date.parse(q.until)-Date.parse(q.since))/86400000<31,"Elige hasta31 días por consulta.");
-    return send(await (await import("./totals-product-detail")).totalsProductDetail(actor,q));
+    const q = z
+      .object({
+        tableId: z.string().min(1).max(100),
+        country: z.string().refine((v) => v === "" || isCountryCode(v)),
+        currency: z.string().regex(/^([A-Z]{3})?$/),
+        since: z.string().date(),
+        until: z.string().date(),
+      })
+      .strict()
+      .parse(Object.fromEntries(req.nextUrl.searchParams));
+    demand(
+      q.since <= q.until &&
+        (Date.parse(q.until) - Date.parse(q.since)) / 86400000 < 31,
+      "Elige hasta31 días por consulta.",
+    );
+    return send(
+      await (
+        await import("./totals-product-detail")
+      ).totalsProductDetail(actor, q),
+    );
   }
   if (path === "effectiveness/totals/daily-detail" && method === "GET") {
     ownerOnly(actor);

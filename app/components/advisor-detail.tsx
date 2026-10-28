@@ -419,117 +419,129 @@ export function AdvisorDetail({
   const partial = days.some((d) => row!.days[d].partial);
   const summary = row ? (
     <div className="advisor-detail-summary" aria-label="Resumen del asesor">
-      {showBM && (
+      <h4>Productividad</h4>
+      <div
+        className="advisor-productivity-values"
+        aria-label="Productividad del asesor"
+      >
         <span>
-          Base manual (BM)
+          Ventas (V)
           <strong>
-            {bmTotal === null ? "—" : number(bmTotal)}
-            {bmDays.length > 0 && bmDays.length < days.length ? " *" : ""}
+            {sales === null ? "—" : number(sales)}
+            {partial ? " *" : ""}
           </strong>
+        </span>
+        {showBC && (
+          <span>
+            Base por contactar (BC)
+            <b>
+              {baseTotal === null ? "—" : number(baseTotal)}
+              {basePartial ? " *" : ""}
+            </b>
+            <small>
+              {baseDays.length}/{days.length} días con BC · declarada por el
+              asesor en Totales.
+            </small>
+          </span>
+        )}
+        {showBC && (
+          <span>
+            Ventas / BC
+            <strong>
+              {!aliasId && performanceRatio(sales, baseTotal, 100) !== null
+                ? performanceRatio(sales, baseTotal, 100)!.toLocaleString(
+                    "es-PE",
+                    { maximumFractionDigits: 2 },
+                  ) + " %"
+                : "—"}
+              {!aliasId &&
+              performanceRatio(sales, baseTotal, 100) !== null &&
+              (partial || basePartial)
+                ? " *"
+                : ""}
+            </strong>
+            <small>
+              {aliasId
+                ? "BC corresponde a la hoja completa; quita el filtro de inventario para comparar."
+                : "Ventas registradas respecto a la base disponible para contactar"}
+            </small>
+          </span>
+        )}
+        {showBM && (
+          <span>
+            Base manual (BM)
+            <strong>
+              {bmTotal === null ? "—" : number(bmTotal)}
+              {bmDays.length > 0 && bmDays.length < days.length ? " *" : ""}
+            </strong>
+            <small>
+              {bmDays.length}/{days.length} días con BM · recibida de Totales al
+              día siguiente.
+            </small>
+          </span>
+        )}
+        {showBM && (
+          <span>
+            Ventas / BM
+            <strong>
+              {!aliasId && sales !== null && bmTotal !== null && bmTotal > 0
+                ? performanceRatio(sales, bmTotal, 100)!.toLocaleString(
+                    "es-PE",
+                    {
+                      maximumFractionDigits: 2,
+                    },
+                  ) + " %"
+                : "—"}
+              {!aliasId &&
+              sales !== null &&
+              bmTotal !== null &&
+              bmTotal > 0 &&
+              (partial || bmDays.length < days.length)
+                ? " *"
+                : ""}
+            </strong>
+            <small>
+              {aliasId
+                ? "BM corresponde a la hoja completa; quita el filtro de inventario para comparar."
+                : "Ventas registradas respecto a la base manual del período"}
+            </small>
+          </span>
+        )}
+        <span>
+          Promedio por día con V
+          <strong>{sales === null ? "—" : number(sales / known.length)}</strong>
           <small>
-            Recibida de Totales por hoja y país · solo lectura. Base del día
-            completo, registrada al día siguiente. {bmDays.length}/{days.length}{" "}
-            días con BM registrada.
+            {known.length}/{days.length} días con ventas registradas
           </small>
         </span>
-      )}
-      {showBM && (
+      </div>
+      <h4 className="advisor-attendance-title">Asistencias</h4>
+      <div
+        className="advisor-attendance-values"
+        aria-label="Asistencias del asesor"
+      >
         <span>
-          Ventas / BM
+          Asistencia (A)
           <strong>
-            {!aliasId && sales !== null && bmTotal !== null && bmTotal > 0
-              ? performanceRatio(sales, bmTotal, 100)!.toLocaleString("es-PE", {
-                  maximumFractionDigits: 2,
-                }) + " %"
-              : "—"}
-            {!aliasId &&
-            sales !== null &&
-            bmTotal !== null &&
-            bmTotal > 0 &&
-            (partial || bmDays.length < days.length)
-              ? " *"
-              : ""}
+            {present} presente(s) · {absent} ausente(s)
           </strong>
-          <small>
-            {aliasId
-              ? "BM corresponde a la hoja completa; quita el filtro de inventario para comparar."
-              : "Ventas registradas respecto a la base manual del período"}
-          </small>
         </span>
-      )}
-      {showBC && (
-        <span>
-          Base por contactar (BC)
-          <b>
-            {baseTotal === null ? "—" : number(baseTotal)}
-            {basePartial ? " *" : ""}
-          </b>
+        <span data-advisor-summary="absences">
+          Inasistencias (I)
+          <strong>{recordedAttendance ? absent : "—"}</strong>
           <small>
-            {baseDays.length}/{days.length} días con BC registrada manualmente
-            en Totales. Es la base que el asesor declara disponible para
-            contactar; no equivale necesariamente a los ingresos de 00:00 a
-            00:00.
+            {recordedAttendance}/{days.length} días con asistencia registrada
           </small>
-        </span>
-      )}
-      {showBC && (
+        </span>{" "}
         <span>
-          Ventas / BC
+          Horas ausentes (H)
           <strong>
-            {!aliasId && performanceRatio(sales, baseTotal, 100) !== null
-              ? performanceRatio(sales, baseTotal, 100)!.toLocaleString(
-                  "es-PE",
-                  { maximumFractionDigits: 2 },
-                ) + " %"
-              : "—"}
-            {!aliasId &&
-            performanceRatio(sales, baseTotal, 100) !== null &&
-            (partial || basePartial)
-              ? " *"
-              : ""}
+            {hours === null ? "—" : number(hours) + " h"}
+            {pending ? " +" : ""}
           </strong>
-          <small>
-            {aliasId
-              ? "BC corresponde a la hoja completa; quita el filtro de inventario para comparar."
-              : "Ventas registradas respecto a la base disponible para contactar"}
-          </small>
+          <small>{pending} regreso(s) pendiente(s)</small>
         </span>
-      )}
-      <span>
-        Ventas (V)
-        <strong>
-          {sales === null ? "—" : number(sales)}
-          {partial ? " *" : ""}
-        </strong>
-      </span>
-      <span>
-        Promedio por día con V
-        <strong>{sales === null ? "—" : number(sales / known.length)}</strong>
-        <small>
-          {known.length}/{days.length} días con ventas registradas
-        </small>
-      </span>
-      <span>
-        Horas ausentes (H)
-        <strong>
-          {hours === null ? "—" : number(hours) + " h"}
-          {pending ? " +" : ""}
-        </strong>
-        <small>{pending} regreso(s) pendiente(s)</small>
-      </span>
-      <span>
-        Asistencia (A)
-        <strong>
-          {present} presente(s) · {absent} ausente(s)
-        </strong>
-      </span>
-      <span data-advisor-summary="absences">
-        Inasistencias (I)
-        <strong>{recordedAttendance ? absent : "—"}</strong>
-        <small>
-          {recordedAttendance}/{days.length} días con asistencia registrada
-        </small>
-      </span>
+      </div>
     </div>
   ) : null;
   const modules: Record<AdvisorModuleId, ReactNode> = {
