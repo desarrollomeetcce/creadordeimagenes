@@ -14,7 +14,6 @@ import { MetaDateRange } from "./meta-date-range";
 import { EffectivenessCell } from "./effectiveness-cell";
 import { AdvisorAbsenceCell } from "./advisor-absence-cell";
 import { subscribeAdvisorSalesChanged } from "./advisor-sales-events";
-import { ManualBaseEditor } from "./manual-base-editor";
 import { AdvisorDetail } from "./advisor-detail";
 import type {
   AdvisorDayData as Day,
@@ -60,11 +59,6 @@ export function AdvisorsSheet({
     month: "2-digit",
     day: "2-digit",
   }).format(new Date());
-  const [baseEditor, setBaseEditor] = useState<{
-    advisorId: string;
-    name: string;
-    day: string;
-  } | null>(null);
   const [detailVersion, setDetailVersion] = useState(0);
   const [detailDay, setDetailDay] = useState<string | null>(null);
   const [since, setSince] = useWorkbookPreference<string>(
@@ -306,17 +300,17 @@ export function AdvisorsSheet({
       </div>
       <p className="sheet-help">
         A y H son asistencia y horas ausentes. BM suma la base manual repartida
-        a cada asesor, por hoja, país y día; pulsa BM para editarla. BC es la
-        base por contactar ingresada en Totales, independiente de BM y B de Meta
-        Ads. Es independiente del diplomado filtrado. V suma las ventas
-        registradas a nombre de cada asesor en las hojas elegidas, aunque no sea
-        el responsable de la fila. Pulsa una venta para ver qué diplomados
-        vendió ese día. H = Horas ausentes (0,5 = 30 minutos): puedes registrar
-        varias salidas y regresos. A y H corresponden a la persona y no se
-        reparten por producto. Los registros anteriores sin reparto conservan su
-        atribución por asignaciones y cortes. * Total parcial o reparto
-        pendiente de aprobar; — sin datos; N.A. no es cero. Todas las hojas
-        incluye también las copias sincronizadas.
+        a cada asesor, por hoja, país y día. BM y BC se consultan aquí y se
+        editan en Totales. BC es la base por contactar ingresada en Totales,
+        independiente de BM y B de Meta Ads. Es independiente del diplomado
+        filtrado. V suma las ventas registradas a nombre de cada asesor en las
+        hojas elegidas, aunque no sea el responsable de la fila. Pulsa una venta
+        para ver qué diplomados vendió ese día. H = Horas ausentes (0,5 = 30
+        minutos): puedes registrar varias salidas y regresos. A y H corresponden
+        a la persona y no se reparten por producto. Los registros anteriores sin
+        reparto conservan su atribución por asignaciones y cortes. * Total
+        parcial o reparto pendiente de aprobar; — sin datos; N.A. no es cero.
+        Todas las hojas incluye también las copias sincronizadas.
       </p>
       {message && (
         <p className="sheet-message" role="status">
@@ -510,13 +504,6 @@ export function AdvisorsSheet({
                         cell={c}
                         disabled={busy || loading}
                         onError={setMessage}
-                        onBase={() =>
-                          setBaseEditor({
-                            advisorId: p.id,
-                            name: p.name,
-                            day: d,
-                          })
-                        }
                         onDetail={() => {
                           setDetailDay(d);
                           setDetail(p);
@@ -552,16 +539,6 @@ export function AdvisorsSheet({
             </p>
           )}
         </div>
-      )}
-      {baseEditor && (
-        <ManualBaseEditor
-          context={{ kind: "advisor", ...baseEditor, tableId, country }}
-          tables={tables}
-          onClose={() => setBaseEditor(null)}
-          onChanged={async () => {
-            await load(true);
-          }}
-        />
       )}
       {detail && (
         <AdvisorDetail
@@ -601,7 +578,7 @@ function FragmentHeaders({
       </th>
       <th
         scope="col"
-        title="Base manual compartida con Totales"
+        title="Base manual recibida de Totales; solo lectura"
         aria-label="Base manual"
       >
         BM{handle(day + "manualBase", "Base manual " + day)}
@@ -625,7 +602,6 @@ function AdvisorDay({
   onSave,
   onAbsenceSave,
   onDetail,
-  onBase,
 }: {
   person: Person;
   day: string;
@@ -633,7 +609,6 @@ function AdvisorDay({
   disabled: boolean;
   onError: (v: string) => void;
   onDetail: () => void;
-  onBase: () => void;
   onSave: (v: Attendance) => Promise<void>;
   onAbsenceSave: (
     v: import("../../lib/meta-ads/advisor-absence").AbsenceInput,
@@ -685,18 +660,14 @@ function AdvisorDay({
           {cell.partial ? " *" : ""}
         </button>
       </td>
-      <td>
-        <button
-          type="button"
-          className="manual-base-cell"
-          aria-label={`BM ${person.name} ${day}`}
-          disabled={disabled}
-          onClick={onBase}
-        >
-          {cell.manualBase === null || cell.manualBase === undefined
-            ? "—"
-            : cell.manualBase.toLocaleString("es-PE")}
-        </button>
+      <td
+        aria-label={`BM ${person.name} ${day}`}
+        title="Solo lectura: suma del reparto de Totales para este asesor, hojas y países consultados"
+        data-readonly="true"
+      >
+        {cell.manualBase === null || cell.manualBase === undefined
+          ? "—"
+          : cell.manualBase.toLocaleString("es-PE")}
       </td>
       <td
         aria-label={`BC ${person.name} ${day}`}

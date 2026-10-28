@@ -269,7 +269,8 @@ export function AdvisorSalesApproval({
     >
       <header className="row">
         <h2>Ventas por asesor</h2>
-        <button className="ui-close-button"
+        <button
+          className="ui-close-button"
           type="button"
           disabled={busy}
           onClick={() => {
@@ -286,9 +287,9 @@ export function AdvisorSalesApproval({
         </b>
       </p>
       <p>
-        El reparto guardado se conserva al reabrir. Se guarda al salir del campo
-        de cantidad o pulsar Enter. Puedes añadir ventas al asesor que las
-        consiguió, aunque ya haya cambiado el responsable.
+        Registra cuánto vendió cada asesor. La celda V muestra la suma y cada
+        persona ve solo sus ventas. Se guarda al salir de la cantidad o pulsar
+        Enter, independientemente del responsable del diplomado.
       </p>
       {!data && !message && <p role="status">Cargando reparto…</p>}
       {data?.linked && (

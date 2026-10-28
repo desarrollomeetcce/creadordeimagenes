@@ -55,7 +55,11 @@ export function AdvisorPeriodHistory({
       void api(query)
         .then((v) => {
           if (active && seq === version) {
-            setPeriods(v.periods);
+            setPeriods(
+              v.periods.filter(
+                (p: AdvisorPeriodView) => p.advisorId === advisorId,
+              ),
+            );
             setMessage("");
           }
         })
@@ -75,7 +79,8 @@ export function AdvisorPeriodHistory({
       unsubscribe();
     };
   }, [query]);
-  const count = Math.max(1, Math.ceil(periods.length / 5)),
+  const selected = periods.filter((p) => p.advisorId === advisorId);
+  const count = Math.max(1, Math.ceil(selected.length / 5)),
     current = Math.min(page, count - 1);
   return (
     <DetailSection
@@ -86,15 +91,13 @@ export function AdvisorPeriodHistory({
       id={sectionId}
     >
       <p className="hint">
-        {aliasId && country
-          ? "Todos los asesores de este inventario y país."
-          : "Asignaciones del asesor en las combinaciones elegidas."}{" "}
-        Más recientes primero, cinco por página. Fechas y horas de Lima.
+        Asignaciones y ventas registradas del asesor seleccionado. Más recientes
+        primero, cinco por página. Fechas y horas de Lima.
       </p>
       {loading && <p role="status">Cargando asignaciones…</p>}
       {message && <p role="alert">{message}</p>}
       <ol className="alias-active-periods advisor-period-list">
-        {periods.slice(current * 5, current * 5 + 5).map((p) => (
+        {selected.slice(current * 5, current * 5 + 5).map((p) => (
           <li key={[p.aliasId, p.country, p.id].join(":")}>
             <div>
               <strong>{p.advisorName}</strong>
@@ -148,22 +151,22 @@ export function AdvisorPeriodHistory({
           </li>
         ))}
       </ol>
-      {!loading && !periods.length && (
+      {!loading && !selected.length && (
         <p>No hay asignaciones registradas en esta combinación.</p>
       )}
-      {periods.some((p) => !p.from) && (
+      {selected.some((p) => !p.from) && (
         <small>
           Un inicio sin registro no se completa con una fecha supuesta.
         </small>
       )}
-      {periods.length > 5 && (
+      {selected.length > 5 && (
         <nav
           className="alias-period-pagination"
           aria-label="Páginas de asignaciones de asesores"
         >
           <span>
-            {current * 5 + 1}–{Math.min(current * 5 + 5, periods.length)} de{" "}
-            {periods.length} asignaciones · Página {current + 1} de {count}
+            {current * 5 + 1}–{Math.min(current * 5 + 5, selected.length)} de{" "}
+            {selected.length} asignaciones · Página {current + 1} de {count}
           </span>
           <div className="row">
             <button

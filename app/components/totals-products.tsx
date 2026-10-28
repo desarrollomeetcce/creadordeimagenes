@@ -1,5 +1,6 @@
 "use client";
-import { useState } from "react";
+import { useRef, useState } from "react";
+import { TotalsProductHistory } from "./totals-product-history";
 import type { TotalProduct } from "../../lib/meta-ads/totals-product-summary";
 import { formatTotalDetail } from "../../lib/meta-ads/totals-detail";
 import { periodTableUrl } from "../../lib/meta-ads/period-table-link";
@@ -18,7 +19,30 @@ export function TotalsProducts({
 }) {
   const [filter, setFilter] = useState("all"),
     [query, setQuery] = useState(""),
-    [page, setPage] = useState(0);
+    [page, setPage] = useState(0),
+    [selectedProduct, setSelectedProduct] = useState("");
+  const container = useRef<HTMLDivElement>(null),
+    historyTrigger = useRef<HTMLButtonElement | null>(null);
+  const openHistory = (aliasId: string, button: HTMLButtonElement) => {
+    historyTrigger.current = button;
+    setSelectedProduct(aliasId);
+    requestAnimationFrame(() => {
+      const target = container.current?.querySelector<HTMLDetailsElement>(
+        `details[data-detail-section="product-evolution:${CSS.escape(aliasId)}"]`,
+      );
+      if (!target) return;
+      target.open = true;
+      target.scrollIntoView({
+        block: "start",
+        behavior: matchMedia("(prefers-reduced-motion: reduce)").matches
+          ? "auto"
+          : "smooth",
+      });
+      target
+        .querySelector<HTMLElement>("button,select")
+        ?.focus({ preventScroll: true });
+    });
+  };
   const status = (p: TotalProduct) =>
     p.sums.sales.value === null
       ? "unknown"
@@ -40,7 +64,7 @@ export function TotalsProducts({
     Math.max(0, Math.ceil(filtered.length / 50) - 1),
   );
   return (
-    <div className="totals-products">
+    <div ref={container} className="totals-products">
       <div
         className="row totals-product-filters"
         aria-label="Filtrar diplomados por ventas"
@@ -93,6 +117,7 @@ export function TotalsProducts({
               <th>Gasto (G)</th>
               <th>Costos fijos (CF)</th>
               <th>Estado</th>
+              <th>Asesores que vendieron</th>
               <th>Detalle</th>
             </tr>
           </thead>
@@ -126,6 +151,24 @@ export function TotalsProducts({
                     </small>
                   </td>
                   <td>
+                    {p.advisors
+                      ?.filter((a) => (a.sales ?? 0) > 0)
+                      .map((a) => `${a.name}: ${a.sales}`)
+                      .join(" · ") ||
+                      (p.sums.sales.value === 0
+                        ? "Sin ventas (0)"
+                        : "Sin registro por asesor")}
+                  </td>
+                  <td>
+                    {p.days && (
+                      <button
+                        type="button"
+                        aria-label={`Ver evolución de ${p.name}`}
+                        onClick={(e) => openHistory(p.aliasId, e.currentTarget)}
+                      >
+                        Ver evolución
+                      </button>
+                    )}
                     <a
                       className="button alias-period-link"
                       target="_blank"
@@ -145,7 +188,7 @@ export function TotalsProducts({
               ))}
             {!filtered.length && (
               <tr>
-                <td colSpan={8}>
+                <td colSpan={9}>
                   {products.length
                     ? "No hay diplomados con este filtro."
                     : "No hay diplomados para este país y moneda."}
@@ -175,6 +218,21 @@ export function TotalsProducts({
             Siguiente →
           </button>
         </div>
+      )}
+      {products.find((p) => p.aliasId === selectedProduct)?.days && (
+        <TotalsProductHistory
+          key={selectedProduct}
+          product={products.find((p) => p.aliasId === selectedProduct)!}
+          tableId={tableId}
+          country={country}
+          onClose={() => {
+            setSelectedProduct("");
+            requestAnimationFrame(() => {
+              if (historyTrigger.current?.isConnected)
+                historyTrigger.current.focus({ preventScroll: true });
+            });
+          }}
+        />
       )}
     </div>
   );

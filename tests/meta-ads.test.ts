@@ -579,8 +579,8 @@ test('Detalle de Totales: manual y automático conservan sus fuentes, cero, N.A.
   const { manualTotalColumns, automaticTotalColumns, totalDetailValue, totalDetailSummary } = await import('../lib/meta-ads/totals-detail');
   const good = (value: number | null) => ({ value, known: value === null ? 0 : 1, expected: 1, na: 0, partial: value === null, pending: false });
   const day = { revision: 0, manual: { baseManual: 3, totalSpend: 0, fixedCost: 'NA' }, sums: { sales: good(6), budget: good(10), base: good(12), spend: good(15), fixedCost: good(2) } } as any;
-  assert.deepEqual(manualTotalColumns.map(c => totalDetailValue(day,c).value), [6,10,3,null,0,null]);
-  assert.deepEqual(automaticTotalColumns.map(c => totalDetailValue(day,c).value), [6,12,15,2,null]);
+  assert.deepEqual(manualTotalColumns.map(c => totalDetailValue(day,c).value), [6,10,null,3,0,null]);
+  assert.deepEqual(automaticTotalColumns.map(c => totalDetailValue(day,c).value), [6,12,null,15,2]);
   assert.equal(totalDetailValue(day,manualTotalColumns[5]).na,1);
   const summary = totalDetailSummary([good(6),good(0),good(null)]); assert.equal(summary.value,6); assert.equal(summary.known,2); assert(summary.partial);
   assert.equal(totalDetailSummary([good(6),{...good(null),pending:true}]).value,null);
@@ -682,4 +682,35 @@ test('Totales por producto: une páginas, conserva cero y faltantes, incluye des
  assert.equal(get('partial').sums.sales.value,0);assert.equal(get('partial').sums.sales.partial,true);
  assert.equal(summarizeTotalProducts(pages,[days[0]],'CO','COP').find(p=>p.aliasId==='sold')!.sums.sales.value,0);
  assert.equal(summarizeTotalProducts(pages,days,'PE','COP')[0].sums.sales.value,200);
+});
+
+test('Ventas de inventario: ranking y fechas por asesor, países separados, páginas sin duplicados y cero/N.A./vacío',async()=>{
+ const {inventoryAdvisorSales}=await import('../lib/meta-ads/inventory-advisor-sales');
+ const a={day:'2026-10-20',country:'PE',advisorId:'ana',name:'Ana',sales:1,na:false,partial:false};
+ const b={...a,advisorId:'donasys',name:'Donasys',sales:3};
+ const report=inventoryAdvisorSales([a,b,a,{...a,day:'2026-10-21',sales:2},{...a,country:'CO',sales:4},{...a,advisorId:'zero',name:'Cero',sales:0},{...a,advisorId:'na',name:'NA',sales:null,na:true},{...a,advisorId:null,name:'Sin asesor',sales:null}]);
+ assert.equal(report.people.find(p=>p.advisorId==='ana')!.sales,7);assert.equal(report.people.find(p=>p.advisorId==='ana')!.knownDays,2);assert.equal(report.people.find(p=>p.advisorId==='donasys')!.sales,3);
+ assert.equal(report.daily.filter(r=>r.advisorId==='ana'&&r.country==='PE'&&r.day==='2026-10-20').length,1);
+ assert.equal(report.daily[0].day,'2026-10-21');assert.equal(report.people.find(p=>p.advisorId==='zero')!.sales,0);assert.equal(report.people.find(p=>p.advisorId==='na')!.sales,null);assert.equal(report.people.find(p=>p.advisorId===null)!.sales,null);
+ assert.equal(report.people.find(p=>p.advisorId===null)!.partial,true);assert.deepEqual(inventoryAdvisorSales([]),{daily:[],people:[]});
+});
+
+test('Columnas de Totales: posiciones arbitrarias conservan identidad, recuperan parámetros nuevos y no mutan preferencias',async()=>{
+ const {orderedTotalColumns,moveTotalColumn}=await import('../lib/meta-ads/totals-column-layout');
+ const cols=[{key:'sales'},{key:'budget'},{key:'advisorBase'},{key:'baseManual'},{key:'totalSpend'},{key:'fixedCost'}],keys=cols.map(c=>c.key);
+ assert.deepEqual(orderedTotalColumns(cols,['baseManual','unknown','baseManual']).map(c=>c.key),['baseManual','sales','budget','advisorBase','totalSpend','fixedCost']);
+ assert.deepEqual(moveTotalColumn(keys,'sales','totalSpend',true),['budget','advisorBase','baseManual','totalSpend','sales','fixedCost']);
+ for(const source of keys)for(const target of keys)for(const after of [false,true]){const next=moveTotalColumn(keys,source,target,after);assert.equal(next.length,6);assert.deepEqual([...next].sort(),[...keys].sort());}
+ assert.deepEqual(keys,cols.map(c=>c.key));assert.deepEqual(moveTotalColumn(keys,'missing','sales'),keys);
+});
+
+test('Totales de producto: períodos por páginas conservan vendedores, fechas, cero y faltantes sin duplicar ni asignar BM/BC',async()=>{
+ const {mergeTotalProductReports}=await import('../lib/meta-ads/totals-product-summary');
+ const value=(n:number|null)=>({value:n,known:n===null?0:1,expected:1,na:0,partial:n===null,pending:false});
+ const cell=(v:number|null,advisors:any[])=>({sums:{sales:value(v),budget:value(null),base:value(null),spend:value(null),fixedCost:value(null)},advisors});
+ const person=(id:string,n:number)=>({advisorId:id,name:id,sales:n,na:false,partial:false});
+ const one={aliasId:'a',name:'Curso',active:true,days:{'2026-10-20':cell(4,[person('Ana',1),person('Donasys',3)])}},two={...one,days:{'2026-10-21':cell(2,[person('Ana',2)]),'2026-10-22':cell(0,[])}};
+ const p=mergeTotalProductReports([{products:[one]},{products:[one,two]}] as any,['2026-10-20','2026-10-21','2026-10-22','2026-10-23'])[0];
+ assert.equal(p.sums.sales.value,6);assert.equal(p.sums.sales.partial,true);assert.equal(p.advisors!.find(a=>a.advisorId==='Ana')!.sales,3);assert.equal(p.advisors!.find(a=>a.advisorId==='Donasys')!.sales,3);assert.equal(p.days!['2026-10-22'].sums.sales.value,0);assert.equal(p.days!['2026-10-23'],undefined);assert(!('manualBase' in p));
+ const {totalDetailPeriods,detailPeriodPreset}=await import('../lib/meta-ads/detail-period-presets');assert.deepEqual(totalDetailPeriods.map(k=>detailPeriodPreset(k,'2026-10-27')!.label),['Hoy','Ayer','Últimos 15 días','Últimos 30 días','Este mes']);
 });

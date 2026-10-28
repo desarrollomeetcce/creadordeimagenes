@@ -13,6 +13,7 @@ import { DetailSection, DetailSections } from "./detail-section";
 import { DetailNavigation } from "./detail-navigation";
 import { MetaDailyChart } from "./meta-daily-chart";
 import type { ActivePeriod } from "../../lib/meta-ads/active-periods";
+import { InventoryAdvisorSales } from "./inventory-advisor-sales";
 type Cell = Record<SheetMetric, number | null> & {
   na: SheetMetric[];
   fxMissing: boolean;
@@ -179,6 +180,16 @@ export function EffectivenessHistory({
                   tone: "activity",
                 },
                 {
+                  target: id + "advisor-sales",
+                  label: "Ventas por asesor",
+                  tone: "sales",
+                },
+                {
+                  target: id + "sales-dates",
+                  label: "Fechas de ventas",
+                  tone: "daily",
+                },
+                {
                   target: id + "chart",
                   label: "Estadísticas",
                   tone: "parameters",
@@ -305,6 +316,15 @@ export function EffectivenessHistory({
                     </nav>
                   )}
                 </DetailSection>
+                <InventoryAdvisorSales
+                  tableId={tableId}
+                  aliasId={aliasId}
+                  country={country}
+                  since={since}
+                  until={until}
+                  sectionId={id}
+                  refreshKey={reload}
+                />
                 <DetailSection
                   id={id + "chart"}
                   stateKey="chart"

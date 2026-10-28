@@ -1282,6 +1282,12 @@ export async function metaRoutes(
       ).changeEffectivenessIdentity(actor, b),
     );
   }
+  if (path === "effectiveness/totals/product-detail" && method === "GET") {
+    ownerOnly(actor);
+    const q=z.object({tableId:z.string().min(1).max(100),country:z.string().refine(v=>v===""||isCountryCode(v)),currency:z.string().regex(/^([A-Z]{3})?$/),since:z.string().date(),until:z.string().date()}).strict().parse(Object.fromEntries(req.nextUrl.searchParams));
+    demand(q.since<=q.until&&(Date.parse(q.until)-Date.parse(q.since))/86400000<31,"Elige hasta31 días por consulta.");
+    return send(await (await import("./totals-product-detail")).totalsProductDetail(actor,q));
+  }
   if (path === "effectiveness/totals/daily-detail" && method === "GET") {
     ownerOnly(actor);
     const q = z

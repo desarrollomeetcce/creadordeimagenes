@@ -4,6 +4,7 @@ import type { Actor } from "./service";
 import { effectiveness } from "./effectiveness";
 import { sumEffectivenessDay } from "./effectiveness-total-values";
 import { advisorSalesPlan } from "./advisor-sales-plan";
+import { mergeTotalProductReports } from "./totals-product-summary";
 import { manualBaseAllocationsSchema } from "./manual-base-policy";
 
 /** Read the same effective cells as Totales, without changing assignments or sources. */
@@ -87,13 +88,31 @@ export async function totalsDailyDetail(
               (!portion.na && portion.sales === null) ||
               !!c?.partialMetrics.includes("sales");
           }
+          const sums = sumEffectivenessDay([r], q.day);
           return {
             aliasId: r.aliasId,
             name:
               sheet.table.aliases.find((a) => a.id === r.aliasId)?.name ??
               "Inventario",
             active: r.active,
-            sums: sumEffectivenessDay([r], q.day),
+            sums,
+            days: {
+              [q.day]: {
+                sums,
+                advisors: plan.portions
+                  .filter((p) => p.sales !== null || p.na)
+                  .map((p) => ({
+                    advisorId: p.advisorId,
+                    name: "",
+                    sales: p.sales,
+                    na: p.na,
+                    partial:
+                      p.partial ||
+                      plan.status === "PENDING" ||
+                      !!c?.partialMetrics.includes("sales"),
+                  })),
+              },
+            },
           };
         });
       const names = new Map(
@@ -125,7 +144,27 @@ export async function totalsDailyDetail(
             (a, b) =>
               (b.sales ?? -1) - (a.sales ?? -1) || a.name.localeCompare(b.name),
           ),
-        products,
+        products: mergeTotalProductReports(
+          [
+            {
+              products: products.map((p) => ({
+                ...p,
+                days: {
+                  [q.day]: {
+                    ...p.days[q.day],
+                    advisors: p.days[q.day].advisors.map((a) => ({
+                      ...a,
+                      name: a.advisorId
+                        ? (names.get(a.advisorId) ?? "Asesor no disponible")
+                        : "Sin asesor / sin distribuir",
+                    })),
+                  },
+                },
+              })),
+            },
+          ],
+          [q.day],
+        ),
       };
     },
     { isolationLevel: "RepeatableRead", timeout: 30000 },

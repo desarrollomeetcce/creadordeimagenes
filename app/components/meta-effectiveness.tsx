@@ -2203,36 +2203,6 @@ export function MetaEffectiveness({
                                 onSave={(v) => editCell(r, d, m.key, v)}
                                 hint={`${c?.linked?.[m.key] ? "Vinculada a «" + c.linked[m.key]!.name + "». Edita el origen o desvincula para editar aquí. " + (!c.linked[m.key]!.matched ? "Sin coincidencia exacta de inventario y país. " : "") : ""}${c?.automaticNa?.includes(m.key) ? "N.A. automático por desactivación; vuelve a vacío al activar. " : ""}${c?.synced?.[m.key] ? "Sincronizado desde «" + c.synced[m.key] + "». " : ""}${c?.manual?.includes(m.key) && !c?.linked?.[m.key] ? "Ajuste manual de Efectividad. Originales conservados. " : ""}${m.key === "spend" && !c?.linked?.[m.key] ? "Original Meta: " + (c?.sourceSpend.map((x) => x.currency + " " + x.amount).join(" + ") || "sin datos") + ". " : ""}${c?.fxMissing && c?.[m.key] === null && !c.na?.includes(m.key) ? "Sin tasa. " : ""}${partial || c?.partialMetrics?.includes(m.key) ? "Cobertura parcial. " : ""}${m.key === "fixedCost" && !c?.linked?.[m.key] ? "Original CF: " + (c?.sourceFixedCost.map((x) => x.currency + " " + x.amount).join(" + ") || "sin datos") + ". " : ""}${m.money && !c?.linked?.[m.key] ? c?.fx.map((f) => `${f.date}: 1 ${f.from} = ${f.rate} ${f.to} · ${f.source}`).join("; ") || "" : ""} ${c?.linked?.[m.key] ? "Edita el valor en la hoja de origen." : m.key === "sales" ? "Clic o Enter para elegir asesor y cantidad de ventas." : "Escribe un número o N.A.; vacío restaura el importado en B/G; en P borra el presupuesto."}`}
                               />
-                              {m.key === "sales" && r.advisorChanges?.[d] && (
-                                <button
-                                  type="button"
-                                  className="sheet-advisor-change"
-                                  data-approved={
-                                    r.advisorChanges[d].status === "APPROVED"
-                                  }
-                                  aria-label={`Reparto de ventas ${name} ${r.country} ${d}`}
-                                  title={
-                                    (d === today
-                                      ? "Hoy hubo cambio de asesor"
-                                      : "Hubo cambio de asesor") +
-                                    " · " +
-                                    (r.advisorChanges[d].status === "APPROVED"
-                                      ? "Reparto aprobado"
-                                      : "Revisar y aprobar reparto")
-                                  }
-                                  onClick={() =>
-                                    setSalesReview({
-                                      aliasId: r.aliasId,
-                                      country: r.country,
-                                      day: d,
-                                    })
-                                  }
-                                >
-                                  {r.advisorChanges[d].status === "APPROVED"
-                                    ? "✓ Aprobado"
-                                    : "↔ Cambio asesor"}
-                                </button>
-                              )}
                               {(c?.partialMetrics?.includes(m.key) ||
                                 (partial && !c?.manual?.includes(m.key))) &&
                                 (m.key === "base" || m.key === "spend") && (

@@ -18,19 +18,26 @@ import {
   type TotalSheet,
   type TotalColumn,
 } from "../../lib/meta-ads/totals-detail";
-import type { totalSourceBlocks } from "../../lib/meta-ads/total-source-blocks";
+import { totalSourceBlocks } from "../../lib/meta-ads/total-source-blocks";
+import { MetaDateRange } from "./meta-date-range";
+import { DetailPeriodPresets } from "./detail-period-presets";
+import { totalDetailPeriods } from "../../lib/meta-ads/detail-period-presets";
+import { readTotalsRange } from "./workbook-range-request";
+import { subscribeAdvisorSalesChanged } from "./advisor-sales-events";
 type Block = ReturnType<typeof totalSourceBlocks<TotalSheet>>[number];
 export function TotalsDetail({
   blocks,
-  days,
+  days: initialDays,
+  totalsSheetId = "default-totals",
   initialMode,
   initialSelection,
-  loading,
+  loading: parentLoading,
   message,
   onClose,
 }: {
   blocks: Block[];
   days: string[];
+  totalsSheetId?: string;
   initialMode: "manual" | "automatic";
   initialSelection?: { blockKey: string; day: string };
   loading: boolean;
@@ -39,6 +46,24 @@ export function TotalsDetail({
 }) {
   const dialog = useRef<HTMLDialogElement>(null);
   const sectionId = useId();
+  const [since, setSince] = useState(initialDays[0] ?? ""),
+    [until, setUntil] = useState(initialDays.at(-1) ?? ""),
+    [rangeResult, setRangeResult] = useState<{
+      query: string;
+      data: TotalSheet;
+    } | null>(null),
+    [rangeLoading, setRangeLoading] = useState(false),
+    [rangeError, setRangeError] = useState(""),
+    [reportBlocks, setReportBlocks] = useState<Block[]>([]);
+  const days: string[] = [];
+  if (
+    since &&
+    until &&
+    since <= until &&
+    (Date.parse(until) - Date.parse(since)) / 86400000 < 3660
+  )
+    for (let at = Date.parse(since); at <= Date.parse(until); at += 86400000)
+      days.push(new Date(at).toISOString().slice(0, 10));
   const [mode, setMode] = useState(initialMode),
     [blockKey, setBlockKey] = useState(
       initialSelection?.blockKey ?? blocks[0]?.key ?? "",
@@ -50,7 +75,71 @@ export function TotalsDetail({
     dialog.current?.showModal();
   }, []);
   const { visibleDays, navigation } = useReportDayPages(days);
-  const block = blocks.find((b) => b.key === blockKey) ?? blocks[0];
+  const availableBlocks = [
+    ...new Map([...blocks, ...reportBlocks].map((b) => [b.key, b])).values(),
+  ];
+  const block =
+    availableBlocks.find((b) => b.key === blockKey) ?? availableBlocks[0];
+  const tableId = block?.table.tableId ?? "";
+  const rangeQuery = JSON.stringify([totalsSheetId, tableId, since, until]);
+  useEffect(() => {
+    if (
+      !tableId ||
+      !since ||
+      !until ||
+      since > until ||
+      (Date.parse(until) - Date.parse(since)) / 86400000 >= 3660
+    )
+      return;
+    let active = true,
+      inFlight = false;
+    setRangeLoading(true);
+    setRangeError("");
+    const load = async () => {
+      if (!active || inFlight || document.hidden) return;
+      inFlight = true;
+      try {
+        const data = await readTotalsRange(
+          { sheetId: totalsSheetId, tableId, since, until },
+          () => active,
+        );
+        if (active) {
+          setRangeResult({ query: rangeQuery, data });
+          // Keep country/currency choices discovered in historical periods, without retaining old values.
+          const choices = totalSourceBlocks([data]).map((b) => ({
+            ...b,
+            table: { ...b.table, groups: [] },
+          }));
+          setReportBlocks((old) => [
+            ...new Map([...old, ...choices].map((b) => [b.key, b])).values(),
+          ]);
+          setRangeError("");
+        }
+      } catch (e) {
+        if (active)
+          setRangeError(
+            e instanceof Error ? e.message : "No se pudo consultar el período.",
+          );
+      } finally {
+        inFlight = false;
+        if (active) setRangeLoading(false);
+      }
+    };
+    void load();
+    const timer = setInterval(load, 30000),
+      unsubscribe = subscribeAdvisorSalesChanged(load);
+    return () => {
+      active = false;
+      clearInterval(timer);
+      unsubscribe();
+    };
+  }, [rangeQuery]);
+  const selectRange = (a: string, b: string) => {
+    setSince(a);
+    setUntil(b);
+    setSelectedDay("");
+  };
+  const loading = parentLoading || rangeLoading;
   const focusDays =
     selectedDay && days.includes(selectedDay) ? [selectedDay] : days;
   const dayIndex = days.indexOf(selectedDay);
@@ -76,7 +165,13 @@ export function TotalsDetail({
         ];
   const barColumn = comparisonColumns.find((c) => c.key === bars) ?? columns[0],
     lineColumn = comparisonColumns.find((c) => c.key === line) ?? columns[1];
-  const group = block?.table.groups.find(
+  const report =
+    rangeResult?.query === rangeQuery
+      ? rangeResult.data
+      : since === initialDays[0] && until === initialDays.at(-1)
+        ? blocks.find((b) => b.key === block?.key)?.table
+        : undefined;
+  const group = report?.groups.find(
     (g) => g.country === block.country && g.currency === block.currency,
   );
   const value = (day: string, column: TotalColumn) =>
@@ -85,12 +180,12 @@ export function TotalsDetail({
     !["sales", "base", "baseManual", "advisorBase"].includes(column.key);
   const summarize = (column: TotalColumn) =>
     totalDetailSummary(focusDays.map((day) => value(day, column)));
-  const sold = summarize(manualTotalColumns[0]),
-    bm = summarize(manualTotalColumns[2]),
-    ba = summarize(manualTotalColumns[3]),
-    gm = summarize(manualTotalColumns[4]),
-    base = summarize(automaticTotalColumns[1]),
-    spend = summarize(automaticTotalColumns[2]);
+  const sold = summarize(manualTotalColumns.find((c) => c.key === "sales")!),
+    bm = summarize(manualTotalColumns.find((c) => c.key === "baseManual")!),
+    ba = summarize(manualTotalColumns.find((c) => c.key === "advisorBase")!),
+    gm = summarize(manualTotalColumns.find((c) => c.key === "totalSpend")!),
+    base = summarize(automaticTotalColumns.find((c) => c.key === "base")!),
+    spend = summarize(automaticTotalColumns.find((c) => c.key === "spend")!);
   const ratios = [
     { name: "Ventas / BC", numerator: sold, denominator: ba, percent: true },
     { name: "Ventas / BM", numerator: sold, denominator: bm, percent: true },
@@ -203,12 +298,29 @@ export function TotalsDetail({
           <SheetSearchSelect
             label="Hoja, país y moneda del detalle de Totales"
             value={block?.key ?? ""}
-            options={blocks.map((b) => ({
+            options={availableBlocks.map((b) => ({
               value: b.key,
               label: `${b.table.name} · ${b.country || "Sin país"} · ${b.currency || "Sin moneda"}`,
             }))}
             onSelect={setBlockKey}
           />
+          <div className="totals-detail-period-controls">
+            <MetaDateRange
+              maxDays={3660}
+              from={since}
+              to={until}
+              onChange={selectRange}
+            />
+            <DetailPeriodPresets
+              key={block?.key}
+              scope={`totals-detail:${totalsSheetId}:${block?.key}`}
+              label="Períodos guardados de Totales"
+              defaults={totalDetailPeriods}
+              since={since}
+              until={until}
+              onSelect={selectRange}
+            />
+          </div>
           <label>
             Fecha del detalle
             <select
@@ -251,6 +363,7 @@ export function TotalsDetail({
           — sin dato; N.A. no suma; * cobertura parcial.
         </p>
         {message && <p role="alert">{message}</p>}
+        {rangeError && <p role="alert">{rangeError}</p>}
         {loading && <small role="status">Actualizando detalle…</small>}
         {!block ? (
           <p>Selecciona una hoja de origen en Totales para ver su detalle.</p>
@@ -487,23 +600,39 @@ export function TotalsDetail({
                         ))}
                         {[
                           {
-                            n: manualTotalColumns[0],
-                            d: manualTotalColumns[2],
+                            n: manualTotalColumns.find(
+                              (c) => c.key === "sales",
+                            )!,
+                            d: manualTotalColumns.find(
+                              (c) => c.key === "baseManual",
+                            )!,
                             percent: true,
                           },
                           {
-                            n: manualTotalColumns[0],
-                            d: automaticTotalColumns[1],
+                            n: manualTotalColumns.find(
+                              (c) => c.key === "sales",
+                            )!,
+                            d: automaticTotalColumns.find(
+                              (c) => c.key === "base",
+                            )!,
                             percent: true,
                           },
                           {
-                            n: manualTotalColumns[4],
-                            d: manualTotalColumns[0],
+                            n: manualTotalColumns.find(
+                              (c) => c.key === "totalSpend",
+                            )!,
+                            d: manualTotalColumns.find(
+                              (c) => c.key === "sales",
+                            )!,
                             percent: false,
                           },
                           {
-                            n: automaticTotalColumns[2],
-                            d: manualTotalColumns[0],
+                            n: automaticTotalColumns.find(
+                              (c) => c.key === "spend",
+                            )!,
+                            d: manualTotalColumns.find(
+                              (c) => c.key === "sales",
+                            )!,
                             percent: false,
                           },
                         ].map((r, i) => {

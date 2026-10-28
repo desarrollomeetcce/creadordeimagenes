@@ -1,8 +1,8 @@
 "use client";
 import { useEffect, useState } from "react";
-import type { EffectivenessSheet } from "../../lib/meta-ads/effectiveness";
 import {
-  summarizeTotalProducts,
+  mergeTotalProductReports,
+  type TotalProductPage,
   type TotalProduct,
 } from "../../lib/meta-ads/totals-product-summary";
 import { readRangePages } from "./workbook-range-request";
@@ -39,15 +39,15 @@ export function TotalsPeriodProducts({
       if (!active || inFlight || document.hidden || !since || !until) return;
       inFlight = true;
       try {
-        const pages = await readRangePages<EffectivenessSheet>(
-          "meta-ads/effectiveness",
-          { tableId, since, until },
+        const pages = await readRangePages<TotalProductPage>(
+          "meta-ads/effectiveness/totals/product-detail",
+          { tableId, country, currency, since, until },
           () => active,
         );
         if (active) {
           setResult({
             context,
-            products: summarizeTotalProducts(pages, days, country, currency),
+            products: mergeTotalProductReports(pages, days),
           });
           setError("");
         }

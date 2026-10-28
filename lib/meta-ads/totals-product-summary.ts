@@ -8,6 +8,8 @@ export type TotalProduct = {
   name: string;
   active: boolean;
   sums: Record<SheetMetric, TotalValue>;
+  days?: Record<string, ProductReportDay>;
+  advisors?: ProductAdvisor[];
 };
 /** Merge report pages by identity; only recorded zero is zero, absent sales stay unknown. */
 export function summarizeTotalProducts(
@@ -39,6 +41,79 @@ export function summarizeTotalProducts(
             totalDetailSummary(daily.map((day) => day[metric.key])),
           ]),
         ) as Record<SheetMetric, TotalValue>,
+      };
+    })
+    .sort((a, b) => a.name.localeCompare(b.name, "es"));
+}
+
+export type ProductAdvisor = {
+  advisorId: string | null;
+  name: string;
+  sales: number | null;
+  na: boolean;
+  partial: boolean;
+};
+export type ProductReportDay = {
+  sums: Record<SheetMetric, TotalValue>;
+  advisors: ProductAdvisor[];
+};
+export type TotalProductReport = {
+  aliasId: string;
+  name: string;
+  active: boolean;
+  days: Record<string, ProductReportDay>;
+};
+export type TotalProductPage = { products: TotalProductReport[] };
+export function mergeTotalProductReports(
+  pages: TotalProductPage[],
+  dates: string[],
+): TotalProduct[] {
+  const products = new Map<string, TotalProductReport>();
+  for (const page of pages)
+    for (const p of page.products) {
+      const old = products.get(p.aliasId);
+      products.set(p.aliasId, { ...p, days: { ...old?.days, ...p.days } });
+    }
+  const unknown: TotalValue = {
+    value: null,
+    known: 0,
+    expected: 1,
+    na: 0,
+    pending: false,
+    partial: true,
+  };
+  return [...products.values()]
+    .map((p) => {
+      const people = new Map<string | null, ProductAdvisor>();
+      for (const date of dates)
+        for (const person of p.days[date]?.advisors ?? []) {
+          const old = people.get(person.advisorId) ?? {
+            ...person,
+            sales: null,
+            na: false,
+            partial: false,
+          };
+          if (person.sales !== null && !person.na)
+            old.sales = (old.sales ?? 0) + person.sales;
+          old.na ||= person.na;
+          old.partial ||=
+            person.partial || (person.sales === null && !person.na);
+          people.set(person.advisorId, old);
+        }
+      return {
+        ...p,
+        sums: Object.fromEntries(
+          sheetMetrics.map((metric) => [
+            metric.key,
+            totalDetailSummary(
+              dates.map((day) => p.days[day]?.sums[metric.key] ?? unknown),
+            ),
+          ]),
+        ) as Record<SheetMetric, TotalValue>,
+        advisors: [...people.values()].map((p) => ({
+          ...p,
+          na: p.sales === null && p.na,
+        })),
       };
     })
     .sort((a, b) => a.name.localeCompare(b.name, "es"));

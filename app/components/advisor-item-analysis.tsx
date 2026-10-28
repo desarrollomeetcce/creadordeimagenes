@@ -18,7 +18,8 @@ export function AdvisorItemAnalysis({
   country,
   since,
   until,
-  onAdvisor,
+  advisorId,
+  advisorName,
   children,
 }: {
   tableId: string;
@@ -27,12 +28,14 @@ export function AdvisorItemAnalysis({
   country: string;
   since: string;
   until: string;
-  onAdvisor: (id: string) => void;
+  advisorId: string;
+  advisorName: string;
   children?: ReactNode;
 }) {
   const [data, setData] = useState<{
       rows: Row[];
       total: number | null;
+      query: string;
     } | null>(null),
     [message, setMessage] = useState("");
   const query = aliasId
@@ -76,6 +79,7 @@ export function AdvisorItemAnalysis({
               (b.sales ?? -1) - (a.sales ?? -1) || a.name.localeCompare(b.name),
           );
           const v = {
+            query,
             rows,
             total: rows.some((r) => r.sales !== null)
               ? rows.reduce((s, r) => s + (r.sales ?? 0), 0)
@@ -99,6 +103,8 @@ export function AdvisorItemAnalysis({
       unsubscribe();
     };
   }, [query]);
+  const current = data?.query === query ? data : null;
+  const rows = current?.rows.filter((r) => r.advisorId === advisorId) ?? [];
   return (
     <DetailSection
       id={sectionId}
@@ -108,17 +114,20 @@ export function AdvisorItemAnalysis({
       className="advisor-item-analysis"
     >
       <p className="hint">
-        Incluye ventas registradas aunque el ítem estuviera desactivado o el
-        asesor no fuera su responsable.
+        Solo las ventas registradas para {advisorName}, aunque el ítem estuviera
+        desactivado o tuviera otro responsable.
       </p>
       {!aliasId ? (
-        <p>Selecciona un inventario para comparar sus asesores.</p>
+        <p>
+          Selecciona un inventario para ver las ventas de {advisorName} en ese
+          producto.
+        </p>
       ) : message ? (
         <p role="alert">{message}</p>
-      ) : !data ? (
+      ) : !current ? (
         <p role="status">Cargando análisis…</p>
-      ) : !data.rows.length ? (
-        <p>No hay ventas registradas en este período.</p>
+      ) : !rows.length ? (
+        <p>{advisorName} no tiene ventas registradas en este período.</p>
       ) : (
         <div className="table-scroll">
           <table>
@@ -127,11 +136,10 @@ export function AdvisorItemAnalysis({
                 <th>Asesor</th>
                 <th>Ventas (V)</th>
                 <th>Días con registro</th>
-                <th></th>
               </tr>
             </thead>
             <tbody>
-              {data.rows.map((r) => (
+              {rows.map((r) => (
                 <tr
                   key={r.advisorId ?? "unassigned"}
                   data-analysis-advisor={r.advisorId ?? ""}
@@ -142,15 +150,6 @@ export function AdvisorItemAnalysis({
                     {r.pending ? " *" : ""}
                   </td>
                   <td>{r.knownDays}</td>
-                  <td>
-                    <button
-                      type="button"
-                      disabled={!r.advisorId}
-                      onClick={() => r.advisorId && onAdvisor(r.advisorId)}
-                    >
-                      Estadísticas del asesor
-                    </button>
-                  </td>
                 </tr>
               ))}
             </tbody>

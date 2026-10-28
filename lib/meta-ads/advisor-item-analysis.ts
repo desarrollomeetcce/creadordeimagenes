@@ -4,6 +4,7 @@ import { demand } from "../errors";
 import type { Actor } from "./service";
 import { effectiveness } from "./effectiveness";
 import { advisorSalesPlan } from "./advisor-sales-plan";
+import type { InventorySalesEntry } from "./inventory-advisor-sales";
 export async function advisorItemAnalysis(
   actor: Actor,
   b: {
@@ -54,6 +55,7 @@ export async function advisorItemAnalysis(
               : ""),
         ]),
       );
+      const daily: InventorySalesEntry[] = [];
       const sums = new Map<
         string | null,
         {
@@ -87,6 +89,21 @@ export async function advisorItemAnalysis(
               ),
             );
           for (const p of plan.portions) {
+            if (p.sales !== null || p.na)
+              daily.push({
+                day,
+                country: row.country,
+                advisorId: p.advisorId,
+                name: p.advisorId
+                  ? (names.get(p.advisorId) ?? "Asesor no disponible")
+                  : "Sin asesor",
+                sales: p.sales,
+                na: p.na,
+                partial:
+                  p.partial ||
+                  plan.status === "PENDING" ||
+                  !!c?.partialMetrics.includes("sales"),
+              });
             const sum = sums.get(p.advisorId) ?? {
               advisorId: p.advisorId,
               name: p.advisorId
@@ -123,6 +140,7 @@ export async function advisorItemAnalysis(
       return {
         aliasId: alias.id,
         alias: alias.name,
+        daily,
         rows,
         total: rows.some((r) => r.sales !== null)
           ? rows.reduce((n, r) => n + (r.sales ?? 0), 0)

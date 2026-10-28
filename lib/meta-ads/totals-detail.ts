@@ -30,27 +30,27 @@ export type TotalSheet = {
 export const manualTotalColumns = [
   { key: "sales", label: "V", name: "Ventas", sum: true },
   { key: "budget", label: "P", name: "Presupuesto", sum: true },
-  { key: "baseManual", label: "BM", name: "Base manual", sum: false },
   {
     key: "advisorBase",
     label: "BC",
     name: "Base por contactar",
     sum: false,
   },
+  { key: "baseManual", label: "BM", name: "Base manual", sum: false },
   { key: "totalSpend", label: "GM", name: "Gasto manual", sum: false },
   { key: "fixedCost", label: "CF", name: "Costos fijos", sum: false },
 ] as const;
 export const automaticTotalColumns = [
   { key: "sales", label: "V", name: "Ventas", sum: true },
   { key: "base", label: "B", name: "Base", sum: true },
-  { key: "spend", label: "G", name: "Gasto", sum: true },
-  { key: "fixedCost", label: "CF", name: "Costos fijos", sum: true },
   {
     key: "advisorBase",
     label: "BC",
     name: "Base por contactar",
     sum: false,
   },
+  { key: "spend", label: "G", name: "Gasto", sum: true },
+  { key: "fixedCost", label: "CF", name: "Costos fijos", sum: true },
 ] as const;
 export type TotalColumn =
   (typeof manualTotalColumns)[number] | (typeof automaticTotalColumns)[number];

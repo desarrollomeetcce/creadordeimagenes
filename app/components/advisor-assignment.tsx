@@ -179,19 +179,15 @@ export function AdvisorAssignment({
                 />
               </label>
               <p className="advisor-auto-cut" role="status">
-                Ventas registradas de esta fecha:{" "}
-                <b>{review?.sales ?? "Sin ventas registradas"}</b>. El sistema
-                tomará automáticamente el total registrado al confirmar el
-                cambio. Esas ventas quedan para los tramos anteriores y solo las
-                que registres después se suman al nuevo asesor. No necesitas
-                escribir otro valor.
+                Este cambio registra desde cuándo es responsable. Los repartos
+                de ventas guardados por asesor se conservan; registra o edita
+                las ventas de cada persona en la celda V.
               </p>
             </>
           ) : (
             <p>
-              El nuevo asesor recibe todas las ventas de esta fecha. Reemplaza
-              los cortes anteriores de este mismo día; las fechas previas
-              mantienen su responsable.
+              La responsabilidad empieza al inicio de esta fecha. Las ventas
+              registradas por asesor son independientes y se editan en V.
             </p>
           )}
         </fieldset>

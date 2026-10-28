@@ -13,17 +13,21 @@ export function DetailPeriodPresets({
   since,
   until,
   onSelect,
+  defaults = defaultDetailPeriods,
+  label = "Períodos guardados del asesor",
 }: {
   scope: string;
   sectionId?: string;
   since: string;
   until: string;
   onSelect: (since: string, until: string) => void;
+  defaults?: string[];
+  label?: string;
 }) {
   const [saved, setSaved] = useWorkbookPreference<string[]>(
     scope,
     "detail-periods",
-    defaultDetailPeriods,
+    defaults,
   );
   const [message, setMessage] = useState("");
   const today = () =>
@@ -61,11 +65,11 @@ export function DetailPeriodPresets({
       id={sectionId}
       className="detail-period-presets"
       role="group"
-      aria-label="Períodos guardados del asesor"
-      title="Los accesos rápidos se calculan al pulsarlos. Los rangos personalizados conservan sus fechas y se guardan en este navegador para este asesor."
+      aria-label={label}
+      title="Los accesos rápidos se calculan al pulsarlos. Los rangos personalizados conservan sus fechas y se guardan en este navegador para esta vista."
     >
       <div className="row detail-period-accesses">
-        {defaultDetailPeriods
+        {defaults
           .filter((key) => key !== "last-month" && saved.includes(key))
           .map(chip)}
         <div className="detail-period-add-group">
@@ -90,14 +94,14 @@ export function DetailPeriodPresets({
             }}
           />
         </div>
-        {saved.filter((key) => !defaultDetailPeriods.includes(key)).map(chip)}
+        {saved.filter((key) => !defaults.includes(key)).map(chip)}
         <button
           type="button"
           className="detail-period-reset"
           aria-label="Restablecer accesos de períodos"
           title="Restablecer accesos"
           onClick={() => {
-            setSaved(defaultDetailPeriods);
+            setSaved(defaults);
             setMessage("");
           }}
         >

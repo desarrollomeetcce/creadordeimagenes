@@ -6,6 +6,13 @@ export const defaultDetailPeriods = [
   "month",
   "last-month",
 ];
+export const totalDetailPeriods = [
+  "today",
+  "calendar:yesterday",
+  "days:15",
+  "days:30",
+  "month",
+];
 export function detailPeriodPreset(key: string, today: string) {
   const end = new Date(today + "T12:00:00Z");
   if (!Number.isFinite(end.getTime())) return null;

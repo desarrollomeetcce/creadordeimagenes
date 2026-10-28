@@ -243,14 +243,20 @@ export function AdvisorDetail({
             }
           const days = Object.assign(
             {},
-            ...pages.map((p) => p.rows[0]?.days ?? {}),
+            ...pages.map(
+              (p) => p.rows.find((r) => r.id === analysisAdvisor)?.days ?? {},
+            ),
           );
           setData({
             ...base,
             since,
             until,
-            rows: base.rows[0] ? [{ ...base.rows[0], days }] : [],
-            breakdown: [...sources.values()],
+            rows: base.rows.some((r) => r.id === analysisAdvisor)
+              ? [{ ...base.rows.find((r) => r.id === analysisAdvisor)!, days }]
+              : [],
+            breakdown: [...sources.values()].filter(
+              (r) => r.advisorId === analysisAdvisor,
+            ),
             manualBaseBreakdown: pages.flatMap(
               (p) => p.manualBaseBreakdown ?? [],
             ),
@@ -295,8 +301,12 @@ export function AdvisorDetail({
       unsubscribe();
     };
   }, [query, valid, reload, minimized]);
-  const row = data?.rows[0],
+  const row = data?.rows.find((p) => p.id === analysisAdvisor),
     days = row ? Object.keys(row.days).sort() : [];
+  const advisorName =
+    row?.name ??
+    people.find((p) => p.id === analysisAdvisor)?.name ??
+    person.name;
   const known = days.filter(
       (d) => row!.days[d].sales !== null && !row!.days[d].na,
     ),
@@ -371,7 +381,9 @@ export function AdvisorDetail({
       <span>
         Base manual (BM)
         <strong>{bmTotal === null ? "—" : number(bmTotal)}</strong>
-        <small>Registrada en Totales y Asesores por hoja y país</small>
+        <small>
+          Recibida del reparto de Totales por hoja y país · solo lectura
+        </small>
       </span>
       <span>
         Ventas / BM
@@ -791,10 +803,8 @@ export function AdvisorDetail({
           country={country}
           since={since}
           until={until}
-          onAdvisor={(id) => {
-            setAnalysisAdvisor(id);
-            setSelectedPeriod(null);
-          }}
+          advisorId={analysisAdvisor}
+          advisorName={advisorName}
         >
           {summary}
         </AdvisorItemAnalysis>
@@ -900,21 +910,21 @@ export function AdvisorDetail({
             type="button"
             className="advisor-detail-restore"
             onClick={restore}
-            aria-label={`Restaurar detalle de ${person.name}`}
+            aria-label={`Restaurar detalle de ${advisorName}`}
           >
-            ↗ Restaurar detalle · {person.name}
+            ↗ Restaurar detalle · {advisorName}
           </button>
         )}
         <dialog
           ref={dialog}
           className="meta-detail advisor-detail"
           hidden={minimized}
-          aria-label={`Detalle de asesor ${person.name}`}
+          aria-label={`Detalle de asesor ${advisorName}`}
           onCancel={onClose}
         >
           <DetailLayoutA11y />
           <header className="row advisor-detail-heading">
-            <h2>{row?.name ?? person.name}</h2>
+            <h2>{advisorName}</h2>
           </header>
           <DetailNavigation
             onClose={onClose}

@@ -27,6 +27,10 @@ import {
 import { readTotalsRange } from "./workbook-range-request";
 import { useReportDayPages } from "./report-day-pages";
 import { ManualBaseEditor } from "./manual-base-editor";
+import {
+  TotalsColumnPalette,
+  useTotalsColumnTools,
+} from "./totals-column-tools";
 import { TotalsDetail } from "./totals-detail";
 const names = new Intl.DisplayNames(["es"], { type: "currency" });
 export function EffectivenessTotals({
@@ -175,7 +179,12 @@ export function EffectivenessTotals({
     () => totalSourceBlocks(data, country, currency),
     [data, country, currency],
   );
-  const columns = mode === "manual" ? manualColumns : autoColumns;
+  const columnTools = useTotalsColumnTools(
+    listId,
+    mode,
+    mode === "manual" ? manualColumns : autoColumns,
+  );
+  const columns = columnTools.columns;
   const layoutColumns = [
     { key: "date", width: 100 },
     ...blocks.flatMap((block) => [
@@ -382,6 +391,7 @@ export function EffectivenessTotals({
         >
           Ver detalle
         </button>
+        <TotalsColumnPalette tools={columnTools} />
         <button disabled={loading} onClick={() => setReload((v) => v + 1)}>
           Actualizar totales
         </button>
@@ -408,6 +418,7 @@ export function EffectivenessTotals({
       )}
       {detailOpen && (
         <TotalsDetail
+          totalsSheetId={listId}
           blocks={blocks}
           days={days}
           initialMode={mode}
@@ -425,6 +436,11 @@ export function EffectivenessTotals({
         Las ventas se suman únicamente desde la hoja de origen indicada en cada
         bloque, sin combinar tablas. No modifica Meta Ads.
       </p>
+      {columnTools.message && (
+        <span className="sr-only" role="status">
+          {columnTools.message}
+        </span>
+      )}
       {message && (
         <p className="sheet-message" role="alert">
           {message}
@@ -568,10 +584,26 @@ export function EffectivenessTotals({
                     <th
                       key={block.key + ":" + m.key}
                       data-entry={m.sum ? "derived" : "manual"}
+                      data-total-column={m.key}
+                      data-total-tone={
+                        columnTools.green(m.key) ? "green" : "brown"
+                      }
+                      data-column-drop={
+                        columnTools.drop?.key === m.key
+                          ? columnTools.drop.after
+                            ? "after"
+                            : "before"
+                          : undefined
+                      }
+                      style={columnTools.style(m.key, true)}
                       title={`${m.name} (${m.label})${m.sum ? " · suma" : " · manual"}`}
                     >
                       {m.label}
                       {m.sum ? " Σ" : ""}
+                      {columnTools.handle(
+                        m,
+                        `${block.table.name} ${block.country} ${block.currency}`,
+                      )}
                       {handle(
                         block.key + ":" + m.key,
                         block.table.name +
@@ -659,7 +691,15 @@ export function EffectivenessTotals({
                             data-country={g.country}
                             data-currency={g.currency}
                             data-metric={m.key}
-                            className={m.sum ? "sheet-derived" : ""}
+                            className={
+                              m.sum || m.key === "advisorBase"
+                                ? "sheet-derived"
+                                : ""
+                            }
+                            data-total-tone={
+                              columnTools.green(m.key) ? "green" : "brown"
+                            }
+                            style={columnTools.style(m.key)}
                             data-entry={m.sum ? "derived" : "manual"}
                           >
                             {m.sum ? (
