@@ -64,7 +64,7 @@ export function EffectivenessHistory({
   const [open, setOpen] = useState(false),
     [since, setSince] = useState(initialSince),
     [until, setUntil] = useState(initialUntil),
-    [data, setData] = useState<Detail | null>(null),
+    [result, setData] = useState<Detail | null>(null),
     [message, setMessage] = useState(""),
     [loading, setLoading] = useState(false),
     [bars, setBars] = useState<SheetMetric>("sales"),
@@ -72,12 +72,14 @@ export function EffectivenessHistory({
     [page, setPage] = useState(0),
     [reload, setReload] = useState(0),
     [expanded, setExpanded] = useState(false);
+  const [loadedQuery, setLoadedQuery] = useState("");
   const query =
       "meta-ads/effectiveness/detail?" +
       new URLSearchParams({ aliasId, country, since, until }),
     valid =
       since <= until &&
       (Date.parse(until) - Date.parse(since)) / 86400000 < 3660;
+  const data = loadedQuery === query ? result : null;
   useEffect(() => {
     if (!open || !valid) return;
     let active = true;
@@ -100,7 +102,10 @@ export function EffectivenessHistory({
             ...pages[0],
             days: Object.assign({}, ...pages.map((p) => p.days)),
           };
-          if (active && request === version) setData(v);
+          if (active && request === version) {
+            setData(v);
+            setLoadedQuery(query);
+          }
         })
         .catch((e) => {
           if (active && request === version) setMessage(e.message);
@@ -244,6 +249,12 @@ export function EffectivenessHistory({
                       Actualizar detalle
                     </button>
                   </div>
+                  <p className="hint">
+                    Ventas y parámetros del{" "}
+                    {since === until ? since : `${since} — ${until}`} · Lima.
+                    Cada cifra corresponde a su fecha, aunque se registre
+                    después.
+                  </p>
                   {data && (
                     <p>
                       Estado actual:{" "}

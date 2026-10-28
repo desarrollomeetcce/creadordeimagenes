@@ -124,15 +124,7 @@ export function AdvisorTeamAnalysis({
   ];
   const choose = (next: "period" | "today" | "yesterday") => {
     setView(next);
-    if (next === "period") {
-      setSince(initialSince);
-      setUntil(initialUntil);
-    } else {
-      const d = next === "today" ? limaToday() : shiftDay(limaToday(), -1);
-      setSince(d);
-      setUntil(d);
-      setBasis(next === "today" ? "BC" : "BM");
-    }
+    if (next !== "period") setBasis(next === "today" ? "BC" : "BM");
   };
   return (
     <>
@@ -174,7 +166,6 @@ export function AdvisorTeamAnalysis({
               onChange={(a, b) => {
                 setSince(a);
                 setUntil(b);
-                setView("period");
               }}
             />
             <SheetSearchSelect

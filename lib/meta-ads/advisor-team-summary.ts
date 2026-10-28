@@ -1,4 +1,4 @@
-import { performanceRatio } from "./performance-metrics";
+import { periodComparison } from "./period-comparison";
 type Person = {
   id: string;
   name: string;
@@ -39,7 +39,12 @@ export function advisorTeamRows(people: Person[], basis: "BC" | "BM") {
       name: p.name,
       sales,
       base,
-      percent: performanceRatio(sales, base, 100),
+      percent: periodComparison(
+        days.map((d) => ({
+          numerator: d.na ? null : d.sales,
+          denominator: baseValue(d) ?? null,
+        })),
+      ).value,
       average: sales === null ? null : sales / salesDays.length,
       knownSales: salesDays.length,
       knownBase: baseDays.length,

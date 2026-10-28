@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { engineRequest as api } from "./generation-engine";
-import { performanceRatio } from "../../lib/meta-ads/performance-metrics";
+import { periodComparison } from "../../lib/meta-ads/period-comparison";
 import { DetailPeriodPresets } from "./detail-period-presets";
 import { MetaDateRange } from "./meta-date-range";
 import { limaToday, shiftDay } from "./date-range";
@@ -105,19 +105,8 @@ export function AdvisorDetail({
   const [analysisView, setAnalysisView] = useState<
     "period" | "today" | "yesterday"
   >(initialAnalysisView);
-  const customRange = useRef({ since: initialSince, until: initialUntil });
   const selectAnalysis = (view: "period" | "today" | "yesterday") => {
-    if (analysisView === "period") customRange.current = { since, until };
-    const range =
-      view === "period"
-        ? customRange.current
-        : {
-            since: view === "today" ? limaToday() : shiftDay(limaToday(), -1),
-            until: view === "today" ? limaToday() : shiftDay(limaToday(), -1),
-          };
     setAnalysisView(view);
-    setSince(range.since);
-    setUntil(range.until);
     setSelectedPeriod(null);
     previousView.current = null;
     setDayPage(0);
@@ -412,6 +401,18 @@ export function AdvisorDetail({
   const baseTotal = baseDays.length
     ? baseDays.reduce((sum, d) => sum + (row!.days[d].advisorBase ?? 0), 0)
     : null;
+  const bmComparison = periodComparison(
+    days.map((day) => ({
+      numerator: row!.days[day].na ? null : row!.days[day].sales,
+      denominator: row!.days[day].manualBase ?? null,
+    })),
+  );
+  const bcComparison = periodComparison(
+    days.map((day) => ({
+      numerator: row!.days[day].na ? null : row!.days[day].sales,
+      denominator: row!.days[day].advisorBase ?? null,
+    })),
+  );
   const pageCount = Math.max(1, Math.ceil(days.length / 31)),
     currentDayPage = Math.min(dayPage, pageCount - 1),
     visibleDays = days.slice(currentDayPage * 31, currentDayPage * 31 + 31);
@@ -427,7 +428,7 @@ export function AdvisorDetail({
   const partial = days.some((d) => row!.days[d].partial);
   const summary = row ? (
     <div className="advisor-detail-summary" aria-label="Resumen del asesor">
-      <h4>Productividad</h4>
+      <h4>Productividad · {since === until ? since : `${since} — ${until}`}</h4>
       <div
         className="advisor-productivity-values"
         aria-label="Productividad del asesor"
@@ -456,14 +457,13 @@ export function AdvisorDetail({
           <span>
             Ventas / BC
             <strong>
-              {!aliasId && performanceRatio(sales, baseTotal, 100) !== null
-                ? performanceRatio(sales, baseTotal, 100)!.toLocaleString(
-                    "es-PE",
-                    { maximumFractionDigits: 2 },
-                  ) + " %"
+              {!aliasId && bcComparison.value !== null
+                ? bcComparison.value!.toLocaleString("es-PE", {
+                    maximumFractionDigits: 2,
+                  }) + " %"
                 : "—"}
               {!aliasId &&
-              performanceRatio(sales, baseTotal, 100) !== null &&
+              bcComparison.value !== null &&
               (partial || basePartial)
                 ? " *"
                 : ""}
@@ -471,7 +471,9 @@ export function AdvisorDetail({
             <small>
               {aliasId
                 ? "BC corresponde a la hoja completa; quita el filtro de inventario para comparar."
-                : "Ventas registradas respecto a la base disponible para contactar"}
+                : bcComparison.mismatched
+                  ? "Faltan ventas o BC de las mismas fechas para comparar el período."
+                  : "Ventas y BC de las mismas fechas del período"}
             </small>
           </span>
         )}
@@ -492,13 +494,10 @@ export function AdvisorDetail({
           <span>
             Ventas / BM
             <strong>
-              {!aliasId && sales !== null && bmTotal !== null && bmTotal > 0
-                ? performanceRatio(sales, bmTotal, 100)!.toLocaleString(
-                    "es-PE",
-                    {
-                      maximumFractionDigits: 2,
-                    },
-                  ) + " %"
+              {!aliasId && bmComparison.value !== null
+                ? bmComparison.value!.toLocaleString("es-PE", {
+                    maximumFractionDigits: 2,
+                  }) + " %"
                 : "—"}
               {!aliasId &&
               sales !== null &&
@@ -511,7 +510,9 @@ export function AdvisorDetail({
             <small>
               {aliasId
                 ? "BM corresponde a la hoja completa; quita el filtro de inventario para comparar."
-                : "Ventas registradas respecto a la base manual del período"}
+                : bmComparison.mismatched
+                  ? "Faltan ventas o BM de las mismas fechas para comparar el período."
+                  : "Ventas y BM de las mismas fechas del período"}
             </small>
           </span>
         )}
@@ -1111,9 +1112,9 @@ export function AdvisorDetail({
             </div>
             <p className="hint" role="status">
               {analysisView === "today"
-                ? `Hoy · ${since} · Lima. Ventas / BC: base declarada para contactar hoy.`
+                ? `Avance provisional · ${since} — ${until} · Lima. Ventas y BC de las mismas fechas del período.`
                 : analysisView === "yesterday"
-                  ? `Ayer · ${since} · Lima. Ventas / BM: base del día completo, registrada al día siguiente.`
+                  ? `Día completo · ${since} — ${until} · Lima. Ventas y BM de las mismas fechas; BM se registra al día siguiente.`
                   : "Período seleccionado: compara ventas con BM o BC, sin mezclar ambas bases."}{" "}
               * Cobertura parcial; — sin dato. Las bases se reciben de Totales y
               no se reparten por diplomado.
@@ -1125,8 +1126,6 @@ export function AdvisorDetail({
                   from={since}
                   to={until}
                   onChange={(a, b) => {
-                    setAnalysisView("period");
-                    customRange.current = { since: a, until: b };
                     setSelectedPeriod(null);
                     previousView.current = null;
                     setDayPage(0);
@@ -1141,8 +1140,6 @@ export function AdvisorDetail({
                   since={since}
                   until={until}
                   onSelect={(a, b) => {
-                    setAnalysisView("period");
-                    customRange.current = { since: a, until: b };
                     setSelectedPeriod(null);
                     previousView.current = null;
                     setDayPage(0);

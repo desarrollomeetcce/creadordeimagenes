@@ -768,3 +768,13 @@ import {advisorPerformanceTrend} from '../lib/meta-ads/advisor-motivation';
 test('Motivación del asesor: variación equivalente, precisión y registros incompletos',()=>{
  assert.deepEqual(advisorPerformanceTrend(5,3),{kind:'improved',delta:2});assert.deepEqual(advisorPerformanceTrend(2,5),{kind:'declined',delta:-3});assert.deepEqual(advisorPerformanceTrend(0,0),{kind:'steady',delta:0});assert.equal(advisorPerformanceTrend(1.0001,1).kind,'steady');assert.equal(advisorPerformanceTrend(null,4).kind,'pending');assert.equal(advisorPerformanceTrend(5,null).kind,'pending');assert.equal(advisorPerformanceTrend(5,3,true).kind,'pending');assert.equal(advisorPerformanceTrend(5,3,false,true).kind,'pending');
 });
+
+import {periodComparison} from '../lib/meta-ads/period-comparison';
+test('Resumen del período: ventas y bases de las mismas fechas, sin mezclar hoy con ayer',()=>{
+ assert.equal(periodComparison([{numerator:5,denominator:358}]).value,5/358*100);
+ assert.equal(periodComparison([{numerator:5,denominator:358},{numerator:3,denominator:150}]).value,8/508*100);
+ assert.deepEqual(periodComparison([{numerator:5,denominator:358},{numerator:3,denominator:null}]),{value:null,mismatched:true,matchedDays:1});
+ assert.equal(periodComparison([{numerator:null,denominator:100},{numerator:5,denominator:358}]).value,null);
+ assert.equal(periodComparison([{numerator:null,denominator:null},{numerator:0,denominator:10}]).value,0);
+ assert.equal(periodComparison([{numerator:5,denominator:0}]).value,null);
+});

@@ -85,11 +85,13 @@ test("Mi desempeño: vinculación segura, bases canónicas, objetivos y aislamie
         data: { aliasId: alias.id, country, currency: "", advisorId: don.id },
       });
     for (const day of [today, yesterday]) {
+      const dailySales = ownSales + (day === yesterday ? 1 : 0);
+      const dailyBM = day === yesterday ? (country === "PE" ? 238 : 120) : bm;
       await db.metaEffectivenessDay.create({
         data: {
           rowId: row.id,
           day,
-          sales: ownSales + 8,
+          sales: dailySales + 8,
           salesOverridden: true,
         },
       });
@@ -97,9 +99,9 @@ test("Mi desempeño: vinculación segura, bases canónicas, objetivos y aislamie
         data: {
           rowId: row.id,
           day,
-          salesTotal: ownSales + 8,
+          salesTotal: dailySales + 8,
           allocations: [
-            { advisorId: ana.id, sales: ownSales },
+            { advisorId: ana.id, sales: dailySales },
             { advisorId: don.id, sales: 8 },
           ],
           basis: { events: [], activeAdvisorId: don.id },
@@ -112,7 +114,7 @@ test("Mi desempeño: vinculación segura, bases canónicas, objetivos y aislamie
           country,
           day,
           allocations: [
-            { advisorId: ana.id, quantity: bm },
+            { advisorId: ana.id, quantity: dailyBM },
             { advisorId: don.id, quantity: 999 },
           ],
         },
@@ -222,12 +224,13 @@ test("Mi desempeño: vinculación segura, bases canónicas, objetivos y aislamie
       assert.equal(a.body.today.sales, 3);
       assert.equal(a.body.today.base, 60);
       assert.equal(a.body.today.percent, 5);
-      assert.equal(a.body.today.previousPercent, 5);
+      assert.equal(a.body.today.previousPercent, (5 / 60) * 100);
       assert.equal(a.body.today.previousDay, yesterday);
       assert.equal(a.body.yesterday.previousPercent, null);
       assert.equal(a.body.history.length, 2);
-      assert.equal(a.body.yesterday.base, 150);
-      assert.equal(a.body.yesterday.percent, 2);
+      assert.equal(a.body.yesterday.sales, 5);
+      assert.equal(a.body.yesterday.base, 358);
+      assert.equal(a.body.yesterday.percent, (5 / 358) * 100);
       assert.equal(d.body.today.sales, 16);
       assert(!JSON.stringify(a.body).includes(don.id));
       assert(!JSON.stringify(a.body).includes(don.name));

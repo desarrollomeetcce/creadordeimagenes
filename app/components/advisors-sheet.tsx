@@ -12,7 +12,6 @@ import { useWorkbookPreference } from "./use-workbook-preference";
 import { engineRequest as api } from "./generation-engine";
 import { useReportDayPages } from "./report-day-pages";
 import { readAdvisorRange } from "./workbook-range-request";
-import { shiftDay } from "./date-range";
 import { MetaDateRange } from "./meta-date-range";
 import { EffectivenessCell } from "./effectiveness-cell";
 import { AdvisorAbsenceCell } from "./advisor-absence-cell";
@@ -110,13 +109,8 @@ export function AdvisorsSheet({
     [busy, setBusy] = useState(false),
     [editingName, setEditingName] = useState<string | null>(null),
     [query, setQuery] = useWorkbookPreference<string>(listId, "query", "");
-  const since =
-    analysisView === "period"
-      ? periodSince
-      : analysisView === "today"
-        ? today
-        : shiftDay(today, -1);
-  const until = analysisView === "period" ? periodUntil : since;
+  const since = periodSince,
+    until = periodUntil;
   useEffect(() => {
     if (tableId !== "all" && !tables.some((t) => t.id === tableId)) {
       setTableId(tables[0]?.id ?? "all");
@@ -285,7 +279,6 @@ export function AdvisorsSheet({
           from={since}
           to={until}
           onChange={(a, b) => {
-            setAnalysisView("period");
             setSince(a);
             setUntil(b);
           }}
@@ -344,9 +337,9 @@ export function AdvisorsSheet({
       </div>
       <p className="sheet-help">
         {analysisView === "today"
-          ? "Hoy · Lima: A, H, V y BC. BM se consulta en Ayer · día completo. "
+          ? "Avance provisional del período: A, H, V y BC. BM se consulta en Ayer · día completo. "
           : analysisView === "yesterday"
-            ? "Ayer · Lima: A, H, V y BM. BC no forma parte de esta vista. "
+            ? "Datos del día completo en el período: A, H, V y BM. BC no forma parte de esta vista. "
             : ""}
         A y H son asistencia y horas ausentes. BM suma la base manual repartida
         a cada asesor, por hoja, país y día. BM y BC se consultan aquí y se

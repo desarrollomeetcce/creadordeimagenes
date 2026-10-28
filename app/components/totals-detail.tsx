@@ -5,12 +5,11 @@ import {
   totalDetailViewNames,
   type TotalDetailView,
 } from "../../lib/meta-ads/total-detail-views";
-import { limaToday, shiftDay } from "./date-range";
 import {
   VerticalDetailLayout,
   InventoryDetailSlot,
 } from "./inventory-detail-layout";
-import { performanceRatio } from "../../lib/meta-ads/performance-metrics";
+import { periodComparison } from "../../lib/meta-ads/period-comparison";
 import { periodTableUrl } from "../../lib/meta-ads/period-table-link";
 import { TotalsDailyBreakdown } from "./totals-daily-breakdown";
 import { TotalsPeriodProducts } from "./totals-period-products";
@@ -167,8 +166,7 @@ export function TotalsDetail({
     setSelectedDay("");
   };
   const loading = parentLoading || rangeLoading;
-  const focusDays =
-    selectedDay && days.includes(selectedDay) ? [selectedDay] : days;
+  const focusDays = days;
   const dayIndex = days.indexOf(selectedDay);
   const columns = totalViewColumns(mode);
   const comparisonColumns = columns;
@@ -195,6 +193,18 @@ export function TotalsDetail({
     gm = summarize(manualTotalColumns.find((c) => c.key === "totalSpend")!),
     base = summarize(automaticTotalColumns.find((c) => c.key === "base")!),
     spend = summarize(automaticTotalColumns.find((c) => c.key === "spend")!);
+  const ratioColumn = (v: typeof sold): TotalColumn =>
+    v === sold
+      ? manualTotalColumns[0]
+      : v === bm
+        ? manualTotalColumns.find((c) => c.key === "baseManual")!
+        : v === ba
+          ? manualTotalColumns.find((c) => c.key === "advisorBase")!
+          : v === gm
+            ? manualTotalColumns.find((c) => c.key === "totalSpend")!
+            : v === base
+              ? automaticTotalColumns.find((c) => c.key === "base")!
+              : automaticTotalColumns.find((c) => c.key === "spend")!;
   const ratios = [
     { name: "Ventas / BC", numerator: sold, denominator: ba, percent: true },
     { name: "Ventas / BM", numerator: sold, denominator: bm, percent: true },
@@ -325,14 +335,6 @@ export function TotalsDetail({
                       aria-pressed={mode === view}
                       onClick={() => {
                         setMode(view);
-                        if (view === "today" || view === "yesterday") {
-                          const day =
-                            view === "today"
-                              ? limaToday()
-                              : shiftDay(limaToday(), -1);
-                          selectRange(day, day);
-                          setSelectedDay(day);
-                        }
                       }}
                     >
                       {totalDetailViewNames[view]}
@@ -366,7 +368,7 @@ export function TotalsDetail({
                   />
                 </div>
                 <label>
-                  Fecha del detalle
+                  Desglose de un día (opcional)
                   <select
                     aria-label="Fecha del detalle de Totales"
                     value={selectedDay}
@@ -397,8 +399,8 @@ export function TotalsDetail({
               </div>
               <p className="hint">
                 {selectedDay
-                  ? "Resumen e indicadores del día elegido. El gráfico y el histórico conservan todo el período para comparar."
-                  : "Detalle del período y filtros de la pestaña."}{" "}
+                  ? "Resumen e indicadores de todo el período. El día elegido solo filtra los desgloses diarios de asesores y productos."
+                  : "Resumen e indicadores de todo el período seleccionado."}{" "}
                 Cada hoja, país y moneda se consulta por separado. V es la misma
                 suma en ambas vistas.{" "}
                 {mode === "automatic"
@@ -441,11 +443,7 @@ export function TotalsDetail({
                       <DetailSection
                         id={sectionId + "summary"}
                         stateKey="summary"
-                        title={
-                          selectedDay
-                            ? `Resumen del día · ${selectedDay}`
-                            : "Resumen del período"
-                        }
+                        title={`Resumen del período · ${since} — ${until}`}
                         tone="sales"
                       >
                         <div className="advisor-detail-summary totals-performance-summary">
@@ -489,11 +487,18 @@ export function TotalsDetail({
                       >
                         <div className="advisor-detail-summary totals-performance-summary">
                           {ratios.map((r) => {
-                            const result = performanceRatio(
-                              r.numerator.value,
-                              r.denominator.value,
+                            const comparison = periodComparison(
+                              days.map((day) => ({
+                                numerator: value(day, ratioColumn(r.numerator))
+                                  .value,
+                                denominator: value(
+                                  day,
+                                  ratioColumn(r.denominator),
+                                ).value,
+                              })),
                               r.percent ? 100 : 1,
                             );
+                            const result = comparison.value;
                             return (
                               <span
                                 key={r.name}
@@ -520,9 +525,11 @@ export function TotalsDetail({
                                     : ""}
                                 </strong>
                                 <small>
-                                  {r.percent
-                                    ? "Ventas registradas respecto a datos recibidos"
-                                    : "Inversión por resultado; no representa utilidad"}
+                                  {comparison.mismatched
+                                    ? "Faltan datos de las mismas fechas para comparar el período."
+                                    : r.percent
+                                      ? "Ventas y base de las mismas fechas del período"
+                                      : "Inversión por resultado; no representa utilidad"}
                                 </small>
                               </span>
                             );

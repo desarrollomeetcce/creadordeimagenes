@@ -1595,3 +1595,12 @@ Totales y Asesores incorporan vistas diarias en su barra principal. Hoy Lima fil
 Nombres unificados en toda la interfaz: Hoy · avance provisional y Ayer · día completo. Mi desempeño añade una persona ilustrada y mensajes constructivos de mejora, descenso, constancia o registros pendientes. Compara porcentajes con la misma base del día calendario anterior (BC/BC o BM/BM), muestra puntos porcentuales y no infiere tendencia con registros faltantes o parciales. Se consultan tres días actuales para comparar ayer con anteayer; el histórico solicitado conserva exactamente su rango y solo datos propios. Sin modelo/migración nuevos ni escrituras financieras o llamadas pagadas.
 
 197 unitarias, TypeScript/build,7 integraciones específicas y8 comprobaciones de navegador aprobadas, detalles en TESTING. Publicación a main y alojamiento externo se registran por separado.
+
+
+### Perfiles de columnas con todas las fechas y resumen del período
+
+Corrección confirmada por el usuario: los botones Hoy · avance provisional / Ayer · día completo filtran parámetros y conservan todas las filas del calendario. Aplica a Totales, Asesores, detalle personal y comparativo del equipo. El calendario conserva el perfil al cambiar fechas; no se fuerza hoy ni ayer. Los resúmenes verdes suman todo el período seleccionado y muestran sus fechas. En Totales, elegir un día solo cambia el desglose diario de productos/asesores; resumen, indicadores, gráfico e histórico siguen cubriendo el período completo. Las tarjetas personales de Mi desempeño siguen mostrando los días reales.
+
+Comparaciones por fechas coincidentes: ninguna venta de hoy se divide entre una BM de ayer. Si faltan parámetros en una de las fechas con datos, el ratio queda pendiente con explicación; las sumas registradas se conservan con cobertura. Helper compartido para resumen individual, Totales y equipo. Los detalles de diplomado y de toda la hoja bloquean respuestas del rango anterior durante cambios de calendario, conservando históricos completos. Sin nuevas API, modelos ni escrituras financieras.
+
+198 unitarias, TypeScript/build,7 integraciones HTTP y4 comprobaciones Chromium aprobadas. Datos diarios intencionalmente distintos: ayer5 ventas/BM358, hoy3/BM150; 1.4% ayer y1.57% para8/508 en el período, sin mezclar fechas. Ver TESTING. Publicación y alojamiento externo se registran por separado.

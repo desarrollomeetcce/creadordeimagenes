@@ -37,7 +37,6 @@ import {
   fillNextDay,
   sheetDataFillLabels,
 } from "../../lib/meta-ads/sheet-data-fill";
-import { shiftDay } from "./date-range";
 import { totalViewColumns } from "../../lib/meta-ads/total-detail-views";
 import { TotalsDetail } from "./totals-detail";
 const names = new Intl.DisplayNames(["es"], { type: "currency" });
@@ -85,13 +84,8 @@ export function EffectivenessTotals({
       "until",
       today,
     );
-  const since =
-    analysisView === "period"
-      ? periodSince
-      : analysisView === "today"
-        ? today
-        : shiftDay(today, -1);
-  const until = analysisView === "period" ? periodUntil : since;
+  const since = periodSince,
+    until = periodUntil;
   const [mode, setMode] = useWorkbookPreference<"manual" | "automatic">(
       listId,
       "mode",
@@ -328,7 +322,6 @@ export function EffectivenessTotals({
               (analysisView === "period" && mode === "manual" ? " primary" : "")
             }
             onClick={() => {
-              setAnalysisView("period");
               setMode("manual");
             }}
           >
@@ -343,7 +336,6 @@ export function EffectivenessTotals({
                 : "")
             }
             onClick={() => {
-              setAnalysisView("period");
               setMode("automatic");
             }}
           >
@@ -376,7 +368,6 @@ export function EffectivenessTotals({
               setMessage("Elige un período válido de hasta diez años.");
               return;
             }
-            setAnalysisView("period");
             setSince(a);
             setUntil(b);
           }}
@@ -487,9 +478,9 @@ export function EffectivenessTotals({
       )}
       <p className="sheet-help">
         {analysisView === "today"
-          ? "Hoy · Lima: ventas, presupuesto, BC y costo fijo; sin BM ni GM."
+          ? "Avance provisional del período: ventas, presupuesto, BC y costo fijo; sin BM ni GM."
           : analysisView === "yesterday"
-            ? "Ayer · Lima: ventas, BM, GM y costo fijo; sin BC ni presupuesto."
+            ? "Datos del día completo en el período: ventas, BM, GM y costo fijo; sin BC ni presupuesto."
             : mode === "manual"
               ? "V/P: suma de inventario. BM y BC: repartos manuales independientes por asesor, hoja, país y día (sin moneda). GM y CF: valores manuales por bloque."
               : "V/B/G/CF: suma de los valores de la vista automática. BC se registra manualmente por asesor."}{" "}

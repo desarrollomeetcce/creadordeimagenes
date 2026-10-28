@@ -72,7 +72,7 @@ export function SheetSalesDetail({
     [until, setUntil] = useState(initialUntil),
     [country, setCountry] = useState("__all"),
     [blocks, setBlocks] = useState<SheetSalesBlock[]>([]),
-    [loading, setLoading] = useState(true),
+    [fetching, setLoading] = useState(true),
     [error, setError] = useState(""),
     [reload, setReload] = useState(0),
     [selected, setSelected] = useState("__all"),
@@ -81,6 +81,9 @@ export function SheetSalesDetail({
     [threshold, setThreshold] = useState(2),
     [ascending, setAscending] = useState(false),
     [page, setPage] = useState(0);
+  const [loadedQuery, setLoadedQuery] = useState("");
+  const rangeQuery = JSON.stringify([tableId, since, until]);
+  const loading = fetching || (!error && loadedQuery !== rangeQuery);
   const dates = useMemo(() => {
     const result: string[] = [];
     if (
@@ -144,6 +147,7 @@ export function SheetSalesDetail({
         sheetSalesProducts(result, dates);
         if (active) {
           setBlocks(result);
+          setLoadedQuery(rangeQuery);
           setError("");
         }
       } catch (e) {
@@ -334,8 +338,9 @@ export function SheetSalesDetail({
                 </button>
               </div>
               <p className="hint">
-                Toda la hoja, incluidos los diplomados desactivados. Ventas
-                registradas por asesor; cero, N.A. y falta de registro se
+                Ventas del {since === until ? since : `${since} — ${until}`} ·
+                Lima. Toda la hoja, incluidos los diplomados desactivados.
+                Ventas registradas por asesor; cero, N.A. y falta de registro se
                 muestran por separado. No cambia los filtros de la tabla.
               </p>
             </DetailStickyHeader>
