@@ -18,6 +18,7 @@ import {
   useAdvisorModuleLayout,
 } from "./detail-module-layout";
 import type { AdvisorModuleId } from "../../lib/meta-ads/advisor-detail-layout";
+import { DetailStickyHeader } from "./detail-sticky-header";
 import { DetailNavigation } from "./detail-navigation";
 import { MetaDailyChart } from "./meta-daily-chart";
 import { countryOptions } from "../../lib/meta-ads/countries";
@@ -923,188 +924,195 @@ export function AdvisorDetail({
           onCancel={onClose}
         >
           <DetailLayoutA11y />
-          <header className="row advisor-detail-heading">
-            <h2>{advisorName}</h2>
-          </header>
-          <DetailNavigation
-            onClose={onClose}
-            items={[
-              {
-                target: sectionId + "inventory-analysis",
-                label: "Ventas por asesor",
-                tone: "sales",
-              },
-              {
-                target: sectionId + "sold-days",
-                label: "Qué vendió cada día",
-                tone: "sold",
-              },
-              {
-                target: sectionId + "days",
-                label: "Histórico por día",
-                tone: "daily",
-              },
-              {
-                target: sectionId + "chart",
-                label: "Estadísticas",
-                tone: "parameters",
-              },
-              {
-                target: sectionId + "assignments",
-                label: "Estadísticas de asesores",
-                tone: "assignments",
-              },
-              {
-                target: sectionId + "products",
-                label: "Ventas por producto",
-                tone: "products",
-              },
-            ].sort(
-              (a, b) =>
-                moduleLayout.rows
-                  .flat()
-                  .indexOf(
-                    a.target.slice(sectionId.length) as AdvisorModuleId,
-                  ) -
-                moduleLayout.rows
-                  .flat()
-                  .indexOf(b.target.slice(sectionId.length) as AdvisorModuleId),
-            )}
-            disabled={!row}
-          />
-          <div className="row advisor-detail-controls">
-            <div className="advisor-period-controls">
-              <MetaDateRange
-                maxDays={3660}
-                from={since}
-                to={until}
-                onChange={(a, b) => {
-                  setSelectedPeriod(null);
-                  previousView.current = null;
-                  setDayPage(0);
-                  setSince(a);
-                  setUntil(b);
-                }}
-              />
-              <DetailPeriodPresets
-                key={analysisAdvisor}
-                scope={"advisor-detail:" + analysisAdvisor}
-                sectionId={sectionId + "periods"}
-                since={since}
-                until={until}
-                onSelect={(a, b) => {
-                  setSelectedPeriod(null);
-                  previousView.current = null;
-                  setDayPage(0);
-                  setSince(a);
-                  setUntil(b);
-                }}
-              />
-            </div>
-            <SheetSearchSelect
-              label="Hoja del detalle del asesor"
-              value={tableId}
-              options={[
-                ...tables.map((t) => ({ value: t.id, label: t.name })),
-                { value: "all", label: "Todas las hojas" },
-              ]}
-              onSelect={(id) => {
-                setSelectedPeriod(null);
-                previousView.current = null;
-                setTableId(id);
-                setAliasId("");
-              }}
+          <DetailStickyHeader>
+            <header className="row advisor-detail-heading">
+              <h2>{advisorName}</h2>
+            </header>
+            <DetailNavigation
+              onClose={onClose}
+              items={[
+                {
+                  target: sectionId + "inventory-analysis",
+                  label: "Ventas por asesor",
+                  tone: "sales",
+                },
+                {
+                  target: sectionId + "sold-days",
+                  label: "Qué vendió cada día",
+                  tone: "sold",
+                },
+                {
+                  target: sectionId + "days",
+                  label: "Histórico por día",
+                  tone: "daily",
+                },
+                {
+                  target: sectionId + "chart",
+                  label: "Estadísticas",
+                  tone: "parameters",
+                },
+                {
+                  target: sectionId + "assignments",
+                  label: "Estadísticas de asesores",
+                  tone: "assignments",
+                },
+                {
+                  target: sectionId + "products",
+                  label: "Ventas por producto",
+                  tone: "products",
+                },
+              ].sort(
+                (a, b) =>
+                  moduleLayout.rows
+                    .flat()
+                    .indexOf(
+                      a.target.slice(sectionId.length) as AdvisorModuleId,
+                    ) -
+                  moduleLayout.rows
+                    .flat()
+                    .indexOf(
+                      b.target.slice(sectionId.length) as AdvisorModuleId,
+                    ),
+              )}
+              disabled={!row}
             />
-            <SheetSearchSelect
-              label="Inventario del detalle del asesor"
-              value={aliasId}
-              placeholder="Todo el inventario"
-              options={[
-                { value: "", label: "Todo el inventario" },
-                ...tables
-                  .filter((t) => tableId === "all" || t.id === tableId)
-                  .flatMap((t) =>
-                    (t.aliases ?? []).map((a) => ({
-                      value: a.id,
-                      label: a.name + (tableId === "all" ? " · " + t.name : ""),
-                    })),
-                  ),
-              ]}
-              onSelect={(v) => {
-                setSelectedPeriod(null);
-                previousView.current = null;
-                setAliasId(v);
-              }}
-            />
-            <SheetSearchSelect
-              label="País del detalle del asesor"
-              value={country}
-              placeholder="Todos los países"
-              options={[
-                { value: "", label: "Todos los países" },
-                ...countryOptions.map((c) => ({
-                  value: c.code,
-                  label: c.code + " · " + c.name,
-                })),
-              ]}
-              onSelect={(v) => {
-                setSelectedPeriod(null);
-                previousView.current = null;
-                setCountry(v);
-              }}
-            />
-            <button
-              type="button"
-              disabled={loading || !valid}
-              onClick={() => setReload((v) => v + 1)}
-            >
-              Actualizar detalle
-            </button>
-          </div>
-          {selectedPeriod ? (
-            <div
-              className="sheet-period-nav"
-              role="region"
-              aria-label="Estadísticas de la asignación"
-            >
-              <div>
-                <strong>
-                  Estadísticas: {selectedPeriod.advisorName} ·{" "}
-                  {selectedPeriod.alias} · {selectedPeriod.country}
-                </strong>
-                <small>
-                  {selectedPeriod.kind === "SALES_DAY"
-                    ? `Ventas registradas el ${selectedPeriod.since}`
-                    : `${selectedPeriod.from ? new Date(selectedPeriod.from).toLocaleString("es-PE", { timeZone: "America/Lima" }) : "Inicio desconocido"} — ${selectedPeriod.until ? new Date(selectedPeriod.until).toLocaleString("es-PE", { timeZone: "America/Lima" }) : "hasta la fecha de consulta"}`}
-                  . Período completo: {since} — {until}. Ventas según cortes y
-                  repartos guardados; sin prorrateo por horas.
-                </small>
+            <div className="row advisor-detail-controls">
+              <div className="advisor-period-controls">
+                <MetaDateRange
+                  maxDays={3660}
+                  from={since}
+                  to={until}
+                  onChange={(a, b) => {
+                    setSelectedPeriod(null);
+                    previousView.current = null;
+                    setDayPage(0);
+                    setSince(a);
+                    setUntil(b);
+                  }}
+                />
+                <DetailPeriodPresets
+                  key={analysisAdvisor}
+                  scope={"advisor-detail:" + analysisAdvisor}
+                  sectionId={sectionId + "periods"}
+                  since={since}
+                  until={until}
+                  onSelect={(a, b) => {
+                    setSelectedPeriod(null);
+                    previousView.current = null;
+                    setDayPage(0);
+                    setSince(a);
+                    setUntil(b);
+                  }}
+                />
               </div>
-              <button onClick={clearPeriod}>Volver al análisis general</button>
-            </div>
-          ) : (
-            <>
               <SheetSearchSelect
-                label="Asesor del análisis"
-                value={analysisAdvisor}
-                options={(people.length ? people : [person]).map((p) => ({
-                  value: p.id,
-                  label: ("label" in p ? p.label : undefined) ?? p.name,
-                }))}
+                label="Hoja del detalle del asesor"
+                value={tableId}
+                options={[
+                  ...tables.map((t) => ({ value: t.id, label: t.name })),
+                  { value: "all", label: "Todas las hojas" },
+                ]}
                 onSelect={(id) => {
-                  setAnalysisAdvisor(id);
                   setSelectedPeriod(null);
+                  previousView.current = null;
+                  setTableId(id);
+                  setAliasId("");
                 }}
               />
-            </>
-          )}
-          <p className="hint">
-            Ventas registradas por asesor en el inventario y país elegidos.
-            Todos suma las combinaciones de las hojas elegidas; el desglose
-            identifica cada producto. A, I y H corresponden al asesor,
-            independientemente del producto. Las ausencias abiertas no se suman
-            hasta registrar el regreso.
-          </p>
+              <SheetSearchSelect
+                label="Inventario del detalle del asesor"
+                value={aliasId}
+                placeholder="Todo el inventario"
+                options={[
+                  { value: "", label: "Todo el inventario" },
+                  ...tables
+                    .filter((t) => tableId === "all" || t.id === tableId)
+                    .flatMap((t) =>
+                      (t.aliases ?? []).map((a) => ({
+                        value: a.id,
+                        label:
+                          a.name + (tableId === "all" ? " · " + t.name : ""),
+                      })),
+                    ),
+                ]}
+                onSelect={(v) => {
+                  setSelectedPeriod(null);
+                  previousView.current = null;
+                  setAliasId(v);
+                }}
+              />
+              <SheetSearchSelect
+                label="País del detalle del asesor"
+                value={country}
+                placeholder="Todos los países"
+                options={[
+                  { value: "", label: "Todos los países" },
+                  ...countryOptions.map((c) => ({
+                    value: c.code,
+                    label: c.code + " · " + c.name,
+                  })),
+                ]}
+                onSelect={(v) => {
+                  setSelectedPeriod(null);
+                  previousView.current = null;
+                  setCountry(v);
+                }}
+              />
+              <button
+                type="button"
+                disabled={loading || !valid}
+                onClick={() => setReload((v) => v + 1)}
+              >
+                Actualizar detalle
+              </button>
+            </div>
+            {selectedPeriod ? (
+              <div
+                className="sheet-period-nav"
+                role="region"
+                aria-label="Estadísticas de la asignación"
+              >
+                <div>
+                  <strong>
+                    Estadísticas: {selectedPeriod.advisorName} ·{" "}
+                    {selectedPeriod.alias} · {selectedPeriod.country}
+                  </strong>
+                  <small>
+                    {selectedPeriod.kind === "SALES_DAY"
+                      ? `Ventas registradas el ${selectedPeriod.since}`
+                      : `${selectedPeriod.from ? new Date(selectedPeriod.from).toLocaleString("es-PE", { timeZone: "America/Lima" }) : "Inicio desconocido"} — ${selectedPeriod.until ? new Date(selectedPeriod.until).toLocaleString("es-PE", { timeZone: "America/Lima" }) : "hasta la fecha de consulta"}`}
+                    . Período completo: {since} — {until}. Ventas según cortes y
+                    repartos guardados; sin prorrateo por horas.
+                  </small>
+                </div>
+                <button onClick={clearPeriod}>
+                  Volver al análisis general
+                </button>
+              </div>
+            ) : (
+              <>
+                <SheetSearchSelect
+                  label="Asesor del análisis"
+                  value={analysisAdvisor}
+                  options={(people.length ? people : [person]).map((p) => ({
+                    value: p.id,
+                    label: ("label" in p ? p.label : undefined) ?? p.name,
+                  }))}
+                  onSelect={(id) => {
+                    setAnalysisAdvisor(id);
+                    setSelectedPeriod(null);
+                  }}
+                />
+              </>
+            )}
+            <p className="hint">
+              Ventas registradas por asesor en el inventario y país elegidos.
+              Todos suma las combinaciones de las hojas elegidas; el desglose
+              identifica cada producto. A, I y H corresponden al asesor,
+              independientemente del producto. Las ausencias abiertas no se
+              suman hasta registrar el regreso.
+            </p>
+          </DetailStickyHeader>
           {!valid && (
             <p role="alert">
               Elige un período válido de hasta diez años, sin fechas futuras.

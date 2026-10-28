@@ -1540,3 +1540,8 @@ Corrección del usuario: manual del mismo día sin color por defecto, también B
 ### Detalle de inventario superior y ampliable
 
 El detalle de diplomados y hojas futuras abre centrado horizontalmente a8px del borde superior, con altura limitada al viewport y scroll interno. Ampliar ocupa el área disponible y Restaurar tamaño vuelve al ancho normal, conservando la misma ventana, período, datos y módulos. Acciones junto al cierre rojo en navegación fija; al reabrir vuelve arriba y tamaño normal. Sin nuevas rutas, consultas financieras ni migraciones. Evidencia en TESTING; publicación a main y despliegue externo se registran por separado.
+
+
+### Cabecera completa fija en los detalles
+
+Inventario/Diplomados, Asesores y Totales conservan arriba el título, navegación, cierre/tamaño, calendario, períodos guardados, filtros y observaciones de contexto mientras se revisan los reportes. Cabecera compartida con altura observada para que los accesos a secciones y evolución queden visibles debajo; altura limitada en móvil para dejar espacio al informe. Calendario fijo respecto al viewport y selectores utilizables después de desplazarse, sin recorte ni desplazamiento doble del calendario. Sin nuevas APIs, cifras o esquema. Validación y capturas en TESTING; publicación a main y verificación del alojamiento se registran por separado.

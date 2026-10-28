@@ -1351,3 +1351,10 @@ Validación de la revisión compacta definitiva: `/workspace/work/advisor-compac
 
 -191/191 unitarias, TypeScript/build (`/workspace/work/detail-window-{unit,typecheck,build}.txt`). Presentación sin API/esquema nuevos,195 integraciones anteriores aplicables.
 - Chromium (`/workspace/work/detail-window-browser.txt`): apertura superior8px, ancho normal910px máximo; Ampliar usa viewport1400x1000 con margen8, preserva mismo DOM/período/datos; Restaurar tamaño, acciones fijas al desplazarse, Escape y reapertura arriba/tamaño normal. Móvil390x844 normal/ampliado y cierre accesible. Sin escrituras financieras, errores JS/API o solicitudes externas. Capturas `/workspace/work/detail-window-{expanded,mobile}.png`.
+
+
+### Cabecera fija completa y consulta desde cualquier posición
+
+-191/191 unitarias, TypeScript y build (`/workspace/work/sticky-header-{unit,typecheck,build}.txt`). Presentación sin API/esquema nuevos;195 integraciones previas aplicables.
+- Chromium (`/workspace/work/sticky-header-browser.txt`): inventario mantiene calendario/contexto/cierre al desplazarse, salto al histórico no queda debajo de cabecera, cambio real a Ayer desde calendario después de desplazarse. Móvil ampliado con cabecera limitada y calendario completo/clic en Actualizar sin recorte. Asesores mantiene período/accesos/persona/país, permite abrir selectores; Totales mantiene modo/país/calendario/accesos y cambia período/modo desde scroll600. Cero escrituras financieras, errores JS/API o solicitudes externas. Capturas `/workspace/work/sticky-header-{mobile,advisor,totals}.png`.
+- ResizeObserver actualiza la altura ante cambio de tamaño/filtros y se desconecta al desmontar. Fondos opacos y capa de cabecera preservan legibilidad; sin transformaciones que desplacen el calendario fijo de inventario.

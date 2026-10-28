@@ -34,7 +34,9 @@ export function DetailNavigation({
                 if (current instanceof HTMLDetailsElement) current.open = true;
                 current = current.parentElement;
               }
-              const navigation = e.currentTarget.closest(".detail-navigation");
+              const navigation =
+                e.currentTarget.closest(".detail-sticky-header") ??
+                e.currentTarget.closest(".detail-navigation");
               target.style.scrollMarginTop = `${(navigation?.getBoundingClientRect().height ?? 0) + 12}px`;
               setActive(item.target);
               target.scrollIntoView({

@@ -6,6 +6,7 @@ import { TotalsDailyBreakdown } from "./totals-daily-breakdown";
 import { TotalsPeriodProducts } from "./totals-period-products";
 import { useReportDayPages } from "./report-day-pages";
 import { DetailSection, DetailSections } from "./detail-section";
+import { DetailStickyHeader } from "./detail-sticky-header";
 import { DetailNavigation } from "./detail-navigation";
 import { MetaDailyChart } from "./meta-daily-chart";
 import { SheetSearchSelect } from "./sheet-search-select";
@@ -230,138 +231,144 @@ export function TotalsDetail({
         aria-label="Detalle de Totales"
         onCancel={onClose}
       >
-        <header className="row">
-          <h2>
-            Detalle de Totales
-            {block
-              ? ` · ${block.table.name} · ${block.country || "Sin país"} · ${block.currency || "Sin moneda"}${selectedDay ? ` · ${selectedDay}` : ""}`
-              : ""}
-          </h2>
-        </header>
-        <DetailNavigation
-          onClose={onClose}
-          items={[
-            { target: sectionId + "summary", label: "Resumen", tone: "sales" },
-            {
-              target: sectionId + "performance",
-              label: "Desempeño",
-              tone: "activity",
-            },
-            {
-              target: sectionId + "chart",
-              label: "Estadísticas",
-              tone: "parameters",
-            },
-            {
-              target: sectionId + "days",
-              label: "Histórico por día",
-              tone: "daily",
-            },
-            ...(selectedDay
-              ? [
-                  {
-                    target: sectionId + "advisors",
-                    label: "Asesores",
-                    tone: "sales" as const,
-                  },
-                  {
-                    target: sectionId + "products",
-                    label: "Productos",
-                    tone: "parameters" as const,
-                  },
-                ]
-              : [
-                  {
-                    target: sectionId + "products",
-                    label: "Diplomados",
-                    tone: "parameters" as const,
-                  },
-                ]),
-          ]}
-          disabled={!block}
-        />
-        <div className="row advisor-detail-controls">
-          <button
-            type="button"
-            aria-pressed={mode === "manual"}
-            onClick={() => setMode("manual")}
-          >
-            Total manual
-          </button>
-          <button
-            type="button"
-            aria-pressed={mode === "automatic"}
-            onClick={() => setMode("automatic")}
-          >
-            Total automático
-          </button>
-          <SheetSearchSelect
-            label="Hoja, país y moneda del detalle de Totales"
-            value={block?.key ?? ""}
-            options={availableBlocks.map((b) => ({
-              value: b.key,
-              label: `${b.table.name} · ${b.country || "Sin país"} · ${b.currency || "Sin moneda"}`,
-            }))}
-            onSelect={setBlockKey}
+        <DetailStickyHeader>
+          <header className="row">
+            <h2>
+              Detalle de Totales
+              {block
+                ? ` · ${block.table.name} · ${block.country || "Sin país"} · ${block.currency || "Sin moneda"}${selectedDay ? ` · ${selectedDay}` : ""}`
+                : ""}
+            </h2>
+          </header>
+          <DetailNavigation
+            onClose={onClose}
+            items={[
+              {
+                target: sectionId + "summary",
+                label: "Resumen",
+                tone: "sales",
+              },
+              {
+                target: sectionId + "performance",
+                label: "Desempeño",
+                tone: "activity",
+              },
+              {
+                target: sectionId + "chart",
+                label: "Estadísticas",
+                tone: "parameters",
+              },
+              {
+                target: sectionId + "days",
+                label: "Histórico por día",
+                tone: "daily",
+              },
+              ...(selectedDay
+                ? [
+                    {
+                      target: sectionId + "advisors",
+                      label: "Asesores",
+                      tone: "sales" as const,
+                    },
+                    {
+                      target: sectionId + "products",
+                      label: "Productos",
+                      tone: "parameters" as const,
+                    },
+                  ]
+                : [
+                    {
+                      target: sectionId + "products",
+                      label: "Diplomados",
+                      tone: "parameters" as const,
+                    },
+                  ]),
+            ]}
+            disabled={!block}
           />
-          <div className="totals-detail-period-controls">
-            <MetaDateRange
-              maxDays={3660}
-              from={since}
-              to={until}
-              onChange={selectRange}
-            />
-            <DetailPeriodPresets
-              key={block?.key}
-              scope={`totals-detail:${totalsSheetId}:${block?.key}`}
-              label="Períodos guardados de Totales"
-              defaults={totalDetailPeriods}
-              since={since}
-              until={until}
-              onSelect={selectRange}
-            />
-          </div>
-          <label>
-            Fecha del detalle
-            <select
-              aria-label="Fecha del detalle de Totales"
-              value={selectedDay}
-              onChange={(e) => setSelectedDay(e.target.value)}
+          <div className="row advisor-detail-controls">
+            <button
+              type="button"
+              aria-pressed={mode === "manual"}
+              onClick={() => setMode("manual")}
             >
-              <option value="">Todo el período</option>
-              {days.map((day) => (
-                <option key={day} value={day}>
-                  {day.slice(8)}.{day.slice(5, 7)}.{day.slice(0, 4)}
-                </option>
-              ))}
-            </select>
-          </label>
-          <button
-            type="button"
-            disabled={dayIndex <= 0}
-            onClick={() => setSelectedDay(days[dayIndex - 1])}
-          >
-            ← Día anterior
-          </button>
-          <button
-            type="button"
-            disabled={dayIndex < 0 || dayIndex >= days.length - 1}
-            onClick={() => setSelectedDay(days[dayIndex + 1])}
-          >
-            Día siguiente →
-          </button>
-        </div>
-        <p className="hint">
-          {selectedDay
-            ? "Resumen e indicadores del día elegido. El gráfico y el histórico conservan todo el período para comparar."
-            : "Detalle del período y filtros de la pestaña."}{" "}
-          Cada hoja, país y moneda se consulta por separado. V es la misma suma
-          en ambas vistas.{" "}
-          {mode === "manual"
-            ? "P suma el presupuesto digitado en las hojas; BM y BC son repartos manuales independientes por asesor y país, compartidos con Asesores. GM y CF son manuales."
-            : "B y G proceden de la vista automática; BC se ingresa manualmente por asesor; CF suma los costos fijos de la hoja."}{" "}
-          — sin dato; N.A. no suma; * cobertura parcial.
-        </p>
+              Total manual
+            </button>
+            <button
+              type="button"
+              aria-pressed={mode === "automatic"}
+              onClick={() => setMode("automatic")}
+            >
+              Total automático
+            </button>
+            <SheetSearchSelect
+              label="Hoja, país y moneda del detalle de Totales"
+              value={block?.key ?? ""}
+              options={availableBlocks.map((b) => ({
+                value: b.key,
+                label: `${b.table.name} · ${b.country || "Sin país"} · ${b.currency || "Sin moneda"}`,
+              }))}
+              onSelect={setBlockKey}
+            />
+            <div className="totals-detail-period-controls">
+              <MetaDateRange
+                maxDays={3660}
+                from={since}
+                to={until}
+                onChange={selectRange}
+              />
+              <DetailPeriodPresets
+                key={block?.key}
+                scope={`totals-detail:${totalsSheetId}:${block?.key}`}
+                label="Períodos guardados de Totales"
+                defaults={totalDetailPeriods}
+                since={since}
+                until={until}
+                onSelect={selectRange}
+              />
+            </div>
+            <label>
+              Fecha del detalle
+              <select
+                aria-label="Fecha del detalle de Totales"
+                value={selectedDay}
+                onChange={(e) => setSelectedDay(e.target.value)}
+              >
+                <option value="">Todo el período</option>
+                {days.map((day) => (
+                  <option key={day} value={day}>
+                    {day.slice(8)}.{day.slice(5, 7)}.{day.slice(0, 4)}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <button
+              type="button"
+              disabled={dayIndex <= 0}
+              onClick={() => setSelectedDay(days[dayIndex - 1])}
+            >
+              ← Día anterior
+            </button>
+            <button
+              type="button"
+              disabled={dayIndex < 0 || dayIndex >= days.length - 1}
+              onClick={() => setSelectedDay(days[dayIndex + 1])}
+            >
+              Día siguiente →
+            </button>
+          </div>
+          <p className="hint">
+            {selectedDay
+              ? "Resumen e indicadores del día elegido. El gráfico y el histórico conservan todo el período para comparar."
+              : "Detalle del período y filtros de la pestaña."}{" "}
+            Cada hoja, país y moneda se consulta por separado. V es la misma
+            suma en ambas vistas.{" "}
+            {mode === "manual"
+              ? "P suma el presupuesto digitado en las hojas; BM y BC son repartos manuales independientes por asesor y país, compartidos con Asesores. GM y CF son manuales."
+              : "B y G proceden de la vista automática; BC se ingresa manualmente por asesor; CF suma los costos fijos de la hoja."}{" "}
+            — sin dato; N.A. no suma; * cobertura parcial.
+          </p>
+        </DetailStickyHeader>
         {message && <p role="alert">{message}</p>}
         {rangeError && <p role="alert">{rangeError}</p>}
         {loading && <small role="status">Actualizando detalle…</small>}

@@ -10,6 +10,7 @@ import {
 } from "../../lib/meta-ads/period-summary";
 import { MetaDateRange } from "./meta-date-range";
 import { DetailSection, DetailSections } from "./detail-section";
+import { DetailStickyHeader } from "./detail-sticky-header";
 import { DetailNavigation } from "./detail-navigation";
 import { MetaDailyChart } from "./meta-daily-chart";
 import type { ActivePeriod } from "../../lib/meta-ads/active-periods";
@@ -162,64 +163,74 @@ export function EffectivenessHistory({
       >
         {open && (
           <>
-            <header className="row">
-              <strong>
-                {name} · {country}
-              </strong>
-            </header>
-            <DetailNavigation
-              closeLabel="Cerrar"
-              expanded={expanded}
-              onToggleExpanded={() => setExpanded((v) => !v)}
-              onClose={() => pop.current?.hidePopover()}
-              items={[
-                {
-                  target: id + "activity",
-                  label: "Activaciones",
-                  tone: "activity",
-                },
-                {
-                  target: id + "advisor-sales",
-                  label: "Ventas por asesor",
-                  tone: "sales",
-                },
-                {
-                  target: id + "sales-dates",
-                  label: "Fechas de ventas",
-                  tone: "daily",
-                },
-                {
-                  target: id + "chart",
-                  label: "Estadísticas",
-                  tone: "parameters",
-                },
-                {
-                  target: id + "days",
-                  label: "Histórico por día",
-                  tone: "daily",
-                },
-              ]}
-              disabled={!data}
-            />
-            <div className="row alias-detail-controls">
-              <MetaDateRange
-                maxDays={3660}
-                from={since}
-                to={until}
-                onChange={(a, b) => {
-                  setSince(a);
-                  setUntil(b);
-                  setPage(0);
-                }}
+            <DetailStickyHeader>
+              <header className="row">
+                <strong>
+                  {name} · {country}
+                </strong>
+              </header>
+              <DetailNavigation
+                closeLabel="Cerrar"
+                expanded={expanded}
+                onToggleExpanded={() => setExpanded((v) => !v)}
+                onClose={() => pop.current?.hidePopover()}
+                items={[
+                  {
+                    target: id + "activity",
+                    label: "Activaciones",
+                    tone: "activity",
+                  },
+                  {
+                    target: id + "advisor-sales",
+                    label: "Ventas por asesor",
+                    tone: "sales",
+                  },
+                  {
+                    target: id + "sales-dates",
+                    label: "Fechas de ventas",
+                    tone: "daily",
+                  },
+                  {
+                    target: id + "chart",
+                    label: "Estadísticas",
+                    tone: "parameters",
+                  },
+                  {
+                    target: id + "days",
+                    label: "Histórico por día",
+                    tone: "daily",
+                  },
+                ]}
+                disabled={!data}
               />
-              <button
-                type="button"
-                disabled={loading || !valid}
-                onClick={() => setReload((v) => v + 1)}
-              >
-                Actualizar detalle
-              </button>
-            </div>
+              <div className="row alias-detail-controls">
+                <MetaDateRange
+                  maxDays={3660}
+                  from={since}
+                  to={until}
+                  onChange={(a, b) => {
+                    setSince(a);
+                    setUntil(b);
+                    setPage(0);
+                  }}
+                />
+                <button
+                  type="button"
+                  disabled={loading || !valid}
+                  onClick={() => setReload((v) => v + 1)}
+                >
+                  Actualizar detalle
+                </button>
+              </div>
+              {data && (
+                <p>
+                  Estado actual:{" "}
+                  <b>{data.active ? "Activado" : "Desactivado"}</b>. Historial
+                  de Efectividad de este inventario y país; no cambia estados en
+                  Meta Ads.
+                </p>
+              )}
+            </DetailStickyHeader>
             {!valid && (
               <p role="alert">Elige un período válido de hasta diez años.</p>
             )}
@@ -227,12 +238,6 @@ export function EffectivenessHistory({
             {loading && <p role="status">Cargando detalle…</p>}
             {data && (
               <>
-                <p>
-                  Estado actual:{" "}
-                  <b>{data.active ? "Activado" : "Desactivado"}</b>. Historial
-                  de Efectividad de este inventario y país; no cambia estados en
-                  Meta Ads.
-                </p>
                 <DetailSection
                   id={id + "activity"}
                   stateKey="activity"
