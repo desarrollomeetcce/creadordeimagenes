@@ -222,6 +222,10 @@ test("Mi desempeño: vinculación segura, bases canónicas, objetivos y aislamie
       assert.equal(a.body.today.sales, 3);
       assert.equal(a.body.today.base, 60);
       assert.equal(a.body.today.percent, 5);
+      assert.equal(a.body.today.previousPercent, 5);
+      assert.equal(a.body.today.previousDay, yesterday);
+      assert.equal(a.body.yesterday.previousPercent, null);
+      assert.equal(a.body.history.length, 2);
       assert.equal(a.body.yesterday.base, 150);
       assert.equal(a.body.yesterday.percent, 2);
       assert.equal(d.body.today.sales, 16);

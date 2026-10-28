@@ -57,6 +57,7 @@ export function AdvisorDetail({
   initialTableId,
   initialAliasId,
   initialCountry,
+  initialAnalysisView = "period",
   initialSince,
   initialUntil,
   onClose,
@@ -68,6 +69,7 @@ export function AdvisorDetail({
   initialTableId: string;
   initialAliasId: string;
   initialCountry: string;
+  initialAnalysisView?: "period" | "today" | "yesterday";
   initialSince: string;
   initialUntil: string;
   onClose: () => void;
@@ -89,14 +91,20 @@ export function AdvisorDetail({
     [since, setSince] = useState(initialSince),
     [until, setUntil] = useState(initialUntil),
     [bars, setBars] = useState<AdvisorMetric>("results"),
-    [line, setLine] = useState<AdvisorMetric>("cost"),
+    [line, setLine] = useState<AdvisorMetric>(
+      initialAnalysisView === "today"
+        ? "advisorBase"
+        : initialAnalysisView === "yesterday"
+          ? "manualBase"
+          : "cost",
+    ),
     [data, setData] = useState<AdvisorSheetData | null>(null),
     [message, setMessage] = useState(""),
     [loading, setLoading] = useState(true),
     [reload, setReload] = useState(0);
   const [analysisView, setAnalysisView] = useState<
     "period" | "today" | "yesterday"
-  >("period");
+  >(initialAnalysisView);
   const customRange = useRef({ since: initialSince, until: initialUntil });
   const selectAnalysis = (view: "period" | "today" | "yesterday") => {
     if (analysisView === "period") customRange.current = { since, until };
@@ -1087,8 +1095,8 @@ export function AdvisorDetail({
               {(
                 [
                   ["period", "Análisis del período"],
-                  ["today", "Análisis de hoy"],
-                  ["yesterday", "Análisis de ayer"],
+                  ["today", "Hoy · avance provisional"],
+                  ["yesterday", "Ayer · día completo"],
                 ] as const
               ).map(([value, label]) => (
                 <button

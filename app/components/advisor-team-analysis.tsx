@@ -16,6 +16,7 @@ export function AdvisorTeamAnalysis({
   tables,
   initialTableId,
   initialCountry,
+  initialView = "period",
   initialSince,
   initialUntil,
   onClose,
@@ -24,6 +25,7 @@ export function AdvisorTeamAnalysis({
   tables: AdvisorTable[];
   initialTableId: string;
   initialCountry: string;
+  initialView?: "period" | "today" | "yesterday";
   initialSince: string;
   initialUntil: string;
   onClose: () => void;
@@ -31,10 +33,12 @@ export function AdvisorTeamAnalysis({
   const [personId, setPersonId] = useState<string | null>(null);
   const onAdvisor = (id: string) => setPersonId(id);
   const dialog = useRef<HTMLDialogElement>(null),
-    [view, setView] = useState<"period" | "today" | "yesterday">("period"),
+    [view, setView] = useState<"period" | "today" | "yesterday">(initialView),
     [since, setSince] = useState(initialSince),
     [until, setUntil] = useState(initialUntil),
-    [basis, setBasis] = useState<"BC" | "BM">("BC"),
+    [basis, setBasis] = useState<"BC" | "BM">(
+      initialView === "yesterday" ? "BM" : "BC",
+    ),
     [tableId, setTableId] = useState(initialTableId),
     [country, setCountry] = useState(initialCountry),
     [sort, setSort] = useState<"sales" | "percent">("sales"),
@@ -148,8 +152,8 @@ export function AdvisorTeamAnalysis({
           <div className="row" role="group" aria-label="Período del equipo">
             {(
               [
-                ["today", "Análisis de hoy"],
-                ["yesterday", "Análisis de ayer"],
+                ["today", "Hoy · avance provisional"],
+                ["yesterday", "Ayer · día completo"],
                 ["period", "Análisis del período"],
               ] as const
             ).map(([v, label]) => (
@@ -398,6 +402,7 @@ export function AdvisorTeamAnalysis({
           initialTableId={tableId}
           initialAliasId=""
           initialCountry={country}
+          initialAnalysisView={view}
           initialSince={since}
           initialUntil={until}
           onClose={() => setPersonId(null)}

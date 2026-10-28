@@ -227,9 +227,12 @@ export async function advisorPerformance(actor: Actor, input: unknown) {
       ? advisorSheet(actor, "all", from, to, { advisorId })
       : personalAdvisorSheet(actor, advisorId!, from, to);
   // Current two days are always queried independently of the optional history range.
-  const current = await read(yesterday, today);
+  const comparisonSince = shiftDay(today, -2);
+  const current = await read(comparisonSince, today);
   const historical =
-    since === yesterday && until === today ? current : await read(since, until);
+    since === comparisonSince && until === today
+      ? current
+      : await read(since, until);
   // Revalidate the binding after the reads as well; a revoked account cannot receive a stale response.
   if (actor.role !== "OWNER")
     demand(
@@ -265,10 +268,16 @@ export async function advisorPerformance(actor: Actor, input: unknown) {
         goals.find(
           (g) => g.basis === basis && g.since <= day && g.until >= day,
         ) ?? null;
+    const previousDay = shiftDay(day, -1),
+      previous = daily(current, previousDay);
+    const previousBase = basis === "BC" ? previous.bc : previous.bm;
     return {
       ...d,
       basis,
       base,
+      previousDay,
+      previousPercent: performanceRatio(previous.sales, previousBase, 100),
+      previousPartial: previous.partial,
       percent: performanceRatio(d.sales, base, 100),
       goal,
     };

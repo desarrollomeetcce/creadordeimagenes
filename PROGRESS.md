@@ -1586,3 +1586,12 @@ Se reutiliza el lector canónico de Efectividad mediante un camino interno autor
 Resumen de todos los detalles personales reorganizado dentro de la misma franja: Productividad primero ventas, BC y V/BC (BM y V/BM ayer), promedio; Asistencias A/I/H abajo. Aplica tanto desde Asesores como desde cualquier hoja financiera. En cabecera Asesor, Ver análisis del equipo compara todos los integrantes de esa pestaña con calendario, hoy/ayer/período, barras verticales, orden por ventas/efectividad, base/cobertura y asistencia. Se puede abrir el detalle personal del mismo período y regresar al comparativo. Valores ausentes/ceros separados y porcentajes contextualizados por la cantidad de base.
 
 Validación y evidencias en TESTING. Publicación a main, migración y comprobación del alojamiento se registran por separado.
+
+
+### Vistas diarias en tablas y acompañamiento visual del asesor
+
+Totales y Asesores incorporan vistas diarias en su barra principal. Hoy Lima filtra V/P/BC/CF en Totales y A/H/V/BC en Asesores; ayer V/BM/GM/CF y A/H/V/BM. Los períodos guardados se conservan al alternar y el calendario pasa a período. Columnas, anchos y encabezados coherentes; los detalles personales, del equipo y de Totales heredan la vista actual. Se mantienen modos completos manual/automático y no se modifican hojas financieras. Hoy añade CF también en el detalle de Totales, siguiendo la última indicación.
+
+Nombres unificados en toda la interfaz: Hoy · avance provisional y Ayer · día completo. Mi desempeño añade una persona ilustrada y mensajes constructivos de mejora, descenso, constancia o registros pendientes. Compara porcentajes con la misma base del día calendario anterior (BC/BC o BM/BM), muestra puntos porcentuales y no infiere tendencia con registros faltantes o parciales. Se consultan tres días actuales para comparar ayer con anteayer; el histórico solicitado conserva exactamente su rango y solo datos propios. Sin modelo/migración nuevos ni escrituras financieras o llamadas pagadas.
+
+197 unitarias, TypeScript/build,7 integraciones específicas y8 comprobaciones de navegador aprobadas, detalles en TESTING. Publicación a main y alojamiento externo se registran por separado.

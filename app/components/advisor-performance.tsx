@@ -2,6 +2,7 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { engineRequest as api } from "./generation-engine";
 import { SheetSearchSelect } from "./sheet-search-select";
+import { PerformanceMotivation } from "./performance-motivation";
 import { MetaDailyChart } from "./meta-daily-chart";
 import { MetaDateRange } from "./meta-date-range";
 import { limaToday, shiftDay } from "./date-range";
@@ -266,6 +267,15 @@ export function AdvisorPerformance({ owner }: { owner: boolean }) {
                   <strong>{goal ? pct(goal.percent) : "Sin definir"}</strong>
                 </div>
               </div>
+              <PerformanceMotivation
+                percent={card.percent}
+                partial={card.partial}
+                basis={card.basis}
+                previousDay={card.previousDay}
+                previousPercent={card.previousPercent}
+                previousPartial={card.previousPartial}
+                goal={card.goal}
+              />
               <p className="hint">
                 {view === "today"
                   ? "BC es la base que declaras disponible para contactar. No significa que ya hayas contactado a todas esas personas ni que sea exclusivamente la base ingresada hoy."

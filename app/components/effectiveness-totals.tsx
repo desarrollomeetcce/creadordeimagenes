@@ -37,6 +37,8 @@ import {
   fillNextDay,
   sheetDataFillLabels,
 } from "../../lib/meta-ads/sheet-data-fill";
+import { shiftDay } from "./date-range";
+import { totalViewColumns } from "../../lib/meta-ads/total-detail-views";
 import { TotalsDetail } from "./totals-detail";
 const names = new Intl.DisplayNames(["es"], { type: "currency" });
 export function EffectivenessTotals({
@@ -70,12 +72,26 @@ export function EffectivenessTotals({
     month: "2-digit",
     day: "2-digit",
   }).format(new Date());
-  const [since, setSince] = useWorkbookPreference<string>(
+  const [analysisView, setAnalysisView] = useState<
+    "period" | "today" | "yesterday"
+  >("period");
+  const [periodSince, setSince] = useWorkbookPreference<string>(
       listId,
       "since",
       today.slice(0, 8) + (Number(today.slice(8)) >= 20 ? "20" : "01"),
     ),
-    [until, setUntil] = useWorkbookPreference<string>(listId, "until", today);
+    [periodUntil, setUntil] = useWorkbookPreference<string>(
+      listId,
+      "until",
+      today,
+    );
+  const since =
+    analysisView === "period"
+      ? periodSince
+      : analysisView === "today"
+        ? today
+        : shiftDay(today, -1);
+  const until = analysisView === "period" ? periodUntil : since;
   const [mode, setMode] = useWorkbookPreference<"manual" | "automatic">(
       listId,
       "mode",
@@ -190,12 +206,18 @@ export function EffectivenessTotals({
     () => totalSourceBlocks(data, country, currency),
     [data, country, currency],
   );
+  const effectiveMode = analysisView === "period" ? mode : "manual";
   const columnTools = useTotalsColumnTools(
     listId,
-    mode,
-    mode === "manual" ? manualColumns : autoColumns,
+    effectiveMode,
+    effectiveMode === "manual" ? manualColumns : autoColumns,
   );
-  const columns = columnTools.columns;
+  const columns =
+    analysisView === "period"
+      ? columnTools.columns
+      : columnTools.columns.filter((c) =>
+          totalViewColumns(analysisView).some((v) => v.key === c.key),
+        );
   const layoutColumns = [
     { key: "date", width: 100 },
     ...blocks.flatMap((block) => [
@@ -300,22 +322,44 @@ export function EffectivenessTotals({
       <div className="row sheet-toolbar">
         <div className="row sheet-view-buttons" aria-label="Vista de totales">
           <button
-            aria-pressed={mode === "manual"}
+            aria-pressed={analysisView === "period" && mode === "manual"}
             className={
-              "sheet-mode-manual" + (mode === "manual" ? " primary" : "")
+              "sheet-mode-manual" +
+              (analysisView === "period" && mode === "manual" ? " primary" : "")
             }
-            onClick={() => setMode("manual")}
+            onClick={() => {
+              setAnalysisView("period");
+              setMode("manual");
+            }}
           >
             Total manual
           </button>
           <button
-            aria-pressed={mode === "automatic"}
+            aria-pressed={analysisView === "period" && mode === "automatic"}
             className={
-              "sheet-mode-automatic" + (mode === "automatic" ? " primary" : "")
+              "sheet-mode-automatic" +
+              (analysisView === "period" && mode === "automatic"
+                ? " primary"
+                : "")
             }
-            onClick={() => setMode("automatic")}
+            onClick={() => {
+              setAnalysisView("period");
+              setMode("automatic");
+            }}
           >
             Total automático
+          </button>
+          <button
+            aria-pressed={analysisView === "today"}
+            onClick={() => setAnalysisView("today")}
+          >
+            Hoy · avance provisional
+          </button>
+          <button
+            aria-pressed={analysisView === "yesterday"}
+            onClick={() => setAnalysisView("yesterday")}
+          >
+            Ayer · día completo
           </button>
         </div>
         <MetaDateRange
@@ -332,6 +376,7 @@ export function EffectivenessTotals({
               setMessage("Elige un período válido de hasta diez años.");
               return;
             }
+            setAnalysisView("period");
             setSince(a);
             setUntil(b);
           }}
@@ -432,7 +477,8 @@ export function EffectivenessTotals({
           totalsSheetId={listId}
           blocks={blocks}
           days={days}
-          initialMode={mode}
+          initialMode={effectiveMode}
+          initialView={analysisView === "period" ? effectiveMode : analysisView}
           initialSelection={detailSelection}
           loading={loading}
           message={message}
@@ -440,9 +486,13 @@ export function EffectivenessTotals({
         />
       )}
       <p className="sheet-help">
-        {mode === "manual"
-          ? "V/P: suma de inventario. BM y BC: repartos manuales independientes por asesor, hoja, país y día (sin moneda). GM y CF: valores manuales por bloque."
-          : "V/B/G/CF: suma de los valores de la vista automática. BC se registra manualmente por asesor."}{" "}
+        {analysisView === "today"
+          ? "Hoy · Lima: ventas, presupuesto, BC y costo fijo; sin BM ni GM."
+          : analysisView === "yesterday"
+            ? "Ayer · Lima: ventas, BM, GM y costo fijo; sin BC ni presupuesto."
+            : mode === "manual"
+              ? "V/P: suma de inventario. BM y BC: repartos manuales independientes por asesor, hoja, país y día (sin moneda). GM y CF: valores manuales por bloque."
+              : "V/B/G/CF: suma de los valores de la vista automática. BC se registra manualmente por asesor."}{" "}
         Países y monedas separados; N.A. no suma, — sin dato, * suma parcial.
         Las ventas se suman únicamente desde la hoja de origen indicada en cada
         bloque, sin combinar tablas. No modifica Meta Ads.

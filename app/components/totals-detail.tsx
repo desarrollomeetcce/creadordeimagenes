@@ -49,6 +49,7 @@ export function TotalsDetail({
   days: initialDays,
   totalsSheetId = "default-totals",
   initialMode,
+  initialView,
   initialSelection,
   loading: parentLoading,
   message,
@@ -58,6 +59,7 @@ export function TotalsDetail({
   days: string[];
   totalsSheetId?: string;
   initialMode: "manual" | "automatic";
+  initialView?: TotalDetailView;
   initialSelection?: { blockKey: string; day: string };
   loading: boolean;
   message: string;
@@ -83,13 +85,19 @@ export function TotalsDetail({
   )
     for (let at = Date.parse(since); at <= Date.parse(until); at += 86400000)
       days.push(new Date(at).toISOString().slice(0, 10));
-  const [mode, setMode] = useState<TotalDetailView>(initialMode),
+  const [mode, setMode] = useState<TotalDetailView>(initialView ?? initialMode),
     [blockKey, setBlockKey] = useState(
       initialSelection?.blockKey ?? blocks[0]?.key ?? "",
     ),
     [selectedDay, setSelectedDay] = useState(initialSelection?.day ?? ""),
     [bars, setBars] = useState("sales"),
-    [line, setLine] = useState(initialMode === "manual" ? "budget" : "base");
+    [line, setLine] = useState(
+      initialView === "yesterday"
+        ? "baseManual"
+        : initialMode === "manual"
+          ? "budget"
+          : "base",
+    );
   useEffect(() => {
     dialog.current?.showModal();
   }, []);

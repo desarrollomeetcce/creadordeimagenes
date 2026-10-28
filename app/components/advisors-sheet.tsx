@@ -12,6 +12,7 @@ import { useWorkbookPreference } from "./use-workbook-preference";
 import { engineRequest as api } from "./generation-engine";
 import { useReportDayPages } from "./report-day-pages";
 import { readAdvisorRange } from "./workbook-range-request";
+import { shiftDay } from "./date-range";
 import { MetaDateRange } from "./meta-date-range";
 import { EffectivenessCell } from "./effectiveness-cell";
 import { AdvisorAbsenceCell } from "./advisor-absence-cell";
@@ -67,15 +68,24 @@ export function AdvisorsSheet({
     month: "2-digit",
     day: "2-digit",
   }).format(new Date());
+  const [analysisView, setAnalysisView] = useState<
+    "period" | "today" | "yesterday"
+  >("period");
+  const showBM = analysisView !== "today",
+    showBC = analysisView !== "yesterday";
   const [teamAnalysis, setTeamAnalysis] = useState(false);
   const [detailVersion, setDetailVersion] = useState(0);
   const [detailDay, setDetailDay] = useState<string | null>(null);
-  const [since, setSince] = useWorkbookPreference<string>(
+  const [periodSince, setSince] = useWorkbookPreference<string>(
       listId,
       "since",
       today.slice(0, 8) + "01",
     ),
-    [until, setUntil] = useWorkbookPreference<string>(listId, "until", today),
+    [periodUntil, setUntil] = useWorkbookPreference<string>(
+      listId,
+      "until",
+      today,
+    ),
     [tableId, setTableId] = useWorkbookPreference<string>(
       listId,
       "tableId",
@@ -100,6 +110,13 @@ export function AdvisorsSheet({
     [busy, setBusy] = useState(false),
     [editingName, setEditingName] = useState<string | null>(null),
     [query, setQuery] = useWorkbookPreference<string>(listId, "query", "");
+  const since =
+    analysisView === "period"
+      ? periodSince
+      : analysisView === "today"
+        ? today
+        : shiftDay(today, -1);
+  const until = analysisView === "period" ? periodUntil : since;
   useEffect(() => {
     if (tableId !== "all" && !tables.some((t) => t.id === tableId)) {
       setTableId(tables[0]?.id ?? "all");
@@ -246,11 +263,29 @@ export function AdvisorsSheet({
     >
       <div className="row sheet-toolbar">
         <strong>Asesores</strong>
+        <div className="row sheet-view-buttons" aria-label="Vista de asesores">
+          {(
+            [
+              ["period", "Análisis del período"],
+              ["today", "Hoy · avance provisional"],
+              ["yesterday", "Ayer · día completo"],
+            ] as const
+          ).map(([value, label]) => (
+            <button
+              key={value}
+              aria-pressed={analysisView === value}
+              onClick={() => setAnalysisView(value)}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
         <MetaDateRange
           maxDays={3660}
           from={since}
           to={until}
           onChange={(a, b) => {
+            setAnalysisView("period");
             setSince(a);
             setUntil(b);
           }}
@@ -308,6 +343,11 @@ export function AdvisorsSheet({
         </button>
       </div>
       <p className="sheet-help">
+        {analysisView === "today"
+          ? "Hoy · Lima: A, H, V y BC. BM se consulta en Ayer · día completo. "
+          : analysisView === "yesterday"
+            ? "Ayer · Lima: A, H, V y BM. BC no forma parte de esta vista. "
+            : ""}
         A y H son asistencia y horas ausentes. BM suma la base manual repartida
         a cada asesor, por hoja, país y día. BM y BC se consultan aquí y se
         editan en Totales. BC es la base por contactar ingresada en Totales,
@@ -355,8 +395,8 @@ export function AdvisorsSheet({
                     (widths[d + "attendance"] ?? 84) +
                     (widths[d + "sales"] ?? 48) +
                     (widths[d + "absence"] ?? 56) +
-                    (widths[d + "manualBase"] ?? 64) +
-                    (widths[d + "advisorBase"] ?? 64),
+                    (showBM ? (widths[d + "manualBase"] ?? 64) : 0) +
+                    (showBC ? (widths[d + "advisorBase"] ?? 64) : 0),
                   0,
                 ),
             }}
@@ -376,14 +416,22 @@ export function AdvisorsSheet({
                   key={d + "sales"}
                   style={{ width: widths[d + "sales"] ?? 48 }}
                 />,
-                <col
-                  key={d + "manualBase"}
-                  style={{ width: widths[d + "manualBase"] ?? 64 }}
-                />,
-                <col
-                  key={d + "advisorBase"}
-                  style={{ width: widths[d + "advisorBase"] ?? 64 }}
-                />,
+                ...(showBM
+                  ? [
+                      <col
+                        key={d + "manualBase"}
+                        style={{ width: widths[d + "manualBase"] ?? 64 }}
+                      />,
+                    ]
+                  : []),
+                ...(showBC
+                  ? [
+                      <col
+                        key={d + "advisorBase"}
+                        style={{ width: widths[d + "advisorBase"] ?? 64 }}
+                      />,
+                    ]
+                  : []),
               ])}
             </colgroup>
             <caption className="sr-only">
@@ -435,14 +483,24 @@ export function AdvisorsSheet({
                   </div>
                 </th>
                 {visibleDays.map((d) => (
-                  <th key={d} colSpan={5} scope="colgroup">
+                  <th
+                    key={d}
+                    colSpan={3 + Number(showBM) + Number(showBC)}
+                    scope="colgroup"
+                  >
                     {d.slice(8)}.{d.slice(5, 7)}
                   </th>
                 ))}
               </tr>
               <tr>
                 {visibleDays.map((d) => (
-                  <FragmentHeaders key={d} day={d} handle={handle} />
+                  <FragmentHeaders
+                    key={d}
+                    day={d}
+                    handle={handle}
+                    showBM={showBM}
+                    showBC={showBC}
+                  />
                 ))}
               </tr>
             </thead>
@@ -519,6 +577,8 @@ export function AdvisorsSheet({
                         person={p}
                         day={d}
                         cell={c}
+                        showBM={showBM}
+                        showBC={showBC}
                         disabled={busy || loading}
                         onError={setMessage}
                         onDetail={() => {
@@ -563,6 +623,7 @@ export function AdvisorsSheet({
           tables={tables}
           initialTableId={tableId}
           initialCountry={country}
+          initialView={analysisView}
           initialSince={since}
           initialUntil={until}
           onClose={() => setTeamAnalysis(false)}
@@ -577,6 +638,7 @@ export function AdvisorsSheet({
           initialTableId={tableId}
           initialAliasId={aliasId}
           initialCountry={country}
+          initialAnalysisView={analysisView}
           initialSince={detailDay ?? since}
           initialUntil={detailDay ?? until}
           onClose={() => setDetail(null)}
@@ -589,7 +651,11 @@ export function AdvisorsSheet({
 function FragmentHeaders({
   day,
   handle,
+  showBM,
+  showBC,
 }: {
+  showBM: boolean;
+  showBC: boolean;
   day: string;
   handle: (key: string, label: string) => ReactNode;
 }) {
@@ -622,32 +688,38 @@ function FragmentHeaders({
         V{handle(day + "sales", "Ventas " + day)}
         <SheetDataFillBadge kind="automatic" />
       </th>
-      <th
-        scope="col"
-        title="Base manual recibida de Totales; solo lectura"
-        aria-label="Base manual"
-        data-fill-kind="automatic"
-        data-fill-timing="next-day"
-      >
-        BM{handle(day + "manualBase", "Base manual " + day)}
-        <SheetDataFillBadge kind="automatic" nextDay />
-      </th>
-      <th
-        scope="col"
-        title="Base por contactar: registrada en Totales"
-        aria-label="Base por contactar"
-        data-fill-kind="automatic"
-        data-fill-timing="same-day"
-      >
-        BC{handle(day + "advisorBase", "Base por contactar " + day)}
-        <SheetDataFillBadge kind="automatic" />
-      </th>
+      {showBM && (
+        <th
+          scope="col"
+          title="Base manual recibida de Totales; solo lectura"
+          aria-label="Base manual"
+          data-fill-kind="automatic"
+          data-fill-timing="next-day"
+        >
+          BM{handle(day + "manualBase", "Base manual " + day)}
+          <SheetDataFillBadge kind="automatic" nextDay />
+        </th>
+      )}
+      {showBC && (
+        <th
+          scope="col"
+          title="Base por contactar: registrada en Totales"
+          aria-label="Base por contactar"
+          data-fill-kind="automatic"
+          data-fill-timing="same-day"
+        >
+          BC{handle(day + "advisorBase", "Base por contactar " + day)}
+          <SheetDataFillBadge kind="automatic" />
+        </th>
+      )}
     </>
   );
 }
 function AdvisorDay({
   person,
   day,
+  showBM,
+  showBC,
   cell,
   disabled,
   onError,
@@ -657,6 +729,8 @@ function AdvisorDay({
 }: {
   person: Person;
   day: string;
+  showBM: boolean;
+  showBC: boolean;
   cell: Day;
   disabled: boolean;
   onError: (v: string) => void;
@@ -719,27 +793,31 @@ function AdvisorDay({
           {cell.partial ? " *" : ""}
         </button>
       </td>
-      <td
-        aria-label={`BM ${person.name} ${day}`}
-        title="Solo lectura: suma del reparto de Totales para este asesor, hojas y países consultados"
-        data-readonly="true"
-        data-fill-kind="automatic"
-        data-fill-timing="next-day"
-      >
-        {cell.manualBase === null || cell.manualBase === undefined
-          ? "—"
-          : cell.manualBase.toLocaleString("es-PE")}
-      </td>
-      <td
-        aria-label={`BC ${person.name} ${day}`}
-        data-fill-kind="automatic"
-        data-fill-timing="same-day"
-        title="BC se registra y reparte por asesor en Totales"
-      >
-        {cell.advisorBase === null || cell.advisorBase === undefined
-          ? "—"
-          : cell.advisorBase.toLocaleString("es-PE")}
-      </td>
+      {showBM && (
+        <td
+          aria-label={`BM ${person.name} ${day}`}
+          title="Solo lectura: suma del reparto de Totales para este asesor, hojas y países consultados"
+          data-readonly="true"
+          data-fill-kind="automatic"
+          data-fill-timing="next-day"
+        >
+          {cell.manualBase === null || cell.manualBase === undefined
+            ? "—"
+            : cell.manualBase.toLocaleString("es-PE")}
+        </td>
+      )}
+      {showBC && (
+        <td
+          aria-label={`BC ${person.name} ${day}`}
+          data-fill-kind="automatic"
+          data-fill-timing="same-day"
+          title="BC se registra y reparte por asesor en Totales"
+        >
+          {cell.advisorBase === null || cell.advisorBase === undefined
+            ? "—"
+            : cell.advisorBase.toLocaleString("es-PE")}
+        </td>
+      )}
     </>
   );
 }
