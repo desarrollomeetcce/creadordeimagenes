@@ -31,6 +31,11 @@ import {
   TotalsColumnPalette,
   useTotalsColumnTools,
 } from "./totals-column-tools";
+import { SheetDataFillBadge } from "./sheet-data-fill-badge";
+import {
+  fillNextDay,
+  sheetDataFillLabels,
+} from "../../lib/meta-ads/sheet-data-fill";
 import { TotalsDetail } from "./totals-detail";
 const names = new Intl.DisplayNames(["es"], { type: "currency" });
 export function EffectivenessTotals({
@@ -585,8 +590,16 @@ export function EffectivenessTotals({
                       key={block.key + ":" + m.key}
                       data-entry={m.sum ? "derived" : "manual"}
                       data-total-column={m.key}
+                      data-fill-kind={columnTools.kind(m.key)}
+                      data-fill-timing={
+                        fillNextDay(m.key) ? "next-day" : "same-day"
+                      }
                       data-total-tone={
-                        columnTools.green(m.key) ? "green" : "brown"
+                        columnTools.kind(m.key) === "automatic"
+                          ? "green"
+                          : columnTools.kind(m.key) === "next-day"
+                            ? "brown"
+                            : "blue"
                       }
                       data-column-drop={
                         columnTools.drop?.key === m.key
@@ -596,7 +609,7 @@ export function EffectivenessTotals({
                           : undefined
                       }
                       style={columnTools.style(m.key, true)}
-                      title={`${m.name} (${m.label})${m.sum ? " · suma" : " · manual"}`}
+                      title={`${m.name} (${m.label}) · ${sheetDataFillLabels[columnTools.kind(m.key)]}`}
                     >
                       {m.label}
                       {m.sum ? " Σ" : ""}
@@ -615,6 +628,7 @@ export function EffectivenessTotals({
                           m.label,
                         76,
                       )}
+                      <SheetDataFillBadge kind={columnTools.kind(m.key)} />
                     </th>
                   )),
                 ])}
@@ -691,13 +705,17 @@ export function EffectivenessTotals({
                             data-country={g.country}
                             data-currency={g.currency}
                             data-metric={m.key}
-                            className={
-                              m.sum || m.key === "advisorBase"
-                                ? "sheet-derived"
-                                : ""
+                            data-fill-kind={columnTools.kind(m.key)}
+                            data-fill-timing={
+                              fillNextDay(m.key) ? "next-day" : "same-day"
                             }
+                            className={m.sum ? "sheet-derived" : ""}
                             data-total-tone={
-                              columnTools.green(m.key) ? "green" : "brown"
+                              columnTools.kind(m.key) === "automatic"
+                                ? "green"
+                                : columnTools.kind(m.key) === "next-day"
+                                  ? "brown"
+                                  : "blue"
                             }
                             style={columnTools.style(m.key)}
                             data-entry={m.sum ? "derived" : "manual"}

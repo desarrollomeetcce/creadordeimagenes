@@ -2245,3 +2245,35 @@ button.ui-close-button:disabled, button.window-close:disabled { opacity: .55; }
 .totals-products>.table-scroll>table tr[data-sales-status="zero"]>th:first-child { background:color-mix(in srgb,#d5a637 8%,var(--surface)); }
 .totals-product-history-controls { flex-wrap:wrap; gap:8px; align-items:center; }
 .totals-product-history-controls>.sheet-search-trigger { flex:1 1 220px; min-width:0; width:auto; }
+
+/* Data origin and the team's expected recording day; these never change values or edit permissions. */
+:root { --fill-automatic:var(--accent); --fill-manual:#326fb4; --fill-next-day:#ad7720; --fill-manual-ink:#23558c; --fill-next-day-ink:#845716; }
+:root[data-theme="dark"] { --fill-manual:#75aaff; --fill-next-day:#e7bb69; --fill-manual-ink:#b5d4ff; --fill-next-day-ink:#f4d393; }
+[data-fill-kind="automatic"] { --sheet-fill-color:var(--fill-automatic); }
+[data-fill-kind="manual"] { --sheet-fill-color:var(--fill-manual); }
+[data-fill-kind="next-day"] { --sheet-fill-color:var(--fill-next-day); }
+.products-catalog .sheet-view td[data-fill-kind],.products-catalog .sheet-view th[data-fill-kind] { background-color:color-mix(in srgb,var(--sheet-fill-color) 8%,var(--surface)); }
+.products-catalog .sheet-view th[data-fill-kind] { background-color:color-mix(in srgb,var(--sheet-fill-color) 20%,var(--surface)); }
+.products-catalog .sheet-view td[data-fill-kind] { box-shadow:inset 2px 0 var(--sheet-fill-color); }
+.products-catalog .sheet-view td[data-fill-kind="automatic"] { color:var(--accent); }
+.products-catalog .sheet-view td[data-fill-kind="manual"] { color:var(--fill-manual-ink); }
+.products-catalog .sheet-view td[data-fill-kind="next-day"] { color:var(--fill-next-day-ink); }
+.products-catalog .sheet-view td[data-fill-kind] .sheet-cell,.products-catalog .sheet-view td[data-fill-kind] .manual-base-cell,.products-catalog .sheet-view td[data-fill-kind] .advisor-sales-detail-trigger { color:inherit; }
+.products-catalog .sheet-view td[data-fill-kind][data-na="true"] { color:var(--muted); }
+.sheet-fill-badge { display:block; width:fit-content; max-width:100%; margin:2px auto 0; padding:1px 4px; border-radius:4px; font-size:9px; line-height:1.2; font-weight:700; white-space:nowrap; color:var(--ink); background:color-mix(in srgb,var(--sheet-fill-color) 18%,var(--surface)); border:1px solid color-mix(in srgb,var(--sheet-fill-color) 45%,var(--line)); }
+.sheet-fill-badge-compact { display:inline-block; margin:0 2px; padding:0 2px; font-size:8px; vertical-align:middle; }
+.effectiveness-topbar .sheet-legend { display:flex; flex-wrap:wrap; gap:3px 9px; white-space:normal; }
+.sheet-fill-legend { display:flex; flex-wrap:wrap; flex-basis:100%; gap:5px 12px; align-items:center; margin-top:3px; }
+.sheet-fill-legend>span { display:inline-flex; align-items:center; gap:5px; font-size:10px; }
+.sheet-fill-legend .sheet-fill-badge { display:inline-block; margin:0; }
+.sheet-fill-timing-note { flex-basis:100%; color:var(--muted); font-size:10px; line-height:1.3; }
+.sheet-fill-palette-hint { display:block; color:var(--muted); font-size:10px; }
+/* Detail tables display results received from the source sheets. Module/status accents stay distinct. */
+.detail-fold-body .table-scroll td { background-color:color-mix(in srgb,var(--fill-automatic) 5%,var(--surface)); }
+.products-catalog .sheet-view .effectiveness-grid td[data-fill-kind]:not([data-colored="true"]) { background-color:color-mix(in srgb,var(--sheet-fill-color) 8%,var(--surface)); }
+.products-catalog .sheet-view .effectiveness-grid th[data-fill-kind] { background-color:color-mix(in srgb,var(--sheet-fill-color) 20%,var(--surface)); }
+.products-catalog .sheet-view .effectiveness-grid td[data-fill-kind="automatic"] { color:var(--accent); }
+.products-catalog .sheet-view .effectiveness-grid td[data-fill-kind="manual"] { color:var(--fill-manual-ink); }
+.products-catalog .sheet-view .effectiveness-grid td[data-fill-kind="next-day"] { color:var(--fill-next-day-ink); }
+.products-catalog .sheet-view .effectiveness-grid td[data-fill-kind][data-na="true"] { color:var(--muted); }
+.effectiveness-topbar .sheet-legend .sheet-fill-timing-note { white-space:normal; min-width:0; }

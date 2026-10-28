@@ -1,4 +1,5 @@
 "use client";
+import { SheetDataFillBadge } from "./sheet-data-fill-badge";
 import type { AdvisorPeriodView } from "../../lib/meta-ads/advisor-period-history";
 import { useSheetWidths } from "./use-sheet-widths";
 import { useSheetHeights } from "./use-sheet-heights";
@@ -567,28 +568,52 @@ function FragmentHeaders({
 }) {
   return (
     <>
-      <th scope="col" title="Asistencia" aria-label="Asistencia">
+      <th
+        scope="col"
+        title="Asistencia · registro manual del mismo día"
+        aria-label="Asistencia"
+        data-fill-kind="manual"
+      >
         A{handle(day + "attendance", "Asistencia " + day)}
+        <SheetDataFillBadge kind="manual" />
       </th>
-      <th scope="col" title="Horas ausentes" aria-label="Horas ausentes">
+      <th
+        scope="col"
+        title="Horas ausentes · registro manual del mismo día"
+        aria-label="Horas ausentes"
+        data-fill-kind="manual"
+      >
         H{handle(day + "absence", "Horas ausentes " + day)}
+        <SheetDataFillBadge kind="manual" />
       </th>
-      <th scope="col" title="Ventas" aria-label="Ventas">
+      <th
+        scope="col"
+        title="Ventas recibidas de las hojas"
+        aria-label="Ventas"
+        data-fill-kind="automatic"
+      >
         V{handle(day + "sales", "Ventas " + day)}
+        <SheetDataFillBadge kind="automatic" />
       </th>
       <th
         scope="col"
         title="Base manual recibida de Totales; solo lectura"
         aria-label="Base manual"
+        data-fill-kind="automatic"
+        data-fill-timing="next-day"
       >
         BM{handle(day + "manualBase", "Base manual " + day)}
+        <SheetDataFillBadge kind="automatic" nextDay />
       </th>
       <th
         scope="col"
         title="Base por contactar: registrada en Totales"
         aria-label="Base por contactar"
+        data-fill-kind="automatic"
+        data-fill-timing="same-day"
       >
         BC{handle(day + "advisorBase", "Base por contactar " + day)}
+        <SheetDataFillBadge kind="automatic" />
       </th>
     </>
   );
@@ -616,7 +641,11 @@ function AdvisorDay({
 }) {
   return (
     <>
-      <td className="advisor-attendance" data-status={cell.status ?? ""}>
+      <td
+        data-fill-kind="manual"
+        className="advisor-attendance"
+        data-status={cell.status ?? ""}
+      >
         {disabled ? (
           <span>
             {statuses.find((s) => s.value === (cell.status ?? ""))?.label}
@@ -634,7 +663,7 @@ function AdvisorDay({
           />
         )}
       </td>
-      <td className="advisor-hours">
+      <td className="advisor-hours" data-fill-kind="manual">
         <AdvisorAbsenceCell
           advisorId={person.id}
           name={person.name}
@@ -645,7 +674,10 @@ function AdvisorDay({
           onError={onError}
         />
       </td>
-      <td title="Ventas registradas a nombre del asesor, independientemente del responsable">
+      <td
+        data-fill-kind="automatic"
+        title="Ventas recibidas de las hojas, registradas a nombre del asesor"
+      >
         <button
           type="button"
           className="advisor-sales-detail-trigger"
@@ -664,6 +696,8 @@ function AdvisorDay({
         aria-label={`BM ${person.name} ${day}`}
         title="Solo lectura: suma del reparto de Totales para este asesor, hojas y países consultados"
         data-readonly="true"
+        data-fill-kind="automatic"
+        data-fill-timing="next-day"
       >
         {cell.manualBase === null || cell.manualBase === undefined
           ? "—"
@@ -671,6 +705,8 @@ function AdvisorDay({
       </td>
       <td
         aria-label={`BC ${person.name} ${day}`}
+        data-fill-kind="automatic"
+        data-fill-timing="same-day"
         title="BC se registra y reparte por asesor en Totales"
       >
         {cell.advisorBase === null || cell.advisorBase === undefined

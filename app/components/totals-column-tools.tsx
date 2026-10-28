@@ -12,6 +12,10 @@ import {
   moveTotalColumn,
   orderedTotalColumns,
 } from "../../lib/meta-ads/totals-column-layout";
+import {
+  totalDataFill,
+  sheetDataFillLabels,
+} from "../../lib/meta-ads/sheet-data-fill";
 import type { TotalColumn } from "../../lib/meta-ads/totals-detail";
 type Gesture = {
   key: string;
@@ -136,10 +140,11 @@ export function useTotalsColumnTools(
       requestAnimationFrame(() => g.button.focus({ preventScroll: true }));
     }
   };
-  const green = (key: string) =>
-    !["baseManual", "totalSpend", "fixedCost"].includes(key);
+  const kind = (key: string) =>
+    totalDataFill(available.find((c) => c.key === key)!);
+  const green = (key: string) => kind(key) === "automatic";
   const style = (key: string, header = false): CSSProperties => ({
-    backgroundColor: `color-mix(in srgb,${colors[key] ?? (green(key) ? "var(--accent)" : "#d3a94c")} ${header ? 20 : green(key) ? 4 : 8}%,var(--surface))`,
+    backgroundColor: `color-mix(in srgb,${colors[key] ?? `var(--fill-${kind(key)})`} ${header ? 20 : 8}%,var(--surface))`,
   });
   const handle = (column: TotalColumn, block: string) => (
     <button
@@ -187,6 +192,7 @@ export function useTotalsColumnTools(
     handle,
     colors,
     green,
+    kind,
     setColor: (key: string, value: string) => {
       if (!/^#[0-9a-f]{6}$/i.test(value)) return;
       let old: Record<string, string> = {};
@@ -220,15 +226,29 @@ export function TotalsColumnPalette({
         aria-label="Colores de columnas de Totales"
       >
         <strong>Colores de columnas</strong>
+        <p className="hint">
+          Los colores personalizados reemplazan el fondo de la guía. Las
+          etiquetas Auto, Hoy y D+1 conservan el significado.
+        </p>
         {tools.columns.map((c) => (
           <label key={c.key}>
-            {c.label} · {c.name}
+            <span>
+              {c.label} · {c.name}
+              <small className="sheet-fill-palette-hint">
+                {sheetDataFillLabels[tools.kind(c.key)]}
+                {tools.colors[c.key] ? " · color personalizado" : ""}
+              </small>
+            </span>
             <input
               type="color"
               aria-label={`Color de ${c.label} en Totales`}
               value={
                 tools.colors[c.key] ??
-                (tools.green(c.key) ? "#176b59" : "#d3a94c")
+                (tools.kind(c.key) === "automatic"
+                  ? "#176b59"
+                  : tools.kind(c.key) === "next-day"
+                    ? "#ad7720"
+                    : "#326fb4")
               }
               onChange={(e) => tools.setColor(c.key, e.target.value)}
             />

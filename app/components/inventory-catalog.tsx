@@ -506,6 +506,7 @@ export function InventoryCatalog({
     return (
       <td
         className="inventory-category-cell"
+        data-fill-kind="manual"
         data-category-kind={kind}
         data-drop-active={categoryDrop === g.name + "|" + kind || undefined}
         onDragOver={(e) => {
@@ -925,7 +926,7 @@ export function InventoryCatalog({
                       g.links.some((a) => selected.includes(a.id)) || undefined
                     }
                   >
-                    <td>
+                    <td data-fill-kind="manual">
                       <div className="inventory-name-cell">
                         <InventoryCheck
                           label={`Seleccionar inventario ${g.name}`}
@@ -963,7 +964,7 @@ export function InventoryCatalog({
                     </td>
                     {categoryCell(g, "PRIMARY")}
                     {categoryCell(g, "SECONDARY")}
-                    <td>
+                    <td data-fill-kind="manual">
                       <div className="inventory-sheet-links">
                         {g.links
                           .filter((a) => !a.standalone)

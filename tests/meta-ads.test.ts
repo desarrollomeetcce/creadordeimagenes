@@ -714,3 +714,12 @@ test('Totales de producto: períodos por páginas conservan vendedores, fechas, 
  assert.equal(p.sums.sales.value,6);assert.equal(p.sums.sales.partial,true);assert.equal(p.advisors!.find(a=>a.advisorId==='Ana')!.sales,3);assert.equal(p.advisors!.find(a=>a.advisorId==='Donasys')!.sales,3);assert.equal(p.days!['2026-10-22'].sums.sales.value,0);assert.equal(p.days!['2026-10-23'],undefined);assert(!('manualBase' in p));
  const {totalDetailPeriods,detailPeriodPreset}=await import('../lib/meta-ads/detail-period-presets');assert.deepEqual(totalDetailPeriods.map(k=>detailPeriodPreset(k,'2026-10-27')!.label),['Hoy','Ayer','Últimos 15 días','Últimos 30 días','Este mes']);
 });
+
+test('Guía de carga: origen automático, manual del día y BM/GM al día siguiente son independientes del valor y de la vista',async()=>{
+ const {totalDataFill,sheetMetricDataFill,fillNextDay}=await import('../lib/meta-ads/sheet-data-fill');
+ assert.equal(totalDataFill({key:'sales',sum:true}),'automatic');assert.equal(totalDataFill({key:'budget',sum:true}),'automatic');
+ for(const key of ['baseManual','totalSpend']){assert(fillNextDay(key));assert.equal(totalDataFill({key,sum:false}),'next-day');}
+ assert.equal(totalDataFill({key:'advisorBase',sum:false}),'manual');assert.equal(totalDataFill({key:'fixedCost',sum:false}),'manual');assert.equal(totalDataFill({key:'fixedCost',sum:true}),'automatic');assert(!fillNextDay('advisorBase'));
+ assert.equal(sheetMetricDataFill('sales'),'manual');assert.equal(sheetMetricDataFill('budget'),'manual');assert.equal(sheetMetricDataFill('base'),'automatic');assert.equal(sheetMetricDataFill('spend'),'automatic');
+ assert.equal(sheetMetricDataFill('base',{manual:true}),'manual');assert.equal(sheetMetricDataFill('spend',{manual:true}),'manual');assert.equal(sheetMetricDataFill('sales',{linked:true,manual:true}),'automatic');assert.equal(sheetMetricDataFill('budget',{synced:true,manual:true}),'automatic');assert.equal(sheetMetricDataFill('fixedCost',{received:true}),'automatic');assert.equal(sheetMetricDataFill('sales',{automaticNa:true}),'automatic');
+});

@@ -1,4 +1,6 @@
 "use client";
+import { SheetDataFillBadge } from "./sheet-data-fill-badge";
+import { sheetMetricDataFill } from "../../lib/meta-ads/sheet-data-fill";
 import type { PeriodTableLink } from "../../lib/meta-ads/period-table-link";
 import {
   notifyAdvisorSalesChanged,
@@ -1805,6 +1807,9 @@ export function MetaEffectiveness({
                         key={d + m.key}
                         className="sheet-parameter-heading"
                         data-metric={m.key}
+                        data-fill-kind={sheetMetricDataFill(m.key, {
+                          linked: !!linkedColumn(m.key, d),
+                        })}
                         scope="col"
                         aria-sort={
                           activeSort.kind === "day" &&
@@ -1842,6 +1847,12 @@ export function MetaEffectiveness({
                             direction: "asc",
                           })}
                         </button>
+                        <SheetDataFillBadge
+                          compact
+                          kind={sheetMetricDataFill(m.key, {
+                            linked: !!linkedColumn(m.key, d),
+                          })}
+                        />
                         <SheetActiveFill
                           metric={m.key}
                           name={m.name}
@@ -2126,6 +2137,16 @@ export function MetaEffectiveness({
                           return (
                             <td
                               key={d + m.label}
+                              data-fill-kind={sheetMetricDataFill(m.key, {
+                                linked: !!c?.linked?.[m.key],
+                                synced: !!c?.synced?.[m.key],
+                                manual: !!c?.manual?.includes(m.key),
+                                automaticNa: !!c?.automaticNa?.includes(m.key),
+                                received:
+                                  m.key === "fixedCost" &&
+                                  !c?.manual?.includes(m.key) &&
+                                  !!c?.sourceFixedCost?.length,
+                              })}
                               data-na={c?.na?.includes(m.key) || undefined}
                               data-auto-na={
                                 c?.automaticNa?.includes(m.key) || undefined
