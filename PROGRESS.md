@@ -1545,3 +1545,19 @@ El detalle de diplomados y hojas futuras abre centrado horizontalmente a8px del 
 ### Cabecera completa fija en los detalles
 
 Inventario/Diplomados, Asesores y Totales conservan arriba el título, navegación, cierre/tamaño, calendario, períodos guardados, filtros y observaciones de contexto mientras se revisan los reportes. Cabecera compartida con altura observada para que los accesos a secciones y evolución queden visibles debajo; altura limitada en móvil para dejar espacio al informe. Calendario fijo respecto al viewport y selectores utilizables después de desplazarse, sin recorte ni desplazamiento doble del calendario. Sin nuevas APIs, cifras o esquema. Validación y capturas en TESTING; publicación a main y verificación del alojamiento se registran por separado.
+
+
+### Orden compartido, comparativos verticales y análisis completo de la hoja
+
+Los cinco módulos del inventario se ordenan por arrastre/teclado y comparten preferencia por cuenta en este navegador para cualquier diplomado/hoja. Orden inicial según la indicación: evolución, histórico, ventas diarias por asesor, vendedores y activaciones. Claves estables conservan DOM, filtros y plegados; navegación sigue el mismo orden. Barras de vendedores verticales agrupadas por día, colores/leyenda internos, sin espacios vacíos por asesor ausente; ventanas31 fechas, conservando el total del período. Celdas de procedencia con relleno medio completo30/42%, sin líneas laterales y manual del mismo día neutro por defecto.
+
+Nuevo Ver detalle de la hoja en cabecera de inventario de todas las hojas financieras: calendario/accesos propios y cabecera fija; resumen de ventas, comparativo vertical/tabular de diplomados, filtro de pocas ventas con límite ajustable, ceros registrados y sin datos/N.A. diferenciados, búsqueda y orden. Incluye desactivados; evolución de toda la hoja o producto, histórico diario con diplomados/asesores y tabla de vendedores por producto. Cantidades consolidadas sin duplicación por moneda; parámetros financieros se presentan por país/moneda en módulo aparte. No se cambia el rango de la hoja ni Meta Ads.
+
+195 unitarias, TypeScript/build y pruebas Chromium en TESTING. Reusa APIs GET existentes, sin nuevas rutas, migraciones o escrituras financieras;195 integraciones anteriores aplicables. Datos sintéticos y dobles sin llamadas pagadas. Main y despliegue efectivo externo se registran por separado.
+
+
+### Vistas de Totales aisladas y análisis de hoy/ayer
+
+El detalle de Totales ahora utiliza exclusivamente V/P/BC/BM/GM/CF en manual y V/B/BC/G/CF en automático: resumen, indicadores, selectores de gráfico e histórico sin columnas cruzadas. Hoy fija fecha de Lima y V/P/BC; ayer fija el día previo y V/BM/GM/CF. Tablas de productos filtran por origen y nunca asignan a diplomados importes manuales de bloque; detalle diario de asesores muestra únicamente las bases de la vista. Motor de movimiento vertical compartido para Totales y análisis de toda la hoja, con preferencias independientes, navegación en el mismo orden, teclado/restablecer y cabecera fija conservados. Sin nuevas rutas ni esquema.
+
+195/195 unitarias y TypeScript/build aprobados. Tres suites de navegador en TESTING verifican inventario, hoja completa y Totales, sin escrituras financieras ni llamadas externas.

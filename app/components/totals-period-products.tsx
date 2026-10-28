@@ -8,6 +8,7 @@ import {
 import { readRangePages } from "./workbook-range-request";
 import { subscribeAdvisorSalesChanged } from "./advisor-sales-events";
 import { DetailSection } from "./detail-section";
+import type { TotalDetailView } from "../../lib/meta-ads/total-detail-views";
 import { TotalsProducts } from "./totals-products";
 export function TotalsPeriodProducts({
   tableId,
@@ -15,7 +16,9 @@ export function TotalsPeriodProducts({
   currency,
   days,
   sectionId,
+  view = "manual",
 }: {
+  view?: TotalDetailView;
   tableId: string;
   country: string;
   currency: string;
@@ -84,6 +87,12 @@ export function TotalsPeriodProducts({
         {since} — {until} · {country || "Sin país"} · {currency || "Sin moneda"}
         . Incluye los diplomados con 0 ventas en este período.
       </p>
+      {view !== "automatic" && (
+        <p className="hint">
+          BM, BC, GM y el CF manual se consultan en el resumen de la hoja y
+          país; no se inventa un reparto por diplomado.
+        </p>
+      )}
       {error && (
         <p role="alert">
           {error}{" "}
@@ -97,6 +106,7 @@ export function TotalsPeriodProducts({
       )}
       {data && since && until && (
         <TotalsProducts
+          view={view}
           key={context}
           products={data}
           tableId={tableId}

@@ -2252,9 +2252,8 @@ button.ui-close-button:disabled, button.window-close:disabled { opacity: .55; }
 [data-fill-kind="automatic"] { --sheet-fill-color:var(--fill-automatic); }
 [data-fill-kind="manual"] { --sheet-fill-color:var(--fill-manual); }
 [data-fill-kind="next-day"] { --sheet-fill-color:var(--fill-next-day); }
-.products-catalog .sheet-view td[data-fill-kind],.products-catalog .sheet-view th[data-fill-kind] { background-color:color-mix(in srgb,var(--sheet-fill-color) 8%,var(--surface)); }
-.products-catalog .sheet-view th[data-fill-kind] { background-color:color-mix(in srgb,var(--sheet-fill-color) 20%,var(--surface)); }
-.products-catalog .sheet-view td[data-fill-kind] { box-shadow:inset 2px 0 var(--sheet-fill-color); }
+.products-catalog .sheet-view td[data-fill-kind],.products-catalog .sheet-view th[data-fill-kind] { background-color:color-mix(in srgb,var(--sheet-fill-color) 30%,var(--surface)); }
+.products-catalog .sheet-view th[data-fill-kind] { background-color:color-mix(in srgb,var(--sheet-fill-color) 42%,var(--surface)); }
 .products-catalog .sheet-view td[data-fill-kind="automatic"] { color:var(--fill-automatic-ink); }
 .products-catalog .sheet-view td[data-fill-kind="manual"] { color:var(--fill-manual-ink); }
 .products-catalog .sheet-view td[data-fill-kind="next-day"] { color:var(--fill-next-day-ink); }
@@ -2269,9 +2268,9 @@ button.ui-close-button:disabled, button.window-close:disabled { opacity: .55; }
 .sheet-fill-timing-note { flex-basis:100%; color:var(--muted); font-size:10px; line-height:1.3; }
 .sheet-fill-palette-hint { display:block; color:var(--muted); font-size:10px; }
 /* Detail tables display results received from the source sheets. Module/status accents stay distinct. */
-.detail-fold-body .table-scroll td { background-color:color-mix(in srgb,var(--fill-automatic) 5%,var(--surface)); }
-.products-catalog .sheet-view .effectiveness-grid td[data-fill-kind]:not([data-colored="true"]) { background-color:color-mix(in srgb,var(--sheet-fill-color) 8%,var(--surface)); }
-.products-catalog .sheet-view .effectiveness-grid th[data-fill-kind] { background-color:color-mix(in srgb,var(--sheet-fill-color) 20%,var(--surface)); }
+.detail-fold-body .table-scroll td { background-color:color-mix(in srgb,var(--fill-automatic) 20%,var(--surface)); }
+.products-catalog .sheet-view .effectiveness-grid td[data-fill-kind]:not([data-colored="true"]) { background-color:color-mix(in srgb,var(--sheet-fill-color) 30%,var(--surface)); }
+.products-catalog .sheet-view .effectiveness-grid th[data-fill-kind] { background-color:color-mix(in srgb,var(--sheet-fill-color) 42%,var(--surface)); }
 .products-catalog .sheet-view .effectiveness-grid td[data-fill-kind="automatic"] { color:var(--fill-automatic-ink); }
 .products-catalog .sheet-view .effectiveness-grid td[data-fill-kind="manual"] { color:var(--fill-manual-ink); }
 .products-catalog .sheet-view .effectiveness-grid td[data-fill-kind="next-day"] { color:var(--fill-next-day-ink); }
@@ -2310,3 +2309,53 @@ button.ui-close-button:disabled, button.window-close:disabled { opacity: .55; }
 .detail-sticky-header>.hint,.detail-sticky-header>p { margin:6px 0 0; }
 :is(.advisor-detail,.totals-detail,.alias-state-detail) .detail-fold { scroll-margin-top:calc(var(--detail-header-height,100px) + 12px); }
 @media(max-width:600px) { .detail-sticky-header { max-height:52dvh; } .detail-sticky-header>.hint { font-size:11px; line-height:1.4; } }
+.inventory-detail-modules { display:flex; flex-direction:column; gap:12px; margin-top:10px; }
+.inventory-detail-slot { position:relative; min-width:0; border-radius:6px; }
+.inventory-detail-slot>.detail-fold { margin:0; }
+.inventory-detail-slot[data-dragging] { opacity:.55; }
+.inventory-detail-slot[data-drop-edge="before"] { box-shadow:0 -4px 0 var(--accent); }
+.inventory-detail-slot[data-drop-edge="after"] { box-shadow:0 4px 0 var(--accent); }
+.inventory-detail-order-hint { margin:8px 0; color:var(--muted); font-size:11px; }
+.inventory-sales-grouped { margin-top:8px; border:1px solid var(--line); border-radius:6px; padding:8px; }
+.inventory-sales-chart-legend { display:flex; flex-wrap:wrap; gap:5px 10px; max-height:110px; overflow:auto; margin-bottom:8px; }
+.inventory-sales-chart-legend button { display:inline-flex; gap:5px; align-items:center; padding:3px 5px; background:transparent; color:var(--ink); border:1px solid transparent; }
+.inventory-sales-chart-legend button[aria-pressed="true"] { border-color:var(--accent); background:var(--soft); }
+.inventory-sales-chart-legend button>span { width:12px; height:12px; border-radius:2px; flex:0 0 auto; }
+.inventory-sales-chart-scroll { overflow-x:auto; max-width:100%; }
+.inventory-sales-chart-scroll svg { display:block; min-width:100%; }
+.inventory-sales-chart-scroll text { fill:var(--ink); font:11px Arial,sans-serif; }
+.inventory-sales-chart-scroll .inventory-sales-chart-year { fill:var(--muted); font-size:9px; }
+.inventory-sales-chart-grid { stroke:var(--line); stroke-width:1; }
+.inventory-sales-chart-scroll g[role="button"] { cursor:pointer; }
+.inventory-sales-chart-scroll g[role="button"]:focus-visible { outline:2px solid var(--selection); }
+.inventory-sales-chart-scroll g[role="button"]:hover rect { opacity:.8; }
+.inventory-sales-chart-pages { justify-content:space-between; flex-wrap:wrap; gap:6px; font-size:11px; }
+.sheet-analysis-trigger { display:block; border:1px solid var(--accent); background:var(--soft); color:var(--accent); border-radius:4px; font-weight:700; padding:4px 6px; font-size:10px; }
+.sheet-sales-detail { width:min(1240px,calc(100vw - 24px)); }
+.sheet-sales-detail-controls { flex-wrap:wrap; gap:7px; margin:8px 0; }
+.sheet-sales-detail-controls>.detail-period-presets { flex:1 1 300px; border:0; padding:0; margin:0; background:transparent; }
+.sheet-sales-detail-controls input[type="number"] { width:70px; }
+.sheet-sales-detail .sheet-search-trigger { max-width:300px; }
+.sheet-sales-detail .table-scroll { max-width:100%; max-height:430px; }
+.sheet-sales-detail table { width:100%; font-size:12px; border-collapse:collapse; }
+.sheet-sales-detail td,.sheet-sales-detail th { padding:7px; border-bottom:1px solid var(--line); text-align:left; white-space:normal; }
+.sheet-sales-detail .detail-fold { scroll-margin-top:calc(var(--detail-header-height,100px) + 12px); }
+.sheet-sales-overview { display:grid; grid-template-columns:repeat(auto-fit,minmax(130px,1fr)); gap:10px; margin:12px 0; }
+.sheet-sales-overview>div { padding:12px; border:1px solid var(--line); border-left:4px solid var(--accent); border-radius:6px; background:var(--soft); }
+.sheet-sales-overview span { display:block; font-size:12px; }
+.sheet-sales-overview strong { display:block; font-size:24px; margin-top:6px; }
+.sheet-sales-detail tr[data-sales-status="zero"] { background:color-mix(in srgb,#d29a53 18%,var(--surface)); }
+.sheet-sales-detail tr[data-sales-status="low"] { background:color-mix(in srgb,#d29a53 8%,var(--surface)); }
+.sheet-sales-detail .sheet-sales-comparison { margin:10px 0; border:1px solid var(--line); border-radius:6px; }
+.sheet-sales-detail .sheet-sales-comparison g[role="button"] { cursor:pointer; }
+@media(max-width:600px) { .sheet-sales-detail { padding:12px; } .sheet-sales-overview { grid-template-columns:repeat(2,minmax(0,1fr)); } }
+.sheet-sales-detail .table-scroll thead th { position:sticky; top:0; z-index:2; background:var(--surface); }
+.sheet-sales-detail .table-scroll tbody th { position:sticky; left:0; z-index:1; background:var(--surface); min-width:150px; }
+.sheet-sales-detail-controls>input { flex:1 1 220px; width:auto; min-width:140px; max-width:360px; }
+.sheet-sales-detail-controls>select { flex:0 1 240px; width:auto; }
+.sheet-sales-detail-controls>label { display:inline-flex; align-items:center; gap:7px; }
+.sheet-sales-detail-controls>.detail-period-presets { flex:1 1 100%; min-width:0; }
+.sheet-sales-detail-controls .detail-period-accesses { flex-wrap:nowrap; overflow-x:auto; max-width:100%; min-width:0; margin:0; gap:5px; padding:2px; }
+.sheet-sales-detail-controls .detail-period-chip,.sheet-sales-detail-controls .detail-period-add-group,.sheet-sales-detail-controls .detail-period-reset { flex:0 0 auto; }
+.sheet-sales-detail-controls .detail-period-chip button { padding:5px 7px; min-height:30px; font-size:11px; }
+.sheet-sales-detail-controls>.sheet-search-trigger { flex:1 1 170px; min-width:0; width:auto; max-width:300px; }

@@ -56,3 +56,27 @@ export function inventoryAdvisorSales(entries: InventorySalesEntry[]) {
       ),
   };
 }
+
+/** Positive sales only: absent/NA/zero values never become a visible sale. */
+export function inventorySalesGroups(entries: InventorySalesEntry[]) {
+  const days = new Map<
+    string,
+    Map<string, { id: string; name: string; sales: number; partial: boolean }>
+  >();
+  for (const r of inventoryAdvisorSales(entries).daily) {
+    if (r.na || r.sales === null || r.sales <= 0) continue;
+    const id = r.advisorId ?? "__unassigned",
+      bars = days.get(r.day) ?? new Map(),
+      b = bars.get(id) ?? { id, name: r.name, sales: 0, partial: false };
+    b.sales += r.sales;
+    b.partial ||= r.partial;
+    bars.set(id, b);
+    days.set(r.day, bars);
+  }
+  return [...days]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([day, bars]) => ({
+      day,
+      bars: [...bars.values()].sort((a, b) => a.id.localeCompare(b.id)),
+    }));
+}

@@ -1,8 +1,12 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { engineRequest as api } from "./generation-engine";
 import { subscribeAdvisorSalesChanged } from "./advisor-sales-events";
 import { DetailSection } from "./detail-section";
+import {
+  totalViewColumns,
+  type TotalDetailView,
+} from "../../lib/meta-ads/total-detail-views";
 import { TotalsProducts } from "./totals-products";
 import { performanceRatio } from "../../lib/meta-ads/performance-metrics";
 import type { TotalsDailyData } from "../../lib/meta-ads/totals-daily-detail";
@@ -13,13 +17,22 @@ export function TotalsDailyBreakdown({
   currency,
   day,
   sectionId,
+  view = "manual",
+  children,
 }: {
+  view?: TotalDetailView;
+  children?: (sections: {
+    advisors: ReactNode;
+    products: ReactNode;
+  }) => ReactNode;
   tableId: string;
   country: string;
   currency: string;
   day: string;
   sectionId: string;
 }) {
+  const showBM = totalViewColumns(view).some((c) => c.key === "baseManual"),
+    showBC = totalViewColumns(view).some((c) => c.key === "advisorBase");
   const query =
     "meta-ads/effectiveness/totals/daily-detail?" +
     new URLSearchParams({ tableId, country, currency, day });
@@ -30,6 +43,7 @@ export function TotalsDailyBreakdown({
   const [error, setError] = useState("");
   const [reload, setReload] = useState(0);
   useEffect(() => {
+    if (!day) return;
     let active = true,
       inFlight = false;
     setError("");
@@ -63,7 +77,7 @@ export function TotalsDailyBreakdown({
     };
   }, [query, reload]);
   const data = result?.query === query ? result.data : null;
-  return (
+  const advisors = (
     <>
       {error && (
         <p role="alert">
@@ -79,12 +93,12 @@ export function TotalsDailyBreakdown({
       <DetailSection
         id={sectionId + "advisors"}
         stateKey="daily-advisors"
-        title="Ventas, BM y BC por asesor"
+        title="Ventas y bases del día por asesor"
         tone="sales"
       >
         <p className="hint">
-          {day} · BM y BC son independientes y corresponden a toda la hoja y
-          país, sin separar monedas ni asignarlas a productos. Las ventas
+          {day} · Las bases manuales son independientes y corresponden a toda la
+          hoja y país, sin separar monedas ni asignarlas a productos. Las ventas
           respetan el reparto registrado, aunque el asesor no estuviera asignado
           o el producto esté desactivado. — sin dato; * cobertura parcial.
         </p>
@@ -95,9 +109,9 @@ export function TotalsDailyBreakdown({
                 <tr>
                   <th>Asesor</th>
                   <th>Ventas (V)</th>
-                  <th>Base manual (BM)</th>
-                  <th>Base por contactar (BC)</th>
-                  <th>Ventas / BM</th>
+                  {showBM && <th>Base manual (BM)</th>}
+                  {showBC && <th>Base por contactar (BC)</th>}
+                  {showBM && <th>Ventas / BM</th>}
                 </tr>
               </thead>
               <tbody>
@@ -110,23 +124,25 @@ export function TotalsDailyBreakdown({
                         {p.sales ?? (p.na ? "N.A." : "—")}
                         {p.partial ? " *" : ""}
                       </td>
-                      <td>{p.manualBase ?? "—"}</td>
-                      <td>{p.advisorBase ?? "—"}</td>
-                      <td>
-                        {ratio === null
-                          ? "—"
-                          : ratio.toLocaleString("es-PE", {
-                              maximumFractionDigits: 2,
-                            }) +
-                            " %" +
-                            (p.partial ? " *" : "")}
-                      </td>
+                      {showBM && <td>{p.manualBase ?? "—"}</td>}
+                      {showBC && <td>{p.advisorBase ?? "—"}</td>}
+                      {showBM && (
+                        <td>
+                          {ratio === null
+                            ? "—"
+                            : ratio.toLocaleString("es-PE", {
+                                maximumFractionDigits: 2,
+                              }) +
+                              " %" +
+                              (p.partial ? " *" : "")}
+                        </td>
+                      )}
                     </tr>
                   );
                 })}
                 {!data.advisors.length && (
                   <tr>
-                    <td colSpan={5}>
+                    <td colSpan={2 + (showBM ? 2 : 0) + (showBC ? 1 : 0)}>
                       No hay repartos de ventas o base manual para este día.
                     </td>
                   </tr>
@@ -135,7 +151,7 @@ export function TotalsDailyBreakdown({
             </table>
           </div>
         )}
-        {data && data.baseState !== "VALUE" && (
+        {showBM && data && data.baseState !== "VALUE" && (
           <p className="hint">
             {data.baseState === "NA"
               ? "Base manual marcada N.A."
@@ -147,27 +163,38 @@ export function TotalsDailyBreakdown({
           elegido y BM y BC son bases independientes compartidas del país.
         </p>
       </DetailSection>
-      <DetailSection
-        id={sectionId + "products"}
-        stateKey="daily-products"
-        title="Ventas y resultados por producto"
-        tone="parameters"
-      >
-        <p className="hint">
-          {day} · {country || "Sin país"} · {currency || "Sin moneda"}. B y G
-          corresponden a la vista automática. Abre el producto para consultar
-          sus datos del día.
-        </p>
-        {data && (
-          <TotalsProducts
-            products={data.products}
-            tableId={tableId}
-            country={country}
-            since={day}
-            until={day}
-          />
-        )}
-      </DetailSection>
+    </>
+  );
+  const products = (
+    <DetailSection
+      id={sectionId + "products"}
+      stateKey="daily-products"
+      title="Ventas y resultados por producto"
+      tone="parameters"
+    >
+      <p className="hint">
+        {day} · {country || "Sin país"} · {currency || "Sin moneda"}. Parámetros
+        de la vista elegida. Las bases y los gastos manuales de Totales no se
+        reparten por producto.
+      </p>
+      {data && (
+        <TotalsProducts
+          view={view}
+          products={data.products}
+          tableId={tableId}
+          country={country}
+          since={day}
+          until={day}
+        />
+      )}
+    </DetailSection>
+  );
+  return children ? (
+    children({ advisors, products })
+  ) : (
+    <>
+      {advisors}
+      {products}
     </>
   );
 }

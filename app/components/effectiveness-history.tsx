@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useId, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { subscribeAdvisorSalesChanged } from "./advisor-sales-events";
 import { periodTableUrl } from "../../lib/meta-ads/period-table-link";
 import { readRangePages } from "./workbook-range-request";
@@ -10,11 +10,23 @@ import {
 } from "../../lib/meta-ads/period-summary";
 import { MetaDateRange } from "./meta-date-range";
 import { DetailSection, DetailSections } from "./detail-section";
+import {
+  InventoryDetailLayout,
+  InventoryDetailSlot,
+} from "./inventory-detail-layout";
+import type { InventoryDetailModuleId } from "../../lib/meta-ads/inventory-detail-order";
 import { DetailStickyHeader } from "./detail-sticky-header";
 import { DetailNavigation } from "./detail-navigation";
 import { MetaDailyChart } from "./meta-daily-chart";
 import type { ActivePeriod } from "../../lib/meta-ads/active-periods";
 import { InventoryAdvisorSales } from "./inventory-advisor-sales";
+const inventoryTargetModules: Record<string, InventoryDetailModuleId> = {
+  chart: "chart",
+  days: "days",
+  "sales-dates": "inventory-sales-dates",
+  "advisor-sales": "inventory-advisor-sales",
+  activity: "activity",
+};
 type Cell = Record<SheetMetric, number | null> & {
   na: SheetMetric[];
   fxMissing: boolean;
@@ -162,297 +174,364 @@ export function EffectivenessHistory({
         }}
       >
         {open && (
-          <>
-            <DetailStickyHeader>
-              <header className="row">
-                <strong>
-                  {name} · {country}
-                </strong>
-              </header>
-              <DetailNavigation
-                closeLabel="Cerrar"
-                expanded={expanded}
-                onToggleExpanded={() => setExpanded((v) => !v)}
-                onClose={() => pop.current?.hidePopover()}
-                items={[
-                  {
-                    target: id + "activity",
-                    label: "Activaciones",
-                    tone: "activity",
-                  },
-                  {
-                    target: id + "advisor-sales",
-                    label: "Ventas por asesor",
-                    tone: "sales",
-                  },
-                  {
-                    target: id + "sales-dates",
-                    label: "Fechas de ventas",
-                    tone: "daily",
-                  },
-                  {
-                    target: id + "chart",
-                    label: "Estadísticas",
-                    tone: "parameters",
-                  },
-                  {
-                    target: id + "days",
-                    label: "Histórico por día",
-                    tone: "daily",
-                  },
-                ]}
-                disabled={!data}
-              />
-              <div className="row alias-detail-controls">
-                <MetaDateRange
-                  maxDays={3660}
-                  from={since}
-                  to={until}
-                  onChange={(a, b) => {
-                    setSince(a);
-                    setUntil(b);
-                    setPage(0);
-                  }}
-                />
-                <button
-                  type="button"
-                  disabled={loading || !valid}
-                  onClick={() => setReload((v) => v + 1)}
-                >
-                  Actualizar detalle
-                </button>
-              </div>
-              {data && (
-                <p>
-                  Estado actual:{" "}
-                  <b>{data.active ? "Activado" : "Desactivado"}</b>. Historial
-                  de Efectividad de este inventario y país; no cambia estados en
-                  Meta Ads.
-                </p>
-              )}
-            </DetailStickyHeader>
-            {!valid && (
-              <p role="alert">Elige un período válido de hasta diez años.</p>
-            )}
-            {message && <p role="alert">{message}</p>}
-            {loading && <p role="status">Cargando detalle…</p>}
-            {data && (
+          <InventoryDetailLayout>
+            {(layout) => (
               <>
-                <DetailSection
-                  id={id + "activity"}
-                  stateKey="activity"
-                  title="Últimas activaciones"
-                  tone="activity"
-                >
-                  {data.activePeriods.length ? (
-                    <ol className="alias-active-periods">
-                      {data.activePeriods
-                        .slice(currentPage * 5, currentPage * 5 + 5)
-                        .map((period) => (
-                          <li key={period.id}>
-                            <div>
-                              <strong
-                                title={`Activado el ${stamp(period.from)} (Lima)`}
-                              >
-                                {period.until
-                                  ? `Del ${new Date(period.since + "T12:00:00Z").toLocaleDateString("es-PE", { dateStyle: "long", timeZone: "America/Lima" })} al ${new Date(period.through + "T12:00:00Z").toLocaleDateString("es-PE", { dateStyle: "long", timeZone: "America/Lima" })}`
-                                  : `Desde el ${new Date(period.since + "T12:00:00Z").toLocaleDateString("es-PE", { dateStyle: "long", timeZone: "America/Lima" })} hasta la fecha`}
-                              </strong>
-                              <small>
-                                {period.until
-                                  ? `Se desactivó el ${stamp(period.until)} (Lima).`
-                                  : `Activo al ${stamp(data.asOf)} (Lima).`}
-                              </small>
-                            </div>
-                            <a
-                              className="button alias-period-link"
-                              href={periodTableUrl({
-                                tableId,
-                                aliasId,
-                                country,
-                                since: period.since,
-                                until: period.through,
-                              })}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              title="Abrir los datos del período en una nueva ventana"
-                              aria-label={`Ir al período activo ${period.since} — ${period.through}`}
-                            >
-                              Ir al período
-                            </a>
-                          </li>
-                        ))}
-                    </ol>
-                  ) : (
+                <DetailStickyHeader>
+                  <header className="row">
+                    <strong>
+                      {name} · {country}
+                    </strong>
+                  </header>
+                  <DetailNavigation
+                    closeLabel="Cerrar"
+                    expanded={expanded}
+                    onToggleExpanded={() => setExpanded((v) => !v)}
+                    onClose={() => pop.current?.hidePopover()}
+                    items={[
+                      {
+                        target: id + "activity",
+                        label: "Activaciones",
+                        tone: "activity",
+                      },
+                      {
+                        target: id + "advisor-sales",
+                        label: "Ventas por asesor",
+                        tone: "sales",
+                      },
+                      {
+                        target: id + "sales-dates",
+                        label: "Fechas de ventas",
+                        tone: "daily",
+                      },
+                      {
+                        target: id + "chart",
+                        label: "Estadísticas",
+                        tone: "parameters",
+                      },
+                      {
+                        target: id + "days",
+                        label: "Histórico por día",
+                        tone: "daily",
+                      },
+                    ].sort(
+                      (a, b) =>
+                        layout.order.indexOf(
+                          inventoryTargetModules[a.target.slice(id.length)],
+                        ) -
+                        layout.order.indexOf(
+                          inventoryTargetModules[b.target.slice(id.length)],
+                        ),
+                    )}
+                    disabled={!data}
+                  />
+                  <div className="row alias-detail-controls">
+                    <MetaDateRange
+                      maxDays={3660}
+                      from={since}
+                      to={until}
+                      onChange={(a, b) => {
+                        setSince(a);
+                        setUntil(b);
+                        setPage(0);
+                      }}
+                    />
+                    <button
+                      type="button"
+                      disabled={loading || !valid}
+                      onClick={() => setReload((v) => v + 1)}
+                    >
+                      Actualizar detalle
+                    </button>
+                  </div>
+                  {data && (
                     <p>
-                      No hay períodos activos registrados. Se registrarán
-                      automáticamente cuando actives esta fila.
+                      Estado actual:{" "}
+                      <b>{data.active ? "Activado" : "Desactivado"}</b>.
+                      Historial de Efectividad de este inventario y país; no
+                      cambia estados en Meta Ads.
                     </p>
                   )}
-                  {data.activePeriods.length > 5 && (
-                    <nav
-                      className="alias-period-pagination"
-                      aria-label="Páginas de activaciones"
-                    >
-                      <span>
-                        {currentPage * 5 + 1}–
-                        {Math.min(
-                          currentPage * 5 + 5,
-                          data.activePeriods.length,
-                        )}{" "}
-                        de {data.activePeriods.length} activaciones · Página{" "}
-                        {currentPage + 1} de {pageCount}
-                      </span>
-                      <div className="row">
-                        <button
-                          disabled={currentPage === 0}
-                          onClick={() => setPage(currentPage - 1)}
-                        >
-                          Más recientes
-                        </button>
-                        <button
-                          disabled={currentPage + 1 >= pageCount}
-                          onClick={() => setPage(currentPage + 1)}
-                        >
-                          Anteriores
-                        </button>
-                      </div>
-                    </nav>
-                  )}
-                </DetailSection>
-                <InventoryAdvisorSales
-                  tableId={tableId}
-                  aliasId={aliasId}
-                  country={country}
-                  since={since}
-                  until={until}
-                  sectionId={id}
-                  refreshKey={reload}
-                />
-                <DetailSection
-                  id={id + "chart"}
-                  stateKey="chart"
-                  title="Evolución de parámetros"
-                  tone="parameters"
-                >
-                  <div className="row alias-detail-controls">
-                    <label>
-                      1 · Barras
-                      <select
-                        aria-label="Barras del detalle del inventario"
-                        value={bars}
-                        onChange={(e) => {
-                          const v = e.target.value as SheetMetric;
-                          setBars(v);
-                          if (v === line)
-                            setLine(v === "sales" ? "budget" : "sales");
-                        }}
-                      >
-                        {sheetMetrics.map((m) => (
-                          <option key={m.key} value={m.key}>
-                            {m.key === "base" ? "Base" : m.name} ({m.label})
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                    <label>
-                      2 · Línea con puntos
-                      <select
-                        aria-label="Línea del detalle del inventario"
-                        value={line}
-                        onChange={(e) => {
-                          const v = e.target.value as SheetMetric;
-                          setLine(v);
-                          if (v === bars)
-                            setBars(v === "sales" ? "budget" : "sales");
-                        }}
-                      >
-                        {sheetMetrics.map((m) => (
-                          <option key={m.key} value={m.key}>
-                            {m.key === "base" ? "Base" : m.name} ({m.label})
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                  </div>
-                  <MetaDailyChart
-                    rows={chart}
-                    bars="results"
-                    line="cost"
-                    currency={data.currency || "PEN"}
-                    metricName="Ventas"
-                    since={since}
-                    until={until}
-                    labels={{
-                      results: `${bar.name} (${bar.label})`,
-                      cost: `${dot.name} (${dot.label})`,
-                    }}
-                    units={{
-                      results:
-                        bar.money && data.currency ? "currency" : "count",
-                      cost: dot.money && data.currency ? "currency" : "count",
-                    }}
-                  />
-                </DetailSection>
-                <DetailSection
-                  id={id + "days"}
-                  stateKey="days"
-                  title="Histórico por día"
-                  tone="daily"
-                >
-                  {navigation}
-                  <div className="table-scroll">
-                    <table className="alias-parameter-days">
-                      <thead>
-                        <tr>
-                          <th>Fecha</th>
-                          {sheetMetrics.map((m) => (
-                            <th key={m.key} title={m.name}>
-                              {m.label}
-                            </th>
-                          ))}
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {visibleDays.map((day) => (
-                          <tr key={day}>
-                            <th>{day}</th>
-                            {sheetMetrics.map((m) => (
-                              <td
-                                key={m.key}
-                                data-na={
-                                  data.days[day]?.na.includes(m.key) ||
-                                  undefined
-                                }
-                              >
-                                {data.days[day]?.na.includes(m.key)
-                                  ? "N.A."
-                                  : value(day, m.key) === null
-                                    ? "—"
-                                    : new Intl.NumberFormat("es-PE", {
-                                        maximumFractionDigits: m.money ? 2 : 0,
-                                      }).format(value(day, m.key)!)}
-                                {m.money &&
-                                value(day, m.key) !== null &&
-                                data.currency
-                                  ? " " + data.currency
-                                  : ""}
-                              </td>
-                            ))}
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                  <p className="hint">
-                    Los parámetros corresponden a los datos actuales guardados
-                    por día; el historial de estados conserva las fechas reales
-                    de cada cambio. N.A. y los vacíos no se convierten en cero.
+                </DetailStickyHeader>
+                {!valid && (
+                  <p role="alert">
+                    Elige un período válido de hasta diez años.
                   </p>
-                </DetailSection>
+                )}
+                <p className="inventory-detail-order-hint">
+                  Arrastra ⠿ para ordenar. Se aplica a los detalles de todos los
+                  diplomados en este navegador.
+                </p>
+                {layout.custom && (
+                  <button type="button" onClick={layout.reset}>
+                    Restablecer orden
+                  </button>
+                )}
+                {layout.warning && <p role="status">{layout.warning}</p>}
+                {message && <p role="alert">{message}</p>}
+                {loading && <p role="status">Cargando detalle…</p>}
+                {data && (
+                  <>
+                    <InventoryAdvisorSales
+                      tableId={tableId}
+                      aliasId={aliasId}
+                      country={country}
+                      since={since}
+                      until={until}
+                      sectionId={id}
+                      refreshKey={reload}
+                    >
+                      {(salesSections) => {
+                        const sections: Record<
+                          InventoryDetailModuleId,
+                          ReactNode
+                        > = {
+                          activity: (
+                            <DetailSection
+                              id={id + "activity"}
+                              stateKey="activity"
+                              title="Últimas activaciones"
+                              tone="activity"
+                            >
+                              {data.activePeriods.length ? (
+                                <ol className="alias-active-periods">
+                                  {data.activePeriods
+                                    .slice(currentPage * 5, currentPage * 5 + 5)
+                                    .map((period) => (
+                                      <li key={period.id}>
+                                        <div>
+                                          <strong
+                                            title={`Activado el ${stamp(period.from)} (Lima)`}
+                                          >
+                                            {period.until
+                                              ? `Del ${new Date(period.since + "T12:00:00Z").toLocaleDateString("es-PE", { dateStyle: "long", timeZone: "America/Lima" })} al ${new Date(period.through + "T12:00:00Z").toLocaleDateString("es-PE", { dateStyle: "long", timeZone: "America/Lima" })}`
+                                              : `Desde el ${new Date(period.since + "T12:00:00Z").toLocaleDateString("es-PE", { dateStyle: "long", timeZone: "America/Lima" })} hasta la fecha`}
+                                          </strong>
+                                          <small>
+                                            {period.until
+                                              ? `Se desactivó el ${stamp(period.until)} (Lima).`
+                                              : `Activo al ${stamp(data.asOf)} (Lima).`}
+                                          </small>
+                                        </div>
+                                        <a
+                                          className="button alias-period-link"
+                                          href={periodTableUrl({
+                                            tableId,
+                                            aliasId,
+                                            country,
+                                            since: period.since,
+                                            until: period.through,
+                                          })}
+                                          target="_blank"
+                                          rel="noopener noreferrer"
+                                          title="Abrir los datos del período en una nueva ventana"
+                                          aria-label={`Ir al período activo ${period.since} — ${period.through}`}
+                                        >
+                                          Ir al período
+                                        </a>
+                                      </li>
+                                    ))}
+                                </ol>
+                              ) : (
+                                <p>
+                                  No hay períodos activos registrados. Se
+                                  registrarán automáticamente cuando actives
+                                  esta fila.
+                                </p>
+                              )}
+                              {data.activePeriods.length > 5 && (
+                                <nav
+                                  className="alias-period-pagination"
+                                  aria-label="Páginas de activaciones"
+                                >
+                                  <span>
+                                    {currentPage * 5 + 1}–
+                                    {Math.min(
+                                      currentPage * 5 + 5,
+                                      data.activePeriods.length,
+                                    )}{" "}
+                                    de {data.activePeriods.length} activaciones
+                                    · Página {currentPage + 1} de {pageCount}
+                                  </span>
+                                  <div className="row">
+                                    <button
+                                      disabled={currentPage === 0}
+                                      onClick={() => setPage(currentPage - 1)}
+                                    >
+                                      Más recientes
+                                    </button>
+                                    <button
+                                      disabled={currentPage + 1 >= pageCount}
+                                      onClick={() => setPage(currentPage + 1)}
+                                    >
+                                      Anteriores
+                                    </button>
+                                  </div>
+                                </nav>
+                              )}
+                            </DetailSection>
+                          ),
+                          chart: (
+                            <DetailSection
+                              id={id + "chart"}
+                              stateKey="chart"
+                              title="Evolución de parámetros"
+                              tone="parameters"
+                            >
+                              <div className="row alias-detail-controls">
+                                <label>
+                                  1 · Barras
+                                  <select
+                                    aria-label="Barras del detalle del inventario"
+                                    value={bars}
+                                    onChange={(e) => {
+                                      const v = e.target.value as SheetMetric;
+                                      setBars(v);
+                                      if (v === line)
+                                        setLine(
+                                          v === "sales" ? "budget" : "sales",
+                                        );
+                                    }}
+                                  >
+                                    {sheetMetrics.map((m) => (
+                                      <option key={m.key} value={m.key}>
+                                        {m.key === "base" ? "Base" : m.name} (
+                                        {m.label})
+                                      </option>
+                                    ))}
+                                  </select>
+                                </label>
+                                <label>
+                                  2 · Línea con puntos
+                                  <select
+                                    aria-label="Línea del detalle del inventario"
+                                    value={line}
+                                    onChange={(e) => {
+                                      const v = e.target.value as SheetMetric;
+                                      setLine(v);
+                                      if (v === bars)
+                                        setBars(
+                                          v === "sales" ? "budget" : "sales",
+                                        );
+                                    }}
+                                  >
+                                    {sheetMetrics.map((m) => (
+                                      <option key={m.key} value={m.key}>
+                                        {m.key === "base" ? "Base" : m.name} (
+                                        {m.label})
+                                      </option>
+                                    ))}
+                                  </select>
+                                </label>
+                              </div>
+                              <MetaDailyChart
+                                rows={chart}
+                                bars="results"
+                                line="cost"
+                                currency={data.currency || "PEN"}
+                                metricName="Ventas"
+                                since={since}
+                                until={until}
+                                labels={{
+                                  results: `${bar.name} (${bar.label})`,
+                                  cost: `${dot.name} (${dot.label})`,
+                                }}
+                                units={{
+                                  results:
+                                    bar.money && data.currency
+                                      ? "currency"
+                                      : "count",
+                                  cost:
+                                    dot.money && data.currency
+                                      ? "currency"
+                                      : "count",
+                                }}
+                              />
+                            </DetailSection>
+                          ),
+                          days: (
+                            <DetailSection
+                              id={id + "days"}
+                              stateKey="days"
+                              title="Histórico por día"
+                              tone="daily"
+                            >
+                              {navigation}
+                              <div className="table-scroll">
+                                <table className="alias-parameter-days">
+                                  <thead>
+                                    <tr>
+                                      <th>Fecha</th>
+                                      {sheetMetrics.map((m) => (
+                                        <th key={m.key} title={m.name}>
+                                          {m.label}
+                                        </th>
+                                      ))}
+                                    </tr>
+                                  </thead>
+                                  <tbody>
+                                    {visibleDays.map((day) => (
+                                      <tr key={day}>
+                                        <th>{day}</th>
+                                        {sheetMetrics.map((m) => (
+                                          <td
+                                            key={m.key}
+                                            data-na={
+                                              data.days[day]?.na.includes(
+                                                m.key,
+                                              ) || undefined
+                                            }
+                                          >
+                                            {data.days[day]?.na.includes(m.key)
+                                              ? "N.A."
+                                              : value(day, m.key) === null
+                                                ? "—"
+                                                : new Intl.NumberFormat(
+                                                    "es-PE",
+                                                    {
+                                                      maximumFractionDigits:
+                                                        m.money ? 2 : 0,
+                                                    },
+                                                  ).format(value(day, m.key)!)}
+                                            {m.money &&
+                                            value(day, m.key) !== null &&
+                                            data.currency
+                                              ? " " + data.currency
+                                              : ""}
+                                          </td>
+                                        ))}
+                                      </tr>
+                                    ))}
+                                  </tbody>
+                                </table>
+                              </div>
+                              <p className="hint">
+                                Los parámetros corresponden a los datos actuales
+                                guardados por día; el historial de estados
+                                conserva las fechas reales de cada cambio. N.A.
+                                y los vacíos no se convierten en cero.
+                              </p>
+                            </DetailSection>
+                          ),
+                          "inventory-advisor-sales": salesSections.sales,
+                          "inventory-sales-dates": salesSections.dates,
+                        };
+                        return (
+                          <div className="inventory-detail-modules">
+                            {layout.order.map((key) => (
+                              <InventoryDetailSlot key={key} id={key}>
+                                {sections[key]}
+                              </InventoryDetailSlot>
+                            ))}
+                          </div>
+                        );
+                      }}
+                    </InventoryAdvisorSales>
+                  </>
+                )}
               </>
             )}
-          </>
+          </InventoryDetailLayout>
         )}
       </div>
     </DetailSections>

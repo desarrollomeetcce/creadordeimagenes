@@ -1,5 +1,10 @@
 "use client";
 import { useRef, useState } from "react";
+import {
+  totalProductMetrics,
+  type TotalDetailView,
+} from "../../lib/meta-ads/total-detail-views";
+import { sheetMetrics } from "../../lib/meta-ads/period-summary";
 import { TotalsProductHistory } from "./totals-product-history";
 import type { TotalProduct } from "../../lib/meta-ads/totals-product-summary";
 import { formatTotalDetail } from "../../lib/meta-ads/totals-detail";
@@ -10,7 +15,9 @@ export function TotalsProducts({
   country,
   since,
   until,
+  view = "manual",
 }: {
+  view?: TotalDetailView;
   products: TotalProduct[];
   tableId: string;
   country: string;
@@ -111,11 +118,14 @@ export function TotalsProducts({
           <thead>
             <tr>
               <th>Producto</th>
-              <th>Ventas (V)</th>
-              <th>Presupuesto (P)</th>
-              <th>Base (B)</th>
-              <th>Gasto (G)</th>
-              <th>Costos fijos (CF)</th>
+              {totalProductMetrics(view).map((key) => {
+                const m = sheetMetrics.find((m) => m.key === key)!;
+                return (
+                  <th key={key}>
+                    {m.name} ({m.label})
+                  </th>
+                );
+              })}
               <th>Estado</th>
               <th>Asesores que vendieron</th>
               <th>Detalle</th>
@@ -127,9 +137,7 @@ export function TotalsProducts({
               .map((p) => (
                 <tr key={p.aliasId} data-sales-status={status(p)}>
                   <th>{p.name}</th>
-                  {(
-                    ["sales", "budget", "base", "spend", "fixedCost"] as const
-                  ).map((metric) => (
+                  {totalProductMetrics(view).map((metric) => (
                     <td key={metric}>{formatTotalDetail(p.sums[metric])}</td>
                   ))}
                   <td>

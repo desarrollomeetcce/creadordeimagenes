@@ -723,3 +723,36 @@ test('Guía de carga: origen automático, manual del día y BM/GM al día siguie
  assert.equal(sheetMetricDataFill('sales'),'manual');assert.equal(sheetMetricDataFill('budget'),'manual');assert.equal(sheetMetricDataFill('base'),'automatic');assert.equal(sheetMetricDataFill('spend'),'automatic');
  assert.equal(sheetMetricDataFill('base',{manual:true}),'manual');assert.equal(sheetMetricDataFill('spend',{manual:true}),'manual');assert.equal(sheetMetricDataFill('sales',{linked:true,manual:true}),'automatic');assert.equal(sheetMetricDataFill('budget',{synced:true,manual:true}),'automatic');assert.equal(sheetMetricDataFill('fixedCost',{received:true}),'automatic');assert.equal(sheetMetricDataFill('sales',{automaticNa:true}),'automatic');
 });
+
+import {inventoryDetailOrder,normalizeInventoryOrder,moveInventoryModule} from '../lib/meta-ads/inventory-detail-order';
+test('detalle de inventario: orden compartido conserva sus cinco módulos y mueve sin duplicar ni mutar',()=>{
+ assert.deepEqual(normalizeInventoryOrder(null),['chart','days','inventory-sales-dates','inventory-advisor-sales','activity']);
+ assert.deepEqual(normalizeInventoryOrder(['activity','invalid','activity','days']),['activity','days','chart','inventory-sales-dates','inventory-advisor-sales']);
+ const original=[...inventoryDetailOrder];
+ for(const source of original)for(const target of original)for(const after of [false,true]){const moved=moveInventoryModule(original,source,target,after);assert.equal(moved.length,5);assert.deepEqual([...moved].sort(),[...original].sort());if(source!==target)assert.equal(moved.indexOf(source),moved.indexOf(target)+(after?1:-1));assert.deepEqual(original,[...inventoryDetailOrder]);}
+ assert.deepEqual(moveInventoryModule(original,'unknown','days'),original);assert.deepEqual(moveInventoryModule(original,'activity','chart'),['activity','chart','days','inventory-sales-dates','inventory-advisor-sales']);
+});
+
+import {inventorySalesGroups} from '../lib/meta-ads/inventory-advisor-sales';
+test('comparativo vertical agrupa por fecha y asesor sin sumar páginas duplicadas ni convertir cero/NA/vacío en ventas',()=>{
+ const row={day:'2026-10-20',country:'PE',advisorId:'ana',name:'Ana',sales:2,na:false,partial:false};
+ const rows=[row,{...row},{...row,country:'CO',sales:1,partial:true},{...row,advisorId:'don',name:'Donasis',sales:3},{...row,day:'2026-10-21',sales:0},{...row,day:'2026-10-21',advisorId:'don',name:'Donasis',sales:4},{...row,day:'2026-10-22',sales:null},{...row,day:'2026-10-23',na:true,sales:5}];
+ const result=inventorySalesGroups(rows);assert.equal(result.length,2);assert.deepEqual(result[0].bars.map(b=>[b.id,b.sales,b.partial]),[['ana',3,true],['don',3,false]]);assert.deepEqual(result[1].bars.map(b=>[b.id,b.sales]),[['don',4]]);assert.equal(result[0].day,'2026-10-20');assert.equal(rows.length,8);const third=inventorySalesGroups([...rows,{...row,advisorId:'third',name:'Kevin',sales:1}]);assert.equal(third[0].bars.length,3);assert.equal(third[0].bars.find(b=>b.id==='third')?.sales,1);
+});
+
+import {sheetSalesProducts,sheetSalesStatus} from '../lib/meta-ads/sheet-sales-summary';
+import type {TotalProduct} from '../lib/meta-ads/totals-product-summary';
+test('toda la hoja: suma ventas entre países sin duplicar monedas, conserva cero/desactivados/sin dato y sus asesores diarios',()=>{
+ const date='2026-10-20',value=(n:number|null)=>({value:n,known:n===null?0:1,expected:1,na:0,pending:false,partial:n===null}),product=(id:string,n:number|null,advisor='ana'):TotalProduct=>({aliasId:id,name:id,active:false,sums:Object.fromEntries(['sales','base','spend','budget','fixedCost'].map(k=>[k,value(n)])) as TotalProduct['sums'],days:{[date]:{sums:Object.fromEntries(['sales','base','spend','budget','fixedCost'].map(k=>[k,value(n)])) as TotalProduct['sums'],advisors:n===null?[]:[{advisorId:advisor,name:advisor,sales:n,na:false,partial:false}]}}});
+ const a=product('curso',2),zero=product('cero',0),unknown=product('sin dato',null),b=product('curso',3,'don');
+ const result=sheetSalesProducts([{country:'PE',currency:'PEN',products:[a,zero,unknown]},{country:'PE',currency:'USD',products:[a,zero,unknown]},{country:'CO',currency:'COP',products:[b]}],[date]);
+ assert.equal(result.length,3);assert.equal(result[0].sales.value,5);assert.equal(result[0].days[date].sales.value,5);assert.deepEqual(result[0].advisors.map(p=>[p.name,p.sales]),[['don',3],['ana',2]]);assert.deepEqual(result[0].countries,['CO','PE']);assert.equal(result[0].active,false);assert.equal(sheetSalesStatus(result.find(p=>p.aliasId==='cero')!,2),'zero');assert.equal(sheetSalesStatus(result.find(p=>p.aliasId==='sin dato')!,2),'unknown');assert.equal(sheetSalesStatus(result[0],6),'low');assert.equal(sheetSalesStatus(result[0],2),'selling');
+ assert.throws(()=>sheetSalesProducts([{country:'PE',currency:'PEN',products:[a]},{country:'PE',currency:'USD',products:[product('curso',4)]}],[date]),/cambiaron/);assert.equal(a.days![date].sums.sales.value,2);
+});
+
+import {totalViewColumns,totalProductMetrics} from '../lib/meta-ads/total-detail-views';
+import {normalizeDetailOrder,moveDetailModule} from '../lib/meta-ads/inventory-detail-order';
+test('Totales: cada vista muestra únicamente sus parámetros, sin mezclar Meta ni inventar repartos por producto',()=>{
+ assert.deepEqual(totalViewColumns('manual').map(c=>c.key),['sales','budget','advisorBase','baseManual','totalSpend','fixedCost']);assert.deepEqual(totalViewColumns('automatic').map(c=>c.key),['sales','base','advisorBase','spend','fixedCost']);assert.deepEqual(totalViewColumns('today').map(c=>c.key),['sales','budget','advisorBase']);assert.deepEqual(totalViewColumns('yesterday').map(c=>c.key),['sales','baseManual','totalSpend','fixedCost']);assert.deepEqual(totalProductMetrics('manual'),['sales','budget']);assert.deepEqual(totalProductMetrics('automatic'),['sales','base','spend','fixedCost']);assert.deepEqual(totalProductMetrics('today'),['sales','budget']);assert.deepEqual(totalProductMetrics('yesterday'),['sales']);
+ const ids=['summary','performance','advisors','products','chart','days'];assert.deepEqual(normalizeDetailOrder(['days','days','invalid'],ids),['days','summary','performance','advisors','products','chart']);assert.deepEqual(moveDetailModule(ids,'days','summary',false,ids),['days','summary','performance','advisors','products','chart']);assert.deepEqual(ids,['summary','performance','advisors','products','chart','days']);
+});

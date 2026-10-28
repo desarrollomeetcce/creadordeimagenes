@@ -144,7 +144,7 @@ export function useTotalsColumnTools(
     totalDataFill(available.find((c) => c.key === key)!);
   const green = (key: string) => kind(key) === "automatic";
   const style = (key: string, header = false): CSSProperties => ({
-    backgroundColor: `color-mix(in srgb,${colors[key] ?? `var(--fill-${kind(key)})`} ${header ? 20 : 8}%,var(--surface))`,
+    backgroundColor: `color-mix(in srgb,${colors[key] ?? `var(--fill-${kind(key)})`} ${header ? 42 : 30}%,var(--surface))`,
   });
   const handle = (column: TotalColumn, block: string) => (
     <button

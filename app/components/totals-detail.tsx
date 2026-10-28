@@ -1,5 +1,15 @@
 "use client";
-import { useEffect, useId, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState, type ReactNode } from "react";
+import {
+  totalViewColumns,
+  totalDetailViewNames,
+  type TotalDetailView,
+} from "../../lib/meta-ads/total-detail-views";
+import { limaToday, shiftDay } from "./date-range";
+import {
+  VerticalDetailLayout,
+  InventoryDetailSlot,
+} from "./inventory-detail-layout";
 import { performanceRatio } from "../../lib/meta-ads/performance-metrics";
 import { periodTableUrl } from "../../lib/meta-ads/period-table-link";
 import { TotalsDailyBreakdown } from "./totals-daily-breakdown";
@@ -25,6 +35,14 @@ import { DetailPeriodPresets } from "./detail-period-presets";
 import { totalDetailPeriods } from "../../lib/meta-ads/detail-period-presets";
 import { readTotalsRange } from "./workbook-range-request";
 import { subscribeAdvisorSalesChanged } from "./advisor-sales-events";
+const totalModuleIds = [
+  "summary",
+  "performance",
+  "advisors",
+  "products",
+  "chart",
+  "days",
+] as const;
 type Block = ReturnType<typeof totalSourceBlocks<TotalSheet>>[number];
 export function TotalsDetail({
   blocks,
@@ -65,7 +83,7 @@ export function TotalsDetail({
   )
     for (let at = Date.parse(since); at <= Date.parse(until); at += 86400000)
       days.push(new Date(at).toISOString().slice(0, 10));
-  const [mode, setMode] = useState(initialMode),
+  const [mode, setMode] = useState<TotalDetailView>(initialMode),
     [blockKey, setBlockKey] = useState(
       initialSelection?.blockKey ?? blocks[0]?.key ?? "",
     ),
@@ -144,26 +162,8 @@ export function TotalsDetail({
   const focusDays =
     selectedDay && days.includes(selectedDay) ? [selectedDay] : days;
   const dayIndex = days.indexOf(selectedDay);
-  const columns =
-    mode === "manual" ? manualTotalColumns : automaticTotalColumns;
-  const comparisonColumns =
-    mode === "manual"
-      ? [
-          ...manualTotalColumns,
-          ...automaticTotalColumns.filter(
-            (c) => c.key === "base" || c.key === "spend",
-          ),
-        ]
-      : [
-          ...automaticTotalColumns.filter((c) => c.key !== "advisorBase"),
-          ...manualTotalColumns.filter(
-            (c) =>
-              c.key === "budget" ||
-              c.key === "baseManual" ||
-              c.key === "advisorBase" ||
-              c.key === "totalSpend",
-          ),
-        ];
+  const columns = totalViewColumns(mode);
+  const comparisonColumns = columns;
   const barColumn = comparisonColumns.find((c) => c.key === bars) ?? columns[0],
     lineColumn = comparisonColumns.find((c) => c.key === line) ?? columns[1];
   const report =
@@ -220,457 +220,487 @@ export function TotalsDetail({
       denominator: base,
       percent: false,
     },
-  ];
+  ].filter((r) =>
+    mode === "automatic"
+      ? r.name.includes("Meta") || r.name === "Ventas / BC"
+      : mode === "today"
+        ? r.name === "Ventas / BC"
+        : mode === "yesterday"
+          ? !r.name.includes("Meta") && r.name !== "Ventas / BC"
+          : !r.name.includes("Meta"),
+  );
   const chartValue = (day: string, column: TotalColumn) =>
     value(day, column).value;
   return (
     <DetailSections>
-      <dialog
-        ref={dialog}
-        className="meta-detail totals-detail"
-        aria-label="Detalle de Totales"
-        onCancel={onClose}
-      >
-        <DetailStickyHeader>
-          <header className="row">
-            <h2>
-              Detalle de Totales
-              {block
-                ? ` · ${block.table.name} · ${block.country || "Sin país"} · ${block.currency || "Sin moneda"}${selectedDay ? ` · ${selectedDay}` : ""}`
-                : ""}
-            </h2>
-          </header>
-          <DetailNavigation
-            onClose={onClose}
-            items={[
-              {
-                target: sectionId + "summary",
-                label: "Resumen",
-                tone: "sales",
-              },
-              {
-                target: sectionId + "performance",
-                label: "Desempeño",
-                tone: "activity",
-              },
-              {
-                target: sectionId + "chart",
-                label: "Estadísticas",
-                tone: "parameters",
-              },
-              {
-                target: sectionId + "days",
-                label: "Histórico por día",
-                tone: "daily",
-              },
-              ...(selectedDay
-                ? [
-                    {
-                      target: sectionId + "advisors",
-                      label: "Asesores",
-                      tone: "sales" as const,
-                    },
-                    {
-                      target: sectionId + "products",
-                      label: "Productos",
-                      tone: "parameters" as const,
-                    },
-                  ]
-                : [
-                    {
-                      target: sectionId + "products",
-                      label: "Diplomados",
-                      tone: "parameters" as const,
-                    },
-                  ]),
-            ]}
-            disabled={!block}
-          />
-          <div className="row advisor-detail-controls">
-            <button
-              type="button"
-              aria-pressed={mode === "manual"}
-              onClick={() => setMode("manual")}
-            >
-              Total manual
-            </button>
-            <button
-              type="button"
-              aria-pressed={mode === "automatic"}
-              onClick={() => setMode("automatic")}
-            >
-              Total automático
-            </button>
-            <SheetSearchSelect
-              label="Hoja, país y moneda del detalle de Totales"
-              value={block?.key ?? ""}
-              options={availableBlocks.map((b) => ({
-                value: b.key,
-                label: `${b.table.name} · ${b.country || "Sin país"} · ${b.currency || "Sin moneda"}`,
-              }))}
-              onSelect={setBlockKey}
-            />
-            <div className="totals-detail-period-controls">
-              <MetaDateRange
-                maxDays={3660}
-                from={since}
-                to={until}
-                onChange={selectRange}
+      <VerticalDetailLayout modules={totalModuleIds} scope="totals">
+        {(layout) => (
+          <dialog
+            ref={dialog}
+            className="meta-detail totals-detail"
+            aria-label="Detalle de Totales"
+            onCancel={onClose}
+          >
+            <DetailStickyHeader>
+              <header className="row">
+                <h2>
+                  Detalle de Totales
+                  {block
+                    ? ` · ${block.table.name} · ${block.country || "Sin país"} · ${block.currency || "Sin moneda"}${selectedDay ? ` · ${selectedDay}` : ""}`
+                    : ""}
+                </h2>
+              </header>
+              <DetailNavigation
+                onClose={onClose}
+                items={[
+                  {
+                    target: sectionId + "summary",
+                    label: "Resumen",
+                    tone: "sales",
+                  },
+                  {
+                    target: sectionId + "performance",
+                    label: "Desempeño",
+                    tone: "activity",
+                  },
+                  {
+                    target: sectionId + "chart",
+                    label: "Estadísticas",
+                    tone: "parameters",
+                  },
+                  {
+                    target: sectionId + "days",
+                    label: "Histórico por día",
+                    tone: "daily",
+                  },
+                  ...(selectedDay
+                    ? [
+                        {
+                          target: sectionId + "advisors",
+                          label: "Asesores",
+                          tone: "sales" as const,
+                        },
+                        {
+                          target: sectionId + "products",
+                          label: "Productos",
+                          tone: "parameters" as const,
+                        },
+                      ]
+                    : [
+                        {
+                          target: sectionId + "products",
+                          label: "Diplomados",
+                          tone: "parameters" as const,
+                        },
+                      ]),
+                ].sort(
+                  (a, b) =>
+                    layout.order.indexOf(
+                      a.target.slice(
+                        sectionId.length,
+                      ) as (typeof totalModuleIds)[number],
+                    ) -
+                    layout.order.indexOf(
+                      b.target.slice(
+                        sectionId.length,
+                      ) as (typeof totalModuleIds)[number],
+                    ),
+                )}
+                disabled={!block}
               />
-              <DetailPeriodPresets
-                key={block?.key}
-                scope={`totals-detail:${totalsSheetId}:${block?.key}`}
-                label="Períodos guardados de Totales"
-                defaults={totalDetailPeriods}
-                since={since}
-                until={until}
-                onSelect={selectRange}
-              />
-            </div>
-            <label>
-              Fecha del detalle
-              <select
-                aria-label="Fecha del detalle de Totales"
-                value={selectedDay}
-                onChange={(e) => setSelectedDay(e.target.value)}
-              >
-                <option value="">Todo el período</option>
-                {days.map((day) => (
-                  <option key={day} value={day}>
-                    {day.slice(8)}.{day.slice(5, 7)}.{day.slice(0, 4)}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <button
-              type="button"
-              disabled={dayIndex <= 0}
-              onClick={() => setSelectedDay(days[dayIndex - 1])}
-            >
-              ← Día anterior
-            </button>
-            <button
-              type="button"
-              disabled={dayIndex < 0 || dayIndex >= days.length - 1}
-              onClick={() => setSelectedDay(days[dayIndex + 1])}
-            >
-              Día siguiente →
-            </button>
-          </div>
-          <p className="hint">
-            {selectedDay
-              ? "Resumen e indicadores del día elegido. El gráfico y el histórico conservan todo el período para comparar."
-              : "Detalle del período y filtros de la pestaña."}{" "}
-            Cada hoja, país y moneda se consulta por separado. V es la misma
-            suma en ambas vistas.{" "}
-            {mode === "manual"
-              ? "P suma el presupuesto digitado en las hojas; BM y BC son repartos manuales independientes por asesor y país, compartidos con Asesores. GM y CF son manuales."
-              : "B y G proceden de la vista automática; BC se ingresa manualmente por asesor; CF suma los costos fijos de la hoja."}{" "}
-            — sin dato; N.A. no suma; * cobertura parcial.
-          </p>
-        </DetailStickyHeader>
-        {message && <p role="alert">{message}</p>}
-        {rangeError && <p role="alert">{rangeError}</p>}
-        {loading && <small role="status">Actualizando detalle…</small>}
-        {!block ? (
-          <p>Selecciona una hoja de origen en Totales para ver su detalle.</p>
-        ) : (
-          <>
-            <a
-              className="button alias-period-link"
-              href={periodTableUrl({
-                tableId: block.table.tableId,
-                aliasId: "",
-                country: block.country,
-                since: focusDays[0],
-                until: focusDays.at(-1)!,
-              })}
-              target="_blank"
-              rel="noopener noreferrer"
-              title="Abrir los datos del período en una nueva ventana"
-            >
-              Ir al período
-            </a>
-            <DetailSection
-              id={sectionId + "summary"}
-              stateKey="summary"
-              title={
-                selectedDay
-                  ? `Resumen del día · ${selectedDay}`
-                  : "Resumen del período"
-              }
-              tone="sales"
-            >
-              <div className="advisor-detail-summary totals-performance-summary">
-                {comparisonColumns.map((c) => {
-                  const v = totalDetailSummary(
-                    focusDays.map((day) => value(day, c)),
-                  );
-                  return (
-                    <span
-                      key={c.key}
-                      data-source={
-                        c.key === "base" ||
-                        c.key === "spend" ||
-                        (c.key === "fixedCost" && c.sum)
-                          ? "automatic"
-                          : "manual"
-                      }
+              <div className="row advisor-detail-controls">
+                {(Object.keys(totalDetailViewNames) as TotalDetailView[]).map(
+                  (view) => (
+                    <button
+                      key={view}
+                      type="button"
+                      aria-pressed={mode === view}
+                      onClick={() => {
+                        setMode(view);
+                        if (view === "today" || view === "yesterday") {
+                          const day =
+                            view === "today"
+                              ? limaToday()
+                              : shiftDay(limaToday(), -1);
+                          selectRange(day, day);
+                          setSelectedDay(day);
+                        }
+                      }}
                     >
-                      {c.name} ({c.label})
-                      <strong>
-                        {format(v)}
-                        {monetary(c) && v.value !== null
-                          ? ` ${block.currency}`
-                          : ""}
-                      </strong>
-                      <small>
-                        {v.known}/{v.expected} días con dato
-                      </small>
-                    </span>
-                  );
-                })}
-              </div>
-            </DetailSection>
-            <DetailSection
-              id={sectionId + "performance"}
-              stateKey="performance"
-              title="Desempeño de esta hoja y país"
-              tone="sales"
-            >
-              <div className="advisor-detail-summary totals-performance-summary">
-                {ratios.map((r) => {
-                  const result = performanceRatio(
-                    r.numerator.value,
-                    r.denominator.value,
-                    r.percent ? 100 : 1,
-                  );
-                  return (
-                    <span
-                      key={r.name}
-                      data-metric={r.name}
-                      data-source={
-                        r.name.includes("Meta") ? "automatic" : "manual"
-                      }
-                    >
-                      {r.name}
-                      <strong>
-                        {result === null
-                          ? "—"
-                          : result.toLocaleString("es-PE", {
-                              maximumFractionDigits: 2,
-                            }) +
-                            (r.percent ? " %" : " " + (block.currency || ""))}
-                        {result !== null &&
-                        (r.numerator.partial || r.denominator.partial)
-                          ? " *"
-                          : ""}
-                      </strong>
-                      <small>
-                        {r.percent
-                          ? "Ventas registradas respecto a datos recibidos"
-                          : "Inversión por resultado; no representa utilidad"}
-                      </small>
-                    </span>
-                  );
-                })}
+                      {totalDetailViewNames[view]}
+                    </button>
+                  ),
+                )}
+                <SheetSearchSelect
+                  label="Hoja, país y moneda del detalle de Totales"
+                  value={block?.key ?? ""}
+                  options={availableBlocks.map((b) => ({
+                    value: b.key,
+                    label: `${b.table.name} · ${b.country || "Sin país"} · ${b.currency || "Sin moneda"}`,
+                  }))}
+                  onSelect={setBlockKey}
+                />
+                <div className="totals-detail-period-controls">
+                  <MetaDateRange
+                    maxDays={3660}
+                    from={since}
+                    to={until}
+                    onChange={selectRange}
+                  />
+                  <DetailPeriodPresets
+                    key={block?.key}
+                    scope={`totals-detail:${totalsSheetId}:${block?.key}`}
+                    label="Períodos guardados de Totales"
+                    defaults={totalDetailPeriods}
+                    since={since}
+                    until={until}
+                    onSelect={selectRange}
+                  />
+                </div>
+                <label>
+                  Fecha del detalle
+                  <select
+                    aria-label="Fecha del detalle de Totales"
+                    value={selectedDay}
+                    onChange={(e) => setSelectedDay(e.target.value)}
+                  >
+                    <option value="">Todo el período</option>
+                    {days.map((day) => (
+                      <option key={day} value={day}>
+                        {day.slice(8)}.{day.slice(5, 7)}.{day.slice(0, 4)}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <button
+                  type="button"
+                  disabled={dayIndex <= 0}
+                  onClick={() => setSelectedDay(days[dayIndex - 1])}
+                >
+                  ← Día anterior
+                </button>
+                <button
+                  type="button"
+                  disabled={dayIndex < 0 || dayIndex >= days.length - 1}
+                  onClick={() => setSelectedDay(days[dayIndex + 1])}
+                >
+                  Día siguiente →
+                </button>
               </div>
               <p className="hint">
-                Manual: BM, BC y GM digitadas. Meta: B y G de la vista
-                automática. No se reemplaza una fuente por la otra cuando falta
-                un dato. V cuenta ventas; sin un importe de ingresos no se
-                calcula ganancia monetaria. GM y G son fuentes distintas: no se
-                suman automáticamente. Indicadores del día o período
-                seleccionado; * cobertura parcial.
+                {selectedDay
+                  ? "Resumen e indicadores del día elegido. El gráfico y el histórico conservan todo el período para comparar."
+                  : "Detalle del período y filtros de la pestaña."}{" "}
+                Cada hoja, país y moneda se consulta por separado. V es la misma
+                suma en ambas vistas.{" "}
+                {mode === "automatic"
+                  ? "B y G proceden de la vista automática; BC se ingresa por asesor; CF suma los costos de la hoja."
+                  : "Parámetros de esta vista: " +
+                    columns.map((c) => c.label).join(", ") +
+                    ". Las bases y gastos manuales pertenecen a la hoja y país."}{" "}
+                — sin dato; N.A. no suma; * cobertura parcial.
               </p>
-            </DetailSection>
-            {selectedDay && (
-              <TotalsDailyBreakdown
-                tableId={block.table.tableId}
-                country={block.country}
-                currency={block.currency}
-                day={selectedDay}
-                sectionId={sectionId}
-              />
-            )}
-            {!selectedDay && (
-              <TotalsPeriodProducts
-                tableId={block.table.tableId}
-                country={block.country}
-                currency={block.currency}
-                days={days}
-                sectionId={sectionId}
-              />
-            )}
-            <DetailSection
-              id={sectionId + "chart"}
-              stateKey="chart"
-              title="Evolución de parámetros"
-              tone="parameters"
-            >
-              <div className="row advisor-detail-controls">
-                <label>
-                  1 · Barras
-                  <select
-                    aria-label="Barras del detalle de Totales"
-                    value={barColumn.key}
-                    onChange={(e) => setBars(e.target.value)}
-                  >
-                    {comparisonColumns.map((c) => (
-                      <option key={c.key} value={c.key}>
-                        {c.name} ({c.label})
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label>
-                  2 · Línea
-                  <select
-                    aria-label="Línea del detalle de Totales"
-                    value={lineColumn.key}
-                    onChange={(e) => setLine(e.target.value)}
-                  >
-                    {comparisonColumns.map((c) => (
-                      <option key={c.key} value={c.key}>
-                        {c.name} ({c.label})
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              </div>
-              {(monetary(barColumn) || monetary(lineColumn)) &&
-              !block.currency ? (
-                <p>
-                  El bloque no tiene moneda; consulta los importes en la tabla
-                  diaria.
-                </p>
-              ) : (
-                <MetaDailyChart
-                  rows={days.map((day) => ({
-                    day,
-                    results: chartValue(day, barColumn),
-                    cost: chartValue(day, lineColumn),
-                    spend: null,
-                  }))}
-                  bars="results"
-                  line="cost"
-                  currency={block.currency || "PEN"}
-                  metricName={barColumn.name}
-                  since={days[0]}
-                  until={days.at(-1)}
-                  labels={{ results: barColumn.name, cost: lineColumn.name }}
-                  units={{
-                    results: monetary(barColumn) ? "currency" : "count",
-                    cost: monetary(lineColumn) ? "currency" : "count",
-                  }}
-                />
-              )}
-            </DetailSection>
-            <DetailSection
-              id={sectionId + "days"}
-              stateKey="days"
-              title={`Histórico por día · ${block.table.name} · ${block.country || "Sin país"} · ${block.currency || "Sin moneda"}`}
-              tone="daily"
-            >
-              {navigation}
-              <div className="table-scroll">
-                <table>
-                  <thead>
-                    <tr>
-                      <th>Fecha</th>
-                      {comparisonColumns.map((c) => (
-                        <th key={c.key}>
-                          {c.name} ({c.label})
-                        </th>
-                      ))}
-                      <th>Ventas / BM</th>
-                      <th>Ventas / B Meta</th>
-                      <th>Costo por venta · GM</th>
-                      <th>Costo por venta · G Meta</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {visibleDays.map((day) => (
-                      <tr key={day}>
-                        <th>
-                          <button
-                            type="button"
-                            aria-pressed={selectedDay === day}
-                            onClick={() => setSelectedDay(day)}
-                            title="Consultar asesores y productos de este día"
-                          >
-                            {day}
-                          </button>
-                        </th>
-                        {comparisonColumns.map((c) => (
-                          <td key={c.key}>{format(value(day, c))}</td>
-                        ))}
-                        {[
-                          {
-                            n: manualTotalColumns.find(
-                              (c) => c.key === "sales",
-                            )!,
-                            d: manualTotalColumns.find(
-                              (c) => c.key === "baseManual",
-                            )!,
-                            percent: true,
-                          },
-                          {
-                            n: manualTotalColumns.find(
-                              (c) => c.key === "sales",
-                            )!,
-                            d: automaticTotalColumns.find(
-                              (c) => c.key === "base",
-                            )!,
-                            percent: true,
-                          },
-                          {
-                            n: manualTotalColumns.find(
-                              (c) => c.key === "totalSpend",
-                            )!,
-                            d: manualTotalColumns.find(
-                              (c) => c.key === "sales",
-                            )!,
-                            percent: false,
-                          },
-                          {
-                            n: automaticTotalColumns.find(
-                              (c) => c.key === "spend",
-                            )!,
-                            d: manualTotalColumns.find(
-                              (c) => c.key === "sales",
-                            )!,
-                            percent: false,
-                          },
-                        ].map((r, i) => {
-                          const n = value(day, r.n),
-                            d = value(day, r.d),
-                            v = performanceRatio(
-                              n.value,
-                              d.value,
+            </DetailStickyHeader>
+            {message && <p role="alert">{message}</p>}
+            {rangeError && <p role="alert">{rangeError}</p>}
+            {loading && <small role="status">Actualizando detalle…</small>}
+            {!block ? (
+              <p>
+                Selecciona una hoja de origen en Totales para ver su detalle.
+              </p>
+            ) : (
+              <>
+                <a
+                  className="button alias-period-link"
+                  href={periodTableUrl({
+                    tableId: block.table.tableId,
+                    aliasId: "",
+                    country: block.country,
+                    since: focusDays[0],
+                    until: focusDays.at(-1)!,
+                  })}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  title="Abrir los datos del período en una nueva ventana"
+                >
+                  Ir al período
+                </a>
+                {(() => {
+                  const sections: Partial<
+                    Record<(typeof totalModuleIds)[number], ReactNode>
+                  > = {
+                    summary: (
+                      <DetailSection
+                        id={sectionId + "summary"}
+                        stateKey="summary"
+                        title={
+                          selectedDay
+                            ? `Resumen del día · ${selectedDay}`
+                            : "Resumen del período"
+                        }
+                        tone="sales"
+                      >
+                        <div className="advisor-detail-summary totals-performance-summary">
+                          {comparisonColumns.map((c) => {
+                            const v = totalDetailSummary(
+                              focusDays.map((day) => value(day, c)),
+                            );
+                            return (
+                              <span
+                                key={c.key}
+                                data-source={
+                                  c.key === "base" ||
+                                  c.key === "spend" ||
+                                  (c.key === "fixedCost" && c.sum)
+                                    ? "automatic"
+                                    : "manual"
+                                }
+                              >
+                                {c.name} ({c.label})
+                                <strong>
+                                  {format(v)}
+                                  {monetary(c) && v.value !== null
+                                    ? ` ${block.currency}`
+                                    : ""}
+                                </strong>
+                                <small>
+                                  {v.known}/{v.expected} días con dato
+                                </small>
+                              </span>
+                            );
+                          })}
+                        </div>
+                      </DetailSection>
+                    ),
+                    performance: (
+                      <DetailSection
+                        id={sectionId + "performance"}
+                        stateKey="performance"
+                        title="Desempeño de esta hoja y país"
+                        tone="sales"
+                      >
+                        <div className="advisor-detail-summary totals-performance-summary">
+                          {ratios.map((r) => {
+                            const result = performanceRatio(
+                              r.numerator.value,
+                              r.denominator.value,
                               r.percent ? 100 : 1,
                             );
-                          return (
-                            <td key={"ratio" + i}>
-                              {v === null
-                                ? "—"
-                                : v.toLocaleString("es-PE", {
-                                    maximumFractionDigits: 2,
-                                  }) +
-                                  (r.percent ? " %" : " " + block.currency) +
-                                  (n.partial || d.partial ? " *" : "")}
-                            </td>
-                          );
-                        })}
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </DetailSection>
-          </>
+                            return (
+                              <span
+                                key={r.name}
+                                data-metric={r.name}
+                                data-source={
+                                  r.name.includes("Meta")
+                                    ? "automatic"
+                                    : "manual"
+                                }
+                              >
+                                {r.name}
+                                <strong>
+                                  {result === null
+                                    ? "—"
+                                    : result.toLocaleString("es-PE", {
+                                        maximumFractionDigits: 2,
+                                      }) +
+                                      (r.percent
+                                        ? " %"
+                                        : " " + (block.currency || ""))}
+                                  {result !== null &&
+                                  (r.numerator.partial || r.denominator.partial)
+                                    ? " *"
+                                    : ""}
+                                </strong>
+                                <small>
+                                  {r.percent
+                                    ? "Ventas registradas respecto a datos recibidos"
+                                    : "Inversión por resultado; no representa utilidad"}
+                                </small>
+                              </span>
+                            );
+                          })}
+                        </div>
+                        <p className="hint">
+                          Indicadores calculados solo con los parámetros de esta
+                          vista. No se reemplaza una fuente por otra si falta un
+                          dato. V cuenta ventas; sin un importe de ingresos no
+                          se calcula ganancia monetaria. Indicadores del día o
+                          período seleccionado; * cobertura parcial.
+                        </p>
+                      </DetailSection>
+                    ),
+                    chart: (
+                      <DetailSection
+                        id={sectionId + "chart"}
+                        stateKey="chart"
+                        title="Evolución de parámetros"
+                        tone="parameters"
+                      >
+                        <div className="row advisor-detail-controls">
+                          <label>
+                            1 · Barras
+                            <select
+                              aria-label="Barras del detalle de Totales"
+                              value={barColumn.key}
+                              onChange={(e) => setBars(e.target.value)}
+                            >
+                              {comparisonColumns.map((c) => (
+                                <option key={c.key} value={c.key}>
+                                  {c.name} ({c.label})
+                                </option>
+                              ))}
+                            </select>
+                          </label>
+                          <label>
+                            2 · Línea
+                            <select
+                              aria-label="Línea del detalle de Totales"
+                              value={lineColumn.key}
+                              onChange={(e) => setLine(e.target.value)}
+                            >
+                              {comparisonColumns.map((c) => (
+                                <option key={c.key} value={c.key}>
+                                  {c.name} ({c.label})
+                                </option>
+                              ))}
+                            </select>
+                          </label>
+                        </div>
+                        {(monetary(barColumn) || monetary(lineColumn)) &&
+                        !block.currency ? (
+                          <p>
+                            El bloque no tiene moneda; consulta los importes en
+                            la tabla diaria.
+                          </p>
+                        ) : (
+                          <MetaDailyChart
+                            rows={days.map((day) => ({
+                              day,
+                              results: chartValue(day, barColumn),
+                              cost: chartValue(day, lineColumn),
+                              spend: null,
+                            }))}
+                            bars="results"
+                            line="cost"
+                            currency={block.currency || "PEN"}
+                            metricName={barColumn.name}
+                            since={days[0]}
+                            until={days.at(-1)}
+                            labels={{
+                              results: barColumn.name,
+                              cost: lineColumn.name,
+                            }}
+                            units={{
+                              results: monetary(barColumn)
+                                ? "currency"
+                                : "count",
+                              cost: monetary(lineColumn) ? "currency" : "count",
+                            }}
+                          />
+                        )}
+                      </DetailSection>
+                    ),
+                    days: (
+                      <DetailSection
+                        id={sectionId + "days"}
+                        stateKey="days"
+                        title={`Histórico por día · ${block.table.name} · ${block.country || "Sin país"} · ${block.currency || "Sin moneda"}`}
+                        tone="daily"
+                      >
+                        {navigation}
+                        <div className="table-scroll">
+                          <table>
+                            <thead>
+                              <tr>
+                                <th>Fecha</th>
+                                {comparisonColumns.map((c) => (
+                                  <th key={c.key}>
+                                    {c.name} ({c.label})
+                                  </th>
+                                ))}
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {visibleDays.map((day) => (
+                                <tr key={day}>
+                                  <th>
+                                    <button
+                                      type="button"
+                                      aria-pressed={selectedDay === day}
+                                      onClick={() => setSelectedDay(day)}
+                                      title="Consultar asesores y productos de este día"
+                                    >
+                                      {day}
+                                    </button>
+                                  </th>
+                                  {comparisonColumns.map((c) => (
+                                    <td key={c.key}>{format(value(day, c))}</td>
+                                  ))}
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </DetailSection>
+                    ),
+                    products: (
+                      <TotalsPeriodProducts
+                        view={mode}
+                        tableId={block.table.tableId}
+                        country={block.country}
+                        currency={block.currency}
+                        days={days}
+                        sectionId={sectionId}
+                      />
+                    ),
+                  };
+                  return (
+                    <TotalsDailyBreakdown
+                      view={mode}
+                      tableId={block.table.tableId}
+                      country={block.country}
+                      currency={block.currency}
+                      day={selectedDay}
+                      sectionId={sectionId}
+                    >
+                      {(daily) => (
+                        <>
+                          <p className="inventory-detail-order-hint">
+                            Arrastra ⠿ para cambiar el orden de las secciones.
+                          </p>
+                          {layout.custom && (
+                            <button type="button" onClick={layout.reset}>
+                              Restablecer orden
+                            </button>
+                          )}
+                          {layout.warning && (
+                            <p role="status">{layout.warning}</p>
+                          )}
+                          <div className="inventory-detail-modules">
+                            {layout.order
+                              .filter(
+                                (key) => key !== "advisors" || !!selectedDay,
+                              )
+                              .map((key) => (
+                                <InventoryDetailSlot key={key} id={key}>
+                                  {key === "advisors"
+                                    ? daily.advisors
+                                    : key === "products" && selectedDay
+                                      ? daily.products
+                                      : sections[key]}
+                                </InventoryDetailSlot>
+                              ))}
+                          </div>
+                        </>
+                      )}
+                    </TotalsDailyBreakdown>
+                  );
+                })()}
+              </>
+            )}
+          </dialog>
         )}
-      </dialog>
+      </VerticalDetailLayout>
     </DetailSections>
   );
 }

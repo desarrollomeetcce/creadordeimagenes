@@ -7,6 +7,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
+import { InventoryDetailHandle } from "./inventory-detail-layout";
 import { DetailModuleHandle } from "./detail-module-layout";
 const SectionState = createContext<{
   closed: Record<string, boolean>;
@@ -64,6 +65,7 @@ export function DetailSection({
         title="Pulsa para plegar o desplegar esta sección"
       >
         <DetailModuleHandle id={stateKey} title={title} />
+        <InventoryDetailHandle id={stateKey} title={title} />
         <h3 className={`detail-section-title detail-section-${tone}`}>
           {title}
         </h3>

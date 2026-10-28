@@ -1,4 +1,5 @@
 "use client";
+import { SheetSalesDetail } from "./sheet-sales-detail";
 import { SheetDataFillBadge } from "./sheet-data-fill-badge";
 import { sheetMetricDataFill } from "../../lib/meta-ads/sheet-data-fill";
 import type { PeriodTableLink } from "../../lib/meta-ads/period-table-link";
@@ -183,6 +184,8 @@ export function MetaEffectiveness({
   aliases: { id: string; name: string }[];
   onNamesChanged: () => Promise<void>;
 }) {
+  const sheetName = tables.find((t) => t.id === tableId)?.name ?? "Hoja";
+  const [sheetSalesDetailOpen, setSheetSalesDetailOpen] = useState(false);
   const inventoryColumnName =
     settings.aliasColumnName.trim().toLowerCase() === "alias"
       ? "Inventario"
@@ -1626,6 +1629,7 @@ export function MetaEffectiveness({
                       onError={setMessage}
                       onSave={(v) => columns({ aliasColumnName: v })}
                     />
+
                     <button
                       type="button"
                       className="sheet-sort-button"
@@ -1646,6 +1650,14 @@ export function MetaEffectiveness({
                       })}
                     </button>
                   </div>
+                  <button
+                    type="button"
+                    className="sheet-analysis-trigger"
+                    aria-label={`Ver detalle de toda la hoja ${sheetName}`}
+                    onClick={() => setSheetSalesDetailOpen(true)}
+                  >
+                    Ver detalle de la hoja
+                  </button>
                   <div className="financial-inventory-controls">
                     <InventoryMultiSelect
                       label="Buscar y filtrar inventario de la hoja"
@@ -2378,6 +2390,15 @@ export function MetaEffectiveness({
             </tbody>
           </table>
         </div>
+      )}
+      {sheetSalesDetailOpen && (
+        <SheetSalesDetail
+          tableId={tableId}
+          name={sheetName}
+          initialSince={since}
+          initialUntil={until}
+          onClose={() => setSheetSalesDetailOpen(false)}
+        />
       )}
     </section>
   );
