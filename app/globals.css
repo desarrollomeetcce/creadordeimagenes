@@ -2296,3 +2296,8 @@ button.ui-close-button:disabled, button.window-close:disabled { opacity: .55; }
 .sheet-fill-edit { display:inline-flex; padding:0; border:0; background:transparent; color:inherit; cursor:pointer; }
 .sheet-fill-edit:hover .sheet-fill-badge { outline:1px solid var(--ink); }
 .sheet-fill-edit:focus-visible { outline:2px solid var(--selection); outline-offset:3px; }
+/* Inventory detail opens at the top of the viewport; its content scrolls independently. */
+.products-catalog .alias-state-detail { inset:8px auto auto 50%; transform:translateX(-50%); max-height:calc(100dvh - 16px); box-sizing:border-box; }
+.products-catalog .alias-state-detail[data-expanded="true"] { inset:8px; transform:none; width:calc(100vw - 16px); height:calc(100dvh - 16px); max-width:none; }
+.detail-navigation .detail-expand-button { flex:0 0 auto; border-color:var(--accent); color:var(--accent); font-weight:700; }
+@media(max-width:600px) { .detail-navigation .detail-expand-button { margin-left:auto; } .detail-navigation:has(.detail-expand-button) .ui-close-button { margin-left:0; } }

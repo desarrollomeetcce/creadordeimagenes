@@ -58,7 +58,7 @@ export function EffectivenessHistory({
     [line, setLine] = useState<SheetMetric>("budget"),
     [page, setPage] = useState(0),
     [reload, setReload] = useState(0),
-    [position, setPosition] = useState({ top: 8, left: 8 });
+    [expanded, setExpanded] = useState(false);
   const query =
       "meta-ads/effectiveness/detail?" +
       new URLSearchParams({ aliasId, country, since, until }),
@@ -138,15 +138,11 @@ export function EffectivenessHistory({
         disabled={!country}
         title="Ver estados por fecha y evolución de parámetros"
         popoverTarget={id}
-        onClick={(e) => {
+        onClick={() => {
           setSince(initialSince);
           setUntil(initialUntil);
           setPage(0);
-          const r = e.currentTarget.getBoundingClientRect();
-          setPosition({
-            left: Math.max(8, Math.min(r.left, innerWidth - 920)),
-            top: Math.max(8, Math.min(r.bottom + 3, innerHeight - 640)),
-          });
+          setExpanded(false);
         }}
       >
         ⓘ
@@ -157,11 +153,12 @@ export function EffectivenessHistory({
         popover="auto"
         className="sheet-state-history alias-state-detail"
         aria-label={`Detalle del inventario ${name} ${country}`}
-        style={{
-          ...position,
-          maxHeight: `calc(100dvh - ${position.top + 8}px)`,
+        role="dialog"
+        data-expanded={expanded || undefined}
+        onToggle={(e) => {
+          setOpen(e.newState === "open");
+          if (e.newState === "open") e.currentTarget.scrollTop = 0;
         }}
-        onToggle={(e) => setOpen(e.newState === "open")}
       >
         {open && (
           <>
@@ -172,6 +169,8 @@ export function EffectivenessHistory({
             </header>
             <DetailNavigation
               closeLabel="Cerrar"
+              expanded={expanded}
+              onToggleExpanded={() => setExpanded((v) => !v)}
               onClose={() => pop.current?.hidePopover()}
               items={[
                 {

@@ -1345,3 +1345,9 @@ Validación de la revisión compacta definitiva: `/workspace/work/advisor-compac
 - Chromium `/workspace/work/tab-color-browser.txt`: menú de clic derecho, Shift+F10, aplicar paleta, recarga, Escape/cancelar y restablecer; colores personalizados de hojas con contraste y marca activa, diálogo móvil oscuro. Leyenda Auto/Hoy/D+1 actualiza variables globales, persiste/restablece categorías independientemente de pestañas, sin cambiar las cifras. Sin escrituras financieras, errores JS/API o llamadas externas. Captura `/workspace/work/tab-color-mobile.png`.
 
 - Corrección final: Chromium también comprueba manual mismo día transparente de forma predeterminada y Sin color después de personalizar la leyenda. Este comportamiento sustituye el azul predeterminado de la versión anterior.
+
+
+### Posición y ampliación de detalle del diplomado
+
+-191/191 unitarias, TypeScript/build (`/workspace/work/detail-window-{unit,typecheck,build}.txt`). Presentación sin API/esquema nuevos,195 integraciones anteriores aplicables.
+- Chromium (`/workspace/work/detail-window-browser.txt`): apertura superior8px, ancho normal910px máximo; Ampliar usa viewport1400x1000 con margen8, preserva mismo DOM/período/datos; Restaurar tamaño, acciones fijas al desplazarse, Escape y reapertura arriba/tamaño normal. Móvil390x844 normal/ampliado y cierre accesible. Sin escrituras financieras, errores JS/API o solicitudes externas. Capturas `/workspace/work/detail-window-{expanded,mobile}.png`.

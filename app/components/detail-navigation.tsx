@@ -5,11 +5,15 @@ export function DetailNavigation({
   onClose,
   closeLabel = "Cerrar detalle",
   disabled = false,
+  expanded = false,
+  onToggleExpanded,
 }: {
   items: { target: string; label: string; tone?: string }[];
   onClose: () => void;
   closeLabel?: string;
   disabled?: boolean;
+  expanded?: boolean;
+  onToggleExpanded?: () => void;
 }) {
   const [active, setActive] = useState("");
   return (
@@ -45,6 +49,21 @@ export function DetailNavigation({
           </button>
         ))}
       </div>
+      {onToggleExpanded && (
+        <button
+          type="button"
+          className="detail-expand-button"
+          aria-expanded={expanded}
+          title={
+            expanded
+              ? "Volver al tamaño normal"
+              : "Ver el detalle a pantalla completa"
+          }
+          onClick={onToggleExpanded}
+        >
+          {expanded ? "Restaurar tamaño" : "⛶ Ampliar"}
+        </button>
+      )}
       <button type="button" className="ui-close-button" onClick={onClose}>
         {closeLabel}
       </button>

@@ -1535,3 +1535,8 @@ Tres colores comunes en Totales, Asesores, hojas financieras e Inventario: verde
 El menú contextual de pestañas y hojas incorpora Cambiar color. Paleta y hexadecimal personalizados, aplicar/cancelar/restablecer; contraste automático y marca de pestaña abierta. Auto/Hoy/D+1 en la leyenda abren el mismo selector para cambiar los colores de procedencia en todas las tablas, conservando prioridad de fondos personalizados de columnas/reglas. Preferencias locales por cuenta/identidad y namespaces independientes, sin escrituras financieras ni cambios de esquema. Cierre rojo a la derecha, Escape, teclado y móvil. Pruebas en TESTING; envío a main no acredita despliegue efectivo externo.
 
 Corrección del usuario: manual del mismo día sin color por defecto, también BC/A/H/V/P editables; Hoy conserva su etiqueta neutra. Leyenda permite elegir un color opcional y volver con Sin color, sin afectar automáticos/D+1 ni datos.
+
+
+### Detalle de inventario superior y ampliable
+
+El detalle de diplomados y hojas futuras abre centrado horizontalmente a8px del borde superior, con altura limitada al viewport y scroll interno. Ampliar ocupa el área disponible y Restaurar tamaño vuelve al ancho normal, conservando la misma ventana, período, datos y módulos. Acciones junto al cierre rojo en navegación fija; al reabrir vuelve arriba y tamaño normal. Sin nuevas rutas, consultas financieras ni migraciones. Evidencia en TESTING; publicación a main y despliegue externo se registran por separado.
