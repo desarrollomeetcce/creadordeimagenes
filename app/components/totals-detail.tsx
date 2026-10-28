@@ -3,6 +3,7 @@ import { useEffect, useId, useRef, useState } from "react";
 import { performanceRatio } from "../../lib/meta-ads/performance-metrics";
 import { periodTableUrl } from "../../lib/meta-ads/period-table-link";
 import { TotalsDailyBreakdown } from "./totals-daily-breakdown";
+import { TotalsPeriodProducts } from "./totals-period-products";
 import { useReportDayPages } from "./report-day-pages";
 import { DetailSection, DetailSections } from "./detail-section";
 import { DetailNavigation } from "./detail-navigation";
@@ -174,7 +175,13 @@ export function TotalsDetail({
                     tone: "parameters" as const,
                   },
                 ]
-              : []),
+              : [
+                  {
+                    target: sectionId + "products",
+                    label: "Diplomados",
+                    tone: "parameters" as const,
+                  },
+                ]),
           ]}
           disabled={!block}
         />
@@ -363,6 +370,15 @@ export function TotalsDetail({
                 country={block.country}
                 currency={block.currency}
                 day={selectedDay}
+                sectionId={sectionId}
+              />
+            )}
+            {!selectedDay && (
+              <TotalsPeriodProducts
+                tableId={block.table.tableId}
+                country={block.country}
+                currency={block.currency}
+                days={days}
                 sectionId={sectionId}
               />
             )}

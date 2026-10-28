@@ -2201,3 +2201,13 @@ button.ui-close-button:disabled, button.window-close:disabled { opacity: .55; }
 .manual-base-editor[data-context="total"] footer { gap:6px; }
 .manual-base-editor[data-context="total"] footer button { padding:8px 10px; }
 @media(max-width:480px) { .manual-base-editor[data-context="total"] { padding:12px; } .manual-base-editor[data-context="total"] .manual-base-line { grid-template-columns:minmax(0,1fr) 90px 36px; gap:6px; } .manual-base-editor[data-context="total"] .manual-base-total small { flex-basis:100%; margin-left:0; } }
+
+.totals-source-detail { padding:3px 8px; min-height:28px; font-size:11px; color:var(--accent); border-color:color-mix(in srgb,var(--accent) 55%,var(--line)); background:var(--soft); }
+.totals-product-filters { flex-wrap:wrap; gap:6px; margin:8px 0; }
+.totals-product-filters button { padding:6px 9px; font-size:12px; }
+.totals-product-filters button[aria-pressed="true"] { color:var(--accent); border-color:var(--accent); background:var(--soft); }
+.totals-product-filters input { flex:1 1 180px; min-width:0; }
+.totals-zero-sales { color:#855400; }
+:root[data-theme="dark"] .totals-zero-sales { color:#f4c36b; }
+.totals-product-active { display:block; color:var(--muted); font-size:11px; }
+.totals-products tr[data-sales-status="zero"] { background:color-mix(in srgb,#d5a637 8%,var(--surface)); }

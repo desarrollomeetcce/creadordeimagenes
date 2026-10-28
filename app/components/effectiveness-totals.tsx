@@ -481,6 +481,32 @@ export function EffectivenessTotals({
                   >
                     <div className="totals-source-heading">
                       <span>{t.name}</span>
+                      <button
+                        type="button"
+                        className="totals-source-detail"
+                        aria-label={`Ver detalle de la hoja ${t.name}`}
+                        onClick={() => {
+                          const candidates = blocks.filter(
+                            (b) => b.table.tableId === t.tableId,
+                          );
+                          const first =
+                            candidates.find((b) => {
+                              const group = b.table.groups.find(
+                                (g) =>
+                                  g.country === b.country &&
+                                  g.currency === b.currency,
+                              );
+                              return Object.values(group?.days ?? {}).some(
+                                (d) => (d.sums?.sales?.known ?? 0) > 0,
+                              );
+                            }) ?? candidates[0];
+                          if (!first) return;
+                          setDetailSelection({ blockKey: first.key, day: "" });
+                          setDetailOpen(true);
+                        }}
+                      >
+                        Ver detalle
+                      </button>
                       {index === data.length - 1 &&
                         selected !== null &&
                         tables.some(

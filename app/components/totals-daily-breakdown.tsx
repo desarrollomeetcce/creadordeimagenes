@@ -3,10 +3,9 @@ import { useEffect, useState } from "react";
 import { engineRequest as api } from "./generation-engine";
 import { subscribeAdvisorSalesChanged } from "./advisor-sales-events";
 import { DetailSection } from "./detail-section";
-import { periodTableUrl } from "../../lib/meta-ads/period-table-link";
+import { TotalsProducts } from "./totals-products";
 import { performanceRatio } from "../../lib/meta-ads/performance-metrics";
 import type { TotalsDailyData } from "../../lib/meta-ads/totals-daily-detail";
-import { formatTotalDetail } from "../../lib/meta-ads/totals-detail";
 
 export function TotalsDailyBreakdown({
   tableId,
@@ -160,54 +159,13 @@ export function TotalsDailyBreakdown({
           sus datos del día.
         </p>
         {data && (
-          <div className="table-scroll">
-            <table>
-              <thead>
-                <tr>
-                  <th>Producto</th>
-                  <th>Ventas (V)</th>
-                  <th>Presupuesto (P)</th>
-                  <th>Base (B)</th>
-                  <th>Gasto (G)</th>
-                  <th>Costos fijos (CF)</th>
-                  <th>Detalle</th>
-                </tr>
-              </thead>
-              <tbody>
-                {data.products.map((p) => (
-                  <tr key={p.aliasId}>
-                    <th>{p.name}</th>
-                    {(
-                      ["sales", "budget", "base", "spend", "fixedCost"] as const
-                    ).map((metric) => (
-                      <td key={metric}>{formatTotalDetail(p.sums[metric])}</td>
-                    ))}
-                    <td>
-                      <a
-                        className="button alias-period-link"
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        href={periodTableUrl({
-                          tableId,
-                          aliasId: p.aliasId,
-                          country,
-                          since: day,
-                          until: day,
-                        })}
-                      >
-                        Ver día ↗
-                      </a>
-                    </td>
-                  </tr>
-                ))}
-                {!data.products.length && (
-                  <tr>
-                    <td colSpan={7}>No hay productos en este bloque.</td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
+          <TotalsProducts
+            products={data.products}
+            tableId={tableId}
+            country={country}
+            since={day}
+            until={day}
+          />
         )}
       </DetailSection>
     </>

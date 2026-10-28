@@ -667,3 +667,19 @@ test('BC es un conteo manual independiente de B de Meta y de BM en ambas vistas 
  for(const columns of [manualTotalColumns,automaticTotalColumns]){const ba=columns.find(c=>c.key==='advisorBase')!;assert.equal(ba.label,'BC');assert.equal(ba.name,'Base por contactar');assert.equal(ba.sum,false);assert.equal(totalDetailValue(day,ba).value,null);day.manual.advisorBase=0;assert.equal(totalDetailValue(day,ba).value,0);day.manual.advisorBase=300;assert.equal(totalDetailValue(day,ba).value,300);day.manual.advisorBase='NA';assert.equal(totalDetailValue(day,ba).na,1);delete day.manual.advisorBase;}
  assert.equal(day.sums.base.value,40);assert.equal(day.manual.baseManual,999);
 });
+
+test('Totales por producto: une páginas, conserva cero y faltantes, incluye desactivados y separa país/moneda', async()=>{
+ const {summarizeTotalProducts}=await import('../lib/meta-ads/totals-product-summary');
+ const days=['2026-09-30','2026-10-01'];
+ const row=(id:string,sales:number|null,day:string,na=false,extra={})=>({aliasId:id,country:'CO',currency:'COP',active:id!=='zero',campaigns:0,days:{[day]:{sales,base:null,spend:null,fixedCost:null,na:na?['sales']:[]}},...extra});
+ const aliases=['zero','sold','unknown','na','partial','foreign','currency'].map(id=>({id,name:id}));
+ const pages=days.map((day,i)=>({table:{aliases},rows:[row('zero',0,day),row('sold',i?2:0,day),row('unknown',null,day),row('na',null,day,true),row('partial',i?null:0,day),row('foreign',100,day,false,{country:'PE'}),row('currency',200,day,false,{currency:'PEN'})]})) as any;
+ const products=summarizeTotalProducts(pages,days,'CO','COP');assert.equal(products.length,5);
+ const get=(id:string)=>products.find(p=>p.aliasId===id)!;
+ assert.equal(get('zero').sums.sales.value,0);assert.equal(get('zero').active,false);assert.equal(get('zero').sums.sales.partial,false);
+ assert.equal(get('sold').sums.sales.value,2);assert.equal(get('unknown').sums.sales.value,null);assert.equal(get('unknown').sums.sales.na,0);
+ assert.equal(get('na').sums.sales.value,null);assert.equal(get('na').sums.sales.na,2);
+ assert.equal(get('partial').sums.sales.value,0);assert.equal(get('partial').sums.sales.partial,true);
+ assert.equal(summarizeTotalProducts(pages,[days[0]],'CO','COP').find(p=>p.aliasId==='sold')!.sums.sales.value,0);
+ assert.equal(summarizeTotalProducts(pages,days,'PE','COP')[0].sums.sales.value,200);
+});
