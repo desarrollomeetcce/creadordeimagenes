@@ -1,7 +1,15 @@
 "use client";
+import { advisorDayEffectiveness } from "../../lib/meta-ads/advisor-day-effectiveness";
 import { summaryPeriod } from "../../lib/meta-ads/summary-period";
 import { SummaryPeriodNotice } from "./summary-period-notice";
-import { useEffect, useId, useRef, useState, type ReactNode } from "react";
+import {
+  Fragment as ReactFragment,
+  useEffect,
+  useId,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import { financialRequest as api } from "./financial-request";
 import { periodComparison } from "../../lib/meta-ads/period-comparison";
 import { DetailPeriodPresets } from "./detail-period-presets";
@@ -35,6 +43,10 @@ import type {
 } from "./advisor-types";
 const number = (v: number) =>
   new Intl.NumberFormat("es-PE", { maximumFractionDigits: 6 }).format(v);
+const percent = new Intl.NumberFormat("es-PE", {
+  style: "percent",
+  maximumFractionDigits: 2,
+});
 const attendance = (v: string | null) =>
   v === "PRESENT"
     ? "Presente"
@@ -244,19 +256,35 @@ export function AdvisorDetail({
         for (let i = 0; i < windows.length; i += 2) {
           if (!active || seq !== version) return;
           const next = await Promise.all(
-            windows.slice(i, i + 2).map((w) =>
-              api(
-                "meta-ads/advisors/detail?" +
-                  new URLSearchParams({
-                    advisorId: analysisAdvisor,
-                    tableId,
-                    ...w,
-                    ...(aliasId ? { aliasId } : {}),
-                    ...(country ? { country } : {}),
-                    ...(selectedPeriod ? { periodId: selectedPeriod.id } : {}),
-                  }),
-              ),
-            ),
+            windows.slice(i, i + 2).map(async (w) => {
+              const common = {
+                advisorId: analysisAdvisor,
+                tableId,
+                ...w,
+                ...(country ? { country } : {}),
+              };
+              const [result, bases] = await Promise.all([
+                api(
+                  "meta-ads/advisors/detail?" +
+                    new URLSearchParams({
+                      ...common,
+                      ...(aliasId ? { aliasId } : {}),
+                      ...(selectedPeriod
+                        ? { periodId: selectedPeriod.id }
+                        : {}),
+                    }),
+                ),
+                aliasId || selectedPeriod
+                  ? api(
+                      "meta-ads/advisors/detail?" + new URLSearchParams(common),
+                    )
+                  : Promise.resolve(null),
+              ]);
+              return {
+                ...result,
+                baseSalesBreakdown: (bases ?? result).breakdown,
+              };
+            }),
           );
           if (!active || seq !== version) return;
           pages.push(...next);
@@ -278,6 +306,23 @@ export function AdvisorDetail({
                 days: { ...old?.days, ...source.days },
               });
             }
+          const baseSources = new Map<
+            string,
+            AdvisorSheetData["breakdown"][number]
+          >();
+          for (const p of pages)
+            for (const source of p.baseSalesBreakdown ?? p.breakdown) {
+              const k = JSON.stringify([
+                source.tableId,
+                source.aliasId,
+                source.country,
+                source.advisorId,
+              ]);
+              baseSources.set(k, {
+                ...source,
+                days: { ...baseSources.get(k)?.days, ...source.days },
+              });
+            }
           const days = Object.assign(
             {},
             ...pages.map(
@@ -292,6 +337,9 @@ export function AdvisorDetail({
               ? [{ ...base.rows.find((r) => r.id === analysisAdvisor)!, days }]
               : [],
             breakdown: [...sources.values()].filter(
+              (r) => r.advisorId === analysisAdvisor,
+            ),
+            baseSalesBreakdown: [...baseSources.values()].filter(
               (r) => r.advisorId === analysisAdvisor,
             ),
             manualBaseBreakdown: pages.flatMap(
@@ -432,6 +480,70 @@ export function AdvisorDetail({
       }),
     );
   const periodHasSales = hasSales(days);
+  const sourceBases = new Map<
+    string,
+    {
+      day: string;
+      tableId: string;
+      tableName: string;
+      country: string;
+      bm: number | null;
+      bc: number | null;
+    }
+  >();
+  for (const [metric, entries] of [
+    ["bm", data?.manualBaseBreakdown ?? []],
+    ["bc", data?.advisorBaseBreakdown ?? []],
+  ] as const) {
+    for (const entry of entries) {
+      if (
+        entry.advisorId !== analysisAdvisor ||
+        !visibleDays.includes(entry.day) ||
+        !summaryDays.includes(entry.day)
+      )
+        continue;
+      const id = JSON.stringify([entry.day, entry.tableId, entry.country]);
+      const item = sourceBases.get(id) ?? {
+        day: entry.day,
+        tableId: entry.tableId,
+        tableName: entry.tableName,
+        country: entry.country,
+        bm: null,
+        bc: null,
+      };
+      item[metric] = entry.quantity;
+      sourceBases.set(id, item);
+    }
+  }
+  const sourceBaseRows = [...sourceBases.values()].sort(
+    (a, b) =>
+      b.day.localeCompare(a.day) ||
+      a.tableName.localeCompare(b.tableName, "es") ||
+      a.country.localeCompare(b.country),
+  );
+  function sourceRate(r: (typeof sourceBaseRows)[number], basis: "BM" | "BC") {
+    const entries = (data?.baseSalesBreakdown ?? [])
+      .filter(
+        (s) =>
+          s.advisorId === analysisAdvisor &&
+          s.tableId === r.tableId &&
+          s.country === r.country,
+      )
+      .map((s) => s.days[r.day]);
+    const known = entries.filter((e) => e && !e.na && e.sales !== null);
+    const na = entries.filter((e) => e?.na).length;
+    return advisorDayEffectiveness({
+      day: r.day,
+      today: limaToday(),
+      basis,
+      base: basis === "BM" ? r.bm : r.bc,
+      sales: known.length ? known.reduce((sum, e) => sum + e.sales!, 0) : null,
+      na: entries.length > 0 && na === entries.length,
+      partial:
+        entries.some((e) => !e || e.partial) ||
+        known.length + na < entries.length,
+    });
+  }
   const pageHasSales = hasSales(visibleDays);
   const partial = summaryDays.some((d) => row!.days[d].partial);
   const summary = row ? (
@@ -957,78 +1069,75 @@ export function AdvisorDetail({
       >
         {row && (
           <>
-            <h4>BM y BC por hoja y país</h4>
+            <h4>
+              {showBM && showBC ? "BM y BC" : showBM ? "BM" : "BC"} por hoja y
+              país
+            </h4>
             <p className="hint">
               BM y BC son repartos manuales independientes de esta persona. No
               se calculan por asignaciones ni se convierten por moneda; no
-              dependen del filtro de diplomado.
+              dependen del filtro de diplomado. % BM = ventas / BM y % BC =
+              ventas / BC de la misma fecha, hoja y país. % BM está disponible
+              después de cerrar el día; una base vacía o cero no produce
+              porcentaje.
             </p>
             <div className="table-scroll advisor-source-scroll">
-              <table>
+              <table aria-label="BM y BC del asesor por hoja y país">
                 <thead>
                   <tr>
                     <th>Fecha</th>
                     <th>Hoja</th>
                     <th>País</th>
-                    <th>BM</th>
+                    {[
+                      ...(showBM ? ["BM" as const] : []),
+                      ...(showBC ? ["BC" as const] : []),
+                    ].map((basis) => (
+                      <ReactFragment key={basis}>
+                        <th>{basis}</th>
+                        <th
+                          title={`Ventas / ${basis} de la misma fecha, hoja y país`}
+                        >
+                          % {basis}
+                        </th>
+                      </ReactFragment>
+                    ))}
                   </tr>
                 </thead>
                 <tbody>
-                  {(data?.manualBaseBreakdown ?? [])
-                    .filter(
-                      (r) =>
-                        r.advisorId === analysisAdvisor &&
-                        visibleDays.includes(r.day),
-                    )
-                    .map((r) => (
-                      <tr
-                        key={JSON.stringify([
-                          r.tableId,
-                          r.country,
-                          r.day,
-                          r.advisorId,
-                        ])}
-                      >
-                        <th>{r.day}</th>
-                        <td>{r.tableName}</td>
-                        <td>{r.country || "Sin país"}</td>
-                        <td>{number(r.quantity)}</td>
-                      </tr>
-                    ))}
+                  {sourceBaseRows.map((r) => (
+                    <tr key={JSON.stringify([r.day, r.tableId, r.country])}>
+                      <th>{r.day}</th>
+                      <td>{r.tableName}</td>
+                      <td>{r.country || "Sin país"}</td>
+                      {[
+                        ...(showBM ? ["BM" as const] : []),
+                        ...(showBC ? ["BC" as const] : []),
+                      ].map((basis) => {
+                        const rate = sourceRate(r, basis),
+                          base = basis === "BM" ? r.bm : r.bc;
+                        return (
+                          <ReactFragment key={basis}>
+                            <td>{base === null ? "—" : number(base)}</td>
+                            <td title={rate.reason}>
+                              {rate.value === null
+                                ? "—"
+                                : percent.format(rate.value)}
+                            </td>
+                          </ReactFragment>
+                        );
+                      })}
+                    </tr>
+                  ))}
+                  {!sourceBaseRows.length && (
+                    <tr>
+                      <td colSpan={3 + (showBM ? 2 : 0) + (showBC ? 2 : 0)}>
+                        No hay BM ni BC registradas en este período.
+                      </td>
+                    </tr>
+                  )}
                 </tbody>
               </table>
             </div>
-            {!!data?.advisorBaseBreakdown?.length && (
-              <div className="table-scroll advisor-source-scroll">
-                <table>
-                  <caption>Base por contactar (BC)</caption>
-                  <thead>
-                    <tr>
-                      <th>Fecha</th>
-                      <th>Hoja</th>
-                      <th>País</th>
-                      <th>BC</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {data.advisorBaseBreakdown
-                      .filter(
-                        (r) =>
-                          r.advisorId === analysisAdvisor &&
-                          visibleDays.includes(r.day),
-                      )
-                      .map((r) => (
-                        <tr key={JSON.stringify([r.tableId, r.country, r.day])}>
-                          <th>{r.day}</th>
-                          <td>{r.tableName}</td>
-                          <td>{r.country || "Sin país"}</td>
-                          <td>{number(r.quantity)}</td>
-                        </tr>
-                      ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
           </>
         )}
       </AdvisorPeriodHistory>
@@ -1139,7 +1248,7 @@ export function AdvisorDetail({
                 : analysisView === "yesterday"
                   ? `Día completo · ${since} — ${until} · Lima. Ventas y BM de las mismas fechas; BM se registra al día siguiente.`
                   : "Período seleccionado: compara ventas con BM o BC, sin mezclar ambas bases."}{" "}
-              * Cobertura parcial; — sin dato. Las bases se reciben de Totales y
+              * Cobertura parcial; — sin dato. BM se recibe de Totales y BC se registra en Asesores;
               no se reparten por diplomado.
             </p>
             <div className="row advisor-detail-controls">

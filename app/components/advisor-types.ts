@@ -44,6 +44,7 @@ export type AdvisorSheetData = {
   country: string;
   rows: AdvisorPerson[];
   breakdown: AdvisorSource[];
+  baseSalesBreakdown?: AdvisorSource[];
   manualBaseBreakdown?: {
     tableId: string;
     tableName: string;
