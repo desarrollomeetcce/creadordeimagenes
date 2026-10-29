@@ -535,7 +535,7 @@ export function InventoryCatalog({
           .filter((name) => !current.includes(name))
           .map((name) => ({ value: name, label: name }))}
         disabled={busy || !categories}
-        description={`Se añadirán a ${section.groups.length} ${section.groups.length === 1 ? "ítem visible" : "ítems visibles"} de esta franja. Se conservan sus categorías actuales.`}
+        description={`Se añadirán a ${section.groups.length} ${section.groups.length === 1 ? "ítem visible" : "ítems visibles"} de esta franja. Las demás categorías se conservan; si una ya figura como secundaria, se moverá a principal.`}
         onChange={add}
         onCreate={async (name, selectedNames) => add([...selectedNames, name])}
         onError={setMessage}
@@ -790,6 +790,7 @@ export function InventoryCatalog({
           <InventoryMultiSelect
             label={`Categorías ${kind === "PRIMARY" ? "principales" : "secundarias"} de ${g.name}`}
             values={assigned.map((c) => c.name)}
+            description={`Si una categoría ya figura como ${kind === "PRIMARY" ? "secundaria" : "principal"}, se moverá al nivel elegido y quedará una sola vez.`}
             placeholder={
               assigned.length
                 ? "+"
@@ -1132,9 +1133,29 @@ export function InventoryCatalog({
                   />
                   <span>Inventario ({visible.length})</span>
                 </div>
+                <div className="inventory-header-category-filter">
+                  <InventoryCategoryFilter
+                    label="Categorías del inventario"
+                    values={activeCategories}
+                    options={categoryOptions}
+                    onChange={selectCategories}
+                    onCreate={async (name) =>
+                      createHeaderCategory("PRIMARY", name)
+                    }
+                    onError={setMessage}
+                    disabled={busy || !categories}
+                  />
+                </div>
                 <InventoryMultiSelect
                   label="Inventario del catálogo"
-                  placeholder="Todo el inventario"
+                  placeholder={
+                    activeCategories.length === 1 &&
+                    activeCategories[0] === noCategory
+                      ? "Inventario sin categorías"
+                      : activeCategories.length
+                        ? "Inventario de las categorías elegidas"
+                        : "Todo el inventario"
+                  }
                   options={categoryInventory.map((g) => ({
                     value: g.links[0].id,
                     label: g.name,
@@ -1152,19 +1173,6 @@ export function InventoryCatalog({
                   onError={setMessage}
                   onChange={(v) => setFilters({ ...filters, items: v })}
                 />
-                <div className="inventory-header-category-filter">
-                  <InventoryCategoryFilter
-                    label="Categoría debajo de Inventario"
-                    values={activeCategories}
-                    options={categoryOptions}
-                    onChange={selectCategories}
-                    onCreate={async (name) =>
-                      createHeaderCategory("PRIMARY", name)
-                    }
-                    onError={setMessage}
-                    disabled={busy || !categories}
-                  />
-                </div>
               </th>
               {(["PRIMARY", "SECONDARY"] as const).map((kind) => (
                 <th key={kind} scope="col">

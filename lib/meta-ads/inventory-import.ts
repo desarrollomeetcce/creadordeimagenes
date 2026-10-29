@@ -23,6 +23,10 @@ import {
   resolveInventoryName,
   type InventoryNameDecision,
 } from "./inventory-duplicates";
+import {
+  categoryAssignmentTags,
+  removeCategoryTagPairs,
+} from "./inventory-category-policy";
 import type { Actor } from "./service";
 type PlannedItem = {
   id: string;
@@ -114,6 +118,7 @@ export async function importInventory(
         relationKeys = new Set<string>(),
         relations: { primaryId: string; secondaryId: string }[] = [],
         plannedAliasTags = new Map<string, Set<string>>();
+      const incomingTags = new Map<string, string[]>();
       let addedSyllabi = 0;
       const resolve = (kind: "PRIMARY" | "SECONDARY", name: string) => {
         name = resolveInventoryName(
@@ -157,7 +162,10 @@ export async function importInventory(
         for (const p of primary)
           for (const s of secondary) {
             const k = p.id + "|" + s.id;
-            if (!relationKeys.has(k)) {
+            if (
+              categoryKey(p.name) !== categoryKey(s.name) &&
+              !relationKeys.has(k)
+            ) {
               relations.push({ primaryId: p.id, secondaryId: s.id });
               relationKeys.add(k);
             }
@@ -239,7 +247,19 @@ export async function importInventory(
             aliasTags.get(a.id) ??
             [])
             item.categories.add(id);
-        for (const c of [...primary, ...secondary]) item.categories.add(c.id);
+        const incoming = [
+          ...(incomingTags.get(item.id) ?? []),
+          ...primary.map((c) => c.id),
+          ...secondary.map((c) => c.id),
+        ];
+        incomingTags.set(item.id, incoming);
+        item.categories = new Set(
+          categoryAssignmentTags(
+            definitions.values(),
+            item.categories,
+            incoming,
+          ),
+        );
         for (const kind of ["PRIMARY", "SECONDARY"])
           demand(
             [...definitions.values()].filter(
@@ -287,6 +307,20 @@ export async function importInventory(
         leafTags = [...plannedAliasTags].flatMap(([aliasId, ids]) =>
           [...ids].map((categoryId) => ({ aliasId, categoryId })),
         );
+      const finalItemTags = new Map(planned.map((i) => [i.id, i.categories]));
+      await removeCategoryTagPairs(
+        tx,
+        storedItems.flatMap((i) =>
+          i.categories
+            .filter((c) => !finalItemTags.get(i.id)!.has(c.categoryId))
+            .map((c) => ({ itemId: i.id, categoryId: c.categoryId })),
+        ),
+        assignments.filter(
+          (a) =>
+            plannedAliasTags.has(a.aliasId) &&
+            !plannedAliasTags.get(a.aliasId)!.has(a.categoryId),
+        ),
+      );
       if (itemTags.length)
         await batches(itemTags, (data) =>
           tx.metaInventoryItemCategory.createMany({

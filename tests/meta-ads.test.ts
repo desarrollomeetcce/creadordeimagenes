@@ -823,3 +823,18 @@ test('Excel con temarios: encabezados, nombres de botones, texto multilínea,150
  const merged=await categoryXlsx('<worksheet><mergeCells><mergeCell ref="A1:E1"/></mergeCells><row><c r="A1" t="inlineStr"><is><t>Área</t></is></c></row></worksheet>');await assert.rejects(()=>parseInventoryFile('revision.xlsx',merged),/franjas|combinadas/);
  const many=await categoryXlsx('<worksheet><row><c r="BC1"><v>Contenido</v></c></row></worksheet>');await assert.rejects(()=>parseInventoryFile('muchos.xlsx',many),/50/);
 });
+
+
+test('Inventario: una categoría se mueve al nivel solicitado y los duplicados ajenos permanecen intactos', async () => {
+ const {categoryAssignmentTags}=await import('../lib/meta-ads/inventory-category-policy');
+ const defs=[{id:'p',name:'Sistemas',kind:'PRIMARY'},{id:'s',name:'SISTEMAS',kind:'SECONDARY'},{id:'oldp',name:'Otra',kind:'PRIMARY'},{id:'olds',name:'Otra',kind:'SECONDARY'}];
+ assert.deepEqual(categoryAssignmentTags(defs,['p','oldp','olds'],['s']),['oldp','olds','s']);
+ assert.deepEqual(categoryAssignmentTags(defs,['s'],['p']),['p']);
+ assert.deepEqual(categoryAssignmentTags(defs,['p','s','oldp','olds'],[]),['p','s','oldp','olds']);
+ assert.throws(()=>categoryAssignmentTags(defs,[],['foreign']),/no disponible/i);
+});
+test('Inventario: un archivo con la misma categoría en ambas columnas conserva solo principal sin depender del orden', async () => {
+ const {categoryAssignmentTags}=await import('../lib/meta-ads/inventory-category-policy');
+ const defs=[{id:'p',name:'Sistemas',kind:'PRIMARY'},{id:'s',name:'sistemas',kind:'SECONDARY'}];
+ for (const incoming of [['p','s'],['s','p'],['s','p','s','p']]) assert.deepEqual(categoryAssignmentTags(defs,['s'],incoming),['p']);
+});

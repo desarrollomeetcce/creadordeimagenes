@@ -15,6 +15,10 @@ import {
   resolveInventoryName,
   type InventoryNameDecision,
 } from "./inventory-duplicates";
+import {
+  categoryAssignmentTags,
+  removeCategoryTagPairs,
+} from "./inventory-category-policy";
 import type { Actor } from "./service";
 type Kind = "PRIMARY" | "SECONDARY";
 async function state(tx: Prisma.TransactionClient, listId: string) {
@@ -165,37 +169,79 @@ export async function writeInventoryTags(
 ) {
   const aliases = await tx.metaAlias.findMany({
       where: { id: { in: ids } },
-      select: { id: true },
+      select: {
+        id: true,
+        inventorySheetId: true,
+        categoryAssignments: { select: { categoryId: true } },
+      },
     }),
     items = await tx.metaInventoryItem.findMany({
       where: { id: { in: ids } },
-      select: { id: true },
+      select: {
+        id: true,
+        sheetId: true,
+        categories: { select: { categoryId: true } },
+      },
     });
   demand(
     aliases.length + items.length === ids.length,
     "El inventario cambió. Recarga.",
     409,
   );
-  if (replace) {
-    await tx.metaInventoryCategoryAssignment.deleteMany({
-      where: { aliasId: { in: ids } },
-    });
-    await tx.metaInventoryItemCategory.deleteMany({
-      where: { itemId: { in: ids } },
-    });
+  const listIds = new Set([
+    ...aliases.map((a) => a.inventorySheetId),
+    ...items.map((i) => i.sheetId),
+  ]);
+  demand(listIds.size === 1, "La selección incluye otra lista.", 409);
+  const definitions = await tx.metaInventoryCategory.findMany({
+    where: { sheetId: [...listIds][0] },
+  });
+  const kinds = new Map(definitions.map((c) => [c.id, c.kind]));
+  const aliasWrites: { aliasId: string; categoryId: string }[] = [],
+    itemWrites: { itemId: string; categoryId: string }[] = [],
+    aliasRemovals: typeof aliasWrites = [],
+    itemRemovals: typeof itemWrites = [];
+  for (const entity of [
+    ...aliases.map((a) => ({
+      id: a.id,
+      item: false,
+      tags: a.categoryAssignments.map((c) => c.categoryId),
+    })),
+    ...items.map((i) => ({
+      id: i.id,
+      item: true,
+      tags: i.categories.map((c) => c.categoryId),
+    })),
+  ]) {
+    const next = categoryAssignmentTags(
+      definitions,
+      replace ? [] : entity.tags,
+      categoryIds,
+    );
+    for (const kind of ["PRIMARY", "SECONDARY"])
+      demand(
+        next.filter((id) => kinds.get(id) === kind).length <=
+          (kind === "PRIMARY" ? 20 : 100),
+        "Un ítem admite hasta 20 categorías principales y 100 secundarias.",
+      );
+    for (const id of entity.tags.filter((id) => !next.includes(id))) {
+      if (entity.item) itemRemovals.push({ itemId: entity.id, categoryId: id });
+      else aliasRemovals.push({ aliasId: entity.id, categoryId: id });
+    }
+    for (const id of next) {
+      if (entity.item) itemWrites.push({ itemId: entity.id, categoryId: id });
+      else aliasWrites.push({ aliasId: entity.id, categoryId: id });
+    }
   }
-  if (aliases.length && categoryIds.length)
+  await removeCategoryTagPairs(tx, itemRemovals, aliasRemovals);
+  if (aliasWrites.length)
     await tx.metaInventoryCategoryAssignment.createMany({
-      data: aliases.flatMap((a) =>
-        categoryIds.map((categoryId) => ({ aliasId: a.id, categoryId })),
-      ),
+      data: aliasWrites,
       skipDuplicates: true,
     });
-  if (items.length && categoryIds.length)
+  if (itemWrites.length)
     await tx.metaInventoryItemCategory.createMany({
-      data: items.flatMap((a) =>
-        categoryIds.map((categoryId) => ({ itemId: a.id, categoryId })),
-      ),
+      data: itemWrites,
       skipDuplicates: true,
     });
 }
@@ -283,27 +329,7 @@ export async function saveInventoryCategories(
             skipDuplicates: true,
           });
         if (b.targetIds?.length) {
-          const all = await tx.metaInventoryCategory.findMany({
-              where: { sheetId: b.listId },
-              select: { id: true, kind: true },
-            }),
-            kind = new Map(all.map((c) => [c.id, c.kind]));
-          const data: { aliasId: string; categoryId: string }[] = [];
-          for (const id of b.targetIds) {
-            const next = [
-              ...new Set([...(before.assignments[id] ?? []), ...added]),
-            ];
-            for (const level of ["PRIMARY", "SECONDARY"])
-              demand(
-                next.filter((c) => kind.get(c) === level).length <=
-                  (level === "SECONDARY" ? 100 : 20),
-                "Un ítem admite hasta 20 categorías principales y 100 secundarias.",
-              );
-            for (const categoryId of added)
-              data.push({ aliasId: id, categoryId });
-          }
-          if (data.length)
-            await writeInventoryTags(tx, b.targetIds, [...added]);
+          await writeInventoryTags(tx, b.targetIds, [...added]);
           affected = b.targetIds.length;
         }
       } else if (b.action === "ASSIGN_BULK") {
@@ -447,14 +473,13 @@ export async function saveInventoryCategories(
         const kinds = new Map(definitions.map((c) => [c.id, c.kind]));
         const updates = b.ids.map((id) => ({
           id,
-          tags: [
-            ...new Set([
-              ...(before.assignments[id] ?? []).filter(
-                (c) => kinds.get(c) !== b.kind,
-              ),
-              ...selected,
-            ]),
-          ],
+          tags: categoryAssignmentTags(
+            definitions,
+            (before.assignments[id] ?? []).filter(
+              (c) => kinds.get(c) !== b.kind,
+            ),
+            selected,
+          ),
         }));
         for (const row of updates)
           for (const kind of ["PRIMARY", "SECONDARY"])
@@ -517,12 +542,11 @@ export async function saveInventoryCategories(
         ]);
         const updates = b.ids.map((id) => ({
           id,
-          tags: [
-            ...new Set([
-              ...(before.assignments[id] ?? []).filter((c) => c !== source.id),
-              target.id,
-            ]),
-          ],
+          tags: categoryAssignmentTags(
+            [...before.categories, target],
+            (before.assignments[id] ?? []).filter((c) => c !== source.id),
+            [target.id],
+          ),
         }));
         for (const row of updates)
           for (const kind of ["PRIMARY", "SECONDARY"])
@@ -709,18 +733,19 @@ export async function saveInventoryCategories(
           "Categoría no disponible en esta lista.",
           404,
         );
+        const uniqueChosen = categoryAssignmentTags(
+          before.categories,
+          [],
+          chosen.map((c) => c.id),
+        );
         for (const kind of ["PRIMARY", "SECONDARY"])
           demand(
-            chosen.filter((c) => c.kind === kind).length <=
-              (kind === "SECONDARY" ? 100 : 20),
+            before.categories.filter(
+              (c) => uniqueChosen.includes(c.id) && c.kind === kind,
+            ).length <= (kind === "SECONDARY" ? 100 : 20),
             "Un ítem admite hasta 20 categorías principales y 100 secundarias.",
           );
-        await writeInventoryTags(
-          tx,
-          b.ids,
-          chosen.map((c) => c.id),
-          true,
-        );
+        await writeInventoryTags(tx, b.ids, uniqueChosen, true);
         affected = b.ids.length;
       } else {
         const requestedIds =

@@ -340,7 +340,8 @@ export function InventoryImport({
       <small>
         Solo categorías: se añaden al listado de categorías. Solo inventario: se
         guarda sin categorías ni hojas. Las celdas vacías no se completan
-        automáticamente. Hasta 1.500 filas; XLSX, CSV, TSV y TXT. El archivo
+        automáticamente. Si una categoría figura en ambas columnas, se conserva
+        como principal. Hasta 1.500 filas; XLSX, CSV, TSV y TXT. El archivo
         puede incluir Temario 1, Temario 2 y más columnas de temarios.
       </small>
       {syllabusEditor && (

@@ -5,6 +5,10 @@ import { db } from "../db";
 import { ownerOnly } from "../auth";
 import { demand } from "../errors";
 import { recordActivity } from "../activity";
+import {
+  categoryAssignmentTags,
+  removeCategoryTagPairs,
+} from "./inventory-category-policy";
 import { categoryIdentity } from "./category-paste";
 import { effectivenessLock } from "./effectiveness";
 import {
@@ -101,8 +105,15 @@ export async function saveSyllabi(actor: Actor, input: unknown) {
         },
         select: { categoryId: true },
       });
+      const inherited = categoryAssignmentTags(
+        await tx.metaInventoryCategory.findMany({
+          where: { sheetId: b.listId },
+        }),
+        [],
+        tags.map((t) => t.categoryId),
+      );
       await tx.metaInventoryItemCategory.createMany({
-        data: [...new Set(tags.map((t) => t.categoryId))].map((categoryId) => ({
+        data: inherited.map((categoryId) => ({
           itemId: row.id,
           categoryId,
         })),
@@ -382,14 +393,33 @@ export async function importCatalogPackage(actor: Actor, input: unknown) {
           secondary = incoming.secondary.map(
             (n) => category("SECONDARY", n).id,
           ),
-          chosen = [...new Set([...oldTags, ...primaryIds, ...secondary])];
+          chosen = categoryAssignmentTags(categoryMap.values(), oldTags, [
+            ...primaryIds,
+            ...secondary,
+          ]);
+        await removeCategoryTagPairs(
+          tx,
+          (old?.categories ?? [])
+            .filter((c) => !chosen.includes(c.categoryId))
+            .map((c) => ({ itemId: id, categoryId: c.categoryId })),
+          group.flatMap((a) =>
+            a.categoryAssignments
+              .filter((c) => !chosen.includes(c.categoryId))
+              .map((c) => ({ aliasId: a.id, categoryId: c.categoryId })),
+          ),
+        );
         for (const categoryId of chosen) {
           tags.push({ itemId: id, categoryId });
           for (const a of group) aliasTags.push({ aliasId: a.id, categoryId });
         }
         for (const primaryId of primaryIds)
           for (const secondaryId of secondary)
-            relations.push({ primaryId, secondaryId });
+            if (
+              chosen.includes(primaryId) &&
+              chosen.includes(secondaryId) &&
+              primaryId !== secondaryId
+            )
+              relations.push({ primaryId, secondaryId });
       }
       demand(
         items.length + newItems.length <= 1500,
