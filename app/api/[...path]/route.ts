@@ -633,6 +633,8 @@ async function handle(
         name: user.name,
         email: user.email,
         role: user.role,
+        effectivenessShared: !!(await db.effectivenessGrant.findFirst({where:{userId:user.id},select:{scope:true}})),
+        metaAdsShared: !!(await db.metaWorkspaceGrant.findUnique({where:{userId:user.id},select:{userId:true}})),
         advisorLinked: !!(await db.metaAdvisorPortal.findUnique({where:{userId:user.id},select:{advisorId:true}})),
       });
     if (route === "auth/logout" && method === "POST") {

@@ -1,3 +1,33 @@
+import {
+  ownerOnly as financialOnly,
+  isFinancialActor,
+  financialContext,
+  checkFinancialContext,
+  financialUserWhere,
+  sharedTableWhere,
+  sharedAliasWhere,
+} from "./financial-access";
+async function metaEditorOnly(
+  actor: Actor,
+  tx?: import("@prisma/client").Prisma.TransactionClient,
+) {
+  if (isFinancialActor(actor)) {
+    financialOnly(actor);
+    if (tx) await checkFinancialContext(actor, tx);
+    return;
+  }
+  return workspaceEditorOnly(actor, tx);
+}
+const metaEditorUserWhere = (id: string, actor?: Actor) =>
+  actor && isFinancialActor(actor)
+    ? financialUserWhere(actor)
+    : workspaceEditorUserWhere(id);
+import {
+  metaEditorOnly as workspaceEditorOnly,
+  metaEditorUserWhere as workspaceEditorUserWhere,
+  metaCanSync,
+  workspaceAccess,
+} from "./workspace-access";
 import { activeWorkbookSheetId } from "./workbook-scope";
 import { isCountryCode } from "./countries";
 import { db } from "../db";
@@ -7,10 +37,11 @@ import { recordActivity } from "../activity";
 import { accountWhere, type Actor } from "./service";
 export async function aliases(actor: Actor) {
   return db.metaAlias.findMany({
-    where:
-      actor.role === "OWNER"
+    where: isFinancialActor(actor)
+      ? sharedAliasWhere(actor)
+      : (await workspaceAccess(actor)).canEdit
         ? {}
-        : { objects: { some: { account: accountWhere(actor) } } },
+        : { objects: { some: { account: await accountWhere(actor) } } },
     select: {
       id: true,
       name: true,
@@ -30,12 +61,12 @@ export async function saveAlias(
   tableId = "diplomados",
   inventorySheetId?: string,
 ) {
-  ownerOnly(actor);
+  await metaEditorOnly(actor);
   return db.$transaction(async (tx) => {
     await tx.$executeRaw`SELECT pg_advisory_xact_lock(884411)`;
     demand(
       await tx.user.findFirst({
-        where: { id: actor.id, role: "OWNER", status: "APPROVED" },
+        where: metaEditorUserWhere(actor.id, actor),
       }),
       "Sin permiso para editar inventario.",
       403,
@@ -104,7 +135,7 @@ export async function assignAliases(
   country?: string | null,
   advisorId?: string | null,
 ) {
-  ownerOnly(actor);
+  await metaEditorOnly(actor);
   demand(
     country === undefined || country === null || isCountryCode(country),
     "País no válido.",
@@ -124,13 +155,13 @@ export async function assignAliases(
     await tx.$executeRaw`SELECT pg_advisory_xact_lock(884411)`;
     demand(
       await tx.user.findFirst({
-        where: { id: actor.id, role: "OWNER", status: "APPROVED" },
+        where: metaEditorUserWhere(actor.id, actor),
       }),
       "Sin permiso para asignar inventario.",
       403,
     );
     const count = await tx.metaAdObject.count({
-      where: { id: { in: ids }, account: accountWhere(actor) },
+      where: { id: { in: ids }, account: await accountWhere(actor) },
     });
     demand(
       count === ids.length,
@@ -191,8 +222,9 @@ export async function assignAliases(
 }
 
 export async function aliasTables(actor: Actor) {
-  ownerOnly(actor);
+  await metaEditorOnly(actor);
   return db.metaAliasTable.findMany({
+    where: sharedTableWhere(actor),
     select: {
       id: true,
       name: true,
@@ -200,6 +232,7 @@ export async function aliasTables(actor: Actor) {
       defaultCountry: true,
       defaultCurrency: true,
       aliases: {
+        where: sharedAliasWhere(actor),
         select: { id: true, name: true, inventorySheetId: true },
         orderBy: { name: "asc" },
       },
@@ -209,12 +242,12 @@ export async function aliasTables(actor: Actor) {
   });
 }
 export async function createAliasTable(actor: Actor, name: string) {
-  ownerOnly(actor);
+  await metaEditorOnly(actor);
   return db.$transaction(async (tx) => {
     await tx.$executeRaw`SELECT pg_advisory_xact_lock(884411)`;
     demand(
       await tx.user.findFirst({
-        where: { id: actor.id, role: "OWNER", status: "APPROVED" },
+        where: metaEditorUserWhere(actor.id, actor),
       }),
       "Sin permiso para crear tablas.",
       403,
@@ -243,12 +276,12 @@ export async function createAliasTable(actor: Actor, name: string) {
 }
 
 export async function renameAliasTable(actor: Actor, id: string, name: string) {
-  ownerOnly(actor);
+  await metaEditorOnly(actor);
   return db.$transaction(async (tx) => {
     await tx.$executeRaw`SELECT pg_advisory_xact_lock(884411)`;
     demand(
       await tx.user.findFirst({
-        where: { id: actor.id, role: "OWNER", status: "APPROVED" },
+        where: metaEditorUserWhere(actor.id, actor),
       }),
       "Sin permiso.",
       403,
@@ -282,12 +315,15 @@ export async function renameAliasTable(actor: Actor, id: string, name: string) {
 
 export async function aliasTableOptions(actor: Actor) {
   return db.metaAliasTable.findMany({
-    where:
-      actor.role === "OWNER"
+    where: isFinancialActor(actor)
+      ? sharedTableWhere(actor)
+      : (await workspaceAccess(actor)).canEdit
         ? {}
         : {
             aliases: {
-              some: { objects: { some: { account: accountWhere(actor) } } },
+              some: {
+                objects: { some: { account: await accountWhere(actor) } },
+              },
             },
           },
     select: { id: true, name: true },

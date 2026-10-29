@@ -2,7 +2,7 @@
 import { DetailSection } from "./detail-section";
 import { useEffect, useState, type ReactNode } from "react";
 import { periodTableUrl } from "../../lib/meta-ads/period-table-link";
-import { engineRequest as api } from "./generation-engine";
+import { financialRequest as api } from "./financial-request";
 import { subscribeAdvisorSalesChanged } from "./advisor-sales-events";
 import type { AdvisorPeriodView } from "../../lib/meta-ads/advisor-period-history";
 const stamp = (s: string) =>

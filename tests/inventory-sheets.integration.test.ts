@@ -104,7 +104,7 @@ test("Vincular hojas desde una celda es atómico, por ID y sin alterar historial
       async () => {
         await assert.rejects(
           () => linkInventorySheets({ id: owner.id, role: "ADMIN" }, body),
-          /OWNER|permiso/i,
+          /OWNER|permiso|acceso/i,
         );
         await assert.rejects(
           () =>

@@ -1,7 +1,7 @@
 import { assertUnlinkedColumns } from "./column-link-policy";
 import { randomUUID } from "node:crypto";
 import { db } from "../db";
-import { ownerOnly } from "../auth";
+import {ownerOnly} from "./financial-access";
 import { demand } from "../errors";
 import { recordActivity } from "../activity";
 import type { Actor } from "./service";

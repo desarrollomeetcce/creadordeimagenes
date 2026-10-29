@@ -1,6 +1,7 @@
+import { sharedTabWhere } from "./financial-access";
 import { z } from "zod";
 import { db } from "../db";
-import { ownerOnly } from "../auth";
+import { ownerOnly } from "./financial-access";
 import { demand } from "../errors";
 import { recordActivity } from "../activity";
 import { effectivenessLock } from "./effectiveness";
@@ -61,7 +62,7 @@ export function parseWorkbookConfig(
 export async function workbookSheets(actor: Actor) {
   ownerOnly(actor);
   return db.metaEffectivenessSheet.findMany({
-    where: { archivedAt: null },
+    where: { archivedAt: null, ...sharedTabWhere(actor) },
     orderBy: [{ createdAt: "asc" }, { id: "asc" }],
   });
 }

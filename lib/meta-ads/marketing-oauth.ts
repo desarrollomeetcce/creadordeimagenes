@@ -1,3 +1,8 @@
+import {
+  metaEditorOnly,
+  metaEditorUserWhere,
+  metaActor,
+} from "./workspace-access";
 import { createHmac, randomBytes } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
@@ -32,20 +37,12 @@ export async function configureMarketingApp(
   id: string,
   input: unknown,
 ) {
-  ownerOnly(actor);
+  await metaEditorOnly(actor);
   const b = appSchema.parse(input);
   await rateLimit("meta:app:" + actor.id, 20);
   return db.$transaction(async (tx) => {
     await tx.$executeRaw`SELECT pg_advisory_xact_lock(884411)`;
-    const u = await tx.user.findUnique({
-      where: { id: actor.id },
-      select: { role: true, status: true },
-    });
-    demand(
-      u?.role === "OWNER" && u.status === "APPROVED",
-      "La autorización cambió.",
-      403,
-    );
+    await metaEditorOnly(actor, tx);
     const c = await tx.metaConnection.findUnique({ where: { id } });
     demand(
       c?.transport === "API" && !c.disconnectedAt,
@@ -62,7 +59,6 @@ export async function configureMarketingApp(
       data: {
         appId: b.appId,
         loginConfigId: b.loginConfigId,
-        ownerId: actor.id,
         ...(b.appSecret
           ? {
               encryptedAppSecret: encryptKey(b.appSecret, "meta-app:" + id),
@@ -102,7 +98,7 @@ async function activeSession(id: string, ownerId: string) {
         id,
         userId: ownerId,
         expiresAt: { gt: new Date() },
-        user: { role: "OWNER", status: "APPROVED" },
+        user: metaEditorUserWhere(),
       },
     }),
     "La sesión original ya no está autorizada. Inicia sesión y vuelve a conectar.",
@@ -115,7 +111,7 @@ export async function beginMarketingOAuth(
   id: string,
   manage = false,
 ) {
-  ownerOnly(actor);
+  await metaEditorOnly(actor);
   const info = marketingOAuthInfo(process.env.APP_ORIGIN);
   demand(
     req.headers.get("origin") === info.origin,
@@ -273,7 +269,6 @@ export async function finishMarketingOAuth(req: NextRequest) {
     const c = await db.metaConnection.findFirst({
       where: {
         id: row.connectionId,
-        ownerId: row.ownerId,
         revision: row.connectionRevision,
         transport: "API",
         disconnectedAt: null,
@@ -402,13 +397,9 @@ export async function finishMarketingOAuth(req: NextRequest) {
           : new Date(Date.now() + Number(long.expires_in) * 1000),
       metaUserId: me.id,
       sessionId: row.sessionId,
+      actorId: row.ownerId,
     });
-    await discover(
-      { id: row.ownerId, role: "OWNER" },
-      c.id,
-      revision,
-      row.sessionId,
-    );
+    await discover(await metaActor(row.ownerId), c.id, revision, row.sessionId);
     await activeSession(row.sessionId, row.ownerId);
     return finishResponse(
       NextResponse.redirect(

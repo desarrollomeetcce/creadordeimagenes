@@ -1,3 +1,11 @@
+import { isFinancialActor } from "./financial-access";
+import {
+  workspaceAccess,
+  metaEditorOnly,
+  metaEditorUserWhere,
+  metaCanSync,
+  metaActor,
+} from "./workspace-access";
 import { metaQuotaScope, quotaHooks, quotaUntil, MetaQuotaWait } from "./quota";
 import { focusedReportDay } from "./focused-labels";
 import { focusedSyncStep, type FocusState } from "./focused-sync";
@@ -55,23 +63,26 @@ export const accountSelect = {
   syncError: true,
   syncState: true,
 } as const;
-export const accountWhere = (actor: Actor): Prisma.MetaAdAccountWhereInput =>
-  actor.role === "OWNER"
-    ? {}
-    : {
-        connection: { disconnectedAt: null },
-        grants: { some: { userId: actor.id } },
-      };
+export async function accountWhere(
+  actor: Actor,
+): Promise<Prisma.MetaAdAccountWhereInput> {
+  if (isFinancialActor(actor)) return {};
+  const a = await workspaceAccess(actor);
+  if (a.canEdit) return {};
+  return {
+    connection: { disconnectedAt: null },
+    ...(a.shared ? {} : { grants: { some: { userId: actor.id } } }),
+  };
+}
 export async function access(actor: Actor, id: string, sync = false) {
   const a = await db.metaAdAccount.findFirst({
-    where: { AND: [{ id }, accountWhere(actor)] },
+    where: { AND: [{ id }, await accountWhere(actor)] },
     include: { connection: true, grants: { where: { userId: actor.id } } },
   });
   demand(a, "Cuenta publicitaria no disponible para este usuario.", 404);
   if (sync)
     demand(
-      actor.role === "OWNER" ||
-        (actor.role === "ADMIN" && a.grants.some((g) => g.canSync)),
+      await metaCanSync(actor, a.grants),
       "No tienes permiso para sincronizar esta cuenta.",
       403,
     );
@@ -140,7 +151,7 @@ function date(v: unknown) {
 }
 // A lightweight check of the saved credential, separate from account discovery.
 export async function refreshConnection(actor: Actor, id: string) {
-  ownerOnly(actor);
+  await metaEditorOnly(actor);
   await rateLimit("meta:refresh:" + actor.id, 15);
   const { connection: c, reader: r } = await reader(id, true);
   demand(
@@ -154,7 +165,7 @@ export async function refreshConnection(actor: Actor, id: string) {
     await tx.$executeRaw`SELECT pg_advisory_xact_lock(884411)`;
     const [user, owner] = await Promise.all([
       tx.user.findFirst({
-        where: { id: actor.id, role: "OWNER", status: "APPROVED" },
+        where: metaEditorUserWhere(actor.id),
       }),
       tx.user.findFirst({
         where: { id: c.ownerId, role: "OWNER", status: "APPROVED" },
@@ -195,7 +206,7 @@ export async function discover(
   expectedRevision?: number,
   sessionId?: string,
 ) {
-  ownerOnly(actor);
+  await metaEditorOnly(actor);
   await rateLimit("meta:discover:" + actor.id, 15);
   const { connection: c, reader: r } = await reader(id, true);
   demand(
@@ -270,6 +281,7 @@ export async function discover(
         await db.$transaction(
           async (tx) => {
             await tx.$executeRaw`SELECT pg_advisory_xact_lock(884411)`;
+            await metaEditorOnly(actor, tx);
             if (sessionId)
               demand(
                 await tx.session.findFirst({
@@ -277,7 +289,7 @@ export async function discover(
                     id: sessionId,
                     userId: actor.id,
                     expiresAt: { gt: new Date() },
-                    user: { role: "OWNER", status: "APPROVED" },
+                    user: metaEditorUserWhere(),
                   },
                 }),
                 "La sesión original ya no está autorizada.",
@@ -357,7 +369,7 @@ export async function discover(
               id: sessionId,
               userId: actor.id,
               expiresAt: { gt: new Date() },
-              user: { role: "OWNER", status: "APPROVED" },
+              user: metaEditorUserWhere(),
             },
           }),
           "La sesión original ya no está autorizada.",
@@ -420,6 +432,7 @@ export async function discover(
         : {}),
     };
   } catch (e) {
+    if (!(await workspaceAccess(actor).catch(() => null))?.canEdit) throw e;
     const reference = randomUUID();
     const code = internalErrorCode(e);
     const message =
@@ -491,11 +504,16 @@ export async function saveToken(
     expiresAt: Date | null;
     metaUserId: string;
     sessionId: string;
+    actorId?: string;
   },
+  actor?: Actor,
 ) {
   return db.$transaction(async (tx) => {
     await tx.$executeRaw`SELECT pg_advisory_xact_lock(884411)`;
+    if (actor) await metaEditorOnly(actor, tx);
     const c = await tx.metaConnection.findUniqueOrThrow({ where: { id } });
+    if (options?.actorId)
+      await metaEditorOnly(await metaActor(options.actorId), tx);
     demand(
       expectedRevision === undefined || c.revision === expectedRevision,
       "La conexión cambió durante la autorización. Inicia de nuevo.",
@@ -510,9 +528,9 @@ export async function saveToken(
         await tx.session.findFirst({
           where: {
             id: options.sessionId,
-            userId: c.ownerId,
+            userId: options.actorId ?? c.ownerId,
             expiresAt: { gt: new Date() },
-            user: { role: "OWNER", status: "APPROVED" },
+            user: metaEditorUserWhere(),
           },
         }),
         "La sesión original ya no está autorizada.",
@@ -638,9 +656,7 @@ export async function queueSync(
         include: { connection: true, grants: { where: { userId: actor.id } } },
       });
       demand(
-        currentUser &&
-          (currentUser.role === "OWNER" ||
-            (currentUser.role === "ADMIN" && a.grants.some((g) => g.canSync))),
+        currentUser && (await metaCanSync(actor, a.grants, tx)),
         "Ya no tienes permiso para sincronizar esta cuenta.",
         403,
       );
@@ -1239,9 +1255,7 @@ export async function controlSync(
       include: { grants: { where: { userId: actor.id } } },
     });
     demand(
-      user &&
-        (user.role === "OWNER" ||
-          (user.role === "ADMIN" && a.grants.some((g) => g.canSync))),
+      user && (await metaCanSync(actor, a.grants, tx)),
       "No tienes permiso para controlar la sincronización.",
       403,
     );

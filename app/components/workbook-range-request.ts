@@ -1,5 +1,5 @@
 "use client";
-import { engineRequest as api } from "./generation-engine";
+import { financialRequest as api } from "./financial-request";
 import { activePeriodWindow } from "../../lib/meta-ads/active-periods";
 import type { AdvisorSheetData } from "./advisor-types";
 import type { TotalSheet } from "../../lib/meta-ads/totals-detail";

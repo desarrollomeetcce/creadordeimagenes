@@ -1,3 +1,8 @@
+import {
+  metaEditorOnly,
+  metaEditorUserWhere,
+  metaActor,
+} from "./workspace-access";
 import { createHash, randomBytes } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "../db";
@@ -27,7 +32,7 @@ export async function beginOAuth(
   id: string,
   clientId?: string,
 ) {
-  ownerOnly(actor);
+  await metaEditorOnly(actor);
   await rateLimit("meta:oauth:" + actor.id, 20);
   const rawSession = req.cookies.get("session")?.value;
   demand(
@@ -37,7 +42,7 @@ export async function beginOAuth(
           id: tokenHash(rawSession),
           userId: actor.id,
           expiresAt: { gt: new Date() },
-          user: { role: "OWNER", status: "APPROVED" },
+          user: metaEditorUserWhere(),
         },
       })),
     "Inicia sesión de nuevo.",
@@ -183,7 +188,7 @@ export async function finishOAuth(req: NextRequest) {
         id: row.sessionId,
         userId: row.ownerId,
         expiresAt: { gt: new Date() },
-        user: { role: "OWNER", status: "APPROVED" },
+        user: metaEditorUserWhere(),
       },
     });
     demand(session, "La sesión original ya no está autorizada.", 401);
@@ -214,7 +219,7 @@ export async function finishOAuth(req: NextRequest) {
             id: row.sessionId,
             userId: row.ownerId,
             expiresAt: { gt: new Date() },
-            user: { role: "OWNER", status: "APPROVED" },
+            user: metaEditorUserWhere(),
           },
         }),
         "La sesión original ya no está autorizada.",
@@ -250,9 +255,11 @@ export async function finishOAuth(req: NextRequest) {
       row.connectionId,
       token.access_token,
       row.connectionRevision,
+      undefined,
+      await metaActor(row.ownerId),
     );
     const verified = await discover(
-      { id: row.ownerId, role: "OWNER" },
+      await metaActor(row.ownerId),
       row.connectionId,
       revision,
       row.sessionId,

@@ -1,3 +1,8 @@
+import {
+  metaEditorOnly,
+  metaEditorUserWhere,
+  metaCanSync,
+} from "./workspace-access";
 import { db } from "../db";
 import { ownerOnly, rateLimit } from "../auth";
 import { AppError, demand } from "../errors";
@@ -13,7 +18,7 @@ export async function setMetaStatus(
   status: "ACTIVE" | "PAUSED",
   expectedStatus: "ACTIVE" | "PAUSED",
 ) {
-  ownerOnly(actor);
+  await metaEditorOnly(actor);
   await rateLimit("meta:manage:" + actor.id, 20);
   const object = await db.metaAdObject.findUnique({
     where: { id: objectId },
@@ -58,7 +63,7 @@ export async function setMetaStatus(
         await tx.$executeRaw`SELECT pg_advisory_xact_lock(884411)`;
         demand(
           await tx.user.findFirst({
-            where: { id: actor.id, role: "OWNER", status: "APPROVED" },
+            where: metaEditorUserWhere(actor.id),
           }),
           "Ya no tienes permiso para modificar Meta.",
           403,

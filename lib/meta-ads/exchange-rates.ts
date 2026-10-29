@@ -1,5 +1,5 @@
 import { db } from "../db";
-import { ownerOnly } from "../auth";
+import {ownerOnly} from "./financial-access";
 import { demand } from "../errors";
 import type { Actor } from "./service";
 export const fxProvider = "Currency API · referencia diaria";

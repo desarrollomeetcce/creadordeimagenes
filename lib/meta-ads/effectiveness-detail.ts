@@ -1,6 +1,6 @@
 import { activePeriods } from "./active-periods";
 import { db } from "../db";
-import { ownerOnly } from "../auth";
+import {ownerOnly} from "./financial-access";
 import { demand } from "../errors";
 import { effectiveness } from "./effectiveness";
 import { aliasStateTimeline } from "./alias-state-timeline";

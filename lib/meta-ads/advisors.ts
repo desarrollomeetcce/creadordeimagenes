@@ -1,3 +1,4 @@
+import { financialContext } from "./financial-access";
 import { manualBaseAllocationsSchema } from "./manual-base-policy";
 import { advisorBaseEstimate } from "./advisor-base-estimate";
 import { inventoryBaseContext } from "./inventory-base-context";
@@ -21,7 +22,7 @@ import {
   type AbsenceInput,
 } from "./advisor-absence";
 import { db } from "../db";
-import { ownerOnly } from "../auth";
+import { ownerOnly } from "./financial-access";
 import { demand } from "../errors";
 import { recordActivity } from "../activity";
 import { accountWhere, type Actor } from "./service";
@@ -33,10 +34,36 @@ import {
 
 export async function advisors(actor: Actor) {
   const people = await db.metaAdvisor.findMany({
-    where:
-      actor.role === "OWNER"
+    where: financialContext(actor)
+      ? financialContext(actor)!.kind === "ADVISORS"
+        ? { sheetId: financialContext(actor)!.scope.slice(4) }
+        : financialContext(actor)!.scope === "ALL"
+          ? {}
+          : {
+              OR: [
+                {
+                  rows: {
+                    some: {
+                      alias: {
+                        tableId: { in: financialContext(actor)!.tableIds },
+                      },
+                    },
+                  },
+                },
+                {
+                  objects: {
+                    some: {
+                      alias: {
+                        tableId: { in: financialContext(actor)!.tableIds },
+                      },
+                    },
+                  },
+                },
+              ],
+            }
+      : actor.role === "OWNER"
         ? {}
-        : { objects: { some: { account: accountWhere(actor) } } },
+        : { objects: { some: { account: await accountWhere(actor) } } },
     select: {
       id: true,
       name: true,

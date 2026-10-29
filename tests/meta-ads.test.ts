@@ -1,3 +1,4 @@
+import {advisorDayEffectiveness} from "../lib/meta-ads/advisor-day-effectiveness";
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {analyze,summarize,localDay,metricFor,dayCount} from '../lib/meta-ads/analytics';
@@ -863,4 +864,18 @@ test('Búsqueda: nombres exactos y prefijos tienen prioridad sobre códigos o me
 test('Búsqueda de cuentas: conserva los filtros de actividad y negocio con palabras y prefijos de ID', async () => {
  const {matchesAccount}=await import('../lib/meta-ads/account-filters');const a={id:'123456',name:'Cámara Nacional',businessId:'negocio',businessName:'Educación Perú',currency:'PEN',enabled:true,activity:{state:'READY' as const,spend30:10,activeCampaigns:1}};
  assert(matchesAccount(a,'peru cam','active','negocio'));assert(matchesAccount(a,'act_123456'));assert(matchesAccount(a,'camara act_123'));assert(!matchesAccount(a,'camara','none'));assert(!matchesAccount(a,'camara','active','otro'));
+});
+
+
+test("efectividad diaria del asesor compara fechas iguales y espera cierre para BM",()=>{
+ const b={day:"2026-10-28",today:"2026-10-29",sales:5,base:358,basis:"BM" as const};
+ assert.equal(advisorDayEffectiveness(b).value,5/358);
+ assert.equal(advisorDayEffectiveness({...b,day:b.today}).value,null);
+ assert.equal(advisorDayEffectiveness({...b,day:b.today,basis:"BC",base:150}).value,5/150);
+ assert.equal(advisorDayEffectiveness({...b,day:"2026-10-30",basis:"BC"}).value,null);
+ assert.equal(advisorDayEffectiveness({...b,sales:0}).value,0);
+ assert.equal(advisorDayEffectiveness({...b,base:0}).value,null);
+ assert.equal(advisorDayEffectiveness({...b,base:null}).value,null);
+ assert.equal(advisorDayEffectiveness({...b,sales:null}).value,null);
+ assert.equal(advisorDayEffectiveness({...b,partial:true}).value,null);
 });

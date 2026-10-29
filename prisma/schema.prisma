@@ -29,6 +29,10 @@ model User {
   plan MembershipPlan? @relation(fields:[planId],references:[id])
   customPlans MembershipPlan[] @relation("CustomPlanRecipient")
   planValidUntil DateTime?
+  effectivenessGrants EffectivenessGrant[] @relation("EffectivenessRecipient")
+  effectivenessInvites EffectivenessGrant[] @relation("EffectivenessIssuer")
+  metaWorkspaceGrant MetaWorkspaceGrant? @relation("MetaWorkspaceRecipient")
+  metaWorkspaceInvites MetaWorkspaceGrant[] @relation("MetaWorkspaceIssuer")
   advisorPortal MetaAdvisorPortal?
   sessions Session[]
   projects Project[]
@@ -1172,4 +1176,39 @@ model MetaAdvisorGoal {
  revision Int @default(1)
  updatedAt DateTime @updatedAt
  @@index([advisorId,since,until])
+}
+
+
+enum MetaWorkspacePermission {
+  VIEW
+  EDIT
+}
+model MetaWorkspaceSharing {
+  id String @id @default("global")
+  revision Int @default(0)
+}
+model MetaWorkspaceGrant {
+  userId String @id
+  user User @relation("MetaWorkspaceRecipient",fields:[userId],references:[id],onDelete:Cascade)
+  grantedById String
+  grantedBy User @relation("MetaWorkspaceIssuer",fields:[grantedById],references:[id],onDelete:Restrict)
+  permission MetaWorkspacePermission
+  pinnedAccountIds Json @default("[]")
+  updatedAt DateTime @updatedAt
+}
+
+model EffectivenessSharing {
+  scope String @id
+  revision Int @default(0)
+}
+model EffectivenessGrant {
+  scope String
+  userId String
+  user User @relation("EffectivenessRecipient",fields:[userId],references:[id],onDelete:Cascade)
+  grantedById String
+  grantedBy User @relation("EffectivenessIssuer",fields:[grantedById],references:[id],onDelete:Restrict)
+  permission MetaWorkspacePermission
+  updatedAt DateTime @updatedAt
+  @@id([scope,userId])
+  @@index([userId])
 }

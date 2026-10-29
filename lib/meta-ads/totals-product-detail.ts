@@ -1,5 +1,5 @@
 import { db } from "../db";
-import { ownerOnly } from "../auth";
+import {ownerOnly} from "./financial-access";
 import type { Actor } from "./service";
 import { effectiveness } from "./effectiveness";
 import { advisorSalesPlan } from "./advisor-sales-plan";

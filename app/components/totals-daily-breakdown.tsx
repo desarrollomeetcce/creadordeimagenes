@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useState, type ReactNode } from "react";
-import { engineRequest as api } from "./generation-engine";
+import { financialRequest as api } from "./financial-request";
 import { subscribeAdvisorSalesChanged } from "./advisor-sales-events";
 import { DetailSection } from "./detail-section";
 import {

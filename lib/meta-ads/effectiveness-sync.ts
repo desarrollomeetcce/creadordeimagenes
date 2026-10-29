@@ -3,7 +3,7 @@ import { activeWorkbookSheetId } from "./workbook-scope";
 import { createHash } from "node:crypto";
 import { db } from "../db";
 import type { Prisma } from "@prisma/client";
-import { ownerOnly } from "../auth";
+import {ownerOnly} from "./financial-access";
 import { demand } from "../errors";
 import { recordActivity } from "../activity";
 import { effectiveness, effectivenessLock } from "./effectiveness";

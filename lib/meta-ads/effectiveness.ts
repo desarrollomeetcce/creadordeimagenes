@@ -1,3 +1,4 @@
+import { checkFinancialContext } from "./financial-access";
 import {
   assertUnlinkedColumns,
   linkCoversDay,
@@ -12,7 +13,7 @@ import { createHash } from "node:crypto";
 import { sheetMetrics, type SheetMetric } from "./period-summary";
 import { db } from "../db";
 import type { Prisma } from "@prisma/client";
-import { ownerOnly } from "../auth";
+import { ownerOnly } from "./financial-access";
 import { demand } from "../errors";
 import { recordActivity } from "../activity";
 import { accountWhere, type Actor } from "./service";
@@ -21,13 +22,7 @@ type Tx = Prisma.TransactionClient;
 const key = (a: string, p: string) => JSON.stringify([a, p]);
 export async function effectivenessLock(tx: Tx, actor: Actor) {
   await tx.$executeRaw`SELECT pg_advisory_xact_lock(884411)`;
-  demand(
-    await tx.user.findFirst({
-      where: { id: actor.id, role: "OWNER", status: "APPROVED" },
-    }),
-    "Sin permiso.",
-    403,
-  );
+  await checkFinancialContext(actor, tx);
 }
 type Amount = { currency: string; amount: number };
 export type EffectivenessCell = {
@@ -193,7 +188,7 @@ async function readEffectiveness(
         level: "campaign",
         alias: { tableId },
         aliasCountry: { not: null },
-        account: advisorScope ? {} : accountWhere(actor),
+        account: advisorScope ? {} : await accountWhere(actor),
       },
       select: {
         aliasId: true,

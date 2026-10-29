@@ -20,7 +20,7 @@ export async function dashboard(actor: Actor, params: URLSearchParams) {
   const level = params.get("level") ?? "ad";
   demand(["campaign", "adset", "ad"].includes(level), "Nivel inválido.");
   const accounts = await db.metaAdAccount.findMany({
-    where: accountWhere(actor),
+    where: await accountWhere(actor),
     select: {
       id: true,
       name: true,

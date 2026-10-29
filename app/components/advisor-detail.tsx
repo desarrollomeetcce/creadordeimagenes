@@ -2,7 +2,7 @@
 import { summaryPeriod } from "../../lib/meta-ads/summary-period";
 import { SummaryPeriodNotice } from "./summary-period-notice";
 import { useEffect, useId, useRef, useState, type ReactNode } from "react";
-import { engineRequest as api } from "./generation-engine";
+import { financialRequest as api } from "./financial-request";
 import { periodComparison } from "../../lib/meta-ads/period-comparison";
 import { DetailPeriodPresets } from "./detail-period-presets";
 import { MetaDateRange } from "./meta-date-range";

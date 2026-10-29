@@ -1,7 +1,7 @@
 "use client";
 import { EffectivenessLinks } from "./effectiveness-links";
 import { useEffect, useState } from "react";
-import { engineRequest as api } from "./generation-engine";
+import { financialRequest as api } from "./financial-request";
 import { SheetSearchSelect } from "./sheet-search-select";
 import { sheetMetrics } from "../../lib/meta-ads/period-summary";
 type Summary = {

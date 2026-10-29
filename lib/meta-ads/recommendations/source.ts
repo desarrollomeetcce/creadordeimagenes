@@ -1,3 +1,4 @@
+import { metaCanSync } from "../workspace-access";
 import { randomUUID, createHash } from "node:crypto";
 import { Prisma } from "@prisma/client";
 import { db } from "../../db";
@@ -108,11 +109,13 @@ export async function refreshSource(
     });
     demand(
       user &&
-        (user.role === "OWNER" ||
-          (user.role === "ADMIN" &&
-            (await tx.metaAccountGrant.findFirst({
-              where: { accountId: a.id, userId: actor.id, canSync: true },
-            })))),
+        (await metaCanSync(
+          actor,
+          await tx.metaAccountGrant.findMany({
+            where: { accountId: a.id, userId: actor.id },
+          }),
+          tx,
+        )),
       "Ya no tienes permiso para actualizar esta cuenta.",
       403,
     );
@@ -388,11 +391,13 @@ export async function refreshSource(
         });
         demand(
           user &&
-            (user.role === "OWNER" ||
-              (user.role === "ADMIN" &&
-                (await tx.metaAccountGrant.findFirst({
-                  where: { accountId: a.id, userId: actor.id, canSync: true },
-                })))),
+            (await metaCanSync(
+              actor,
+              await tx.metaAccountGrant.findMany({
+                where: { accountId: a.id, userId: actor.id },
+              }),
+              tx,
+            )),
           "El permiso cambió durante la lectura.",
           403,
         );

@@ -9,7 +9,7 @@ import { SheetSizedRow } from "./sheet-sized-row";
 
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useWorkbookPreference } from "./use-workbook-preference";
-import { engineRequest as api } from "./generation-engine";
+import { financialRequest as api } from "./financial-request";
 import { MetaDateRange } from "./meta-date-range";
 import { SheetMultiFilter } from "./sheet-multi-filter";
 import { SheetSearchSelect } from "./sheet-search-select";
@@ -44,12 +44,14 @@ export function EffectivenessTotals({
   tables,
   listId = "default-totals",
   initialTableId,
+  initialSelected,
   sheetTabs,
 }: {
   listId?: string;
   sheetTabs: ReactNode;
   tables: { id: string; name: string }[];
   initialTableId: string;
+  initialSelected?: string[] | null;
 }) {
   const numbersTable = useRef<HTMLTableElement>(null);
   useSheetTextFit(
@@ -94,7 +96,11 @@ export function EffectivenessTotals({
     [selected, setSelected] = useWorkbookPreference<string[] | null>(
       listId,
       "selected",
-      listId === "default-totals" && initialTableId ? [initialTableId] : [],
+      initialSelected !== undefined
+        ? initialSelected
+        : listId === "default-totals" && initialTableId
+          ? [initialTableId]
+          : [],
     );
   const [country, setCountry] = useWorkbookPreference<string>(
       listId,
@@ -313,7 +319,7 @@ export function EffectivenessTotals({
       aria-label="Totales de efectividad"
       aria-busy={loading}
     >
-      <div className="row sheet-toolbar">
+      <div className="sheet-toolbar sheet-totals-toolbar">
         <div className="row sheet-view-buttons" aria-label="Vista de totales">
           <button
             aria-pressed={analysisView === "period" && mode === "manual"}
@@ -322,6 +328,7 @@ export function EffectivenessTotals({
               (analysisView === "period" && mode === "manual" ? " primary" : "")
             }
             onClick={() => {
+              setAnalysisView("period");
               setMode("manual");
             }}
           >
@@ -336,112 +343,120 @@ export function EffectivenessTotals({
                 : "")
             }
             onClick={() => {
+              setAnalysisView("period");
               setMode("automatic");
             }}
           >
             Total automático
           </button>
           <button
+            className="sheet-mode-today"
             aria-pressed={analysisView === "today"}
             onClick={() => setAnalysisView("today")}
           >
             Hoy · avance provisional
           </button>
           <button
+            className="sheet-mode-yesterday"
             aria-pressed={analysisView === "yesterday"}
             onClick={() => setAnalysisView("yesterday")}
           >
             Ayer · día completo
           </button>
         </div>
-        <MetaDateRange
-          maxDays={3660}
-          from={since}
-          to={until}
-          onChange={(a, b) => {
-            if (
-              !a ||
-              !b ||
-              a > b ||
-              (Date.parse(b) - Date.parse(a)) / 86400000 >= 3660
-            ) {
-              setMessage("Elige un período válido de hasta diez años.");
-              return;
-            }
-            setSince(a);
-            setUntil(b);
-          }}
-        />
-        <SheetMultiFilter
-          label="Hojas de origen"
-          value={selected}
-          onChange={setSelected}
-          options={tables.map((t) => ({ value: t.id, label: t.name }))}
-        />
-        {!data.length &&
-          selected !== null &&
-          tables.some((t) => !selected.includes(t.id)) && (
-            <SheetSearchSelect
-              label="Agregar hoja a Totales"
-              className="sheet-add-source"
-              value=""
-              placeholder="+ Agregar hoja"
-              options={tables
-                .filter((t) => !selected.includes(t.id))
-                .map((t) => ({ value: t.id, label: t.name }))}
-              onSelect={(id) =>
-                setSelected((old) =>
-                  old === null ? null : [...new Set([...old, id])],
-                )
-              }
-            />
-          )}
-        <label>
-          País
-          <SheetSearchSelect
-            label="País de totales"
-            placeholder="Todos"
-            value={country}
-            options={[
-              { value: "", label: "Todos" },
-              { value: "__none", label: "Sin país" },
-              ...countryOptions.map((c) => ({
-                value: c.code,
-                label: c.code + " · " + c.name,
-              })),
-            ]}
-            onSelect={setCountry}
-          />
-        </label>
-        <label>
-          Moneda
-          <SheetSearchSelect
-            label="Moneda de totales"
-            placeholder="Todas"
-            value={currency}
-            options={[
-              { value: "", label: "Todas" },
-              ...currencyCodes.map((c) => ({
-                value: c,
-                label: c + " · " + names.of(c),
-              })),
-            ]}
-            onSelect={setCurrency}
-          />
-        </label>
-        <button
-          type="button"
-          onClick={() => {
-            setDetailSelection(undefined);
-            setDetailOpen(true);
-          }}
+        <div
+          className="row sheet-totals-filters"
+          aria-label="Fecha y filtros de totales"
         >
-          Ver detalle
-        </button>
-        <TotalsColumnPalette tools={columnTools} />
-        <button disabled={loading} onClick={() => setReload((v) => v + 1)}>
-          Actualizar totales
-        </button>
+          <MetaDateRange
+            maxDays={3660}
+            from={since}
+            to={until}
+            onChange={(a, b) => {
+              if (
+                !a ||
+                !b ||
+                a > b ||
+                (Date.parse(b) - Date.parse(a)) / 86400000 >= 3660
+              ) {
+                setMessage("Elige un período válido de hasta diez años.");
+                return;
+              }
+              setSince(a);
+              setUntil(b);
+            }}
+          />
+          <SheetMultiFilter
+            label="Hojas de origen"
+            value={selected}
+            onChange={setSelected}
+            options={tables.map((t) => ({ value: t.id, label: t.name }))}
+          />
+          {!data.length &&
+            selected !== null &&
+            tables.some((t) => !selected.includes(t.id)) && (
+              <SheetSearchSelect
+                label="Agregar hoja a Totales"
+                className="sheet-add-source"
+                value=""
+                placeholder="+ Agregar hoja"
+                options={tables
+                  .filter((t) => !selected.includes(t.id))
+                  .map((t) => ({ value: t.id, label: t.name }))}
+                onSelect={(id) =>
+                  setSelected((old) =>
+                    old === null ? null : [...new Set([...old, id])],
+                  )
+                }
+              />
+            )}
+          <label>
+            País
+            <SheetSearchSelect
+              label="País de totales"
+              placeholder="Todos"
+              value={country}
+              options={[
+                { value: "", label: "Todos" },
+                { value: "__none", label: "Sin país" },
+                ...countryOptions.map((c) => ({
+                  value: c.code,
+                  label: c.code + " · " + c.name,
+                })),
+              ]}
+              onSelect={setCountry}
+            />
+          </label>
+          <label>
+            Moneda
+            <SheetSearchSelect
+              label="Moneda de totales"
+              placeholder="Todas"
+              value={currency}
+              options={[
+                { value: "", label: "Todas" },
+                ...currencyCodes.map((c) => ({
+                  value: c,
+                  label: c + " · " + names.of(c),
+                })),
+              ]}
+              onSelect={setCurrency}
+            />
+          </label>
+          <button
+            type="button"
+            onClick={() => {
+              setDetailSelection(undefined);
+              setDetailOpen(true);
+            }}
+          >
+            Ver detalle
+          </button>
+          <TotalsColumnPalette tools={columnTools} />
+          <button disabled={loading} onClick={() => setReload((v) => v + 1)}>
+            Actualizar totales
+          </button>
+        </div>
       </div>
       {baseEditor && (
         <ManualBaseEditor

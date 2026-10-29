@@ -1,4 +1,5 @@
 "use client";
+import { advisorDayEffectiveness } from "../../lib/meta-ads/advisor-day-effectiveness";
 import { matchesSearchWords } from "../../lib/search";
 import { useSheetTextFit } from "./use-sheet-text-fit";
 import { SheetDataFillBadge } from "./sheet-data-fill-badge";
@@ -10,7 +11,7 @@ import { SheetSizedRow } from "./sheet-sized-row";
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useWorkbookPreference } from "./use-workbook-preference";
-import { engineRequest as api } from "./generation-engine";
+import { financialRequest as api } from "./financial-request";
 import { useReportDayPages } from "./report-day-pages";
 import { readAdvisorRange } from "./workbook-range-request";
 import { MetaDateRange } from "./meta-date-range";
@@ -27,6 +28,11 @@ import type {
 } from "./advisor-types";
 import { countryOptions } from "../../lib/meta-ads/countries";
 import { SheetSearchSelect } from "./sheet-search-select";
+const advisorCountFormat = new Intl.NumberFormat("es-PE");
+const advisorRateFormat = new Intl.NumberFormat("es-PE", {
+  style: "percent",
+  maximumFractionDigits: 2,
+});
 const statuses = [
   { value: "", label: "Sin registrar" },
   { value: "PRESENT", label: "Presente" },
@@ -73,6 +79,8 @@ export function AdvisorsSheet({
   >("period");
   const showBM = analysisView !== "today",
     showBC = analysisView !== "yesterday";
+  const rateBasis =
+    analysisView === "period" ? null : analysisView === "today" ? "BC" : "BM";
   const [teamAnalysis, setTeamAnalysis] = useState(false);
   const [detailVersion, setDetailVersion] = useState(0);
   const [detailDay, setDetailDay] = useState<string | null>(null);
@@ -248,13 +256,20 @@ export function AdvisorsSheet({
         <div className="row sheet-view-buttons" aria-label="Vista de asesores">
           {(
             [
-              ["period", "Análisis del período"],
               ["today", "Hoy · avance provisional"],
               ["yesterday", "Ayer · día completo"],
+              ["period", "Análisis del período"],
             ] as const
           ).map(([value, label]) => (
             <button
               key={value}
+              className={
+                value === "today"
+                  ? "sheet-mode-today"
+                  : value === "yesterday"
+                    ? "sheet-mode-yesterday"
+                    : undefined
+              }
               aria-pressed={analysisView === value}
               onClick={() => setAnalysisView(value)}
             >
@@ -272,7 +287,7 @@ export function AdvisorsSheet({
           }}
         />
         <label>
-          Ventas de{" "}
+          Ventas de hojas{" "}
           <SheetSearchSelect
             label="Hojas para ventas por asesor"
             value={tableId}
@@ -323,25 +338,6 @@ export function AdvisorsSheet({
           Actualizar
         </button>
       </div>
-      <p className="sheet-help">
-        {analysisView === "today"
-          ? "Avance provisional del período: A, H, V y BC. BM se consulta en Ayer · día completo. "
-          : analysisView === "yesterday"
-            ? "Datos del día completo en el período: A, H, V y BM. BC no forma parte de esta vista. "
-            : ""}
-        A y H son asistencia y horas ausentes. BM suma la base manual repartida
-        a cada asesor, por hoja, país y día. BM y BC se consultan aquí y se
-        editan en Totales. BC es la base por contactar ingresada en Totales,
-        independiente de BM y B de Meta Ads. Es independiente del diplomado
-        filtrado. V suma las ventas registradas a nombre de cada asesor en las
-        hojas elegidas, aunque no sea el responsable de la fila. Pulsa una venta
-        para ver qué diplomados vendió ese día. H = Horas ausentes (0,5 = 30
-        minutos): puedes registrar varias salidas y regresos. A y H corresponden
-        a la persona y no se reparten por producto. Los registros anteriores sin
-        reparto conservan su atribución por asignaciones y cortes. * Total
-        parcial o reparto pendiente de aprobar; — sin datos; N.A. no es cero.
-        Todas las hojas incluye también las copias sincronizadas.
-      </p>
       {message && (
         <p className="sheet-message" role="status">
           {message}
@@ -377,7 +373,8 @@ export function AdvisorsSheet({
                     (widths[d + "sales"] ?? 48) +
                     (widths[d + "absence"] ?? 56) +
                     (showBM ? (widths[d + "manualBase"] ?? 64) : 0) +
-                    (showBC ? (widths[d + "advisorBase"] ?? 64) : 0),
+                    (showBC ? (widths[d + "advisorBase"] ?? 64) : 0) +
+                    (rateBasis ? (widths[d + "effectiveness"] ?? 84) : 0),
                   0,
                 ),
             }}
@@ -410,6 +407,14 @@ export function AdvisorsSheet({
                       <col
                         key={d + "advisorBase"}
                         style={{ width: widths[d + "advisorBase"] ?? 64 }}
+                      />,
+                    ]
+                  : []),
+                ...(rateBasis
+                  ? [
+                      <col
+                        key={d + "effectiveness"}
+                        style={{ width: widths[d + "effectiveness"] ?? 84 }}
                       />,
                     ]
                   : []),
@@ -466,7 +471,9 @@ export function AdvisorsSheet({
                 {visibleDays.map((d) => (
                   <th
                     key={d}
-                    colSpan={3 + Number(showBM) + Number(showBC)}
+                    colSpan={
+                      3 + Number(showBM) + Number(showBC) + Number(!!rateBasis)
+                    }
                     scope="colgroup"
                   >
                     {d.slice(8)}.{d.slice(5, 7)}
@@ -481,6 +488,7 @@ export function AdvisorsSheet({
                     handle={handle}
                     showBM={showBM}
                     showBC={showBC}
+                    rateBasis={rateBasis}
                   />
                 ))}
               </tr>
@@ -560,6 +568,8 @@ export function AdvisorsSheet({
                         cell={c}
                         showBM={showBM}
                         showBC={showBC}
+                        rateBasis={rateBasis}
+                        today={today}
                         disabled={busy || loading}
                         onError={setMessage}
                         onDetail={() => {
@@ -634,7 +644,9 @@ function FragmentHeaders({
   handle,
   showBM,
   showBC,
+  rateBasis,
 }: {
+  rateBasis: "BC" | "BM" | null;
   showBM: boolean;
   showBC: boolean;
   day: string;
@@ -693,6 +705,32 @@ function FragmentHeaders({
           <SheetDataFillBadge kind="automatic" />
         </th>
       )}
+      {rateBasis && (
+        <th
+          scope="col"
+          aria-label={
+            rateBasis === "BC"
+              ? "Efectividad provisional Ventas / BC"
+              : "Efectividad real Ventas / BM"
+          }
+          className={
+            "advisor-effectiveness advisor-effectiveness-" +
+            rateBasis.toLowerCase()
+          }
+          title={
+            rateBasis === "BC"
+              ? "Efectividad provisional: ventas / BC del mismo día, hasta hoy Lima."
+              : "Efectividad real: ventas / BM del mismo día; disponible desde el día siguiente."
+          }
+        >
+          V / {rateBasis} %
+          {handle(
+            day + "effectiveness",
+            "Efectividad " + rateBasis + " " + day,
+          )}
+          <small>Calculado</small>
+        </th>
+      )}
     </>
   );
 }
@@ -701,6 +739,8 @@ function AdvisorDay({
   day,
   showBM,
   showBC,
+  rateBasis,
+  today,
   cell,
   disabled,
   onError,
@@ -712,6 +752,8 @@ function AdvisorDay({
   day: string;
   showBM: boolean;
   showBC: boolean;
+  rateBasis: "BC" | "BM" | null;
+  today: string;
   cell: Day;
   disabled: boolean;
   onError: (v: string) => void;
@@ -721,6 +763,17 @@ function AdvisorDay({
     v: import("../../lib/meta-ads/advisor-absence").AbsenceInput,
   ) => Promise<void>;
 }) {
+  const rate = rateBasis
+    ? advisorDayEffectiveness({
+        day,
+        today,
+        basis: rateBasis,
+        sales: cell.sales,
+        base: rateBasis === "BC" ? cell.advisorBase : cell.manualBase,
+        na: cell.na,
+        partial: cell.partial,
+      })
+    : null;
   return (
     <>
       <td
@@ -770,7 +823,7 @@ function AdvisorDay({
             ? "N.A."
             : cell.sales === null
               ? "—"
-              : new Intl.NumberFormat("es-PE").format(cell.sales)}
+              : advisorCountFormat.format(cell.sales)}
           {cell.partial ? " *" : ""}
         </button>
       </td>
@@ -797,6 +850,22 @@ function AdvisorDay({
           {cell.advisorBase === null || cell.advisorBase === undefined
             ? "—"
             : cell.advisorBase.toLocaleString("es-PE")}
+        </td>
+      )}
+      {rateBasis && rate && (
+        <td
+          data-rate-basis={rateBasis}
+          data-readonly="true"
+          aria-label={`Efectividad ${rateBasis} ${person.name} ${day}`}
+          title={rate.reason}
+          className={
+            "advisor-effectiveness advisor-effectiveness-" +
+            rateBasis.toLowerCase()
+          }
+        >
+          {rate.value === null
+            ? "—"
+            : advisorRateFormat.format(rate.value) + (cell.partial ? " *" : "")}
         </td>
       )}
     </>

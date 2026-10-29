@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import type { Prisma } from "@prisma/client";
 import { db } from "../db";
-import { ownerOnly } from "../auth";
+import {ownerOnly} from "./financial-access";
 import { demand } from "../errors";
 import { recordActivity } from "../activity";
 import { accountWhere, type Actor } from "./service";
@@ -187,7 +187,7 @@ async function unlinkPlan(actor: Actor, tableId: string, tx: Tx) {
         object: {
           level: "campaign",
           alias: { tableId: { in: ancestry } },
-          account: accountWhere(actor),
+          account: await accountWhere(actor),
         },
         day: dayRange,
         scope: "7d_click,1d_view|impression",

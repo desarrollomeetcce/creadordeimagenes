@@ -71,7 +71,7 @@ const Library = LibraryWorkspace;
 const Presets = dynamic(() => import("./components/productivity").then(m => m.Presets));
 const PresetTools = dynamic(() => import("./components/productivity").then(m => m.PresetTools));
 import type { FormEvent } from "react";
-type User = { id: string; name: string; email: string; role: string; advisorLinked?: boolean };
+type User = { id: string; name: string; email: string; role: string; advisorLinked?: boolean; metaAdsShared?: boolean; effectivenessShared?:boolean };
 type Settings = {
   count: number;
   textCount: number;
@@ -256,6 +256,7 @@ export default function Home() {
           "account",
           "plans",
           "collection",
+          ...(user.effectivenessShared?["products"]:[]),
           ...(managesUsers(user.role) ? ["users"] : []),
           ...(user.role === "OWNER"
             ? [
@@ -281,6 +282,7 @@ export default function Home() {
               "plans",
               "collection",
               "performance",
+              ...(user.effectivenessShared?["products"]:[]),
             ].includes(requested))
             ? requested
             : "projects";
@@ -473,7 +475,7 @@ export default function Home() {
               ["projects", "▦", "Proyectos"],
               ["library", "▧", "Biblioteca"],
               ["metaads", "▥", "Meta Ads"],
-              ...(user.role === "OWNER" ? [["products", "▤", "Efectividad"]] : []),
+              ...(user.role === "OWNER"||user.effectivenessShared ? [["products", "▤", "Efectividad"]] : []),
               ["presets", "≡", "Configuraciones guardadas"],
               ["history", "◷", "Historial"],
               ["trash", "⌫", "Papelera"],
@@ -488,7 +490,7 @@ export default function Home() {
               .filter(
                 ([v]) =>
                   user.role !== "OBSERVER" ||
-                  ["projects", "library", "presets", "account", "performance"].includes(v),
+                  (["projects", "library", "presets", "account", "performance"].includes(v) || (v === "metaads" && !!user.metaAdsShared) || (v==="products"&&!!user.effectivenessShared)),
               )
               .map(([v, icon, label]) => (
                 <button
@@ -510,7 +512,7 @@ export default function Home() {
         </aside>
         <div className="workspace">
           <header className={view === "products" ? "topbar effectiveness-topbar" : "topbar"}>
-            {view === "products" ? <div className="effectiveness-topbar-title"><h1>Efectividad</h1><EffectivenessLegend /></div> : <span className="muted">{view === "metaads" ? "Análisis y control de Meta" : titles[view]}</span>}
+            {view === "products" ? <div className="effectiveness-topbar-title"><div className="effectiveness-title-line"><h1>Efectividad</h1>{user.role==="OWNER"&&<button type="button" className="effectiveness-share-button" onClick={()=>window.dispatchEvent(new Event("share-effectiveness"))}>Compartir</button>}</div><EffectivenessLegend /></div> : <span className="muted">{view === "metaads" ? "Análisis y control de Meta" : titles[view]}</span>}
             {view === "metaads" && <span className="meta-topbar-role">Rol: <strong>{user.role}</strong></span>}
             {view !== "performance" && <span className="badge">Producción publicitaria</span>}
 
@@ -563,7 +565,7 @@ export default function Home() {
               </>
             ) : view === "performance" ? (
               <AdvisorPerformance owner={user.role === "OWNER"} />
-            ) : view === "products" && user.role === "OWNER" ? (
+            ) : view === "products" && (user.role === "OWNER"||user.effectivenessShared) ? (
               <ProductsCatalog />
             ) : view === "metaads" ? (
               <MetaAds role={user.role} userId={user.id} />

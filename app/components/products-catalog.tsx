@@ -1,7 +1,10 @@
 "use client";
+import { MetaWorkspaceSharing } from "./meta-workspace-sharing";
+import { useFinancialReadOnly } from "./financial-read-only";
+import { engineRequest as generalApi } from "./generation-engine";
 import { useEffect, useRef, useState, useId, useContext } from "react";
-import { CurrentUserId } from "./role-guide";
-import { engineRequest as api } from "./generation-engine";
+import { CurrentUserId, CurrentRole } from "./role-guide";
+import { financialRequest as api } from "./financial-request";
 import { SheetTabColorDialog, useSheetTabColors } from "./sheet-tab-colors";
 import { useSheetOrder } from "./use-sheet-order";
 import { InventoryCatalog } from "./inventory-catalog";
@@ -25,6 +28,72 @@ type CatalogTable = {
   defaultCurrency: string;
 };
 export function ProductsCatalog() {
+  const actualRole = useContext(CurrentRole);
+  const [access, setAccess] = useState<{
+    isOwner: boolean;
+    global: "VIEW" | "EDIT" | null;
+    grants: { scope: string; permission: "VIEW" | "EDIT" }[];
+  } | null>(null);
+  const [sharingScope, setSharingScope] = useState<string | null>(null);
+  const root = useRef<HTMLElement>(null);
+  const accessVersion = useRef("");
+  const permission = (scope: string) =>
+    access?.isOwner ||
+    access?.global === "EDIT" ||
+    access?.grants.some((g) => g.scope === scope && g.permission === "EDIT")
+      ? "EDIT"
+      : access?.global || access?.grants.some((g) => g.scope === scope)
+        ? "VIEW"
+        : null;
+  useEffect(() => {
+    let live = true;
+    const update = () => {
+      if (document.visibilityState !== "visible") return;
+      void generalApi("meta-ads/effectiveness-access")
+        .then((a) => {
+          if (live) {
+            const signature = JSON.stringify([
+              a.isOwner,
+              a.global,
+              [...a.grants].sort((x, y) => x.scope.localeCompare(y.scope)),
+            ]);
+            const changed =
+              !!accessVersion.current && accessVersion.current !== signature;
+            accessVersion.current = signature;
+            setAccess(a);
+            if (changed)
+              void Promise.all([
+                api("meta-ads/alias-tables"),
+                api("meta-ads/workbook-sheets"),
+              ])
+                .then(([tables, sheets]) => {
+                  if (live) {
+                    setTables(tables);
+                    setSpecials(sheets);
+                  }
+                })
+                .catch(() => {
+                  if (live) {
+                    setTables([]);
+                    setSpecials([]);
+                  }
+                });
+          }
+        })
+        .catch(() => {});
+    };
+    update();
+    window.addEventListener("focus", update);
+    const timer = setInterval(update, 30000);
+    const sharing = () => setSharingScope("ALL");
+    window.addEventListener("share-effectiveness", sharing);
+    return () => {
+      live = false;
+      clearInterval(timer);
+      window.removeEventListener("focus", update);
+      window.removeEventListener("share-effectiveness", sharing);
+    };
+  }, []);
   const userId = useContext(CurrentUserId),
     locationKey = `effectiveness-location:v1:${userId}`;
   const [restoredLocationKey, setRestoredLocationKey] = useState<string | null>(
@@ -47,6 +116,7 @@ export function ProductsCatalog() {
     kind: "TOTALS" | "ADVISORS" | "INVENTORY";
     name: string;
     revision: number;
+    config?: { selected?: string[] | null; tableId?: string };
   };
   const [periodLink, setPeriodLink] = useState<PeriodTableLink | null>(null);
   const periodSequence = useRef(0);
@@ -68,6 +138,31 @@ export function ProductsCatalog() {
   const totals = special?.kind === "TOTALS",
     advisorSheet = special?.kind === "ADVISORS",
     inventorySheet = special?.kind === "INVENTORY";
+  const documentScope = special ? "TAB:" + special.id : "TABLE:" + selected;
+  const canEdit =
+    permission(documentScope) === "EDIT" || actualRole === "OWNER";
+  const isOwner = access?.isOwner ?? actualRole === "OWNER";
+  const canCreate = isOwner || access?.global === "EDIT";
+  useFinancialReadOnly(root, !canEdit);
+  useEffect(() => {
+    if (!access || !specialsLoaded || loading) return;
+    if (special && permission("TAB:" + special.id)) return;
+    if (
+      !specialId &&
+      tables.some((t) => t.id === selected) &&
+      permission("TABLE:" + selected)
+    )
+      return;
+    const allowed = specials.find((s) => permission("TAB:" + s.id));
+    if (allowed) setSpecialId(allowed.id);
+    else {
+      const first = tables.find((t) => permission("TABLE:" + t.id));
+      if (first) {
+        setSpecialId(null);
+        setSelected(first.id);
+      }
+    }
+  }, [access, specialsLoaded, loading, specialId, specials, tables, selected]);
   const [editing, setEditing] = useState<{
       id: string;
       name: string;
@@ -122,6 +217,7 @@ export function ProductsCatalog() {
     isSpecial = false,
     revision?: number,
   ) => {
+    if (!canEdit) return;
     editCancelled.current = false;
     setEditing({ id, name, special: isSpecial, revision });
   };
@@ -225,6 +321,7 @@ export function ProductsCatalog() {
     y: number,
     trigger?: HTMLButtonElement,
   ) => {
+    if (!canEdit) return;
     contextTrigger.current = trigger ?? null;
     setContextTable(t);
     setMenuPosition({
@@ -487,6 +584,7 @@ export function ProductsCatalog() {
               ))}
             <button
               className="sheet-add-tab"
+              hidden={!canCreate}
               disabled={busy || !specialsLoaded}
               aria-label={`Agregar pestaña de ${kind === "TOTALS" ? "Totales" : kind === "ADVISORS" ? "Asesores" : "Inventario"}`}
               title={`Agregar ${kind === "TOTALS" ? "Totales" : kind === "ADVISORS" ? "Asesores" : "Inventario"}`}
@@ -498,112 +596,123 @@ export function ProductsCatalog() {
         ))}
       </div>
       <div
-        className="sheet-tab-list sheet-financial-tabs"
+        className={
+          "sheet-tab-list sheet-financial-tabs" +
+          (!orderedTables.some((t) => permission("TABLE:" + t.id)) && !canCreate
+            ? " sheet-financial-tabs-empty"
+            : "")
+        }
         role="tablist"
         aria-label="Hojas de datos"
       >
         <span className="sheet-tab-row-label">Hojas:</span>
-        {orderedTables.map((t) => (
-          <span key={t.id} className="sheet-tab-wrap">
-            <button
-              role="tab"
-              style={tabColors.style(t.id)}
-              data-custom-tab-color={!!tabColors.colors[t.id] || undefined}
-              aria-selected={
-                !totals && !advisorSheet && !inventorySheet && selected === t.id
-              }
-              className={
-                "sheet-tab-alias" + (editing?.id === t.id ? " sr-only" : "")
-              }
-              draggable
-              data-sheet-id={t.id}
-              onContextMenu={(e) => {
-                e.preventDefault();
-                openMenu(t, e.clientX, e.clientY, e.currentTarget);
-              }}
-              data-dragging={dragging === t.id || undefined}
-              data-drop-edge={
-                drop?.id === t.id
-                  ? drop.after
-                    ? "after"
-                    : "before"
-                  : undefined
-              }
-              title="Clic derecho para cambiar color, editar o eliminar; arrastra o usa Alt + flecha izquierda/derecha para ordenar"
-              onDragStart={(e) => {
-                dragged.current = t.id;
-                setDragging(t.id);
-                e.dataTransfer.effectAllowed = "move";
-                e.dataTransfer.setData("text/plain", t.id);
-              }}
-              onDragOver={(e) => {
-                if (!dragged.current) return;
-                e.preventDefault();
-                e.dataTransfer.dropEffect = "move";
-                const rect = e.currentTarget.getBoundingClientRect(),
-                  after = e.clientX > rect.left + rect.width / 2;
-                setDrop((old) =>
-                  old?.id === t.id && old.after === after
-                    ? old
-                    : { id: t.id, after },
-                );
-              }}
-              onDrop={(e) => {
-                e.preventDefault();
-                const rect = e.currentTarget.getBoundingClientRect();
-                if (dragged.current)
-                  reorder(
-                    dragged.current,
-                    t.id,
-                    e.clientX > rect.left + rect.width / 2,
-                  );
-                dragged.current = null;
-                setDragging(null);
-                setDrop(null);
-              }}
-              onDragEnd={() => {
-                dragged.current = null;
-                setDragging(null);
-                setDrop(null);
-              }}
-              onKeyDown={(e) => {
-                if (
-                  e.key === "ContextMenu" ||
-                  (e.shiftKey && e.key === "F10")
-                ) {
+        {orderedTables
+          .filter((t) => permission("TABLE:" + t.id))
+          .map((t) => (
+            <span key={t.id} className="sheet-tab-wrap">
+              <button
+                role="tab"
+                style={tabColors.style(t.id)}
+                data-custom-tab-color={!!tabColors.colors[t.id] || undefined}
+                aria-selected={
+                  !totals &&
+                  !advisorSheet &&
+                  !inventorySheet &&
+                  selected === t.id
+                }
+                className={
+                  "sheet-tab-alias" + (editing?.id === t.id ? " sr-only" : "")
+                }
+                draggable
+                data-sheet-id={t.id}
+                onContextMenu={(e) => {
                   e.preventDefault();
-                  const r = e.currentTarget.getBoundingClientRect();
-                  openMenu(t, r.left, r.bottom, e.currentTarget);
-                  return;
+                  openMenu(t, e.clientX, e.clientY, e.currentTarget);
+                }}
+                data-dragging={dragging === t.id || undefined}
+                data-drop-edge={
+                  drop?.id === t.id
+                    ? drop.after
+                      ? "after"
+                      : "before"
+                    : undefined
                 }
-                if (!e.altKey || !["ArrowLeft", "ArrowRight"].includes(e.key))
-                  return;
-                e.preventDefault();
-                const index = sheetOrder.indexOf(t.id),
-                  target =
-                    sheetOrder[index + (e.key === "ArrowRight" ? 1 : -1)];
-                if (target) {
-                  const button = e.currentTarget;
-                  reorder(t.id, target, e.key === "ArrowRight");
-                  requestAnimationFrame(() =>
-                    button.focus({ preventScroll: true }),
+                title="Clic derecho para cambiar color, editar o eliminar; arrastra o usa Alt + flecha izquierda/derecha para ordenar"
+                onDragStart={(e) => {
+                  dragged.current = t.id;
+                  setDragging(t.id);
+                  e.dataTransfer.effectAllowed = "move";
+                  e.dataTransfer.setData("text/plain", t.id);
+                }}
+                onDragOver={(e) => {
+                  if (!dragged.current) return;
+                  e.preventDefault();
+                  e.dataTransfer.dropEffect = "move";
+                  const rect = e.currentTarget.getBoundingClientRect(),
+                    after = e.clientX > rect.left + rect.width / 2;
+                  setDrop((old) =>
+                    old?.id === t.id && old.after === after
+                      ? old
+                      : { id: t.id, after },
                   );
-                }
-              }}
-              onClick={() => {
-                setSelected(t.id);
-                setSpecialId(null);
-                setEditing(null);
-                setMessage("");
-              }}
-            >
-              {t.name} ({t.aliases.length})
-            </button>
-            {tabEditor(t.id)}
-          </span>
-        ))}
+                }}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  const rect = e.currentTarget.getBoundingClientRect();
+                  if (dragged.current)
+                    reorder(
+                      dragged.current,
+                      t.id,
+                      e.clientX > rect.left + rect.width / 2,
+                    );
+                  dragged.current = null;
+                  setDragging(null);
+                  setDrop(null);
+                }}
+                onDragEnd={() => {
+                  dragged.current = null;
+                  setDragging(null);
+                  setDrop(null);
+                }}
+                onKeyDown={(e) => {
+                  if (
+                    e.key === "ContextMenu" ||
+                    (e.shiftKey && e.key === "F10")
+                  ) {
+                    e.preventDefault();
+                    const r = e.currentTarget.getBoundingClientRect();
+                    openMenu(t, r.left, r.bottom, e.currentTarget);
+                    return;
+                  }
+                  if (!e.altKey || !["ArrowLeft", "ArrowRight"].includes(e.key))
+                    return;
+                  e.preventDefault();
+                  const index = sheetOrder.indexOf(t.id),
+                    target =
+                      sheetOrder[index + (e.key === "ArrowRight" ? 1 : -1)];
+                  if (target) {
+                    const button = e.currentTarget;
+                    reorder(t.id, target, e.key === "ArrowRight");
+                    requestAnimationFrame(() =>
+                      button.focus({ preventScroll: true }),
+                    );
+                  }
+                }}
+                onClick={() => {
+                  setSelected(t.id);
+                  setSpecialId(null);
+                  setEditing(null);
+                  setMessage("");
+                }}
+              >
+                {t.name} ({t.aliases.length})
+              </button>
+              {tabEditor(t.id)}
+            </span>
+          ))}
         <button
           className="sheet-add-tab"
+          hidden={!canCreate}
           aria-expanded={adding}
           onClick={() => setAdding((v) => !v)}
         >
@@ -612,8 +721,50 @@ export function ProductsCatalog() {
       </div>
     </nav>
   );
+  if (access && !isOwner && !permission(documentScope))
+    return (
+      <section ref={root} className="products-catalog effectiveness-workbook">
+        {access.grants.length ? sheetTabs : null}
+        <p role="status" className="notice">
+          {access.grants.length
+            ? "Selecciona un documento compartido para continuar."
+            : "No tienes documentos compartidos de Efectividad."}
+        </p>
+        <button type="button" onClick={() => window.location.reload()}>
+          Actualizar acceso
+        </button>
+      </section>
+    );
   return (
-    <section className="products-catalog effectiveness-workbook">
+    <section
+      ref={root}
+      data-effectiveness-document={documentScope}
+      data-financial-read-only={!canEdit || undefined}
+      className="products-catalog effectiveness-workbook"
+    >
+      {sharingScope && isOwner && (
+        <MetaWorkspaceSharing
+          scope={sharingScope}
+          onClose={() => setSharingScope(null)}
+        />
+      )}
+      {isOwner && (
+        <div className="sheet-document-share">
+          <span>
+            {special?.name ??
+              tables.find((t) => t.id === selected)?.name ??
+              "Efectividad"}
+          </span>
+          <button type="button" onClick={() => setSharingScope(documentScope)}>
+            Compartir hoja
+          </button>
+        </div>
+      )}
+      {!isOwner && (
+        <p className="sheet-share-status">
+          {canEdit ? "Puede editar" : "Solo lectura"}
+        </p>
+      )}
       {locationReady && !totals && !advisorSheet && !inventorySheet && (
         <div className="sheet-book-bar">
           {!totals && !advisorSheet && !inventorySheet && (
@@ -767,6 +918,9 @@ export function ProductsCatalog() {
           listId={special!.id}
           tables={orderedTables}
           initialTableId={table?.id ?? ""}
+          initialSelected={
+            !isOwner ? (special?.config?.selected ?? null) : undefined
+          }
           sheetTabs={sheetTabs}
         />
       )}

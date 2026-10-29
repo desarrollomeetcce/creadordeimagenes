@@ -1,3 +1,28 @@
+async function metaEditorOnly(
+  actor: Actor,
+  tx?: import("@prisma/client").Prisma.TransactionClient,
+) {
+  if (isFinancialActor(actor)) {
+    ownerOnly(actor);
+    if (tx) await checkFinancialContext(actor, tx);
+    return {
+      permission: "EDIT" as const,
+      canEdit: true,
+      canShare: false,
+      shared: true,
+      pinnedAccountIds: [] as string[],
+      sponsorId: actor.id,
+    };
+  }
+  return workspaceEditorOnly(actor, tx);
+}
+import {
+  workspaceAccess,
+  metaEditorOnly as workspaceEditorOnly,
+  metaCanSync,
+  readWorkspaceSharing,
+  saveWorkspaceSharing,
+} from "./workspace-access";
 import { syllabiSchema } from "./inventory-syllabi-policy";
 import { workbookKindSchema } from "./workbook-sheets";
 import { salesAllocationsSchema } from "./advisor-sales-plan";
@@ -9,7 +34,15 @@ import { isCurrency, syncFxDays } from "./exchange-rates";
 import { isCountryCode } from "./countries";
 import { z } from "zod";
 import { db } from "../db";
-import { ownerOnly } from "../auth";
+import {
+  ownerOnly,
+  isFinancialActor,
+  authorizeFinancialRequest,
+  checkFinancialContext,
+  financialCapabilities,
+  readFinancialSharing,
+  saveFinancialSharing,
+} from "./financial-access";
 import { demand } from "../errors";
 import { recordActivity } from "../activity";
 import {
@@ -60,6 +93,71 @@ export async function metaRoutes(
 ) {
   const path = parts.slice(1).join("/"),
     method = req.method;
+  if (path === "effectiveness-access" && method === "GET")
+    return send(await financialCapabilities(actor));
+  if (path === "effectiveness-sharing") {
+    if (method === "GET")
+      return send(
+        await readFinancialSharing(
+          actor,
+          req.nextUrl.searchParams.get("scope") ?? "ALL",
+        ),
+      );
+    if (method === "PUT")
+      return send(await saveFinancialSharing(actor, await body()));
+  }
+  if (parts[1] === "financial") {
+    const raw = method === "GET" ? undefined : await body();
+    const scoped = await authorizeFinancialRequest(
+      actor,
+      parts.slice(2).join("/"),
+      method,
+      req.nextUrl.searchParams,
+      raw,
+      req.headers.get("x-effectiveness-document"),
+    );
+    return metaRoutes(
+      req,
+      ["meta-ads", ...parts.slice(2)],
+      scoped,
+      async () => raw,
+    );
+  }
+  if (path === "workspace-access" && method === "GET") {
+    const a = await workspaceAccess(actor);
+    return send({
+      permission: a.permission,
+      canEdit: a.canEdit,
+      canShare: a.canShare,
+      shared: a.shared,
+      pinnedAccountIds: a.pinnedAccountIds,
+    });
+  }
+  if (path === "workspace-inventories" && method === "GET") {
+    await metaEditorOnly(actor);
+    return send(
+      await db.metaEffectivenessSheet.findMany({
+        where: { kind: "INVENTORY", archivedAt: null },
+        select: { id: true, name: true, kind: true },
+        orderBy: { name: "asc" },
+      }),
+    );
+  }
+  if (path === "sharing") {
+    if (method === "GET") return send(await readWorkspaceSharing(actor));
+    if (method === "PUT")
+      return send(await saveWorkspaceSharing(actor, await body()));
+  }
+  const moduleAccess = isFinancialActor(actor)
+    ? { shared: false, canEdit: false, permission: null }
+    : await workspaceAccess(actor);
+  if (
+    !isFinancialActor(actor) &&
+    moduleAccess.shared &&
+    !moduleAccess.canEdit &&
+    method !== "GET"
+  )
+    demand(false, "Este acceso a Meta Ads es solo de visualización.", 403);
   if (
     parts[1] === "objects" &&
     parts[2] &&
@@ -67,7 +165,7 @@ export async function metaRoutes(
     parts.length === 4 &&
     method === "POST"
   ) {
-    ownerOnly(actor);
+    await metaEditorOnly(actor);
     const b = z
       .object({
         status: z.enum(["ACTIVE", "PAUSED"]),
@@ -1496,7 +1594,7 @@ export async function metaRoutes(
   if (path === "alias-tables" && method === "GET")
     return send(await (await import("./aliases")).aliasTables(actor));
   if (path === "alias-tables" && method === "POST") {
-    ownerOnly(actor);
+    await metaEditorOnly(actor);
     const b = z
       .object({ name: z.string().trim().min(1).max(100) })
       .strict()
@@ -1509,7 +1607,7 @@ export async function metaRoutes(
   if (path === "aliases" && method === "GET")
     return send(await (await import("./aliases")).aliases(actor));
   if (path === "aliases" && method === "POST") {
-    ownerOnly(actor);
+    await metaEditorOnly(actor);
     const b = z
       .object({
         name: z.string().trim().min(1).max(150),
@@ -1531,7 +1629,7 @@ export async function metaRoutes(
     parts.length === 3 &&
     method === "PATCH"
   ) {
-    ownerOnly(actor);
+    await metaEditorOnly(actor);
     const b = z
       .object({ name: z.string().trim().min(1).max(150) })
       .strict()
@@ -1541,7 +1639,7 @@ export async function metaRoutes(
     );
   }
   if (path === "objects/alias" && method === "PATCH") {
-    ownerOnly(actor);
+    await metaEditorOnly(actor);
     const b = z
       .object({
         objectIds: z
@@ -1571,7 +1669,7 @@ export async function metaRoutes(
     parts.length === 4 &&
     method === "PATCH"
   ) {
-    ownerOnly(actor);
+    await metaEditorOnly(actor);
     const b = z
       .object({
         aliasId: z.string().max(80).nullable(),
@@ -1591,11 +1689,11 @@ export async function metaRoutes(
     );
   }
   if (path === "marketing-oauth-config" && method === "GET") {
-    ownerOnly(actor);
+    await metaEditorOnly(actor);
     return send(marketingOAuthInfo(process.env.APP_ORIGIN));
   }
   if (path === "connections") {
-    ownerOnly(actor);
+    await metaEditorOnly(actor);
     if (method === "GET")
       return send(
         await db.metaConnection.findMany({
@@ -1605,16 +1703,32 @@ export async function metaRoutes(
       );
     if (method === "POST") {
       const b = cfg.parse(await body());
-      const c = await db.metaConnection.create({
-        data: {
-          name: b.name,
-          transport: b.transport,
-          apiVersion: b.apiVersion,
-          appId: b.appId,
-          ownerId: actor.id,
-        },
+      const c = await db.$transaction(async (tx) => {
+        await tx.$executeRaw`SELECT pg_advisory_xact_lock(884411)`;
+        const permission = await metaEditorOnly(actor, tx);
+        demand(
+          permission.sponsorId &&
+            (await tx.user.findFirst({
+              where: {
+                id: permission.sponsorId,
+                role: "OWNER",
+                status: "APPROVED",
+              },
+            })),
+          "El propietario que compartió el acceso ya no está habilitado.",
+          403,
+        );
+        return tx.metaConnection.create({
+          data: {
+            name: b.name,
+            transport: b.transport,
+            apiVersion: b.apiVersion,
+            appId: b.appId,
+            ownerId: permission.sponsorId,
+          },
+        });
       });
-      if (b.token) await saveToken(c.id, b.token);
+      if (b.token) await saveToken(c.id, b.token, undefined, undefined, actor);
       await recordActivity(db, {
         data: {
           actorId: actor.id,
@@ -1633,7 +1747,7 @@ export async function metaRoutes(
     }
   }
   if (parts[1] === "connections" && parts[2]) {
-    ownerOnly(actor);
+    await metaEditorOnly(actor);
     const id = parts[2];
     const c = await db.metaConnection.findUnique({ where: { id } });
     demand(c, "Conexión no encontrada.", 404);
@@ -1678,23 +1792,27 @@ export async function metaRoutes(
         !b.transport || b.transport === c.transport,
         "Crea otra conexión para cambiar de tipo.",
       );
-      await db.metaConnection.update({
-        where: { id },
-        data: {
-          ...(b.name ? { name: b.name } : {}),
-          ...(b.apiVersion ? { apiVersion: b.apiVersion } : {}),
-          ...(b.appId ? { appId: b.appId } : {}),
-          ownerId: actor.id,
-          revision: { increment: 1 },
-          verifiedAt: null,
-        },
+      await db.$transaction(async (tx) => {
+        await tx.$executeRaw`SELECT pg_advisory_xact_lock(884411)`;
+        await metaEditorOnly(actor, tx);
+        await tx.metaConnection.update({
+          where: { id },
+          data: {
+            ...(b.name ? { name: b.name } : {}),
+            ...(b.apiVersion ? { apiVersion: b.apiVersion } : {}),
+            ...(b.appId ? { appId: b.appId } : {}),
+            revision: { increment: 1 },
+            verifiedAt: null,
+          },
+        });
       });
-      if (b.token) await saveToken(id, b.token);
+      if (b.token) await saveToken(id, b.token, undefined, undefined, actor);
       return send({ ok: true });
     }
     if (method === "DELETE" && !parts[3]) {
       await db.$transaction(async (tx) => {
         await tx.$executeRaw`SELECT pg_advisory_xact_lock(884411)`;
+        await metaEditorOnly(actor, tx);
         await tx.metaConnection.update({
           where: { id },
           data: {
@@ -1726,7 +1844,7 @@ export async function metaRoutes(
   }
   if (path === "accounts" && method === "GET") {
     const rows = await db.metaAdAccount.findMany({
-      where: accountWhere(actor),
+      where: await accountWhere(actor),
       select: {
         ...accountSelect,
         connection: {
@@ -1739,7 +1857,7 @@ export async function metaRoutes(
           },
         },
         grants: { where: { userId: actor.id }, select: { canSync: true } },
-        ...(actor.role === "OWNER"
+        ...(moduleAccess.canEdit
           ? {
               sources: {
                 select: {
@@ -1805,9 +1923,9 @@ export async function metaRoutes(
         lastCompletedAt: completedAt(a.syncState),
         progress: syncProgress(a),
         syncState: { phase: (a.syncState as { phase?: number }).phase ?? null },
-        canSync:
-          actor.role === "OWNER" ||
-          (actor.role === "ADMIN" && a.grants.some((g) => g.canSync)),
+        canSync: moduleAccess.permission
+          ? moduleAccess.canEdit
+          : actor.role === "ADMIN" && a.grants.some((g) => g.canSync),
         grants: undefined,
       })),
     );
@@ -1827,7 +1945,7 @@ export async function metaRoutes(
       "Selección de cuentas inválida.",
     );
     const rows = await db.metaAdAccount.findMany({
-      where: { AND: [accountWhere(actor), { id: { in: ids } }] },
+      where: { AND: [await accountWhere(actor), { id: { in: ids } }] },
       select: {
         id: true,
         enabled: true,
@@ -1883,7 +2001,7 @@ export async function metaRoutes(
         })
         .strict()
         .parse(await body());
-      if (b.full) ownerOnly(actor);
+      if (b.full) await metaEditorOnly(actor);
       const result = await queueSync(
         actor,
         id,
@@ -1947,6 +2065,7 @@ export async function metaRoutes(
         );
         await db.$transaction(async (tx) => {
           await tx.$executeRaw`SELECT pg_advisory_xact_lock(884411)`;
+          await metaEditorOnly(actor, tx);
           const users = await tx.user.findMany({
             where: {
               id: { in: b.grants.map((g) => g.userId) },
@@ -1984,7 +2103,7 @@ export async function metaRoutes(
       }
     }
     if (method === "PATCH" && !parts[3]) {
-      ownerOnly(actor);
+      await metaEditorOnly(actor);
       const b = z
         .object({
           enabled: z.boolean().optional(),
@@ -2023,6 +2142,7 @@ export async function metaRoutes(
       }
       await db.$transaction(async (tx) => {
         await tx.$executeRaw`SELECT pg_advisory_xact_lock(884411)`;
+        await metaEditorOnly(actor, tx);
         await tx.metaAdAccount.update({
           where: { id },
           data: {
@@ -2160,7 +2280,7 @@ export async function metaRoutes(
   }
   if (path === "objects" && method === "GET") {
     const allowed = await db.metaAdAccount.findMany({
-      where: accountWhere(actor),
+      where: await accountWhere(actor),
       select: { id: true, selectionSince: true, syncState: true },
     });
     const ids = (req.nextUrl.searchParams.get("accounts") ?? "")

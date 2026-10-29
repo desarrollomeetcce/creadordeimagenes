@@ -5,7 +5,7 @@ import {
   type InventorySyllabus,
 } from "./inventory-syllabi-policy";
 import { db } from "../db";
-import { ownerOnly } from "../auth";
+import {ownerOnly} from "./financial-access";
 import { AppError, demand } from "../errors";
 import { recordActivity } from "../activity";
 import { effectivenessLock } from "./effectiveness";

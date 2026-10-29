@@ -31,7 +31,7 @@ import {
   type CSSProperties,
   type ReactNode,
 } from "react";
-import { engineRequest as api } from "./generation-engine";
+import { financialRequest as api } from "./financial-request";
 import { countryOptions } from "../../lib/meta-ads/countries";
 import {
   parseEffectivenessPaste,

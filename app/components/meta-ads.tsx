@@ -1,4 +1,5 @@
 "use client";
+import { MetaWorkspaceSharing } from "./meta-workspace-sharing";
 import { countryName, countryOptions } from "../../lib/meta-ads/countries";
 import { fetchJsonResponse, readJsonResponse } from "../../lib/http-response";
 import { metaObjectURL } from "../../lib/meta-ads/meta-link";
@@ -423,10 +424,35 @@ function SyncIndicator({
   );
 }
 export function MetaAds({ role, userId }: { role: string; userId: string }) {
-  const owner = role === "OWNER";
+  const [moduleAccess, setModuleAccess] = useState<{
+    permission: "VIEW" | "EDIT" | null;
+    canEdit: boolean;
+    canShare: boolean;
+    shared: boolean;
+    pinnedAccountIds: string[];
+  } | null>(null);
+  const [sharingWorkspace, setSharingWorkspace] = useState(false);
+  const owner = moduleAccess?.canEdit ?? role === "OWNER";
+  const viewOnly = moduleAccess?.shared && !moduleAccess.canEdit;
+  const pinsSeeded = useRef(false);
+  const moduleReady = !!moduleAccess;
+  useEffect(() => {
+    let live = true;
+    void api("meta-ads/workspace-access")
+      .then((a) => {
+        if (live) setModuleAccess(a);
+      })
+      .catch((e) => {
+        if (live) setMessage(e.message);
+      });
+    return () => {
+      live = false;
+    };
+  }, [userId]);
   const stableViewport = useMetaStableViewport();
   const tableHeaderScroll = useRef<HTMLDivElement>(null);
   const masterSelection = useRef<HTMLInputElement>(null);
+  const accessibleAccounts = useRef("");
   const performanceTab = useRef<HTMLButtonElement>(null);
   const [accounts, setAccounts] = useState<Account[]>([]),
     [preferencesReady, setPreferencesReady] = useState(false),
@@ -500,11 +526,12 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
     [revision, setRevision] = useState(0),
     [sharing, setSharing] = useState<Account | null>(null);
   useEffect(() => {
+    if (!moduleReady) return;
     let active = true;
     Promise.all([
       api("meta-ads/aliases"),
       api("meta-ads/alias-table-options"),
-      owner ? api("meta-ads/workbook-sheets") : Promise.resolve([]),
+      owner ? api("meta-ads/workspace-inventories") : Promise.resolve([]),
     ])
       .then(([rows, tables, sheets]) => {
         if (active) {
@@ -528,7 +555,7 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
     return () => {
       active = false;
     };
-  }, [revision]);
+  }, [revision, owner, moduleReady]);
   const aliasControl = (o: Item) => (
     <MetaAliasAction
       name={o.name}
@@ -725,6 +752,7 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
   };
   const preferencesKey = `meta-ads:preferences:v1:${userId}`;
   useEffect(() => {
+    if (!moduleReady) return;
     let stored = null;
     try {
       stored = localStorage.getItem(preferencesKey);
@@ -772,7 +800,7 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
           : p.tab,
     );
     setPreferencesReady(true);
-  }, [preferencesKey, owner]);
+  }, [preferencesKey, owner, moduleReady]);
   useEffect(() => {
     if (!preferencesReady || !accountsLoaded) return;
     try {
@@ -932,7 +960,35 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
     return () => clearTimeout(timer);
   }, [q]);
   const refresh = useCallback(async () => {
-    const rows: Account[] = await api("meta-ads/accounts");
+    const [rows, permission]: [Account[], NonNullable<typeof moduleAccess>] =
+      await Promise.all([
+        api("meta-ads/accounts"),
+        api("meta-ads/workspace-access"),
+      ]);
+    setModuleAccess(permission);
+    const key = rows
+      .map((a) => a.id)
+      .sort()
+      .join(",");
+    if (accessibleAccounts.current !== key) {
+      accessibleAccounts.current = key;
+      serial.current++;
+      const ids = new Set(rows.map((a) => a.id));
+      setItems((old) => old.filter((item) => ids.has(item.accountId)));
+      setSummary(null);
+      setTotal(0);
+    }
+    if (!pinsSeeded.current) {
+      pinsSeeded.current = true;
+      if (permission.shared)
+        setPinnedAccountIds((old) =>
+          old.length
+            ? old
+            : permission.pinnedAccountIds.filter((id) =>
+                rows.some((a) => a.id === id),
+              ),
+        );
+    }
     rows.forEach((a) => syncVersions.current.set(a.id, a.syncedAt));
     setAccounts(rows);
     const allowed = new Set(rows.map((a) => a.id));
@@ -972,6 +1028,10 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
       live = false;
     };
   }, [refresh, preferencesReady]);
+  const visibleAccountsKey = accounts
+    .map((a) => a.id)
+    .sort()
+    .join(",");
   useEffect(() => {
     if (!analyticsTab || !preferencesReady || !accountsLoaded) {
       setLoading(false);
@@ -1036,6 +1096,7 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
     tab,
     preferencesReady,
     accountsLoaded,
+    visibleAccountsKey,
     analyticsTab,
     analysisPeriod,
     summarySelectionKey,
@@ -1062,6 +1123,28 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
     until,
     revision,
   ]);
+  useEffect(() => {
+    if (!viewOnly) return;
+    setTab("panel");
+    setSyncOpen(false);
+    setConnections([]);
+    setMarketingInfo(null);
+  }, [viewOnly]);
+  useEffect(() => {
+    if (!preferencesReady) return;
+    const update = () => {
+      if (document.visibilityState === "visible")
+        void refresh().catch((e) => setMessage(e.message));
+    };
+    window.addEventListener("focus", update);
+    document.addEventListener("visibilitychange", update);
+    const timer = window.setInterval(update, 30000);
+    return () => {
+      window.removeEventListener("focus", update);
+      document.removeEventListener("visibilitychange", update);
+      window.clearInterval(timer);
+    };
+  }, [preferencesReady, refresh]);
   const pendingKey = accounts
     .filter(
       (a) =>
@@ -1911,58 +1994,83 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
     setTab("panel");
     performanceTab.current?.focus({ preventScroll: true });
   };
-  if (!preferencesReady)
-    return <p role="status">Restaurando tu selección de Meta Ads…</p>;
+  if (!preferencesReady || !moduleAccess)
+    return (
+      <p role="status">
+        {message || "Restaurando tu selección y permisos de Meta Ads…"}
+      </p>
+    );
   return (
     <section className="meta-ads stack" {...stableViewport}>
-      <div className="row" role="tablist" aria-label="Secciones Meta Ads">
-        {[
-          ["panel", "Rendimiento"],
-          ["sync", "Sincronización de cuentas"],
-          ["alerts", "Alertas"],
-          ["accounts", "Cuentas publicitarias"],
-          ...(owner ? [["connections", "Conexiones"]] : []),
-        ].map(([id, label]) => (
-          <button
-            type="button"
-            role="tab"
-            aria-selected={
-              id === "sync"
-                ? syncOpen && tab === "panel"
-                : tab === id && !(id === "panel" && syncOpen)
-            }
-            aria-expanded={
-              id === "sync" ? syncOpen && tab === "panel" : undefined
-            }
-            aria-controls={
-              id === "sync" && syncOpen && tab === "panel"
-                ? "meta-account-sync-panel"
-                : undefined
-            }
-            ref={id === "panel" ? performanceTab : undefined}
-            className={
-              (
+      {sharingWorkspace && (
+        <MetaWorkspaceSharing
+          pinnedAccountIds={pinnedAccountIds}
+          onClose={() => setSharingWorkspace(false)}
+        />
+      )}
+      <div className="meta-section-toolbar">
+        <div className="row" role="tablist" aria-label="Secciones Meta Ads">
+          {[
+            ["panel", "Rendimiento"],
+            ...(!viewOnly
+              ? [
+                  ["sync", "Sincronización de cuentas"],
+                  ["alerts", "Alertas"],
+                  ["accounts", "Cuentas publicitarias"],
+                ]
+              : []),
+            ...(owner ? [["connections", "Conexiones"]] : []),
+          ].map(([id, label]) => (
+            <button
+              type="button"
+              role="tab"
+              aria-selected={
                 id === "sync"
                   ? syncOpen && tab === "panel"
                   : tab === id && !(id === "panel" && syncOpen)
-              )
-                ? "primary"
-                : ""
-            }
-            key={id}
-            onClick={() => {
-              if (id === "sync") {
-                setTab("panel");
-                setSyncOpen((v) => !v);
-              } else {
-                setSyncOpen(false);
-                setTab(id);
               }
-            }}
+              aria-expanded={
+                id === "sync" ? syncOpen && tab === "panel" : undefined
+              }
+              aria-controls={
+                id === "sync" && syncOpen && tab === "panel"
+                  ? "meta-account-sync-panel"
+                  : undefined
+              }
+              ref={id === "panel" ? performanceTab : undefined}
+              className={
+                (
+                  id === "sync"
+                    ? syncOpen && tab === "panel"
+                    : tab === id && !(id === "panel" && syncOpen)
+                )
+                  ? "primary"
+                  : ""
+              }
+              key={id}
+              onClick={() => {
+                if (id === "sync") {
+                  setTab("panel");
+                  setSyncOpen((v) => !v);
+                } else {
+                  setSyncOpen(false);
+                  setTab(id);
+                }
+              }}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+        {(moduleAccess?.canShare ?? role === "OWNER") && (
+          <button
+            type="button"
+            className="meta-share-button"
+            onClick={() => setSharingWorkspace(true)}
           >
-            {label}
+            <span aria-hidden="true">↗</span> Compartir
           </button>
-        ))}
+        )}
       </div>
       {message && (
         <aside className="notice meta-feedback" role="status">
@@ -2339,7 +2447,7 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
                 </article>
               ))}
           </>
-        ) : tab === "accounts" ? (
+        ) : tab === "accounts" && !viewOnly ? (
           <>
             <div className="row">
               <h2>Cuentas autorizadas · {accounts.length}</h2>
@@ -2591,7 +2699,7 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
                   de cualquier antigüedad. Los comparativos muestran hoy, 7, 15,
                   30 días y el histórico disponible en Meta.
                 </small>
-                {owner && (
+                {role === "OWNER" && (
                   <div className="row">
                     <button
                       type="button"
@@ -2636,7 +2744,7 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
           </>
         ) : (
           <>
-            {syncOpen && tab === "panel" && (
+            {syncOpen && tab === "panel" && !viewOnly && (
               <section
                 className="meta-account-sync-panel"
                 id="meta-account-sync-panel"

@@ -1,3 +1,8 @@
+import {
+  metaEditorOnly,
+  metaEditorUserWhere,
+  metaCanSync,
+} from "../workspace-access";
 import { createHash } from "node:crypto";
 import { Prisma } from "@prisma/client";
 import { z } from "zod";
@@ -48,7 +53,7 @@ export const rulesSchema = z
   );
 export async function getRules(actor: Actor) {
   const accounts = await db.metaAdAccount.findMany({
-    where: accountWhere(actor),
+    where: await accountWhere(actor),
     select: { currency: true },
     distinct: ["currency"],
   });
@@ -66,13 +71,13 @@ export async function getRules(actor: Actor) {
   };
 }
 export async function saveRules(actor: Actor, value: unknown) {
-  ownerOnly(actor);
+  await metaEditorOnly(actor);
   const rules = rulesSchema.parse(value);
   return db.$transaction(async (tx) => {
     await tx.$executeRaw`SELECT pg_advisory_xact_lock(884411)`;
     demand(
       await tx.user.findFirst({
-        where: { id: actor.id, role: "OWNER", status: "APPROVED" },
+        where: metaEditorUserWhere(actor.id),
       }),
       "Sin permiso para configurar recomendaciones.",
       403,
@@ -110,7 +115,7 @@ export async function campaignList(actor: Actor, params: URLSearchParams) {
   if (accounts.length)
     demand(
       (await db.metaAdAccount.count({
-        where: { AND: [accountWhere(actor), { id: { in: accounts } }] },
+        where: { AND: [await accountWhere(actor), { id: { in: accounts } }] },
       })) === accounts.length,
       "Cuenta no autorizada.",
       404,
@@ -125,7 +130,7 @@ export async function campaignList(actor: Actor, params: URLSearchParams) {
     level: "campaign",
     account: {
       AND: [
-        accountWhere(actor),
+        await accountWhere(actor),
         ...(accounts.length ? [{ id: { in: accounts } }] : []),
       ],
     },
@@ -171,7 +176,11 @@ export async function campaignAnalysis(
   mode: "night" | "day" = "night",
 ) {
   const campaign = await db.metaAdObject.findFirst({
-    where: { id: campaignId, level: "campaign", account: accountWhere(actor) },
+    where: {
+      id: campaignId,
+      level: "campaign",
+      account: await accountWhere(actor),
+    },
   });
   demand(campaign, "Campaña no disponible.", 404);
   const a = await access(actor, campaign.accountId),
@@ -248,7 +257,7 @@ export async function campaignAnalysis(
     await access(actor, a.id);
     return {
       ...(cached.payload as object),
-      canReadFromMeta: actor.role === "OWNER" || (actor.role === "ADMIN" && a.grants.some((g) => g.canSync)),
+      canReadFromMeta: await metaCanSync(actor, a.grants),
       computedAt: cached.computedAt.toISOString(),
       expiresAt: cached.expiresAt.toISOString(),
       cached: true,
@@ -453,9 +462,7 @@ export async function campaignAnalysis(
       error: source && state?.error ? state.error : a.syncError,
       attribution: scope,
     },
-    canReadFromMeta:
-      actor.role === "OWNER" ||
-      (actor.role === "ADMIN" && a.grants.some((g) => g.canSync)),
+    canReadFromMeta: await metaCanSync(actor, a.grants),
     sourceUpdatedAt: sourceAt?.toISOString() ?? null,
   };
   const expiresAt = new Date(

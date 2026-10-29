@@ -1,7 +1,7 @@
 import { salesAllocationsSchema } from "./advisor-sales-plan";
 import { limaDay } from "./advisor-attribution";
 import { db } from "../db";
-import { ownerOnly } from "../auth";
+import {ownerOnly} from "./financial-access";
 import { demand } from "../errors";
 import type { Actor } from "./service";
 import {
