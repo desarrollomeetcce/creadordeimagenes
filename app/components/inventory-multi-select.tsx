@@ -192,7 +192,11 @@ export function InventoryMultiSelect({
         </fieldset>
         {onCreate &&
           query.trim() &&
-          !options.some((o) => key(o.label).trim() === key(query).trim()) && (
+          !options.some(
+            (o) =>
+              key(o.label).trim() === key(query).trim() ||
+              key(o.value).trim() === key(query).trim(),
+          ) && (
             <button
               type="button"
               disabled={busy || disabled}

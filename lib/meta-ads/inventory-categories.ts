@@ -103,6 +103,7 @@ type Action =
       names: string[];
       decisions?: InventoryNameDecision[];
     }
+  | { action: "RENAME"; categoryId: string; name: string }
   | { action: "DELETE"; categoryId: string }
   | { action: "DELETE_MANY"; categoryIds: string[] };
 async function fullGroups(
@@ -433,6 +434,162 @@ export async function saveInventoryCategories(
         for (const row of updates)
           await writeInventoryTags(tx, [row.id], row.tags, true);
         affected = b.ids.length;
+      } else if (b.action === "RENAME") {
+        const source = before.categories.find((c) => c.id === b.categoryId);
+        demand(source, "Categoría no disponible en esta lista.", 404);
+        const nextName = b.name.trim().replace(/\s+/g, " ");
+        demand(
+          nextName.length > 0 &&
+            nextName.length <= 80 &&
+            !/[,;\n]/.test(b.name),
+          "Indica un solo nombre de categoría de hasta 80 caracteres.",
+        );
+        const sourceRows = before.categories.filter(
+          (c) => categoryKey(c.name) === categoryKey(source.name),
+        );
+        const destinationRows = before.categories.filter(
+          (c) => categoryKey(c.name) === categoryKey(nextName),
+        );
+        const merging =
+          destinationRows.length > 0 &&
+          categoryKey(source.name) !== categoryKey(nextName);
+        const finalName = merging ? destinationRows[0].name : nextName;
+        const sourceIds = new Set(sourceRows.map((c) => c.id));
+        const destinationIds = new Set(destinationRows.map((c) => c.id));
+        const targetByKind = new Map<string, string>();
+        for (const kind of new Set(
+          [...sourceRows, ...destinationRows].map((c) => c.kind),
+        )) {
+          const existing =
+            destinationRows.find(
+              (c) => c.kind === kind && c.name === finalName,
+            ) ?? destinationRows.find((c) => c.kind === kind);
+          if (existing) {
+            targetByKind.set(kind, existing.id);
+          } else {
+            const row = await tx.metaInventoryCategory.create({
+              data: {
+                sheetId: b.listId,
+                kind,
+                name: finalName,
+                key: categoryIdentity(finalName),
+              },
+            });
+            targetByKind.set(kind, row.id);
+          }
+        }
+        const aliases = await tx.metaAlias.findMany({
+          where: { inventorySheetId: b.listId },
+          select: { id: true, name: true },
+        });
+        const entities = [
+          ...aliases.map((a) => ({ ...a, item: false })),
+          ...before.items.map((i) => ({ id: i.id, name: i.name, item: true })),
+        ];
+        const groups = new Map<string, typeof entities>();
+        for (const entity of entities) {
+          if (!groups.has(entity.name)) groups.set(entity.name, []);
+          groups.get(entity.name)!.push(entity);
+        }
+        const aliasWrites: { aliasId: string; categoryId: string }[] = [],
+          itemWrites: { itemId: string; categoryId: string }[] = [];
+        const aliasIds: string[] = [],
+          itemIds: string[] = [];
+        const categoryById = new Map(before.categories.map((c) => [c.id, c]));
+        for (const members of groups.values()) {
+          const tags = [
+            ...new Set(members.flatMap((e) => before.assignments[e.id] ?? [])),
+          ];
+          if (!tags.some((id) => sourceIds.has(id))) continue;
+          // Preserve an already assigned destination; otherwise inherit the source usage.
+          const existing = tags.filter(
+            (id) => destinationIds.has(id) && (!sourceIds.has(id) || !merging),
+          );
+          const candidates = existing.length
+            ? existing
+            : tags.filter((id) => sourceIds.has(id));
+          const kind = candidates.some(
+            (id) => categoryById.get(id)?.kind === "PRIMARY",
+          )
+            ? "PRIMARY"
+            : "SECONDARY";
+          const targetId = targetByKind.get(kind)!;
+          for (const member of members) {
+            const remainingInKind = (
+              before.assignments[member.id] ?? []
+            ).filter(
+              (id) =>
+                !sourceIds.has(id) &&
+                !destinationIds.has(id) &&
+                categoryById.get(id)?.kind === kind,
+            ).length;
+            demand(
+              remainingInKind + 1 <= (kind === "PRIMARY" ? 20 : 100),
+              "La fusión excedería el límite de categorías de un inventario. Revisa sus categorías antes de fusionar.",
+            );
+            if (member.item) {
+              itemIds.push(member.id);
+              itemWrites.push({ itemId: member.id, categoryId: targetId });
+            } else {
+              aliasIds.push(member.id);
+              aliasWrites.push({ aliasId: member.id, categoryId: targetId });
+            }
+          }
+          affected++;
+        }
+        const replacedIds = [...new Set([...sourceIds, ...destinationIds])];
+        await tx.metaInventoryCategoryAssignment.deleteMany({
+          where: { aliasId: { in: aliasIds }, categoryId: { in: replacedIds } },
+        });
+        await tx.metaInventoryItemCategory.deleteMany({
+          where: { itemId: { in: itemIds }, categoryId: { in: replacedIds } },
+        });
+        if (aliasWrites.length)
+          await tx.metaInventoryCategoryAssignment.createMany({
+            data: aliasWrites,
+            skipDuplicates: true,
+          });
+        if (itemWrites.length)
+          await tx.metaInventoryItemCategory.createMany({
+            data: itemWrites,
+            skipDuplicates: true,
+          });
+        const mappedId = (id: string) =>
+          sourceIds.has(id)
+            ? targetByKind.get(categoryById.get(id)!.kind)!
+            : id;
+        const links = before.relations
+          .filter(
+            (r) => sourceIds.has(r.primaryId) || sourceIds.has(r.secondaryId),
+          )
+          .map((r) => ({
+            primaryId: mappedId(r.primaryId),
+            secondaryId: mappedId(r.secondaryId),
+          }))
+          .filter(
+            (r) =>
+              r.primaryId !== r.secondaryId &&
+              !(
+                targetByKind.get("PRIMARY") === r.primaryId &&
+                targetByKind.get("SECONDARY") === r.secondaryId
+              ),
+          );
+        if (links.length)
+          await tx.metaInventoryCategoryRelation.createMany({
+            data: links,
+            skipDuplicates: true,
+          });
+        const retained = new Set(targetByKind.values());
+        await tx.metaInventoryCategory.deleteMany({
+          where: {
+            id: { in: [...sourceIds].filter((id) => !retained.has(id)) },
+          },
+        });
+        for (const id of retained)
+          await tx.metaInventoryCategory.update({
+            where: { id },
+            data: { name: finalName, key: categoryIdentity(finalName) },
+          });
       } else if (b.action === "ASSIGN") {
         const found = await fullGroups(tx, b.listId, b.ids);
         demand(
@@ -508,6 +665,9 @@ export async function saveInventoryCategories(
             action: b.action,
             affected,
             ...(b.action === "DELETE" ? { categoryId: b.categoryId } : {}),
+            ...(b.action === "RENAME"
+              ? { categoryId: b.categoryId, name: b.name }
+              : {}),
             ...(b.action === "ASSIGN_LEVEL"
               ? { kind: b.kind, names: b.names, ids: b.ids }
               : {}),

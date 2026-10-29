@@ -19,7 +19,7 @@ export function useWorkbookPreference<T extends string | string[] | null>(
         if (raw === null) return raw as T;
         if (
           Array.isArray(raw) &&
-          raw.length <= 100 &&
+          raw.length <= (field === "catalogCategories" ? 1000 : 100) &&
           raw.every((v) => typeof v === "string" && v.length <= 100)
         )
           return raw as T;

@@ -2,14 +2,17 @@
 import { Fragment, useEffect, useRef, useState, type ReactNode } from "react";
 import { useWorkbookPreference } from "./use-workbook-preference";
 import { engineRequest as api } from "./generation-engine";
-import { SheetSearchSelect } from "./sheet-search-select";
+import { InventoryCategoryFilter } from "./inventory-category-filter";
 import { InventoryMultiSelect } from "./inventory-multi-select";
 import { useSheetWidths } from "./use-sheet-widths";
 import { useSheetHeights } from "./use-sheet-heights";
 import { SheetColumnResizer } from "./sheet-column-resizer";
 import { SheetSizedRow } from "./sheet-sized-row";
 import { useInventoryDuplicateReview } from "./inventory-duplicate-review";
-import { splitCategoryNames } from "../../lib/meta-ads/category-paste";
+import {
+  categoryKey,
+  splitCategoryNames,
+} from "../../lib/meta-ads/category-paste";
 import {
   InventoryNewRow,
   type InventoryNewRowValue,
@@ -227,6 +230,9 @@ export function InventoryCatalog({
     "catalogCategory",
     "",
   );
+  const [catalogCategories, setCatalogCategories] = useWorkbookPreference<
+    string[]
+  >(listId, "catalogCategories", []);
   const filters = {
     primary: primaryFilter,
     secondary: secondaryFilter,
@@ -307,16 +313,52 @@ export function InventoryCatalog({
                   })),
                 )
               : [];
-      setCategories(
-        await api("meta-ads/inventory/categories", "POST", {
-          listId,
-          revision: categories.revision,
-          ...action,
-          ...(["IMPORT", "MOVE", "ASSIGN_LEVEL"].includes(action.action)
-            ? { decisions }
-            : {}),
-        }),
-      );
+      const next = (await api("meta-ads/inventory/categories", "POST", {
+        listId,
+        revision: categories.revision,
+        ...action,
+        ...(["IMPORT", "MOVE", "ASSIGN_LEVEL"].includes(action.action)
+          ? { decisions }
+          : {}),
+      })) as InventoryCategoryState;
+      setCategories(next);
+      if (action.action === "RENAME") {
+        const source = categories.categories.find(
+          (c) => c.id === action.categoryId,
+        );
+        const destination = next.categories.find(
+          (c) => categoryKey(c.name) === categoryKey(action.name),
+        );
+        if (source && destination) {
+          const replace = (values: string[]) => [
+            ...new Set(
+              values.map((value) => {
+                const name =
+                  categories.categories.find((c) => c.id === value)?.name ??
+                  value;
+                return categoryKey(name) === categoryKey(source.name)
+                  ? destination.name
+                  : value;
+              }),
+            ),
+          ];
+          setCatalogCategories(
+            replace(
+              catalogCategories.length
+                ? catalogCategories
+                : catalogCategory
+                  ? [catalogCategory]
+                  : [],
+            ),
+          );
+          setCatalogCategory("");
+          setPrimaryFilter(replace(primaryFilter));
+          setSecondaryFilter(replace(secondaryFilter));
+        }
+        setMessage(
+          "Categoría actualizada en toda la lista. Las coincidencias se unificaron sin duplicar categorías en los inventarios.",
+        );
+      }
     } finally {
       setBusy(false);
     }
@@ -383,9 +425,16 @@ export function InventoryCatalog({
     grouped.get(a.name)!.links.push(a);
   }
   const available = [...grouped.values()];
-  const activeCategory = directoryNames.includes(catalogCategory)
-    ? catalogCategory
-    : "";
+  const noCategory = "::without-categories::";
+  const activeCategories = [
+    ...new Set(
+      catalogCategories.length
+        ? catalogCategories
+        : catalogCategory
+          ? [catalogCategory]
+          : [],
+    ),
+  ].filter((name) => name === noCategory || directoryNames.includes(name));
   const membership = new Map(
     available.map((g) => [
       g.name,
@@ -399,23 +448,29 @@ export function InventoryCatalog({
     ]),
   );
   const categoryOptions = [
-    { value: "", label: "Todas las categorías" },
+    { value: noCategory, label: "Sin categorías" },
     ...directoryNames.map((name) => ({
       value: name,
       label: `${name} (${categoryCounts.get(name) ?? 0})`,
     })),
   ];
-  const selectCategory = (name: string) => {
+  const selectCategories = (names: string[]) => {
     setFilters({ primary: [], secondary: [], items: [], sheets: [] });
-    setCatalogCategory(name);
+    setCatalogCategory("");
+    setCatalogCategories(names);
   };
-  const clearFilters = () => selectCategory("");
-  const categoryInventory = activeCategory
-    ? available.filter((g) => membership.get(g.name)!.has(activeCategory))
-    : available;
+  const clearFilters = () => selectCategories([]);
+  const matchesCategory = (g: (typeof available)[number]) =>
+    !activeCategories.length ||
+    activeCategories.some((name) =>
+      name === noCategory
+        ? !membership.get(g.name)!.size
+        : membership.get(g.name)!.has(name),
+    );
+  const categoryInventory = available.filter(matchesCategory);
   const visible = available.filter(
     (g) =>
-      (!activeCategory || membership.get(g.name)!.has(activeCategory)) &&
+      matchesCategory(g) &&
       (!filters.items.length ||
         g.links.some((a) => filters.items.includes(a.id))) &&
       (!filters.sheets.length ||
@@ -549,7 +604,10 @@ export function InventoryCatalog({
         items: behavior.selectItem && savedItem ? [savedItem.id] : [],
         sheets: [],
       });
-      if (behavior.selectItem) setCatalogCategory("");
+      if (behavior.selectItem) {
+        setCatalogCategory("");
+        setCatalogCategories([]);
+      }
       if (behavior.closeDraft !== false) setNewRowOpen(false);
       setMessage(
         behavior.selectItem
@@ -954,16 +1012,14 @@ export function InventoryCatalog({
         </div>
         <div className="inventory-catalog-category-picker">
           <span>Seleccionar categoría</span>
-          <SheetSearchSelect
+          <InventoryCategoryFilter
             label="Seleccionar categoría"
-            value={activeCategory}
+            values={activeCategories}
             options={categoryOptions}
-            onSelect={selectCategory}
+            onChange={selectCategories}
             onCreate={async (name) => createHeaderCategory("PRIMARY", name)}
-            createLabel="Añadir categoría"
             onError={setMessage}
             disabled={busy || !categories}
-            placeholder="Todas las categorías"
           />
           <small>Incluye categorías principales y secundarias.</small>
         </div>
@@ -976,14 +1032,18 @@ export function InventoryCatalog({
             ◉
           </span>
           <span>
-            {activeCategory
-              ? "Inventario de esta categoría"
+            {activeCategories.length
+              ? "Inventario de las categorías seleccionadas"
               : "Inventario de todas las categorías"}
           </span>
           <strong data-category-inventory-count>
             {categories ? categoryInventory.length : "—"}
           </strong>
-          <small>{activeCategory || "Catálogo completo"}</small>
+          <small>
+            {activeCategories.length
+              ? `${activeCategories.length} categoría${activeCategories.length === 1 ? "" : "s"} seleccionada${activeCategories.length === 1 ? "" : "s"}`
+              : "Catálogo completo"}
+          </small>
           <progress
             className="inventory-category-share"
             aria-label="Proporción del catálogo en la categoría seleccionada"
@@ -1039,11 +1099,6 @@ export function InventoryCatalog({
                     label: g.name,
                     searchText: [...membership.get(g.name)!].join(" "),
                   }))}
-                  categoryFilter={{
-                    options: categoryOptions,
-                    value: activeCategory,
-                    onChange: selectCategory,
-                  }}
                   values={filters.items}
                   disabled={busy || !categories}
                   description="Busca por nombre o categoría. También puedes agregar un inventario nuevo sin categorías ni hojas."
@@ -1057,18 +1112,16 @@ export function InventoryCatalog({
                   onChange={(v) => setFilters({ ...filters, items: v })}
                 />
                 <div className="inventory-header-category-filter">
-                  <SheetSearchSelect
+                  <InventoryCategoryFilter
                     label="Categoría debajo de Inventario"
-                    value={activeCategory}
+                    values={activeCategories}
                     options={categoryOptions}
-                    onSelect={selectCategory}
+                    onChange={selectCategories}
                     onCreate={async (name) =>
                       createHeaderCategory("PRIMARY", name)
                     }
-                    createLabel="Añadir categoría"
                     onError={setMessage}
                     disabled={busy || !categories}
-                    placeholder="Todas las categorías"
                   />
                 </div>
               </th>

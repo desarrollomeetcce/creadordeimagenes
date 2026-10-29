@@ -44,5 +44,6 @@ export type InventoryCategoryAction =
       names: string[];
       decisions?: import("../../lib/meta-ads/inventory-duplicates").InventoryNameDecision[];
     }
+  | { action: "RENAME"; categoryId: string; name: string }
   | { action: "DELETE"; categoryId: string }
   | { action: "DELETE_MANY"; categoryIds: string[] };

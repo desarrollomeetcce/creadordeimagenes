@@ -285,6 +285,19 @@ export async function metaRoutes(
         z
           .object({
             ...base,
+            action: z.literal("RENAME"),
+            categoryId: z.string().min(1).max(100),
+            name: z
+              .string()
+              .trim()
+              .min(1)
+              .max(80)
+              .regex(/^[^,;\n]+$/),
+          })
+          .strict(),
+        z
+          .object({
+            ...base,
             action: z.literal("DELETE"),
             categoryId: z.string().min(1).max(100),
           })

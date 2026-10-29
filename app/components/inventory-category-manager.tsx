@@ -5,6 +5,7 @@ import type {
   InventoryCategoryAction,
 } from "./inventory-category-types";
 import { categoryKey } from "../../lib/meta-ads/category-paste";
+import { SheetSearchSelect } from "./sheet-search-select";
 import { InventoryMultiSelect } from "./inventory-multi-select";
 export function InventoryCategoryManager({
   config,
@@ -28,7 +29,9 @@ export function InventoryCategoryManager({
     [error, setError] = useState(""),
     [name, setName] = useState(""),
     [kind, setKind] = useState("PRIMARY"),
-    [usage, setUsage] = useState("ALL");
+    [usage, setUsage] = useState("ALL"),
+    [editing, setEditing] = useState<string | null>(null),
+    [editName, setEditName] = useState("");
   useEffect(() => {
     dialog.current?.showModal();
   }, []);
@@ -86,6 +89,15 @@ export function InventoryCategoryManager({
       setBusy(false);
     }
   };
+  const editingGroup = groups.find((c) => c.id === editing);
+  const destination = groups.find(
+    (c) => c.id !== editing && categoryKey(c.name) === categoryKey(editName),
+  );
+  const editAffected = editingGroup
+    ? Object.values(config.assignments).filter((ids) =>
+        ids.some((id) => editingGroup.ids.includes(id)),
+      ).length
+    : 0;
   const chosen = selected.filter((id) => visible.some((c) => c.id === id));
   return (
     <dialog
@@ -181,6 +193,81 @@ export function InventoryCategoryManager({
         values={filter}
         onChange={setFilter}
       />
+      {editingGroup && (
+        <section
+          className="inventory-category-editor"
+          aria-label="Editar categoría"
+        >
+          <h3>Editar «{editingGroup.name}»</h3>
+          <label>
+            Nuevo nombre
+            <input
+              aria-label="Nuevo nombre de categoría"
+              value={editName}
+              maxLength={80}
+              disabled={busy}
+              onChange={(e) => setEditName(e.target.value)}
+            />
+          </label>
+          <label>
+            O buscar una categoría existente para reemplazarla
+            <SheetSearchSelect
+              label="Categoría de destino"
+              value={destination?.id ?? ""}
+              options={groups
+                .filter((c) => c.id !== editing)
+                .map((c) => ({ value: c.id, label: c.name }))}
+              onSelect={(value) =>
+                setEditName(groups.find((c) => c.id === value)!.name)
+              }
+              placeholder="Buscar categoría existente…"
+              disabled={busy}
+            />
+          </label>
+          <p>
+            {destination
+              ? `Se fusionará «${editingGroup.name}» con «${destination.name}».`
+              : `Se cambiará el nombre de «${editingGroup.name}».`}{" "}
+            El cambio se aplica a todos sus usos en esta lista ({editAffected}{" "}
+            registros). Si un diplomado ya tiene la categoría de destino, se
+            conserva una sola vez con su clasificación existente.
+          </p>
+          <div className="row">
+            <button
+              type="button"
+              disabled={busy || !editName.trim()}
+              onClick={async () => {
+                setBusy(true);
+                setError("");
+                try {
+                  await onSave({
+                    action: "RENAME",
+                    categoryId: editingGroup.ids[0],
+                    name: editName.trim(),
+                  });
+                  setEditing(null);
+                  setSelected([]);
+                  setFilter([]);
+                  setName("");
+                } catch (e) {
+                  setError((e as Error).message);
+                } finally {
+                  setBusy(false);
+                }
+              }}
+            >
+              {destination ? "Fusionar categorías" : "Guardar nombre"}
+            </button>
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => setEditing(null)}
+            >
+              Cancelar edición
+            </button>
+          </div>
+        </section>
+      )}
       <label className="inventory-category-select-all">
         <input
           type="checkbox"
@@ -228,6 +315,30 @@ export function InventoryCategoryManager({
                 </small>
               </span>
             </label>
+            <button
+              type="button"
+              disabled={busy}
+              aria-label={`Editar categoría ${c.name}`}
+              title="Editar o fusionar categoría"
+              onClick={() => {
+                setEditing(c.id);
+                setEditName(c.name);
+                setReview(null);
+                setError("");
+              }}
+            >
+              <svg
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.8"
+                aria-hidden="true"
+              >
+                <path d="m15 5 4 4M4 20l4-1L21 6l-4-4L4 15v5Z" />
+              </svg>
+            </button>
             <button
               type="button"
               disabled={busy}
