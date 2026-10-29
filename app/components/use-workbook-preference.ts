@@ -24,7 +24,9 @@ export function useWorkbookPreference<T extends string | string[] | null>(
               ? 10000
               : field === "catalogCategories"
                 ? 1000
-                : 100) &&
+                : field === "itemFilter"
+                  ? 1500
+                  : 100) &&
           raw.every((v) => typeof v === "string" && v.length <= 100)
         )
           return raw as T;

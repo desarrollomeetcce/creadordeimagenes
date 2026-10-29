@@ -426,6 +426,44 @@ export function InventoryCatalog({
     grouped.get(a.name)!.links.push(a);
   }
   const available = [...grouped.values()];
+  const itemFilterTrack = useRef<HTMLDivElement>(null),
+    previousItemFilterCount = useRef(0);
+  const itemGroupById = new Map(
+    available.flatMap((g) => g.links.map((a) => [a.id, g] as const)),
+  );
+  const itemFilterChips = [
+    ...new Map<string, { key: string; name: string; ids: readonly string[] }>(
+      filters.items.map((id) => {
+        const group = itemGroupById.get(id);
+        return group
+          ? ([
+              "item:" + group.name,
+              {
+                key: "item:" + group.name,
+                name: group.name,
+                ids: group.links.map((a) => a.id),
+              },
+            ] as const)
+          : ([
+              "missing:" + id,
+              {
+                key: "missing:" + id,
+                name: "Inventario no disponible",
+                ids: [id],
+              },
+            ] as const);
+      }),
+    ).values(),
+  ];
+  useEffect(() => {
+    if (!categories) return;
+    if (
+      filters.items.length > previousItemFilterCount.current &&
+      itemFilterTrack.current
+    )
+      itemFilterTrack.current.scrollLeft = itemFilterTrack.current.scrollWidth;
+    previousItemFilterCount.current = filters.items.length;
+  }, [filters.items, categories]);
   const noCategory = "::without-categories::";
   const activeCategories = [
     ...new Set(
@@ -1147,37 +1185,73 @@ export function InventoryCatalog({
                     disabled={busy || !categories}
                   />
                 </div>
-                <InventoryMultiSelect
-                  label="Inventario del catálogo"
-                  placeholder={
-                    activeCategories.length === 1 &&
-                    activeCategories[0] === noCategory
-                      ? "Inventario sin categorías"
-                      : activeCategories.length
-                        ? "Inventario de las categorías elegidas"
-                        : "Todo el inventario"
-                  }
-                  options={categoryInventory.map((g) => ({
-                    value: g.links[0].id,
-                    label: g.name,
-                  }))}
-                  values={filters.items}
-                  disabled={busy || !categories}
-                  description={
-                    activeCategories.length
-                      ? "Busca por nombre dentro de las categorías elegidas. Para ver otros inventarios, cambia o quita la categoría de arriba."
-                      : "Busca por el nombre del inventario. Para buscar un área, usa el selector de categorías de arriba."
-                  }
-                  createLabel="Crear inventario"
-                  onCreate={async (name) =>
-                    saveNewRow(
-                      { name, primary: [], secondary: [], sheets: [] },
-                      { closeDraft: false, selectItem: true },
-                    )
-                  }
-                  onError={setMessage}
-                  onChange={(v) => setFilters({ ...filters, items: v })}
-                />
+                <div className="inventory-item-filter">
+                  <InventoryMultiSelect
+                    label="Inventario del catálogo"
+                    placeholder={
+                      activeCategories.length === 1 &&
+                      activeCategories[0] === noCategory
+                        ? "Inventario sin categorías"
+                        : activeCategories.length
+                          ? "Inventario de las categorías elegidas"
+                          : "Todo el inventario"
+                    }
+                    options={categoryInventory.map((g) => ({
+                      value: g.links[0].id,
+                      label: g.name,
+                    }))}
+                    values={filters.items}
+                    disabled={busy || !categories}
+                    description={
+                      activeCategories.length
+                        ? "Busca por nombre dentro de las categorías elegidas. Para ver otros inventarios, cambia o quita la categoría de arriba."
+                        : "Busca por el nombre del inventario. Para buscar un área, usa el selector de categorías de arriba."
+                    }
+                    createLabel="Crear inventario"
+                    onCreate={async (name) =>
+                      saveNewRow(
+                        { name, primary: [], secondary: [], sheets: [] },
+                        { closeDraft: false, selectItem: true },
+                      )
+                    }
+                    onError={setMessage}
+                    onChange={(v) => setFilters({ ...filters, items: v })}
+                  />
+                  {categories && itemFilterChips.length > 0 && (
+                    <div
+                      ref={itemFilterTrack}
+                      className="inventory-item-filter-chips"
+                      role="group"
+                      aria-label="Inventarios filtrados"
+                      tabIndex={0}
+                    >
+                      {itemFilterChips.map((chip) => (
+                        <span
+                          key={chip.key}
+                          data-inventory-filter-chip={chip.name}
+                        >
+                          <span title={chip.name}>{chip.name}</span>
+                          <button
+                            type="button"
+                            aria-label={`Quitar filtro de inventario ${chip.name}`}
+                            title={`Quitar ${chip.name}`}
+                            disabled={busy}
+                            onClick={() =>
+                              setFilters({
+                                ...filters,
+                                items: filters.items.filter(
+                                  (id) => !chip.ids.includes(id),
+                                ),
+                              })
+                            }
+                          >
+                            ×
+                          </button>
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
               </th>
               {(["PRIMARY", "SECONDARY"] as const).map((kind) => (
                 <th key={kind} scope="col">
