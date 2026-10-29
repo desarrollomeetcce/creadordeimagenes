@@ -1,4 +1,5 @@
 "use client";
+import { SheetSearchSelect } from "./sheet-search-select";
 import { MetaWorkspaceSharing } from "./meta-workspace-sharing";
 import { countryName, countryOptions } from "../../lib/meta-ads/countries";
 import { fetchJsonResponse, readJsonResponse } from "../../lib/http-response";
@@ -2908,36 +2909,34 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
                   <div className="meta-alias-country-filter">
                     <span>Buscar por inventario y país</span>
                     <div>
-                      <select
-                        aria-label="Buscar por inventario"
+                      <SheetSearchSelect
+                        label="Buscar por inventario"
+                        placeholder="Todo el inventario"
                         value={aliasFilter}
-                        onChange={(e) =>
-                          resetPage(() => setAliasFilter(e.target.value))
-                        }
-                      >
-                        <option value="">Todo el inventario</option>
-                        <option value="__none">Sin inventario</option>
-                        {aliases.map((a) => (
-                          <option key={a.id} value={a.id}>
-                            {a.name}
-                          </option>
-                        ))}
-                      </select>
-                      <select
-                        aria-label="Filtrar por país del inventario"
+                        options={[
+                          { value: "", label: "Todo el inventario" },
+                          { value: "__none", label: "Sin inventario" },
+                          ...aliases.map((a) => ({
+                            value: a.id,
+                            label: a.name,
+                          })),
+                        ]}
+                        onSelect={(v) => resetPage(() => setAliasFilter(v))}
+                      />
+                      <SheetSearchSelect
+                        label="Filtrar por país del inventario"
+                        placeholder="País: todos"
                         value={countryFilter}
-                        onChange={(e) =>
-                          resetPage(() => setCountryFilter(e.target.value))
-                        }
-                      >
-                        <option value="">País: todos</option>
-                        <option value="__none">Sin país</option>
-                        {countryOptions.map((c) => (
-                          <option key={c.code} value={c.code}>
-                            {c.code} · {c.name}
-                          </option>
-                        ))}
-                      </select>
+                        options={[
+                          { value: "", label: "País: todos" },
+                          { value: "__none", label: "Sin país" },
+                          ...countryOptions.map((c) => ({
+                            value: c.code,
+                            label: `${c.code} · ${c.name}`,
+                          })),
+                        ]}
+                        onSelect={(v) => resetPage(() => setCountryFilter(v))}
+                      />
                     </div>
                   </div>
                   <div className="meta-filter-actions">

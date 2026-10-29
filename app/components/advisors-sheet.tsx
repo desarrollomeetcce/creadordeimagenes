@@ -1,4 +1,6 @@
 "use client";
+import { AdvisorContactBaseEditor } from "./advisor-contact-base-editor";
+import { notifyAdvisorSalesChanged } from "./advisor-sales-events";
 import { advisorDayEffectiveness } from "../../lib/meta-ads/advisor-day-effectiveness";
 import { matchesSearchWords } from "../../lib/search";
 import { useSheetTextFit } from "./use-sheet-text-fit";
@@ -56,6 +58,11 @@ export function AdvisorsSheet({
   onChanged: () => Promise<void>;
   onOpenPeriod?: (period: AdvisorPeriodView) => void;
 }) {
+  const [contactBase, setContactBase] = useState<{
+    advisorId: string;
+    name: string;
+    day: string;
+  } | null>(null);
   const numbersTable = useRef<HTMLTableElement>(null);
   useSheetTextFit(
     numbersTable,
@@ -253,6 +260,17 @@ export function AdvisorsSheet({
       aria-label="Hoja Asesores"
       aria-busy={loading}
     >
+      {contactBase && (
+        <AdvisorContactBaseEditor
+          {...contactBase}
+          advisorListId={listId}
+          onClose={() => setContactBase(null)}
+          onSaved={async () => {
+            notifyAdvisorSalesChanged();
+            await load(true);
+          }}
+        />
+      )}
       <div className="row sheet-toolbar sheet-toolbar-with-actions">
         <div className="row sheet-toolbar-controls">
           <strong>Asesores</strong>
@@ -580,6 +598,13 @@ export function AdvisorsSheet({
                         today={today}
                         disabled={busy || loading}
                         onError={setMessage}
+                        onContactBase={() =>
+                          setContactBase({
+                            advisorId: p.id,
+                            name: p.name,
+                            day: d,
+                          })
+                        }
                         onDetail={() => {
                           setDetailDay(d);
                           setDetail(p);
@@ -704,13 +729,13 @@ function FragmentHeaders({
       {showBC && (
         <th
           scope="col"
-          title="Base por contactar: registrada en Totales"
+          title="Base por contactar: registra por asesor, hoja y país"
           aria-label="Base por contactar"
-          data-fill-kind="automatic"
+          data-fill-kind="manual"
           data-fill-timing="same-day"
         >
           BC{handle(day + "advisorBase", "Base por contactar " + day)}
-          <SheetDataFillBadge kind="automatic" />
+          <SheetDataFillBadge kind="manual" />
         </th>
       )}
       {rateBasis && (
@@ -754,6 +779,7 @@ function AdvisorDay({
   onError,
   onSave,
   onAbsenceSave,
+  onContactBase,
   onDetail,
 }: {
   person: Person;
@@ -766,6 +792,7 @@ function AdvisorDay({
   disabled: boolean;
   onError: (v: string) => void;
   onDetail: () => void;
+  onContactBase: () => void;
   onSave: (v: Attendance) => Promise<void>;
   onAbsenceSave: (
     v: import("../../lib/meta-ads/advisor-absence").AbsenceInput,
@@ -851,13 +878,21 @@ function AdvisorDay({
       {showBC && (
         <td
           aria-label={`BC ${person.name} ${day}`}
-          data-fill-kind="automatic"
+          data-fill-kind="manual"
           data-fill-timing="same-day"
-          title="BC se registra y reparte por asesor en Totales"
+          title="Registrar BC de este asesor por hoja y país"
         >
-          {cell.advisorBase === null || cell.advisorBase === undefined
-            ? "—"
-            : cell.advisorBase.toLocaleString("es-PE")}
+          <button
+            type="button"
+            className="advisor-contact-base-cell"
+            disabled={disabled}
+            aria-label={`Registrar BC de ${person.name} ${day}`}
+            onClick={onContactBase}
+          >
+            {cell.advisorBase == null
+              ? "—"
+              : cell.advisorBase.toLocaleString("es-PE")}
+          </button>
         </td>
       )}
       {rateBasis && rate && (

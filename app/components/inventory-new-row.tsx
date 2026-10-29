@@ -14,7 +14,16 @@ export function InventoryNewRow({
   disabled,
   onSave,
   onCancel,
+  visibleParameters = [
+    "inventory",
+    "primary",
+    "secondary",
+    "sheets",
+    "advisors",
+    "syllabi",
+  ],
 }: {
+  visibleParameters?: string[];
   directory: string[];
   tables: { id: string; name: string }[];
   disabled: boolean;
@@ -51,7 +60,7 @@ export function InventoryNewRow({
   ].sort((a, b) => a.localeCompare(b, "es"));
   return (
     <tr className="inventory-new-row" data-inventory-draft>
-      <td>
+      <td hidden={!visibleParameters.includes("inventory")}>
         <input
           ref={input}
           aria-label="Inventario de la nueva fila"
@@ -97,7 +106,14 @@ export function InventoryNewRow({
         {error && <small role="alert">{error}</small>}
       </td>
       {(["primary", "secondary"] as const).map((kind) => (
-        <td key={kind}>
+        <td
+          key={kind}
+          hidden={
+            !visibleParameters.includes(
+              kind === "primary" ? "primary" : "secondary",
+            )
+          }
+        >
           <InventoryMultiSelect
             label={
               kind === "primary"
@@ -128,7 +144,7 @@ export function InventoryNewRow({
           />
         </td>
       ))}
-      <td>
+      <td hidden={!visibleParameters.includes("sheets")}>
         <InventoryMultiSelect
           label="Hojas de la nueva fila"
           placeholder="Sin hojas"
@@ -139,8 +155,19 @@ export function InventoryNewRow({
           onChange={(sheets) => setValue((old) => ({ ...old, sheets }))}
         />
       </td>
-      <td aria-hidden="true" className="inventory-column-gap" />
-      <td className="hint">Temarios disponibles al guardar</td>
+      <td hidden={!visibleParameters.includes("advisors")} className="hint">
+        Asesores disponibles al guardar
+      </td>
+      <td
+        hidden={
+          !visibleParameters.includes("syllabi") || visibleParameters.length < 2
+        }
+        aria-hidden="true"
+        className="inventory-column-gap"
+      />
+      <td hidden={!visibleParameters.includes("syllabi")} className="hint">
+        Temarios disponibles al guardar
+      </td>
     </tr>
   );
 }

@@ -980,6 +980,7 @@ model MetaEffectivenessSync {
 
 model MetaAdvisor {
  portal MetaAdvisorPortal?
+ inventoryAssignments MetaInventoryAdvisor[]
  targets MetaAdvisorTarget[]
  goals MetaAdvisorGoal[]
  sheetId String @default("default-advisors")
@@ -1102,6 +1103,8 @@ model MetaInventoryCategoryAssignment {
 }
 
 model MetaInventoryItem {
+ advisorRevision Int @default(0)
+ advisors MetaInventoryAdvisor[]
  syllabi Json @default("[]")
  syllabusRevision Int @default(0)
  id String @id @default(cuid())
@@ -1225,4 +1228,13 @@ model MetaAdvisorTarget {
  revision Int @default(1)
  updatedAt DateTime @updatedAt
  @@id([advisorId,basis])
+}
+
+model MetaInventoryAdvisor {
+ itemId String
+ item MetaInventoryItem @relation(fields:[itemId],references:[id],onDelete:Cascade)
+ advisorId String
+ advisor MetaAdvisor @relation(fields:[advisorId],references:[id],onDelete:Restrict)
+ @@id([itemId,advisorId])
+ @@index([advisorId])
 }

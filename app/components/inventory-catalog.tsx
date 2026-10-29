@@ -1,4 +1,9 @@
 "use client";
+import {
+  InventoryColumnVisibility,
+  inventoryParameters,
+} from "./inventory-column-visibility";
+import type { InventoryAdvisorState } from "../../lib/meta-ads/inventory-advisors";
 import { Fragment, useEffect, useRef, useState, type ReactNode } from "react";
 import { useWorkbookPreference } from "./use-workbook-preference";
 import { financialRequest as api } from "./financial-request";
@@ -184,14 +189,30 @@ export function InventoryCatalog({
       setSyllabiBusy(false);
     }
   };
+  const [parameterChoice, setParameterChoice] = useWorkbookPreference<string[]>(
+    listId,
+    "visibleParameters",
+    inventoryParameters.map((p) => p.key),
+  );
+  const parameters = inventoryParameters
+    .filter(
+      (p) => Array.isArray(parameterChoice) && parameterChoice.includes(p.key),
+    )
+    .map((p) => p.key);
+  const showParameter = (key: string) => parameters.includes(key);
   const columns = [
     { key: "inventory", label: "Inventario", width: 340 },
     { key: "primary", label: "Categoría principal", width: 174 },
     { key: "secondary", label: "Categorías secundarias", width: 202 },
     { key: "sheets", label: "Hojas", width: 380 },
+    { key: "advisors", label: "Asesores", width: 270 },
     { key: "gap", label: "", width: 22 },
     { key: "syllabi", label: "Temarios", width: 285 },
-  ];
+  ].filter((c) =>
+    c.key === "gap"
+      ? showParameter("syllabi") && parameters.length > 1
+      : showParameter(c.key),
+  );
   const columnHandle = (key: string, label: string) => (
     <SheetColumnResizer
       label={label}
@@ -760,6 +781,7 @@ export function InventoryCatalog({
     const assigned = groupCategories(g).filter((c) => c.kind === kind);
     return (
       <td
+        hidden={!showParameter(kind === "PRIMARY" ? "primary" : "secondary")}
         className="inventory-category-cell"
         data-fill-kind="manual"
         data-category-kind={kind}
@@ -942,6 +964,91 @@ export function InventoryCatalog({
     ids: string[];
     names: string[];
   } | null>(null);
+  const [advisorTags, setAdvisorTags] = useState<InventoryAdvisorState | null>(
+    null,
+  );
+  const reloadAdvisorTags = async () => {
+    const data: InventoryAdvisorState = await api(
+      "meta-ads/inventory/advisors?" + new URLSearchParams({ listId }),
+    );
+    setAdvisorTags(data);
+    return data;
+  };
+  useEffect(() => {
+    let active = true;
+    setAdvisorTags((old) => (old?.listId === listId ? old : null));
+    api("meta-ads/inventory/advisors?" + new URLSearchParams({ listId }))
+      .then((data: InventoryAdvisorState) => {
+        if (active) setAdvisorTags(data);
+      })
+      .catch((e) => {
+        if (active) setMessage(e.message);
+      });
+    return () => {
+      active = false;
+    };
+  }, [listId, categories?.revision]);
+  const currentAdvisorTags =
+    advisorTags?.listId === listId ? advisorTags : null;
+  const advisorTagsByName = new Map(
+    (currentAdvisorTags?.items ?? []).map((i) => [i.name, i]),
+  );
+  const advisorTagsById = new Map(
+    (currentAdvisorTags?.items ?? []).map((i) => [i.id, i]),
+  );
+  const groupAdvisorTags = (g: (typeof visible)[number]) =>
+    advisorTagsByName.get(g.name) ??
+    g.links.map((l) => advisorTagsById.get(l.id)).find(Boolean);
+  const updateAdvisorTags = async (
+    groups: typeof visible,
+    advisorIds: string[],
+    mode: "ADD" | "REMOVE",
+  ) => {
+    if (!currentAdvisorTags || !groups.length || !advisorIds.length) return;
+    setBusy(true);
+    let committed = false;
+    const selectedNames = groups
+      .filter((g) => g.links.some((l) => selected.includes(l.id)))
+      .map((g) => g.name);
+    try {
+      await api("meta-ads/inventory/advisors", "POST", {
+        listId,
+        mode,
+        advisorIds,
+        items: groups.map((g) => ({
+          inventoryId: g.links[0].id,
+          expectedName: g.name,
+          revision: groupAdvisorTags(g)?.revision ?? 0,
+        })),
+      });
+      committed = true;
+      const [tags] = await Promise.all([
+        reloadAdvisorTags(),
+        reloadCategories(),
+      ]);
+      setSelected((old) => [
+        ...new Set([
+          ...old,
+          ...tags.items
+            .filter((i) => selectedNames.includes(i.name))
+            .map((i) => i.id),
+        ]),
+      ]);
+      setMessage(
+        mode === "ADD"
+          ? "Asesores asignados al inventario."
+          : "Asesor retirado de este tema.",
+      );
+    } catch (e) {
+      if (committed)
+        setMessage(
+          "Los asesores se guardaron. Actualiza para ver los cambios.",
+        );
+      else throw e;
+    } finally {
+      setBusy(false);
+    }
+  };
   const choose = (ids: string[], checked: boolean) =>
     setSelected((old) =>
       checked
@@ -1112,6 +1219,10 @@ export function InventoryCatalog({
           >
             Quitar selección
           </button>
+          <InventoryColumnVisibility
+            values={parameters}
+            onChange={setParameterChoice}
+          />
         </div>
         {toolbarActions}
       </div>
@@ -1214,6 +1325,7 @@ export function InventoryCatalog({
         tabIndex={0}
       >
         <table
+          hidden={!columns.length}
           className="inventory-catalog-grid inventory-categorized-grid sheet-resizable-table"
           style={{
             width: columns.reduce((n, c) => n + (widths[c.key] ?? c.width), 0),
@@ -1226,7 +1338,7 @@ export function InventoryCatalog({
           </colgroup>
           <thead>
             <tr>
-              <th scope="col">
+              <th scope="col" hidden={!showParameter("inventory")}>
                 {columnHandle("inventory", "Inventario")}
                 <div className="inventory-header-title">
                   <InventoryCheck
@@ -1326,7 +1438,13 @@ export function InventoryCatalog({
                 </div>
               </th>
               {(["PRIMARY", "SECONDARY"] as const).map((kind) => (
-                <th key={kind} scope="col">
+                <th
+                  key={kind}
+                  scope="col"
+                  hidden={
+                    !showParameter(kind === "PRIMARY" ? "primary" : "secondary")
+                  }
+                >
                   {columnHandle(
                     kind === "PRIMARY" ? "primary" : "secondary",
                     kind === "PRIMARY"
@@ -1389,7 +1507,7 @@ export function InventoryCatalog({
                   </button>
                 </th>
               ))}
-              <th scope="col">
+              <th scope="col" hidden={!showParameter("sheets")}>
                 {columnHandle("sheets", "Hojas")}
                 <div>Hojas</div>
                 <InventoryMultiSelect
@@ -1461,8 +1579,47 @@ export function InventoryCatalog({
                   }}
                 />
               </th>
-              <th aria-hidden="true" className="inventory-column-gap" />
-              <th scope="col">{columnHandle("syllabi", "Temarios")}Temarios</th>
+              <th scope="col" hidden={!showParameter("advisors")}>
+                {columnHandle("advisors", "Asesores")}
+                <div>Asesores</div>
+                <InventoryMultiSelect
+                  label="Asignar asesores a inventarios seleccionados"
+                  placeholder={
+                    "Asignar asesores" +
+                    (selectedGroups ? " (" + selectedGroups + ")" : "")
+                  }
+                  values={[]}
+                  all={false}
+                  options={(currentAdvisorTags?.options ?? []).map((p) => ({
+                    value: p.id,
+                    label: p.label,
+                  }))}
+                  disabled={busy || !currentAdvisorTags || !selectedGroups}
+                  description={
+                    "Añade asesores a " +
+                    selectedGroups +
+                    " inventarios seleccionados visibles, independientemente de sus hojas y países."
+                  }
+                  onError={setMessage}
+                  onChange={(ids) =>
+                    updateAdvisorTags(
+                      visible.filter((g) =>
+                        g.links.some((l) => selectedVisible.includes(l.id)),
+                      ),
+                      ids,
+                      "ADD",
+                    )
+                  }
+                />
+              </th>
+              <th
+                hidden={!columns.some((c) => c.key === "gap")}
+                aria-hidden="true"
+                className="inventory-column-gap"
+              />
+              <th scope="col" hidden={!showParameter("syllabi")}>
+                {columnHandle("syllabi", "Temarios")}Temarios
+              </th>
             </tr>
           </thead>
           <tbody>
@@ -1488,7 +1645,7 @@ export function InventoryCatalog({
                     }
                     data-category-group={section.title}
                   >
-                    <th colSpan={6} scope="rowgroup">
+                    <th colSpan={Math.max(1, columns.length)} scope="rowgroup">
                       <div className="inventory-band-heading">
                         <InventoryCheck
                           label={`Seleccionar visibles de ${section.title}`}
@@ -1552,7 +1709,10 @@ export function InventoryCatalog({
                         undefined
                       }
                     >
-                      <td data-fill-kind="manual">
+                      <td
+                        hidden={!showParameter("inventory")}
+                        data-fill-kind="manual"
+                      >
                         <div className="inventory-name-cell">
                           <InventoryCheck
                             label={`Seleccionar inventario ${g.name}`}
@@ -1590,7 +1750,10 @@ export function InventoryCatalog({
                       </td>
                       {categoryCell(g, "PRIMARY")}
                       {categoryCell(g, "SECONDARY")}
-                      <td data-fill-kind="manual">
+                      <td
+                        hidden={!showParameter("sheets")}
+                        data-fill-kind="manual"
+                      >
                         <div className="inventory-sheet-toolbar">
                           <div className="inventory-sheet-links">
                             {g.links
@@ -1685,8 +1848,66 @@ export function InventoryCatalog({
                           />
                         </div>
                       </td>
-                      <td aria-hidden="true" className="inventory-column-gap" />
-                      <td className="inventory-syllabi-cell">
+                      <td
+                        hidden={!showParameter("advisors")}
+                        className="inventory-advisors-cell"
+                      >
+                        <div className="inventory-advisor-toolbar">
+                          <div className="inventory-advisor-chips">
+                            {(groupAdvisorTags(g)?.advisors ?? []).map((p) => (
+                              <span key={p.id} title={p.label}>
+                                <span>{p.name}</span>
+                                <button
+                                  type="button"
+                                  aria-label={
+                                    "Quitar asesor " + p.name + " de " + g.name
+                                  }
+                                  disabled={busy}
+                                  onClick={() =>
+                                    void updateAdvisorTags(
+                                      [g],
+                                      [p.id],
+                                      "REMOVE",
+                                    ).catch((e) => setMessage(e.message))
+                                  }
+                                >
+                                  ×
+                                </button>
+                              </span>
+                            ))}
+                          </div>
+                          <InventoryMultiSelect
+                            label={"Añadir asesores a " + g.name}
+                            placeholder="+"
+                            compact
+                            all={false}
+                            values={[]}
+                            options={(currentAdvisorTags?.options ?? [])
+                              .filter(
+                                (p) =>
+                                  !groupAdvisorTags(g)?.advisors.some(
+                                    (a) => a.id === p.id,
+                                  ),
+                              )
+                              .map((p) => ({ value: p.id, label: p.label }))}
+                            disabled={busy || !currentAdvisorTags}
+                            description="Añade uno o varios asesores a este tema. La relación es independiente de las hojas y países."
+                            onError={setMessage}
+                            onChange={(ids) =>
+                              updateAdvisorTags([g], ids, "ADD")
+                            }
+                          />
+                        </div>
+                      </td>
+                      <td
+                        hidden={!columns.some((c) => c.key === "gap")}
+                        aria-hidden="true"
+                        className="inventory-column-gap"
+                      />
+                      <td
+                        hidden={!showParameter("syllabi")}
+                        className="inventory-syllabi-cell"
+                      >
                         <InventorySyllabusChips
                           label={g.name}
                           syllabi={syllabiByName.get(g.name) ?? []}
@@ -1710,6 +1931,7 @@ export function InventoryCatalog({
           <tfoot>
             {newRowOpen && (
               <InventoryNewRow
+                visibleParameters={parameters}
                 directory={directoryNames}
                 tables={tables}
                 disabled={busy}
@@ -1718,10 +1940,15 @@ export function InventoryCatalog({
               />
             )}
             <tr className="inventory-add-row">
-              <td colSpan={6}>
+              <td colSpan={Math.max(1, columns.length)}>
                 <button
                   type="button"
-                  disabled={busy || !categories || newRowOpen}
+                  disabled={
+                    busy ||
+                    !categories ||
+                    newRowOpen ||
+                    !showParameter("inventory")
+                  }
                   onClick={() => setNewRowOpen(true)}
                 >
                   + Agregar fila
@@ -1730,6 +1957,11 @@ export function InventoryCatalog({
             </tr>
           </tfoot>
         </table>
+        {!columns.length && (
+          <p className="sheet-help">
+            Elige las columnas que quieres mostrar en «Ver parámetros».
+          </p>
+        )}
         {!visible.length && (
           <p className="sheet-help">
             No hay elementos que coincidan con los filtros.

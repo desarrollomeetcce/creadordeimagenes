@@ -436,7 +436,7 @@ export async function authorizeFinancialRequest(
       );
     if (doc.kind === "ADVISORS") {
       demand(
-        /^(advisors(?:\/(sheet|detail|periods|period-history|attendance|absence))?$|effectiveness\/advisor(?:-|$)|manual-base\/advisor$)/.test(
+        /^(advisors(?:\/(sheet|detail|periods|period-history|attendance|absence|contact-base(?:\/bucket)?))?$|effectiveness\/advisor(?:-|$)|manual-base\/advisor$)/.test(
           path,
         ),
         "Comparte también la hoja financiera para consultar ese detalle.",
@@ -546,7 +546,7 @@ export async function authorizeFinancialRequest(
       const id = values.find((v) => v.key === "id");
       if (id) advisorIds.push(id.value);
     }
-    if (advisorIds.length) {
+    if (advisorIds.length && path!=="inventory/advisors") {
       const allowedAlias =
         doc.kind === "INVENTORY"
           ? { inventorySheetId: scope.slice(4) }

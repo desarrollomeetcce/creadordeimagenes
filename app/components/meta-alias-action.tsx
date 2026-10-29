@@ -1,4 +1,5 @@
 "use client";
+import { SheetSearchSelect } from "./sheet-search-select";
 import { useId, useRef, useState } from "react";
 import { countryName, countryOptions } from "../../lib/meta-ads/countries";
 import type { MetaAliasOption } from "./meta-alias-directory";
@@ -120,6 +121,10 @@ export function MetaAliasAction({
           maxHeight: `calc(100dvh - ${position.top + 8}px)`,
         }}
       >
+        <header className="meta-alias-context">
+          <small>{bulk ? "Asignación masiva" : "Asignando inventario a"}</small>
+          <strong>{bulk ? `${bulkCount} elementos seleccionados` : name}</strong>
+        </header>
         <form
           onSubmit={(e) => {
             e.preventDefault();
@@ -128,87 +133,83 @@ export function MetaAliasAction({
         >
           <label>
             Lista de inventario
-            <select
-              aria-label="Lista de inventario"
+            <SheetSearchSelect
+              label="Lista de inventario"
+              placeholder="Todas las listas"
               value={draftList}
-              onChange={(e) => {
-                setDraftList(e.target.value);
+              options={[
+                { value: "", label: "Todas las listas" },
+                ...inventories.map((t) => ({ value: t.id, label: t.name })),
+              ]}
+              onSelect={(v) => {
+                setDraftList(v);
                 setDraftTable("");
                 setDraftAlias("");
+                setDraftCountry("");
               }}
-            >
-              <option value="">Todas las listas</option>
-              {inventories.map((t) => (
-                <option key={t.id} value={t.id}>
-                  {t.name}
-                </option>
-              ))}
-            </select>
+            />
           </label>
           <label>
             Tabla
-            <select
-              aria-label="Tabla de inventario"
+            <SheetSearchSelect
+              label="Tabla de inventario"
+              placeholder="Elige una tabla"
               value={draftTable}
               disabled={disabled}
-              onChange={(e) => {
-                setDraftTable(e.target.value);
+              options={[
+                { value: "", label: "Elige una tabla" },
+                ...tables.map((t) => ({ value: t.id, label: t.name })),
+              ]}
+              onSelect={(v) => {
+                setDraftTable(v);
                 setDraftAlias("");
+                setDraftCountry("");
               }}
-            >
-              <option value="">Elige una tabla</option>
-              {tables.map((t) => (
-                <option key={t.id} value={t.id}>
-                  {t.name}
-                </option>
-              ))}
-            </select>
+            />
           </label>
           <label>
             {bulk ? `Inventario para ${bulkCount} seleccionados` : "Inventario"}
-            <select
-              aria-label={
+            <SheetSearchSelect
+              label={
                 bulk ? "Inventario para seleccionados" : `Inventario de ${name}`
               }
+              placeholder="Elige un elemento del inventario"
               value={draftAlias}
               disabled={disabled || !draftTable}
-              onChange={(e) => {
-                setDraftAlias(e.target.value);
-                if (!e.target.value) setDraftCountry("");
+              options={[
+                { value: "", label: "Elige un elemento del inventario" },
+                ...aliases
+                  .filter(
+                    (a) =>
+                      (a.tableId ?? "diplomados") === draftTable &&
+                      (!draftList ||
+                        (a.inventorySheetId ?? "default-inventory") ===
+                          draftList),
+                  )
+                  .map((a) => ({ value: a.id, label: a.name })),
+              ]}
+              onSelect={(v) => {
+                setDraftAlias(v);
+                if (!v) setDraftCountry("");
               }}
-            >
-              <option value="">{"Elige un elemento del inventario"}</option>
-              {aliases
-                .filter(
-                  (a) =>
-                    (a.tableId ?? "diplomados") === draftTable &&
-                    (!draftList ||
-                      (a.inventorySheetId ?? "default-inventory") ===
-                        draftList),
-                )
-                .map((a) => (
-                  <option value={a.id} key={a.id}>
-                    {a.name}
-                  </option>
-                ))}
-            </select>
+            />
           </label>
           <label>
             País
-            <select
-              aria-label="País del inventario"
+            <SheetSearchSelect
+              label="País del inventario"
+              placeholder="Selecciona un país"
               value={draftCountry}
-              required={!!draftAlias}
               disabled={disabled || !draftAlias}
-              onChange={(e) => setDraftCountry(e.target.value)}
-            >
-              <option value="">Selecciona un país</option>
-              {countryOptions.map((c) => (
-                <option value={c.code} key={c.code}>
-                  {c.name}
-                </option>
-              ))}
-            </select>
+              options={[
+                { value: "", label: "Selecciona un país" },
+                ...countryOptions.map((c) => ({
+                  value: c.code,
+                  label: `${c.code} · ${c.name}`,
+                })),
+              ]}
+              onSelect={setDraftCountry}
+            />
           </label>
           <small>
             Inventario y país vinculan la base y el gasto con Efectividad. Las

@@ -494,17 +494,19 @@ export default function Home() {
                   (["projects", "library", "presets", "account", "performance"].includes(v) || (v === "metaads" && !!user.metaAdsShared) || (v==="products"&&!!user.effectivenessShared))),
               )
               .map(([v, icon, label]) => (
-                <button
+                <a
                   key={v}
+                  href={"?view="+encodeURIComponent(v)}
+                  aria-current={view===v?"page":undefined}
                   className={
                     view === v || (v === "library" && view === "jobs")
                       ? "active"
                       : ""
                   }
-                  onClick={() => navigate(v)}
+                  onClick={event=>{if(event.button!==0||event.metaKey||event.ctrlKey||event.shiftKey||event.altKey)return;event.preventDefault();navigate(v);}}
                 >
                   {icon}　{label}
-                </button>
+                </a>
               ))}
           </nav>
           <SidebarAccount user={user} view={view} navigate={navigate} logout={() => {
@@ -515,7 +517,7 @@ export default function Home() {
           <header className={view === "products" ? "topbar effectiveness-topbar" : "topbar"}>
             {view === "products" ? <div className="effectiveness-topbar-title"><div className="effectiveness-title-line"><h1>Efectividad</h1>{user.role==="OWNER"&&<button type="button" className="effectiveness-share-button" onClick={()=>window.dispatchEvent(new Event("share-effectiveness"))}>Compartir</button>}</div><EffectivenessLegend /></div> : <span className="muted">{view === "metaads" ? "Análisis y control de Meta" : titles[view]}</span>}
             {view === "metaads" && <span className="meta-topbar-role">Rol: <strong>{user.role}</strong></span>}
-            {view !== "performance" && <span className="badge">Producción publicitaria</span>}
+            {view !== "performance" && view !== "products" && <span className="badge">Producción publicitaria</span>}
 
           </header>
           <main className={view === "products" ? "effectiveness-main" : undefined}>

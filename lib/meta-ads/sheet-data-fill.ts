@@ -10,7 +10,7 @@ export function totalDataFill(column: {
   key: string;
   sum: boolean;
 }): SheetDataFill {
-  return column.sum
+  return (column.sum || column.key === "advisorBase")
     ? "automatic"
     : fillNextDay(column.key)
       ? "next-day"

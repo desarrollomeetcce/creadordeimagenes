@@ -41,78 +41,82 @@ export function EffectivenessLegend() {
   return (
     <>
       <span className="sheet-legend" aria-label="Leyenda de parámetros">
-        <span>
-          <b>V</b> Ventas
-        </span>
-        <span>
-          <b>P</b> Presupuesto
-        </span>
-        <span>
-          <b>B</b> Base (Meta Ads)
-        </span>
-        <span>
-          <b>G</b> Gasto
-        </span>
-        <span>
-          <b>CF</b> Costos fijos
-        </span>
-        <span>
-          <b>BM</b> Base manual
-        </span>
-        <span>
-          <b>BC</b> Base por contactar
-        </span>
-        <span>
-          <b>GM</b> Gasto manual
-        </span>
-        <span
-          className="sheet-fill-legend"
-          role="group"
-          aria-label="Guía de colores de los datos"
-        >
+        <span className="sheet-parameter-legend">
           <span>
-            <button
-              type="button"
-              className="sheet-fill-edit"
-              data-edit-fill="automatic"
-              aria-label="Cambiar color de datos automáticos"
-              title="Cambiar color"
-              onClick={() => setEditing("automatic")}
-            >
-              <SheetDataFillBadge kind="automatic" />
-            </button>{" "}
-            Automático / recibido
+            <b>V</b> Ventas
           </span>
           <span>
-            <button
-              type="button"
-              className="sheet-fill-edit"
-              data-edit-fill="manual"
-              aria-label="Cambiar color de manuales del mismo día"
-              title="Cambiar color"
-              onClick={() => setEditing("manual")}
-            >
-              <SheetDataFillBadge kind="manual" />
-            </button>{" "}
-            Manual · mismo día (sin color por defecto)
+            <b>P</b> Presupuesto
           </span>
           <span>
-            <button
-              type="button"
-              className="sheet-fill-edit"
-              data-edit-fill="next-day"
-              aria-label="Cambiar color de manuales del día siguiente"
-              title="Cambiar color"
-              onClick={() => setEditing("next-day")}
-            >
-              <SheetDataFillBadge kind="next-day" />
-            </button>{" "}
-            Manual · día siguiente (BM y GM)
+            <b>B</b> Base (Meta Ads)
+          </span>
+          <span>
+            <b>G</b> Gasto
+          </span>
+          <span>
+            <b>CF</b> Costos fijos
+          </span>
+          <span>
+            <b>BM</b> Base manual
+          </span>
+          <span>
+            <b>BC</b> Base por contactar
+          </span>
+          <span>
+            <b>GM</b> Gasto manual
           </span>
         </span>
-        <span className="sheet-fill-timing-note">
-          BC se registra el mismo día. BM y GM se completan al día siguiente,
-          para la fecha correspondiente.
+        <span className="sheet-provenance-legend">
+          <span
+            className="sheet-fill-legend"
+            role="group"
+            aria-label="Guía de colores de los datos"
+          >
+            <span>
+              <button
+                type="button"
+                className="sheet-fill-edit"
+                data-edit-fill="automatic"
+                aria-label="Cambiar color de datos automáticos"
+                title="Cambiar color"
+                onClick={() => setEditing("automatic")}
+              >
+                <SheetDataFillBadge kind="automatic" />
+              </button>{" "}
+              Automático / recibido
+            </span>
+            <span>
+              <button
+                type="button"
+                className="sheet-fill-edit"
+                data-edit-fill="manual"
+                aria-label="Cambiar color de manuales del mismo día"
+                title="Cambiar color"
+                onClick={() => setEditing("manual")}
+              >
+                <SheetDataFillBadge kind="manual" />
+              </button>{" "}
+              Manual · mismo día (sin color por defecto)
+            </span>
+            <span>
+              <button
+                type="button"
+                className="sheet-fill-edit"
+                data-edit-fill="next-day"
+                aria-label="Cambiar color de manuales del día siguiente"
+                title="Cambiar color"
+                onClick={() => setEditing("next-day")}
+              >
+                <SheetDataFillBadge kind="next-day" />
+              </button>{" "}
+              Manual · día siguiente (BM y GM)
+            </span>
+          </span>
+          <span className="sheet-fill-timing-note">
+            BC: mismo día en Asesores, automático en Totales. BM/GM: al día
+            siguiente.
+          </span>
         </span>
       </span>
       {palette.warning && (

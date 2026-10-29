@@ -720,7 +720,7 @@ test('Guía de carga: origen automático, manual del día y BM/GM al día siguie
  const {totalDataFill,sheetMetricDataFill,fillNextDay}=await import('../lib/meta-ads/sheet-data-fill');
  assert.equal(totalDataFill({key:'sales',sum:true}),'automatic');assert.equal(totalDataFill({key:'budget',sum:true}),'automatic');
  for(const key of ['baseManual','totalSpend']){assert(fillNextDay(key));assert.equal(totalDataFill({key,sum:false}),'next-day');}
- assert.equal(totalDataFill({key:'advisorBase',sum:false}),'manual');assert.equal(totalDataFill({key:'fixedCost',sum:false}),'manual');assert.equal(totalDataFill({key:'fixedCost',sum:true}),'automatic');assert(!fillNextDay('advisorBase'));
+ assert.equal(totalDataFill({key:'advisorBase',sum:false}),'automatic');assert.equal(totalDataFill({key:'fixedCost',sum:false}),'manual');assert.equal(totalDataFill({key:'fixedCost',sum:true}),'automatic');assert(!fillNextDay('advisorBase'));
  assert.equal(sheetMetricDataFill('sales'),'manual');assert.equal(sheetMetricDataFill('budget'),'manual');assert.equal(sheetMetricDataFill('base'),'automatic');assert.equal(sheetMetricDataFill('spend'),'automatic');
  assert.equal(sheetMetricDataFill('base',{manual:true}),'manual');assert.equal(sheetMetricDataFill('spend',{manual:true}),'manual');assert.equal(sheetMetricDataFill('sales',{linked:true,manual:true}),'automatic');assert.equal(sheetMetricDataFill('budget',{synced:true,manual:true}),'automatic');assert.equal(sheetMetricDataFill('fixedCost',{received:true}),'automatic');assert.equal(sheetMetricDataFill('sales',{automaticNa:true}),'automatic');
 });

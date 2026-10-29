@@ -185,6 +185,10 @@ export async function metaRoutes(
   if(path === "my-performance/team" && method === "GET")return send(await(await import("./advisor-performance")).performanceTeam(actor));
   if(path === "my-performance/targets" && method === "PUT")return send(await(await import("./advisor-performance")).saveAdvisorTargets(actor,await body()));
   if(path === "my-performance/accounts" && method === "POST")return send(await(await import("./advisor-performance")).createAdvisorAccess(actor,await body()),201);
+  if((path === "advisors/contact-base" || path === "advisors/contact-base/bucket") && method === "GET"){
+   const service=await import("./advisor-contact-base");return send(await(path.endsWith("/bucket")?service.advisorContactBaseBucket:service.advisorContactBase)(actor,Object.fromEntries(req.nextUrl.searchParams)));
+  }
+  if(path === "advisors/contact-base" && method === "POST")return send(await(await import("./advisor-contact-base")).saveAdvisorContactBase(actor,await body()));
   if (path === "my-performance" && method === "GET")
     return send(
       await (
@@ -268,6 +272,8 @@ export async function metaRoutes(
    ownerOnly(actor);const b=z.object({listId:z.string().min(1).max(100),revision:z.number().int().nonnegative(),tableIds:z.array(z.string().min(1).max(100)).min(1).max(1500),items:z.array(z.object({inventoryId:z.string().min(1).max(100),expectedName:z.string().min(1).max(150)}).strict()).min(1).max(1500)}).strict().parse(await body());
    return send(await(await import("./inventory-import")).linkInventorySheetsBatch(actor,b));
   }
+  if(path==="inventory/advisors" && method==="GET")return send(await(await import("./inventory-advisors")).inventoryAdvisors(actor,Object.fromEntries(req.nextUrl.searchParams)));
+  if(path==="inventory/advisors" && method==="POST")return send(await(await import("./inventory-advisors")).saveInventoryAdvisors(actor,await body()));
   if (path === "inventory/sheets" && method === "POST") {
     ownerOnly(actor);
     const b = z
@@ -1013,6 +1019,7 @@ export async function metaRoutes(
       (path === "manual-base" || path === "advisor-base") &&
       method === "POST"
     ) {
+      if(path==="advisor-base")demand(actor.role==="OWNER","BC se registra desde la pestaña de Asesores.",403);
       const { manualBaseAllocationsSchema } =
         await import("./manual-base-policy");
       const b = scope

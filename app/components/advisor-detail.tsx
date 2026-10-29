@@ -849,7 +849,7 @@ export function AdvisorDetail({
           asignaciones antiguas sin historial conservan su atribución previa.
         </p>
         <p className="hint">
-          BC es la base por contactar registrada manualmente en Totales por
+          BC es la base por contactar registrada manualmente en Asesores por
           hoja, país y fecha. No se calcula por asignaciones ni se copia de B de
           Meta Ads o BM. BC no se atribuye a un diplomado concreto y no cambia
           al filtrar productos. Las ventas V corresponden al reparto registrado

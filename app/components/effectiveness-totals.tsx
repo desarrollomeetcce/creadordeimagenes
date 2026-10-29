@@ -500,8 +500,8 @@ export function EffectivenessTotals({
           : analysisView === "yesterday"
             ? "Datos del día completo en el período: ventas, BM, GM y costo fijo; sin BC ni presupuesto."
             : mode === "manual"
-              ? "V/P: suma de inventario. BM y BC: repartos manuales independientes por asesor, hoja, país y día (sin moneda). GM y CF: valores manuales por bloque."
-              : "V/B/G/CF: suma de los valores de la vista automática. BC se registra manualmente por asesor."}{" "}
+              ? "V/P: suma de inventario. BM: reparto manual en Totales. BC: suma automática de Asesores por hoja, país y día (sin moneda). GM y CF: valores manuales por bloque."
+              : "V/B/G/CF: suma de los valores de la vista automática. BC se recibe automáticamente desde Asesores."}{" "}
         Países y monedas separados; N.A. no suma, — sin dato, * suma parcial.
         Las ventas se suman únicamente desde la hoja de origen indicada en cada
         bloque, sin combinar tablas. No modifica Meta Ads.
@@ -654,7 +654,9 @@ export function EffectivenessTotals({
                   ...columns.map((m) => (
                     <th
                       key={block.key + ":" + m.key}
-                      data-entry={m.sum ? "derived" : "manual"}
+                      data-entry={
+                        m.sum || m.key === "advisorBase" ? "derived" : "manual"
+                      }
                       data-total-column={m.key}
                       data-fill-kind={columnTools.kind(m.key)}
                       data-fill-timing={
@@ -678,7 +680,7 @@ export function EffectivenessTotals({
                       title={`${m.name} (${m.label}) · ${sheetDataFillLabels[columnTools.kind(m.key)]}`}
                     >
                       {m.label}
-                      {m.sum ? " Σ" : ""}
+                      {m.sum || m.key === "advisorBase" ? " Σ" : ""}
                       {columnTools.handle(
                         m,
                         `${block.table.name} ${block.country} ${block.currency}`,
@@ -775,7 +777,11 @@ export function EffectivenessTotals({
                             data-fill-timing={
                               fillNextDay(m.key) ? "next-day" : "same-day"
                             }
-                            className={m.sum ? "sheet-derived" : ""}
+                            className={
+                              m.sum || m.key === "advisorBase"
+                                ? "sheet-derived"
+                                : ""
+                            }
                             data-total-tone={
                               columnTools.kind(m.key) === "automatic"
                                 ? "green"
@@ -784,7 +790,11 @@ export function EffectivenessTotals({
                                   : "blue"
                             }
                             style={columnTools.style(m.key)}
-                            data-entry={m.sum ? "derived" : "manual"}
+                            data-entry={
+                              m.sum || m.key === "advisorBase"
+                                ? "derived"
+                                : "manual"
+                            }
                           >
                             {m.sum ? (
                               <span
@@ -802,8 +812,15 @@ export function EffectivenessTotals({
                                       maximumFractionDigits: 2,
                                     }) + (sum.partial ? " *" : "")}
                               </span>
-                            ) : m.key === "baseManual" ||
-                              m.key === "advisorBase" ? (
+                            ) : m.key === "advisorBase" ? (
+                              <span title="BC automática: suma de los registros de Asesores para esta hoja, país y fecha">
+                                {cell?.manual.advisorBase === "NA"
+                                  ? "N.A."
+                                  : (cell?.manual.advisorBase?.toLocaleString(
+                                      "es-PE",
+                                    ) ?? "—")}
+                              </span>
+                            ) : m.key === "baseManual" ? (
                               <button
                                 type="button"
                                 className="manual-base-cell"
@@ -811,8 +828,7 @@ export function EffectivenessTotals({
                                 title={`Repartir ${m.name.toLowerCase()} por asesor`}
                                 onClick={() =>
                                   setBaseEditor({
-                                    metric:
-                                      m.key === "advisorBase" ? "BA" : "BM",
+                                    metric: "BM",
                                     tableId: t.tableId,
                                     country: g.country,
                                     currency: g.currency,

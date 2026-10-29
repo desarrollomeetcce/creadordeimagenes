@@ -1,4 +1,8 @@
 "use client";
+import {
+  SheetHorizontalNavigation,
+  horizontalSheetKey,
+} from "./sheet-horizontal-navigation";
 import { SheetSalesDetail } from "./sheet-sales-detail";
 import { SheetDataFillBadge } from "./sheet-data-fill-badge";
 import {
@@ -281,6 +285,7 @@ export function MetaEffectiveness({
     until: string;
     targets: { aliasId: string; country: string }[];
   } | null>(null);
+  const horizontalScroll = useRef<HTMLDivElement>(null);
   const grid = useRef<HTMLTableElement>(null);
   useSheetTextFit(grid);
   const {
@@ -367,13 +372,19 @@ export function MetaEffectiveness({
     });
   const [valueFilter, setValueFilter] = useState<string[] | null>(null),
     [stateFilter, setStateFilter] = useState("");
-  const viewMetrics = sheetMetrics.filter((m) =>
-    view === "manual"
-      ? m.key === "sales" || m.key === "budget"
-      : m.key !== "budget",
+  const viewMetrics = sheetMetrics.filter(
+    (m) =>
+      m.key !== "fixedCost" &&
+      (view === "manual"
+        ? m.key === "sales" || m.key === "budget"
+        : m.key !== "budget"),
   );
   const visibleMetrics = viewMetrics.filter(
-    (m) => selectedMetrics === null || selectedMetrics.includes(m.key),
+    (m) =>
+      selectedMetrics === null ||
+      (selectedMetrics.length > 0 &&
+        selectedMetrics.every((key) => key === "fixedCost")) ||
+      selectedMetrics.includes(m.key),
   );
   const visibleMetricKeys = new Set(visibleMetrics.map((m) => m.key));
   const currentRange = useRef(""),
@@ -796,12 +807,15 @@ export function MetaEffectiveness({
         a.country.localeCompare(b.country)
       );
     });
-  const advisorSections = grouping==="advisor"?groupFinancialRowsByAdvisor(
-    rows,
-    financialAliases,
-    temporaryCategories.temporary,
-    advisors,
-  ):[];
+  const advisorSections =
+    grouping === "advisor"
+      ? groupFinancialRowsByAdvisor(
+          rows,
+          financialAliases,
+          temporaryCategories.temporary,
+          advisors,
+        )
+      : [];
   const categoryBands =
     grouping === "advisor"
       ? advisorSections.flatMap((g) => g.bands)
@@ -1019,6 +1033,17 @@ export function MetaEffectiveness({
   return (
     <section
       className="effectiveness sheet-view financial-sheet-view"
+      tabIndex={0}
+      onKeyDown={(event) => horizontalSheetKey(event, horizontalScroll.current)}
+      onPointerDown={(event) => {
+        const target = event.target as HTMLElement;
+        if (
+          !target.closest(
+            "input,textarea,select,button,a,label,table,[contenteditable=true],[popover],dialog",
+          )
+        )
+          event.currentTarget.focus({ preventScroll: true });
+      }}
       aria-label="Efectividad diaria"
     >
       {duplicateReview.dialog}
@@ -1604,926 +1629,938 @@ export function MetaEffectiveness({
       )}
       {sheetTabs}
       {valid && (
-        <div className="table-scroll effectiveness-scroll sheet-scroll">
-          <table
-            ref={grid}
-            className="effectiveness-grid"
-            style={
-              {
-                ...(columnWidths.alias
-                  ? { "--sheet-alias-width": `${columnWidths.alias}px` }
-                  : {}),
-                "--sheet-advisor-width": `${columnWidths.advisor ?? 100}px`,
-                ...(columnWidths.country
-                  ? { "--sheet-country-width": `${columnWidths.country}px` }
-                  : {}),
-                ...(columnWidths.currency
-                  ? { "--sheet-currency-width": `${columnWidths.currency}px` }
-                  : {}),
-                "--sheet-metrics-width": `${days.reduce((sum, day) => sum + visibleMetrics.reduce((n, m) => n + (columnWidths[day + m.key] ?? 36), 0), 0)}px`,
-              } as CSSProperties
-            }
+        <>
+          <div
+            ref={horizontalScroll}
+            className="table-scroll effectiveness-scroll sheet-scroll"
           >
-            <caption className="sr-only">
-              Efectividad diaria desde {since} hasta {until}
-            </caption>
-            <colgroup>
-              <col className="sheet-alias-col" />
-              <col className="sheet-country-col" />
-              <col className="sheet-advisor-col" />
-              <col className="sheet-currency-col" />
-              {days.flatMap((day) =>
-                visibleMetrics.map((metric) => (
-                  <col
-                    key={day + metric.key}
-                    className="sheet-metric-col"
-                    style={{ width: columnWidths[day + metric.key] ?? 36 }}
-                  />
-                )),
-              )}
-            </colgroup>
+            <table
+              ref={grid}
+              className="effectiveness-grid"
+              style={
+                {
+                  ...(columnWidths.alias
+                    ? { "--sheet-alias-width": `${columnWidths.alias}px` }
+                    : {}),
+                  "--sheet-advisor-width": `${columnWidths.advisor ?? 100}px`,
+                  ...(columnWidths.country
+                    ? { "--sheet-country-width": `${columnWidths.country}px` }
+                    : {}),
+                  ...(columnWidths.currency
+                    ? { "--sheet-currency-width": `${columnWidths.currency}px` }
+                    : {}),
+                  "--sheet-metrics-width": `${days.reduce((sum, day) => sum + visibleMetrics.reduce((n, m) => n + (columnWidths[day + m.key] ?? 36), 0), 0)}px`,
+                } as CSSProperties
+              }
+            >
+              <caption className="sr-only">
+                Efectividad diaria desde {since} hasta {until}
+              </caption>
+              <colgroup>
+                <col className="sheet-alias-col" />
+                <col className="sheet-country-col" />
+                <col className="sheet-advisor-col" />
+                <col className="sheet-currency-col" />
+                {days.flatMap((day) =>
+                  visibleMetrics.map((metric) => (
+                    <col
+                      key={day + metric.key}
+                      className="sheet-metric-col"
+                      style={{ width: columnWidths[day + metric.key] ?? 36 }}
+                    />
+                  )),
+                )}
+              </colgroup>
 
-            <thead>
-              <tr>
-                <th
-                  rowSpan={visibleMetrics.length ? 2 : 1}
-                  scope="col"
-                  className="effectiveness-name"
-                  aria-sort={
-                    activeSort.kind === "text" && activeSort.field === "alias"
-                      ? activeSort.direction === "asc"
-                        ? "ascending"
-                        : "descending"
-                      : undefined
-                  }
-                >
-                  <div className="sheet-alias-heading">
-                    <input
-                      type="checkbox"
-                      className="sheet-alias-select"
-                      aria-label="Seleccionar todas las filas visibles"
-                      checked={allVisibleSelected}
-                      disabled={busy || !eligibleRows.length}
-                      title="Selecciona las filas visibles con país para activar o desactivar en bloque"
-                      ref={(el) => {
-                        if (el)
-                          el.indeterminate =
-                            selectedVisibleRows.length > 0 &&
-                            !allVisibleSelected;
-                      }}
-                      onChange={() => {
-                        const next = new Set(selectedPairs);
-                        for (const r of eligibleRows) {
-                          if (allVisibleSelected) next.delete(activationKey(r));
-                          else next.add(activationKey(r));
+              <thead>
+                <tr>
+                  <th
+                    rowSpan={visibleMetrics.length ? 2 : 1}
+                    scope="col"
+                    className="effectiveness-name"
+                    aria-sort={
+                      activeSort.kind === "text" && activeSort.field === "alias"
+                        ? activeSort.direction === "asc"
+                          ? "ascending"
+                          : "descending"
+                        : undefined
+                    }
+                  >
+                    <div className="sheet-alias-heading">
+                      <input
+                        type="checkbox"
+                        className="sheet-alias-select"
+                        aria-label="Seleccionar todas las filas visibles"
+                        checked={allVisibleSelected}
+                        disabled={busy || !eligibleRows.length}
+                        title="Selecciona las filas visibles con país para activar o desactivar en bloque"
+                        ref={(el) => {
+                          if (el)
+                            el.indeterminate =
+                              selectedVisibleRows.length > 0 &&
+                              !allVisibleSelected;
+                        }}
+                        onChange={() => {
+                          const next = new Set(selectedPairs);
+                          for (const r of eligibleRows) {
+                            if (allVisibleSelected)
+                              next.delete(activationKey(r));
+                            else next.add(activationKey(r));
+                          }
+                          choosePairs([...next]);
+                        }}
+                      />
+                      <EffectivenessCell
+                        label="Nombre de columna A"
+                        value={inventoryColumnName}
+                        onError={setMessage}
+                        onSave={(v) => columns({ aliasColumnName: v })}
+                      />
+
+                      <button
+                        type="button"
+                        className="sheet-sort-button"
+                        aria-label="Ordenar inventario"
+                        title="Ordenar alfabéticamente ascendente o descendente"
+                        onClick={() =>
+                          order({
+                            kind: "text",
+                            field: "alias",
+                            direction: "asc",
+                          })
                         }
-                        choosePairs([...next]);
-                      }}
+                      >
+                        {arrow({
+                          kind: "text",
+                          field: "alias",
+                          direction: "asc",
+                        })}
+                      </button>
+                    </div>
+                    <button
+                      type="button"
+                      className="sheet-analysis-trigger"
+                      aria-label={`Ver detalle de toda la hoja ${sheetName}`}
+                      onClick={() => setSheetSalesDetailOpen(true)}
+                    >
+                      Ver detalle de la hoja
+                    </button>
+                    <div className="financial-inventory-controls">
+                      <small>Seleccionar inventario</small>
+                      <SheetSearchSelect
+                        label="Seleccionar inventario"
+                        placeholder="Seleccionar inventario"
+                        value={inventoryId}
+                        options={inventoryLists.map((s) => ({
+                          value: s.id,
+                          label: s.name,
+                        }))}
+                        disabled={busy}
+                        onSelect={(id) => {
+                          setInventoryPreference(id);
+                          setNewName("");
+                        }}
+                      />
+                      {!inventoryId && (
+                        <small>
+                          Crea una pestaña Inventario para añadir ítems.
+                        </small>
+                      )}
+                      <InventoryMultiSelect
+                        label="Buscar y filtrar inventario de la hoja"
+                        placeholder="Buscar inventario…"
+                        options={financialAliases
+                          .filter((a) =>
+                            tables
+                              .find((t) => t.id === tableId)
+                              ?.aliases.some(
+                                (e) =>
+                                  e.id === a.id &&
+                                  e.inventorySheetId === inventoryId,
+                              ),
+                          )
+                          .map((a) => ({
+                            value: a.id,
+                            label: a.name,
+                          }))}
+                        values={selectedAliases ?? []}
+                        onChange={(v) => {
+                          setHistoryPeriod(null);
+                          setSelectedAliases(v.length ? v : null);
+                        }}
+                      />
+                    </div>
+                    <SheetColumnResizer
+                      label={inventoryColumnName}
+                      onResize={(w) => resizeColumn("alias", w)}
+                      onReset={() => resizeColumn("alias")}
                     />
-                    <EffectivenessCell
-                      label="Nombre de columna A"
-                      value={inventoryColumnName}
-                      onError={setMessage}
-                      onSave={(v) => columns({ aliasColumnName: v })}
-                    />
-
+                  </th>
+                  <th
+                    rowSpan={visibleMetrics.length ? 2 : 1}
+                    scope="col"
+                    className="effectiveness-country"
+                  >
                     <button
                       type="button"
                       className="sheet-sort-button"
-                      aria-label="Ordenar inventario"
-                      title="Ordenar alfabéticamente ascendente o descendente"
+                      aria-label="Ordenar por país"
                       onClick={() =>
                         order({
                           kind: "text",
-                          field: "alias",
+                          field: "country",
                           direction: "asc",
                         })
                       }
                     >
+                      País
                       {arrow({
-                        kind: "text",
-                        field: "alias",
-                        direction: "asc",
-                      })}
-                    </button>
-                  </div>
-                  <button
-                    type="button"
-                    className="sheet-analysis-trigger"
-                    aria-label={`Ver detalle de toda la hoja ${sheetName}`}
-                    onClick={() => setSheetSalesDetailOpen(true)}
-                  >
-                    Ver detalle de la hoja
-                  </button>
-                  <div className="financial-inventory-controls">
-                    <small>Seleccionar inventario</small>
-                    <SheetSearchSelect
-                      label="Seleccionar inventario"
-                      placeholder="Seleccionar inventario"
-                      value={inventoryId}
-                      options={inventoryLists.map((s) => ({
-                        value: s.id,
-                        label: s.name,
-                      }))}
-                      disabled={busy}
-                      onSelect={(id) => {
-                        setInventoryPreference(id);
-                        setNewName("");
-                      }}
-                    />
-                    {!inventoryId && (
-                      <small>
-                        Crea una pestaña Inventario para añadir ítems.
-                      </small>
-                    )}
-                    <InventoryMultiSelect
-                      label="Buscar y filtrar inventario de la hoja"
-                      placeholder="Buscar inventario…"
-                      options={financialAliases
-                        .filter((a) =>
-                          tables
-                            .find((t) => t.id === tableId)
-                            ?.aliases.some(
-                              (e) =>
-                                e.id === a.id &&
-                                e.inventorySheetId === inventoryId,
-                            ),
-                        )
-                        .map((a) => ({
-                          value: a.id,
-                          label: a.name,
-                        }))}
-                      values={selectedAliases ?? []}
-                      onChange={(v) => {
-                        setHistoryPeriod(null);
-                        setSelectedAliases(v.length ? v : null);
-                      }}
-                    />
-                  </div>
-                  <SheetColumnResizer
-                    label={inventoryColumnName}
-                    onResize={(w) => resizeColumn("alias", w)}
-                    onReset={() => resizeColumn("alias")}
-                  />
-                </th>
-                <th
-                  rowSpan={visibleMetrics.length ? 2 : 1}
-                  scope="col"
-                  className="effectiveness-country"
-                >
-                  <button
-                    type="button"
-                    className="sheet-sort-button"
-                    aria-label="Ordenar por país"
-                    onClick={() =>
-                      order({
                         kind: "text",
                         field: "country",
                         direction: "asc",
-                      })
-                    }
+                      })}
+                    </button>
+                    <SheetSearchSelect
+                      compact
+                      className="sheet-column-control"
+                      label="País para todas las filas"
+                      value={settings.defaultCountry}
+                      placeholder="Todas"
+                      options={[
+                        { value: "", label: "Vacío en todas" },
+                        ...countries,
+                      ]}
+                      onSelect={(v) => columns({ country: v })}
+                      onError={setMessage}
+                    />
+                    <SheetColumnResizer
+                      label="País"
+                      onResize={(w) => resizeColumn("country", w)}
+                      onReset={() => resizeColumn("country")}
+                    />
+                  </th>
+                  <th
+                    rowSpan={visibleMetrics.length ? 2 : 1}
+                    scope="col"
+                    className="effectiveness-advisor"
                   >
-                    País
-                    {arrow({
-                      kind: "text",
-                      field: "country",
-                      direction: "asc",
-                    })}
-                  </button>
-                  <SheetSearchSelect
-                    compact
-                    className="sheet-column-control"
-                    label="País para todas las filas"
-                    value={settings.defaultCountry}
-                    placeholder="Todas"
-                    options={[
-                      { value: "", label: "Vacío en todas" },
-                      ...countries,
-                    ]}
-                    onSelect={(v) => columns({ country: v })}
-                    onError={setMessage}
-                  />
-                  <SheetColumnResizer
-                    label="País"
-                    onResize={(w) => resizeColumn("country", w)}
-                    onReset={() => resizeColumn("country")}
-                  />
-                </th>
-                <th
-                  rowSpan={visibleMetrics.length ? 2 : 1}
-                  scope="col"
-                  className="effectiveness-advisor"
-                >
-                  Asesor
-                  <SheetSearchSelect
-                    label="Agrupar hoja por inventario o asesor"
-                    value={grouping}
-                    options={[
-                      { value: "inventory", label: "Por inventario" },
-                      { value: "advisor", label: "Por asesor" },
-                    ]}
-                    onSelect={(value) =>
-                      setGrouping(value as "inventory" | "advisor")
-                    }
-                  />
-                  <SheetSearchSelect
-                    label="Asignar asesor a filas de la hoja"
-                    placeholder="Asignar asesor…"
-                    value=""
-                    disabled={busy || !rows.some((r) => r.country)}
-                    options={[
-                      { value: "__none", label: "Sin asesor" },
-                      ...advisors.map((a) => ({
-                        value: a.id,
-                        label: a.label ?? a.name,
-                      })),
-                    ]}
-                    onSelect={(id) =>
-                      setBulkAdvisor({
-                        advisorId: id === "__none" ? null : id,
-                        name:
-                          id === "__none"
-                            ? "Sin asesor"
-                            : (advisors.find((a) => a.id === id)?.name ??
-                              "asesor"),
-                        selected: [...selectedVisibleRows],
-                        visible: [...rows],
-                      })
-                    }
-                  />
-                  <SheetColumnResizer
-                    label="Asesor"
-                    onResize={(w) => resizeColumn("advisor", w)}
-                    onReset={() => resizeColumn("advisor")}
-                  />
-                </th>
+                    Asesor
+                    <SheetSearchSelect
+                      label="Ordenar por"
+                      value={grouping}
+                      options={[
+                        { value: "inventory", label: "Ordenado por inventario" },
+                        { value: "advisor", label: "Ordenado por asesor" },
+                      ]}
+                      onSelect={(value) =>
+                        setGrouping(value as "inventory" | "advisor")
+                      }
+                    />
+                    <SheetSearchSelect
+                      label="Asignar asesor a filas de la hoja"
+                      placeholder="Asignar asesor…"
+                      value=""
+                      disabled={busy || !rows.some((r) => r.country)}
+                      options={[
+                        { value: "__none", label: "Sin asesor" },
+                        ...advisors.map((a) => ({
+                          value: a.id,
+                          label: a.label ?? a.name,
+                        })),
+                      ]}
+                      onSelect={(id) =>
+                        setBulkAdvisor({
+                          advisorId: id === "__none" ? null : id,
+                          name:
+                            id === "__none"
+                              ? "Sin asesor"
+                              : (advisors.find((a) => a.id === id)?.name ??
+                                "asesor"),
+                          selected: [...selectedVisibleRows],
+                          visible: [...rows],
+                        })
+                      }
+                    />
+                    <SheetColumnResizer
+                      label="Asesor"
+                      onResize={(w) => resizeColumn("advisor", w)}
+                      onReset={() => resizeColumn("advisor")}
+                    />
+                  </th>
 
-                <th
-                  rowSpan={visibleMetrics.length ? 2 : 1}
-                  scope="col"
-                  className="effectiveness-currency"
-                >
-                  <button
-                    type="button"
-                    className="sheet-sort-button"
-                    aria-label="Ordenar por moneda"
-                    onClick={() =>
-                      order({
+                  <th
+                    rowSpan={visibleMetrics.length ? 2 : 1}
+                    scope="col"
+                    className="effectiveness-currency"
+                  >
+                    <button
+                      type="button"
+                      className="sheet-sort-button"
+                      aria-label="Ordenar por moneda"
+                      onClick={() =>
+                        order({
+                          kind: "text",
+                          field: "currency",
+                          direction: "asc",
+                        })
+                      }
+                    >
+                      Moneda
+                      {arrow({
                         kind: "text",
                         field: "currency",
                         direction: "asc",
-                      })
-                    }
-                  >
-                    Moneda
-                    {arrow({
-                      kind: "text",
-                      field: "currency",
-                      direction: "asc",
-                    })}
-                  </button>
-                  <SheetSearchSelect
-                    compact
-                    className="sheet-column-control"
-                    label="Moneda para todas las filas"
-                    value={settings.defaultCurrency}
-                    placeholder="Todas"
-                    options={[
-                      { value: "", label: "Vacío en todas" },
-                      ...currencies,
-                    ]}
-                    onSelect={(v) => columns({ currency: v })}
-                    onError={setMessage}
-                  />
-                  <SheetColumnResizer
-                    label="Moneda"
-                    onResize={(w) => resizeColumn("currency", w)}
-                    onReset={() => resizeColumn("currency")}
-                  />
-                </th>
-                {visibleMetrics.length > 0 &&
-                  days.map((d) => (
-                    <th
-                      key={d}
-                      className="sheet-date-heading"
-                      data-day={d}
-                      colSpan={visibleMetrics.length}
-                      scope="colgroup"
-                    >
-                      {d.slice(8)}.{d.slice(5, 7)}
-                    </th>
-                  ))}
-              </tr>
-              {visibleMetrics.length > 0 && (
-                <tr>
-                  {days.flatMap((d) =>
-                    visibleMetrics.map((m) => (
+                      })}
+                    </button>
+                    <SheetSearchSelect
+                      compact
+                      className="sheet-column-control"
+                      label="Moneda para todas las filas"
+                      value={settings.defaultCurrency}
+                      placeholder="Todas"
+                      options={[
+                        { value: "", label: "Vacío en todas" },
+                        ...currencies,
+                      ]}
+                      onSelect={(v) => columns({ currency: v })}
+                      onError={setMessage}
+                    />
+                    <SheetColumnResizer
+                      label="Moneda"
+                      onResize={(w) => resizeColumn("currency", w)}
+                      onReset={() => resizeColumn("currency")}
+                    />
+                  </th>
+                  {visibleMetrics.length > 0 &&
+                    days.map((d) => (
                       <th
-                        key={d + m.key}
-                        className="sheet-parameter-heading"
-                        data-metric={m.key}
-                        data-fill-kind={sheetMetricDataFill(m.key, {
-                          linked: !!linkedColumn(m.key, d),
-                        })}
-                        scope="col"
-                        aria-sort={
-                          activeSort.kind === "day" &&
-                          activeSort.day === d &&
-                          activeSort.metric === m.key
-                            ? activeSort.direction === "asc"
-                              ? "ascending"
-                              : "descending"
-                            : undefined
-                        }
+                        key={d}
+                        className="sheet-date-heading"
+                        data-day={d}
+                        colSpan={visibleMetrics.length}
+                        scope="colgroup"
                       >
-                        <button
-                          type="button"
-                          className="sheet-sort-button"
-                          aria-label={`Ordenar ${m.name} ${d}`}
-                          title={
-                            m.money
-                              ? "Ordena dentro de cada moneda; desconocidos al final"
-                              : `Ordenar ${m.name} de ${d}`
+                        {d.slice(8)}.{d.slice(5, 7)}
+                      </th>
+                    ))}
+                </tr>
+                {visibleMetrics.length > 0 && (
+                  <tr>
+                    {days.flatMap((d) =>
+                      visibleMetrics.map((m) => (
+                        <th
+                          key={d + m.key}
+                          className="sheet-parameter-heading"
+                          data-metric={m.key}
+                          data-fill-kind={sheetMetricDataFill(m.key, {
+                            linked: !!linkedColumn(m.key, d),
+                          })}
+                          scope="col"
+                          aria-sort={
+                            activeSort.kind === "day" &&
+                            activeSort.day === d &&
+                            activeSort.metric === m.key
+                              ? activeSort.direction === "asc"
+                                ? "ascending"
+                                : "descending"
+                              : undefined
                           }
-                          onClick={() =>
-                            order({
+                        >
+                          <button
+                            type="button"
+                            className="sheet-sort-button"
+                            aria-label={`Ordenar ${m.name} ${d}`}
+                            title={
+                              m.money
+                                ? "Ordena dentro de cada moneda; desconocidos al final"
+                                : `Ordenar ${m.name} de ${d}`
+                            }
+                            onClick={() =>
+                              order({
+                                kind: "day",
+                                day: d,
+                                metric: m.key,
+                                direction: "asc",
+                              })
+                            }
+                          >
+                            {m.label}
+                            {arrow({
                               kind: "day",
                               day: d,
                               metric: m.key,
                               direction: "asc",
-                            })
-                          }
-                        >
-                          {m.label}
-                          {arrow({
-                            kind: "day",
-                            day: d,
-                            metric: m.key,
-                            direction: "asc",
-                          })}
-                        </button>
-                        <SheetDataFillBadge
-                          compact
-                          kind={sheetMetricDataFill(m.key, {
-                            linked: !!linkedColumn(m.key, d),
-                          })}
-                        />
-                        <SheetActiveFill
-                          metric={m.key}
-                          name={m.name}
-                          day={d}
-                          disabled={busy || !data || linkedColumn(m.key, d)}
-                          onError={setMessage}
-                          onApply={async (value) => {
-                            const targets = (data?.rows ?? []).filter(
-                              (r) => r.active,
-                            );
-                            if (!targets.length)
-                              throw Error(
-                                "No hay elementos activos en el inventario en esta hoja.",
-                              );
-                            setBusy(true);
-                            try {
-                              await fill(targets, [m.key], value, [d], true);
-                            } finally {
-                              setBusy(false);
-                            }
-                          }}
-                        />
-                        <SheetColumnResizer
-                          label={`${m.name} ${d}`}
-                          onResize={(w) => resizeColumn(d + m.key, w)}
-                          onReset={() => resizeColumn(d + m.key)}
-                        />
-                      </th>
-                    )),
-                  )}
-                </tr>
-              )}
-            </thead>
-            <tbody>
-              {displayedRows.map((r) => {
-                const name = names.get(r.aliasId) ?? "Inventario";
-                const category = financialRowCategories(
-                  r,
-                  financialAliases.find((a) => a.id === r.aliasId),
-                  temporaryCategories.temporary,
-                );
-                const advisorBand = firstAdvisorBands.get(activationKey(r)),
-                  inactiveCount = firstInactiveBands.get(activationKey(r));
-                const band = showCategoryBands
-                  ? firstBands.get(activationKey(r))
-                  : undefined;
-                return (
-                  <Fragment key={activationKey(r)}>
-                    {advisorBand && (
-                      <tr
-                        className="financial-advisor-band"
-                        data-advisor-group={advisorBand.id || "none"}
-                      >
-                        <th colSpan={4 + days.length * visibleMetrics.length}>
-                          <span>
-                            <strong>{advisorBand.name}</strong>
-                            <small>
-                              {advisorBand.rows.length}{" "}
-                              {advisorBand.rows.length === 1 ? "fila" : "filas"}
-                            </small>
-                          </span>
-                        </th>
-                      </tr>
-                    )}
-                    {inactiveCount && (
-                      <tr className="financial-inactive-band">
-                        <th colSpan={4 + days.length * visibleMetrics.length}>
-                          <span>
-                            <strong>Desactivados</strong>
-                            <small>
-                              {inactiveCount}{" "}
-                              {inactiveCount === 1 ? "fila" : "filas"}
-                            </small>
-                          </span>
-                        </th>
-                      </tr>
-                    )}
-                    {band && (
-                      <tr className="financial-category-band">
-                        <th colSpan={4 + days.length * visibleMetrics.length}>
-                          <span>
-                            <strong>
-                              {band.names.join(" · ") ||
-                                "Sin categoría principal"}
-                            </strong>
-                            <small>
-                              {band.names.length > 0 &&
-                                `${band.temporary ? "Categoría temporal" : "Categoría principal"} · `}
-                              {band.rows.length}{" "}
-                              {band.rows.length === 1 ? "fila" : "filas"}
-                            </small>
-                          </span>
-                        </th>
-                      </tr>
-                    )}
-                    <SheetSizedRow
-                      label={`${name} ${r.country}`}
-                      height={rowsLayout.heights[r.aliasId + ":" + r.country]}
-                      onResize={(v) =>
-                        rowsLayout.resize(r.aliasId + ":" + r.country, v)
-                      }
-                      onReset={() =>
-                        rowsLayout.resize(r.aliasId + ":" + r.country)
-                      }
-                      key={JSON.stringify([r.aliasId, r.country])}
-                      data-alias-id={r.aliasId}
-                      data-country={r.country}
-                      data-currency={r.currency}
-                      data-active={r.active}
-                    >
-                      <td className="effectiveness-name">
-                        <div className="sheet-alias-row">
-                          <input
-                            type="checkbox"
-                            className="sheet-alias-select"
-                            aria-label={`Seleccionar ${name} ${r.country || "sin país"}`}
-                            checked={selectedPairSet.has(activationKey(r))}
-                            disabled={busy}
-                            title={`Seleccionar ${name} en ${r.country || "sin país"} para acciones de esta hoja`}
-                            onChange={() =>
-                              choosePairs(
-                                selectedPairSet.has(activationKey(r))
-                                  ? selectedPairs.filter(
-                                      (k) => k !== activationKey(r),
-                                    )
-                                  : [...selectedPairs, activationKey(r)],
-                              )
-                            }
-                          />
-                          <button
-                            type="button"
-                            role="switch"
-                            aria-checked={r.active}
-                            className="meta-status-switch sheet-alias-switch"
-                            disabled={busy || !r.country}
-                            aria-label={`${r.active ? "Desactivar" : "Activar"} ${name} ${r.country || "sin país"}`}
-                            title={
-                              !r.country
-                                ? "Elige un país para activar o desactivar esta fila"
-                                : `${r.active ? "Activado" : "Desactivado"} · ${r.country}${r.lastStateChange ? " · " + new Date(r.lastStateChange).toLocaleString("es-PE", { timeZone: "America/Lima" }) : " · por defecto"}. Solo Efectividad.`
-                            }
-                            onClick={() => void toggleState(r)}
-                          >
-                            <span aria-hidden="true" />
+                            })}
                           </button>
-                          <EffectivenessCell
-                            label={`Inventario ${name} ${r.country || "sin país"}`}
-                            value={name}
-                            onError={setMessage}
-                            onPaste={openPaste}
-                            onSave={async (v) => {
-                              if (!v || v.length > 150)
-                                throw Error(
-                                  "El nombre debe tener entre 1 y 150 caracteres.",
-                                );
-                              await mutate(
-                                "meta-ads/aliases/" + r.aliasId,
-                                "PATCH",
-                                { name: v },
-                                true,
-                              );
-                            }}
-                          />
-                          {!!category.choices.length && (
-                            <span
-                              className="financial-temporary-category"
-                              data-temporary={category.temporary || undefined}
-                            >
-                              <InventoryMultiSelect
-                                compact
-                                all={false}
-                                label={`${r.active ? "Categoría temporal" : "Categoría principal del inventario"} de ${name} ${r.country || "sin país"}`}
-                                placeholder="▤"
-                                options={category.choices.map((c) => ({
-                                  value: c.id,
-                                  label: c.name,
-                                }))}
-                                values={category.ids}
-                                disabled={busy || !r.active}
-                                description="Solo categorías ya asignadas a este inventario. Puedes elegir varias, incluidas las secundarias. Vacío restaura las principales del inventario. Los desactivados siempre usan las principales del inventario."
-                                onChange={(ids) =>
-                                  temporaryCategories.choose(
-                                    activationKey(r),
-                                    ids,
-                                    category.defaults,
-                                  )
-                                }
-                              />
-                            </span>
-                          )}
-                          <EffectivenessHistory
-                            tableId={tableId}
-                            aliasId={r.aliasId}
-                            country={r.country}
-                            name={name}
-                            initialSince={since}
-                            initialUntil={until}
-                            onPeriod={(period) =>
-                              openActivePeriod(period, r, name)
-                            }
-                          />
-                        </div>
-                      </td>
-                      <td className="effectiveness-country">
-                        <SheetSearchSelect
-                          compact
-                          placeholder="—"
-                          label={`País de ${name} ${r.country || "sin país"}`}
-                          value={r.country}
-                          options={[
-                            { value: "", label: "Sin asignar" },
-                            ...countries,
-                          ]}
-                          onSelect={(v) => identity(r, "country", v)}
-                          onError={setMessage}
-                        />
-                      </td>
-                      <td className="effectiveness-advisor">
-                        <div className="alias-advisor-actions">
-                          <SheetSearchSelect
+                          <SheetDataFillBadge
                             compact
-                            displayLabel
-                            placeholder="Sin asesor"
-                            label={`Asesor de ${name} ${r.country}`}
-                            value={
-                              advisors.some((a) => a.id === r.advisorId)
-                                ? (r.advisorId ?? "")
-                                : ""
-                            }
-                            options={[
-                              { value: "", label: "Sin asesor" },
-                              ...advisors.map((a) => ({
-                                value: a.id,
-                                label: a.label ?? a.name,
-                              })),
-                            ]}
+                            kind={sheetMetricDataFill(m.key, {
+                              linked: !!linkedColumn(m.key, d),
+                            })}
+                          />
+                          <SheetActiveFill
+                            metric={m.key}
+                            name={m.name}
+                            day={d}
+                            disabled={busy || !data || linkedColumn(m.key, d)}
                             onError={setMessage}
-                            onSelect={async (advisorId) => {
-                              if (!r.country)
+                            onApply={async (value) => {
+                              const targets = (data?.rows ?? []).filter(
+                                (r) => r.active,
+                              );
+                              if (!targets.length)
                                 throw Error(
-                                  "Elige primero el país de esta fila para asignar el asesor.",
+                                  "No hay elementos activos en el inventario en esta hoja.",
                                 );
-                              if ((advisorId || null) !== r.advisorId)
-                                setAssignment({
-                                  row: r,
-                                  advisorId: advisorId || null,
-                                  name,
-                                });
+                              setBusy(true);
+                              try {
+                                await fill(targets, [m.key], value, [d], true);
+                              } finally {
+                                setBusy(false);
+                              }
                             }}
                           />
-                          {r.advisorId && r.country && (
+                          <SheetColumnResizer
+                            label={`${m.name} ${d}`}
+                            onResize={(w) => resizeColumn(d + m.key, w)}
+                            onReset={() => resizeColumn(d + m.key)}
+                          />
+                        </th>
+                      )),
+                    )}
+                  </tr>
+                )}
+              </thead>
+              <tbody>
+                {displayedRows.map((r) => {
+                  const name = names.get(r.aliasId) ?? "Inventario";
+                  const category = financialRowCategories(
+                    r,
+                    financialAliases.find((a) => a.id === r.aliasId),
+                    temporaryCategories.temporary,
+                  );
+                  const advisorBand = firstAdvisorBands.get(activationKey(r)),
+                    inactiveCount = firstInactiveBands.get(activationKey(r));
+                  const band = showCategoryBands
+                    ? firstBands.get(activationKey(r))
+                    : undefined;
+                  return (
+                    <Fragment key={activationKey(r)}>
+                      {advisorBand && (
+                        <tr
+                          className="financial-advisor-band"
+                          data-advisor-group={advisorBand.id || "none"}
+                        >
+                          <th colSpan={4 + days.length * visibleMetrics.length}>
+                            <span>
+                              <strong>{advisorBand.name}</strong>
+                              <small>
+                                {advisorBand.rows.length}{" "}
+                                {advisorBand.rows.length === 1
+                                  ? "fila"
+                                  : "filas"}
+                              </small>
+                            </span>
+                          </th>
+                        </tr>
+                      )}
+                      {inactiveCount && (
+                        <tr className="financial-inactive-band">
+                          <th colSpan={4 + days.length * visibleMetrics.length}>
+                            <span>
+                              <strong>Desactivados</strong>
+                              <small>
+                                {inactiveCount}{" "}
+                                {inactiveCount === 1 ? "fila" : "filas"}
+                              </small>
+                            </span>
+                          </th>
+                        </tr>
+                      )}
+                      {band && (
+                        <tr className="financial-category-band">
+                          <th colSpan={4 + days.length * visibleMetrics.length}>
+                            <span>
+                              <strong>
+                                {band.names.join(" · ") ||
+                                  "Sin categoría principal"}
+                              </strong>
+                              <small>
+                                {band.names.length > 0 &&
+                                  `${band.temporary ? "Categoría temporal" : "Categoría principal"} · `}
+                                {band.rows.length}{" "}
+                                {band.rows.length === 1 ? "fila" : "filas"}
+                              </small>
+                            </span>
+                          </th>
+                        </tr>
+                      )}
+                      <SheetSizedRow
+                        label={`${name} ${r.country}`}
+                        height={rowsLayout.heights[r.aliasId + ":" + r.country]}
+                        onResize={(v) =>
+                          rowsLayout.resize(r.aliasId + ":" + r.country, v)
+                        }
+                        onReset={() =>
+                          rowsLayout.resize(r.aliasId + ":" + r.country)
+                        }
+                        key={JSON.stringify([r.aliasId, r.country])}
+                        data-alias-id={r.aliasId}
+                        data-country={r.country}
+                        data-currency={r.currency}
+                        data-active={r.active}
+                      >
+                        <td className="effectiveness-name">
+                          <div className="sheet-alias-row">
+                            <input
+                              type="checkbox"
+                              className="sheet-alias-select"
+                              aria-label={`Seleccionar ${name} ${r.country || "sin país"}`}
+                              checked={selectedPairSet.has(activationKey(r))}
+                              disabled={busy}
+                              title={`Seleccionar ${name} en ${r.country || "sin país"} para acciones de esta hoja`}
+                              onChange={() =>
+                                choosePairs(
+                                  selectedPairSet.has(activationKey(r))
+                                    ? selectedPairs.filter(
+                                        (k) => k !== activationKey(r),
+                                      )
+                                    : [...selectedPairs, activationKey(r)],
+                                )
+                              }
+                            />
                             <button
                               type="button"
-                              className="advisor-detail-trigger"
-                              aria-label={`Detalle del asesor de ${name} ${r.country}`}
-                              title="Ver progreso del asesor"
-                              onClick={() => {
-                                const p = advisors.find(
-                                  (a) => a.id === r.advisorId,
-                                );
-                                if (p) {
-                                  setDetailVersion((v) => v + 1);
-                                  setAdvisorDetail({
-                                    ...p,
-                                    aliasId: r.aliasId,
-                                    country: r.country,
-                                  });
-                                }
-                              }}
+                              role="switch"
+                              aria-checked={r.active}
+                              className="meta-status-switch sheet-alias-switch"
+                              disabled={busy || !r.country}
+                              aria-label={`${r.active ? "Desactivar" : "Activar"} ${name} ${r.country || "sin país"}`}
+                              title={
+                                !r.country
+                                  ? "Elige un país para activar o desactivar esta fila"
+                                  : `${r.active ? "Activado" : "Desactivado"} · ${r.country}${r.lastStateChange ? " · " + new Date(r.lastStateChange).toLocaleString("es-PE", { timeZone: "America/Lima" }) : " · por defecto"}. Solo Efectividad.`
+                              }
+                              onClick={() => void toggleState(r)}
                             >
-                              ↗
+                              <span aria-hidden="true" />
                             </button>
-                          )}
-                        </div>
-                      </td>
+                            <EffectivenessCell
+                              label={`Inventario ${name} ${r.country || "sin país"}`}
+                              value={name}
+                              onError={setMessage}
+                              onPaste={openPaste}
+                              onSave={async (v) => {
+                                if (!v || v.length > 150)
+                                  throw Error(
+                                    "El nombre debe tener entre 1 y 150 caracteres.",
+                                  );
+                                await mutate(
+                                  "meta-ads/aliases/" + r.aliasId,
+                                  "PATCH",
+                                  { name: v },
+                                  true,
+                                );
+                              }}
+                            />
+                            {!!category.choices.length && (
+                              <span
+                                className="financial-temporary-category"
+                                data-temporary={category.temporary || undefined}
+                              >
+                                <InventoryMultiSelect
+                                  compact
+                                  all={false}
+                                  label={`${r.active ? "Categoría temporal" : "Categoría principal del inventario"} de ${name} ${r.country || "sin país"}`}
+                                  placeholder="▤"
+                                  options={category.choices.map((c) => ({
+                                    value: c.id,
+                                    label: c.name,
+                                  }))}
+                                  values={category.ids}
+                                  disabled={busy || !r.active}
+                                  description="Solo categorías ya asignadas a este inventario. Puedes elegir varias, incluidas las secundarias. Vacío restaura las principales del inventario. Los desactivados siempre usan las principales del inventario."
+                                  onChange={(ids) =>
+                                    temporaryCategories.choose(
+                                      activationKey(r),
+                                      ids,
+                                      category.defaults,
+                                    )
+                                  }
+                                />
+                              </span>
+                            )}
+                            <EffectivenessHistory
+                              tableId={tableId}
+                              aliasId={r.aliasId}
+                              country={r.country}
+                              name={name}
+                              initialSince={since}
+                              initialUntil={until}
+                              onPeriod={(period) =>
+                                openActivePeriod(period, r, name)
+                              }
+                            />
+                          </div>
+                        </td>
+                        <td className="effectiveness-country">
+                          <SheetSearchSelect
+                            compact
+                            placeholder="—"
+                            label={`País de ${name} ${r.country || "sin país"}`}
+                            value={r.country}
+                            options={[
+                              { value: "", label: "Sin asignar" },
+                              ...countries,
+                            ]}
+                            onSelect={(v) => identity(r, "country", v)}
+                            onError={setMessage}
+                          />
+                        </td>
+                        <td className="effectiveness-advisor">
+                          <div className="alias-advisor-actions">
+                            <SheetSearchSelect
+                              compact
+                              displayLabel
+                              placeholder="Sin asesor"
+                              label={`Asesor de ${name} ${r.country}`}
+                              value={
+                                advisors.some((a) => a.id === r.advisorId)
+                                  ? (r.advisorId ?? "")
+                                  : ""
+                              }
+                              options={[
+                                { value: "", label: "Sin asesor" },
+                                ...advisors.map((a) => ({
+                                  value: a.id,
+                                  label: a.label ?? a.name,
+                                })),
+                              ]}
+                              onError={setMessage}
+                              onSelect={async (advisorId) => {
+                                if (!r.country)
+                                  throw Error(
+                                    "Elige primero el país de esta fila para asignar el asesor.",
+                                  );
+                                if ((advisorId || null) !== r.advisorId)
+                                  setAssignment({
+                                    row: r,
+                                    advisorId: advisorId || null,
+                                    name,
+                                  });
+                              }}
+                            />
+                            {r.advisorId && r.country && (
+                              <button
+                                type="button"
+                                className="advisor-detail-trigger"
+                                aria-label={`Detalle del asesor de ${name} ${r.country}`}
+                                title="Ver progreso del asesor"
+                                onClick={() => {
+                                  const p = advisors.find(
+                                    (a) => a.id === r.advisorId,
+                                  );
+                                  if (p) {
+                                    setDetailVersion((v) => v + 1);
+                                    setAdvisorDetail({
+                                      ...p,
+                                      aliasId: r.aliasId,
+                                      country: r.country,
+                                    });
+                                  }
+                                }}
+                              >
+                                ↗
+                              </button>
+                            )}
+                          </div>
+                        </td>
 
-                      <td className="effectiveness-currency">
-                        <SheetSearchSelect
-                          compact
-                          placeholder="—"
-                          label={`Moneda de ${name} ${r.country || "sin país"}`}
-                          value={r.currency}
-                          options={[
-                            { value: "", label: "Sin asignar" },
-                            ...currencies,
-                          ]}
-                          onSelect={(v) => identity(r, "currency", v)}
-                          onError={setMessage}
-                        />
-                      </td>
-                      {days.flatMap((d) => {
-                        const c = r.days[d],
-                          partial = c && c.campaigns < r.campaigns;
-                        const cells = sheetMetrics.map((m) => {
-                          const cellColor = sheetCellColor(
-                            colorRules,
-                            m.key,
-                            d,
-                            c?.na?.includes(m.key)
-                              ? "NA"
-                              : (c?.[m.key] ?? null),
-                            r.currency || "USD",
-                          );
-                          const fillKind = sheetMetricDataFill(m.key, {
-                            linked: !!c?.linked?.[m.key],
-                            synced: !!c?.synced?.[m.key],
-                            manual: !!c?.manual?.includes(m.key),
-                            automaticNa: !!c?.automaticNa?.includes(m.key),
-                            received:
-                              m.key === "fixedCost" &&
-                              !c?.manual?.includes(m.key) &&
-                              !!c?.sourceFixedCost?.length,
-                          });
-                          return (
-                            <td
-                              key={d + m.label}
-                              data-fill-kind={fillKind}
-                              data-na={c?.na?.includes(m.key) || undefined}
-                              data-auto-na={
-                                c?.automaticNa?.includes(m.key) || undefined
-                              }
-                              style={
-                                cellColor
-                                  ? ({
-                                      "--sheet-rule-color": cellColor,
-                                    } as CSSProperties)
-                                  : undefined
-                              }
-                              data-colored={!!cellColor || undefined}
-                              className={
-                                m.key === "base" || m.key === "spend"
-                                  ? "sheet-derived" +
-                                    ((partial && !c?.manual?.includes(m.key)) ||
-                                    c?.partialMetrics?.includes(m.key)
-                                      ? " sheet-partial"
-                                      : "")
-                                  : c?.synced?.[m.key]
-                                    ? "sheet-synced-cell"
-                                    : ""
-                              }
-                            >
-                              <EffectivenessCell
-                                allowNA
-                                locked={!!c?.linked?.[m.key]}
-                                onOpen={
-                                  m.key === "sales" && !c?.linked?.sales
-                                    ? () => {
-                                        if (!r.country) {
-                                          setMessage(
-                                            "Elige el país antes de registrar ventas por asesor.",
-                                          );
-                                          return;
-                                        }
-                                        setSalesReview({
-                                          aliasId: r.aliasId,
-                                          country: r.country,
-                                          day: d,
-                                        });
-                                      }
+                        <td className="effectiveness-currency">
+                          <SheetSearchSelect
+                            compact
+                            placeholder="—"
+                            label={`Moneda de ${name} ${r.country || "sin país"}`}
+                            value={r.currency}
+                            options={[
+                              { value: "", label: "Sin asignar" },
+                              ...currencies,
+                            ]}
+                            onSelect={(v) => identity(r, "currency", v)}
+                            onError={setMessage}
+                          />
+                        </td>
+                        {days.flatMap((d) => {
+                          const c = r.days[d],
+                            partial = c && c.campaigns < r.campaigns;
+                          const cells = sheetMetrics.map((m) => {
+                            const cellColor = sheetCellColor(
+                              colorRules,
+                              m.key,
+                              d,
+                              c?.na?.includes(m.key)
+                                ? "NA"
+                                : (c?.[m.key] ?? null),
+                              r.currency || "USD",
+                            );
+                            const fillKind = sheetMetricDataFill(m.key, {
+                              linked: !!c?.linked?.[m.key],
+                              synced: !!c?.synced?.[m.key],
+                              manual: !!c?.manual?.includes(m.key),
+                              automaticNa: !!c?.automaticNa?.includes(m.key),
+                              received:
+                                m.key === "fixedCost" &&
+                                !c?.manual?.includes(m.key) &&
+                                !!c?.sourceFixedCost?.length,
+                            });
+                            return (
+                              <td
+                                key={d + m.label}
+                                data-fill-kind={fillKind}
+                                data-na={c?.na?.includes(m.key) || undefined}
+                                data-auto-na={
+                                  c?.automaticNa?.includes(m.key) || undefined
+                                }
+                                style={
+                                  cellColor
+                                    ? ({
+                                        "--sheet-rule-color": cellColor,
+                                      } as CSSProperties)
                                     : undefined
                                 }
-                                manual={
-                                  c?.manual?.includes(m.key) &&
-                                  !c?.linked?.[m.key]
+                                data-colored={!!cellColor || undefined}
+                                className={
+                                  m.key === "base" || m.key === "spend"
+                                    ? "sheet-derived" +
+                                      ((partial &&
+                                        !c?.manual?.includes(m.key)) ||
+                                      c?.partialMetrics?.includes(m.key)
+                                        ? " sheet-partial"
+                                        : "")
+                                    : c?.synced?.[m.key]
+                                      ? "sheet-synced-cell"
+                                      : ""
                                 }
-                                placeholder={
-                                  m.money &&
-                                  c?.fxMissing &&
-                                  c[m.key] === null &&
-                                  !c.na?.includes(m.key)
-                                    ? "Sin tasa"
-                                    : "—"
-                                }
-                                label={`${m.label} ${name} ${r.country} ${d}`}
-                                value={
-                                  c?.na?.includes(m.key)
-                                    ? "N.A."
-                                    : c?.[m.key] === null ||
-                                        c?.[m.key] === undefined
-                                      ? ""
-                                      : m.money
-                                        ? c[m.key]!.toFixed(
-                                            new Intl.NumberFormat("en", {
-                                              style: "currency",
-                                              currency: r.currency || "USD",
-                                            }).resolvedOptions()
-                                              .maximumFractionDigits,
-                                          )
-                                        : String(c[m.key])
-                                }
-                                onError={setMessage}
-                                onSave={(v) => editCell(r, d, m.key, v)}
-                                hint={`${cellColor ? "Fondo por una regla de Colores para este valor. " : sheetDataFillLabels[fillKind] + ". "}${c?.linked?.[m.key] ? "Vinculada a «" + c.linked[m.key]!.name + "». Edita el origen o desvincula para editar aquí. " + (!c.linked[m.key]!.matched ? "Sin coincidencia exacta de inventario y país. " : "") : ""}${c?.automaticNa?.includes(m.key) ? "N.A. automático por desactivación; vuelve a vacío al activar. " : ""}${c?.synced?.[m.key] ? "Sincronizado desde «" + c.synced[m.key] + "». " : ""}${c?.manual?.includes(m.key) && !c?.linked?.[m.key] ? "Ajuste manual de Efectividad. Originales conservados. " : ""}${m.key === "spend" && !c?.linked?.[m.key] ? "Original Meta: " + (c?.sourceSpend.map((x) => x.currency + " " + x.amount).join(" + ") || "sin datos") + ". " : ""}${c?.fxMissing && c?.[m.key] === null && !c.na?.includes(m.key) ? "Sin tasa. " : ""}${partial || c?.partialMetrics?.includes(m.key) ? "Cobertura parcial. " : ""}${m.key === "fixedCost" && !c?.linked?.[m.key] ? "Original CF: " + (c?.sourceFixedCost.map((x) => x.currency + " " + x.amount).join(" + ") || "sin datos") + ". " : ""}${m.money && !c?.linked?.[m.key] ? c?.fx.map((f) => `${f.date}: 1 ${f.from} = ${f.rate} ${f.to} · ${f.source}`).join("; ") || "" : ""} ${c?.linked?.[m.key] ? "Edita el valor en la hoja de origen." : m.key === "sales" ? "Clic o Enter para elegir asesor y cantidad de ventas." : "Escribe un número o N.A.; vacío restaura el importado en B/G; en P borra el presupuesto."}`}
-                              />
-                              {(c?.partialMetrics?.includes(m.key) ||
-                                (partial && !c?.manual?.includes(m.key))) &&
-                                (m.key === "base" || m.key === "spend") && (
-                                  <span
-                                    className="sheet-partial-marker"
-                                    title="Cobertura parcial"
-                                  >
-                                    *
-                                  </span>
-                                )}
-                            </td>
+                              >
+                                <EffectivenessCell
+                                  allowNA
+                                  locked={!!c?.linked?.[m.key]}
+                                  onOpen={
+                                    m.key === "sales" && !c?.linked?.sales
+                                      ? () => {
+                                          if (!r.country) {
+                                            setMessage(
+                                              "Elige el país antes de registrar ventas por asesor.",
+                                            );
+                                            return;
+                                          }
+                                          setSalesReview({
+                                            aliasId: r.aliasId,
+                                            country: r.country,
+                                            day: d,
+                                          });
+                                        }
+                                      : undefined
+                                  }
+                                  manual={
+                                    c?.manual?.includes(m.key) &&
+                                    !c?.linked?.[m.key]
+                                  }
+                                  placeholder={
+                                    m.money &&
+                                    c?.fxMissing &&
+                                    c[m.key] === null &&
+                                    !c.na?.includes(m.key)
+                                      ? "Sin tasa"
+                                      : "—"
+                                  }
+                                  label={`${m.label} ${name} ${r.country} ${d}`}
+                                  value={
+                                    c?.na?.includes(m.key)
+                                      ? "N.A."
+                                      : c?.[m.key] === null ||
+                                          c?.[m.key] === undefined
+                                        ? ""
+                                        : m.money
+                                          ? c[m.key]!.toFixed(
+                                              new Intl.NumberFormat("en", {
+                                                style: "currency",
+                                                currency: r.currency || "USD",
+                                              }).resolvedOptions()
+                                                .maximumFractionDigits,
+                                            )
+                                          : String(c[m.key])
+                                  }
+                                  onError={setMessage}
+                                  onSave={(v) => editCell(r, d, m.key, v)}
+                                  hint={`${cellColor ? "Fondo por una regla de Colores para este valor. " : sheetDataFillLabels[fillKind] + ". "}${c?.linked?.[m.key] ? "Vinculada a «" + c.linked[m.key]!.name + "». Edita el origen o desvincula para editar aquí. " + (!c.linked[m.key]!.matched ? "Sin coincidencia exacta de inventario y país. " : "") : ""}${c?.automaticNa?.includes(m.key) ? "N.A. automático por desactivación; vuelve a vacío al activar. " : ""}${c?.synced?.[m.key] ? "Sincronizado desde «" + c.synced[m.key] + "». " : ""}${c?.manual?.includes(m.key) && !c?.linked?.[m.key] ? "Ajuste manual de Efectividad. Originales conservados. " : ""}${m.key === "spend" && !c?.linked?.[m.key] ? "Original Meta: " + (c?.sourceSpend.map((x) => x.currency + " " + x.amount).join(" + ") || "sin datos") + ". " : ""}${c?.fxMissing && c?.[m.key] === null && !c.na?.includes(m.key) ? "Sin tasa. " : ""}${partial || c?.partialMetrics?.includes(m.key) ? "Cobertura parcial. " : ""}${m.key === "fixedCost" && !c?.linked?.[m.key] ? "Original CF: " + (c?.sourceFixedCost.map((x) => x.currency + " " + x.amount).join(" + ") || "sin datos") + ". " : ""}${m.money && !c?.linked?.[m.key] ? c?.fx.map((f) => `${f.date}: 1 ${f.from} = ${f.rate} ${f.to} · ${f.source}`).join("; ") || "" : ""} ${c?.linked?.[m.key] ? "Edita el valor en la hoja de origen." : m.key === "sales" ? "Clic o Enter para elegir asesor y cantidad de ventas." : "Escribe un número o N.A.; vacío restaura el importado en B/G; en P borra el presupuesto."}`}
+                                />
+                                {(c?.partialMetrics?.includes(m.key) ||
+                                  (partial && !c?.manual?.includes(m.key))) &&
+                                  (m.key === "base" || m.key === "spend") && (
+                                    <span
+                                      className="sheet-partial-marker"
+                                      title="Cobertura parcial"
+                                    >
+                                      *
+                                    </span>
+                                  )}
+                              </td>
+                            );
+                          });
+                          return cells.filter((_, i) =>
+                            visibleMetricKeys.has(sheetMetrics[i].key),
                           );
-                        });
-                        return cells.filter((_, i) =>
-                          visibleMetricKeys.has(sheetMetrics[i].key),
-                        );
-                      })}
-                    </SheetSizedRow>
-                  </Fragment>
-                );
-              })}
-              <tr className="sheet-new-row">
-                <td className="effectiveness-name">
-                  <div className="sheet-alias-row">
-                    <button
-                      type="button"
-                      role="switch"
-                      className="meta-status-switch sheet-alias-switch"
-                      aria-label="Estado de la nueva fila"
-                      aria-checked={newActive}
-                      disabled={busy || !newCountry}
-                      title={
-                        newCountry
-                          ? "Estado inicial de la nueva fila"
-                          : "Elige un país para cambiar el estado inicial"
-                      }
-                      onClick={() => setNewActive((active) => !active)}
-                    >
-                      <span aria-hidden="true" />
-                    </button>
+                        })}
+                      </SheetSizedRow>
+                    </Fragment>
+                  );
+                })}
+                <tr className="sheet-new-row">
+                  <td className="effectiveness-name">
+                    <div className="sheet-alias-row">
+                      <button
+                        type="button"
+                        role="switch"
+                        className="meta-status-switch sheet-alias-switch"
+                        aria-label="Estado de la nueva fila"
+                        aria-checked={newActive}
+                        disabled={busy || !newCountry}
+                        title={
+                          newCountry
+                            ? "Estado inicial de la nueva fila"
+                            : "Elige un país para cambiar el estado inicial"
+                        }
+                        onClick={() => setNewActive((active) => !active)}
+                      >
+                        <span aria-hidden="true" />
+                      </button>
+                      <SheetSearchSelect
+                        key={inventoryId}
+                        label="Seleccionar o crear inventario para añadir"
+                        placeholder="Selecciona o escribe uno nuevo…"
+                        value={newName}
+                        options={inventoryNames.map((name) => ({
+                          value: name,
+                          label: name,
+                        }))}
+                        disabled={
+                          busy || inventoryState?.listId !== inventoryId
+                        }
+                        createOnEnter
+                        onError={setMessage}
+                        onSelect={async (name) => {
+                          setNewName(name);
+                          await addRow(name);
+                        }}
+                        onCreate={async (name) => {
+                          setNewName(name);
+                          await addRow(name);
+                        }}
+                      />
+                    </div>
+                  </td>
+                  <td className="effectiveness-country">
                     <SheetSearchSelect
-                      key={inventoryId}
-                      label="Seleccionar o crear inventario para añadir"
-                      placeholder="Selecciona o escribe uno nuevo…"
-                      value={newName}
-                      options={inventoryNames.map((name) => ({
-                        value: name,
-                        label: name,
-                      }))}
-                      disabled={busy || inventoryState?.listId !== inventoryId}
-                      createOnEnter
-                      onError={setMessage}
-                      onSelect={async (name) => {
-                        setNewName(name);
-                        await addRow(name);
-                      }}
-                      onCreate={async (name) => {
-                        setNewName(name);
-                        await addRow(name);
+                      compact
+                      placeholder="—"
+                      label="País del nuevo inventario"
+                      value={newCountry}
+                      options={[
+                        { value: "", label: "Sin asignar" },
+                        ...countries,
+                      ]}
+                      onSelect={(value) => {
+                        setNewCountry(value);
+                        if (!value) setNewActive(false);
                       }}
                     />
-                  </div>
-                </td>
-                <td className="effectiveness-country">
-                  <SheetSearchSelect
-                    compact
-                    placeholder="—"
-                    label="País del nuevo inventario"
-                    value={newCountry}
-                    options={[
-                      { value: "", label: "Sin asignar" },
-                      ...countries,
-                    ]}
-                    onSelect={(value) => {
-                      setNewCountry(value);
-                      if (!value) setNewActive(false);
-                    }}
-                  />
-                </td>
-                <td className="effectiveness-advisor">
-                  <SheetSearchSelect
-                    compact
-                    displayLabel
-                    label="Asesor del nuevo inventario"
-                    placeholder="Sin asesor"
-                    value={newAdvisor}
-                    options={[
-                      { value: "", label: "Sin asesor" },
-                      ...advisors.map((a) => ({
-                        value: a.id,
-                        label: a.label ?? a.name,
-                      })),
-                    ]}
-                    onSelect={(id) => {
-                      if (!id) {
-                        setNewAdvisor("");
-                        setNewTiming(null);
-                      } else setNewAssignment(id);
-                    }}
-                    onError={setMessage}
-                  />
-                  {newAdvisor && (
-                    <button
-                      type="button"
-                      className="advisor-start-trigger"
-                      title="Cambiar inicio de la asignación"
-                      onClick={() => setNewAssignment(newAdvisor)}
-                    >
-                      {newTiming?.day.slice(5) ?? "Hoy"} ·{" "}
-                      {newTiming?.mode === "CLOCK" ? newTiming.time : "00:00"}
-                    </button>
-                  )}
-                </td>
-
-                <td className="effectiveness-currency">
-                  <SheetSearchSelect
-                    compact
-                    placeholder="—"
-                    label="Moneda del nuevo inventario"
-                    value={newCurrency}
-                    options={[
-                      { value: "", label: "Sin asignar" },
-                      ...currencies,
-                    ]}
-                    onSelect={setNewCurrency}
-                  />
-                  {visibleMetrics.length === 0 && (
-                    <button
-                      disabled={
-                        busy ||
-                        !newName.trim() ||
-                        inventoryState?.listId !== inventoryId
-                      }
-                      onClick={() => void addRow()}
-                    >
-                      Agregar fila
-                    </button>
-                  )}
-                </td>
-                {visibleMetrics.length > 0 && (
-                  <td colSpan={days.length * visibleMetrics.length}>
-                    <button
-                      disabled={
-                        busy ||
-                        !newName.trim() ||
-                        inventoryState?.listId !== inventoryId
-                      }
-                      onClick={() => void addRow()}
-                    >
-                      Agregar fila
-                    </button>
-                    {!data && (
-                      <span role="status" className="sheet-loading-status">
-                        Cargando datos…
-                      </span>
+                  </td>
+                  <td className="effectiveness-advisor">
+                    <SheetSearchSelect
+                      compact
+                      displayLabel
+                      label="Asesor del nuevo inventario"
+                      placeholder="Sin asesor"
+                      value={newAdvisor}
+                      options={[
+                        { value: "", label: "Sin asesor" },
+                        ...advisors.map((a) => ({
+                          value: a.id,
+                          label: a.label ?? a.name,
+                        })),
+                      ]}
+                      onSelect={(id) => {
+                        if (!id) {
+                          setNewAdvisor("");
+                          setNewTiming(null);
+                        } else setNewAssignment(id);
+                      }}
+                      onError={setMessage}
+                    />
+                    {newAdvisor && (
+                      <button
+                        type="button"
+                        className="advisor-start-trigger"
+                        title="Cambiar inicio de la asignación"
+                        onClick={() => setNewAssignment(newAdvisor)}
+                      >
+                        {newTiming?.day.slice(5) ?? "Hoy"} ·{" "}
+                        {newTiming?.mode === "CLOCK" ? newTiming.time : "00:00"}
+                      </button>
                     )}
                   </td>
-                )}
-              </tr>
-            </tbody>
-          </table>
-        </div>
+
+                  <td className="effectiveness-currency">
+                    <SheetSearchSelect
+                      compact
+                      placeholder="—"
+                      label="Moneda del nuevo inventario"
+                      value={newCurrency}
+                      options={[
+                        { value: "", label: "Sin asignar" },
+                        ...currencies,
+                      ]}
+                      onSelect={setNewCurrency}
+                    />
+                    {visibleMetrics.length === 0 && (
+                      <button
+                        disabled={
+                          busy ||
+                          !newName.trim() ||
+                          inventoryState?.listId !== inventoryId
+                        }
+                        onClick={() => void addRow()}
+                      >
+                        Agregar fila
+                      </button>
+                    )}
+                  </td>
+                  {visibleMetrics.length > 0 && (
+                    <td colSpan={days.length * visibleMetrics.length}>
+                      <button
+                        disabled={
+                          busy ||
+                          !newName.trim() ||
+                          inventoryState?.listId !== inventoryId
+                        }
+                        onClick={() => void addRow()}
+                      >
+                        Agregar fila
+                      </button>
+                      {!data && (
+                        <span role="status" className="sheet-loading-status">
+                          Cargando datos…
+                        </span>
+                      )}
+                    </td>
+                  )}
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <SheetHorizontalNavigation target={horizontalScroll} />
+        </>
       )}
       {sheetSalesDetailOpen && (
         <SheetSalesDetail
