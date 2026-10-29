@@ -1,5 +1,6 @@
 "use client";
 import { useId, useRef, useState } from "react";
+import { searchOptions } from "../../lib/search";
 import type { SheetOption } from "./sheet-search-select";
 const key = (s: string) =>
   s
@@ -23,7 +24,7 @@ export function InventoryMultiSelect({
   categoryFilter,
 }: {
   label: string;
-  options: (SheetOption & { searchText?: string })[];
+  options: SheetOption[];
   categoryFilter?: {
     options: SheetOption[];
     value: string;
@@ -50,11 +51,10 @@ export function InventoryMultiSelect({
     [draft, setDraft] = useState(values),
     [busy, setBusy] = useState(false),
     [position, setPosition] = useState({ top: 8, left: 8 });
-  const filtered = options.filter((o) =>
-    key(query)
-      .trim()
-      .split(/\s+/)
-      .every((w) => key(o.label + " " + (o.searchText ?? "")).includes(w)),
+  const filtered = searchOptions(
+    options,
+    query,
+    (o) => o.searchLabel ?? o.label,
   );
   const chosen = all ? values : draft;
   const change = async (next: string[]) => {
@@ -149,7 +149,10 @@ export function InventoryMultiSelect({
           aria-label={`Buscar ${label}`}
           placeholder="Escribe para buscar…"
           value={query}
-          onChange={(e) => setQuery(e.target.value)}
+          onChange={(e) => {
+            setQuery(e.target.value);
+            popover.current?.querySelector("fieldset")?.scrollTo(0, 0);
+          }}
           onKeyDown={(e) => {
             if (e.key === "Escape") {
               e.preventDefault();
@@ -160,6 +163,11 @@ export function InventoryMultiSelect({
         />
         {description && (
           <p className="inventory-selection-description">{description}</p>
+        )}
+        {query.trim() && (
+          <small role="status">
+            {filtered.length} coincidencia{filtered.length === 1 ? "" : "s"}
+          </small>
         )}
         <fieldset disabled={busy || disabled} aria-label={label}>
           {all && (

@@ -1,4 +1,5 @@
 "use client";
+import { matchesSearchWords } from "../../lib/search";
 import { useRef, useState } from "react";
 import {
   totalProductMetrics,
@@ -56,15 +57,10 @@ export function TotalsProducts({
       : p.sums.sales.value === 0
         ? "zero"
         : "sold";
-  const normalized = (s: string) =>
-    s
-      .normalize("NFD")
-      .replace(/[\u0300-\u036f]/g, "")
-      .toLocaleLowerCase("es");
   const filtered = products.filter(
     (p) =>
       (filter === "all" || status(p) === filter) &&
-      normalized(p.name).includes(normalized(query.trim())),
+      matchesSearchWords(p.name, query),
   );
   const currentPage = Math.min(
     page,

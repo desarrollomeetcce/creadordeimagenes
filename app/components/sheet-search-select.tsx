@@ -1,6 +1,11 @@
 "use client";
+import { searchOptions } from "../../lib/search";
 import { useId, useRef, useState } from "react";
-export type SheetOption = { value: string; label: string };
+export type SheetOption = {
+  value: string;
+  label: string;
+  searchLabel?: string;
+};
 const normalize = (v: string) =>
   v
     .normalize("NFD")
@@ -46,8 +51,11 @@ export function SheetSearchSelect({
     [open, setOpen] = useState(false),
     [position, setPosition] = useState({ top: 8, left: 8 });
   const filtered = open
-    ? options.filter((o) =>
-        normalize(o.label + " " + o.value).includes(normalize(query.trim())),
+    ? searchOptions(
+        options,
+        query,
+        (o) => o.searchLabel ?? o.label,
+        (o) => o.value,
       )
     : [];
   const choose = async (v: string, create = false) => {
@@ -130,6 +138,7 @@ export function SheetSearchSelect({
           onChange={(e) => {
             setQuery(e.target.value);
             setIndex(0);
+            popover.current?.querySelector('[role="listbox"]')?.scrollTo(0, 0);
           }}
           onKeyDown={(e) => {
             if (e.key === "ArrowDown" || e.key === "ArrowUp") {
@@ -155,6 +164,11 @@ export function SheetSearchSelect({
             }
           }}
         />
+        {query.trim() && (
+          <small role="status">
+            {filtered.length} coincidencia{filtered.length === 1 ? "" : "s"}
+          </small>
+        )}
         <div
           id={id + "-list"}
           role="listbox"

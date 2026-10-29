@@ -1,3 +1,4 @@
+import { matchesSearchWords } from "../search";
 export type AccountActivity = {
   partial?: boolean;
   state: "READY" | "UNSYNCED" | "SYNCING" | "STALE";
@@ -20,20 +21,18 @@ export const activityOptions = [
   ["none", "Sin gasto ni campañas activas"],
   ["unknown", "Sin datos actuales / sin sincronizar"],
 ] as const;
-const normalize = (value: string) =>
-  value
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .toLocaleLowerCase("es")
-    .trim();
 export function matchesAccount(
   a: SearchableAccount,
   query = "",
   activity = "all",
   business = "",
 ) {
-  const q = normalize(query).replace(/^act_/, "");
-  if (q && !normalize(`${a.name} ${a.id} ${a.businessName ?? ""}`).includes(q))
+  if (
+    !matchesSearchWords(
+      `${a.name} ${a.id} ${a.businessName ?? ""}`,
+      query.replace(/\bact_/gi, ""),
+    )
+  )
     return false;
   if (
     business === "__unknown"
@@ -43,7 +42,11 @@ export function matchesAccount(
     return false;
   if (activity === "enabled") return a.enabled;
   if (activity === "unknown")
-    return !a.activity || a.activity.state !== "READY" || (!!a.activity.partial && !a.activity.activeCampaigns);
+    return (
+      !a.activity ||
+      a.activity.state !== "READY" ||
+      (!!a.activity.partial && !a.activity.activeCampaigns)
+    );
   if (activity !== "all") {
     if (a.activity?.state !== "READY") return false;
     if (activity === "spend")
@@ -53,7 +56,11 @@ export function matchesAccount(
         a.activity.activeCampaigns !== null && a.activity.activeCampaigns > 0
       );
     if (activity === "none")
-      return !a.activity.partial && a.activity.spend30 === 0 && a.activity.activeCampaigns === 0;
+      return (
+        !a.activity.partial &&
+        a.activity.spend30 === 0 &&
+        a.activity.activeCampaigns === 0
+      );
   }
   return true;
 }

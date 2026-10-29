@@ -1,4 +1,5 @@
 "use client";
+import { searchOptions } from "../../lib/search";
 import { useId, useRef, useState } from "react";
 export type SearchOption = {
   id: string;
@@ -38,12 +39,12 @@ export function SearchSelect({
     [browsing, setBrowsing] = useState(false),
     [active, setActive] = useState(-1),
     [collapsed, setCollapsed] = useState<string[]>([]);
-  const normalized =
-    browsing && browseOnToggle ? "" : value.trim().toLocaleLowerCase();
-  const filtered = options.filter((o) =>
-    `${o.label} ${o.detail ?? ""} ${o.group ?? ""} ${o.search ?? ""}`
-      .toLocaleLowerCase()
-      .includes(normalized),
+  const normalized = browsing && browseOnToggle ? "" : value.trim();
+  const filtered = searchOptions(
+    options,
+    normalized,
+    (o) => o.label,
+    (o) => `${o.detail ?? ""} ${o.group ?? ""} ${o.search ?? ""}`,
   );
   const groups = [...new Set(filtered.map((o) => o.group ?? ""))];
   const visible = filtered.filter(

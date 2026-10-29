@@ -1,4 +1,5 @@
 "use client";
+import { matchesSearchWords } from "../../lib/search";
 import { useReusableConfiguration } from "./reusable-configuration";
 import { SearchSelect } from "./search-select";
 import { CurrentRole, useCanEdit } from "./role-guide";
@@ -43,10 +44,33 @@ function useAction() {
 }
 export { LibraryWorkspace as Library } from "./library-workspace";
 export function PresetTools(props: {
-  category:{id:string;name:string;prompt:string;settings?:unknown;instructionPolicy?:Record<string,unknown>;applyPromptToAll?:boolean;applySettingsToAll?:boolean};
-  scope?: "project"|"category"|"subproduct"|"brand";
-  saveCurrent?:()=>Promise<any>;
-}) { const tools=useReusableConfiguration({scope:props.scope??"category",current:props.category,saveCurrent:props.saveCurrent,onApplied:async()=>{window.location.reload();}});return <>{tools.picker}{tools.saver}</>; }
+  category: {
+    id: string;
+    name: string;
+    prompt: string;
+    settings?: unknown;
+    instructionPolicy?: Record<string, unknown>;
+    applyPromptToAll?: boolean;
+    applySettingsToAll?: boolean;
+  };
+  scope?: "project" | "category" | "subproduct" | "brand";
+  saveCurrent?: () => Promise<any>;
+}) {
+  const tools = useReusableConfiguration({
+    scope: props.scope ?? "category",
+    current: props.category,
+    saveCurrent: props.saveCurrent,
+    onApplied: async () => {
+      window.location.reload();
+    },
+  });
+  return (
+    <>
+      {tools.picker}
+      {tools.saver}
+    </>
+  );
+}
 function PresetSharing({ id }: { id: string }) {
   const [shares, setShares] = useState<
     { id: string; name: string; email: string; role: string }[]
@@ -122,11 +146,6 @@ const visibilityLabels: Record<string, string> = {
   SHARED: "Compartida",
   OFFICIAL: "Oficial",
 };
-const normalizeSearch = (value: string) =>
-  value
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .toLocaleLowerCase("es");
 function PresetDetails({
   preset,
   edit,
@@ -320,7 +339,12 @@ function PresetDetails({
             <button className="primary" disabled={busy}>
               Guardar cambios
             </button>
-            <button className="ui-close-button" type="button" disabled={busy} onClick={close}>
+            <button
+              className="ui-close-button"
+              type="button"
+              disabled={busy}
+              onClick={close}
+            >
               Cerrar edición
             </button>
           </div>
@@ -540,18 +564,18 @@ export function Presets() {
       active = false;
     };
   }, []);
-  const search = normalizeSearch(query.trim());
   const filtered = items
     .filter(
       (i) =>
         (!visibility || i.visibility === visibility) &&
-        normalizeSearch(
+        matchesSearchWords(
           i.name +
             " " +
             i.prompt +
             " " +
             (visibilityLabels[i.visibility] ?? i.visibility),
-        ).includes(search),
+          query,
+        ),
     )
     .sort((a, b) =>
       order === "name"

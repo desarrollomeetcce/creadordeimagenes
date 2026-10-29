@@ -838,3 +838,29 @@ test('Inventario: un archivo con la misma categoría en ambas columnas conserva 
  const defs=[{id:'p',name:'Sistemas',kind:'PRIMARY'},{id:'s',name:'sistemas',kind:'SECONDARY'}];
  for (const incoming of [['p','s'],['s','p'],['s','p','s','p']]) assert.deepEqual(categoryAssignmentTags(defs,['s'],incoming),['p']);
 });
+
+
+test('Búsqueda: Recursos humanos aparece primero y las opciones se reducen al escribir sin confundir categorías con nombres', async () => {
+ const {searchOptions}=await import('../lib/search');
+ const options=[{label:'Coaching y liderazgo',category:'Recursos humanos'},{label:'Gestión de Recursos Humanos',category:'Empresa'},{label:'Recursos humanos',category:'Empresa'},{label:'Recursos turísticos',category:'Turismo'},{label:'Comunicación organizacional',category:'Recursos humanos'}];
+ let previous=options.length;
+ for(const query of ['r','re','rec','recursos','recursos h','recursos hu','recursos humanos']){const found=searchOptions(options,query,o=>o.label);assert(found.length<=previous);previous=found.length;assert(found.some(o=>o.label==='Recursos humanos'));assert.equal(found[0].label,'Recursos humanos');}
+ assert.deepEqual(searchOptions(options,'recursos humanos',o=>o.label).map(o=>o.label),['Recursos humanos','Gestión de Recursos Humanos']);
+});
+test('Búsqueda: fragmentos, palabras invertidas, tildes, signos y espacios se normalizan sin exigir Enter', async () => {
+ const {matchesSearchWords,searchOptions}=await import('../lib/search');
+ for(const q of ['gestion calidad','CALIDAD GESTIÓN','  calidad \u00a0gestion  ','gest cal','gestion-calidad']) assert(matchesSearchWords('Gestión de la calidad',q));
+ assert(matchesSearchWords('ISO-17025','iso 17025'));assert(matchesSearchWords('NUTRICIÓN','nutri'));assert(matchesSearchWords('ﬁnanzas','finanzas'));
+ assert(!matchesSearchWords('Derecho laboral','recursos'));assert(!matchesSearchWords('Recursos humanos','recursos minería'));
+ const values=['Gestión de calidad','Recursos humanos'];assert.deepEqual(searchOptions(values,'',o=>o),values);assert.deepEqual(searchOptions(values,'noexiste',o=>o),[]);assert.deepEqual(values,['Gestión de calidad','Recursos humanos']);
+});
+test('Búsqueda: nombres exactos y prefijos tienen prioridad sobre códigos o metadatos sin perder el código explícito', async () => {
+ const {searchOptions}=await import('../lib/search');
+ const options=[{label:'ANA',value:'humanos'},{label:'Gestión de recursos humanos',value:'id2'},{label:'Recursos humanos',value:'id3'},{label:'Perú',value:'PE'}];
+ assert.equal(searchOptions(options,'recursos',o=>o.label,o=>o.value)[0].label,'Recursos humanos');assert.equal(searchOptions(options,'PE',o=>o.label,o=>o.value)[0].label,'Perú');
+ assert.equal(searchOptions(options,'humanos',o=>o.label,o=>o.value).at(-1)?.label,'ANA');
+});
+test('Búsqueda de cuentas: conserva los filtros de actividad y negocio con palabras y prefijos de ID', async () => {
+ const {matchesAccount}=await import('../lib/meta-ads/account-filters');const a={id:'123456',name:'Cámara Nacional',businessId:'negocio',businessName:'Educación Perú',currency:'PEN',enabled:true,activity:{state:'READY' as const,spend30:10,activeCampaigns:1}};
+ assert(matchesAccount(a,'peru cam','active','negocio'));assert(matchesAccount(a,'act_123456'));assert(matchesAccount(a,'camara act_123'));assert(!matchesAccount(a,'camara','none'));assert(!matchesAccount(a,'camara','active','otro'));
+});

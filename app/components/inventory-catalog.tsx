@@ -453,6 +453,7 @@ export function InventoryCatalog({
     ...directoryNames.map((name) => ({
       value: name,
       label: `${name} (${categoryCounts.get(name) ?? 0})`,
+      searchLabel: name,
     })),
   ];
   const selectCategories = (names: string[]) => {
@@ -1159,11 +1160,15 @@ export function InventoryCatalog({
                   options={categoryInventory.map((g) => ({
                     value: g.links[0].id,
                     label: g.name,
-                    searchText: [...membership.get(g.name)!].join(" "),
                   }))}
                   values={filters.items}
                   disabled={busy || !categories}
-                  description="Busca por nombre o categoría. También puedes agregar un inventario nuevo sin categorías ni hojas."
+                  description={
+                    activeCategories.length
+                      ? "Busca por nombre dentro de las categorías elegidas. Para ver otros inventarios, cambia o quita la categoría de arriba."
+                      : "Busca por el nombre del inventario. Para buscar un área, usa el selector de categorías de arriba."
+                  }
+                  createLabel="Crear inventario"
                   onCreate={async (name) =>
                     saveNewRow(
                       { name, primary: [], secondary: [], sheets: [] },

@@ -1,4 +1,5 @@
 "use client";
+import { matchesSearchWords } from "../../lib/search";
 import { useRef, useState } from "react";
 type ScopeAccount = {
   id: string;
@@ -22,10 +23,8 @@ export function MetaConnectionScope({
     [query, setQuery] = useState(""),
     [page, setPage] = useState(1),
     summary = useRef<HTMLElement>(null);
-  const needle = query.trim().toLocaleLowerCase("es"),
-    filtered = accounts.filter(
-      (a) =>
-        !needle || `${a.name} ${a.id}`.toLocaleLowerCase("es").includes(needle),
+  const filtered = accounts.filter((a) =>
+      matchesSearchWords(`${a.name} ${a.id}`, query.replace(/\bact_/gi, "")),
     ),
     pages = Math.max(1, Math.ceil(filtered.length / 25)),
     current = Math.min(page, pages),

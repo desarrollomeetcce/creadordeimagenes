@@ -1,11 +1,7 @@
 "use client";
 import { useId, useRef, useState, type ReactNode } from "react";
+import { normalizeSearchText, searchOptions } from "../../lib/search";
 import type { SheetOption } from "./sheet-search-select";
-const normalize = (text: string) =>
-  text
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .toLocaleLowerCase("es");
 /** null means every current/future option; [] explicitly means no options. */
 export function SheetMultiFilter({
   label,
@@ -32,12 +28,11 @@ export function SheetMultiFilter({
   const selected = new Set(value ?? options.map((o) => o.value));
   const all = value === null;
   const count = options.filter((o) => selected.has(o.value)).length;
-  const words = normalize(query.trim()).split(/\s+/).filter(Boolean);
-  const matchesAll = words.length === 1 && words[0] === "todos";
+  const matchesAll = normalizeSearchText(query) === "todos";
   const filtered = open
-    ? options.filter(
-        (o) => matchesAll || words.every((w) => normalize(o.label).includes(w)),
-      )
+    ? matchesAll
+      ? options
+      : searchOptions(options, query, (o) => o.label)
     : [];
   const toggle = (key: string) => {
     const next = options
@@ -113,7 +108,12 @@ export function SheetMultiFilter({
           aria-label={`Buscar en ${label}`}
           placeholder="Buscar por nombre o abreviatura…"
           value={query}
-          onChange={(e) => setQuery(e.target.value)}
+          onChange={(e) => {
+            setQuery(e.target.value);
+            popover.current
+              ?.querySelector(".sheet-multi-options")
+              ?.scrollTo(0, 0);
+          }}
           onKeyDown={(e) => {
             if (e.key === "Enter") {
               e.preventDefault();
@@ -166,7 +166,8 @@ export function SheetMultiFilter({
           <small>
             {count}/{options.length} seleccionados
           </small>
-          <button className="ui-close-button"
+          <button
+            className="ui-close-button"
             type="button"
             onClick={() => {
               popover.current?.hidePopover();

@@ -1,4 +1,5 @@
 "use client";
+import { matchesSearchWords } from "../../lib/search";
 import { useSheetTextFit } from "./use-sheet-text-fit";
 import { SheetDataFillBadge } from "./sheet-data-fill-badge";
 import type { AdvisorPeriodView } from "../../lib/meta-ads/advisor-period-history";
@@ -233,21 +234,8 @@ export function AdvisorsSheet({
     for (let d = Date.parse(since); d <= Date.parse(until); d += 86400000)
       days.push(new Date(d).toISOString().slice(0, 10));
   const { visibleDays, navigation } = useReportDayPages(days);
-  const words = query
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .toLowerCase()
-    .trim()
-    .split(/\s+/)
-    .filter(Boolean);
   const filtered = (rowsContext === key ? rows : []).filter((p) =>
-    words.every((w) =>
-      p.name
-        .normalize("NFD")
-        .replace(/[\u0300-\u036f]/g, "")
-        .toLowerCase()
-        .includes(w),
-    ),
+    matchesSearchWords(p.name, query),
   );
   return (
     <section

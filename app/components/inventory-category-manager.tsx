@@ -4,6 +4,7 @@ import type {
   InventoryCategoryState,
   InventoryCategoryAction,
 } from "./inventory-category-types";
+import { matchesSearchWords } from "../../lib/search";
 import { categoryKey } from "../../lib/meta-ads/category-paste";
 import { SheetSearchSelect } from "./sheet-search-select";
 import { InventoryMultiSelect } from "./inventory-multi-select";
@@ -41,7 +42,6 @@ export function InventoryCategoryManager({
       .replace(/[\u0300-\u036f]/g, "")
       .toLocaleLowerCase("es")
       .trim();
-  const words = normalize(name).split(/\s+/).filter(Boolean);
   const exists = config.categories.some(
     (c) => normalize(c.name) === normalize(name),
   );
@@ -64,7 +64,7 @@ export function InventoryCategoryManager({
     (c) =>
       (!filter.length || filter.includes(c.id)) &&
       (usage === "ALL" || c.kinds.includes(usage)) &&
-      words.every((word) => normalize(c.name).includes(word)),
+      matchesSearchWords(c.name, name),
   );
   const reviewGroups = groups.filter((c) => review?.includes(c.id));
   const reviewIds = reviewGroups.flatMap((c) => c.ids);

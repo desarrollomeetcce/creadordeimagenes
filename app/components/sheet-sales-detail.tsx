@@ -1,4 +1,5 @@
 "use client";
+import { matchesSearchWords } from "../../lib/search";
 import {
   useEffect,
   useId,
@@ -193,11 +194,7 @@ export function SheetSalesDetail({
             (status === "selling"
               ? (p.sales.value ?? 0) > 0
               : sheetSalesStatus(p, threshold) === status)) &&
-          query
-            .trim()
-            .toLocaleLowerCase("es")
-            .split(/\s+/)
-            .every((word) => p.name.toLocaleLowerCase("es").includes(word)),
+          matchesSearchWords(p.name, query),
       )
       .sort((a, b) =>
         ascending
