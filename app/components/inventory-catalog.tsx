@@ -1246,118 +1246,166 @@ export function InventoryCatalog({
             </tr>
           </thead>
           <tbody>
-            {sections.map(([key, section]) => (
-              <Fragment key={key}>
-                <tr
-                  className="inventory-group-band"
-                  data-category-group={section.title}
-                >
-                  <th colSpan={6} scope="rowgroup">
-                    <div className="inventory-band-heading">
-                      <span>{section.title}</span>
-                      <small>
-                        {section.groups.length}{" "}
-                        {section.groups.length === 1 ? "ítem" : "ítems"}
-                      </small>
-                      {bandCategorySelector(section)}
-                    </div>
-                  </th>
-                </tr>
-                {section.groups.map((g) => (
-                  <SheetSizedRow
-                    label={g.name}
-                    height={rowsLayout.heights[g.links[0].id]}
-                    onResize={(v) => rowsLayout.resize(g.links[0].id, v)}
-                    onReset={() => rowsLayout.resize(g.links[0].id)}
-                    key={g.name}
-                    data-inventory-name={g.name}
-                    data-selected={
-                      g.links.some((a) => selected.includes(a.id)) || undefined
-                    }
+            {sections.map(([key, section]) => {
+              // Sections are built from `visible`: never select the whole category directory.
+              const sectionIds = section.groups.flatMap((g) =>
+                g.links.map((a) => a.id),
+              );
+              const selectedSectionIds = sectionIds.filter((id) =>
+                selected.includes(id),
+              );
+              const selectedSectionGroups = section.groups.filter((g) =>
+                g.links.some((a) => selected.includes(a.id)),
+              ).length;
+              return (
+                <Fragment key={key}>
+                  <tr
+                    className="inventory-group-band"
+                    data-category-group={section.title}
                   >
-                    <td data-fill-kind="manual">
-                      <div className="inventory-name-cell">
+                    <th colSpan={6} scope="rowgroup">
+                      <div className="inventory-band-heading">
                         <InventoryCheck
-                          label={`Seleccionar inventario ${g.name}`}
-                          checked={g.links.every((a) =>
-                            selected.includes(a.id),
-                          )}
+                          label={`Seleccionar visibles de ${section.title}`}
+                          checked={
+                            !!sectionIds.length &&
+                            selectedSectionIds.length === sectionIds.length
+                          }
                           mixed={
-                            g.links.some((a) => selected.includes(a.id)) &&
-                            !g.links.every((a) => selected.includes(a.id))
+                            selectedSectionIds.length > 0 &&
+                            selectedSectionIds.length < sectionIds.length
                           }
-                          disabled={busy}
-                          onChange={(checked) =>
-                            choose(
-                              g.links.map((a) => a.id),
-                              checked,
-                            )
-                          }
+                          disabled={busy || !sectionIds.length}
+                          onChange={(checked) => choose(sectionIds, checked)}
                         />
-                        <EffectivenessCell
-                          label={`Nombre de inventario ${g.name}`}
-                          value={g.name}
-                          onError={setMessage}
-                          onSave={async (value) => {
-                            await api("meta-ads/inventory/rename", "POST", {
-                              listId,
-                              expectedName: g.name,
-                              name: value.trim(),
-                              ids: g.links.map((a) => a.id),
-                            });
-                            await onChanged();
-                            await reloadCategories();
-                          }}
-                        />
-                      </div>
-                    </td>
-                    {categoryCell(g, "PRIMARY")}
-                    {categoryCell(g, "SECONDARY")}
-                    <td data-fill-kind="manual">
-                      <div className="inventory-sheet-links">
-                        {g.links
-                          .filter((a) => !a.standalone)
-                          .map((a) => (
-                            <span
-                              key={a.id}
-                              className="inventory-sheet-chip"
-                              data-inventory-id={a.id}
+                        <span>{section.title}</span>
+                        <small>
+                          {section.groups.length}{" "}
+                          {section.groups.length === 1 ? "ítem" : "ítems"}
+                        </small>
+                        {bandCategorySelector(section)}
+                        {selectedSectionGroups > 0 && (
+                          <>
+                            <small
+                              className="inventory-band-selected"
+                              role="status"
                             >
-                              {a.tableName}
-                              <button
-                                type="button"
-                                className="inventory-remove"
-                                aria-label={`Eliminar ${g.name} de ${a.tableName}`}
-                                title={`Eliminar solo de ${a.tableName}`}
-                                disabled={busy}
-                                onClick={() => void prepareRemoval(a.id)}
-                              >
-                                ×
-                              </button>
-                            </span>
-                          ))}
+                              {selectedSectionGroups} seleccionado
+                              {selectedSectionGroups === 1 ? "" : "s"}
+                            </small>
+                            <button
+                              type="button"
+                              className="inventory-band-delete"
+                              aria-label={`Eliminar seleccionados visibles de ${section.title}`}
+                              disabled={busy}
+                              onClick={() =>
+                                setBulkIds([...selectedSectionIds])
+                              }
+                            >
+                              Eliminar seleccionados ({selectedSectionGroups})
+                            </button>
+                          </>
+                        )}
                       </div>
-                    </td>
-                    <td aria-hidden="true" className="inventory-column-gap" />
-                    <td className="inventory-syllabi-cell">
-                      <InventorySyllabusChips
-                        label={g.name}
-                        syllabi={syllabiByName.get(g.name) ?? []}
-                        disabled={busy || syllabiBusy}
-                        onOpen={(id) => setSyllabiOpen({ name: g.name, id })}
-                        onRename={(id, title) =>
-                          renameSyllabus(g.name, id, title)
-                        }
-                        onRemove={(id) => void removeSyllabus(g.name, id)}
-                        onAdd={() =>
-                          setSyllabiOpen({ name: g.name, id: "__new" })
-                        }
-                      />
-                    </td>
-                  </SheetSizedRow>
-                ))}
-              </Fragment>
-            ))}
+                    </th>
+                  </tr>
+                  {section.groups.map((g) => (
+                    <SheetSizedRow
+                      label={g.name}
+                      height={rowsLayout.heights[g.links[0].id]}
+                      onResize={(v) => rowsLayout.resize(g.links[0].id, v)}
+                      onReset={() => rowsLayout.resize(g.links[0].id)}
+                      key={g.name}
+                      data-inventory-name={g.name}
+                      data-selected={
+                        g.links.some((a) => selected.includes(a.id)) ||
+                        undefined
+                      }
+                    >
+                      <td data-fill-kind="manual">
+                        <div className="inventory-name-cell">
+                          <InventoryCheck
+                            label={`Seleccionar inventario ${g.name}`}
+                            checked={g.links.every((a) =>
+                              selected.includes(a.id),
+                            )}
+                            mixed={
+                              g.links.some((a) => selected.includes(a.id)) &&
+                              !g.links.every((a) => selected.includes(a.id))
+                            }
+                            disabled={busy}
+                            onChange={(checked) =>
+                              choose(
+                                g.links.map((a) => a.id),
+                                checked,
+                              )
+                            }
+                          />
+                          <EffectivenessCell
+                            label={`Nombre de inventario ${g.name}`}
+                            value={g.name}
+                            onError={setMessage}
+                            onSave={async (value) => {
+                              await api("meta-ads/inventory/rename", "POST", {
+                                listId,
+                                expectedName: g.name,
+                                name: value.trim(),
+                                ids: g.links.map((a) => a.id),
+                              });
+                              await onChanged();
+                              await reloadCategories();
+                            }}
+                          />
+                        </div>
+                      </td>
+                      {categoryCell(g, "PRIMARY")}
+                      {categoryCell(g, "SECONDARY")}
+                      <td data-fill-kind="manual">
+                        <div className="inventory-sheet-links">
+                          {g.links
+                            .filter((a) => !a.standalone)
+                            .map((a) => (
+                              <span
+                                key={a.id}
+                                className="inventory-sheet-chip"
+                                data-inventory-id={a.id}
+                              >
+                                {a.tableName}
+                                <button
+                                  type="button"
+                                  className="inventory-remove"
+                                  aria-label={`Eliminar ${g.name} de ${a.tableName}`}
+                                  title={`Eliminar solo de ${a.tableName}`}
+                                  disabled={busy}
+                                  onClick={() => void prepareRemoval(a.id)}
+                                >
+                                  ×
+                                </button>
+                              </span>
+                            ))}
+                        </div>
+                      </td>
+                      <td aria-hidden="true" className="inventory-column-gap" />
+                      <td className="inventory-syllabi-cell">
+                        <InventorySyllabusChips
+                          label={g.name}
+                          syllabi={syllabiByName.get(g.name) ?? []}
+                          disabled={busy || syllabiBusy}
+                          onOpen={(id) => setSyllabiOpen({ name: g.name, id })}
+                          onRename={(id, title) =>
+                            renameSyllabus(g.name, id, title)
+                          }
+                          onRemove={(id) => void removeSyllabus(g.name, id)}
+                          onAdd={() =>
+                            setSyllabiOpen({ name: g.name, id: "__new" })
+                          }
+                        />
+                      </td>
+                    </SheetSizedRow>
+                  ))}
+                </Fragment>
+              );
+            })}
           </tbody>
           <tfoot>
             {newRowOpen && (
