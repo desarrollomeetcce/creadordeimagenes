@@ -837,7 +837,11 @@ export function InventoryCatalog({
       </td>
     );
   };
-  const [selected, setSelected] = useState<string[]>([]),
+  const [selected, setSelected] = useWorkbookPreference<string[]>(
+      listId,
+      "catalogSelection",
+      [],
+    ),
     [bulkIds, setBulkIds] = useState<string[] | null>(null);
   const visibleIds = visible.flatMap((g) => g.links.map((a) => a.id)),
     selectedVisible = visibleIds.filter((id) => selected.includes(id)),
@@ -899,7 +903,6 @@ export function InventoryCatalog({
               kind: assignment.kind,
               names,
             });
-            setSelected([]);
             setMessage(
               `Categorías ${assignment.kind === "PRIMARY" ? "principales" : "secundarias"} asignadas a ${assignment.names.length} inventarios.`,
             );
@@ -1011,6 +1014,13 @@ export function InventoryCatalog({
         >
           <InventoryActionIcon name="filters" />
           Limpiar filtros
+        </button>
+        <button
+          type="button"
+          disabled={!selected.length || busy}
+          onClick={() => setSelected([])}
+        >
+          Quitar selección
         </button>
       </div>
       {sheetTabs}
