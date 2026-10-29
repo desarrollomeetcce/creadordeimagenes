@@ -6,6 +6,8 @@ datasource db {
   provider = "postgresql"
 }
 enum Role {
+  SUPERVISOR
+  ADVISOR
   OWNER
   ADMIN
   USER
@@ -978,6 +980,7 @@ model MetaEffectivenessSync {
 
 model MetaAdvisor {
  portal MetaAdvisorPortal?
+ targets MetaAdvisorTarget[]
  goals MetaAdvisorGoal[]
  sheetId String @default("default-advisors")
  sheet MetaEffectivenessSheet @relation(fields:[sheetId],references:[id],onDelete:Restrict)
@@ -1211,4 +1214,15 @@ model EffectivenessGrant {
   updatedAt DateTime @updatedAt
   @@id([scope,userId])
   @@index([userId])
+}
+
+model MetaAdvisorTarget {
+ advisorId String
+ advisor MetaAdvisor @relation(fields:[advisorId],references:[id],onDelete:Restrict)
+ basis String
+ percent Float?
+ salesTarget Int?
+ revision Int @default(1)
+ updatedAt DateTime @updatedAt
+ @@id([advisorId,basis])
 }

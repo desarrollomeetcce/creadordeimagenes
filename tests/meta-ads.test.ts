@@ -879,3 +879,13 @@ test("efectividad diaria del asesor compara fechas iguales y espera cierre para 
  assert.equal(advisorDayEffectiveness({...b,sales:null}).value,null);
  assert.equal(advisorDayEffectiveness({...b,partial:true}).value,null);
 });
+
+
+import {groupFinancialRowsByAdvisor} from "../lib/meta-ads/financial-categories";
+test("Vista por asesor repite categorías dentro de cada persona sin duplicar filas ni cambiar asignaciones",()=>{
+ const entries=[{id:"a",name:"Curso A",categoryAssignments:[{category:{id:"edu",name:"Educación",kind:"PRIMARY" as const}}]},{id:"b",name:"Curso B",categoryAssignments:[{category:{id:"edu",name:"Educación",kind:"PRIMARY" as const}}]},{id:"c",name:"Curso C",categoryAssignments:[{category:{id:"edu",name:"Educación",kind:"PRIMARY" as const}}]}];
+ const rows=[{aliasId:"a",country:"PE",advisorId:"jesus",active:true},{aliasId:"b",country:"PE",advisorId:"donays",active:true},{aliasId:"c",country:"PE",advisorId:"jesus",active:true},{aliasId:"d",country:"PE",advisorId:null,active:false}];const before=JSON.stringify(rows);
+ const groups=groupFinancialRowsByAdvisor(rows,entries,{},[{id:"jesus",name:"Jesús"},{id:"donays",name:"Donays"}]);
+ assert.deepEqual(groups.map(g=>g.name),["Donays","Jesús","Sin asesor"]);assert.deepEqual(groups[0].bands[0].names,["Educación"]);assert.equal(groups[0].bands[0].rows.length,1);assert.deepEqual(groups[1].bands[0].names,["Educación"]);assert.equal(groups[1].bands[0].rows.length,2);assert.equal(groups.flatMap(g=>g.rows).length,4);assert.equal(JSON.stringify(rows),before);
+ const filtered=groupFinancialRowsByAdvisor(rows.slice(0,2),entries,{},[{id:"jesus",name:"Jesús"},{id:"donays",name:"Donays"}]);assert.equal(filtered.flatMap(g=>g.rows).length,2);
+});

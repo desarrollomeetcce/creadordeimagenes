@@ -5,7 +5,7 @@ import {
   type InventorySyllabus,
 } from "./inventory-syllabi-policy";
 import { db } from "../db";
-import {ownerOnly} from "./financial-access";
+import { ownerOnly, financialDestinationEdit } from "./financial-access";
 import { AppError, demand } from "../errors";
 import { recordActivity } from "../activity";
 import { effectivenessLock } from "./effectiveness";
@@ -371,15 +371,16 @@ export async function importInventory(
 }
 
 /** Add links by sheet ID; never transfer another inventory's history or edit existing sheet data. */
+type InventorySheetsInput = {
+  listId: string;
+  revision: number;
+  inventoryId: string;
+  expectedName: string;
+  tableIds: string[];
+};
 export async function linkInventorySheets(
   actor: Actor,
-  b: {
-    listId: string;
-    revision: number;
-    inventoryId: string;
-    expectedName: string;
-    tableIds: string[];
-  },
+  b: InventorySheetsInput,
 ) {
   ownerOnly(actor);
   demand(
@@ -389,122 +390,169 @@ export async function linkInventorySheets(
     "Selecciona hojas diferentes.",
   );
   return db.$transaction(
+    (tx) => linkInventorySheetsInTransaction(tx, actor, b),
+    { timeout: 30000 },
+  );
+}
+async function linkInventorySheetsInTransaction(
+  tx: Prisma.TransactionClient,
+  actor: Actor,
+  b: InventorySheetsInput,
+) {
+  await effectivenessLock(tx, actor);
+  await financialDestinationEdit(actor, b.tableIds, tx);
+  const list = await tx.metaEffectivenessSheet.findFirst({
+    where: { id: b.listId, kind: "INVENTORY", archivedAt: null },
+  });
+  demand(list, "Inventario no disponible.", 404);
+  demand(
+    list.categoryRevision === b.revision,
+    "El inventario cambió. Recarga antes de vincular hojas.",
+    409,
+  );
+  const [item, alias] = await Promise.all([
+    tx.metaInventoryItem.findFirst({
+      where: { id: b.inventoryId, sheetId: b.listId },
+    }),
+    tx.metaAlias.findFirst({
+      where: { id: b.inventoryId, inventorySheetId: b.listId },
+    }),
+  ]);
+  const source = item ?? alias;
+  demand(source, "Diplomado no disponible en este inventario.", 404);
+  demand(
+    source.name === b.expectedName,
+    "El nombre del diplomado cambió. Recarga antes de vincular.",
+    409,
+  );
+  const tables = await tx.metaAliasTable.findMany({
+    where: { id: { in: b.tableIds } },
+    select: { id: true },
+  });
+  demand(
+    tables.length === b.tableIds.length,
+    "Una hoja ya no está disponible.",
+    404,
+  );
+  const existing = await tx.metaAlias.findMany({
+    where: {
+      tableId: { in: b.tableIds },
+      name: { equals: source.name, mode: "insensitive" },
+    },
+  });
+  demand(
+    existing.every(
+      (a) => a.inventorySheetId === b.listId && a.name === source.name,
+    ),
+    "Ese diplomado ya existe en alguna hoja desde otro inventario o con otra escritura. Revisa esa hoja antes de vincular.",
+    409,
+  );
+  const additions = b.tableIds
+    .filter((id) => !existing.some((a) => a.tableId === id))
+    .map((tableId) => ({
+      id: randomUUID(),
+      name: source.name,
+      tableId,
+      inventorySheetId: b.listId,
+    }));
+  if (additions.length) {
+    demand(
+      (await tx.metaAlias.count()) + additions.length <= 1500,
+      "El catálogo admite hasta 1.500 asignaciones a hojas.",
+    );
+    const [definitions, itemTags, aliasTags] = await Promise.all([
+      tx.metaInventoryCategory.findMany({ where: { sheetId: b.listId } }),
+      tx.metaInventoryItemCategory.findMany({
+        where: { item: { sheetId: b.listId, name: source.name } },
+        select: { categoryId: true },
+      }),
+      tx.metaInventoryCategoryAssignment.findMany({
+        where: { alias: { inventorySheetId: b.listId, name: source.name } },
+        select: { categoryId: true },
+      }),
+    ]);
+    const inherited = categoryAssignmentTags(
+      definitions,
+      [],
+      [...itemTags, ...aliasTags].map((c) => c.categoryId),
+    );
+    for (const kind of ["PRIMARY", "SECONDARY"])
+      demand(
+        definitions.filter((c) => c.kind === kind && inherited.includes(c.id))
+          .length <= (kind === "PRIMARY" ? 20 : 100),
+        "Revisa las categorías del diplomado antes de vincularlo: se admite hasta 20 principales y 100 secundarias.",
+      );
+    await tx.metaAlias.createMany({ data: additions });
+    if (inherited.length)
+      await tx.metaInventoryCategoryAssignment.createMany({
+        data: additions.flatMap((a) =>
+          inherited.map((categoryId) => ({ aliasId: a.id, categoryId })),
+        ),
+        skipDuplicates: true,
+      });
+    await tx.metaEffectivenessSheet.update({
+      where: { id: b.listId },
+      data: { categoryRevision: { increment: 1 } },
+    });
+    await recordActivity(tx, {
+      data: {
+        actorId: actor.id,
+        action: "META_INVENTARIO_HOJAS_VINCULADAS",
+        resourceId: b.listId,
+        detail: {
+          inventoryId: b.inventoryId,
+          name: source.name,
+          tableIds: b.tableIds,
+          created: additions.length,
+        },
+      },
+    });
+  }
+  return {
+    created: additions.length,
+    aliasIds: [...existing, ...additions].map((a) => a.id),
+    revision: list.categoryRevision + (additions.length ? 1 : 0),
+  };
+}
+export async function linkInventorySheetsBatch(
+  actor: Actor,
+  b: {
+    listId: string;
+    revision: number;
+    tableIds: string[];
+    items: { inventoryId: string; expectedName: string }[];
+  },
+) {
+  ownerOnly(actor);
+  demand(
+    b.items.length > 0 &&
+      b.items.length <= 1500 &&
+      new Set(b.items.map((i) => i.inventoryId)).size === b.items.length,
+    "Selecciona inventarios diferentes.",
+  );
+  demand(
+    b.tableIds.length > 0 &&
+      b.tableIds.length <= 1500 &&
+      new Set(b.tableIds).size === b.tableIds.length,
+    "Selecciona hojas diferentes.",
+  );
+  return db.$transaction(
     async (tx) => {
       await effectivenessLock(tx, actor);
-      const list = await tx.metaEffectivenessSheet.findFirst({
-        where: { id: b.listId, kind: "INVENTORY", archivedAt: null },
-      });
-      demand(list, "Inventario no disponible.", 404);
-      demand(
-        list.categoryRevision === b.revision,
-        "El inventario cambió. Recarga antes de vincular hojas.",
-        409,
-      );
-      const [item, alias] = await Promise.all([
-        tx.metaInventoryItem.findFirst({
-          where: { id: b.inventoryId, sheetId: b.listId },
-        }),
-        tx.metaAlias.findFirst({
-          where: { id: b.inventoryId, inventorySheetId: b.listId },
-        }),
-      ]);
-      const source = item ?? alias;
-      demand(source, "Diplomado no disponible en este inventario.", 404);
-      demand(
-        source.name === b.expectedName,
-        "El nombre del diplomado cambió. Recarga antes de vincular.",
-        409,
-      );
-      const tables = await tx.metaAliasTable.findMany({
-        where: { id: { in: b.tableIds } },
-        select: { id: true },
-      });
-      demand(
-        tables.length === b.tableIds.length,
-        "Una hoja ya no está disponible.",
-        404,
-      );
-      const existing = await tx.metaAlias.findMany({
-        where: {
-          tableId: { in: b.tableIds },
-          name: { equals: source.name, mode: "insensitive" },
-        },
-      });
-      demand(
-        existing.every(
-          (a) => a.inventorySheetId === b.listId && a.name === source.name,
-        ),
-        "Ese diplomado ya existe en alguna hoja desde otro inventario o con otra escritura. Revisa esa hoja antes de vincular.",
-        409,
-      );
-      const additions = b.tableIds
-        .filter((id) => !existing.some((a) => a.tableId === id))
-        .map((tableId) => ({
-          id: randomUUID(),
-          name: source.name,
-          tableId,
-          inventorySheetId: b.listId,
-        }));
-      if (additions.length) {
-        demand(
-          (await tx.metaAlias.count()) + additions.length <= 1500,
-          "El catálogo admite hasta 1.500 asignaciones a hojas.",
-        );
-        const [definitions, itemTags, aliasTags] = await Promise.all([
-          tx.metaInventoryCategory.findMany({ where: { sheetId: b.listId } }),
-          tx.metaInventoryItemCategory.findMany({
-            where: { item: { sheetId: b.listId, name: source.name } },
-            select: { categoryId: true },
-          }),
-          tx.metaInventoryCategoryAssignment.findMany({
-            where: { alias: { inventorySheetId: b.listId, name: source.name } },
-            select: { categoryId: true },
-          }),
-        ]);
-        const inherited = categoryAssignmentTags(
-          definitions,
-          [],
-          [...itemTags, ...aliasTags].map((c) => c.categoryId),
-        );
-        for (const kind of ["PRIMARY", "SECONDARY"])
-          demand(
-            definitions.filter(
-              (c) => c.kind === kind && inherited.includes(c.id),
-            ).length <= (kind === "PRIMARY" ? 20 : 100),
-            "Revisa las categorías del diplomado antes de vincularlo: se admite hasta 20 principales y 100 secundarias.",
-          );
-        await tx.metaAlias.createMany({ data: additions });
-        if (inherited.length)
-          await tx.metaInventoryCategoryAssignment.createMany({
-            data: additions.flatMap((a) =>
-              inherited.map((categoryId) => ({ aliasId: a.id, categoryId })),
-            ),
-            skipDuplicates: true,
-          });
-        await tx.metaEffectivenessSheet.update({
-          where: { id: b.listId },
-          data: { categoryRevision: { increment: 1 } },
+      let revision = b.revision,
+        created = 0;
+      for (const item of b.items) {
+        const result = await linkInventorySheetsInTransaction(tx, actor, {
+          ...item,
+          listId: b.listId,
+          revision,
+          tableIds: b.tableIds,
         });
-        await recordActivity(tx, {
-          data: {
-            actorId: actor.id,
-            action: "META_INVENTARIO_HOJAS_VINCULADAS",
-            resourceId: b.listId,
-            detail: {
-              inventoryId: b.inventoryId,
-              name: source.name,
-              tableIds: b.tableIds,
-              created: additions.length,
-            },
-          },
-        });
+        revision = result.revision;
+        created += result.created;
       }
-      return {
-        created: additions.length,
-        aliasIds: [...existing, ...additions].map((a) => a.id),
-        revision: list.categoryRevision + (additions.length ? 1 : 0),
-      };
+      return { revision, created, items: b.items.length };
     },
-    { timeout: 30000 },
+    { timeout: 120000 },
   );
 }

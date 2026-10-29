@@ -1,10 +1,14 @@
 export const roleLabels: Record<string, string> = {
   OWNER: "OWNER",
+  SUPERVISOR: "Supervisor",
+  ADVISOR: "Asesor",
   ADMIN: "Administrador",
   USER: "Usuario",
   OBSERVER: "Observador",
 };
 export const roleAbilities: Record<string, string[]> = {
+  SUPERVISOR: ["Administrar las metas y cuentas de asesores en Mi desempeño.", "Consultar el resumen del equipo y la vista individual de cada asesor."],
+  ADVISOR: ["Consultar únicamente tu desempeño y tus metas, sin editarlas.", "Cambiar tu propia contraseña."],
   OWNER: [
     "Ver y administrar todos los proyectos, productos, subproductos y afiches.",
     "Crear cuentas de cualquier rol, aprobarlas, suspenderlas y cambiar contraseñas.",

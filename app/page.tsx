@@ -242,7 +242,7 @@ export default function Home() {
       setCollection(null);
       try {
         const params = new URLSearchParams(location);
-        const requested = params.get("view") ?? (user.advisorLinked ? "performance" : "projects");
+        const requested = params.get("view") ?? ((user.advisorLinked || ["SUPERVISOR","ADVISOR"].includes(user.role)) ? "performance" : "projects");
         const allowed = [
           "performance",
           "projects",
@@ -272,6 +272,7 @@ export default function Home() {
         ];
         const nextView =
           allowed.includes(requested) &&
+          (!["SUPERVISOR","ADVISOR"].includes(user.role) || ["performance","account"].includes(requested) || (requested==="metaads"&&user.metaAdsShared) || (requested==="products"&&user.effectivenessShared)) &&
           (user.role !== "OBSERVER" ||
             [
               "projects",
@@ -285,7 +286,7 @@ export default function Home() {
               ...(user.effectivenessShared?["products"]:[]),
             ].includes(requested))
             ? requested
-            : "projects";
+            : (["SUPERVISOR","ADVISOR"].includes(user.role)?"performance":"projects");
         if (active) setView(nextView);
         if (nextView === "collection") {
           const scope = params.get("scope"),
@@ -471,7 +472,7 @@ export default function Home() {
           <div className="eyebrow">Espacio de trabajo</div>
           <nav aria-label="Menú principal">
             {[
-              ...(user.role === "OWNER" || user.advisorLinked ? [["performance", "◎", "Mi desempeño"]] : []),
+              ...(["OWNER","SUPERVISOR","ADVISOR"].includes(user.role) || user.advisorLinked ? [["performance", "◎", "Mi desempeño"]] : []),
               ["projects", "▦", "Proyectos"],
               ["library", "▧", "Biblioteca"],
               ["metaads", "▥", "Meta Ads"],
@@ -489,8 +490,8 @@ export default function Home() {
             ]
               .filter(
                 ([v]) =>
-                  user.role !== "OBSERVER" ||
-                  (["projects", "library", "presets", "account", "performance"].includes(v) || (v === "metaads" && !!user.metaAdsShared) || (v==="products"&&!!user.effectivenessShared)),
+                  (!["SUPERVISOR","ADVISOR"].includes(user.role) || v==="performance" || (v==="metaads"&&!!user.metaAdsShared) || (v==="products"&&!!user.effectivenessShared)) && (user.role !== "OBSERVER" ||
+                  (["projects", "library", "presets", "account", "performance"].includes(v) || (v === "metaads" && !!user.metaAdsShared) || (v==="products"&&!!user.effectivenessShared))),
               )
               .map(([v, icon, label]) => (
                 <button
@@ -564,7 +565,7 @@ export default function Home() {
                 )}
               </>
             ) : view === "performance" ? (
-              <AdvisorPerformance owner={user.role === "OWNER"} />
+              <AdvisorPerformance owner={["OWNER","SUPERVISOR"].includes(user.role)} />
             ) : view === "products" && (user.role === "OWNER"||user.effectivenessShared) ? (
               <ProductsCatalog />
             ) : view === "metaads" ? (

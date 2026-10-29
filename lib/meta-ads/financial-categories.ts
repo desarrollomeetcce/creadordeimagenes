@@ -143,3 +143,45 @@ export function parseTemporaryCategories(
     return {};
   }
 }
+
+/** Presentation grouping only: each visible row occurs once, with categories repeated within its advisor. */
+export function groupFinancialRowsByAdvisor<
+  T extends {
+    aliasId: string;
+    country: string;
+    active?: boolean;
+    advisorId: string | null;
+  },
+>(
+  rows: T[],
+  entries: FinancialCatalogEntry[],
+  temporary: TemporaryCategoryMap,
+  advisors: { id: string; name: string; label?: string }[],
+) {
+  const names = new Map(advisors.map((a) => [a.id, a.label ?? a.name])),
+    groups = new Map<string, { id: string; name: string; rows: T[] }>();
+  for (const row of rows) {
+    const id = row.advisorId && names.has(row.advisorId) ? row.advisorId : "";
+    let group = groups.get(id);
+    if (!group) {
+      group = { id, name: names.get(id) ?? "Sin asesor", rows: [] };
+      groups.set(id, group);
+    }
+    group.rows.push(row);
+  }
+  return [...groups.values()]
+    .sort((a, b) =>
+      !a.id
+        ? 1
+        : !b.id
+          ? -1
+          : a.name.localeCompare(b.name, "es", {
+              sensitivity: "base",
+              numeric: true,
+            }) || a.id.localeCompare(b.id),
+    )
+    .map((group) => ({
+      ...group,
+      bands: groupFinancialRows(group.rows, entries, temporary),
+    }));
+}

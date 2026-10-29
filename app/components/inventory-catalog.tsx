@@ -1399,6 +1399,67 @@ export function InventoryCatalog({
                   values={filters.sheets}
                   onChange={(v) => setFilters({ ...filters, sheets: v })}
                 />
+                <InventoryMultiSelect
+                  label="Asignar hojas a inventarios seleccionados"
+                  placeholder={
+                    "Asignar hojas" +
+                    (selectedGroups ? " (" + selectedGroups + ")" : "")
+                  }
+                  values={[]}
+                  all={false}
+                  options={tables.map((t) => ({ value: t.id, label: t.name }))}
+                  disabled={busy || !categories || !selectedGroups}
+                  description={
+                    "Añade las hojas elegidas a " +
+                    selectedGroups +
+                    " inventarios seleccionados visibles. Los vínculos actuales se conservan."
+                  }
+                  onError={setMessage}
+                  onChange={async (tableIds) => {
+                    if (!tableIds.length || !categories) return;
+                    const items = visible
+                      .filter((g) =>
+                        g.links.some((a) => selectedVisible.includes(a.id)),
+                      )
+                      .map((g) => ({
+                        inventoryId: g.links.find((a) =>
+                          selectedVisible.includes(a.id),
+                        )!.id,
+                        expectedName: g.name,
+                      }));
+                    if (!items.length) return;
+                    setBusy(true);
+                    let committed = false;
+                    try {
+                      const result = await api(
+                        "meta-ads/inventory/sheets/batch",
+                        "POST",
+                        {
+                          listId,
+                          revision: categories.revision,
+                          tableIds,
+                          items,
+                        },
+                      );
+                      committed = true;
+                      await onChanged();
+                      await reloadCategories();
+                      setMessage(
+                        result.created
+                          ? `Hojas asignadas a ${result.items} inventarios: ${result.created} vínculos nuevos.`
+                          : "Los inventarios ya están en las hojas elegidas.",
+                      );
+                    } catch (e) {
+                      if (committed)
+                        setMessage(
+                          "Las hojas se asignaron. Actualiza para ver los cambios.",
+                        );
+                      else throw e;
+                    } finally {
+                      setBusy(false);
+                    }
+                  }}
+                />
               </th>
               <th aria-hidden="true" className="inventory-column-gap" />
               <th scope="col">{columnHandle("syllabi", "Temarios")}Temarios</th>

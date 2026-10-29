@@ -1,3 +1,5 @@
+import { isPerformanceManager, performanceManager } from "./performance-access";
+import { performanceEffectivenessSource } from "./effectiveness";
 import { financialContext } from "./financial-access";
 import { manualBaseAllocationsSchema } from "./manual-base-policy";
 import { advisorBaseEstimate } from "./advisor-base-estimate";
@@ -34,36 +36,41 @@ import {
 
 export async function advisors(actor: Actor) {
   const people = await db.metaAdvisor.findMany({
-    where: financialContext(actor)
-      ? financialContext(actor)!.kind === "ADVISORS"
-        ? { sheetId: financialContext(actor)!.scope.slice(4) }
-        : financialContext(actor)!.scope === "ALL"
-          ? {}
-          : {
-              OR: [
-                {
-                  rows: {
-                    some: {
-                      alias: {
-                        tableId: { in: financialContext(actor)!.tableIds },
+    where: {
+      sheet: { archivedAt: null },
+      AND: [
+        financialContext(actor)
+          ? financialContext(actor)!.kind === "ADVISORS"
+            ? { sheetId: financialContext(actor)!.scope.slice(4) }
+            : financialContext(actor)!.scope === "ALL"
+              ? {}
+              : {
+                  OR: [
+                    {
+                      rows: {
+                        some: {
+                          alias: {
+                            tableId: { in: financialContext(actor)!.tableIds },
+                          },
+                        },
                       },
                     },
-                  },
-                },
-                {
-                  objects: {
-                    some: {
-                      alias: {
-                        tableId: { in: financialContext(actor)!.tableIds },
+                    {
+                      objects: {
+                        some: {
+                          alias: {
+                            tableId: { in: financialContext(actor)!.tableIds },
+                          },
+                        },
                       },
                     },
-                  },
-                },
-              ],
-            }
-      : actor.role === "OWNER"
-        ? {}
-        : { objects: { some: { account: await accountWhere(actor) } } },
+                  ],
+                }
+          : actor.role === "OWNER"
+            ? {}
+            : { objects: { some: { account: await accountWhere(actor) } } },
+      ],
+    },
     select: {
       id: true,
       name: true,
@@ -76,11 +83,8 @@ export async function advisors(actor: Actor) {
   });
   return people.map((p) => ({
     ...p,
-    label: p.sheet.archivedAt
-      ? p.name + " · " + p.sheet.name + " (pestaña eliminada)"
-      : p.sheetId === "default-advisors"
-        ? p.name
-        : p.name + " · " + p.sheet.name,
+    label:
+      p.sheetId === "default-advisors" ? p.name : p.name + " · " + p.sheet.name,
   }));
 }
 export async function saveAdvisor(
@@ -106,7 +110,7 @@ export async function saveAdvisor(
       demand((await tx.metaAdvisor.count()) < 1000, "Máximo 1000 asesores.");
     demand(
       await tx.metaEffectivenessSheet.findFirst({
-        where: { id: sheetId, kind: "ADVISORS" },
+        where: { id: sheetId, kind: "ADVISORS", archivedAt: null },
       }),
       "Lista de asesores no disponible.",
       404,
@@ -199,138 +203,178 @@ async function reviewAssignment(
       .digest("hex"),
   };
 }
-export async function assignRowAdvisor(
+type RowAdvisorInput = {
+  aliasId: string;
+  country: string;
+  advisorId: string | null;
+  revision: number;
+  day?: string;
+  mode?: "DAY" | "CLOCK";
+  time?: string;
+  cutoffSales?: number;
+  token?: string;
+};
+export async function assignRowAdvisor(actor: Actor, b: RowAdvisorInput) {
+  ownerOnly(actor);
+  return db.$transaction((tx) => assignRowAdvisorInTransaction(tx, actor, b), {
+    timeout: 60000,
+  });
+}
+async function assignRowAdvisorInTransaction(
+  tx: import("@prisma/client").Prisma.TransactionClient,
+  actor: Actor,
+  b: RowAdvisorInput,
+) {
+  await effectivenessLock(tx, actor);
+  const alias = await tx.metaAlias.findUnique({
+    where: { id: b.aliasId },
+    include: { table: true },
+  });
+  demand(alias, "Inventario no disponible.", 404);
+  if (b.advisorId)
+    demand(
+      await tx.metaAdvisor.findFirst({
+        where: { id: b.advisorId, sheet: { archivedAt: null } },
+      }),
+      "Asesor no disponible.",
+      404,
+    );
+  const where = {
+    aliasId_country_currency: {
+      aliasId: b.aliasId,
+      country: b.country,
+      currency: "",
+    },
+  };
+  const old = await tx.metaEffectivenessRow.findUnique({ where });
+  demand(
+    !old?.hidden && (old?.revision ?? 0) === b.revision,
+    "La fila cambió. Recarga antes de asignar.",
+    409,
+  );
+  if ((old?.advisorId ?? null) === b.advisorId)
+    return { ok: true, changed: false };
+  const day = b.day ?? limaDay(),
+    mode = b.mode ?? "DAY";
+  demand(mode !== "CLOCK" || !!b.time, "Indica la hora del cambio.");
+  const at = new Date(
+    day + "T" + (mode === "DAY" ? "00:00" : b.time) + ":00-05:00",
+  );
+  demand(
+    Number.isFinite(at.getTime()) && at.getTime() <= Date.now(),
+    "La asignación no puede comenzar en el futuro.",
+  );
+  const history = await tx.metaAdvisorAssignment.findMany({
+    where: { aliasId: b.aliasId, country: b.country },
+  });
+  const last = assignmentTimeline(history).at(-1);
+  demand(
+    !last ||
+      at >= last.effectiveAt ||
+      (mode === "DAY" && day === limaDay(last.effectiveAt)),
+    "El inicio debe ser igual o posterior al último cambio. Solo un cambio de día completo puede reemplazar los cortes de esa misma fecha.",
+    409,
+  );
+  demand(history.length < 1000, "Máximo1000 cambios por inventario y país.");
+  let cutoff: number | null = null;
+  if (mode === "CLOCK") {
+    // Capture the latest registered daily sales under the same lock as the transfer.
+    // Legacy client cutoff/token fields never decide ownership of sales.
+    const review = await reviewAssignment(tx, actor, b.aliasId, b.country, day);
+    cutoff = review.sales ?? 0;
+    const previousCut =
+      last && limaDay(last.effectiveAt) === day ? (last.cutoffSales ?? 0) : 0;
+    demand(
+      cutoff >= previousCut || review.salesApprovalValid,
+      "Las ventas registradas son menores que un corte anterior. Corrige el total del día o elige Todo el día.",
+      409,
+    );
+  }
+  const row = await tx.metaEffectivenessRow.upsert({
+    where,
+    create: {
+      aliasId: b.aliasId,
+      country: b.country,
+      currency: "",
+      displayCurrency: alias.table.defaultCurrency,
+      advisorId: b.advisorId,
+      revision: 1,
+    },
+    update: { advisorId: b.advisorId, revision: { increment: 1 } },
+  });
+  const change = await tx.metaAdvisorAssignment.create({
+    data: {
+      aliasId: b.aliasId,
+      country: b.country,
+      advisorId: b.advisorId,
+      previousAdvisorId: old?.advisorId ?? null,
+      effectiveAt: at,
+      mode,
+      cutoffSales: cutoff,
+    },
+  });
+  await recordActivity(tx, {
+    data: {
+      actorId: actor.id,
+      action: "META_EFECTIVIDAD_ASESOR",
+      resourceId: row.id,
+      detail: {
+        advisorId: b.advisorId,
+        previousAdvisorId: old?.advisorId ?? null,
+        country: b.country,
+        effectiveAt: at.toISOString(),
+        mode,
+        cutoffSales: cutoff,
+        assignmentId: change.id,
+      },
+    },
+  });
+  return { ok: true, changed: true };
+}
+export async function assignRowsAdvisor(
   actor: Actor,
   b: {
-    aliasId: string;
-    country: string;
+    tableId: string;
     advisorId: string | null;
-    revision: number;
-    day?: string;
-    mode?: "DAY" | "CLOCK";
+    day: string;
+    mode: "DAY" | "CLOCK";
     time?: string;
-    cutoffSales?: number;
-    token?: string;
+    targets: { aliasId: string; country: string; revision: number }[];
   },
 ) {
   ownerOnly(actor);
+  demand(
+    b.targets.length > 0 &&
+      b.targets.length <= 1500 &&
+      new Set(b.targets.map((t) => JSON.stringify([t.aliasId, t.country])))
+        .size === b.targets.length,
+    "Selecciona filas diferentes.",
+  );
   return db.$transaction(
     async (tx) => {
       await effectivenessLock(tx, actor);
-      const alias = await tx.metaAlias.findUnique({
-        where: { id: b.aliasId },
-        include: { table: true },
-      });
-      demand(alias, "Inventario no disponible.", 404);
-      if (b.advisorId)
-        demand(
-          await tx.metaAdvisor.findUnique({ where: { id: b.advisorId } }),
-          "Asesor no disponible.",
-          404,
-        );
-      const where = {
-        aliasId_country_currency: {
-          aliasId: b.aliasId,
-          country: b.country,
-          currency: "",
-        },
-      };
-      const old = await tx.metaEffectivenessRow.findUnique({ where });
+      const ids = [...new Set(b.targets.map((t) => t.aliasId))];
       demand(
-        !old?.hidden && (old?.revision ?? 0) === b.revision,
-        "La fila cambió. Recarga antes de asignar.",
-        409,
+        (await tx.metaAlias.count({
+          where: { id: { in: ids }, tableId: b.tableId },
+        })) === ids.length,
+        "Una fila no pertenece a esta hoja.",
+        403,
       );
-      if ((old?.advisorId ?? null) === b.advisorId) return { ok: true };
-      const day = b.day ?? limaDay(),
-        mode = b.mode ?? "DAY";
-      demand(mode !== "CLOCK" || !!b.time, "Indica la hora del cambio.");
-      const at = new Date(
-        day + "T" + (mode === "DAY" ? "00:00" : b.time) + ":00-05:00",
-      );
-      demand(
-        Number.isFinite(at.getTime()) && at.getTime() <= Date.now(),
-        "La asignación no puede comenzar en el futuro.",
-      );
-      const history = await tx.metaAdvisorAssignment.findMany({
-        where: { aliasId: b.aliasId, country: b.country },
-      });
-      const last = assignmentTimeline(history).at(-1);
-      demand(
-        !last ||
-          at >= last.effectiveAt ||
-          (mode === "DAY" && day === limaDay(last.effectiveAt)),
-        "El inicio debe ser igual o posterior al último cambio. Solo un cambio de día completo puede reemplazar los cortes de esa misma fecha.",
-        409,
-      );
-      demand(
-        history.length < 1000,
-        "Máximo1000 cambios por inventario y país.",
-      );
-      let cutoff: number | null = null;
-      if (mode === "CLOCK") {
-        // Capture the latest registered daily sales under the same lock as the transfer.
-        // Legacy client cutoff/token fields never decide ownership of sales.
-        const review = await reviewAssignment(
-          tx,
-          actor,
-          b.aliasId,
-          b.country,
-          day,
-        );
-        cutoff = review.sales ?? 0;
-        const previousCut =
-          last && limaDay(last.effectiveAt) === day
-            ? (last.cutoffSales ?? 0)
-            : 0;
-        demand(
-          cutoff >= previousCut || review.salesApprovalValid,
-          "Las ventas registradas son menores que un corte anterior. Corrige el total del día o elige Todo el día.",
-          409,
-        );
+      let changed = 0;
+      for (const target of b.targets) {
+        const r = await assignRowAdvisorInTransaction(tx, actor, {
+          ...target,
+          advisorId: b.advisorId,
+          day: b.day,
+          mode: b.mode,
+          time: b.time,
+        });
+        if (r.changed) changed++;
       }
-      const row = await tx.metaEffectivenessRow.upsert({
-        where,
-        create: {
-          aliasId: b.aliasId,
-          country: b.country,
-          currency: "",
-          displayCurrency: alias.table.defaultCurrency,
-          advisorId: b.advisorId,
-          revision: 1,
-        },
-        update: { advisorId: b.advisorId, revision: { increment: 1 } },
-      });
-      const change = await tx.metaAdvisorAssignment.create({
-        data: {
-          aliasId: b.aliasId,
-          country: b.country,
-          advisorId: b.advisorId,
-          previousAdvisorId: old?.advisorId ?? null,
-          effectiveAt: at,
-          mode,
-          cutoffSales: cutoff,
-        },
-      });
-      await recordActivity(tx, {
-        data: {
-          actorId: actor.id,
-          action: "META_EFECTIVIDAD_ASESOR",
-          resourceId: row.id,
-          detail: {
-            advisorId: b.advisorId,
-            previousAdvisorId: old?.advisorId ?? null,
-            country: b.country,
-            effectiveAt: at.toISOString(),
-            mode,
-            cutoffSales: cutoff,
-            assignmentId: change.id,
-          },
-        },
-      });
-      return { ok: true };
+      return { ok: true, changed, rows: b.targets.length };
     },
-    { timeout: 60000 },
+    { timeout: 120000 },
   );
 }
 export async function saveAttendance(
@@ -464,6 +508,23 @@ export async function advisorSheet(
   ownerOnly(actor);
   return readAdvisorSheet(actor, tableId, since, until, filters);
 }
+export async function managerAdvisorSheet(
+  actor: Actor,
+  since: string,
+  until: string,
+  advisorListId: string,
+) {
+  await performanceManager(actor);
+  return readAdvisorSheet(
+    actor,
+    "all",
+    since,
+    until,
+    { advisorListId },
+    false,
+    true,
+  );
+}
 export async function personalAdvisorSheet(
   actor: Actor,
   advisorId: string,
@@ -485,15 +546,18 @@ async function readAdvisorSheet(
     periodId?: string;
   } = {},
   personal = false,
+  managed = false,
 ) {
   return db.$transaction(
     async (tx) => {
-      if (personal) {
+      if (managed) await performanceManager(actor, tx);
+      else if (personal) {
         demand(
           filters.advisorId &&
-            (await tx.metaAdvisorPortal.findFirst({
-              where: { advisorId: filters.advisorId, userId: actor.id },
-            })),
+            ((await isPerformanceManager(actor, tx)) ||
+              (await tx.metaAdvisorPortal.findFirst({
+                where: { advisorId: filters.advisorId, userId: actor.id },
+              }))),
           "No tienes acceso a este asesor.",
           403,
         );
@@ -509,17 +573,21 @@ async function readAdvisorSheet(
             )?.sheetId
           : "default-advisors");
       demand(
-        sheetId &&
-          (await tx.metaEffectivenessSheet.findFirst({
-            where: { id: sheetId, kind: "ADVISORS" },
-          })),
+        (managed && sheetId === "all") ||
+          (sheetId &&
+            (await tx.metaEffectivenessSheet.findFirst({
+              where: { id: sheetId, kind: "ADVISORS", archivedAt: null },
+            }))),
         "Lista de asesores no disponible.",
         404,
       );
-      const personWhere = {
-        sheetId,
-        ...(filters.advisorId ? { id: filters.advisorId } : {}),
-      };
+      const personWhere =
+        managed && sheetId === "all"
+          ? { sheet: { archivedAt: null } }
+          : {
+              sheetId,
+              ...(filters.advisorId ? { id: filters.advisorId } : {}),
+            };
       const [people, attendance, absences, tables] = await Promise.all([
         tx.metaAdvisor.findMany({
           where: personWhere,
@@ -683,16 +751,24 @@ async function readAdvisorSheet(
         cutoffSales: number | null;
       }[] = [];
       for (const table of tables) {
-        const sheet = personal
-            ? await advisorEffectivenessSource(
+        const sheet = managed
+            ? await performanceEffectivenessSource(
                 actor,
-                filters.advisorId!,
                 table.id,
                 since,
                 until,
                 tx,
               )
-            : await effectiveness(actor, table.id, since, until, tx),
+            : personal
+              ? await advisorEffectivenessSource(
+                  actor,
+                  filters.advisorId!,
+                  table.id,
+                  since,
+                  until,
+                  tx,
+                )
+              : await effectiveness(actor, table.id, since, until, tx),
           names = new Map(sheet.table.aliases.map((a) => [a.id, a.name]));
         const assignments = await tx.metaAdvisorAssignment.findMany({
           where: { alias: { tableId: table.id } },

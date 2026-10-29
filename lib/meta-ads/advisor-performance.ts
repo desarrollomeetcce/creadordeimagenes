@@ -1,10 +1,17 @@
 import { z } from "zod";
 import { db } from "../db";
-import { ownerOnly } from "../auth";
+import argon2 from "argon2";
+import { rateLimit } from "../auth";
+import { performanceManager, isPerformanceManager } from "./performance-access";
 import { demand } from "../errors";
 import { recordActivity } from "../activity";
-import { effectivenessLock } from "./effectiveness";
-import { advisorSheet, personalAdvisorSheet } from "./advisors";
+import type { Prisma } from "@prisma/client";
+async function performanceLock(tx: Prisma.TransactionClient, actor: Actor) {
+  await tx.$executeRaw`SELECT pg_advisory_xact_lock(891234)`;
+  await tx.$executeRaw`SELECT pg_advisory_xact_lock(884411)`;
+  await performanceManager(actor, tx);
+}
+import { managerAdvisorSheet, personalAdvisorSheet } from "./advisors";
 import { performanceRatio } from "./performance-metrics";
 import { localDay, shiftDay } from "./analytics";
 import type { Actor } from "./service";
@@ -36,33 +43,61 @@ export const advisorGoalSchema = z
   .strict()
   .refine((v) => v.since <= v.until, "Revisa las fechas de la meta.");
 export async function performanceSettings(actor: Actor) {
-  ownerOnly(actor);
+  await performanceManager(actor);
   const [people, accounts] = await Promise.all([
     db.metaAdvisor.findMany({
+      where: { sheet: { archivedAt: null } },
       select: {
         id: true,
         name: true,
         sheet: { select: { name: true, archivedAt: true } },
         portal: { select: { userId: true, revision: true } },
+        targets: true,
+        goals: {
+          where: {
+            since: { lte: localDay("America/Lima") },
+            until: { gte: shiftDay(localDay("America/Lima"), -1) },
+          },
+          select: {
+            id: true,
+            basis: true,
+            percent: true,
+            salesTarget: true,
+            revision: true,
+            since: true,
+            until: true,
+          },
+        },
       },
       orderBy: { name: "asc" },
       take: 1000,
     }),
     db.user.findMany({
-      where: { status: "APPROVED" },
-      select: { id: true, name: true, email: true },
+      where: {
+        status: "APPROVED",
+        role: { in: ["ADVISOR", "USER", "OBSERVER"] },
+      },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        advisorPortal: { select: { advisorId: true } },
+      },
       orderBy: { name: "asc" },
     }),
   ]);
+  await performanceManager(actor);
   return { people, accounts };
 }
 export async function savePortalLink(actor: Actor, input: unknown) {
-  ownerOnly(actor);
+  await performanceManager(actor);
   const b = portalLinkSchema.parse(input);
   return db.$transaction(async (tx) => {
-    await effectivenessLock(tx, actor);
+    await performanceLock(tx, actor);
     demand(
-      await tx.metaAdvisor.findUnique({ where: { id: b.advisorId } }),
+      await tx.metaAdvisor.findFirst({
+        where: { id: b.advisorId, sheet: { archivedAt: null } },
+      }),
       "Asesor no disponible.",
       404,
     );
@@ -77,7 +112,11 @@ export async function savePortalLink(actor: Actor, input: unknown) {
     if (b.userId) {
       demand(
         await tx.user.findFirst({
-          where: { id: b.userId, status: "APPROVED" },
+          where: {
+            id: b.userId,
+            status: "APPROVED",
+            role: { in: ["ADVISOR", "USER", "OBSERVER"] },
+          },
         }),
         "Selecciona una cuenta aprobada.",
         400,
@@ -107,12 +146,14 @@ export async function savePortalLink(actor: Actor, input: unknown) {
   });
 }
 export async function saveAdvisorGoal(actor: Actor, input: unknown) {
-  ownerOnly(actor);
+  await performanceManager(actor);
   const b = advisorGoalSchema.parse(input);
   return db.$transaction(async (tx) => {
-    await effectivenessLock(tx, actor);
+    await performanceLock(tx, actor);
     demand(
-      await tx.metaAdvisor.findUnique({ where: { id: b.advisorId } }),
+      await tx.metaAdvisor.findFirst({
+        where: { id: b.advisorId, sheet: { archivedAt: null } },
+      }),
       "Asesor no disponible.",
       404,
     );
@@ -165,7 +206,7 @@ export async function saveAdvisorGoal(actor: Actor, input: unknown) {
   });
 }
 export async function deleteAdvisorGoal(actor: Actor, input: unknown) {
-  ownerOnly(actor);
+  await performanceManager(actor);
   const b = z
     .object({
       id: z.string().min(1).max(100),
@@ -174,7 +215,7 @@ export async function deleteAdvisorGoal(actor: Actor, input: unknown) {
     .strict()
     .parse(input);
   return db.$transaction(async (tx) => {
-    await effectivenessLock(tx, actor);
+    await performanceLock(tx, actor);
     const old = await tx.metaAdvisorGoal.findUnique({ where: { id: b.id } });
     demand(
       old && old.revision === b.revision,
@@ -203,8 +244,9 @@ export async function advisorPerformance(actor: Actor, input: unknown) {
     since <= until && (Date.parse(until) - Date.parse(since)) / 86400000 < 31,
     "Elige hasta 31 días para el histórico.",
   );
+  const manager = await isPerformanceManager(actor);
   let advisorId = q.advisorId;
-  if (actor.role !== "OWNER") {
+  if (!manager) {
     const link = await db.metaAdvisorPortal.findUnique({
       where: { userId: actor.id },
       select: { advisorId: true },
@@ -217,15 +259,13 @@ export async function advisorPerformance(actor: Actor, input: unknown) {
     advisorId = link.advisorId;
   }
   demand(advisorId, "Selecciona un asesor.");
-  const person = await db.metaAdvisor.findUnique({
-    where: { id: advisorId },
+  const person = await db.metaAdvisor.findFirst({
+    where: { id: advisorId, sheet: { archivedAt: null } },
     select: { id: true, name: true },
   });
   demand(person, "Asesor no disponible.", 404);
   const read = (from: string, to: string) =>
-    actor.role === "OWNER"
-      ? advisorSheet(actor, "all", from, to, { advisorId })
-      : personalAdvisorSheet(actor, advisorId!, from, to);
+    personalAdvisorSheet(actor, advisorId!, from, to);
   // Current two days are always queried independently of the optional history range.
   const comparisonSince = shiftDay(today, -2);
   const current = await read(comparisonSince, today);
@@ -234,7 +274,7 @@ export async function advisorPerformance(actor: Actor, input: unknown) {
       ? current
       : await read(since, until);
   // Revalidate the binding after the reads as well; a revoked account cannot receive a stale response.
-  if (actor.role !== "OWNER")
+  if (!manager)
     demand(
       await db.metaAdvisorPortal.findFirst({
         where: { advisorId, userId: actor.id },
@@ -242,6 +282,8 @@ export async function advisorPerformance(actor: Actor, input: unknown) {
       "El acceso a este asesor cambió.",
       403,
     );
+  if (manager) await performanceManager(actor);
+  const targets = await db.metaAdvisorTarget.findMany({ where: { advisorId } });
   const goals = await db.metaAdvisorGoal.findMany({
     where: { advisorId },
     orderBy: [{ since: "desc" }, { basis: "asc" }],
@@ -264,10 +306,26 @@ export async function advisorPerformance(actor: Actor, input: unknown) {
   const card = (day: string, basis: "BC" | "BM") => {
     const d = daily(current, day),
       base = basis === "BC" ? d.bc : d.bm,
-      goal =
+      target = targets.find((t) => t.basis === basis),
+      legacy =
         goals.find(
           (g) => g.basis === basis && g.since <= day && g.until >= day,
-        ) ?? null;
+        ) ?? null,
+      goal = target
+        ? target.percent === null
+          ? null
+          : {
+              id: "target:" + advisorId + ":" + basis,
+              advisorId: advisorId!,
+              basis,
+              percent: target.percent,
+              salesTarget: target.salesTarget,
+              since: "",
+              until: "",
+              revision: target.revision,
+              updatedAt: target.updatedAt,
+            }
+        : legacy;
     const previousDay = shiftDay(day, -1),
       previous = daily(current, previousDay);
     const previousBase = basis === "BC" ? previous.bc : previous.bm;
@@ -276,10 +334,17 @@ export async function advisorPerformance(actor: Actor, input: unknown) {
       basis,
       base,
       previousDay,
-      previousPercent: performanceRatio(previous.sales, previousBase, 100),
+      previousPercent:
+        basis === "BM" && previous.partial
+          ? null
+          : performanceRatio(previous.sales, previousBase, 100),
       previousPartial: previous.partial,
-      percent: performanceRatio(d.sales, base, 100),
+      percent:
+        basis === "BM" && d.partial
+          ? null
+          : performanceRatio(d.sales, base, 100),
       goal,
+      salesTarget: target ? target.salesTarget : (legacy?.salesTarget ?? null),
     };
   };
   return {
@@ -303,3 +368,202 @@ export async function advisorPerformance(actor: Actor, input: unknown) {
 export type AdvisorPerformanceReport = Awaited<
   ReturnType<typeof advisorPerformance>
 >;
+
+const targetSchema = z
+  .object({
+    advisorId: z.string().min(1).max(100),
+    targets: z
+      .array(
+        z
+          .object({
+            basis: z.enum(["BC", "BM"]),
+            percent: z.number().finite().min(0).max(100).nullable(),
+            salesTarget: z.number().int().min(1).max(100000000).nullable(),
+            revision: z.number().int().min(0),
+          })
+          .strict(),
+      )
+      .length(2),
+  })
+  .strict()
+  .refine(
+    (b) => new Set(b.targets.map((t) => t.basis)).size === 2,
+    "Incluye BC y BM una sola vez.",
+  );
+export async function saveAdvisorTargets(actor: Actor, input: unknown) {
+  await performanceManager(actor);
+  const b = targetSchema.parse(input);
+  return db.$transaction(async (tx) => {
+    await performanceLock(tx, actor);
+    demand(
+      await tx.metaAdvisor.findFirst({
+        where: { id: b.advisorId, sheet: { archivedAt: null } },
+      }),
+      "Asesor no disponible.",
+      404,
+    );
+    const rows = [];
+    for (const t of b.targets) {
+      const key = { advisorId: b.advisorId, basis: t.basis };
+      const old = await tx.metaAdvisorTarget.findUnique({
+        where: { advisorId_basis: key },
+      });
+      demand(
+        (old?.revision ?? 0) === t.revision,
+        "Las metas cambiaron. Actualiza antes de guardar.",
+        409,
+      );
+      rows.push(
+        await tx.metaAdvisorTarget.upsert({
+          where: { advisorId_basis: key },
+          create: { ...key, percent: t.percent, salesTarget: t.salesTarget },
+          update: {
+            percent: t.percent,
+            salesTarget: t.salesTarget,
+            revision: { increment: 1 },
+          },
+        }),
+      );
+    }
+    await recordActivity(tx, {
+      data: {
+        actorId: actor.id,
+        action: "ASESOR_METAS_DIARIAS_GUARDADAS",
+        resourceId: b.advisorId,
+        detail: { bases: b.targets.map((t) => t.basis) },
+      },
+    });
+    return { targets: rows };
+  });
+}
+export async function createAdvisorAccess(actor: Actor, input: unknown) {
+  await performanceManager(actor);
+  const b = z
+    .object({
+      advisorId: z.string().min(1).max(100),
+      revision: z.number().int().min(0),
+      email: z
+        .string()
+        .trim()
+        .pipe(z.email().max(200))
+        .transform((v) => v.toLowerCase()),
+      password: z.string().min(12).max(128),
+    })
+    .strict()
+    .parse(input);
+  await rateLimit("advisor-account-create:" + actor.id, 30);
+  const passwordHash = await argon2.hash(b.password, { type: argon2.argon2id });
+  return db.$transaction(async (tx) => {
+    await performanceLock(tx, actor);
+    const person = await tx.metaAdvisor.findFirst({
+      where: { id: b.advisorId, sheet: { archivedAt: null } },
+    });
+    demand(person, "Asesor no disponible.", 404);
+    const old = await tx.metaAdvisorPortal.findUnique({
+      where: { advisorId: b.advisorId },
+    });
+    demand(
+      (old?.revision ?? 0) === b.revision,
+      "El vínculo cambió. Actualiza antes de guardar.",
+      409,
+    );
+    demand(
+      !old?.userId,
+      "Desvincula la cuenta anterior antes de crear otra.",
+      409,
+    );
+    demand(
+      !(await tx.user.findFirst({
+        where: { email: { equals: b.email, mode: "insensitive" } },
+      })),
+      "Ya existe una cuenta con ese correo. Selecciónala en las cuentas existentes.",
+      409,
+    );
+    const user = await tx.user.create({
+      data: {
+        name: person.name,
+        email: b.email,
+        passwordHash,
+        role: "ADVISOR",
+        status: "APPROVED",
+      },
+      select: { id: true, email: true, name: true },
+    });
+    await tx.metaAdvisorPortal.upsert({
+      where: { advisorId: b.advisorId },
+      create: { advisorId: b.advisorId, userId: user.id },
+      update: { userId: user.id, revision: { increment: 1 } },
+    });
+    await recordActivity(tx, {
+      data: {
+        actorId: actor.id,
+        action: "ASESOR_CUENTA_CREADA",
+        resourceId: b.advisorId,
+        detail: { userId: user.id },
+      },
+    });
+    return { user };
+  });
+}
+export async function performanceTeam(actor: Actor) {
+  await performanceManager(actor);
+  const today = localDay("America/Lima"),
+    yesterday = shiftDay(today, -1),
+    settings = await performanceSettings(actor),
+    byPerson = new Map<
+      string,
+      {
+        today: {
+          day: string;
+          sales: number | null;
+          base: number | null;
+          percent: number | null;
+          partial: boolean;
+          na: boolean;
+        };
+        yesterday: {
+          day: string;
+          sales: number | null;
+          base: number | null;
+          percent: number | null;
+          partial: boolean;
+          na: boolean;
+        };
+      }
+    >();
+  // Read all active advisors together, independent of their tab. No per-person queries.
+  const sheet = await managerAdvisorSheet(actor, yesterday, today, "all");
+  for (const row of sheet.rows) {
+    const card = (day: string, basis: "BC" | "BM") => {
+      const d = row.days[day];
+      const base = basis === "BC" ? d?.advisorBase : d?.manualBase;
+      return {
+        day,
+        sales: d?.na ? null : (d?.sales ?? null),
+        base: base ?? null,
+        percent:
+          basis === "BM" && d?.partial
+            ? null
+            : performanceRatio(
+                d?.na ? null : (d?.sales ?? null),
+                base ?? null,
+                100,
+              ),
+        partial: !!d?.partial,
+        na: !!d?.na,
+      };
+    };
+    byPerson.set(row.id, {
+      today: card(today, "BC"),
+      yesterday: card(yesterday, "BM"),
+    });
+  }
+  await performanceManager(actor);
+  return {
+    ...settings,
+    today,
+    yesterday,
+    people: settings.people.map((p) => ({ ...p, ...byPerson.get(p.id) })),
+  };
+}
+export type PerformanceTeam = Awaited<ReturnType<typeof performanceTeam>>;

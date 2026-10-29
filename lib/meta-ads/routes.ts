@@ -148,11 +148,13 @@ export async function metaRoutes(
     if (method === "PUT")
       return send(await saveWorkspaceSharing(actor, await body()));
   }
-  const moduleAccess = isFinancialActor(actor)
+  const performanceRequest=path==="my-performance"||path.startsWith("my-performance/");
+  const moduleAccess = (isFinancialActor(actor)||performanceRequest)
     ? { shared: false, canEdit: false, permission: null }
     : await workspaceAccess(actor);
   if (
     !isFinancialActor(actor) &&
+    !performanceRequest &&
     moduleAccess.shared &&
     !moduleAccess.canEdit &&
     method !== "GET"
@@ -180,6 +182,9 @@ export async function metaRoutes(
       ).setMetaStatus(actor, parts[2], b.status, b.expectedStatus),
     );
   }
+  if(path === "my-performance/team" && method === "GET")return send(await(await import("./advisor-performance")).performanceTeam(actor));
+  if(path === "my-performance/targets" && method === "PUT")return send(await(await import("./advisor-performance")).saveAdvisorTargets(actor,await body()));
+  if(path === "my-performance/accounts" && method === "POST")return send(await(await import("./advisor-performance")).createAdvisorAccess(actor,await body()),201);
   if (path === "my-performance" && method === "GET")
     return send(
       await (
@@ -258,6 +263,10 @@ export async function metaRoutes(
         await import("./inventory-syllabi")
       ).importCatalogPackage(actor, await body()),
     );
+  }
+  if(path === "inventory/sheets/batch" && method === "POST"){
+   ownerOnly(actor);const b=z.object({listId:z.string().min(1).max(100),revision:z.number().int().nonnegative(),tableIds:z.array(z.string().min(1).max(100)).min(1).max(1500),items:z.array(z.object({inventoryId:z.string().min(1).max(100),expectedName:z.string().min(1).max(150)}).strict()).min(1).max(1500)}).strict().parse(await body());
+   return send(await(await import("./inventory-import")).linkInventorySheetsBatch(actor,b));
   }
   if (path === "inventory/sheets" && method === "POST") {
     ownerOnly(actor);
@@ -783,6 +792,10 @@ export async function metaRoutes(
         await import("./advisors")
       ).assignmentReview(actor, q.aliasId, q.country, q.day),
     );
+  }
+  if(path === "effectiveness/advisors/batch" && method === "PATCH"){
+   ownerOnly(actor);const b=z.object({tableId:z.string().min(1).max(100),advisorId:z.string().min(1).max(100).nullable(),...assignmentTimingSchema.shape,targets:z.array(z.object({aliasId:z.string().min(1).max(100),country:z.string().refine(isCountryCode,"Elige un país válido."),revision:z.number().int().nonnegative()}).strict()).min(1).max(1500)}).strict().parse(await body());
+   return send(await(await import("./advisors")).assignRowsAdvisor(actor,b));
   }
   if (path === "effectiveness/advisor" && method === "PATCH") {
     ownerOnly(actor);

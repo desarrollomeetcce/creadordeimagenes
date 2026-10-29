@@ -1,7 +1,8 @@
 "use client";
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useState } from "react";
 import { engineRequest as api } from "./generation-engine";
 import { SheetSearchSelect } from "./sheet-search-select";
+import { PerformanceTeam } from "./performance-team";
 import { PerformanceMotivation } from "./performance-motivation";
 import { MetaDailyChart } from "./meta-daily-chart";
 import { MetaDateRange } from "./meta-date-range";
@@ -17,12 +18,14 @@ type Settings = {
   }[];
   accounts: { id: string; name: string; email: string }[];
 };
-type Goal = Report["goals"][number];
 const fmt = (v: number | null) =>
   v === null ? "—" : v.toLocaleString("es-PE", { maximumFractionDigits: 2 });
 const pct = (v: number | null) => (v === null ? "—" : fmt(v) + " %");
 export function AdvisorPerformance({ owner }: { owner: boolean }) {
   const today = limaToday();
+  const [panel, setPanel] = useState<"team" | "advisor">(
+    owner ? "team" : "advisor",
+  );
   const [settings, setSettings] = useState<Settings | null>(null),
     [advisorId, setAdvisorId] = useState(""),
     [since, setSince] = useState(shiftDay(today, -14)),
@@ -32,34 +35,19 @@ export function AdvisorPerformance({ owner }: { owner: boolean }) {
       null,
     ),
     [error, setError] = useState(""),
-    [notice, setNotice] = useState(""),
-    [saving, setSaving] = useState(false),
-    [view, setView] = useState<"today" | "yesterday">("today"),
-    [userId, setUserId] = useState(""),
-    [editing, setEditing] = useState<Goal | null>(null);
-  const [basis, setBasis] = useState<"BC" | "BM">("BC"),
-    [goalSince, setGoalSince] = useState(today.slice(0, 8) + "01"),
-    [goalUntil, setGoalUntil] = useState(shiftDay(today, 30)),
-    [percent, setPercent] = useState("5"),
-    [target, setTarget] = useState("");
+    [view, setView] = useState<"today" | "yesterday">("today");
   const query =
     "meta-ads/my-performance?" +
     new URLSearchParams({ since, until, ...(owner ? { advisorId } : {}) });
   const current = response?.key === query ? response.data : null;
-  const selected = settings?.people.find((p) => p.id === advisorId);
-  const loadSettings = async () => {
-    const s: Settings = await api("meta-ads/my-performance/settings");
-    setSettings(s);
-    setAdvisorId((id) => id || s.people[0]?.id || "");
-  };
   useEffect(() => {
-    if (!owner) return;
+    if (!owner || panel !== "advisor") return;
     let active = true;
     api("meta-ads/my-performance/settings")
       .then((s: Settings) => {
         if (active) {
           setSettings(s);
-          setAdvisorId(s.people[0]?.id ?? "");
+          setAdvisorId((id) => id || s.people[0]?.id || "");
         }
       })
       .catch((e) => {
@@ -68,13 +56,9 @@ export function AdvisorPerformance({ owner }: { owner: boolean }) {
     return () => {
       active = false;
     };
-  }, [owner]);
+  }, [owner, panel]);
   useEffect(() => {
-    setUserId(selected?.portal?.userId ?? "");
-    setEditing(null);
-  }, [advisorId, selected?.portal?.userId]);
-  useEffect(() => {
-    if (owner && !advisorId) return;
+    if (owner && (!advisorId || panel !== "advisor")) return;
     let active = true,
       inFlight = false;
     setError("");
@@ -106,29 +90,7 @@ export function AdvisorPerformance({ owner }: { owner: boolean }) {
       clearInterval(timer);
       document.removeEventListener("visibilitychange", load);
     };
-  }, [query, reload, owner, advisorId]);
-  async function save(action: () => Promise<void>) {
-    setSaving(true);
-    setError("");
-    setNotice("");
-    try {
-      await action();
-      setNotice("Cambios guardados.");
-      setReload((n) => n + 1);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "No se pudo guardar.");
-    } finally {
-      setSaving(false);
-    }
-  }
-  function editGoal(g: Goal) {
-    setEditing(g);
-    setBasis(g.basis as "BC" | "BM");
-    setGoalSince(g.since);
-    setGoalUntil(g.until);
-    setPercent(String(g.percent));
-    setTarget(g.salesTarget === null ? "" : String(g.salesTarget));
-  }
+  }, [query, reload, owner, advisorId, panel]);
   const card = current?.[view];
   const goal = card?.goal;
   const achieved =
@@ -159,525 +121,405 @@ export function AdvisorPerformance({ owner }: { owner: boolean }) {
               : "Tus ventas, tus bases y el avance hacia tus objetivos."}
           </p>
         </div>
-        <button disabled={saving} onClick={() => setReload((n) => n + 1)}>
+        <button disabled={false} onClick={() => setReload((n) => n + 1)}>
           Actualizar
         </button>
       </header>
       {owner && (
-        <div className="performance-owner-picker">
-          <SheetSearchSelect
-            label="Asesor que deseas visualizar"
-            value={advisorId}
-            disabled={saving}
-            options={(settings?.people ?? []).map((p) => ({
-              value: p.id,
-              label:
-                p.name +
-                " · " +
-                p.sheet.name +
-                (p.sheet.archivedAt ? " (archivada)" : ""),
-            }))}
-            onSelect={(id) => {
-              setAdvisorId(id);
-              setNotice("");
-            }}
-          />
-          <span className="hint">
-            Vista del asesor: sus propias ventas y bases de todas las hojas y
-            países.
-          </span>
+        <div
+          role="tablist"
+          aria-label="Vistas de Mi desempeño"
+          className="performance-panel-tabs"
+        >
+          <button
+            role="tab"
+            aria-selected={panel === "team"}
+            onClick={() => setPanel("team")}
+          >
+            Mis asesores
+          </button>
+          <button
+            role="tab"
+            aria-selected={panel === "advisor"}
+            onClick={() => setPanel("advisor")}
+          >
+            Vista del asesor
+          </button>
         </div>
       )}
-      {error && (
-        <p role="alert" className="notice error">
-          {error}
-        </p>
+      {owner && panel === "team" && (
+        <PerformanceTeam
+          reload={reload}
+          onDetail={(id) => {
+            setAdvisorId(id);
+            setPanel("advisor");
+          }}
+        />
       )}
-      {notice && (
-        <p role="status" className="notice success">
-          {notice}
-        </p>
-      )}
-      {owner && settings && !settings.people.length ? (
-        <p>No hay asesores. Regístralos primero en Efectividad.</p>
-      ) : !current && !error ? (
-        <p role="status">Cargando desempeño…</p>
-      ) : null}
-      {current && (
-        <>
-          <h2>{current.person.name}</h2>
-          <div
-            className="performance-view-picker"
-            role="group"
-            aria-label="Día del desempeño"
-          >
-            <button
-              aria-pressed={view === "today"}
-              onClick={() => setView("today")}
-            >
-              Hoy · avance provisional
-            </button>
-            <button
-              aria-pressed={view === "yesterday"}
-              onClick={() => setView("yesterday")}
-            >
-              Ayer · día completo
-            </button>
+      <div hidden={owner && panel !== "advisor"}>
+        {owner && panel === "advisor" && (
+          <div className="performance-owner-picker">
+            <SheetSearchSelect
+              label="Asesor que deseas visualizar"
+              value={advisorId}
+              disabled={false}
+              options={(settings?.people ?? []).map((p) => ({
+                value: p.id,
+                label: p.name + " · " + p.sheet.name,
+              }))}
+              onSelect={(id) => {
+                setAdvisorId(id);
+              }}
+            />
+            <span className="hint">
+              Vista del asesor: sus propias ventas y bases de todas las hojas y
+              países.
+            </span>
           </div>
-          {card && (
-            <article
-              className="performance-day"
-              aria-label={
-                view === "today" ? "Desempeño de hoy" : "Desempeño de ayer"
-              }
+        )}
+        {error && (
+          <p role="alert" className="notice error">
+            {error}
+          </p>
+        )}
+        {owner && settings && !settings.people.length ? (
+          <p>No hay asesores. Regístralos primero en Efectividad.</p>
+        ) : !current && !error ? (
+          <p role="status">Cargando desempeño…</p>
+        ) : null}
+        {current && (!owner || panel === "advisor") && (
+          <>
+            <h2>{current.person.name}</h2>
+            <div
+              className="performance-view-picker"
+              role="group"
+              aria-label="Día del desempeño"
             >
-              <div className="performance-day-heading">
-                <h3>
-                  {view === "today" ? "Así vas hoy" : "Tus resultados de ayer"}
-                </h3>
-                <span>
-                  {card.day} · Lima{card.partial ? " · Cobertura parcial" : ""}
+              <button
+                aria-pressed={view === "today"}
+                onClick={() => setView("today")}
+              >
+                Hoy · avance provisional
+              </button>
+              <button
+                aria-pressed={view === "yesterday"}
+                onClick={() => setView("yesterday")}
+              >
+                Ayer · día completo
+              </button>
+            </div>
+            {card && (
+              <article
+                className="performance-day"
+                aria-label={
+                  view === "today" ? "Desempeño de hoy" : "Desempeño de ayer"
+                }
+              >
+                <div className="performance-day-heading">
+                  <h3>
+                    {view === "today"
+                      ? "Así vas hoy"
+                      : "Tus resultados de ayer"}
+                  </h3>
+                  <span>
+                    {card.day} · Lima
+                    {card.partial ? " · Cobertura parcial" : ""}
+                  </span>
+                </div>
+                <div className="performance-values">
+                  <div>
+                    <span>Ventas registradas</span>
+                    <strong>
+                      {card.na ? "N.A." : fmt(card.sales)}
+                      {card.partial ? " *" : ""}
+                    </strong>
+                  </div>
+                  <div>
+                    <span>
+                      {view === "today"
+                        ? "Base por contactar (BC)"
+                        : "Base manual (BM)"}
+                    </span>
+                    <strong>{fmt(card.base)}</strong>
+                  </div>
+                  <div>
+                    <span>Efectividad · V/{card.basis}</span>
+                    <strong>
+                      {pct(card.percent)}
+                      {card.partial ? " *" : ""}
+                    </strong>
+                  </div>
+                  <div>
+                    <span>Meta de efectividad</span>
+                    <strong>{goal ? pct(goal.percent) : "Sin definir"}</strong>
+                  </div>
+                </div>
+                <PerformanceMotivation
+                  percent={card.percent}
+                  partial={card.partial}
+                  basis={card.basis}
+                  previousDay={card.previousDay}
+                  previousPercent={card.previousPercent}
+                  previousPartial={card.previousPartial}
+                  goal={card.goal}
+                />
+                <p className="hint">
+                  {view === "today"
+                    ? "BC es la base que declaras disponible para contactar. No significa que ya hayas contactado a todas esas personas ni que sea exclusivamente la base ingresada hoy."
+                    : "BM corresponde a las 24 horas de ayer, de 00:00 a 00:00 en Lima, y se registra al día siguiente en Totales."}
+                </p>
+                {card.base === null ? (
+                  <p className="performance-pending">
+                    Pendiente de registrar {card.basis}. Todavía no se puede
+                    calcular tu efectividad.
+                  </p>
+                ) : card.base === 0 ? (
+                  <p className="performance-pending">
+                    La base registrada es 0. No se calcula un porcentaje sobre
+                    cero.
+                  </p>
+                ) : card.sales === null ? (
+                  <p className="performance-pending">
+                    {card.na
+                      ? "Ventas marcadas N.A."
+                      : "Pendiente de registrar ventas."}
+                  </p>
+                ) : null}
+                {(goal || card.salesTarget !== null) && (
+                  <div className="performance-goal-progress">
+                    <p>{goal ? "Meta diaria de efectividad · "+card.basis : "Meta diaria de ventas"}</p>
+                    {progress !== null && (
+                      <>
+                        <progress
+                          aria-label="Avance hacia la meta de efectividad"
+                          max={100}
+                          value={progress}
+                        />
+                        <strong>
+                          {card.partial
+                            ? "Resultado parcial: completa los registros para evaluar la meta."
+                            : achieved
+                              ? "¡Meta de efectividad alcanzada!"
+                              : `Te faltan ${fmt(Math.max(0, (goal?.percent ?? 0) - (card.percent ?? 0)))} puntos porcentuales para tu meta.`}
+                        </strong>
+                      </>
+                    )}
+                    {card.salesTarget !== null && (
+                      <p>
+                        Meta diaria de ventas: {card.salesTarget} ·{" "}
+                        {card.sales === null
+                          ? "Pendiente"
+                          : `${fmt(card.sales)} registradas · faltan ${fmt(Math.max(0, card.salesTarget! - card.sales))}`}
+                      </p>
+                    )}
+                  </div>
+                )}
+                <div className="performance-attendance">
+                  <span>
+                    Asistencia:{" "}
+                    <b>
+                      {card.attendance === "PRESENT"
+                        ? "Presente"
+                        : card.attendance === "ABSENT"
+                          ? "Ausente"
+                          : card.attendance === "NA"
+                            ? "N.A."
+                            : "Sin registrar"}
+                    </b>
+                  </span>
+                  <span>
+                    Horas ausentes:{" "}
+                    <b>
+                      {fmt(card.hours)} h{card.pending ? " +" : ""}
+                    </b>
+                  </span>
+                </div>
+              </article>
+            )}
+            <details className="performance-history" open>
+              <summary>Mi evolución e histórico diario</summary>
+              <div className="row">
+                <MetaDateRange
+                  from={since}
+                  to={until}
+                  maxDays={31}
+                  onChange={(a, b) => {
+                    setSince(a);
+                    setUntil(b);
+                  }}
+                />
+                <span className="hint">
+                  El período cambia el histórico; Hoy y Ayer conservan sus
+                  fechas.
                 </span>
               </div>
-              <div className="performance-values">
-                <div>
-                  <span>Ventas registradas</span>
-                  <strong>
-                    {card.na ? "N.A." : fmt(card.sales)}
-                    {card.partial ? " *" : ""}
-                  </strong>
-                </div>
-                <div>
-                  <span>
-                    {view === "today"
-                      ? "Base por contactar (BC)"
-                      : "Base manual (BM)"}
-                  </span>
-                  <strong>{fmt(card.base)}</strong>
-                </div>
-                <div>
-                  <span>Efectividad · V/{card.basis}</span>
-                  <strong>
-                    {pct(card.percent)}
-                    {card.partial ? " *" : ""}
-                  </strong>
-                </div>
-                <div>
-                  <span>Meta de efectividad</span>
-                  <strong>{goal ? pct(goal.percent) : "Sin definir"}</strong>
-                </div>
+              <div
+                className="performance-period-attendance"
+                aria-label="Asistencia del período"
+              >
+                <span>
+                  Asistencias registradas{" "}
+                  <b>
+                    {
+                      current.history.filter((d) => d.attendance === "PRESENT")
+                        .length
+                    }
+                  </b>
+                </span>
+                <span>
+                  Ausencias registradas{" "}
+                  <b>
+                    {
+                      current.history.filter((d) => d.attendance === "ABSENT")
+                        .length
+                    }
+                  </b>
+                </span>
+                <span>
+                  Horas ausentes registradas{" "}
+                  <b>
+                    {fmt(
+                      current.history.some((d) => d.hours !== null)
+                        ? current.history.reduce(
+                            (n, d) => n + (d.hours ?? 0),
+                            0,
+                          )
+                        : null,
+                    )}{" "}
+                    h
+                  </b>
+                </span>
               </div>
-              <PerformanceMotivation
-                percent={card.percent}
-                partial={card.partial}
-                basis={card.basis}
-                previousDay={card.previousDay}
-                previousPercent={card.previousPercent}
-                previousPartial={card.previousPartial}
-                goal={card.goal}
+              <MetaDailyChart
+                rows={current.history.map((d) => ({
+                  day: d.day,
+                  results: d.sales,
+                  cost: view === "today" ? d.bc : d.bm,
+                  spend: null,
+                }))}
+                bars="results"
+                line="cost"
+                currency="PEN"
+                metricName="Ventas"
+                since={since}
+                until={until}
+                labels={{
+                  results: "Ventas (V)",
+                  cost:
+                    view === "today"
+                      ? "Base por contactar (BC)"
+                      : "Base manual (BM)",
+                  spend: "",
+                }}
+                units={{ results: "count", cost: "count", spend: "count" }}
               />
               <p className="hint">
-                {view === "today"
-                  ? "BC es la base que declaras disponible para contactar. No significa que ya hayas contactado a todas esas personas ni que sea exclusivamente la base ingresada hoy."
-                  : "BM corresponde a las 24 horas de ayer, de 00:00 a 00:00 en Lima, y se registra al día siguiente en Totales."}
+                Promedio por día con ventas registradas:{" "}
+                {fmt(
+                  current.history.some((d) => d.sales !== null)
+                    ? current.history.reduce((n, d) => n + (d.sales ?? 0), 0) /
+                        current.history.filter((d) => d.sales !== null).length
+                    : null,
+                )}
+                . Barras de ventas y línea de base con escalas independientes.
               </p>
-              {card.base === null ? (
-                <p className="performance-pending">
-                  Pendiente de registrar {card.basis}. Todavía no se puede
-                  calcular tu efectividad.
-                </p>
-              ) : card.base === 0 ? (
-                <p className="performance-pending">
-                  La base registrada es 0. No se calcula un porcentaje sobre
-                  cero.
-                </p>
-              ) : card.sales === null ? (
-                <p className="performance-pending">
-                  {card.na
-                    ? "Ventas marcadas N.A."
-                    : "Pendiente de registrar ventas."}
-                </p>
-              ) : null}
-              {goal && (
-                <div className="performance-goal-progress">
-                  <p>
-                    Objetivo vigente: {goal.since} — {goal.until} · medición
-                    diaria con {card.basis}
-                  </p>
-                  {progress !== null && (
-                    <>
-                      <progress
-                        aria-label="Avance hacia la meta de efectividad"
-                        max={100}
-                        value={progress}
-                      />
-                      <strong>
-                        {card.partial
-                          ? "Resultado parcial: completa los registros para evaluar la meta."
-                          : achieved
-                            ? "¡Meta de efectividad alcanzada!"
-                            : `Te faltan ${fmt(Math.max(0, goal.percent - (card.percent ?? 0)))} puntos porcentuales para tu meta.`}
-                      </strong>
-                    </>
-                  )}
-                  {goal.salesTarget !== null && (
-                    <p>
-                      Meta diaria de ventas: {goal.salesTarget} ·{" "}
-                      {card.sales === null
-                        ? "Pendiente"
-                        : `${fmt(card.sales)} registradas · faltan ${fmt(Math.max(0, goal.salesTarget - card.sales))}`}
-                    </p>
-                  )}
+              <div className="table-scroll">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Fecha</th>
+                      <th>Ventas</th>
+                      <th>BC</th>
+                      <th>V/BC</th>
+                      <th>BM</th>
+                      <th>V/BM</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {current.history.map((d) => (
+                      <tr key={d.day}>
+                        <th>{d.day}</th>
+                        <td>
+                          {d.na ? "N.A." : fmt(d.sales)}
+                          {d.partial ? " *" : ""}
+                        </td>
+                        <td>{fmt(d.bc)}</td>
+                        <td>
+                          {pct(performanceRatio(d.sales, d.bc, 100))}
+                          {d.partial ? " *" : ""}
+                        </td>
+                        <td>{fmt(d.bm)}</td>
+                        <td>
+                          {pct(
+                            d.day < today && !d.partial
+                              ? performanceRatio(d.sales, d.bm, 100)
+                              : null,
+                          )}
+                          {d.partial ? " *" : ""}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <p className="hint">
+                * Cobertura parcial · — sin dato. BM y BC se reciben del reparto
+                de Totales; las ventas respetan el reparto registrado por
+                asesor, aunque cambie el responsable.
+              </p>
+            </details>
+            <details className="performance-history">
+              <summary>Qué diplomados vendí en el período</summary>
+              {!positive.length ? (
+                <p>No hay ventas positivas registradas en este período.</p>
+              ) : (
+                <div className="table-scroll">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Diplomado / producto</th>
+                        <th>Hoja · país</th>
+                        <th>Ventas</th>
+                        <th>Fechas y cantidades</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {positive.map((s, i) => (
+                        <tr key={i}>
+                          <th>{s.product}</th>
+                          <td>
+                            {s.sheet} · {s.country}
+                          </td>
+                          <td>
+                            {fmt(
+                              Object.values(s.days).reduce(
+                                (n, d) => n + (!d.na ? (d.sales ?? 0) : 0),
+                                0,
+                              ),
+                            )}
+                          </td>
+                          <td>
+                            {Object.entries(s.days)
+                              .filter(
+                                ([, d]) =>
+                                  !d.na && d.sales !== null && d.sales > 0,
+                              )
+                              .map(
+                                ([day, d]) =>
+                                  `${day}: ${fmt(d.sales)}${d.partial ? " *" : ""}`,
+                              )
+                              .join(" · ")}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                 </div>
               )}
-              <div className="performance-attendance">
-                <span>
-                  Asistencia:{" "}
-                  <b>
-                    {card.attendance === "PRESENT"
-                      ? "Presente"
-                      : card.attendance === "ABSENT"
-                        ? "Ausente"
-                        : card.attendance === "NA"
-                          ? "N.A."
-                          : "Sin registrar"}
-                  </b>
-                </span>
-                <span>
-                  Horas ausentes:{" "}
-                  <b>
-                    {fmt(card.hours)} h{card.pending ? " +" : ""}
-                  </b>
-                </span>
-              </div>
-            </article>
-          )}
-          <details className="performance-history" open>
-            <summary>Mi evolución e histórico diario</summary>
-            <div className="row">
-              <MetaDateRange
-                from={since}
-                to={until}
-                maxDays={31}
-                onChange={(a, b) => {
-                  setSince(a);
-                  setUntil(b);
-                }}
-              />
-              <span className="hint">
-                El período cambia el histórico; Hoy y Ayer conservan sus fechas.
-              </span>
-            </div>
-            <MetaDailyChart
-              rows={current.history.map((d) => ({
-                day: d.day,
-                results: d.sales,
-                cost: view === "today" ? d.bc : d.bm,
-                spend: null,
-              }))}
-              bars="results"
-              line="cost"
-              currency="PEN"
-              metricName="Ventas"
-              since={since}
-              until={until}
-              labels={{
-                results: "Ventas (V)",
-                cost:
-                  view === "today"
-                    ? "Base por contactar (BC)"
-                    : "Base manual (BM)",
-                spend: "",
-              }}
-              units={{ results: "count", cost: "count", spend: "count" }}
-            />
-            <p className="hint">
-              Promedio por día con ventas registradas:{" "}
-              {fmt(
-                current.history.some((d) => d.sales !== null)
-                  ? current.history.reduce((n, d) => n + (d.sales ?? 0), 0) /
-                      current.history.filter((d) => d.sales !== null).length
-                  : null,
-              )}
-              . Barras de ventas y línea de base con escalas independientes.
-            </p>
-            <div className="table-scroll">
-              <table>
-                <thead>
-                  <tr>
-                    <th>Fecha</th>
-                    <th>Ventas</th>
-                    <th>BC</th>
-                    <th>V/BC</th>
-                    <th>BM</th>
-                    <th>V/BM</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {current.history.map((d) => (
-                    <tr key={d.day}>
-                      <th>{d.day}</th>
-                      <td>
-                        {d.na ? "N.A." : fmt(d.sales)}
-                        {d.partial ? " *" : ""}
-                      </td>
-                      <td>{fmt(d.bc)}</td>
-                      <td>
-                        {pct(performanceRatio(d.sales, d.bc, 100))}
-                        {d.partial ? " *" : ""}
-                      </td>
-                      <td>{fmt(d.bm)}</td>
-                      <td>
-                        {pct(performanceRatio(d.sales, d.bm, 100))}
-                        {d.partial ? " *" : ""}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-            <p className="hint">
-              * Cobertura parcial · — sin dato. BM y BC se reciben del reparto
-              de Totales; las ventas respetan el reparto registrado por asesor,
-              aunque cambie el responsable.
-            </p>
-          </details>
-          <details className="performance-history">
-            <summary>Qué diplomados vendí en el período</summary>
-            {!positive.length ? (
-              <p>No hay ventas positivas registradas en este período.</p>
-            ) : (
-              <div className="table-scroll">
-                <table>
-                  <thead>
-                    <tr>
-                      <th>Diplomado / producto</th>
-                      <th>Hoja · país</th>
-                      <th>Ventas</th>
-                      <th>Fechas y cantidades</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {positive.map((s, i) => (
-                      <tr key={i}>
-                        <th>{s.product}</th>
-                        <td>
-                          {s.sheet} · {s.country}
-                        </td>
-                        <td>
-                          {fmt(
-                            Object.values(s.days).reduce(
-                              (n, d) => n + (!d.na ? (d.sales ?? 0) : 0),
-                              0,
-                            ),
-                          )}
-                        </td>
-                        <td>
-                          {Object.entries(s.days)
-                            .filter(
-                              ([, d]) =>
-                                !d.na && d.sales !== null && d.sales > 0,
-                            )
-                            .map(
-                              ([day, d]) =>
-                                `${day}: ${fmt(d.sales)}${d.partial ? " *" : ""}`,
-                            )
-                            .join(" · ")}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </details>
-          <details className="performance-history">
-            <summary>Mis metas y períodos</summary>
-            {!current.goals.length ? (
-              <p>Todavía no hay metas definidas.</p>
-            ) : (
-              <div className="table-scroll">
-                <table>
-                  <thead>
-                    <tr>
-                      <th>Base</th>
-                      <th>Período</th>
-                      <th>Efectividad diaria</th>
-                      <th>Ventas diarias</th>
-                      {owner && <th>Acciones</th>}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {current.goals.map((g) => (
-                      <tr key={g.id}>
-                        <th>{g.basis}</th>
-                        <td>
-                          {g.since} — {g.until}
-                        </td>
-                        <td>{pct(g.percent)}</td>
-                        <td>{fmt(g.salesTarget)}</td>
-                        {owner && (
-                          <td>
-                            <button
-                              disabled={saving}
-                              onClick={() => editGoal(g)}
-                            >
-                              Editar meta
-                            </button>
-                            <button
-                              disabled={saving}
-                              onClick={() =>
-                                void save(async () => {
-                                  await api(
-                                    "meta-ads/my-performance/goals",
-                                    "DELETE",
-                                    { id: g.id, revision: g.revision },
-                                  );
-                                  setEditing(null);
-                                })
-                              }
-                            >
-                              Eliminar meta
-                            </button>
-                          </td>
-                        )}
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </details>
-        </>
-      )}
-      {owner && advisorId && (
-        <details className="performance-admin">
-          <summary>Administrar acceso y metas de este asesor</summary>
-          <form
-            onSubmit={(e: FormEvent) => {
-              e.preventDefault();
-              void save(async () => {
-                await api("meta-ads/my-performance/link", "PUT", {
-                  advisorId,
-                  userId: userId || null,
-                  revision: selected?.portal?.revision ?? 0,
-                });
-                await loadSettings();
-              });
-            }}
-          >
-            <h3>Cuenta de acceso</h3>
-            <p className="hint">
-              Vincula una cuenta aprobada. Cada cuenta puede representar a un
-              solo asesor; desvincular retira su acceso a este panel.
-            </p>
-            <SheetSearchSelect
-              label="Cuenta del asesor"
-              value={userId}
-              disabled={saving}
-              options={[
-                { value: "", label: "Sin cuenta vinculada" },
-                ...(settings?.accounts ?? []).map((a) => ({
-                  value: a.id,
-                  label: a.name + " · " + a.email,
-                })),
-              ]}
-              onSelect={setUserId}
-            />
-            <button disabled={saving}>Guardar vínculo</button>
-          </form>
-          <form
-            onSubmit={(e: FormEvent) => {
-              e.preventDefault();
-              void save(async () => {
-                await api("meta-ads/my-performance/goals", "PUT", {
-                  ...(editing ? { id: editing.id } : {}),
-                  advisorId,
-                  basis,
-                  since: goalSince,
-                  until: goalUntil,
-                  percent: Number(percent),
-                  salesTarget: target ? Number(target) : null,
-                  revision: editing?.revision ?? 0,
-                });
-                setEditing(null);
-              });
-            }}
-          >
-            <h3>{editing ? "Editar meta" : "Definir meta"}</h3>
-            <p className="hint">
-              El porcentaje se evalúa cada día del período. BC corresponde al
-              avance de hoy; BM al resultado de ayer. Puedes definir objetivos
-              distintos para cada base.
-            </p>
-            <div className="performance-goal-fields">
-              <label>
-                Base
-                <select
-                  disabled={saving}
-                  value={basis}
-                  onChange={(e) => setBasis(e.target.value as "BC" | "BM")}
-                >
-                  <option value="BC">BC · base por contactar</option>
-                  <option value="BM">BM · base manual</option>
-                </select>
-              </label>
-              <label>
-                Desde
-                <input
-                  required
-                  type="date"
-                  value={goalSince}
-                  onChange={(e) => setGoalSince(e.target.value)}
-                />
-              </label>
-              <label>
-                Hasta
-                <input
-                  required
-                  type="date"
-                  min={goalSince}
-                  value={goalUntil}
-                  onChange={(e) => setGoalUntil(e.target.value)}
-                />
-              </label>
-              <label>
-                Meta de efectividad (%)
-                <input
-                  required
-                  type="number"
-                  min="0"
-                  max="100"
-                  step="0.01"
-                  value={percent}
-                  onChange={(e) => setPercent(e.target.value)}
-                />
-              </label>
-              <label>
-                Ventas por día (opcional)
-                <input
-                  type="number"
-                  min="1"
-                  max="100000000"
-                  step="1"
-                  value={target}
-                  onChange={(e) => setTarget(e.target.value)}
-                />
-              </label>
-            </div>
-            <button disabled={saving}>Guardar meta</button>
-            {editing && (
-              <button
-                type="button"
-                disabled={saving}
-                onClick={() => setEditing(null)}
-              >
-                Cancelar edición
-              </button>
-            )}
-          </form>
-        </details>
-      )}
+            </details>
+          </>
+        )}
+      </div>
     </section>
   );
 }

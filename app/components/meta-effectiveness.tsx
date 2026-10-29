@@ -19,6 +19,7 @@ import {
 import { useFinancialCategories } from "./use-financial-categories";
 import {
   groupFinancialRows,
+  groupFinancialRowsByAdvisor,
   financialRowCategories,
   type FinancialCatalogEntry,
 } from "../../lib/meta-ads/financial-categories";
@@ -63,6 +64,7 @@ import {
   sheetCellColor,
   type SheetColorRule,
 } from "../../lib/meta-ads/sheet-colors";
+import { AdvisorBulkAssignment } from "./advisor-bulk-assignment";
 import { AdvisorAssignment } from "./advisor-assignment";
 import type { AdvisorPeriodView } from "../../lib/meta-ads/advisor-period-history";
 import { AdvisorDetail } from "./advisor-detail";
@@ -206,6 +208,12 @@ export function MetaEffectiveness({
     advisorId: string | null;
     name: string;
   } | null>(null);
+  const [bulkAdvisor, setBulkAdvisor] = useState<{
+    advisorId: string | null;
+    name: string;
+    selected: Row[];
+    visible: Row[];
+  } | null>(null);
   const [newAssignment, setNewAssignment] = useState<string | null>(null);
   const [newTiming, setNewTiming] = useState<{
     day: string;
@@ -336,6 +344,9 @@ export function MetaEffectiveness({
     setValueFilter(null);
     setSelectedMetrics(null);
   }, [initialPeriodLink, tableId]);
+  const [grouping, setGrouping] = useWorkbookPreference<
+    "inventory" | "advisor"
+  >(tableId, "financialGrouping", "inventory");
   const [newActive, setNewActive] = useState(false);
   const [newName, setNewName] = useState(""),
     [newCountry, setNewCountry] = useState(settings.defaultCountry),
@@ -656,9 +667,10 @@ export function MetaEffectiveness({
     setPaste(text);
     return true;
   };
-  const addRow = async () => {
+  const addRow = async (name = newName) => {
     if (
-      !newName.trim() ||
+      !name.trim() ||
+      busy ||
       !inventoryId ||
       inventoryState?.listId !== inventoryId
     )
@@ -668,7 +680,7 @@ export function MetaEffectiveness({
     try {
       const code = resolveCountry(newCountry);
       if (code === null) throw Error("País no reconocido.");
-      const rows = parseEffectivenessPaste(newName, code, newCurrency);
+      const rows = parseEffectivenessPaste(name, code, newCurrency);
       if (newAdvisor && rows.some((r) => !r.country))
         throw Error("Elige el país antes de guardar el inventario con asesor.");
       const decisions = await duplicateReview.review(
@@ -784,21 +796,52 @@ export function MetaEffectiveness({
         a.country.localeCompare(b.country)
       );
     });
-  const categoryBands = groupFinancialRows(
+  const advisorSections = grouping==="advisor"?groupFinancialRowsByAdvisor(
     rows,
     financialAliases,
     temporaryCategories.temporary,
-  );
+    advisors,
+  ):[];
+  const categoryBands =
+    grouping === "advisor"
+      ? advisorSections.flatMap((g) => g.bands)
+      : groupFinancialRows(
+          rows,
+          financialAliases,
+          temporaryCategories.temporary,
+        );
   const showCategoryBands = financialAliases.some(
     (a) => (a as FinancialCatalogEntry).categoryAssignments?.length,
   );
-  const displayedRows = showCategoryBands
-    ? categoryBands.flatMap((b) => b.rows)
-    : rows;
-  const inactiveRows = displayedRows.filter((r) => !r.active);
-  const firstInactiveKey = inactiveRows.length
-    ? activationKey(inactiveRows[0])
-    : null;
+  const displayedRows =
+    grouping === "advisor"
+      ? advisorSections.flatMap((g) =>
+          showCategoryBands ? g.bands.flatMap((b) => b.rows) : g.rows,
+        )
+      : showCategoryBands
+        ? categoryBands.flatMap((b) => b.rows)
+        : rows;
+  const firstAdvisorBands = new Map(
+    grouping === "advisor"
+      ? advisorSections.map((g) => {
+          const ordered = showCategoryBands
+            ? g.bands.flatMap((b) => b.rows)
+            : g.rows;
+          return [activationKey(ordered[0]), g] as const;
+        })
+      : [],
+  );
+  const inactiveSections =
+    grouping === "advisor"
+      ? advisorSections.map((g) =>
+          g.bands.flatMap((b) => b.rows).filter((r) => !r.active),
+        )
+      : [displayedRows.filter((r) => !r.active)];
+  const firstInactiveBands = new Map(
+    inactiveSections
+      .filter((g) => g.length)
+      .map((g) => [activationKey(g[0]), g.length]),
+  );
   const firstBands = new Map(
     categoryBands
       .filter((b) => b.rows.length)
@@ -975,7 +1018,7 @@ export function MetaEffectiveness({
       : " ↕";
   return (
     <section
-      className="effectiveness sheet-view"
+      className="effectiveness sheet-view financial-sheet-view"
       aria-label="Efectividad diaria"
     >
       {duplicateReview.dialog}
@@ -1047,6 +1090,17 @@ export function MetaEffectiveness({
               mode: b.mode,
               ...(b.time ? { time: b.time } : {}),
             });
+          }}
+        />
+      )}
+      {bulkAdvisor && (
+        <AdvisorBulkAssignment
+          tableId={tableId}
+          {...bulkAdvisor}
+          onClose={() => setBulkAdvisor(null)}
+          onSaved={async () => {
+            notifyAdvisorSalesChanged();
+            await refresh();
           }}
         />
       )}
@@ -1662,19 +1716,6 @@ export function MetaEffectiveness({
                     Ver detalle de la hoja
                   </button>
                   <div className="financial-inventory-controls">
-                    <InventoryMultiSelect
-                      label="Buscar y filtrar inventario de la hoja"
-                      placeholder="Buscar inventario…"
-                      options={financialAliases.map((a) => ({
-                        value: a.id,
-                        label: a.name,
-                      }))}
-                      values={selectedAliases ?? []}
-                      onChange={(v) => {
-                        setHistoryPeriod(null);
-                        setSelectedAliases(v.length ? v : null);
-                      }}
-                    />
                     <small>Seleccionar inventario</small>
                     <SheetSearchSelect
                       label="Seleccionar inventario"
@@ -1695,6 +1736,29 @@ export function MetaEffectiveness({
                         Crea una pestaña Inventario para añadir ítems.
                       </small>
                     )}
+                    <InventoryMultiSelect
+                      label="Buscar y filtrar inventario de la hoja"
+                      placeholder="Buscar inventario…"
+                      options={financialAliases
+                        .filter((a) =>
+                          tables
+                            .find((t) => t.id === tableId)
+                            ?.aliases.some(
+                              (e) =>
+                                e.id === a.id &&
+                                e.inventorySheetId === inventoryId,
+                            ),
+                        )
+                        .map((a) => ({
+                          value: a.id,
+                          label: a.name,
+                        }))}
+                      values={selectedAliases ?? []}
+                      onChange={(v) => {
+                        setHistoryPeriod(null);
+                        setSelectedAliases(v.length ? v : null);
+                      }}
+                    />
                   </div>
                   <SheetColumnResizer
                     label={inventoryColumnName}
@@ -1751,6 +1815,42 @@ export function MetaEffectiveness({
                   className="effectiveness-advisor"
                 >
                   Asesor
+                  <SheetSearchSelect
+                    label="Agrupar hoja por inventario o asesor"
+                    value={grouping}
+                    options={[
+                      { value: "inventory", label: "Por inventario" },
+                      { value: "advisor", label: "Por asesor" },
+                    ]}
+                    onSelect={(value) =>
+                      setGrouping(value as "inventory" | "advisor")
+                    }
+                  />
+                  <SheetSearchSelect
+                    label="Asignar asesor a filas de la hoja"
+                    placeholder="Asignar asesor…"
+                    value=""
+                    disabled={busy || !rows.some((r) => r.country)}
+                    options={[
+                      { value: "__none", label: "Sin asesor" },
+                      ...advisors.map((a) => ({
+                        value: a.id,
+                        label: a.label ?? a.name,
+                      })),
+                    ]}
+                    onSelect={(id) =>
+                      setBulkAdvisor({
+                        advisorId: id === "__none" ? null : id,
+                        name:
+                          id === "__none"
+                            ? "Sin asesor"
+                            : (advisors.find((a) => a.id === id)?.name ??
+                              "asesor"),
+                        selected: [...selectedVisibleRows],
+                        visible: [...rows],
+                      })
+                    }
+                  />
                   <SheetColumnResizer
                     label="Asesor"
                     onResize={(w) => resizeColumn("advisor", w)}
@@ -1909,19 +2009,37 @@ export function MetaEffectiveness({
                   financialAliases.find((a) => a.id === r.aliasId),
                   temporaryCategories.temporary,
                 );
+                const advisorBand = firstAdvisorBands.get(activationKey(r)),
+                  inactiveCount = firstInactiveBands.get(activationKey(r));
                 const band = showCategoryBands
                   ? firstBands.get(activationKey(r))
                   : undefined;
                 return (
                   <Fragment key={activationKey(r)}>
-                    {activationKey(r) === firstInactiveKey && (
+                    {advisorBand && (
+                      <tr
+                        className="financial-advisor-band"
+                        data-advisor-group={advisorBand.id || "none"}
+                      >
+                        <th colSpan={4 + days.length * visibleMetrics.length}>
+                          <span>
+                            <strong>{advisorBand.name}</strong>
+                            <small>
+                              {advisorBand.rows.length}{" "}
+                              {advisorBand.rows.length === 1 ? "fila" : "filas"}
+                            </small>
+                          </span>
+                        </th>
+                      </tr>
+                    )}
+                    {inactiveCount && (
                       <tr className="financial-inactive-band">
                         <th colSpan={4 + days.length * visibleMetrics.length}>
                           <span>
                             <strong>Desactivados</strong>
                             <small>
-                              {inactiveRows.length}{" "}
-                              {inactiveRows.length === 1 ? "fila" : "filas"}
+                              {inactiveCount}{" "}
+                              {inactiveCount === 1 ? "fila" : "filas"}
                             </small>
                           </span>
                         </th>
@@ -2074,7 +2192,11 @@ export function MetaEffectiveness({
                             displayLabel
                             placeholder="Sin asesor"
                             label={`Asesor de ${name} ${r.country}`}
-                            value={r.advisorId ?? ""}
+                            value={
+                              advisors.some((a) => a.id === r.advisorId)
+                                ? (r.advisorId ?? "")
+                                : ""
+                            }
                             options={[
                               { value: "", label: "Sin asesor" },
                               ...advisors.map((a) => ({
@@ -2290,8 +2412,16 @@ export function MetaEffectiveness({
                         label: name,
                       }))}
                       disabled={busy || inventoryState?.listId !== inventoryId}
-                      onSelect={setNewName}
-                      onCreate={setNewName}
+                      createOnEnter
+                      onError={setMessage}
+                      onSelect={async (name) => {
+                        setNewName(name);
+                        await addRow(name);
+                      }}
+                      onCreate={async (name) => {
+                        setNewName(name);
+                        await addRow(name);
+                      }}
                     />
                   </div>
                 </td>

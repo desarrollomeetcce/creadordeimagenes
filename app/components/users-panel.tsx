@@ -46,7 +46,7 @@ export function UsersPanel({ isOwner }: { isOwner: boolean }) {
     void refresh().catch((e) => setMessage(e.message));
   }, [refresh]);
   const roles = isOwner
-    ? ["USER", "OBSERVER", "ADMIN", "OWNER"]
+    ? ["USER", "OBSERVER", "ADVISOR", "SUPERVISOR", "ADMIN", "OWNER"]
     : ["USER", "OBSERVER"];
   async function run(fn: () => Promise<unknown>) {
     setBusy(true);

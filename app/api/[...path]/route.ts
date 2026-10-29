@@ -318,6 +318,7 @@ async function handle(
       return send(result);
     }
     const user = await actor();
+    if (["SUPERVISOR","ADVISOR"].includes(user.role)) demand(parts[0]==="meta-ads" || ["auth/me","auth/logout","auth/change-password"].includes(route),"Tu rol está destinado a Mi desempeño.",403);
     if(parts[0]==="meta-ads")return await (await import("@/lib/meta-ads/routes")).metaRoutes(req,parts,user,()=>body(req));
     if(parts[0]==="system-resources")return await (await import("@/lib/system-resources")).systemResourceRoutes(req,parts,user,()=>body(req));
     if(parts[0]==="engines"&&parts[1]==="config"){

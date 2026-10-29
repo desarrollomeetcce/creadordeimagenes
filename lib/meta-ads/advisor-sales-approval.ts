@@ -2,7 +2,7 @@ import { assertUnlinkedColumns } from "./column-link-policy";
 import { createHash } from "node:crypto";
 import type { Prisma } from "@prisma/client";
 import { db } from "../db";
-import {ownerOnly} from "./financial-access";
+import { ownerOnly } from "./financial-access";
 import { demand } from "../errors";
 import { recordActivity } from "../activity";
 import { effectiveness, effectivenessLock } from "./effectiveness";
@@ -38,6 +38,7 @@ async function review(
         })
       : null,
     tx.metaAdvisor.findMany({
+      where: { sheet: { archivedAt: null } },
       select: {
         id: true,
         name: true,
@@ -97,9 +98,8 @@ async function review(
     status: plan.status,
     advisors: advisors.map((p) => ({
       ...p,
-      label: p.sheet.archivedAt
-        ? p.name + " · " + p.sheet.name + " (pestaña eliminada)"
-        : p.sheetId === "default-advisors"
+      label:
+        p.sheetId === "default-advisors"
           ? p.name
           : p.name + " · " + p.sheet.name,
     })),

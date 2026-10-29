@@ -24,6 +24,7 @@ export function SheetSearchSelect({
   displayLabel = false,
   onCreate,
   createLabel = "Añadir nuevo",
+  createOnEnter = false,
   disabled = false,
 }: {
   label: string;
@@ -37,6 +38,7 @@ export function SheetSearchSelect({
   displayLabel?: boolean;
   onCreate?: (name: string) => void | Promise<void>;
   createLabel?: string;
+  createOnEnter?: boolean;
   disabled?: boolean;
 }) {
   const id = useId(),
@@ -157,6 +159,8 @@ export function SheetSearchSelect({
             } else if (e.key === "Enter") {
               e.preventDefault();
               if (filtered[index]) void choose(filtered[index].value);
+              else if (createOnEnter && onCreate && query.trim())
+                void choose(query.trim(), true);
             } else if (e.key === "Escape") {
               e.preventDefault();
               popover.current?.hidePopover();

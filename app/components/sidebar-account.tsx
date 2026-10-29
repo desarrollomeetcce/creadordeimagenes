@@ -14,7 +14,7 @@ export function SidebarAccount({ user, view, navigate, logout }: {
       ["mail", "✉", "Ajustes de correo"],
       ["ai", "⚙", "Ajustes de IA"],
     ] : []),
-    ...(user.role !== "OBSERVER" ? [["usage", "↗", "Costos de IA"]] : []),
+    ...(!["OBSERVER","SUPERVISOR","ADVISOR"].includes(user.role) ? [["usage", "↗", "Costos de IA"]] : []),
     ...(user.role === "OWNER" ? [["payments", "◇", "Ajustes de pago"]] : []),
   ];
   useEffect(() => {
@@ -50,7 +50,7 @@ export function SidebarAccount({ user, view, navigate, logout }: {
         </div>}
         {managesUsers(user.role) && item("users", "♙", "Usuarios")}
         {item("account", "♙", "Mi cuenta")}
-        {user.role !== "OBSERVER" && item("plans", "◇", "Mi plan")}
+        {!["OBSERVER","SUPERVISOR","ADVISOR"].includes(user.role) && item("plans", "◇", "Mi plan")}
         <button type="button" className="sidebar-logout" onClick={logout}><span aria-hidden="true">↪</span><span>Cerrar sesión</span></button>
       </div>
     </footer>

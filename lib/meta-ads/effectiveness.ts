@@ -1,3 +1,4 @@
+import { isPerformanceManager, performanceManager } from "./performance-access";
 import { checkFinancialContext } from "./financial-access";
 import {
   assertUnlinkedColumns,
@@ -133,7 +134,11 @@ export async function advisorEffectivenessSource(
   const link = await client.metaAdvisorPortal.findFirst({
     where: { advisorId, userId: actor.id },
   });
-  demand(link, "No tienes acceso a este asesor.", 403);
+  demand(
+    link || (await isPerformanceManager(actor, client)),
+    "No tienes acceso a este asesor.",
+    403,
+  );
   return readEffectiveness(
     actor,
     tableId,
@@ -143,6 +148,26 @@ export async function advisorEffectivenessSource(
     [],
     false,
     advisorId,
+  );
+}
+/** Internal manager source: checked current role; raw financial rows never leave the performance service. */
+export async function performanceEffectivenessSource(
+  actor: Actor,
+  tableId: string,
+  since: string,
+  until: string,
+  client: Prisma.TransactionClient,
+) {
+  await performanceManager(actor, client);
+  return readEffectiveness(
+    actor,
+    tableId,
+    since,
+    until,
+    client,
+    [],
+    false,
+    "performance-manager",
   );
 }
 async function readEffectiveness(

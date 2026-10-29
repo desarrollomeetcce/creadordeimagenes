@@ -65,6 +65,22 @@ export async function checkFinancialContext(actor: Actor, tx: Client = db) {
     403,
   );
 }
+/** Destination grants are checked again under the financial write lock. */
+export async function financialDestinationEdit(
+  actor: Actor,
+  tableIds: string[],
+  tx: Client = db,
+) {
+  const ctx = financialContext(actor);
+  if (!ctx) return;
+  const access = await financialAccess(actor, tx);
+  for (const id of tableIds)
+    demand(
+      scopePermission(access, "TABLE:" + id) === "EDIT",
+      "El permiso para vincular una hoja de destino cambió.",
+      403,
+    );
+}
 export function financialUserWhere(actor: Actor): Prisma.UserWhereInput {
   const ctx = financialContext(actor);
   if (!ctx) return { id: actor.id, role: "OWNER", status: "APPROVED" };
@@ -469,7 +485,7 @@ export async function authorizeFinancialRequest(
           403,
         );
     }
-    if (write && path === "inventory/sheets")
+    if (write && ["inventory/sheets", "inventory/sheets/batch"].includes(path))
       for (const ref of values.filter((v) => v.key === "tableIds"))
         demand(
           scopePermission(a, "TABLE:" + ref.value) === "EDIT",

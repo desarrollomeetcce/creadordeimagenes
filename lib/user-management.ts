@@ -8,7 +8,7 @@ import { rateLimit } from "./auth";
 import { managesUsers, canManageAccount } from "./roles";
 import { issuePasswordReset } from "./accounts";
 
-const role = z.enum(["OWNER", "ADMIN", "USER", "OBSERVER"]);
+const role = z.enum(["OWNER", "ADMIN", "USER", "OBSERVER", "SUPERVISOR", "ADVISOR"]);
 const status = z.enum(["PENDING", "APPROVED", "REJECTED", "SUSPENDED"]);
 const password = z.string().min(12).max(128);
 const select = {

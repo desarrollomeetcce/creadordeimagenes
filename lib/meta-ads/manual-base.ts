@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import type { Prisma } from "@prisma/client";
 import { db } from "../db";
-import {ownerOnly} from "./financial-access";
+import { ownerOnly } from "./financial-access";
 import { demand } from "../errors";
 import { recordActivity } from "../activity";
 import { effectivenessLock } from "./effectiveness";
@@ -58,6 +58,7 @@ async function readReview(
         }),
     includeAdvisors
       ? tx.metaAdvisor.findMany({
+          where: { sheet: { archivedAt: null } },
           select: {
             id: true,
             name: true,
@@ -116,11 +117,7 @@ async function readReview(
     advisors: people.map((p) => ({
       id: p.id,
       name: p.name,
-      label:
-        p.name +
-        " · " +
-        p.sheet.name +
-        (p.sheet.archivedAt ? " (pestaña eliminada)" : ""),
+      label: p.name + " · " + p.sheet.name,
     })),
   };
 }
