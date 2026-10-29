@@ -192,7 +192,7 @@ async function scopedRemovalIds(
   ids: string[],
 ) {
   demand(
-    ids.length > 0 && ids.length <= 1000 && new Set(ids).size === ids.length,
+    ids.length > 0 && ids.length <= 1500 && new Set(ids).size === ids.length,
     "Selección inválida.",
   );
   const found =

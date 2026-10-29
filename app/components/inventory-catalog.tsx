@@ -13,6 +13,7 @@ import {
   InventoryNewRow,
   type InventoryNewRowValue,
 } from "./inventory-new-row";
+import { InventorySyllabusChips } from "./inventory-syllabus-chips";
 import { InventorySyllabi } from "./inventory-syllabi";
 import { InventoryPackageImport } from "./inventory-package-import";
 import { InventoryImport } from "./inventory-import";
@@ -147,6 +148,35 @@ export function InventoryCatalog({
       setSyllabiBusy(false);
     }
   };
+  const renameSyllabus = async (name: string, id: string, title: string) => {
+    setSyllabiBusy(true);
+    let committed = false;
+    try {
+      const data = await api(
+        "meta-ads/inventory/syllabi?" + new URLSearchParams({ listId, name }),
+      );
+      if (!data.syllabi.some((s: { id: string }) => s.id === id))
+        throw Error("El temario cambió. Actualiza el inventario.");
+      await api("meta-ads/inventory/syllabi", "PUT", {
+        listId,
+        name,
+        revision: data.revision,
+        syllabi: data.syllabi.map((s: { id: string }) =>
+          s.id === id ? { ...s, title } : s,
+        ),
+      });
+      committed = true;
+      await reloadCategories();
+    } catch (e) {
+      if (committed)
+        setMessage(
+          "Nombre guardado. Actualiza el inventario para ver el cambio.",
+        );
+      else throw e;
+    } finally {
+      setSyllabiBusy(false);
+    }
+  };
   const columns = [
     { key: "inventory", label: "Inventario", width: 340 },
     { key: "primary", label: "Categoría principal", width: 174 },
@@ -236,7 +266,7 @@ export function InventoryCatalog({
                   kind: "PRIMARY" as const,
                   name,
                 })),
-                ...splitCategoryNames(r.secondary).map((name) => ({
+                ...splitCategoryNames(r.secondary, 100).map((name) => ({
                   kind: "SECONDARY" as const,
                   name,
                 })),
@@ -503,7 +533,7 @@ export function InventoryCatalog({
     text: string,
   ) => {
     if (!categories) throw Error("Recarga las categorías antes de guardar.");
-    const names = splitCategoryNames(text);
+    const names = splitCategoryNames(text, kind === "SECONDARY" ? 100 : 20);
     setBusy(true);
     try {
       const decisions = await duplicateReview.review(
@@ -1064,55 +1094,19 @@ export function InventoryCatalog({
                     </td>
                     <td aria-hidden="true" className="inventory-column-gap" />
                     <td className="inventory-syllabi-cell">
-                      <div className="inventory-syllabi-chips">
-                        {(syllabiByName.get(g.name) ?? [])
-                          .slice(0, 2)
-                          .map((s) => (
-                            <span
-                              className="inventory-syllabus-chip"
-                              key={s.id}
-                            >
-                              <button
-                                type="button"
-                                onClick={() =>
-                                  setSyllabiOpen({ name: g.name, id: s.id })
-                                }
-                                title={`Abrir temario ${s.title}`}
-                              >
-                                {s.title}
-                              </button>
-                              <button
-                                type="button"
-                                className="inventory-remove"
-                                aria-label={`Eliminar temario ${s.title} de ${g.name}`}
-                                disabled={busy || syllabiBusy}
-                                onClick={() =>
-                                  void removeSyllabus(g.name, s.id)
-                                }
-                              >
-                                ×
-                              </button>
-                            </span>
-                          ))}
-                        {(syllabiByName.get(g.name)?.length ?? 0) > 2 && (
-                          <button
-                            type="button"
-                            onClick={() => setSyllabiOpen({ name: g.name })}
-                          >
-                            +{(syllabiByName.get(g.name)?.length ?? 0) - 2}{" "}
-                            temarios
-                          </button>
-                        )}
-                        <button
-                          type="button"
-                          aria-label={`Añadir temario a ${g.name}`}
-                          onClick={() =>
-                            setSyllabiOpen({ name: g.name, id: "__new" })
-                          }
-                        >
-                          +
-                        </button>
-                      </div>
+                      <InventorySyllabusChips
+                        label={g.name}
+                        syllabi={syllabiByName.get(g.name) ?? []}
+                        disabled={busy || syllabiBusy}
+                        onOpen={(id) => setSyllabiOpen({ name: g.name, id })}
+                        onRename={(id, title) =>
+                          renameSyllabus(g.name, id, title)
+                        }
+                        onRemove={(id) => void removeSyllabus(g.name, id)}
+                        onAdd={() =>
+                          setSyllabiOpen({ name: g.name, id: "__new" })
+                        }
+                      />
                     </td>
                   </SheetSizedRow>
                 ))}

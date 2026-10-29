@@ -41,7 +41,7 @@ export async function linkFinancialInventory(
     );
     let item = items.find((i) => i.name === name);
     if (!item) {
-      demand(items.length < 1000, "Máximo 1000 ítems por lista de inventario.");
+      demand(items.length < 1500, "Máximo 1500 ítems por lista de inventario.");
       item = await tx.metaInventoryItem.create({
         data: { sheetId: listId, name },
       });

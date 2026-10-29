@@ -38,13 +38,13 @@ export const catalogPackageSchema = z
           .object({
             name: z.string().trim().min(1).max(150),
             primary: z.string().trim().min(1).max(80),
-            secondary: z.array(z.string().trim().min(1).max(80)).max(20),
+            secondary: z.array(z.string().trim().min(1).max(80)).max(100),
             syllabi: syllabiSchema,
           })
           .strict(),
       )
       .min(1)
-      .max(1000),
+      .max(1500),
   })
   .strict()
   .superRefine((v, c) => {

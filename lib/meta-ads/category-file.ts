@@ -128,8 +128,12 @@ async function parseFile(name: string, encoded: string, inventory: boolean) {
         .join(""),
     );
   }
-  const data = await xml(target),
-    records: string[][] = [];
+  const data = await xml(target);
+  demand(
+    !inventory || !data.getElementsByTagName("mergeCell").length,
+    "El archivo contiene franjas o celdas combinadas. Usa la hoja de importación, con los títulos en la fila 1 y un inventario por fila.",
+  );
+  const records: string[][] = [];
   for (const row of Array.from(data.getElementsByTagName("row"))) {
     const values: string[] = [];
     for (const c of Array.from(row.getElementsByTagName("c"))) {
@@ -159,18 +163,26 @@ async function parseFile(name: string, encoded: string, inventory: boolean) {
       );
       if (!content.trim()) continue;
       demand(
-        column < (inventory ? 4 : 2),
+        column < (inventory ? 54 : 2),
         inventory
-          ? "Usa solo las columnas A a D del inventario."
+          ? "Usa Inventario, Categoría principal, Categorías secundarias, Hojas y hasta 50 columnas de temarios."
           : "Usa solo las columnas A y B para las categorías.",
       );
       values[column] = content;
     }
     if (values.some((v) => v?.trim()))
       records.push(
-        Array.from({ length: inventory ? 4 : 2 }, (_, i) => values[i] ?? ""),
+        Array.from(
+          { length: inventory ? Math.max(4, values.length) : 2 },
+          (_, i) => values[i] ?? "",
+        ),
       );
-    demand(records.length <= 501, "Se admiten hasta 500 filas.");
+    demand(
+      records.length <= (inventory ? 1501 : 501),
+      inventory
+        ? "Se admiten hasta 1.500 filas."
+        : "Se admiten hasta 500 filas.",
+    );
   }
   return {
     rows: inventory

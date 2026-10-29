@@ -2,13 +2,16 @@
 import { useEffect, useRef, useState } from "react";
 import { engineRequest as api } from "./generation-engine";
 import {
-  inventoryRows,
+  inventoryDraftRows,
   inventoryImportFields,
   parseInventoryGrid,
   type InventoryImportRow,
 } from "../../lib/meta-ads/inventory-paste";
 import { useInventoryDuplicateReview } from "./inventory-duplicate-review";
 import type { InventoryCategoryState } from "./inventory-category-types";
+import { InventorySyllabusChips } from "./inventory-syllabus-chips";
+import { InventorySyllabusDraft } from "./inventory-syllabus-draft";
+import type { InventorySyllabus } from "../../lib/meta-ads/inventory-syllabi-policy";
 import { splitCategoryNames } from "../../lib/meta-ads/category-paste";
 const fields = inventoryImportFields;
 const titles = [
@@ -16,6 +19,7 @@ const titles = [
   "Categoría principal",
   "Categorías secundarias",
   "Hojas",
+  "Temarios",
 ];
 const blank = () => ({ primary: "", secondary: "", name: "", sheets: "" });
 export function InventoryImport({
@@ -44,6 +48,10 @@ export function InventoryImport({
     [busy, setBusy] = useState(false),
     [error, setError] = useState(""),
     [message, setMessage] = useState("");
+  const [syllabusEditor, setSyllabusEditor] = useState<{
+    row: number;
+    value: InventorySyllabus;
+  } | null>(null);
   useEffect(() => {
     dialog.current?.showModal();
     if (upload) file.current?.click();
@@ -77,7 +85,8 @@ export function InventoryImport({
         Completa solo las columnas que necesites. Puedes pegar una columna de
         categorías o inventario. Las categorías vacías quedan sin categoría; sin
         Hojas, el ítem se guarda sin asignación. Las comas separan categorías y
-        hojas.
+        hojas. En Temarios, usa «+» para añadir botones y pulsa cada uno para
+        escribir su contenido.
       </p>
       <button
         type="button"
@@ -110,7 +119,9 @@ export function InventoryImport({
               content,
             });
             setRows(result.rows);
-            setMessage(`Archivo preparado: ${f.name}. Revisa y guarda.`);
+            setMessage(
+              `Archivo preparado: ${f.name} · ${result.rows.length} filas · ${result.rows.reduce((n: number, r: InventoryImportRow) => n + (r.syllabi?.length ?? 0), 0)} temarios. Revisa y guarda.`,
+            );
           } catch (e) {
             setError((e as Error).message);
           } finally {
@@ -146,8 +157,8 @@ export function InventoryImport({
                         e.preventDefault();
                         try {
                           const parsed = parseInventoryGrid(text, false, col);
-                          if (i + parsed.rows.length > 500)
-                            throw Error("Máximo 500 filas.");
+                          if (i + parsed.rows.length > 1500)
+                            throw Error("Máximo 1.500 filas.");
                           setRows((old) => {
                             const next = [...old];
                             while (next.length < i + parsed.rows.length)
@@ -156,6 +167,8 @@ export function InventoryImport({
                               const row = { ...next[i + n] };
                               for (const key of parsed.columns)
                                 row[key] = r[key];
+                              if (parsed.hasSyllabi)
+                                row.syllabi = r.syllabi ?? [];
                               next[i + n] = row;
                             });
                             return next;
@@ -170,7 +183,10 @@ export function InventoryImport({
                       <div className="inventory-category-chips">
                         {(() => {
                           try {
-                            return splitCategoryNames(r[k]);
+                            return splitCategoryNames(
+                              r[k],
+                              k === "secondary" ? 100 : 20,
+                            );
                           } catch {
                             return [];
                           }
@@ -185,7 +201,10 @@ export function InventoryImport({
                                 update(
                                   i,
                                   k,
-                                  splitCategoryNames(r[k])
+                                  splitCategoryNames(
+                                    r[k],
+                                    k === "secondary" ? 100 : 20,
+                                  )
                                     .filter((x) => x !== n)
                                     .join(", "),
                                 )
@@ -199,6 +218,54 @@ export function InventoryImport({
                     )}
                   </td>
                 ))}
+                <td className="inventory-syllabi-cell">
+                  <InventorySyllabusChips
+                    label={r.name || `fila ${i + 1}`}
+                    syllabi={r.syllabi ?? []}
+                    disabled={busy}
+                    onOpen={(id) => {
+                      const value = r.syllabi?.find((s) => s.id === id);
+                      if (value) setSyllabusEditor({ row: i, value });
+                    }}
+                    onRename={(id, title) =>
+                      setRows((old) =>
+                        old.map((r, n) =>
+                          n === i
+                            ? {
+                                ...r,
+                                syllabi: r.syllabi?.map((s) =>
+                                  s.id === id ? { ...s, title } : s,
+                                ),
+                              }
+                            : r,
+                        ),
+                      )
+                    }
+                    onRemove={(id) =>
+                      setRows((old) =>
+                        old.map((r, n) =>
+                          n === i
+                            ? {
+                                ...r,
+                                syllabi: r.syllabi?.filter((s) => s.id !== id),
+                              }
+                            : r,
+                        ),
+                      )
+                    }
+                    onAdd={() =>
+                      setSyllabusEditor({
+                        row: i,
+                        value: {
+                          id: crypto.randomUUID(),
+                          title: `Temario ${(r.syllabi?.length ?? 0) + 1}`,
+                          scope: "Todo el mundo",
+                          content: "",
+                        },
+                      })
+                    }
+                  />
+                </td>
               </tr>
             ))}
           </tbody>
@@ -207,7 +274,7 @@ export function InventoryImport({
       <footer className="row">
         <button
           type="button"
-          disabled={busy || rows.length >= 500}
+          disabled={busy || rows.length >= 1500}
           onClick={() => setRows((old) => [...old, blank()])}
         >
           + Fila
@@ -221,16 +288,14 @@ export function InventoryImport({
             setError("");
             let committed = false;
             try {
-              const parsed = inventoryRows(
-                rows.map((r) => fields.map((k) => r[k])),
-              );
+              const parsed = inventoryDraftRows(rows);
               const decisions = await duplicates.review(
                 parsed.flatMap((r) => [
                   ...splitCategoryNames(r.primary).map((name) => ({
                     kind: "PRIMARY" as const,
                     name,
                   })),
-                  ...splitCategoryNames(r.secondary).map((name) => ({
+                  ...splitCategoryNames(r.secondary, 100).map((name) => ({
                     kind: "SECONDARY" as const,
                     name,
                   })),
@@ -275,8 +340,34 @@ export function InventoryImport({
       <small>
         Solo categorías: se añaden al listado de categorías. Solo inventario: se
         guarda sin categorías ni hojas. Las celdas vacías no se completan
-        automáticamente. Hasta 500 filas; XLSX, CSV, TSV y TXT.
+        automáticamente. Hasta 1.500 filas; XLSX, CSV, TSV y TXT. El archivo
+        puede incluir Temario 1, Temario 2 y más columnas de temarios.
       </small>
+      {syllabusEditor && (
+        <InventorySyllabusDraft
+          key={syllabusEditor.value.id}
+          value={syllabusEditor.value}
+          inventory={
+            rows[syllabusEditor.row]?.name || `fila ${syllabusEditor.row + 1}`
+          }
+          onClose={() => setSyllabusEditor(null)}
+          onSave={(value) => {
+            setRows((old) =>
+              old.map((r, n) =>
+                n === syllabusEditor.row
+                  ? {
+                      ...r,
+                      syllabi: r.syllabi?.some((s) => s.id === value.id)
+                        ? r.syllabi.map((s) => (s.id === value.id ? value : s))
+                        : [...(r.syllabi ?? []), value],
+                    }
+                  : r,
+              ),
+            );
+            setSyllabusEditor(null);
+          }}
+        />
+      )}
       {duplicates.dialog}
     </dialog>
   );

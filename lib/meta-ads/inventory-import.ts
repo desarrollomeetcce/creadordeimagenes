@@ -1,21 +1,42 @@
+import { randomUUID } from "node:crypto";
+import { Prisma } from "@prisma/client";
+import {
+  syllabiSchema,
+  type InventorySyllabus,
+} from "./inventory-syllabi-policy";
 import { db } from "../db";
 import { ownerOnly } from "../auth";
 import { AppError, demand } from "../errors";
 import { recordActivity } from "../activity";
 import { effectivenessLock } from "./effectiveness";
-import { inventoryRows, type InventoryImportRow } from "./inventory-paste";
+import {
+  inventoryDraftRows,
+  INVENTORY_IMPORT_LIMIT,
+  type InventoryImportRow,
+} from "./inventory-paste";
 import {
   categoryKey,
   categoryIdentity,
   splitCategoryNames,
 } from "./category-paste";
-import { writeInventoryTags } from "./inventory-categories";
 import {
   resolveInventoryName,
   type InventoryNameDecision,
 } from "./inventory-duplicates";
 import type { Actor } from "./service";
-/** Empty cells stay empty. A catalogue item can exist independently of source worksheets. */
+type PlannedItem = {
+  id: string;
+  name: string;
+  syllabi: InventorySyllabus[];
+  categories: Set<string>;
+  fresh: boolean;
+  changed: boolean;
+};
+async function batches<T>(rows: T[], write: (batch: T[]) => Promise<unknown>) {
+  for (let i = 0; i < rows.length; i += 5000)
+    await write(rows.slice(i, i + 5000));
+}
+/** Validate and plan first, then write in bounded batches in one transaction. Blank cells never invent data. */
 export async function importInventory(
   actor: Actor,
   b: {
@@ -28,9 +49,7 @@ export async function importInventory(
   ownerOnly(actor);
   let rows: InventoryImportRow[];
   try {
-    rows = inventoryRows(
-      b.rows.map((r) => [r.name, r.primary, r.secondary, r.sheets]),
-    );
+    rows = inventoryDraftRows(b.rows);
   } catch (e) {
     throw new AppError((e as Error).message);
   }
@@ -46,20 +65,57 @@ export async function importInventory(
         "El inventario cambió. Recarga antes de importar.",
         409,
       );
-      const tables = await tx.metaAliasTable.findMany(),
-        aliases = await tx.metaAlias.findMany(),
-        items = await tx.metaInventoryItem.findMany({
-          where: { sheetId: b.listId },
-        }),
-        categories = await tx.metaInventoryCategory.findMany({
-          where: { sheetId: b.listId },
-        });
+      const [tables, aliases, storedItems, storedCategories, assignments] =
+        await Promise.all([
+          tx.metaAliasTable.findMany(),
+          tx.metaAlias.findMany(),
+          tx.metaInventoryItem.findMany({
+            where: { sheetId: b.listId },
+            include: { categories: { select: { categoryId: true } } },
+          }),
+          tx.metaInventoryCategory.findMany({ where: { sheetId: b.listId } }),
+          tx.metaInventoryCategoryAssignment.findMany({
+            where: { alias: { inventorySheetId: b.listId } },
+            select: { aliasId: true, categoryId: true },
+          }),
+        ]);
       const definitions = new Map(
-        categories.map((c) => [c.kind + "|" + categoryIdentity(c.name), c]),
+          storedCategories.map((c) => [
+            c.kind + "|" + categoryIdentity(c.name),
+            c,
+          ]),
+        ),
+        newDefinitions: typeof storedCategories = [];
+      const items = new Map<string, PlannedItem>(
+        storedItems.map((i) => [
+          i.name,
+          {
+            id: i.id,
+            name: i.name,
+            syllabi: syllabiSchema.parse(i.syllabi),
+            categories: new Set(i.categories.map((c) => c.categoryId)),
+            fresh: false,
+            changed: false,
+          },
+        ]),
       );
-      let created = 0,
-        linked = 0;
-      const resolve = async (kind: "PRIMARY" | "SECONDARY", name: string) => {
+      const aliasTags = new Map<string, Set<string>>();
+      for (const a of assignments) {
+        const s = aliasTags.get(a.aliasId) ?? new Set<string>();
+        s.add(a.categoryId);
+        aliasTags.set(a.aliasId, s);
+      }
+      const newAliases: {
+          id: string;
+          name: string;
+          tableId: string;
+          inventorySheetId: string;
+        }[] = [],
+        relationKeys = new Set<string>(),
+        relations: { primaryId: string; secondaryId: string }[] = [],
+        plannedAliasTags = new Map<string, Set<string>>();
+      let addedSyllabi = 0;
+      const resolve = (kind: "PRIMARY" | "SECONDARY", name: string) => {
         name = resolveInventoryName(
           kind,
           name,
@@ -72,15 +128,15 @@ export async function importInventory(
         let c = definitions.get(k);
         if (!c) {
           demand(definitions.size < 1000, "Máximo 1000 categorías por lista.");
-          c = await tx.metaInventoryCategory.create({
-            data: {
-              sheetId: b.listId,
-              kind,
-              name,
-              key: categoryIdentity(name),
-            },
-          });
+          c = {
+            id: randomUUID(),
+            sheetId: b.listId,
+            kind,
+            name,
+            key: categoryIdentity(name),
+          };
           definitions.set(k, c);
+          newDefinitions.push(c);
         }
         return c;
       };
@@ -92,100 +148,166 @@ export async function importInventory(
           demand(found.length === 1, `Hoja no disponible o ambigua: ${name}.`);
           return found[0].id;
         });
-        const primary: Awaited<ReturnType<typeof resolve>>[] = [],
-          secondary: Awaited<ReturnType<typeof resolve>>[] = [];
-        for (const name of splitCategoryNames(row.primary))
-          primary.push(await resolve("PRIMARY", name));
-        for (const name of splitCategoryNames(row.secondary))
-          secondary.push(await resolve("SECONDARY", name));
-        if (primary.length && secondary.length)
-          await tx.metaInventoryCategoryRelation.createMany({
-            data: primary.flatMap((p) =>
-              secondary.map((s) => ({ primaryId: p.id, secondaryId: s.id })),
-            ),
-            skipDuplicates: true,
-          });
-        if (!row.name) continue; // Category-only rows only define categories; never fabricate an inventory name.
-        const inventoryName = resolveInventoryName(
+        const primary = splitCategoryNames(row.primary).map((n) =>
+            resolve("PRIMARY", n),
+          ),
+          secondary = splitCategoryNames(row.secondary, 100).map((n) =>
+            resolve("SECONDARY", n),
+          );
+        for (const p of primary)
+          for (const s of secondary) {
+            const k = p.id + "|" + s.id;
+            if (!relationKeys.has(k)) {
+              relations.push({ primaryId: p.id, secondaryId: s.id });
+              relationKeys.add(k);
+            }
+          }
+        if (!row.name) continue;
+        const name = resolveInventoryName(
           "INVENTORY",
           row.name,
           [
-            ...items.map((i) => i.name),
+            ...items.keys(),
             ...aliases
               .filter((a) => a.inventorySheetId === b.listId)
               .map((a) => a.name),
+            ...newAliases.map((a) => a.name),
           ],
           b.decisions,
         );
-        let item = items.find((i) => i.name === inventoryName);
+        let item = items.get(name);
         if (!item) {
           demand(
-            items.length < 1000,
-            "Máximo 1000 ítems por lista de inventario.",
+            items.size < INVENTORY_IMPORT_LIMIT,
+            "Máximo 1.500 ítems por lista de inventario.",
           );
-          item = await tx.metaInventoryItem.create({
-            data: { sheetId: b.listId, name: inventoryName },
-          });
-          items.push(item);
-          created++;
+          item = {
+            id: randomUUID(),
+            name,
+            syllabi: [],
+            categories: new Set(),
+            fresh: true,
+            changed: false,
+          };
+          items.set(name, item);
         }
-        const group = aliases.filter(
-          (a) => a.inventorySheetId === b.listId && a.name === inventoryName,
+        for (const s of row.syllabi ?? [])
+          if (
+            !item.syllabi.some(
+              (old) =>
+                old.id === s.id ||
+                (old.scope === s.scope && old.content === s.content),
+            )
+          ) {
+            item.syllabi.push(s);
+            item.changed = true;
+            addedSyllabi++;
+          }
+        demand(
+          item.syllabi.length <= 50,
+          `El inventario ${name} supera 50 temarios.`,
         );
+        syllabiSchema.parse(item.syllabi);
+        const group = [
+          ...aliases.filter(
+            (a) => a.inventorySheetId === b.listId && a.name === name,
+          ),
+          ...newAliases.filter((a) => a.name === name),
+        ];
         for (const tableId of tableIds) {
-          let a = aliases.find(
-            (a) => a.tableId === tableId && a.name === inventoryName,
-          );
+          let a =
+            aliases.find((a) => a.tableId === tableId && a.name === name) ??
+            newAliases.find((a) => a.tableId === tableId && a.name === name);
           if (a)
             demand(
-              a.inventorySheetId === b.listId && a.name === inventoryName,
-              "Existe un inventario con ese nombre en otra lista o con distinta escritura. Usa su nombre exacto.",
+              a.inventorySheetId === b.listId,
+              "Existe un inventario con ese nombre en otra lista. Usa su nombre exacto.",
               409,
             );
           else {
             demand(
-              aliases.length < 1000,
-              "El catálogo admite hasta 1000 asignaciones a hojas.",
+              aliases.length + newAliases.length < 1500,
+              "El catálogo admite hasta 1.500 asignaciones a hojas.",
             );
-            a = await tx.metaAlias.create({
-              data: {
-                name: inventoryName,
-                tableId,
-                inventorySheetId: b.listId,
-              },
-            });
-            aliases.push(a);
-            group.push(a);
-            linked++;
+            a = { id: randomUUID(), name, tableId, inventorySheetId: b.listId };
+            newAliases.push(a);
           }
+          if (!group.some((g) => g.id === a.id)) group.push(a);
         }
-        const old = await tx.metaInventoryCategoryAssignment.findMany({
-            where: { aliasId: { in: group.map((a) => a.id) } },
-          }),
-          own = await tx.metaInventoryItemCategory.findMany({
-            where: { itemId: item.id },
-          });
-        const chosen = [
-          ...new Set([
-            ...old.map((c) => c.categoryId),
-            ...own.map((c) => c.categoryId),
-            ...primary.map((c) => c.id),
-            ...secondary.map((c) => c.id),
-          ]),
-        ];
+        for (const a of group)
+          for (const id of plannedAliasTags.get(a.id) ??
+            aliasTags.get(a.id) ??
+            [])
+            item.categories.add(id);
+        for (const c of [...primary, ...secondary]) item.categories.add(c.id);
         for (const kind of ["PRIMARY", "SECONDARY"])
           demand(
             [...definitions.values()].filter(
-              (c) => c.kind === kind && chosen.includes(c.id),
-            ).length <= 20,
-            "Máximo 20 categorías por nivel e ítem.",
+              (c) => c.kind === kind && item.categories.has(c.id),
+            ).length <= (kind === "SECONDARY" ? 100 : 20),
+            "Máximo 20 categorías principales y 100 secundarias por ítem.",
           );
-        await writeInventoryTags(
-          tx,
-          [item.id, ...group.map((a) => a.id)],
-          chosen,
+        for (const a of group)
+          plannedAliasTags.set(a.id, new Set(item.categories));
+      }
+      const planned = [...items.values()],
+        fresh = planned.filter((i) => i.fresh),
+        updates = planned.filter((i) => !i.fresh && i.changed);
+      if (newDefinitions.length)
+        await batches(newDefinitions, (data) =>
+          tx.metaInventoryCategory.createMany({ data }),
+        );
+      if (fresh.length)
+        await batches(
+          fresh.map((i) => ({
+            id: i.id,
+            sheetId: b.listId,
+            name: i.name,
+            syllabi: i.syllabi,
+            syllabusRevision: i.syllabi.length ? 1 : 0,
+          })),
+          (data) => tx.metaInventoryItem.createMany({ data }),
+        );
+      if (updates.length) {
+        const payload = updates.map((i) => ({ id: i.id, syllabi: i.syllabi }));
+        const count = await tx.$executeRaw(
+          Prisma.sql`UPDATE "MetaInventoryItem" i SET syllabi=x.syllabi,"syllabusRevision"=i."syllabusRevision"+1 FROM jsonb_to_recordset(${JSON.stringify(payload)}::jsonb) AS x(id text,syllabi jsonb) WHERE i.id=x.id AND i."sheetId"=${b.listId}`,
+        );
+        demand(
+          count === updates.length,
+          "El inventario cambió. Recarga antes de importar.",
+          409,
         );
       }
+      if (newAliases.length)
+        await batches(newAliases, (data) => tx.metaAlias.createMany({ data }));
+      const itemTags = planned.flatMap((i) =>
+          [...i.categories].map((categoryId) => ({ itemId: i.id, categoryId })),
+        ),
+        leafTags = [...plannedAliasTags].flatMap(([aliasId, ids]) =>
+          [...ids].map((categoryId) => ({ aliasId, categoryId })),
+        );
+      if (itemTags.length)
+        await batches(itemTags, (data) =>
+          tx.metaInventoryItemCategory.createMany({
+            data,
+            skipDuplicates: true,
+          }),
+        );
+      if (leafTags.length)
+        await batches(leafTags, (data) =>
+          tx.metaInventoryCategoryAssignment.createMany({
+            data,
+            skipDuplicates: true,
+          }),
+        );
+      if (relations.length)
+        await batches(relations, (data) =>
+          tx.metaInventoryCategoryRelation.createMany({
+            data,
+            skipDuplicates: true,
+          }),
+        );
       await tx.metaEffectivenessSheet.update({
         where: { id: b.listId },
         data: { categoryRevision: { increment: 1 } },
@@ -195,11 +317,21 @@ export async function importInventory(
           actorId: actor.id,
           action: "META_INVENTARIO_IMPORTADO",
           resourceId: b.listId,
-          detail: { rows: rows.length, created, linked },
+          detail: {
+            rows: rows.length,
+            created: fresh.length,
+            linked: newAliases.length,
+            addedSyllabi,
+          },
         },
       });
-      return { created, linked, rows: rows.length };
+      return {
+        created: fresh.length,
+        linked: newAliases.length,
+        rows: rows.length,
+        addedSyllabi,
+      };
     },
-    { timeout: 60000 },
+    { timeout: 120000 },
   );
 }

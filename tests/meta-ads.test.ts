@@ -417,12 +417,12 @@ test('Inventario: cuatro columnas, etiquetas con comas, CSV y validación por fi
  const {parseInventoryText,inventoryRows}=await import('../lib/meta-ads/inventory-paste');
  const rows=parseInventoryText('Categoría principal\tCategorías secundarias\tInventario\tHojas\nAmbiental, Civil\tAgua, Suelos\tMonitoreo ambiental\tDiplomados, Colombia');assert.equal(rows.length,1);assert.equal(rows[0].name,'Monitoreo ambiental');assert.deepEqual(splitCategoryNames(rows[0].primary),['Ambiental','Civil']);assert.deepEqual(splitCategoryNames(rows[0].sheets),['Diplomados','Colombia']);
  assert.deepEqual(parseInventoryText('Monitoreo ambiental;Ambiental, Civil;Agua, Suelos;Diplomados, Colombia',true),rows);
- assert.equal(inventoryRows([['','A','B','']])[0].name,'');assert.equal(inventoryRows([['Producto','','','']])[0].sheets,'');assert.throws(()=>inventoryRows([['Producto','A','B','Diplomados','extra']]),/cuatro/);
+ assert.equal(inventoryRows([['','A','B','']])[0].name,'');assert.equal(inventoryRows([['Producto','','','']])[0].sheets,'');assert.equal(inventoryRows([['Producto','A','B','Diplomados','Contenido del temario']])[0].syllabi?.[0].content,'Contenido del temario');
 });
-test('Inventario: archivo XLSX cuatro columnas y rechazo de quinta/fórmulas',async()=>{
+test('Inventario: XLSX mantiene cuatro columnas, valida nombre para temarios y rechaza fórmulas',async()=>{
  const {parseInventoryFile}=await import('../lib/meta-ads/category-file');
  const content=await categoryXlsx('<worksheet><row><c r="A1" t="inlineStr"><is><t>Ambiental, Civil</t></is></c><c r="B1" t="inlineStr"><is><t>Agua</t></is></c><c r="C1" t="inlineStr"><is><t>Monitoreo</t></is></c><c r="D1" t="inlineStr"><is><t>Diplomados, Colombia</t></is></c></row></worksheet>');assert.equal((await parseInventoryFile('inventario.xlsx',content)).rows[0].sheets,'Diplomados, Colombia');
- const extra=await categoryXlsx('<worksheet><row><c r="E1"><v>Extra</v></c></row></worksheet>');await assert.rejects(()=>parseInventoryFile('extra.xlsx',extra),/A a D/);
+ const extra=await categoryXlsx('<worksheet><row><c r="E1"><v>Extra</v></c></row></worksheet>');await assert.rejects(()=>parseInventoryFile('extra.xlsx',extra),/nombre del inventario/);
  const formula=await categoryXlsx('<worksheet><row><c r="C1"><f>1+1</f><v>2</v></c></row></worksheet>');await assert.rejects(()=>parseInventoryFile('formula.xlsx',formula),/fórmulas/);
 });
 
@@ -434,7 +434,7 @@ test('Inventario: columnas opcionales y pegado desde la columna enfocada, sin in
  assert.deepEqual(parseInventoryText('Inventario\nMonitoreo'),[{primary:'',secondary:'',name:'Monitoreo',sheets:''}]);
  assert.deepEqual(parseInventoryText('Agua\nSuelos',false,2).map(r=>r.secondary),['Agua','Suelos']);
  assert.deepEqual(inventoryRows([['Solo inventario','','','']]),[{primary:'',secondary:'',name:'Solo inventario',sheets:''}]);
- assert.throws(()=>parseInventoryGrid('A\tB',false,3),/cuatro/);assert.throws(()=>inventoryRows([['','','','']]),/Incluye/);
+ assert.throws(()=>parseInventoryGrid('A\tB',false,3),/nombre del inventario/);assert.throws(()=>inventoryRows([['','','','']]),/Incluye/);
 });
 test('Inventario: archivo de una columna con encabezado de categoría o inventario conserva su tipo',async()=>{
  const {parseInventoryFile}=await import('../lib/meta-ads/category-file');
@@ -800,4 +800,26 @@ test('Catálogo preparado: nombres equivalentes, límites y temarios únicos', a
  assert(!syllabiSchema.safeParse([{...outline,content:' '}]).success);
  assert(!syllabiSchema.safeParse([{...outline,content:'a'.repeat(30001)}]).success);
  assert(!catalogPackageSchema.safeParse({...p,items:[{...item,hojas:['no permitido']}]}).success);
+});
+
+test('Temarios preparados: conservar alineación al quitar filas vacías y exigir un inventario real',async()=>{
+ const {inventoryDraftRows}=await import('../lib/meta-ads/inventory-paste');
+ const blank={name:'',primary:'',secondary:'',sheets:''},s={id:'draft-world',title:'Todo el mundo',scope:'Todo el mundo',content:'Unidad uno\nUnidad dos'};
+ const rows=inventoryDraftRows([blank,{...blank,name:'Producto de prueba',syllabi:[s]},{...blank,primary:'Área de prueba'}]);
+ assert.equal(rows.length,2);assert.deepEqual(rows[0].syllabi,[s]);assert.equal(rows[1].name,'');assert.equal(rows[1].syllabi,undefined);
+ assert.throws(()=>inventoryDraftRows([{...blank,syllabi:[s]}]),/nombre del inventario/i);
+ assert.throws(()=>inventoryDraftRows([{...blank,name:'Curso',syllabi:[s,s]}]),/revisa/i);
+ assert.throws(()=>inventoryDraftRows([{...blank,name:'Curso',syllabi:[{...s,content:' '}]}]),/revisa/i);
+});
+
+
+test('Excel con temarios: encabezados, nombres de botones, texto multilínea,1500 filas y áreas secundarias amplias', async()=>{
+ const {inventoryGrid,inventoryRows}=await import('../lib/meta-ads/inventory-paste');
+ const p=inventoryGrid([['Inventario','Categoría principal','Categorías secundarias','Hojas','Temario 1','Temario 2'],['Curso','Calidad',Array.from({length:30},(_,i)=>'Área '+i).join(', '),'','Nombre: Perú 1\nÁmbito: Perú\n\nUnidad uno\nUnidad dos','Contenido sin metadatos']]);
+ assert.equal(p.rows[0].syllabi?.length,2);assert.equal(p.rows[0].syllabi?.[0].title,'Perú 1');assert.equal(p.rows[0].syllabi?.[0].scope,'Perú');assert.equal(p.rows[0].syllabi?.[0].content,'Unidad uno\nUnidad dos');assert.equal(p.rows[0].syllabi?.[1].title,'Temario 2');assert.equal(p.rows[0].syllabi?.[1].scope,'Todo el mundo');assert.equal(p.hasSyllabi,true);
+ assert.equal(inventoryRows(Array.from({length:1500},(_,i)=>['Curso '+i,'Área','Especialidad',''])).length,1500);
+ assert.throws(()=>inventoryRows(Array.from({length:1501},(_,i)=>['Curso '+i])),/1.500/);
+ const {parseInventoryFile}=await import('../lib/meta-ads/category-file');
+ const merged=await categoryXlsx('<worksheet><mergeCells><mergeCell ref="A1:E1"/></mergeCells><row><c r="A1" t="inlineStr"><is><t>Área</t></is></c></row></worksheet>');await assert.rejects(()=>parseInventoryFile('revision.xlsx',merged),/franjas|combinadas/);
+ const many=await categoryXlsx('<worksheet><row><c r="BC1"><v>Contenido</v></c></row></worksheet>');await assert.rejects(()=>parseInventoryFile('muchos.xlsx',many),/50/);
 });

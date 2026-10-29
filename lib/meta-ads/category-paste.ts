@@ -1,9 +1,8 @@
 export type CategoryImportRow = { primary: string; secondary: string };
 export const categoryKey = (s: string) =>
   s.normalize("NFKC").trim().replace(/\s+/g, " ").toLocaleLowerCase("es");
-export const categoryIdentity = (s: string) =>
-  s.trim().replace(/\s+/g, " ");
-export function splitCategoryNames(text: string) {
+export const categoryIdentity = (s: string) => s.trim().replace(/\s+/g, " ");
+export function splitCategoryNames(text: string, limit = 20) {
   const names = [
     ...new Map(
       text
@@ -14,7 +13,7 @@ export function splitCategoryNames(text: string) {
     ).values(),
   ];
   if (
-    names.length > 20 ||
+    names.length > limit ||
     names.some(
       (n) =>
         n.length > 80 ||
@@ -22,7 +21,7 @@ export function splitCategoryNames(text: string) {
     )
   )
     throw Error(
-      "Cada celda admite hasta 20 categorías de hasta 80 caracteres cada una.",
+      `Cada celda admite hasta ${limit} categorías de hasta 80 caracteres cada una.`,
     );
   return names;
 }
@@ -55,15 +54,21 @@ export function categoryRows(records: string[][]): CategoryImportRow[] {
     const primary = (r[0] ?? "").replace(/^\uFEFF/, "").trim(),
       secondary = (r[1] ?? "").trim();
     const p = splitCategoryNames(primary),
-      s = splitCategoryNames(secondary);
+      s = splitCategoryNames(secondary, 100);
     if (!p.length && !s.length)
       throw Error(`Fila ${i + 1}: incluye al menos una categoría.`);
     return { primary, secondary };
   });
 }
-export function parseDelimitedRecords(text: string, csv = false): string[][] {
-  if (text.length > 200000)
-    throw Error("La lista admite hasta 200 000 caracteres.");
+export function parseDelimitedRecords(
+  text: string,
+  csv = false,
+  maxCharacters = 200000,
+): string[][] {
+  if (text.length > maxCharacters)
+    throw Error(
+      `La lista supera ${maxCharacters.toLocaleString("es-PE")} caracteres.`,
+    );
   text = text.replace(/^\uFEFF/, "");
   let delimiter = "\t";
   if (csv) {

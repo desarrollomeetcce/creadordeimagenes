@@ -392,8 +392,8 @@ export async function importCatalogPackage(actor: Actor, input: unknown) {
             relations.push({ primaryId, secondaryId });
       }
       demand(
-        items.length + newItems.length <= 1000,
-        "El inventario supera 1000 ítems.",
+        items.length + newItems.length <= 1500,
+        "El inventario supera 1500 ítems.",
       );
       if (newItems.length)
         await tx.metaInventoryItem.createMany({ data: newItems });

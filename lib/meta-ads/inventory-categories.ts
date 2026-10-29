@@ -110,7 +110,7 @@ async function fullGroups(
   ids: string[],
 ) {
   demand(
-    ids.length > 0 && ids.length <= 1000 && new Set(ids).size === ids.length,
+    ids.length > 0 && ids.length <= 1500 && new Set(ids).size === ids.length,
     "Selección de inventario inválida.",
   );
   const aliases = await tx.metaAlias.findMany({
@@ -256,7 +256,7 @@ export async function saveInventoryCategories(
             primary.push(id);
             added.add(id);
           }
-          for (const name of splitCategoryNames(row.secondary)) {
+          for (const name of splitCategoryNames(row.secondary, 100)) {
             const id = await resolve("SECONDARY", name);
             secondary.push(id);
             added.add(id);
@@ -287,8 +287,9 @@ export async function saveInventoryCategories(
             ];
             for (const level of ["PRIMARY", "SECONDARY"])
               demand(
-                next.filter((c) => kind.get(c) === level).length <= 20,
-                "Un ítem admite hasta 20 categorías de cada nivel.",
+                next.filter((c) => kind.get(c) === level).length <=
+                  (level === "SECONDARY" ? 100 : 20),
+                "Un ítem admite hasta 20 categorías principales y 100 secundarias.",
               );
             for (const categoryId of added)
               data.push({ aliasId: id, categoryId });
@@ -356,8 +357,9 @@ export async function saveInventoryCategories(
         for (const row of updates)
           for (const kind of ["PRIMARY", "SECONDARY"])
             demand(
-              row.tags.filter((id) => kinds.get(id) === kind).length <= 20,
-              "Un ítem admite hasta 20 categorías de cada nivel.",
+              row.tags.filter((id) => kinds.get(id) === kind).length <=
+                (kind === "SECONDARY" ? 100 : 20),
+              "Un ítem admite hasta 20 categorías principales y 100 secundarias.",
             );
         for (const row of updates)
           await writeInventoryTags(tx, [row.id], row.tags, true);
@@ -423,8 +425,9 @@ export async function saveInventoryCategories(
         for (const row of updates)
           for (const kind of ["PRIMARY", "SECONDARY"])
             demand(
-              row.tags.filter((id) => kinds.get(id) === kind).length <= 20,
-              "Un ítem admite hasta 20 categorías de cada nivel.",
+              row.tags.filter((id) => kinds.get(id) === kind).length <=
+                (kind === "SECONDARY" ? 100 : 20),
+              "Un ítem admite hasta 20 categorías principales y 100 secundarias.",
             );
         for (const row of updates)
           await writeInventoryTags(tx, [row.id], row.tags, true);
@@ -450,8 +453,9 @@ export async function saveInventoryCategories(
         );
         for (const kind of ["PRIMARY", "SECONDARY"])
           demand(
-            chosen.filter((c) => c.kind === kind).length <= 20,
-            "Un ítem admite hasta 20 categorías de cada nivel.",
+            chosen.filter((c) => c.kind === kind).length <=
+              (kind === "SECONDARY" ? 100 : 20),
+            "Un ítem admite hasta 20 categorías principales y 100 secundarias.",
           );
         await writeInventoryTags(
           tx,

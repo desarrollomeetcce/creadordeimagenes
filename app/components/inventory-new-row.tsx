@@ -114,7 +114,13 @@ export function InventoryNewRow({
               setValue((old) => ({
                 ...old,
                 [kind]: [
-                  ...new Set([...selected, ...splitCategoryNames(name)]),
+                  ...new Set([
+                    ...selected,
+                    ...splitCategoryNames(
+                      name,
+                      kind === "secondary" ? 100 : 20,
+                    ),
+                  ]),
                 ],
               }))
             }

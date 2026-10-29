@@ -393,6 +393,309 @@ test("Inventario: carga privada, temarios y concurrencia sin cambiar hojas finan
       );
     },
   );
+  await t.test(
+    "Pegar inventario guarda versiones juntas, preserva ediciones y revierte todos los datos ante error",
+    async () => {
+      const name = "Temarios preparados " + tag,
+        versions = [
+          { ...outline, id: "prepared-world" },
+          {
+            ...outline,
+            id: "prepared-pe",
+            title: "Perú",
+            scope: "Perú",
+            content: "Contenido propio de Perú",
+          },
+        ];
+      let meta = await inventoryCategories(actor, listId);
+      const payload = {
+        listId,
+        revision: meta.revision,
+        rows: [
+          {
+            name,
+            primary: "Educación",
+            secondary: "Gestión empresarial",
+            sheets: "",
+            syllabi: versions,
+          },
+        ],
+      };
+      assert.equal(
+        (await apiUser.call("meta-ads/inventory/import", "POST", payload))
+          .status,
+        403,
+      );
+      const saved = await apiOwner.call(
+        "meta-ads/inventory/import",
+        "POST",
+        payload,
+      );
+      assert.equal(saved.status, 200);
+      assert.equal(saved.body.addedSyllabi, 2);
+      const read = await readSyllabi(actor, listId, name);
+      assert.equal(read.syllabi.length, 2);
+      assert.equal(read.syllabi[1].content, versions[1].content);
+      assert.equal(
+        (await apiOwner.call("meta-ads/inventory/import", "POST", payload))
+          .status,
+        409,
+      );
+      await saveSyllabi(actor, {
+        listId,
+        name,
+        revision: read.revision,
+        syllabi: read.syllabi.map((s) =>
+          s.id === "prepared-world"
+            ? { ...s, title: "Nombre editado", content: "Contenido posterior" }
+            : s,
+        ),
+      });
+      meta = await inventoryCategories(actor, listId);
+      const repeated = await apiOwner.call(
+        "meta-ads/inventory/import",
+        "POST",
+        { ...payload, revision: meta.revision },
+      );
+      assert.equal(repeated.status, 200);
+      assert.equal(repeated.body.addedSyllabi, 0);
+      const kept = await readSyllabi(actor, listId, name);
+      assert.equal(kept.syllabi[0].title, "Nombre editado");
+      assert.equal(kept.syllabi[0].content, "Contenido posterior");
+      assert.equal(kept.syllabi.length, 2);
+      meta = await inventoryCategories(actor, listId);
+      const before = meta.items.length;
+      const invalid = await apiOwner.call("meta-ads/inventory/import", "POST", {
+        listId,
+        revision: meta.revision,
+        rows: [
+          {
+            name: "No debe quedar " + tag,
+            primary: "",
+            secondary: "",
+            sheets: "",
+            syllabi: versions,
+          },
+          {
+            name: "Fallo posterior " + tag,
+            primary: "",
+            secondary: "",
+            sheets: "Hoja inexistente " + tag,
+          },
+        ],
+      });
+      assert.equal(invalid.status, 400);
+      assert.equal(
+        (await inventoryCategories(actor, listId)).items.length,
+        before,
+      );
+      const nameless = await apiOwner.call(
+        "meta-ads/inventory/import",
+        "POST",
+        {
+          listId,
+          revision: meta.revision,
+          rows: [
+            {
+              name: "",
+              primary: "No crear " + tag,
+              secondary: "",
+              sheets: "",
+              syllabi: versions,
+            },
+          ],
+        },
+      );
+      assert.equal(nameless.status, 400);
+      assert.equal(
+        await db.metaInventoryCategory.count({
+          where: { sheetId: listId, name: "No crear " + tag },
+        }),
+        0,
+      );
+    },
+  );
+  await t.test(
+    "Carga de temarios UTF8 supera un megabyte sin ampliar los demás límites",
+    async () => {
+      const meta = await inventoryCategories(actor, listId),
+        rows = Array.from({ length: 2 }, (_, n) => ({
+          name: `Temario extenso ${n} ${tag}`,
+          primary: "",
+          secondary: "",
+          sheets: "",
+          syllabi: Array.from({ length: 10 }, (_, i) => ({
+            ...outline,
+            id: `large-${n}-${i}`,
+            title: `Versión ${i + 1}`,
+            content: `${n}-${i}:` + "字".repeat(24990),
+          })),
+        }));
+      const payload = { listId, revision: meta.revision, rows };
+      assert(Buffer.byteLength(JSON.stringify(payload)) > 1000000);
+      const saved = await apiOwner.call(
+        "meta-ads/inventory/import",
+        "POST",
+        payload,
+      );
+      assert.equal(saved.status, 200);
+      assert.equal(saved.body.addedSyllabi, 20);
+      const read = await readSyllabi(actor, listId, rows[0].name);
+      assert.equal(read.syllabi.length, 10);
+      assert.equal(read.syllabi[9].content, rows[0].syllabi[9].content);
+    },
+  );
+  await t.test(
+    "Importación admite1500 filas completas y rechaza1501 sin cargas parciales",
+    async () => {
+      const target = await db.metaEffectivenessSheet.create({
+          data: { name: "Capacidad1500 " + tag, kind: "INVENTORY" },
+        }),
+        rows = Array.from({ length: 1500 }, (_, i) => ({
+          name: `Registro ${tag} ${i}`,
+          primary: "",
+          secondary: "",
+          sheets: "",
+        }));
+      const saved = await apiOwner.call("meta-ads/inventory/import", "POST", {
+        listId: target.id,
+        revision: 0,
+        rows,
+      });
+      assert.equal(saved.status, 200);
+      assert.equal(saved.body.created, 1500);
+      const state = await inventoryCategories(actor, target.id);
+      assert.equal(state.items.length, 1500);
+      const excessive = await apiOwner.call(
+        "meta-ads/inventory/import",
+        "POST",
+        {
+          listId: target.id,
+          revision: state.revision,
+          rows: [...rows, { ...rows[0], name: "Exceso" }],
+        },
+      );
+      assert.equal(excessive.status, 400);
+      assert.equal(
+        await db.metaInventoryItem.count({ where: { sheetId: target.id } }),
+        1500,
+      );
+    },
+  );
+  if (
+    process.env.INVENTORY_XLSX_TEST_PATH &&
+    process.env.INVENTORY_PACKAGE_TEST_PATH
+  )
+    await t.test(
+      "Excel real completo: convertir celdas en botones e importar todos los temarios sin pérdida ni duplicación",
+      async () => {
+        const pkg = catalogPackageSchema.parse(
+            JSON.parse(
+              await readFile(process.env.INVENTORY_PACKAGE_TEST_PATH!, "utf8"),
+            ),
+          ),
+          file = await readFile(process.env.INVENTORY_XLSX_TEST_PATH!);
+        const parsed = await apiOwner.call("meta-ads/inventory/file", "POST", {
+          name: "inventario-importar.xlsx",
+          content: file.toString("base64"),
+        });
+        assert.equal(parsed.status, 200);
+        assert.equal(parsed.body.rows.length, pkg.items.length);
+        const expected = new Map(pkg.items.map((i) => [i.name, i]));
+        for (const row of parsed.body.rows) {
+          const e = expected.get(row.name)!;
+          assert(e);
+          assert.equal(row.primary, e.primary);
+          assert.deepEqual(
+            row.secondary.split(", ").sort(),
+            [...e.secondary].sort(),
+          );
+          assert.equal(row.sheets, "");
+          assert.deepEqual(
+            (row.syllabi ?? []).map((s: any) => [s.title, s.scope, s.content]),
+            e.syllabi.map((s) => [s.title, s.scope, s.content]),
+          );
+        }
+        const target = await db.metaEffectivenessSheet.create({
+            data: { kind: "INVENTORY", name: "Excel completo " + tag },
+          }),
+          saved = await apiOwner.call("meta-ads/inventory/import", "POST", {
+            listId: target.id,
+            revision: 0,
+            rows: parsed.body.rows,
+          });
+        assert.equal(saved.status, 200);
+        assert.equal(saved.body.created, pkg.items.length);
+        assert.equal(
+          saved.body.addedSyllabi,
+          pkg.items.reduce((n, i) => n + i.syllabi.length, 0),
+        );
+        const state = await inventoryCategories(actor, target.id),
+          defs = new Map(state.categories.map((c) => [c.id, c]));
+        assert.equal(state.items.length, pkg.items.length);
+        for (const item of state.items) {
+          const e = expected.get(item.name)!;
+          assert.equal(
+            state.assignments[item.id].filter(
+              (id) => defs.get(id)?.kind === "SECONDARY",
+            ).length,
+            e.secondary.length,
+          );
+        }
+        const again = await apiOwner.call("meta-ads/inventory/import", "POST", {
+          listId: target.id,
+          revision: state.revision,
+          rows: parsed.body.rows,
+        });
+        assert.equal(again.status, 200);
+        assert.equal(again.body.created, 0);
+        assert.equal(again.body.addedSyllabi, 0);
+        if (process.env.INVENTORY_SIMPLE_XLSX_TEST_PATH) {
+          const simple = await apiOwner.call(
+            "meta-ads/inventory/file",
+            "POST",
+            {
+              name: "lista-simple.xlsx",
+              content: (
+                await readFile(process.env.INVENTORY_SIMPLE_XLSX_TEST_PATH)
+              ).toString("base64"),
+            },
+          );
+          assert.equal(simple.status, 200);
+          assert.equal(simple.body.rows.length, pkg.items.length);
+          assert(
+            simple.body.rows.every(
+              (r: any) => !r.syllabi?.length && r.sheets === "",
+            ),
+          );
+          const beforeSimple = await inventoryCategories(actor, target.id),
+            savedSimple = await apiOwner.call(
+              "meta-ads/inventory/import",
+              "POST",
+              {
+                listId: target.id,
+                revision: beforeSimple.revision,
+                rows: simple.body.rows,
+              },
+            );
+          assert.equal(savedSimple.status, 200);
+          assert.equal(savedSimple.body.addedSyllabi, 0);
+          assert.equal(savedSimple.body.created, 0);
+          assert.equal(
+            (await inventoryCategories(actor, target.id)).items.reduce(
+              (n, i) => n + i.syllabi.length,
+              0,
+            ),
+            pkg.items.reduce((n, i) => n + i.syllabi.length, 0),
+          );
+        }
+
+        assert.equal(
+          await db.metaAlias.count({ where: { inventorySheetId: target.id } }),
+          0,
+        );
+      },
+    );
   if (process.env.INVENTORY_PACKAGE_TEST_PATH)
     await t.test(
       "Paquete privado completo y repetición HTTP sin duplicados",

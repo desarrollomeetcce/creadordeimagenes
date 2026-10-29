@@ -1,3 +1,4 @@
+import { syllabiSchema } from "./inventory-syllabi-policy";
 import { workbookKindSchema } from "./workbook-sheets";
 import { salesAllocationsSchema } from "./advisor-sales-plan";
 import { assignmentTimingSchema } from "./advisor-attribution";
@@ -172,14 +173,15 @@ export async function metaRoutes(
             z
               .object({
                 primary: z.string().max(2000),
-                secondary: z.string().max(2000),
+                secondary: z.string().max(8200),
                 name: z.string().max(150),
                 sheets: z.string().max(2000),
+                syllabi: syllabiSchema.optional(),
               })
               .strict(),
           )
           .min(1)
-          .max(500),
+          .max(1500),
       })
       .strict()
       .parse(await body());
@@ -205,7 +207,7 @@ export async function metaRoutes(
     } catch (e) {
       if (e instanceof (await import("../errors")).AppError) throw e;
       throw new (await import("../errors")).AppError(
-        "No se pudo leer el archivo. Usa XLSX sin fórmulas o CSV/TSV con cuatro columnas válidas.",
+        "No se pudo leer el archivo. Usa XLSX sin fórmulas o CSV/TSV con Inventario, Categoría principal, Categorías secundarias, Hojas y Temario 1, Temario 2…",
       );
     }
   }
@@ -239,7 +241,7 @@ export async function metaRoutes(
                 z
                   .object({
                     primary: z.string().max(2000),
-                    secondary: z.string().max(2000),
+                    secondary: z.string().max(8200),
                   })
                   .strict(),
               )
@@ -256,7 +258,7 @@ export async function metaRoutes(
             ids,
             expectedName: z.string().min(1).max(150),
             kind: z.enum(["PRIMARY", "SECONDARY"]),
-            names: z.array(z.string().min(1).max(80)).max(20),
+            names: z.array(z.string().min(1).max(80)).max(100),
             decisions: nameDecisions,
           })
           .strict(),

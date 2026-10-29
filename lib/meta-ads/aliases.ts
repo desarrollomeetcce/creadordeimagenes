@@ -20,7 +20,7 @@ export async function aliases(actor: Actor) {
       table: { select: { id: true, name: true } },
     },
     orderBy: { name: "asc" },
-    take: 1000,
+    take: 1500,
   });
 }
 export async function saveAlias(
@@ -54,8 +54,8 @@ export async function saveAlias(
       );
     if (!id)
       demand(
-        (await tx.metaAlias.count()) < 1000,
-        "El catálogo admite hasta 1000 elementos de inventario.",
+        (await tx.metaAlias.count()) < 1500,
+        "El catálogo admite hasta 1500 elementos de inventario.",
       );
     if (id) {
       const existing = await tx.metaAlias.findUnique({ where: { id } });
