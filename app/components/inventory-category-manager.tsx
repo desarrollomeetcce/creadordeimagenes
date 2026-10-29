@@ -4,6 +4,7 @@ import type {
   InventoryCategoryState,
   InventoryCategoryAction,
 } from "./inventory-category-types";
+import { categoryKey } from "../../lib/meta-ads/category-paste";
 import { InventoryMultiSelect } from "./inventory-multi-select";
 export function InventoryCategoryManager({
   config,
@@ -26,7 +27,8 @@ export function InventoryCategoryManager({
     [busy, setBusy] = useState(false),
     [error, setError] = useState(""),
     [name, setName] = useState(""),
-    [kind, setKind] = useState("PRIMARY");
+    [kind, setKind] = useState("PRIMARY"),
+    [usage, setUsage] = useState("ALL");
   useEffect(() => {
     dialog.current?.showModal();
   }, []);
@@ -40,11 +42,29 @@ export function InventoryCategoryManager({
   const exists = config.categories.some(
     (c) => normalize(c.name) === normalize(name),
   );
-  const visible = config.categories.filter(
+  const grouped = new Map<
+    string,
+    { id: string; name: string; ids: string[]; kinds: string[] }
+  >();
+  for (const c of config.categories) {
+    const key = categoryKey(c.name);
+    if (!grouped.has(key))
+      grouped.set(key, { id: key, name: c.name, ids: [], kinds: [] });
+    const group = grouped.get(key)!;
+    group.ids.push(c.id);
+    if (!group.kinds.includes(c.kind)) group.kinds.push(c.kind);
+  }
+  const groups = [...grouped.values()].sort((a, b) =>
+    a.name.localeCompare(b.name, "es"),
+  );
+  const visible = groups.filter(
     (c) =>
       (!filter.length || filter.includes(c.id)) &&
+      (usage === "ALL" || c.kinds.includes(usage)) &&
       words.every((word) => normalize(c.name).includes(word)),
   );
+  const reviewGroups = groups.filter((c) => review?.includes(c.id));
+  const reviewIds = reviewGroups.flatMap((c) => c.ids);
   const addCategory = async () => {
     if (!name.trim() || busy || exists) return;
     setBusy(true);
@@ -89,8 +109,9 @@ export function InventoryCategoryManager({
         </button>
       </header>
       <p>
-        Elige categorías principales o secundarias. Al eliminarlas se retiran de
-        los ítems de esta lista; los inventarios y sus cifras se conservan.
+        Cada categoría aparece una sola vez. Al eliminarla se retiran todos sus
+        usos, principales y secundarios, de esta lista. Los inventarios y sus
+        cifras se conservan.
       </p>
       <form
         className="row"
@@ -140,12 +161,23 @@ export function InventoryCategoryManager({
           ? ". Si buscas una categoría nueva, puedes añadirla con el botón indicado."
           : "."}
       </p>
+      <label className="inventory-category-usage-filter">
+        Mostrar
+        <select
+          aria-label="Uso de las categorías"
+          value={usage}
+          disabled={busy}
+          onChange={(e) => setUsage(e.target.value)}
+        >
+          <option value="ALL">Todas las categorías</option>
+          <option value="PRIMARY">Categorías principales</option>
+          <option value="SECONDARY">Categorías secundarias</option>
+        </select>
+      </label>
       <InventoryMultiSelect
         label="Categorías para buscar"
-        options={config.categories.map((c) => ({
-          value: c.id,
-          label: `${c.name} · ${c.kind === "PRIMARY" ? "Principal" : "Secundaria"}`,
-        }))}
+        placeholder="Todas las categorías"
+        options={groups.map((c) => ({ value: c.id, label: c.name }))}
         values={filter}
         onChange={setFilter}
       />
@@ -188,7 +220,11 @@ export function InventoryCategoryManager({
               <span>
                 {c.name}
                 <small>
-                  {c.kind === "PRIMARY" ? "Principal" : "Secundaria"}
+                  {c.kinds.length === 2
+                    ? "Principal y secundaria"
+                    : c.kinds.includes("PRIMARY")
+                      ? "Principal"
+                      : "Secundaria"}
                 </small>
               </span>
             </label>
@@ -240,15 +276,12 @@ export function InventoryCategoryManager({
           aria-label="Confirmar eliminación de categorías"
         >
           <p>
-            Se eliminarán {review.length} categorías:{" "}
-            {config.categories
-              .filter((c) => review.includes(c.id))
-              .map((c) => c.name)
-              .join(", ")}
-            . Se retirarán de{" "}
+            Se eliminarán {reviewGroups.length} categorías, en todos sus usos
+            principales y secundarios:{" "}
+            {reviewGroups.map((c) => c.name).join(", ")}. Se retirarán de{" "}
             {
               Object.values(config.assignments).filter((ids) =>
-                ids.some((id) => review.includes(id)),
+                ids.some((id) => reviewIds.includes(id)),
               ).length
             }{" "}
             registros. Los ítems y las cifras se conservarán.
@@ -269,7 +302,10 @@ export function InventoryCategoryManager({
                 setBusy(true);
                 setError("");
                 try {
-                  await onSave({ action: "DELETE_MANY", categoryIds: review });
+                  await onSave({
+                    action: "DELETE_MANY",
+                    categoryIds: reviewIds,
+                  });
                   setSelected(selected.filter((id) => !review.includes(id)));
                   setFilter(filter.filter((id) => !review.includes(id)));
                   setReview(null);

@@ -1446,3 +1446,10 @@ Regresión completa final:195/195 aprobadas con backend PostgreSQL coincidente (
 Filtro unificado por categoría principal o secundaria, disponible en resumen y debajo de Inventario; contador de inventarios únicos, categorías por nombre y miembros de categoría. El desplegable de inventario permite buscar por categoría. Ver categorías filtra mientras se escribe: Enter/Buscar no crean registros; añadir requiere pulsar un botón explícito. Los selectores ofrecen Añadir categoría para nombres inexistentes (comparación sin tildes/mayúsculas).
 
 Validación: 202/202 pruebas unitarias, typecheck y build correctos; siete comprobaciones Chromium sobre catálogo sintético de 764 inventarios: conteos contra categorías/asignaciones, coincidencias principales/secundarias, selector interno, búsqueda por categoría en inventario, búsqueda en gestor sin creación por Enter y móvil oscuro. Sin errores JS ni escrituras durante buscar/filtrar. Integración de datos no repetida: rutas, esquema y persistencia conservados. Publicación Vercel pendiente de comprobar; no acredita actualización de Hostinger.
+
+
+## 2026-10-29 · Categorías unificadas
+
+Ver categorías agrupa un mismo nombre en una sola fila y permite mostrar todas, principales o secundarias. Selección y revisión cuentan nombres únicos; eliminar una categoría retira ambos usos incluso si solo se visualiza un nivel. El servidor expande DELETE y DELETE_MANY dentro de la lista autorizada, tras validar identificadores y revisión. Conserva ítems, temarios y categorías de otras listas. Sin cambios de esquema.
+
+Validación: 202 pruebas unitarias, typecheck/build correctos; integración Postgres exclusiva prueba DELETE, DELETE_MANY, referencias de otra lista y revisión obsoleta, conservación de ítems/temarios. Tres comprobaciones Chromium verifican 101 nombres únicos, Nutrición en una fila, filtros de uso y payload con ambos IDs. Confirmación interceptada con conflicto sintético: sin eliminar datos de catálogo. Publicación Vercel pendiente de verificar; Hostinger no verificado.

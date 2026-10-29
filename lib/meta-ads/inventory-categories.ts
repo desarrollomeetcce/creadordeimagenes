@@ -6,6 +6,7 @@ import { recordActivity } from "../activity";
 import { effectivenessLock } from "./effectiveness";
 import {
   categoryRows,
+  categoryKey,
   categoryIdentity,
   splitCategoryNames,
   type CategoryImportRow,
@@ -465,7 +466,9 @@ export async function saveInventoryCategories(
         );
         affected = b.ids.length;
       } else {
-        const ids = b.action === "DELETE" ? [b.categoryId] : b.categoryIds;
+        const requestedIds =
+          b.action === "DELETE" ? [b.categoryId] : b.categoryIds;
+        const ids = requestedIds;
         demand(
           ids.length > 0 &&
             new Set(ids).size === ids.length &&
@@ -473,14 +476,23 @@ export async function saveInventoryCategories(
           "Categoría no disponible.",
           404,
         );
+        // A category name is one concept; deletion removes both usage levels.
+        const names = new Set(
+          before.categories
+            .filter((c) => requestedIds.includes(c.id))
+            .map((c) => categoryKey(c.name)),
+        );
+        const allIds = before.categories
+          .filter((c) => names.has(categoryKey(c.name)))
+          .map((c) => c.id);
         affected = await tx.metaInventoryCategoryAssignment.count({
-          where: { categoryId: { in: ids } },
+          where: { categoryId: { in: allIds } },
         });
         affected += await tx.metaInventoryItemCategory.count({
-          where: { categoryId: { in: ids } },
+          where: { categoryId: { in: allIds } },
         });
         await tx.metaInventoryCategory.deleteMany({
-          where: { id: { in: ids } },
+          where: { id: { in: allIds } },
         });
       }
       await tx.metaEffectivenessSheet.update({
