@@ -65,6 +65,7 @@ import {
   AccountSecurity,
   RecoveryIssuer,
   ResetPasswordForm,
+  ForgotPasswordForm,
 } from "./components/account-security";
 const Library = LibraryWorkspace;
 const Presets = dynamic(() => import("./components/productivity").then(m => m.Presets));
@@ -675,6 +676,7 @@ function Login({
   onLogin: () => Promise<void>;
 }) {
   const [emergency, setEmergency] = useState(false);
+  const [forgot, setForgot] = useState(false);
   const [mode, setMode] = useState(setup ? "setup" : "login");
   const t = useTask();
   const submit = (e: FormEvent<HTMLFormElement>) => {
@@ -713,7 +715,9 @@ function Login({
         <div className="brand" style={{ marginBottom: 35 }}>
           ✳ estudio AI
         </div>
-        {emergency ? (
+        {forgot ? (
+          <ForgotPasswordForm onBack={() => setForgot(false)} />
+        ) : emergency ? (
           <EmergencyOwnerForm onBack={() => setEmergency(false)} />
         ) : (
           <>
@@ -791,11 +795,9 @@ function Login({
               </button>
             )}
             {!setup && mode === "login" && (
-              <p className="muted">
-                ¿Olvidaste tu contraseña? Solicita al OWNER o a un Administrador
-                autorizado un enlace temporal de recuperación y ábrelo para
-                elegir una nueva contraseña.
-              </p>
+              <button type="button" onClick={() => setForgot(true)}>
+                ¿Olvidaste tu contraseña?
+              </button>
             )}
             {!setup && mode === "login" && (
               <button type="button" onClick={() => setEmergency(true)}>

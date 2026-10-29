@@ -117,61 +117,75 @@ export function RecoveryIssuer({
         Recuperar acceso
       </button>
       {open && (
-        <form
-          className="stack"
-          onSubmit={(e) => {
-            e.preventDefault();
-            const form = e.currentTarget,
-              currentPassword = new FormData(form).get("currentPassword"),
-              email =
-                (e.nativeEvent as SubmitEvent).submitter?.getAttribute(
-                  "value",
-                ) === "email";
-            setBusy(true);
-            setMessage("");
-            setLink("");
-            void post(
-              `users/${userId}/${email ? "recovery-email" : "recovery"}`,
-              { currentPassword },
-            )
-              .then((result) => {
-                if (email) setMessage(result.message);
-                else {
-                  setLink(
-                    `${window.location.origin}/#recuperar=${encodeURIComponent(result.token)}`,
-                  );
-                  setMessage(
-                    `Válido hasta ${new Date(result.expiresAt).toLocaleTimeString()}. El enlace anterior ya no funciona. No se envió ningún correo.`,
-                  );
-                }
-                form.reset();
-              })
-              .catch((error: Error) => setMessage(error.message))
-              .finally(() => setBusy(false));
-          }}
-        >
+        <div className="stack">
           <p>
-            Genera un enlace de un solo uso para {name}. Caduca en 30 minutos.
-            Puedes enviarlo al correo registrado si el OWNER configuró y
-            verificó el correo, o entregarlo de forma privada.
+            Envía a {name} un enlace de un solo uso al correo registrado. Caduca
+            en 30 minutos.
           </p>
-          <label>
-            Tu contraseña actual de OWNER o Administrador
-            <PasswordInput
-              name="currentPassword"
-              required
-              minLength={12}
-              maxLength={128}
-              autoComplete="current-password"
-            />
-          </label>
-          <button className="primary" value="email" disabled={busy}>
+          <button
+            type="button"
+            className="primary"
+            disabled={busy}
+            onClick={() => {
+              setBusy(true);
+              setMessage("");
+              setLink("");
+              void post(`users/${userId}/recovery-email`, {})
+                .then((result) => setMessage(result.message))
+                .catch((error: Error) => setMessage(error.message))
+                .finally(() => setBusy(false));
+            }}
+          >
             Enviar enlace por correo
           </button>
-          <button value="manual" disabled={busy}>
-            Generar enlace para copiar
-          </button>
-        </form>
+          <details>
+            <summary>Generar enlace para copiar</summary>
+            <form
+              className="stack"
+              onSubmit={(e) => {
+                e.preventDefault();
+                const form = e.currentTarget,
+                  currentPassword = new FormData(form).get("currentPassword");
+                setBusy(true);
+                setMessage("");
+                setLink("");
+                void post(`users/${userId}/recovery`, { currentPassword })
+                  .then((result) => {
+                    {
+                      setLink(
+                        `${window.location.origin}/#recuperar=${encodeURIComponent(result.token)}`,
+                      );
+                      setMessage(
+                        `Válido hasta ${new Date(result.expiresAt).toLocaleTimeString()}. El enlace anterior ya no funciona. No se envió ningún correo.`,
+                      );
+                    }
+                    form.reset();
+                  })
+                  .catch((error: Error) => setMessage(error.message))
+                  .finally(() => setBusy(false));
+              }}
+            >
+              <p>
+                Genera un enlace de un solo uso para {name}. Caduca en 30
+                minutos. Puedes enviarlo al correo registrado si el OWNER
+                configuró y verificó el correo, o entregarlo de forma privada.
+              </p>
+              <label>
+                Tu contraseña actual de OWNER o Administrador
+                <PasswordInput
+                  name="currentPassword"
+                  required
+                  minLength={12}
+                  maxLength={128}
+                  autoComplete="current-password"
+                />
+              </label>
+              <button value="manual" disabled={busy}>
+                Generar enlace para copiar
+              </button>
+            </form>
+          </details>
+        </div>
       )}
       {link && (
         <div className="stack">
@@ -305,6 +319,56 @@ export function ResetPasswordForm({
           )}
         </>
       )}
+    </div>
+  );
+}
+
+export function ForgotPasswordForm({ onBack }: { onBack: () => void }) {
+  const [busy, setBusy] = useState(false),
+    [message, setMessage] = useState("");
+  return (
+    <div className="stack">
+      <h1>Recuperar contraseña</h1>
+      <p>
+        Escribe el correo de tu cuenta y te enviaremos un enlace para elegir una
+        nueva contraseña.
+      </p>
+      <form
+        className="stack"
+        onSubmit={(e) => {
+          e.preventDefault();
+          const email = new FormData(e.currentTarget).get("email");
+          setBusy(true);
+          setMessage("");
+          void post("auth/forgot-password", { email })
+            .then((result) => setMessage(result.message))
+            .catch((error: Error) => setMessage(error.message))
+            .finally(() => setBusy(false));
+        }}
+      >
+        <label>
+          Correo electrónico
+          <input
+            type="email"
+            name="email"
+            required
+            maxLength={200}
+            autoComplete="email"
+            disabled={busy}
+          />
+        </label>
+        <button className="primary" disabled={busy}>
+          {busy ? "Enviando…" : "Enviar enlace de recuperación"}
+        </button>
+      </form>
+      {message && (
+        <div role="status" className="notice">
+          {message}
+        </div>
+      )}
+      <button type="button" onClick={onBack} disabled={busy}>
+        Volver al ingreso
+      </button>
     </div>
   );
 }

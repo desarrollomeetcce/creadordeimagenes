@@ -1,12 +1,11 @@
 import { recordActivity } from "./activity";
-import { randomUUID } from "node:crypto";
+import { randomUUID, randomBytes } from "node:crypto";
 import argon2 from "argon2";
 import { z } from "zod";
 import { db } from "./db";
 import { ownerOnly, rateLimit, tokenHash } from "./auth";
 import { encryptKey, decryptKey } from "./crypto";
 import { AppError, demand } from "./errors";
-import { issuePasswordReset } from "./accounts";
 import { managesUsers, canManageAccount } from "./roles";
 import { smtpAdapter, safeMailError, type MailAdapter } from "./smtp";
 
@@ -253,24 +252,7 @@ export async function testMail(
       "El servidor aceptó el mensaje de prueba para tu correo de acceso. Revisa la bandeja de entrada y spam; la aceptación no garantiza la entrega.",
   };
 }
-export async function emailPasswordReset(
-  actor: Actor,
-  targetId: string,
-  input: unknown,
-  adapter: MailAdapter = smtpAdapter,
-) {
-  demand(managesUsers(actor.role), "No puedes administrar usuarios.", 403);
-  const target = await db.user.findUnique({
-    where: { id: targetId },
-    select: { role: true },
-  });
-  demand(
-    target && canManageAccount(actor.role, target.role),
-    "Solo el OWNER puede recuperar cuentas elevadas.",
-    403,
-  );
-  // issuePasswordReset reauthenticates and locks issuer/recipient, enforcing elevated-role restrictions.
-  const c = await savedMail();
+function recoveryOrigin() {
   const origin = new URL(process.env.APP_ORIGIN ?? "");
   demand(
     !origin.username &&
@@ -284,15 +266,62 @@ export async function emailPasswordReset(
     "APP_ORIGIN debe contener el origen HTTPS de la plataforma.",
     503,
   );
-  const reset = await issuePasswordReset(actor, targetId, input);
+  return origin.origin;
+}
+async function createEmailReset(
+  targetId: string,
+  expectedEmail: string,
+  actor?: Actor,
+) {
+  const token = randomBytes(32).toString("base64url"),
+    expiresAt = new Date(Date.now() + 30 * 60000);
+  return db.$transaction(async (tx) => {
+    const issuerId = actor?.id ?? targetId;
+    const rows = await tx.$queryRaw<
+      { id: string; role: string; status: string; email: string }[]
+    >`SELECT id, role, status, email FROM "User" WHERE id IN (${issuerId}, ${targetId}) ORDER BY id FOR UPDATE`;
+    const target = rows.find((r) => r.id === targetId),
+      issuer = rows.find((r) => r.id === issuerId);
+    if (actor)
+      demand(
+        issuer?.status === "APPROVED" &&
+          canManageAccount(issuer.role, target?.role ?? ""),
+        "No puedes recuperar esta cuenta.",
+        403,
+      );
+    if (
+      !target ||
+      target.status !== "APPROVED" ||
+      target.email !== expectedEmail
+    )
+      return null;
+    await tx.passwordReset.deleteMany({ where: { userId: target.id } });
+    await tx.passwordReset.create({
+      data: { tokenHash: tokenHash(token), userId: target.id, expiresAt },
+    });
+    await recordActivity(tx, {
+      data: {
+        actorId: issuerId,
+        action: "RECUPERACION_CORREO_SOLICITADA",
+        resourceId: target.id,
+      },
+    });
+    return { token, email: target.email };
+  });
+}
+async function sendResetMail(
+  c: Awaited<ReturnType<typeof savedMail>>,
+  origin: string,
+  reset: { token: string; email: string },
+  adapter: MailAdapter,
+) {
   try {
     await adapter.send(credentials(c), {
       to: reset.email,
       subject: "Recupera tu acceso · estudio AI",
-      text: `Se solicitó recuperar tu cuenta en estudio AI.\n\nAbre este enlace una sola vez durante los próximos 30 minutos:\n${origin.origin}/#recuperar=${encodeURIComponent(reset.token)}\n\nSi no lo solicitaste, no utilices el enlace y contacta al administrador. Tu contraseña no ha cambiado.`,
+      text: `Se solicitó recuperar tu cuenta en estudio AI.\n\nAbre este enlace una sola vez durante los próximos 30 minutos:\n${origin}/#recuperar=${encodeURIComponent(reset.token)}\n\nSi no lo solicitaste, ignora este mensaje. Tu contraseña no ha cambiado.`,
     });
   } catch (error) {
-    // SMTP can fail after accepting DATA: revoke this link and never retry automatically.
     await db.passwordReset.deleteMany({
       where: { tokenHash: tokenHash(reset.token) },
     });
@@ -302,6 +331,37 @@ export async function emailPasswordReset(
       502,
     );
   }
+}
+export async function emailPasswordReset(
+  actor: Actor,
+  targetId: string,
+  input: unknown,
+  adapter: MailAdapter = smtpAdapter,
+) {
+  demand(managesUsers(actor.role), "No puedes administrar usuarios.", 403);
+  // Accept older clients, but email delivery never requires the issuer's password.
+  z.object({ currentPassword: z.string().max(128).optional() })
+    .strict()
+    .parse(input);
+  const target = await db.user.findUnique({
+    where: { id: targetId },
+    select: { role: true, email: true },
+  });
+  demand(
+    target && canManageAccount(actor.role, target.role),
+    "Solo el OWNER puede recuperar cuentas elevadas.",
+    403,
+  );
+  await rateLimit(`recovery-mail:${actor.id}`, 8);
+  const c = await savedMail(),
+    origin = recoveryOrigin();
+  const reset = await createEmailReset(targetId, target.email, actor);
+  demand(
+    reset,
+    "Solo se pueden recuperar cuentas aprobadas. Actualiza la lista si el correo cambió.",
+    409,
+  );
+  await sendResetMail(c, origin, reset, adapter);
   await recordActivity(db, {
     data: {
       actorId: actor.id,
@@ -312,6 +372,47 @@ export async function emailPasswordReset(
   return {
     ok: true,
     message:
-      "El servidor aceptó el enlace para el correo de la cuenta. Pide a la persona que revise entrada y spam; caduca en 30 minutos. No se garantiza la entrega.",
+      "El servidor aceptó el enlace para el correo de la cuenta. Revisa entrada y spam; caduca en 30 minutos.",
   };
+}
+export async function requestPasswordReset(
+  input: unknown,
+  adapter: MailAdapter = smtpAdapter,
+) {
+  const b = z
+    .object({
+      email: z
+        .string()
+        .trim()
+        .pipe(z.email().max(200))
+        .transform((v) => v.toLowerCase()),
+    })
+    .strict()
+    .parse(input);
+  await rateLimit("recovery-request:global", 100);
+  await rateLimit(`recovery-request:${tokenHash(b.email)}`, 4);
+  // Check global mail readiness before looking up an account, returning the same error for any email.
+  const c = await savedMail(),
+    origin = recoveryOrigin();
+  const response = {
+    ok: true,
+    message:
+      "Si el correo pertenece a una cuenta habilitada, recibirás un enlace para crear una nueva contraseña. Revisa entrada y spam; caduca en 30 minutos.",
+  };
+  const target = await db.user.findFirst({
+    where: {
+      email: { equals: b.email, mode: "insensitive" },
+      status: "APPROVED",
+    },
+    select: { id: true, email: true },
+  });
+  if (!target) return response;
+  const reset = await createEmailReset(target.id, target.email);
+  if (!reset) return response;
+  try {
+    await sendResetMail(c, origin, reset, adapter);
+  } catch {
+    return response;
+  }
+  return response;
 }

@@ -121,7 +121,7 @@ export function UsersPanel({ isOwner }: { isOwner: boolean }) {
       {users.map((u) => (
         <article key={u.id} className="panel stack">
           <h3>{u.name}</h3>
-          <span>{u.email}</span>
+          <AccountEmailEditor account={u} busy={busy} run={run} />
           <div className="fields">
             <label>
               Rol de {u.name}
@@ -319,5 +319,97 @@ export function UsersPanel({ isOwner }: { isOwner: boolean }) {
         </p>
       )}
     </>
+  );
+}
+
+function AccountEmailEditor({
+  account,
+  busy,
+  run,
+}: {
+  account: Account;
+  busy: boolean;
+  run: (fn: () => Promise<unknown>) => Promise<void>;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [expectedEmail, setExpectedEmail] = useState(account.email);
+  return (
+    <div>
+      <div className="account-email-heading">
+        <span>{account.email}</span>
+        <button
+          type="button"
+          disabled={busy}
+          aria-expanded={editing}
+          aria-label={`Editar correo de ${account.name}`}
+          onClick={() => {
+            setExpectedEmail(account.email);
+            setEditing(!editing);
+          }}
+        >
+          ✎ Editar correo
+        </button>
+      </div>
+      {editing && (
+        <form
+          className="inside stack"
+          onSubmit={(e) => {
+            e.preventDefault();
+            const form = e.currentTarget,
+              data = new FormData(form);
+            void run(async () => {
+              const result = await api(`users/${account.id}/email`, "PATCH", {
+                email: data.get("email"),
+                expectedEmail,
+                currentPassword: data.get("currentPassword"),
+              });
+              form.reset();
+              setEditing(false);
+              if (result.closesOwnSession) window.location.reload();
+            });
+          }}
+        >
+          <label>
+            Nuevo correo de {account.name}
+            <input
+              name="email"
+              type="email"
+              defaultValue={expectedEmail}
+              required
+              maxLength={200}
+              disabled={busy}
+              autoComplete="off"
+            />
+          </label>
+          <label>
+            Tu contraseña actual
+            <PasswordInput
+              name="currentPassword"
+              required
+              minLength={12}
+              maxLength={128}
+              disabled={busy}
+              autoComplete="current-password"
+            />
+          </label>
+          <small>
+            Usarás el nuevo correo para iniciar sesión. Al cambiar el de tu
+            propia cuenta, volverás a ingresar.
+          </small>
+          <div className="account-email-actions">
+            <button type="submit" disabled={busy}>
+              Guardar correo
+            </button>
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => setEditing(false)}
+            >
+              Cancelar
+            </button>
+          </div>
+        </form>
+      )}
+    </div>
   );
 }

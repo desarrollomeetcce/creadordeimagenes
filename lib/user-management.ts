@@ -101,6 +101,88 @@ export async function userManagement(
   }
   if (parts.length === 3 && parts[2] === "recovery" && req.method === "POST")
     return send(await issuePasswordReset(actor, parts[1], await body()), 201);
+  if (parts.length === 3 && parts[2] === "email" && req.method === "PATCH") {
+    const b = z
+      .object({
+        email: z
+          .string()
+          .trim()
+          .pipe(z.email().max(200))
+          .transform((v) => v.toLowerCase()),
+        expectedEmail: z.string().max(200),
+        currentPassword: password,
+      })
+      .strict()
+      .parse(await body());
+    await rateLimit(`account-email:${actor.id}`, 10);
+    const issuer = await db.user.findUniqueOrThrow({ where: { id: actor.id } });
+    demand(
+      await argon2.verify(issuer.passwordHash, b.currentPassword),
+      "Tu contraseña actual no es correcta.",
+      403,
+    );
+    const result = await db
+      .$transaction(async (tx) => {
+        await tx.$executeRaw`SELECT pg_advisory_xact_lock(891234)`;
+        const rows = await tx.$queryRaw<
+          {
+            id: string;
+            role: string;
+            status: string;
+            email: string;
+            passwordHash: string;
+          }[]
+        >`SELECT id, role, status, email, "passwordHash" FROM "User" WHERE id IN (${actor.id}, ${parts[1]}) ORDER BY id FOR UPDATE`;
+        const current = rows.find((r) => r.id === actor.id),
+          target = rows.find((r) => r.id === parts[1]);
+        demand(target, "Cuenta no encontrada.", 404);
+        demand(
+          current?.status === "APPROVED" &&
+            current.passwordHash === issuer.passwordHash &&
+            canManageAccount(current.role, target.role),
+          "No puedes cambiar el correo de esta cuenta.",
+          403,
+        );
+        demand(
+          target.email === b.expectedEmail,
+          "El correo cambió. Actualiza la lista antes de editarlo.",
+          409,
+        );
+        if (target.email === b.email)
+          return { ok: true, closesOwnSession: false };
+        demand(
+          !(await tx.user.findFirst({
+            where: {
+              email: { equals: b.email, mode: "insensitive" },
+              id: { not: target.id },
+            },
+          })),
+          "Ya existe una cuenta con ese correo.",
+          409,
+        );
+        await tx.user.update({
+          where: { id: target.id },
+          data: { email: b.email },
+        });
+        await tx.session.deleteMany({ where: { userId: target.id } });
+        await tx.passwordReset.deleteMany({ where: { userId: target.id } });
+        await tx.ownerRecovery.deleteMany({ where: { userId: target.id } });
+        await recordActivity(tx, {
+          data: {
+            actorId: actor.id,
+            action: "CORREO_USUARIO_ACTUALIZADO",
+            resourceId: target.id,
+          },
+        });
+        return { ok: true, closesOwnSession: actor.id === target.id };
+      })
+      .catch((error) => {
+        if (error?.code === "P2002")
+          demand(false, "Ya existe una cuenta con ese correo.", 409);
+        throw error;
+      });
+    return send(result);
+  }
   if (
     parts.length === 3 &&
     parts[2] === "recovery-email" &&

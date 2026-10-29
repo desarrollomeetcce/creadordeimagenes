@@ -303,6 +303,10 @@ async function handle(
         201,
       );
     }
+    if (route === "auth/forgot-password" && method === "POST") {
+      const { requestPasswordReset } = await import("@/lib/mail");
+      return send(await requestPasswordReset(await body(req)));
+    }
     if (route === "auth/reset-password" && method === "POST") {
       const { resetPassword } = await import("@/lib/accounts");
       return send(await resetPassword(await body(req)));
