@@ -161,6 +161,22 @@ export async function metaRoutes(
       ).importCatalogPackage(actor, await body()),
     );
   }
+  if (path === "inventory/sheets" && method === "POST") {
+    ownerOnly(actor);
+    const b = z
+      .object({
+        listId: z.string().min(1).max(100),
+        revision: z.number().int().nonnegative(),
+        inventoryId: z.string().min(1).max(100),
+        expectedName: z.string().min(1).max(150),
+        tableIds: z.array(z.string().min(1).max(100)).min(1).max(1500),
+      })
+      .strict()
+      .parse(await body());
+    return send(
+      await (await import("./inventory-import")).linkInventorySheets(actor, b),
+    );
+  }
   if (path === "inventory/import" && method === "POST") {
     ownerOnly(actor);
     const b = z

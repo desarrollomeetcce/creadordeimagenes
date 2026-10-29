@@ -234,6 +234,11 @@ export function InventoryCatalog({
   const [catalogCategories, setCatalogCategories] = useWorkbookPreference<
     string[]
   >(listId, "catalogCategories", []);
+  const [grouping, setGrouping] = useWorkbookPreference<string>(
+    listId,
+    "catalogGrouping",
+    "continuous",
+  );
   const filters = {
     primary: primaryFilter,
     secondary: secondaryFilter,
@@ -524,7 +529,10 @@ export function InventoryCatalog({
           (c) => c.kind === "SECONDARY" && secondaryNames.includes(c.name),
         )),
   );
-  const bands = new Map<string, { title: string; groups: typeof visible }>();
+  const bands = new Map<
+    string,
+    { title: string; groups: typeof visible; accent?: "blue" }
+  >();
   for (const g of visible) {
     const primary = groupCategories(g)
         .filter((c) => c.kind === "PRIMARY")
@@ -535,20 +543,57 @@ export function InventoryCatalog({
     if (!bands.has(key)) bands.set(key, { title, groups: [] });
     bands.get(key)!.groups.push(g);
   }
-  const sections = [...bands.entries()].sort(([a, x], [b, y]) =>
+  const primarySections = [...bands.entries()].sort(([a, x], [b, y]) =>
     a === "__none"
       ? 1
       : b === "__none"
         ? -1
         : x.title.localeCompare(y.title, "es"),
   );
+  const continuousSections: typeof primarySections = [];
+  const categorized = visible.filter((g) =>
+    groupCategories(g).some((c) => c.kind === "PRIMARY"),
+  );
+  const uncategorized = visible.filter(
+    (g) => !groupCategories(g).some((c) => c.kind === "PRIMARY"),
+  );
+  const scopeNames = [
+    ...new Set([
+      ...activeCategories.filter((name) => name !== noCategory),
+      ...primaryNames,
+      ...secondaryNames,
+    ]),
+  ];
+  if (categorized.length)
+    continuousSections.push([
+      "__continuous",
+      {
+        title: scopeNames.join(" · ") || "Todo el inventario",
+        groups: categorized,
+        accent: "blue",
+      },
+    ]);
+  if (uncategorized.length)
+    continuousSections.push([
+      "__none",
+      { title: "Sin categoría principal", groups: uncategorized },
+    ]);
+  const sections =
+    grouping === "primary" ? primarySections : continuousSections;
   const bandCategorySelector = (section: {
     title: string;
     groups: typeof visible;
   }) => {
     const current = groupCategories(section.groups[0])
       .filter((c) => c.kind === "PRIMARY")
-      .map((c) => c.name);
+      .map((c) => c.name)
+      .filter((name) =>
+        section.groups.every((g) =>
+          groupCategories(g).some(
+            (c) => c.kind === "PRIMARY" && c.name === name,
+          ),
+        ),
+      );
     const ids = [
       ...new Set(section.groups.flatMap((g) => g.links.map((a) => a.id))),
     ];
@@ -806,7 +851,9 @@ export function InventoryCatalog({
                 }).catch((e) => setMessage(e.message));
               }}
             >
-              {c.name}
+              <span className="inventory-category-chip-label" title={c.name}>
+                {c.name}
+              </span>
               {
                 <button
                   type="button"
@@ -1098,6 +1145,26 @@ export function InventoryCatalog({
             disabled={busy || !categories}
           />
           <small>Incluye categorías principales y secundarias.</small>
+          <div
+            className="inventory-grouping-controls"
+            role="group"
+            aria-label="Vista del inventario"
+          >
+            <button
+              type="button"
+              aria-pressed={grouping !== "primary"}
+              onClick={() => setGrouping("continuous")}
+            >
+              Lista continua
+            </button>
+            <button
+              type="button"
+              aria-pressed={grouping === "primary"}
+              onClick={() => setGrouping("primary")}
+            >
+              Por categoría principal
+            </button>
+          </div>
         </div>
         <div
           className="inventory-catalog-counter inventory-category-count-card"
@@ -1347,7 +1414,12 @@ export function InventoryCatalog({
               return (
                 <Fragment key={key}>
                   <tr
-                    className="inventory-group-band"
+                    className={
+                      "inventory-group-band" +
+                      (section.accent === "blue"
+                        ? " inventory-filter-band"
+                        : "")
+                    }
                     data-category-group={section.title}
                   >
                     <th colSpan={6} scope="rowgroup">
@@ -1365,7 +1437,12 @@ export function InventoryCatalog({
                           disabled={busy || !sectionIds.length}
                           onChange={(checked) => choose(sectionIds, checked)}
                         />
-                        <span>{section.title}</span>
+                        <span
+                          className="inventory-band-title"
+                          title={section.title}
+                        >
+                          {section.title}
+                        </span>
                         <small>
                           {section.groups.length}{" "}
                           {section.groups.length === 1 ? "ítem" : "ítems"}
@@ -1448,28 +1525,98 @@ export function InventoryCatalog({
                       {categoryCell(g, "PRIMARY")}
                       {categoryCell(g, "SECONDARY")}
                       <td data-fill-kind="manual">
-                        <div className="inventory-sheet-links">
-                          {g.links
-                            .filter((a) => !a.standalone)
-                            .map((a) => (
-                              <span
-                                key={a.id}
-                                className="inventory-sheet-chip"
-                                data-inventory-id={a.id}
-                              >
-                                {a.tableName}
-                                <button
-                                  type="button"
-                                  className="inventory-remove"
-                                  aria-label={`Eliminar ${g.name} de ${a.tableName}`}
-                                  title={`Eliminar solo de ${a.tableName}`}
-                                  disabled={busy}
-                                  onClick={() => void prepareRemoval(a.id)}
+                        <div className="inventory-sheet-toolbar">
+                          <div className="inventory-sheet-links">
+                            {g.links
+                              .filter((a) => !a.standalone)
+                              .map((a) => (
+                                <span
+                                  key={a.id}
+                                  className="inventory-sheet-chip"
+                                  data-inventory-id={a.id}
                                 >
-                                  ×
-                                </button>
-                              </span>
-                            ))}
+                                  <span
+                                    className="inventory-sheet-chip-label"
+                                    title={a.tableName}
+                                  >
+                                    {a.tableName}
+                                  </span>
+                                  <button
+                                    type="button"
+                                    className="inventory-remove"
+                                    aria-label={`Eliminar ${g.name} de ${a.tableName}`}
+                                    title={`Eliminar solo de ${a.tableName}`}
+                                    disabled={busy}
+                                    onClick={() => void prepareRemoval(a.id)}
+                                  >
+                                    ×
+                                  </button>
+                                </span>
+                              ))}
+                          </div>
+                          <InventoryMultiSelect
+                            label={`Añadir hojas a ${g.name}`}
+                            placeholder="+"
+                            compact
+                            all={false}
+                            values={[]}
+                            options={tables
+                              .filter(
+                                (t) => !g.links.some((a) => a.tableId === t.id),
+                              )
+                              .map((t) => ({ value: t.id, label: t.name }))}
+                            disabled={busy || !categories}
+                            description={
+                              tables.length === 0
+                                ? "Aún no hay hojas creadas."
+                                : tables.every((t) =>
+                                      g.links.some((a) => a.tableId === t.id),
+                                    )
+                                  ? "El diplomado ya está vinculado a todas las hojas disponibles."
+                                  : "Busca y marca una o varias hojas. Pulsa Listo para añadir este diplomado; sus vínculos actuales se conservan."
+                            }
+                            onError={setMessage}
+                            onChange={async (tableIds) => {
+                              if (!tableIds.length || !categories) return;
+                              setBusy(true);
+                              let committed = false;
+                              try {
+                                const result = await api(
+                                  "meta-ads/inventory/sheets",
+                                  "POST",
+                                  {
+                                    listId,
+                                    revision: categories.revision,
+                                    inventoryId: g.links[0].id,
+                                    expectedName: g.name,
+                                    tableIds,
+                                  },
+                                );
+                                committed = true;
+                                if (
+                                  g.links.some((a) => selected.includes(a.id))
+                                )
+                                  setSelected((old) => [
+                                    ...new Set([...old, ...result.aliasIds]),
+                                  ]);
+                                await onChanged();
+                                await reloadCategories();
+                                setMessage(
+                                  result.created
+                                    ? `«${g.name}» añadido a ${result.created} hoja${result.created === 1 ? "" : "s"}.`
+                                    : "El diplomado ya está vinculado a las hojas elegidas.",
+                                );
+                              } catch (e) {
+                                if (committed)
+                                  setMessage(
+                                    "Las hojas se vincularon. Actualiza para ver todos los cambios.",
+                                  );
+                                else throw e;
+                              } finally {
+                                setBusy(false);
+                              }
+                            }}
+                          />
                         </div>
                       </td>
                       <td aria-hidden="true" className="inventory-column-gap" />
