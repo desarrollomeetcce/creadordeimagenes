@@ -1095,6 +1095,8 @@ model MetaInventoryCategoryAssignment {
 }
 
 model MetaInventoryItem {
+ syllabi Json @default("[]")
+ syllabusRevision Int @default(0)
  id String @id @default(cuid())
  sheetId String
  sheet MetaEffectivenessSheet @relation(fields:[sheetId],references:[id],onDelete:Restrict)

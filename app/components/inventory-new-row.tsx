@@ -133,6 +133,8 @@ export function InventoryNewRow({
           onChange={(sheets) => setValue((old) => ({ ...old, sheets }))}
         />
       </td>
+      <td aria-hidden="true" className="inventory-column-gap" />
+      <td className="hint">Temarios disponibles al guardar</td>
     </tr>
   );
 }

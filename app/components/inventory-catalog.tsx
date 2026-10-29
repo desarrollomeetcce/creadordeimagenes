@@ -13,6 +13,8 @@ import {
   InventoryNewRow,
   type InventoryNewRowValue,
 } from "./inventory-new-row";
+import { InventorySyllabi } from "./inventory-syllabi";
+import { InventoryPackageImport } from "./inventory-package-import";
 import { InventoryImport } from "./inventory-import";
 import { InventorySelectionDelete } from "./inventory-selection-delete";
 import { InventoryCategoryManager } from "./inventory-category-manager";
@@ -87,12 +89,14 @@ export function InventoryCatalog({
   listId = "default-inventory",
   sheetTabs,
   onChanged,
+  onOpenInventory,
 }: {
   listId?: string;
   tables: Table[];
   initialTableId: string;
   sheetTabs: ReactNode;
   onChanged: () => Promise<void>;
+  onOpenInventory?: (id: string) => void;
 }) {
   const categoryDrag = useRef<{
       name: string;
@@ -106,15 +110,50 @@ export function InventoryCatalog({
     setDraggingCategory(null);
     setCategoryDrop(null);
   };
+  const [syllabiOpen, setSyllabiOpen] = useState<{
+    name: string;
+    id?: string;
+  } | null>(null);
+  const [packageOpen, setPackageOpen] = useState(false);
+  const [syllabiBusy, setSyllabiBusy] = useState(false);
   const [newRowOpen, setNewRowOpen] = useState(false);
   const duplicateReview = useInventoryDuplicateReview();
   const { widths, resize, warning } = useSheetWidths("inventory:" + listId),
     rowsLayout = useSheetHeights("inventory:" + listId);
+  const removeSyllabus = async (name: string, id: string) => {
+    setSyllabiBusy(true);
+    let committed = false;
+    try {
+      const data = await api(
+        "meta-ads/inventory/syllabi?" + new URLSearchParams({ listId, name }),
+      );
+      await api("meta-ads/inventory/syllabi", "PUT", {
+        listId,
+        name,
+        revision: data.revision,
+        syllabi: data.syllabi.filter((s: { id: string }) => s.id !== id),
+      });
+      committed = true;
+      await reloadCategories();
+    } catch (e) {
+      setMessage(
+        committed
+          ? "Temario eliminado. Actualiza el inventario para ver el cambio."
+          : e instanceof Error
+            ? e.message
+            : "No se pudo eliminar el temario.",
+      );
+    } finally {
+      setSyllabiBusy(false);
+    }
+  };
   const columns = [
     { key: "inventory", label: "Inventario", width: 340 },
     { key: "primary", label: "Categoría principal", width: 174 },
     { key: "secondary", label: "Categorías secundarias", width: 202 },
     { key: "sheets", label: "Hojas", width: 380 },
+    { key: "gap", label: "", width: 22 },
+    { key: "syllabi", label: "Temarios", width: 285 },
   ];
   const columnHandle = (key: string, label: string) => (
     <SheetColumnResizer
@@ -250,6 +289,9 @@ export function InventoryCatalog({
     ...new Set(g.links.flatMap((a) => categories?.assignments[a.id] ?? [])),
   ];
   const categoryById = new Map(categories?.categories.map((c) => [c.id, c]));
+  const syllabiByName = new Map(
+    categories?.items?.map((i) => [i.name, i.syllabi ?? []]),
+  );
   const directoryNames = [
     ...new Set(categories?.categories.map((c) => c.name) ?? []),
   ].sort((a, b) => a.localeCompare(b, "es"));
@@ -712,6 +754,28 @@ export function InventoryCatalog({
       className="inventory-catalog sheet-view"
       aria-label="Inventario sin países"
     >
+      {packageOpen && (
+        <InventoryPackageImport
+          onClose={() => setPackageOpen(false)}
+          onSaved={async (id) => {
+            await onChanged();
+            await reloadCategories();
+            setMessage("Catálogo cargado.");
+            onOpenInventory?.(id);
+          }}
+        />
+      )}
+      {syllabiOpen && (
+        <InventorySyllabi
+          listId={listId}
+          name={syllabiOpen.name}
+          initialId={syllabiOpen.id}
+          onClose={() => setSyllabiOpen(null)}
+          onChanged={async () => {
+            await reloadCategories();
+          }}
+        />
+      )}
       {message && (
         <p role="status" className="sheet-message">
           {message}
@@ -726,6 +790,13 @@ export function InventoryCatalog({
         className="row inventory-actions-toolbar"
         aria-label="Acciones del inventario"
       >
+        <button
+          type="button"
+          disabled={busy}
+          onClick={() => setPackageOpen(true)}
+        >
+          Cargar catálogo preparado
+        </button>
         <div
           className="inventory-toolbar-main"
           role="group"
@@ -894,6 +965,8 @@ export function InventoryCatalog({
                   onChange={(v) => setFilters({ ...filters, sheets: v })}
                 />
               </th>
+              <th aria-hidden="true" className="inventory-column-gap" />
+              <th scope="col">{columnHandle("syllabi", "Temarios")}Temarios</th>
             </tr>
           </thead>
           <tbody>
@@ -903,7 +976,7 @@ export function InventoryCatalog({
                   className="inventory-group-band"
                   data-category-group={section.title}
                 >
-                  <th colSpan={4} scope="rowgroup">
+                  <th colSpan={6} scope="rowgroup">
                     <div className="inventory-band-heading">
                       <span>{section.title}</span>
                       <small>
@@ -989,6 +1062,58 @@ export function InventoryCatalog({
                           ))}
                       </div>
                     </td>
+                    <td aria-hidden="true" className="inventory-column-gap" />
+                    <td className="inventory-syllabi-cell">
+                      <div className="inventory-syllabi-chips">
+                        {(syllabiByName.get(g.name) ?? [])
+                          .slice(0, 2)
+                          .map((s) => (
+                            <span
+                              className="inventory-syllabus-chip"
+                              key={s.id}
+                            >
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setSyllabiOpen({ name: g.name, id: s.id })
+                                }
+                                title={`Abrir temario ${s.title}`}
+                              >
+                                {s.title}
+                              </button>
+                              <button
+                                type="button"
+                                className="inventory-remove"
+                                aria-label={`Eliminar temario ${s.title} de ${g.name}`}
+                                disabled={busy || syllabiBusy}
+                                onClick={() =>
+                                  void removeSyllabus(g.name, s.id)
+                                }
+                              >
+                                ×
+                              </button>
+                            </span>
+                          ))}
+                        {(syllabiByName.get(g.name)?.length ?? 0) > 2 && (
+                          <button
+                            type="button"
+                            onClick={() => setSyllabiOpen({ name: g.name })}
+                          >
+                            +{(syllabiByName.get(g.name)?.length ?? 0) - 2}{" "}
+                            temarios
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          aria-label={`Añadir temario a ${g.name}`}
+                          onClick={() =>
+                            setSyllabiOpen({ name: g.name, id: "__new" })
+                          }
+                        >
+                          +
+                        </button>
+                      </div>
+                    </td>
                   </SheetSizedRow>
                 ))}
               </Fragment>
@@ -1005,7 +1130,7 @@ export function InventoryCatalog({
               />
             )}
             <tr className="inventory-add-row">
-              <td colSpan={4}>
+              <td colSpan={6}>
                 <button
                   type="button"
                   disabled={busy || !categories || newRowOpen}

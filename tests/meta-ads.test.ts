@@ -787,3 +787,17 @@ test('Corte del resumen: ayer excluye hoy sin quitar filas del histórico, hoy i
  assert.equal(summaryPeriod(['2026-10-28'],'yesterday','2026-10-28').end,null);assert.equal(summaryPeriod(['2026-10-20'],'yesterday','2026-10-28').end,'2026-10-20');
  assert.equal(summaryPeriod(['2024-02-29','2024-03-01'],'yesterday','2024-03-01').end,'2024-02-29');
 });
+
+test('Catálogo preparado: nombres equivalentes, límites y temarios únicos', async () => {
+ const {catalogPackageSchema,syllabiSchema,catalogNameKey}=await import('../lib/meta-ads/inventory-syllabi-policy');
+ const outline={id:'a',title:'Todo el mundo 1',scope:'Todo el mundo',content:'Contenido del curso'};
+ const item={name:'Curso sintético',primary:'Educación',secondary:[],syllabi:[outline]};
+ const p={format:'inventario-catalog-v1',targetName:'Inventario prueba',categories:['Educación'],items:[item]};
+ assert(catalogPackageSchema.safeParse(p).success);
+ assert.equal(catalogNameKey('  EDUCACIÓN  Superior '),'educacion superior');
+ assert(!catalogPackageSchema.safeParse({...p,items:[item,{...item,name:' CURSO SINTÉTICO '}]}).success);
+ assert(!syllabiSchema.safeParse([outline,outline]).success);
+ assert(!syllabiSchema.safeParse([{...outline,content:' '}]).success);
+ assert(!syllabiSchema.safeParse([{...outline,content:'a'.repeat(30001)}]).success);
+ assert(!catalogPackageSchema.safeParse({...p,items:[{...item,hojas:['no permitido']}]}).success);
+});

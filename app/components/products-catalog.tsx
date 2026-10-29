@@ -747,6 +747,7 @@ export function ProductsCatalog() {
           initialTableId={table?.id ?? ""}
           sheetTabs={sheetTabs}
           onChanged={load}
+          onOpenInventory={(id) => setSpecialId(id)}
         />
       )}
       {locationReady && advisorSheet && !inventorySheet && (

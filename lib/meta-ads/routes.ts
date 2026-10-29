@@ -121,6 +121,45 @@ export async function metaRoutes(
     )
     .max(2000)
     .optional();
+  if (path === "inventory/syllabi" && method === "GET") {
+    ownerOnly(actor);
+    const q = z
+      .object({
+        listId: z.string().min(1).max(100),
+        name: z.string().min(1).max(150),
+      })
+      .strict()
+      .parse(Object.fromEntries(req.nextUrl.searchParams));
+    return send(
+      await (
+        await import("./inventory-syllabi")
+      ).readSyllabi(actor, q.listId, q.name),
+    );
+  }
+  if (path === "inventory/syllabi" && method === "PUT") {
+    ownerOnly(actor);
+    return send(
+      await (
+        await import("./inventory-syllabi")
+      ).saveSyllabi(actor, await body()),
+    );
+  }
+  if (path === "inventory/package/preview" && method === "POST") {
+    ownerOnly(actor);
+    return send(
+      await (
+        await import("./inventory-syllabi")
+      ).previewCatalogPackage(actor, await body()),
+    );
+  }
+  if (path === "inventory/package/import" && method === "POST") {
+    ownerOnly(actor);
+    return send(
+      await (
+        await import("./inventory-syllabi")
+      ).importCatalogPackage(actor, await body()),
+    );
+  }
   if (path === "inventory/import" && method === "POST") {
     ownerOnly(actor);
     const b = z

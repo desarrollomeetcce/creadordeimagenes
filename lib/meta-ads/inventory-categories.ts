@@ -50,13 +50,21 @@ async function state(tx: Prisma.TransactionClient, listId: string) {
   });
   for (const item of items)
     byAlias[item.id] = item.categories.map((c) => c.categoryId);
+  const metadata = await tx.$queryRaw<
+    { id: string; syllabi: { id: string; title: string; scope: string }[] }[]
+  >`SELECT i.id,COALESCE((SELECT jsonb_agg(jsonb_build_object('id',s->>'id','title',s->>'title','scope',s->>'scope')) FROM jsonb_array_elements(i.syllabi) s),'[]'::jsonb) AS syllabi FROM "MetaInventoryItem" i WHERE i."sheetId"=${listId}`;
+  const syllabiById = new Map(metadata.map((m) => [m.id, m.syllabi]));
   return {
     listId,
     revision: sheet.categoryRevision,
     categories,
     relations,
     assignments: byAlias,
-    items: items.map(({ id, name }) => ({ id, name })),
+    items: items.map(({ id, name }) => ({
+      id,
+      name,
+      syllabi: syllabiById.get(id) ?? [],
+    })),
   };
 }
 export async function inventoryCategories(actor: Actor, listId: string) {

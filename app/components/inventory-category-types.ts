@@ -9,7 +9,11 @@ export type InventoryCategoryState = {
   categories: InventoryCategory[];
   relations: { primaryId: string; secondaryId: string }[];
   assignments: Record<string, string[]>;
-  items?: { id: string; name: string }[];
+  items?: {
+    id: string;
+    name: string;
+    syllabi?: { id: string; title: string; scope: string }[];
+  }[];
 };
 export type InventoryCategoryAction =
   | {

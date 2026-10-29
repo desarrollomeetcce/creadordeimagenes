@@ -121,7 +121,7 @@ async function bounded(req: NextRequest, max: number) {
   return Buffer.concat(chunks);
 }
 async function body(req: NextRequest) {
-  const raw = (await bounded(req, ["/api/meta-ads/inventory/categories/file","/api/meta-ads/inventory/file"].includes(req.nextUrl.pathname) ? 3000000 : ["/api/meta-ads/effectiveness/cells","/api/meta-ads/effectiveness/states","/api/meta-ads/inventory/remove","/api/meta-ads/inventory/remove-preview","/api/meta-ads/inventory/categories","/api/meta-ads/inventory/import"].includes(req.nextUrl.pathname) ? 1000000 : 100000)).toString("utf8");
+  const raw = (await bounded(req, ["/api/meta-ads/inventory/package/preview","/api/meta-ads/inventory/package/import"].includes(req.nextUrl.pathname) ? 8000000 : ["/api/meta-ads/inventory/categories/file","/api/meta-ads/inventory/file"].includes(req.nextUrl.pathname) ? 3000000 : ["/api/meta-ads/effectiveness/cells","/api/meta-ads/effectiveness/states","/api/meta-ads/inventory/remove","/api/meta-ads/inventory/remove-preview","/api/meta-ads/inventory/categories","/api/meta-ads/inventory/import","/api/meta-ads/inventory/syllabi"].includes(req.nextUrl.pathname) ? 1000000 : 100000)).toString("utf8");
   try {
     return JSON.parse(raw);
   } catch {
