@@ -2505,3 +2505,5 @@ button.ui-close-button:disabled, button.window-close:disabled { opacity: .55; }
 .meta-alias-popover label>.sheet-search-trigger{margin-top:6px;width:100%}.meta-alias-country-filter>div>.sheet-search-trigger{flex:1 1 50%;width:50%;min-width:0}
 
 .meta-alias-context{display:flex;flex-direction:column;gap:4px;margin-bottom:10px;padding-bottom:9px;border-bottom:1px solid var(--line)}.meta-alias-context>small{font-size:10px;color:var(--muted)}.meta-alias-context>strong{font-size:12px;line-height:1.4;overflow-wrap:anywhere}
+
+.advisor-contact-base-editor table{table-layout:fixed}.advisor-contact-base-editor th:nth-child(1){width:43%}.advisor-contact-base-editor th:nth-child(2){width:28%}.advisor-contact-base-editor th:last-child{width:44px}.advisor-contact-base-editor td{padding:6px 4px}.advisor-contact-base-editor td input{width:100%;min-width:0}.advisor-contact-base-editor td .sheet-search-trigger{width:100%;min-height:36px}.advisor-contact-base-editor .advisor-contact-base-plus{margin-top:8px;min-width:36px;font-size:19px;padding:3px 11px}
