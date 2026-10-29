@@ -2,6 +2,7 @@
 import { Fragment, useEffect, useRef, useState, type ReactNode } from "react";
 import { useWorkbookPreference } from "./use-workbook-preference";
 import { engineRequest as api } from "./generation-engine";
+import { InventoryCategoryAssign } from "./inventory-category-assign";
 import { InventoryCategoryFilter } from "./inventory-category-filter";
 import { InventoryMultiSelect } from "./inventory-multi-select";
 import { useSheetWidths } from "./use-sheet-widths";
@@ -843,6 +844,11 @@ export function InventoryCatalog({
     selectedGroups = visible.filter((g) =>
       g.links.some((a) => selected.includes(a.id)),
     ).length;
+  const [assignment, setAssignment] = useState<{
+    kind: "PRIMARY" | "SECONDARY";
+    ids: string[];
+    names: string[];
+  } | null>(null);
   const choose = (ids: string[], checked: boolean) =>
     setSelected((old) =>
       checked
@@ -880,6 +886,26 @@ export function InventoryCatalog({
       className="inventory-catalog sheet-view"
       aria-label="Inventario sin países"
     >
+      {assignment && (
+        <InventoryCategoryAssign
+          kind={assignment.kind}
+          inventoryNames={assignment.names}
+          categoryNames={directoryNames}
+          onClose={() => setAssignment(null)}
+          onApply={async (names) => {
+            await saveCategory({
+              action: "ASSIGN_BULK",
+              ids: assignment.ids,
+              kind: assignment.kind,
+              names,
+            });
+            setSelected([]);
+            setMessage(
+              `Categorías ${assignment.kind === "PRIMARY" ? "principales" : "secundarias"} asignadas a ${assignment.names.length} inventarios.`,
+            );
+          }}
+        />
+      )}
       {packageOpen && (
         <InventoryPackageImport
           onClose={() => setPackageOpen(false)}
@@ -1059,7 +1085,12 @@ export function InventoryCatalog({
           </small>
         </div>
       </div>
-      <div className="table-scroll">
+      <div
+        className="table-scroll inventory-table-scroll"
+        role="region"
+        aria-label="Tabla de inventario desplazable"
+        tabIndex={0}
+      >
         <table
           className="inventory-catalog-grid inventory-categorized-grid sheet-resizable-table"
           style={{
@@ -1162,6 +1193,31 @@ export function InventoryCatalog({
                       })
                     }
                   />
+                  <button
+                    type="button"
+                    className="inventory-header-assign"
+                    aria-label={`Asignar categoría ${kind === "PRIMARY" ? "principal" : "secundaria"} a seleccionados`}
+                    disabled={busy || !categories || !selectedGroups}
+                    title={
+                      selectedGroups
+                        ? `Asignar a ${selectedGroups} inventarios seleccionados visibles`
+                        : "Marca los inventarios que deseas actualizar"
+                    }
+                    onClick={() =>
+                      setAssignment({
+                        kind,
+                        ids: [...selectedVisible],
+                        names: visible
+                          .filter((g) =>
+                            g.links.some((a) => selectedVisible.includes(a.id)),
+                          )
+                          .map((g) => g.name),
+                      })
+                    }
+                  >
+                    Asignar categoría
+                    {selectedGroups ? ` (${selectedGroups})` : ""}
+                  </button>
                 </th>
               ))}
               <th scope="col">

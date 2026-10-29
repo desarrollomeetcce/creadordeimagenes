@@ -103,6 +103,12 @@ type Action =
       names: string[];
       decisions?: InventoryNameDecision[];
     }
+  | {
+      action: "ASSIGN_BULK";
+      ids: string[];
+      kind: "PRIMARY" | "SECONDARY";
+      names: string[];
+    }
   | { action: "RENAME"; categoryId: string; name: string }
   | { action: "DELETE"; categoryId: string }
   | { action: "DELETE_MANY"; categoryIds: string[] };
@@ -300,6 +306,100 @@ export async function saveInventoryCategories(
             await writeInventoryTags(tx, b.targetIds, [...added]);
           affected = b.targetIds.length;
         }
+      } else if (b.action === "ASSIGN_BULK") {
+        const found = await fullGroups(tx, b.listId, b.ids);
+        const keys = new Set(b.names.map(categoryKey));
+        demand(
+          keys.size > 0 &&
+            keys.size === b.names.length &&
+            keys.size <= (b.kind === "PRIMARY" ? 20 : 100),
+          "Selecciona categorías diferentes dentro del límite del nivel elegido.",
+        );
+        const definitions = [...before.categories];
+        demand(
+          [...keys].every((key) =>
+            definitions.some((c) => categoryKey(c.name) === key),
+          ),
+          "Categoría no disponible en esta lista.",
+          404,
+        );
+        const selectedIds: string[] = [];
+        for (const key of keys) {
+          const existing = definitions.find(
+            (c) => categoryKey(c.name) === key && c.kind === b.kind,
+          );
+          if (existing) selectedIds.push(existing.id);
+          else {
+            demand(
+              definitions.length < 1000,
+              "Se admiten hasta 1000 categorías por lista.",
+            );
+            const name = definitions.find(
+              (c) => categoryKey(c.name) === key,
+            )!.name;
+            const row = await tx.metaInventoryCategory.create({
+              data: {
+                sheetId: b.listId,
+                kind: b.kind,
+                name,
+                key: categoryIdentity(name),
+              },
+            });
+            definitions.push(row);
+            selectedIds.push(row.id);
+          }
+        }
+        const replaced = before.categories
+          .filter((c) => keys.has(categoryKey(c.name)))
+          .map((c) => c.id);
+        const kinds = new Map(definitions.map((c) => [c.id, c.kind]));
+        for (const id of b.ids) {
+          const next = [
+            ...(before.assignments[id] ?? []).filter(
+              (c) => !replaced.includes(c),
+            ),
+            ...selectedIds,
+          ];
+          for (const kind of ["PRIMARY", "SECONDARY"])
+            demand(
+              next.filter((id) => kinds.get(id) === kind).length <=
+                (kind === "PRIMARY" ? 20 : 100),
+              "Un ítem admite hasta 20 categorías principales y 100 secundarias.",
+            );
+        }
+        const aliasIds = (
+          await tx.metaAlias.findMany({
+            where: { id: { in: b.ids }, inventorySheetId: b.listId },
+            select: { id: true },
+          })
+        ).map((a) => a.id);
+        const itemIds = (
+          await tx.metaInventoryItem.findMany({
+            where: { id: { in: b.ids }, sheetId: b.listId },
+            select: { id: true },
+          })
+        ).map((a) => a.id);
+        await tx.metaInventoryCategoryAssignment.deleteMany({
+          where: { aliasId: { in: aliasIds }, categoryId: { in: replaced } },
+        });
+        await tx.metaInventoryItemCategory.deleteMany({
+          where: { itemId: { in: itemIds }, categoryId: { in: replaced } },
+        });
+        if (aliasIds.length)
+          await tx.metaInventoryCategoryAssignment.createMany({
+            data: aliasIds.flatMap((aliasId) =>
+              selectedIds.map((categoryId) => ({ aliasId, categoryId })),
+            ),
+            skipDuplicates: true,
+          });
+        if (itemIds.length)
+          await tx.metaInventoryItemCategory.createMany({
+            data: itemIds.flatMap((itemId) =>
+              selectedIds.map((categoryId) => ({ itemId, categoryId })),
+            ),
+            skipDuplicates: true,
+          });
+        affected = new Set(found.map((a) => a.name)).size;
       } else if (b.action === "ASSIGN_LEVEL") {
         const found = await fullGroups(tx, b.listId, b.ids);
         demand(
@@ -665,6 +765,9 @@ export async function saveInventoryCategories(
             action: b.action,
             affected,
             ...(b.action === "DELETE" ? { categoryId: b.categoryId } : {}),
+            ...(b.action === "ASSIGN_BULK"
+              ? { kind: b.kind, names: b.names, ids: b.ids }
+              : {}),
             ...(b.action === "RENAME"
               ? { categoryId: b.categoryId, name: b.name }
               : {}),

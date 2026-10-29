@@ -285,6 +285,15 @@ export async function metaRoutes(
         z
           .object({
             ...base,
+            action: z.literal("ASSIGN_BULK"),
+            ids: z.array(z.string().min(1).max(100)).min(1).max(1500),
+            kind: z.enum(["PRIMARY", "SECONDARY"]),
+            names: z.array(z.string().trim().min(1).max(80)).min(1).max(100),
+          })
+          .strict(),
+        z
+          .object({
+            ...base,
             action: z.literal("RENAME"),
             categoryId: z.string().min(1).max(100),
             name: z
