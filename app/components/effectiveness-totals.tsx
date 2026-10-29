@@ -46,9 +46,11 @@ export function EffectivenessTotals({
   initialTableId,
   initialSelected,
   sheetTabs,
+  toolbarActions,
 }: {
   listId?: string;
   sheetTabs: ReactNode;
+  toolbarActions?: ReactNode;
   tables: { id: string; name: string }[];
   initialTableId: string;
   initialSelected?: string[] | null;
@@ -363,6 +365,7 @@ export function EffectivenessTotals({
           >
             Ayer · día completo
           </button>
+          {toolbarActions}
         </div>
         <div
           className="row sheet-totals-filters"

@@ -44,6 +44,7 @@ export function AdvisorsSheet({
   listId = "default-advisors",
   initialTableId,
   sheetTabs,
+  toolbarActions,
   onChanged,
   onOpenPeriod,
 }: {
@@ -51,6 +52,7 @@ export function AdvisorsSheet({
   tables: AdvisorTable[];
   initialTableId: string;
   sheetTabs: ReactNode;
+  toolbarActions?: ReactNode;
   onChanged: () => Promise<void>;
   onOpenPeriod?: (period: AdvisorPeriodView) => void;
 }) {
@@ -251,92 +253,98 @@ export function AdvisorsSheet({
       aria-label="Hoja Asesores"
       aria-busy={loading}
     >
-      <div className="row sheet-toolbar">
-        <strong>Asesores</strong>
-        <div className="row sheet-view-buttons" aria-label="Vista de asesores">
-          {(
-            [
-              ["today", "Hoy · avance provisional"],
-              ["yesterday", "Ayer · día completo"],
-              ["period", "Análisis del período"],
-            ] as const
-          ).map(([value, label]) => (
-            <button
-              key={value}
-              className={
-                value === "today"
-                  ? "sheet-mode-today"
-                  : value === "yesterday"
-                    ? "sheet-mode-yesterday"
-                    : undefined
-              }
-              aria-pressed={analysisView === value}
-              onClick={() => setAnalysisView(value)}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
-        <MetaDateRange
-          maxDays={3660}
-          from={since}
-          to={until}
-          onChange={(a, b) => {
-            setSince(a);
-            setUntil(b);
-          }}
-        />
-        <label>
-          Ventas de hojas{" "}
-          <SheetSearchSelect
-            label="Hojas para ventas por asesor"
-            value={tableId}
-            options={[
-              ...tables.map((t) => ({ value: t.id, label: t.name })),
-              { value: "all", label: "Todas las hojas" },
-            ]}
-            onSelect={(id) => {
-              setTableId(id);
-              setAliasId("");
+      <div className="row sheet-toolbar sheet-toolbar-with-actions">
+        <div className="row sheet-toolbar-controls">
+          <strong>Asesores</strong>
+          <div
+            className="row sheet-view-buttons"
+            aria-label="Vista de asesores"
+          >
+            {(
+              [
+                ["today", "Hoy · avance provisional"],
+                ["yesterday", "Ayer · día completo"],
+                ["period", "Análisis del período"],
+              ] as const
+            ).map(([value, label]) => (
+              <button
+                key={value}
+                className={
+                  value === "today"
+                    ? "sheet-mode-today"
+                    : value === "yesterday"
+                      ? "sheet-mode-yesterday"
+                      : undefined
+                }
+                aria-pressed={analysisView === value}
+                onClick={() => setAnalysisView(value)}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          <MetaDateRange
+            maxDays={3660}
+            from={since}
+            to={until}
+            onChange={(a, b) => {
+              setSince(a);
+              setUntil(b);
             }}
           />
-        </label>
-        <SheetSearchSelect
-          label="Inventario de ventas por asesor"
-          value={aliasId}
-          placeholder="Todo el inventario"
-          options={[
-            { value: "", label: "Todo el inventario" },
-            ...tables
-              .filter((t) => tableId === "all" || t.id === tableId)
-              .flatMap((t) =>
-                (t.aliases ?? []).map((a) => ({
-                  value: a.id,
-                  label: a.name + (tableId === "all" ? " · " + t.name : ""),
-                })),
-              ),
-          ]}
-          onSelect={setAliasId}
-        />
-        <SheetSearchSelect
-          label="País de ventas por asesor"
-          value={country}
-          placeholder="Todos los países"
-          options={[
-            { value: "", label: "Todos los países" },
-            ...countryOptions.map((c) => ({
-              value: c.code,
-              label: c.name + " · " + c.code,
-            })),
-          ]}
-          onSelect={setCountry}
-        />
-        <button
-          disabled={busy || loading || !valid}
-          onClick={() => void load()}
-        >
-          Actualizar
-        </button>
+          <label>
+            Ventas de hojas{" "}
+            <SheetSearchSelect
+              label="Hojas para ventas por asesor"
+              value={tableId}
+              options={[
+                ...tables.map((t) => ({ value: t.id, label: t.name })),
+                { value: "all", label: "Todas las hojas" },
+              ]}
+              onSelect={(id) => {
+                setTableId(id);
+                setAliasId("");
+              }}
+            />
+          </label>
+          <SheetSearchSelect
+            label="Inventario de ventas por asesor"
+            value={aliasId}
+            placeholder="Todo el inventario"
+            options={[
+              { value: "", label: "Todo el inventario" },
+              ...tables
+                .filter((t) => tableId === "all" || t.id === tableId)
+                .flatMap((t) =>
+                  (t.aliases ?? []).map((a) => ({
+                    value: a.id,
+                    label: a.name + (tableId === "all" ? " · " + t.name : ""),
+                  })),
+                ),
+            ]}
+            onSelect={setAliasId}
+          />
+          <SheetSearchSelect
+            label="País de ventas por asesor"
+            value={country}
+            placeholder="Todos los países"
+            options={[
+              { value: "", label: "Todos los países" },
+              ...countryOptions.map((c) => ({
+                value: c.code,
+                label: c.name + " · " + c.code,
+              })),
+            ]}
+            onSelect={setCountry}
+          />
+          <button
+            disabled={busy || loading || !valid}
+            onClick={() => void load()}
+          >
+            Actualizar
+          </button>
+        </div>
+        {toolbarActions}
       </div>
       {message && (
         <p className="sheet-message" role="status">

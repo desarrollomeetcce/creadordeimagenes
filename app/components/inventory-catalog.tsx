@@ -94,6 +94,7 @@ export function InventoryCatalog({
   tables,
   listId = "default-inventory",
   sheetTabs,
+  toolbarActions,
   onChanged,
   onOpenInventory,
 }: {
@@ -101,6 +102,7 @@ export function InventoryCatalog({
   tables: Table[];
   initialTableId: string;
   sheetTabs: ReactNode;
+  toolbarActions?: ReactNode;
   onChanged: () => Promise<void>;
   onOpenInventory?: (id: string) => void;
 }) {
@@ -1029,86 +1031,89 @@ export function InventoryCatalog({
         </p>
       )}
       <div
-        className="row inventory-actions-toolbar"
+        className="row inventory-actions-toolbar sheet-toolbar-with-actions"
         aria-label="Acciones del inventario"
       >
-        <button
-          type="button"
-          disabled={busy}
-          onClick={() => setPackageOpen(true)}
-        >
-          Cargar catálogo preparado
-        </button>
-        <div
-          className="inventory-toolbar-main"
-          role="group"
-          aria-label="Añadir y organizar inventario"
-        >
+        <div className="row sheet-toolbar-controls">
           <button
             type="button"
-            className="inventory-action-primary"
-            disabled={busy || !categories}
-            onClick={() => setImportView("paste")}
+            disabled={busy}
+            onClick={() => setPackageOpen(true)}
           >
-            <InventoryActionIcon name="paste" />
-            Pegar inventario
+            Cargar catálogo preparado
+          </button>
+          <div
+            className="inventory-toolbar-main"
+            role="group"
+            aria-label="Añadir y organizar inventario"
+          >
+            <button
+              type="button"
+              className="inventory-action-primary"
+              disabled={busy || !categories}
+              onClick={() => setImportView("paste")}
+            >
+              <InventoryActionIcon name="paste" />
+              Pegar inventario
+            </button>
+            <button
+              type="button"
+              disabled={busy || !categories}
+              onClick={() => setImportView("file")}
+            >
+              <InventoryActionIcon name="import" />
+              Importar inventario
+            </button>
+            <button
+              type="button"
+              disabled={busy || !categories}
+              onClick={() => setCategoryManager("catalog")}
+            >
+              <InventoryActionIcon name="categories" />
+              Ver categorías
+            </button>
+          </div>
+          <div
+            className="inventory-toolbar-delete"
+            role="group"
+            aria-label="Eliminar inventario seleccionado"
+          >
+            <button
+              type="button"
+              className="danger"
+              disabled={busy || !selectedVisible.length}
+              onClick={() => setBulkIds([...selectedVisible])}
+              title="Eliminar los ítems marcados después de revisar sus hojas"
+            >
+              <InventoryActionIcon name="delete" />
+              Eliminar
+            </button>
+            <span
+              className="inventory-selected-count"
+              data-selected={selectedGroups > 0 || undefined}
+              role="status"
+            >
+              {selectedGroups}{" "}
+              {selectedGroups === 1 ? "seleccionado" : "seleccionados"}
+            </span>
+          </div>
+          <button
+            type="button"
+            className="inventory-clear-filters"
+            onClick={clearFilters}
+          >
+            <InventoryActionIcon name="filters" />
+            Limpiar filtros
           </button>
           <button
             type="button"
-            disabled={busy || !categories}
-            onClick={() => setImportView("file")}
+            disabled={!selected.length || busy}
+            onClick={() => setSelected([])}
           >
-            <InventoryActionIcon name="import" />
-            Importar inventario
-          </button>
-          <button
-            type="button"
-            disabled={busy || !categories}
-            onClick={() => setCategoryManager("catalog")}
-          >
-            <InventoryActionIcon name="categories" />
-            Ver categorías
+            Quitar selección
           </button>
         </div>
-        <div
-          className="inventory-toolbar-delete"
-          role="group"
-          aria-label="Eliminar inventario seleccionado"
-        >
-          <button
-            type="button"
-            className="danger"
-            disabled={busy || !selectedVisible.length}
-            onClick={() => setBulkIds([...selectedVisible])}
-            title="Eliminar los ítems marcados después de revisar sus hojas"
-          >
-            <InventoryActionIcon name="delete" />
-            Eliminar
-          </button>
-          <span
-            className="inventory-selected-count"
-            data-selected={selectedGroups > 0 || undefined}
-            role="status"
-          >
-            {selectedGroups}{" "}
-            {selectedGroups === 1 ? "seleccionado" : "seleccionados"}
-          </span>
-        </div>
-        <button
-          type="button"
-          className="inventory-clear-filters"
-          onClick={clearFilters}
-        >
-          <InventoryActionIcon name="filters" />
-          Limpiar filtros
-        </button>
-        <button
-          type="button"
-          disabled={!selected.length || busy}
-          onClick={() => setSelected([])}
-        >
-          Quitar selección
-        </button>
+        {toolbarActions}
       </div>
       {sheetTabs}
       <div

@@ -721,6 +721,16 @@ export function ProductsCatalog() {
       </div>
     </nav>
   );
+  const documentShare = isOwner ? (
+    <button
+      type="button"
+      className="sheet-document-share"
+      title={"Compartir " + (special?.name ?? table?.name ?? "esta hoja")}
+      onClick={() => setSharingScope(documentScope)}
+    >
+      Compartir hoja
+    </button>
+  ) : null;
   if (access && !isOwner && !permission(documentScope))
     return (
       <section ref={root} className="products-catalog effectiveness-workbook">
@@ -747,18 +757,6 @@ export function ProductsCatalog() {
           scope={sharingScope}
           onClose={() => setSharingScope(null)}
         />
-      )}
-      {isOwner && (
-        <div className="sheet-document-share">
-          <span>
-            {special?.name ??
-              tables.find((t) => t.id === selected)?.name ??
-              "Efectividad"}
-          </span>
-          <button type="button" onClick={() => setSharingScope(documentScope)}>
-            Compartir hoja
-          </button>
-        </div>
       )}
       {!isOwner && (
         <p className="sheet-share-status">
@@ -818,6 +816,7 @@ export function ProductsCatalog() {
                 />
               </label>
             )}
+          {documentShare}
         </div>
       )}
       {adding && (
@@ -897,6 +896,7 @@ export function ProductsCatalog() {
           tables={orderedTables}
           initialTableId={table?.id ?? ""}
           sheetTabs={sheetTabs}
+          toolbarActions={documentShare}
           onChanged={load}
           onOpenInventory={(id) => setSpecialId(id)}
         />
@@ -908,6 +908,7 @@ export function ProductsCatalog() {
           tables={orderedTables}
           initialTableId={table?.id ?? "all"}
           sheetTabs={sheetTabs}
+          toolbarActions={documentShare}
           onChanged={loadAdvisors}
           onOpenPeriod={openAdvisorPeriod}
         />
@@ -922,6 +923,7 @@ export function ProductsCatalog() {
             !isOwner ? (special?.config?.selected ?? null) : undefined
           }
           sheetTabs={sheetTabs}
+          toolbarActions={documentShare}
         />
       )}
       {table && !totals && !advisorSheet && !inventorySheet && (
