@@ -1633,3 +1633,10 @@ Importar/Pegar inventario acepta hasta1500 registros y columnas Inventario→Pri
 Tres Excel privados separados: revisión por áreas, importación plana con1769 temarios en17 columnas y lista plana de tres campos.764 ítems únicos con principal/secundarias, seis Veterinaria verificados en origen, nueve cursos nutricionales reclasificados, públicos secundarios ampliados y categorías aisladas agrupadas:26 grupos principales y101 nombres de áreas/especialidades, todos utilizados por al menos dos ítems. Ningún dato del catálogo se incorpora al repositorio público.
 
 Vercel autorizado por el usuario: proyecto/destino y su base Neon comprobados mediante metadatos de integración, migración de temarios verificada por checksum, carga inicial de764/1769 en Inventario2 revisado confirmada sin Hojas ni cambios financieros. La ampliación de audiencias se valida en una copia sintética idéntica antes de aplicarla. Recibos privados separan verificación de Vercel y Hostinger.202 unitarias, TypeScript/build,13 integraciones y6 flujos Chromium aprobados; ver TESTING.
+
+
+## 2026-10-29 · Búsqueda y recuentos del catálogo
+
+Filtro unificado por categoría principal o secundaria, disponible en resumen y debajo de Inventario; contador de inventarios únicos, categorías por nombre y miembros de categoría. El desplegable de inventario permite buscar por categoría. Ver categorías filtra mientras se escribe: Enter/Buscar no crean registros; añadir requiere pulsar un botón explícito. Los selectores ofrecen Añadir categoría para nombres inexistentes (comparación sin tildes/mayúsculas).
+
+Validación: 202/202 pruebas unitarias, typecheck y build correctos; siete comprobaciones Chromium sobre catálogo sintético de 764 inventarios: conteos contra categorías/asignaciones, coincidencias principales/secundarias, selector interno, búsqueda por categoría en inventario, búsqueda en gestor sin creación por Enter y móvil oscuro. Sin errores JS ni escrituras durante buscar/filtrar. Integración de datos no repetida: rutas, esquema y persistencia conservados. Publicación Vercel pendiente de comprobar; no acredita actualización de Hostinger.

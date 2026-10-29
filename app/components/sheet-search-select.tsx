@@ -18,6 +18,7 @@ export function SheetSearchSelect({
   compact = false,
   displayLabel = false,
   onCreate,
+  createLabel = "Añadir nuevo",
   disabled = false,
 }: {
   label: string;
@@ -30,6 +31,7 @@ export function SheetSearchSelect({
   compact?: boolean;
   displayLabel?: boolean;
   onCreate?: (name: string) => void | Promise<void>;
+  createLabel?: string;
   disabled?: boolean;
 }) {
   const id = useId(),
@@ -177,13 +179,17 @@ export function SheetSearchSelect({
         </div>
         {onCreate &&
           query.trim() &&
-          !options.some((o) => o.label === query.trim()) && (
+          !options.some(
+            (o) =>
+              normalize(o.label) === normalize(query.trim()) ||
+              normalize(o.value) === normalize(query.trim()),
+          ) && (
             <button
               type="button"
               disabled={busy}
               onClick={() => void choose(query.trim(), true)}
             >
-              + Añadir nuevo «{query.trim()}»
+              + {createLabel} «{query.trim()}»
             </button>
           )}
         {busy && <small role="status">Guardando…</small>}

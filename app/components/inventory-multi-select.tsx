@@ -17,11 +17,18 @@ export function InventoryMultiSelect({
   onError,
   all = true,
   onCreate,
+  createLabel = "Crear",
   compact = false,
   description,
+  categoryFilter,
 }: {
   label: string;
-  options: SheetOption[];
+  options: (SheetOption & { searchText?: string })[];
+  categoryFilter?: {
+    options: SheetOption[];
+    value: string;
+    onChange: (value: string) => void;
+  };
   values: string[];
   onChange: (v: string[]) => void | Promise<void>;
   placeholder?: string;
@@ -29,6 +36,7 @@ export function InventoryMultiSelect({
   onError?: (v: string) => void;
   all?: boolean;
   onCreate?: (name: string, selected: string[]) => Promise<void>;
+  createLabel?: string;
   compact?: boolean;
   description?: string;
 }) {
@@ -46,7 +54,7 @@ export function InventoryMultiSelect({
     key(query)
       .trim()
       .split(/\s+/)
-      .every((w) => key(o.label).includes(w)),
+      .every((w) => key(o.label + " " + (o.searchText ?? "")).includes(w)),
   );
   const chosen = all ? values : draft;
   const change = async (next: string[]) => {
@@ -115,6 +123,26 @@ export function InventoryMultiSelect({
             search.current?.focus({ preventScroll: true });
         }}
       >
+        {categoryFilter && (
+          <label className="inventory-dropdown-category">
+            Filtrar por categoría
+            <select
+              aria-label="Categoría del inventario"
+              value={categoryFilter.value}
+              disabled={disabled || busy}
+              onChange={(e) => {
+                setQuery("");
+                categoryFilter.onChange(e.target.value);
+              }}
+            >
+              {categoryFilter.options.map((o) => (
+                <option key={o.value} value={o.value}>
+                  {o.label}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
         <input
           ref={search}
           type="search"
@@ -164,7 +192,7 @@ export function InventoryMultiSelect({
         </fieldset>
         {onCreate &&
           query.trim() &&
-          !options.some((o) => o.label === query.trim()) && (
+          !options.some((o) => key(o.label).trim() === key(query).trim()) && (
             <button
               type="button"
               disabled={busy || disabled}
@@ -184,7 +212,7 @@ export function InventoryMultiSelect({
                 }
               }}
             >
-              + Crear «{query.trim()}»
+              + {createLabel} «{query.trim()}»
             </button>
           )}
         <button

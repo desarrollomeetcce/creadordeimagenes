@@ -30,9 +30,42 @@ export function InventoryCategoryManager({
   useEffect(() => {
     dialog.current?.showModal();
   }, []);
-  const visible = config.categories.filter(
-    (c) => !filter.length || filter.includes(c.id),
+  const normalize = (value: string) =>
+    value
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toLocaleLowerCase("es")
+      .trim();
+  const words = normalize(name).split(/\s+/).filter(Boolean);
+  const exists = config.categories.some(
+    (c) => normalize(c.name) === normalize(name),
   );
+  const visible = config.categories.filter(
+    (c) =>
+      (!filter.length || filter.includes(c.id)) &&
+      words.every((word) => normalize(c.name).includes(word)),
+  );
+  const addCategory = async () => {
+    if (!name.trim() || busy || exists) return;
+    setBusy(true);
+    setError("");
+    try {
+      await onSave({
+        action: "IMPORT",
+        rows: [
+          {
+            primary: kind === "PRIMARY" ? name.trim() : "",
+            secondary: kind === "SECONDARY" ? name.trim() : "",
+          },
+        ],
+      });
+      setName("");
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
   const chosen = selected.filter((id) => visible.some((c) => c.id === id));
   return (
     <dialog
@@ -46,7 +79,12 @@ export function InventoryCategoryManager({
     >
       <header className="row">
         <h2>Categorías del inventario</h2>
-        <button className="ui-close-button" type="button" disabled={busy} onClick={onClose}>
+        <button
+          className="ui-close-button"
+          type="button"
+          disabled={busy}
+          onClick={onClose}
+        >
           Cerrar
         </button>
       </header>
@@ -56,48 +94,52 @@ export function InventoryCategoryManager({
       </p>
       <form
         className="row"
-        onSubmit={async (e) => {
+        onSubmit={(e) => {
           e.preventDefault();
-          if (!name.trim() || busy) return;
-          setBusy(true);
-          setError("");
-          try {
-            await onSave({
-              action: "IMPORT",
-              rows: [
-                {
-                  primary: kind === "PRIMARY" ? name.trim() : "",
-                  secondary: kind === "SECONDARY" ? name.trim() : "",
-                },
-              ],
-            });
-            setName("");
-          } catch (e) {
-            setError((e as Error).message);
-          } finally {
-            setBusy(false);
-          }
         }}
       >
         <input
-          aria-label="Nueva categoría"
-          placeholder="Nombre de la categoría…"
+          aria-label="Buscar categorías"
+          type="search"
+          placeholder="Buscar por nombre de categoría…"
           value={name}
           maxLength={80}
           disabled={busy}
-          onChange={(e) => setName(e.target.value)}
+          onChange={(e) => {
+            setName(e.target.value);
+            setFilter([]);
+          }}
         />
-        <select
-          aria-label="Tipo de categoría"
-          value={kind}
-          disabled={busy}
-          onChange={(e) => setKind(e.target.value)}
-        >
-          <option value="PRIMARY">Principal</option>
-          <option value="SECONDARY">Secundaria</option>
-        </select>
-        <button disabled={busy || !name.trim()}>Añadir categoría</button>
+        <button type="submit" disabled={busy}>
+          Buscar
+        </button>
+        {name.trim() && !exists && (
+          <>
+            <select
+              aria-label="Tipo de categoría"
+              value={kind}
+              disabled={busy}
+              onChange={(e) => setKind(e.target.value)}
+            >
+              <option value="PRIMARY">Principal</option>
+              <option value="SECONDARY">Secundaria</option>
+            </select>
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => void addCategory()}
+            >
+              Añadir «{name.trim()}»
+            </button>
+          </>
+        )}
       </form>
+      <p role="status" aria-live="polite">
+        {visible.length} categorías encontradas
+        {name.trim() && !exists
+          ? ". Si buscas una categoría nueva, puedes añadirla con el botón indicado."
+          : "."}
+      </p>
       <InventoryMultiSelect
         label="Categorías para buscar"
         options={config.categories.map((c) => ({
@@ -123,6 +165,11 @@ export function InventoryCategoryManager({
         Seleccionar todas las categorías visibles
       </label>
       <div className="inventory-category-delete-list">
+        {!visible.length && (
+          <p>
+            Sin coincidencias. Revisa el nombre o añade una categoría nueva.
+          </p>
+        )}
         {visible.map((c) => (
           <div key={c.id} className="inventory-category-delete-item">
             <label>

@@ -2,6 +2,7 @@
 import { Fragment, useEffect, useRef, useState, type ReactNode } from "react";
 import { useWorkbookPreference } from "./use-workbook-preference";
 import { engineRequest as api } from "./generation-engine";
+import { SheetSearchSelect } from "./sheet-search-select";
 import { InventoryMultiSelect } from "./inventory-multi-select";
 import { useSheetWidths } from "./use-sheet-widths";
 import { useSheetHeights } from "./use-sheet-heights";
@@ -221,6 +222,11 @@ export function InventoryCatalog({
       "sheetFilter",
       [],
     );
+  const [catalogCategory, setCatalogCategory] = useWorkbookPreference<string>(
+    listId,
+    "catalogCategory",
+    "",
+  );
   const filters = {
     primary: primaryFilter,
     secondary: secondaryFilter,
@@ -377,8 +383,39 @@ export function InventoryCatalog({
     grouped.get(a.name)!.links.push(a);
   }
   const available = [...grouped.values()];
+  const activeCategory = directoryNames.includes(catalogCategory)
+    ? catalogCategory
+    : "";
+  const membership = new Map(
+    available.map((g) => [
+      g.name,
+      new Set(groupCategories(g).map((c) => c.name)),
+    ]),
+  );
+  const categoryCounts = new Map(
+    directoryNames.map((name) => [
+      name,
+      available.filter((g) => membership.get(g.name)!.has(name)).length,
+    ]),
+  );
+  const categoryOptions = [
+    { value: "", label: "Todas las categorías" },
+    ...directoryNames.map((name) => ({
+      value: name,
+      label: `${name} (${categoryCounts.get(name) ?? 0})`,
+    })),
+  ];
+  const selectCategory = (name: string) => {
+    setFilters({ primary: [], secondary: [], items: [], sheets: [] });
+    setCatalogCategory(name);
+  };
+  const clearFilters = () => selectCategory("");
+  const categoryInventory = activeCategory
+    ? available.filter((g) => membership.get(g.name)!.has(activeCategory))
+    : available;
   const visible = available.filter(
     (g) =>
+      (!activeCategory || membership.get(g.name)!.has(activeCategory)) &&
       (!filters.items.length ||
         g.links.some((a) => filters.items.includes(a.id))) &&
       (!filters.sheets.length ||
@@ -512,6 +549,7 @@ export function InventoryCatalog({
         items: behavior.selectItem && savedItem ? [savedItem.id] : [],
         sheets: [],
       });
+      if (behavior.selectItem) setCatalogCategory("");
       if (behavior.closeDraft !== false) setNewRowOpen(false);
       setMessage(
         behavior.selectItem
@@ -885,15 +923,82 @@ export function InventoryCatalog({
         <button
           type="button"
           className="inventory-clear-filters"
-          onClick={() =>
-            setFilters({ primary: [], secondary: [], items: [], sheets: [] })
-          }
+          onClick={clearFilters}
         >
           <InventoryActionIcon name="filters" />
           Limpiar filtros
         </button>
       </div>
       {sheetTabs}
+      <div
+        className="inventory-catalog-overview"
+        aria-label="Resumen del inventario"
+      >
+        <div className="inventory-catalog-counter" data-counter="inventory">
+          <span className="inventory-counter-icon" aria-hidden="true">
+            ▦
+          </span>
+          <span>Inventario total</span>
+          <strong data-inventory-total>
+            {categories ? available.length : "—"}
+          </strong>
+        </div>
+        <div className="inventory-catalog-counter" data-counter="categories">
+          <span className="inventory-counter-icon" aria-hidden="true">
+            <InventoryActionIcon name="categories" />
+          </span>
+          <span>Categorías</span>
+          <strong data-category-total>
+            {categories ? directoryNames.length : "—"}
+          </strong>
+        </div>
+        <div className="inventory-catalog-category-picker">
+          <span>Seleccionar categoría</span>
+          <SheetSearchSelect
+            label="Seleccionar categoría"
+            value={activeCategory}
+            options={categoryOptions}
+            onSelect={selectCategory}
+            onCreate={async (name) => createHeaderCategory("PRIMARY", name)}
+            createLabel="Añadir categoría"
+            onError={setMessage}
+            disabled={busy || !categories}
+            placeholder="Todas las categorías"
+          />
+          <small>Incluye categorías principales y secundarias.</small>
+        </div>
+        <div
+          className="inventory-catalog-counter inventory-category-count-card"
+          role="status"
+          aria-live="polite"
+        >
+          <span className="inventory-counter-icon" aria-hidden="true">
+            ◉
+          </span>
+          <span>
+            {activeCategory
+              ? "Inventario de esta categoría"
+              : "Inventario de todas las categorías"}
+          </span>
+          <strong data-category-inventory-count>
+            {categories ? categoryInventory.length : "—"}
+          </strong>
+          <small>{activeCategory || "Catálogo completo"}</small>
+          <progress
+            className="inventory-category-share"
+            aria-label="Proporción del catálogo en la categoría seleccionada"
+            max={Math.max(1, available.length)}
+            value={categoryInventory.length}
+          />
+          <small>
+            {categories && available.length
+              ? `${Math.round((categoryInventory.length / available.length) * 100)}% del catálogo · `
+              : ""}
+            Mostrando {categories ? visible.length : "—"} de{" "}
+            {categories ? categoryInventory.length : "—"}
+          </small>
+        </div>
+      </div>
       <div className="table-scroll">
         <table
           className="inventory-catalog-grid inventory-categorized-grid sheet-resizable-table"
@@ -929,13 +1034,19 @@ export function InventoryCatalog({
                 <InventoryMultiSelect
                   label="Inventario del catálogo"
                   placeholder="Todo el inventario"
-                  options={available.map((g) => ({
+                  options={categoryInventory.map((g) => ({
                     value: g.links[0].id,
                     label: g.name,
+                    searchText: [...membership.get(g.name)!].join(" "),
                   }))}
+                  categoryFilter={{
+                    options: categoryOptions,
+                    value: activeCategory,
+                    onChange: selectCategory,
+                  }}
                   values={filters.items}
                   disabled={busy || !categories}
-                  description="Busca un inventario o escribe uno nuevo para agregarlo sin categorías ni hojas."
+                  description="Busca por nombre o categoría. También puedes agregar un inventario nuevo sin categorías ni hojas."
                   onCreate={async (name) =>
                     saveNewRow(
                       { name, primary: [], secondary: [], sheets: [] },
@@ -945,6 +1056,21 @@ export function InventoryCatalog({
                   onError={setMessage}
                   onChange={(v) => setFilters({ ...filters, items: v })}
                 />
+                <div className="inventory-header-category-filter">
+                  <SheetSearchSelect
+                    label="Categoría debajo de Inventario"
+                    value={activeCategory}
+                    options={categoryOptions}
+                    onSelect={selectCategory}
+                    onCreate={async (name) =>
+                      createHeaderCategory("PRIMARY", name)
+                    }
+                    createLabel="Añadir categoría"
+                    onError={setMessage}
+                    disabled={busy || !categories}
+                    placeholder="Todas las categorías"
+                  />
+                </div>
               </th>
               {(["PRIMARY", "SECONDARY"] as const).map((kind) => (
                 <th key={kind} scope="col">
@@ -974,6 +1100,7 @@ export function InventoryCatalog({
                     disabled={busy || !categories}
                     description="Busca una categoría o escribe una nueva para añadirla al catálogo."
                     onCreate={async (name) => createHeaderCategory(kind, name)}
+                    createLabel="Añadir categoría"
                     onError={setMessage}
                     onChange={(v) =>
                       setFilters({
@@ -1156,7 +1283,7 @@ export function InventoryCatalog({
             setMessage(
               "Guardado. Las categorías sin ítems se consultan en «Ver categorías».",
             );
-            setFilters({ primary: [], secondary: [], items: [], sheets: [] });
+            clearFilters();
           }}
         />
       )}
