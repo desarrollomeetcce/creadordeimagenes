@@ -19,6 +19,7 @@ import {
 } from "../../lib/meta-ads/countries";
 import { limaToday } from "./date-range";
 import { InventoryActionMenu } from "./inventory-action-menu";
+import { useInventoryPinnedColumns } from "./use-inventory-pinned-columns";
 import dynamic from "next/dynamic";
 const InventoryTrials = dynamic(
   () => import("./inventory-trials").then((m) => m.InventoryTrials),
@@ -358,12 +359,53 @@ export function InventoryCatalog({
       ? showParameter("syllabi") && parameters.length > 1
       : c.key.startsWith("country:") || showParameter(c.key),
   );
+  const [pinnedColumns, setPinnedColumns] = useWorkbookPreference<string[]>(
+    listId,
+    "inventory-pinned-columns",
+    [],
+  );
+  const tableRef = useInventoryPinnedColumns(pinnedColumns);
+  const pinControl = (keys: string[], label: string) => {
+    const fixed = keys.every((key) => pinnedColumns.includes(key));
+    return (
+      <button
+        type="button"
+        className="inventory-pin-button"
+        data-pin-keys={keys.join("|")}
+        aria-label={`${fixed ? "Desfijar" : "Fijar"} columna ${label}`}
+        title={`${fixed ? "Desfijar" : "Fijar"} columna: ${label}`}
+        aria-pressed={fixed}
+        onClick={() =>
+          setPinnedColumns((current) =>
+            fixed
+              ? current.filter((key) => !keys.includes(key))
+              : [...new Set([...current, ...keys])],
+          )
+        }
+      >
+        <svg
+          width="12"
+          height="12"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.8"
+          aria-hidden="true"
+        >
+          <path d="M9 3h6l-1 6 4 4v2H6v-2l4-4-1-6ZM12 15v7" />
+        </svg>
+      </button>
+    );
+  };
   const columnHandle = (key: string, label: string) => (
-    <SheetColumnResizer
-      label={label}
-      onResize={(v) => resize(key, v)}
-      onReset={() => resize(key)}
-    />
+    <>
+      <SheetColumnResizer
+        label={label}
+        onResize={(v) => resize(key, v)}
+        onReset={() => resize(key)}
+      />
+      {pinControl([key], label)}
+    </>
   );
   const [busy, setBusy] = useState(false),
     [message, setMessage] = useState("");
@@ -1678,6 +1720,7 @@ export function InventoryCatalog({
         tabIndex={0}
       >
         <table
+          ref={tableRef}
           hidden={!columns.length}
           className="inventory-catalog-grid inventory-categorized-grid sheet-resizable-table"
           style={{
@@ -1686,7 +1729,11 @@ export function InventoryCatalog({
         >
           <colgroup>
             {columns.map((c) => (
-              <col key={c.key} style={{ width: widths[c.key] ?? c.width }} />
+              <col
+                key={c.key}
+                data-column-key={c.key}
+                style={{ width: widths[c.key] ?? c.width }}
+              />
             ))}
           </colgroup>
           <thead>
@@ -2108,6 +2155,12 @@ export function InventoryCatalog({
                   className="inventory-country-heading"
                   data-country-block={country}
                 >
+                  {pinControl(
+                    inventoryCountryMetrics.map(
+                      (metric) => `country:${country}:${metric.key}`,
+                    ),
+                    countryName(country),
+                  )}
                   {countryName(country)}
                 </th>
               ))}
