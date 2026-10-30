@@ -115,6 +115,7 @@ export function InventoryCountryCells({
   sheetLabel,
   onChange,
   onHistory,
+  onReplace,
 }: {
   name: string;
   countries: string[];
@@ -129,6 +130,7 @@ export function InventoryCountryCells({
     change: InventoryCampaignChange,
   ) => void;
   onHistory: (tableId: string, name: string) => void;
+  onReplace?: (tableId: string, name: string) => void;
 }) {
   return (
     <>
@@ -170,6 +172,22 @@ export function InventoryCountryCells({
                   disabled={disabled}
                   onChange={(change) => onChange(tableId, name, change)}
                 />
+                {onReplace && (
+                  <button
+                    type="button"
+                    aria-label={`Reemplazar diplomado ${title}`}
+                    title="Reemplazar solo en este país"
+                    disabled={
+                      disabled ||
+                      !point ||
+                      (point.activation !== "ACTIVE" &&
+                        !point.campaignTasks.length)
+                    }
+                    onClick={() => onReplace(tableId, name)}
+                  >
+                    ↔
+                  </button>
+                )}
                 <button
                   type="button"
                   className="inventory-sheet-item-pin"

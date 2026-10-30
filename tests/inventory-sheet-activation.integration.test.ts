@@ -7,6 +7,7 @@ import {
   inventoryActivationDirectory,
   inventoryActivationAddSheet,
   inventoryActivationChange,
+  inventoryActivationReplace,
   inventoryActivationReport,
   saveInventoryFactorLimits,
   financialCatalogStatus,
@@ -1037,6 +1038,182 @@ test("Activación por hoja: selección, pin, historial y permisos", async (t) =>
           country: "BO",
         });
         assert(filtered.rows[0].history?.every((h) => h.country === "BO"));
+      },
+    );
+    await t.test(
+      "Reemplazar conserva otros diplomados y países, valida categorías y revierte pares en conflicto",
+      async () => {
+        const table = await db.metaAliasTable.create({
+          data: { name: "Top reemplazo " + tag, defaultCountry: "EC" },
+        });
+        autoTables.push(table.id);
+        for (const country of ["EC", "BO"])
+          await inventoryActivationAddSheet(owner, {
+            listId: list.id,
+            tableId: table.id,
+            country,
+          });
+        const category = await db.metaInventoryCategory.create({
+          data: {
+            sheetId: list.id,
+            kind: "PRIMARY",
+            name: "QA reemplazo " + tag,
+            key: "reemplazo-" + tag,
+          },
+        });
+        const catalog = await db.metaInventoryItem.findMany({
+          where: { sheetId: list.id, name: { in: names.slice(0, 2) } },
+        });
+        await db.metaInventoryItemCategory.createMany({
+          data: catalog.map((i) => ({ itemId: i.id, categoryId: category.id })),
+          skipDuplicates: true,
+        });
+        const read = () =>
+          inventoryActivationReport(owner, {
+            listId: list.id,
+            tableIds: table.id,
+            byCountry: "true",
+          });
+        for (const country of ["EC", "BO"])
+          await inventoryActivationChange(owner, {
+            listId: list.id,
+            tableId: table.id,
+            country,
+            items: [{ name: names[0], targets: [] }],
+            active: true,
+          });
+        await inventoryActivationChange(owner, {
+          listId: list.id,
+          tableId: table.id,
+          country: "EC",
+          items: [{ name: names[2], targets: [] }],
+          active: true,
+        });
+        let rows = (await read()).rows;
+        const old = rows.find(
+            (r) => r.name === names[0] && r.country === "EC",
+          )!,
+          bo = rows.find((r) => r.name === names[0] && r.country === "BO")!,
+          kept = rows.find((r) => r.name === names[2])!;
+        const groupsBefore = await db.metaInventoryTrialGroup.findMany({
+          where: { sheetId: list.id },
+        });
+        await inventoryActivationReplace(owner, {
+          listId: list.id,
+          tableId: table.id,
+          country: "EC",
+          from: { name: names[0], targets: old.targets },
+          to: { name: names[1], targets: [] },
+          mode: "SAME",
+        });
+        rows = (await read()).rows;
+        assert.equal(
+          rows.find((r) => r.name === names[0] && r.country === "EC")!
+            .campaignTask,
+          "STOP",
+        );
+        assert.equal(
+          rows.find((r) => r.name === names[1] && r.country === "EC")!
+            .campaignTask,
+          "CREATE",
+        );
+        assert.equal(
+          rows.find((r) => r.name === names[0] && r.country === "EC")!
+            .activation,
+          "ACTIVE",
+        );
+        assert.equal(
+          rows.find((r) => r.name === names[1] && r.country === "EC")!
+            .activation,
+          "ACTIVE",
+        );
+        assert.deepEqual(
+          rows.find((r) => r.name === names[0] && r.country === "BO")!.targets,
+          bo.targets,
+        );
+        assert.deepEqual(
+          rows.find((r) => r.name === names[2])!.targets,
+          kept.targets,
+        );
+        assert.deepEqual(
+          await db.metaInventoryTrialGroup.findMany({
+            where: { sheetId: list.id },
+          }),
+          groupsBefore,
+        );
+        const from = rows.find((r) => r.name === names[2])!;
+        await assert.rejects(
+          () =>
+            inventoryActivationReplace(owner, {
+              listId: list.id,
+              tableId: table.id,
+              country: "EC",
+              from: { name: names[2], targets: from.targets },
+              to: { name: names[1], targets: [] },
+              mode: "MANUAL",
+            }),
+          /ya está activo/i,
+        );
+        const extra = await db.metaInventoryItem.create({
+          data: { sheetId: list.id, name: "Reserva " + tag },
+        });
+        await inventoryActivationChange(owner, {
+          listId: list.id,
+          tableId: table.id,
+          country: "EC",
+          items: [{ name: extra.name, targets: [] }],
+          active: true,
+        });
+        let reserve = (await read()).rows.find((r) => r.name === extra.name)!;
+        await inventoryActivationChange(owner, {
+          listId: list.id,
+          tableId: table.id,
+          country: "EC",
+          items: [{ name: extra.name, targets: reserve.targets }],
+          active: false,
+        });
+        reserve = (await read()).rows.find((r) => r.name === extra.name)!;
+        await assert.rejects(
+          () =>
+            inventoryActivationReplace(owner, {
+              listId: list.id,
+              tableId: table.id,
+              country: "EC",
+              from: { name: names[2], targets: from.targets },
+              to: {
+                name: extra.name,
+                targets: reserve.targets.map((t) => ({
+                  ...t,
+                  revision: t.revision - 1,
+                })),
+              },
+              mode: "MANUAL",
+            }),
+          /cambió/i,
+        );
+        const after = (await read()).rows.find((r) => r.name === names[2])!;
+        assert.equal(after.campaignTask, "NONE");
+        assert.deepEqual(after.targets, from.targets);
+        const cap = await authorizeFinancialRequest(
+          { id: viewer.id, role: "OBSERVER" },
+          "inventory/sheet-activation/report",
+          "GET",
+          new URLSearchParams({ listId: list.id, tableIds: table.id }),
+          null,
+          "TAB:" + list.id,
+        );
+        await assert.rejects(
+          () =>
+            inventoryActivationReplace(cap, {
+              listId: list.id,
+              tableId: table.id,
+              country: "EC",
+              from: { name: names[2], targets: from.targets },
+              to: { name: extra.name, targets: reserve.targets },
+              mode: "MANUAL",
+            }),
+          /permiso/i,
+        );
       },
     );
     await t.test(

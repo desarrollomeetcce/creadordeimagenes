@@ -118,6 +118,17 @@ export function InventoryCampaignControl({
               <span className="campaign-menu-dot campaign-off" />
               Desactivar
             </button>
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => {
+                if (task === "STOP" && (active || mixed))
+                  choose({ campaignTask: "NONE" });
+                else popover.current?.hidePopover();
+              }}
+            >
+              ✓ Mantener
+            </button>
             {task !== "NONE" && (
               <button
                 type="button"

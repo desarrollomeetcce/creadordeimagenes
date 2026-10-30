@@ -1,5 +1,5 @@
 "use client";
-import { Fragment, useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useRef, useState, type ReactNode } from "react";
 import { financialRequest as api } from "./financial-request";
 import { InventoryMultiSelect } from "./inventory-multi-select";
 import { SheetSearchSelect } from "./sheet-search-select";
@@ -22,7 +22,15 @@ export function InventoryGroupEditor({
   initialNames,
   onClose,
   onSaved,
+  topContent,
+  initialTab,
+  onChooseGroup,
+  externalBusy = false,
 }: {
+  externalBusy?: boolean;
+  topContent?: ReactNode;
+  initialTab?: "create" | "edit" | "top";
+  onChooseGroup?: (id: string) => void;
   directory: TrialDirectory;
   group?: TrialGroup;
   initialNames: string[];
@@ -30,6 +38,9 @@ export function InventoryGroupEditor({
   onSaved: (id: string) => Promise<void>;
 }) {
   const dialog = useRef<HTMLDialogElement>(null);
+  const [managementTab, setManagementTab] = useState<"create" | "edit" | "top">(
+    initialTab ?? (group ? "edit" : "create"),
+  );
   const [requestId] = useState(() => crypto.randomUUID());
   const [name, setName] = useState(
     group?.name ?? "Grupo " + (directory.groups.length + 1),
@@ -186,310 +197,398 @@ export function InventoryGroupEditor({
       }
       onCancel={(e) => {
         e.preventDefault();
-        if (!busy) onClose();
+        if (!busy && !externalBusy) onClose();
       }}
     >
       <header>
-        <h2>{group ? "Editar " + group.name : "Crear grupo"}</h2>
+        <h2>Crear / modificar grupo</h2>
         <button
           className="ui-close-button"
           aria-label="Cerrar edición de grupo"
-          disabled={busy}
+          disabled={busy || externalBusy}
           onClick={onClose}
         >
           ×
         </button>
       </header>
-      <div className="inventory-group-editor-controls">
-        {
-          <label>
-            Nombre
-            <input
-              aria-label="Nombre del grupo"
-              value={name}
-              maxLength={100}
-              onChange={(e) => setName(e.target.value)}
-            />
-          </label>
-        }
-        <label>
-          Buscar inventario
-          <input
-            type="search"
-            aria-label="Buscar inventario para grupo"
-            placeholder="Nombre del diplomado…"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-          />
-        </label>
-        <label>
-          Categoría principal
-          <InventoryMultiSelect
-            label="Categoría principal para grupo"
-            options={primaryOptions.map((n) => ({ value: n, label: n }))}
-            values={primary}
-            onChange={setPrimary}
-          />
-        </label>
-        <label>
-          Categorías secundarias
-          <InventoryMultiSelect
-            label="Categorías secundarias para grupo"
-            options={secondaryOptions.map((n) => ({ value: n, label: n }))}
-            values={secondary}
-            onChange={setSecondary}
-          />
-        </label>
-        <label>
-          Hojas
-          <InventoryMultiSelect
-            label="Hojas para grupo"
-            options={sheetOptions.map((s) => ({ value: s.id, label: s.name }))}
-            values={sheets}
-            onChange={setSheets}
-          />
-        </label>
-        {!group && (
-          <label>
-            Países
-            <InventoryMultiSelect
-              label="Países del grupo"
-              all={false}
-              options={countryOptions.map((c) => ({
-                value: c.code,
-                label: c.name,
-              }))}
-              values={countries}
-              onChange={setCountries}
-            />
-          </label>
-        )}
-      </div>
-      <div className="row inventory-group-proposal">
-        <label>
-          Cantidad
-          <input
-            type="number"
-            aria-label="Cantidad aleatoria del grupo"
-            min={1}
-            max={100}
-            value={count}
-            onChange={(e) => setCount(Number(e.target.value))}
-          />
-        </label>
-        <button
-          disabled={busy || !count || count > 100}
-          onClick={() => {
-            const proposal = diverseTrialItems(proposalPool, count, []);
-            setIds(proposal.map((i) => i.id));
-            setOnlySelected(true);
-            setReplacing(null);
-            setError(
-              proposal.length < count
-                ? `Se encontraron ${proposal.length} categorías principales diferentes con los filtros actuales. Revisa la propuesta.`
-                : "",
-            );
-          }}
+      {topContent && (
+        <nav
+          className="inventory-management-tabs"
+          aria-label="Gestionar inventario"
         >
-          Proponer al azar
-        </button>
-        <label>
-          <input
-            type="checkbox"
-            checked={onlySelected}
-            onChange={(e) => setOnlySelected(e.target.checked)}
-          />{" "}
-          Ver seleccionados ({ids.length})
-        </label>
-        <button
-          disabled={busy}
-          onClick={() => {
-            setQuery("");
-            setPrimary([]);
-            setSecondary([]);
-            setSheets([]);
-            setOnlySelected(false);
-          }}
-        >
-          Limpiar filtros
-        </button>
-        <button disabled={busy} onClick={() => setIds([])}>
-          Quitar selección
-        </button>
-      </div>
-      {replacing && (
-        <p role="status" className="notice">
-          Elige el reemplazo de{" "}
-          <strong>{catalog.find((i) => i.id === replacing)?.name}</strong>{" "}
-          usando los filtros.{" "}
-          <button onClick={() => setReplacing(null)}>Cancelar reemplazo</button>
-        </p>
+          <button
+            type="button"
+            aria-pressed={managementTab === "top"}
+            disabled={busy || externalBusy}
+            onClick={() => setManagementTab("top")}
+          >
+            Top · evaluar y reemplazar
+          </button>
+          <button
+            type="button"
+            aria-pressed={managementTab === "create"}
+            disabled={busy || externalBusy || !directory.canEdit}
+            onClick={() => {
+              if (group && onChooseGroup) onChooseGroup("");
+              else setManagementTab("create");
+            }}
+          >
+            Crear
+          </button>
+          <button
+            type="button"
+            aria-pressed={managementTab === "edit"}
+            disabled={busy || externalBusy || !directory.canEdit}
+            onClick={() => setManagementTab("edit")}
+          >
+            Modificar grupo
+          </button>
+        </nav>
       )}
-      <div className="table-scroll inventory-group-picker-table">
-        <table>
-          <thead>
-            <tr>
-              <th>
-                <input
-                  type="checkbox"
-                  aria-label="Seleccionar inventarios filtrados para grupo"
-                  disabled={busy || !eligible.length || !!replacing}
-                  checked={
-                    !!eligible.length &&
-                    eligible.every((i) => ids.includes(i.id))
-                  }
-                  onChange={(e) =>
-                    setIds((v) =>
-                      e.target.checked
-                        ? [...new Set([...v, ...eligible.map((i) => i.id)])]
-                        : v.filter((id) => !eligible.some((i) => i.id === id)),
-                    )
-                  }
-                />{" "}
-                Inventario ({filtered.length})
-              </th>
-              <th>Categoría principal</th>
-              <th>Categorías secundarias</th>
-              <th>Hojas</th>
-              <th>Selección</th>
-            </tr>
-          </thead>
-          <tbody>
-            {ordered.map((i, index) => {
-              const heading =
-                i.primaryNames.join(" · ") || "Sin categoría principal";
-              const assigned = occupied.get(categoryKey(i.name));
-              return (
-                <Fragment key={i.id}>
-                  {(index === 0 ||
-                    heading !==
-                      (ordered[index - 1].primaryNames.join(" · ") ||
-                        "Sin categoría principal")) && (
-                    <tr className="inventory-group-band">
-                      <th colSpan={5}>{heading}</th>
-                    </tr>
-                  )}
-                  <tr
-                    data-group-candidate={i.name}
-                    data-selected={ids.includes(i.id) || undefined}
-                  >
-                    <td>
-                      <label>
+      {managementTab === "top" ? (
+        topContent
+      ) : (
+        <>
+          {managementTab === "edit" && onChooseGroup && (
+            <label className="inventory-management-group">
+              Grupo a modificar
+              <SheetSearchSelect
+                label="Grupo a modificar"
+                value={group?.id ?? ""}
+                placeholder="Elige un grupo…"
+                options={directory.groups.map((group) => ({
+                  value: group.id,
+                  label: group.name,
+                }))}
+                onSelect={onChooseGroup}
+              />
+            </label>
+          )}
+          {(managementTab !== "edit" || group) && (
+            <>
+              <div className="inventory-group-editor-controls">
+                {
+                  <label>
+                    Nombre
+                    <input
+                      aria-label="Nombre del grupo"
+                      value={name}
+                      maxLength={100}
+                      onChange={(e) => setName(e.target.value)}
+                    />
+                  </label>
+                }
+                <label>
+                  Buscar inventario
+                  <input
+                    type="search"
+                    aria-label="Buscar inventario para grupo"
+                    placeholder="Nombre del diplomado…"
+                    value={query}
+                    onChange={(e) => setQuery(e.target.value)}
+                  />
+                </label>
+                <label>
+                  Categoría principal
+                  <InventoryMultiSelect
+                    label="Categoría principal para grupo"
+                    options={primaryOptions.map((n) => ({
+                      value: n,
+                      label: n,
+                    }))}
+                    values={primary}
+                    onChange={setPrimary}
+                  />
+                </label>
+                <label>
+                  Categorías secundarias
+                  <InventoryMultiSelect
+                    label="Categorías secundarias para grupo"
+                    options={secondaryOptions.map((n) => ({
+                      value: n,
+                      label: n,
+                    }))}
+                    values={secondary}
+                    onChange={setSecondary}
+                  />
+                </label>
+                <label>
+                  Hojas
+                  <InventoryMultiSelect
+                    label="Hojas para grupo"
+                    options={sheetOptions.map((s) => ({
+                      value: s.id,
+                      label: s.name,
+                    }))}
+                    values={sheets}
+                    onChange={setSheets}
+                  />
+                </label>
+                {!group && (
+                  <label>
+                    Países
+                    <InventoryMultiSelect
+                      label="Países del grupo"
+                      all={false}
+                      options={countryOptions.map((c) => ({
+                        value: c.code,
+                        label: c.name,
+                      }))}
+                      values={countries}
+                      onChange={setCountries}
+                    />
+                  </label>
+                )}
+              </div>
+              <div className="row inventory-group-proposal">
+                <label>
+                  Cantidad
+                  <input
+                    type="number"
+                    aria-label="Cantidad aleatoria del grupo"
+                    min={1}
+                    max={100}
+                    value={count}
+                    onChange={(e) => setCount(Number(e.target.value))}
+                  />
+                </label>
+                <button
+                  disabled={busy || !count || count > 100}
+                  onClick={() => {
+                    const proposal = diverseTrialItems(proposalPool, count, []);
+                    setIds(proposal.map((i) => i.id));
+                    setOnlySelected(true);
+                    setReplacing(null);
+                    setError(
+                      proposal.length < count
+                        ? `Se encontraron ${proposal.length} categorías principales diferentes con los filtros actuales. Revisa la propuesta.`
+                        : "",
+                    );
+                  }}
+                >
+                  Proponer al azar
+                </button>
+                <label>
+                  <input
+                    type="checkbox"
+                    checked={onlySelected}
+                    onChange={(e) => setOnlySelected(e.target.checked)}
+                  />{" "}
+                  Ver seleccionados ({ids.length})
+                </label>
+                <button
+                  disabled={busy}
+                  onClick={() => {
+                    setQuery("");
+                    setPrimary([]);
+                    setSecondary([]);
+                    setSheets([]);
+                    setOnlySelected(false);
+                  }}
+                >
+                  Limpiar filtros
+                </button>
+                <button disabled={busy} onClick={() => setIds([])}>
+                  Quitar selección
+                </button>
+              </div>
+              {replacing && (
+                <p role="status" className="notice">
+                  Elige el reemplazo de{" "}
+                  <strong>
+                    {catalog.find((i) => i.id === replacing)?.name}
+                  </strong>{" "}
+                  usando los filtros.{" "}
+                  <button onClick={() => setReplacing(null)}>
+                    Cancelar reemplazo
+                  </button>
+                </p>
+              )}
+              <div className="table-scroll inventory-group-picker-table">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>
                         <input
                           type="checkbox"
-                          aria-label={"Incluir " + i.name}
-                          checked={ids.includes(i.id)}
-                          disabled={
-                            busy ||
-                            (!!assigned && !ids.includes(i.id)) ||
-                            (!!replacing && ids.includes(i.id))
+                          aria-label="Seleccionar inventarios filtrados para grupo"
+                          disabled={busy || !eligible.length || !!replacing}
+                          checked={
+                            !!eligible.length &&
+                            eligible.every((i) => ids.includes(i.id))
                           }
-                          onChange={() => {
-                            if (replacing) {
-                              setIds((v) =>
-                                v.map((x) => (x === replacing ? i.id : x)),
-                              );
-                              setReplacing(null);
-                              setError("");
-                            } else toggle(i.id);
-                          }}
+                          onChange={(e) =>
+                            setIds((v) =>
+                              e.target.checked
+                                ? [
+                                    ...new Set([
+                                      ...v,
+                                      ...eligible.map((i) => i.id),
+                                    ]),
+                                  ]
+                                : v.filter(
+                                    (id) => !eligible.some((i) => i.id === id),
+                                  ),
+                            )
+                          }
                         />{" "}
-                        {i.name}
-                      </label>
-                    </td>
-                    <td>{i.primaryNames.join(" · ") || "—"}</td>
-                    <td>{i.secondaryNames?.join(" · ") || "—"}</td>
-                    <td>{i.sheets?.map((s) => s.name).join(" · ") || "—"}</td>
-                    <td>
-                      {assigned ? (
-                        <small>En {assigned}</small>
-                      ) : (
-                        ids.includes(i.id) && (
-                          <div className="inventory-group-row-actions">
-                            <button
-                              disabled={busy}
-                              onClick={() => {
-                                setReplacing(i.id);
-                                setOnlySelected(false);
-                                setQuery("");
-                                setPrimary([]);
-                                setSecondary([]);
-                                setSheets([]);
-                              }}
-                            >
-                              Editar
-                            </button>
-                            <button
-                              disabled={busy}
-                              onClick={() => replaceRandom(i, true)}
-                            >
-                              Azar · misma categoría
-                            </button>
-                            <button
-                              disabled={busy}
-                              onClick={() => replaceRandom(i, false)}
-                            >
-                              Azar · otra categoría
-                            </button>
-                            <button
-                              disabled={busy}
-                              aria-label={"Quitar del grupo " + i.name}
-                              onClick={() =>
-                                setIds((v) => v.filter((x) => x !== i.id))
-                              }
-                            >
-                              ×
-                            </button>
-                          </div>
-                        )
-                      )}
-                    </td>
-                  </tr>
-                </Fragment>
-              );
-            })}
-            {!filtered.length && (
-              <tr>
-                <td colSpan={5}>No hay resultados con estos filtros.</td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-      </div>
-      <small>
-        La selección se conserva al cambiar filtros. Cada diplomado pertenece a
-        un solo grupo. Los cambios se aplican al guardar; los ciclos anteriores
-        se conservan.
-      </small>
-      {error && (
-        <p role="alert" className="notice error">
-          {error}
-        </p>
+                        Inventario ({filtered.length})
+                      </th>
+                      <th>Categoría principal</th>
+                      <th>Categorías secundarias</th>
+                      <th>Hojas</th>
+                      <th>Selección</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {ordered.map((i, index) => {
+                      const heading =
+                        i.primaryNames.join(" · ") || "Sin categoría principal";
+                      const assigned = occupied.get(categoryKey(i.name));
+                      return (
+                        <Fragment key={i.id}>
+                          {(index === 0 ||
+                            heading !==
+                              (ordered[index - 1].primaryNames.join(" · ") ||
+                                "Sin categoría principal")) && (
+                            <tr className="inventory-group-band">
+                              <th colSpan={5}>{heading}</th>
+                            </tr>
+                          )}
+                          <tr
+                            data-group-candidate={i.name}
+                            data-selected={ids.includes(i.id) || undefined}
+                          >
+                            <td>
+                              <label>
+                                <input
+                                  type="checkbox"
+                                  aria-label={"Incluir " + i.name}
+                                  checked={ids.includes(i.id)}
+                                  disabled={
+                                    busy ||
+                                    (!!assigned && !ids.includes(i.id)) ||
+                                    (!!replacing && ids.includes(i.id))
+                                  }
+                                  onChange={() => {
+                                    if (replacing) {
+                                      setIds((v) =>
+                                        v.map((x) =>
+                                          x === replacing ? i.id : x,
+                                        ),
+                                      );
+                                      setReplacing(null);
+                                      setError("");
+                                    } else toggle(i.id);
+                                  }}
+                                />{" "}
+                                {i.name}
+                              </label>
+                            </td>
+                            <td>{i.primaryNames.join(" · ") || "—"}</td>
+                            <td>{i.secondaryNames?.join(" · ") || "—"}</td>
+                            <td>
+                              {i.sheets?.map((s) => s.name).join(" · ") || "—"}
+                            </td>
+                            <td>
+                              {assigned ? (
+                                <small>En {assigned}</small>
+                              ) : (
+                                ids.includes(i.id) && (
+                                  <div className="inventory-group-row-actions">
+                                    <button
+                                      disabled={busy}
+                                      onClick={() => {
+                                        setReplacing(i.id);
+                                        setOnlySelected(false);
+                                        setQuery("");
+                                        setPrimary([]);
+                                        setSecondary([]);
+                                        setSheets([]);
+                                      }}
+                                    >
+                                      Editar
+                                    </button>
+                                    <button
+                                      disabled={busy}
+                                      onClick={() => replaceRandom(i, true)}
+                                    >
+                                      Azar · misma categoría
+                                    </button>
+                                    <button
+                                      disabled={busy}
+                                      onClick={() => replaceRandom(i, false)}
+                                    >
+                                      Azar · otra categoría
+                                    </button>
+                                    <button
+                                      disabled={busy}
+                                      aria-label={"Quitar del grupo " + i.name}
+                                      onClick={() =>
+                                        setIds((v) =>
+                                          v.filter((x) => x !== i.id),
+                                        )
+                                      }
+                                    >
+                                      ×
+                                    </button>
+                                  </div>
+                                )
+                              )}
+                            </td>
+                          </tr>
+                        </Fragment>
+                      );
+                    })}
+                    {!filtered.length && (
+                      <tr>
+                        <td colSpan={5}>
+                          No hay resultados con estos filtros.
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+              <small>
+                La selección se conserva al cambiar filtros. Cada diplomado
+                pertenece a un solo grupo. Los cambios se aplican al guardar;
+                los ciclos anteriores se conservan.
+              </small>
+              {error && (
+                <p role="alert" className="notice error">
+                  {error}
+                </p>
+              )}
+              <footer>
+                <span>{ids.length} diplomados seleccionados</span>
+                <button disabled={busy} onClick={onClose}>
+                  Cancelar
+                </button>
+                <button
+                  className="primary"
+                  disabled={
+                    busy ||
+                    !directory.canEdit ||
+                    committed ||
+                    !!replacing ||
+                    ids.length > 1500 ||
+                    !name.trim() ||
+                    (!group &&
+                      (!ids.length ||
+                        !name.trim() ||
+                        !countries.length ||
+                        countries.length > 20))
+                  }
+                  onClick={() => void save()}
+                >
+                  {busy ? "Guardando…" : "Guardar grupo"}
+                </button>
+              </footer>
+            </>
+          )}
+        </>
       )}
-      <footer>
-        <span>{ids.length} diplomados seleccionados</span>
-        <button disabled={busy} onClick={onClose}>
-          Cancelar
-        </button>
-        <button
-          className="primary"
-          disabled={
-            busy ||
-            committed ||
-            !!replacing ||
-            ids.length > 1500 ||
-            !name.trim() ||
-            (!group &&
-              (!ids.length ||
-                !name.trim() ||
-                !countries.length ||
-                countries.length > 20))
-          }
-          onClick={() => void save()}
-        >
-          {busy ? "Guardando…" : "Guardar grupo"}
-        </button>
-      </footer>
     </dialog>
   );
 }

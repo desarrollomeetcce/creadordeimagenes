@@ -342,7 +342,7 @@ const target = z
     revision: z.number().int().nonnegative(),
   })
   .strict();
-export async function inventoryActivationChange(actor: Actor, input: unknown) {
+async function activationChange(actor: Actor, input: unknown, sharedTx?: Tx) {
   const b = z
     .object({
       listId: id,
@@ -369,253 +369,387 @@ export async function inventoryActivationChange(actor: Actor, input: unknown) {
       "Por hacer campaña requiere activación de la hoja.",
     )
     .parse(input);
-  return db.$transaction(
-    async (tx) => {
-      const { list, access } = await context(tx, actor, b.listId, true),
-        settings = activationSettings(list.config),
-        catalog = await items(tx, b.listId);
-      const table = await tx.metaAliasTable.findUnique({
-        where: { id: b.tableId },
-      });
-      demand(table, "Hoja no disponible.", 404);
-      const linked = await tx.metaAlias.findFirst({
-        where: { tableId: table.id, inventorySheetId: list.id },
-        select: { id: true },
-      });
+  const run = async (tx: Tx) => {
+    const { list, access } = await context(tx, actor, b.listId, true),
+      settings = activationSettings(list.config),
+      catalog = await items(tx, b.listId);
+    const table = await tx.metaAliasTable.findUnique({
+      where: { id: b.tableId },
+    });
+    demand(table, "Hoja no disponible.", 404);
+    const linked = await tx.metaAlias.findFirst({
+      where: { tableId: table.id, inventorySheetId: list.id },
+      select: { id: true },
+    });
+    demand(
+      linked ||
+        settings.sheets.includes(table.id) ||
+        access.isOwner ||
+        scopePermission(access, "ALL") === "EDIT" ||
+        scopePermission(access, "TABLE:" + table.id) === "EDIT",
+      "La hoja de destino no está autorizada.",
+      403,
+    );
+    demand(
+      new Set(b.items.map((i) => categoryKey(i.name))).size === b.items.length,
+      "Inventario repetido.",
+    );
+    // Validate the entire selection and every state revision before any mutation.
+    const plans = [];
+    const tableAliases = await tx.metaAlias.findMany({
+      where: { tableId: table.id },
+      include: {
+        effectivenessStates: true,
+        effectivenessRows: { where: { legacy: false } },
+      },
+    });
+    if (b.country)
       demand(
-        linked ||
-          settings.sheets.includes(table.id) ||
-          access.isOwner ||
-          scopePermission(access, "ALL") === "EDIT" ||
-          scopePermission(access, "TABLE:" + table.id) === "EDIT",
-        "La hoja de destino no está autorizada.",
+        (settings.countries[table.id] ?? []).includes(b.country) ||
+          table.defaultCountry === b.country ||
+          resolveCountry(table.name) === b.country ||
+          tableAliases.some((a) =>
+            [...a.effectivenessRows, ...a.effectivenessStates].some(
+              (r) => r.country === b.country,
+            ),
+          ),
+        "Agrega primero este país a la hoja de evaluación.",
         403,
       );
-      demand(
-        new Set(b.items.map((i) => categoryKey(i.name))).size ===
-          b.items.length,
-        "Inventario repetido.",
+    for (const item of b.items) {
+      const real = catalog.get(categoryKey(item.name));
+      demand(real, "Un inventario cambió. Actualiza.", 409);
+      const matches = tableAliases.filter(
+        (a) => categoryKey(a.name) === categoryKey(real),
       );
-      // Validate the entire selection and every state revision before any mutation.
-      const plans = [];
-      const tableAliases = await tx.metaAlias.findMany({
-        where: { tableId: table.id },
+      demand(
+        matches.length <= 1,
+        "Hay variantes del diplomado en esta hoja. Revisa las asignaciones antes de continuar.",
+        409,
+      );
+      const alias = matches[0] ?? null;
+      demand(
+        !alias || alias.inventorySheetId === list.id,
+        "El diplomado pertenece a otro Inventario en esta hoja.",
+        409,
+      );
+      const countries = b.country
+        ? [b.country]
+        : alias
+          ? [
+              ...new Set([
+                ...alias.effectivenessRows.map((r) => r.country),
+                ...alias.effectivenessStates.map((s) => s.country),
+              ]),
+            ]
+          : [];
+      if (!countries.length) {
+        // A sheet explicitly named for a country already supplies that choice.
+        // Preserve an explicit default and existing row countries; never use Meta targeting.
+        const sheetCountry = isCountryCode(table.defaultCountry)
+          ? table.defaultCountry
+          : resolveCountry(table.name);
+        if (sheetCountry) countries.push(sheetCountry);
+      }
+      demand(
+        countries.length > 0 && countries.every(isCountryCode),
+        "No se pudo identificar el país de esta hoja. Usa el nombre del país o su código en la hoja.",
+      );
+      const current = countries.map((country) => ({
+        aliasId: alias?.id ?? "",
+        country,
+        revision:
+          alias?.effectivenessStates.find((s) => s.country === country)
+            ?.revision ?? 0,
+      }));
+      demand(
+        (current.length === item.targets.length &&
+          current.every((t) =>
+            item.targets.some(
+              (x) =>
+                x.aliasId === t.aliasId &&
+                x.country === t.country &&
+                x.revision === t.revision,
+            ),
+          )) ||
+          (!item.targets.length &&
+            (!alias ||
+              countries.every(
+                (country) =>
+                  !alias.effectivenessStates.some(
+                    (s) => s.country === country,
+                  ) &&
+                  !alias.effectivenessRows.some((r) => r.country === country),
+              ))),
+        "La activación cambió. Actualiza antes de guardar.",
+        409,
+      );
+      plans.push({ real, alias, countries });
+    }
+    let changed = 0;
+    for (const plan of plans) {
+      if (!plan.alias && b.active === false) continue;
+      let alias = plan.alias;
+      if (!alias) {
+        const created = await tx.metaAlias.create({
+          data: {
+            tableId: table.id,
+            inventorySheetId: list.id,
+            name: plan.real,
+          },
+        });
+        alias = {
+          ...created,
+          effectivenessStates: [],
+          effectivenessRows: [],
+        };
+        const source = await tx.metaInventoryItem.findFirst({
+          where: { sheetId: list.id, name: plan.real },
+          include: { categories: true },
+        });
+        if (source?.categories.length)
+          await tx.metaInventoryCategoryAssignment.createMany({
+            data: source.categories.map((c) => ({
+              aliasId: created.id,
+              categoryId: c.categoryId,
+            })),
+            skipDuplicates: true,
+          });
+      }
+      for (const country of plan.countries) {
+        const old = alias.effectivenessStates.find(
+            (s) => s.country === country,
+          ),
+          key = rowKey(alias.id, country),
+          control = settings.rows[key];
+        const active =
+            b.campaignTask === "CREATE"
+              ? true
+              : (b.active ?? old?.active ?? (plan.alias ? true : false)),
+          pinned = b.pinned ?? control?.pinned ?? false,
+          campaignTask =
+            b.campaignTask ??
+            (b.active !== undefined
+              ? "NONE"
+              : (control?.campaignTask ?? "NONE"));
+        if (
+          old &&
+          old.active === active &&
+          control?.pinned === pinned &&
+          (control?.campaignTask ?? "NONE") === campaignTask
+        )
+          continue;
+        const state = await tx.metaEffectivenessState.upsert({
+          where: { aliasId_country: { aliasId: alias.id, country } },
+          create: { aliasId: alias.id, country, active, revision: 1 },
+          update: { active, revision: { increment: 1 } },
+        });
+        settings.rows[key] = { pinned, campaignTask };
+        await tx.metaEffectivenessRow.upsert({
+          where: {
+            aliasId_country_currency: {
+              aliasId: alias.id,
+              country,
+              currency: "",
+            },
+          },
+          create: {
+            aliasId: alias.id,
+            country,
+            currency: "",
+            displayCurrency: table.defaultCurrency,
+            hidden: !active && !pinned,
+          },
+          update: { hidden: !active && !pinned },
+        });
+        await tx.metaEffectivenessRow.updateMany({
+          where: { aliasId: alias.id, country, legacy: false },
+          data: { hidden: !active && !pinned },
+        });
+        await tx.metaEffectivenessEvent.create({
+          data: {
+            stateId: state.id,
+            actorId: actor.id,
+            active,
+            snapshot: {
+              source: "INVENTORY_SHEET",
+              action:
+                b.active !== undefined
+                  ? "ACTIVATION"
+                  : b.pinned !== undefined
+                    ? "PIN"
+                    : "CAMPAIGN_TASK",
+              campaignTask,
+              pinned,
+              priorActive: old?.active ?? (plan.alias ? true : false),
+            },
+          },
+        });
+        changed++;
+      }
+    }
+    settings.sheets = [...new Set([...settings.sheets, table.id])];
+    await tx.metaEffectivenessSheet.update({
+      where: { id: list.id },
+      data: {
+        config: {
+          ...(list.config as Record<string, Prisma.JsonValue>),
+          inventoryActivation: settings as unknown as Prisma.InputJsonValue,
+        },
+        revision: { increment: 1 },
+      },
+    });
+    await recordActivity(tx, {
+      data: {
+        actorId: actor.id,
+        action: "INVENTARIO_ACTIVACION_HOJA",
+        resourceId: list.id,
+        detail: {
+          tableId: table.id,
+          items: b.items.length,
+          changed,
+          active: b.active ?? null,
+          pinned: b.pinned ?? null,
+        },
+      },
+    });
+    return { changed };
+  };
+  return sharedTx ? run(sharedTx) : db.$transaction(run, { timeout: 120000 });
+}
+export async function inventoryActivationChange(actor: Actor, input: unknown) {
+  return activationChange(actor, input);
+}
+/** Pair replacement is atomic: retiring item stays on until its campaign is actually stopped. */
+export async function inventoryActivationReplace(actor: Actor, input: unknown) {
+  const choice = z.object({ name, targets: z.array(target).max(250) }).strict();
+  const b = z
+    .object({
+      listId: id,
+      tableId: id,
+      country: z.string().refine(isCountryCode),
+      from: choice,
+      to: choice,
+      mode: z.enum(["MANUAL", "SAME", "OTHER"]),
+    })
+    .strict()
+    .parse(input);
+  demand(
+    categoryKey(b.from.name) !== categoryKey(b.to.name),
+    "Elige otro diplomado para reemplazar.",
+  );
+  return db.$transaction(
+    async (tx) => {
+      const { list } = await context(tx, actor, b.listId, true),
+        settings = activationSettings(list.config),
+        catalog = await items(tx, b.listId);
+      const from = catalog.get(categoryKey(b.from.name)),
+        to = catalog.get(categoryKey(b.to.name));
+      demand(
+        from && to,
+        "El catálogo cambió. Actualiza y elige de nuevo.",
+        409,
+      );
+      const candidates = await tx.metaAlias.findMany({
+        where: { tableId: b.tableId },
         include: {
           effectivenessStates: true,
           effectivenessRows: { where: { legacy: false } },
         },
       });
-      if (b.country)
-        demand(
-          (settings.countries[table.id] ?? []).includes(b.country) ||
-            table.defaultCountry === b.country ||
-            resolveCountry(table.name) === b.country ||
-            tableAliases.some((a) =>
-              [...a.effectivenessRows, ...a.effectivenessStates].some(
-                (r) => r.country === b.country,
+      const candidate = candidates.find(
+        (a) => categoryKey(a.name) === categoryKey(to),
+      );
+      const state = candidate?.effectivenessStates.find(
+        (s) => s.country === b.country,
+      );
+      const pending = candidate
+        ? settings.rows[rowKey(candidate.id, b.country)]?.campaignTask
+        : "NONE";
+      demand(
+        !(
+          state?.active ??
+          candidate?.effectivenessRows.some((r) => r.country === b.country)
+        ) &&
+          (!pending || pending === "NONE"),
+        "El reemplazo ya está activo o tiene una campaña pendiente en este país. Elige otro.",
+        409,
+      );
+      if (b.mode !== "MANUAL") {
+        const [canonical, aliases] = await Promise.all([
+          tx.metaInventoryItem.findMany({
+            where: { sheetId: b.listId, name: { in: [from, to] } },
+            include: { categories: { include: { category: true } } },
+          }),
+          tx.metaAlias.findMany({
+            where: { inventorySheetId: b.listId, name: { in: [from, to] } },
+            include: { categoryAssignments: { include: { category: true } } },
+          }),
+        ]);
+        const primary = (n: string) =>
+          new Set([
+            ...canonical
+              .filter((i) => i.name === n)
+              .flatMap((i) =>
+                i.categories
+                  .filter((c) => c.category.kind === "PRIMARY")
+                  .map((c) => c.categoryId),
               ),
-            ),
-          "Agrega primero este país a la hoja de evaluación.",
-          403,
-        );
-      for (const item of b.items) {
-        const real = catalog.get(categoryKey(item.name));
-        demand(real, "Un inventario cambió. Actualiza.", 409);
-        const matches = tableAliases.filter(
-          (a) => categoryKey(a.name) === categoryKey(real),
-        );
-        demand(
-          matches.length <= 1,
-          "Hay variantes del diplomado en esta hoja. Revisa las asignaciones antes de continuar.",
-          409,
-        );
-        const alias = matches[0] ?? null;
-        demand(
-          !alias || alias.inventorySheetId === list.id,
-          "El diplomado pertenece a otro Inventario en esta hoja.",
-          409,
-        );
-        const countries = b.country
-          ? [b.country]
-          : alias
-            ? [
-                ...new Set([
-                  ...alias.effectivenessRows.map((r) => r.country),
-                  ...alias.effectivenessStates.map((s) => s.country),
-                ]),
-              ]
-            : [];
-        if (!countries.length) {
-          // A sheet explicitly named for a country already supplies that choice.
-          // Preserve an explicit default and existing row countries; never use Meta targeting.
-          const sheetCountry = isCountryCode(table.defaultCountry)
-            ? table.defaultCountry
-            : resolveCountry(table.name);
-          if (sheetCountry) countries.push(sheetCountry);
-        }
-        demand(
-          countries.length > 0 && countries.every(isCountryCode),
-          "No se pudo identificar el país de esta hoja. Usa el nombre del país o su código en la hoja.",
-        );
-        const current = countries.map((country) => ({
-          aliasId: alias?.id ?? "",
-          country,
-          revision:
-            alias?.effectivenessStates.find((s) => s.country === country)
-              ?.revision ?? 0,
-        }));
-        demand(
-          (current.length === item.targets.length &&
-            current.every((t) =>
-              item.targets.some(
-                (x) =>
-                  x.aliasId === t.aliasId &&
-                  x.country === t.country &&
-                  x.revision === t.revision,
+            ...aliases
+              .filter((i) => i.name === n)
+              .flatMap((i) =>
+                i.categoryAssignments
+                  .filter((c) => c.category.kind === "PRIMARY")
+                  .map((c) => c.categoryId),
               ),
-            )) ||
-            (!item.targets.length &&
-              (!alias ||
-                countries.every(
-                  (country) =>
-                    !alias.effectivenessStates.some(
-                      (s) => s.country === country,
-                    ) &&
-                    !alias.effectivenessRows.some((r) => r.country === country),
-                ))),
-          "La activación cambió. Actualiza antes de guardar.",
+          ]);
+        const old = primary(from),
+          next = primary(to),
+          shared = [...next].some((c) => old.has(c));
+        demand(
+          b.mode === "SAME" ? shared : next.size > 0 && !shared,
+          "Las categorías cambiaron. Vuelve a proponer un reemplazo.",
           409,
         );
-        plans.push({ real, alias, countries });
       }
-      let changed = 0;
-      for (const plan of plans) {
-        if (!plan.alias && b.active === false) continue;
-        let alias = plan.alias;
-        if (!alias) {
-          const created = await tx.metaAlias.create({
-            data: {
-              tableId: table.id,
-              inventorySheetId: list.id,
-              name: plan.real,
-            },
-          });
-          alias = {
-            ...created,
-            effectivenessStates: [],
-            effectivenessRows: [],
-          };
-          const source = await tx.metaInventoryItem.findFirst({
-            where: { sheetId: list.id, name: plan.real },
-            include: { categories: true },
-          });
-          if (source?.categories.length)
-            await tx.metaInventoryCategoryAssignment.createMany({
-              data: source.categories.map((c) => ({
-                aliasId: created.id,
-                categoryId: c.categoryId,
-              })),
-              skipDuplicates: true,
-            });
-        }
-        for (const country of plan.countries) {
-          const old = alias.effectivenessStates.find(
-              (s) => s.country === country,
-            ),
-            key = rowKey(alias.id, country),
-            control = settings.rows[key];
-          const active =
-              b.campaignTask === "CREATE"
-                ? true
-                : (b.active ?? old?.active ?? (plan.alias ? true : false)),
-            pinned = b.pinned ?? control?.pinned ?? false,
-            campaignTask =
-              b.campaignTask ??
-              (b.active !== undefined
-                ? "NONE"
-                : (control?.campaignTask ?? "NONE"));
-          if (
-            old &&
-            old.active === active &&
-            control?.pinned === pinned &&
-            (control?.campaignTask ?? "NONE") === campaignTask
-          )
-            continue;
-          const state = await tx.metaEffectivenessState.upsert({
-            where: { aliasId_country: { aliasId: alias.id, country } },
-            create: { aliasId: alias.id, country, active, revision: 1 },
-            update: { active, revision: { increment: 1 } },
-          });
-          settings.rows[key] = { pinned, campaignTask };
-          await tx.metaEffectivenessRow.upsert({
-            where: {
-              aliasId_country_currency: {
-                aliasId: alias.id,
-                country,
-                currency: "",
-              },
-            },
-            create: {
-              aliasId: alias.id,
-              country,
-              currency: "",
-              displayCurrency: table.defaultCurrency,
-              hidden: !active && !pinned,
-            },
-            update: { hidden: !active && !pinned },
-          });
-          await tx.metaEffectivenessRow.updateMany({
-            where: { aliasId: alias.id, country, legacy: false },
-            data: { hidden: !active && !pinned },
-          });
-          await tx.metaEffectivenessEvent.create({
-            data: {
-              stateId: state.id,
-              actorId: actor.id,
-              active,
-              snapshot: {
-                source: "INVENTORY_SHEET",
-                action:
-                  b.active !== undefined
-                    ? "ACTIVATION"
-                    : b.pinned !== undefined
-                      ? "PIN"
-                      : "CAMPAIGN_TASK",
-                campaignTask,
-                pinned,
-                priorActive: old?.active ?? (plan.alias ? true : false),
-              },
-            },
-          });
-          changed++;
-        }
-      }
-      settings.sheets = [...new Set([...settings.sheets, table.id])];
-      await tx.metaEffectivenessSheet.update({
-        where: { id: list.id },
-        data: {
-          config: {
-            ...(list.config as Record<string, Prisma.JsonValue>),
-            inventoryActivation: settings as unknown as Prisma.InputJsonValue,
-          },
-          revision: { increment: 1 },
+      await activationChange(
+        actor,
+        {
+          listId: b.listId,
+          tableId: b.tableId,
+          country: b.country,
+          items: [b.from],
+          campaignTask: "STOP",
         },
-      });
+        tx,
+      );
+      await activationChange(
+        actor,
+        {
+          listId: b.listId,
+          tableId: b.tableId,
+          country: b.country,
+          items: [b.to],
+          active: true,
+          campaignTask: "CREATE",
+        },
+        tx,
+      );
       await recordActivity(tx, {
         data: {
           actorId: actor.id,
-          action: "INVENTARIO_ACTIVACION_HOJA",
-          resourceId: list.id,
+          action: "INVENTARIO_REEMPLAZO_PAIS",
+          resourceId: b.listId,
           detail: {
-            tableId: table.id,
-            items: b.items.length,
-            changed,
-            active: b.active ?? null,
-            pinned: b.pinned ?? null,
+            tableId: b.tableId,
+            country: b.country,
+            from,
+            to,
+            mode: b.mode,
           },
         },
       });
-      return { changed };
+      return { from, to, country: b.country };
     },
     { timeout: 120000 },
   );
@@ -916,6 +1050,8 @@ async function activationReport(
             sales,
             budget,
             complete,
+            since: current[0]?.since ?? null,
+            activeDays: current[0]?.days ?? null,
             history: q.historyName ? history : undefined,
           });
         }

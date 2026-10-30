@@ -18,6 +18,7 @@ import {
   type InventoryActivationSelection,
 } from "./inventory-deactivation-confirm";
 import type { InventoryCampaignChange } from "./inventory-campaign-control";
+import { InventoryTop, inventoryTopPriority } from "./inventory-top";
 import { InventoryFactorSettings } from "./inventory-factor-settings";
 import { InventorySheetHistory } from "./inventory-sheet-history";
 import { InventoryAddEvaluationSheet } from "./inventory-add-evaluation-sheet";
@@ -143,6 +144,9 @@ export function InventoryCatalog({
   const [groupEditor, setGroupEditor] = useState<{
     id?: string;
     names: string[];
+    tab?: "create" | "edit" | "top";
+    column?: string;
+    replaceName?: string;
   } | null>(null);
   const [evaluation, setEvaluation] = useState<string | null>(null);
   const [groupFilter, setGroupFilter] = useState("");
@@ -897,11 +901,7 @@ export function InventoryCatalog({
               const point = countryEvaluation.lookup.get(
                 JSON.stringify([categoryKey(name), topSheet]),
               );
-              return point?.campaignTasks.includes("CREATE")
-                ? 0
-                : point?.campaignTasks.includes("STOP")
-                  ? 2
-                  : 1;
+              return point ? inventoryTopPriority(point) : 99;
             };
             return (
               rank(a.name) - rank(b.name) || a.name.localeCompare(b.name, "es")
@@ -1600,6 +1600,42 @@ export function InventoryCatalog({
     >
       {groupEditor && trialDirectory && (
         <InventoryGroupEditor
+          key={[
+            groupEditor.id,
+            groupEditor.tab,
+            groupEditor.column,
+            groupEditor.replaceName,
+          ].join(":")}
+          initialTab={groupEditor.tab}
+          externalBusy={busy}
+          onChooseGroup={(id) =>
+            setGroupEditor({
+              id: id || undefined,
+              names: [],
+              tab: id ? "edit" : "create",
+            })
+          }
+          topContent={
+            <InventoryTop
+              onBusyChange={setBusy}
+              directory={trialDirectory}
+              columns={knownCountries
+                .filter((id) => id.includes(":"))
+                .map((id) => ({ value: id, label: sheetLabel(id) }))}
+              initialColumn={groupEditor.column ?? topSheet ?? countryCodes[0]}
+              initialReplaceName={groupEditor.replaceName}
+              onChanged={async () => {
+                setCountryReload((value) => value + 1);
+                await reloadGroups();
+                await onChanged();
+                await reloadCategories();
+                await reloadSheetDirectory();
+              }}
+              onDetail={(tableId, name) =>
+                setActivationHistory({ tableId, name })
+              }
+            />
+          }
           directory={trialDirectory}
           group={trialGroups.find((g) => g.id === groupEditor.id)}
           initialNames={groupEditor.names}
@@ -1760,9 +1796,10 @@ export function InventoryCatalog({
         <div className="row sheet-toolbar-controls">
           <button
             type="button"
-            disabled={!trialDirectory?.canEdit || busy}
+            disabled={!trialDirectory || busy}
             onClick={() =>
               setGroupEditor({
+                tab: selectedVisible.length ? "create" : "top",
                 names: available
                   .filter((g) =>
                     g.links.some((a) => selectedVisible.includes(a.id)),
@@ -1771,7 +1808,7 @@ export function InventoryCatalog({
               })
             }
           >
-            + Crear grupo{selectedVisible.length ? " con selección" : ""}
+            Crear / modificar grupo
           </button>
           <button
             type="button"
@@ -2484,6 +2521,17 @@ export function InventoryCatalog({
                     }}
                   >
                     Top
+                  </button>{" "}
+                  <button
+                    type="button"
+                    aria-label={`Analizar Top de ${sheetLabel(country)}`}
+                    title="Ver resultados y reemplazar diplomados"
+                    disabled={busy || !trialDirectory}
+                    onClick={() =>
+                      setGroupEditor({ names: [], tab: "top", column: country })
+                    }
+                  >
+                    ↗
                   </button>
                   <select
                     className="inventory-campaign-filter"
@@ -2940,6 +2988,15 @@ export function InventoryCatalog({
                           hiddenColumns={hiddenColumnKeys}
                           evaluation={countryEvaluation}
                           sheetLabel={sheetLabel}
+                          onReplace={(tableId, name) =>
+                            setGroupEditor({
+                              names: [],
+                              tab: "top",
+                              column: tableId,
+                              replaceName: name,
+                            })
+                          }
+
                           onChange={(tableId, name, change) =>
                             void changeSheetActivation(tableId, [name], change)
                           }
