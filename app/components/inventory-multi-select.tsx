@@ -55,11 +55,9 @@ export function InventoryMultiSelect({
     [draft, setDraft] = useState(values),
     [busy, setBusy] = useState(false),
     [position, setPosition] = useState({ top: 8, left: 8 });
-  const filtered = searchOptions(
-    options,
-    query,
-    (o) => o.searchLabel ?? o.label,
-  );
+  const filtered = open
+    ? searchOptions(options, query, (o) => o.searchLabel ?? o.label)
+    : [];
   const chosen = all ? values : draft;
   const change = async (next: string[]) => {
     if (!all) {

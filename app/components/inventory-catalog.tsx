@@ -362,7 +362,16 @@ export function InventoryCatalog({
         (c) => countryChoice === null || countryChoice.includes(c),
       )
     : [];
-  const hasCountryColumns = countryCodes.length > 0;
+  const [hiddenColumnKeys, setHiddenColumnKeys] = useWorkbookPreference<
+    string[]
+  >(listId, "inventory-hidden-columns", []);
+  const visibleCountryMetrics = (id: string) =>
+    inventoryCountryMetrics.filter(
+      (metric) => !hiddenColumnKeys.includes(`country:${id}:${metric.key}`),
+    );
+  const hasCountryColumns = countryCodes.some(
+    (id) => visibleCountryMetrics(id).length > 0,
+  );
   const columns = [
     { key: "inventory", label: "Inventario", width: 340 },
     { key: "primary", label: "Categoría principal", width: 174 },
@@ -378,11 +387,35 @@ export function InventoryCatalog({
     ),
     { key: "gap", label: "", width: 22 },
     { key: "syllabi", label: "Temarios", width: 285 },
-  ].filter((c) =>
-    c.key === "gap"
-      ? showParameter("syllabi") && parameters.length > 1
-      : c.key.startsWith("country:") || showParameter(c.key),
+  ].filter(
+    (c) =>
+      !hiddenColumnKeys.includes(c.key) &&
+      (c.key === "gap"
+        ? showParameter("syllabi") && parameters.length > 1
+        : c.key.startsWith("country:") || showParameter(c.key)),
   );
+  const hideColumns = (keys: string[]) => {
+    const regular = keys.filter((key) => !key.startsWith("country:"));
+    if (regular.length)
+      setParameterChoice((current) =>
+        current.filter((key) => !regular.includes(key)),
+      );
+    const metrics = keys.filter((key) => key.startsWith("country:"));
+    if (metrics.length)
+      setHiddenColumnKeys((current) => [...new Set([...current, ...metrics])]);
+  };
+  const hideControl = (keys: string[], label: string) => (
+    <button
+      type="button"
+      className="inventory-hide-button"
+      aria-label={`Ocultar columna ${label}`}
+      title={`Ocultar ${label}. Recuperar en Ver parámetros.`}
+      onClick={() => hideColumns(keys)}
+    >
+      −
+    </button>
+  );
+
   const [pinnedColumns, setPinnedColumns] = useWorkbookPreference<string[]>(
     listId,
     "inventory-pinned-columns",
@@ -429,6 +462,7 @@ export function InventoryCatalog({
         onReset={() => resize(key)}
       />
       {pinControl([key], label)}
+      {hideControl([key], label)}
     </>
   );
   const [busy, setBusy] = useState(false),
@@ -772,7 +806,7 @@ export function InventoryCatalog({
   );
   const countryEvaluation = useInventoryCountryEvaluation(
     listId,
-    countryCodes,
+    hasCountryColumns ? countryCodes : [],
     countryReload,
   );
   const bands = new Map<
@@ -1661,6 +1695,25 @@ export function InventoryCatalog({
           <InventoryColumnVisibility
             values={parameters}
             onChange={setParameterChoice}
+            hiddenColumns={countryCodes.flatMap((id) =>
+              inventoryCountryMetrics
+                .filter((metric) =>
+                  hiddenColumnKeys.includes(`country:${id}:${metric.key}`),
+                )
+                .map((metric) => ({
+                  key: `country:${id}:${metric.key}`,
+                  label: sheetLabel(id) + " · " + metric.label,
+                })),
+            )}
+            onRestoreColumn={(key) =>
+              setHiddenColumnKeys((current) =>
+                current.filter((value) => value !== key),
+              )
+            }
+            onRestoreAll={() => {
+              setParameterChoice(inventoryParameters.map((p) => p.key));
+              setHiddenColumnKeys([]);
+            }}
           />
         </div>
         {toolbarActions}
@@ -2195,11 +2248,18 @@ export function InventoryCatalog({
                 <th
                   key={country}
                   scope="colgroup"
-                  colSpan={inventoryCountryMetrics.length}
+                  hidden={!visibleCountryMetrics(country).length}
+                  colSpan={Math.max(1, visibleCountryMetrics(country).length)}
                   className="inventory-country-heading"
                   data-country-block={country}
                 >
                   {pinControl(
+                    visibleCountryMetrics(country).map(
+                      (metric) => `country:${country}:${metric.key}`,
+                    ),
+                    sheetLabel(country),
+                  )}
+                  {hideControl(
                     inventoryCountryMetrics.map(
                       (metric) => `country:${country}:${metric.key}`,
                     ),
@@ -2225,7 +2285,7 @@ export function InventoryCatalog({
             {hasCountryColumns && (
               <tr className="inventory-country-subheaders">
                 {countryCodes.flatMap((country) =>
-                  inventoryCountryMetrics.map((metric) => (
+                  visibleCountryMetrics(country).map((metric) => (
                     <th
                       scope="col"
                       key={country + ":" + metric.key}
@@ -2639,6 +2699,7 @@ export function InventoryCatalog({
                           busy={busy}
                           name={g.name}
                           countries={countryCodes}
+                          hiddenColumns={hiddenColumnKeys}
                           evaluation={countryEvaluation}
                           sheetLabel={sheetLabel}
                           onChange={(tableId, name, change) =>
@@ -2683,7 +2744,8 @@ export function InventoryCatalog({
               <InventoryNewRow
                 visibleParameters={parameters}
                 countryColumnCount={
-                  countryCodes.length * inventoryCountryMetrics.length
+                  columns.filter((column) => column.key.startsWith("country:"))
+                    .length
                 }
                 directory={directoryNames}
                 tables={tables}

@@ -9,7 +9,10 @@ import {
   inventoryActivationChange,
   inventoryActivationReport,
 } from "../lib/meta-ads/inventory-sheet-activation";
-import { effectiveness } from "../lib/meta-ads/effectiveness";
+import {
+  effectiveness,
+  inventoryEffectivenessSource,
+} from "../lib/meta-ads/effectiveness";
 import { setEffectivenessState } from "../lib/meta-ads/effectiveness-controls";
 import { authorizeFinancialRequest } from "../lib/meta-ads/financial-access";
 import { limaDay } from "../lib/meta-ads/advisor-attribution";
@@ -280,6 +283,30 @@ test("Activación por hoja: selección, pin, historial y permisos", async (t) =>
           }),
           2,
         );
+      },
+    );
+    await t.test(
+      "Fuente histórica no fabrica 366 días N.A.; conserva datos reales y ausencias",
+      async () => {
+        const floor = new Date(Date.parse(today) - 365 * 86400000)
+          .toISOString()
+          .slice(0, 10);
+        const source = await db.$transaction((tx) =>
+          inventoryEffectivenessSource(owner, pe.id, floor, today, tx),
+        );
+        const a = source.rows.find(
+          (r) =>
+            r.aliasId ===
+            source.table.aliases.find((a) => a.name === names[0])?.id,
+        )!;
+        assert.equal(Object.keys(a.days).length, 2);
+        assert.equal(a.days[yesterday].sales, 0);
+        const b = source.rows.find(
+          (r) =>
+            r.aliasId ===
+            source.table.aliases.find((a) => a.name === names[1])?.id,
+        )!;
+        assert.equal(Object.keys(b.days).length, 0);
       },
     );
     await t.test(

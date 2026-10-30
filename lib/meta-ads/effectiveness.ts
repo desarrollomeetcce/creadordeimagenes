@@ -596,7 +596,7 @@ async function readEffectiveness(
   }
   // State-derived N.A. never writes annotations or clears real values on reactivation.
   for (const r of rows.values())
-    if (!r.active) {
+    if (!r.active && !includeHidden) {
       for (
         let date = Date.parse(since);
         date <= Date.parse(until);

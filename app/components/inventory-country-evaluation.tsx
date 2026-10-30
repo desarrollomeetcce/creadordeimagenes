@@ -94,6 +94,7 @@ export function InventoryRowPinIcon() {
 export function InventoryCountryCells({
   name,
   countries,
+  hiddenColumns,
   evaluation,
   canEdit,
   busy,
@@ -103,6 +104,7 @@ export function InventoryCountryCells({
 }: {
   name: string;
   countries: string[];
+  hiddenColumns: string[];
   evaluation: ReturnType<typeof useInventoryCountryEvaluation>;
   canEdit: boolean;
   busy: boolean;
@@ -117,6 +119,12 @@ export function InventoryCountryCells({
   return (
     <>
       {countries.map((tableId) => {
+        if (
+          inventoryCountryMetrics.every((metric) =>
+            hiddenColumns.includes(`country:${tableId}:${metric.key}`),
+          )
+        )
+          return null;
         const point = evaluation.lookup.get(
             JSON.stringify([categoryKey(name), tableId]),
           ),
@@ -138,6 +146,7 @@ export function InventoryCountryCells({
             <td
               data-inventory-country={tableId}
               data-country-metric="activation"
+              hidden={hiddenColumns.includes(`country:${tableId}:activation`)}
             >
               <div className="inventory-sheet-row-controls">
                 <button
@@ -190,6 +199,7 @@ export function InventoryCountryCells({
             <td
               data-inventory-country={tableId}
               data-country-metric="factor"
+              hidden={hiddenColumns.includes(`country:${tableId}:factor`)}
               title={
                 point
                   ? `Presupuesto: S/ ${point.budget ?? "—"} · Ventas: ${point.sales ?? "—"} · Límite: S/ ${assessment?.limit ?? "—"}. Datos diarios del período de activación.`

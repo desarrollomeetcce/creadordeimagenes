@@ -542,14 +542,38 @@ export async function inventoryActivationReport(actor: Actor, input: unknown) {
         fx = new Map(rates.map((r) => [r.day, r.rates as FxRates]));
       const output = [];
       for (const tableId of tableIds) {
-        const source = await inventoryEffectivenessSource(
-            actor,
-            tableId,
-            floor,
-            today,
-            tx,
+        const tableAliases = aliases.filter((a) => a.tableId === tableId);
+        const relevantPeriods = tableAliases.flatMap((alias) =>
+          alias.effectivenessStates.flatMap((state) =>
+            periods(state.events, state.active).slice(
+              0,
+              q.historyName ? 100 : 1,
+            ),
           ),
-          tableAliases = aliases.filter((a) => a.tableId === tableId);
+        );
+        const starts = relevantPeriods
+          .flatMap((period) =>
+            period.since ? [limaDay(new Date(period.since))] : [],
+          )
+          .filter((day) => day >= floor && day <= today)
+          .sort();
+        const sourceSince = starts[0] ?? today;
+        const sourceUntil = relevantPeriods.some((period) => !period.until)
+          ? today
+          : (relevantPeriods
+              .flatMap((period) =>
+                period.until ? [limaDay(new Date(period.until))] : [],
+              )
+              .filter((day) => day >= sourceSince && day <= today)
+              .sort()
+              .at(-1) ?? today);
+        const source = await inventoryEffectivenessSource(
+          actor,
+          tableId,
+          sourceSince,
+          sourceUntil,
+          tx,
+        );
         for (const alias of tableAliases) {
           const rows = source.rows.filter((r) => r.aliasId === alias.id),
             states = alias.effectivenessStates;

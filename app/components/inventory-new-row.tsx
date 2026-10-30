@@ -161,7 +161,7 @@ export function InventoryNewRow({
       </td>
       {countryColumnCount > 0 && (
         <td colSpan={countryColumnCount} className="hint">
-          Evaluación disponible después de asignar un grupo
+          Activa o fija el inventario en una hoja después de guardar
         </td>
       )}
       <td

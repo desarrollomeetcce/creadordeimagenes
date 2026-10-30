@@ -12,9 +12,15 @@ export const inventoryParameters = [
 export function InventoryColumnVisibility({
   values,
   onChange,
+  hiddenColumns = [],
+  onRestoreColumn,
+  onRestoreAll,
 }: {
   values: string[];
   onChange: (v: string[]) => void;
+  hiddenColumns?: { key: string; label: string }[];
+  onRestoreColumn?: (key: string) => void;
+  onRestoreAll?: () => void;
 }) {
   const id = useId(),
     popover = useRef<HTMLDivElement>(null),
@@ -80,6 +86,27 @@ export function InventoryColumnVisibility({
             {p.label}
           </label>
         ))}
+        {!!hiddenColumns.length && (
+          <>
+            <strong>Columnas ocultas de hojas</strong>
+            {hiddenColumns.map((column) => (
+              <label key={column.key}>
+                <input
+                  type="checkbox"
+                  checked={false}
+                  aria-label={`Restaurar columna ${column.label}`}
+                  onChange={() => onRestoreColumn?.(column.key)}
+                />
+                {column.label}
+              </label>
+            ))}
+          </>
+        )}
+        {onRestoreAll && (
+          <button type="button" onClick={onRestoreAll}>
+            Restaurar todas las columnas
+          </button>
+        )}
         <button type="button" onClick={() => popover.current?.hidePopover()}>
           Listo
         </button>
