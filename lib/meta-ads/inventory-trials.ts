@@ -51,6 +51,24 @@ const edit = { listId: id, groupId: id, revision: z.number().int().positive() };
 export const trialChange = z.discriminatedUnion("action", [
   z
     .object({
+      action: z.literal("REMOVE_MEMBERS"),
+      listId: id,
+      groups: z
+        .array(
+          z
+            .object({
+              groupId: id,
+              revision: z.number().int().positive(),
+              itemIds: z.array(id).min(1).max(100),
+            })
+            .strict(),
+        )
+        .min(1)
+        .max(100),
+    })
+    .strict(),
+  z
+    .object({
       action: z.literal("CREATE"),
       requestId: z.string().uuid().optional(),
       listId: id,
@@ -340,6 +358,63 @@ export async function saveInventoryTrial(actor: Actor, input: unknown) {
   return db.$transaction(
     async (tx) => {
       await context(tx, actor, b.listId, true);
+      if (b.action === "REMOVE_MEMBERS") {
+        demand(
+          new Set(b.groups.map((g) => g.groupId)).size === b.groups.length,
+          "No repitas grupos.",
+        );
+        let removed = 0;
+        for (const change of b.groups) {
+          const group = await tx.metaInventoryTrialGroup.findFirst({
+            where: { id: change.groupId, sheetId: b.listId, archivedAt: null },
+          });
+          demand(group, "Grupo no disponible.", 404);
+          demand(
+            group.revision === change.revision,
+            "Un grupo cambió. Actualiza antes de quitar asignaciones.",
+            409,
+          );
+          const payload = group.payload as unknown as TrialPayload;
+          demand(
+            new Set(change.itemIds).size === change.itemIds.length &&
+              change.itemIds.every((id) =>
+                payload.members.some((m) => m.itemId === id),
+              ),
+            "Una asignación cambió. Actualiza el inventario.",
+            409,
+          );
+          const slots = new Set(
+            payload.members
+              .filter((m) => change.itemIds.includes(m.itemId))
+              .map((m) => m.slotId),
+          );
+          for (const cycle of payload.cycles)
+            if (!cycle.until && slots.has(cycle.slotId)) {
+              demand(
+                cycle.since <= today(),
+                "La fecha de inicio cambió. Actualiza.",
+                409,
+              );
+              cycle.until =
+                cycle.since === today() ? today() : shift(today(), -1);
+            }
+          payload.members = payload.members.filter((m) => !slots.has(m.slotId));
+          await tx.metaInventoryTrialGroup.update({
+            where: { id: group.id },
+            data: { payload: json(payload), revision: { increment: 1 } },
+          });
+          removed += slots.size;
+        }
+        await recordActivity(tx, {
+          data: {
+            actorId: actor.id,
+            action: "INVENTARIO_GRUPOS_RETIRADOS",
+            resourceId: b.listId,
+            detail: { groups: b.groups.length, items: removed },
+          },
+        });
+        return { removed };
+      }
       if (b.action === "CREATE") {
         const requestHash = createHash("sha256")
           .update(JSON.stringify(b))

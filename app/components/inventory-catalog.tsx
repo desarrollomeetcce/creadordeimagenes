@@ -1124,6 +1124,61 @@ export function InventoryCatalog({
       token: string;
     } | null>(null),
     [deleteError, setDeleteError] = useState("");
+  const selectedGroupNames = new Set(
+    visible
+      .filter((g) => g.links.some((a) => selectedVisible.includes(a.id)))
+      .map((g) => categoryKey(g.name)),
+  );
+  const removalGroups = trialGroups
+    .map((group) => ({
+      groupId: group.id,
+      revision: group.revision,
+      itemIds: group.members
+        .filter((m) =>
+          selectedGroupNames.has(
+            categoryKey(trialItemsById.get(m.itemId)?.name ?? m.name),
+          ),
+        )
+        .map((m) => m.itemId),
+    }))
+    .filter((g) => g.itemIds.length);
+  const removalCount = removalGroups.reduce((n, g) => n + g.itemIds.length, 0);
+  const selectedAssignedGroups = new Set(
+    visible
+      .filter((g) => g.links.some((a) => selectedVisible.includes(a.id)))
+      .map((g) => trialGroupByName.get(categoryKey(g.name))?.id ?? ""),
+  );
+  const commonSelectedGroup =
+    selectedAssignedGroups.size === 1 ? [...selectedAssignedGroups][0] : "";
+  async function removeGroupMembers(groups: typeof removalGroups) {
+    if (!groups.length || busy) return;
+    setBusy(true);
+    setMessage("");
+    let committed = false;
+    try {
+      const result = await api("meta-ads/inventory/trials", "POST", {
+        action: "REMOVE_MEMBERS",
+        listId,
+        groups,
+      });
+      committed = true;
+      await reloadGroups();
+      setMessage(
+        `Grupo retirado de ${result.removed} diplomado${result.removed === 1 ? "" : "s"}.`,
+      );
+    } catch (e) {
+      setMessage(
+        committed
+          ? "Las asignaciones se quitaron. Actualiza para ver el cambio."
+          : e instanceof Error
+            ? e.message
+            : "No se pudo quitar el grupo.",
+      );
+      if (!committed) await reloadGroups().catch(() => {});
+    } finally {
+      setBusy(false);
+    }
+  }
   const dialog = useRef<HTMLDialogElement>(null);
   useEffect(() => {
     if (review) dialog.current?.showModal();
@@ -1678,21 +1733,40 @@ export function InventoryCatalog({
                       : "Ordenar por grupos"}
                   </button>
                 </div>
-                <select
-                  aria-label="Filtrar inventario por grupo"
-                  value={groupFilter}
-                  onChange={(e) => setGroupFilter(e.target.value)}
-                >
-                  <option value="">Todos los grupos</option>
-                  <option value="none">Sin grupo</option>
-                  {trialGroups.map((g) => (
-                    <option key={g.id} value={g.id}>
-                      {g.name} ({g.members.length})
-                    </option>
-                  ))}
-                </select>
+                <div className="inventory-group-filter-control">
+                  <select
+                    title="Filtrar filas; no cambia sus asignaciones"
+                    aria-label="Filtrar inventario por grupo"
+                    value={groupFilter}
+                    onChange={(e) => setGroupFilter(e.target.value)}
+                  >
+                    <option value="">Ver: todos los grupos</option>
+                    <option value="none">Ver: sin grupo</option>
+                    {trialGroups.map((g) => (
+                      <option key={g.id} value={g.id}>
+                        Ver: {g.name} ({g.members.length})
+                      </option>
+                    ))}
+                  </select>
+                  {groupFilter && (
+                    <button
+                      type="button"
+                      aria-label="Quitar filtro de grupo"
+                      title="Volver a ver todo el inventario"
+                      onClick={() => setGroupFilter("")}
+                    >
+                      ×
+                    </button>
+                  )}
+                </div>
                 <InventoryGroupSelect
                   groups={trialGroups}
+                  value={commonSelectedGroup}
+                  placeholder={
+                    selectedAssignedGroups.size > 1
+                      ? "Varios grupos seleccionados"
+                      : "Asignar grupo a seleccionados…"
+                  }
                   label="Asignar grupo a inventarios seleccionados"
                   disabled={
                     !trialDirectory?.canEdit || !selected.length || busy
@@ -1708,6 +1782,16 @@ export function InventoryCatalog({
                     })
                   }
                 />
+                <button
+                  type="button"
+                  className="inventory-remove-group-bulk"
+                  disabled={!trialDirectory?.canEdit || busy || !removalCount}
+                  onClick={() => void removeGroupMembers(removalGroups)}
+                  title="Quita la asignación solo de los diplomados seleccionados visibles; conserva los grupos y el inventario"
+                >
+                  Quitar grupo a seleccionados
+                  {removalCount ? ` (${removalCount})` : ""}
+                </button>
               </th>
               <th
                 hidden={!columns.some((c) => c.key === "gap")}
@@ -1996,6 +2080,32 @@ export function InventoryCatalog({
                                 }
                               >
                                 {assigned.name}
+                              </button>
+                              <button
+                                type="button"
+                                className="inventory-remove"
+                                aria-label={`Quitar ${assigned.name} de ${g.name}`}
+                                title={`Quitar ${assigned.name} de este diplomado`}
+                                disabled={!trialDirectory?.canEdit || busy}
+                                onClick={() =>
+                                  void removeGroupMembers([
+                                    {
+                                      groupId: assigned.id,
+                                      revision: assigned.revision,
+                                      itemIds: assigned.members
+                                        .filter(
+                                          (m) =>
+                                            categoryKey(
+                                              trialItemsById.get(m.itemId)
+                                                ?.name ?? m.name,
+                                            ) === categoryKey(g.name),
+                                        )
+                                        .map((m) => m.itemId),
+                                    },
+                                  ])
+                                }
+                              >
+                                ×
                               </button>
                               <button
                                 aria-label={

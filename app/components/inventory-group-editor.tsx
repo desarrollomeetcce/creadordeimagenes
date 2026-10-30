@@ -496,19 +496,23 @@ export function InventoryGroupSelect({
   label,
   disabled,
   onSelect,
+  value = "",
+  placeholder = "Asignar grupo…",
 }: {
   groups: TrialGroup[];
   label: string;
   disabled?: boolean;
   onSelect: (id: string) => void;
+  value?: string;
+  placeholder?: string;
 }) {
   return (
     <SheetSearchSelect
       label={label}
-      value=""
+      value={value}
+      placeholder={placeholder}
       disabled={disabled}
       options={[
-        { value: "", label: "Asignar grupo…" },
         ...groups.map((g) => ({ value: g.id, label: g.name })),
         { value: "new", label: "+ Crear grupo" },
       ]}

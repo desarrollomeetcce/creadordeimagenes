@@ -6,7 +6,7 @@ import { randomUUID } from "node:crypto";
 import { db } from "../lib/db";
 import {
   inventoryTrials,
-  saveInventoryTrial,
+  saveInventoryTrial as changeInventoryTrial,
   inventoryTrialReport,
 } from "../lib/meta-ads/inventory-trials";
 import { authorizeFinancialRequest } from "../lib/meta-ads/financial-access";
@@ -15,6 +15,14 @@ import {
   trialAssessment,
   trialDays,
 } from "../lib/meta-ads/inventory-trial-policy";
+async function saveInventoryTrial(
+  actor: Parameters<typeof changeInventoryTrial>[0],
+  input: unknown,
+) {
+  const result = await changeInventoryTrial(actor, input);
+  assert(!("removed" in result));
+  return result;
+}
 test("Grupos de inventario: reglas, países, propuestas, reemplazos e aislamiento", async (t) => {
   assert(
     process.env.DATABASE_URL?.includes("library_organization_test") &&
@@ -870,10 +878,120 @@ test("Grupos de inventario: reglas, países, propuestas, reemplazos e aislamient
           false,
         );
         await fail(saveInventoryTrial(readActor, base), 403);
+        await fail(
+          changeInventoryTrial(readActor, {
+            action: "REMOVE_MEMBERS",
+            listId: list.id,
+            groups: [
+              {
+                groupId: group.id,
+                revision: group.revision,
+                itemIds: [items[0].id],
+              },
+            ],
+          }),
+          403,
+        );
         await db.effectivenessGrant.deleteMany({
           where: { userId: editor.id },
         });
         await fail(saveInventoryTrial(editActor, base), 403);
+      },
+    );
+    await t.test(
+      "Retirada individual y masiva atómica conserva grupos, inventario y ciclos",
+      async () => {
+        const fresh = await Promise.all(
+          [0, 1, 2].map((i) =>
+            db.metaInventoryItem.create({
+              data: { sheetId: list.id, name: "Retirar " + i + tag },
+            }),
+          ),
+        );
+        const a = await saveInventoryTrial(actor, {
+          ...base,
+          name: "Retirar A",
+          itemIds: fresh.slice(0, 2).map((i) => i.id),
+        });
+        const b = await saveInventoryTrial(actor, {
+          ...base,
+          name: "Retirar B",
+          itemIds: [fresh[2].id],
+        });
+        const groups = [
+          { groupId: a.id, revision: a.revision, itemIds: [fresh[0].id] },
+          { groupId: b.id, revision: b.revision + 1, itemIds: [fresh[2].id] },
+        ];
+        await fail(
+          changeInventoryTrial(actor, {
+            action: "REMOVE_MEMBERS",
+            listId: list.id,
+            groups,
+          }),
+          409,
+        );
+        let current = (
+          await inventoryTrials(actor, { listId: list.id })
+        ).groups.find((g) => g.id === a.id)!;
+        assert.equal(current.members.length, 2);
+        assert.equal(current.revision, a.revision);
+        await fail(
+          changeInventoryTrial(actor, {
+            action: "REMOVE_MEMBERS",
+            listId: list.id,
+            groups: [{ ...groups[0], itemIds: [ownOther.id] }],
+          }),
+          409,
+        );
+        groups[1].revision = b.revision;
+        const result = await changeInventoryTrial(actor, {
+          action: "REMOVE_MEMBERS",
+          listId: list.id,
+          groups,
+        });
+        assert.equal("removed" in result && result.removed, 2);
+        const directory = await inventoryTrials(actor, { listId: list.id });
+        current = directory.groups.find((g) => g.id === a.id)!;
+        assert.deepEqual(
+          current.members.map((m) => m.itemId),
+          [fresh[1].id],
+        );
+        assert(
+          current.cycles
+            .filter((c) => c.itemId === fresh[0].id)
+            .every((c) => c.until),
+        );
+        assert(
+          current.cycles
+            .filter((c) => c.itemId === fresh[1].id)
+            .every((c) => !c.until),
+        );
+        assert.equal(
+          directory.groups.find((g) => g.id === b.id)!.members.length,
+          0,
+        );
+        assert.equal(
+          await db.metaInventoryItem.count({
+            where: { id: { in: fresh.map((i) => i.id) } },
+          }),
+          3,
+        );
+        const empty = await inventoryTrialReport(actor, {
+          listId: list.id,
+          groupId: b.id,
+        });
+        assert.equal(empty.rows.length, 0);
+        await changeInventoryTrial(actor, {
+          action: "REMOVE_MEMBERS",
+          listId: list.id,
+          groups: [
+            {
+              groupId: a.id,
+              revision: current.revision,
+              itemIds: [fresh[1].id],
+            },
+          ],
+        });
       },
     );
     await t.test(
