@@ -14,9 +14,11 @@ type Leaf = {
 export function InventorySelectionDelete({
   listId,
   ids,
+  sheetsOnly = false,
   onClose,
   onRemoved,
 }: {
+  sheetsOnly?: boolean;
   listId: string;
   ids: string[];
   onClose: () => void;
@@ -60,13 +62,27 @@ export function InventorySelectionDelete({
     <dialog
       ref={dialog}
       className="meta-detail inventory-selection-delete"
-      aria-label="Eliminar selección de inventario"
+      aria-label={
+        sheetsOnly
+          ? "Quitar hojas de seleccionados"
+          : "Eliminar selección de inventario"
+      }
       onCancel={(e) => {
         if (busy) e.preventDefault();
         else onClose();
       }}
     >
-      <h2>Eliminar inventario seleccionado</h2>
+      <h2>
+        {sheetsOnly
+          ? "Quitar hojas de los seleccionados"
+          : "Eliminar inventario seleccionado"}
+      </h2>
+      {sheetsOnly && (
+        <p>
+          El diplomado y sus categorías se conservan en el catálogo. Revisa las
+          hojas que vas a quitar y sus datos antes de confirmar.
+        </p>
+      )}
       <p>
         Revisa los ítems y sus vínculos con hojas. «Ficha de inventario» es el
         registro del catálogo, aunque no tenga hoja asignada. Los registros sin
@@ -129,7 +145,12 @@ export function InventorySelectionDelete({
       )}
       {error && <p role="alert">{error}</p>}
       <div className="row">
-        <button className={committed ? "ui-close-button" : undefined} type="button" disabled={busy} onClick={onClose}>
+        <button
+          className={committed ? "ui-close-button" : undefined}
+          type="button"
+          disabled={busy}
+          onClick={onClose}
+        >
           {committed ? "Cerrar" : "Cancelar"}
         </button>
         {error && !committed && (
@@ -154,6 +175,7 @@ export function InventorySelectionDelete({
             try {
               const result = await api("meta-ads/inventory/remove", "POST", {
                 listId,
+                ...(sheetsOnly ? { preserveCatalog: true } : {}),
                 entries: chosen.map((i) => ({ id: i.id, token: i.token })),
               });
               saved = true;
@@ -171,7 +193,11 @@ export function InventorySelectionDelete({
             }
           }}
         >
-          {busy ? "Eliminando…" : "Eliminar selección"}
+          {busy
+            ? "Quitando…"
+            : sheetsOnly
+              ? "Confirmar quitar hojas"
+              : "Eliminar selección"}
         </button>
       </div>
     </dialog>

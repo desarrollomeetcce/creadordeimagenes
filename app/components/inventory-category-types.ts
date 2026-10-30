@@ -50,6 +50,7 @@ export type InventoryCategoryAction =
       kind: "PRIMARY" | "SECONDARY";
       names: string[];
     }
+  | { action: "CLEAR_BULK"; ids: string[]; kind: "PRIMARY" | "SECONDARY" }
   | { action: "RENAME"; categoryId: string; name: string }
   | { action: "DELETE"; categoryId: string }
   | { action: "DELETE_MANY"; categoryIds: string[] };

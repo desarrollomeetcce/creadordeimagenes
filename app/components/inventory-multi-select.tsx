@@ -10,6 +10,7 @@ const key = (s: string) =>
 /** One searchable, multiple-choice control. Empty selection means all only in filters. */
 export function InventoryMultiSelect({
   label,
+  onOpen,
   options,
   values,
   onChange,
@@ -23,6 +24,7 @@ export function InventoryMultiSelect({
   description,
   categoryFilter,
 }: {
+  onOpen?: () => void;
   label: string;
   options: SheetOption[];
   categoryFilter?: {
@@ -96,6 +98,7 @@ export function InventoryMultiSelect({
         disabled={disabled || busy}
         title={compact ? label : text}
         onClick={(e) => {
+          onOpen?.();
           const r = e.currentTarget.getBoundingClientRect();
           setPosition({
             left: Math.max(8, Math.min(r.left, innerWidth - 288)),

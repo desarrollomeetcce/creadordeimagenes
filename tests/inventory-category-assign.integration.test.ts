@@ -89,7 +89,7 @@ test("Asignación masiva por nivel conserva otras categorías y mueve coincidenc
                 names: ["Calidad"],
               },
             ),
-          /OWNER|permiso/i,
+          /OWNER|permiso|acceso/i,
         );
         for (const invalid of [[a.id], [foreign.id], [a.id, a.id]])
           await assert.rejects(

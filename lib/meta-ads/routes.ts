@@ -414,6 +414,7 @@ export async function metaRoutes(
             categoryIds: z.array(z.string().min(1).max(100)).max(40),
           })
           .strict(),
+        z.object({...base,action:z.literal("CLEAR_BULK"),ids:z.array(z.string().min(1).max(100)).min(1).max(1500),kind:z.enum(["PRIMARY","SECONDARY"])}).strict(),
         z
           .object({
             ...base,
@@ -500,6 +501,7 @@ export async function metaRoutes(
     const b = z
       .object({
         listId: z.string().min(1).max(100),
+        preserveCatalog:z.boolean().optional(),
         entries: z
           .array(
             z

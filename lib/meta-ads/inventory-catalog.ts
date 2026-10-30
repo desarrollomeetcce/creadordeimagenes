@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import type { Prisma } from "@prisma/client";
 import { db } from "../db";
-import {ownerOnly} from "./financial-access";
+import { ownerOnly } from "./financial-access";
 import { demand } from "../errors";
 import { recordActivity } from "../activity";
 import { effectivenessLock } from "./effectiveness";
@@ -227,7 +227,11 @@ export async function previewRemoveInventorySelection(
 }
 export async function removeInventorySelection(
   actor: Actor,
-  b: { listId: string; entries: { id: string; token: string }[] },
+  b: {
+    listId: string;
+    entries: { id: string; token: string }[];
+    preserveCatalog?: boolean;
+  },
 ) {
   ownerOnly(actor);
   return db.$transaction(
@@ -244,6 +248,38 @@ export async function removeInventorySelection(
           409,
         );
         items.push(r);
+      }
+      if (b.preserveCatalog) {
+        demand(
+          items.every((i) => !i.standalone),
+          "Solo se pueden quitar vínculos de hojas.",
+          409,
+        );
+        const aliases = await tx.metaAlias.findMany({
+          where: { id: { in: ids }, inventorySheetId: b.listId },
+          include: { categoryAssignments: true },
+        });
+        for (const alias of aliases) {
+          let item = await tx.metaInventoryItem.findFirst({
+            where: { sheetId: b.listId, name: alias.name },
+          });
+          if (!item)
+            item = await tx.metaInventoryItem.create({
+              data: { sheetId: b.listId, name: alias.name },
+            });
+          if (alias.categoryAssignments.length)
+            await tx.metaInventoryItemCategory.createMany({
+              data: alias.categoryAssignments.map((c) => ({
+                itemId: item!.id,
+                categoryId: c.categoryId,
+              })),
+              skipDuplicates: true,
+            });
+        }
+        await tx.metaEffectivenessSheet.update({
+          where: { id: b.listId },
+          data: { categoryRevision: { increment: 1 } },
+        });
       }
       // Validate the complete selection before deleting any leaf or association.
       await tx.metaAdObject.updateMany({

@@ -1,6 +1,6 @@
 import type { Prisma } from "@prisma/client";
 import { db } from "../db";
-import {ownerOnly} from "./financial-access";
+import { ownerOnly } from "./financial-access";
 import { AppError, demand } from "../errors";
 import { recordActivity } from "../activity";
 import { effectivenessLock } from "./effectiveness";
@@ -113,6 +113,7 @@ type Action =
       kind: "PRIMARY" | "SECONDARY";
       names: string[];
     }
+  | { action: "CLEAR_BULK"; ids: string[]; kind: "PRIMARY" | "SECONDARY" }
   | { action: "RENAME"; categoryId: string; name: string }
   | { action: "DELETE"; categoryId: string }
   | { action: "DELETE_MANY"; categoryIds: string[] };
@@ -332,6 +333,18 @@ export async function saveInventoryCategories(
           await writeInventoryTags(tx, b.targetIds, [...added]);
           affected = b.targetIds.length;
         }
+      } else if (b.action === "CLEAR_BULK") {
+        await fullGroups(tx, b.listId, b.ids);
+        const categoryIds = before.categories
+          .filter((c) => c.kind === b.kind)
+          .map((c) => c.id);
+        await tx.metaInventoryCategoryAssignment.deleteMany({
+          where: { aliasId: { in: b.ids }, categoryId: { in: categoryIds } },
+        });
+        await tx.metaInventoryItemCategory.deleteMany({
+          where: { itemId: { in: b.ids }, categoryId: { in: categoryIds } },
+        });
+        affected = b.ids.length;
       } else if (b.action === "ASSIGN_BULK") {
         const found = await fullGroups(tx, b.listId, b.ids);
         const keys = new Set(b.names.map(categoryKey));

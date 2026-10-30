@@ -1092,12 +1092,13 @@ export function InventoryCatalog({
       </td>
     );
   };
-  const [selected, setSelected] = useWorkbookPreference<string[]>(
-      listId,
-      "catalogSelection",
-      [],
-    ),
-    [bulkIds, setBulkIds] = useState<string[] | null>(null);
+  const [selected, setSelected] = useState<string[]>([]);
+  const [bulkIds, setBulkIds] = useState<string[] | null>(null);
+  const [sheetRemoval, setSheetRemoval] = useState<string[] | null>(null);
+  const sheetAssignment = useRef<{
+    revision: number;
+    items: { inventoryId: string; expectedName: string }[];
+  } | null>(null);
   const visibleIds = visible.flatMap((g) => g.links.map((a) => a.id)),
     selectedVisible = visibleIds.filter((id) => selected.includes(id)),
     selectedGroups = visible.filter((g) =>
@@ -1211,6 +1212,7 @@ export function InventoryCatalog({
             await onChanged();
             await reloadCategories();
             setGroupEditor(null);
+            setSelected([]);
             setMessage("Grupo guardado.");
           }}
         />
@@ -1258,6 +1260,7 @@ export function InventoryCatalog({
               kind: assignment.kind,
               names,
             });
+            setSelected([]);
             setMessage(
               `Categorías ${assignment.kind === "PRIMARY" ? "principales" : "secundarias"} asignadas a ${assignment.names.length} inventarios.`,
             );
@@ -1307,12 +1310,14 @@ export function InventoryCatalog({
             onClick={() =>
               setGroupEditor({
                 names: available
-                  .filter((g) => g.links.some((a) => selected.includes(a.id)))
+                  .filter((g) =>
+                    g.links.some((a) => selectedVisible.includes(a.id)),
+                  )
                   .map((g) => g.name),
               })
             }
           >
-            + Crear grupo{selected.length ? " con selección" : ""}
+            + Crear grupo{selectedVisible.length ? " con selección" : ""}
           </button>
           <button
             type="button"
@@ -1642,6 +1647,36 @@ export function InventoryCatalog({
                     Asignar categoría
                     {selectedGroups ? ` (${selectedGroups})` : ""}
                   </button>
+                  <button
+                    type="button"
+                    className="inventory-header-assign"
+                    disabled={
+                      busy ||
+                      !trialDirectory?.canEdit ||
+                      !categories ||
+                      !selectedGroups
+                    }
+                    onClick={() => {
+                      void saveCategory({
+                        action: "CLEAR_BULK",
+                        ids: [...selectedVisible],
+                        kind,
+                      })
+                        .then(() => {
+                          setSelected([]);
+                          setMessage(
+                            "Categorías retiradas de los seleccionados.",
+                          );
+                        })
+                        .catch((e) => setMessage(e.message));
+                    }}
+                  >
+                    Quitar{" "}
+                    {kind === "PRIMARY"
+                      ? "categoría principal"
+                      : "categorías secundarias"}
+                    {selectedGroups ? ` (${selectedGroups})` : ""}
+                  </button>
                 </th>
               ))}
               <th scope="col" hidden={!showParameter("sheets")}>
@@ -1656,6 +1691,25 @@ export function InventoryCatalog({
                 />
                 <InventoryMultiSelect
                   label="Asignar hojas a inventarios seleccionados"
+                  onOpen={() => {
+                    sheetAssignment.current = categories
+                      ? {
+                          revision: categories.revision,
+                          items: visible
+                            .filter((g) =>
+                              g.links.some((a) =>
+                                selectedVisible.includes(a.id),
+                              ),
+                            )
+                            .map((g) => ({
+                              inventoryId: g.links.find((a) =>
+                                selectedVisible.includes(a.id),
+                              )!.id,
+                              expectedName: g.name,
+                            })),
+                        }
+                      : null;
+                  }}
                   placeholder={
                     "Asignar hojas" +
                     (selectedGroups ? " (" + selectedGroups + ")" : "")
@@ -1672,16 +1726,12 @@ export function InventoryCatalog({
                   onError={setMessage}
                   onChange={async (tableIds) => {
                     if (!tableIds.length || !categories) return;
-                    const items = visible
-                      .filter((g) =>
-                        g.links.some((a) => selectedVisible.includes(a.id)),
-                      )
-                      .map((g) => ({
-                        inventoryId: g.links.find((a) =>
-                          selectedVisible.includes(a.id),
-                        )!.id,
-                        expectedName: g.name,
-                      }));
+                    const snapshot = sheetAssignment.current;
+                    if (!snapshot)
+                      throw Error(
+                        "Vuelve a abrir Asignar hojas para revisar la selección.",
+                      );
+                    const items = snapshot.items;
                     if (!items.length) return;
                     setBusy(true);
                     let committed = false;
@@ -1691,12 +1741,13 @@ export function InventoryCatalog({
                         "POST",
                         {
                           listId,
-                          revision: categories.revision,
+                          revision: snapshot.revision,
                           tableIds,
                           items,
                         },
                       );
                       committed = true;
+                      setSelected([]);
                       await onChanged();
                       await reloadCategories();
                       setMessage(
@@ -1715,6 +1766,33 @@ export function InventoryCatalog({
                     }
                   }}
                 />
+                <button
+                  type="button"
+                  className="inventory-header-assign"
+                  disabled={
+                    busy ||
+                    !trialDirectory?.canEdit ||
+                    !visible.some(
+                      (g) =>
+                        g.links.some((a) => selectedVisible.includes(a.id)) &&
+                        g.links.some((a) => !a.standalone),
+                    )
+                  }
+                  onClick={() =>
+                    setSheetRemoval(
+                      visible
+                        .filter((g) =>
+                          g.links.some((a) => selectedVisible.includes(a.id)),
+                        )
+                        .flatMap((g) =>
+                          g.links.filter((a) => !a.standalone).map((a) => a.id),
+                        ),
+                    )
+                  }
+                >
+                  Quitar hojas de seleccionados
+                  {selectedGroups ? ` (${selectedGroups})` : ""}
+                </button>
               </th>
               <th scope="col" hidden={!showParameter("group")}>
                 {columnHandle("group", "Grupo")}
@@ -1769,7 +1847,7 @@ export function InventoryCatalog({
                   }
                   label="Asignar grupo a inventarios seleccionados"
                   disabled={
-                    !trialDirectory?.canEdit || !selected.length || busy
+                    !trialDirectory?.canEdit || !selectedVisible.length || busy
                   }
                   onSelect={(id) =>
                     setGroupEditor({
@@ -2228,6 +2306,22 @@ export function InventoryCatalog({
           onSave={saveCategory}
           onRefresh={async () => {
             await reloadCategories();
+          }}
+        />
+      )}
+      {sheetRemoval && (
+        <InventorySelectionDelete
+          listId={listId}
+          ids={sheetRemoval}
+          sheetsOnly
+          onClose={() => setSheetRemoval(null)}
+          onRemoved={async () => {
+            await onChanged();
+            await reloadCategories();
+            await reloadGroups();
+            setSelected([]);
+            setSheetRemoval(null);
+            setMessage("Hojas retiradas de los seleccionados.");
           }}
         />
       )}
