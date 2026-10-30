@@ -167,7 +167,7 @@ export function MetaAliasAction({
           setDraftCountry(bulk ? "" : (country ?? ""));
           const r = e.currentTarget.getBoundingClientRect();
           setPosition({
-            left: Math.max(8, Math.min(r.left, window.innerWidth - 280)),
+            left: Math.max(8, Math.min(r.left, window.innerWidth - 376)),
             top: Math.max(8, Math.min(r.bottom + 5, window.innerHeight - 420)),
           });
         }}
@@ -187,7 +187,11 @@ export function MetaAliasAction({
         }}
       >
         <header className="meta-alias-context">
-          <small>{bulk ? "Asignación masiva" : "Asignando inventario a"}</small>
+          <small>
+            <span aria-hidden="true">⠿</span>{" "}
+            {bulk ? "Asignación masiva" : "Asignando inventario a"}
+            <span className="meta-alias-drag-hint">Arrastra para mover</span>
+          </small>
           <strong>
             {bulk ? `${bulkCount} elementos seleccionados` : name}
           </strong>

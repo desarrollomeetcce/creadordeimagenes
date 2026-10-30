@@ -45,3 +45,7 @@ Las cifras financieras son diarias. Si dos activaciones comparten un día, falta
 ## Pedido adicional: contadores visibles
 
 Añadido acumulado general encima de las estadísticas del detalle: ventas, días activos con horas, presupuesto y gasto original de Meta, en cuatro recuadros de colores suaves. Todo el historial registrado, sin depender del rango del gráfico; P/Meta solamente días activos y cada fecha una vez. Pruebas adicionales validan ausencia/zero/FX, intervalos repetidos y separar gasto manual del original de Meta. En móvil se distribuyen en dos columnas. No cambia el historial ni las campañas.
+
+## Pedido adicional: cabecera fija y mover ventanas
+
+Meta asignar inventario conserva nombre de campaña visible y formulario con desplazamiento interno. Ventana más amplia y redimensionable desde esquina. Soporte común de arrastre desde cabecera en ventanas nativas con título de otras secciones; mantiene selección, acciones, ampliar/restaurar, teclado y límites de pantalla. Ocho verificaciones de navegador incluyen Meta, grupos y detalle financiero, resize real y móvil. Los controles de formulario y los menús conservan su interacción normal.

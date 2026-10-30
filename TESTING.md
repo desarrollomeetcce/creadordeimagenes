@@ -1845,3 +1845,7 @@ Evidencia:214 unitarias,23 integración activación/lote y12 Meta/asignación/hi
 ## 2026-10-30 · Acumulado general legible
 
 214 unitarias +40 helper/integración correctas; typecheck/build. Tres comprobaciones Chromium en cuatro contadores del detalle nativo: V5,1día/P10/GMeta7.5 de todo el historial aunque gráfico sea de un solo día, ampliar y dos columnas en móvil; excluye Gmanual999 yMeta999 de día apagado. Claro/oscuro inspeccionados, ceroerroresJS. Agregados exclusivos alias+país autorizados, tiempos de eventos completos, suma diaria única, cero/ausencia/FX respetados. Integración conserva datos/permisos/fuentes ocultas y verifica resumen fuera de rango. Base exclusiva limpiada, sin llamadas de proveedor.
+
+## 2026-10-30 · Arrastrar ventanas desde su cabecera
+
+214 unitarias,typecheck/build.8verificaciones Chromium: Meta360px arrastrable sin perder lista/tabla/inventario/país; resize real desde esquina; cabecera fija al desplazar formulario; clamp y Alt+flecha; móvil; unPATCH explícito tras mover con campos conservados; grupos conservan maximizar/restaurar; detalle completo de otra pestaña se mueve y reabre centrado. Capturas inspeccionadas y cero erroresJS. Selectores/menús se excluyen y no cambian permisos/datos. Fixture exclusiva retirada; ninguna llamada facturable.
