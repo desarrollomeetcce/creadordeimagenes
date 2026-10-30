@@ -91,6 +91,9 @@ export function InventorySheetHistory({
               <tr>
                 <th>Desde</th>
                 <th>Hasta</th>
+                <th title="Ventas desde la activación hasta la siguiente, aunque ya esté apagado">
+                  Ventas hasta
+                </th>
                 <th>País</th>
                 <th>Días</th>
                 <th>Ventas</th>
@@ -104,6 +107,7 @@ export function InventorySheetHistory({
                 <tr key={i}>
                   <td>{date(h.since)}</td>
                   <td>{h.until ? date(h.until) : "Presente"}</td>
+                  <td>{h.salesUntil ?? "—"}</td>
                   <td>{countryName(h.country)}</td>
                   <td>{h.days ?? "—"}</td>
                   <td>{h.sales ?? "—"}</td>
@@ -136,8 +140,10 @@ export function InventorySheetHistory({
       <p className="trial-help">
         El FX usa los límites vigentes. Las fechas provienen del registro de
         activaciones. Ventas y presupuesto se registran por día; no se atribuyen
-        por hora. Si el inicio no se registró o faltan datos, FX y estado quedan
-        pendientes. Se consultan hasta los últimos 366 días de métricas.
+        por hora. Las ventas incluyen pagos posteriores al apagado, hasta la
+        siguiente activación o hasta hoy. Presupuesto y días solo cubren el
+        tiempo activo. Si el inicio no se registró o faltan datos, FX y estado
+        quedan pendientes. Se consultan hasta los últimos 366 días de métricas.
       </p>
     </dialog>
   );

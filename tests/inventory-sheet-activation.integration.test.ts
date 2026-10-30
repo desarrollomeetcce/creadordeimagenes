@@ -1385,6 +1385,140 @@ test("Activación por hoja: selección, pin, historial y permisos", async (t) =>
       },
     );
     await t.test(
+      "Ventas posteriores al apagado siguen el ciclo; próxima activación las separa y P/días no crecen",
+      async () => {
+        const table = await db.metaAliasTable.create({
+          data: {
+            name: "Pagos tardíos " + tag,
+            defaultCountry: "PE",
+            defaultCurrency: "PEN",
+          },
+        });
+        autoTables.push(table.id);
+        await inventoryActivationAddSheet(owner, {
+          listId: list.id,
+          tableId: table.id,
+          country: "PE",
+        });
+        const item = await db.metaInventoryItem.create({
+          data: { sheetId: list.id, name: "Tardío " + tag },
+        });
+        await importEffectiveness(
+          owner,
+          table.id,
+          [{ name: item.name, country: "PE", currency: "PEN" }],
+          undefined,
+          undefined,
+          list.id,
+          undefined,
+          false,
+        );
+        const alias = await db.metaAlias.findFirstOrThrow({
+          where: { tableId: table.id, name: item.name },
+        });
+        const row = await db.metaEffectivenessRow.findFirstOrThrow({
+          where: { aliasId: alias.id, country: "PE" },
+        });
+        const state = await db.metaEffectivenessState.findUniqueOrThrow({
+          where: { aliasId_country: { aliasId: alias.id, country: "PE" } },
+        });
+        const dates = Array.from({ length: 4 }, (_, n) =>
+          new Date(Date.parse(today) - (3 - n) * 86400000)
+            .toISOString()
+            .slice(0, 10),
+        );
+        for (let n = 0; n < 4; n++)
+          await db.metaEffectivenessDay.create({
+            data: {
+              rowId: row.id,
+              day: dates[n],
+              sales: [0, 0, 1, 4][n],
+              salesOverridden: true,
+              annotations: {
+                budget: { value: n < 2 ? 25 : 999, currency: "PEN" },
+              },
+            },
+          });
+        await db.metaEffectivenessEvent.deleteMany({
+          where: { stateId: state.id },
+        });
+        await db.metaEffectivenessEvent.createMany({
+          data: [
+            {
+              stateId: state.id,
+              actorId: actor.id,
+              active: true,
+              createdAt: new Date(dates[0] + "T05:00:00Z"),
+              snapshot: { priorActive: false },
+            },
+            {
+              stateId: state.id,
+              actorId: actor.id,
+              active: false,
+              createdAt: new Date(dates[1] + "T06:00:00Z"),
+              snapshot: { priorActive: true },
+            },
+          ],
+        });
+        const read = () =>
+          inventoryActivationReport(owner, {
+            listId: list.id,
+            tableIds: table.id,
+            byCountry: "true",
+            historyName: item.name,
+          });
+        let result = (await read()).rows[0],
+          h = result.history![0];
+        assert.equal(result.activation, "INACTIVE");
+        assert.equal(h.sales, 5);
+        assert.equal(h.budget, 50);
+        assert.equal(h.days, 2);
+        assert.equal(h.salesUntil, today);
+        assert.equal(h.complete, true);
+        assert.equal(h.assessment.usage, 50 / 250);
+        const summary = (
+          await inventoryActivationReport(owner, {
+            listId: list.id,
+            tableIds: table.id,
+            byCountry: "true",
+          })
+        ).rows[0];
+        assert.equal(summary.sales, 5);
+        assert.equal(summary.budget, 50);
+        await db.metaEffectivenessState.update({
+          where: { id: state.id },
+          data: { active: true, revision: { increment: 1 } },
+        });
+        await db.metaEffectivenessEvent.create({
+          data: {
+            stateId: state.id,
+            actorId: actor.id,
+            active: true,
+            createdAt: new Date(today + "T05:00:00Z"),
+            snapshot: { priorActive: false },
+          },
+        });
+        result = (await read()).rows[0];
+        assert.equal(result.history!.length, 2);
+        const [current, prior] = result.history!;
+        assert.equal(current.sales, 4);
+        assert.equal(prior.sales, 1);
+        assert.equal(prior.salesUntil, dates[2]);
+        assert.equal(prior.budget, 50);
+        assert.equal(prior.days, 2);
+        assert.equal(prior.assessment.limit, 70);
+        assert.equal(prior.assessment.usage, 50 / 70);
+        assert.equal(current.sales! + prior.sales!, 5);
+        await db.metaEffectivenessDay.update({
+          where: { rowId_day: { rowId: row.id, day: today } },
+          data: { sales: null },
+        });
+        h = (await read()).rows[0].history![0];
+        assert.equal(h.sales, null);
+        assert.equal(h.assessment.status, "PENDING");
+      },
+    );
+    await t.test(
       "Editar preferencias conserva metadatos internos de activación",
       async () => {
         const current = await db.metaEffectivenessSheet.findUniqueOrThrow({

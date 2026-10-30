@@ -235,8 +235,9 @@ export function InventoryDiplomaObservations({
                 </strong>
                 <span>
                   {" "}
-                  Ventas y gastos corresponden al último período de cada fila.
-                  Un guion indica un dato desconocido.
+                  Ventas desde la activación hasta la siguiente o hasta hoy,
+                  incluyendo pagos después del apagado. Días y gastos cubren
+                  solo el tiempo activo. Un guion indica un dato desconocido.
                 </span>
                 <button
                   type="button"
@@ -253,6 +254,7 @@ export function InventoryDiplomaObservations({
                     <tr>
                       <th>Desde</th>
                       <th>Hasta</th>
+                      <th>Ventas hasta</th>
                       <th>Horas activas</th>
                       <th>Días</th>
                       <th>Ventas</th>
@@ -268,6 +270,7 @@ export function InventoryDiplomaObservations({
                       <tr key={i}>
                         <td>{date(h.since)}</td>
                         <td>{h.until ? date(h.until) : "En curso"}</td>
+                        <td>{h.salesUntil ?? "—"}</td>
                         <td>{money(h.hours)}</td>
                         <td>{h.days ?? "—"}</td>
                         <td>{h.sales ?? "—"}</td>

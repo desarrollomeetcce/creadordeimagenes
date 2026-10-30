@@ -858,6 +858,8 @@ export async function inventoryActivationReplaceBatch(
   );
 }
 export type SheetInterval = {
+  /** Inclusive daily sales window: activation start through the day before the next activation, or today. */
+  salesUntil: string | null;
   metaSpend?: number | null;
   metaComplete?: boolean;
   metaAssessment?: ReturnType<typeof trialAssessment>;
@@ -996,15 +998,8 @@ async function activationReport(
         .filter((day) => day >= floor && day <= today)
         .sort();
       const sourceSince = starts[0] ?? today;
-      const sourceUntil = relevantPeriods.some((period) => !period.until)
-        ? today
-        : (relevantPeriods
-            .flatMap((period) =>
-              period.until ? [limaDay(new Date(period.until))] : [],
-            )
-            .filter((day) => day >= sourceSince && day <= today)
-            .sort()
-            .at(-1) ?? today);
+      // Payments can arrive after stopping. Only the next activation closes the sales window.
+      const sourceUntil = today;
       const source = await inventoryEffectivenessSource(
         actor,
         tableId,
@@ -1043,6 +1038,18 @@ async function activationReport(
                 until = period.until ? limaDay(new Date(period.until)) : today;
               const dates =
                 since && since >= floor ? trialDays(since, until, []) : [];
+              const next = ranges[ranges.indexOf(period) - 1];
+              const salesUntil = next?.since
+                ? new Date(Date.parse(limaDay(new Date(next.since))) - 86400000)
+                    .toISOString()
+                    .slice(0, 10)
+                : today;
+              const salesDates =
+                since && since >= floor && salesUntil >= since
+                  ? trialDays(since, salesUntil, [])
+                  : [];
+              let salesComplete = !!salesDates.length;
+
               const overlapping = ranges.some(
                 (other) =>
                   other !== period &&
@@ -1074,30 +1081,33 @@ async function activationReport(
                     else metaSpend = (metaSpend ?? 0) + value;
                   }
                 }
-                const v = d?.sales ?? null,
-                  p =
-                    d?.budget === null || d?.budget === undefined
-                      ? null
-                      : convertMoney(
-                          d.budget,
-                          row.currency,
-                          "PEN",
-                          fx.get(day),
-                        );
-                if (v !== null) sales = (sales ?? 0) + v;
+                const p =
+                  d?.budget === null || d?.budget === undefined
+                    ? null
+                    : convertMoney(d.budget, row.currency, "PEN", fx.get(day));
                 if (p !== null) budget = (budget ?? 0) + p;
                 if (
-                  v === null ||
                   p === null ||
-                  d?.na.includes("sales") ||
                   d?.na.includes("budget") ||
-                  d?.partialMetrics.includes("sales") ||
                   d?.partialMetrics.includes("budget")
                 )
                   complete = false;
               }
+              for (const day of salesDates) {
+                const d = row.days[day],
+                  v = d?.sales ?? null;
+                if (v !== null) sales = (sales ?? 0) + v;
+                if (
+                  v === null ||
+                  d?.na.includes("sales") ||
+                  d?.partialMetrics.includes("sales")
+                )
+                  salesComplete = false;
+              }
+              complete = complete && salesComplete;
               history.push({
                 ...period,
+                salesUntil: since ? salesUntil : null,
                 ...(q.historyName
                   ? {
                       metaSpend,
@@ -1105,7 +1115,7 @@ async function activationReport(
                       metaAssessment: inventoryFactorAssessment(
                         sales,
                         metaSpend,
-                        metaComplete && complete,
+                        metaComplete && salesComplete,
                         settings.limits,
                       ),
                       hours: period.since
