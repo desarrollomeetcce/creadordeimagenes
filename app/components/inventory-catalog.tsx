@@ -1880,10 +1880,28 @@ export function InventoryCatalog({
                     title="Filtrar filas; no cambia sus asignaciones"
                     aria-label="Filtrar inventario por grupo"
                     value={groupFilter}
-                    onChange={(e) => setGroupFilter(e.target.value)}
+                    onChange={(e) => {
+                      if (e.target.value === "new")
+                        setGroupEditor({
+                          names: visible
+                            .filter((g) =>
+                              g.links.some((a) =>
+                                selectedVisible.includes(a.id),
+                              ),
+                            )
+                            .map((g) => g.name),
+                        });
+                      else setGroupFilter(e.target.value);
+                    }}
                   >
                     <option value="">Ver: todos los grupos</option>
                     <option value="none">Ver: sin grupo</option>
+                    <option
+                      value="new"
+                      disabled={!trialDirectory?.canEdit || busy}
+                    >
+                      + Crear grupo…
+                    </option>
                     {trialGroups.map((g) => (
                       <option key={g.id} value={g.id}>
                         Ver: {g.name} ({g.members.length})

@@ -95,16 +95,19 @@ export function InventoryGroupEditor({
     ).values(),
   ];
   const pool = catalog.filter((i) => !occupied.has(categoryKey(i.name)));
-  const filtered = catalog.filter(
+  const matching = catalog.filter(
     (i) =>
       matchesSearchWords(i.name, query) &&
       (!primary.length || i.primaryNames.some((n) => primary.includes(n))) &&
       (!secondary.length ||
         i.secondaryNames?.some((n) => secondary.includes(n))) &&
-      (!sheets.length || i.sheets?.some((s) => sheets.includes(s.id))) &&
-      (!onlySelected || ids.includes(i.id)),
+      (!sheets.length || i.sheets?.some((s) => sheets.includes(s.id))),
   );
+  const filtered = matching.filter((i) => !onlySelected || ids.includes(i.id));
   const eligible = filtered.filter((i) => !occupied.has(categoryKey(i.name)));
+  const proposalPool = matching.filter(
+    (i) => !occupied.has(categoryKey(i.name)),
+  );
   const ordered = filtered
     .slice()
     .sort(
@@ -277,9 +280,9 @@ export function InventoryGroupEditor({
         <button
           disabled={busy || !count || count > 100}
           onClick={() => {
-            const proposal = diverseTrialItems(eligible, count, []);
+            const proposal = diverseTrialItems(proposalPool, count, []);
             setIds(proposal.map((i) => i.id));
-            setOnlySelected(false);
+            setOnlySelected(true);
             setReplacing(null);
             setError(
               proposal.length < count
