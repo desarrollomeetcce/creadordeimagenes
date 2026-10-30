@@ -272,6 +272,10 @@ export async function metaRoutes(
    ownerOnly(actor);const b=z.object({listId:z.string().min(1).max(100),revision:z.number().int().nonnegative(),tableIds:z.array(z.string().min(1).max(100)).min(1).max(1500),items:z.array(z.object({inventoryId:z.string().min(1).max(100),expectedName:z.string().min(1).max(150)}).strict()).min(1).max(1500)}).strict().parse(await body());
    return send(await(await import("./inventory-import")).linkInventorySheetsBatch(actor,b));
   }
+  if(path==="inventory/sheet-activation/directory" && method==="GET")return send(await(await import("./inventory-sheet-activation")).inventoryActivationDirectory(actor,Object.fromEntries(req.nextUrl.searchParams)));
+  if(path==="inventory/sheet-activation/report" && method==="GET")return send(await(await import("./inventory-sheet-activation")).inventoryActivationReport(actor,Object.fromEntries(req.nextUrl.searchParams)));
+  if(path==="inventory/sheet-activation/sheet" && method==="POST")return send(await(await import("./inventory-sheet-activation")).inventoryActivationAddSheet(actor,await body()));
+  if(path==="inventory/sheet-activation" && method==="PATCH")return send(await(await import("./inventory-sheet-activation")).inventoryActivationChange(actor,await body()));
   if(path==="inventory/trials" && method==="GET")return send(await(await import("./inventory-trials")).inventoryTrials(actor,Object.fromEntries(req.nextUrl.searchParams)));
   if(path==="inventory/trials/catalog-report" && method==="GET")return send(await(await import("./inventory-trials")).inventoryCatalogTrialReport(actor,Object.fromEntries(req.nextUrl.searchParams)));
   if(path==="inventory/trials/report" && method==="GET")return send(await(await import("./inventory-trials")).inventoryTrialReport(actor,Object.fromEntries(req.nextUrl.searchParams)));
@@ -1623,7 +1627,7 @@ export async function metaRoutes(
   if (path === "alias-tables" && method === "POST") {
     await metaEditorOnly(actor);
     const b = z
-      .object({ name: z.string().trim().min(1).max(100) })
+      .object({ name: z.string().trim().min(1).max(100).optional() })
       .strict()
       .parse(await body());
     return send(

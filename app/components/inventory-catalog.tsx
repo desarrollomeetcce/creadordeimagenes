@@ -13,11 +13,9 @@ import {
   inventoryCountryMetrics,
   useInventoryCountryEvaluation,
 } from "./inventory-country-evaluation";
-import {
-  countryOptions as allCountryOptions,
-  countryName,
-} from "../../lib/meta-ads/countries";
-import { limaToday } from "./date-range";
+import { InventorySheetHistory } from "./inventory-sheet-history";
+import { InventoryAddEvaluationSheet } from "./inventory-add-evaluation-sheet";
+import type { InventorySheetActivationDirectory } from "../../lib/meta-ads/inventory-sheet-activation";
 import { InventoryActionMenu } from "./inventory-action-menu";
 import { useInventoryPinnedColumns } from "./use-inventory-pinned-columns";
 import dynamic from "next/dynamic";
@@ -295,7 +293,7 @@ export function InventoryCatalog({
     useWorkbookPreference<string>(listId, "country-columns-introduced", "");
   const [countryChoice, setCountryChoice] = useWorkbookPreference<
     string[] | null
-  >(listId, "inventory-country-columns", null);
+  >(listId, "inventory-sheet-columns", null);
   const [countryReload, setCountryReload] = useState(0);
   useEffect(() => {
     if (!countryColumnsIntroduced) {
@@ -325,14 +323,40 @@ export function InventoryCatalog({
     )
     .map((p) => p.key);
   const showParameter = (key: string) => parameters.includes(key);
-  const [addedCountries, setAddedCountries] = useWorkbookPreference<string[]>(
-    listId,
-    "inventory-added-countries",
-    [],
-  );
-  const knownCountries = [
-    ...new Set([...trialGroups.flatMap((g) => g.countries), ...addedCountries]),
-  ];
+  const [sheetDirectory, setSheetDirectory] =
+    useState<InventorySheetActivationDirectory | null>(null);
+  const [sheetAddOpen, setSheetAddOpen] = useState(false);
+  const [activationHistory, setActivationHistory] = useState<{
+    tableId: string;
+    name: string;
+  } | null>(null);
+  async function reloadSheetDirectory() {
+    const next: InventorySheetActivationDirectory = await api(
+      "meta-ads/inventory/sheet-activation/directory?" +
+        new URLSearchParams({ listId }),
+    );
+    setSheetDirectory(next);
+  }
+  useEffect(() => {
+    let alive = true;
+    setSheetDirectory(null);
+    void api(
+      "meta-ads/inventory/sheet-activation/directory?" +
+        new URLSearchParams({ listId }),
+    )
+      .then((d) => {
+        if (alive) setSheetDirectory(d);
+      })
+      .catch((e) => {
+        if (alive) setMessage(e.message);
+      });
+    return () => {
+      alive = false;
+    };
+  }, [listId]);
+  const knownCountries = sheetDirectory?.selected ?? [];
+  const sheetLabel = (id: string) =>
+    sheetDirectory?.tables.find((t) => t.id === id)?.name ?? "Hoja";
   const countryCodes = showParameter("countries")
     ? knownCountries.filter(
         (c) => countryChoice === null || countryChoice.includes(c),
@@ -348,7 +372,7 @@ export function InventoryCatalog({
     ...countryCodes.flatMap((country) =>
       inventoryCountryMetrics.map((metric) => ({
         key: `country:${country}:${metric.key}`,
-        label: countryName(country) + " · " + metric.label,
+        label: sheetLabel(country) + " · " + metric.label,
         width: metric.width,
       })),
     ),
@@ -748,9 +772,7 @@ export function InventoryCatalog({
   );
   const countryEvaluation = useInventoryCountryEvaluation(
     listId,
-    trialDirectory,
-    visible.map((g) => g.name),
-    hasCountryColumns,
+    countryCodes,
     countryReload,
   );
   const bands = new Map<
@@ -1258,6 +1280,44 @@ export function InventoryCatalog({
   );
   const commonSelectedGroup =
     selectedAssignedGroups.size === 1 ? [...selectedAssignedGroups][0] : "";
+  async function changeSheetActivation(
+    tableId: string,
+    names: string[],
+    change: { active?: boolean; pinned?: boolean },
+  ) {
+    if (busy || !names.length || !countryEvaluation.ready) return;
+    const items = names.map((name) => ({
+      name,
+      targets:
+        countryEvaluation.lookup.get(
+          JSON.stringify([categoryKey(name), tableId]),
+        )?.targets ?? [],
+    }));
+    setBusy(true);
+    setMessage("");
+    let committed = false;
+    try {
+      await api("meta-ads/inventory/sheet-activation", "PATCH", {
+        listId,
+        tableId,
+        items,
+        ...change,
+      });
+      committed = true;
+      setCountryReload((v) => v + 1);
+      await onChanged();
+      await reloadCategories();
+      await reloadSheetDirectory();
+    } catch (e) {
+      setMessage(
+        (committed ? "Cambio guardado. Actualiza la vista. " : "") +
+          (e as Error).message,
+      );
+      setCountryReload((v) => v + 1);
+    } finally {
+      setBusy(false);
+    }
+  }
   async function assignGroupDirectly(id: string, names: string[]) {
     if (id === "new") {
       setGroupEditor({ names });
@@ -1417,6 +1477,28 @@ export function InventoryCatalog({
           </header>
           <InventoryTrials listId={listId} fixedGroupId={evaluation} />
         </dialog>
+      )}
+      {activationHistory && (
+        <InventorySheetHistory
+          listId={listId}
+          tableId={activationHistory.tableId}
+          name={activationHistory.name}
+          sheetName={sheetLabel(activationHistory.tableId)}
+          onClose={() => setActivationHistory(null)}
+        />
+      )}
+      {sheetAddOpen && sheetDirectory && (
+        <InventoryAddEvaluationSheet
+          listId={listId}
+          directory={sheetDirectory}
+          onClose={() => setSheetAddOpen(false)}
+          onSaved={async (id) => {
+            await reloadSheetDirectory();
+            setCountryChoice([...new Set([...countryCodes, id])]);
+            setCountryReload((v) => v + 1);
+            await onChanged();
+          }}
+        />
       )}
       {assignment && (
         <InventoryCategoryAssign
@@ -1646,62 +1728,24 @@ export function InventoryCatalog({
         {showParameter("countries") && (
           <div className="inventory-country-controls">
             <InventoryMultiSelect
-              label="Países de evaluación visibles"
-              placeholder="Países de evaluación"
+              label="Hojas de evaluación visibles"
+              placeholder="Hojas de evaluación"
               all={false}
               selectAll
               values={countryCodes}
               options={knownCountries.map((c) => ({
                 value: c,
-                label: countryName(c),
+                label: sheetLabel(c),
               }))}
               onChange={setCountryChoice}
             />
-            <InventoryActionMenu
-              label="Agregar país"
-              disabled={busy || !trialDirectory?.canEdit}
+            <button
+              type="button"
+              disabled={busy || !sheetDirectory?.canEdit}
+              onClick={() => setSheetAddOpen(true)}
             >
-              <InventoryMultiSelect
-                label="Elegir países adicionales"
-                all={false}
-                values={addedCountries}
-                options={allCountryOptions.map((c) => ({
-                  value: c.code,
-                  label: c.name,
-                }))}
-                onError={setMessage}
-                description="Añade países a la evaluación de los grupos actuales desde hoy."
-                onChange={async (next) => {
-                  const additions = next.filter(
-                    (c) => !knownCountries.includes(c),
-                  );
-                  setBusy(true);
-                  try {
-                    for (const group of trialGroups) {
-                      const countries = [
-                        ...new Set([...group.countries, ...additions]),
-                      ];
-                      if (countries.length !== group.countries.length)
-                        await api("meta-ads/inventory/trials", "POST", {
-                          action: "COUNTRIES",
-                          listId,
-                          groupId: group.id,
-                          revision: group.revision,
-                          countries,
-                          since: limaToday(),
-                        });
-                    }
-                    setAddedCountries([
-                      ...new Set([...addedCountries, ...next]),
-                    ]);
-                    setCountryChoice([...new Set([...countryCodes, ...next])]);
-                  } finally {
-                    setBusy(false);
-                    await reloadGroups();
-                  }
-                }}
-              />
-            </InventoryActionMenu>
+              Agregar hoja
+            </button>
             <button
               type="button"
               aria-label="Actualizar evaluación del inventario"
@@ -2159,9 +2203,9 @@ export function InventoryCatalog({
                     inventoryCountryMetrics.map(
                       (metric) => `country:${country}:${metric.key}`,
                     ),
-                    countryName(country),
+                    sheetLabel(country),
                   )}
-                  {countryName(country)}
+                  {sheetLabel(country)}
                 </th>
               ))}
               <th
@@ -2190,9 +2234,67 @@ export function InventoryCatalog({
                     >
                       {columnHandle(
                         `country:${country}:${metric.key}`,
-                        countryName(country) + " · " + metric.label,
+                        sheetLabel(country) + " · " + metric.label,
                       )}
-                      {metric.label}
+                      <span>{metric.label}</span>
+                      {metric.key === "activation" && (
+                        <span className="inventory-sheet-bulk-controls">
+                          <button
+                            type="button"
+                            aria-label={`Activar en ${sheetLabel(country)}`}
+                            title="Activar seleccionados"
+                            disabled={
+                              busy ||
+                              !selectedGroups ||
+                              !sheetDirectory?.canEdit ||
+                              !countryEvaluation.ready ||
+                              countryEvaluation.loading
+                            }
+                            onClick={() =>
+                              void changeSheetActivation(
+                                country,
+                                visible
+                                  .filter((g) =>
+                                    g.links.some((a) =>
+                                      selectedVisible.includes(a.id),
+                                    ),
+                                  )
+                                  .map((g) => g.name),
+                                { active: true },
+                              )
+                            }
+                          >
+                            ◉
+                          </button>
+                          <button
+                            type="button"
+                            aria-label={`Desactivar en ${sheetLabel(country)}`}
+                            title="Desactivar seleccionados"
+                            disabled={
+                              busy ||
+                              !selectedGroups ||
+                              !sheetDirectory?.canEdit ||
+                              !countryEvaluation.ready ||
+                              countryEvaluation.loading
+                            }
+                            onClick={() =>
+                              void changeSheetActivation(
+                                country,
+                                visible
+                                  .filter((g) =>
+                                    g.links.some((a) =>
+                                      selectedVisible.includes(a.id),
+                                    ),
+                                  )
+                                  .map((g) => g.name),
+                                { active: false },
+                              )
+                            }
+                          >
+                            ○
+                          </button>
+                        </span>
+                      )}
                     </th>
                   )),
                 )}
@@ -2533,16 +2635,18 @@ export function InventoryCatalog({
                       </td>
                       {hasCountryColumns && (
                         <InventoryCountryCells
-                          canEdit={!!trialDirectory?.canEdit}
-                          onChanged={() => setCountryReload((v) => v + 1)}
+                          canEdit={!!sheetDirectory?.canEdit}
+                          busy={busy}
                           name={g.name}
                           countries={countryCodes}
                           evaluation={countryEvaluation}
-                          group={trialGroupByName.get(categoryKey(g.name))?.id}
-                          reserved={
-                            trialGroupByName.get(categoryKey(g.name))?.reserve
+                          sheetLabel={sheetLabel}
+                          onChange={(tableId, name, change) =>
+                            void changeSheetActivation(tableId, [name], change)
                           }
-                          onOpen={setEvaluation}
+                          onHistory={(tableId, name) =>
+                            setActivationHistory({ tableId, name })
+                          }
                         />
                       )}
                       <td

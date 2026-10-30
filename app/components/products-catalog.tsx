@@ -109,8 +109,34 @@ export function ProductsCatalog() {
     [selected, setSelected] = useState("diplomados"),
     [message, setMessage] = useState(""),
     [loading, setLoading] = useState(true),
-    [adding, setAdding] = useState(false),
     [busy, setBusy] = useState(false);
+  const creatingTable = useRef(false);
+  async function createTableDirectly() {
+    if (creatingTable.current || busy || !canCreate) return;
+    creatingTable.current = true;
+    setBusy(true);
+    setMessage("");
+    let committed = false;
+    try {
+      const t = await api("meta-ads/alias-tables", "POST", {});
+      committed = true;
+      appendSheet(t.id);
+      await load();
+      setSelected(t.id);
+      setSpecialId(null);
+      setEditing(null);
+    } catch (error) {
+      setMessage(
+        (committed ? "La hoja se creó. Actualiza la lista. " : "") +
+          (error instanceof Error
+            ? error.message
+            : "No se pudo crear la hoja."),
+      );
+    } finally {
+      creatingTable.current = false;
+      setBusy(false);
+    }
+  }
   type Special = {
     id: string;
     kind: "TOTALS" | "ADVISORS" | "INVENTORY";
@@ -713,8 +739,8 @@ export function ProductsCatalog() {
         <button
           className="sheet-add-tab"
           hidden={!canCreate}
-          aria-expanded={adding}
-          onClick={() => setAdding((v) => !v)}
+          disabled={busy}
+          onClick={() => void createTableDirectly()}
         >
           + Tabla
         </button>
@@ -818,41 +844,6 @@ export function ProductsCatalog() {
             )}
           {documentShare}
         </div>
-      )}
-      {adding && (
-        <form
-          className="row sheet-add-table"
-          onSubmit={async (e) => {
-            e.preventDefault();
-            const name = String(new FormData(e.currentTarget).get("name"));
-            setBusy(true);
-            try {
-              const t = await api("meta-ads/alias-tables", "POST", { name });
-              appendSheet(t.id);
-              await load();
-              setSelected(t.id);
-              setSpecialId(null);
-              setAdding(false);
-            } catch (error) {
-              setMessage(
-                error instanceof Error
-                  ? error.message
-                  : "No se pudo crear la tabla.",
-              );
-            } finally {
-              setBusy(false);
-            }
-          }}
-        >
-          <label>
-            Nombre de la nueva tabla
-            <input name="name" required maxLength={100} />
-          </label>
-          <button disabled={busy}>Crear tabla</button>
-          <button type="button" onClick={() => setAdding(false)}>
-            Cancelar
-          </button>
-        </form>
       )}
       {message && (
         <p className="sheet-message" role="status">

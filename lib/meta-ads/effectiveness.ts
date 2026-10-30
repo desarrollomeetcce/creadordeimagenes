@@ -170,6 +170,27 @@ export async function performanceEffectivenessSource(
     "performance-manager",
   );
 }
+/** Authorized Inventory aggregate/history service only; never returned as raw rows. */
+export async function inventoryEffectivenessSource(
+  actor: Actor,
+  tableId: string,
+  since: string,
+  until: string,
+  client: Prisma.TransactionClient,
+) {
+  ownerOnly(actor);
+  return readEffectiveness(
+    actor,
+    tableId,
+    since,
+    until,
+    client,
+    [],
+    false,
+    undefined,
+    true,
+  );
+}
 async function readEffectiveness(
   actor: Actor,
   tableId: string,
@@ -179,6 +200,7 @@ async function readEffectiveness(
   path: string[] = [],
   ignoreLink = false,
   advisorScope?: string,
+  includeHidden = false,
 ): Promise<EffectivenessSheet> {
   demand(
     !path.includes(tableId) && path.length < 9,
@@ -267,7 +289,9 @@ async function readEffectiveness(
       : client.metaEffectivenessLink.findUnique({ where: { tableId } }),
   ]);
   const hidden = new Set(
-      stored.filter((s) => s.hidden).map((s) => key(s.aliasId, s.country)),
+      stored
+        .filter((s) => s.hidden && !includeHidden)
+        .map((s) => key(s.aliasId, s.country)),
     ),
     fx = new Map(snapshots.map((s) => [s.day, s]));
   const rows = new Map<string, EffectivenessRow>();
@@ -323,7 +347,7 @@ async function readEffectiveness(
       partialMetrics: [],
     });
   for (const s of stored) {
-    if (s.hidden) continue;
+    if (s.hidden && !includeHidden) continue;
     const r = get(s.aliasId, s.country);
     r.advisorId = s.advisorId;
     r.currency = s.displayCurrency;
@@ -378,7 +402,7 @@ async function readEffectiveness(
   for (const a of table!.aliases)
     if (
       ![...rows.values()].some((r) => r.aliasId === a.id) &&
-      !stored.some((r) => r.aliasId === a.id && r.hidden)
+      !stored.some((r) => r.aliasId === a.id && r.hidden && !includeHidden)
     )
       get(a.id, table!.defaultCountry);
   const missing = new Set<string>();
@@ -490,6 +514,7 @@ async function readEffectiveness(
       [...path, tableId],
       false,
       advisorScope,
+      includeHidden,
     );
     linkedSourceName = source.table.name;
     const names = new Map(source.table.aliases.map((a) => [a.id, a.name]));

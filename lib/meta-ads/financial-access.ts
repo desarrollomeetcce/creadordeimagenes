@@ -411,6 +411,23 @@ export async function authorizeFinancialRequest(
     }
     tableIds = [...visible];
   }
+  if (
+    doc.kind === "INVENTORY" &&
+    path.startsWith("inventory/sheet-activation")
+  ) {
+    const linked = await db.metaAlias.findMany({
+      where: { inventorySheetId: scope.slice(4) },
+      select: { tableId: true },
+    });
+    const internal = doc.config.inventoryActivation as
+      { sheets?: unknown } | undefined;
+    const configured = Array.isArray(internal?.sheets)
+      ? internal.sheets.filter((v): v is string => typeof v === "string")
+      : [];
+    tableIds = [
+      ...new Set([...tableIds, ...linked.map((a) => a.tableId), ...configured]),
+    ];
+  }
   if (!isMetadata && scope !== "ALL") {
     if (write && /^(effectiveness\/(sync|links)|inventory\/package)/.test(path))
       demand(
@@ -515,7 +532,9 @@ export async function authorizeFinancialRequest(
         ref.value !== "all"
       )
         demand(
-          tableIds.includes(ref.value),
+          path === "inventory/sheet-activation/report" && ref.key === "tableIds"
+            ? ref.value.split(",").every((id) => tableIds.includes(id))
+            : tableIds.includes(ref.value),
           "Una hoja de origen no está compartida en este documento.",
           403,
         );
@@ -546,7 +565,7 @@ export async function authorizeFinancialRequest(
       const id = values.find((v) => v.key === "id");
       if (id) advisorIds.push(id.value);
     }
-    if (advisorIds.length && path!=="inventory/advisors") {
+    if (advisorIds.length && path !== "inventory/advisors") {
       const allowedAlias =
         doc.kind === "INVENTORY"
           ? { inventorySheetId: scope.slice(4) }

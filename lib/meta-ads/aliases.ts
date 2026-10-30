@@ -241,7 +241,7 @@ export async function aliasTables(actor: Actor) {
     take: 100,
   });
 }
-export async function createAliasTable(actor: Actor, name: string) {
+export async function createAliasTable(actor: Actor, name?: string) {
   await metaEditorOnly(actor);
   return db.$transaction(async (tx) => {
     await tx.$executeRaw`SELECT pg_advisory_xact_lock(884411)`;
@@ -256,6 +256,16 @@ export async function createAliasTable(actor: Actor, name: string) {
       (await tx.metaAliasTable.count()) < 100,
       "El catálogo admite hasta 100 tablas.",
     );
+    if (!name) {
+      const existing = new Set(
+        (await tx.metaAliasTable.findMany({ select: { name: true } })).map(
+          (t) => t.name.toLocaleLowerCase("es"),
+        ),
+      );
+      let number = 1;
+      while (existing.has(`hoja ${number}`)) number++;
+      name = `Hoja ${number}`;
+    }
     demand(
       !(await tx.metaAliasTable.findFirst({
         where: { name: { equals: name, mode: "insensitive" } },

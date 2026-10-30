@@ -1,7 +1,8 @@
+import { syncInventoryActivationVisibility } from "./inventory-sheet-activation";
 import { assertUnlinkedColumns } from "./column-link-policy";
 import { randomUUID } from "node:crypto";
 import { db } from "../db";
-import {ownerOnly} from "./financial-access";
+import { ownerOnly } from "./financial-access";
 import { demand } from "../errors";
 import { recordActivity } from "../activity";
 import type { Actor } from "./service";
@@ -225,6 +226,9 @@ export async function setEffectivenessState(
           },
         },
       });
+      await syncInventoryActivationVisibility(tx, [
+        { aliasId: b.aliasId, country: b.country, active: b.active },
+      ]);
       return { ok: true };
     },
     { timeout: 60000 },
@@ -336,6 +340,14 @@ export async function setEffectivenessStates(
           },
         },
       });
+      await syncInventoryActivationVisibility(
+        tx,
+        changed.map((r) => ({
+          aliasId: r.aliasId,
+          country: r.country,
+          active: b.active,
+        })),
+      );
       return {
         ok: true,
         changed: changed.length,

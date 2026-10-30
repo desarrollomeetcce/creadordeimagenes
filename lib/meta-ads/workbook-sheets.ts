@@ -1,3 +1,4 @@
+import type { Prisma } from "@prisma/client";
 import { sharedTabWhere } from "./financial-access";
 import { z } from "zod";
 import { db } from "../db";
@@ -155,7 +156,22 @@ export async function updateWorkbookSheet(
     const config =
       b.config === undefined
         ? undefined
-        : parseWorkbookConfig(workbookKindSchema.parse(old.kind), b.config);
+        : (() => {
+            const supplied = b.config as Record<string, unknown>;
+            const { inventoryActivation: _internal, ...publicConfig } =
+              supplied;
+            const parsed = parseWorkbookConfig(
+              workbookKindSchema.parse(old.kind),
+              publicConfig,
+            );
+            const stored = old.config as Record<string, Prisma.JsonValue>;
+            return {
+              ...parsed,
+              ...(old.kind === "INVENTORY" && stored.inventoryActivation
+                ? { inventoryActivation: stored.inventoryActivation }
+                : {}),
+            };
+          })();
     const sheet = await tx.metaEffectivenessSheet.update({
       where: { id },
       data: { name, ...(config ? { config } : {}), revision: { increment: 1 } },

@@ -6,7 +6,7 @@ export const inventoryParameters = [
   { key: "secondary", label: "Categorías secundarias" },
   { key: "sheets", label: "Hojas" },
   { key: "group", label: "Grupo" },
-  { key: "countries", label: "Países y evaluación" },
+  { key: "countries", label: "Hojas y evaluación" },
   { key: "syllabi", label: "Temarios" },
 ];
 export function InventoryColumnVisibility({
