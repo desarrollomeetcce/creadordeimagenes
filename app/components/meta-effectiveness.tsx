@@ -1132,18 +1132,6 @@ export function MetaEffectiveness({
       }}
       aria-label="Efectividad diaria"
     >
-      <div className="financial-metadata-visibility">
-        <InventoryMultiSelect
-          label="Ver columnas"
-          compact
-          placeholder="Ver columnas"
-          options={metadataColumns}
-          values={metadataVisible}
-          onChange={setMetadataVisible}
-          all={false}
-          selectAll
-        />
-      </div>
       {duplicateReview.dialog}
       {rowDeletion && (
         <DeleteEffectivenessRows
@@ -1308,13 +1296,46 @@ export function MetaEffectiveness({
             />
           </label>
           <SheetMultiFilter
-            label="Filtro de parámetros"
-            options={viewMetrics.map((m) => ({
-              value: m.key,
-              label: `${m.key === "base" ? "Base" : m.name} (${m.label})`,
-            }))}
-            value={selectedMetrics}
-            onChange={setSelectedMetrics}
+            label="Ver parámetros"
+            options={[
+              ...metadataColumns.map((column) => ({
+                value: "column:" + column.value,
+                label: column.label,
+              })),
+              ...viewMetrics.map((m) => ({
+                value: m.key,
+                label: `${m.key === "base" ? "Base" : m.name} (${m.label})`,
+              })),
+            ]}
+            value={
+              visibleMetadata.length === metadataColumns.length &&
+              visibleMetrics.length === viewMetrics.length
+                ? null
+                : [
+                    ...visibleMetadata.map(
+                      (column) => "column:" + column.value,
+                    ),
+                    ...visibleMetrics.map((metric) => metric.key),
+                  ]
+            }
+            onChange={(values) => {
+              setMetadataVisible(
+                metadataColumns
+                  .filter(
+                    (column) =>
+                      values === null ||
+                      values.includes("column:" + column.value),
+                  )
+                  .map((column) => column.value),
+              );
+              setSelectedMetrics(
+                values === null
+                  ? null
+                  : viewMetrics
+                      .filter((metric) => values.includes(metric.key))
+                      .map((metric) => metric.key),
+              );
+            }}
           />
           <SheetMultiFilter
             label="Filtro de valores"
@@ -1617,9 +1638,9 @@ export function MetaEffectiveness({
           <span> Tasas pendientes: {data.missingFxDays.join(", ")}. </span>
         ) : null}
         <details>
-          <summary>Cómo se calcula</summary> Filtro de parámetros elige las
-          columnas visibles de cada fecha; Filtro de inventario elige las filas.
-          Se cruzan con el país y el rango de fechas; Todos incluye la lista
+          <summary>Cómo se calcula</summary> Ver parámetros elige las columnas
+          visibles de cada fecha; Filtro de inventario elige las filas. Se
+          cruzan con el país y el rango de fechas; Todos incluye la lista
           completa, aunque haya una búsqueda escrita. Ocultar una columna no
           borra sus datos. Los importes de monedas distintas se ordenan en
           grupos separados. Solo campañas, incluidas apagadas; nunca suma sus
@@ -1759,6 +1780,11 @@ export function MetaEffectiveness({
                   <col
                     key={c.value}
                     data-column-key={c.value}
+                    style={
+                      c.value === "evaluation"
+                        ? { width: columnWidths.evaluation ?? 110 }
+                        : undefined
+                    }
                     className={
                       c.value === "evaluation"
                         ? "financial-evaluation-col"
@@ -1894,7 +1920,7 @@ export function MetaEffectiveness({
                           .filter((name): name is string => !!name)}
                         disabled={busy || !inventoryId}
                         addDisabled={inventoryState?.listId !== inventoryId}
-                        description="Marca varios diplomados. Buscar filtra los de esta hoja; Agregar seleccionados los incorpora desde el catálogo."
+                        description="Marca diplomados y elige Buscar o Agregar."
                         onError={setMessage}
                         onChange={(names) => {
                           const ids = financialAliases
@@ -2114,6 +2140,13 @@ export function MetaEffectiveness({
                     hidden={!metadataVisible.includes("evaluation")}
                   >
                     Estado {metadataControls("evaluation", "Estado")}
+                    <SheetColumnResizer
+                      label="Estado"
+                      onResize={(width) =>
+                        resizeColumn("evaluation", width)
+                      }
+                      onReset={() => resizeColumn("evaluation")}
+                    />
                   </th>
                   {visibleMetrics.length > 0 &&
                     days.map((d) => (

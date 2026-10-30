@@ -256,52 +256,54 @@ export function InventoryMultiSelect({
               + {createLabel} «{query.trim()}»
             </button>
           )}
-        <button
-          type="button"
-          disabled={busy || disabled}
-          onClick={async () => {
-            if (pending.current) return;
-            pending.current = true;
-            setBusy(true);
-            try {
-              if (!all) await onChange(draft);
-              popover.current?.hidePopover();
-              trigger.current?.focus({ preventScroll: true });
-            } catch (e) {
-              onError?.((e as Error).message);
-            } finally {
-              setBusy(false);
-              pending.current = false;
-            }
-          }}
-        >
-          {confirmLabel}
-        </button>
-        {onAdd && (
+        <div className={onAdd ? "inventory-picker-actions" : undefined}>
           <button
             type="button"
-            className="inventory-picker-add"
-            data-financial-write
-            disabled={busy || disabled || addDisabled || !draft.length}
+            disabled={busy || disabled}
             onClick={async () => {
               if (pending.current) return;
               pending.current = true;
               setBusy(true);
               try {
-                await onAdd(draft);
+                if (!all) await onChange(draft);
                 popover.current?.hidePopover();
                 trigger.current?.focus({ preventScroll: true });
               } catch (e) {
                 onError?.((e as Error).message);
               } finally {
-                pending.current = false;
                 setBusy(false);
+                pending.current = false;
               }
             }}
           >
-            Agregar seleccionados{draft.length ? ` (${draft.length})` : ""}
+            {confirmLabel}
           </button>
-        )}
+          {onAdd && (
+            <button
+              type="button"
+              className="inventory-picker-add"
+              data-financial-write
+              disabled={busy || disabled || addDisabled || !draft.length}
+              onClick={async () => {
+                if (pending.current) return;
+                pending.current = true;
+                setBusy(true);
+                try {
+                  await onAdd(draft);
+                  popover.current?.hidePopover();
+                  trigger.current?.focus({ preventScroll: true });
+                } catch (e) {
+                  onError?.((e as Error).message);
+                } finally {
+                  pending.current = false;
+                  setBusy(false);
+                }
+              }}
+            >
+              Agregar
+            </button>
+          )}
+        </div>
         {busy && <small role="status">Guardando…</small>}
       </div>
     </>
