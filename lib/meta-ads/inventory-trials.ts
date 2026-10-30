@@ -911,11 +911,25 @@ export async function inventoryTrialReport(actor: Actor, input: unknown) {
         >();
       const dayKey = (item: string, country: string, day: string) =>
         JSON.stringify([item, country, day]);
+      const sourceSheets = new Map<
+        string,
+        Map<string, { tableId: string; name: string; active: boolean }>
+      >();
       for (const tableId of new Set(aliases.map((a) => a.tableId))) {
         const sheet = await effectiveness(actor, tableId, since, until, tx);
         for (const row of sheet.rows) {
           const item = aliasItems.get(row.aliasId);
           if (!item || !group.countries.includes(row.country)) continue;
+          const sourceKey = JSON.stringify([item, row.country]);
+          if (!sourceSheets.has(sourceKey))
+            sourceSheets.set(sourceKey, new Map());
+          sourceSheets
+            .get(sourceKey)!
+            .set(row.aliasId, {
+              tableId: sheet.table.id,
+              name: sheet.table.name,
+              active: row.active,
+            });
           for (const date of trialDays(since, until, [])) {
             const c: EffectivenessCell | undefined = row.days[date];
             for (const metric of ["sales", "budget", "spend"] as const) {
@@ -1021,7 +1035,22 @@ export async function inventoryTrialReport(actor: Actor, input: unknown) {
             (p) => p.since <= until && (!p.until || p.until >= until),
           ),
           available = items.some((i) => i.id === c.itemId);
+        const sheets = [
+          ...(sourceSheets
+            .get(JSON.stringify([c.itemId, c.country]))
+            ?.values() ?? []),
+        ];
+        const activation: "ACTIVE" | "INACTIVE" | "MIXED" | "UNKNOWN" =
+          !sheets.length
+            ? "UNKNOWN"
+            : sheets.every((s) => s.active)
+              ? "ACTIVE"
+              : sheets.every((s) => !s.active)
+                ? "INACTIVE"
+                : "MIXED";
         return {
+          sheets,
+          activation,
           cycleId: c.id,
           slotId: c.slotId,
           itemId: c.itemId,

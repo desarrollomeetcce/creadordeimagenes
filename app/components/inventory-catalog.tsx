@@ -2003,6 +2003,11 @@ export function InventoryCatalog({
                                 Editar grupo
                               </button>
                               <button
+                                aria-label={
+                                  "Detalle de evaluación de " +
+                                  section.trialTitle +
+                                  " por país"
+                                }
                                 onClick={() => setEvaluation(section.trialId!)}
                               >
                                 Evaluar por país ↗
@@ -2269,7 +2274,9 @@ export function InventoryCatalog({
                               </button>
                               <button
                                 aria-label={
-                                  "Evaluar " + assigned.name + " por país"
+                                  "Detalle de evaluación de " +
+                                  assigned.name +
+                                  " por país"
                                 }
                                 onClick={() => setEvaluation(assigned.id)}
                               >

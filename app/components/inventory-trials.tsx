@@ -46,6 +46,25 @@ const pct = (v: number | null) =>
       }).format(v);
 const dayMin = () =>
   new Date(Date.parse(limaToday()) - 365 * 86400000).toISOString().slice(0, 10);
+function TrialActivation({ state }: { state: Row["activation"] }) {
+  const label = {
+    ACTIVE: "Activado",
+    INACTIVE: "Desactivado",
+    MIXED: "Mixto",
+    UNKNOWN: "Sin registro en hojas",
+  }[state];
+  return (
+    <span
+      className={"trial-sheet-activation trial-sheet-" + state}
+      aria-label={"Estado actual en hojas: " + label}
+    >
+      <i aria-hidden="true" />
+      {label}
+    </span>
+  );
+}
+const factor = (value: number | null) =>
+  value === null ? "—" : num(value) + "×";
 function TrialDialog({
   title,
   onClose,
@@ -292,7 +311,7 @@ export function InventoryTrials({
     const k = categoryFor(m);
     categoryCounts.set(k, (categoryCounts.get(k) ?? 0) + 1);
   }
-  const totalColumns = 4 + (country === "all" ? countries.length : 6);
+  const totalColumns = 4 + (country === "all" ? countries.length : 7);
   const currentRows =
       report?.rows.filter((r) => countries.includes(r.country)) ?? [],
     alertCount = currentRows.filter((r) =>
@@ -587,9 +606,10 @@ export function InventoryTrials({
                       <th>Gasto Meta</th>
                       <th>Días activos</th>
                       <th title="Importe evaluado / límite de alerta">
-                        Uso del límite
+                        Factor de evaluación
                       </th>
-                      <th>Estado</th>
+                      <th>Activación en hojas</th>
+                      <th>Estado de evaluación</th>
                     </>
                   )}
                 </tr>
@@ -598,6 +618,13 @@ export function InventoryTrials({
                 {ordered.map((m, index) => {
                   const item = itemFor(m),
                     row = lookup.get(m.slotId + ":" + country),
+                    displaySheets =
+                      country === "all"
+                        ? item?.sheets
+                        : row?.sheets.map((s) => ({
+                            id: s.tableId,
+                            name: s.name,
+                          })),
                     category = categoryFor(m),
                     newCategory =
                       index === 0 ||
@@ -664,8 +691,8 @@ export function InventoryTrials({
                         </td>
                         <td className="trial-meta-cell">
                           <div className="trial-meta-tags">
-                            {item?.sheets?.length ? (
-                              item.sheets.map((sheet) => (
+                            {displaySheets?.length ? (
+                              displaySheets.map((sheet) => (
                                 <span key={sheet.id}>{sheet.name}</span>
                               ))
                             ) : (
@@ -691,6 +718,14 @@ export function InventoryTrials({
                                     onClick={() => setDetail(r)}
                                   >
                                     <b>{status(r)}</b>
+                                    <TrialActivation state={r.activation} />
+                                    <small>
+                                      Hojas:{" "}
+                                      {r.sheets
+                                        .map((s) => s.name)
+                                        .join(" · ") ||
+                                        "Sin registro para este país"}
+                                    </small>
                                     {r.name !== m.name && (
                                       <span className="trial-replacement-name">
                                         Ahora: {r.name}
@@ -704,7 +739,8 @@ export function InventoryTrials({
                                       P {money(r.budget)} · G {money(r.spend)}
                                     </span>
                                     <small>
-                                      Uso del límite: {pct(evaluate(r).usage)}
+                                      Factor: {factor(evaluate(r).usage)} (
+                                      {pct(evaluate(r).usage)})
                                       {!r.complete.sales ||
                                       !(basis === "META"
                                         ? r.complete.spend
@@ -755,8 +791,18 @@ export function InventoryTrials({
                             </td>
                             <td>{row.activeDays}</td>
                             <td>
-                              {pct(evaluate(row).usage)}
-                              <small>Límite {money(evaluate(row).limit)}</small>
+                              {factor(evaluate(row).usage)}
+                              <small>
+                                {pct(evaluate(row).usage)} · Límite{" "}
+                                {money(evaluate(row).limit)}
+                              </small>
+                            </td>
+                            <td>
+                              <TrialActivation state={row.activation} />
+                              <small>
+                                {row.sheets.map((s) => s.name).join(" · ") ||
+                                  "Sin registro para este país"}
+                              </small>
                             </td>
                             <td>
                               <button
@@ -778,7 +824,7 @@ export function InventoryTrials({
                             </td>
                           </>
                         ) : (
-                          <td colSpan={6}>
+                          <td colSpan={7}>
                             {loading
                               ? "Cargando cifras…"
                               : group.reserve
@@ -1337,9 +1383,33 @@ function TrialDetail({
       <div className={"trial-detail-status trial-" + evaluation.status}>
         <strong>{trialStatusNames[evaluation.status]}</strong>
         <span>
-          Uso del límite: {pct(evaluation.usage)} · Límite{" "}
-          {money(evaluation.limit)}
+          Factor de evaluación: {factor(evaluation.usage)} (
+          {pct(evaluation.usage)}) · Límite {money(evaluation.limit)}
         </span>
+      </div>
+      <p className="trial-help">
+        Factor = {basis === "META" ? "gasto Meta" : "presupuesto acumulado"} /
+        límite según ventas. Desde 1× (100%) se genera alerta.
+      </p>
+      <div className="trial-sources">
+        <strong>Hojas de origen · estado actual</strong>
+        <TrialActivation state={row.activation} />
+        {row.sheets.length ? (
+          <ul>
+            {row.sheets.map((s) => (
+              <li key={s.tableId}>
+                {s.name}
+                <TrialActivation state={s.active ? "ACTIVE" : "INACTIVE"} />
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p>Sin registro de este diplomado y país en las hojas vinculadas.</p>
+        )}
+        <small>
+          La activación refleja la hoja. La pausa de seguimiento se registra por
+          separado.
+        </small>
       </div>
       <div className="trial-detail-numbers">
         <div>

@@ -877,6 +877,20 @@ test("Grupos de inventario: reglas, países, propuestas, reemplazos e aislamient
           (await inventoryTrials(readActor, { listId: list.id })).canEdit,
           false,
         );
+        const viewReport = await inventoryTrialReport(readActor, {
+          listId: list.id,
+          groupId: group.id,
+        });
+        assert(viewReport.rows.length > 0);
+        assert(
+          viewReport.rows.every(
+            (row) =>
+              Array.isArray(row.sheets) &&
+              ["ACTIVE", "INACTIVE", "MIXED", "UNKNOWN"].includes(
+                row.activation,
+              ),
+          ),
+        );
         await fail(saveInventoryTrial(readActor, base), 403);
         await fail(
           changeInventoryTrial(readActor, {
@@ -896,6 +910,128 @@ test("Grupos de inventario: reglas, países, propuestas, reemplazos e aislamient
           where: { userId: editor.id },
         });
         await fail(saveInventoryTrial(editActor, base), 403);
+      },
+    );
+    await t.test(
+      "Fuentes y activación por país: Ecuador, Bolivia y factor independiente",
+      async () => {
+        const item = await db.metaInventoryItem.create({
+          data: { sheetId: list.id, name: "Fuentes " + tag },
+        });
+        const sources = await Promise.all(
+          ["Perú", "Ecuador", "Ecuador adicional", "Bolivia"].map((name) =>
+            db.metaAliasTable.create({
+              data: { name: name + tag, defaultCurrency: "PEN" },
+            }),
+          ),
+        );
+        const aliases = [];
+        const countries = ["PE", "EC", "EC", "BO"];
+        for (let i = 0; i < sources.length; i++) {
+          const alias = await db.metaAlias.create({
+            data: {
+              name: item.name,
+              inventorySheetId: list.id,
+              tableId: sources[i].id,
+            },
+          });
+          aliases.push(alias);
+          await db.metaEffectivenessRow.create({
+            data: {
+              aliasId: alias.id,
+              country: countries[i],
+              currency: "PEN",
+              displayCurrency: "PEN",
+              days: {
+                create: [
+                  {
+                    day: yesterday,
+                    sales: 0,
+                    salesOverridden: true,
+                    annotations: { budget: { value: 0, currency: "PEN" } },
+                  },
+                  {
+                    day: today,
+                    sales: [1, 2, 1, 0][i],
+                    salesOverridden: true,
+                    annotations: {
+                      budget: { value: [10, 20, 10, 25][i], currency: "PEN" },
+                    },
+                  },
+                ],
+              },
+            },
+          });
+        }
+        const group = await saveInventoryTrial(actor, {
+          ...base,
+          name: "Países fuente",
+          itemIds: [item.id],
+          countries: ["PE", "EC", "BO"],
+        });
+        try {
+          let report = await inventoryTrialReport(actor, {
+            listId: list.id,
+            groupId: group.id,
+          });
+          const ec = report.rows.find((r) => r.country === "EC")!,
+            bo = report.rows.find((r) => r.country === "BO")!;
+          assert.equal(ec.sales, 3);
+          assert.equal(ec.budget, 30);
+          assert.equal(ec.budgetEvaluation.usage, 0.2);
+          assert.equal(ec.activation, "ACTIVE");
+          assert.deepEqual(
+            ec.sheets.map((s) => s.name).sort(),
+            sources
+              .slice(1, 3)
+              .map((s) => s.name)
+              .sort(),
+          );
+          assert.equal(bo.budgetEvaluation.usage, 1);
+          assert.equal(bo.budgetEvaluation.status, "CRITICAL");
+          await db.metaEffectivenessState.createMany({
+            data: [
+              { aliasId: aliases[2].id, country: "EC", active: false },
+              { aliasId: aliases[3].id, country: "BO", active: false },
+            ],
+          });
+          report = await inventoryTrialReport(actor, {
+            listId: list.id,
+            groupId: group.id,
+          });
+          assert.equal(
+            report.rows.find((r) => r.country === "PE")!.activation,
+            "ACTIVE",
+          );
+          assert.equal(
+            report.rows.find((r) => r.country === "EC")!.activation,
+            "MIXED",
+          );
+          assert.equal(
+            report.rows.find((r) => r.country === "BO")!.activation,
+            "INACTIVE",
+          );
+          const detail = await inventoryTrialReport(actor, {
+            listId: list.id,
+            groupId: group.id,
+            slotId: group.members[0].slotId,
+            country: "EC",
+          });
+          assert.equal(detail.rows.length, 1);
+          assert.equal(detail.rows[0].sheets.length, 2);
+          assert.equal(detail.rows[0].sheets.filter((s) => s.active).length, 1);
+        } finally {
+          await db.metaInventoryTrialGroup.delete({ where: { id: group.id } });
+          await db.metaEffectivenessRow.deleteMany({
+            where: { aliasId: { in: aliases.map((a) => a.id) } },
+          });
+          await db.metaAlias.deleteMany({
+            where: { id: { in: aliases.map((a) => a.id) } },
+          });
+          await db.metaAliasTable.deleteMany({
+            where: { id: { in: sources.map((t) => t.id) } },
+          });
+        }
       },
     );
     await t.test(
