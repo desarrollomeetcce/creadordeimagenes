@@ -6,6 +6,7 @@ import {
   type InventoryNameDecision,
 } from "./inventory-duplicates";
 import { writeInventoryTags } from "./inventory-categories";
+import { setInventoryMembership } from "./inventory-membership";
 
 /** Caller holds the financial write lock. Linking a catalog never transfers another list's data. */
 export async function linkFinancialInventory(
@@ -57,7 +58,8 @@ export async function linkFinancialInventory(
       });
       aliases.push(alias);
       created++;
-    }
+    } else if (await setInventoryMembership(tx, listId, [alias.id], false))
+      created++;
     const group = aliases.filter(
       (a) => a.inventorySheetId === listId && a.name === name,
     );

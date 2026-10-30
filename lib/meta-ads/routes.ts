@@ -1638,6 +1638,8 @@ export async function metaRoutes(
       201,
     );
   }
+  if (path === "meta-advisor-options" && method === "GET") return send(await (await import("./aliases")).metaAssignmentAdvisors(actor));
+  if (path === "alias-catalog" && method === "GET") return send(await (await import("./aliases")).metaAliasCatalog(actor));
   if (path === "aliases" && method === "GET")
     return send(await (await import("./aliases")).aliases(actor));
   if (path === "aliases" && method === "POST") {
@@ -1680,6 +1682,8 @@ export async function metaRoutes(
           .array(z.string().regex(/^\d{1,40}$/))
           .min(1)
           .max(100),
+        currency: z.string().refine(isCurrency,"Moneda inválida.").optional(),
+        selection: z.object({tableId:z.string().min(1).max(100),catalogId:z.string().min(1).max(120).optional(),name:z.string().trim().min(1).max(150).optional(),inventorySheetId:z.string().min(1).max(100).optional()}).strict().optional(),
         aliasId: z.string().min(1).max(80).nullable(),
         advisorId: z.string().min(1).max(80).nullable().optional(),
         country: z
@@ -1693,7 +1697,7 @@ export async function metaRoutes(
     return send(
       await (
         await import("./aliases")
-      ).assignAliases(actor, b.objectIds, b.aliasId, b.country, b.advisorId),
+      ).assignAliases(actor, b.objectIds, b.aliasId, b.country, b.advisorId, b.selection, b.currency),
     );
   }
   if (
@@ -1706,6 +1710,8 @@ export async function metaRoutes(
     await metaEditorOnly(actor);
     const b = z
       .object({
+        currency: z.string().refine(isCurrency,"Moneda inválida.").optional(),
+        selection: z.object({tableId:z.string().min(1).max(100),catalogId:z.string().min(1).max(120).optional(),name:z.string().trim().min(1).max(150).optional(),inventorySheetId:z.string().min(1).max(100).optional()}).strict().optional(),
         aliasId: z.string().max(80).nullable(),
         advisorId: z.string().min(1).max(80).nullable().optional(),
         country: z
@@ -1719,7 +1725,7 @@ export async function metaRoutes(
     return send(
       await (
         await import("./aliases")
-      ).assignAlias(actor, parts[2], b.aliasId, b.country, b.advisorId),
+      ).assignAlias(actor, parts[2], b.aliasId, b.country, b.advisorId, b.selection, b.currency),
     );
   }
   if (path === "marketing-oauth-config" && method === "GET") {

@@ -116,6 +116,7 @@ export function InventoryCountryCells({
   onChange,
   onHistory,
   onReplace,
+  onDetail,
 }: {
   name: string;
   countries: string[];
@@ -131,6 +132,7 @@ export function InventoryCountryCells({
   ) => void;
   onHistory: (tableId: string, name: string) => void;
   onReplace?: (tableId: string, name: string) => void;
+  onDetail?: (tableId: string, name: string, aliasId: string) => void;
 }) {
   return (
     <>
@@ -188,23 +190,26 @@ export function InventoryCountryCells({
                     ↔
                   </button>
                 )}
-                <button
-                  type="button"
-                  className="inventory-sheet-item-pin"
-                  aria-pressed={point?.pinned ?? false}
-                  aria-label={`${point?.pinned ? "Desfijar" : "Fijar"} diplomado ${title}`}
-                  title={
-                    point?.pinned
-                      ? "Desfijar de la hoja"
-                      : "Mantener en la hoja aunque esté desactivado"
-                  }
-                  disabled={disabled}
-                  onClick={() =>
-                    onChange(tableId, name, { pinned: !point?.pinned })
-                  }
-                >
-                  <InventoryRowPinIcon />
-                </button>
+                {point?.activation !== "ACTIVE" &&
+                  point?.activation !== "MIXED" && (
+                    <button
+                      type="button"
+                      className="inventory-sheet-item-pin"
+                      aria-pressed={point?.pinned ?? false}
+                      aria-label={`${point?.pinned ? "Desfijar" : "Fijar"} diplomado ${title}`}
+                      title={
+                        point?.pinned
+                          ? "Desfijar de la hoja"
+                          : "Mantener en la hoja aunque esté desactivado"
+                      }
+                      disabled={disabled}
+                      onClick={() =>
+                        onChange(tableId, name, { pinned: !point?.pinned })
+                      }
+                    >
+                      <InventoryRowPinIcon />
+                    </button>
+                  )}
                 <button
                   type="button"
                   className="inventory-sheet-history-arrow"
@@ -240,27 +245,54 @@ export function InventoryCountryCells({
                 : ""}
             </td>
             <td data-inventory-country={tableId} data-country-metric="status">
-              {point ? (
+              <div className="inventory-state-cell-content">
+                {point ? (
+                  <button
+                    type="button"
+                    className={
+                      "trial-status inventory-status-with-dot trial-" +
+                      assessment!.status
+                    }
+                    aria-label={`Detalle de evaluación de ${title}`}
+                    onClick={() =>
+                      onDetail
+                        ? onDetail(
+                            tableId,
+                            name,
+                            point.targets[0]?.aliasId ?? "",
+                          )
+                        : onHistory(tableId, name)
+                    }
+                  >
+                    <InventoryStatusLabel status={assessment!.status} />
+                  </button>
+                ) : (
+                  <small title={evaluation.error || undefined}>
+                    <span
+                      className="inventory-status-dot inventory-status-dot-PENDING"
+                      aria-hidden="true"
+                    />
+                    {status}
+                  </small>
+                )}
                 <button
                   type="button"
-                  className={
-                    "trial-status inventory-status-with-dot trial-" +
-                    assessment!.status
+                  className="inventory-country-detail"
+                  aria-label={`Ver detalle completo de ${title}`}
+                  title="Ver estadísticas, ventas e historial completo"
+                  onClick={() =>
+                    onDetail
+                      ? onDetail(
+                          tableId,
+                          name,
+                          point?.targets[0]?.aliasId ?? "",
+                        )
+                      : onHistory(tableId, name)
                   }
-                  aria-label={`Detalle de evaluación de ${title}`}
-                  onClick={() => onHistory(tableId, name)}
                 >
-                  <InventoryStatusLabel status={assessment!.status} />
+                  ↗
                 </button>
-              ) : (
-                <small title={evaluation.error || undefined}>
-                  <span
-                    className="inventory-status-dot inventory-status-dot-PENDING"
-                    aria-hidden="true"
-                  />
-                  {status}
-                </small>
-              )}
+              </div>
             </td>
           </Fragment>
         );

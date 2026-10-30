@@ -224,8 +224,11 @@ async function assignRowAdvisorInTransaction(
   tx: import("@prisma/client").Prisma.TransactionClient,
   actor: Actor,
   b: RowAdvisorInput,
+  metaInitial = false,
 ) {
-  await effectivenessLock(tx, actor);
+  if (metaInitial)
+    await (await import("./workspace-access")).metaEditorOnly(actor, tx);
+  else await effectivenessLock(tx, actor);
   const alias = await tx.metaAlias.findUnique({
     where: { id: b.aliasId },
     include: { table: true },
@@ -330,6 +333,41 @@ async function assignRowAdvisorInTransaction(
     },
   });
   return { ok: true, changed: true };
+}
+/** Caller already holds884411 and has validated the selected Meta objects and exact alias/country. */
+export async function assignMetaInitialAdvisor(
+  tx: import("@prisma/client").Prisma.TransactionClient,
+  actor: Actor,
+  aliasId: string,
+  country: string,
+  advisorId: string,
+) {
+  await (await import("./workspace-access")).metaEditorOnly(actor, tx);
+  const row = await tx.metaEffectivenessRow.findUnique({
+    where: { aliasId_country_currency: { aliasId, country, currency: "" } },
+  });
+  if (row?.advisorId === advisorId) return;
+  demand(
+    !row?.advisorId &&
+      (await tx.metaAdvisorAssignment.count({
+        where: { aliasId, country },
+      })) === 0,
+    "Esta fila ya tiene historial de asesor. Conserva su asesor o cámbialo desde la hoja.",
+    409,
+  );
+  return assignRowAdvisorInTransaction(
+    tx,
+    actor,
+    {
+      aliasId,
+      country,
+      advisorId,
+      revision: row?.revision ?? 0,
+      day: limaDay(),
+      mode: "DAY",
+    },
+    true,
+  );
 }
 export async function assignRowsAdvisor(
   actor: Actor,

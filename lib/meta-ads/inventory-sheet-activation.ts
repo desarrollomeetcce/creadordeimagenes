@@ -31,8 +31,13 @@ type Tx = Prisma.TransactionClient;
 const id = z.string().min(1).max(100),
   name = z.string().trim().min(1).max(150);
 export type InventoryCampaignTask = "NONE" | "CREATE" | "STOP";
-type Control = { pinned: boolean; campaignTask?: InventoryCampaignTask };
+type Control = {
+  pinned: boolean;
+  campaignTask?: InventoryCampaignTask;
+  pendingAssignmentAt?: string;
+};
 type Settings = {
+  detachedAliases: string[];
   sheets: string[];
   countries: Record<string, string[]>;
   rows: Record<string, Control>;
@@ -42,6 +47,9 @@ export const activationSettings = (config: Prisma.JsonValue): Settings => {
   const v = (config as Record<string, unknown>)?.inventoryActivation as
     Partial<Settings> | undefined;
   return {
+    detachedAliases: Array.isArray(v?.detachedAliases)
+      ? v.detachedAliases.filter((x) => typeof x === "string")
+      : [],
     countries:
       v?.countries &&
       typeof v.countries === "object" &&
@@ -332,7 +340,13 @@ export async function syncInventoryActivationVisibility(
     if (control)
       await tx.metaEffectivenessRow.updateMany({
         where: { aliasId: t.aliasId, country: t.country },
-        data: { hidden: !t.active && !control.pinned },
+        data: {
+          hidden:
+            activationSettings(
+              a.inventorySheet.config,
+            ).detachedAliases.includes(t.aliasId) ||
+            (!t.active && !control.pinned),
+        },
       });
   }
 }
@@ -517,6 +531,11 @@ async function activationChange(actor: Actor, input: unknown, sharedTx?: Tx) {
             skipDuplicates: true,
           });
       }
+      const wasDetached = settings.detachedAliases.includes(alias.id);
+      if (b.active === true || b.campaignTask === "CREATE" || b.pinned === true)
+        settings.detachedAliases = settings.detachedAliases.filter(
+          (id) => id !== alias.id,
+        );
       for (const country of plan.countries) {
         const old = alias.effectivenessStates.find(
             (s) => s.country === country,
@@ -535,6 +554,7 @@ async function activationChange(actor: Actor, input: unknown, sharedTx?: Tx) {
               : (control?.campaignTask ?? "NONE"));
         if (
           old &&
+          !wasDetached &&
           old.active === active &&
           control?.pinned === pinned &&
           (control?.campaignTask ?? "NONE") === campaignTask
@@ -545,7 +565,26 @@ async function activationChange(actor: Actor, input: unknown, sharedTx?: Tx) {
           create: { aliasId: alias.id, country, active, revision: 1 },
           update: { active, revision: { increment: 1 } },
         });
-        settings.rows[key] = { pinned, campaignTask };
+        const needsAssignment =
+          active &&
+          (b.active === true || b.campaignTask === "CREATE") &&
+          (!alias.effectivenessRows.some(
+            (row) => row.country === country && row.advisorId,
+          ) ||
+            !alias.effectivenessRows.some(
+              (row) => row.country === country && row.displayCurrency,
+            ));
+        settings.rows[key] = {
+          ...control,
+          pinned,
+          campaignTask,
+          ...(needsAssignment
+            ? {
+                pendingAssignmentAt:
+                  control?.pendingAssignmentAt ?? new Date().toISOString(),
+              }
+            : {}),
+        };
         await tx.metaEffectivenessRow.upsert({
           where: {
             aliasId_country_currency: {
@@ -559,13 +598,23 @@ async function activationChange(actor: Actor, input: unknown, sharedTx?: Tx) {
             country,
             currency: "",
             displayCurrency: table.defaultCurrency,
-            hidden: !active && !pinned,
+            hidden:
+              settings.detachedAliases.includes(alias.id) ||
+              (!active && !pinned),
           },
-          update: { hidden: !active && !pinned },
+          update: {
+            hidden:
+              settings.detachedAliases.includes(alias.id) ||
+              (!active && !pinned),
+          },
         });
         await tx.metaEffectivenessRow.updateMany({
           where: { aliasId: alias.id, country, legacy: false },
-          data: { hidden: !active && !pinned },
+          data: {
+            hidden:
+              settings.detachedAliases.includes(alias.id) ||
+              (!active && !pinned),
+          },
         });
         await tx.metaEffectivenessEvent.create({
           data: {

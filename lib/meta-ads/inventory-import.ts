@@ -1,3 +1,7 @@
+import {
+  detachedInventoryAliases,
+  setInventoryMembership,
+} from "./inventory-membership";
 import { randomUUID } from "node:crypto";
 import { Prisma } from "@prisma/client";
 import {
@@ -455,6 +459,36 @@ async function linkInventorySheetsInTransaction(
       tableId,
       inventorySheetId: b.listId,
     }));
+  const detached = new Set(detachedInventoryAliases(list.config));
+  const reattached = existing.filter((a) => detached.has(a.id));
+  if (reattached.length) {
+    await setInventoryMembership(
+      tx,
+      b.listId,
+      reattached.map((a) => a.id),
+      false,
+    );
+    if (!additions.length) {
+      await tx.metaEffectivenessSheet.update({
+        where: { id: b.listId },
+        data: { categoryRevision: { increment: 1 } },
+      });
+      await recordActivity(tx, {
+        data: {
+          actorId: actor.id,
+          action: "META_INVENTARIO_HOJAS_VINCULADAS",
+          resourceId: b.listId,
+          detail: {
+            inventoryId: b.inventoryId,
+            name: source.name,
+            tableIds: b.tableIds,
+            created: 0,
+            reattached: reattached.length,
+          },
+        },
+      });
+    }
+  }
   if (additions.length) {
     demand(
       (await tx.metaAlias.count()) + additions.length <= 1500,
@@ -509,9 +543,10 @@ async function linkInventorySheetsInTransaction(
     });
   }
   return {
-    created: additions.length,
+    created: additions.length + reattached.length,
     aliasIds: [...existing, ...additions].map((a) => a.id),
-    revision: list.categoryRevision + (additions.length ? 1 : 0),
+    revision:
+      list.categoryRevision + (additions.length || reattached.length ? 1 : 0),
   };
 }
 export async function linkInventorySheetsBatch(

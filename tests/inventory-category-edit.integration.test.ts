@@ -97,7 +97,7 @@ test("Editar y fusionar categorías conserva clasificaciones y deduplica por inv
                 name: "Otra",
               },
             ),
-          /OWNER|permiso/i,
+          /OWNER|permiso|acceso/i,
         );
         await assert.rejects(
           () =>

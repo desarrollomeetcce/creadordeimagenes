@@ -69,6 +69,8 @@ export type EffectivenessRow = {
   active: boolean;
   stateRevision: number;
   lastStateChange: string | null;
+  pendingAssignmentAt?: string;
+  campaignTask?: "NONE" | "CREATE" | "STOP";
   token: string;
   advisorChanges: Record<
     string,
@@ -229,65 +231,99 @@ async function readEffectiveness(
     },
   });
   demand(table, "Tabla no disponible.", 404);
-  const [campaigns, stored, snapshots, states, columnLink] = await Promise.all([
-    client.metaAdObject.findMany({
-      where: {
-        level: "campaign",
-        alias: { tableId },
-        aliasCountry: { not: null },
-        account: advisorScope ? {} : await accountWhere(actor),
-      },
-      select: {
-        aliasId: true,
-        aliasCountry: true,
-        account: { select: { currency: true, timezone: true } },
-        daily: {
-          where: {
-            day: { gte: since, lte: until },
-            scope: "7d_click,1d_view|impression",
+  const [campaigns, stored, snapshots, states, columnLink, assignmentLists] =
+    await Promise.all([
+      client.metaAdObject.findMany({
+        where: {
+          level: "campaign",
+          alias: { tableId },
+          aliasCountry: { not: null },
+          account: advisorScope ? {} : await accountWhere(actor),
+        },
+        select: {
+          aliasId: true,
+          aliasCountry: true,
+          account: { select: { currency: true, timezone: true } },
+          daily: {
+            where: {
+              day: { gte: since, lte: until },
+              scope: "7d_click,1d_view|impression",
+            },
+            select: { day: true, spend: true, actions: true, updatedAt: true },
           },
-          select: { day: true, spend: true, actions: true, updatedAt: true },
         },
-      },
-    }),
-    client.metaEffectivenessRow.findMany({
-      where: { legacy: false, alias: { tableId } },
-      include: {
-        days: { where: { day: { gte: since, lte: until } } },
-        legacySources: {
-          where: { hidden: false },
-          include: { days: { where: { day: { gte: since, lte: until } } } },
+      }),
+      client.metaEffectivenessRow.findMany({
+        where: { legacy: false, alias: { tableId } },
+        include: {
+          days: { where: { day: { gte: since, lte: until } } },
+          legacySources: {
+            where: { hidden: false },
+            include: { days: { where: { day: { gte: since, lte: until } } } },
+          },
         },
-      },
-    }),
-    client.metaFxDay.findMany({
-      where: { day: { gte: since, lte: until } },
-      select: {
-        day: true,
-        rates: true,
-        source: true,
-        sourceUrl: true,
-        fetchedAt: true,
-      },
-    }),
-    client.metaEffectivenessState.findMany({
-      where: { alias: { tableId } },
-      select: {
-        aliasId: true,
-        country: true,
-        active: true,
-        revision: true,
-        events: {
-          orderBy: [{ createdAt: "desc" }, { id: "desc" }],
-          take: 1,
-          select: { createdAt: true, active: true },
+      }),
+      client.metaFxDay.findMany({
+        where: { day: { gte: since, lte: until } },
+        select: {
+          day: true,
+          rates: true,
+          source: true,
+          sourceUrl: true,
+          fetchedAt: true,
         },
-      },
-    }),
-    ignoreLink
-      ? Promise.resolve(null)
-      : client.metaEffectivenessLink.findUnique({ where: { tableId } }),
-  ]);
+      }),
+      client.metaEffectivenessState.findMany({
+        where: { alias: { tableId } },
+        select: {
+          aliasId: true,
+          country: true,
+          active: true,
+          revision: true,
+          events: {
+            orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+            take: 1,
+            select: { createdAt: true, active: true },
+          },
+        },
+      }),
+      ignoreLink
+        ? Promise.resolve(null)
+        : client.metaEffectivenessLink.findUnique({ where: { tableId } }),
+      includeHidden
+        ? Promise.resolve([])
+        : client.metaEffectivenessSheet.findMany({
+            where: { kind: "INVENTORY", inventory: { some: { tableId } } },
+            select: { config: true },
+          }),
+    ]);
+  const pendingAssignments = new Map<string, string>();
+  const campaignTasks = new Map<string, "NONE" | "CREATE" | "STOP">();
+  for (const list of assignmentLists) {
+    const controls =
+      (
+        list.config as {
+          inventoryActivation?: {
+            rows?: Record<
+              string,
+              {
+                pendingAssignmentAt?: string;
+                campaignTask?: "NONE" | "CREATE" | "STOP";
+              }
+            >;
+          };
+        }
+      )?.inventoryActivation?.rows ?? {};
+    for (const [key, control] of Object.entries(controls)) {
+      if (typeof control.pendingAssignmentAt === "string")
+        pendingAssignments.set(key, control.pendingAssignmentAt);
+      if (
+        control.campaignTask &&
+        ["NONE", "CREATE", "STOP"].includes(control.campaignTask)
+      )
+        campaignTasks.set(key, control.campaignTask);
+    }
+  }
   const hidden = new Set(
       stored
         .filter((s) => s.hidden && !includeHidden)
@@ -319,6 +355,12 @@ async function readEffectiveness(
             ?.events[0]?.createdAt.toISOString() ?? null,
         token: "",
         advisorChanges: {},
+        ...(campaignTasks.has(a + "|" + p)
+          ? { campaignTask: campaignTasks.get(a + "|" + p) }
+          : {}),
+        ...(pendingAssignments.has(a + "|" + p)
+          ? { pendingAssignmentAt: pendingAssignments.get(a + "|" + p) }
+          : {}),
       };
       rows.set(k, r);
     }

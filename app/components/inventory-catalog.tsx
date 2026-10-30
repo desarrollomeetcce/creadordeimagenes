@@ -67,7 +67,12 @@ import { EffectivenessCell } from "./effectiveness-cell";
 type Table = {
   id: string;
   name: string;
-  aliases: { id: string; name: string; inventorySheetId?: string }[];
+  aliases: {
+    id: string;
+    name: string;
+    inventorySheetId?: string;
+    detached?: boolean;
+  }[];
 };
 function InventoryActionIcon({
   name,
@@ -816,7 +821,11 @@ export function InventoryCatalog({
   }[] = [
     ...tables.flatMap((t) =>
       t.aliases
-        .filter((a) => (a.inventorySheetId ?? "default-inventory") === listId)
+        .filter(
+          (a) =>
+            (a.inventorySheetId ?? "default-inventory") === listId &&
+            !a.detached,
+        )
         .map((a) => ({
           ...a,
           tableId: t.id,
@@ -1689,6 +1698,19 @@ export function InventoryCatalog({
       setBusy(false);
     }
   };
+  const fullDetailContent = fullDetail && (
+    <EffectivenessHistory
+      key={fullDetail.aliasId + ":" + fullDetail.country}
+      {...fullDetail}
+      autoOpen
+      initialSince={new Date(Date.parse(limaToday()) - 10 * 86400000)
+        .toISOString()
+        .slice(0, 10)}
+      initialUntil={limaToday()}
+      onPeriod={() => {}}
+      onClose={() => setFullDetail(null)}
+    />
+  );
   return (
     <section
       className="inventory-catalog sheet-view"
@@ -1739,21 +1761,7 @@ export function InventoryCatalog({
                   })
                 }
               />
-              {fullDetail && (
-                <EffectivenessHistory
-                  key={fullDetail.aliasId + ":" + fullDetail.country}
-                  {...fullDetail}
-                  autoOpen
-                  initialSince={new Date(
-                    Date.parse(limaToday()) - 10 * 86400000,
-                  )
-                    .toISOString()
-                    .slice(0, 10)}
-                  initialUntil={limaToday()}
-                  onPeriod={() => {}}
-                  onClose={() => setFullDetail(null)}
-                />
-              )}
+              {fullDetailContent}
             </>
           }
           directory={trialDirectory}
@@ -1800,6 +1808,7 @@ export function InventoryCatalog({
           <InventoryTrials listId={listId} fixedGroupId={evaluation} />
         </dialog>
       )}
+      {!groupEditor && fullDetailContent}
       {activationHistory && (
         <InventorySheetHistory
           listId={listId}
@@ -2978,10 +2987,10 @@ export function InventoryCatalog({
                                   <button
                                     type="button"
                                     className="inventory-remove"
-                                    aria-label={`Eliminar ${g.name} de ${a.tableName}`}
-                                    title={`Eliminar solo de ${a.tableName}`}
+                                    aria-label={`Quitar ${g.name} de ${a.tableName}`}
+                                    title={`Quitar vínculo de ${a.tableName}; conservar historial`}
                                     disabled={busy}
-                                    onClick={() => void prepareRemoval(a.id)}
+                                    onClick={() => setSheetRemoval([a.id])}
                                   >
                                     ×
                                   </button>
@@ -3137,6 +3146,16 @@ export function InventoryCatalog({
 
                           onChange={(tableId, name, change) =>
                             void changeSheetActivation(tableId, [name], change)
+                          }
+                          onDetail={(column, name, aliasId) =>
+                            aliasId
+                              ? setFullDetail({
+                                  tableId: column.split(":")[0],
+                                  country: column.split(":")[1],
+                                  name,
+                                  aliasId,
+                                })
+                              : setActivationHistory({ tableId: column, name })
                           }
                           onHistory={(tableId, name) =>
                             setActivationHistory({ tableId, name })

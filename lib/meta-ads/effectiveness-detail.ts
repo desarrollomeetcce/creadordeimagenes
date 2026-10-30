@@ -1,8 +1,8 @@
 import { activePeriods } from "./active-periods";
 import { db } from "../db";
-import {ownerOnly} from "./financial-access";
+import { ownerOnly } from "./financial-access";
 import { demand } from "../errors";
-import { effectiveness } from "./effectiveness";
+import { effectiveness, inventoryEffectivenessSource } from "./effectiveness";
 import { aliasStateTimeline } from "./alias-state-timeline";
 import type { Actor } from "./service";
 export async function effectivenessDetail(
@@ -29,7 +29,13 @@ export async function effectivenessDetail(
         where: { aliasId_country: { aliasId: b.aliasId, country: b.country } },
       });
       const [sheet, prior, events, fullEvents] = await Promise.all([
-        effectiveness(actor, alias.tableId, b.since, b.until, tx),
+        inventoryEffectivenessSource(
+          actor,
+          alias.tableId,
+          b.since,
+          b.until,
+          tx,
+        ),
         state
           ? tx.metaEffectivenessEvent.findFirst({
               where: { stateId: state.id, createdAt: { lt: since } },
@@ -65,9 +71,20 @@ export async function effectivenessDetail(
         events.length <= 10000,
         "El período tiene demasiados cambios de estado. Elige menos días.",
       );
-      const row = sheet.rows.find(
+      let row = sheet.rows.find(
         (r) => r.aliasId === b.aliasId && r.country === b.country,
       );
+      // Unpinning hides a financial row, not its authorized statistics or recorded history.
+      if (!row)
+        row = (
+          await inventoryEffectivenessSource(
+            actor,
+            alias.tableId,
+            b.since,
+            b.until,
+            tx,
+          )
+        ).rows.find((r) => r.aliasId === b.aliasId && r.country === b.country);
       demand(row, "Fila de inventario y país no disponible.", 404);
       const serialize = (e: {
         id: string;

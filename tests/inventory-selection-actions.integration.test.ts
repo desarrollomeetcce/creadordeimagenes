@@ -135,7 +135,7 @@ test("Selección explícita: asignar hojas, limpiar categorías y retirar hojas 
       preserveCatalog: true,
       entries: preview.items.map((i) => ({ id: i.id, token: i.token })),
     });
-    assert.equal(await db.metaAlias.count({ where: { id: { in: ids } } }), 0);
+    assert.equal(await db.metaAlias.count({ where: { id: { in: ids } } }), 2);
     assert(
       await db.metaInventoryItem.findUnique({ where: { id: items[0].id } }),
     );

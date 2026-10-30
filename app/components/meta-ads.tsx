@@ -492,9 +492,15 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
     [campaign, setCampaign] = useState(""),
     [adset, setAdset] = useState(""),
     [aliases, setAliases] = useState<MetaAliasOption[]>([]),
-    [aliasTables, setAliasTables] = useState<{ id: string; name: string }[]>(
-      [],
-    ),
+    [assignmentAdvisors, setAssignmentAdvisors] = useState<
+      { id: string; name: string; sheet: { name: string } }[]
+    >([]),
+    [aliasCatalog, setAliasCatalog] = useState<
+      import("./meta-alias-directory").MetaCatalogOption[]
+    >([]),
+    [aliasTables, setAliasTables] = useState<
+      { id: string; name: string; defaultCurrency?: string }[]
+    >([]),
     [inventories, setInventories] = useState<{ id: string; name: string }[]>(
       [],
     ),
@@ -532,14 +538,18 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
     Promise.all([
       api("meta-ads/aliases"),
       api("meta-ads/alias-table-options"),
+      owner ? api("meta-ads/alias-catalog") : Promise.resolve([]),
+      owner ? api("meta-ads/meta-advisor-options") : Promise.resolve([]),
       owner ? api("meta-ads/workspace-inventories") : Promise.resolve([]),
     ])
-      .then(([rows, tables, sheets]) => {
+      .then(([rows, tables, catalog, people, sheets]) => {
         if (active) {
           setInventories(
             sheets.filter((s: { kind: string }) => s.kind === "INVENTORY"),
           );
           setAliases(rows);
+          setAliasCatalog(catalog);
+          setAssignmentAdvisors(people);
           setAliasTables(tables);
           setAliasFilter((current) =>
             current &&
@@ -563,16 +573,20 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
       value={o.aliasId}
       country={o.aliasCountry}
       aliases={aliases}
+      catalog={aliasCatalog}
+      advisors={assignmentAdvisors}
       inventories={inventories}
       tables={aliasTables}
       disabled={busy}
       readOnly={!owner}
-      onAssign={(aliasId, country) =>
+      onAssign={(aliasId, country, selection, details) =>
         void run(
           () =>
             api(`meta-ads/objects/${o.id}/alias`, "PATCH", {
               aliasId,
               country,
+              ...(selection ? { selection } : {}),
+              ...details,
             }),
           "Inventario actualizado.",
         )
@@ -1398,19 +1412,23 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
         <MetaAliasAction
           name="selección"
           aliases={aliases}
+          catalog={aliasCatalog}
+          advisors={assignmentAdvisors}
           inventories={inventories}
           tables={aliasTables}
           disabled={busy}
           bulkCount={
             summarySelectionKey ? summarySelectionKey.split(",").length : 0
           }
-          onAssign={(aliasId, country) =>
+          onAssign={(aliasId, country, selection, details) =>
             void run(
               () =>
                 api("meta-ads/objects/alias", "PATCH", {
                   objectIds: summarySelectionKey.split(",").filter(Boolean),
                   aliasId,
                   country,
+                  ...(selection ? { selection } : {}),
+                  ...details,
                 }),
               "Inventario asignado a la selección.",
             )

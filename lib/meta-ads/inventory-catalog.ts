@@ -6,6 +6,10 @@ import { demand } from "../errors";
 import { recordActivity } from "../activity";
 import { effectivenessLock } from "./effectiveness";
 import type { Actor } from "./service";
+import {
+  detachedInventoryAliases,
+  setInventoryMembership,
+} from "./inventory-membership";
 /** Grouping is presentation only: each leaf remains an independent source-sheet identity. */
 export async function renameInventoryGroup(
   actor: Actor,
@@ -28,9 +32,15 @@ export async function renameInventoryGroup(
     const items = await tx.metaInventoryItem.findMany({
       where: { sheetId: b.listId, name: b.expectedName },
     });
+    const sheet = await tx.metaEffectivenessSheet.findUniqueOrThrow({
+      where: { id: b.listId },
+      select: { config: true },
+    });
+    const detached = new Set(detachedInventoryAliases(sheet.config));
+    const visibleRows = rows.filter((row) => !detached.has(row.id));
     demand(
-      rows.length + items.length === ids.length &&
-        [...rows, ...items].every((r) => ids.includes(r.id)),
+      visibleRows.length + items.length === ids.length &&
+        [...visibleRows, ...items].every((r) => ids.includes(r.id)),
       "El inventario cambió. Recarga antes de renombrar.",
       409,
     );
@@ -61,7 +71,7 @@ export async function renameInventoryGroup(
       data: { name: b.name },
     });
     await tx.metaAlias.updateMany({
-      where: { id: { in: ids } },
+      where: { id: { in: rows.map((row) => row.id) } },
       data: { name: b.name },
     });
     await recordActivity(tx, {
@@ -79,6 +89,7 @@ async function review(tx: Prisma.TransactionClient, id: string) {
   const alias = await tx.metaAlias.findUnique({
     where: { id },
     include: {
+      inventorySheet: { select: { revision: true } },
       categoryAssignments: {
         select: {
           categoryId: true,
@@ -280,6 +291,16 @@ export async function removeInventorySelection(
           where: { id: b.listId },
           data: { categoryRevision: { increment: 1 } },
         });
+        await setInventoryMembership(tx, b.listId, ids, true);
+        await recordActivity(tx, {
+          data: {
+            actorId: actor.id,
+            action: "META_INVENTARIO_HOJAS_DESVINCULADAS",
+            resourceId: b.listId,
+            detail: { items, historyPreserved: true },
+          },
+        });
+        return { ok: true, removed: ids, historyPreserved: true };
       }
       // Validate the complete selection before deleting any leaf or association.
       await tx.metaAdObject.updateMany({

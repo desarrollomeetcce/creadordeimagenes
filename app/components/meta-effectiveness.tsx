@@ -124,6 +124,8 @@ type Row = {
   active: boolean;
   stateRevision: number;
   lastStateChange: string | null;
+  pendingAssignmentAt?: string;
+  campaignTask?: "NONE" | "CREATE" | "STOP";
   token: string;
   advisorChanges?: Record<
     string,
@@ -904,10 +906,30 @@ export function MetaEffectiveness({
         a.country.localeCompare(b.country)
       );
     });
+  const pendingAssignmentRows = rows
+    .filter(
+      (r) =>
+        r.campaignTask === "CREATE" ||
+        (!!r.pendingAssignmentAt && (!r.advisorId || !r.currency)),
+    )
+    .sort(
+      (a, b) =>
+        Number(b.campaignTask === "CREATE") -
+          Number(a.campaignTask === "CREATE") ||
+        (b.pendingAssignmentAt ?? "").localeCompare(
+          a.pendingAssignmentAt ?? "",
+        ),
+    );
+  const pendingAssignmentKeys = new Set(
+    pendingAssignmentRows.map(activationKey),
+  );
+  const normalRows = rows.filter(
+    (r) => !pendingAssignmentKeys.has(activationKey(r)),
+  );
   const advisorSections =
     grouping === "advisor"
       ? groupFinancialRowsByAdvisor(
-          rows,
+          normalRows,
           financialAliases,
           temporaryCategories.temporary,
           advisors,
@@ -917,21 +939,22 @@ export function MetaEffectiveness({
     grouping === "advisor"
       ? advisorSections.flatMap((g) => g.bands)
       : groupFinancialRows(
-          rows,
+          normalRows,
           financialAliases,
           temporaryCategories.temporary,
         );
   const showCategoryBands = financialAliases.some(
     (a) => (a as FinancialCatalogEntry).categoryAssignments?.length,
   );
-  const displayedRows =
+  const normalDisplayedRows =
     grouping === "advisor"
       ? advisorSections.flatMap((g) =>
           showCategoryBands ? g.bands.flatMap((b) => b.rows) : g.rows,
         )
       : showCategoryBands
         ? categoryBands.flatMap((b) => b.rows)
-        : rows;
+        : normalRows;
+  const displayedRows = [...pendingAssignmentRows, ...normalDisplayedRows];
   const firstAdvisorBands = new Map(
     grouping === "advisor"
       ? advisorSections.map((g) => {
@@ -947,7 +970,7 @@ export function MetaEffectiveness({
       ? advisorSections.map((g) =>
           g.bands.flatMap((b) => b.rows).filter((r) => !r.active),
         )
-      : [displayedRows.filter((r) => !r.active)];
+      : [normalDisplayedRows.filter((r) => !r.active)];
   const firstInactiveBands = new Map(
     inactiveSections
       .filter((g) => g.length)
@@ -2272,6 +2295,27 @@ export function MetaEffectiveness({
                     : undefined;
                   return (
                     <Fragment key={activationKey(r)}>
+                      {pendingAssignmentRows[0] &&
+                        activationKey(pendingAssignmentRows[0]) ===
+                          activationKey(r) && (
+                          <tr className="financial-pending-assignment-band">
+                            <th
+                              colSpan={Math.max(
+                                1,
+                                visibleMetadata.length +
+                                  days.length * visibleMetrics.length,
+                              )}
+                            >
+                              <span>
+                                <strong>Por asignar</strong>
+                                <small>
+                                  Campaña o datos pendientes ·{" "}
+                                  {pendingAssignmentRows.length}
+                                </small>
+                              </span>
+                            </th>
+                          </tr>
+                        )}
                       {advisorBand && (
                         <tr
                           className="financial-advisor-band"
@@ -2353,6 +2397,11 @@ export function MetaEffectiveness({
                         data-country={r.country}
                         data-currency={r.currency}
                         data-active={r.active}
+                        data-campaign-task={r.campaignTask ?? "NONE"}
+                        data-pending-assignment={
+                          pendingAssignmentKeys.has(activationKey(r)) ||
+                          undefined
+                        }
                         data-sheet-focus={
                           (initialPeriodLink?.focus &&
                             initialPeriodLink.aliasId === r.aliasId &&
@@ -2387,6 +2436,7 @@ export function MetaEffectiveness({
                               role="switch"
                               aria-checked={r.active}
                               className="meta-status-switch sheet-alias-switch"
+                              data-campaign-task={r.campaignTask ?? "NONE"}
                               disabled={busy || !r.country}
                               aria-label={`${r.active ? "Desactivar" : "Activar"} ${name} ${r.country || "sin país"}`}
                               title={

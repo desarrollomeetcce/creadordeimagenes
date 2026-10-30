@@ -1,13 +1,21 @@
 "use client";
 import { SheetSearchSelect } from "./sheet-search-select";
-import { useId, useRef, useState } from "react";
+import { useId, useMemo, useRef, useState } from "react";
+import { categoryKey } from "../../lib/meta-ads/category-paste";
+import { currencyCodes } from "../../lib/meta-ads/currency-codes";
+import type { MetaInventorySelection } from "../../lib/meta-ads/aliases";
 import { countryName, countryOptions } from "../../lib/meta-ads/countries";
-import type { MetaAliasOption } from "./meta-alias-directory";
+import type {
+  MetaAliasOption,
+  MetaCatalogOption,
+} from "./meta-alias-directory";
 export function MetaAliasAction({
   name,
   value,
   country,
   aliases,
+  catalog = [],
+  advisors = [],
   tables: providedTables,
   inventories: providedInventories,
   disabled = false,
@@ -19,12 +27,19 @@ export function MetaAliasAction({
   value?: string | null;
   country?: string | null;
   aliases: MetaAliasOption[];
-  tables?: { id: string; name: string }[];
+  catalog?: MetaCatalogOption[];
+  advisors?: { id: string; name: string; sheet?: { name: string } }[];
+  tables?: { id: string; name: string; defaultCurrency?: string }[];
   inventories?: { id: string; name: string }[];
   disabled?: boolean;
   readOnly?: boolean;
   bulkCount?: number;
-  onAssign: (id: string | null, country: string | null) => void;
+  onAssign: (
+    id: string | null,
+    country: string | null,
+    selection?: MetaInventorySelection,
+    details?: { advisorId?: string; currency?: string },
+  ) => void;
 }) {
   const id = useId(),
     popover = useRef<HTMLDivElement>(null);
@@ -33,6 +48,48 @@ export function MetaAliasAction({
     [draftCountry, setDraftCountry] = useState(""),
     [draftList, setDraftList] = useState(""),
     [draftTable, setDraftTable] = useState("");
+  const [open, setOpen] = useState(false),
+    [customName, setCustomName] = useState("");
+  const [draftAdvisor, setDraftAdvisor] = useState(""),
+    [draftCurrency, setDraftCurrency] = useState("");
+  const details = {
+    ...(draftAdvisor ? { advisorId: draftAdvisor } : {}),
+    ...(draftCurrency ? { currency: draftCurrency } : {}),
+  };
+  const options = useMemo(() => {
+    if (!open) return [];
+    const inTable = aliases.filter(
+      (a) => (a.tableId ?? "diplomados") === draftTable && !a.detached,
+    );
+    const names = new Set(inTable.map((a) => categoryKey(a.name)));
+    return [
+      { value: "", label: "Elige un elemento del inventario" },
+      ...inTable
+        .filter((a) => !draftList || a.inventorySheetId === draftList)
+        .map((a) => ({ value: a.id, label: a.name, group: "En esta tabla" })),
+      ...catalog
+        .filter(
+          (c) =>
+            (!draftList || c.inventorySheetId === draftList) &&
+            !names.has(categoryKey(c.name)),
+        )
+        .map((c) => ({
+          value: c.catalogId,
+          label: c.name,
+          searchLabel: c.name + " " + c.inventorySheetName,
+          group: "Fuera de la tabla · Inventario completo",
+        })),
+      ...(customName
+        ? [
+            {
+              value: "new:" + customName,
+              label: customName,
+              group: "Nuevo diplomado",
+            },
+          ]
+        : []),
+    ];
+  }, [open, aliases, catalog, draftTable, draftList, customName]);
   const tables = providedTables ?? [
     ...new Map(
       aliases.map((a) => [
@@ -66,7 +123,7 @@ export function MetaAliasAction({
     );
   const assign = (aliasId: string | null, code: string | null) => {
     popover.current?.hidePopover();
-    onAssign(aliasId, code);
+    onAssign(aliasId, code, undefined, aliasId ? details : undefined);
   };
   return (
     <>
@@ -86,6 +143,13 @@ export function MetaAliasAction({
             : `${label} de ${name}`
         }
         onClick={(e) => {
+          setCustomName("");
+          setDraftAdvisor("");
+          setDraftCurrency(
+            providedTables?.find(
+              (t) => t.id === aliases.find((a) => a.id === value)?.tableId,
+            )?.defaultCurrency ?? "",
+          );
           const currentList =
             aliases.find((a) => a.id === value)?.inventorySheetId ??
             "default-inventory";
@@ -115,6 +179,7 @@ export function MetaAliasAction({
         id={id}
         ref={popover}
         popover="auto"
+        onToggle={(e) => setOpen(e.newState === "open")}
         className="meta-alias-popover"
         style={{
           ...position,
@@ -123,12 +188,34 @@ export function MetaAliasAction({
       >
         <header className="meta-alias-context">
           <small>{bulk ? "Asignación masiva" : "Asignando inventario a"}</small>
-          <strong>{bulk ? `${bulkCount} elementos seleccionados` : name}</strong>
+          <strong>
+            {bulk ? `${bulkCount} elementos seleccionados` : name}
+          </strong>
         </header>
         <form
           onSubmit={(e) => {
             e.preventDefault();
-            assign(draftAlias || null, draftAlias ? draftCountry : null);
+            const item = catalog.find((c) => c.catalogId === draftAlias);
+            if (item || (customName && draftAlias === "new:" + customName)) {
+              popover.current?.hidePopover();
+              onAssign(
+                null,
+                draftCountry,
+                {
+                  tableId: draftTable,
+                  ...(item
+                    ? {
+                        catalogId: item.catalogId,
+                        inventorySheetId: item.inventorySheetId,
+                      }
+                    : {
+                        name: customName,
+                        ...(draftList ? { inventorySheetId: draftList } : {}),
+                      }),
+                },
+                details,
+              );
+            } else assign(draftAlias || null, draftAlias ? draftCountry : null);
           }}
         >
           <label>
@@ -146,6 +233,7 @@ export function MetaAliasAction({
                 setDraftTable("");
                 setDraftAlias("");
                 setDraftCountry("");
+                setCustomName("");
               }}
             />
           </label>
@@ -162,8 +250,13 @@ export function MetaAliasAction({
               ]}
               onSelect={(v) => {
                 setDraftTable(v);
+                setDraftCurrency(
+                  providedTables?.find((t) => t.id === v)?.defaultCurrency ??
+                    "",
+                );
                 setDraftAlias("");
                 setDraftCountry("");
+                setCustomName("");
               }}
             />
           </label>
@@ -176,18 +269,13 @@ export function MetaAliasAction({
               placeholder="Elige un elemento del inventario"
               value={draftAlias}
               disabled={disabled || !draftTable}
-              options={[
-                { value: "", label: "Elige un elemento del inventario" },
-                ...aliases
-                  .filter(
-                    (a) =>
-                      (a.tableId ?? "diplomados") === draftTable &&
-                      (!draftList ||
-                        (a.inventorySheetId ?? "default-inventory") ===
-                          draftList),
-                  )
-                  .map((a) => ({ value: a.id, label: a.name })),
-              ]}
+              options={options}
+              onCreate={(name) => {
+                setCustomName(name);
+                setDraftAlias("new:" + name);
+              }}
+              createLabel="Añadir nuevo a esta tabla"
+              createOnEnter
               onSelect={(v) => {
                 setDraftAlias(v);
                 if (!v) setDraftCountry("");
@@ -211,12 +299,51 @@ export function MetaAliasAction({
               onSelect={setDraftCountry}
             />
           </label>
+          <div className="meta-alias-details-row">
+            <label>
+              Asesor
+              <SheetSearchSelect
+                label="Asesor del inventario"
+                value={draftAdvisor}
+                placeholder="Conservar / sin asesor"
+                disabled={disabled || !draftAlias}
+                options={[
+                  { value: "", label: "Conservar / sin asesor" },
+                  ...advisors.map((a) => ({
+                    value: a.id,
+                    label: a.name + (a.sheet ? " · " + a.sheet.name : ""),
+                  })),
+                ]}
+                onSelect={setDraftAdvisor}
+              />
+            </label>
+            <label>
+              Moneda
+              <SheetSearchSelect
+                label="Moneda del inventario"
+                value={draftCurrency}
+                placeholder="Conservar / sin moneda"
+                disabled={disabled || !draftAlias}
+                options={[
+                  { value: "", label: "Conservar / sin moneda" },
+                  ...currencyCodes.map((value) => ({ value, label: value })),
+                ]}
+                onSelect={setDraftCurrency}
+              />
+            </label>
+          </div>
           <small>
             Inventario y país vinculan la base y el gasto con Efectividad. Las
             ventas por asesor se registran en V de cada hoja. No cambia la
             segmentación en Meta.
           </small>
-          {!aliases.length && (
+          {draftAlias && !aliases.some((a) => a.id === draftAlias) && (
+            <small className="meta-alias-add-hint">
+              Se añadirá sin duplicados, con su estado registrado en Meta. Si
+              faltan datos, aparecerá en «Por asignar».
+            </small>
+          )}
+          {!aliases.length && !catalog.length && (
             <p className="hint">Crea los nombres en «Efectividad».</p>
           )}
           <div className="row">

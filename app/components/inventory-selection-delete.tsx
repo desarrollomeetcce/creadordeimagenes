@@ -80,7 +80,7 @@ export function InventorySelectionDelete({
       {sheetsOnly && (
         <p>
           El diplomado y sus categorías se conservan en el catálogo. Revisa las
-          hojas que vas a quitar y sus datos antes de confirmar.
+          hojas que vas a quitar. Sus datos y su historial se conservan.
         </p>
       )}
       <p>
@@ -138,8 +138,9 @@ export function InventorySelectionDelete({
             {chosen.reduce((n, i) => n + i.days, 0)} días con datos manuales.
           </p>
           <p>
-            Se quitarán sus asignaciones internas en Meta y su historial en
-            estas hojas. Esta eliminación no se puede deshacer.
+            {sheetsOnly
+              ? "Se retirará el vínculo visible con la hoja. Se conservan activaciones, estadísticas y vínculos internos; puedes volver a añadirlo sin duplicarlo."
+              : "Se quitarán sus asignaciones internas en Meta y su historial en estas hojas. Esta eliminación no se puede deshacer."}
           </p>
         </>
       )}

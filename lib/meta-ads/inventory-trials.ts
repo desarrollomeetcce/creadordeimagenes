@@ -1,3 +1,4 @@
+import { detachedInventoryAliases } from "./inventory-membership";
 import { z } from "zod";
 import { randomUUID, createHash } from "node:crypto";
 import type { Prisma } from "@prisma/client";
@@ -215,6 +216,11 @@ async function catalog(
       },
     }),
   ]);
+  const list = await tx.metaEffectivenessSheet.findUniqueOrThrow({
+    where: { id: listId },
+    select: { config: true },
+  });
+  const detached = new Set(detachedInventoryAliases(list.config));
   const out = new Map<string, TrialItem>();
   for (const alias of aliases) {
     const k = categoryKey(alias.name),
@@ -235,7 +241,10 @@ async function catalog(
       if (c.kind === "SECONDARY" && !item.secondaryNames!.includes(c.name))
         item.secondaryNames!.push(c.name);
     }
-    if (!item.sheets!.some((t) => t.id === alias.table.id))
+    if (
+      !detached.has(alias.id) &&
+      !item.sheets!.some((t) => t.id === alias.table.id)
+    )
       item.sheets!.push(alias.table);
     out.set(k, item);
   }

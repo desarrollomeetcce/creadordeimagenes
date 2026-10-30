@@ -1,3 +1,4 @@
+import { detachedInventoryAliases } from "./inventory-membership";
 import type { Prisma } from "@prisma/client";
 import { db } from "../db";
 import { ownerOnly } from "./financial-access";
@@ -151,22 +152,27 @@ async function fullGroups(
       inventorySheetId: listId,
       name: { in: [...new Set(found.map((a) => a.name))] },
     },
-    select: { id: true },
+    select: { id: true, name: true },
   });
   const allItems = await tx.metaInventoryItem.findMany({
     where: {
       sheetId: listId,
       name: { in: [...new Set(found.map((a) => a.name))] },
     },
-    select: { id: true },
+    select: { id: true, name: true },
   });
-  const all = [...allAliases, ...allItems];
+  const list = await tx.metaEffectivenessSheet.findUniqueOrThrow({
+    where: { id: listId },
+    select: { config: true },
+  });
+  const detached = new Set(detachedInventoryAliases(list.config));
+  const all = [...allAliases.filter((a) => !detached.has(a.id)), ...allItems];
   demand(
-    all.length === ids.length && all.every((a) => ids.includes(a.id)),
+    all.every((a) => ids.includes(a.id)),
     "La agrupación de inventario cambió. Recarga antes de guardar.",
     409,
   );
-  return found;
+  return [...allAliases, ...allItems];
 }
 export async function writeInventoryTags(
   tx: Prisma.TransactionClient,

@@ -4,10 +4,17 @@ import { engineRequest as api } from "./generation-engine";
 export type MetaAliasOption = {
   id: string;
   name: string;
+  detached?: boolean;
   inventorySheetId?: string;
   inventorySheet?: { id: string; name: string };
   tableId?: string;
   table?: { id: string; name: string };
+};
+export type MetaCatalogOption = {
+  catalogId: string;
+  name: string;
+  inventorySheetId: string;
+  inventorySheetName: string;
 };
 export function MetaAliasDirectory({
   aliases,

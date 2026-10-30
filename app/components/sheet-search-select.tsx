@@ -1,10 +1,11 @@
 "use client";
 import { searchOptions } from "../../lib/search";
-import { useId, useRef, useState } from "react";
+import { Fragment, useId, useRef, useState } from "react";
 export type SheetOption = {
   value: string;
   label: string;
   searchLabel?: string;
+  group?: string;
 };
 const normalize = (v: string) =>
   v
@@ -60,6 +61,10 @@ export function SheetSearchSelect({
         (o) => o.value,
       )
     : [];
+  if (open && options.some((o) => o.group)) {
+    const groups = [...new Set(options.map((o) => o.group))];
+    filtered.sort((a, b) => groups.indexOf(a.group) - groups.indexOf(b.group));
+  }
   const choose = async (v: string, create = false) => {
     if (pending.current) return;
     pending.current = true;
@@ -180,18 +185,25 @@ export function SheetSearchSelect({
           aria-busy={busy}
         >
           {filtered.map((o, i) => (
-            <button
-              id={id + "-option-" + i}
-              type="button"
-              role="option"
-              aria-selected={o.value === value}
-              data-highlighted={i === index}
-              key={o.value}
-              disabled={busy}
-              onClick={() => void choose(o.value)}
-            >
-              {o.label}
-            </button>
+            <Fragment key={o.value}>
+              {o.group && (i === 0 || filtered[i - 1].group !== o.group) && (
+                <div className="sheet-search-option-group" role="presentation">
+                  {o.group}
+                </div>
+              )}
+              <button
+                id={id + "-option-" + i}
+                type="button"
+                role="option"
+                aria-selected={o.value === value}
+                data-highlighted={i === index}
+                key={o.value}
+                disabled={busy}
+                onClick={() => void choose(o.value)}
+              >
+                {o.label}
+              </button>
+            </Fragment>
           ))}
           {!filtered.length && <p role="status">Sin coincidencias</p>}
         </div>
