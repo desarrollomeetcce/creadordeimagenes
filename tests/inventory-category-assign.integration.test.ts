@@ -191,6 +191,43 @@ test("Asignación masiva por nivel conserva otras categorías y mueve coincidenc
       },
     );
     await t.test(
+      "Quitar elegidas solo retira la categoría del nivel y los inventarios marcados",
+      async () => {
+        const before = await inventoryCategories(actor, lists[0].id);
+        const target = ids[0];
+        const after = await saveInventoryCategories(actor, {
+          listId: lists[0].id,
+          revision: before.revision,
+          action: "REMOVE_BULK",
+          ids: [target, alias.id],
+          kind: "SECONDARY",
+          names: ["Calidad"],
+        });
+        const removed = before.categories.find(
+          (c) => c.kind === "SECONDARY" && c.name === "Calidad",
+        )!;
+        assert(!after.assignments[target]?.includes(removed.id));
+        assert.deepEqual(after.assignments[ids[1]], before.assignments[ids[1]]);
+        assert.deepEqual(
+          after.assignments[target],
+          before.assignments[target].filter((id) => id !== removed.id),
+        );
+        assert.deepEqual(after.categories, before.categories);
+        await assert.rejects(
+          () =>
+            saveInventoryCategories(actor, {
+              listId: lists[0].id,
+              revision: before.revision,
+              action: "REMOVE_BULK",
+              ids: [target, alias.id],
+              kind: "SECONDARY",
+              names: ["Electricidad"],
+            }),
+          /cambiaron/i,
+        );
+      },
+    );
+    await t.test(
       "Si excede el límite en un seleccionado se revierte toda la asignación",
       async () => {
         const extras = await Promise.all(

@@ -7,12 +7,14 @@ export function InventoryCategoryAssign({
   categoryNames,
   onClose,
   onApply,
+  onRemoveAll,
 }: {
   kind: "PRIMARY" | "SECONDARY";
   inventoryNames: string[];
   categoryNames: string[];
   onClose: () => void;
-  onApply: (names: string[]) => Promise<void>;
+  onApply: (names: string[], remove?: boolean) => Promise<void>;
+  onRemoveAll: () => Promise<void>;
 }) {
   const dialog = useRef<HTMLDialogElement>(null),
     [names, setNames] = useState<string[]>([]),
@@ -26,14 +28,14 @@ export function InventoryCategoryAssign({
     <dialog
       ref={dialog}
       className="meta-detail inventory-category-assign"
-      aria-label={`Asignar categorías ${level}`}
+      aria-label={`Asignar o quitar categorías ${level}`}
       onCancel={(e) => {
         if (busy) e.preventDefault();
         else onClose();
       }}
     >
       <header className="row">
-        <h2>Asignar categorías {level}</h2>
+        <h2>Asignar o quitar categorías {level}</h2>
         <button
           type="button"
           className="ui-close-button"
@@ -79,10 +81,8 @@ export function InventoryCategoryAssign({
         ))}
       </div>
       <p>
-        Las categorías elegidas se añadirán como <strong>{level}</strong> a
-        estos inventarios. Si alguna ya figura en el otro nivel, se moverá al
-        nivel elegido y quedará una sola vez. Las demás categorías se
-        conservarán.
+        Elige categorías y pulsa Asignar o Quitar. «Quitar todas» retira las de
+        este nivel únicamente de los inventarios seleccionados.
       </p>
       {error && <p role="alert">{error}</p>}
       <footer className="row">
@@ -104,7 +104,43 @@ export function InventoryCategoryAssign({
         >
           {busy
             ? "Asignando…"
-            : `Aplicar a ${inventoryNames.length} inventario${inventoryNames.length === 1 ? "" : "s"}`}
+            : `Asignar a ${inventoryNames.length} inventario${inventoryNames.length === 1 ? "" : "s"}`}
+        </button>
+        <button
+          type="button"
+          disabled={busy || !names.length}
+          onClick={async () => {
+            setBusy(true);
+            setError("");
+            try {
+              await onApply(names, true);
+              onClose();
+            } catch (e) {
+              setError((e as Error).message);
+            } finally {
+              setBusy(false);
+            }
+          }}
+        >
+          Quitar elegidas
+        </button>
+        <button
+          type="button"
+          disabled={busy}
+          onClick={async () => {
+            setBusy(true);
+            setError("");
+            try {
+              await onRemoveAll();
+              onClose();
+            } catch (e) {
+              setError((e as Error).message);
+            } finally {
+              setBusy(false);
+            }
+          }}
+        >
+          Quitar todas
         </button>
         <button type="button" disabled={busy} onClick={onClose}>
           Cancelar

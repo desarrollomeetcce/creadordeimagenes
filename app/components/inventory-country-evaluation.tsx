@@ -5,6 +5,7 @@ import { categoryKey } from "../../lib/meta-ads/category-paste";
 import { countryName } from "../../lib/meta-ads/countries";
 import { trialStatusNames } from "../../lib/meta-ads/inventory-trial-policy";
 import { limaToday } from "./date-range";
+import type { EffectivenessSheet } from "../../lib/meta-ads/effectiveness";
 import type {
   InventoryCatalogTrialReport,
   TrialDirectory,
@@ -12,10 +13,6 @@ import type {
 } from "../../lib/meta-ads/inventory-trials";
 export const inventoryCountryMetrics = [
   { key: "activation", label: "Activación", width: 118 },
-  { key: "sales", label: "Ventas", width: 62 },
-  { key: "days", label: "Días evaluados", width: 78 },
-  { key: "budget", label: "Presupuesto acumulado · S/", width: 116 },
-  { key: "limit", label: "Límite según ventas · S/", width: 112 },
   { key: "factor", label: "Factor %", width: 86 },
   { key: "status", label: "Estado", width: 140 },
 ] as const;
@@ -168,6 +165,8 @@ export function InventoryCountryCells({
   group,
   reserved,
   onOpen,
+  canEdit = false,
+  onChanged,
 }: {
   name: string;
   countries: string[];
@@ -175,7 +174,64 @@ export function InventoryCountryCells({
   group?: string;
   reserved?: boolean;
   onOpen: (groupId: string) => void;
+  canEdit?: boolean;
+  onChanged: () => void;
 }) {
+  const [changing, setChanging] = useState(""),
+    [changeError, setChangeError] = useState("");
+  async function toggle(point: Point) {
+    if (changing || !canEdit) return;
+    setChanging(point.row.country);
+    setChangeError("");
+    let changed = 0;
+    try {
+      const active = point.row.activation !== "ACTIVE",
+        today = limaToday();
+      const tables = [...new Set(point.row.sheets.map((s) => s.tableId))];
+      for (const tableId of tables) {
+        const sheet: EffectivenessSheet = await api(
+          "meta-ads/effectiveness?" +
+            new URLSearchParams({ tableId, since: today, until: today }),
+        );
+        const ids = new Set(
+          sheet.table.aliases
+            .filter((a) => categoryKey(a.name) === categoryKey(name))
+            .map((a) => a.id),
+        );
+        const targets = sheet.rows.filter(
+          (r) =>
+            ids.has(r.aliasId) &&
+            r.country === point.row.country &&
+            r.active !== active,
+        );
+        if (targets.length) {
+          await api("meta-ads/effectiveness/states", "PATCH", {
+            tableId,
+            since: today,
+            until: today,
+            metrics: ["sales", "budget"],
+            active,
+            targets: targets.map((r) => ({
+              aliasId: r.aliasId,
+              country: r.country,
+              revision: r.stateRevision,
+            })),
+          });
+          changed += targets.length;
+        }
+      }
+    } catch (e) {
+      setChangeError(
+        (changed ? "Algunas hojas se actualizaron. " : "") +
+          (e instanceof Error
+            ? e.message
+            : "No se pudo cambiar la activación."),
+      );
+    } finally {
+      setChanging("");
+      onChanged();
+    }
+  }
   return (
     <>
       {countries.map((country) => {
@@ -185,41 +241,50 @@ export function InventoryCountryCells({
         const problem =
           evaluation.error ||
           evaluation.errors.find((e) => e.groupId === group)?.message;
-        if (points.length !== 1)
+        if (points.length !== 1) {
+          const text =
+            points.length > 1
+              ? "Varios seguimientos"
+              : problem
+                ? "No disponible"
+                : evaluation.loading && group
+                  ? "Cargando…"
+                  : reserved
+                    ? "Reserva"
+                    : "Sin seguimiento";
           return (
-            <td
-              key={country}
-              colSpan={inventoryCountryMetrics.length}
-              data-inventory-country={country}
-              className="inventory-country-empty"
-              title={problem || undefined}
-            >
-              {points.length > 1 ? (
-                <>
-                  <span>Varios seguimientos</span>
-                  {points.map((p) => (
-                    <button
-                      key={p.groupId}
-                      aria-label={`Detalle de ${name} en ${countryName(country)} · ${p.groupName}`}
-                      onClick={() => onOpen(p.groupId)}
-                    >
-                      {p.groupName}
-                    </button>
-                  ))}
-                </>
-              ) : problem ? (
-                "No disponible"
-              ) : evaluation.loading && group ? (
-                "Cargando evaluación…"
-              ) : reserved ? (
-                "Reserva"
-              ) : group ? (
-                "Sin seguimiento para este país"
-              ) : (
-                "Sin seguimiento"
-              )}
-            </td>
+            <Fragment key={country}>
+              <td
+                data-inventory-country={country}
+                data-country-metric="activation"
+              >
+                <span className="trial-sheet-activation trial-sheet-UNKNOWN">
+                  <i aria-hidden="true" />
+                  N.A.
+                </span>
+              </td>
+              <td data-inventory-country={country} data-country-metric="factor">
+                —
+              </td>
+              <td
+                data-inventory-country={country}
+                data-country-metric="status"
+                title={problem || undefined}
+              >
+                {text}
+                {points.map((p) => (
+                  <button
+                    key={p.groupId}
+                    aria-label={`Detalle de ${name} en ${countryName(country)} · ${p.groupName}`}
+                    onClick={() => onOpen(p.groupId)}
+                  >
+                    {p.groupName}
+                  </button>
+                ))}
+              </td>
+            </Fragment>
           );
+        }
         const { row, groupId, groupName } = points[0],
           assessment = row.budgetEvaluation;
         const label = {
@@ -240,33 +305,32 @@ export function InventoryCountryCells({
               data-country-metric="activation"
               title={title}
             >
-              <span
+              <button
+                type="button"
+                disabled={
+                  !canEdit || !!changing || row.activation === "UNKNOWN"
+                }
+                onClick={() => void toggle(points[0])}
+                role="switch"
+                aria-checked={
+                  row.activation === "MIXED"
+                    ? "mixed"
+                    : row.activation === "ACTIVE"
+                }
+                aria-label={`Activación de ${name} en ${countryName(country)}: ${label}`}
                 className={
                   "trial-sheet-activation trial-sheet-" + row.activation
                 }
               >
                 <i aria-hidden="true" />
-                {label}
-              </span>
-            </td>
-            <td data-inventory-country={country} data-country-metric="sales">
-              {number(row.sales)}
-              {!row.complete.sales && row.sales !== null ? " *" : ""}
-            </td>
-            <td data-inventory-country={country} data-country-metric="days">
-              {row.activeDays}
-            </td>
-            <td data-inventory-country={country} data-country-metric="budget">
-              {money(row.budget)}
-              {!row.complete.budget && row.budget !== null ? " *" : ""}
-            </td>
-            <td data-inventory-country={country} data-country-metric="limit">
-              {money(assessment.limit)}
+                {changing === country ? "Guardando…" : label}
+              </button>
+              {changeError && <small role="alert">{changeError}</small>}
             </td>
             <td
               data-inventory-country={country}
               data-country-metric="factor"
-              title="Presupuesto acumulado durante los días evaluados ÷ límite según ventas × 100"
+              title={`Presupuesto acumulado: S/ ${money(row.budget)} · Ventas: ${number(row.sales)} · Días evaluados: ${row.activeDays} · Límite: S/ ${money(assessment.limit)}. Factor = presupuesto acumulado ÷ límite × 100.`}
             >
               {percent(assessment.usage)}
               {(!row.complete.sales || !row.complete.budget) &&

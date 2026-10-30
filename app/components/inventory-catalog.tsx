@@ -13,7 +13,12 @@ import {
   inventoryCountryMetrics,
   useInventoryCountryEvaluation,
 } from "./inventory-country-evaluation";
-import { countryName } from "../../lib/meta-ads/countries";
+import {
+  countryOptions as allCountryOptions,
+  countryName,
+} from "../../lib/meta-ads/countries";
+import { limaToday } from "./date-range";
+import { InventoryActionMenu } from "./inventory-action-menu";
 import dynamic from "next/dynamic";
 const InventoryTrials = dynamic(
   () => import("./inventory-trials").then((m) => m.InventoryTrials),
@@ -319,7 +324,14 @@ export function InventoryCatalog({
     )
     .map((p) => p.key);
   const showParameter = (key: string) => parameters.includes(key);
-  const knownCountries = [...new Set(trialGroups.flatMap((g) => g.countries))];
+  const [addedCountries, setAddedCountries] = useWorkbookPreference<string[]>(
+    listId,
+    "inventory-added-countries",
+    [],
+  );
+  const knownCountries = [
+    ...new Set([...trialGroups.flatMap((g) => g.countries), ...addedCountries]),
+  ];
   const countryCodes = showParameter("countries")
     ? knownCountries.filter(
         (c) => countryChoice === null || countryChoice.includes(c),
@@ -1370,16 +1382,25 @@ export function InventoryCatalog({
           inventoryNames={assignment.names}
           categoryNames={directoryNames}
           onClose={() => setAssignment(null)}
-          onApply={async (names) => {
+          onRemoveAll={async () => {
             await saveCategory({
-              action: "ASSIGN_BULK",
+              action: "CLEAR_BULK",
+              ids: assignment.ids,
+              kind: assignment.kind,
+            });
+            setSelected([]);
+            setMessage("Categorías retiradas de los seleccionados.");
+          }}
+          onApply={async (names, remove) => {
+            await saveCategory({
+              action: remove ? "REMOVE_BULK" : "ASSIGN_BULK",
               ids: assignment.ids,
               kind: assignment.kind,
               names,
             });
             setSelected([]);
             setMessage(
-              `Categorías ${assignment.kind === "PRIMARY" ? "principales" : "secundarias"} asignadas a ${assignment.names.length} inventarios.`,
+              `Categorías ${assignment.kind === "PRIMARY" ? "principales" : "secundarias"} ${remove ? "retiradas de" : "asignadas a"} ${assignment.names.length} inventarios.`,
             );
           }}
         />
@@ -1517,29 +1538,6 @@ export function InventoryCatalog({
             values={parameters}
             onChange={setParameterChoice}
           />
-          {showParameter("countries") && !!knownCountries.length && (
-            <>
-              <InventoryMultiSelect
-                label="Países de evaluación visibles"
-                placeholder="Países de evaluación"
-                all={false}
-                values={countryCodes}
-                options={knownCountries.map((c) => ({
-                  value: c,
-                  label: countryName(c),
-                }))}
-                onChange={setCountryChoice}
-              />
-              <button
-                type="button"
-                aria-label="Actualizar evaluación del inventario"
-                disabled={countryEvaluation.loading || !countryCodes.length}
-                onClick={() => setCountryReload((v) => v + 1)}
-              >
-                Actualizar evaluación
-              </button>
-            </>
-          )}
         </div>
         {toolbarActions}
       </div>
@@ -1603,6 +1601,75 @@ export function InventoryCatalog({
             </button>
           </div>
         </div>
+        {showParameter("countries") && (
+          <div className="inventory-country-controls">
+            <InventoryMultiSelect
+              label="Países de evaluación visibles"
+              placeholder="Países de evaluación"
+              all={false}
+              selectAll
+              values={countryCodes}
+              options={knownCountries.map((c) => ({
+                value: c,
+                label: countryName(c),
+              }))}
+              onChange={setCountryChoice}
+            />
+            <InventoryActionMenu
+              label="Agregar país"
+              disabled={busy || !trialDirectory?.canEdit}
+            >
+              <InventoryMultiSelect
+                label="Elegir países adicionales"
+                all={false}
+                values={addedCountries}
+                options={allCountryOptions.map((c) => ({
+                  value: c.code,
+                  label: c.name,
+                }))}
+                onError={setMessage}
+                description="Añade países a la evaluación de los grupos actuales desde hoy."
+                onChange={async (next) => {
+                  const additions = next.filter(
+                    (c) => !knownCountries.includes(c),
+                  );
+                  setBusy(true);
+                  try {
+                    for (const group of trialGroups) {
+                      const countries = [
+                        ...new Set([...group.countries, ...additions]),
+                      ];
+                      if (countries.length !== group.countries.length)
+                        await api("meta-ads/inventory/trials", "POST", {
+                          action: "COUNTRIES",
+                          listId,
+                          groupId: group.id,
+                          revision: group.revision,
+                          countries,
+                          since: limaToday(),
+                        });
+                    }
+                    setAddedCountries([
+                      ...new Set([...addedCountries, ...next]),
+                    ]);
+                    setCountryChoice([...new Set([...countryCodes, ...next])]);
+                  } finally {
+                    setBusy(false);
+                    await reloadGroups();
+                  }
+                }}
+              />
+            </InventoryActionMenu>
+            <button
+              type="button"
+              aria-label="Actualizar evaluación del inventario"
+              disabled={countryEvaluation.loading || !countryCodes.length}
+              onClick={() => setCountryReload((v) => v + 1)}
+            >
+              Actualizar evaluación
+            </button>
+          </div>
+        )}
       </div>
       <div
         className="table-scroll inventory-table-scroll"
@@ -1774,7 +1841,7 @@ export function InventoryCatalog({
                   <button
                     type="button"
                     className="inventory-header-assign"
-                    aria-label={`Asignar categoría ${kind === "PRIMARY" ? "principal" : "secundaria"} a seleccionados`}
+                    aria-label={`Asignar o quitar categoría ${kind === "PRIMARY" ? "principal" : "secundaria"} a seleccionados`}
                     disabled={busy || !categories || !selectedGroups}
                     title={
                       selectedGroups
@@ -1793,37 +1860,7 @@ export function InventoryCatalog({
                       })
                     }
                   >
-                    Asignar categoría
-                    {selectedGroups ? ` (${selectedGroups})` : ""}
-                  </button>
-                  <button
-                    type="button"
-                    className="inventory-header-assign"
-                    disabled={
-                      busy ||
-                      !trialDirectory?.canEdit ||
-                      !categories ||
-                      !selectedGroups
-                    }
-                    onClick={() => {
-                      void saveCategory({
-                        action: "CLEAR_BULK",
-                        ids: [...selectedVisible],
-                        kind,
-                      })
-                        .then(() => {
-                          setSelected([]);
-                          setMessage(
-                            "Categorías retiradas de los seleccionados.",
-                          );
-                        })
-                        .catch((e) => setMessage(e.message));
-                    }}
-                  >
-                    Quitar{" "}
-                    {kind === "PRIMARY"
-                      ? "categoría principal"
-                      : "categorías secundarias"}
+                    Asignar o quitar
                     {selectedGroups ? ` (${selectedGroups})` : ""}
                   </button>
                 </th>
@@ -1842,110 +1879,120 @@ export function InventoryCatalog({
                   values={filters.sheets}
                   onChange={(v) => setFilters({ ...filters, sheets: v })}
                 />
-                <InventoryMultiSelect
-                  label="Asignar hojas a inventarios seleccionados"
-                  onOpen={() => {
-                    sheetAssignment.current = categories
-                      ? {
-                          revision: categories.revision,
-                          items: visible
-                            .filter((g) =>
-                              g.links.some((a) =>
-                                selectedVisible.includes(a.id),
-                              ),
-                            )
-                            .map((g) => ({
-                              inventoryId: g.links.find((a) =>
-                                selectedVisible.includes(a.id),
-                              )!.id,
-                              expectedName: g.name,
-                            })),
-                        }
-                      : null;
-                  }}
-                  placeholder={
-                    "Asignar hojas" +
-                    (selectedGroups ? " (" + selectedGroups + ")" : "")
-                  }
-                  values={[]}
-                  all={false}
-                  options={tables.map((t) => ({ value: t.id, label: t.name }))}
-                  disabled={busy || !categories || !selectedGroups}
-                  description={
-                    "Añade las hojas elegidas a " +
-                    selectedGroups +
-                    " inventarios seleccionados visibles. Los vínculos actuales se conservan."
-                  }
-                  onError={setMessage}
-                  onChange={async (tableIds) => {
-                    if (!tableIds.length || !categories) return;
-                    const snapshot = sheetAssignment.current;
-                    if (!snapshot)
-                      throw Error(
-                        "Vuelve a abrir Asignar hojas para revisar la selección.",
-                      );
-                    const items = snapshot.items;
-                    if (!items.length) return;
-                    setBusy(true);
-                    let committed = false;
-                    try {
-                      const result = await api(
-                        "meta-ads/inventory/sheets/batch",
-                        "POST",
-                        {
-                          listId,
-                          revision: snapshot.revision,
-                          tableIds,
-                          items,
-                        },
-                      );
-                      committed = true;
-                      setSelected([]);
-                      await onChanged();
-                      await reloadCategories();
-                      setMessage(
-                        result.created
-                          ? `Hojas asignadas a ${result.items} inventarios: ${result.created} vínculos nuevos.`
-                          : "Los inventarios ya están en las hojas elegidas.",
-                      );
-                    } catch (e) {
-                      if (committed)
-                        setMessage(
-                          "Las hojas se asignaron. Actualiza para ver los cambios.",
-                        );
-                      else throw e;
-                    } finally {
-                      setBusy(false);
-                    }
-                  }}
-                />
-                <button
-                  type="button"
-                  className="inventory-header-assign"
-                  disabled={
-                    busy ||
-                    !trialDirectory?.canEdit ||
-                    !visible.some(
-                      (g) =>
-                        g.links.some((a) => selectedVisible.includes(a.id)) &&
-                        g.links.some((a) => !a.standalone),
-                    )
-                  }
-                  onClick={() =>
-                    setSheetRemoval(
-                      visible
-                        .filter((g) =>
-                          g.links.some((a) => selectedVisible.includes(a.id)),
-                        )
-                        .flatMap((g) =>
-                          g.links.filter((a) => !a.standalone).map((a) => a.id),
-                        ),
-                    )
-                  }
+                <InventoryActionMenu
+                  label="Asignar o quitar hojas"
+                  disabled={busy || !selectedGroups}
                 >
-                  Quitar hojas de seleccionados
-                  {selectedGroups ? ` (${selectedGroups})` : ""}
-                </button>
+                  <InventoryMultiSelect
+                    label="Asignar hojas a inventarios seleccionados"
+                    onOpen={() => {
+                      sheetAssignment.current = categories
+                        ? {
+                            revision: categories.revision,
+                            items: visible
+                              .filter((g) =>
+                                g.links.some((a) =>
+                                  selectedVisible.includes(a.id),
+                                ),
+                              )
+                              .map((g) => ({
+                                inventoryId: g.links.find((a) =>
+                                  selectedVisible.includes(a.id),
+                                )!.id,
+                                expectedName: g.name,
+                              })),
+                          }
+                        : null;
+                    }}
+                    placeholder={
+                      "Asignar hojas" +
+                      (selectedGroups ? " (" + selectedGroups + ")" : "")
+                    }
+                    values={[]}
+                    all={false}
+                    options={tables.map((t) => ({
+                      value: t.id,
+                      label: t.name,
+                    }))}
+                    disabled={busy || !categories || !selectedGroups}
+                    description={
+                      "Añade las hojas elegidas a " +
+                      selectedGroups +
+                      " inventarios seleccionados visibles. Los vínculos actuales se conservan."
+                    }
+                    onError={setMessage}
+                    onChange={async (tableIds) => {
+                      if (!tableIds.length || !categories) return;
+                      const snapshot = sheetAssignment.current;
+                      if (!snapshot)
+                        throw Error(
+                          "Vuelve a abrir Asignar hojas para revisar la selección.",
+                        );
+                      const items = snapshot.items;
+                      if (!items.length) return;
+                      setBusy(true);
+                      let committed = false;
+                      try {
+                        const result = await api(
+                          "meta-ads/inventory/sheets/batch",
+                          "POST",
+                          {
+                            listId,
+                            revision: snapshot.revision,
+                            tableIds,
+                            items,
+                          },
+                        );
+                        committed = true;
+                        setSelected([]);
+                        await onChanged();
+                        await reloadCategories();
+                        setMessage(
+                          result.created
+                            ? `Hojas asignadas a ${result.items} inventarios: ${result.created} vínculos nuevos.`
+                            : "Los inventarios ya están en las hojas elegidas.",
+                        );
+                      } catch (e) {
+                        if (committed)
+                          setMessage(
+                            "Las hojas se asignaron. Actualiza para ver los cambios.",
+                          );
+                        else throw e;
+                      } finally {
+                        setBusy(false);
+                      }
+                    }}
+                  />
+                  <button
+                    type="button"
+                    className="inventory-header-assign"
+                    disabled={
+                      busy ||
+                      !trialDirectory?.canEdit ||
+                      !visible.some(
+                        (g) =>
+                          g.links.some((a) => selectedVisible.includes(a.id)) &&
+                          g.links.some((a) => !a.standalone),
+                      )
+                    }
+                    onClick={() =>
+                      setSheetRemoval(
+                        visible
+                          .filter((g) =>
+                            g.links.some((a) => selectedVisible.includes(a.id)),
+                          )
+                          .flatMap((g) =>
+                            g.links
+                              .filter((a) => !a.standalone)
+                              .map((a) => a.id),
+                          ),
+                      )
+                    }
+                  >
+                    Quitar hojas de seleccionados
+                    {selectedGroups ? ` (${selectedGroups})` : ""}
+                  </button>
+                </InventoryActionMenu>
               </th>
               <th
                 scope="col"
@@ -2012,39 +2059,46 @@ export function InventoryCatalog({
                     </button>
                   )}
                 </div>
-                <InventoryGroupSelect
-                  groups={trialGroups}
-                  value={commonSelectedGroup}
-                  placeholder={
-                    selectedAssignedGroups.size > 1
-                      ? "Varios grupos seleccionados"
-                      : "Asignar grupo a seleccionados…"
-                  }
-                  label="Asignar grupo a inventarios seleccionados"
-                  disabled={
-                    !trialDirectory?.canEdit || !selectedVisible.length || busy
-                  }
-                  onSelect={(id) =>
-                    assignGroupDirectly(
-                      id,
-                      visible
-                        .filter((g) =>
-                          g.links.some((a) => selectedVisible.includes(a.id)),
-                        )
-                        .map((g) => g.name),
-                    )
-                  }
-                />
-                <button
-                  type="button"
-                  className="inventory-remove-group-bulk"
-                  disabled={!trialDirectory?.canEdit || busy || !removalCount}
-                  onClick={() => void removeGroupMembers(removalGroups)}
-                  title="Quita la asignación solo de los diplomados seleccionados visibles; conserva los grupos y el inventario"
+                <InventoryActionMenu
+                  label="Asignar o quitar grupos"
+                  disabled={busy || !selectedGroups}
                 >
-                  Quitar grupo a seleccionados
-                  {removalCount ? ` (${removalCount})` : ""}
-                </button>
+                  <InventoryGroupSelect
+                    groups={trialGroups}
+                    value={commonSelectedGroup}
+                    placeholder={
+                      selectedAssignedGroups.size > 1
+                        ? "Varios grupos seleccionados"
+                        : "Asignar grupo a seleccionados…"
+                    }
+                    label="Asignar grupo a inventarios seleccionados"
+                    disabled={
+                      !trialDirectory?.canEdit ||
+                      !selectedVisible.length ||
+                      busy
+                    }
+                    onSelect={(id) =>
+                      assignGroupDirectly(
+                        id,
+                        visible
+                          .filter((g) =>
+                            g.links.some((a) => selectedVisible.includes(a.id)),
+                          )
+                          .map((g) => g.name),
+                      )
+                    }
+                  />
+                  <button
+                    type="button"
+                    className="inventory-remove-group-bulk"
+                    disabled={!trialDirectory?.canEdit || busy || !removalCount}
+                    onClick={() => void removeGroupMembers(removalGroups)}
+                    title="Quita la asignación solo de los diplomados seleccionados visibles; conserva los grupos y el inventario"
+                  >
+                    Quitar grupo a seleccionados
+                    {removalCount ? ` (${removalCount})` : ""}
+                  </button>
+                </InventoryActionMenu>
               </th>
               {countryCodes.map((country) => (
                 <th
@@ -2426,6 +2480,8 @@ export function InventoryCatalog({
                       </td>
                       {hasCountryColumns && (
                         <InventoryCountryCells
+                          canEdit={!!trialDirectory?.canEdit}
+                          onChanged={() => setCountryReload((v) => v + 1)}
                           name={g.name}
                           countries={countryCodes}
                           evaluation={countryEvaluation}

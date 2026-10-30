@@ -18,6 +18,7 @@ export function InventoryMultiSelect({
   disabled = false,
   onError,
   all = true,
+  selectAll = false,
   onCreate,
   createLabel = "Crear",
   compact = false,
@@ -38,6 +39,7 @@ export function InventoryMultiSelect({
   disabled?: boolean;
   onError?: (v: string) => void;
   all?: boolean;
+  selectAll?: boolean;
   onCreate?: (name: string, selected: string[]) => Promise<void>;
   createLabel?: string;
   compact?: boolean;
@@ -173,6 +175,23 @@ export function InventoryMultiSelect({
           </small>
         )}
         <fieldset disabled={busy || disabled} aria-label={label}>
+          {selectAll && !all && (
+            <label>
+              <input
+                type="checkbox"
+                checked={
+                  !!options.length &&
+                  options.every((o) => chosen.includes(o.value))
+                }
+                onChange={(e) =>
+                  void change(
+                    e.target.checked ? options.map((o) => o.value) : [],
+                  )
+                }
+              />
+              Todos
+            </label>
+          )}
           {all && (
             <label>
               <input

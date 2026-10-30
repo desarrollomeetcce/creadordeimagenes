@@ -45,7 +45,7 @@ export type InventoryCategoryAction =
       decisions?: import("../../lib/meta-ads/inventory-duplicates").InventoryNameDecision[];
     }
   | {
-      action: "ASSIGN_BULK";
+      action: "ASSIGN_BULK" | "REMOVE_BULK";
       ids: string[];
       kind: "PRIMARY" | "SECONDARY";
       names: string[];

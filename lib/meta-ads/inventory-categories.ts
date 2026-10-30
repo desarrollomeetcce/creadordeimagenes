@@ -113,6 +113,12 @@ type Action =
       kind: "PRIMARY" | "SECONDARY";
       names: string[];
     }
+  | {
+      action: "REMOVE_BULK";
+      ids: string[];
+      kind: "PRIMARY" | "SECONDARY";
+      names: string[];
+    }
   | { action: "CLEAR_BULK"; ids: string[]; kind: "PRIMARY" | "SECONDARY" }
   | { action: "RENAME"; categoryId: string; name: string }
   | { action: "DELETE"; categoryId: string }
@@ -333,10 +339,15 @@ export async function saveInventoryCategories(
           await writeInventoryTags(tx, b.targetIds, [...added]);
           affected = b.targetIds.length;
         }
-      } else if (b.action === "CLEAR_BULK") {
+      } else if (b.action === "CLEAR_BULK" || b.action === "REMOVE_BULK") {
         await fullGroups(tx, b.listId, b.ids);
         const categoryIds = before.categories
-          .filter((c) => c.kind === b.kind)
+          .filter(
+            (c) =>
+              c.kind === b.kind &&
+              (b.action !== "REMOVE_BULK" ||
+                b.names.some((n) => categoryKey(n) === categoryKey(c.name))),
+          )
           .map((c) => c.id);
         await tx.metaInventoryCategoryAssignment.deleteMany({
           where: { aliasId: { in: b.ids }, categoryId: { in: categoryIds } },
