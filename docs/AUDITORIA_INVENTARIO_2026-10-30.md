@@ -57,3 +57,7 @@ Se detectó una eliminación destructiva en la ruta de filas financieras: ya se 
 Tabla a pantalla completa mantiene DOM/datos/scroll, controles flotantes y navegación real de hojas, manual/automático y calendario solo dentro de ampliación. Ancho común de métricas en ambas vistas, separadores de metadatos individuales y cabecera más compacta. Chromium verifica6 escenarios de ventana y4 de bajas, con25 pruebas enfocadas de servidor,214 unitarias y compilación/tipos.
 
 Regresión adicional del mismo cambio:26 pruebas de asignación Meta/selección/categorías aprobadas;51 pruebas de integración en total, sin fallos.
+
+## Contador de pestañas corregido
+
+El número entre paréntesis usaba todo el catálogo de aliases, incluidas identidades históricas retiradas. Ya usa presencia real compartida con la hoja financiera: ocultos/retirados no cuentan, apagados fijados sí, varios países de un mismo diplomado no duplican el contador. La proyección completa refresca el valor de la pestaña y conserva todo el catálogo histórico. Prueba de navegador con4 diplomados retira los4 y verifica0 antes/después de recargar; conserva sus historias y3 ventas. No se borran datos para corregir el número.

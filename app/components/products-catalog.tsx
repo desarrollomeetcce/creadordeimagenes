@@ -3,7 +3,14 @@ import type { FinancialTableWindowMode } from "./financial-table-window";
 import { MetaWorkspaceSharing } from "./meta-workspace-sharing";
 import { useFinancialReadOnly } from "./financial-read-only";
 import { engineRequest as generalApi } from "./generation-engine";
-import { useEffect, useRef, useState, useId, useContext } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  useId,
+  useContext,
+  useCallback,
+} from "react";
 import { CurrentUserId, CurrentRole } from "./role-guide";
 import { financialRequest as api } from "./financial-request";
 import { SheetTabColorDialog, useSheetTabColors } from "./sheet-tab-colors";
@@ -24,6 +31,7 @@ type CatalogTable = {
   id: string;
   name: string;
   aliases: MetaAliasOption[];
+  visibleAliasCount: number;
   aliasColumnName: string;
   defaultCountry: string;
   defaultCurrency: string;
@@ -112,6 +120,15 @@ export function ProductsCatalog() {
     [loading, setLoading] = useState(true),
     [busy, setBusy] = useState(false);
   const creatingTable = useRef(false);
+  const updatePresenceCount = useCallback((tableId: string, count: number) => {
+    setTables((current) =>
+      current.some((t) => t.id === tableId && t.visibleAliasCount !== count)
+        ? current.map((t) =>
+            t.id === tableId ? { ...t, visibleAliasCount: count } : t,
+          )
+        : current,
+    );
+  }, []);
   async function createTableDirectly() {
     if (creatingTable.current || busy || !canCreate) return;
     creatingTable.current = true;
@@ -666,7 +683,7 @@ export function ProductsCatalog() {
                       : "before"
                     : undefined
                 }
-                title="Clic derecho para cambiar color, editar o eliminar; arrastra o usa Alt + flecha izquierda/derecha para ordenar"
+                title={`${t.visibleAliasCount} diplomados presentes en esta hoja, incluidos los desactivados fijados; no cuenta retirados ni duplica países. Clic derecho para editar; arrastra para ordenar.`}
                 onDragStart={(e) => {
                   dragged.current = t.id;
                   setDragging(t.id);
@@ -734,7 +751,7 @@ export function ProductsCatalog() {
                   setMessage("");
                 }}
               >
-                {t.name} ({t.aliases.length})
+                {t.name} ({t.visibleAliasCount})
               </button>
               {tabEditor(t.id)}
             </span>
@@ -941,6 +958,7 @@ export function ProductsCatalog() {
           aliases={table.aliases}
           settings={table}
           onNamesChanged={load}
+          onPresenceChanged={updatePresenceCount}
           onOpenAdvisorPeriod={openAdvisorPeriod}
           advisorPeriodRequest={advisorPeriodRequest}
           onAdvisorPeriodHandled={() => setAdvisorPeriodRequest(null)}

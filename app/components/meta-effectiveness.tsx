@@ -175,6 +175,7 @@ export function MetaEffectiveness({
   tableId,
   aliases,
   onNamesChanged,
+  onPresenceChanged,
   settings,
   view,
   onViewChange,
@@ -211,6 +212,7 @@ export function MetaEffectiveness({
   settings: Settings;
   aliases: { id: string; name: string }[];
   onNamesChanged: () => Promise<void>;
+  onPresenceChanged: (tableId: string, count: number) => void;
 }) {
   const sheetName = tables.find((t) => t.id === tableId)?.name ?? "Hoja";
   const [sheetSalesDetailOpen, setSheetSalesDetailOpen] = useState(false);
@@ -393,6 +395,13 @@ export function MetaEffectiveness({
     [pasteCountry, setPasteCountry] = useState(settings.defaultCountry),
     [pasteCurrency, setPasteCurrency] = useState(settings.defaultCurrency),
     [csv, setCsv] = useState(false);
+  useEffect(() => {
+    if (data)
+      onPresenceChanged(
+        tableId,
+        new Set(data.rows.map((row) => row.aliasId)).size,
+      );
+  }, [data, tableId, onPresenceChanged]);
   useEffect(() => {
     let alive = true;
     setCatalogStatus(null);

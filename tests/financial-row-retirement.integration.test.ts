@@ -67,6 +67,11 @@ test("Retirar de hoja desactiva sin borrar ventas/historial; apagar conserva pin
         items: [{ name, targets: [] }],
         active: true,
       });
+    assert.equal(
+      (await aliasTables(actor)).find((t) => t.id === table.id)!
+        .visibleAliasCount,
+      2,
+    );
     const aliases = await db.metaAlias.findMany({
       where: { tableId: table.id },
       orderBy: { name: "asc" },
@@ -185,6 +190,8 @@ test("Retirar de hoja desactiva sin borrar ventas/historial; apagar conserva pin
     }
     const dir = await aliasTables(actor),
       dirAliases = dir.flatMap((t) => t.aliases);
+    assert.equal(dir.find((t) => t.id === table.id)!.visibleAliasCount, 1);
+    assert.equal(dir.find((t) => t.id === table.id)!.aliases.length, 2);
     assert.equal(
       dirAliases.find((a) => a.id === aliases[1].id)?.detached,
       true,
@@ -234,6 +241,11 @@ test("Retirar de hoja desactiva sin borrar ventas/historial; apagar conserva pin
     let point = (await read()).rows.find(
       (r) => r.name === names[1] && r.country === "PE",
     )!;
+    assert.equal(
+      (await aliasTables(actor)).find((t) => t.id === table.id)!
+        .visibleAliasCount,
+      2,
+    );
     assert.equal(point.pinned, true);
     assert.equal(point.activation, "INACTIVE");
     assert(
@@ -319,6 +331,35 @@ test("Retirar de hoja desactiva sin borrar ventas/historial; apagar conserva pin
     assert.equal(old.active, false);
     assert.equal(old.legacyHistoryUnavailable, true);
     assert.equal(old.removals[0].sales, null);
+    const ecuador = (await read()).rows.find(
+      (r) => r.name === names[0] && r.country === "EC",
+    )!;
+    await inventoryActivationChange(actor, {
+      listId: list.id,
+      tableId: table.id,
+      country: "EC",
+      items: [{ name: names[0], targets: ecuador.targets }],
+      active: false,
+      pinned: false,
+    });
+    const empty = (await aliasTables(actor)).find((t) => t.id === table.id)!;
+    assert.equal(empty.visibleAliasCount, 0);
+    assert.equal(empty.aliases.length, 2);
+    assert.equal(
+      (await effectiveness(actor, table.id, yesterday, today)).rows.length,
+      0,
+    );
+    assert.equal(
+      (
+        await effectivenessDetail(actor, {
+          aliasId: aliases[0].id,
+          country: "PE",
+          since: yesterday,
+          until: today,
+        })
+      ).lifetime.sales,
+      5,
+    );
   } finally {
     await db.metaEffectivenessEvent.deleteMany({
       where: { state: { alias: { tableId: table.id } } },

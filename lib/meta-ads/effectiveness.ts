@@ -13,6 +13,7 @@ import { limaDay } from "./advisor-attribution";
 import { createHash } from "node:crypto";
 import { sheetMetrics, type SheetMetric } from "./period-summary";
 import { db } from "../db";
+import { financialRowPresence } from "./financial-row-presence";
 import type { Prisma } from "@prisma/client";
 import { ownerOnly } from "./financial-access";
 import { demand } from "../errors";
@@ -441,12 +442,14 @@ async function readEffectiveness(
         x.updatedAt = d.updatedAt.toISOString();
     }
   }
-  for (const a of table!.aliases)
-    if (
-      ![...rows.values()].some((r) => r.aliasId === a.id) &&
-      !stored.some((r) => r.aliasId === a.id && r.hidden && !includeHidden)
-    )
-      get(a.id, table!.defaultCountry);
+  for (const row of financialRowPresence(
+    table!.aliases,
+    stored,
+    campaigns,
+    table!.defaultCountry,
+    includeHidden,
+  ))
+    get(row.aliasId, row.country);
   const missing = new Set<string>();
   const annotations = new Map(
     stored.map((s) => [

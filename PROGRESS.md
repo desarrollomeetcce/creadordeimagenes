@@ -2061,3 +2061,9 @@ Eliminar filas de hoja ahora desactiva y oculta sin borrar métricas diarias, ve
 Validación: compilación y tipos correctos,214 pruebas unitarias,25 pruebas enfocadas de baja/activación; Chromium6 comprobaciones de ventana/métricas y4 de apagado/pin/desfijar/reincorporar/eliminar/filtro histórico/detalle con ventas conservadas. Sin llamadas a Meta ni proveedores.
 
 Regresión adicional del mismo cambio:26 pruebas de asignación Meta/selección/categorías aprobadas;51 pruebas de integración en total, sin fallos.
+
+## 30/10/2026 · Contador de hojas sin registros históricos retirados
+
+Causa identificada: ProductsCatalog mostraba aliases.length, incluyendo identidades conservadas por historial aunque todas sus filas estuvieran ocultas. La API ahora devuelve visibleAliasCount a partir de la misma política financialRowPresence que usa la hoja; una identidad en dos países cuenta una vez. Apagados fijados cuentan porque siguen presentes; retirados no. Se mantienen aliases e historia completos. La hoja actualiza la pestaña desde su respuesta completa al recargar datos, sin depender de filtros de pantalla.
+
+217 unitarias y25 pruebas de integración aprobadas; tipos/compilación correctos. Chromium reproduce4 presentes→retirar4→0 inmediato→recargar0; confirma catálogo4, historial/estados desactivados y3 ventas preservadas. Fixture propia eliminada. Sin migración, reparación destructiva ni llamadas Meta/IA.

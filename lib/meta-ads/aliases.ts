@@ -43,6 +43,7 @@ import {
 } from "./inventory-membership";
 import { categoryKey } from "./category-paste";
 import type { Prisma } from "@prisma/client";
+import { financialRowPresence } from "./financial-row-presence";
 export type MetaInventorySelection = {
   tableId: string;
   catalogId?: string;
@@ -613,8 +614,42 @@ export async function aliasTables(actor: Actor) {
       (a) => [a.id, a],
     ),
   );
+  const ids = [...aliases.keys()];
+  const [stored, campaigns] = await Promise.all([
+    db.metaEffectivenessRow.findMany({
+      where: { aliasId: { in: ids }, legacy: false },
+      select: { aliasId: true, country: true, hidden: true },
+    }),
+    db.metaAdObject.findMany({
+      where: {
+        level: "campaign",
+        aliasId: { in: ids },
+        aliasCountry: { not: null },
+        account: await accountWhere(actor),
+      },
+      select: { aliasId: true, aliasCountry: true },
+      distinct: ["aliasId", "aliasCountry"],
+    }),
+  ]);
+  const counts = new Map<string, Set<string>>();
+  const byAlias = new Map(
+    tables.flatMap((t) => t.aliases.map((a) => [a.id, t.id] as const)),
+  );
+  // Retained aliases are still returned for history and selectors; only present identities count.
+  const presence = financialRowPresence(
+    tables.flatMap((t) => t.aliases),
+    stored,
+    campaigns,
+    "",
+  );
+  for (const row of presence) {
+    const tableId = byAlias.get(row.aliasId)!;
+    if (!counts.has(tableId)) counts.set(tableId, new Set());
+    counts.get(tableId)!.add(row.aliasId);
+  }
   return tables.map((table) => ({
     ...table,
+    visibleAliasCount: counts.get(table.id)?.size ?? 0,
     aliases: table.aliases.map((a) => aliases.get(a.id)!),
   }));
 }

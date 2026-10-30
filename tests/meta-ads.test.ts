@@ -924,3 +924,24 @@ test('country header order keeps missing FX last, active first and recorded pend
  assert(compare(active,off,'factor',false)<0);assert(compare(pending,active,'factor',true)>0);
  assert(compare(pending,unused,'status',false)<0);assert(compare(pending,undefined,'status',true)<0);
 });
+
+
+test('Hojas: cuatro identidades históricas retiradas cuentan cero sin borrar el catálogo',async()=>{
+ const {financialRowPresence}=await import('../lib/meta-ads/financial-row-presence');
+ const aliases=['a','b','c','d'].map(id=>({id}));
+ assert.deepEqual(financialRowPresence(aliases,aliases.map(a=>({aliasId:a.id,country:'EC',hidden:true})),[],'EC'),[]);
+ assert.equal(aliases.length,4);
+ assert.equal(financialRowPresence(aliases,aliases.map(a=>({aliasId:a.id,country:'EC',hidden:true})),[],'EC',true).length,4);
+});
+test('Hojas: el mismo diplomado en dos países cuenta una identidad; apagado fijado permanece presente',async()=>{
+ const {financialRowPresence}=await import('../lib/meta-ads/financial-row-presence');
+ const rows=financialRowPresence([{id:'a'},{id:'b'}],[{aliasId:'a',country:'PE',hidden:false},{aliasId:'a',country:'EC',hidden:false},{aliasId:'b',country:'PE',hidden:true}],[],'PE');
+ assert.equal(rows.length,2);assert.equal(new Set(rows.map(r=>r.aliasId)).size,1);
+ assert.deepEqual(financialRowPresence([{id:'a'}],[{aliasId:'a',country:'PE',hidden:false}],[],'PE'),[{aliasId:'a',country:'PE'}]);
+});
+test('Hojas: una campaña vinculada no resucita el país retirado; otro país conserva presencia y altas sin filas conservan respaldo',async()=>{
+ const {financialRowPresence}=await import('../lib/meta-ads/financial-row-presence');
+ const aliases=[{id:'a'},{id:'b'}],stored=[{aliasId:'a',country:'PE',hidden:true}];
+ assert.deepEqual(financialRowPresence(aliases,stored,[{aliasId:'a',aliasCountry:'PE'}],'PE'),[{aliasId:'b',country:'PE'}]);
+ assert.deepEqual(financialRowPresence(aliases,stored,[{aliasId:'a',aliasCountry:'PE'},{aliasId:'a',aliasCountry:'EC'}],'PE'),[{aliasId:'a',country:'EC'},{aliasId:'b',country:'PE'}]);
+});
