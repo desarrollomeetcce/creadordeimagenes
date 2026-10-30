@@ -8,10 +8,13 @@ import {
   inventoryActivationAddSheet,
   inventoryActivationChange,
   inventoryActivationReport,
+  saveInventoryFactorLimits,
+  financialCatalogStatus,
 } from "../lib/meta-ads/inventory-sheet-activation";
 import {
   effectiveness,
   inventoryEffectivenessSource,
+  importEffectiveness,
 } from "../lib/meta-ads/effectiveness";
 import { setEffectivenessState } from "../lib/meta-ads/effectiveness-controls";
 import { authorizeFinancialRequest } from "../lib/meta-ads/financial-access";
@@ -139,6 +142,29 @@ test("Activación por hoja: selección, pin, historial y permisos", async (t) =>
           await db.metaAlias.count({ where: { tableId: ec.id } }),
           0,
         );
+      },
+    );
+    await t.test(
+      "Desactivar y fijar se guarda atómicamente y mantiene visible la fila",
+      async () => {
+        const row = (await report()).rows.find((r) => r.name === names[0])!;
+        await inventoryActivationChange(owner, {
+          listId: list.id,
+          tableId: pe.id,
+          items: [{ name: names[0], targets: row.targets }],
+          active: false,
+          pinned: true,
+        });
+        const current = (await report()).rows.find((r) => r.name === names[0])!;
+        assert.equal(current.activation, "INACTIVE");
+        assert.equal(current.pinned, true);
+        assert(
+          (await effectiveness(owner, pe.id, today, today)).rows.some(
+            (r) => r.aliasId === current.targets[0].aliasId && !r.active,
+          ),
+        );
+        await change(names[0], { active: true });
+        await change(names[0], { pinned: false });
       },
     );
     await t.test(
@@ -351,6 +377,403 @@ test("Activación por hoja: selección, pin, historial y permisos", async (t) =>
               tableIds: "missing",
             }),
           /pertenece/i,
+        );
+      },
+    );
+    await t.test(
+      "Límites personalizados cambian FX/estado e historial y sobreviven a cambios de pin",
+      async () => {
+        const before = await inventoryActivationDirectory(owner, {
+          listId: list.id,
+        });
+        assert.equal(before.limits[0], 25);
+        assert.equal(before.limits[2], 100);
+        const limits = [...before.limits];
+        limits[0] = 60;
+        limits[1] = 70;
+        limits[2] = 90;
+        await saveInventoryFactorLimits(owner, {
+          listId: list.id,
+          revision: before.revision,
+          limits,
+        });
+        let r = (await report()).rows.find((r) => r.name === names[0])!;
+        assert.equal(r.assessment.limit, 60);
+        assert.equal(r.assessment.usage, 0.5);
+        assert.equal(r.assessment.status, "TESTING");
+        await change(names[1], { pinned: true });
+        assert.deepEqual(
+          (await inventoryActivationDirectory(owner, { listId: list.id }))
+            .limits,
+          limits,
+        );
+        const aliasId = r.targets[0].aliasId;
+        await db.metaEffectivenessDay.updateMany({
+          where: { row: { aliasId }, day: today },
+          data: { sales: 2 },
+        });
+        r = (await report()).rows.find((r) => r.name === names[0])!;
+        assert.equal(r.assessment.limit, 90);
+        assert.equal(r.assessment.usage, 30 / 90);
+        assert.equal(r.assessment.status, "WITHIN");
+        const history = await inventoryActivationReport(owner, {
+          listId: list.id,
+          tableIds: pe.id,
+          historyName: names[0],
+        });
+        assert.equal(history.rows[0].history![0].assessment.limit, 90);
+      },
+    );
+    await t.test(
+      "Límites rechazan revisión caducada, importes inválidos y escritura de visor",
+      async () => {
+        const before = await inventoryActivationDirectory(owner, {
+          listId: list.id,
+        });
+        await assert.rejects(
+          () =>
+            saveInventoryFactorLimits(owner, {
+              listId: list.id,
+              revision: before.revision - 1,
+              limits: [1],
+            }),
+          /cambió/i,
+        );
+        for (const limits of [[], [0], [-2], [Infinity]])
+          await assert.rejects(() =>
+            saveInventoryFactorLimits(owner, {
+              listId: list.id,
+              revision: before.revision,
+              limits,
+            }),
+          );
+        const cap = await authorizeFinancialRequest(
+          { id: viewer.id, role: "OBSERVER" },
+          "inventory/sheet-activation/directory",
+          "GET",
+          new URLSearchParams({ listId: list.id }),
+          null,
+          "TAB:" + list.id,
+        );
+        await assert.rejects(
+          () =>
+            saveInventoryFactorLimits(cap, {
+              listId: list.id,
+              revision: before.revision,
+              limits: [1],
+            }),
+          /permiso/i,
+        );
+        assert.deepEqual(
+          await inventoryActivationDirectory(owner, { listId: list.id }),
+          before,
+        );
+      },
+    );
+    await t.test(
+      "Agregar varios desde el catálogo conserva existentes, estados, ventas y categorías",
+      async () => {
+        const extra = await db.metaInventoryItem.create({
+          data: { sheetId: list.id, name: "Extra " + tag },
+        });
+        const category = await db.metaInventoryCategory.create({
+          data: {
+            sheetId: list.id,
+            name: "Añadir " + tag,
+            key: "add-" + tag,
+            kind: "PRIMARY",
+          },
+        });
+        await db.metaInventoryItemCategory.create({
+          data: { itemId: extra.id, categoryId: category.id },
+        });
+        const existing = (await report()).rows.find(
+          (r) => r.name === names[1],
+        )!;
+        const beforeDays = await db.metaEffectivenessDay.findMany({
+          where: { row: { alias: { inventorySheetId: list.id } } },
+          orderBy: [{ rowId: "asc" }, { day: "asc" }],
+        });
+        const rows = [names[1], names[2], extra.name].map((name) => ({
+          name,
+          country: "PE",
+          currency: "PEN",
+        }));
+        const revision = (
+          await db.metaEffectivenessSheet.findUniqueOrThrow({
+            where: { id: list.id },
+          })
+        ).categoryRevision;
+        await importEffectiveness(
+          owner,
+          pe.id,
+          rows,
+          undefined,
+          undefined,
+          list.id,
+          undefined,
+          false,
+          (
+            await db.metaEffectivenessSheet.findUniqueOrThrow({
+              where: { id: list.id },
+            })
+          ).categoryRevision,
+          true,
+        );
+        const assigned = await db.metaAlias.findMany({
+          where: { tableId: pe.id, inventorySheetId: list.id },
+        });
+        assert.equal(assigned.length, 4);
+        assert.equal(
+          (await report()).rows.find((r) => r.name === names[1])!.activation,
+          existing.activation,
+        );
+        const added = assigned.find((a) => a.name === extra.name)!;
+        assert(
+          await db.metaInventoryCategoryAssignment.findUnique({
+            where: {
+              aliasId_categoryId: {
+                aliasId: added.id,
+                categoryId: category.id,
+              },
+            },
+          }),
+        );
+        assert.equal(
+          (await report()).rows.find((r) => r.name === extra.name)!.activation,
+          "INACTIVE",
+        );
+        await importEffectiveness(
+          owner,
+          pe.id,
+          rows,
+          undefined,
+          undefined,
+          list.id,
+          undefined,
+          false,
+          (
+            await db.metaEffectivenessSheet.findUniqueOrThrow({
+              where: { id: list.id },
+            })
+          ).categoryRevision,
+          true,
+        );
+        await assert.rejects(
+          () =>
+            importEffectiveness(
+              owner,
+              pe.id,
+              rows,
+              undefined,
+              undefined,
+              list.id,
+              undefined,
+              false,
+              revision,
+              true,
+            ),
+          /cambió/i,
+        );
+        const freshRevision = (
+          await db.metaEffectivenessSheet.findUniqueOrThrow({
+            where: { id: list.id },
+          })
+        ).categoryRevision;
+        await assert.rejects(
+          () =>
+            importEffectiveness(
+              owner,
+              pe.id,
+              [{ name: "No existe " + tag, country: "PE", currency: "PEN" }],
+              undefined,
+              undefined,
+              list.id,
+              undefined,
+              false,
+              freshRevision,
+              true,
+            ),
+          /no pertenece/i,
+        );
+        assert.equal(
+          await db.metaAlias.count({
+            where: { tableId: pe.id, inventorySheetId: list.id },
+          }),
+          4,
+        );
+        assert.equal(
+          await db.metaInventoryItem.count({ where: { sheetId: list.id } }),
+          4,
+        );
+        assert.deepEqual(
+          await db.metaEffectivenessDay.findMany({
+            where: { row: { alias: { inventorySheetId: list.id } } },
+            orderBy: [{ rowId: "asc" }, { day: "asc" }],
+          }),
+          beforeDays,
+        );
+      },
+    );
+    await t.test(
+      "Pendientes de campaña por hoja se guardan sin confundir activación ni dividir ciclos",
+      async () => {
+        let row = (await report()).rows.find((r) => r.name === names[0])!;
+        await inventoryActivationChange(owner, {
+          listId: list.id,
+          tableId: pe.id,
+          items: [{ name: names[0], targets: row.targets }],
+          campaignTask: "CREATE",
+        });
+        row = (await report()).rows.find((r) => r.name === names[0])!;
+        assert.equal(row.activation, "ACTIVE");
+        assert.equal(row.campaignTask, "CREATE");
+        assert.deepEqual(row.campaignTasks, ["CREATE"]);
+        const periods = (
+          await inventoryActivationReport(owner, {
+            listId: list.id,
+            tableIds: pe.id,
+            historyName: names[0],
+          })
+        ).rows[0].history!.length;
+        await inventoryActivationChange(owner, {
+          listId: list.id,
+          tableId: pe.id,
+          items: [{ name: names[0], targets: row.targets }],
+          campaignTask: "STOP",
+        });
+        row = (await report()).rows.find((r) => r.name === names[0])!;
+        assert.equal(row.activation, "ACTIVE");
+        assert.equal(row.campaignTask, "STOP");
+        await change(names[0], { pinned: true });
+        assert.equal(
+          (await report()).rows.find((r) => r.name === names[0])!.campaignTask,
+          "STOP",
+        );
+        assert.equal(
+          (
+            await inventoryActivationReport(owner, {
+              listId: list.id,
+              tableIds: pe.id,
+              historyName: names[0],
+            })
+          ).rows[0].history!.length,
+          periods,
+        );
+        assert.equal(
+          (
+            await inventoryActivationReport(owner, {
+              listId: list.id,
+              tableIds: ec.id,
+            })
+          ).rows.length,
+          0,
+        );
+      },
+    );
+    await t.test(
+      "Completar campaña borra pendiente y desactivar conserva pin; conflictos no escriben",
+      async () => {
+        let row = (await report()).rows.find((r) => r.name === names[0])!;
+        await assert.rejects(() =>
+          inventoryActivationChange(owner, {
+            listId: list.id,
+            tableId: pe.id,
+            items: [{ name: names[0], targets: row.targets }],
+            active: false,
+            campaignTask: "CREATE",
+          }),
+        );
+        assert.equal(
+          (await report()).rows.find((r) => r.name === names[0])!.campaignTask,
+          "STOP",
+        );
+        await inventoryActivationChange(owner, {
+          listId: list.id,
+          tableId: pe.id,
+          items: [{ name: names[0], targets: row.targets }],
+          active: false,
+        });
+        row = (await report()).rows.find((r) => r.name === names[0])!;
+        assert.equal(row.activation, "INACTIVE");
+        assert.equal(row.campaignTask, "NONE");
+        assert.equal(row.pinned, true);
+        await assert.rejects(() =>
+          inventoryActivationChange(owner, {
+            listId: list.id,
+            tableId: pe.id,
+            items: [{ name: names[0], targets: row.targets }],
+            campaignTask: "INVALID",
+          }),
+        );
+        const cap = await authorizeFinancialRequest(
+          { id: viewer.id, role: "OBSERVER" },
+          "inventory/sheet-activation/report",
+          "GET",
+          new URLSearchParams({ listId: list.id, tableIds: pe.id }),
+          null,
+          "TAB:" + list.id,
+        );
+        await assert.rejects(
+          () =>
+            inventoryActivationChange(cap, {
+              listId: list.id,
+              tableId: pe.id,
+              items: [{ name: names[0], targets: row.targets }],
+              campaignTask: "STOP",
+            }),
+          /permiso/i,
+        );
+      },
+    );
+    await t.test(
+      "Estado financiero respeta hoja, país y revocación de acceso",
+      async () => {
+        const result = await financialCatalogStatus(owner, { tableId: pe.id });
+        assert(result.rows.length > 0);
+        const aliasIds = await db.metaAlias.findMany({
+          where: { tableId: pe.id },
+          select: { id: true },
+        });
+        assert(
+          result.rows.every((r) => aliasIds.some((a) => a.id === r.aliasId)),
+        );
+        assert(
+          result.rows.every(
+            (r) =>
+              Object.keys(r).sort().join(",") === "aliasId,assessment,country",
+          ),
+        );
+        await db.effectivenessGrant.create({
+          data: {
+            userId: viewer.id,
+            scope: "TABLE:" + pe.id,
+            permission: "VIEW",
+            grantedById: actor.id,
+          },
+        });
+        const cap = await authorizeFinancialRequest(
+          { id: viewer.id, role: "OBSERVER" },
+          "effectiveness/catalog-status",
+          "GET",
+          new URLSearchParams({ tableId: pe.id }),
+          null,
+          "TABLE:" + pe.id,
+        );
+        assert.deepEqual(
+          await financialCatalogStatus(cap, { tableId: pe.id }),
+          result,
+        );
+        await assert.rejects(
+          () => financialCatalogStatus(cap, { tableId: ec.id }),
+          /fuera/i,
+        );
+        await db.effectivenessGrant.deleteMany({
+          where: { userId: viewer.id, scope: "TABLE:" + pe.id },
+        });
+        await assert.rejects(
+          () => financialCatalogStatus(cap, { tableId: pe.id }),
+          /acceso/i,
         );
       },
     );

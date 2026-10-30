@@ -49,8 +49,8 @@ export async function linkFinancialInventory(
     }
     if (!alias) {
       demand(
-        aliases.length < 1000,
-        "El catálogo admite hasta 1000 asignaciones a hojas.",
+        aliases.length < 1500,
+        "El catálogo admite hasta 1500 asignaciones a hojas.",
       );
       alias = await tx.metaAlias.create({
         data: { tableId, inventorySheetId: listId, name },

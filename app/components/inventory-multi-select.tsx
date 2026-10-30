@@ -24,7 +24,13 @@ export function InventoryMultiSelect({
   compact = false,
   description,
   categoryFilter,
+  confirmLabel = "Listo",
+  onAdd,
+  addDisabled = false,
 }: {
+  confirmLabel?: string;
+  onAdd?: (values: string[]) => Promise<void>;
+  addDisabled?: boolean;
   onOpen?: () => void;
   label: string;
   options: SheetOption[];
@@ -115,7 +121,10 @@ export function InventoryMultiSelect({
         ref={popover}
         id={id}
         popover="auto"
-        className="sheet-search-popover inventory-multi-popover"
+        className={
+          "sheet-search-popover inventory-multi-popover" +
+          (onAdd ? " inventory-multi-with-add" : "")
+        }
         style={{
           ...position,
           maxHeight: `calc(100dvh - ${position.top + 8}px)`,
@@ -266,8 +275,33 @@ export function InventoryMultiSelect({
             }
           }}
         >
-          Listo
+          {confirmLabel}
         </button>
+        {onAdd && (
+          <button
+            type="button"
+            className="inventory-picker-add"
+            data-financial-write
+            disabled={busy || disabled || addDisabled || !draft.length}
+            onClick={async () => {
+              if (pending.current) return;
+              pending.current = true;
+              setBusy(true);
+              try {
+                await onAdd(draft);
+                popover.current?.hidePopover();
+                trigger.current?.focus({ preventScroll: true });
+              } catch (e) {
+                onError?.((e as Error).message);
+              } finally {
+                pending.current = false;
+                setBusy(false);
+              }
+            }}
+          >
+            Agregar seleccionados{draft.length ? ` (${draft.length})` : ""}
+          </button>
+        )}
         {busy && <small role="status">Guardando…</small>}
       </div>
     </>

@@ -1,4 +1,9 @@
 "use client";
+import {
+  InventoryCampaignControl,
+  type InventoryCampaignChange,
+} from "./inventory-campaign-control";
+import { InventoryStatusLabel } from "./inventory-status-label";
 import { Fragment, useEffect, useMemo, useState } from "react";
 import { financialRequest as api } from "./financial-request";
 import { categoryKey } from "../../lib/meta-ads/category-paste";
@@ -112,7 +117,7 @@ export function InventoryCountryCells({
   onChange: (
     tableId: string,
     name: string,
-    change: { active?: boolean; pinned?: boolean },
+    change: InventoryCampaignChange,
   ) => void;
   onHistory: (tableId: string, name: string) => void;
 }) {
@@ -149,24 +154,13 @@ export function InventoryCountryCells({
               hidden={hiddenColumns.includes(`country:${tableId}:activation`)}
             >
               <div className="inventory-sheet-row-controls">
-                <button
-                  type="button"
-                  className={
-                    "trial-sheet-activation trial-sheet-" +
-                    (active ? "ACTIVE" : mixed ? "MIXED" : "INACTIVE")
-                  }
-                  role="switch"
-                  aria-checked={active}
-                  aria-label={`Activación de ${title}`}
-                  title={`${active ? "Desactivar" : mixed ? "Activar todas las filas" : "Activar"} en ${sheetLabel(tableId)}`}
+                <InventoryCampaignControl
+                  title={title}
+                  activation={point?.activation ?? "INACTIVE"}
+                  task={point?.campaignTask ?? "NONE"}
                   disabled={disabled}
-                  onClick={() => onChange(tableId, name, { active: !active })}
-                >
-                  <i aria-hidden="true" />
-                  <span className="sr-only">
-                    {active ? "Activado" : mixed ? "Mixto" : "Desactivado"}
-                  </span>
-                </button>
+                  onChange={(change) => onChange(tableId, name, change)}
+                />
                 <button
                   type="button"
                   className="inventory-sheet-item-pin"
@@ -222,14 +216,23 @@ export function InventoryCountryCells({
               {point ? (
                 <button
                   type="button"
-                  className={"trial-status trial-" + assessment!.status}
+                  className={
+                    "trial-status inventory-status-with-dot trial-" +
+                    assessment!.status
+                  }
                   aria-label={`Detalle de evaluación de ${title}`}
                   onClick={() => onHistory(tableId, name)}
                 >
-                  {status}
+                  <InventoryStatusLabel status={assessment!.status} />
                 </button>
               ) : (
-                <small title={evaluation.error || undefined}>{status}</small>
+                <small title={evaluation.error || undefined}>
+                  <span
+                    className="inventory-status-dot inventory-status-dot-PENDING"
+                    aria-hidden="true"
+                  />
+                  {status}
+                </small>
               )}
             </td>
           </Fragment>

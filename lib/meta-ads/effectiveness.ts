@@ -947,6 +947,8 @@ export async function importEffectiveness(
   inventorySheetId?: string,
   decisions?: InventoryNameDecision[],
   initialActive?: boolean,
+  catalogRevision?: number,
+  existingOnly = false,
 ) {
   ownerOnly(actor);
   return db.$transaction(
@@ -957,6 +959,37 @@ export async function importEffectiveness(
         "Tabla no disponible.",
         404,
       );
+      if (existingOnly) {
+        demand(
+          inventorySheetId && catalogRevision !== undefined,
+          "Selecciona un catálogo vigente antes de agregar.",
+        );
+        const list = await tx.metaEffectivenessSheet.findFirst({
+          where: { id: inventorySheetId, kind: "INVENTORY", archivedAt: null },
+          select: { categoryRevision: true },
+        });
+        demand(
+          list && list.categoryRevision === catalogRevision,
+          "El catálogo cambió. Actualiza y vuelve a seleccionar los diplomados.",
+          409,
+        );
+        const [items, aliases] = await Promise.all([
+          tx.metaInventoryItem.findMany({
+            where: { sheetId: inventorySheetId },
+            select: { name: true },
+          }),
+          tx.metaAlias.findMany({
+            where: { inventorySheetId },
+            select: { name: true },
+          }),
+        ]);
+        const known = new Set([...items, ...aliases].map((item) => item.name));
+        demand(
+          entries.every((entry) => known.has(entry.name)),
+          "Un diplomado ya no pertenece al catálogo seleccionado.",
+          409,
+        );
+      }
       if (initialActive !== undefined)
         demand(
           entries.every((e) => !!e.country),
@@ -1026,8 +1059,8 @@ export async function importEffectiveness(
         if (!a && !fresh.has(k)) fresh.set(k, e.name);
       }
       demand(
-        aliases.length + fresh.size <= 1000,
-        "El catálogo admite hasta 1000 elementos de inventario.",
+        aliases.length + fresh.size <= 1500,
+        "El catálogo admite hasta 1500 elementos de inventario.",
       );
       if (fresh.size) {
         const inventorySheetId = await activeWorkbookSheetId(tx, "INVENTORY");
@@ -1224,7 +1257,7 @@ export async function importEffectiveness(
         created: fresh.size + inventoryCreated,
       };
     },
-    { timeout: 30000 },
+    { timeout: 120000 },
   );
 }
 export async function setEffectivenessColumns(

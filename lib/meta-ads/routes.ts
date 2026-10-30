@@ -272,6 +272,8 @@ export async function metaRoutes(
    ownerOnly(actor);const b=z.object({listId:z.string().min(1).max(100),revision:z.number().int().nonnegative(),tableIds:z.array(z.string().min(1).max(100)).min(1).max(1500),items:z.array(z.object({inventoryId:z.string().min(1).max(100),expectedName:z.string().min(1).max(150)}).strict()).min(1).max(1500)}).strict().parse(await body());
    return send(await(await import("./inventory-import")).linkInventorySheetsBatch(actor,b));
   }
+  if(path==="effectiveness/catalog-status" && method==="GET")return send(await(await import("./inventory-sheet-activation")).financialCatalogStatus(actor,Object.fromEntries(req.nextUrl.searchParams)));
+  if(path==="inventory/sheet-activation/limits" && method==="PUT")return send(await(await import("./inventory-sheet-activation")).saveInventoryFactorLimits(actor,await body()));
   if(path==="inventory/sheet-activation/directory" && method==="GET")return send(await(await import("./inventory-sheet-activation")).inventoryActivationDirectory(actor,Object.fromEntries(req.nextUrl.searchParams)));
   if(path==="inventory/sheet-activation/report" && method==="GET")return send(await(await import("./inventory-sheet-activation")).inventoryActivationReport(actor,Object.fromEntries(req.nextUrl.searchParams)));
   if(path==="inventory/sheet-activation/sheet" && method==="POST")return send(await(await import("./inventory-sheet-activation")).inventoryActivationAddSheet(actor,await body()));

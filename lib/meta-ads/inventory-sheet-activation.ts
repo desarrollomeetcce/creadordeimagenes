@@ -13,22 +13,40 @@ import {
   financialAccess,
   financialContext,
   scopePermission,
+  checkFinancialContext,
 } from "./financial-access";
 import { categoryKey } from "./category-paste";
 import { isCountryCode } from "./countries";
 import { limaDay } from "./advisor-attribution";
+import {
+  defaultInventoryLimits,
+  inventoryFactorAssessment,
+} from "./inventory-factor-policy";
 import { trialAssessment, trialDays } from "./inventory-trial-policy";
 import { convertMoney, type FxRates } from "./exchange-rates";
 import type { Actor } from "./service";
 type Tx = Prisma.TransactionClient;
 const id = z.string().min(1).max(100),
   name = z.string().trim().min(1).max(150);
-type Control = { pinned: boolean };
-type Settings = { sheets: string[]; rows: Record<string, Control> };
+export type InventoryCampaignTask = "NONE" | "CREATE" | "STOP";
+type Control = { pinned: boolean; campaignTask?: InventoryCampaignTask };
+type Settings = {
+  sheets: string[];
+  rows: Record<string, Control>;
+  limits: number[];
+};
 export const activationSettings = (config: Prisma.JsonValue): Settings => {
   const v = (config as Record<string, unknown>)?.inventoryActivation as
     Partial<Settings> | undefined;
   return {
+    limits:
+      Array.isArray(v?.limits) &&
+      v.limits.length > 0 &&
+      v.limits.every(
+        (n) => typeof n === "number" && Number.isFinite(n) && n > 0,
+      )
+        ? v.limits.slice(0, 101)
+        : defaultInventoryLimits(),
     sheets: Array.isArray(v?.sheets)
       ? v.sheets.filter((x) => typeof x === "string")
       : [],
@@ -105,6 +123,8 @@ export async function inventoryActivationDirectory(
       },
     });
     return {
+      revision: list.revision,
+      limits: settings.limits,
       canEdit,
       canCreate:
         canEdit &&
@@ -112,6 +132,48 @@ export async function inventoryActivationDirectory(
       tables,
       selected: tables.filter((t) => visible.has(t.id)).map((t) => t.id),
     };
+  });
+}
+export async function saveInventoryFactorLimits(actor: Actor, input: unknown) {
+  const b = z
+    .object({
+      listId: id,
+      revision: z.number().int().positive(),
+      limits: z
+        .array(z.number().finite().min(0.01).max(10000000))
+        .min(1)
+        .max(101),
+    })
+    .strict()
+    .parse(input);
+  return db.$transaction(async (tx) => {
+    const { list } = await context(tx, actor, b.listId, true);
+    demand(
+      list.revision === b.revision,
+      "La configuración cambió. Cierra y vuelve a abrir Factor antes de guardar.",
+      409,
+    );
+    const settings = activationSettings(list.config);
+    settings.limits = b.limits;
+    const updated = await tx.metaEffectivenessSheet.update({
+      where: { id: list.id },
+      data: {
+        config: {
+          ...(list.config as Record<string, Prisma.JsonValue>),
+          inventoryActivation: settings as unknown as Prisma.InputJsonValue,
+        },
+        revision: { increment: 1 },
+      },
+    });
+    await recordActivity(tx, {
+      data: {
+        actorId: actor.id,
+        action: "INVENTARIO_LIMITES_FX",
+        resourceId: list.id,
+        detail: { salesRows: b.limits.length },
+      },
+    });
+    return { revision: updated.revision, limits: b.limits };
   });
 }
 export async function inventoryActivationAddSheet(
@@ -236,11 +298,19 @@ export async function inventoryActivationChange(actor: Actor, input: unknown) {
         .max(1500),
       active: z.boolean().optional(),
       pinned: z.boolean().optional(),
+      campaignTask: z.enum(["NONE", "CREATE", "STOP"]).optional(),
     })
     .strict()
     .refine(
-      (v) => (v.active === undefined) !== (v.pinned === undefined),
+      (v) =>
+        v.active !== undefined ||
+        v.pinned !== undefined ||
+        v.campaignTask !== undefined,
       "Elige activación o fijación.",
+    )
+    .refine(
+      (v) => !(v.active === false && v.campaignTask === "CREATE"),
+      "Por hacer campaña requiere activación de la hoja.",
     )
     .parse(input);
   return db.$transaction(
@@ -368,16 +438,29 @@ export async function inventoryActivationChange(actor: Actor, input: unknown) {
             ),
             key = rowKey(alias.id, country),
             control = settings.rows[key];
-          const active = b.active ?? old?.active ?? (plan.alias ? true : false),
-            pinned = b.pinned ?? control?.pinned ?? false;
-          if (old && old.active === active && control?.pinned === pinned)
+          const active =
+              b.campaignTask === "CREATE"
+                ? true
+                : (b.active ?? old?.active ?? (plan.alias ? true : false)),
+            pinned = b.pinned ?? control?.pinned ?? false,
+            campaignTask =
+              b.campaignTask ??
+              (b.active !== undefined
+                ? "NONE"
+                : (control?.campaignTask ?? "NONE"));
+          if (
+            old &&
+            old.active === active &&
+            control?.pinned === pinned &&
+            (control?.campaignTask ?? "NONE") === campaignTask
+          )
             continue;
           const state = await tx.metaEffectivenessState.upsert({
             where: { aliasId_country: { aliasId: alias.id, country } },
             create: { aliasId: alias.id, country, active, revision: 1 },
             update: { active, revision: { increment: 1 } },
           });
-          settings.rows[key] = { pinned };
+          settings.rows[key] = { pinned, campaignTask };
           await tx.metaEffectivenessRow.upsert({
             where: {
               aliasId_country_currency: {
@@ -406,7 +489,13 @@ export async function inventoryActivationChange(actor: Actor, input: unknown) {
               active,
               snapshot: {
                 source: "INVENTORY_SHEET",
-                action: b.active === undefined ? "PIN" : "ACTIVATION",
+                action:
+                  b.active !== undefined
+                    ? "ACTIVATION"
+                    : b.pinned !== undefined
+                      ? "PIN"
+                      : "CAMPAIGN_TASK",
+                campaignTask,
                 pinned,
                 priorActive: old?.active ?? (plan.alias ? true : false),
               },
@@ -476,7 +565,12 @@ function periods(
   if (on) result.push({ since: start, until: null });
   return result.reverse();
 }
-export async function inventoryActivationReport(actor: Actor, input: unknown) {
+async function activationReport(
+  actor: Actor,
+  input: unknown,
+  authorizedTable?: string,
+  sharedTx?: Tx,
+) {
   const q = z
     .object({
       listId: id,
@@ -491,209 +585,303 @@ export async function inventoryActivationReport(actor: Actor, input: unknown) {
     tableIds.length <= 20 && new Set(tableIds).size === tableIds.length,
     "Elige hasta20 hojas diferentes.",
   );
-  return db.$transaction(
-    async (tx) => {
-      const { list, canEdit } = await context(tx, actor, q.listId),
-        settings = activationSettings(list.config),
-        catalog = await items(tx, list.id);
-      if (q.historyName)
-        demand(
-          catalog.has(categoryKey(q.historyName)),
-          "Inventario no disponible.",
-          404,
-        );
-      const aliases = await tx.metaAlias.findMany({
-        where: {
-          inventorySheetId: list.id,
-          tableId: { in: tableIds },
-          ...(q.historyName
-            ? { name: catalog.get(categoryKey(q.historyName)) }
-            : {}),
-        },
-        include: {
-          effectivenessStates: {
-            include: {
-              events: { orderBy: [{ createdAt: "asc" }, { id: "asc" }] },
-            },
-          },
-        },
-      });
-      const allowed = new Set([
-        ...settings.sheets,
-        ...(
-          await tx.metaAlias.findMany({
-            where: { inventorySheetId: list.id },
-            select: { tableId: true },
-          })
-        ).map((a) => a.tableId),
-      ]);
+  const run = async (tx: Tx) => {
+    if (authorizedTable)
       demand(
-        tableIds.every((id) => allowed.has(id)),
-        "Una hoja no pertenece a este Inventario.",
+        tableIds.length === 1 && tableIds[0] === authorizedTable,
+        "Hoja fuera del documento.",
         403,
       );
-      const today = limaDay(new Date()),
-        floor = new Date(Date.parse(today) - 365 * 86400000)
-          .toISOString()
-          .slice(0, 10),
-        rates = await tx.metaFxDay.findMany({
-          where: { day: { gte: floor, lte: today } },
-        }),
-        fx = new Map(rates.map((r) => [r.day, r.rates as FxRates]));
-      const output = [];
-      for (const tableId of tableIds) {
-        const tableAliases = aliases.filter((a) => a.tableId === tableId);
-        const relevantPeriods = tableAliases.flatMap((alias) =>
-          alias.effectivenessStates.flatMap((state) =>
-            periods(state.events, state.active).slice(
-              0,
-              q.historyName ? 100 : 1,
-            ),
-          ),
-        );
-        const starts = relevantPeriods
-          .flatMap((period) =>
-            period.since ? [limaDay(new Date(period.since))] : [],
-          )
-          .filter((day) => day >= floor && day <= today)
-          .sort();
-        const sourceSince = starts[0] ?? today;
-        const sourceUntil = relevantPeriods.some((period) => !period.until)
-          ? today
-          : (relevantPeriods
-              .flatMap((period) =>
-                period.until ? [limaDay(new Date(period.until))] : [],
+    const authorizedList = authorizedTable
+      ? await tx.metaEffectivenessSheet.findFirst({
+          where: { id: q.listId, kind: "INVENTORY", archivedAt: null },
+        })
+      : null;
+    if (authorizedTable)
+      demand(authorizedList, "Inventario no disponible.", 404);
+    const { list, canEdit } = authorizedList
+        ? { list: authorizedList, canEdit: false }
+        : await context(tx, actor, q.listId),
+      settings = activationSettings(list.config),
+      catalog = await items(tx, list.id);
+    if (q.historyName)
+      demand(
+        catalog.has(categoryKey(q.historyName)),
+        "Inventario no disponible.",
+        404,
+      );
+    const aliases = await tx.metaAlias.findMany({
+      where: {
+        inventorySheetId: list.id,
+        tableId: { in: tableIds },
+        ...(q.historyName
+          ? { name: catalog.get(categoryKey(q.historyName)) }
+          : {}),
+      },
+      include: {
+        effectivenessStates: {
+          include: {
+            events: { orderBy: [{ createdAt: "asc" }, { id: "asc" }] },
+          },
+        },
+      },
+    });
+    const allowed = new Set([
+      ...settings.sheets,
+      ...(
+        await tx.metaAlias.findMany({
+          where: { inventorySheetId: list.id },
+          select: { tableId: true },
+        })
+      ).map((a) => a.tableId),
+    ]);
+    demand(
+      tableIds.every((id) => allowed.has(id)),
+      "Una hoja no pertenece a este Inventario.",
+      403,
+    );
+    const today = limaDay(new Date()),
+      floor = new Date(Date.parse(today) - 365 * 86400000)
+        .toISOString()
+        .slice(0, 10),
+      rates = await tx.metaFxDay.findMany({
+        where: { day: { gte: floor, lte: today } },
+      }),
+      fx = new Map(rates.map((r) => [r.day, r.rates as FxRates]));
+    const output = [];
+    for (const tableId of tableIds) {
+      const tableAliases = aliases.filter((a) => a.tableId === tableId);
+      const relevantPeriods = tableAliases.flatMap((alias) =>
+        alias.effectivenessStates.flatMap((state) =>
+          periods(state.events, state.active).slice(0, q.historyName ? 100 : 1),
+        ),
+      );
+      const starts = relevantPeriods
+        .flatMap((period) =>
+          period.since ? [limaDay(new Date(period.since))] : [],
+        )
+        .filter((day) => day >= floor && day <= today)
+        .sort();
+      const sourceSince = starts[0] ?? today;
+      const sourceUntil = relevantPeriods.some((period) => !period.until)
+        ? today
+        : (relevantPeriods
+            .flatMap((period) =>
+              period.until ? [limaDay(new Date(period.until))] : [],
+            )
+            .filter((day) => day >= sourceSince && day <= today)
+            .sort()
+            .at(-1) ?? today);
+      const source = await inventoryEffectivenessSource(
+        actor,
+        tableId,
+        sourceSince,
+        sourceUntil,
+        tx,
+      );
+      for (const alias of tableAliases) {
+        const rows = source.rows.filter((r) => r.aliasId === alias.id),
+          states = alias.effectivenessStates;
+        const targets = rows.map((r) => ({
+          aliasId: alias.id,
+          country: r.country,
+          revision: states.find((s) => s.country === r.country)?.revision ?? 0,
+        }));
+        const history: SheetInterval[] = [];
+        for (const row of rows) {
+          const state = states.find((s) => s.country === row.country),
+            ranges = periods(state?.events ?? [], row.active);
+          for (const period of ranges.slice(0, q.historyName ? 100 : 1)) {
+            const since = period.since ? limaDay(new Date(period.since)) : null,
+              until = period.until ? limaDay(new Date(period.until)) : today;
+            const dates =
+              since && since >= floor ? trialDays(since, until, []) : [];
+            const overlapping = ranges.some(
+              (other) =>
+                other !== period &&
+                dates.some(
+                  (day) =>
+                    (!other.since || limaDay(new Date(other.since)) <= day) &&
+                    (!other.until || limaDay(new Date(other.until)) >= day),
+                ),
+            );
+            let sales: number | null = null,
+              budget: number | null = null,
+              complete = !!dates.length && !overlapping;
+            for (const day of dates) {
+              const d = row.days[day];
+              const v = d?.sales ?? null,
+                p =
+                  d?.budget === null || d?.budget === undefined
+                    ? null
+                    : convertMoney(d.budget, row.currency, "PEN", fx.get(day));
+              if (v !== null) sales = (sales ?? 0) + v;
+              if (p !== null) budget = (budget ?? 0) + p;
+              if (
+                v === null ||
+                p === null ||
+                d?.na.includes("sales") ||
+                d?.na.includes("budget") ||
+                d?.partialMetrics.includes("sales") ||
+                d?.partialMetrics.includes("budget")
               )
-              .filter((day) => day >= sourceSince && day <= today)
-              .sort()
-              .at(-1) ?? today);
-        const source = await inventoryEffectivenessSource(
-          actor,
-          tableId,
-          sourceSince,
-          sourceUntil,
-          tx,
-        );
-        for (const alias of tableAliases) {
-          const rows = source.rows.filter((r) => r.aliasId === alias.id),
-            states = alias.effectivenessStates;
-          const targets = rows.map((r) => ({
-            aliasId: alias.id,
-            country: r.country,
-            revision:
-              states.find((s) => s.country === r.country)?.revision ?? 0,
-          }));
-          const history: SheetInterval[] = [];
-          for (const row of rows) {
-            const state = states.find((s) => s.country === row.country),
-              ranges = periods(state?.events ?? [], row.active);
-            for (const period of ranges.slice(0, q.historyName ? 100 : 1)) {
-              const since = period.since
-                  ? limaDay(new Date(period.since))
-                  : null,
-                until = period.until ? limaDay(new Date(period.until)) : today;
-              const dates =
-                since && since >= floor ? trialDays(since, until, []) : [];
-              const overlapping = ranges.some(
-                (other) =>
-                  other !== period &&
-                  dates.some(
-                    (day) =>
-                      (!other.since || limaDay(new Date(other.since)) <= day) &&
-                      (!other.until || limaDay(new Date(other.until)) >= day),
-                  ),
-              );
-              let sales: number | null = null,
-                budget: number | null = null,
-                complete = !!dates.length && !overlapping;
-              for (const day of dates) {
-                const d = row.days[day];
-                const v = d?.sales ?? null,
-                  p =
-                    d?.budget === null || d?.budget === undefined
-                      ? null
-                      : convertMoney(
-                          d.budget,
-                          row.currency,
-                          "PEN",
-                          fx.get(day),
-                        );
-                if (v !== null) sales = (sales ?? 0) + v;
-                if (p !== null) budget = (budget ?? 0) + p;
-                if (
-                  v === null ||
-                  p === null ||
-                  d?.na.includes("sales") ||
-                  d?.na.includes("budget") ||
-                  d?.partialMetrics.includes("sales") ||
-                  d?.partialMetrics.includes("budget")
-                )
-                  complete = false;
-              }
-              history.push({
-                ...period,
-                days: dates.length || null,
+                complete = false;
+            }
+            history.push({
+              ...period,
+              days: dates.length || null,
+              sales,
+              budget,
+              complete,
+              assessment: inventoryFactorAssessment(
                 sales,
                 budget,
                 complete,
-                assessment: trialAssessment(sales, budget, complete, {
-                  zero: 25,
-                  perSale: 50,
-                }),
-                country: row.country,
-                partialDays:
-                  !!period.since &&
-                  !!period.until &&
-                  limaDay(new Date(period.since)) === until,
-              });
-            }
-          }
-          const current = rows.map((r) =>
-              history.find((h) => h.country === r.country),
-            ),
-            sales = current.some(
-              (h) => h?.sales !== null && h?.sales !== undefined,
-            )
-              ? current.reduce((n, h) => n + (h?.sales ?? 0), 0)
-              : null,
-            budget = current.some(
-              (h) => h?.budget !== null && h?.budget !== undefined,
-            )
-              ? current.reduce((n, h) => n + (h?.budget ?? 0), 0)
-              : null,
-            complete = current.length > 0 && current.every((h) => h?.complete);
-          output.push({
-            name: alias.name,
-            tableId,
-            targets,
-            activation: !rows.length
-              ? "UNKNOWN"
-              : rows.every((r) => r.active)
-                ? "ACTIVE"
-                : rows.every((r) => !r.active)
-                  ? "INACTIVE"
-                  : "MIXED",
-            pinned:
-              targets.length > 0 &&
-              targets.every(
-                (t) => settings.rows[rowKey(t.aliasId, t.country)]?.pinned,
+                settings.limits,
               ),
-            assessment: trialAssessment(sales, budget, complete, {
-              zero: 25,
-              perSale: 50,
-            }),
+              country: row.country,
+              partialDays:
+                !!period.since &&
+                !!period.until &&
+                limaDay(new Date(period.since)) === until,
+            });
+          }
+        }
+        const current = rows.map((r) =>
+            history.find((h) => h.country === r.country),
+          ),
+          sales = current.some(
+            (h) => h?.sales !== null && h?.sales !== undefined,
+          )
+            ? current.reduce((n, h) => n + (h?.sales ?? 0), 0)
+            : null,
+          budget = current.some(
+            (h) => h?.budget !== null && h?.budget !== undefined,
+          )
+            ? current.reduce((n, h) => n + (h?.budget ?? 0), 0)
+            : null,
+          complete = current.length > 0 && current.every((h) => h?.complete);
+        const campaignTasks = [
+          ...new Set(
+            targets.map(
+              (t) =>
+                settings.rows[rowKey(t.aliasId, t.country)]?.campaignTask ??
+                "NONE",
+            ),
+          ),
+        ].filter((task) => task !== "NONE");
+        output.push({
+          campaignTasks,
+          campaignTask:
+            campaignTasks.length > 1 ? "MIXED" : (campaignTasks[0] ?? "NONE"),
+          countryAssessments: rows.map((r) => ({
+            country: r.country,
+            assessment:
+              history.find((h) => h.country === r.country)?.assessment ??
+              inventoryFactorAssessment(null, null, false, settings.limits),
+          })),
+          name: alias.name,
+          tableId,
+          targets,
+          activation: !rows.length
+            ? "UNKNOWN"
+            : rows.every((r) => r.active)
+              ? "ACTIVE"
+              : rows.every((r) => !r.active)
+                ? "INACTIVE"
+                : "MIXED",
+          pinned:
+            targets.length > 0 &&
+            targets.every(
+              (t) => settings.rows[rowKey(t.aliasId, t.country)]?.pinned,
+            ),
+          assessment: inventoryFactorAssessment(
             sales,
             budget,
             complete,
-            history: q.historyName ? history : undefined,
-          });
-        }
+            settings.limits,
+          ),
+          sales,
+          budget,
+          complete,
+          history: q.historyName ? history : undefined,
+        });
       }
-      return { canEdit, rows: output, today };
+    }
+    return { canEdit, rows: output, today };
+  };
+  return sharedTx
+    ? run(sharedTx)
+    : db.$transaction(run, {
+        timeout: 120000,
+        isolationLevel: "RepeatableRead",
+      });
+}
+export async function inventoryActivationReport(actor: Actor, input: unknown) {
+  return activationReport(actor, input);
+}
+/** Aggregate-only read of aliases on the currently authorized financial table. */
+export async function financialCatalogStatus(actor: Actor, input: unknown) {
+  const q = z.object({ tableId: id }).strict().parse(input);
+  return db.$transaction(
+    async (tx) => {
+      ownerOnly(actor);
+      await effectivenessLock(tx, actor);
+      await checkFinancialContext(actor, tx);
+      const access = await financialAccess(actor, tx),
+        cap = financialContext(actor);
+      demand(
+        access.isOwner ||
+          scopePermission(access, "ALL") ||
+          (cap?.tableIds.includes(q.tableId) &&
+            scopePermission(access, cap.scope)),
+        "Hoja fuera del documento compartido.",
+        403,
+      );
+      const aliases = await tx.metaAlias.findMany({
+        where: { tableId: q.tableId },
+        select: { id: true, inventorySheetId: true },
+      });
+      const lists = [
+        ...new Set(
+          aliases
+            .map((a) => a.inventorySheetId)
+            .filter((v): v is string => !!v),
+        ),
+      ];
+      const rows = [];
+      for (const listId of lists) {
+        const list = await tx.metaEffectivenessSheet.findFirst({
+          where: { id: listId, kind: "INVENTORY", archivedAt: null },
+          select: { id: true },
+        });
+        if (!list) continue;
+        const report = await activationReport(
+          actor,
+          { listId, tableIds: q.tableId },
+          q.tableId,
+          tx,
+        );
+        for (const row of report.rows)
+          for (const target of row.targets) {
+            if (!aliases.some((a) => a.id === target.aliasId)) continue;
+            rows.push({
+              aliasId: target.aliasId,
+              country: target.country,
+              assessment:
+                row.countryAssessments.find((c) => c.country === target.country)
+                  ?.assessment ?? row.assessment,
+            });
+          }
+      }
+      return { tableId: q.tableId, rows };
     },
     { timeout: 120000, isolationLevel: "RepeatableRead" },
   );
 }
+export type FinancialCatalogStatus = Awaited<
+  ReturnType<typeof financialCatalogStatus>
+>;
 export type InventorySheetActivationReport = Awaited<
   ReturnType<typeof inventoryActivationReport>
 >;

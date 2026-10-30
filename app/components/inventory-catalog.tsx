@@ -13,6 +13,12 @@ import {
   inventoryCountryMetrics,
   useInventoryCountryEvaluation,
 } from "./inventory-country-evaluation";
+import {
+  InventoryDeactivationConfirm,
+  type InventoryActivationSelection,
+} from "./inventory-deactivation-confirm";
+import type { InventoryCampaignChange } from "./inventory-campaign-control";
+import { InventoryFactorSettings } from "./inventory-factor-settings";
 import { InventorySheetHistory } from "./inventory-sheet-history";
 import { InventoryAddEvaluationSheet } from "./inventory-add-evaluation-sheet";
 import type { InventorySheetActivationDirectory } from "../../lib/meta-ads/inventory-sheet-activation";
@@ -326,6 +332,13 @@ export function InventoryCatalog({
   const [sheetDirectory, setSheetDirectory] =
     useState<InventorySheetActivationDirectory | null>(null);
   const [sheetAddOpen, setSheetAddOpen] = useState(false);
+  const [factorOpen, setFactorOpen] = useState(false);
+  const [factorLoading, setFactorLoading] = useState(false);
+  const [deactivationPrompt, setDeactivationPrompt] = useState<{
+    tableId: string;
+    names: string[];
+    items: InventoryActivationSelection;
+  } | null>(null);
   const [activationHistory, setActivationHistory] = useState<{
     tableId: string;
     name: string;
@@ -372,6 +385,52 @@ export function InventoryCatalog({
   const hasCountryColumns = countryCodes.some(
     (id) => visibleCountryMetrics(id).length > 0,
   );
+  const countryEvaluation = useInventoryCountryEvaluation(
+    listId,
+    hasCountryColumns ? countryCodes : [],
+    countryReload,
+  );
+  const [topPreference, setTopPreference] = useWorkbookPreference<string>(
+    listId,
+    "inventory-top-sheet",
+    "",
+  );
+  const [campaignFilterSheet, setCampaignFilterSheet] =
+    useWorkbookPreference<string>(
+      listId,
+      "inventory-campaign-filter-sheet",
+      "",
+    );
+  const [campaignFilter, setCampaignFilter] = useWorkbookPreference<string>(
+    listId,
+    "inventory-campaign-filter",
+    "",
+  );
+  const topSheet =
+    countryCodes.includes(topPreference) &&
+    visibleCountryMetrics(topPreference).length
+      ? topPreference
+      : "";
+  const activeCampaignFilter =
+    countryCodes.includes(campaignFilterSheet) &&
+    visibleCountryMetrics(campaignFilterSheet).length
+      ? campaignFilter
+      : "";
+  const campaignMatches = (name: string) => {
+    if (!activeCampaignFilter) return true;
+    const point = countryEvaluation.lookup.get(
+      JSON.stringify([categoryKey(name), campaignFilterSheet]),
+    );
+    if (activeCampaignFilter === "ACTIVE")
+      return point?.activation === "ACTIVE" || point?.activation === "MIXED";
+    if (activeCampaignFilter === "INACTIVE")
+      return !point || point.activation === "INACTIVE";
+    return (
+      point?.campaignTasks.includes(
+        activeCampaignFilter as "CREATE" | "STOP",
+      ) ?? false
+    );
+  };
   const columns = [
     { key: "inventory", label: "Inventario", width: 340 },
     { key: "primary", label: "Categoría principal", width: 174 },
@@ -787,6 +846,7 @@ export function InventoryCatalog({
   const visible = available.filter(
     (g) =>
       matchesCategory(g) &&
+      campaignMatches(g.name) &&
       (!groupFilter ||
         (groupFilter === "none"
           ? !trialGroupByName.has(categoryKey(g.name))
@@ -804,16 +864,45 @@ export function InventoryCatalog({
           (c) => c.kind === "SECONDARY" && secondaryNames.includes(c.name),
         )),
   );
-  const countryEvaluation = useInventoryCountryEvaluation(
-    listId,
-    hasCountryColumns ? countryCodes : [],
-    countryReload,
+  const topItems =
+    topSheet && countryEvaluation.ready
+      ? visible
+          .filter((group) => {
+            const point = countryEvaluation.lookup.get(
+              JSON.stringify([categoryKey(group.name), topSheet]),
+            );
+            return (
+              point &&
+              (point.activation === "ACTIVE" ||
+                point.activation === "MIXED" ||
+                point.campaignTasks.length > 0)
+            );
+          })
+          .sort((a, b) => {
+            const rank = (name: string) => {
+              const point = countryEvaluation.lookup.get(
+                JSON.stringify([categoryKey(name), topSheet]),
+              );
+              return point?.campaignTasks.includes("CREATE")
+                ? 0
+                : point?.campaignTasks.includes("STOP")
+                  ? 2
+                  : 1;
+            };
+            return (
+              rank(a.name) - rank(b.name) || a.name.localeCompare(b.name, "es")
+            );
+          })
+      : [];
+  const topNames = new Set(topItems.map((item) => categoryKey(item.name)));
+  const remainingVisible = visible.filter(
+    (item) => !topNames.has(categoryKey(item.name)),
   );
   const bands = new Map<
     string,
     { title: string; groups: typeof visible; accent?: "blue" }
   >();
-  for (const g of visible) {
+  for (const g of remainingVisible) {
     const primary = groupCategories(g)
         .filter((c) => c.kind === "PRIMARY")
         .sort((a, b) => a.name.localeCompare(b.name, "es")),
@@ -831,10 +920,10 @@ export function InventoryCatalog({
         : x.title.localeCompare(y.title, "es"),
   );
   const continuousSections: typeof primarySections = [];
-  const categorized = visible.filter((g) =>
+  const categorized = remainingVisible.filter((g) =>
     groupCategories(g).some((c) => c.kind === "PRIMARY"),
   );
-  const uncategorized = visible.filter(
+  const uncategorized = remainingVisible.filter(
     (g) => !groupCategories(g).some((c) => c.kind === "PRIMARY"),
   );
   const scopeNames = [
@@ -867,11 +956,22 @@ export function InventoryCatalog({
       trialId?: string;
       trialCount?: number;
       hideBand?: boolean;
+      top?: boolean;
     },
   ][] = [];
+  if (topItems.length)
+    sections.push([
+      "__top",
+      {
+        title: "Top · " + sheetLabel(topSheet),
+        groups: topItems,
+        accent: "blue",
+        top: true,
+      },
+    ]);
   if (groupOrder === "groups") {
     for (const trial of [...trialGroups, null]) {
-      const members = visible.filter(
+      const members = remainingVisible.filter(
         (g) =>
           (trialGroupByName.get(categoryKey(g.name))?.id ?? null) ===
           (trial?.id ?? null),
@@ -1317,16 +1417,33 @@ export function InventoryCatalog({
   async function changeSheetActivation(
     tableId: string,
     names: string[],
-    change: { active?: boolean; pinned?: boolean },
+    change: InventoryCampaignChange,
+    confirmedItems?: InventoryActivationSelection,
   ) {
     if (busy || !names.length || !countryEvaluation.ready) return;
-    const items = names.map((name) => ({
-      name,
-      targets:
-        countryEvaluation.lookup.get(
+    const items =
+      confirmedItems ??
+      names.map((name) => ({
+        name,
+        targets:
+          countryEvaluation.lookup.get(
+            JSON.stringify([categoryKey(name), tableId]),
+          )?.targets ?? [],
+      }));
+    if (
+      !confirmedItems &&
+      change.active === false &&
+      change.pinned === undefined &&
+      names.some((name) => {
+        const row = countryEvaluation.lookup.get(
           JSON.stringify([categoryKey(name), tableId]),
-        )?.targets ?? [],
-    }));
+        );
+        return row && row.activation !== "INACTIVE" && !row.pinned;
+      })
+    ) {
+      setDeactivationPrompt({ tableId, names: [...names], items });
+      return;
+    }
     setBusy(true);
     setMessage("");
     let committed = false;
@@ -1521,6 +1638,32 @@ export function InventoryCatalog({
           onClose={() => setActivationHistory(null)}
         />
       )}
+      {deactivationPrompt && (
+        <InventoryDeactivationConfirm
+          names={deactivationPrompt.names}
+          sheetName={sheetLabel(deactivationPrompt.tableId)}
+          onClose={() => setDeactivationPrompt(null)}
+          onConfirm={async (pin) => {
+            await changeSheetActivation(
+              deactivationPrompt.tableId,
+              deactivationPrompt.names,
+              { active: false, ...(pin ? { pinned: true } : {}) },
+              deactivationPrompt.items,
+            );
+          }}
+        />
+      )}
+      {factorOpen && sheetDirectory && (
+        <InventoryFactorSettings
+          listId={listId}
+          directory={sheetDirectory}
+          onClose={() => setFactorOpen(false)}
+          onSaved={async () => {
+            await reloadSheetDirectory();
+            setCountryReload((value) => value + 1);
+          }}
+        />
+      )}
       {sheetAddOpen && sheetDirectory && (
         <InventoryAddEvaluationSheet
           listId={listId}
@@ -1705,6 +1848,32 @@ export function InventoryCatalog({
                   label: sheetLabel(id) + " · " + metric.label,
                 })),
             )}
+            sheetColumns={knownCountries.map((id) => ({
+              id,
+              label: sheetLabel(id),
+              checked:
+                countryCodes.includes(id) &&
+                visibleCountryMetrics(id).length > 0,
+              partial:
+                countryCodes.includes(id) &&
+                visibleCountryMetrics(id).length > 0 &&
+                visibleCountryMetrics(id).length <
+                  inventoryCountryMetrics.length,
+            }))}
+            onToggleSheet={(id, checked) => {
+              if (checked) {
+                setParameterChoice((current) =>
+                  current.includes("countries")
+                    ? current
+                    : [...current, "countries"],
+                );
+                setCountryChoice([...new Set([...countryCodes, id])]);
+                setHiddenColumnKeys((current) =>
+                  current.filter((key) => !key.startsWith(`country:${id}:`)),
+                );
+              } else
+                setCountryChoice(countryCodes.filter((value) => value !== id));
+            }}
             onRestoreColumn={(key) =>
               setHiddenColumnKeys((current) =>
                 current.filter((value) => value !== key),
@@ -1713,6 +1882,7 @@ export function InventoryCatalog({
             onRestoreAll={() => {
               setParameterChoice(inventoryParameters.map((p) => p.key));
               setHiddenColumnKeys([]);
+              setCountryChoice(null);
             }}
           />
         </div>
@@ -1780,6 +1950,24 @@ export function InventoryCatalog({
         </div>
         {showParameter("countries") && (
           <div className="inventory-country-controls">
+            <button
+              type="button"
+              aria-label="Definir límites del factor"
+              disabled={busy || factorLoading || !sheetDirectory}
+              onClick={async () => {
+                setFactorLoading(true);
+                try {
+                  await reloadSheetDirectory();
+                  setFactorOpen(true);
+                } catch (e) {
+                  setMessage((e as Error).message);
+                } finally {
+                  setFactorLoading(false);
+                }
+              }}
+            >
+              {factorLoading ? "…" : "Factor"}
+            </button>
             <InventoryMultiSelect
               label="Hojas de evaluación visibles"
               placeholder="Hojas de evaluación"
@@ -2265,7 +2453,40 @@ export function InventoryCatalog({
                     ),
                     sheetLabel(country),
                   )}
-                  {sheetLabel(country)}
+                  <span className="inventory-sheet-heading-name">
+                    {sheetLabel(country)}
+                  </span>
+                  <button
+                    type="button"
+                    className="inventory-sheet-top-control"
+                    aria-label={`Ver Top de ${sheetLabel(country)}`}
+                    aria-pressed={topSheet === country}
+                    title="Activos y pendientes primero, seguidos de los grupos"
+                    onClick={() => {
+                      setTopPreference(topSheet === country ? "" : country);
+                      setGroupFilter("");
+                      setGroupOrder("groups");
+                    }}
+                  >
+                    Top
+                  </button>
+                  <select
+                    className="inventory-campaign-filter"
+                    aria-label={`Filtrar campañas de ${sheetLabel(country)}`}
+                    value={
+                      campaignFilterSheet === country ? campaignFilter : ""
+                    }
+                    onChange={(e) => {
+                      setCampaignFilterSheet(country);
+                      setCampaignFilter(e.target.value);
+                    }}
+                  >
+                    <option value="">Todos</option>
+                    <option value="ACTIVE">Activos</option>
+                    <option value="CREATE">Por hacer campaña</option>
+                    <option value="STOP">Por desactivar campaña</option>
+                    <option value="INACTIVE">Desactivados</option>
+                  </select>
                 </th>
               ))}
               <th
@@ -2422,9 +2643,11 @@ export function InventoryCatalog({
                       "inventory-group-band" +
                       (section.accent === "blue"
                         ? " inventory-filter-band"
-                        : "")
+                        : "") +
+                      (section.top ? " inventory-top-band" : "")
                     }
                     data-category-group={section.title}
+                    data-inventory-top={section.top ? topSheet : undefined}
                   >
                     <th colSpan={Math.max(1, columns.length)} scope="rowgroup">
                       <div className="inventory-band-heading">
@@ -2451,7 +2674,7 @@ export function InventoryCatalog({
                           {section.groups.length}{" "}
                           {section.groups.length === 1 ? "ítem" : "ítems"}
                         </small>
-                        {bandCategorySelector(section)}
+                        {!section.top && bandCategorySelector(section)}
                         {selectedSectionGroups > 0 && (
                           <>
                             <small

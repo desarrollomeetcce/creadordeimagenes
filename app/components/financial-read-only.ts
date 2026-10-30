@@ -38,6 +38,7 @@ export function useFinancialReadOnly(
           (!!button.closest(".inventory-syllabus-chip") && !/×|✎/.test(text));
         const row = !!button.closest("tbody");
         const blocked =
+          button.hasAttribute("data-financial-write") ||
           (!picker && mutate.test(label)) ||
           /^\+/.test(text) ||
           (!!button.closest(

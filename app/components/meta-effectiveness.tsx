@@ -51,6 +51,10 @@ import {
 } from "../../lib/meta-ads/period-summary";
 import { SheetSearchSelect } from "./sheet-search-select";
 import { SheetMultiFilter } from "./sheet-multi-filter";
+import { useInventoryPinnedColumns } from "./use-inventory-pinned-columns";
+import { InventoryRowPinIcon } from "./inventory-country-evaluation";
+import { InventoryStatusLabel } from "./inventory-status-label";
+import type { FinancialCatalogStatus } from "../../lib/meta-ads/inventory-sheet-activation";
 import { InventoryMultiSelect } from "./inventory-multi-select";
 import { useWorkbookPreference } from "./use-workbook-preference";
 import { useInventoryDuplicateReview } from "./inventory-duplicate-review";
@@ -286,7 +290,70 @@ export function MetaEffectiveness({
     targets: { aliasId: string; country: string }[];
   } | null>(null);
   const horizontalScroll = useRef<HTMLDivElement>(null);
-  const grid = useRef<HTMLTableElement>(null);
+  const metadataColumns = [
+    { value: "alias", label: "Inventario" },
+    { value: "country", label: "País" },
+    { value: "advisor", label: "Asesor" },
+    { value: "currency", label: "Moneda" },
+    { value: "evaluation", label: "Estado" },
+  ];
+  const [metadataVisible, setMetadataVisible] = useWorkbookPreference<string[]>(
+    tableId,
+    "metadata-visible",
+    ["alias", "country", "advisor", "currency", "evaluation"],
+  );
+  const [metadataPins, setMetadataPins] = useWorkbookPreference<string[]>(
+    tableId,
+    "metadata-pins",
+    ["alias", "country"],
+  );
+  const visibleMetadata = metadataColumns.filter((c) =>
+    metadataVisible.includes(c.value),
+  );
+  const grid = useInventoryPinnedColumns(
+    metadataPins.filter((k) => metadataVisible.includes(k)),
+  );
+  const [catalogStatus, setCatalogStatus] =
+    useState<FinancialCatalogStatus | null>(null);
+  const [catalogStatusError, setCatalogStatusError] = useState("");
+  const statusLookup = useMemo(
+    () =>
+      new Map(
+        catalogStatus?.rows.map((r) => [
+          JSON.stringify([r.aliasId, r.country]),
+          r.assessment,
+        ]) ?? [],
+      ),
+    [catalogStatus],
+  );
+  const metadataControls = (key: string, label: string) => (
+    <span className="financial-column-tools">
+      <button
+        type="button"
+        data-pin-keys={key}
+        aria-label={`${metadataPins.includes(key) ? "Desfijar" : "Fijar"} columna ${label}`}
+        title={`${metadataPins.includes(key) ? "Desfijar" : "Fijar"} columna ${label}`}
+        aria-pressed={metadataPins.includes(key)}
+        onClick={() =>
+          setMetadataPins((old) =>
+            old.includes(key) ? old.filter((v) => v !== key) : [...old, key],
+          )
+        }
+      >
+        <InventoryRowPinIcon />
+      </button>
+      <button
+        type="button"
+        aria-label={`Ocultar columna ${label}`}
+        title={`Ocultar columna ${label}`}
+        onClick={() =>
+          setMetadataVisible((old) => old.filter((v) => v !== key))
+        }
+      >
+        −
+      </button>
+    </span>
+  );
   useSheetTextFit(grid);
   const {
     widths: columnWidths,
@@ -311,6 +378,25 @@ export function MetaEffectiveness({
     [pasteCountry, setPasteCountry] = useState(settings.defaultCountry),
     [pasteCurrency, setPasteCurrency] = useState(settings.defaultCurrency),
     [csv, setCsv] = useState(false);
+  useEffect(() => {
+    let alive = true;
+    setCatalogStatus(null);
+    setCatalogStatusError("");
+    if (data)
+      void api(
+        "meta-ads/effectiveness/catalog-status?" +
+          new URLSearchParams({ tableId }),
+      )
+        .then((result: FinancialCatalogStatus) => {
+          if (alive) setCatalogStatus(result);
+        })
+        .catch((e: Error) => {
+          if (alive) setCatalogStatusError(e.message);
+        });
+    return () => {
+      alive = false;
+    };
+  }, [tableId, data]);
   const [historyPeriod, setHistoryPeriod] = useState<null | {
     name: string;
     heading?: string;
@@ -1046,6 +1132,18 @@ export function MetaEffectiveness({
       }}
       aria-label="Efectividad diaria"
     >
+      <div className="financial-metadata-visibility">
+        <InventoryMultiSelect
+          label="Ver columnas"
+          compact
+          placeholder="Ver columnas"
+          options={metadataColumns}
+          values={metadataVisible}
+          onChange={setMetadataVisible}
+          all={false}
+          selectAll
+        />
+      </div>
       {duplicateReview.dialog}
       {rowDeletion && (
         <DeleteEffectivenessRows
@@ -1657,14 +1755,22 @@ export function MetaEffectiveness({
                 Efectividad diaria desde {since} hasta {until}
               </caption>
               <colgroup>
-                <col className="sheet-alias-col" />
-                <col className="sheet-country-col" />
-                <col className="sheet-advisor-col" />
-                <col className="sheet-currency-col" />
+                {visibleMetadata.map((c) => (
+                  <col
+                    key={c.value}
+                    data-column-key={c.value}
+                    className={
+                      c.value === "evaluation"
+                        ? "financial-evaluation-col"
+                        : `sheet-${c.value}-col`
+                    }
+                  />
+                ))}
                 {days.flatMap((day) =>
                   visibleMetrics.map((metric) => (
                     <col
                       key={day + metric.key}
+                      data-column-key={day + metric.key}
                       className="sheet-metric-col"
                       style={{ width: columnWidths[day + metric.key] ?? 36 }}
                     />
@@ -1678,6 +1784,7 @@ export function MetaEffectiveness({
                     rowSpan={visibleMetrics.length ? 2 : 1}
                     scope="col"
                     className="effectiveness-name"
+                    hidden={!metadataVisible.includes("alias")}
                     aria-sort={
                       activeSort.kind === "text" && activeSort.field === "alias"
                         ? activeSort.direction === "asc"
@@ -1686,6 +1793,7 @@ export function MetaEffectiveness({
                         : undefined
                     }
                   >
+                    {metadataControls("alias", "Inventario")}
                     <div className="sheet-alias-heading">
                       <input
                         type="checkbox"
@@ -1767,26 +1875,85 @@ export function MetaEffectiveness({
                         </small>
                       )}
                       <InventoryMultiSelect
+                        key={tableId + ":" + inventoryId}
                         label="Buscar y filtrar inventario de la hoja"
                         placeholder="Buscar inventario…"
-                        options={financialAliases
-                          .filter((a) =>
-                            tables
-                              .find((t) => t.id === tableId)
-                              ?.aliases.some(
-                                (e) =>
-                                  e.id === a.id &&
-                                  e.inventorySheetId === inventoryId,
-                              ),
+                        all={false}
+                        selectAll
+                        confirmLabel="Buscar"
+                        options={inventoryNames.map((name) => ({
+                          value: name,
+                          label: name,
+                        }))}
+                        values={(selectedAliases ?? [])
+                          .map(
+                            (id) =>
+                              financialAliases.find((alias) => alias.id === id)
+                                ?.name,
                           )
-                          .map((a) => ({
-                            value: a.id,
-                            label: a.name,
-                          }))}
-                        values={selectedAliases ?? []}
-                        onChange={(v) => {
+                          .filter((name): name is string => !!name)}
+                        disabled={busy || !inventoryId}
+                        addDisabled={inventoryState?.listId !== inventoryId}
+                        description="Marca varios diplomados. Buscar filtra los de esta hoja; Agregar seleccionados los incorpora desde el catálogo."
+                        onError={setMessage}
+                        onChange={(names) => {
+                          const ids = financialAliases
+                            .filter((alias) => names.includes(alias.name))
+                            .map((alias) => alias.id);
+                          if (names.length && !ids.length)
+                            throw Error(
+                              "Los seleccionados aún no están en esta hoja. Pulsa Agregar seleccionados.",
+                            );
                           setHistoryPeriod(null);
-                          setSelectedAliases(v.length ? v : null);
+                          setSelectedAliases(ids.length ? ids : null);
+                        }}
+                        onAdd={async (names) => {
+                          if (!isCurrency(settings.defaultCurrency))
+                            throw Error(
+                              "Elige la moneda de la hoja antes de agregar los diplomados.",
+                            );
+                          if (inventoryState?.listId !== inventoryId)
+                            throw Error(
+                              "Actualiza el catálogo antes de agregar.",
+                            );
+                          const chosen = [...new Set(names)];
+                          if (
+                            chosen.some(
+                              (name) => !inventoryNames.includes(name),
+                            )
+                          )
+                            throw Error(
+                              "El catálogo cambió. Vuelve a seleccionar los diplomados.",
+                            );
+                          setBusy(true);
+                          try {
+                            await mutate(
+                              "meta-ads/effectiveness/import",
+                              "POST",
+                              {
+                                tableId,
+                                inventorySheetId: inventoryId,
+                                catalogRevision: inventoryState.revision,
+                                existingOnly: true,
+                                rows: chosen.map((name) => ({
+                                  name,
+                                  country: settings.defaultCountry,
+                                  currency: settings.defaultCurrency,
+                                })),
+                                ...(settings.defaultCountry
+                                  ? { initialActive: false }
+                                  : {}),
+                              },
+                              true,
+                            );
+                            setHistoryPeriod(null);
+                            setSelectedAliases(null);
+                            setMessage(
+                              `${chosen.length} diplomado${chosen.length === 1 ? "" : "s"} agregado${chosen.length === 1 ? "" : "s"} o ya presente${chosen.length === 1 ? "" : "s"} en la hoja.`,
+                            );
+                          } finally {
+                            setBusy(false);
+                          }
                         }}
                       />
                     </div>
@@ -1800,7 +1967,9 @@ export function MetaEffectiveness({
                     rowSpan={visibleMetrics.length ? 2 : 1}
                     scope="col"
                     className="effectiveness-country"
+                    hidden={!metadataVisible.includes("country")}
                   >
+                    {metadataControls("country", "País")}
                     <button
                       type="button"
                       className="sheet-sort-button"
@@ -1843,13 +2012,18 @@ export function MetaEffectiveness({
                     rowSpan={visibleMetrics.length ? 2 : 1}
                     scope="col"
                     className="effectiveness-advisor"
+                    hidden={!metadataVisible.includes("advisor")}
                   >
+                    {metadataControls("advisor", "Asesor")}
                     Asesor
                     <SheetSearchSelect
                       label="Ordenar por"
                       value={grouping}
                       options={[
-                        { value: "inventory", label: "Ordenado por inventario" },
+                        {
+                          value: "inventory",
+                          label: "Ordenado por inventario",
+                        },
                         { value: "advisor", label: "Ordenado por asesor" },
                       ]}
                       onSelect={(value) =>
@@ -1892,7 +2066,9 @@ export function MetaEffectiveness({
                     rowSpan={visibleMetrics.length ? 2 : 1}
                     scope="col"
                     className="effectiveness-currency"
+                    hidden={!metadataVisible.includes("currency")}
                   >
+                    {metadataControls("currency", "Moneda")}
                     <button
                       type="button"
                       className="sheet-sort-button"
@@ -1930,6 +2106,14 @@ export function MetaEffectiveness({
                       onResize={(w) => resizeColumn("currency", w)}
                       onReset={() => resizeColumn("currency")}
                     />
+                  </th>
+                  <th
+                    rowSpan={visibleMetrics.length ? 2 : 1}
+                    scope="col"
+                    className="financial-evaluation"
+                    hidden={!metadataVisible.includes("evaluation")}
+                  >
+                    Estado {metadataControls("evaluation", "Estado")}
                   </th>
                   {visibleMetrics.length > 0 &&
                     days.map((d) => (
@@ -2051,7 +2235,13 @@ export function MetaEffectiveness({
                           className="financial-advisor-band"
                           data-advisor-group={advisorBand.id || "none"}
                         >
-                          <th colSpan={4 + days.length * visibleMetrics.length}>
+                          <th
+                            colSpan={Math.max(
+                              1,
+                              visibleMetadata.length +
+                                days.length * visibleMetrics.length,
+                            )}
+                          >
                             <span>
                               <strong>{advisorBand.name}</strong>
                               <small>
@@ -2066,7 +2256,13 @@ export function MetaEffectiveness({
                       )}
                       {inactiveCount && (
                         <tr className="financial-inactive-band">
-                          <th colSpan={4 + days.length * visibleMetrics.length}>
+                          <th
+                            colSpan={Math.max(
+                              1,
+                              visibleMetadata.length +
+                                days.length * visibleMetrics.length,
+                            )}
+                          >
                             <span>
                               <strong>Desactivados</strong>
                               <small>
@@ -2079,7 +2275,13 @@ export function MetaEffectiveness({
                       )}
                       {band && (
                         <tr className="financial-category-band">
-                          <th colSpan={4 + days.length * visibleMetrics.length}>
+                          <th
+                            colSpan={Math.max(
+                              1,
+                              visibleMetadata.length +
+                                days.length * visibleMetrics.length,
+                            )}
+                          >
                             <span>
                               <strong>
                                 {band.names.join(" · ") ||
@@ -2110,7 +2312,10 @@ export function MetaEffectiveness({
                         data-currency={r.currency}
                         data-active={r.active}
                       >
-                        <td className="effectiveness-name">
+                        <td
+                          className="effectiveness-name"
+                          hidden={!metadataVisible.includes("alias")}
+                        >
                           <div className="sheet-alias-row">
                             <input
                               type="checkbox"
@@ -2203,7 +2408,10 @@ export function MetaEffectiveness({
                             />
                           </div>
                         </td>
-                        <td className="effectiveness-country">
+                        <td
+                          className="effectiveness-country"
+                          hidden={!metadataVisible.includes("country")}
+                        >
                           <SheetSearchSelect
                             compact
                             placeholder="—"
@@ -2217,7 +2425,10 @@ export function MetaEffectiveness({
                             onError={setMessage}
                           />
                         </td>
-                        <td className="effectiveness-advisor">
+                        <td
+                          className="effectiveness-advisor"
+                          hidden={!metadataVisible.includes("advisor")}
+                        >
                           <div className="alias-advisor-actions">
                             <SheetSearchSelect
                               compact
@@ -2276,7 +2487,10 @@ export function MetaEffectiveness({
                           </div>
                         </td>
 
-                        <td className="effectiveness-currency">
+                        <td
+                          className="effectiveness-currency"
+                          hidden={!metadataVisible.includes("currency")}
+                        >
                           <SheetSearchSelect
                             compact
                             placeholder="—"
@@ -2288,6 +2502,22 @@ export function MetaEffectiveness({
                             ]}
                             onSelect={(v) => identity(r, "currency", v)}
                             onError={setMessage}
+                          />
+                        </td>
+                        <td
+                          className="financial-evaluation"
+                          hidden={!metadataVisible.includes("evaluation")}
+                          title={
+                            catalogStatusError ||
+                            "Mismo semáforo de Inventario para esta hoja, país y último período de activación."
+                          }
+                        >
+                          <InventoryStatusLabel
+                            status={
+                              statusLookup.get(
+                                JSON.stringify([r.aliasId, r.country]),
+                              )?.status ?? "PENDING"
+                            }
                           />
                         </td>
                         {days.flatMap((d) => {
@@ -2417,7 +2647,10 @@ export function MetaEffectiveness({
                   );
                 })}
                 <tr className="sheet-new-row">
-                  <td className="effectiveness-name">
+                  <td
+                    className="effectiveness-name"
+                    hidden={!metadataVisible.includes("alias")}
+                  >
                     <div className="sheet-alias-row">
                       <button
                         type="button"
@@ -2460,7 +2693,10 @@ export function MetaEffectiveness({
                       />
                     </div>
                   </td>
-                  <td className="effectiveness-country">
+                  <td
+                    className="effectiveness-country"
+                    hidden={!metadataVisible.includes("country")}
+                  >
                     <SheetSearchSelect
                       compact
                       placeholder="—"
@@ -2476,7 +2712,10 @@ export function MetaEffectiveness({
                       }}
                     />
                   </td>
-                  <td className="effectiveness-advisor">
+                  <td
+                    className="effectiveness-advisor"
+                    hidden={!metadataVisible.includes("advisor")}
+                  >
                     <SheetSearchSelect
                       compact
                       displayLabel
@@ -2511,7 +2750,10 @@ export function MetaEffectiveness({
                     )}
                   </td>
 
-                  <td className="effectiveness-currency">
+                  <td
+                    className="effectiveness-currency"
+                    hidden={!metadataVisible.includes("currency")}
+                  >
                     <SheetSearchSelect
                       compact
                       placeholder="—"
@@ -2535,6 +2777,12 @@ export function MetaEffectiveness({
                         Agregar fila
                       </button>
                     )}
+                  </td>
+                  <td
+                    className="financial-evaluation"
+                    hidden={!metadataVisible.includes("evaluation")}
+                  >
+                    —
                   </td>
                   {visibleMetrics.length > 0 && (
                     <td colSpan={days.length * visibleMetrics.length}>

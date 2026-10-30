@@ -15,12 +15,21 @@ export function InventoryColumnVisibility({
   hiddenColumns = [],
   onRestoreColumn,
   onRestoreAll,
+  sheetColumns = [],
+  onToggleSheet,
 }: {
   values: string[];
   onChange: (v: string[]) => void;
   hiddenColumns?: { key: string; label: string }[];
   onRestoreColumn?: (key: string) => void;
   onRestoreAll?: () => void;
+  sheetColumns?: {
+    id: string;
+    label: string;
+    checked: boolean;
+    partial?: boolean;
+  }[];
+  onToggleSheet?: (id: string, checked: boolean) => void;
 }) {
   const id = useId(),
     popover = useRef<HTMLDivElement>(null),
@@ -86,6 +95,25 @@ export function InventoryColumnVisibility({
             {p.label}
           </label>
         ))}
+        {!!sheetColumns.length && (
+          <>
+            <strong>Hojas de evaluación</strong>
+            {sheetColumns.map((sheet) => (
+              <label key={sheet.id}>
+                <input
+                  type="checkbox"
+                  aria-label={`Mostrar hoja ${sheet.label}`}
+                  checked={sheet.checked}
+                  ref={(input) => {
+                    if (input) input.indeterminate = !!sheet.partial;
+                  }}
+                  onChange={(e) => onToggleSheet?.(sheet.id, e.target.checked)}
+                />
+                {sheet.label}
+              </label>
+            ))}
+          </>
+        )}
         {!!hiddenColumns.length && (
           <>
             <strong>Columnas ocultas de hojas</strong>
