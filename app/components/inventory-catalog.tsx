@@ -8,7 +8,6 @@ const InventoryTrials = dynamic(
   () => import("./inventory-trials").then((m) => m.InventoryTrials),
   { loading: () => <p role="status">Cargando grupos…</p> },
 );
-import type { InventoryAdvisorState } from "../../lib/meta-ads/inventory-advisors";
 import { Fragment, useEffect, useRef, useState, type ReactNode } from "react";
 import { useWorkbookPreference } from "./use-workbook-preference";
 import { financialRequest as api } from "./financial-request";
@@ -204,9 +203,13 @@ export function InventoryCatalog({
     "visibleParameters",
     inventoryParameters.map((p) => p.key),
   );
+  const visibleChoices =
+    parameterChoice.length === 1 && parameterChoice[0] === "advisors"
+      ? inventoryParameters.map((p) => p.key)
+      : parameterChoice;
   const parameters = inventoryParameters
     .filter(
-      (p) => Array.isArray(parameterChoice) && parameterChoice.includes(p.key),
+      (p) => Array.isArray(visibleChoices) && visibleChoices.includes(p.key),
     )
     .map((p) => p.key);
   const showParameter = (key: string) => parameters.includes(key);
@@ -215,7 +218,6 @@ export function InventoryCatalog({
     { key: "primary", label: "Categoría principal", width: 174 },
     { key: "secondary", label: "Categorías secundarias", width: 202 },
     { key: "sheets", label: "Hojas", width: 380 },
-    { key: "advisors", label: "Asesores", width: 270 },
     { key: "gap", label: "", width: 22 },
     { key: "syllabi", label: "Temarios", width: 285 },
   ].filter((c) =>
@@ -974,91 +976,6 @@ export function InventoryCatalog({
     ids: string[];
     names: string[];
   } | null>(null);
-  const [advisorTags, setAdvisorTags] = useState<InventoryAdvisorState | null>(
-    null,
-  );
-  const reloadAdvisorTags = async () => {
-    const data: InventoryAdvisorState = await api(
-      "meta-ads/inventory/advisors?" + new URLSearchParams({ listId }),
-    );
-    setAdvisorTags(data);
-    return data;
-  };
-  useEffect(() => {
-    let active = true;
-    setAdvisorTags((old) => (old?.listId === listId ? old : null));
-    api("meta-ads/inventory/advisors?" + new URLSearchParams({ listId }))
-      .then((data: InventoryAdvisorState) => {
-        if (active) setAdvisorTags(data);
-      })
-      .catch((e) => {
-        if (active) setMessage(e.message);
-      });
-    return () => {
-      active = false;
-    };
-  }, [listId, categories?.revision]);
-  const currentAdvisorTags =
-    advisorTags?.listId === listId ? advisorTags : null;
-  const advisorTagsByName = new Map(
-    (currentAdvisorTags?.items ?? []).map((i) => [i.name, i]),
-  );
-  const advisorTagsById = new Map(
-    (currentAdvisorTags?.items ?? []).map((i) => [i.id, i]),
-  );
-  const groupAdvisorTags = (g: (typeof visible)[number]) =>
-    advisorTagsByName.get(g.name) ??
-    g.links.map((l) => advisorTagsById.get(l.id)).find(Boolean);
-  const updateAdvisorTags = async (
-    groups: typeof visible,
-    advisorIds: string[],
-    mode: "ADD" | "REMOVE",
-  ) => {
-    if (!currentAdvisorTags || !groups.length || !advisorIds.length) return;
-    setBusy(true);
-    let committed = false;
-    const selectedNames = groups
-      .filter((g) => g.links.some((l) => selected.includes(l.id)))
-      .map((g) => g.name);
-    try {
-      await api("meta-ads/inventory/advisors", "POST", {
-        listId,
-        mode,
-        advisorIds,
-        items: groups.map((g) => ({
-          inventoryId: g.links[0].id,
-          expectedName: g.name,
-          revision: groupAdvisorTags(g)?.revision ?? 0,
-        })),
-      });
-      committed = true;
-      const [tags] = await Promise.all([
-        reloadAdvisorTags(),
-        reloadCategories(),
-      ]);
-      setSelected((old) => [
-        ...new Set([
-          ...old,
-          ...tags.items
-            .filter((i) => selectedNames.includes(i.name))
-            .map((i) => i.id),
-        ]),
-      ]);
-      setMessage(
-        mode === "ADD"
-          ? "Asesores asignados al inventario."
-          : "Asesor retirado de este tema.",
-      );
-    } catch (e) {
-      if (committed)
-        setMessage(
-          "Los asesores se guardaron. Actualiza para ver los cambios.",
-        );
-      else throw e;
-    } finally {
-      setBusy(false);
-    }
-  };
   const choose = (ids: string[], checked: boolean) =>
     setSelected((old) =>
       checked
@@ -1628,39 +1545,6 @@ export function InventoryCatalog({
                   }}
                 />
               </th>
-              <th scope="col" hidden={!showParameter("advisors")}>
-                {columnHandle("advisors", "Asesores")}
-                <div>Asesores</div>
-                <InventoryMultiSelect
-                  label="Asignar asesores a inventarios seleccionados"
-                  placeholder={
-                    "Asignar asesores" +
-                    (selectedGroups ? " (" + selectedGroups + ")" : "")
-                  }
-                  values={[]}
-                  all={false}
-                  options={(currentAdvisorTags?.options ?? []).map((p) => ({
-                    value: p.id,
-                    label: p.label,
-                  }))}
-                  disabled={busy || !currentAdvisorTags || !selectedGroups}
-                  description={
-                    "Añade asesores a " +
-                    selectedGroups +
-                    " inventarios seleccionados visibles, independientemente de sus hojas y países."
-                  }
-                  onError={setMessage}
-                  onChange={(ids) =>
-                    updateAdvisorTags(
-                      visible.filter((g) =>
-                        g.links.some((l) => selectedVisible.includes(l.id)),
-                      ),
-                      ids,
-                      "ADD",
-                    )
-                  }
-                />
-              </th>
               <th
                 hidden={!columns.some((c) => c.key === "gap")}
                 aria-hidden="true"
@@ -1894,57 +1778,6 @@ export function InventoryCatalog({
                                 setBusy(false);
                               }
                             }}
-                          />
-                        </div>
-                      </td>
-                      <td
-                        hidden={!showParameter("advisors")}
-                        className="inventory-advisors-cell"
-                      >
-                        <div className="inventory-advisor-toolbar">
-                          <div className="inventory-advisor-chips">
-                            {(groupAdvisorTags(g)?.advisors ?? []).map((p) => (
-                              <span key={p.id} title={p.label}>
-                                <span>{p.name}</span>
-                                <button
-                                  type="button"
-                                  aria-label={
-                                    "Quitar asesor " + p.name + " de " + g.name
-                                  }
-                                  disabled={busy}
-                                  onClick={() =>
-                                    void updateAdvisorTags(
-                                      [g],
-                                      [p.id],
-                                      "REMOVE",
-                                    ).catch((e) => setMessage(e.message))
-                                  }
-                                >
-                                  ×
-                                </button>
-                              </span>
-                            ))}
-                          </div>
-                          <InventoryMultiSelect
-                            label={"Añadir asesores a " + g.name}
-                            placeholder="+"
-                            compact
-                            all={false}
-                            values={[]}
-                            options={(currentAdvisorTags?.options ?? [])
-                              .filter(
-                                (p) =>
-                                  !groupAdvisorTags(g)?.advisors.some(
-                                    (a) => a.id === p.id,
-                                  ),
-                              )
-                              .map((p) => ({ value: p.id, label: p.label }))}
-                            disabled={busy || !currentAdvisorTags}
-                            description="Añade uno o varios asesores a este tema. La relación es independiente de las hojas y países."
-                            onError={setMessage}
-                            onChange={(ids) =>
-                              updateAdvisorTags([g], ids, "ADD")
-                            }
                           />
                         </div>
                       </td>

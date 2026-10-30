@@ -19,7 +19,6 @@ export function InventoryNewRow({
     "primary",
     "secondary",
     "sheets",
-    "advisors",
     "syllabi",
   ],
 }: {
@@ -154,9 +153,6 @@ export function InventoryNewRow({
           options={tables.map((t) => ({ value: t.id, label: t.name }))}
           onChange={(sheets) => setValue((old) => ({ ...old, sheets }))}
         />
-      </td>
-      <td hidden={!visibleParameters.includes("advisors")} className="hint">
-        Asesores disponibles al guardar
       </td>
       <td
         hidden={
