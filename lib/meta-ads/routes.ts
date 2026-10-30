@@ -272,6 +272,9 @@ export async function metaRoutes(
    ownerOnly(actor);const b=z.object({listId:z.string().min(1).max(100),revision:z.number().int().nonnegative(),tableIds:z.array(z.string().min(1).max(100)).min(1).max(1500),items:z.array(z.object({inventoryId:z.string().min(1).max(100),expectedName:z.string().min(1).max(150)}).strict()).min(1).max(1500)}).strict().parse(await body());
    return send(await(await import("./inventory-import")).linkInventorySheetsBatch(actor,b));
   }
+  if(path==="inventory/trials" && method==="GET")return send(await(await import("./inventory-trials")).inventoryTrials(actor,Object.fromEntries(req.nextUrl.searchParams)));
+  if(path==="inventory/trials/report" && method==="GET")return send(await(await import("./inventory-trials")).inventoryTrialReport(actor,Object.fromEntries(req.nextUrl.searchParams)));
+  if(path==="inventory/trials" && method==="POST")return send(await(await import("./inventory-trials")).saveInventoryTrial(actor,await body()));
   if(path==="inventory/advisors" && method==="GET")return send(await(await import("./inventory-advisors")).inventoryAdvisors(actor,Object.fromEntries(req.nextUrl.searchParams)));
   if(path==="inventory/advisors" && method==="POST")return send(await(await import("./inventory-advisors")).saveInventoryAdvisors(actor,await body()));
   if (path === "inventory/sheets" && method === "POST") {

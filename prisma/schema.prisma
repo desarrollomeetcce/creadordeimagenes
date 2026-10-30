@@ -1054,6 +1054,7 @@ model MetaAdvisorSalesApproval {
 }
 
 model MetaEffectivenessSheet {
+ trialGroups MetaInventoryTrialGroup[]
  inventoryItems MetaInventoryItem[]
  categoryRevision Int @default(0)
  categories MetaInventoryCategory[]
@@ -1237,4 +1238,17 @@ model MetaInventoryAdvisor {
  advisor MetaAdvisor @relation(fields:[advisorId],references:[id],onDelete:Restrict)
  @@id([itemId,advisorId])
  @@index([advisorId])
+}
+
+model MetaInventoryTrialGroup {
+ id String @id @default(cuid())
+ sheetId String
+ sheet MetaEffectivenessSheet @relation(fields:[sheetId],references:[id],onDelete:Cascade)
+ name String
+ payload Json
+ revision Int @default(1)
+ archivedAt DateTime?
+ createdAt DateTime @default(now())
+ updatedAt DateTime @updatedAt
+ @@index([sheetId,archivedAt,createdAt])
 }

@@ -3,6 +3,11 @@ import {
   InventoryColumnVisibility,
   inventoryParameters,
 } from "./inventory-column-visibility";
+import dynamic from "next/dynamic";
+const InventoryTrials = dynamic(
+  () => import("./inventory-trials").then((m) => m.InventoryTrials),
+  { loading: () => <p role="status">Cargando grupos…</p> },
+);
 import type { InventoryAdvisorState } from "../../lib/meta-ads/inventory-advisors";
 import { Fragment, useEffect, useRef, useState, type ReactNode } from "react";
 import { useWorkbookPreference } from "./use-workbook-preference";
@@ -111,6 +116,11 @@ export function InventoryCatalog({
   onChanged: () => Promise<void>;
   onOpenInventory?: (id: string) => void;
 }) {
+  const [catalogView, setCatalogView] = useWorkbookPreference<string>(
+    listId,
+    "catalog-view",
+    "inventory",
+  );
   const categoryDrag = useRef<{
       name: string;
       categoryId: string;
@@ -1081,6 +1091,44 @@ export function InventoryCatalog({
       setBusy(false);
     }
   };
+  const viewTabs = (
+    <div
+      className="inventory-view-tabs"
+      role="tablist"
+      aria-label="Vista del inventario"
+    >
+      <button
+        type="button"
+        role="tab"
+        aria-selected={catalogView !== "groups"}
+        onClick={() => setCatalogView("inventory")}
+      >
+        Inventario
+      </button>
+      <button
+        type="button"
+        role="tab"
+        aria-selected={catalogView === "groups"}
+        onClick={() => setCatalogView("groups")}
+      >
+        Grupos y evaluación
+      </button>
+    </div>
+  );
+  if (catalogView === "groups")
+    return (
+      <section
+        className="inventory-catalog sheet-view"
+        aria-label="Grupos y evaluación de inventario"
+      >
+        <div className="row inventory-actions-toolbar sheet-toolbar-with-actions">
+          {viewTabs}
+          {toolbarActions}
+        </div>
+        {sheetTabs}
+        <InventoryTrials listId={listId} />
+      </section>
+    );
   return (
     <section
       className="inventory-catalog sheet-view"
@@ -1142,6 +1190,7 @@ export function InventoryCatalog({
         aria-label="Acciones del inventario"
       >
         <div className="row sheet-toolbar-controls">
+          {viewTabs}
           <button
             type="button"
             disabled={busy}
