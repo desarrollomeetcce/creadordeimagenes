@@ -8,6 +8,12 @@ import {
   InventoryGroupSelect,
 } from "./inventory-group-editor";
 import type { TrialDirectory } from "../../lib/meta-ads/inventory-trials";
+import {
+  InventoryCountryCells,
+  inventoryCountryMetrics,
+  useInventoryCountryEvaluation,
+} from "./inventory-country-evaluation";
+import { countryName } from "../../lib/meta-ads/countries";
 import dynamic from "next/dynamic";
 const InventoryTrials = dynamic(
   () => import("./inventory-trials").then((m) => m.InventoryTrials),
@@ -264,10 +270,12 @@ export function InventoryCatalog({
   useEffect(() => {
     if (!groupColumnIntroduced) {
       if (parameterChoice.length && !parameterChoice.includes("group"))
-        setParameterChoice(
-          parameterChoice.length === 1 && parameterChoice[0] === "advisors"
+        setParameterChoice((current) =>
+          current.length === 1 && current[0] === "advisors"
             ? inventoryParameters.map((p) => p.key)
-            : [...parameterChoice, "group"],
+            : current.includes("group")
+              ? current
+              : [...current, "group"],
         );
       setGroupColumnIntroduced("yes");
     }
@@ -276,6 +284,30 @@ export function InventoryCatalog({
     parameterChoice,
     setParameterChoice,
     setGroupColumnIntroduced,
+  ]);
+  const [countryColumnsIntroduced, setCountryColumnsIntroduced] =
+    useWorkbookPreference<string>(listId, "country-columns-introduced", "");
+  const [countryChoice, setCountryChoice] = useWorkbookPreference<
+    string[] | null
+  >(listId, "inventory-country-columns", null);
+  const [countryReload, setCountryReload] = useState(0);
+  useEffect(() => {
+    if (!countryColumnsIntroduced) {
+      if (parameterChoice.length && !parameterChoice.includes("countries"))
+        setParameterChoice((current) =>
+          current.length === 1 && current[0] === "advisors"
+            ? inventoryParameters.map((p) => p.key)
+            : current.includes("countries")
+              ? current
+              : [...current, "countries"],
+        );
+      setCountryColumnsIntroduced("yes");
+    }
+  }, [
+    countryColumnsIntroduced,
+    parameterChoice,
+    setParameterChoice,
+    setCountryColumnsIntroduced,
   ]);
   const visibleChoices =
     parameterChoice.length === 1 && parameterChoice[0] === "advisors"
@@ -287,18 +319,32 @@ export function InventoryCatalog({
     )
     .map((p) => p.key);
   const showParameter = (key: string) => parameters.includes(key);
+  const knownCountries = [...new Set(trialGroups.flatMap((g) => g.countries))];
+  const countryCodes = showParameter("countries")
+    ? knownCountries.filter(
+        (c) => countryChoice === null || countryChoice.includes(c),
+      )
+    : [];
+  const hasCountryColumns = countryCodes.length > 0;
   const columns = [
     { key: "inventory", label: "Inventario", width: 340 },
     { key: "primary", label: "Categoría principal", width: 174 },
     { key: "secondary", label: "Categorías secundarias", width: 202 },
     { key: "sheets", label: "Hojas", width: 380 },
     { key: "group", label: "Grupo", width: 230 },
+    ...countryCodes.flatMap((country) =>
+      inventoryCountryMetrics.map((metric) => ({
+        key: `country:${country}:${metric.key}`,
+        label: countryName(country) + " · " + metric.label,
+        width: metric.width,
+      })),
+    ),
     { key: "gap", label: "", width: 22 },
     { key: "syllabi", label: "Temarios", width: 285 },
   ].filter((c) =>
     c.key === "gap"
       ? showParameter("syllabi") && parameters.length > 1
-      : showParameter(c.key),
+      : c.key.startsWith("country:") || showParameter(c.key),
   );
   const columnHandle = (key: string, label: string) => (
     <SheetColumnResizer
@@ -645,6 +691,13 @@ export function InventoryCatalog({
         groupCategories(g).some(
           (c) => c.kind === "SECONDARY" && secondaryNames.includes(c.name),
         )),
+  );
+  const countryEvaluation = useInventoryCountryEvaluation(
+    listId,
+    trialDirectory,
+    visible.map((g) => g.name),
+    hasCountryColumns,
+    countryReload,
   );
   const bands = new Map<
     string,
@@ -1464,6 +1517,29 @@ export function InventoryCatalog({
             values={parameters}
             onChange={setParameterChoice}
           />
+          {showParameter("countries") && !!knownCountries.length && (
+            <>
+              <InventoryMultiSelect
+                label="Países de evaluación visibles"
+                placeholder="Países de evaluación"
+                all={false}
+                values={countryCodes}
+                options={knownCountries.map((c) => ({
+                  value: c,
+                  label: countryName(c),
+                }))}
+                onChange={setCountryChoice}
+              />
+              <button
+                type="button"
+                aria-label="Actualizar evaluación del inventario"
+                disabled={countryEvaluation.loading || !countryCodes.length}
+                onClick={() => setCountryReload((v) => v + 1)}
+              >
+                Actualizar evaluación
+              </button>
+            </>
+          )}
         </div>
         {toolbarActions}
       </div>
@@ -1501,7 +1577,11 @@ export function InventoryCatalog({
             onError={setMessage}
             disabled={busy || !categories}
           />
-          <small>Incluye categorías principales y secundarias.</small>
+          <small>
+            {hasCountryColumns
+              ? "Evaluación en S/ · Factor = presupuesto acumulado ÷ límite × 100. Desde 100%: alerta."
+              : "Incluye categorías principales y secundarias."}
+          </small>
           <div
             className="inventory-grouping-controls"
             role="group"
@@ -1544,7 +1624,11 @@ export function InventoryCatalog({
           </colgroup>
           <thead>
             <tr>
-              <th scope="col" hidden={!showParameter("inventory")}>
+              <th
+                scope="col"
+                rowSpan={hasCountryColumns ? 2 : 1}
+                hidden={!showParameter("inventory")}
+              >
                 {columnHandle("inventory", "Inventario")}
                 <div className="inventory-header-title">
                   <InventoryCheck
@@ -1647,6 +1731,7 @@ export function InventoryCatalog({
                 <th
                   key={kind}
                   scope="col"
+                  rowSpan={hasCountryColumns ? 2 : 1}
                   hidden={
                     !showParameter(kind === "PRIMARY" ? "primary" : "secondary")
                   }
@@ -1743,7 +1828,11 @@ export function InventoryCatalog({
                   </button>
                 </th>
               ))}
-              <th scope="col" hidden={!showParameter("sheets")}>
+              <th
+                scope="col"
+                rowSpan={hasCountryColumns ? 2 : 1}
+                hidden={!showParameter("sheets")}
+              >
                 {columnHandle("sheets", "Hojas")}
                 <div>Hojas</div>
                 <InventoryMultiSelect
@@ -1858,7 +1947,11 @@ export function InventoryCatalog({
                   {selectedGroups ? ` (${selectedGroups})` : ""}
                 </button>
               </th>
-              <th scope="col" hidden={!showParameter("group")}>
+              <th
+                scope="col"
+                rowSpan={hasCountryColumns ? 2 : 1}
+                hidden={!showParameter("group")}
+              >
                 {columnHandle("group", "Grupo")}
                 <div className="inventory-group-heading">
                   <span>Grupo</span>
@@ -1953,15 +2046,51 @@ export function InventoryCatalog({
                   {removalCount ? ` (${removalCount})` : ""}
                 </button>
               </th>
+              {countryCodes.map((country) => (
+                <th
+                  key={country}
+                  scope="colgroup"
+                  colSpan={inventoryCountryMetrics.length}
+                  className="inventory-country-heading"
+                  data-country-block={country}
+                >
+                  {countryName(country)}
+                </th>
+              ))}
               <th
+                rowSpan={hasCountryColumns ? 2 : 1}
                 hidden={!columns.some((c) => c.key === "gap")}
                 aria-hidden="true"
                 className="inventory-column-gap"
               />
-              <th scope="col" hidden={!showParameter("syllabi")}>
+              <th
+                scope="col"
+                rowSpan={hasCountryColumns ? 2 : 1}
+                hidden={!showParameter("syllabi")}
+              >
                 {columnHandle("syllabi", "Temarios")}Temarios
               </th>
             </tr>
+            {hasCountryColumns && (
+              <tr className="inventory-country-subheaders">
+                {countryCodes.flatMap((country) =>
+                  inventoryCountryMetrics.map((metric) => (
+                    <th
+                      scope="col"
+                      key={country + ":" + metric.key}
+                      data-country-block={country}
+                      data-country-metric={metric.key}
+                    >
+                      {columnHandle(
+                        `country:${country}:${metric.key}`,
+                        countryName(country) + " · " + metric.label,
+                      )}
+                      {metric.label}
+                    </th>
+                  )),
+                )}
+              </tr>
+            )}
           </thead>
           <tbody>
             {sections.map(([key, section]) => {
@@ -2295,6 +2424,18 @@ export function InventoryCatalog({
                           );
                         })()}
                       </td>
+                      {hasCountryColumns && (
+                        <InventoryCountryCells
+                          name={g.name}
+                          countries={countryCodes}
+                          evaluation={countryEvaluation}
+                          group={trialGroupByName.get(categoryKey(g.name))?.id}
+                          reserved={
+                            trialGroupByName.get(categoryKey(g.name))?.reserve
+                          }
+                          onOpen={setEvaluation}
+                        />
+                      )}
                       <td
                         hidden={!columns.some((c) => c.key === "gap")}
                         aria-hidden="true"
@@ -2328,6 +2469,9 @@ export function InventoryCatalog({
             {newRowOpen && (
               <InventoryNewRow
                 visibleParameters={parameters}
+                countryColumnCount={
+                  countryCodes.length * inventoryCountryMetrics.length
+                }
                 directory={directoryNames}
                 tables={tables}
                 disabled={busy}

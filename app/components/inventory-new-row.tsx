@@ -10,6 +10,7 @@ export type InventoryNewRowValue = {
 };
 export function InventoryNewRow({
   directory,
+  countryColumnCount = 0,
   tables,
   disabled,
   onSave,
@@ -22,6 +23,7 @@ export function InventoryNewRow({
     "syllabi",
   ],
 }: {
+  countryColumnCount?: number;
   visibleParameters?: string[];
   directory: string[];
   tables: { id: string; name: string }[];
@@ -157,6 +159,11 @@ export function InventoryNewRow({
       <td hidden={!visibleParameters.includes("group")} className="hint">
         Asignar después de guardar
       </td>
+      {countryColumnCount > 0 && (
+        <td colSpan={countryColumnCount} className="hint">
+          Evaluación disponible después de asignar un grupo
+        </td>
+      )}
       <td
         hidden={
           !visibleParameters.includes("syllabi") || visibleParameters.length < 2

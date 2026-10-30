@@ -2,7 +2,7 @@ import { z } from "zod";
 import { randomUUID, createHash } from "node:crypto";
 import type { Prisma } from "@prisma/client";
 import { db } from "../db";
-import { demand } from "../errors";
+import { demand, AppError } from "../errors";
 import { recordActivity } from "../activity";
 import {
   ownerOnly,
@@ -14,6 +14,7 @@ import {
   effectiveness,
   effectivenessLock,
   type EffectivenessCell,
+  type EffectivenessSheet,
 } from "./effectiveness";
 import { convertMoney, type FxRates } from "./exchange-rates";
 import { linkCoversDay, linkMetrics } from "./column-link-policy";
@@ -786,327 +787,402 @@ export async function inventoryTrialReport(actor: Actor, input: unknown) {
     until = b.until ?? today();
   dateCheck(until);
   return db.$transaction(
+    (tx) => trialReportInTransaction(tx, actor, b, until),
+    { timeout: 120000, isolationLevel: "RepeatableRead" },
+  );
+}
+type TrialSourceCache = {
+  since: string;
+  sheets: Map<string, Promise<EffectivenessSheet>>;
+};
+async function trialReportInTransaction(
+  tx: Prisma.TransactionClient,
+  actor: Actor,
+  b: z.infer<typeof trialReportQuery>,
+  until: string,
+  cache?: TrialSourceCache,
+) {
+  if (!cache) await context(tx, actor, b.listId);
+  const g = await tx.metaInventoryTrialGroup.findFirst({
+    where: { id: b.groupId, sheetId: b.listId, archivedAt: null },
+  });
+  demand(g, "Grupo no disponible.", 404);
+  const group = serialize(g),
+    cycles = [
+      ...new Map(
+        group.cycles
+          .filter(
+            (c) =>
+              group.members.some((m) => m.slotId === c.slotId) &&
+              group.countries.includes(c.country) &&
+              c.since <= until &&
+              (!c.until || c.until >= until),
+          )
+          .map((c) => [JSON.stringify([c.slotId, c.country]), c]),
+      ).values(),
+    ];
+  const relevantCycles = cycles.filter(
+    (c) =>
+      (!b.slotId || c.slotId === b.slotId) &&
+      (!b.country || c.country === b.country),
+  );
+  const items = await tx.metaInventoryItem.findMany({
+      where: {
+        sheetId: b.listId,
+        id: { in: [...new Set(relevantCycles.map((c) => c.itemId))] },
+      },
+      select: { id: true, name: true },
+    }),
+    byName = new Map(items.map((i) => [categoryKey(i.name), i.id]));
+  const aliases = await tx.metaAlias.findMany({
+      where: {
+        inventorySheetId: b.listId,
+        name: { in: items.map((i) => i.name) },
+      },
+      select: { id: true, name: true, tableId: true },
+    }),
+    aliasItems = new Map(
+      aliases.map((a) => [a.id, byName.get(categoryKey(a.name))!]),
+    );
+  const since = relevantCycles.reduce(
+    (d, c) => (c.since < d ? c.since : d),
+    until,
+  );
+  demand(
+    since >= shift(until, -365),
+    "El ciclo supera 366 días. Inicia uno nuevo para evaluar.",
+  );
+  const fx = await tx.metaFxDay.findMany({
+      where: { day: { gte: since, lte: until } },
+      select: { day: true, rates: true },
+    }),
+    rates = new Map(fx.map((r) => [r.day, r.rates as FxRates]));
+  const links = await tx.metaEffectivenessLink.findMany(),
+    linkMap = new Map(links.map((l) => [l.tableId, l]));
+  function origin(table: string, metric: Metric, day: string) {
+    const seen = new Set<string>();
+    let current = table;
+    while (!seen.has(current)) {
+      seen.add(current);
+      const link = linkMap.get(current);
+      if (
+        !link ||
+        !linkCoversDay(link, day) ||
+        !linkMetrics(link).includes(metric)
+      )
+        break;
+      current = link.sourceTableId;
+    }
+    return current;
+  }
+  const campaignHealth = await tx.metaAdObject.findMany({
+    where: { level: "campaign", aliasId: { in: aliases.map((a) => a.id) } },
+    select: {
+      aliasId: true,
+      aliasCountry: true,
+      account: {
+        select: {
+          syncedAt: true,
+          syncError: true,
+          connection: { select: { disconnectedAt: true } },
+        },
+      },
+    },
+  });
+  const fresh = new Map<string, boolean>();
+  for (const a of aliases)
+    for (const code of group.countries) {
+      const matches = campaignHealth.filter(
+        (c) => c.aliasId === a.id && c.aliasCountry === code,
+      );
+      fresh.set(
+        JSON.stringify([a.id, code]),
+        !!matches.length &&
+          matches.every(
+            (c) =>
+              c.account.syncedAt &&
+              !c.account.syncError &&
+              !c.account.connection.disconnectedAt &&
+              (until === today()
+                ? Date.now() - c.account.syncedAt.getTime() <= 3600000
+                : c.account.syncedAt.getTime() >=
+                  Date.parse(until + "T23:59:59-05:00")),
+          ),
+      );
+    }
+  const values = new Map<string, SourceDay>(),
+    seenMetric = new Map<
+      string,
+      {
+        value: number | null;
+        complete: boolean;
+        conflict: boolean;
+        metric: Metric;
+        item: string;
+        country: string;
+        date: string;
+        updatedAt: string | null;
+      }
+    >();
+  const dayKey = (item: string, country: string, day: string) =>
+    JSON.stringify([item, country, day]);
+  const sourceSheets = new Map<
+    string,
+    Map<string, { tableId: string; name: string; active: boolean }>
+  >();
+  for (const tableId of new Set(aliases.map((a) => a.tableId))) {
+    let sheet: EffectivenessSheet;
+    if (cache) {
+      let pending = cache.sheets.get(tableId);
+      if (!pending) {
+        pending = effectiveness(actor, tableId, cache.since, until, tx);
+        cache.sheets.set(tableId, pending);
+      }
+      sheet = await pending;
+    } else sheet = await effectiveness(actor, tableId, since, until, tx);
+    for (const row of sheet.rows) {
+      const item = aliasItems.get(row.aliasId);
+      if (!item || !group.countries.includes(row.country)) continue;
+      const sourceKey = JSON.stringify([item, row.country]);
+      if (!sourceSheets.has(sourceKey)) sourceSheets.set(sourceKey, new Map());
+      sourceSheets.get(sourceKey)!.set(row.aliasId, {
+        tableId: sheet.table.id,
+        name: sheet.table.name,
+        active: row.active,
+      });
+      for (const date of trialDays(since, until, [])) {
+        const c: EffectivenessCell | undefined = row.days[date];
+        for (const metric of ["sales", "budget", "spend"] as const) {
+          let amount = c?.[metric] ?? null;
+          if (metric !== "sales" && amount !== null)
+            amount = convertMoney(amount, row.currency, "PEN", rates.get(date));
+          const complete =
+            amount !== null &&
+            !c?.na.includes(metric) &&
+            !c?.partialMetrics.includes(metric) &&
+            !c?.fxPending.includes(metric) &&
+            (metric !== "spend" ||
+              (row.campaigns > 0 &&
+                c?.campaigns === row.campaigns &&
+                (!c?.manual.includes("spend") || !!c.linked.spend) &&
+                !!fresh.get(JSON.stringify([row.aliasId, row.country]))));
+          const root = origin(tableId, metric, date),
+            dedup = JSON.stringify([item, row.country, date, metric, root]),
+            previous = seenMetric.get(dedup);
+          if (previous) {
+            if (
+              amount !== null &&
+              previous.value !== null &&
+              Math.abs(amount - previous.value) > 0.000001
+            )
+              previous.conflict = true;
+            if (previous.value === null && amount !== null) {
+              previous.value = amount;
+              previous.complete = complete;
+            } else if (amount !== null) previous.complete ||= complete;
+            if (
+              c?.updatedAt &&
+              (!previous.updatedAt || c.updatedAt < previous.updatedAt)
+            )
+              previous.updatedAt = c.updatedAt;
+          } else
+            seenMetric.set(dedup, {
+              value: amount,
+              complete,
+              conflict: false,
+              metric,
+              item,
+              country: row.country,
+              date,
+              updatedAt: c?.updatedAt ?? null,
+            });
+        }
+      }
+    }
+  }
+  for (const source of seenMetric.values()) {
+    const k = dayKey(source.item, source.country, source.date),
+      v = values.get(k) ?? {
+        sales: null,
+        budget: null,
+        spend: null,
+        complete: { sales: true, budget: true, spend: true },
+        updatedAt: null,
+      };
+    if (source.value !== null)
+      v[source.metric] = (v[source.metric] ?? 0) + source.value;
+    v.complete[source.metric] &&= source.complete && !source.conflict;
+    if (source.updatedAt && (!v.updatedAt || source.updatedAt < v.updatedAt))
+      v.updatedAt = source.updatedAt;
+    values.set(k, v);
+  }
+  const rows = relevantCycles.map((c) => {
+    const dates = trialDays(c.since, until, c.pauses),
+      daily = dates.map((day) => ({
+        day,
+        ...(values.get(dayKey(c.itemId, c.country, day)) ?? {
+          sales: null,
+          budget: null,
+          spend: null,
+          complete: { sales: false, budget: false, spend: false },
+          updatedAt: null,
+        }),
+      }));
+    const total = (metric: Metric) => {
+      const known = daily.filter((d) => d[metric] !== null);
+      return {
+        value: known.length ? known.reduce((n, d) => n + d[metric]!, 0) : null,
+        complete:
+          daily.length > 0 &&
+          known.length === daily.length &&
+          daily.every((d) => d.complete[metric]),
+      };
+    };
+    const sales = total("sales"),
+      budget = total("budget"),
+      spend = total("spend"),
+      paused = c.pauses.some(
+        (p) => p.since <= until && (!p.until || p.until >= until),
+      ),
+      available = items.some((i) => i.id === c.itemId);
+    const sheets = [
+      ...(sourceSheets.get(JSON.stringify([c.itemId, c.country]))?.values() ??
+        []),
+    ];
+    const activation: "ACTIVE" | "INACTIVE" | "MIXED" | "UNKNOWN" =
+      !sheets.length
+        ? "UNKNOWN"
+        : sheets.every((s) => s.active)
+          ? "ACTIVE"
+          : sheets.every((s) => !s.active)
+            ? "INACTIVE"
+            : "MIXED";
+    return {
+      sheets,
+      activation,
+      cycleId: c.id,
+      slotId: c.slotId,
+      itemId: c.itemId,
+      name: items.find((i) => i.id === c.itemId)?.name ?? c.name,
+      country: c.country,
+      since: c.since,
+      activeDays: dates.length,
+      paused,
+      available,
+      decision: c.decision,
+      sales: sales.value,
+      budget: budget.value,
+      spend: spend.value,
+      complete: {
+        sales: sales.complete,
+        budget: budget.complete,
+        spend: spend.complete,
+      },
+      budgetEvaluation: trialAssessment(
+        sales.value,
+        budget.value,
+        available && sales.complete && budget.complete,
+        group.rules,
+      ),
+      metaEvaluation: trialAssessment(
+        sales.value,
+        spend.value,
+        available && sales.complete && spend.complete,
+        group.rules,
+      ),
+      salesPerDay:
+        sales.value === null || !dates.length
+          ? null
+          : sales.value / dates.length,
+      budgetPerSale:
+        sales.value && budget.value !== null
+          ? budget.value / sales.value
+          : null,
+      spendPerSale:
+        sales.value && spend.value !== null ? spend.value / sales.value : null,
+      daily: b.slotId ? daily : [],
+    };
+  });
+  return {
+    groupId: g.id,
+    revision: g.revision,
+    until,
+    currency: "PEN",
+    rows,
+    generatedAt: new Date().toISOString(),
+  };
+}
+
+export type TrialDirectory = Awaited<ReturnType<typeof inventoryTrials>>;
+export type TrialReport = Awaited<ReturnType<typeof inventoryTrialReport>>;
+
+const catalogReportQuery = scope
+  .extend({ groupIds: z.string().min(1).max(10000), until: day.optional() })
+  .strict();
+/** Batch read for the inventory grid. Canonical sheets are read once across groups. */
+export async function inventoryCatalogTrialReport(
+  actor: Actor,
+  input: unknown,
+) {
+  const b = catalogReportQuery.parse(input),
+    until = b.until ?? today(),
+    ids = b.groupIds.split(",");
+  dateCheck(until);
+  demand(
+    ids.length <= 100 &&
+      new Set(ids).size === ids.length &&
+      ids.every((i) => i.length > 0 && i.length <= 100),
+    "Selecciona grupos válidos.",
+  );
+  return db.$transaction(
     async (tx) => {
       await context(tx, actor, b.listId);
-      const g = await tx.metaInventoryTrialGroup.findFirst({
-        where: { id: b.groupId, sheetId: b.listId, archivedAt: null },
+      const groups = await tx.metaInventoryTrialGroup.findMany({
+        where: { sheetId: b.listId, archivedAt: null, id: { in: ids } },
       });
-      demand(g, "Grupo no disponible.", 404);
-      const group = serialize(g),
-        cycles = [
-          ...new Map(
-            group.cycles
-              .filter(
-                (c) =>
-                  group.members.some((m) => m.slotId === c.slotId) &&
-                  group.countries.includes(c.country) &&
-                  c.since <= until &&
-                  (!c.until || c.until >= until),
-              )
-              .map((c) => [JSON.stringify([c.slotId, c.country]), c]),
-          ).values(),
-        ];
-      const relevantCycles = cycles.filter(
-        (c) =>
-          (!b.slotId || c.slotId === b.slotId) &&
-          (!b.country || c.country === b.country),
-      );
-      const items = await tx.metaInventoryItem.findMany({
-          where: {
-            sheetId: b.listId,
-            id: { in: [...new Set(relevantCycles.map((c) => c.itemId))] },
-          },
-          select: { id: true, name: true },
-        }),
-        byName = new Map(items.map((i) => [categoryKey(i.name), i.id]));
-      const aliases = await tx.metaAlias.findMany({
-          where: {
-            inventorySheetId: b.listId,
-            name: { in: items.map((i) => i.name) },
-          },
-          select: { id: true, name: true, tableId: true },
-        }),
-        aliasItems = new Map(
-          aliases.map((a) => [a.id, byName.get(categoryKey(a.name))!]),
-        );
-      const since = relevantCycles.reduce(
-        (d, c) => (c.since < d ? c.since : d),
-        until,
-      );
       demand(
-        since >= shift(until, -365),
-        "El ciclo supera 366 días. Inicia uno nuevo para evaluar.",
+        groups.length === ids.length,
+        "Un grupo cambió o pertenece a otro inventario.",
+        409,
       );
-      const fx = await tx.metaFxDay.findMany({
-          where: { day: { gte: since, lte: until } },
-          select: { day: true, rates: true },
-        }),
-        rates = new Map(fx.map((r) => [r.day, r.rates as FxRates]));
-      const links = await tx.metaEffectivenessLink.findMany(),
-        linkMap = new Map(links.map((l) => [l.tableId, l]));
-      function origin(table: string, metric: Metric, day: string) {
-        const seen = new Set<string>();
-        let current = table;
-        while (!seen.has(current)) {
-          seen.add(current);
-          const link = linkMap.get(current);
+      let since = until;
+      for (const group of groups)
+        for (const c of (group.payload as unknown as TrialPayload).cycles)
           if (
-            !link ||
-            !linkCoversDay(link, day) ||
-            !linkMetrics(link).includes(metric)
+            c.since <= until &&
+            (!c.until || c.until >= until) &&
+            c.since < since
           )
-            break;
-          current = link.sourceTableId;
-        }
-        return current;
-      }
-      const campaignHealth = await tx.metaAdObject.findMany({
-        where: { level: "campaign", aliasId: { in: aliases.map((a) => a.id) } },
-        select: {
-          aliasId: true,
-          aliasCountry: true,
-          account: {
-            select: {
-              syncedAt: true,
-              syncError: true,
-              connection: { select: { disconnectedAt: true } },
-            },
-          },
-        },
-      });
-      const fresh = new Map<string, boolean>();
-      for (const a of aliases)
-        for (const code of group.countries) {
-          const matches = campaignHealth.filter(
-            (c) => c.aliasId === a.id && c.aliasCountry === code,
-          );
-          fresh.set(
-            JSON.stringify([a.id, code]),
-            !!matches.length &&
-              matches.every(
-                (c) =>
-                  c.account.syncedAt &&
-                  !c.account.syncError &&
-                  !c.account.connection.disconnectedAt &&
-                  (until === today()
-                    ? Date.now() - c.account.syncedAt.getTime() <= 3600000
-                    : c.account.syncedAt.getTime() >=
-                      Date.parse(until + "T23:59:59-05:00")),
-              ),
-          );
-        }
-      const values = new Map<string, SourceDay>(),
-        seenMetric = new Map<
-          string,
-          {
-            value: number | null;
-            complete: boolean;
-            conflict: boolean;
-            metric: Metric;
-            item: string;
-            country: string;
-            date: string;
-            updatedAt: string | null;
-          }
-        >();
-      const dayKey = (item: string, country: string, day: string) =>
-        JSON.stringify([item, country, day]);
-      const sourceSheets = new Map<
-        string,
-        Map<string, { tableId: string; name: string; active: boolean }>
-      >();
-      for (const tableId of new Set(aliases.map((a) => a.tableId))) {
-        const sheet = await effectiveness(actor, tableId, since, until, tx);
-        for (const row of sheet.rows) {
-          const item = aliasItems.get(row.aliasId);
-          if (!item || !group.countries.includes(row.country)) continue;
-          const sourceKey = JSON.stringify([item, row.country]);
-          if (!sourceSheets.has(sourceKey))
-            sourceSheets.set(sourceKey, new Map());
-          sourceSheets
-            .get(sourceKey)!
-            .set(row.aliasId, {
-              tableId: sheet.table.id,
-              name: sheet.table.name,
-              active: row.active,
-            });
-          for (const date of trialDays(since, until, [])) {
-            const c: EffectivenessCell | undefined = row.days[date];
-            for (const metric of ["sales", "budget", "spend"] as const) {
-              let amount = c?.[metric] ?? null;
-              if (metric !== "sales" && amount !== null)
-                amount = convertMoney(
-                  amount,
-                  row.currency,
-                  "PEN",
-                  rates.get(date),
-                );
-              const complete =
-                amount !== null &&
-                !c?.na.includes(metric) &&
-                !c?.partialMetrics.includes(metric) &&
-                !c?.fxPending.includes(metric) &&
-                (metric !== "spend" ||
-                  (row.campaigns > 0 &&
-                    c?.campaigns === row.campaigns &&
-                    (!c?.manual.includes("spend") || !!c.linked.spend) &&
-                    !!fresh.get(JSON.stringify([row.aliasId, row.country]))));
-              const root = origin(tableId, metric, date),
-                dedup = JSON.stringify([item, row.country, date, metric, root]),
-                previous = seenMetric.get(dedup);
-              if (previous) {
-                if (
-                  amount !== null &&
-                  previous.value !== null &&
-                  Math.abs(amount - previous.value) > 0.000001
-                )
-                  previous.conflict = true;
-                if (previous.value === null && amount !== null) {
-                  previous.value = amount;
-                  previous.complete = complete;
-                } else if (amount !== null) previous.complete ||= complete;
-                if (
-                  c?.updatedAt &&
-                  (!previous.updatedAt || c.updatedAt < previous.updatedAt)
-                )
-                  previous.updatedAt = c.updatedAt;
-              } else
-                seenMetric.set(dedup, {
-                  value: amount,
-                  complete,
-                  conflict: false,
-                  metric,
-                  item,
-                  country: row.country,
-                  date,
-                  updatedAt: c?.updatedAt ?? null,
-                });
-            }
-          }
-        }
-      }
-      for (const source of seenMetric.values()) {
-        const k = dayKey(source.item, source.country, source.date),
-          v = values.get(k) ?? {
-            sales: null,
-            budget: null,
-            spend: null,
-            complete: { sales: true, budget: true, spend: true },
-            updatedAt: null,
-          };
-        if (source.value !== null)
-          v[source.metric] = (v[source.metric] ?? 0) + source.value;
-        v.complete[source.metric] &&= source.complete && !source.conflict;
-        if (
-          source.updatedAt &&
-          (!v.updatedAt || source.updatedAt < v.updatedAt)
-        )
-          v.updatedAt = source.updatedAt;
-        values.set(k, v);
-      }
-      const rows = relevantCycles.map((c) => {
-        const dates = trialDays(c.since, until, c.pauses),
-          daily = dates.map((day) => ({
-            day,
-            ...(values.get(dayKey(c.itemId, c.country, day)) ?? {
-              sales: null,
-              budget: null,
-              spend: null,
-              complete: { sales: false, budget: false, spend: false },
-              updatedAt: null,
-            }),
-          }));
-        const total = (metric: Metric) => {
-          const known = daily.filter((d) => d[metric] !== null);
-          return {
-            value: known.length
-              ? known.reduce((n, d) => n + d[metric]!, 0)
-              : null,
-            complete:
-              daily.length > 0 &&
-              known.length === daily.length &&
-              daily.every((d) => d.complete[metric]),
-          };
-        };
-        const sales = total("sales"),
-          budget = total("budget"),
-          spend = total("spend"),
-          paused = c.pauses.some(
-            (p) => p.since <= until && (!p.until || p.until >= until),
-          ),
-          available = items.some((i) => i.id === c.itemId);
-        const sheets = [
-          ...(sourceSheets
-            .get(JSON.stringify([c.itemId, c.country]))
-            ?.values() ?? []),
-        ];
-        const activation: "ACTIVE" | "INACTIVE" | "MIXED" | "UNKNOWN" =
-          !sheets.length
-            ? "UNKNOWN"
-            : sheets.every((s) => s.active)
-              ? "ACTIVE"
-              : sheets.every((s) => !s.active)
-                ? "INACTIVE"
-                : "MIXED";
-        return {
-          sheets,
-          activation,
-          cycleId: c.id,
-          slotId: c.slotId,
-          itemId: c.itemId,
-          name: items.find((i) => i.id === c.itemId)?.name ?? c.name,
-          country: c.country,
-          since: c.since,
-          activeDays: dates.length,
-          paused,
-          available,
-          decision: c.decision,
-          sales: sales.value,
-          budget: budget.value,
-          spend: spend.value,
-          complete: {
-            sales: sales.complete,
-            budget: budget.complete,
-            spend: spend.complete,
-          },
-          budgetEvaluation: trialAssessment(
-            sales.value,
-            budget.value,
-            available && sales.complete && budget.complete,
-            group.rules,
-          ),
-          metaEvaluation: trialAssessment(
-            sales.value,
-            spend.value,
-            available && sales.complete && spend.complete,
-            group.rules,
-          ),
-          salesPerDay:
-            sales.value === null || !dates.length
-              ? null
-              : sales.value / dates.length,
-          budgetPerSale:
-            sales.value && budget.value !== null
-              ? budget.value / sales.value
-              : null,
-          spendPerSale:
-            sales.value && spend.value !== null
-              ? spend.value / sales.value
-              : null,
-          daily: b.slotId ? daily : [],
-        };
-      });
-      return {
-        groupId: g.id,
-        revision: g.revision,
-        until,
-        currency: "PEN",
-        rows,
-        generatedAt: new Date().toISOString(),
+            since = c.since;
+      const cache: TrialSourceCache = {
+        since: since < shift(until, -365) ? shift(until, -365) : since,
+        sheets: new Map(),
       };
+      const reports: TrialReport[] = [],
+        errors: { groupId: string; message: string }[] = [];
+      for (const group of groups) {
+        if ((group.payload as unknown as TrialPayload).reserve) continue;
+        try {
+          reports.push(
+            await trialReportInTransaction(
+              tx,
+              actor,
+              { listId: b.listId, groupId: group.id },
+              until,
+              cache,
+            ),
+          );
+        } catch (e) {
+          if (e instanceof AppError)
+            errors.push({ groupId: group.id, message: e.message });
+          else throw e;
+        }
+      }
+      return { reports, errors, until };
     },
     { timeout: 120000, isolationLevel: "RepeatableRead" },
   );
 }
-export type TrialDirectory = Awaited<ReturnType<typeof inventoryTrials>>;
-export type TrialReport = Awaited<ReturnType<typeof inventoryTrialReport>>;
+export type InventoryCatalogTrialReport = Awaited<
+  ReturnType<typeof inventoryCatalogTrialReport>
+>;

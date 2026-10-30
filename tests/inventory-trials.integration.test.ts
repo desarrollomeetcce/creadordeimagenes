@@ -8,6 +8,7 @@ import {
   inventoryTrials,
   saveInventoryTrial as changeInventoryTrial,
   inventoryTrialReport,
+  inventoryCatalogTrialReport,
 } from "../lib/meta-ads/inventory-trials";
 import { authorizeFinancialRequest } from "../lib/meta-ads/financial-access";
 import {
@@ -882,6 +883,19 @@ test("Grupos de inventario: reglas, países, propuestas, reemplazos e aislamient
           groupId: group.id,
         });
         assert(viewReport.rows.length > 0);
+        const batchViewer = await inventoryCatalogTrialReport(readActor, {
+          listId: list.id,
+          groupIds: group.id,
+        });
+        assert.deepEqual(batchViewer.reports[0].rows, viewReport.rows);
+        await fail(
+          inventoryCatalogTrialReport(readActor, {
+            listId: foreign.id,
+            groupIds: group.id,
+          }),
+          403,
+        );
+
         assert(
           viewReport.rows.every(
             (row) =>
@@ -1020,6 +1034,97 @@ test("Grupos de inventario: reglas, países, propuestas, reemplazos e aislamient
           assert.equal(detail.rows.length, 1);
           assert.equal(detail.rows[0].sheets.length, 2);
           assert.equal(detail.rows[0].sheets.filter((s) => s.active).length, 1);
+          const otherItem = await db.metaInventoryItem.create({
+            data: { sheetId: list.id, name: "Fuente adicional " + tag },
+          });
+          const otherAlias = await db.metaAlias.create({
+            data: {
+              tableId: sources[0].id,
+              inventorySheetId: list.id,
+              name: otherItem.name,
+            },
+          });
+          aliases.push(otherAlias);
+          await db.metaEffectivenessRow.create({
+            data: {
+              aliasId: otherAlias.id,
+              country: "PE",
+              currency: "PEN",
+              displayCurrency: "PEN",
+              days: {
+                create: [
+                  {
+                    day: yesterday,
+                    sales: 50,
+                    salesOverridden: true,
+                    annotations: { budget: { value: 500, currency: "PEN" } },
+                  },
+                  {
+                    day: today,
+                    sales: 2,
+                    salesOverridden: true,
+                    annotations: { budget: { value: 10, currency: "PEN" } },
+                  },
+                ],
+              },
+            },
+          });
+          const otherGroup = await saveInventoryTrial(actor, {
+            ...base,
+            since: today,
+            name: "Otro inicio",
+            itemIds: [otherItem.id],
+            countries: ["PE"],
+          });
+          try {
+            const batch = await inventoryCatalogTrialReport(actor, {
+              listId: list.id,
+              groupIds: [group.id, otherGroup.id].join(","),
+            });
+            assert.equal(batch.reports.length, 2);
+            assert.equal(batch.errors.length, 0);
+            for (const id of [group.id, otherGroup.id]) {
+              const individual = await inventoryTrialReport(actor, {
+                listId: list.id,
+                groupId: id,
+              });
+              assert.deepEqual(
+                batch.reports.find((r) => r.groupId === id)!.rows,
+                individual.rows,
+              );
+            }
+            const otherRow = batch.reports.find(
+              (r) => r.groupId === otherGroup.id,
+            )!.rows[0];
+            assert.equal(otherRow.sales, 2);
+            assert.equal(otherRow.budget, 10);
+            assert.equal(otherRow.budgetEvaluation.usage, 0.1);
+            await fail(
+              inventoryCatalogTrialReport(actor, {
+                listId: foreign.id,
+                groupIds: group.id,
+              }),
+              409,
+            );
+            await fail(
+              inventoryCatalogTrialReport(actor, {
+                listId: list.id,
+                groupIds: group.id + "," + group.id,
+              }),
+              400,
+            );
+            await fail(
+              inventoryCatalogTrialReport(actor, {
+                listId: list.id,
+                groupIds: group.id + ",missing",
+              }),
+              409,
+            );
+          } finally {
+            await db.metaInventoryTrialGroup.delete({
+              where: { id: otherGroup.id },
+            });
+          }
         } finally {
           await db.metaInventoryTrialGroup.delete({ where: { id: group.id } });
           await db.metaEffectivenessRow.deleteMany({
