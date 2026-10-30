@@ -1,7 +1,8 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import { SheetSearchSelect } from "./sheet-search-select";
-import { countryOptions } from "../../lib/meta-ads/countries";
+import { resolveCountry } from "../../lib/meta-ads/effectiveness-paste";
+import { countryOptions, isCountryCode } from "../../lib/meta-ads/countries";
 import { financialRequest as api } from "./financial-request";
 import type { InventorySheetActivationDirectory } from "../../lib/meta-ads/inventory-sheet-activation";
 export function InventoryAddEvaluationSheet({
@@ -75,10 +76,11 @@ export function InventoryAddEvaluationSheet({
               "POST",
               {
                 listId,
-                ...(mode === "existing" ? { tableId } : { name, country }),
+                country,
+                ...(mode === "existing" ? { tableId } : { name }),
               },
             );
-            await onSaved(t.id);
+            await onSaved(t.id + ":" + country);
             onClose();
           } catch (e) {
             setError((e as Error).message);
@@ -97,7 +99,17 @@ export function InventoryAddEvaluationSheet({
               label: t.name,
             }))}
             disabled={busy}
-            onSelect={setTableId}
+            onSelect={(id) => {
+              setTableId(id);
+              const table = directory.tables.find((t) => t.id === id);
+              setCountry(
+                table
+                  ? isCountryCode(table.defaultCountry)
+                    ? table.defaultCountry
+                    : resolveCountry(table.name) || ""
+                  : "",
+              );
+            }}
           />
         ) : (
           <>
@@ -111,29 +123,30 @@ export function InventoryAddEvaluationSheet({
                 onChange={(e) => setName(e.target.value)}
               />
             </label>
-            <label>
-              País
-              <SheetSearchSelect
-                label="País de la nueva hoja"
-                value={country}
-                placeholder="Selecciona un país"
-                options={countryOptions.map((c) => ({
-                  value: c.code,
-                  label: c.name,
-                }))}
-                disabled={busy}
-                onSelect={setCountry}
-              />
-            </label>
           </>
         )}
+        <label>
+          País
+          <SheetSearchSelect
+            label="País de la hoja"
+            value={country}
+            placeholder="Selecciona un país"
+            options={countryOptions.map((c) => ({
+              value: c.code,
+              label: c.name,
+            }))}
+            disabled={busy}
+            onSelect={setCountry}
+          />
+        </label>
         {error && <p role="alert">{error}</p>}
         <footer>
           <button
             type="submit"
             disabled={
               busy ||
-              (mode === "existing" ? !tableId : !name.trim() || !country)
+              !country ||
+              (mode === "existing" ? !tableId : !name.trim())
             }
           >
             {busy

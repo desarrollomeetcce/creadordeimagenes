@@ -778,6 +778,268 @@ test("Activación por hoja: selección, pin, historial y permisos", async (t) =>
       },
     );
     await t.test(
+      "Activar y pendientes reconocen país del nombre de hoja sin repetir configuración",
+      async () => {
+        const table = await db.metaAliasTable.create({
+          data: { name: "EC · Ecuador" },
+        });
+        autoTables.push(table.id);
+        const emptyAlias = await db.metaAlias.create({
+          data: {
+            tableId: table.id,
+            inventorySheetId: list.id,
+            name: names[0],
+          },
+        });
+        const initial = await inventoryActivationReport(owner, {
+          listId: list.id,
+          tableIds: table.id,
+        });
+        assert.equal(
+          initial.rows.find((r) => r.name === names[0])!.targets.length,
+          0,
+        );
+        await inventoryActivationChange(owner, {
+          listId: list.id,
+          tableId: table.id,
+          items: names.slice(0, 2).map((name) => ({ name, targets: [] })),
+          campaignTask: "CREATE",
+        });
+        let result = await inventoryActivationReport(owner, {
+          listId: list.id,
+          tableIds: table.id,
+        });
+        for (const name of names.slice(0, 2)) {
+          const row = result.rows.find((r) => r.name === name)!;
+          assert.equal(row.activation, "ACTIVE");
+          assert.equal(row.campaignTask, "CREATE");
+          assert.deepEqual(
+            row.targets.map((t) => t.country),
+            ["EC"],
+          );
+        }
+        const row = result.rows.find((r) => r.name === names[0])!;
+        await inventoryActivationChange(owner, {
+          listId: list.id,
+          tableId: table.id,
+          items: [{ name: names[0], targets: row.targets }],
+          campaignTask: "STOP",
+        });
+        result = await inventoryActivationReport(owner, {
+          listId: list.id,
+          tableIds: table.id,
+        });
+        assert.equal(
+          result.rows.find((r) => r.name === names[0])!.campaignTask,
+          "STOP",
+        );
+        assert.equal(
+          result.rows.find((r) => r.name === names[0])!.activation,
+          "ACTIVE",
+        );
+        const fresh = result.rows.find((r) => r.name === names[0])!;
+        await inventoryActivationChange(owner, {
+          listId: list.id,
+          tableId: table.id,
+          items: [{ name: names[0], targets: fresh.targets }],
+          active: true,
+          campaignTask: "NONE",
+        });
+        assert.equal(
+          (
+            await inventoryActivationReport(owner, {
+              listId: list.id,
+              tableIds: table.id,
+            })
+          ).rows.find((r) => r.name === names[0])!.campaignTask,
+          "NONE",
+        );
+        assert.equal(
+          (
+            await db.metaAliasTable.findUniqueOrThrow({
+              where: { id: table.id },
+            })
+          ).defaultCountry,
+          "",
+        );
+        assert.equal(
+          (
+            await db.metaAlias.findUniqueOrThrow({
+              where: { id: emptyAlias.id },
+            })
+          ).inventorySheetId,
+          list.id,
+        );
+      },
+    );
+    await t.test(
+      "Elegir hoja guarda país una sola vez sin modificar filas existentes",
+      async () => {
+        const table = await db.metaAliasTable.create({
+          data: { name: "Hoja país único " + tag },
+        });
+        autoTables.push(table.id);
+        await inventoryActivationAddSheet(owner, {
+          listId: list.id,
+          tableId: table.id,
+          country: "BO",
+        });
+        assert.equal(
+          (
+            await db.metaAliasTable.findUniqueOrThrow({
+              where: { id: table.id },
+            })
+          ).defaultCountry,
+          "",
+        );
+        await inventoryActivationChange(owner, {
+          listId: list.id,
+          tableId: table.id,
+          country: "BO",
+          items: [{ name: names[2], targets: [] }],
+          active: true,
+        });
+        const row = (
+          await inventoryActivationReport(owner, {
+            listId: list.id,
+            tableIds: table.id,
+          })
+        ).rows.find((r) => r.name === names[2])!;
+        assert.equal(row.activation, "ACTIVE");
+        assert.deepEqual(
+          row.targets.map((t) => t.country),
+          ["BO"],
+        );
+        const cap = await authorizeFinancialRequest(
+          { id: viewer.id, role: "OBSERVER" },
+          "inventory/sheet-activation/directory",
+          "GET",
+          new URLSearchParams({ listId: list.id }),
+          null,
+          "TAB:" + list.id,
+        );
+        await assert.rejects(
+          () =>
+            inventoryActivationAddSheet(cap, {
+              listId: list.id,
+              tableId: table.id,
+              country: "EC",
+            }),
+          /permiso/i,
+        );
+        assert.equal(
+          (
+            await db.metaAliasTable.findUniqueOrThrow({
+              where: { id: table.id },
+            })
+          ).defaultCountry,
+          "",
+        );
+      },
+    );
+    await t.test(
+      "Una hoja admite BO/EC/CO con activación, revisión y reportes independientes",
+      async () => {
+        const table = await db.metaAliasTable.create({
+          data: { name: "A10 " + tag },
+        });
+        autoTables.push(table.id);
+        for (const country of ["BO", "EC", "CO"])
+          await inventoryActivationAddSheet(owner, {
+            listId: list.id,
+            tableId: table.id,
+            country,
+          });
+        const directory = await inventoryActivationDirectory(owner, {
+          listId: list.id,
+        });
+        assert.deepEqual(
+          directory.columns
+            .filter((c) => c.tableId === table.id)
+            .map((c) => c.country)
+            .sort(),
+          ["BO", "CO", "EC"],
+        );
+        const read = () =>
+          inventoryActivationReport(owner, {
+            listId: list.id,
+            tableIds: table.id,
+            byCountry: "true",
+          });
+        await inventoryActivationChange(owner, {
+          listId: list.id,
+          tableId: table.id,
+          country: "BO",
+          items: [{ name: names[0], targets: [] }],
+          campaignTask: "CREATE",
+        });
+        await inventoryActivationChange(owner, {
+          listId: list.id,
+          tableId: table.id,
+          country: "EC",
+          items: [{ name: names[0], targets: [] }],
+          active: true,
+        });
+        let rows = (await read()).rows;
+        assert.equal(
+          rows.find((r) => r.country === "BO")!.campaignTask,
+          "CREATE",
+        );
+        assert.equal(
+          rows.find((r) => r.country === "EC")!.campaignTask,
+          "NONE",
+        );
+        const ec = rows.find((r) => r.country === "EC")!;
+        await inventoryActivationChange(owner, {
+          listId: list.id,
+          tableId: table.id,
+          country: "EC",
+          items: [{ name: names[0], targets: ec.targets }],
+          active: false,
+          pinned: true,
+        });
+        rows = (await read()).rows;
+        assert.equal(
+          rows.find((r) => r.country === "BO")!.activation,
+          "ACTIVE",
+        );
+        assert.equal(
+          rows.find((r) => r.country === "BO")!.campaignTask,
+          "CREATE",
+        );
+        assert.equal(
+          rows.find((r) => r.country === "EC")!.activation,
+          "INACTIVE",
+        );
+        assert.deepEqual(
+          rows.find((r) => r.country === "BO")!.targets.map((t) => t.country),
+          ["BO"],
+        );
+        assert.deepEqual(
+          rows.find((r) => r.country === "EC")!.targets.map((t) => t.country),
+          ["EC"],
+        );
+        await assert.rejects(
+          () =>
+            inventoryActivationChange(owner, {
+              listId: list.id,
+              tableId: table.id,
+              country: "CO",
+              items: [{ name: names[0], targets: ec.targets }],
+              active: true,
+            }),
+          /cambió/i,
+        );
+        const filtered = await inventoryActivationReport(owner, {
+          listId: list.id,
+          tableIds: table.id,
+          historyName: names[0],
+          country: "BO",
+        });
+        assert(filtered.rows[0].history?.every((h) => h.country === "BO"));
+      },
+    );
+    await t.test(
       "Editar preferencias conserva metadatos internos de activación",
       async () => {
         const current = await db.metaEffectivenessSheet.findUniqueOrThrow({

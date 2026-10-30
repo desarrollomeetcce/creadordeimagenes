@@ -40,7 +40,13 @@ export function useInventoryCountryEvaluation(
       try {
         const report: InventorySheetActivationReport = await api(
           "meta-ads/inventory/sheet-activation/report?" +
-            new URLSearchParams({ listId, tableIds: key }),
+            new URLSearchParams({
+              listId,
+              tableIds: [
+                ...new Set(tableIds.map((id) => id.split(":")[0])),
+              ].join(","),
+              byCountry: "true",
+            }),
         );
         if (alive) {
           setState({ stamp, report });
@@ -73,7 +79,10 @@ export function useInventoryCountryEvaluation(
     () =>
       new Map(
         report?.rows.map((r) => [
-          JSON.stringify([categoryKey(r.name), r.tableId]),
+          JSON.stringify([
+            categoryKey(r.name),
+            r.country ? r.tableId + ":" + r.country : r.tableId,
+          ]),
           r,
         ]) ?? [],
       ),

@@ -17,6 +17,7 @@ import {
 } from "./financial-access";
 import { categoryKey } from "./category-paste";
 import { isCountryCode } from "./countries";
+import { resolveCountry } from "./effectiveness-paste";
 import { limaDay } from "./advisor-attribution";
 import {
   defaultInventoryLimits,
@@ -32,6 +33,7 @@ export type InventoryCampaignTask = "NONE" | "CREATE" | "STOP";
 type Control = { pinned: boolean; campaignTask?: InventoryCampaignTask };
 type Settings = {
   sheets: string[];
+  countries: Record<string, string[]>;
   rows: Record<string, Control>;
   limits: number[];
 };
@@ -39,6 +41,19 @@ export const activationSettings = (config: Prisma.JsonValue): Settings => {
   const v = (config as Record<string, unknown>)?.inventoryActivation as
     Partial<Settings> | undefined;
   return {
+    countries:
+      v?.countries &&
+      typeof v.countries === "object" &&
+      !Array.isArray(v.countries)
+        ? Object.fromEntries(
+            Object.entries(v.countries)
+              .filter(([, value]) => Array.isArray(value))
+              .map(([key, value]) => [
+                key,
+                [...new Set(value.filter(isCountryCode))],
+              ]),
+          )
+        : {},
     limits:
       Array.isArray(v?.limits) &&
       v.limits.length > 0 &&
@@ -106,7 +121,14 @@ export async function inventoryActivationDirectory(
       settings = activationSettings(list.config);
     const linked = await tx.metaAlias.findMany({
         where: { inventorySheetId: q.listId },
-        select: { tableId: true },
+        select: {
+          tableId: true,
+          effectivenessRows: {
+            where: { legacy: false },
+            select: { country: true },
+          },
+          effectivenessStates: { select: { country: true } },
+        },
       }),
       visible = new Set([...settings.sheets, ...linked.map((a) => a.tableId)]);
     const tables = await tx.metaAliasTable.findMany({
@@ -131,6 +153,35 @@ export async function inventoryActivationDirectory(
         (access.isOwner || scopePermission(access, "ALL") === "EDIT"),
       tables,
       selected: tables.filter((t) => visible.has(t.id)).map((t) => t.id),
+      columns: tables
+        .filter((t) => visible.has(t.id))
+        .flatMap((t) => {
+          const countryList = [
+            ...new Set([
+              ...(settings.countries[t.id] ?? []),
+              ...linked
+                .filter((a) => a.tableId === t.id)
+                .flatMap((a) =>
+                  [...a.effectivenessRows, ...a.effectivenessStates].map(
+                    (r) => r.country,
+                  ),
+                ),
+              ...(isCountryCode(t.defaultCountry) ? [t.defaultCountry] : []),
+            ]),
+          ].filter(isCountryCode);
+          if (!countryList.length) {
+            const code = resolveCountry(t.name);
+            if (code) countryList.push(code);
+          }
+          return countryList.length
+            ? countryList.map((country) => ({
+                id: t.id + ":" + country,
+                tableId: t.id,
+                country,
+                name: t.name,
+              }))
+            : [{ id: t.id, tableId: t.id, country: "", name: t.name }];
+        }),
     };
   });
 }
@@ -236,6 +287,10 @@ export async function inventoryActivationAddSheet(
         },
       });
     }
+    if (b.country)
+      settings.countries[table.id] = [
+        ...new Set([...(settings.countries[table.id] ?? []), b.country]),
+      ];
     settings.sheets = [...new Set([...settings.sheets, table.id])];
     await tx.metaEffectivenessSheet.update({
       where: { id: list.id },
@@ -292,6 +347,7 @@ export async function inventoryActivationChange(actor: Actor, input: unknown) {
     .object({
       listId: id,
       tableId: id,
+      country: z.string().refine(isCountryCode).optional(),
       items: z
         .array(z.object({ name, targets: z.array(target).max(250) }).strict())
         .min(1)
@@ -349,6 +405,19 @@ export async function inventoryActivationChange(actor: Actor, input: unknown) {
           effectivenessRows: { where: { legacy: false } },
         },
       });
+      if (b.country)
+        demand(
+          (settings.countries[table.id] ?? []).includes(b.country) ||
+            table.defaultCountry === b.country ||
+            resolveCountry(table.name) === b.country ||
+            tableAliases.some((a) =>
+              [...a.effectivenessRows, ...a.effectivenessStates].some(
+                (r) => r.country === b.country,
+              ),
+            ),
+          "Agrega primero este país a la hoja de evaluación.",
+          403,
+        );
       for (const item of b.items) {
         const real = catalog.get(categoryKey(item.name));
         demand(real, "Un inventario cambió. Actualiza.", 409);
@@ -366,18 +435,27 @@ export async function inventoryActivationChange(actor: Actor, input: unknown) {
           "El diplomado pertenece a otro Inventario en esta hoja.",
           409,
         );
-        const countries = alias
-          ? [
-              ...new Set([
-                ...alias.effectivenessRows.map((r) => r.country),
-                ...alias.effectivenessStates.map((s) => s.country),
-              ]),
-            ]
-          : [];
-        if (!countries.length) countries.push(table.defaultCountry);
+        const countries = b.country
+          ? [b.country]
+          : alias
+            ? [
+                ...new Set([
+                  ...alias.effectivenessRows.map((r) => r.country),
+                  ...alias.effectivenessStates.map((s) => s.country),
+                ]),
+              ]
+            : [];
+        if (!countries.length) {
+          // A sheet explicitly named for a country already supplies that choice.
+          // Preserve an explicit default and existing row countries; never use Meta targeting.
+          const sheetCountry = isCountryCode(table.defaultCountry)
+            ? table.defaultCountry
+            : resolveCountry(table.name);
+          if (sheetCountry) countries.push(sheetCountry);
+        }
         demand(
-          countries.every(isCountryCode),
-          "Define el país de la hoja antes de activarla.",
+          countries.length > 0 && countries.every(isCountryCode),
+          "No se pudo identificar el país de esta hoja. Usa el nombre del país o su código en la hoja.",
         );
         const current = countries.map((country) => ({
           aliasId: alias?.id ?? "",
@@ -396,7 +474,15 @@ export async function inventoryActivationChange(actor: Actor, input: unknown) {
                   x.revision === t.revision,
               ),
             )) ||
-            (!alias && !item.targets.length),
+            (!item.targets.length &&
+              (!alias ||
+                countries.every(
+                  (country) =>
+                    !alias.effectivenessStates.some(
+                      (s) => s.country === country,
+                    ) &&
+                    !alias.effectivenessRows.some((r) => r.country === country),
+                ))),
           "La activación cambió. Actualiza antes de guardar.",
           409,
         );
@@ -575,6 +661,8 @@ async function activationReport(
     .object({
       listId: id,
       tableIds: z.string().max(2500),
+      byCountry: z.literal("true").optional(),
+      country: z.string().refine(isCountryCode).optional(),
       historyName: name.optional(),
       historyTableId: id.optional(),
     })
@@ -619,6 +707,10 @@ async function activationReport(
           : {}),
       },
       include: {
+        effectivenessRows: {
+          where: { legacy: false },
+          select: { country: true },
+        },
         effectivenessStates: {
           include: {
             events: { orderBy: [{ createdAt: "asc" }, { id: "asc" }] },
@@ -680,132 +772,153 @@ async function activationReport(
         tx,
       );
       for (const alias of tableAliases) {
-        const rows = source.rows.filter((r) => r.aliasId === alias.id),
-          states = alias.effectivenessStates;
-        const targets = rows.map((r) => ({
-          aliasId: alias.id,
-          country: r.country,
-          revision: states.find((s) => s.country === r.country)?.revision ?? 0,
-        }));
-        const history: SheetInterval[] = [];
-        for (const row of rows) {
-          const state = states.find((s) => s.country === row.country),
-            ranges = periods(state?.events ?? [], row.active);
-          for (const period of ranges.slice(0, q.historyName ? 100 : 1)) {
-            const since = period.since ? limaDay(new Date(period.since)) : null,
-              until = period.until ? limaDay(new Date(period.until)) : today;
-            const dates =
-              since && since >= floor ? trialDays(since, until, []) : [];
-            const overlapping = ranges.some(
-              (other) =>
-                other !== period &&
-                dates.some(
-                  (day) =>
-                    (!other.since || limaDay(new Date(other.since)) <= day) &&
-                    (!other.until || limaDay(new Date(other.until)) >= day),
-                ),
-            );
-            let sales: number | null = null,
-              budget: number | null = null,
-              complete = !!dates.length && !overlapping;
-            for (const day of dates) {
-              const d = row.days[day];
-              const v = d?.sales ?? null,
-                p =
-                  d?.budget === null || d?.budget === undefined
-                    ? null
-                    : convertMoney(d.budget, row.currency, "PEN", fx.get(day));
-              if (v !== null) sales = (sales ?? 0) + v;
-              if (p !== null) budget = (budget ?? 0) + p;
-              if (
-                v === null ||
-                p === null ||
-                d?.na.includes("sales") ||
-                d?.na.includes("budget") ||
-                d?.partialMetrics.includes("sales") ||
-                d?.partialMetrics.includes("budget")
-              )
-                complete = false;
-            }
-            history.push({
-              ...period,
-              days: dates.length || null,
-              sales,
-              budget,
-              complete,
-              assessment: inventoryFactorAssessment(
+        const states = alias.effectivenessStates,
+          allRows = source.rows.filter(
+            (r) =>
+              r.aliasId === alias.id &&
+              (!q.country || r.country === q.country) &&
+              (states.some((state) => state.country === r.country) ||
+                alias.effectivenessRows.some(
+                  (row) => row.country === r.country,
+                )),
+          );
+        for (const rows of q.byCountry
+          ? allRows.map((row) => [row])
+          : [allRows]) {
+          const targets = rows.map((r) => ({
+            aliasId: alias.id,
+            country: r.country,
+            revision:
+              states.find((s) => s.country === r.country)?.revision ?? 0,
+          }));
+          const history: SheetInterval[] = [];
+          for (const row of rows) {
+            const state = states.find((s) => s.country === row.country),
+              ranges = periods(state?.events ?? [], row.active);
+            for (const period of ranges.slice(0, q.historyName ? 100 : 1)) {
+              const since = period.since
+                  ? limaDay(new Date(period.since))
+                  : null,
+                until = period.until ? limaDay(new Date(period.until)) : today;
+              const dates =
+                since && since >= floor ? trialDays(since, until, []) : [];
+              const overlapping = ranges.some(
+                (other) =>
+                  other !== period &&
+                  dates.some(
+                    (day) =>
+                      (!other.since || limaDay(new Date(other.since)) <= day) &&
+                      (!other.until || limaDay(new Date(other.until)) >= day),
+                  ),
+              );
+              let sales: number | null = null,
+                budget: number | null = null,
+                complete = !!dates.length && !overlapping;
+              for (const day of dates) {
+                const d = row.days[day];
+                const v = d?.sales ?? null,
+                  p =
+                    d?.budget === null || d?.budget === undefined
+                      ? null
+                      : convertMoney(
+                          d.budget,
+                          row.currency,
+                          "PEN",
+                          fx.get(day),
+                        );
+                if (v !== null) sales = (sales ?? 0) + v;
+                if (p !== null) budget = (budget ?? 0) + p;
+                if (
+                  v === null ||
+                  p === null ||
+                  d?.na.includes("sales") ||
+                  d?.na.includes("budget") ||
+                  d?.partialMetrics.includes("sales") ||
+                  d?.partialMetrics.includes("budget")
+                )
+                  complete = false;
+              }
+              history.push({
+                ...period,
+                days: dates.length || null,
                 sales,
                 budget,
                 complete,
-                settings.limits,
-              ),
-              country: row.country,
-              partialDays:
-                !!period.since &&
-                !!period.until &&
-                limaDay(new Date(period.since)) === until,
-            });
+                assessment: inventoryFactorAssessment(
+                  sales,
+                  budget,
+                  complete,
+                  settings.limits,
+                ),
+                country: row.country,
+                partialDays:
+                  !!period.since &&
+                  !!period.until &&
+                  limaDay(new Date(period.since)) === until,
+              });
+            }
           }
-        }
-        const current = rows.map((r) =>
-            history.find((h) => h.country === r.country),
-          ),
-          sales = current.some(
-            (h) => h?.sales !== null && h?.sales !== undefined,
-          )
-            ? current.reduce((n, h) => n + (h?.sales ?? 0), 0)
-            : null,
-          budget = current.some(
-            (h) => h?.budget !== null && h?.budget !== undefined,
-          )
-            ? current.reduce((n, h) => n + (h?.budget ?? 0), 0)
-            : null,
-          complete = current.length > 0 && current.every((h) => h?.complete);
-        const campaignTasks = [
-          ...new Set(
-            targets.map(
-              (t) =>
-                settings.rows[rowKey(t.aliasId, t.country)]?.campaignTask ??
-                "NONE",
+          const current = rows.map((r) =>
+              history.find((h) => h.country === r.country),
             ),
-          ),
-        ].filter((task) => task !== "NONE");
-        output.push({
-          campaignTasks,
-          campaignTask:
-            campaignTasks.length > 1 ? "MIXED" : (campaignTasks[0] ?? "NONE"),
-          countryAssessments: rows.map((r) => ({
-            country: r.country,
-            assessment:
-              history.find((h) => h.country === r.country)?.assessment ??
-              inventoryFactorAssessment(null, null, false, settings.limits),
-          })),
-          name: alias.name,
-          tableId,
-          targets,
-          activation: !rows.length
-            ? "UNKNOWN"
-            : rows.every((r) => r.active)
-              ? "ACTIVE"
-              : rows.every((r) => !r.active)
-                ? "INACTIVE"
-                : "MIXED",
-          pinned:
-            targets.length > 0 &&
-            targets.every(
-              (t) => settings.rows[rowKey(t.aliasId, t.country)]?.pinned,
+            sales = current.some(
+              (h) => h?.sales !== null && h?.sales !== undefined,
+            )
+              ? current.reduce((n, h) => n + (h?.sales ?? 0), 0)
+              : null,
+            budget = current.some(
+              (h) => h?.budget !== null && h?.budget !== undefined,
+            )
+              ? current.reduce((n, h) => n + (h?.budget ?? 0), 0)
+              : null,
+            complete = current.length > 0 && current.every((h) => h?.complete);
+          const campaignTasks = [
+            ...new Set(
+              targets.map(
+                (t) =>
+                  settings.rows[rowKey(t.aliasId, t.country)]?.campaignTask ??
+                  "NONE",
+              ),
             ),
-          assessment: inventoryFactorAssessment(
+          ].filter((task) => task !== "NONE");
+          output.push({
+            country: q.byCountry ? rows[0]?.country : undefined,
+            campaignTasks,
+            campaignTask:
+              campaignTasks.length > 1 ? "MIXED" : (campaignTasks[0] ?? "NONE"),
+            countryAssessments: rows.map((r) => ({
+              country: r.country,
+              assessment:
+                history.find((h) => h.country === r.country)?.assessment ??
+                inventoryFactorAssessment(null, null, false, settings.limits),
+            })),
+            name: alias.name,
+            tableId,
+            targets,
+            activation: !rows.length
+              ? "UNKNOWN"
+              : rows.every((r) => r.active)
+                ? "ACTIVE"
+                : rows.every((r) => !r.active)
+                  ? "INACTIVE"
+                  : "MIXED",
+            pinned:
+              targets.length > 0 &&
+              targets.every(
+                (t) => settings.rows[rowKey(t.aliasId, t.country)]?.pinned,
+              ),
+            assessment: inventoryFactorAssessment(
+              sales,
+              budget,
+              complete,
+              settings.limits,
+            ),
             sales,
             budget,
             complete,
-            settings.limits,
-          ),
-          sales,
-          budget,
-          complete,
-          history: q.historyName ? history : undefined,
-        });
+            history: q.historyName ? history : undefined,
+          });
+        }
       }
     }
     return { canEdit, rows: output, today };

@@ -21,6 +21,7 @@ import type { InventoryCampaignChange } from "./inventory-campaign-control";
 import { InventoryFactorSettings } from "./inventory-factor-settings";
 import { InventorySheetHistory } from "./inventory-sheet-history";
 import { InventoryAddEvaluationSheet } from "./inventory-add-evaluation-sheet";
+import { countryName } from "../../lib/meta-ads/countries";
 import type { InventorySheetActivationDirectory } from "../../lib/meta-ads/inventory-sheet-activation";
 import { InventoryActionMenu } from "./inventory-action-menu";
 import { useInventoryPinnedColumns } from "./use-inventory-pinned-columns";
@@ -367,12 +368,25 @@ export function InventoryCatalog({
       alive = false;
     };
   }, [listId]);
-  const knownCountries = sheetDirectory?.selected ?? [];
-  const sheetLabel = (id: string) =>
-    sheetDirectory?.tables.find((t) => t.id === id)?.name ?? "Hoja";
+  const knownCountries =
+    sheetDirectory?.columns.map((column) => column.id) ?? [];
+  const sheetLabel = (id: string) => {
+    const column = sheetDirectory?.columns.find((column) => column.id === id);
+    const table = sheetDirectory?.tables.find(
+      (table) => table.id === id.split(":")[0],
+    );
+    const label = table?.name ?? "Hoja";
+    return column?.country &&
+      categoryKey(label) !== categoryKey(countryName(column.country))
+      ? label + " · " + countryName(column.country)
+      : label;
+  };
   const countryCodes = showParameter("countries")
     ? knownCountries.filter(
-        (c) => countryChoice === null || countryChoice.includes(c),
+        (c) =>
+          countryChoice === null ||
+          countryChoice.includes(c) ||
+          countryChoice.includes(c.split(":")[0]),
       )
     : [];
   const [hiddenColumnKeys, setHiddenColumnKeys] = useWorkbookPreference<
@@ -1450,7 +1464,8 @@ export function InventoryCatalog({
     try {
       await api("meta-ads/inventory/sheet-activation", "PATCH", {
         listId,
-        tableId,
+        tableId: tableId.split(":")[0],
+        ...(tableId.includes(":") ? { country: tableId.split(":")[1] } : {}),
         items,
         ...change,
       });

@@ -28,9 +28,10 @@ export function InventorySheetHistory({
       "meta-ads/inventory/sheet-activation/report?" +
         new URLSearchParams({
           listId,
-          tableIds: tableId,
+          tableIds: tableId.split(":")[0],
+          ...(tableId.includes(":") ? { country: tableId.split(":")[1] } : {}),
           historyName: name,
-          historyTableId: tableId,
+          historyTableId: tableId.split(":")[0],
         }),
     )
       .then((d) => {
