@@ -259,6 +259,33 @@ test("Grupos de inventario: reglas, países, propuestas, reemplazos e aislamient
       },
     );
     await t.test(
+      "Metadatos de grupos reutilizan categorías y hojas del inventario sin exigir vínculos",
+      async () => {
+        const secondary = await db.metaInventoryCategory.create({
+          data: {
+            sheetId: list.id,
+            kind: "SECONDARY",
+            name: "Secundaria " + tag,
+            key: "secondary" + tag,
+          },
+        });
+        await db.metaInventoryItemCategory.create({
+          data: { itemId: items[0].id, categoryId: secondary.id },
+        });
+        const directory = await inventoryTrials(actor, { listId: list.id }),
+          item = directory.catalog.find((i) => i.id === items[0].id)!,
+          unlinked = directory.catalog.find((i) => i.id === items[1].id)!;
+        assert.deepEqual(item.primaryNames, [categories[0].name]);
+        assert.deepEqual(item.secondaryNames, [secondary.name]);
+        assert.deepEqual(item.sheets, [{ id: table.id, name: table.name }]);
+        assert.deepEqual(unlinked.sheets, []);
+        const legacyItem = directory.catalog.find(
+          (i) => i.name === legacy.name,
+        )!;
+        assert(legacyItem.sheets?.some((t) => t.id === table.id));
+      },
+    );
+    await t.test(
       "Cifras reales por país, cero explícito y sincronización incompleta pendientes",
       async () => {
         const report = await inventoryTrialReport(actor, {

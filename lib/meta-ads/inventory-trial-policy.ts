@@ -3,6 +3,8 @@ export type TrialItem = {
   name: string;
   primaryIds: string[];
   primaryNames: string[];
+  secondaryNames?: string[];
+  sheets?: { id: string; name: string }[];
 };
 export type TrialMember = { slotId: string; itemId: string; name: string };
 export type TrialCycle = {

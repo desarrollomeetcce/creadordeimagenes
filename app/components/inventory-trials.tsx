@@ -1,5 +1,12 @@
 "use client";
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import {
+  Fragment,
+  useEffect,
+  useId,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import { financialRequest as api } from "./financial-request";
 import { SheetSearchSelect } from "./sheet-search-select";
 import { InventoryMultiSelect } from "./inventory-multi-select";
@@ -81,6 +88,7 @@ function TrialDialog({
   );
 }
 export function InventoryTrials({ listId }: { listId: string }) {
+  const panelId = useId();
   const [directory, setDirectory] = useState<TrialDirectory | null>(null),
     [report, setReport] = useState<TrialReport | null>(null),
     [message, setMessage] = useState(""),
@@ -89,6 +97,7 @@ export function InventoryTrials({ listId }: { listId: string }) {
     [reload, setReload] = useState(0),
     [creating, setCreating] = useState(false),
     [editing, setEditing] = useState(false),
+    [addingCountry, setAddingCountry] = useState(false),
     [replacing, setReplacing] = useState(false),
     [cycleEditing, setCycleEditing] = useState(false),
     [detail, setDetail] = useState<Row | null>(null),
@@ -192,6 +201,7 @@ export function InventoryTrials({ listId }: { listId: string }) {
       setSelected([]);
       setDetail(null);
       setEditing(false);
+      setAddingCountry(false);
       setReplacing(false);
       setCycleEditing(false);
     } catch (e) {
@@ -236,6 +246,7 @@ export function InventoryTrials({ listId }: { listId: string }) {
       active = false;
     };
   }, [listId, group?.id, until, detail?.slotId, detail?.country]);
+  const catalogById = new Map(directory?.catalog.map((i) => [i.id, i]) ?? []);
   const lookup = new Map(
       report?.rows.map((r) => [r.slotId + ":" + r.country, r]) ?? [],
     ),
@@ -249,6 +260,33 @@ export function InventoryTrials({ listId }: { listId: string }) {
         query,
       ),
     );
+  const itemFor = (m: TrialGroup["members"][number]) =>
+    catalogById.get(
+      country === "all"
+        ? m.itemId
+        : (lookup.get(m.slotId + ":" + country)?.itemId ?? m.itemId),
+    );
+  const categoryFor = (m: TrialGroup["members"][number]) =>
+    itemFor(m)
+      ?.primaryNames.slice()
+      .sort((a, b) => a.localeCompare(b, "es"))
+      .join(" · ") || "Sin categoría principal";
+  const ordered = visible
+    .slice()
+    .sort(
+      (a, b) =>
+        categoryFor(a).localeCompare(categoryFor(b), "es") ||
+        (itemFor(a)?.name ?? a.name).localeCompare(
+          itemFor(b)?.name ?? b.name,
+          "es",
+        ),
+    );
+  const categoryCounts = new Map<string, number>();
+  for (const m of ordered) {
+    const k = categoryFor(m);
+    categoryCounts.set(k, (categoryCounts.get(k) ?? 0) + 1);
+  }
+  const totalColumns = 4 + (country === "all" ? countries.length : 6);
   const currentRows =
       report?.rows.filter((r) => countries.includes(r.country)) ?? [],
     alertCount = currentRows.filter((r) =>
@@ -269,22 +307,55 @@ export function InventoryTrials({ listId }: { listId: string }) {
   }
   return (
     <div className="inventory-trials">
+      {!!directory?.groups.length && (
+        <div
+          className="trial-group-tabs"
+          role="tablist"
+          aria-label="Grupos guardados"
+          onKeyDown={(e) => {
+            if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(e.key))
+              return;
+            const tabs = [
+                ...e.currentTarget.querySelectorAll<HTMLButtonElement>(
+                  "button",
+                ),
+              ],
+              index = tabs.indexOf(
+                (e.target as HTMLElement).closest("button")!,
+              );
+            if (index < 0) return;
+            e.preventDefault();
+            const next =
+              e.key === "Home"
+                ? 0
+                : e.key === "End"
+                  ? tabs.length - 1
+                  : (index + (e.key === "ArrowRight" ? 1 : -1) + tabs.length) %
+                    tabs.length;
+            tabs[next].click();
+            tabs[next].focus();
+          }}
+        >
+          {directory.groups.map((g) => (
+            <button
+              type="button"
+              role="tab"
+              key={g.id}
+              id={panelId + "-" + g.id}
+              aria-controls={panelId}
+              aria-label={"Abrir " + g.name}
+              aria-selected={group?.id === g.id}
+              tabIndex={group?.id === g.id ? 0 : -1}
+              onClick={() => setSelectedId(g.id)}
+            >
+              {g.name}
+              {g.reserve && <small>Reserva</small>}
+            </button>
+          ))}
+        </div>
+      )}
+
       <div className="trial-controls">
-        <label>
-          Grupo
-          <SheetSearchSelect
-            label="Grupo de evaluación"
-            placeholder="Sin grupos"
-            value={group?.id ?? ""}
-            options={
-              directory?.groups.map((g) => ({
-                value: g.id,
-                label: g.name + (g.reserve ? " · Reserva" : ""),
-              })) ?? []
-            }
-            onSelect={setSelectedId}
-          />
-        </label>
         <label>
           País
           <SheetSearchSelect
@@ -312,7 +383,7 @@ export function InventoryTrials({ listId }: { listId: string }) {
             onSelect={setBasis}
           />
         </label>
-        <label>
+        <label className="trial-cutoff">
           Hasta
           <input
             aria-label="Fecha de corte de evaluación"
@@ -343,6 +414,13 @@ export function InventoryTrials({ listId }: { listId: string }) {
               onClick={() => setCreating(true)}
             >
               + Crear grupo
+            </button>
+            <button
+              type="button"
+              disabled={!group || group.countries.length >= 20}
+              onClick={() => setAddingCountry(true)}
+            >
+              Añadir país
             </button>
             <button
               type="button"
@@ -459,6 +537,9 @@ export function InventoryTrials({ listId }: { listId: string }) {
           </div>
           <div
             className="trial-table-scroll"
+            id={panelId}
+            role="tabpanel"
+            aria-labelledby={panelId + "-" + group.id}
             tabIndex={0}
             aria-label="Tabla de grupos por país"
           >
@@ -485,9 +566,10 @@ export function InventoryTrials({ listId }: { listId: string }) {
                     )}{" "}
                     Diplomado
                   </th>
-                  {group.reserve ? (
-                    <th>Categoría principal</th>
-                  ) : country === "all" ? (
+                  <th>Categoría principal</th>
+                  <th>Categorías secundarias</th>
+                  <th>Hojas</th>
+                  {country === "all" ? (
                     countries.map((c) => <th key={c}>{countryName(c)}</th>)
                   ) : (
                     <>
@@ -504,148 +586,204 @@ export function InventoryTrials({ listId }: { listId: string }) {
                 </tr>
               </thead>
               <tbody>
-                {visible.map((m) => {
-                  const item = directory?.catalog.find(
-                      (i) => i.id === m.itemId,
-                    ),
-                    row = lookup.get(m.slotId + ":" + country);
+                {ordered.map((m, index) => {
+                  const item = itemFor(m),
+                    row = lookup.get(m.slotId + ":" + country),
+                    category = categoryFor(m),
+                    newCategory =
+                      index === 0 ||
+                      categoryFor(ordered[index - 1]) !== category;
                   return (
-                    <tr key={m.slotId} data-trial-slot={m.slotId}>
-                      <th>
-                        {canEdit && !group.reserve && (
-                          <input
-                            type="checkbox"
-                            aria-label={"Seleccionar " + m.name}
-                            checked={selected.includes(m.slotId)}
-                            onChange={(e) => select(m.slotId, e.target.checked)}
-                          />
-                        )}
-                        <span>
-                          {country !== "all"
-                            ? (row?.name ?? item?.name ?? m.name)
-                            : (item?.name ?? m.name)}
-                        </span>
-                        {country !== "all" && row?.name !== m.name && row && (
-                          <small>Reemplaza a {m.name}</small>
-                        )}
-                      </th>
-                      {group.reserve ? (
-                        <td>
-                          {item?.primaryNames.join(", ") ||
-                            "Sin categoría principal"}
-                        </td>
-                      ) : country === "all" ? (
-                        countries.map((c) => {
-                          const r = lookup.get(m.slotId + ":" + c);
-                          return (
-                            <td key={c}>
-                              {r ? (
-                                <button
-                                  type="button"
-                                  className={
-                                    "trial-country-cell trial-" +
-                                    (r.paused ? "PAUSED" : evaluate(r).status)
-                                  }
-                                  aria-label={
-                                    "Detalle de " + r.name + " en " + c
-                                  }
-                                  onClick={() => setDetail(r)}
-                                >
-                                  <b>{status(r)}</b>
-                                  {r.name !== m.name && (
-                                    <span className="trial-replacement-name">
-                                      Ahora: {r.name}
-                                    </span>
-                                  )}
-                                  <span>
-                                    <strong>{num(r.sales)}</strong> ventas ·{" "}
-                                    {r.activeDays} días
-                                  </span>
-                                  <span>
-                                    P {money(r.budget)} · G {money(r.spend)}
-                                  </span>
-                                  <small>
-                                    Uso del límite: {pct(evaluate(r).usage)}
-                                    {!r.complete.sales ||
-                                    !(basis === "META"
-                                      ? r.complete.spend
-                                      : r.complete.budget)
-                                      ? " · parcial"
-                                      : ""}
-                                  </small>
-                                  {r.decision !== "AUTO" && (
-                                    <small>
-                                      Decisión:{" "}
-                                      {r.decision === "KEEP"
-                                        ? "conservar"
-                                        : "reemplazar"}
-                                    </small>
-                                  )}
-                                </button>
-                              ) : (
-                                <span className="trial-muted">
-                                  {loading
-                                    ? "Cargando…"
-                                    : "Sin evaluación a esta fecha"}
-                                </span>
-                              )}
-                            </td>
-                          );
-                        })
-                      ) : row ? (
-                        <>
-                          <td>
-                            {num(row.sales)}
-                            {!row.complete.sales && row.sales !== null
-                              ? " *"
-                              : ""}
+                    <Fragment key={m.slotId}>
+                      {newCategory && (
+                        <tr className="trial-category-band">
+                          <td colSpan={totalColumns}>
+                            <span>
+                              <strong>{category}</strong>
+                              <small>
+                                {categoryCounts.get(category)}{" "}
+                                {categoryCounts.get(category) === 1
+                                  ? "diplomado"
+                                  : "diplomados"}
+                              </small>
+                            </span>
                           </td>
-                          <td>
-                            {money(row.budget)}
-                            {!row.complete.budget && row.budget !== null
-                              ? " *"
-                              : ""}
-                          </td>
-                          <td>
-                            {money(row.spend)}
-                            {!row.complete.spend && row.spend !== null
-                              ? " *"
-                              : ""}
-                          </td>
-                          <td>{row.activeDays}</td>
-                          <td>
-                            {pct(evaluate(row).usage)}
-                            <small>Límite {money(evaluate(row).limit)}</small>
-                          </td>
-                          <td>
-                            <button
-                              type="button"
-                              className={
-                                "trial-status trial-" +
-                                (row.paused ? "PAUSED" : evaluate(row).status)
-                              }
-                              aria-label={
-                                "Detalle de " + row.name + " en " + row.country
-                              }
-                              onClick={() => setDetail(row)}
-                            >
-                              {status(row)} ↗
-                            </button>
-                          </td>
-                        </>
-                      ) : (
-                        <td colSpan={6}>
-                          {loading
-                            ? "Cargando cifras…"
-                            : "Sin evaluación a esta fecha"}
-                        </td>
+                        </tr>
                       )}
-                    </tr>
+                      <tr data-trial-slot={m.slotId}>
+                        <th>
+                          {canEdit && !group.reserve && (
+                            <input
+                              type="checkbox"
+                              aria-label={"Seleccionar " + m.name}
+                              checked={selected.includes(m.slotId)}
+                              onChange={(e) =>
+                                select(m.slotId, e.target.checked)
+                              }
+                            />
+                          )}
+                          <span>
+                            {country !== "all"
+                              ? (row?.name ?? item?.name ?? m.name)
+                              : (item?.name ?? m.name)}
+                          </span>
+                          {country !== "all" && row?.name !== m.name && row && (
+                            <small>Reemplaza a {m.name}</small>
+                          )}
+                        </th>
+                        <td className="trial-meta-cell">
+                          <div className="trial-meta-tags trial-primary-tags">
+                            {item?.primaryNames.length ? (
+                              item.primaryNames.map((name) => (
+                                <span key={name}>{name}</span>
+                              ))
+                            ) : (
+                              <small>Sin categoría principal</small>
+                            )}
+                          </div>
+                        </td>
+                        <td className="trial-meta-cell">
+                          <div className="trial-meta-tags">
+                            {item?.secondaryNames?.length ? (
+                              item.secondaryNames.map((name) => (
+                                <span key={name}>{name}</span>
+                              ))
+                            ) : (
+                              <small>Sin categoría secundaria</small>
+                            )}
+                          </div>
+                        </td>
+                        <td className="trial-meta-cell">
+                          <div className="trial-meta-tags">
+                            {item?.sheets?.length ? (
+                              item.sheets.map((sheet) => (
+                                <span key={sheet.id}>{sheet.name}</span>
+                              ))
+                            ) : (
+                              <small>Sin hojas vinculadas</small>
+                            )}
+                          </div>
+                        </td>
+                        {country === "all" ? (
+                          countries.map((c) => {
+                            const r = lookup.get(m.slotId + ":" + c);
+                            return (
+                              <td key={c}>
+                                {r ? (
+                                  <button
+                                    type="button"
+                                    className={
+                                      "trial-country-cell trial-" +
+                                      (r.paused ? "PAUSED" : evaluate(r).status)
+                                    }
+                                    aria-label={
+                                      "Detalle de " + r.name + " en " + c
+                                    }
+                                    onClick={() => setDetail(r)}
+                                  >
+                                    <b>{status(r)}</b>
+                                    {r.name !== m.name && (
+                                      <span className="trial-replacement-name">
+                                        Ahora: {r.name}
+                                      </span>
+                                    )}
+                                    <span>
+                                      <strong>{num(r.sales)}</strong> ventas ·{" "}
+                                      {r.activeDays} días
+                                    </span>
+                                    <span>
+                                      P {money(r.budget)} · G {money(r.spend)}
+                                    </span>
+                                    <small>
+                                      Uso del límite: {pct(evaluate(r).usage)}
+                                      {!r.complete.sales ||
+                                      !(basis === "META"
+                                        ? r.complete.spend
+                                        : r.complete.budget)
+                                        ? " · parcial"
+                                        : ""}
+                                    </small>
+                                    {r.decision !== "AUTO" && (
+                                      <small>
+                                        Decisión:{" "}
+                                        {r.decision === "KEEP"
+                                          ? "conservar"
+                                          : "reemplazar"}
+                                      </small>
+                                    )}
+                                  </button>
+                                ) : (
+                                  <span className="trial-muted">
+                                    {loading
+                                      ? "Cargando…"
+                                      : group.reserve
+                                        ? "Reserva"
+                                        : "Sin evaluación a esta fecha"}
+                                  </span>
+                                )}
+                              </td>
+                            );
+                          })
+                        ) : row ? (
+                          <>
+                            <td>
+                              {num(row.sales)}
+                              {!row.complete.sales && row.sales !== null
+                                ? " *"
+                                : ""}
+                            </td>
+                            <td>
+                              {money(row.budget)}
+                              {!row.complete.budget && row.budget !== null
+                                ? " *"
+                                : ""}
+                            </td>
+                            <td>
+                              {money(row.spend)}
+                              {!row.complete.spend && row.spend !== null
+                                ? " *"
+                                : ""}
+                            </td>
+                            <td>{row.activeDays}</td>
+                            <td>
+                              {pct(evaluate(row).usage)}
+                              <small>Límite {money(evaluate(row).limit)}</small>
+                            </td>
+                            <td>
+                              <button
+                                type="button"
+                                className={
+                                  "trial-status trial-" +
+                                  (row.paused ? "PAUSED" : evaluate(row).status)
+                                }
+                                aria-label={
+                                  "Detalle de " +
+                                  row.name +
+                                  " en " +
+                                  row.country
+                                }
+                                onClick={() => setDetail(row)}
+                              >
+                                {status(row)} ↗
+                              </button>
+                            </td>
+                          </>
+                        ) : (
+                          <td colSpan={6}>
+                            {loading
+                              ? "Cargando cifras…"
+                              : group.reserve
+                                ? "Reserva"
+                                : "Sin evaluación a esta fecha"}
+                          </td>
+                        )}
+                      </tr>
+                    </Fragment>
                   );
                 })}
                 {!visible.length && (
                   <tr>
-                    <td colSpan={country === "all" ? 1 + countries.length : 7}>
+                    <td colSpan={totalColumns}>
                       No hay diplomados que coincidan con la búsqueda.
                     </td>
                   </tr>
@@ -670,6 +808,14 @@ export function InventoryTrials({ listId }: { listId: string }) {
             setCreating(false);
             await loadDirectory();
           }}
+        />
+      )}
+      {addingCountry && group && (
+        <TrialAddCountry
+          group={group}
+          busy={busy}
+          onClose={() => setAddingCountry(false)}
+          onChange={change}
         />
       )}
       {editing && group && (
@@ -737,7 +883,14 @@ function TrialCreate({
     [mode, setMode] = useState<"MANUAL" | "DIVERSE">("MANUAL"),
     [ids, setIds] = useState<string[]>([]),
     [count, setCount] = useState(10),
-    [countries, setCountries] = useState(["PE", "EC", "BO", "CO"]),
+    [countries, setCountries] = useState(() =>
+      directory.groups.length
+        ? [...new Set(directory.groups.flatMap((g) => g.countries))].slice(
+            0,
+            20,
+          )
+        : ["PE", "EC", "BO", "CO"],
+    ),
     [reserve, setReserve] = useState(false),
     [since, setSince] = useState(limaToday),
     [avoid, setAvoid] = useState(true),
@@ -1500,6 +1653,80 @@ function TrialStart({
           </button>
           <button className="primary" disabled={busy || !date}>
             Guardar inicio
+          </button>
+        </footer>
+      </form>
+    </TrialDialog>
+  );
+}
+
+function TrialAddCountry({
+  group,
+  busy,
+  onClose,
+  onChange,
+}: {
+  group: TrialGroup;
+  busy: boolean;
+  onClose: () => void;
+  onChange: (b: Record<string, unknown>) => Promise<void>;
+}) {
+  const [country, setCountry] = useState(""),
+    [since, setSince] = useState(limaToday),
+    [error, setError] = useState("");
+  return (
+    <TrialDialog
+      title={"Añadir país · " + group.name}
+      busy={busy}
+      onClose={onClose}
+    >
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          void onChange({
+            action: "COUNTRIES",
+            countries: [...group.countries, country],
+            since,
+          }).catch((e) => setError(e.message));
+        }}
+      >
+        <label>
+          País
+          <SheetSearchSelect
+            label="País para añadir al grupo"
+            placeholder="Busca un país"
+            value={country}
+            disabled={busy}
+            options={countryOptions
+              .filter((c) => !group.countries.includes(c.code))
+              .map((c) => ({ value: c.code, label: c.code + " · " + c.name }))}
+            onSelect={setCountry}
+          />
+        </label>
+        <label>
+          Evaluar desde
+          <input
+            type="date"
+            aria-label="Inicio del país añadido"
+            min={dayMin()}
+            max={limaToday()}
+            required
+            value={since}
+            onChange={(e) => setSince(e.target.value)}
+          />
+        </label>
+        <p className="trial-help">
+          El nuevo país tendrá su propio ciclo. Puedes crear el grupo sin hojas;
+          las cifras quedarán pendientes hasta tener ventas y presupuesto o
+          gasto vinculados al diplomado y país.
+        </p>
+        {error && <p role="alert">{error}</p>}
+        <footer>
+          <button type="button" disabled={busy} onClick={onClose}>
+            Cancelar
+          </button>
+          <button className="primary" disabled={busy || !country}>
+            Guardar país
           </button>
         </footer>
       </form>

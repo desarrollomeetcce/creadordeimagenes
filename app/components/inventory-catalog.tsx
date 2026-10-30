@@ -1028,7 +1028,7 @@ export function InventoryCatalog({
         aria-selected={catalogView === "groups"}
         onClick={() => setCatalogView("groups")}
       >
-        Grupos y evaluación
+        Grupos
       </button>
     </div>
   );
@@ -1036,7 +1036,7 @@ export function InventoryCatalog({
     return (
       <section
         className="inventory-catalog sheet-view"
-        aria-label="Grupos y evaluación de inventario"
+        aria-label="Grupos de inventario"
       >
         <div className="row inventory-actions-toolbar sheet-toolbar-with-actions">
           {viewTabs}

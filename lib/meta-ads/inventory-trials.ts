@@ -165,6 +165,7 @@ async function catalog(
         id: true,
         name: true,
         categories: {
+          where: { category: { sheetId: listId } },
           select: {
             category: { select: { id: true, name: true, kind: true } },
           },
@@ -176,7 +177,9 @@ async function catalog(
       select: {
         id: true,
         name: true,
+        table: { select: { id: true, name: true } },
         categoryAssignments: {
+          where: { category: { sheetId: listId } },
           select: {
             category: { select: { id: true, name: true, kind: true } },
           },
@@ -185,36 +188,47 @@ async function catalog(
     }),
   ]);
   const out = new Map<string, TrialItem>();
-  for (const a of aliases) {
-    const k = categoryKey(a.name),
-      old = out.get(k),
-      tags = a.categoryAssignments
-        .map((x) => x.category)
-        .filter((c) => c.kind === "PRIMARY");
-    if (!old)
-      out.set(k, {
-        id: a.id,
-        name: a.name,
-        primaryIds: tags.map((c) => c.id),
-        primaryNames: tags.map((c) => c.name),
-      });
-    else
-      for (const t of tags)
-        if (!old.primaryIds.includes(t.id)) {
-          old.primaryIds.push(t.id);
-          old.primaryNames.push(t.name);
-        }
+  for (const alias of aliases) {
+    const k = categoryKey(alias.name),
+      tags = alias.categoryAssignments.map((x) => x.category),
+      item = out.get(k) ?? {
+        id: alias.id,
+        name: alias.name,
+        primaryIds: [],
+        primaryNames: [],
+        secondaryNames: [],
+        sheets: [],
+      };
+    for (const c of tags) {
+      if (c.kind === "PRIMARY" && !item.primaryIds.includes(c.id)) {
+        item.primaryIds.push(c.id);
+        item.primaryNames.push(c.name);
+      }
+      if (c.kind === "SECONDARY" && !item.secondaryNames!.includes(c.name))
+        item.secondaryNames!.push(c.name);
+    }
+    if (!item.sheets!.some((t) => t.id === alias.table.id))
+      item.sheets!.push(alias.table);
+    out.set(k, item);
   }
-  for (const a of items) {
-    const tags = a.categories
-      .map((x) => x.category)
-      .filter((c) => c.kind === "PRIMARY");
-    out.set(categoryKey(a.name), {
-      id: a.id,
-      name: a.name,
-      primaryIds: tags.map((c) => c.id),
-      primaryNames: tags.map((c) => c.name),
+  for (const item of items) {
+    const k = categoryKey(item.name),
+      tags = item.categories.map((x) => x.category),
+      primary = tags.filter((c) => c.kind === "PRIMARY");
+    out.set(k, {
+      id: item.id,
+      name: item.name,
+      primaryIds: primary.map((c) => c.id),
+      primaryNames: primary.map((c) => c.name),
+      secondaryNames: tags
+        .filter((c) => c.kind === "SECONDARY")
+        .map((c) => c.name),
+      sheets: out.get(k)?.sheets ?? [],
     });
+  }
+  for (const item of out.values()) {
+    item.sheets?.sort((a, b) => a.name.localeCompare(b.name, "es"));
+    item.secondaryNames?.sort((a, b) => a.localeCompare(b, "es"));
   }
   return [...out.values()].sort((a, b) => a.name.localeCompare(b.name, "es"));
 }
