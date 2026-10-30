@@ -49,3 +49,11 @@ Añadido acumulado general encima de las estadísticas del detalle: ventas, día
 ## Pedido adicional: cabecera fija y mover ventanas
 
 Meta asignar inventario conserva nombre de campaña visible y formulario con desplazamiento interno. Ventana más amplia y redimensionable desde esquina. Soporte común de arrastre desde cabecera en ventanas nativas con título de otras secciones; mantiene selección, acciones, ampliar/restaurar, teclado y límites de pantalla. Ocho verificaciones de navegador incluyen Meta, grupos y detalle financiero, resize real y móvil. Los controles de formulario y los menús conservan su interacción normal.
+
+## Corrección posterior: coherencia de hoja y conservación real
+
+Se detectó una eliminación destructiva en la ruta de filas financieras: ya se reemplazó por baja lógica con evento de retiro y conservación de días, ventas, asesores y ciclos. Apagar en hoja conserva la fila y la fija en Inventario; quitar pin apagado oculta y elimina el chip de hoja si no queda país visible. Reincorporación conserva identidad y ventas. Datos de Perú/Ecuador permanecen independientes. Los retiros antiguos con datos ya destruidos se reconocen por auditoría y se muestran como no disponibles, sin inventar recuperación ni un inicio de activación.
+
+Tabla a pantalla completa mantiene DOM/datos/scroll, controles flotantes y navegación real de hojas, manual/automático y calendario solo dentro de ampliación. Ancho común de métricas en ambas vistas, separadores de metadatos individuales y cabecera más compacta. Chromium verifica6 escenarios de ventana y4 de bajas, con25 pruebas enfocadas de servidor,214 unitarias y compilación/tipos.
+
+Regresión adicional del mismo cambio:26 pruebas de asignación Meta/selección/categorías aprobadas;51 pruebas de integración en total, sin fallos.

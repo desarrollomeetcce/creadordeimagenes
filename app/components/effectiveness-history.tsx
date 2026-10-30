@@ -35,6 +35,15 @@ type Cell = Record<SheetMetric, number | null> & {
 import type { InventoryLifetimeSummary } from "../../lib/meta-ads/inventory-lifetime-summary";
 type Detail = {
   lifetime: InventoryLifetimeSummary;
+  legacyHistoryUnavailable?: boolean;
+  removals: {
+    id: string;
+    createdAt: string;
+    since: string | null;
+    until: string | null;
+    sales: number | null;
+    salesPartial: boolean;
+  }[];
   name: string;
   tableName: string;
   currency: string;
@@ -282,6 +291,13 @@ export function EffectivenessHistory({
                     Elige un período válido de hasta diez años.
                   </p>
                 )}
+                {data?.legacyHistoryUnavailable && (
+                  <p className="hint">
+                    Hay un retiro de esta hoja registrado. Las fechas y ventas
+                    anteriores fueron borradas por una versión previa y no están
+                    disponibles; no se reconstruyen como cero.
+                  </p>
+                )}
                 {data?.lifetime && (
                   <InventoryLifetimeCounters summary={data.lifetime} />
                 )}
@@ -320,6 +336,36 @@ export function EffectivenessHistory({
                               title="Últimas activaciones"
                               tone="activity"
                             >
+                              {!!data.removals?.length && (
+                                <details className="inventory-sheet-removal-history">
+                                  <summary>
+                                    Retiros de esta hoja ({data.removals.length}
+                                    )
+                                  </summary>
+                                  <ul>
+                                    {data.removals.map((r) => (
+                                      <li key={r.id}>
+                                        <strong>
+                                          Retirado de la hoja el{" "}
+                                          {stamp(r.createdAt)}
+                                        </strong>
+                                        <span>
+                                          Ventas del período{" "}
+                                          {r.since ?? "no registrado"} —{" "}
+                                          {r.until ?? "no registrado"}:{" "}
+                                          {r.sales === null
+                                            ? "Sin datos"
+                                            : r.sales}
+                                          {r.salesPartial && r.sales !== null
+                                            ? " (parcial)"
+                                            : ""}
+                                          . Se conserva el historial.
+                                        </span>
+                                      </li>
+                                    ))}
+                                  </ul>
+                                </details>
+                              )}
                               {data.activePeriods.length ? (
                                 <ol className="alias-active-periods">
                                   {data.activePeriods

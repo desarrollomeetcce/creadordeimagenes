@@ -1,4 +1,5 @@
 "use client";
+import type { FinancialTableWindowMode } from "./financial-table-window";
 import { MetaWorkspaceSharing } from "./meta-workspace-sharing";
 import { useFinancialReadOnly } from "./financial-read-only";
 import { engineRequest as generalApi } from "./generation-engine";
@@ -427,6 +428,8 @@ export function ProductsCatalog() {
     }
   };
   const [view, setView] = useState<"manual" | "automatic">("manual");
+  const [tableWindowMode, setTableWindowMode] =
+    useState<FinancialTableWindowMode>("inline");
   useEffect(() => {
     if (loading || !specialsLoaded || locationReady) return;
     try {
@@ -922,6 +925,15 @@ export function ProductsCatalog() {
           key={table.id}
           inventoryLists={specials.filter((s) => s.kind === "INVENTORY")}
           view={view}
+          onViewChange={setView}
+          tableWindowMode={tableWindowMode}
+          onTableWindowModeChange={setTableWindowMode}
+          onChooseTable={(id) => {
+            setSelected(id);
+            setSpecialId(null);
+            setEditing(null);
+            setMessage("");
+          }}
           advisors={advisors}
           sheetTabs={sheetTabs}
           tables={orderedTables}

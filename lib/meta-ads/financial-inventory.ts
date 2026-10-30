@@ -58,7 +58,9 @@ export async function linkFinancialInventory(
       });
       aliases.push(alias);
       created++;
-    } else if (await setInventoryMembership(tx, listId, [alias.id], false))
+    } else if (
+      await setInventoryMembership(tx, listId, [alias.id], false, false)
+    )
       created++;
     const group = aliases.filter(
       (a) => a.inventorySheetId === listId && a.name === name,

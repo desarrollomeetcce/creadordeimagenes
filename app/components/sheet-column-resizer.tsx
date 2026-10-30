@@ -4,8 +4,10 @@ export function SheetColumnResizer({
   label,
   onResize,
   onReset,
+  description,
 }: {
   label: string;
+  description?: string;
   onResize: (width: number) => void;
   onReset: () => void;
 }) {
@@ -19,7 +21,10 @@ export function SheetColumnResizer({
       type="button"
       className="sheet-column-resizer"
       aria-label={`Cambiar ancho de ${label}`}
-      title="Arrastra para cambiar el ancho. ← → ajustan; doble clic o Inicio restablecen."
+      title={
+        description ??
+        "Arrastra para cambiar el ancho. ← → ajustan; doble clic o Inicio restablecen."
+      }
       onClick={(e) => e.stopPropagation()}
       onDoubleClick={(e) => {
         e.preventDefault();

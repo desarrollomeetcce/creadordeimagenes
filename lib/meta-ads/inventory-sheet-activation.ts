@@ -326,28 +326,73 @@ export async function inventoryActivationAddSheet(
 export async function syncInventoryActivationVisibility(
   tx: Tx,
   targets: { aliasId: string; country: string; active: boolean }[],
+  removed = false,
 ) {
   const aliases = await tx.metaAlias.findMany({
     where: { id: { in: targets.map((t) => t.aliasId) } },
-    select: { id: true, inventorySheet: { select: { config: true } } },
+    select: {
+      id: true,
+      name: true,
+      inventorySheetId: true,
+      categoryAssignments: { select: { categoryId: true } },
+      inventorySheet: { select: { id: true, config: true } },
+    },
   });
-  for (const t of targets) {
-    const a = aliases.find((a) => a.id === t.aliasId);
-    if (!a) continue;
-    const control = activationSettings(a.inventorySheet.config).rows[
-      rowKey(t.aliasId, t.country)
-    ];
-    if (control)
+  const lists = new Map(
+    aliases.map((a) => [a.inventorySheet.id, a.inventorySheet]),
+  );
+  for (const list of lists.values()) {
+    const settings = activationSettings(list.config);
+    const own = aliases.filter((a) => a.inventorySheetId === list.id);
+    for (const t of targets.filter((t) =>
+      own.some((a) => a.id === t.aliasId),
+    )) {
+      const key = rowKey(t.aliasId, t.country),
+        control = settings.rows[key];
+      settings.rows[key] = {
+        ...control,
+        pinned: removed ? false : !t.active ? true : (control?.pinned ?? false),
+        campaignTask: "NONE",
+      };
       await tx.metaEffectivenessRow.updateMany({
         where: { aliasId: t.aliasId, country: t.country },
         data: {
-          hidden:
-            activationSettings(
-              a.inventorySheet.config,
-            ).detachedAliases.includes(t.aliasId) ||
-            (!t.active && !control.pinned),
+          hidden: removed || settings.detachedAliases.includes(t.aliasId),
+          revision: { increment: 1 },
         },
       });
+    }
+    if (removed)
+      for (const a of own) {
+        const item = await tx.metaInventoryItem.upsert({
+          where: { sheetId_name: { sheetId: list.id, name: a.name } },
+          create: { sheetId: list.id, name: a.name },
+          update: {},
+        });
+        if (a.categoryAssignments.length)
+          await tx.metaInventoryItemCategory.createMany({
+            data: a.categoryAssignments.map((c) => ({
+              itemId: item.id,
+              categoryId: c.categoryId,
+            })),
+            skipDuplicates: true,
+          });
+        const visible = await tx.metaEffectivenessRow.count({
+          where: { aliasId: a.id, legacy: false, hidden: false },
+        });
+        if (!visible && !settings.detachedAliases.includes(a.id))
+          settings.detachedAliases.push(a.id);
+      }
+    await tx.metaEffectivenessSheet.update({
+      where: { id: list.id },
+      data: {
+        config: {
+          ...(list.config as Prisma.JsonObject),
+          inventoryActivation: settings as unknown as Prisma.InputJsonValue,
+        },
+        revision: { increment: 1 },
+      },
+    });
   }
 }
 const target = z
@@ -636,6 +681,33 @@ async function activationChange(actor: Actor, input: unknown, sharedTx?: Tx) {
           },
         });
         changed++;
+      }
+    }
+    for (const aliasId of new Set(
+      plans.flatMap((plan) => (plan.alias ? [plan.alias.id] : [])),
+    )) {
+      const visible = await tx.metaEffectivenessRow.count({
+        where: { aliasId, legacy: false, hidden: false },
+      });
+      if (!visible && !settings.detachedAliases.includes(aliasId)) {
+        settings.detachedAliases.push(aliasId);
+        const alias = await tx.metaAlias.findUniqueOrThrow({
+          where: { id: aliasId },
+          include: { categoryAssignments: true },
+        });
+        const item = await tx.metaInventoryItem.upsert({
+          where: { sheetId_name: { sheetId: list.id, name: alias.name } },
+          create: { sheetId: list.id, name: alias.name },
+          update: {},
+        });
+        if (alias.categoryAssignments.length)
+          await tx.metaInventoryItemCategory.createMany({
+            data: alias.categoryAssignments.map((c) => ({
+              itemId: item.id,
+              categoryId: c.categoryId,
+            })),
+            skipDuplicates: true,
+          });
       }
     }
     settings.sheets = [...new Set([...settings.sheets, table.id])];
@@ -952,7 +1024,7 @@ async function activationReport(
       include: {
         effectivenessRows: {
           where: { legacy: false },
-          select: { country: true },
+          select: { country: true, hidden: true },
         },
         effectivenessStates: {
           include: {
@@ -1164,10 +1236,14 @@ async function activationReport(
             complete = current.length > 0 && current.every((h) => h?.complete);
           const campaignTasks = [
             ...new Set(
-              targets.map(
-                (t) =>
-                  settings.rows[rowKey(t.aliasId, t.country)]?.campaignTask ??
-                  "NONE",
+              targets.map((t) =>
+                !states.some((s) => s.country === t.country) &&
+                alias.effectivenessRows.some(
+                  (r) => r.country === t.country && r.hidden,
+                )
+                  ? "NONE"
+                  : (settings.rows[rowKey(t.aliasId, t.country)]
+                      ?.campaignTask ?? "NONE"),
               ),
             ),
           ].filter((task) => task !== "NONE");
@@ -1180,6 +1256,15 @@ async function activationReport(
                 ),
               ),
             ),
+            ...(rows.some(
+              (row) =>
+                !states.some((s) => s.country === row.country) &&
+                alias.effectivenessRows.some(
+                  (r) => r.country === row.country && r.hidden,
+                ),
+            )
+              ? { usage: "UNKNOWN" as const, activationHours: null }
+              : {}),
             country: q.byCountry ? rows[0]?.country : undefined,
             campaignTasks,
             campaignTask:

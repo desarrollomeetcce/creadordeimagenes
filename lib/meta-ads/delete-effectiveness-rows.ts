@@ -1,10 +1,12 @@
 import { createHash } from "node:crypto";
 import type { Prisma } from "@prisma/client";
 import { db } from "../db";
-import {ownerOnly} from "./financial-access";
+import { ownerOnly } from "./financial-access";
 import { demand } from "../errors";
 import { recordActivity } from "../activity";
 import { effectiveness, effectivenessLock } from "./effectiveness";
+import { syncInventoryActivationVisibility } from "./inventory-sheet-activation";
+import { summarizePeriod } from "./period-summary";
 import type { Actor } from "./service";
 type Target = { aliasId: string; country: string };
 type Request = {
@@ -52,17 +54,14 @@ async function reviewRows(
     "El inventario ya no pertenece a esta hoja.",
     409,
   );
-  const visible = new Set(
-    (
-      await effectiveness(
-        actor,
-        request.tableId,
-        request.since,
-        request.until,
-        tx,
-      )
-    ).rows.map(key),
+  const view = await effectiveness(
+    actor,
+    request.tableId,
+    request.since,
+    request.until,
+    tx,
   );
+  const visible = new Set(view.rows.map(key));
   demand(
     targets.every((t) => visible.has(key(t))),
     "Una fila cambió o ya no está disponible. Revisa la selección.",
@@ -99,6 +98,7 @@ async function reviewRows(
     table,
     targets,
     rows,
+    viewRows: view.rows,
     counts,
     token,
     items: targets.map((t) => ({
@@ -140,39 +140,67 @@ export async function deleteEffectivenessRows(
         "Las filas cambiaron desde la revisión. Revisa de nuevo antes de eliminarlas.",
         409,
       );
-      const rowIds = r.rows.map((row) => row.id);
-      await tx.metaAdvisorSalesApproval.deleteMany({
-        where: { rowId: { in: rowIds } },
-      });
-      await tx.metaEffectivenessDay.deleteMany({
-        where: { rowId: { in: rowIds } },
-      });
-      await tx.metaAdvisorAssignment.deleteMany({ where: { OR: r.targets } });
-      await tx.metaEffectivenessState.deleteMany({ where: { OR: r.targets } });
-      if (rowIds.length)
-        await tx.metaEffectivenessRow.updateMany({
-          where: { id: { in: rowIds } },
-          data: { hidden: true, advisorId: null, revision: { increment: 1 } },
+      const dates: string[] = [];
+      for (
+        let at = Date.parse(request.since);
+        at <= Date.parse(request.until);
+        at += 86400000
+      )
+        dates.push(new Date(at).toISOString().slice(0, 10));
+      for (const target of r.targets) {
+        const row = r.viewRows.find(
+          (row) =>
+            row.aliasId === target.aliasId && row.country === target.country,
+        )!;
+        const state = await tx.metaEffectivenessState.upsert({
+          where: { aliasId_country: target },
+          create: { ...target, active: false, revision: 1 },
+          update: { active: false, revision: { increment: 1 } },
         });
-      // Empty hidden identities prevent original Meta facts/default rows from reappearing on the next read.
-      for (const target of r.targets)
+        const sales = summarizePeriod(row.days, dates, "sales");
+        await tx.metaEffectivenessEvent.create({
+          data: {
+            stateId: state.id,
+            active: false,
+            actorId: actor.id,
+            snapshot: {
+              reason: "ROW_REMOVED_FROM_SHEET",
+              priorActive: row.active,
+              since: request.since,
+              until: request.until,
+              sales: sales.total,
+              salesPartial: sales.partial,
+              tableId: request.tableId,
+            },
+          },
+        });
         await tx.metaEffectivenessRow.upsert({
           where: { aliasId_country_currency: { ...target, currency: "" } },
           create: {
             ...target,
             currency: "",
-            displayCurrency: r.table.defaultCurrency,
+            displayCurrency: row.currency || r.table.defaultCurrency,
             hidden: true,
             revision: 1,
           },
-          update: { hidden: true, advisorId: null },
+          update: { hidden: true, revision: { increment: 1 } },
         });
+      }
+      await syncInventoryActivationVisibility(
+        tx,
+        r.targets.map((t) => ({ ...t, active: false })),
+        true,
+      );
       await recordActivity(tx, {
         data: {
           actorId: actor.id,
           action: "META_EFECTIVIDAD_FILAS_ELIMINADAS",
           resourceId: r.table.id,
-          detail: { targets: r.targets, counts: r.counts },
+          detail: {
+            targets: r.targets,
+            counts: r.counts,
+            preservedHistory: true,
+          },
         },
       });
       return { ok: true, removed: r.targets.length };

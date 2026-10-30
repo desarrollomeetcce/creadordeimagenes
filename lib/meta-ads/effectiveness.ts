@@ -346,7 +346,7 @@ async function readEffectiveness(
         timezones: [],
         active:
           states.find((s) => s.aliasId === a && s.country === p)?.active ??
-          true,
+          !stored.some((s) => s.aliasId === a && s.country === p && s.hidden),
         stateRevision:
           states.find((s) => s.aliasId === a && s.country === p)?.revision ?? 0,
         lastStateChange:
@@ -1279,6 +1279,20 @@ export async function importEffectiveness(
           }
         }
       }
+      const inactive = await tx.metaEffectivenessState.findMany({
+        where: {
+          active: false,
+          OR: imported.map((r) => ({ aliasId: r.aliasId, country: r.country })),
+        },
+        select: { aliasId: true, country: true },
+      });
+      if (inactive.length)
+        await (
+          await import("./inventory-sheet-activation")
+        ).syncInventoryActivationVisibility(
+          tx,
+          inactive.map((t) => ({ ...t, active: false })),
+        );
       await recordActivity(tx, {
         data: {
           actorId: actor.id,

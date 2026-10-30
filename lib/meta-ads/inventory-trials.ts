@@ -1,4 +1,7 @@
-import { detachedInventoryAliases } from "./inventory-membership";
+import {
+  detachedInventoryAliases,
+  physicallyHiddenInventoryAliases,
+} from "./inventory-membership";
 import { z } from "zod";
 import { randomUUID, createHash } from "node:crypto";
 import type { Prisma } from "@prisma/client";
@@ -220,7 +223,13 @@ async function catalog(
     where: { id: listId },
     select: { config: true },
   });
-  const detached = new Set(detachedInventoryAliases(list.config));
+  const detached = new Set([
+    ...detachedInventoryAliases(list.config),
+    ...(await physicallyHiddenInventoryAliases(
+      tx,
+      aliases.map((a) => a.id),
+    )),
+  ]);
   const out = new Map<string, TrialItem>();
   for (const alias of aliases) {
     const k = categoryKey(alias.name),

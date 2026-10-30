@@ -249,7 +249,13 @@ export async function effectivenessHistory(
   const state = await db.metaEffectivenessState.findUnique({
     where: { aliasId_country: { aliasId, country } },
   });
-  if (!state) return { active: true, events: [], next: null };
+  if (!state) {
+    const row = await db.metaEffectivenessRow.findFirst({
+      where: { aliasId, country, legacy: false },
+      select: { hidden: true },
+    });
+    return { active: !row?.hidden, events: [], next: null };
+  }
   if (cursor)
     demand(
       await db.metaEffectivenessEvent.findFirst({

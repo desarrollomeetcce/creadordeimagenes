@@ -13,6 +13,7 @@ export async function setInventoryMembership(
   listId: string,
   ids: string[],
   detached: boolean,
+  restoreRows = true,
 ) {
   const list = await tx.metaEffectivenessSheet.findUniqueOrThrow({
     where: { id: listId },
@@ -29,19 +30,54 @@ export async function setInventoryMembership(
   const config = list.config as Prisma.JsonObject;
   const activation = config.inventoryActivation as
     Prisma.JsonObject | undefined;
+  const controls = { ...((activation?.rows as Prisma.JsonObject) ?? {}) };
+  if (!detached && restoreRows) {
+    const inactive = await tx.metaEffectivenessState.findMany({
+      where: { aliasId: { in: ids }, active: false },
+      select: { aliasId: true, country: true },
+    });
+    for (const row of inactive) {
+      const key = row.aliasId + "|" + row.country;
+      controls[key] = {
+        ...((controls[key] as Prisma.JsonObject) ?? {}),
+        pinned: true,
+        campaignTask: "NONE",
+      };
+    }
+  }
   await tx.metaEffectivenessSheet.update({
     where: { id: listId },
     data: {
       config: {
         ...config,
-        inventoryActivation: { ...activation, detachedAliases: [...current] },
+        inventoryActivation: {
+          ...activation,
+          rows: controls,
+          detachedAliases: [...current],
+        },
       },
       revision: { increment: 1 },
     },
   });
-  await tx.metaEffectivenessRow.updateMany({
-    where: { aliasId: { in: ids }, alias: { inventorySheetId: listId } },
-    data: { hidden: detached, revision: { increment: 1 } },
-  });
+  if (detached || restoreRows)
+    await tx.metaEffectivenessRow.updateMany({
+      where: { aliasId: { in: ids }, alias: { inventorySheetId: listId } },
+      data: { hidden: detached, revision: { increment: 1 } },
+    });
   return true;
+}
+
+/** Existing hidden financial identities are not current sheet membership, even in older configs. */
+export async function physicallyHiddenInventoryAliases(
+  tx: Pick<Prisma.TransactionClient, "metaEffectivenessRow">,
+  ids: string[],
+) {
+  if (!ids.length) return [];
+  const rows = await tx.metaEffectivenessRow.findMany({
+    where: { aliasId: { in: ids }, legacy: false },
+    select: { aliasId: true, hidden: true },
+  });
+  const known = new Set(rows.map((r) => r.aliasId)),
+    visible = new Set(rows.filter((r) => !r.hidden).map((r) => r.aliasId));
+  return [...known].filter((id) => !visible.has(id));
 }

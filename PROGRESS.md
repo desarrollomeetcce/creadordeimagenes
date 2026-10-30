@@ -2051,3 +2051,13 @@ Asignar inventario de Meta amplía264→360px, admite redimensionar desde esquin
 MovableWindows compartido en layout habilita arrastre desde cabecera de diálogos/popovers nativos con título: Meta, grupos/Top, detalle nativo, observaciones/historial, cabeceras de instrucciones/biblioteca/vista/editor de imagen y panel modal de marca. Lista/calendario/menús y paneles inline quedan fuera; no arrastra desde botones/campos/labels ni controles de ordenar/redimensionar. Puntero capturado con umbral y límites de viewport; cabecera accesible con Alt+flechas, ajuste al cambiar viewport y ResizeObserver limitado a cada ventana abierta. Se recupera colocación normal al cerrar/reabrir o maximizar/restaurar. Limpieza de listeners/observadores/atributos al cerrar/desmontar, sin observer de tablas, sin persistir posiciones ni tocar datos/permisos.
 
 214 unitarias,typecheck/build correctos. Ocho comprobaciones Chromium reales: ancho mayor y arrastre con selección preservada/cero escrituras; esquina redimensionada con mouse; campaña fija mientras formulario scroll; límites y teclado; ajuste móvil; único guardado explícito después de mover/redimensionar; grupo en otra sección con maximizar/restaurar; detalle financiero completo movible y reapertura normal con contadores intactos. Capturas escritorio/móvil inspeccionadas, cero erroresJS. Fixture propia exclusiva eliminada. No cambios de servidor ni llamadas Meta/IA/SMTP.
+
+## 30/10/2026 · Tabla ampliable y bajas con historial
+
+Maximizar tabla dentro de Inventario abre el mismo contenido completo en ventana nativa: restaurar/minimizar/cerrar, arrastrar y redimensionar. Solo ampliada incluye vistas manual/automática, calendario y navegación horizontal de hojas. Arrastrar una subcolumna cambia todas las métricas/fechas y conserva ancho entre ambas vistas; cabecera compactada.
+
+Eliminar filas de hoja ahora desactiva y oculta sin borrar métricas diarias, ventas, asesores ni activaciones. Desactivar en hoja mantiene fila y pin; desfijar apagado retira membresía actual si no hay otros países visibles. Reañadir reutiliza identidad/historia. Detalle registra retiros y ventas conocidas del período revisado. Antiguos retiros destructivos se señalan como datos no disponibles; no hay recuperación inventada.
+
+Validación: compilación y tipos correctos,214 pruebas unitarias,25 pruebas enfocadas de baja/activación; Chromium6 comprobaciones de ventana/métricas y4 de apagado/pin/desfijar/reincorporar/eliminar/filtro histórico/detalle con ventas conservadas. Sin llamadas a Meta ni proveedores.
+
+Regresión adicional del mismo cambio:26 pruebas de asignación Meta/selección/categorías aprobadas;51 pruebas de integración en total, sin fallos.

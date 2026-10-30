@@ -3,6 +3,11 @@ import {
   SheetHorizontalNavigation,
   horizontalSheetKey,
 } from "./sheet-horizontal-navigation";
+import {
+  FinancialTableWindow,
+  FinancialTableWindowControls,
+  type FinancialTableWindowMode,
+} from "./financial-table-window";
 import { SheetSalesDetail } from "./sheet-sales-detail";
 import { SheetDataFillBadge } from "./sheet-data-fill-badge";
 import {
@@ -172,6 +177,10 @@ export function MetaEffectiveness({
   onNamesChanged,
   settings,
   view,
+  onViewChange,
+  onChooseTable,
+  tableWindowMode,
+  onTableWindowModeChange,
   tables,
   sheetTabs,
   advisors,
@@ -194,6 +203,10 @@ export function MetaEffectiveness({
     aliases: { id: string; name: string; inventorySheetId?: string }[];
   }[];
   view: "manual" | "automatic";
+  onViewChange: (view: "manual" | "automatic") => void;
+  onChooseTable: (id: string) => void;
+  tableWindowMode: FinancialTableWindowMode;
+  onTableWindowModeChange: (mode: FinancialTableWindowMode) => void;
   tableId: string;
   settings: Settings;
   aliases: { id: string; name: string }[];
@@ -1150,6 +1163,68 @@ export function MetaEffectiveness({
         ? " ↑"
         : " ↓"
       : " ↕";
+  const chooseReportRange = (a: string, b: string) => {
+    if (
+      !a ||
+      !b ||
+      a > b ||
+      (Date.parse(b) - Date.parse(a)) / 86400000 >= 3660
+    ) {
+      setMessage("Elige un período válido de hasta diez años.");
+      return;
+    }
+    setHistoryPeriod(null);
+    const window = activePeriodWindow(a, b);
+    setReportRange(window.next ? { since: a, until: b } : null);
+    setSince(window.since);
+    setUntil(window.until);
+  };
+  const expandedToolbar = (
+    <div className="financial-table-window-toolbar">
+      <div
+        className="financial-table-window-views"
+        role="group"
+        aria-label="Vista de tabla ampliada"
+      >
+        <button
+          type="button"
+          aria-pressed={view === "manual"}
+          onClick={() => onViewChange("manual")}
+        >
+          Vista manual
+        </button>
+        <button
+          type="button"
+          aria-pressed={view === "automatic"}
+          onClick={() => onViewChange("automatic")}
+        >
+          Vista automática
+        </button>
+      </div>
+      <MetaDateRange
+        maxDays={3660}
+        from={reportRange?.since ?? since}
+        to={reportRange?.until ?? until}
+        onChange={chooseReportRange}
+      />
+      <nav
+        className="financial-table-window-sheets"
+        aria-label="Hojas de tabla ampliada"
+      >
+        <span>Hojas:</span>
+        {tables.map((t) => (
+          <button
+            type="button"
+            key={t.id}
+            aria-current={t.id === tableId ? "page" : undefined}
+            onClick={() => onChooseTable(t.id)}
+          >
+            {t.name}
+          </button>
+        ))}
+      </nav>
+    </div>
+  );
   return (
     <section
       className="effectiveness sheet-view financial-sheet-view"
@@ -1172,6 +1247,7 @@ export function MetaEffectiveness({
           selection={rowDeletion}
           onClose={() => setRowDeletion(null)}
           onDeleted={async () => {
+            await onNamesChanged();
             const keys = new Set(rowDeletion.targets.map(activationKey));
             temporaryCategories.forget([...keys]);
             setSelectedPairs((old) => old.filter((k) => !keys.has(k)));
@@ -1294,22 +1370,7 @@ export function MetaEffectiveness({
             maxDays={3660}
             from={reportRange?.since ?? since}
             to={reportRange?.until ?? until}
-            onChange={(a, b) => {
-              if (
-                !a ||
-                !b ||
-                a > b ||
-                (Date.parse(b) - Date.parse(a)) / 86400000 >= 3660
-              ) {
-                setMessage("Elige un período válido de hasta diez años.");
-                return;
-              }
-              setHistoryPeriod(null);
-              const window = activePeriodWindow(a, b);
-              setReportRange(window.next ? { since: a, until: b } : null);
-              setSince(window.since);
-              setUntil(window.until);
-            }}
+            onChange={chooseReportRange}
           />
           <span className="sheet-filter-label">Filtros:</span>
           <label>
@@ -1782,7 +1843,13 @@ export function MetaEffectiveness({
       )}
       {sheetTabs}
       {valid && (
-        <>
+        <FinancialTableWindow
+          title={sheetName}
+          scrollRef={horizontalScroll}
+          mode={tableWindowMode}
+          onModeChange={onTableWindowModeChange}
+          toolbar={expandedToolbar}
+        >
           <div
             ref={horizontalScroll}
             className="table-scroll effectiveness-scroll sheet-scroll"
@@ -1802,7 +1869,7 @@ export function MetaEffectiveness({
                   ...(columnWidths.currency
                     ? { "--sheet-currency-width": `${columnWidths.currency}px` }
                     : {}),
-                  "--sheet-metrics-width": `${days.reduce((sum, day) => sum + visibleMetrics.reduce((n, m) => n + (columnWidths[day + m.key] ?? 36), 0), 0)}px`,
+                  "--sheet-metrics-width": `${days.reduce((sum, day) => sum + visibleMetrics.reduce((n, m) => n + (columnWidths.metric ?? columnWidths[day + m.key] ?? 36), 0), 0)}px`,
                 } as CSSProperties
               }
             >
@@ -1832,7 +1899,12 @@ export function MetaEffectiveness({
                       key={day + metric.key}
                       data-column-key={day + metric.key}
                       className="sheet-metric-col"
-                      style={{ width: columnWidths[day + metric.key] ?? 36 }}
+                      style={{
+                        width:
+                          columnWidths.metric ??
+                          columnWidths[day + metric.key] ??
+                          36,
+                      }}
                     />
                   )),
                 )}
@@ -1844,6 +1916,7 @@ export function MetaEffectiveness({
                     rowSpan={visibleMetrics.length ? 2 : 1}
                     scope="col"
                     className="effectiveness-name"
+                    data-table-window-handle
                     hidden={!metadataVisible.includes("alias")}
                     aria-sort={
                       activeSort.kind === "text" && activeSort.field === "alias"
@@ -1854,6 +1927,7 @@ export function MetaEffectiveness({
                     }
                   >
                     {metadataControls("alias", "Inventario")}
+                    <FinancialTableWindowControls />
                     <div className="sheet-alias-heading">
                       <input
                         type="checkbox"
@@ -2274,8 +2348,9 @@ export function MetaEffectiveness({
                           />
                           <SheetColumnResizer
                             label={`${m.name} ${d}`}
-                            onResize={(w) => resizeColumn(d + m.key, w)}
-                            onReset={() => resizeColumn(d + m.key)}
+                            description="Arrastra para ajustar todos los parámetros y fechas, en vista manual y automática. Doble clic restablece todos."
+                            onResize={(w) => resizeColumn("metric", w)}
+                            onReset={() => resizeColumn("metric", 36)}
                           />
                         </th>
                       )),
@@ -2909,7 +2984,7 @@ export function MetaEffectiveness({
             </table>
           </div>
           <SheetHorizontalNavigation target={horizontalScroll} />
-        </>
+        </FinancialTableWindow>
       )}
       {sheetSalesDetailOpen && (
         <SheetSalesDetail

@@ -1849,3 +1849,9 @@ Evidencia:214 unitarias,23 integración activación/lote y12 Meta/asignación/hi
 ## 2026-10-30 · Arrastrar ventanas desde su cabecera
 
 214 unitarias,typecheck/build.8verificaciones Chromium: Meta360px arrastrable sin perder lista/tabla/inventario/país; resize real desde esquina; cabecera fija al desplazar formulario; clamp y Alt+flecha; móvil; unPATCH explícito tras mover con campos conservados; grupos conservan maximizar/restaurar; detalle completo de otra pestaña se mueve y reabre centrado. Capturas inspeccionadas y cero erroresJS. Selectores/menús se excluyen y no cambian permisos/datos. Fixture exclusiva retirada; ninguna llamada facturable.
+
+### Tabla ampliada y retiro financiero conservador (30/10/2026)
+
+`tests/financial-row-retirement.integration.test.ts` usa exclusivamente library_organization_test sobre /workspace/work/pgdata. Verifica token obsoleto/rollback, retiro PE preservando EC, días/ventas/eventos, estados/Top/pin y membresía, reincorporación sin duplicar y datos históricos ausentes de versiones antiguas. Ejecutado junto a inventory-sheet-activation:25 pruebas aprobadas. Chromium real:6 verificaciones ventana nativa/DOM único/ancho común/vistas/cambio hojas/resize/cierre/sin escrituras y4 recorrido financiero→Inventario→desfijar→reincorporar→retirar→detalle histórico.214 unitarias, typecheck y build aprobados. Evidencia local /workspace/work/table-window-browser.txt y /workspace/work/retirement-browser.txt.
+
+Regresión adicional del mismo cambio:26 pruebas de asignación Meta/selección/categorías aprobadas;51 pruebas de integración en total, sin fallos.

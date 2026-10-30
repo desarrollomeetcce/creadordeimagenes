@@ -183,8 +183,60 @@ export async function effectivenessDetail(
         })),
         rates: new Map(rates.map((r) => [r.day, r.rates as FxRates])),
       });
+      const legacyRemoval = !state
+        ? await tx.auditEvent.findFirst({
+            where: {
+              action: "META_EFECTIVIDAD_FILAS_ELIMINADAS",
+              resourceId: alias.tableId,
+              detail: {
+                path: ["targets"],
+                array_contains: [{ aliasId: alias.id, country: b.country }],
+              },
+            },
+            orderBy: { createdAt: "desc" },
+            select: { id: true, createdAt: true, detail: true },
+          })
+        : null;
+      const legacyHistoryUnavailable =
+        !!legacyRemoval &&
+        !(legacyRemoval.detail as Record<string, unknown>)?.preservedHistory;
       return {
         lifetime,
+        legacyHistoryUnavailable,
+        removals: legacyHistoryUnavailable
+          ? [
+              {
+                id: legacyRemoval.id,
+                createdAt: legacyRemoval.createdAt.toISOString(),
+                since: null,
+                until: null,
+                sales: null,
+                salesPartial: true,
+              },
+            ]
+          : fullEvents
+              .filter(
+                (e) =>
+                  (e.snapshot as Record<string, unknown>)?.reason ===
+                  "ROW_REMOVED_FROM_SHEET",
+              )
+              .slice(-100)
+              .reverse()
+              .map((e) => {
+                const snap = e.snapshot as Record<string, unknown>;
+                return {
+                  id: e.id,
+                  createdAt: e.createdAt.toISOString(),
+                  since: typeof snap.since === "string" ? snap.since : null,
+                  until: typeof snap.until === "string" ? snap.until : null,
+                  sales:
+                    typeof snap.sales === "number" &&
+                    Number.isFinite(snap.sales)
+                      ? snap.sales
+                      : null,
+                  salesPartial: snap.salesPartial !== false,
+                };
+              }),
         aliasId: alias.id,
         name: alias.name,
         tableId: alias.tableId,

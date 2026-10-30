@@ -38,6 +38,7 @@ import { accountWhere, type Actor } from "./service";
 import { isCurrency } from "./currency-codes";
 import {
   detachedInventoryAliases,
+  physicallyHiddenInventoryAliases,
   setInventoryMembership,
 } from "./inventory-membership";
 import { categoryKey } from "./category-paste";
@@ -227,9 +228,13 @@ async function withInventoryMembership<
     where: { id: { in: [...new Set(rows.map((a) => a.inventorySheetId))] } },
     select: { id: true, config: true },
   });
-  const detached = new Set(
-    lists.flatMap((list) => detachedInventoryAliases(list.config)),
-  );
+  const detached = new Set([
+    ...lists.flatMap((list) => detachedInventoryAliases(list.config)),
+    ...(await physicallyHiddenInventoryAliases(
+      db,
+      rows.map((r) => r.id),
+    )),
+  ]);
   return rows.map((row) => ({
     ...row,
     ...(detached.has(row.id) ? { detached: true } : {}),
@@ -437,6 +442,7 @@ export async function assignAliases(
           alias.inventorySheetId,
           [alias.id],
           false,
+          false,
         )
       )
         alias = await tx.metaAlias.findUniqueOrThrow({
@@ -516,7 +522,7 @@ export async function assignAliases(
         ).assignMetaInitialAdvisor(tx, actor, aliasId, country, advisorId);
       const next = {
         ...control,
-        pinned: control?.pinned ?? false,
+        pinned: active ? (control?.pinned ?? false) : true,
         campaignTask:
           control?.campaignTask === "STOP"
             ? ("STOP" as const)

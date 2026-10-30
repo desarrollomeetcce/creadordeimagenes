@@ -1,4 +1,7 @@
-import { detachedInventoryAliases } from "./inventory-membership";
+import {
+  detachedInventoryAliases,
+  physicallyHiddenInventoryAliases,
+} from "./inventory-membership";
 import type { Prisma } from "@prisma/client";
 import { db } from "../db";
 import { ownerOnly } from "./financial-access";
@@ -165,7 +168,13 @@ async function fullGroups(
     where: { id: listId },
     select: { config: true },
   });
-  const detached = new Set(detachedInventoryAliases(list.config));
+  const detached = new Set([
+    ...detachedInventoryAliases(list.config),
+    ...(await physicallyHiddenInventoryAliases(
+      tx,
+      allAliases.map((a) => a.id),
+    )),
+  ]);
   const all = [...allAliases.filter((a) => !detached.has(a.id)), ...allItems];
   demand(
     all.every((a) => ids.includes(a.id)),

@@ -26,7 +26,9 @@ export function MovableWindows() {
     } | null = null;
     const isOpen = (el: HTMLElement) =>
       el.matches("dialog[open], [popover]:popover-open") &&
-      !el.matches(".expandable-panel.inline");
+      !el.matches(
+        ".expandable-panel.inline, .financial-table-window[data-table-window-mode=inline]",
+      );
     const isExpanded = (el: HTMLElement) =>
       el.dataset.expanded === "true" ||
       el.matches(".fullscreen,.is-fullscreen");
@@ -112,14 +114,14 @@ export function MovableWindows() {
         return;
       // Menus/search lists/calendar dropdowns have no window header and remain ordinary controls.
       const header = el.querySelector<HTMLElement>(
-        ":scope > header, :scope > .detail-sticky-header, .detail-sticky-header, :scope > h2, :scope > form > header, .image-preview-bar, .editor-window-bar, .attachment-library-header, .instruction-editor-heading, .expandable-panel-bar",
+        ":scope > header, :scope > .detail-sticky-header, [data-table-window-handle], .detail-sticky-header, :scope > h2, :scope > form > header, .image-preview-bar, .editor-window-bar, .attachment-library-header, .instruction-editor-heading, .expandable-panel-bar",
       );
       if (!header) {
         if (retry < 3) requestAnimationFrame(() => prepare(el, retry + 1));
         return;
       }
       const observer = new ResizeObserver(() => {
-        if (!el.isConnected) remove(el);
+        if (!el.isConnected || !isOpen(el)) remove(el);
         else fit(el);
       });
       windows.set(el, {
@@ -149,7 +151,10 @@ export function MovableWindows() {
         remove(el);
         return;
       }
-      requestAnimationFrame(() => prepare(el));
+      requestAnimationFrame(() => {
+        if (!isOpen(el)) remove(el);
+        else prepare(el);
+      });
     };
     const pointerDown = (event: PointerEvent) => {
       if (event.button !== 0 || event.ctrlKey || event.metaKey) return;
@@ -158,7 +163,7 @@ export function MovableWindows() {
       const popup = target.closest<HTMLElement>(
         "dialog[open], [popover]:popover-open",
       );
-      if (!popup || isExpanded(popup)) return;
+      if (!popup || !isOpen(popup) || isExpanded(popup)) return;
       prepare(popup);
       const state = windows.get(popup);
       if (
@@ -208,7 +213,7 @@ export function MovableWindows() {
       const popup = header.closest<HTMLElement>(
         "dialog[open], [popover]:popover-open",
       );
-      if (!popup || isExpanded(popup)) return;
+      if (!popup || !isOpen(popup) || isExpanded(popup)) return;
       event.preventDefault();
       const r = popup.getBoundingClientRect(),
         step = event.shiftKey ? 50 : 20;
@@ -234,7 +239,7 @@ export function MovableWindows() {
       const button = target.closest("button");
       if (!button) return;
       if (
-        button.matches(".detail-expand-button") ||
+        button.matches(".detail-expand-button,[data-window-size-control]") ||
         /Maximizar|Restaurar|Ampliar|Pantalla completa|Reducir ventana|Volver a la página|Abrir ventana amplia/.test(
           button.textContent ?? "",
         )

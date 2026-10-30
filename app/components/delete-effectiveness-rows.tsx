@@ -98,7 +98,8 @@ export function DeleteEffectivenessRows({
           {selection.targets.length === 1 ? "fila" : "filas"}
           {review ? ` de «${review.table.name}»` : ""}
         </h2>
-        <button className="ui-close-button"
+        <button
+          className="ui-close-button"
           type="button"
           aria-label="Cerrar revisión de filas"
           disabled={busy}
@@ -111,12 +112,12 @@ export function DeleteEffectivenessRows({
       {review && (
         <>
           <p>
-            Se quitarán estas filas de esta hoja, incluidos sus valores manuales
-            y repartos de ventas de todas las fechas.
+            Se quitarán estas filas de la hoja y quedarán desactivadas, fuera
+            del Top. Sus ventas, métricas, asesores e historial se conservarán.
           </p>
           <p>
-            Los productos del inventario, las otras hojas, la asistencia y horas
-            de los asesores y los datos originales de Meta se conservan.
+            El diplomado seguirá en el inventario. Las otras hojas, los otros
+            países y las campañas reales de Meta no cambian.
           </p>
           <ul className="effectiveness-delete-list">
             {review.items.map((item) => (
@@ -131,13 +132,18 @@ export function DeleteEffectivenessRows({
           </p>
           <small>
             Puedes volver a añadir el producto desde el selector de inventario.
-            Los valores manuales eliminados no se recuperan al añadirlo.
+            Se reutilizarán los mismos datos y el mismo historial, sin duplicar.
           </small>
         </>
       )}
       {error && <p role="alert">{error}</p>}
       <footer className="row">
-        <button className={committed ? "ui-close-button" : undefined} type="button" disabled={busy} onClick={onClose}>
+        <button
+          className={committed ? "ui-close-button" : undefined}
+          type="button"
+          disabled={busy}
+          onClick={onClose}
+        >
           {committed ? "Cerrar" : "Cancelar"}
         </button>
         {error && !committed && (
