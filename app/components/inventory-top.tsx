@@ -44,7 +44,7 @@ export function InventoryTop({
   initialColumn?: string;
   initialReplaceName?: string;
   onChanged: () => Promise<void>;
-  onDetail: (column: string, name: string) => void;
+  onDetail: (column: string, name: string, aliasId: string) => void;
   onBusyChange?: (busy: boolean) => void;
 }) {
   const [column, setColumn] = useState(
@@ -137,7 +137,7 @@ export function InventoryTop({
     }
   }
   async function change(p: SheetPoint, change: InventoryCampaignChange) {
-    if (change.active === false && p.activation !== "INACTIVE" && !p.pinned) {
+    if (change.active === false && p.activation !== "INACTIVE") {
       setConfirm({ point: p, change, column });
       return;
     }
@@ -490,8 +490,11 @@ export function InventoryTop({
                         </button>
                         <button
                           type="button"
-                          title="Ver períodos de activación y resultados"
-                          onClick={() => onDetail(column, item.name)}
+                          title="Ver estadísticas, ventas e historial del diplomado"
+                          disabled={!p.targets[0]?.aliasId}
+                          onClick={() =>
+                            onDetail(column, item.name, p.targets[0].aliasId)
+                          }
                         >
                           Ver detalle ↗
                         </button>
@@ -499,6 +502,7 @@ export function InventoryTop({
                           target="_blank"
                           rel="noopener noreferrer"
                           href={periodTableUrl({
+                            focus: true,
                             tableId: column.split(":")[0],
                             aliasId: p.targets[0]?.aliasId ?? "",
                             country: column.split(":")[1],
@@ -545,9 +549,9 @@ export function InventoryTop({
           }
           onClose={() => setConfirm(null)}
           onConfirm={async (pin) => {
-            await saveChange(
+            return saveChange(
               confirm.point,
-              { ...confirm.change, ...(pin ? { pinned: true } : {}) },
+              { ...confirm.change, pinned: pin },
               confirm.column,
             );
           }}

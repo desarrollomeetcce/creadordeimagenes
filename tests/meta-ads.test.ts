@@ -889,3 +889,38 @@ test("Vista por asesor repite categorías dentro de cada persona sin duplicar fi
  assert.deepEqual(groups.map(g=>g.name),["Donays","Jesús","Sin asesor"]);assert.deepEqual(groups[0].bands[0].names,["Educación"]);assert.equal(groups[0].bands[0].rows.length,1);assert.deepEqual(groups[1].bands[0].names,["Educación"]);assert.equal(groups[1].bands[0].rows.length,2);assert.equal(groups.flatMap(g=>g.rows).length,4);assert.equal(JSON.stringify(rows),before);
  const filtered=groupFinancialRowsByAdvisor(rows.slice(0,2),entries,{},[{id:"jesus",name:"Jesús"},{id:"donays",name:"Donays"}]);assert.equal(filtered.flatMap(g=>g.rows).length,2);
 });
+
+test('sheet analysis sorts sales both ways with missing data last and retains stable ties', async () => {
+ const {sortSheetSalesProducts, emptySales} = await import('../lib/meta-ads/sheet-sales-summary');
+ const product = (name:string, value:number|null) => ({aliasId:name,name,countries:['PE'],active:true,sales:{...emptySales,value},days:{},advisors:[]});
+ const rows=[product('Sin dato',null),product('Dos',2),product('Cero',0),product('Dos B',2)];
+ assert.deepEqual(sortSheetSalesProducts(rows,'sales',true,2).map(p=>p.name),['Cero','Dos','Dos B','Sin dato']);
+ assert.deepEqual(sortSheetSalesProducts(rows,'sales',false,2).map(p=>p.name),['Dos','Dos B','Cero','Sin dato']);
+ assert.equal(rows[0].name,'Sin dato');
+});
+test('Top full-sheet link focuses an item without changing legacy filtered period links', async () => {
+ const {periodTableUrl,parsePeriodTableLink}=await import('../lib/meta-ads/period-table-link');
+ const link={tableId:'table',aliasId:'item',country:'PE',since:'2026-10-20',until:'2026-10-30',focus:true};
+ assert.deepEqual(parsePeriodTableLink(new URL(periodTableUrl(link),'https://example.test').searchParams),link);
+ const {focus,...legacy}=link;
+ assert.deepEqual(parsePeriodTableLink(new URL(periodTableUrl(legacy),'https://example.test').searchParams),legacy);
+});
+
+test('country usage counts closed and open activation periods and distinguishes short trials from unknown starts', async()=>{
+ const {inventoryUsage}=await import('../lib/meta-ads/inventory-usage');
+ const since='2026-10-29T00:00:00Z', now=Date.parse('2026-10-30T00:00:00Z');
+ assert.deepEqual(inventoryUsage([],now),{usage:'NEVER',activationHours:0});
+ assert.deepEqual(inventoryUsage([{since,until:'2026-10-29T01:00:00Z'}],now),{usage:'TEST',activationHours:1});
+ assert.deepEqual(inventoryUsage([{since,until:null}],now),{usage:'USED',activationHours:24});
+ assert.deepEqual(inventoryUsage([{since,until:'2026-10-29T12:00:00Z'}],now),{usage:'USED',activationHours:12});
+ assert.deepEqual(inventoryUsage([{since:null,until:null}],now),{usage:'UNKNOWN',activationHours:null});
+ assert.equal(inventoryUsage([{since,until:'2026-10-29T07:00:00Z'},{since:'2026-10-29T10:00:00Z',until:'2026-10-29T16:00:00Z'}],now).activationHours,13);
+});
+test('country header order keeps missing FX last, active first and recorded pending activity before unused items',async()=>{
+ const {compareInventoryEvaluation:compare}=await import('../lib/meta-ads/inventory-evaluation-order');
+ const point=(activation:string,usage:string,fx:number|null,status:string)=>({activation,usage,assessment:{usage:fx,status}});
+ const active=point('ACTIVE','USED',1.2,'CRITICAL'),off=point('INACTIVE','USED',0.2,'WITHIN'),pending=point('INACTIVE','TEST',null,'PENDING'),unused=point('INACTIVE','NEVER',null,'PENDING');
+ assert(compare(active,off,'activation',false)<0);assert(compare(active,off,'activation',true)>0);
+ assert(compare(active,off,'factor',false)<0);assert(compare(pending,active,'factor',true)>0);
+ assert(compare(pending,unused,'status',false)<0);assert(compare(pending,undefined,'status',true)<0);
+});

@@ -267,6 +267,8 @@ test("Activación por hoja: selección, pin, historial y permisos", async (t) =>
         let r = (await report()).rows.find((r) => r.name === names[0])!;
         assert.equal(r.budget, 30);
         assert.equal(r.sales, 0);
+        assert.equal(r.usage, "USED");
+        assert(r.activationHours !== null && r.activationHours >= 12);
         assert.equal(r.assessment.usage, 1.2);
         assert.equal(r.assessment.status, "CRITICAL");
         await change(names[0], { pinned: true });

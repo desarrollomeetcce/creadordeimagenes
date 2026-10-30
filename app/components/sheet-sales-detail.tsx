@@ -1,4 +1,7 @@
 "use client";
+import { EffectivenessHistory } from "./effectiveness-history";
+import { InventorySheetReplacement } from "./inventory-sheet-replacement";
+import { countryName } from "../../lib/meta-ads/countries";
 import { matchesSearchWords } from "../../lib/search";
 import {
   useEffect,
@@ -15,6 +18,8 @@ import {
 } from "../../lib/meta-ads/totals-product-summary";
 import {
   sheetSalesProducts,
+  sortSheetSalesProducts,
+  type SheetSalesSort,
   sheetSalesStatus,
   sumSalesAdvisors,
   emptySales,
@@ -56,12 +61,14 @@ const statusNames: Record<string, string> = {
 };
 export function SheetSalesDetail({
   tableId,
+  inventoryAliases = [],
   name,
   initialSince,
   initialUntil,
   onClose,
 }: {
   tableId: string;
+  inventoryAliases?: { id: string; inventorySheetId?: string }[];
   name: string;
   initialSince: string;
   initialUntil: string;
@@ -80,8 +87,41 @@ export function SheetSalesDetail({
     [query, setQuery] = useState(""),
     [status, setStatus] = useState("all"),
     [threshold, setThreshold] = useState(2),
-    [ascending, setAscending] = useState(false),
+    [ascending, setAscending] = useState(true),
+    [sortKey, setSortKey] = useState<SheetSalesSort>("sales"),
     [page, setPage] = useState(0);
+  const [detail, setDetail] = useState<{
+    aliasId: string;
+    name: string;
+    country: string;
+  } | null>(null);
+  const [replacement, setReplacement] = useState<{
+    listId: string;
+    name: string;
+    country: string;
+  } | null>(null);
+  const sortHeader = (key: SheetSalesSort, label: string) => (
+    <th
+      aria-sort={
+        sortKey === key ? (ascending ? "ascending" : "descending") : "none"
+      }
+    >
+      <button
+        type="button"
+        className="sheet-sales-sort"
+        onClick={() => {
+          setSortKey(key);
+          setAscending(sortKey === key ? !ascending : true);
+          setPage(0);
+        }}
+      >
+        {label}{" "}
+        <span aria-hidden="true">
+          {sortKey === key ? (ascending ? "↑" : "↓") : "↕"}
+        </span>
+      </button>
+    </th>
+  );
   const [loadedQuery, setLoadedQuery] = useState("");
   const rangeQuery = JSON.stringify([tableId, since, until]);
   const loading = fetching || (!error && loadedQuery !== rangeQuery);
@@ -187,20 +227,19 @@ export function SheetSalesDetail({
     ),
     chosen = products.find((p) => p.aliasId === selected),
     focus = chosen ? [chosen] : products;
-  const filtered = products
-      .filter(
+  const filtered = sortSheetSalesProducts(
+      products.filter(
         (p) =>
           (status === "all" ||
             (status === "selling"
               ? (p.sales.value ?? 0) > 0
               : sheetSalesStatus(p, threshold) === status)) &&
           matchesSearchWords(p.name, query),
-      )
-      .sort((a, b) =>
-        ascending
-          ? (a.sales.value ?? Infinity) - (b.sales.value ?? Infinity)
-          : 0,
       ),
+      sortKey,
+      ascending,
+      threshold,
+    ),
     currentPage = Math.min(
       page,
       Math.max(0, Math.ceil(filtered.length / 50) - 1),
@@ -440,8 +479,9 @@ export function SheetSalesDetail({
                           </label>
                           <button
                             type="button"
-                            aria-pressed={ascending}
+                            aria-pressed={sortKey === "sales" && ascending}
                             onClick={() => {
+                              setSortKey("sales");
                               setAscending((v) => !v);
                               setPage(0);
                             }}
@@ -459,12 +499,12 @@ export function SheetSalesDetail({
                           <table>
                             <thead>
                               <tr>
-                                <th>Diplomado</th>
-                                <th>País</th>
-                                <th>Ventas (V)</th>
-                                <th>Resultado del período</th>
-                                <th>Estado actual</th>
-                                <th>Quiénes vendieron</th>
+                                {sortHeader("name", "Diplomado")}
+                                {sortHeader("country", "País")}
+                                {sortHeader("sales", "Ventas (V)")}
+                                {sortHeader("result", "Resultado del período")}
+                                {sortHeader("active", "Estado actual")}
+                                {sortHeader("advisors", "Quiénes vendieron")}
                                 <th>Detalle</th>
                               </tr>
                             </thead>
@@ -521,6 +561,50 @@ export function SheetSalesDetail({
                                     >
                                       Ver evolución
                                     </button>
+                                    {p.countries.filter(Boolean).map((code) => (
+                                      <span
+                                        key={code}
+                                        className="sheet-diploma-actions"
+                                      >
+                                        <button
+                                          type="button"
+                                          onClick={() =>
+                                            setDetail({
+                                              aliasId: p.aliasId,
+                                              name: p.name,
+                                              country: code,
+                                            })
+                                          }
+                                        >
+                                          Ver detalle
+                                          {p.countries.length > 1
+                                            ? " · " + countryName(code)
+                                            : ""}
+                                        </button>
+                                        {inventoryAliases.find(
+                                          (a) => a.id === p.aliasId,
+                                        )?.inventorySheetId && (
+                                          <button
+                                            type="button"
+                                            className="inventory-top-replace-trigger"
+                                            onClick={() =>
+                                              setReplacement({
+                                                listId: inventoryAliases.find(
+                                                  (a) => a.id === p.aliasId,
+                                                )!.inventorySheetId!,
+                                                name: p.name,
+                                                country: code,
+                                              })
+                                            }
+                                          >
+                                            ↔ Reemplazar
+                                            {p.countries.length > 1
+                                              ? " · " + countryName(code)
+                                              : ""}
+                                          </button>
+                                        )}
+                                      </span>
+                                    ))}
                                   </td>
                                 </tr>
                               ))}
@@ -803,6 +887,30 @@ export function SheetSalesDetail({
                   );
                 })()}
               </>
+            )}
+            {detail && (
+              <EffectivenessHistory
+                {...detail}
+                tableId={tableId}
+                initialSince={since}
+                initialUntil={until}
+                autoOpen
+                onPeriod={() => {}}
+                onClose={() => setDetail(null)}
+              />
+            )}
+            {replacement && (
+              <InventorySheetReplacement
+                {...replacement}
+                tableId={tableId}
+                sheetName={name}
+                since={since}
+                until={until}
+                onClose={() => setReplacement(null)}
+                onChanged={async () => {
+                  setReload((v) => v + 1);
+                }}
+              />
             )}
           </dialog>
         )}

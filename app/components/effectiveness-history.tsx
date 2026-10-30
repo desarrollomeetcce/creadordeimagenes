@@ -50,6 +50,8 @@ export function EffectivenessHistory({
   initialSince,
   initialUntil,
   onPeriod,
+  autoOpen = false,
+  onClose,
 }: {
   aliasId: string;
   tableId: string;
@@ -58,6 +60,8 @@ export function EffectivenessHistory({
   initialSince: string;
   initialUntil: string;
   onPeriod: (period: ActivePeriod) => void;
+  autoOpen?: boolean;
+  onClose?: () => void;
 }) {
   const id = useId(),
     pop = useRef<HTMLDivElement>(null);
@@ -73,6 +77,9 @@ export function EffectivenessHistory({
     [reload, setReload] = useState(0),
     [expanded, setExpanded] = useState(false);
   const [loadedQuery, setLoadedQuery] = useState("");
+  useEffect(() => {
+    if (autoOpen) pop.current?.showPopover();
+  }, [autoOpen]);
   const query =
       "meta-ads/effectiveness/detail?" +
       new URLSearchParams({ aliasId, country, since, until }),
@@ -149,22 +156,24 @@ export function EffectivenessHistory({
   }));
   return (
     <DetailSections>
-      <button
-        type="button"
-        className="sheet-history-trigger"
-        aria-label={`Detalle de ${name} ${country || "sin país"}`}
-        disabled={!country}
-        title="Ver estados por fecha y evolución de parámetros"
-        popoverTarget={id}
-        onClick={() => {
-          setSince(initialSince);
-          setUntil(initialUntil);
-          setPage(0);
-          setExpanded(false);
-        }}
-      >
-        ⓘ
-      </button>
+      {!autoOpen && (
+        <button
+          type="button"
+          className="sheet-history-trigger"
+          aria-label={`Detalle de ${name} ${country || "sin país"}`}
+          disabled={!country}
+          title="Ver estados por fecha y evolución de parámetros"
+          popoverTarget={id}
+          onClick={() => {
+            setSince(initialSince);
+            setUntil(initialUntil);
+            setPage(0);
+            setExpanded(false);
+          }}
+        >
+          ⓘ
+        </button>
+      )}
       <div
         id={id}
         ref={pop}
@@ -176,6 +185,7 @@ export function EffectivenessHistory({
         onToggle={(e) => {
           setOpen(e.newState === "open");
           if (e.newState === "open") e.currentTarget.scrollTop = 0;
+          else if (e.oldState === "open") onClose?.();
         }}
       >
         {open && (

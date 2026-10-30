@@ -5,6 +5,7 @@ export type PeriodTableLink = {
   country: string;
   since: string;
   until: string;
+  focus?: boolean;
 };
 export function periodTableUrl(period: PeriodTableLink) {
   return (
@@ -16,6 +17,7 @@ export function periodTableUrl(period: PeriodTableLink) {
       periodCountry: period.country,
       periodSince: period.since,
       periodUntil: period.until,
+      ...(period.focus ? { periodFocus: "1" } : {}),
     })
   );
 }
@@ -42,5 +44,12 @@ export function parsePeriodTableLink(
     (Date.parse(until) - Date.parse(since)) / 86400000 >= 3660
   )
     return null;
-  return { tableId, aliasId, country, since, until };
+  return {
+    tableId,
+    aliasId,
+    country,
+    since,
+    until,
+    ...(params.get("periodFocus") === "1" ? { focus: true } : {}),
+  };
 }

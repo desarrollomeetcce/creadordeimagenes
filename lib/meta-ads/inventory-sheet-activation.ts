@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { inventoryUsage } from "./inventory-usage";
 import type { Prisma } from "@prisma/client";
 import { db } from "../db";
 import { demand } from "../errors";
@@ -1016,6 +1017,14 @@ async function activationReport(
             ),
           ].filter((task) => task !== "NONE");
           output.push({
+            ...inventoryUsage(
+              rows.flatMap((row) =>
+                periods(
+                  states.find((s) => s.country === row.country)?.events ?? [],
+                  row.active,
+                ),
+              ),
+            ),
             country: q.byCountry ? rows[0]?.country : undefined,
             campaignTasks,
             campaignTask:

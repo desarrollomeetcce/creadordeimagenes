@@ -1,4 +1,5 @@
 "use client";
+import { compareInventoryEvaluation } from "../../lib/meta-ads/inventory-evaluation-order";
 import {
   InventoryColumnVisibility,
   inventoryParameters,
@@ -21,6 +22,8 @@ import type { InventoryCampaignChange } from "./inventory-campaign-control";
 import { InventoryTop, inventoryTopPriority } from "./inventory-top";
 import { InventoryFactorSettings } from "./inventory-factor-settings";
 import { InventorySheetHistory } from "./inventory-sheet-history";
+import { EffectivenessHistory } from "./effectiveness-history";
+import { limaToday } from "./date-range";
 import { InventoryAddEvaluationSheet } from "./inventory-add-evaluation-sheet";
 import { countryName } from "../../lib/meta-ads/countries";
 import type { InventorySheetActivationDirectory } from "../../lib/meta-ads/inventory-sheet-activation";
@@ -344,6 +347,12 @@ export function InventoryCatalog({
     names: string[];
     items: InventoryActivationSelection;
   } | null>(null);
+  const [fullDetail, setFullDetail] = useState<{
+    tableId: string;
+    country: string;
+    aliasId: string;
+    name: string;
+  } | null>(null);
   const [activationHistory, setActivationHistory] = useState<{
     tableId: string;
     name: string;
@@ -434,11 +443,67 @@ export function InventoryCatalog({
     visibleCountryMetrics(campaignFilterSheet).length
       ? campaignFilter
       : "";
+  const [countrySort, setCountrySort] = useState<{
+    country: string;
+    metric: "activation" | "factor" | "status";
+    ascending: boolean;
+  } | null>(null);
+  const activeCountrySort =
+    countrySort &&
+    countryCodes.includes(countrySort.country) &&
+    visibleCountryMetrics(countrySort.country).some(
+      (m) => m.key === countrySort.metric,
+    )
+      ? countrySort
+      : null;
+  const countrySortButton = (
+    country: string,
+    metric: (typeof inventoryCountryMetrics)[number],
+  ) => {
+    const chosen =
+      activeCountrySort?.country === country &&
+      activeCountrySort.metric === metric.key;
+    return (
+      <button
+        type="button"
+        className="inventory-country-sort"
+        aria-label={`Ordenar por ${metric.label} en ${sheetLabel(country)}`}
+        title={
+          chosen
+            ? activeCountrySort.ascending
+              ? "Quitar orden"
+              : "Cambiar a menor primero"
+            : "Ordenar de mayor a menor"
+        }
+        onClick={() =>
+          setCountrySort(
+            chosen
+              ? activeCountrySort.ascending
+                ? null
+                : { ...activeCountrySort, ascending: true }
+              : { country, metric: metric.key, ascending: false },
+          )
+        }
+      >
+        {metric.label}{" "}
+        <span aria-hidden="true">
+          {chosen ? (activeCountrySort.ascending ? "↑" : "↓") : "↕"}
+        </span>
+      </button>
+    );
+  };
   const campaignMatches = (name: string) => {
     if (!activeCampaignFilter) return true;
     const point = countryEvaluation.lookup.get(
       JSON.stringify([categoryKey(name), campaignFilterSheet]),
     );
+    if (["NEVER", "TEST", "USED", "UNKNOWN"].includes(activeCampaignFilter))
+      return (
+        countryEvaluation.ready &&
+        (point?.usage ?? "NEVER") === activeCampaignFilter
+      );
+    if (activeCampaignFilter === "HISTORY")
+      return countryEvaluation.ready && !!point && point.usage !== "NEVER";
     if (activeCampaignFilter === "ACTIVE")
       return point?.activation === "ACTIVE" || point?.activation === "MIXED";
     if (activeCampaignFilter === "INACTIVE")
@@ -852,6 +917,8 @@ export function InventoryCatalog({
   const clearFilters = () => {
     selectCategories([]);
     setGroupFilter("");
+    setCampaignFilter("");
+    setCountrySort(null);
   };
   const matchesCategory = (g: (typeof available)[number]) =>
     !activeCategories.length ||
@@ -1024,6 +1091,35 @@ export function InventoryCatalog({
       );
     }
   } else sections.push(...baseSections);
+  if (activeCountrySort) {
+    const { country, metric, ascending } = activeCountrySort;
+    const ordered = [...visible].sort(
+      (a, b) =>
+        compareInventoryEvaluation(
+          countryEvaluation.lookup.get(
+            JSON.stringify([categoryKey(a.name), country]),
+          ),
+          countryEvaluation.lookup.get(
+            JSON.stringify([categoryKey(b.name), country]),
+          ),
+          metric,
+          ascending,
+        ) || a.name.localeCompare(b.name, "es"),
+    );
+    sections.splice(0, sections.length, [
+      "country-sort",
+      {
+        title:
+          sheetLabel(country) +
+          " · " +
+          (inventoryCountryMetrics.find((m) => m.key === metric)?.label ??
+            "Orden") +
+          (ascending ? " ↑" : " ↓"),
+        groups: ordered,
+        accent: "blue",
+      },
+    ]);
+  }
   const bandCategorySelector = (section: {
     title: string;
     groups: typeof visible;
@@ -1452,7 +1548,7 @@ export function InventoryCatalog({
         const row = countryEvaluation.lookup.get(
           JSON.stringify([categoryKey(name), tableId]),
         );
-        return row && row.activation !== "INACTIVE" && !row.pinned;
+        return row && row.activation !== "INACTIVE";
       })
     ) {
       setDeactivationPrompt({ tableId, names: [...names], items });
@@ -1616,25 +1712,49 @@ export function InventoryCatalog({
             })
           }
           topContent={
-            <InventoryTop
-              onBusyChange={setBusy}
-              directory={trialDirectory}
-              columns={knownCountries
-                .filter((id) => id.includes(":"))
-                .map((id) => ({ value: id, label: sheetLabel(id) }))}
-              initialColumn={groupEditor.column ?? topSheet ?? countryCodes[0]}
-              initialReplaceName={groupEditor.replaceName}
-              onChanged={async () => {
-                setCountryReload((value) => value + 1);
-                await reloadGroups();
-                await onChanged();
-                await reloadCategories();
-                await reloadSheetDirectory();
-              }}
-              onDetail={(tableId, name) =>
-                setActivationHistory({ tableId, name })
-              }
-            />
+            <>
+              <InventoryTop
+                onBusyChange={setBusy}
+                directory={trialDirectory}
+                columns={knownCountries
+                  .filter((id) => id.includes(":"))
+                  .map((id) => ({ value: id, label: sheetLabel(id) }))}
+                initialColumn={
+                  groupEditor.column ?? topSheet ?? countryCodes[0]
+                }
+                initialReplaceName={groupEditor.replaceName}
+                onChanged={async () => {
+                  setCountryReload((value) => value + 1);
+                  await reloadGroups();
+                  await onChanged();
+                  await reloadCategories();
+                  await reloadSheetDirectory();
+                }}
+                onDetail={(column, name, aliasId) =>
+                  setFullDetail({
+                    tableId: column.split(":")[0],
+                    country: column.split(":")[1],
+                    name,
+                    aliasId,
+                  })
+                }
+              />
+              {fullDetail && (
+                <EffectivenessHistory
+                  key={fullDetail.aliasId + ":" + fullDetail.country}
+                  {...fullDetail}
+                  autoOpen
+                  initialSince={new Date(
+                    Date.parse(limaToday()) - 10 * 86400000,
+                  )
+                    .toISOString()
+                    .slice(0, 10)}
+                  initialUntil={limaToday()}
+                  onPeriod={() => {}}
+                  onClose={() => setFullDetail(null)}
+                />
+              )}
+            </>
           }
           directory={trialDirectory}
           group={trialGroups.find((g) => g.id === groupEditor.id)}
@@ -1698,7 +1818,7 @@ export function InventoryCatalog({
             await changeSheetActivation(
               deactivationPrompt.tableId,
               deactivationPrompt.names,
-              { active: false, ...(pin ? { pinned: true } : {}) },
+              { active: false, pinned: pin },
               deactivationPrompt.items,
             );
           }}
@@ -2549,6 +2669,11 @@ export function InventoryCatalog({
                     <option value="CREATE">Por hacer campaña</option>
                     <option value="STOP">Por desactivar campaña</option>
                     <option value="INACTIVE">Desactivados</option>
+                    <option value="HISTORY">Con historial de activación</option>
+                    <option value="NEVER">Nunca activados</option>
+                    <option value="TEST">Pruebas · menos de 12 h</option>
+                    <option value="USED">Usados · 12 h o más</option>
+                    <option value="UNKNOWN">Tiempo no registrado</option>
                   </select>
                 </th>
               ))}
@@ -2575,12 +2700,25 @@ export function InventoryCatalog({
                       key={country + ":" + metric.key}
                       data-country-block={country}
                       data-country-metric={metric.key}
+                      aria-sort={
+                        activeCountrySort?.country === country &&
+                        activeCountrySort.metric === metric.key
+                          ? activeCountrySort.ascending
+                            ? "ascending"
+                            : "descending"
+                          : "none"
+                      }
                     >
-                      {columnHandle(
-                        `country:${country}:${metric.key}`,
-                        sheetLabel(country) + " · " + metric.label,
-                      )}
-                      <span>{metric.label}</span>
+                      <SheetColumnResizer
+                        label={sheetLabel(country) + " · " + metric.label}
+                        onResize={(v) =>
+                          resize(`country:${country}:${metric.key}`, v)
+                        }
+                        onReset={() =>
+                          resize(`country:${country}:${metric.key}`)
+                        }
+                      />
+                      {countrySortButton(country, metric)}
                       {metric.key === "activation" && (
                         <span className="inventory-sheet-bulk-controls">
                           <button

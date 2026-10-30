@@ -15,6 +15,52 @@ export type SheetSalesProduct = {
   days: Record<string, { sales: TotalValue; advisors: ProductAdvisor[] }>;
   advisors: ProductAdvisor[];
 };
+export type SheetSalesSort =
+  "name" | "country" | "sales" | "result" | "active" | "advisors";
+/** Missing sales always sort last; ties use the displayed name, never a fabricated zero. */
+export function sortSheetSalesProducts(
+  products: SheetSalesProduct[],
+  key: SheetSalesSort,
+  ascending: boolean,
+  threshold: number,
+) {
+  return [...products].sort((a, b) => {
+    const value = (p: SheetSalesProduct): string | number | null => {
+      switch (key) {
+        case "name":
+          return p.name;
+        case "country":
+          return p.countries.join(", ");
+        case "sales":
+          return p.sales.value;
+        case "result":
+          return p.sales.value === null
+            ? null
+            : { zero: 0, low: 1, selling: 2, unknown: 3 }[
+                sheetSalesStatus(p, threshold)
+              ];
+        case "active":
+          return Number(p.active);
+        case "advisors":
+          return p.advisors
+            .filter((v) => v.sales !== null && !v.na && v.sales > 0)
+            .map((v) => v.name)
+            .join(", ");
+      }
+    };
+    const x = value(a),
+      y = value(b);
+    if (x === null || y === null)
+      return x === y ? a.name.localeCompare(b.name, "es") : x === null ? 1 : -1;
+    const compared =
+      typeof x === "number" && typeof y === "number"
+        ? x - y
+        : String(x).localeCompare(String(y), "es");
+    return (
+      (ascending ? compared : -compared) || a.name.localeCompare(b.name, "es")
+    );
+  });
+}
 export const emptySales: TotalValue = {
   value: null,
   known: 0,

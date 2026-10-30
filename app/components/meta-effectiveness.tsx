@@ -429,12 +429,23 @@ export function MetaEffectiveness({
     setReportRange(w.next ? { since: p.since, until: p.until } : null);
     setSince(w.since);
     setUntil(w.until);
-    setCountry(p.country);
-    setSelectedAliases(p.aliasId ? [p.aliasId] : null);
+    setCountry(p.focus ? "" : p.country);
+    setSelectedAliases(!p.focus && p.aliasId ? [p.aliasId] : null);
     setStateFilter("");
     setValueFilter(null);
     setSelectedMetrics(null);
   }, [initialPeriodLink, tableId]);
+  useEffect(() => {
+    const p = initialPeriodLink;
+    if (!p?.focus || p.tableId !== tableId || !data) return;
+    const frame = requestAnimationFrame(() => {
+      const row = document.querySelector<HTMLElement>(
+        `.effectiveness-grid tr[data-alias-id=${JSON.stringify(p.aliasId)}][data-country=${JSON.stringify(p.country)}]`,
+      );
+      row?.scrollIntoView({ block: "center", inline: "nearest" });
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [initialPeriodLink, tableId, data]);
   const [grouping, setGrouping] = useWorkbookPreference<
     "inventory" | "advisor"
   >(tableId, "financialGrouping", "inventory");
@@ -2142,9 +2153,7 @@ export function MetaEffectiveness({
                     Estado {metadataControls("evaluation", "Estado")}
                     <SheetColumnResizer
                       label="Estado"
-                      onResize={(width) =>
-                        resizeColumn("evaluation", width)
-                      }
+                      onResize={(width) => resizeColumn("evaluation", width)}
                       onReset={() => resizeColumn("evaluation")}
                     />
                   </th>
@@ -2344,6 +2353,12 @@ export function MetaEffectiveness({
                         data-country={r.country}
                         data-currency={r.currency}
                         data-active={r.active}
+                        data-sheet-focus={
+                          (initialPeriodLink?.focus &&
+                            initialPeriodLink.aliasId === r.aliasId &&
+                            initialPeriodLink.country === r.country) ||
+                          undefined
+                        }
                       >
                         <td
                           className="effectiveness-name"
@@ -2845,6 +2860,7 @@ export function MetaEffectiveness({
       )}
       {sheetSalesDetailOpen && (
         <SheetSalesDetail
+          inventoryAliases={tables.find((t) => t.id === tableId)?.aliases ?? []}
           tableId={tableId}
           name={sheetName}
           initialSince={since}

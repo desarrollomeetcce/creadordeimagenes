@@ -12,11 +12,12 @@ export function InventoryDeactivationConfirm({
 }: {
   names: string[];
   sheetName: string;
-  onConfirm: (pin: boolean) => Promise<void>;
+  onConfirm: (pin: boolean) => Promise<void | boolean>;
   onClose: () => void;
 }) {
   const dialog = useRef<HTMLDialogElement>(null),
-    [busy, setBusy] = useState(false);
+    [busy, setBusy] = useState(false),
+    [error, setError] = useState("");
   useEffect(() => {
     dialog.current?.showModal();
   }, []);
@@ -24,8 +25,14 @@ export function InventoryDeactivationConfirm({
     if (busy) return;
     setBusy(true);
     try {
-      await onConfirm(pin);
-      onClose();
+      setError("");
+      if ((await onConfirm(pin)) !== false) onClose();
+    } catch (e) {
+      setError(
+        e instanceof Error
+          ? e.message
+          : "No se pudo desactivar. Actualiza y revisa su estado.",
+      );
     } finally {
       setBusy(false);
     }
@@ -60,6 +67,7 @@ export function InventoryDeactivationConfirm({
         conservan.
       </small>
       <footer>
+        {error && <p role="alert">{error}</p>}
         <button
           type="button"
           className="inventory-picker-add"
