@@ -63,6 +63,15 @@ export const trialChange = z.discriminatedUnion("action", [
       rules,
     })
     .strict(),
+  z
+    .object({
+      ...edit,
+      action: z.literal("MEMBERS"),
+      name: z.string().trim().min(1).max(100).optional(),
+      itemIds: z.array(id).max(100),
+      since: day,
+    })
+    .strict(),
   z.object({ ...edit, action: z.literal("RULES"), rules }).strict(),
   z
     .object({
@@ -298,6 +307,34 @@ export async function inventoryTrials(actor: Actor, input: unknown) {
     { timeout: 30000 },
   );
 }
+async function exclusiveMembers(
+  tx: Prisma.TransactionClient,
+  listId: string,
+  items: TrialItem[],
+  except?: string,
+) {
+  const others = await tx.metaInventoryTrialGroup.findMany({
+    where: {
+      sheetId: listId,
+      archivedAt: null,
+      ...(except ? { id: { not: except } } : {}),
+    },
+    select: { name: true, payload: true },
+  });
+  for (const other of others) {
+    const members = (other.payload as unknown as TrialPayload).members;
+    const conflict = items.find((i) =>
+      members.some(
+        (m) => m.itemId === i.id || categoryKey(m.name) === categoryKey(i.name),
+      ),
+    );
+    demand(
+      !conflict,
+      `«${conflict?.name}» ya pertenece a «${other.name}». Retíralo de ese grupo antes de asignarlo a otro.`,
+      409,
+    );
+  }
+}
 export async function saveInventoryTrial(actor: Actor, input: unknown) {
   const b = trialChange.parse(input);
   return db.$transaction(
@@ -342,6 +379,7 @@ export async function saveInventoryTrial(actor: Actor, input: unknown) {
           "Un diplomado cambió. Actualiza la selección.",
           409,
         );
+        await exclusiveMembers(tx, b.listId, chosen as TrialItem[]);
         if (b.diverse) {
           const used = new Set<string>();
           for (const i of chosen) {
@@ -410,6 +448,57 @@ export async function saveInventoryTrial(actor: Actor, input: unknown) {
         409,
       );
       const p = g.payload as unknown as TrialPayload;
+      if (b.action === "MEMBERS") {
+        dateCheck(b.since);
+        demand(
+          new Set(b.itemIds).size === b.itemIds.length,
+          "No repitas diplomados.",
+        );
+        const source = await catalog(tx, b.listId);
+        const chosen = b.itemIds.map((id) => source.find((i) => i.id === id));
+        demand(
+          chosen.every(Boolean),
+          "Un diplomado cambió. Actualiza la selección.",
+          409,
+        );
+        await exclusiveMembers(tx, b.listId, chosen as TrialItem[], g.id);
+        const next = [];
+        for (const candidate of chosen) {
+          const item = await canonical(tx, b.listId, candidate!);
+          const old = p.members.find((m) => m.itemId === item.id);
+          if (old) next.push({ ...old, name: item.name });
+          else {
+            const member = {
+              slotId: randomUUID(),
+              itemId: item.id,
+              name: item.name,
+            };
+            next.push(member);
+            if (!p.reserve)
+              for (const country of p.countries)
+                p.cycles.push({
+                  id: randomUUID(),
+                  ...member,
+                  country,
+                  since: b.since,
+                  until: null,
+                  pauses: [],
+                  decision: "AUTO",
+                });
+          }
+        }
+        const kept = new Set(next.map((m) => m.slotId));
+        for (const c of p.cycles)
+          if (!c.until && !kept.has(c.slotId)) {
+            demand(
+              b.since >= c.since,
+              "La fecha no puede preceder al ciclo retirado.",
+              409,
+            );
+            c.until = b.since === c.since ? b.since : shift(b.since, -1);
+          }
+        p.members = next;
+      }
       if (b.action === "RULES") p.rules = b.rules;
       if (b.action === "COUNTRIES") {
         dateCheck(b.since);
@@ -577,7 +666,9 @@ export async function saveInventoryTrial(actor: Actor, input: unknown) {
         data: {
           payload: json(p),
           revision: { increment: 1 },
-          ...(b.action === "RENAME" ? { name: b.name } : {}),
+          ...((b.action === "RENAME" || b.action === "MEMBERS") && b.name
+            ? { name: b.name }
+            : {}),
           ...(b.action === "ARCHIVE" ? { archivedAt: new Date() } : {}),
         },
       });
@@ -620,6 +711,7 @@ export async function inventoryTrialReport(actor: Actor, input: unknown) {
             group.cycles
               .filter(
                 (c) =>
+                  group.members.some((m) => m.slotId === c.slotId) &&
                   group.countries.includes(c.country) &&
                   c.since <= until &&
                   (!c.until || c.until >= until),

@@ -1,4 +1,5 @@
 import test from "node:test";
+import type { TrialCycle } from "../lib/meta-ads/inventory-trial-policy";
 import { Prisma } from "@prisma/client";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
@@ -244,7 +245,13 @@ test("Grupos de inventario: reglas, países, propuestas, reemplazos e aislamient
       "Reintentar el alta no duplica grupos ni cambia la selección guardada",
       async () => {
         const requestId = randomUUID(),
-          b = { ...base, name: "Idempotente", requestId, reserve: true };
+          b = {
+            ...base,
+            itemIds: [items[2].id],
+            name: "Idempotente",
+            requestId,
+            reserve: true,
+          };
         const a = await saveInventoryTrial(actor, b),
           again = await saveInventoryTrial(actor, b);
         assert.equal(a.id, again.id);
@@ -256,6 +263,12 @@ test("Grupos de inventario: reglas, países, propuestas, reemplazos e aislamient
           saveInventoryTrial(actor, { ...b, name: "Otra selección" }),
           409,
         );
+        await saveInventoryTrial(actor, {
+          action: "ARCHIVE",
+          listId: list.id,
+          groupId: a.id,
+          revision: a.revision,
+        });
       },
     );
     await t.test(
@@ -667,6 +680,108 @@ test("Grupos de inventario: reglas, países, propuestas, reemplazos e aislamient
       },
     );
     await t.test(
+      "Pertenencia exclusiva y edición atómica conservan ciclos, otros países y revisión",
+      async () => {
+        const editItem = await db.metaInventoryItem.create({
+          data: { sheetId: list.id, name: "Edición " + tag },
+        });
+        await fail(
+          saveInventoryTrial(actor, { ...base, name: "Duplicado" }),
+          409,
+        );
+        const another = await saveInventoryTrial(actor, {
+          ...base,
+          name: "Otro",
+          itemIds: [items[3].id],
+        });
+        const before = structuredClone(group);
+        await fail(
+          saveInventoryTrial(actor, {
+            action: "MEMBERS",
+            listId: list.id,
+            groupId: group.id,
+            revision: group.revision,
+            itemIds: [items[0].id, items[3].id],
+            since: today,
+          }),
+          409,
+        );
+        assert.equal(
+          (await inventoryTrials(actor, { listId: list.id })).groups.find(
+            (g) => g.id === group.id,
+          )!.revision,
+          group.revision,
+        );
+        await fail(
+          saveInventoryTrial(actor, {
+            action: "MEMBERS",
+            listId: list.id,
+            groupId: group.id,
+            revision: group.revision,
+            itemIds: [ownOther.id],
+            since: today,
+          }),
+          409,
+        );
+        group = await saveInventoryTrial(actor, {
+          action: "MEMBERS",
+          listId: list.id,
+          groupId: group.id,
+          revision: group.revision,
+          itemIds: [items[0].id, editItem.id],
+          since: today,
+        });
+        assert.deepEqual(
+          group.cycles.filter(
+            (c: TrialCycle) => c.slotId === before.members[0].slotId,
+          ),
+          before.cycles,
+        );
+        assert.equal(group.members.length, 2);
+        assert.equal(
+          group.cycles.filter(
+            (c: TrialCycle) => c.itemId === editItem.id && !c.until,
+          ).length,
+          2,
+        );
+        await fail(
+          saveInventoryTrial(actor, {
+            action: "MEMBERS",
+            listId: list.id,
+            groupId: group.id,
+            revision: before.revision,
+            itemIds: [],
+            since: today,
+          }),
+          409,
+        );
+        group = await saveInventoryTrial(actor, {
+          action: "MEMBERS",
+          listId: list.id,
+          groupId: group.id,
+          revision: group.revision,
+          itemIds: [items[0].id],
+          since: today,
+        });
+        assert(
+          group.cycles
+            .filter((c: TrialCycle) => c.itemId === editItem.id)
+            .every((c: TrialCycle) => c.until),
+        );
+        const report = await inventoryTrialReport(actor, {
+          listId: list.id,
+          groupId: group.id,
+        });
+        assert(report.rows.every((r) => r.slotId === group.members[0].slotId));
+        await saveInventoryTrial(actor, {
+          action: "ARCHIVE",
+          listId: list.id,
+          groupId: another.id,
+          revision: another.revision,
+        });
+      },
+    );
+    await t.test(
       "Países nuevos, reglas y archivo se guardan sin tocar datos financieros",
       async () => {
         group = await saveInventoryTrial(actor, {
@@ -729,7 +844,11 @@ test("Grupos de inventario: reglas, países, propuestas, reemplazos e aislamient
           base,
           "TAB:" + list.id,
         );
-        await saveInventoryTrial(editActor, { ...base, name: "Editor" });
+        await saveInventoryTrial(editActor, {
+          ...base,
+          itemIds: [items[3].id],
+          name: "Editor",
+        });
         await fail(
           saveInventoryTrial(editActor, {
             ...base,

@@ -3,6 +3,11 @@ import {
   InventoryColumnVisibility,
   inventoryParameters,
 } from "./inventory-column-visibility";
+import {
+  InventoryGroupEditor,
+  InventoryGroupSelect,
+} from "./inventory-group-editor";
+import type { TrialDirectory } from "../../lib/meta-ads/inventory-trials";
 import dynamic from "next/dynamic";
 const InventoryTrials = dynamic(
   () => import("./inventory-trials").then((m) => m.InventoryTrials),
@@ -115,10 +120,61 @@ export function InventoryCatalog({
   onChanged: () => Promise<void>;
   onOpenInventory?: (id: string) => void;
 }) {
-  const [catalogView, setCatalogView] = useWorkbookPreference<string>(
+  const [trialDirectory, setTrialDirectory] = useState<TrialDirectory | null>(
+    null,
+  );
+  const [groupEditor, setGroupEditor] = useState<{
+    id?: string;
+    names: string[];
+  } | null>(null);
+  const [evaluation, setEvaluation] = useState<string | null>(null);
+  const [groupFilter, setGroupFilter] = useState("");
+  const [groupOrder, setGroupOrder] = useWorkbookPreference<string>(
     listId,
-    "catalog-view",
-    "inventory",
+    "group-order",
+    "",
+  );
+  const evaluationDialog = useRef<HTMLDialogElement>(null);
+  async function reloadGroups() {
+    const data: TrialDirectory = await api(
+      "meta-ads/inventory/trials?" + new URLSearchParams({ listId }),
+    );
+    setTrialDirectory(data);
+  }
+  useEffect(() => {
+    let active = true;
+    setTrialDirectory(null);
+    setGroupFilter("");
+    setGroupEditor(null);
+    setEvaluation(null);
+    void api("meta-ads/inventory/trials?" + new URLSearchParams({ listId }))
+      .then((d: TrialDirectory) => {
+        if (active) setTrialDirectory(d);
+      })
+      .catch((e) => {
+        if (active) setMessage(e.message);
+      });
+    return () => {
+      active = false;
+    };
+  }, [listId]);
+  useEffect(() => {
+    if (evaluation) evaluationDialog.current?.showModal();
+  }, [evaluation]);
+  const trialGroups = trialDirectory?.groups ?? [];
+  const trialItemsById = new Map(
+    trialDirectory?.catalog.map((i) => [i.id, i]) ?? [],
+  );
+  const trialGroupByName = new Map(
+    trialGroups.flatMap((g) =>
+      g.members.map(
+        (m) =>
+          [
+            categoryKey(trialItemsById.get(m.itemId)?.name ?? m.name),
+            g,
+          ] as const,
+      ),
+    ),
   );
   const categoryDrag = useRef<{
       name: string;
@@ -203,6 +259,24 @@ export function InventoryCatalog({
     "visibleParameters",
     inventoryParameters.map((p) => p.key),
   );
+  const [groupColumnIntroduced, setGroupColumnIntroduced] =
+    useWorkbookPreference<string>(listId, "group-column-introduced", "");
+  useEffect(() => {
+    if (!groupColumnIntroduced) {
+      if (parameterChoice.length && !parameterChoice.includes("group"))
+        setParameterChoice(
+          parameterChoice.length === 1 && parameterChoice[0] === "advisors"
+            ? inventoryParameters.map((p) => p.key)
+            : [...parameterChoice, "group"],
+        );
+      setGroupColumnIntroduced("yes");
+    }
+  }, [
+    groupColumnIntroduced,
+    parameterChoice,
+    setParameterChoice,
+    setGroupColumnIntroduced,
+  ]);
   const visibleChoices =
     parameterChoice.length === 1 && parameterChoice[0] === "advisors"
       ? inventoryParameters.map((p) => p.key)
@@ -218,6 +292,7 @@ export function InventoryCatalog({
     { key: "primary", label: "Categoría principal", width: 174 },
     { key: "secondary", label: "Categorías secundarias", width: 202 },
     { key: "sheets", label: "Hojas", width: 380 },
+    { key: "group", label: "Grupo", width: 230 },
     { key: "gap", label: "", width: 22 },
     { key: "syllabi", label: "Temarios", width: 285 },
   ].filter((c) =>
@@ -539,7 +614,10 @@ export function InventoryCatalog({
     setCatalogCategory("");
     setCatalogCategories(names);
   };
-  const clearFilters = () => selectCategories([]);
+  const clearFilters = () => {
+    selectCategories([]);
+    setGroupFilter("");
+  };
   const matchesCategory = (g: (typeof available)[number]) =>
     !activeCategories.length ||
     activeCategories.some((name) =>
@@ -551,6 +629,10 @@ export function InventoryCatalog({
   const visible = available.filter(
     (g) =>
       matchesCategory(g) &&
+      (!groupFilter ||
+        (groupFilter === "none"
+          ? !trialGroupByName.has(categoryKey(g.name))
+          : trialGroupByName.get(categoryKey(g.name))?.id === groupFilter)) &&
       (!filters.items.length ||
         g.links.some((a) => filters.items.includes(a.id))) &&
       (!filters.sheets.length ||
@@ -613,8 +695,58 @@ export function InventoryCatalog({
       "__none",
       { title: "Sin categoría principal", groups: uncategorized },
     ]);
-  const sections =
+  const baseSections =
     grouping === "primary" ? primarySections : continuousSections;
+  const sections: [
+    string,
+    (typeof primarySections)[number][1] & {
+      trialTitle?: string;
+      trialId?: string;
+      trialCount?: number;
+      hideBand?: boolean;
+    },
+  ][] = [];
+  if (groupOrder === "groups") {
+    for (const trial of [...trialGroups, null]) {
+      const members = visible.filter(
+        (g) =>
+          (trialGroupByName.get(categoryKey(g.name))?.id ?? null) ===
+          (trial?.id ?? null),
+      );
+      if (!members.length) continue;
+      const entries =
+        grouping === "primary"
+          ? baseSections
+              .map(
+                ([key, section]) =>
+                  [
+                    key,
+                    {
+                      ...section,
+                      groups: section.groups.filter((g) => members.includes(g)),
+                    },
+                  ] as const,
+              )
+              .filter(([, section]) => section.groups.length)
+          : ([["continuous", { title: "", groups: members }]] as const);
+      entries.forEach(([key, section], index) =>
+        sections.push([
+          (trial?.id ?? "none") + ":" + key,
+          {
+            ...section,
+            hideBand: grouping !== "primary",
+            ...(index === 0
+              ? {
+                  trialTitle: trial?.name ?? "Sin grupo",
+                  trialId: trial?.id,
+                  trialCount: members.length,
+                }
+              : {}),
+          },
+        ]),
+      );
+    }
+  } else sections.push(...baseSections);
   const bandCategorySelector = (section: {
     title: string;
     groups: typeof visible;
@@ -1008,49 +1140,56 @@ export function InventoryCatalog({
       setBusy(false);
     }
   };
-  const viewTabs = (
-    <div
-      className="inventory-view-tabs"
-      role="tablist"
-      aria-label="Vista del inventario"
-    >
-      <button
-        type="button"
-        role="tab"
-        aria-selected={catalogView !== "groups"}
-        onClick={() => setCatalogView("inventory")}
-      >
-        Inventario
-      </button>
-      <button
-        type="button"
-        role="tab"
-        aria-selected={catalogView === "groups"}
-        onClick={() => setCatalogView("groups")}
-      >
-        Grupos
-      </button>
-    </div>
-  );
-  if (catalogView === "groups")
-    return (
-      <section
-        className="inventory-catalog sheet-view"
-        aria-label="Grupos de inventario"
-      >
-        <div className="row inventory-actions-toolbar sheet-toolbar-with-actions">
-          {viewTabs}
-          {toolbarActions}
-        </div>
-        {sheetTabs}
-        <InventoryTrials listId={listId} />
-      </section>
-    );
   return (
     <section
       className="inventory-catalog sheet-view"
       aria-label="Inventario sin países"
     >
+      {groupEditor && trialDirectory && (
+        <InventoryGroupEditor
+          directory={trialDirectory}
+          group={trialGroups.find((g) => g.id === groupEditor.id)}
+          initialNames={groupEditor.names}
+          onClose={() => setGroupEditor(null)}
+          onSaved={async () => {
+            await reloadGroups();
+            await onChanged();
+            await reloadCategories();
+            setGroupEditor(null);
+            setMessage("Grupo guardado.");
+          }}
+        />
+      )}
+      {evaluation && (
+        <dialog
+          ref={evaluationDialog}
+          className="trial-dialog inventory-group-evaluation"
+          aria-label="Evaluación del grupo por país"
+          onCancel={(e) => {
+            e.preventDefault();
+            setEvaluation(null);
+            void reloadGroups().catch((e) => setMessage(e.message));
+          }}
+        >
+          <header>
+            <h2>
+              {trialGroups.find((g) => g.id === evaluation)?.name ?? "Grupo"} ·
+              Evaluación por país
+            </h2>
+            <button
+              className="ui-close-button"
+              aria-label="Cerrar evaluación del grupo"
+              onClick={() => {
+                setEvaluation(null);
+                void reloadGroups().catch((e) => setMessage(e.message));
+              }}
+            >
+              ×
+            </button>
+          </header>
+          <InventoryTrials listId={listId} fixedGroupId={evaluation} />
+        </dialog>
+      )}
       {assignment && (
         <InventoryCategoryAssign
           kind={assignment.kind}
@@ -1107,7 +1246,19 @@ export function InventoryCatalog({
         aria-label="Acciones del inventario"
       >
         <div className="row sheet-toolbar-controls">
-          {viewTabs}
+          <button
+            type="button"
+            disabled={!trialDirectory?.canEdit || busy}
+            onClick={() =>
+              setGroupEditor({
+                names: available
+                  .filter((g) => g.links.some((a) => selected.includes(a.id)))
+                  .map((g) => g.name),
+              })
+            }
+          >
+            + Crear grupo{selected.length ? " con selección" : ""}
+          </button>
           <button
             type="button"
             disabled={busy}
@@ -1247,41 +1398,6 @@ export function InventoryCatalog({
               Por categoría principal
             </button>
           </div>
-        </div>
-        <div
-          className="inventory-catalog-counter inventory-category-count-card"
-          role="status"
-          aria-live="polite"
-        >
-          <span className="inventory-counter-icon" aria-hidden="true">
-            ◉
-          </span>
-          <span>
-            {activeCategories.length
-              ? "Inventario de las categorías seleccionadas"
-              : "Inventario de todas las categorías"}
-          </span>
-          <strong data-category-inventory-count>
-            {categories ? categoryInventory.length : "—"}
-          </strong>
-          <small>
-            {activeCategories.length
-              ? `${activeCategories.length} categoría${activeCategories.length === 1 ? "" : "s"} seleccionada${activeCategories.length === 1 ? "" : "s"}`
-              : "Catálogo completo"}
-          </small>
-          <progress
-            className="inventory-category-share"
-            aria-label="Proporción del catálogo en la categoría seleccionada"
-            max={Math.max(1, available.length)}
-            value={categoryInventory.length}
-          />
-          <small>
-            {categories && available.length
-              ? `${Math.round((categoryInventory.length / available.length) * 100)}% del catálogo · `
-              : ""}
-            Mostrando {categories ? visible.length : "—"} de{" "}
-            {categories ? categoryInventory.length : "—"}
-          </small>
         </div>
       </div>
       <div
@@ -1545,6 +1661,54 @@ export function InventoryCatalog({
                   }}
                 />
               </th>
+              <th scope="col" hidden={!showParameter("group")}>
+                {columnHandle("group", "Grupo")}
+                <div className="inventory-group-heading">
+                  <span>Grupo</span>
+                  <button
+                    type="button"
+                    aria-label="Ordenar inventario por grupos"
+                    aria-pressed={groupOrder === "groups"}
+                    onClick={() =>
+                      setGroupOrder(groupOrder === "groups" ? "" : "groups")
+                    }
+                  >
+                    {groupOrder === "groups"
+                      ? "Ordenado por grupos ✓"
+                      : "Ordenar por grupos"}
+                  </button>
+                </div>
+                <select
+                  aria-label="Filtrar inventario por grupo"
+                  value={groupFilter}
+                  onChange={(e) => setGroupFilter(e.target.value)}
+                >
+                  <option value="">Todos los grupos</option>
+                  <option value="none">Sin grupo</option>
+                  {trialGroups.map((g) => (
+                    <option key={g.id} value={g.id}>
+                      {g.name} ({g.members.length})
+                    </option>
+                  ))}
+                </select>
+                <InventoryGroupSelect
+                  groups={trialGroups}
+                  label="Asignar grupo a inventarios seleccionados"
+                  disabled={
+                    !trialDirectory?.canEdit || !selected.length || busy
+                  }
+                  onSelect={(id) =>
+                    setGroupEditor({
+                      id: id === "new" ? undefined : id,
+                      names: available
+                        .filter((g) =>
+                          g.links.some((a) => selected.includes(a.id)),
+                        )
+                        .map((g) => g.name),
+                    })
+                  }
+                />
+              </th>
               <th
                 hidden={!columns.some((c) => c.key === "gap")}
                 aria-hidden="true"
@@ -1569,7 +1733,44 @@ export function InventoryCatalog({
               ).length;
               return (
                 <Fragment key={key}>
+                  {section.trialTitle && (
+                    <tr
+                      className="inventory-trial-group-band"
+                      data-inventory-trial-group={section.trialTitle}
+                    >
+                      <th
+                        colSpan={Math.max(1, columns.length)}
+                        scope="rowgroup"
+                      >
+                        <div className="inventory-band-heading">
+                          <strong>{section.trialTitle}</strong>
+                          <small>{section.trialCount} diplomados</small>
+                          {section.trialId && (
+                            <>
+                              <button
+                                disabled={!trialDirectory?.canEdit}
+                                onClick={() =>
+                                  setGroupEditor({
+                                    id: section.trialId,
+                                    names: [],
+                                  })
+                                }
+                              >
+                                Editar grupo
+                              </button>
+                              <button
+                                onClick={() => setEvaluation(section.trialId!)}
+                              >
+                                Evaluar por país ↗
+                              </button>
+                            </>
+                          )}
+                        </div>
+                      </th>
+                    </tr>
+                  )}
                   <tr
+                    hidden={section.hideBand}
                     className={
                       "inventory-group-band" +
                       (section.accent === "blue"
@@ -1780,6 +1981,45 @@ export function InventoryCatalog({
                             }}
                           />
                         </div>
+                      </td>
+                      <td hidden={!showParameter("group")}>
+                        {(() => {
+                          const assigned = trialGroupByName.get(
+                            categoryKey(g.name),
+                          );
+                          return assigned ? (
+                            <div className="inventory-group-cell">
+                              <button
+                                disabled={!trialDirectory?.canEdit}
+                                onClick={() =>
+                                  setGroupEditor({ id: assigned.id, names: [] })
+                                }
+                              >
+                                {assigned.name}
+                              </button>
+                              <button
+                                aria-label={
+                                  "Evaluar " + assigned.name + " por país"
+                                }
+                                onClick={() => setEvaluation(assigned.id)}
+                              >
+                                Evaluar ↗
+                              </button>
+                            </div>
+                          ) : (
+                            <InventoryGroupSelect
+                              groups={trialGroups}
+                              label={"Asignar grupo a " + g.name}
+                              disabled={!trialDirectory?.canEdit || busy}
+                              onSelect={(id) =>
+                                setGroupEditor({
+                                  id: id === "new" ? undefined : id,
+                                  names: [g.name],
+                                })
+                              }
+                            />
+                          );
+                        })()}
                       </td>
                       <td
                         hidden={!columns.some((c) => c.key === "gap")}

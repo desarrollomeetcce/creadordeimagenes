@@ -87,7 +87,13 @@ function TrialDialog({
     </dialog>
   );
 }
-export function InventoryTrials({ listId }: { listId: string }) {
+export function InventoryTrials({
+  listId,
+  fixedGroupId,
+}: {
+  listId: string;
+  fixedGroupId?: string;
+}) {
   const panelId = useId();
   const [directory, setDirectory] = useState<TrialDirectory | null>(null),
     [report, setReport] = useState<TrialReport | null>(null),
@@ -121,7 +127,7 @@ export function InventoryTrials({ listId }: { listId: string }) {
       "BUDGET",
     );
   const group =
-      directory?.groups.find((g) => g.id === selectedId) ??
+      directory?.groups.find((g) => g.id === (fixedGroupId ?? selectedId)) ??
       directory?.groups[0],
     country = group?.countries.includes(chosenCountry) ? chosenCountry : "all",
     canEdit = directory?.canEdit ?? false;
@@ -307,7 +313,7 @@ export function InventoryTrials({ listId }: { listId: string }) {
   }
   return (
     <div className="inventory-trials">
-      {!!directory?.groups.length && (
+      {!fixedGroupId && !!directory?.groups.length && (
         <div
           className="trial-group-tabs"
           role="tablist"
@@ -412,6 +418,7 @@ export function InventoryTrials({ listId }: { listId: string }) {
               type="button"
               className="primary"
               onClick={() => setCreating(true)}
+              hidden={!!fixedGroupId}
             >
               + Crear grupo
             </button>
@@ -538,8 +545,10 @@ export function InventoryTrials({ listId }: { listId: string }) {
           <div
             className="trial-table-scroll"
             id={panelId}
-            role="tabpanel"
-            aria-labelledby={panelId + "-" + group.id}
+            role={fixedGroupId ? "region" : "tabpanel"}
+            aria-labelledby={
+              fixedGroupId ? undefined : panelId + "-" + group.id
+            }
             tabIndex={0}
             aria-label="Tabla de grupos por país"
           >

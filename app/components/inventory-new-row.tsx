@@ -154,6 +154,9 @@ export function InventoryNewRow({
           onChange={(sheets) => setValue((old) => ({ ...old, sheets }))}
         />
       </td>
+      <td hidden={!visibleParameters.includes("group")} className="hint">
+        Asignar después de guardar
+      </td>
       <td
         hidden={
           !visibleParameters.includes("syllabi") || visibleParameters.length < 2
