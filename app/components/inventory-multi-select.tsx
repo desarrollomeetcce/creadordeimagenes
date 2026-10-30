@@ -60,6 +60,7 @@ export function InventoryMultiSelect({
     [open, setOpen] = useState(false),
     [draft, setDraft] = useState(values),
     [busy, setBusy] = useState(false),
+    [localError, setLocalError] = useState(""),
     [position, setPosition] = useState({ top: 8, left: 8 });
   const filtered = open
     ? searchOptions(options, query, (o) => o.searchLabel ?? o.label)
@@ -111,6 +112,7 @@ export function InventoryMultiSelect({
             top: Math.max(8, Math.min(r.bottom + 3, innerHeight - 330)),
           });
           setQuery("");
+          setLocalError("");
           setDraft(values);
         }}
       >
@@ -246,6 +248,7 @@ export function InventoryMultiSelect({
                   popover.current?.hidePopover();
                   setQuery("");
                 } catch (e) {
+                  setLocalError((e as Error).message);
                   onError?.((e as Error).message);
                 } finally {
                   setBusy(false);
@@ -289,10 +292,12 @@ export function InventoryMultiSelect({
                 pending.current = true;
                 setBusy(true);
                 try {
+                  setLocalError("");
                   await onAdd(draft);
                   popover.current?.hidePopover();
                   trigger.current?.focus({ preventScroll: true });
                 } catch (e) {
+                  setLocalError((e as Error).message);
                   onError?.((e as Error).message);
                 } finally {
                   pending.current = false;
@@ -304,6 +309,11 @@ export function InventoryMultiSelect({
             </button>
           )}
         </div>
+        {localError && (
+          <p role="alert" className="notice error">
+            {localError}
+          </p>
+        )}
         {busy && <small role="status">Guardando…</small>}
       </div>
     </>

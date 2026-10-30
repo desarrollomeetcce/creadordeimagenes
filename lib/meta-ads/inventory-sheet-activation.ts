@@ -671,7 +671,7 @@ export async function inventoryActivationChange(actor: Actor, input: unknown) {
   return activationChange(actor, input);
 }
 /** Pair replacement is atomic: retiring item stays on until its campaign is actually stopped. */
-export async function inventoryActivationReplace(actor: Actor, input: unknown) {
+async function activationReplace(actor: Actor, input: unknown, sharedTx?: Tx) {
   const choice = z.object({ name, targets: z.array(target).max(250) }).strict();
   const b = z
     .object({
@@ -688,123 +688,180 @@ export async function inventoryActivationReplace(actor: Actor, input: unknown) {
     categoryKey(b.from.name) !== categoryKey(b.to.name),
     "Elige otro diplomado para reemplazar.",
   );
+  const run = async (tx: Tx) => {
+    const { list } = await context(tx, actor, b.listId, true),
+      settings = activationSettings(list.config),
+      catalog = await items(tx, b.listId);
+    const from = catalog.get(categoryKey(b.from.name)),
+      to = catalog.get(categoryKey(b.to.name));
+    demand(from && to, "El catálogo cambió. Actualiza y elige de nuevo.", 409);
+    const candidates = await tx.metaAlias.findMany({
+      where: { tableId: b.tableId },
+      include: {
+        effectivenessStates: true,
+        effectivenessRows: { where: { legacy: false } },
+      },
+    });
+    const candidate = candidates.find(
+      (a) => categoryKey(a.name) === categoryKey(to),
+    );
+    const state = candidate?.effectivenessStates.find(
+      (s) => s.country === b.country,
+    );
+    const pending = candidate
+      ? settings.rows[rowKey(candidate.id, b.country)]?.campaignTask
+      : "NONE";
+    demand(
+      !(
+        state?.active ??
+        candidate?.effectivenessRows.some((r) => r.country === b.country)
+      ) &&
+        (!pending || pending === "NONE"),
+      "El reemplazo ya está activo o tiene una campaña pendiente en este país. Elige otro.",
+      409,
+    );
+    if (b.mode !== "MANUAL") {
+      const [canonical, aliases] = await Promise.all([
+        tx.metaInventoryItem.findMany({
+          where: { sheetId: b.listId, name: { in: [from, to] } },
+          include: { categories: { include: { category: true } } },
+        }),
+        tx.metaAlias.findMany({
+          where: { inventorySheetId: b.listId, name: { in: [from, to] } },
+          include: { categoryAssignments: { include: { category: true } } },
+        }),
+      ]);
+      const primary = (n: string) =>
+        new Set([
+          ...canonical
+            .filter((i) => i.name === n)
+            .flatMap((i) =>
+              i.categories
+                .filter((c) => c.category.kind === "PRIMARY")
+                .map((c) => c.categoryId),
+            ),
+          ...aliases
+            .filter((i) => i.name === n)
+            .flatMap((i) =>
+              i.categoryAssignments
+                .filter((c) => c.category.kind === "PRIMARY")
+                .map((c) => c.categoryId),
+            ),
+        ]);
+      const old = primary(from),
+        next = primary(to),
+        shared = [...next].some((c) => old.has(c));
+      demand(
+        b.mode === "SAME" ? shared : next.size > 0 && !shared,
+        "Las categorías cambiaron. Vuelve a proponer un reemplazo.",
+        409,
+      );
+    }
+    await activationChange(
+      actor,
+      {
+        listId: b.listId,
+        tableId: b.tableId,
+        country: b.country,
+        items: [b.from],
+        campaignTask: "STOP",
+      },
+      tx,
+    );
+    await activationChange(
+      actor,
+      {
+        listId: b.listId,
+        tableId: b.tableId,
+        country: b.country,
+        items: [b.to],
+        active: true,
+        campaignTask: "CREATE",
+      },
+      tx,
+    );
+    await recordActivity(tx, {
+      data: {
+        actorId: actor.id,
+        action: "INVENTARIO_REEMPLAZO_PAIS",
+        resourceId: b.listId,
+        detail: {
+          tableId: b.tableId,
+          country: b.country,
+          from,
+          to,
+          mode: b.mode,
+        },
+      },
+    });
+    return { from, to, country: b.country };
+  };
+  return sharedTx ? run(sharedTx) : db.$transaction(run, { timeout: 120000 });
+}
+export async function inventoryActivationReplace(actor: Actor, input: unknown) {
+  return activationReplace(actor, input);
+}
+export async function inventoryActivationReplaceBatch(
+  actor: Actor,
+  input: unknown,
+) {
+  const choice = z.object({ name, targets: z.array(target).max(250) }).strict();
+  const b = z
+    .object({
+      listId: id,
+      tableId: id,
+      country: z.string().refine(isCountryCode),
+      replacements: z
+        .array(
+          z
+            .object({
+              from: choice,
+              to: choice,
+              mode: z.enum(["MANUAL", "SAME", "OTHER"]),
+            })
+            .strict(),
+        )
+        .min(1)
+        .max(100),
+    })
+    .strict()
+    .parse(input);
+  const origins = new Set(b.replacements.map((r) => categoryKey(r.from.name)));
+  const destinations = new Set(
+    b.replacements.map((r) => categoryKey(r.to.name)),
+  );
+  demand(
+    origins.size === b.replacements.length &&
+      destinations.size === b.replacements.length &&
+      ![...destinations].some((n) => origins.has(n)),
+    "No repitas diplomados ni uses uno del bloque que vas a reemplazar.",
+  );
   return db.$transaction(
     async (tx) => {
-      const { list } = await context(tx, actor, b.listId, true),
-        settings = activationSettings(list.config),
-        catalog = await items(tx, b.listId);
-      const from = catalog.get(categoryKey(b.from.name)),
-        to = catalog.get(categoryKey(b.to.name));
-      demand(
-        from && to,
-        "El catálogo cambió. Actualiza y elige de nuevo.",
-        409,
-      );
-      const candidates = await tx.metaAlias.findMany({
-        where: { tableId: b.tableId },
-        include: {
-          effectivenessStates: true,
-          effectivenessRows: { where: { legacy: false } },
-        },
-      });
-      const candidate = candidates.find(
-        (a) => categoryKey(a.name) === categoryKey(to),
-      );
-      const state = candidate?.effectivenessStates.find(
-        (s) => s.country === b.country,
-      );
-      const pending = candidate
-        ? settings.rows[rowKey(candidate.id, b.country)]?.campaignTask
-        : "NONE";
-      demand(
-        !(
-          state?.active ??
-          candidate?.effectivenessRows.some((r) => r.country === b.country)
-        ) &&
-          (!pending || pending === "NONE"),
-        "El reemplazo ya está activo o tiene una campaña pendiente en este país. Elige otro.",
-        409,
-      );
-      if (b.mode !== "MANUAL") {
-        const [canonical, aliases] = await Promise.all([
-          tx.metaInventoryItem.findMany({
-            where: { sheetId: b.listId, name: { in: [from, to] } },
-            include: { categories: { include: { category: true } } },
-          }),
-          tx.metaAlias.findMany({
-            where: { inventorySheetId: b.listId, name: { in: [from, to] } },
-            include: { categoryAssignments: { include: { category: true } } },
-          }),
-        ]);
-        const primary = (n: string) =>
-          new Set([
-            ...canonical
-              .filter((i) => i.name === n)
-              .flatMap((i) =>
-                i.categories
-                  .filter((c) => c.category.kind === "PRIMARY")
-                  .map((c) => c.categoryId),
-              ),
-            ...aliases
-              .filter((i) => i.name === n)
-              .flatMap((i) =>
-                i.categoryAssignments
-                  .filter((c) => c.category.kind === "PRIMARY")
-                  .map((c) => c.categoryId),
-              ),
-          ]);
-        const old = primary(from),
-          next = primary(to),
-          shared = [...next].some((c) => old.has(c));
-        demand(
-          b.mode === "SAME" ? shared : next.size > 0 && !shared,
-          "Las categorías cambiaron. Vuelve a proponer un reemplazo.",
-          409,
+      const results = [];
+      for (const replacement of b.replacements)
+        results.push(
+          await activationReplace(
+            actor,
+            {
+              listId: b.listId,
+              tableId: b.tableId,
+              country: b.country,
+              ...replacement,
+            },
+            tx,
+          ),
         );
-      }
-      await activationChange(
-        actor,
-        {
-          listId: b.listId,
-          tableId: b.tableId,
-          country: b.country,
-          items: [b.from],
-          campaignTask: "STOP",
-        },
-        tx,
-      );
-      await activationChange(
-        actor,
-        {
-          listId: b.listId,
-          tableId: b.tableId,
-          country: b.country,
-          items: [b.to],
-          active: true,
-          campaignTask: "CREATE",
-        },
-        tx,
-      );
-      await recordActivity(tx, {
-        data: {
-          actorId: actor.id,
-          action: "INVENTARIO_REEMPLAZO_PAIS",
-          resourceId: b.listId,
-          detail: {
-            tableId: b.tableId,
-            country: b.country,
-            from,
-            to,
-            mode: b.mode,
-          },
-        },
-      });
-      return { from, to, country: b.country };
+      return { replaced: results.length, results };
     },
     { timeout: 120000 },
   );
 }
 export type SheetInterval = {
+  metaSpend?: number | null;
+  metaComplete?: boolean;
+  metaAssessment?: ReturnType<typeof trialAssessment>;
+  hours?: number | null;
   since: string | null;
   until: string | null;
   days: number | null;
@@ -998,8 +1055,25 @@ async function activationReport(
               let sales: number | null = null,
                 budget: number | null = null,
                 complete = !!dates.length && !overlapping;
+              let metaSpend: number | null = null,
+                metaComplete = !!dates.length && !overlapping;
               for (const day of dates) {
                 const d = row.days[day];
+                if (q.historyName) {
+                  const parts = d?.sourceSpend ?? [];
+                  if (!parts.length || d?.partialMetrics.includes("spend"))
+                    metaComplete = false;
+                  for (const part of parts) {
+                    const value = convertMoney(
+                      part.amount,
+                      part.currency,
+                      "PEN",
+                      fx.get(day),
+                    );
+                    if (value === null) metaComplete = false;
+                    else metaSpend = (metaSpend ?? 0) + value;
+                  }
+                }
                 const v = d?.sales ?? null,
                   p =
                     d?.budget === null || d?.budget === undefined
@@ -1024,6 +1098,28 @@ async function activationReport(
               }
               history.push({
                 ...period,
+                ...(q.historyName
+                  ? {
+                      metaSpend,
+                      metaComplete,
+                      metaAssessment: inventoryFactorAssessment(
+                        sales,
+                        metaSpend,
+                        metaComplete && complete,
+                        settings.limits,
+                      ),
+                      hours: period.since
+                        ? Math.max(
+                            0,
+                            (new Date(
+                              period.until ?? new Date().toISOString(),
+                            ).getTime() -
+                              new Date(period.since).getTime()) /
+                              3600000,
+                          )
+                        : null,
+                    }
+                  : {}),
                 days: dates.length || null,
                 sales,
                 budget,

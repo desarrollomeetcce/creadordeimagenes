@@ -273,6 +273,7 @@ export async function metaRoutes(
    return send(await(await import("./inventory-import")).linkInventorySheetsBatch(actor,b));
   }
   if(path==="effectiveness/catalog-status" && method==="GET")return send(await(await import("./inventory-sheet-activation")).financialCatalogStatus(actor,Object.fromEntries(req.nextUrl.searchParams)));
+  if(path==="inventory/sheet-activation/replace-batch" && method==="POST")return send(await(await import("./inventory-sheet-activation")).inventoryActivationReplaceBatch(actor,await body()));
   if(path==="inventory/sheet-activation/replace" && method==="POST")return send(await(await import("./inventory-sheet-activation")).inventoryActivationReplace(actor,await body()));
   if(path==="inventory/sheet-activation/limits" && method==="PUT")return send(await(await import("./inventory-sheet-activation")).saveInventoryFactorLimits(actor,await body()));
   if(path==="inventory/sheet-activation/directory" && method==="GET")return send(await(await import("./inventory-sheet-activation")).inventoryActivationDirectory(actor,Object.fromEntries(req.nextUrl.searchParams)));
@@ -1466,6 +1467,8 @@ export async function metaRoutes(
         inventorySheetId: z.string().min(1).max(100).optional(),
         decisions: nameDecisions,
         initialActive: z.boolean().optional(),
+        catalogRevision: z.number().int().nonnegative().optional(),
+        existingOnly: z.boolean().optional(),
         advisorId: z.string().min(1).max(80).optional(),
         advisorTiming: assignmentTimingSchema
           .omit({ cutoffSales: true, token: true })
@@ -1498,6 +1501,8 @@ export async function metaRoutes(
         b.inventorySheetId,
         b.decisions,
         b.initialActive,
+        b.catalogRevision,
+        b.existingOnly,
       ),
     );
   }

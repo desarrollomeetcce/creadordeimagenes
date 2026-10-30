@@ -8,6 +8,7 @@ import {
   inventoryActivationAddSheet,
   inventoryActivationChange,
   inventoryActivationReplace,
+  inventoryActivationReplaceBatch,
   inventoryActivationReport,
   saveInventoryFactorLimits,
   financialCatalogStatus,
@@ -1216,6 +1217,171 @@ test("Activación por hoja: selección, pin, historial y permisos", async (t) =>
             }),
           /permiso/i,
         );
+      },
+    );
+    await t.test(
+      "Reemplazo múltiple valida unicidad, rollback tardío y permisos; conserva países e historial",
+      async () => {
+        const table = await db.metaAliasTable.create({
+          data: { name: "Lote " + tag, defaultCountry: "PE" },
+        });
+        autoTables.push(table.id);
+        await inventoryActivationAddSheet(owner, {
+          listId: list.id,
+          tableId: table.id,
+          country: "PE",
+        });
+        await inventoryActivationAddSheet(owner, {
+          listId: list.id,
+          tableId: table.id,
+          country: "EC",
+        });
+        const choices = await Promise.all(
+          Array.from({ length: 5 }, (_, n) =>
+            db.metaInventoryItem.create({
+              data: { sheetId: list.id, name: `Lote ${n} ${tag}` },
+            }),
+          ),
+        );
+        const read = () =>
+          inventoryActivationReport(owner, {
+            listId: list.id,
+            tableIds: table.id,
+            byCountry: "true",
+          });
+        for (const item of choices.slice(0, 2))
+          for (const country of ["PE", "EC"])
+            await inventoryActivationChange(owner, {
+              listId: list.id,
+              tableId: table.id,
+              country,
+              items: [{ name: item.name, targets: [] }],
+              active: true,
+            });
+        const rows = (await read()).rows;
+        const pair = (n: number) => ({
+          from: {
+            name: choices[n].name,
+            targets: rows.find(
+              (r) => r.name === choices[n].name && r.country === "PE",
+            )!.targets,
+          },
+          to: { name: choices[n + 2].name, targets: [] },
+          mode: "MANUAL" as const,
+        });
+        const base = { listId: list.id, tableId: table.id, country: "PE" };
+        const before = await db.metaEffectivenessSheet.findUniqueOrThrow({
+          where: { id: list.id },
+        });
+        await assert.rejects(
+          () =>
+            inventoryActivationReplaceBatch(owner, {
+              ...base,
+              replacements: [pair(0), { ...pair(1), to: pair(0).to }],
+            }),
+          /No repitas/,
+        );
+        await assert.rejects(
+          () =>
+            inventoryActivationReplaceBatch(owner, {
+              ...base,
+              replacements: [
+                pair(0),
+                {
+                  ...pair(1),
+                  to: { name: choices[1].name, targets: pair(1).from.targets },
+                },
+              ],
+            }),
+          /No repitas/,
+        );
+        await assert.rejects(
+          () =>
+            inventoryActivationReplaceBatch(owner, {
+              ...base,
+              replacements: [
+                pair(0),
+                {
+                  ...pair(1),
+                  from: {
+                    ...pair(1).from,
+                    targets: pair(1).from.targets.map((t) => ({
+                      ...t,
+                      revision: t.revision - 1,
+                    })),
+                  },
+                },
+              ],
+            }),
+          /cambió/i,
+        );
+        assert.deepEqual(
+          (await read()).rows.map(({ activationHours, ...r }) => r),
+          rows.map(({ activationHours, ...r }) => r),
+        );
+        assert.deepEqual(
+          await db.metaEffectivenessSheet.findUniqueOrThrow({
+            where: { id: list.id },
+          }),
+          before,
+        );
+        assert.equal(
+          await db.metaAlias.count({
+            where: { tableId: table.id, name: choices[2].name },
+          }),
+          0,
+        );
+        const cap = await authorizeFinancialRequest(
+          { id: viewer.id, role: "OBSERVER" },
+          "inventory/sheet-activation/report",
+          "GET",
+          new URLSearchParams({ listId: list.id, tableIds: table.id }),
+          null,
+          "TAB:" + list.id,
+        );
+        await assert.rejects(
+          () =>
+            inventoryActivationReplaceBatch(cap, {
+              ...base,
+              replacements: [pair(0)],
+            }),
+          /permiso/i,
+        );
+        const result = await inventoryActivationReplaceBatch(owner, {
+          ...base,
+          replacements: [pair(0), pair(1)],
+        });
+        assert.equal(result.replaced, 2);
+        const after = (await read()).rows;
+        for (let n = 0; n < 2; n++) {
+          const old = after.find(
+            (r) => r.name === choices[n].name && r.country === "PE",
+          )!;
+          assert.equal(old.activation, "ACTIVE");
+          assert.equal(old.campaignTask, "STOP");
+          const next = after.find(
+            (r) => r.name === choices[n + 2].name && r.country === "PE",
+          )!;
+          assert.equal(next.activation, "ACTIVE");
+          assert.equal(next.campaignTask, "CREATE");
+          assert.deepEqual(
+            after.find((r) => r.name === choices[n].name && r.country === "EC"),
+            rows.find((r) => r.name === choices[n].name && r.country === "EC"),
+          );
+          const history = await inventoryActivationReport(owner, {
+            listId: list.id,
+            tableIds: table.id,
+            historyName: choices[n].name,
+            country: "PE",
+          });
+          assert.equal(history.rows[0].history!.length, 1);
+          assert(history.rows[0].history![0].hours! >= 0);
+          assert.equal(history.rows[0].history![0].metaSpend, null);
+          assert.equal(
+            history.rows[0].history![0].metaAssessment!.status,
+            "PENDING",
+          );
+        }
       },
     );
     await t.test(

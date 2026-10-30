@@ -2008,6 +2008,9 @@ export function MetaEffectiveness({
                             );
                             setHistoryPeriod(null);
                             setSelectedAliases(null);
+                            setCountry("");
+                            setStateFilter("");
+                            setValueFilter(null);
                             setMessage(
                               `${chosen.length} diplomado${chosen.length === 1 ? "" : "s"} agregado${chosen.length === 1 ? "" : "s"} o ya presente${chosen.length === 1 ? "" : "s"} en la hoja.`,
                             );

@@ -646,6 +646,92 @@ test("Meta inventory assignment materializes catalog choices atomically and flag
         );
       },
     );
+    await t.test(
+      "Historical G Meta uses received spend, preserves zero and never substitutes manual G",
+      async () => {
+        const alias = await db.metaAlias.findFirstOrThrow({
+          where: { tableId: table.id, name: items[0].name },
+        });
+        const state = await db.metaEffectivenessState.findUniqueOrThrow({
+          where: { aliasId_country: { aliasId: alias.id, country: "PE" } },
+        });
+        await db.metaEffectivenessEvent.deleteMany({
+          where: { stateId: state.id },
+        });
+        await db.metaEffectivenessState.update({
+          where: { id: state.id },
+          data: { active: false },
+        });
+        await db.metaEffectivenessEvent.createMany({
+          data: [
+            {
+              stateId: state.id,
+              actorId: owner.id,
+              active: true,
+              createdAt: new Date(today + "T05:00:00Z"),
+              snapshot: { priorActive: false },
+            },
+            {
+              stateId: state.id,
+              actorId: owner.id,
+              active: false,
+              createdAt: new Date(today + "T06:00:00Z"),
+              snapshot: { priorActive: true },
+            },
+          ],
+        });
+        const row = await db.metaEffectivenessRow.findFirstOrThrow({
+          where: { aliasId: alias.id, country: "PE" },
+        });
+        await db.metaEffectivenessDay.update({
+          where: { rowId_day: { rowId: row.id, day: today } },
+          data: {
+            annotations: {
+              spend: { value: 999, currency: "PEN" },
+              budget: { value: 25, currency: "PEN" },
+            },
+          },
+        });
+        await db.metaAdObject.update({
+          where: { id: objectIds[0] },
+          data: { aliasId: alias.id, aliasCountry: "PE" },
+        });
+        const read = async () =>
+          (
+            await inventoryActivationReport(actor, {
+              listId: list.id,
+              tableIds: table.id,
+              country: "PE",
+              historyName: alias.name,
+            })
+          ).rows[0].history![0];
+        let h = await read();
+        assert.equal(h.metaSpend, null);
+        assert.equal(h.metaAssessment!.status, "PENDING");
+        await db.metaAdDaily.create({
+          data: {
+            objectId: objectIds[0],
+            accountId,
+            day: today,
+            scope: "7d_click,1d_view|impression",
+            spend: 3,
+            impressions: 100,
+            actions: {},
+          },
+        });
+        h = await read();
+        assert.equal(h.metaSpend, 3);
+        assert.equal(h.budget, 25);
+        assert.equal(h.hours, 1);
+        await db.metaAdDaily.updateMany({
+          where: { objectId: objectIds[0] },
+          data: { spend: 0 },
+        });
+        h = await read();
+        assert.equal(h.metaSpend, 0);
+        assert.notEqual(h.metaSpend, 999);
+      },
+    );
   } finally {
     await db.metaAdObject.deleteMany({ where: { accountId } });
     await db.metaEffectivenessEvent.deleteMany({

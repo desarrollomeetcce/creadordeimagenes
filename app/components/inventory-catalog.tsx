@@ -1724,6 +1724,9 @@ export function InventoryCatalog({
             groupEditor.column,
             groupEditor.replaceName,
           ].join(":")}
+          evaluationColumns={knownCountries
+            .filter((id) => id.includes(":"))
+            .map((id) => ({ value: id, label: sheetLabel(id) }))}
           initialTab={groupEditor.tab}
           externalBusy={busy}
           onChooseGroup={(id) =>

@@ -18,6 +18,7 @@ export function InventorySheetHistory({
   name: string;
   onClose: () => void;
 }) {
+  const [expanded, setExpanded] = useState(false);
   const ref = useRef<HTMLDialogElement>(null),
     [data, setData] = useState<InventorySheetActivationReport | null>(null),
     [error, setError] = useState("");
@@ -57,6 +58,7 @@ export function InventorySheetHistory({
     <dialog
       ref={ref}
       className="trial-dialog inventory-activation-history"
+      data-expanded={expanded || undefined}
       aria-label="Historial de activación del diplomado"
       onCancel={onClose}
     >
@@ -65,6 +67,13 @@ export function InventorySheetHistory({
           <h2>{name}</h2>
           <small>{sheetName} · Hora de Lima</small>
         </div>
+        <button
+          type="button"
+          aria-pressed={expanded}
+          onClick={() => setExpanded((v) => !v)}
+        >
+          {expanded ? "↙ Restaurar" : "⛶ Maximizar"}
+        </button>
         <button type="button" className="ui-close-button" onClick={onClose}>
           Cerrar
         </button>

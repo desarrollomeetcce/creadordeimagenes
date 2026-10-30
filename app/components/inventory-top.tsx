@@ -1,5 +1,9 @@
 "use client";
 import { Fragment, useRef, useState } from "react";
+import { useSheetWidths } from "./use-sheet-widths";
+import { SheetColumnResizer } from "./sheet-column-resizer";
+import { InventoryBatchReplacement } from "./inventory-batch-replacement";
+import { InventoryDiplomaObservations } from "./inventory-diploma-observations";
 import { financialRequest as api } from "./financial-request";
 import { SheetSearchSelect } from "./sheet-search-select";
 import {
@@ -60,6 +64,20 @@ export function InventoryTop({
     [message, setMessage] = useState(""),
     [error, setError] = useState(""),
     [kept, setKept] = useState<string[]>([]);
+  const [selected, setSelected] = useState<string[]>([]);
+  const [batch, setBatch] = useState<string[]>([]);
+  const [inspect, setInspect] = useState("");
+  const { widths, resize, warning } = useSheetWidths(
+    "inventory-top:" + directory.listId,
+  );
+  const sizes = [32, 260, 72, 50, 80, 65, 75, 60, 120, 300];
+  const handle = (i: number, label: string) => (
+    <SheetColumnResizer
+      label={label}
+      onResize={(v) => resize("column" + i, v)}
+      onReset={() => resize("column" + i)}
+    />
+  );
   const pending = useRef(false);
   const evaluation = useInventoryCountryEvaluation(
     directory.listId,
@@ -193,6 +211,9 @@ export function InventoryTop({
             disabled={busy}
             onSelect={(value) => {
               setColumn(value);
+              setSelected([]);
+              setBatch([]);
+              setInspect("");
               setReplaceName("");
               setCandidate("");
               setMessage("");
@@ -237,11 +258,23 @@ export function InventoryTop({
             </strong>
           </span>
         ))}
+        <button
+          type="button"
+          className="primary inventory-batch-trigger"
+          disabled={disabled || !selected.length}
+          onClick={() => {
+            setBatch([...selected]);
+            setReplaceName("");
+          }}
+        >
+          ↔ Reemplazar seleccionados ({selected.length})
+        </button>
       </div>
       <p className="inventory-top-hint">
         Conserva los que funcionan. Reemplaza solo los que quieres cambiar en
         este país.
       </p>
+      {warning && <small role="status">{warning}</small>}
       {(error || evaluation.error) && (
         <p role="alert" className="notice error">
           {error || evaluation.error}
@@ -251,6 +284,60 @@ export function InventoryTop({
         <p role="status" className="inventory-top-feedback">
           {message}
         </p>
+      )}
+      {!!batch.length && (
+        <InventoryBatchReplacement
+          key={JSON.stringify([column, batch])}
+          origins={catalog.filter((i) => batch.includes(i.name))}
+          candidates={options.filter(
+            (i) => !batch.some((n) => categoryKey(n) === categoryKey(i.name)),
+          )}
+          busy={disabled}
+          onClose={() => setBatch([])}
+          onInspect={setInspect}
+          onConfirm={async (plan) => {
+            const valid = plan.every(
+              (p) => point(p.from) && options.some((i) => i.name === p.to),
+            );
+            if (!valid) {
+              setError("El Top cambió. Actualiza y revisa la propuesta.");
+              return;
+            }
+            const saved = await mutate(
+              () =>
+                api(
+                  "meta-ads/inventory/sheet-activation/replace-batch",
+                  "POST",
+                  {
+                    listId: directory.listId,
+                    tableId: column.split(":")[0],
+                    country: column.split(":")[1],
+                    replacements: plan.map((p) => ({
+                      from: { name: p.from, targets: point(p.from)!.targets },
+                      to: { name: p.to, targets: point(p.to)?.targets ?? [] },
+                      mode: p.mode,
+                    })),
+                  },
+                ),
+              "Reemplazos listos: anteriores por desactivar y nuevos por hacer campaña.",
+            );
+            if (saved) {
+              setBatch([]);
+              setSelected([]);
+              setQuery("");
+              setPrimary("");
+            }
+          }}
+        />
+      )}
+      {inspect && (
+        <InventoryDiplomaObservations
+          listId={directory.listId}
+          name={inspect}
+          columns={columns}
+          initialColumn={column}
+          onClose={() => setInspect("")}
+        />
       )}
       {replaceName && (
         <section
@@ -340,6 +427,9 @@ export function InventoryTop({
               <span>{replaceName} · Por desactivar</span>
               <b aria-hidden="true">→</b>
               <strong>{candidate} · Por hacer campaña</strong>
+              <button type="button" onClick={() => setInspect(candidate)}>
+                Ver antecedentes ↗
+              </button>
             </p>
           )}
         </section>
@@ -348,27 +438,66 @@ export function InventoryTop({
         <p role="status">Cargando Top…</p>
       ) : (
         <div className="inventory-top-scroll">
-          <table className="inventory-top-table">
+          <table
+            className="inventory-top-table"
+            style={{
+              width: sizes.reduce(
+                (n, v, i) => n + (widths["column" + i] ?? v),
+                0,
+              ),
+              minWidth: 0,
+            }}
+          >
             <colgroup>
-              {[260, 72, 50, 80, 65, 75, 60, 120, 300].map((width, index) => (
-                <col key={index} style={{ width }} />
-              ))}
+              {[32, 260, 72, 50, 80, 65, 75, 60, 120, 300].map(
+                (width, index) => (
+                  <col
+                    key={index}
+                    style={{ width: widths["column" + index] ?? width }}
+                  />
+                ),
+              )}
             </colgroup>
             <thead>
               <tr>
-                <th>Diplomado</th>
-                <th>Activación</th>
-                <th>Ventas</th>
-                <th>Desde</th>
+                <th>
+                  <input
+                    type="checkbox"
+                    aria-label="Seleccionar todos los diplomados visibles del Top"
+                    disabled={disabled || !filtered.length}
+                    checked={
+                      !!filtered.length &&
+                      filtered.every((r) => selected.includes(r.item.name))
+                    }
+                    onChange={(e) =>
+                      setSelected((current) =>
+                        e.target.checked
+                          ? [
+                              ...new Set([
+                                ...current,
+                                ...filtered.map((r) => r.item.name),
+                              ]),
+                            ]
+                          : current.filter(
+                              (n) => !filtered.some((r) => r.item.name === n),
+                            ),
+                      )
+                    }
+                  />
+                </th>
+                <th>Diplomado{handle(1, "Diplomado")}</th>
+                <th>Activación{handle(2, "Activación")}</th>
+                <th>Ventas{handle(3, "Ventas")}</th>
+                <th>Desde{handle(4, "Desde")}</th>
                 <th title="Días calendario del último período de activación registrado">
-                  Días activos
+                  Días activos{handle(5, "Días activos")}
                 </th>
                 <th title="Presupuesto acumulado del último período registrado, en soles">
-                  Pres. S/
+                  Pres. S/{handle(6, "Presupuesto")}
                 </th>
-                <th>FX</th>
-                <th>Estado</th>
-                <th>Acciones</th>
+                <th>FX{handle(7, "FX")}</th>
+                <th>Estado{handle(8, "Estado")}</th>
+                <th>Acciones{handle(9, "Acciones")}</th>
               </tr>
             </thead>
             <tbody>
@@ -377,16 +506,74 @@ export function InventoryTop({
                   {(index === 0 ||
                     rank(filtered[index - 1].point) !== rank(p)) && (
                     <tr className="inventory-top-band" data-top-rank={rank(p)}>
-                      <th colSpan={9}>{bucketNames[rank(p)]}</th>
+                      <th colSpan={10}>
+                        <div className="inventory-top-block-heading">
+                          <label>
+                            <input
+                              type="checkbox"
+                              aria-label={
+                                "Seleccionar bloque " + bucketNames[rank(p)]
+                              }
+                              disabled={disabled}
+                              checked={filtered
+                                .filter((r) => rank(r.point) === rank(p))
+                                .every((r) => selected.includes(r.item.name))}
+                              onChange={(e) => {
+                                const names = filtered
+                                  .filter((r) => rank(r.point) === rank(p))
+                                  .map((r) => r.item.name);
+                                setSelected((current) =>
+                                  e.target.checked
+                                    ? [...new Set([...current, ...names])]
+                                    : current.filter((n) => !names.includes(n)),
+                                );
+                              }}
+                            />{" "}
+                            {bucketNames[rank(p)]}
+                          </label>
+                          <button
+                            type="button"
+                            disabled={disabled}
+                            onClick={() => {
+                              const names = filtered
+                                .filter((r) => rank(r.point) === rank(p))
+                                .map((r) => r.item.name);
+                              setSelected(names);
+                              setBatch(names);
+                              setReplaceName("");
+                            }}
+                          >
+                            ↔ Reemplazar bloque
+                          </button>
+                        </div>
+                      </th>
                     </tr>
                   )}
                   <tr
+                    data-top-selected={
+                      selected.includes(item.name) || undefined
+                    }
                     data-top-name={item.name}
                     data-top-kept={
                       kept.includes(JSON.stringify([column, item.name])) ||
                       undefined
                     }
                   >
+                    <td>
+                      <input
+                        type="checkbox"
+                        aria-label={"Reemplazar " + item.name}
+                        disabled={disabled}
+                        checked={selected.includes(item.name)}
+                        onChange={(e) =>
+                          setSelected((current) =>
+                            e.target.checked
+                              ? [...new Set([...current, item.name])]
+                              : current.filter((n) => n !== item.name),
+                          )
+                        }
+                      />
+                    </td>
                     <td>
                       <strong>{item.name}</strong>
                       <small>
@@ -480,6 +667,8 @@ export function InventoryTop({
                           className="inventory-top-replace-trigger"
                           disabled={disabled}
                           onClick={() => {
+                            setBatch([]);
+                            setSelected([item.name]);
                             setReplaceName(item.name);
                             setCandidate("");
                             setError("");
@@ -526,7 +715,7 @@ export function InventoryTop({
               ))}
               {!filtered.length && (
                 <tr>
-                  <td colSpan={9}>
+                  <td colSpan={10}>
                     {evaluation.error
                       ? "No se pudo cargar la evaluación. Actualiza para intentarlo de nuevo."
                       : !column

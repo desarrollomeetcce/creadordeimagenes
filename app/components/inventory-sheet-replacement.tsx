@@ -32,6 +32,7 @@ export function InventorySheetReplacement({
   const [directory, setDirectory] = useState<TrialDirectory | null>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [expanded, setExpanded] = useState(false);
   const [detail, setDetail] = useState<{
     name: string;
     aliasId: string;
@@ -54,6 +55,7 @@ export function InventorySheetReplacement({
     <dialog
       ref={dialog}
       className="trial-dialog inventory-group-editor"
+      data-expanded={expanded || undefined}
       aria-label="Reemplazar diplomado en la hoja"
       onCancel={(e) => {
         e.preventDefault();
@@ -62,6 +64,13 @@ export function InventorySheetReplacement({
     >
       <header>
         <h2>Reemplazar diplomado · {countryName(country)}</h2>
+        <button
+          type="button"
+          aria-pressed={expanded}
+          onClick={() => setExpanded((v) => !v)}
+        >
+          {expanded ? "↙ Restaurar" : "⛶ Maximizar"}
+        </button>
         <button
           type="button"
           className="ui-close-button"

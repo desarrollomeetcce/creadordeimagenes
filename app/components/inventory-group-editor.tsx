@@ -14,6 +14,10 @@ import type {
   TrialGroup,
 } from "../../lib/meta-ads/inventory-trials";
 import { limaToday } from "./date-range";
+import { useSheetWidths } from "./use-sheet-widths";
+import { SheetColumnResizer } from "./sheet-column-resizer";
+import { useInventoryCountryEvaluation } from "./inventory-country-evaluation";
+import { InventoryDiplomaObservations } from "./inventory-diploma-observations";
 import { countryOptions } from "../../lib/meta-ads/countries";
 
 export function InventoryGroupEditor({
@@ -26,7 +30,9 @@ export function InventoryGroupEditor({
   initialTab,
   onChooseGroup,
   externalBusy = false,
+  evaluationColumns = [],
 }: {
+  evaluationColumns?: { value: string; label: string }[];
   externalBusy?: boolean;
   topContent?: ReactNode;
   initialTab?: "create" | "edit" | "top";
@@ -40,6 +46,36 @@ export function InventoryGroupEditor({
   const dialog = useRef<HTMLDialogElement>(null);
   const [managementTab, setManagementTab] = useState<"create" | "edit" | "top">(
     initialTab ?? (group ? "edit" : "create"),
+  );
+  const [expanded, setExpanded] = useState(false),
+    [observations, setObservations] = useState(""),
+    [evaluationColumn, setEvaluationColumn] = useState(
+      evaluationColumns[0]?.value ?? "",
+    );
+  const { widths, resize, warning } = useSheetWidths(
+    "inventory-group-picker:" + directory.listId,
+  );
+  const evaluation = useInventoryCountryEvaluation(
+    directory.listId,
+    managementTab !== "top" && evaluationColumn ? [evaluationColumn] : [],
+    0,
+  );
+  const columnSpecs = [
+    { key: "name", label: "Diplomado", width: 300 },
+    { key: "primary", label: "Categoría principal", width: 120 },
+    { key: "secondary", label: "Categorías secundarias", width: 150 },
+    { key: "sheets", label: "Hojas", width: 100 },
+    { key: "sales", label: "Ventas", width: 60 },
+    { key: "days", label: "Días", width: 60 },
+    { key: "observations", label: "Observaciones", width: 135 },
+    { key: "selection", label: "Selección", width: 220 },
+  ];
+  const handle = (index: number) => (
+    <SheetColumnResizer
+      label={columnSpecs[index].label}
+      onResize={(value) => resize(columnSpecs[index].key, value)}
+      onReset={() => resize(columnSpecs[index].key)}
+    />
   );
   const [requestId] = useState(() => crypto.randomUUID());
   const [name, setName] = useState(
@@ -192,6 +228,7 @@ export function InventoryGroupEditor({
     <dialog
       ref={dialog}
       className="trial-dialog inventory-group-editor"
+      data-expanded={expanded || undefined}
       aria-label={
         group ? "Editar " + group.name : "Crear grupo desde inventario"
       }
@@ -203,6 +240,13 @@ export function InventoryGroupEditor({
       <header>
         <h2>Crear / modificar grupo</h2>
         <button
+          type="button"
+          aria-pressed={expanded}
+          onClick={() => setExpanded((v) => !v)}
+        >
+          {expanded ? "↙ Restaurar" : "⛶ Maximizar"}
+        </button>
+        <button
           className="ui-close-button"
           aria-label="Cerrar edición de grupo"
           disabled={busy || externalBusy}
@@ -211,6 +255,15 @@ export function InventoryGroupEditor({
           ×
         </button>
       </header>
+      {observations && (
+        <InventoryDiplomaObservations
+          listId={directory.listId}
+          name={observations}
+          columns={evaluationColumns}
+          initialColumn={evaluationColumn}
+          onClose={() => setObservations("")}
+        />
+      )}
       {topContent && (
         <nav
           className="inventory-management-tabs"
@@ -392,6 +445,20 @@ export function InventoryGroupEditor({
                   Quitar selección
                 </button>
               </div>
+              {!!evaluationColumns.length && (
+                <label className="inventory-group-evaluate-in">
+                  Evaluar en{" "}
+                  <SheetSearchSelect
+                    label="País de evaluación del grupo"
+                    value={evaluationColumn}
+                    options={evaluationColumns}
+                    onSelect={setEvaluationColumn}
+                  />
+                </label>
+              )}
+              {(warning || evaluation.error) && (
+                <small role="status">{warning || evaluation.error}</small>
+              )}
               {replacing && (
                 <p role="status" className="notice">
                   Elige el reemplazo de{" "}
@@ -405,7 +472,24 @@ export function InventoryGroupEditor({
                 </p>
               )}
               <div className="table-scroll inventory-group-picker-table">
-                <table>
+                <table
+                  style={{
+                    tableLayout: "fixed",
+                    width: columnSpecs.reduce(
+                      (n, c) => n + (widths[c.key] ?? c.width),
+                      0,
+                    ),
+                    minWidth: 0,
+                  }}
+                >
+                  <colgroup>
+                    {columnSpecs.map((c) => (
+                      <col
+                        key={c.key}
+                        style={{ width: widths[c.key] ?? c.width }}
+                      />
+                    ))}
+                  </colgroup>
                   <thead>
                     <tr>
                       <th>
@@ -432,12 +516,14 @@ export function InventoryGroupEditor({
                             )
                           }
                         />{" "}
-                        Inventario ({filtered.length})
+                        Inventario ({filtered.length}){handle(0)}
                       </th>
-                      <th>Categoría principal</th>
-                      <th>Categorías secundarias</th>
-                      <th>Hojas</th>
-                      <th>Selección</th>
+                      {columnSpecs.slice(1).map((c, index) => (
+                        <th key={c.key}>
+                          {c.label}
+                          {handle(index + 1)}
+                        </th>
+                      ))}
                     </tr>
                   </thead>
                   <tbody>
@@ -445,6 +531,9 @@ export function InventoryGroupEditor({
                       const heading =
                         i.primaryNames.join(" · ") || "Sin categoría principal";
                       const assigned = occupied.get(categoryKey(i.name));
+                      const point = evaluation.lookup.get(
+                        JSON.stringify([categoryKey(i.name), evaluationColumn]),
+                      );
                       return (
                         <Fragment key={i.id}>
                           {(index === 0 ||
@@ -452,7 +541,7 @@ export function InventoryGroupEditor({
                               (ordered[index - 1].primaryNames.join(" · ") ||
                                 "Sin categoría principal")) && (
                             <tr className="inventory-group-band">
-                              <th colSpan={5}>{heading}</th>
+                              <th colSpan={8}>{heading}</th>
                             </tr>
                           )}
                           <tr
@@ -490,6 +579,16 @@ export function InventoryGroupEditor({
                             <td>
                               {i.sheets?.map((s) => s.name).join(" · ") || "—"}
                             </td>
+                            <td>{point?.sales ?? "—"}</td>
+                            <td>{point?.activeDays ?? "—"}</td>
+                            <td>
+                              <button
+                                type="button"
+                                onClick={() => setObservations(i.name)}
+                              >
+                                Ver antecedentes ↗
+                              </button>
+                            </td>
                             <td>
                               {assigned ? (
                                 <small>En {assigned}</small>
@@ -513,13 +612,13 @@ export function InventoryGroupEditor({
                                       disabled={busy}
                                       onClick={() => replaceRandom(i, true)}
                                     >
-                                      Azar · misma categoría
+                                      Azar · misma
                                     </button>
                                     <button
                                       disabled={busy}
                                       onClick={() => replaceRandom(i, false)}
                                     >
-                                      Azar · otra categoría
+                                      Azar · otra
                                     </button>
                                     <button
                                       disabled={busy}
@@ -542,7 +641,7 @@ export function InventoryGroupEditor({
                     })}
                     {!filtered.length && (
                       <tr>
-                        <td colSpan={5}>
+                        <td colSpan={8}>
                           No hay resultados con estos filtros.
                         </td>
                       </tr>
