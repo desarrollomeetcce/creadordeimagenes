@@ -59,7 +59,7 @@ export const trialChange = z.discriminatedUnion("action", [
             .object({
               groupId: id,
               revision: z.number().int().positive(),
-              itemIds: z.array(id).min(1).max(100),
+              itemIds: z.array(id).min(1).max(1500),
             })
             .strict(),
         )
@@ -73,7 +73,7 @@ export const trialChange = z.discriminatedUnion("action", [
       requestId: z.string().uuid().optional(),
       listId: id,
       name: z.string().trim().min(1).max(100),
-      itemIds: z.array(id).min(1).max(100),
+      itemIds: z.array(id).min(1).max(1500),
       countries: z.array(country).min(1).max(20),
       since: day,
       reserve: z.boolean(),
@@ -84,9 +84,9 @@ export const trialChange = z.discriminatedUnion("action", [
   z
     .object({
       ...edit,
-      action: z.literal("MEMBERS"),
+      action: z.enum(["MEMBERS", "ADD_MEMBERS"]),
       name: z.string().trim().min(1).max(100).optional(),
-      itemIds: z.array(id).max(100),
+      itemIds: z.array(id).max(1500),
       since: day,
     })
     .strict(),
@@ -112,7 +112,7 @@ export const trialChange = z.discriminatedUnion("action", [
       ...edit,
       action: z.enum(["PAUSE", "RESUME", "RESTART", "START_DATE"]),
       country,
-      slotIds: z.array(id).min(1).max(100),
+      slotIds: z.array(id).min(1).max(1500),
       date: day,
     })
     .strict(),
@@ -121,7 +121,7 @@ export const trialChange = z.discriminatedUnion("action", [
       ...edit,
       action: z.literal("DECISION"),
       country,
-      slotIds: z.array(id).min(1).max(100),
+      slotIds: z.array(id).min(1).max(1500),
       decision: z.enum(["AUTO", "KEEP", "REPLACE"]),
     })
     .strict(),
@@ -523,14 +523,26 @@ export async function saveInventoryTrial(actor: Actor, input: unknown) {
         409,
       );
       const p = g.payload as unknown as TrialPayload;
-      if (b.action === "MEMBERS") {
+      if (b.action === "MEMBERS" || b.action === "ADD_MEMBERS") {
         dateCheck(b.since);
         demand(
           new Set(b.itemIds).size === b.itemIds.length,
           "No repitas diplomados.",
         );
         const source = await catalog(tx, b.listId);
-        const chosen = b.itemIds.map((id) => source.find((i) => i.id === id));
+        const memberIds =
+          b.action === "ADD_MEMBERS"
+            ? [...new Set([...p.members.map((m) => m.itemId), ...b.itemIds])]
+            : b.itemIds;
+        demand(
+          memberIds.length <= 1500,
+          "Un grupo admite hasta 1500 diplomados.",
+        );
+        demand(
+          b.action !== "ADD_MEMBERS" || b.itemIds.length > 0,
+          "Selecciona al menos un diplomado.",
+        );
+        const chosen = memberIds.map((id) => source.find((i) => i.id === id));
         demand(
           chosen.every(Boolean),
           "Un diplomado cambió. Actualiza la selección.",
@@ -733,7 +745,7 @@ export async function saveInventoryTrial(actor: Actor, input: unknown) {
         }
       }
       demand(
-        p.cycles.length <= 10000,
+        p.cycles.length <= 100000,
         "Este grupo alcanzó su límite de historial. Crea un grupo nuevo.",
       );
       const updated = await tx.metaInventoryTrialGroup.update({

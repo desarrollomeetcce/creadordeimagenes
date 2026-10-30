@@ -474,7 +474,7 @@ export function InventoryGroupEditor({
             busy ||
             committed ||
             !!replacing ||
-            ids.length > 100 ||
+            ids.length > 1500 ||
             !name.trim() ||
             (!group &&
               (!ids.length ||
@@ -502,7 +502,7 @@ export function InventoryGroupSelect({
   groups: TrialGroup[];
   label: string;
   disabled?: boolean;
-  onSelect: (id: string) => void;
+  onSelect: (id: string) => void | Promise<void>;
   value?: string;
   placeholder?: string;
 }) {
@@ -517,7 +517,7 @@ export function InventoryGroupSelect({
         { value: "new", label: "+ Crear grupo" },
       ]}
       onSelect={(id) => {
-        if (id) onSelect(id);
+        if (id) return onSelect(id);
       }}
     />
   );

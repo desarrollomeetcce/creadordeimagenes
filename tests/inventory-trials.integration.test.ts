@@ -899,6 +899,117 @@ test("Grupos de inventario: reglas, países, propuestas, reemplazos e aislamient
       },
     );
     await t.test(
+      "Asignación directa agrega solo elegidos y conserva miembros/ciclos existentes",
+      async () => {
+        const fresh = await Promise.all(
+          [0, 1, 2, 3].map((i) =>
+            db.metaInventoryItem.create({
+              data: { sheetId: list.id, name: "Directo " + i + tag },
+            }),
+          ),
+        );
+        let direct = await saveInventoryTrial(actor, {
+          ...base,
+          name: "Directo",
+          itemIds: [fresh[0].id],
+        });
+        const occupied = await saveInventoryTrial(actor, {
+          ...base,
+          name: "Ocupado",
+          itemIds: [fresh[3].id],
+        });
+        const old = structuredClone(direct);
+        await fail(
+          changeInventoryTrial(actor, {
+            action: "ADD_MEMBERS",
+            listId: list.id,
+            groupId: direct.id,
+            revision: direct.revision,
+            itemIds: [fresh[1].id, ownOther.id],
+            since: today,
+          }),
+          409,
+        );
+        assert.equal(
+          (await inventoryTrials(actor, { listId: list.id })).groups.find(
+            (g) => g.id === direct.id,
+          )!.members.length,
+          1,
+        );
+        direct = await saveInventoryTrial(actor, {
+          action: "ADD_MEMBERS",
+          listId: list.id,
+          groupId: direct.id,
+          revision: direct.revision,
+          itemIds: [fresh[1].id, fresh[2].id],
+          since: today,
+        });
+        assert.deepEqual(
+          direct.members.map((m) => m.itemId),
+          fresh.slice(0, 3).map((i) => i.id),
+        );
+        assert.deepEqual(
+          direct.cycles.filter((c) => c.slotId === old.members[0].slotId),
+          old.cycles,
+        );
+        await fail(
+          changeInventoryTrial(actor, {
+            action: "ADD_MEMBERS",
+            listId: list.id,
+            groupId: direct.id,
+            revision: old.revision,
+            itemIds: [fresh[3].id],
+            since: today,
+          }),
+          409,
+        );
+        await fail(
+          changeInventoryTrial(actor, {
+            action: "ADD_MEMBERS",
+            listId: list.id,
+            groupId: direct.id,
+            revision: direct.revision,
+            itemIds: [fresh[3].id],
+            since: today,
+          }),
+          409,
+        );
+        const again = await saveInventoryTrial(actor, {
+          action: "ADD_MEMBERS",
+          listId: list.id,
+          groupId: direct.id,
+          revision: direct.revision,
+          itemIds: [fresh[1].id],
+          since: today,
+        });
+        assert.equal(again.members.length, 3);
+        assert.equal(again.cycles.length, 6);
+        const more = Array.from({ length: 101 }, (_, i) => ({
+          id: randomUUID(),
+          sheetId: list.id,
+          name: "Lote directo " + i + tag,
+        }));
+        await db.metaInventoryItem.createMany({ data: more });
+        const large = await saveInventoryTrial(actor, {
+          action: "ADD_MEMBERS",
+          listId: list.id,
+          groupId: direct.id,
+          revision: again.revision,
+          itemIds: more.map((i) => i.id),
+          since: today,
+        });
+        assert.equal(large.members.length, 104);
+        assert.equal(large.cycles.length, 208);
+
+        assert.equal(
+          (await inventoryTrials(actor, { listId: list.id })).groups.find(
+            (g) => g.id === occupied.id,
+          )!.members.length,
+          1,
+        );
+      },
+    );
+    await t.test(
       "Retirada individual y masiva atómica conserva grupos, inventario y ciclos",
       async () => {
         const fresh = await Promise.all(

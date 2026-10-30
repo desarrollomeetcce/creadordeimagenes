@@ -1151,6 +1151,70 @@ export function InventoryCatalog({
   );
   const commonSelectedGroup =
     selectedAssignedGroups.size === 1 ? [...selectedAssignedGroups][0] : "";
+  async function assignGroupDirectly(id: string, names: string[]) {
+    if (id === "new") {
+      setGroupEditor({ names });
+      return;
+    }
+    if (busy || !trialDirectory?.canEdit || !names.length) return;
+    const group = trialGroups.find((g) => g.id === id);
+    if (!group) {
+      setMessage("El grupo cambió. Actualiza.");
+      return;
+    }
+    setBusy(true);
+    setMessage("");
+    let committed = false;
+    try {
+      const itemIds = [
+        ...new Set(
+          names.map(
+            (name) =>
+              trialDirectory.catalog.find(
+                (i) => categoryKey(i.name) === categoryKey(name),
+              )?.id,
+          ),
+        ),
+      ];
+      if (itemIds.some((id) => !id))
+        throw Error("Un diplomado cambió. Actualiza el inventario.");
+      await api("meta-ads/inventory/trials", "POST", {
+        action: "ADD_MEMBERS",
+        listId,
+        groupId: id,
+        revision: group.revision,
+        itemIds,
+        since: new Intl.DateTimeFormat("en-CA", {
+          timeZone: "America/Lima",
+          year: "numeric",
+          month: "2-digit",
+          day: "2-digit",
+        }).format(new Date()),
+      });
+      committed = true;
+      setSelected([]);
+      await reloadGroups();
+      await onChanged();
+      await reloadCategories();
+      setMessage(
+        `${names.length} diplomado${names.length === 1 ? "" : "s"} asignado${names.length === 1 ? "" : "s"} a ${group.name}.`,
+      );
+    } catch (e) {
+      setMessage(
+        committed
+          ? "Grupo asignado. Actualiza para ver el cambio."
+          : e instanceof Error
+            ? e.message
+            : "No se pudo asignar el grupo.",
+      );
+      if (!committed) {
+        await reloadGroups().catch(() => {});
+        throw e;
+      }
+    } finally {
+      setBusy(false);
+    }
+  }
   async function removeGroupMembers(groups: typeof removalGroups) {
     if (!groups.length || busy) return;
     setBusy(true);
@@ -1850,14 +1914,14 @@ export function InventoryCatalog({
                     !trialDirectory?.canEdit || !selectedVisible.length || busy
                   }
                   onSelect={(id) =>
-                    setGroupEditor({
-                      id: id === "new" ? undefined : id,
-                      names: available
+                    assignGroupDirectly(
+                      id,
+                      visible
                         .filter((g) =>
-                          g.links.some((a) => selected.includes(a.id)),
+                          g.links.some((a) => selectedVisible.includes(a.id)),
                         )
                         .map((g) => g.name),
-                    })
+                    )
                   }
                 />
                 <button
@@ -2200,10 +2264,7 @@ export function InventoryCatalog({
                               label={"Asignar grupo a " + g.name}
                               disabled={!trialDirectory?.canEdit || busy}
                               onSelect={(id) =>
-                                setGroupEditor({
-                                  id: id === "new" ? undefined : id,
-                                  names: [g.name],
-                                })
+                                assignGroupDirectly(id, [g.name])
                               }
                             />
                           );
