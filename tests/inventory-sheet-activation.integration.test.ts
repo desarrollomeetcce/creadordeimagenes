@@ -18,6 +18,7 @@ import {
   inventoryEffectivenessSource,
   importEffectiveness,
 } from "../lib/meta-ads/effectiveness";
+import { effectivenessDetail } from "../lib/meta-ads/effectiveness-detail";
 import { setEffectivenessState } from "../lib/meta-ads/effectiveness-controls";
 import { authorizeFinancialRequest } from "../lib/meta-ads/financial-access";
 import { limaDay } from "../lib/meta-ads/advisor-attribution";
@@ -1509,6 +1510,17 @@ test("Activación por hoja: selección, pin, historial y permisos", async (t) =>
         assert.equal(prior.assessment.limit, 70);
         assert.equal(prior.assessment.usage, 50 / 70);
         assert.equal(current.sales! + prior.sales!, 5);
+        const cumulative = await effectivenessDetail(owner, {
+          aliasId: alias.id,
+          country: "PE",
+          since: today,
+          until: today,
+        });
+        assert.equal(cumulative.lifetime.sales, 5);
+        assert.equal(cumulative.lifetime.activeDays, 3);
+        assert.equal(cumulative.lifetime.budget, 1049); // Two old active days + today's new activation; yesterday's999 is excluded.
+        assert.equal(Object.keys(cumulative.days).length, 1); // Chart remains on the requested single day.
+
         await db.metaEffectivenessDay.update({
           where: { rowId_day: { rowId: row.id, day: today } },
           data: { sales: null },

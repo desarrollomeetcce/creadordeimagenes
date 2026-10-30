@@ -686,6 +686,8 @@ test("Meta inventory assignment materializes catalog choices atomically and flag
         await db.metaEffectivenessDay.update({
           where: { rowId_day: { rowId: row.id, day: today } },
           data: {
+            sales: 3,
+            salesOverridden: true,
             annotations: {
               spend: { value: 999, currency: "PEN" },
               budget: { value: 25, currency: "PEN" },
@@ -730,6 +732,18 @@ test("Meta inventory assignment materializes catalog choices atomically and flag
         h = await read();
         assert.equal(h.metaSpend, 0);
         assert.notEqual(h.metaSpend, 999);
+        const detail = await effectivenessDetail(actor, {
+          aliasId: alias.id,
+          country: "PE",
+          since: today,
+          until: today,
+        });
+        assert.equal(detail.lifetime.sales, 3);
+        assert.equal(detail.lifetime.budget, 25);
+        assert.equal(detail.lifetime.metaSpend, 0);
+        assert.equal(detail.lifetime.activeDays, 1);
+        assert.equal(detail.lifetime.activeHours, 1);
+        assert.equal(detail.lifetime.timePartial, false);
       },
     );
   } finally {

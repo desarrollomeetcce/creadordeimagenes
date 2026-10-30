@@ -1841,3 +1841,7 @@ Evidencia:214 unitarias,23 integración activación/lote y12 Meta/asignación/hi
 ## 2026-10-30 · Auditoría Inventario y ventas tardías
 
 214 unitarias y36 integración correctas, typecheck/build. Prueba nueva reconstruye período cerrado:5ventas posteriores,50presupuesto activo,2días; presupuesto999 de días apagados excluido; próxima activación separa1+4ventas, respetando límite personalizado70 y ausencia actual pendiente. Compara resumen e historial y no duplica ventas. Tres comprobaciones Chromium muestran V5/P10/1día/FX4% tras cierre, Ventas hasta y cinco secciones del detalle completo apagado. Reporte de pedidos en docs/AUDITORIA_INVENTARIO_2026-10-30.md; evidencia previa de12verificaciones UX de Top/20altas/cabeceras conservada. Base exclusiva y limpieza local, sin llamadas Meta/IA/SMTP.
+
+## 2026-10-30 · Acumulado general legible
+
+214 unitarias +40 helper/integración correctas; typecheck/build. Tres comprobaciones Chromium en cuatro contadores del detalle nativo: V5,1día/P10/GMeta7.5 de todo el historial aunque gráfico sea de un solo día, ampliar y dos columnas en móvil; excluye Gmanual999 yMeta999 de día apagado. Claro/oscuro inspeccionados, ceroerroresJS. Agregados exclusivos alias+país autorizados, tiempos de eventos completos, suma diaria única, cero/ausencia/FX respetados. Integración conserva datos/permisos/fuentes ocultas y verifica resumen fuera de rango. Base exclusiva limpiada, sin llamadas de proveedor.

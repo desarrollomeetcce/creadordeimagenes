@@ -2,7 +2,11 @@ import { activePeriods } from "./active-periods";
 import { db } from "../db";
 import { ownerOnly } from "./financial-access";
 import { demand } from "../errors";
-import { effectiveness, inventoryEffectivenessSource } from "./effectiveness";
+import { inventoryEffectivenessSource } from "./effectiveness";
+import { inventoryLifetimeSummary } from "./inventory-lifetime-summary";
+import { accountWhere } from "./service";
+import { limaDay } from "./advisor-attribution";
+import type { FxRates } from "./exchange-rates";
 import { aliasStateTimeline } from "./alias-state-timeline";
 import type { Actor } from "./service";
 export async function effectivenessDetail(
@@ -57,7 +61,12 @@ export async function effectivenessDetail(
         state
           ? tx.metaEffectivenessEvent.findMany({
               where: { stateId: state.id, createdAt: { lte: new Date(asOf) } },
-              select: { id: true, active: true, createdAt: true },
+              select: {
+                id: true,
+                active: true,
+                createdAt: true,
+                snapshot: true,
+              },
               orderBy: [{ createdAt: "asc" }, { id: "asc" }],
               take: 10001,
             })
@@ -90,8 +99,92 @@ export async function effectivenessDetail(
         id: string;
         active: boolean;
         createdAt: Date;
-      }) => ({ ...e, createdAt: e.createdAt.toISOString() });
+      }) => ({
+        id: e.id,
+        active: e.active,
+        createdAt: e.createdAt.toISOString(),
+      });
+      const today = limaDay(new Date(asOf));
+      const [firstDay, meta] = await Promise.all([
+        tx.metaEffectivenessDay.aggregate({
+          where: {
+            row: { aliasId: alias.id, country: b.country },
+            day: { lte: today },
+          },
+          _min: { day: true },
+        }),
+        tx.metaAdDaily.findMany({
+          where: {
+            scope: "7d_click,1d_view|impression",
+            day: { lte: today },
+            object: {
+              aliasId: alias.id,
+              aliasCountry: b.country,
+              level: "campaign",
+              account: await accountWhere(actor),
+            },
+          },
+          select: {
+            day: true,
+            spend: true,
+            account: { select: { currency: true } },
+          },
+        }),
+      ]);
+      const allPeriods = activePeriods(fullEvents.map(serialize), asOf);
+      const first =
+        [
+          firstDay._min.day,
+          ...meta.map((d) => d.day),
+          ...allPeriods.map((p) => p.since),
+        ]
+          .filter((d): d is string => !!d && d <= today)
+          .sort()[0] ?? today;
+      const lifetimeRow =
+        b.since <= first && b.until >= today
+          ? row
+          : (
+              await inventoryEffectivenessSource(
+                actor,
+                alias.tableId,
+                first,
+                today,
+                tx,
+              )
+            ).rows.find(
+              (r) => r.aliasId === alias.id && r.country === b.country,
+            );
+      demand(
+        lifetimeRow,
+        "No se pudo consultar el acumulado de este diplomado.",
+        404,
+      );
+      const rates = await tx.metaFxDay.findMany({
+        where: { day: { gte: first, lte: today } },
+        select: { day: true, rates: true },
+      });
+      const initial = fullEvents[0];
+      const timeComplete =
+        !!initial &&
+        initial.active &&
+        (initial.snapshot as Record<string, unknown>)?.priorActive !== true;
+      const lifetime = inventoryLifetimeSummary({
+        since: first,
+        today,
+        asOf,
+        currency: lifetimeRow.currency,
+        periods: allPeriods,
+        timeComplete,
+        days: lifetimeRow.days,
+        meta: meta.map((d) => ({
+          day: d.day,
+          currency: d.account.currency,
+          amount: Number(d.spend),
+        })),
+        rates: new Map(rates.map((r) => [r.day, r.rates as FxRates])),
+      });
       return {
+        lifetime,
         aliasId: alias.id,
         name: alias.name,
         tableId: alias.tableId,
@@ -99,7 +192,7 @@ export async function effectivenessDetail(
         country: b.country,
         currency: row.currency,
         active: row.active,
-        activePeriods: activePeriods(fullEvents.map(serialize), asOf),
+        activePeriods: allPeriods,
         asOf,
         days: row.days,
         timeline: aliasStateTimeline(

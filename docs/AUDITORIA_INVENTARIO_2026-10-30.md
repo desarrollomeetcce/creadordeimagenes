@@ -41,3 +41,7 @@ Se contrastaron los pedidos de la conversación con las rutas, componentes, prue
 - Base exclusiva sintética, fixtures retiradas; sin llamadas facturables Meta/IA/SMTP.
 
 Las cifras financieras son diarias. Si dos activaciones comparten un día, faltan datos o no se registró el inicio, no se afirma una atribución exacta por hora: el estado queda pendiente. Se muestran hasta366días de métricas y100períodos por país; las fechas históricas registradas permanecen.
+
+## Pedido adicional: contadores visibles
+
+Añadido acumulado general encima de las estadísticas del detalle: ventas, días activos con horas, presupuesto y gasto original de Meta, en cuatro recuadros de colores suaves. Todo el historial registrado, sin depender del rango del gráfico; P/Meta solamente días activos y cada fecha una vez. Pruebas adicionales validan ausencia/zero/FX, intervalos repetidos y separar gasto manual del original de Meta. En móvil se distribuyen en dos columnas. No cambia el historial ni las campañas.

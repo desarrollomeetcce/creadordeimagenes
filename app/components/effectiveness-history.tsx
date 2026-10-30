@@ -17,6 +17,7 @@ import {
 import type { InventoryDetailModuleId } from "../../lib/meta-ads/inventory-detail-order";
 import { DetailStickyHeader } from "./detail-sticky-header";
 import { DetailNavigation } from "./detail-navigation";
+import { InventoryLifetimeCounters } from "./inventory-lifetime-counters";
 import { MetaDailyChart } from "./meta-daily-chart";
 import type { ActivePeriod } from "../../lib/meta-ads/active-periods";
 import { InventoryAdvisorSales } from "./inventory-advisor-sales";
@@ -31,7 +32,9 @@ type Cell = Record<SheetMetric, number | null> & {
   na: SheetMetric[];
   fxMissing: boolean;
 };
+import type { InventoryLifetimeSummary } from "../../lib/meta-ads/inventory-lifetime-summary";
 type Detail = {
+  lifetime: InventoryLifetimeSummary;
   name: string;
   tableName: string;
   currency: string;
@@ -278,6 +281,9 @@ export function EffectivenessHistory({
                   <p role="alert">
                     Elige un período válido de hasta diez años.
                   </p>
+                )}
+                {data?.lifetime && (
+                  <InventoryLifetimeCounters summary={data.lifetime} />
                 )}
                 <p className="inventory-detail-order-hint">
                   Arrastra ⠿ para ordenar. Se aplica a los detalles de todos los
