@@ -2,6 +2,10 @@ import { isPerformanceManager, performanceManager } from "./performance-access";
 import { performanceEffectivenessSource } from "./effectiveness";
 import { financialContext } from "./financial-access";
 import { manualBaseAllocationsSchema } from "./manual-base-policy";
+import {
+  advisorFinancialMetrics,
+  type AdvisorFinancialRow,
+} from "./advisor-financial-metrics";
 import { advisorBaseEstimate } from "./advisor-base-estimate";
 import { inventoryBaseContext } from "./inventory-base-context";
 import {
@@ -765,6 +769,7 @@ async function readAdvisorSheet(
           }
         >
       >();
+      const financialRows: AdvisorFinancialRow[] = [];
       const breakdown: {
         tableId: string;
         tableName: string;
@@ -834,6 +839,12 @@ async function readAdvisorSheet(
           const changes = assignments.filter(
             (e) => e.aliasId === row.aliasId && e.country === row.country,
           );
+          const financialRow: AdvisorFinancialRow = {
+            ...row,
+            changes,
+            attributedSales: {},
+          };
+          if (!personal && !managed) financialRows.push(financialRow);
           if (filters.advisorId) estimateRows.push({ ...row, changes });
           if (filters.advisorId)
             for (const e of assignmentTimeline(changes))
@@ -933,6 +944,8 @@ async function readAdvisorSheet(
                 continue;
               if (filters.advisorId && portion.advisorId !== filters.advisorId)
                 continue;
+              (financialRow.attributedSales![day] ??= {})[portion.advisorId] =
+                portion.na ? null : portion.sales;
               if (!totals.has(portion.advisorId))
                 totals.set(portion.advisorId, new Map());
               const byDay = totals.get(portion.advisorId)!;
@@ -987,6 +1000,11 @@ async function readAdvisorSheet(
           "Selecciona una asignación válida con hoja, inventario, país y asesor.",
           404,
         );
+      const financial = advisorFinancialMetrics(
+        financialRows,
+        dates,
+        personIds,
+      );
       return {
         tableId,
         since,
@@ -1011,6 +1029,9 @@ async function readAdvisorSheet(
               return [
                 day,
                 {
+                  ...(!personal && !managed
+                    ? { financial: financial.get(p.id)?.[day] }
+                    : {}),
                   manualBase:
                     manualBaseByPersonDay.get(JSON.stringify([p.id, day])) ??
                     null,

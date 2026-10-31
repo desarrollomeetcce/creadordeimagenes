@@ -28,6 +28,8 @@ export async function effectivenessLock(tx: Tx, actor: Actor) {
 }
 type Amount = { currency: string; amount: number };
 export type EffectivenessCell = {
+  sourceBase?: number | null;
+  metaSpend?: number | null;
   budget: number | null;
   spend: number | null;
   base: number | null;
@@ -525,6 +527,9 @@ async function readEffectiveness(
         v = actions["onsite_conversion.messaging_conversation_started_7d"];
       x.base =
         (x.base ?? 0) + (typeof v === "number" && Number.isFinite(v) ? v : 0);
+      x.sourceBase =
+        (x.sourceBase ?? 0) +
+        (typeof v === "number" && Number.isFinite(v) ? v : 0);
       x.campaigns++;
       if (!x.updatedAt || d.updatedAt.toISOString() > x.updatedAt)
         x.updatedAt = d.updatedAt.toISOString();
@@ -599,6 +604,16 @@ async function readEffectiveness(
         }
         return total;
       };
+      const originalAmounts = c.sourceSpend.map((a) =>
+        r.currency
+          ? convertMoney(a.amount, a.currency, r.currency, rates)
+          : null,
+      );
+      c.metaSpend =
+        originalAmounts.length &&
+        originalAmounts.every((n): n is number => n !== null)
+          ? originalAmounts.reduce((sum, n) => sum + n!, 0)
+          : null;
       const overrides =
         annotations.get(key(r.aliasId, r.country))?.get(day) ?? {};
       c.spend = overrides.spend ? null : project(c.sourceSpend, "spend");

@@ -866,6 +866,10 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
           ? "panel"
           : p.tab,
     );
+    if (new URLSearchParams(window.location.search).get("metaTab") === "sync") {
+      setTab("panel");
+      setSyncOpen(!!moduleAccess?.canEdit);
+    }
     setPreferencesReady(true);
   }, [preferencesKey, owner, moduleReady]);
   useEffect(() => {

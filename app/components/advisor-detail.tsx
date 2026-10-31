@@ -1,4 +1,11 @@
 "use client";
+import {
+  advisorAnalysisDefaults,
+  type AdvisorAnalysisView,
+} from "../../lib/meta-ads/advisor-analysis-view";
+import { advisorFinancialSummary } from "../../lib/meta-ads/advisor-financial-summary";
+import { AdvisorMetaNotice } from "./advisor-meta-notice";
+import { AdvisorFinancialSummary } from "./advisor-financial-summary";
 import { advisorDayEffectiveness } from "../../lib/meta-ads/advisor-day-effectiveness";
 import { summaryPeriod } from "../../lib/meta-ads/summary-period";
 import { SummaryPeriodNotice } from "./summary-period-notice";
@@ -56,9 +63,18 @@ const attendance = (v: string | null) =>
         ? "N.A."
         : "—";
 type AdvisorMetric =
-  DailyChartMetric | "absences" | "advisorBase" | "manualBase";
+  | DailyChartMetric
+  | "absences"
+  | "advisorBase"
+  | "manualBase"
+  | "metaBase"
+  | "metaSpend"
+  | "budget";
 const options = [
   { value: "results", label: "Ventas (V)" },
+  { value: "budget", label: "Presupuesto (P)" },
+  { value: "metaBase", label: "Base Meta Ads (B)" },
+  { value: "metaSpend", label: "Gasto Meta (G)" },
   { value: "manualBase", label: "Base manual (BM)" },
   { value: "advisorBase", label: "Base por contactar (BC)" },
   { value: "cost", label: "Horas ausentes (H)" },
@@ -71,9 +87,10 @@ export function AdvisorDetail({
   initialTableId,
   initialAliasId,
   initialCountry,
-  initialAnalysisView = "period",
+  initialAnalysisView = "today",
   initialSince,
   initialUntil,
+  initialRangeSelected = false,
   onClose,
   openRequest = 0,
   onOpenPeriod,
@@ -83,9 +100,10 @@ export function AdvisorDetail({
   initialTableId: string;
   initialAliasId: string;
   initialCountry: string;
-  initialAnalysisView?: "period" | "today" | "yesterday";
+  initialAnalysisView?: AdvisorAnalysisView;
   initialSince: string;
   initialUntil: string;
+  initialRangeSelected?: boolean;
   onClose: () => void;
   openRequest?: number;
   onOpenPeriod?: (period: AdvisorPeriodView) => void;
@@ -99,44 +117,91 @@ export function AdvisorDetail({
       if (!dialog.current?.open) dialog.current?.showModal();
     });
   };
+  const initialDefaults = advisorAnalysisDefaults(
+    initialAnalysisView,
+    limaToday(),
+    initialSince,
+    initialUntil,
+  );
+  if (initialRangeSelected) {
+    initialDefaults.since = initialSince;
+    initialDefaults.until = initialUntil;
+  }
+  const [autoDay, setAutoDay] = useState(
+    initialDefaults.allInventory && !initialRangeSelected,
+  );
   const [tableId, setTableId] = useState(initialTableId),
-    [aliasId, setAliasId] = useState(initialAliasId),
+    [aliasId, setAliasId] = useState(
+      initialDefaults.allInventory ? "" : initialAliasId,
+    ),
     [country, setCountry] = useState(initialCountry),
-    [since, setSince] = useState(initialSince),
-    [until, setUntil] = useState(initialUntil),
+    [since, setSince] = useState(initialDefaults.since),
+    [until, setUntil] = useState(initialDefaults.until),
     [bars, setBars] = useState<AdvisorMetric>("results"),
     [line, setLine] = useState<AdvisorMetric>(
-      initialAnalysisView === "today"
-        ? "advisorBase"
-        : initialAnalysisView === "yesterday"
-          ? "manualBase"
-          : "cost",
+      initialAnalysisView === "meta"
+        ? "metaBase"
+        : initialAnalysisView === "today"
+          ? "advisorBase"
+          : initialAnalysisView === "yesterday"
+            ? "manualBase"
+            : "cost",
     ),
     [data, setData] = useState<AdvisorSheetData | null>(null),
     [message, setMessage] = useState(""),
     [loading, setLoading] = useState(true),
     [reload, setReload] = useState(0);
-  const [analysisView, setAnalysisView] = useState<
-    "period" | "today" | "yesterday"
-  >(initialAnalysisView);
-  const selectAnalysis = (view: "period" | "today" | "yesterday") => {
+  const [analysisView, setAnalysisView] =
+    useState<AdvisorAnalysisView>(initialAnalysisView);
+  const selectAnalysis = (view: AdvisorAnalysisView) => {
+    const defaults = advisorAnalysisDefaults(view, limaToday(), since, until);
+    setSince(defaults.since);
+    setUntil(defaults.until);
+    setAutoDay(defaults.allInventory);
+    if (defaults.allInventory) setAliasId("");
     setAnalysisView(view);
     setSelectedPeriod(null);
     previousView.current = null;
     setDayPage(0);
     setBars("results");
     setLine(
-      view === "today"
-        ? "advisorBase"
-        : view === "yesterday"
-          ? "manualBase"
-          : "cost",
+      view === "meta"
+        ? "metaBase"
+        : view === "today"
+          ? "advisorBase"
+          : view === "yesterday"
+            ? "manualBase"
+            : "cost",
     );
   };
-  const showBM = analysisView !== "today",
-    showBC = analysisView !== "yesterday";
+  const showBM = analysisView === "period" || analysisView === "yesterday",
+    showBC = analysisView === "period" || analysisView === "today";
+  useEffect(() => {
+    if (!autoDay) return;
+    const update = () => {
+      if (!document.hidden) {
+        const d = advisorAnalysisDefaults(
+          analysisView,
+          limaToday(),
+          since,
+          until,
+        );
+        setSince(d.since);
+        setUntil(d.until);
+      }
+    };
+    const timer = setInterval(update, 60000);
+    document.addEventListener("visibilitychange", update);
+    return () => {
+      clearInterval(timer);
+      document.removeEventListener("visibilitychange", update);
+    };
+  }, [autoDay, analysisView, since, until]);
   const metricOptions = options.filter(
     (o) =>
+      (analysisView === "meta"
+        ? o.value !== "budget"
+        : o.value !== "metaBase" && o.value !== "metaSpend") &&
       (showBM || o.value !== "manualBase") &&
       (showBC || o.value !== "advisorBase"),
   );
@@ -172,6 +237,7 @@ export function AdvisorDetail({
   }, []);
   const selectPeriod = (p: AdvisorPeriodView) => {
     if (!p.since || !p.from) return;
+    setAutoDay(false);
     setAnalysisView("period");
     previousView.current ??= {
       tableId,
@@ -418,6 +484,13 @@ export function AdvisorDetail({
   ).length;
   const metricValue = (metric: AdvisorMetric, day: string) => {
     const c = row!.days[day];
+    if (metric === "metaBase") return c.financial?.base ?? null;
+    if (metric === "budget" || metric === "metaSpend") {
+      const currencies = c.financial?.currencies ?? [];
+      return currencies.length === 1
+        ? currencies[0][metric === "budget" ? "budget" : "spend"]
+        : null;
+    }
     return metric === "manualBase"
       ? (c.manualBase ?? null)
       : metric === "advisorBase"
@@ -546,6 +619,17 @@ export function AdvisorDetail({
   }
   const pageHasSales = hasSales(visibleDays);
   const partial = summaryDays.some((d) => row!.days[d].partial);
+  const financialDays = summaryDays.map((day) => ({
+    day,
+    value: row!.days[day],
+  }));
+  const financialSummary = advisorFinancialSummary(
+    financialDays.map((d) => ({
+      day: d.day,
+      sales: d.value.na ? null : d.value.sales,
+      financial: d.value.financial,
+    })),
+  );
   const summary = row ? (
     <div className="advisor-detail-summary" aria-label="Resumen del asesor">
       <SummaryPeriodNotice
@@ -553,6 +637,29 @@ export function AdvisorDetail({
         view={analysisView}
         today={limaToday()}
       />
+      {(analysisView === "today" || analysisView === "yesterday") && (
+        <div className="advisor-analysis-note" role="note">
+          <strong>Puedes cambiar el período para consultar más fechas.</strong>
+          <span>
+            {aliasId
+              ? "BM y BC son del asesor y país completos; no se registran por diplomado."
+              : analysisView === "today"
+                ? "BC suma los cortes declarados por el asesor en las fechas elegidas; no equivale a una base de 24 horas."
+                : "Ventas y BM corresponden a las mismas fechas completas."}
+          </span>
+          {aliasId && (
+            <button type="button" onClick={() => setAliasId("")}>
+              Volver a todo el inventario
+            </button>
+          )}
+        </div>
+      )}
+      {analysisView === "meta" && (
+        <AdvisorMetaNotice
+          updatedAt={financialSummary.updatedAt}
+          partial={financialSummary.metaPartial}
+        />
+      )}
       <h4>
         Productividad ·{" "}
         {summaryDays.length
@@ -579,7 +686,7 @@ export function AdvisorDetail({
             </b>
             <small>
               {baseDays.length}/{summaryDays.length} días con BC · declarada por
-              el asesor en Totales.
+              el asesor.
             </small>
           </span>
         )}
@@ -648,13 +755,21 @@ export function AdvisorDetail({
             </small>
           </span>
         )}
-        <span>
-          Promedio por día con V
-          <strong>{sales === null ? "—" : number(sales / known.length)}</strong>
-          <small>
-            {known.length}/{summaryDays.length} días con ventas registradas
-          </small>
-        </span>
+        <AdvisorFinancialSummary
+          days={financialDays}
+          meta={analysisView === "meta"}
+        />
+        {analysisView === "period" && (
+          <span>
+            Promedio por día con V
+            <strong>
+              {sales === null ? "—" : number(sales / known.length)}
+            </strong>
+            <small>
+              {known.length}/{summaryDays.length} días con ventas registradas
+            </small>
+          </span>
+        )}
       </div>
       <h4 className="advisor-attendance-title">Asistencias</h4>
       <div
@@ -797,6 +912,12 @@ export function AdvisorDetail({
                 <th>H</th>
                 <th title="Inasistencias">I</th>
                 <th>V</th>
+                {analysisView === "meta" && (
+                  <>
+                    <th>B</th>
+                    <th>G</th>
+                  </>
+                )}
                 {showBM && <th>BM</th>}
                 {showBC && <th title="Base por contactar">BC</th>}
                 <th>Salidas y regresos · Lima</th>
@@ -821,6 +942,24 @@ export function AdvisorDetail({
                       {c.na ? "N.A." : c.sales === null ? "—" : number(c.sales)}
                       {c.partial ? " *" : ""}
                     </td>
+                    {analysisView === "meta" && (
+                      <>
+                        <td>
+                          {c.financial?.base == null
+                            ? "—"
+                            : number(c.financial.base)}
+                        </td>
+                        <td>
+                          {c.financial?.currencies
+                            .map((m) =>
+                              m.spend == null
+                                ? "—"
+                                : `${m.currency} ${number(m.spend)}`,
+                            )
+                            .join(" · ") || "—"}
+                        </td>
+                      </>
+                    )}
                     {showBM && (
                       <td>
                         {c.manualBase === null || c.manualBase === undefined
@@ -1230,6 +1369,7 @@ export function AdvisorDetail({
                   ["period", "Análisis del período"],
                   ["today", "Hoy · avance provisional"],
                   ["yesterday", "Ayer · día completo"],
+                  ["meta", "Datos Meta"],
                 ] as const
               ).map(([value, label]) => (
                 <button
@@ -1243,13 +1383,14 @@ export function AdvisorDetail({
               ))}
             </div>
             <p className="hint" role="status">
-              {analysisView === "today"
-                ? `Avance provisional · ${since} — ${until} · Lima. Ventas y BC de las mismas fechas del período.`
-                : analysisView === "yesterday"
-                  ? `Día completo · ${since} — ${until} · Lima. Ventas y BM de las mismas fechas; BM se registra al día siguiente.`
-                  : "Período seleccionado: compara ventas con BM o BC, sin mezclar ambas bases."}{" "}
-              * Cobertura parcial; — sin dato. BM se recibe de Totales y BC se registra en Asesores;
-              no se reparten por diplomado.
+              {analysisView === "meta"
+                ? "V / B × 100 y G / V · por inventario y país · según informes de Meta."
+                : analysisView === "today"
+                  ? "V / BC × 100 y P / V · cortes declarados, sin repartir BC por diplomado."
+                  : analysisView === "yesterday"
+                    ? "V / BM × 100 y P / V · datos de días completos, sin repartir BM por diplomado."
+                    : "Período elegido · ventas y bases de las mismas fechas."}{" "}
+              * Cobertura parcial; — sin dato.
             </p>
             <div className="row advisor-detail-controls">
               <div className="advisor-period-controls">
@@ -1258,6 +1399,7 @@ export function AdvisorDetail({
                   from={since}
                   to={until}
                   onChange={(a, b) => {
+                    setAutoDay(false);
                     setSelectedPeriod(null);
                     previousView.current = null;
                     setDayPage(0);
@@ -1272,6 +1414,7 @@ export function AdvisorDetail({
                   since={since}
                   until={until}
                   onSelect={(a, b) => {
+                    setAutoDay(false);
                     setSelectedPeriod(null);
                     previousView.current = null;
                     setDayPage(0);

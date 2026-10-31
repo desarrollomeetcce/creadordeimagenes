@@ -1,5 +1,5 @@
 export type SummaryView =
-  "period" | "manual" | "automatic" | "today" | "yesterday";
+  "period" | "manual" | "automatic" | "today" | "yesterday" | "meta";
 /** Keep history intact; cut only summary calculations at the last eligible business day. */
 export function summaryPeriod(
   days: string[],

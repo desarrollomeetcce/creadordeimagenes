@@ -91,6 +91,7 @@ export function AdvisorsSheet({
   const rateBasis =
     analysisView === "period" ? null : analysisView === "today" ? "BC" : "BM";
   const [teamAnalysis, setTeamAnalysis] = useState(false);
+  const [teamViewOverride, setTeamViewOverride] = useState<"meta" | null>(null);
   const [detailVersion, setDetailVersion] = useState(0);
   const [detailDay, setDetailDay] = useState<string | null>(null);
   const [periodSince, setSince] = useWorkbookPreference<string>(
@@ -295,11 +296,33 @@ export function AdvisorsSheet({
                       : undefined
                 }
                 aria-pressed={analysisView === value}
-                onClick={() => setAnalysisView(value)}
+                onClick={() => {
+                  setAnalysisView(value);
+                  if (value === "today" || value === "yesterday") {
+                    const day =
+                      value === "today"
+                        ? today
+                        : new Date(Date.parse(today) - 86400000)
+                            .toISOString()
+                            .slice(0, 10);
+                    setSince(day);
+                    setUntil(day);
+                    setAliasId("");
+                  }
+                }}
               >
                 {label}
               </button>
             ))}
+            <button
+              type="button"
+              onClick={() => {
+                setTeamViewOverride("meta");
+                setTeamAnalysis(true);
+              }}
+            >
+              Datos Meta
+            </button>
           </div>
           <MetaDateRange
             maxDays={3660}
@@ -458,7 +481,10 @@ export function AdvisorsSheet({
                   <button
                     type="button"
                     className="advisor-team-trigger"
-                    onClick={() => setTeamAnalysis(true)}
+                    onClick={() => {
+                      setTeamViewOverride(null);
+                      setTeamAnalysis(true);
+                    }}
                   >
                     Ver análisis del equipo
                   </button>
@@ -647,7 +673,7 @@ export function AdvisorsSheet({
           tables={tables}
           initialTableId={tableId}
           initialCountry={country}
-          initialView={analysisView}
+          initialView={teamViewOverride ?? analysisView}
           initialSince={since}
           initialUntil={until}
           onClose={() => setTeamAnalysis(false)}
@@ -663,6 +689,7 @@ export function AdvisorsSheet({
           initialAliasId={aliasId}
           initialCountry={country}
           initialAnalysisView={analysisView}
+          initialRangeSelected={!!detailDay}
           initialSince={detailDay ?? since}
           initialUntil={detailDay ?? until}
           onClose={() => setDetail(null)}

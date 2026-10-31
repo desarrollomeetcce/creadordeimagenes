@@ -8,6 +8,7 @@ type Person = {
       sales: number | null;
       na: boolean;
       partial: boolean;
+      financial?: import("./advisor-financial-metrics").AdvisorFinancialDay;
       manualBase?: number | null;
       advisorBase?: number | null;
       status: string | null;
@@ -15,12 +16,16 @@ type Person = {
     }
   >;
 };
-export function advisorTeamRows(people: Person[], basis: "BC" | "BM") {
+export function advisorTeamRows(people: Person[], basis: "BC" | "BM" | "B") {
   return people.map((p) => {
     const days = Object.values(p.days),
       salesDays = days.filter((d) => !d.na && d.sales !== null),
       baseValue = (d: (typeof days)[number]) =>
-        basis === "BC" ? d.advisorBase : d.manualBase,
+        basis === "B"
+          ? d.financial?.base
+          : basis === "BC"
+            ? d.advisorBase
+            : d.manualBase,
       baseDays = days.filter(
         (d) => baseValue(d) !== null && baseValue(d) !== undefined,
       ),
@@ -52,6 +57,7 @@ export function advisorTeamRows(people: Person[], basis: "BC" | "BM") {
       partial: days.some(
         (d) =>
           d.partial ||
+          (basis === "B" && !!d.financial?.metaPartial) ||
           (!d.na &&
             (d.sales === null ||
               baseValue(d) === null ||

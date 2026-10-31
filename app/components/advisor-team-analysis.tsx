@@ -1,7 +1,14 @@
 "use client";
+import {
+  advisorAnalysisDefaults,
+  type AdvisorAnalysisView,
+} from "../../lib/meta-ads/advisor-analysis-view";
+import { advisorFinancialSummary } from "../../lib/meta-ads/advisor-financial-summary";
+import { countryOptions } from "../../lib/meta-ads/countries";
 import { summaryPeriod } from "../../lib/meta-ads/summary-period";
 import { SummaryPeriodNotice } from "./summary-period-notice";
 import { useEffect, useRef, useState } from "react";
+import { AdvisorMetaNotice } from "./advisor-meta-notice";
 import { AdvisorDetail } from "./advisor-detail";
 import { DetailStickyHeader } from "./detail-sticky-header";
 import { MetaDateRange } from "./meta-date-range";
@@ -27,19 +34,27 @@ export function AdvisorTeamAnalysis({
   tables: AdvisorTable[];
   initialTableId: string;
   initialCountry: string;
-  initialView?: "period" | "today" | "yesterday";
+  initialView?: AdvisorAnalysisView;
   initialSince: string;
   initialUntil: string;
   onClose: () => void;
 }) {
   const [personId, setPersonId] = useState<string | null>(null);
   const onAdvisor = (id: string) => setPersonId(id);
+  const initialDefaults = advisorAnalysisDefaults(
+    initialView,
+    limaToday(),
+    initialSince,
+    initialUntil,
+  );
+  const [autoDay, setAutoDay] = useState(initialDefaults.allInventory);
+  const [aliasId, setAliasId] = useState("");
   const dialog = useRef<HTMLDialogElement>(null),
-    [view, setView] = useState<"period" | "today" | "yesterday">(initialView),
-    [since, setSince] = useState(initialSince),
-    [until, setUntil] = useState(initialUntil),
-    [basis, setBasis] = useState<"BC" | "BM">(
-      initialView === "yesterday" ? "BM" : "BC",
+    [view, setView] = useState<AdvisorAnalysisView>(initialView),
+    [since, setSince] = useState(initialDefaults.since),
+    [until, setUntil] = useState(initialDefaults.until),
+    [basis, setBasis] = useState<"BC" | "BM" | "B">(
+      initialView === "meta" ? "B" : initialView === "yesterday" ? "BM" : "BC",
     ),
     [tableId, setTableId] = useState(initialTableId),
     [country, setCountry] = useState(initialCountry),
@@ -53,6 +68,7 @@ export function AdvisorTeamAnalysis({
   const person = data?.value.rows.find((p) => p.id === personId);
   const key = JSON.stringify({
     advisorListId: listId,
+    aliasId,
     tableId,
     country,
     since,
@@ -71,7 +87,14 @@ export function AdvisorTeamAnalysis({
       inFlight = true;
       try {
         const value = await readAdvisorRange(
-          { advisorListId: listId, tableId, country, since, until },
+          {
+            advisorListId: listId,
+            tableId,
+            country,
+            since,
+            until,
+            ...(aliasId ? { aliasId } : {}),
+          },
           () => active,
         );
         if (active) {
@@ -99,7 +122,7 @@ export function AdvisorTeamAnalysis({
       unsub();
       document.removeEventListener("visibilitychange", load);
     };
-  }, [key, reload, listId, tableId, country, since, until]);
+  }, [key, reload, listId, tableId, country, since, until, aliasId]);
   const periodPeople = data?.key === key ? data.value.rows : [];
   const periodDays = Object.keys(periodPeople[0]?.days ?? {}).sort();
   const summaryDaySet = new Set(
@@ -113,12 +136,14 @@ export function AdvisorTeamAnalysis({
       ),
     })),
     basis,
-  ).sort(
-    (a, b) =>
-      (b[sort] ?? -1) - (a[sort] ?? -1) ||
-      (b.sales ?? -1) - (a.sales ?? -1) ||
-      a.name.localeCompare(b.name),
-  );
+  )
+    .map((r) => (aliasId && basis !== "B" ? { ...r, percent: null } : r))
+    .sort(
+      (a, b) =>
+        (b[sort] ?? -1) - (a[sort] ?? -1) ||
+        (b.sales ?? -1) - (a.sales ?? -1) ||
+        a.name.localeCompare(b.name),
+    );
   const pageCount = Math.max(1, Math.ceil(rows.length / 25)),
     activePage = Math.min(page, pageCount - 1),
     visible = rows.slice(activePage * 25, activePage * 25 + 25),
@@ -126,6 +151,43 @@ export function AdvisorTeamAnalysis({
   const totalSales = rows.some((r) => r.sales !== null)
     ? rows.reduce((n, r) => n + (r.sales ?? 0), 0)
     : null;
+  const financial = new Map(
+    periodPeople.map((p) => [
+      p.id,
+      advisorFinancialSummary(
+        Object.entries(p.days)
+          .filter(([day]) => summaryDaySet.has(day))
+          .map(([day, d]) => ({
+            day,
+            sales: d.na ? null : d.sales,
+            financial: d.financial,
+          })),
+      ),
+    ]),
+  );
+  const moneyText = (
+    id: string,
+    key: "budget" | "spend" | "budgetCac" | "metaCac",
+  ) =>
+    financial
+      .get(id)
+      ?.money.map((m) =>
+        m[key] === null
+          ? "—"
+          : (m.currency
+              ? new Intl.NumberFormat("es-PE", {
+                  style: "currency",
+                  currency: m.currency,
+                  maximumFractionDigits: 2,
+                }).format(m[key]!)
+              : fmt(m[key]!) + " · moneda pendiente") +
+            (m.partial ||
+            (view !== "meta" && m.budgetPartial) ||
+            (view === "meta" && financial.get(id)?.metaPartial)
+              ? " *"
+              : ""),
+      )
+      .join(" · ") || "—";
   const colors = [
     "#258e7e",
     "#477ec0",
@@ -134,10 +196,33 @@ export function AdvisorTeamAnalysis({
     "#d05f88",
     "#4ba6bc",
   ];
-  const choose = (next: "period" | "today" | "yesterday") => {
+  const choose = (next: AdvisorAnalysisView) => {
+    const d = advisorAnalysisDefaults(next, limaToday(), since, until);
+    setSince(d.since);
+    setUntil(d.until);
+    setAutoDay(d.allInventory);
+    if (d.allInventory) setAliasId("");
     setView(next);
-    if (next !== "period") setBasis(next === "today" ? "BC" : "BM");
+    if (next !== "period")
+      setBasis(next === "meta" ? "B" : next === "today" ? "BC" : "BM");
+    else if (basis === "B") setBasis("BC");
   };
+  useEffect(() => {
+    if (!autoDay) return;
+    const update = () => {
+      if (!document.hidden) {
+        const d = advisorAnalysisDefaults(view, limaToday(), since, until);
+        setSince(d.since);
+        setUntil(d.until);
+      }
+    };
+    const timer = setInterval(update, 60000);
+    document.addEventListener("visibilitychange", update);
+    return () => {
+      clearInterval(timer);
+      document.removeEventListener("visibilitychange", update);
+    };
+  }, [autoDay, view, since, until]);
   return (
     <>
       <dialog
@@ -159,6 +244,7 @@ export function AdvisorTeamAnalysis({
                 ["today", "Hoy · avance provisional"],
                 ["yesterday", "Ayer · día completo"],
                 ["period", "Análisis del período"],
+                ["meta", "Datos Meta"],
               ] as const
             ).map(([v, label]) => (
               <button
@@ -176,6 +262,7 @@ export function AdvisorTeamAnalysis({
               to={until}
               maxDays={3660}
               onChange={(a, b) => {
+                setAutoDay(false);
                 setSince(a);
                 setUntil(b);
               }}
@@ -187,21 +274,77 @@ export function AdvisorTeamAnalysis({
                 { value: "all", label: "Todas las hojas" },
                 ...tables.map((t) => ({ value: t.id, label: t.name })),
               ]}
-              onSelect={setTableId}
+              onSelect={(id) => {
+                setTableId(id);
+                setAliasId("");
+              }}
+            />
+            <SheetSearchSelect
+              label="Inventario del análisis del equipo"
+              value={aliasId}
+              placeholder="Todo el inventario"
+              options={[
+                { value: "", label: "Todo el inventario" },
+                ...tables
+                  .filter((t) => tableId === "all" || t.id === tableId)
+                  .flatMap((t) =>
+                    (t.aliases ?? []).map((a) => ({
+                      value: a.id,
+                      label: a.name + (tableId === "all" ? " · " + t.name : ""),
+                    })),
+                  ),
+              ]}
+              onSelect={setAliasId}
+            />
+            <SheetSearchSelect
+              label="País del análisis del equipo"
+              value={country}
+              placeholder="Todos los países"
+              options={[
+                { value: "", label: "Todos los países" },
+                ...countryOptions.map((c) => ({
+                  value: c.code,
+                  label: c.code + " · " + c.name,
+                })),
+              ]}
+              onSelect={setCountry}
             />
             <button onClick={() => setReload((n) => n + 1)}>
               Actualizar análisis
             </button>
           </div>
-          <p className="hint">
-            {since} — {until} · Lima · {country || "Todos los países"}. Todos
-            los asesores de esta pestaña y todos sus productos.{" "}
-            {basis === "BC"
-              ? "BC: base declarada para contactar."
-              : "BM: base de las 24 horas, registrada al día siguiente."}{" "}
-            Los repartos de Totales se suman por persona, sin duplicar monedas.
-          </p>
+          {view !== "meta" && (
+            <div className="advisor-analysis-note" role="note">
+              <strong>
+                Puedes cambiar el período para consultar más fechas.
+              </strong>
+              <span>
+                {aliasId
+                  ? "BM y BC son del asesor y país completos; no se registran por diplomado."
+                  : basis === "BC"
+                    ? "BC suma los cortes declarados por el asesor en las fechas elegidas; no representa una base de 24 horas."
+                    : "Ventas y BM de las mismas fechas completas. BM se registra al día siguiente."}
+              </span>
+              {aliasId && (
+                <button type="button" onClick={() => setAliasId("")}>
+                  Volver a todo el inventario
+                </button>
+              )}
+            </div>
+          )}
         </DetailStickyHeader>
+        {view === "meta" && (
+          <AdvisorMetaNotice
+            updatedAt={
+              [...financial.values()]
+                .map((f) => f.updatedAt)
+                .filter((d): d is string => !!d)
+                .sort()
+                .at(-1) ?? null
+            }
+            partial={[...financial.values()].some((f) => f.metaPartial)}
+          />
+        )}
         {error && <p role="alert">{error}</p>}
         {data?.key !== key && !error ? (
           <p role="status">Cargando comparativo…</p>
@@ -322,6 +465,12 @@ export function AdvisorTeamAnalysis({
                         <th>Ventas (V)</th>
                         <th>{basis}</th>
                         <th>V/{basis} %</th>
+                        <th>
+                          {view === "meta"
+                            ? "Gasto Meta (G)"
+                            : "Presupuesto (P)"}
+                        </th>
+                        <th>CAC · {view === "meta" ? "G/V" : "P/V"}</th>
                         <th>Promedio por día con V</th>
                         <th>Cobertura V / base</th>
                         <th>Detalle</th>
@@ -334,8 +483,20 @@ export function AdvisorTeamAnalysis({
                           <td>{fmt(r.sales)}</td>
                           <td>{fmt(r.base)}</td>
                           <td>
-                            {fmt(r.percent)}
+                            {fmt(aliasId && basis !== "B" ? null : r.percent)}
                             {r.partial && r.percent !== null ? " *" : ""}
+                          </td>
+                          <td>
+                            {moneyText(
+                              r.id,
+                              view === "meta" ? "spend" : "budget",
+                            )}
+                          </td>
+                          <td>
+                            {moneyText(
+                              r.id,
+                              view === "meta" ? "metaCac" : "budgetCac",
+                            )}
                           </td>
                           <td>{fmt(r.average)}</td>
                           <td>
@@ -408,9 +569,10 @@ export function AdvisorTeamAnalysis({
           person={person}
           tables={tables}
           initialTableId={tableId}
-          initialAliasId=""
+          initialAliasId={aliasId}
           initialCountry={country}
           initialAnalysisView={view}
+          initialRangeSelected
           initialSince={since}
           initialUntil={until}
           onClose={() => setPersonId(null)}

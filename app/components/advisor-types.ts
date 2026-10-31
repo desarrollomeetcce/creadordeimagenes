@@ -4,6 +4,7 @@ import type { absenceSummary } from "../../lib/meta-ads/advisor-absence";
 export type AbsenceView = ReturnType<typeof absenceSummary>;
 export type Attendance = "PRESENT" | "ABSENT" | "NA" | null;
 export type AdvisorDayData = {
+  financial?: import("../../lib/meta-ads/advisor-financial-metrics").AdvisorFinancialDay;
   manualBase?: number | null;
   advisorBase?: number | null;
   base?: number | null;

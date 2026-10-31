@@ -1003,3 +1003,32 @@ test("Ventas registradas: inicio automático, fecha manual independiente y dupli
   assert(!validSalesDate("2026-02-30"));
   assert.equal(parseMetaPreferences(JSON.stringify({salesSince:"2026-10-30"})).salesSince,"2026-10-30");
 });
+
+test("Asesores: Hoy/Ayer fijan solo valores iniciales; Meta y período permiten rango elegido",async()=>{
+ const {advisorAnalysisDefaults}=await import('../lib/meta-ads/advisor-analysis-view');
+ assert.deepEqual(advisorAnalysisDefaults('today','2026-10-31','2026-10-01','2026-10-30'),{since:'2026-10-31',until:'2026-10-31',allInventory:true});
+ assert.deepEqual(advisorAnalysisDefaults('yesterday','2026-03-01','2026-01-01','2026-02-01'),{since:'2026-02-28',until:'2026-02-28',allInventory:true});
+ assert.equal(advisorAnalysisDefaults('meta','2026-10-31','2026-10-10','2026-10-30').since,'2026-10-10');
+ assert.equal(advisorAnalysisDefaults('period','2026-10-31','2026-10-10','2026-10-30').allInventory,false);
+});
+test("Asesores: P/V y G/V respetan origen, misma fecha, monedas y ventas cero",async()=>{
+ const {advisorFinancialSummary}=await import('../lib/meta-ads/advisor-financial-summary');
+ const financial={currencies:[{currency:'PEN',budget:20,spend:30,sales:2,partial:false}],base:100,metaPartial:false,assignmentPartial:false,updatedAt:'2026-10-30T16:00:00Z'};
+ const s=advisorFinancialSummary([{day:'2026-10-30',sales:2,financial}]);
+ assert.equal(s.money[0].budgetCac,10);assert.equal(s.money[0].metaCac,15);assert.equal(s.effectiveness,2);
+ assert.equal(advisorFinancialSummary([{day:'2026-10-30',sales:0,financial:{...financial,currencies:[{...financial.currencies[0],sales:0}]}}]).money[0].budgetCac,null);
+ assert.equal(advisorFinancialSummary([{day:'2026-10-29',sales:2},{day:'2026-10-30',sales:null,financial}]).effectiveness,null);
+ assert.equal(advisorFinancialSummary([{day:'2026-10-30',sales:2,financial:{...financial,currencies:[...financial.currencies,{...financial.currencies[0],currency:'USD'}]}}]).money.length,2);
+});
+test("Asesores: transferencias dentro del día no duplican ni prorratean P/B/G",async()=>{
+ const {advisorFinancialMetrics}=await import('../lib/meta-ads/advisor-financial-metrics');
+ const day='2026-10-30',asOf=new Date('2026-10-31T03:00:00Z');
+ const cell={sales:2,budget:20,sourceBase:100,metaSpend:30,campaigns:1,na:[],partialMetrics:[],updatedAt:'2026-10-30T16:00:00Z'};
+ const row:any={aliasId:'item',country:'PE',currency:'PEN',advisorId:'ana',campaigns:1,days:{[day]:cell},changes:[]};
+ assert.equal(advisorFinancialMetrics([row],[day],new Set(['ana']),asOf).get('ana')?.[day].currencies[0].budget,20);
+ const changes=[{id:'handover',previousAdvisorId:'ana',advisorId:'don',effectiveAt:new Date(day+'T12:00:00-05:00'),createdAt:new Date(day+'T12:00:00-05:00'),mode:'CLOCK',cutoffSales:1}];
+ const divided=advisorFinancialMetrics([{...row,advisorId:'don',changes}],[day],new Set(['ana','don']),asOf);
+ for(const name of ['ana','don']){assert.equal(divided.get(name)?.[day].currencies[0].budget,null);assert.equal(divided.get(name)?.[day].base,null);assert(divided.get(name)?.[day].assignmentPartial);}
+ const attributed=advisorFinancialMetrics([{...row,attributedSales:{[day]:{ana:1,don:1}}}],[day],new Set(['ana']),asOf);
+ assert.equal(attributed.get('ana')?.[day].currencies[0].sales,1);
+});
