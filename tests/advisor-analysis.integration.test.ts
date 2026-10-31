@@ -40,6 +40,9 @@ test("Análisis de asesor: bases agregadas, P/V, Meta original, país/producto y
   const advisor = await db.metaAdvisor.create({
     data: { sheetId: list.id, name: "Ana " + tag },
   });
+  const alternate = await db.metaAdvisor.create({
+    data: { sheetId: list.id, name: "Otro asesor " + tag },
+  });
   const table = await db.metaAliasTable.create({
     data: {
       name: "Análisis " + tag,
@@ -177,6 +180,104 @@ test("Análisis de asesor: bases agregadas, P/V, Meta original, país/producto y
       country: "EC",
     });
     assert.equal(other.rows[0].days[today].financial, undefined);
+    // Existing Meta reports precede onboarding; sales were explicitly allocated by hand.
+    for (const [index, aliasId] of aliases.entries()) {
+      await db.metaAdvisorAssignment.create({
+        data: {
+          aliasId,
+          country: "PE",
+          advisorId: advisor.id,
+          previousAdvisorId: null,
+          effectiveAt: new Date(today + "T00:00:00-05:00"),
+          mode: "DAY",
+        },
+      });
+      const row = await db.metaEffectivenessRow.findFirstOrThrow({
+        where: { aliasId, country: "PE", legacy: false },
+      });
+      await db.metaAdvisorSalesApproval.create({
+        data: {
+          rowId: row.id,
+          actorId: owner.id,
+          day: yesterday,
+          salesTotal: index ? 3 : 2,
+          allocations: [
+            {
+              advisorId: index ? advisor.id : alternate.id,
+              sales: index ? 3 : 2,
+            },
+          ],
+          basis: { events: [], activeAdvisorId: null },
+        },
+      });
+    }
+    const past = await advisorSheet(owner, table.id, yesterday, yesterday, {
+      advisorId: advisor.id,
+      country: "PE",
+    });
+    const pastDay = past.rows[0].days[yesterday];
+    assert.equal(pastDay.financial?.base, 300);
+    assert.equal(pastDay.financial?.currencies[0].spend, 90);
+    assert.equal(pastDay.financial?.currencies[0].budget, null);
+    assert.equal(pastDay.sales, 3);
+    assert(pastDay.financial?.updatedAt);
+    assert.equal(pastDay.financial?.assignmentPartial, false);
+    const alternatePast = await advisorSheet(
+      owner,
+      table.id,
+      yesterday,
+      yesterday,
+      { advisorId: alternate.id, country: "PE" },
+    );
+    assert.equal(alternatePast.rows[0].days[yesterday].sales, 2);
+    assert.equal(alternatePast.rows[0].days[yesterday].financial?.base, null);
+    assert.equal(
+      alternatePast.rows[0].days[yesterday].financial?.currencies[0].spend,
+      null,
+    );
+    // A later transfer must not move bootstrap history to the new current advisor.
+    await db.metaAdvisorAssignment.create({
+      data: {
+        aliasId: aliases[1],
+        country: "PE",
+        advisorId: alternate.id,
+        previousAdvisorId: advisor.id,
+        effectiveAt: new Date(today + "T00:01:00-05:00"),
+        mode: "CLOCK",
+        cutoffSales: 0,
+      },
+    });
+    await db.metaEffectivenessRow.updateMany({
+      where: { aliasId: aliases[1] },
+      data: { advisorId: alternate.id },
+    });
+    const retained = await advisorSheet(owner, table.id, yesterday, yesterday, {
+      advisorId: advisor.id,
+      country: "PE",
+    });
+    assert.equal(retained.rows[0].days[yesterday].financial?.base, 300);
+    assert.equal(
+      retained.rows[0].days[yesterday].financial?.currencies[0].spend,
+      90,
+    );
+    assert.equal(retained.rows[0].days[yesterday].sales, 3);
+    const team = await advisorSheet(owner, table.id, yesterday, yesterday, {
+      advisorListId: list.id,
+      country: "PE",
+    });
+    assert.equal(
+      team.rows.reduce(
+        (n, p) => n + (p.days[yesterday].financial?.base ?? 0),
+        0,
+      ),
+      300,
+    );
+    assert.equal(
+      await db.metaAdvisorAssignment.count({
+        where: { aliasId: { in: aliases } },
+      }),
+      3,
+    );
     const personal = await personalAdvisorSheet(user, advisor.id, today, today);
     assert.equal(personal.rows[0].days[today].financial, undefined);
     assert(!JSON.stringify(personal).includes('"budget"'));
@@ -197,7 +298,9 @@ test("Análisis de asesor: bases agregadas, P/V, Meta original, país/producto y
     await db.metaManualBaseDay.deleteMany({ where: { tableId: table.id } });
     await db.metaAliasTable.delete({ where: { id: table.id } });
     await db.metaAdvisorPortal.deleteMany({ where: { advisorId: advisor.id } });
-    await db.metaAdvisor.delete({ where: { id: advisor.id } });
+    await db.metaAdvisor.deleteMany({
+      where: { id: { in: [advisor.id, alternate.id] } },
+    });
     await db.metaEffectivenessSheet.delete({ where: { id: list.id } });
     await db.user.deleteMany({ where: { id: { in: [owner.id, user.id] } } });
     await db.$disconnect();

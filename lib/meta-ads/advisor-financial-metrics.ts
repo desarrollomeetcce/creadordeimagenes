@@ -1,3 +1,4 @@
+import { advisorMetaPeriods } from "./advisor-meta-periods";
 import { advisorAssignmentPeriods } from "./advisor-periods";
 import type { AssignmentChange } from "./advisor-attribution";
 import type { EffectivenessRow } from "./effectiveness";
@@ -28,24 +29,36 @@ export function advisorFinancialMetrics(
   const output = new Map<string, Record<string, AdvisorFinancialDay>>();
   for (const row of rows) {
     const periods = advisorAssignmentPeriods(row.advisorId, row.changes, asOf);
+    const metaPeriods = advisorMetaPeriods(row.advisorId, row.changes, asOf);
     for (const day of dates) {
       const start = Date.parse(day + "T00:00:00-05:00"),
         end = Math.min(start + 86400000, asOf.getTime());
       if (end <= start) continue;
-      const overlapping = periods.filter(
-        (p) =>
-          (p.from === null || Date.parse(p.from) < end) &&
-          (p.until === null || Date.parse(p.until) > start),
-      );
-      const owners = [...new Set(overlapping.map((p) => p.advisorId))];
-      // Full daily budgets/Meta reports cannot be apportioned between intraday handovers.
-      const exclusive =
-        owners.length === 1 &&
-        overlapping.some(
-          (p) =>
-            (p.from === null || Date.parse(p.from) <= start) &&
-            (p.until === null || Date.parse(p.until) >= end),
-        );
+      const withinDay = (p: (typeof periods)[number]) =>
+        (p.from === null || Date.parse(p.from) < end) &&
+        (p.until === null || Date.parse(p.until) > start);
+      const overlapping = periods.filter(withinDay);
+      const metaOverlapping = metaPeriods.filter(withinDay);
+      const exclusiveOwner = (parts: typeof periods) => {
+        const owners = [...new Set(parts.map((p) => p.advisorId))];
+        return owners.length === 1 &&
+          parts.some(
+            (p) =>
+              (p.from === null || Date.parse(p.from) <= start) &&
+              (p.until === null || Date.parse(p.until) >= end),
+          )
+          ? owners[0]
+          : null;
+      };
+      const budgetOwner = exclusiveOwner(overlapping);
+      const metaOwner = exclusiveOwner(metaOverlapping);
+      const recordedSales = row.attributedSales?.[day];
+      const owners = [
+        ...new Set([
+          ...[...overlapping, ...metaOverlapping].map((p) => p.advisorId),
+          ...Object.keys(recordedSales ?? {}),
+        ]),
+      ];
       const cell = row.days[day];
       for (const id of owners.filter((id) => personIds.has(id))) {
         const days = output.get(id) ?? {};
@@ -56,7 +69,8 @@ export function advisorFinancialMetrics(
           assignmentPartial: false,
           updatedAt: null,
         };
-        sum.assignmentPartial ||= !exclusive;
+        const hasMetaPeriod = metaOverlapping.some((p) => p.advisorId === id);
+        sum.assignmentPartial ||= hasMetaPeriod && metaOwner !== id;
         const currency = row.currency || "";
         let money = sum.currencies.find((c) => c.currency === currency);
         if (!money) {
@@ -74,27 +88,37 @@ export function advisorFinancialMetrics(
           : !cell?.na.includes("sales")
             ? (cell?.sales ?? null)
             : null;
-        if (exclusive) {
+        if (budgetOwner === id) {
           const budget =
             cell && !cell.na.includes("budget") ? cell.budget : null;
-          const spend = cell?.metaSpend ?? null;
           if (budget !== null) money.budget = (money.budget ?? 0) + budget;
-          if (spend !== null) money.spend = (money.spend ?? 0) + spend;
-          if (sales !== null) money.sales = (money.sales ?? 0) + sales;
-          if (cell?.sourceBase !== null && cell?.sourceBase !== undefined)
-            sum.base = (sum.base ?? 0) + cell.sourceBase;
           money.budgetPartial ||=
             budget === null || !!cell?.partialMetrics.includes("budget");
-          money.partial ||=
-            sales === null || !!cell?.partialMetrics.includes("sales");
-        } else money.partial = true;
-        sum.metaPartial ||=
-          !exclusive ||
-          !cell ||
-          cell.sourceBase == null ||
-          cell.metaSpend == null ||
-          cell.campaigns < row.campaigns;
+        } else if (overlapping.some((p) => p.advisorId === id))
+          money.budgetPartial = true;
+        if (metaOwner === id) {
+          const spend = cell?.metaSpend ?? null;
+          if (spend !== null) money.spend = (money.spend ?? 0) + spend;
+          if (cell?.sourceBase !== null && cell?.sourceBase !== undefined)
+            sum.base = (sum.base ?? 0) + cell.sourceBase;
+        }
+        // Sales allocations are independent of who owns the Meta source. They
+        // contribute to the advisor's denominator without moving B, G or P.
+        if (sales !== null) money.sales = (money.sales ?? 0) + sales;
+        money.partial ||=
+          !!cell?.partialMetrics.includes("sales") ||
+          (row.attributedSales
+            ? !!recordedSales && id in recordedSales && sales === null
+            : sales === null);
+        if (hasMetaPeriod)
+          sum.metaPartial ||=
+            metaOwner !== id ||
+            !cell ||
+            cell.sourceBase == null ||
+            cell.metaSpend == null ||
+            cell.campaigns < row.campaigns;
         if (
+          metaOwner === id &&
           cell?.updatedAt &&
           (!sum.updatedAt || cell.updatedAt > sum.updatedAt)
         )

@@ -1032,3 +1032,32 @@ test("Asesores: transferencias dentro del día no duplican ni prorratean P/B/G",
  const attributed=advisorFinancialMetrics([{...row,attributedSales:{[day]:{ana:1,don:1}}}],[day],new Set(['ana']),asOf);
  assert.equal(attributed.get('ana')?.[day].currencies[0].sales,1);
 });
+
+test("Meta histórico: anterior a primera asignación pertenece al asesor inicial, ventas y presupuesto conservan sus fechas", async()=>{
+ const {advisorFinancialMetrics}=await import('../lib/meta-ads/advisor-financial-metrics');
+ const {advisorMetaPeriods}=await import('../lib/meta-ads/advisor-meta-periods');
+ const {advisorAssignmentPeriods}=await import('../lib/meta-ads/advisor-periods');
+ const changes=[{id:'first',previousAdvisorId:null,advisorId:'don',effectiveAt:new Date('2026-10-29T12:00:00-05:00'),createdAt:new Date('2026-10-29T12:00:00-05:00'),mode:'CLOCK',cutoffSales:0}];
+ const old='2026-10-23',asOf=new Date('2026-10-31T20:00:00Z');
+ const c={sales:5,budget:20,sourceBase:100,metaSpend:30,campaigns:1,na:[],partialMetrics:[],updatedAt:'2026-10-31T15:00:00Z'};
+ const row:any={advisorId:'don',currency:'PEN',campaigns:1,days:{[old]:c},changes,attributedSales:{[old]:{don:2,ana:3}}};
+ const data=advisorFinancialMetrics([row],[old],new Set(['don','ana']),asOf);
+ assert.equal(data.get('don')?.[old].base,100);assert.equal(data.get('don')?.[old].currencies[0].spend,30);
+ assert.equal(data.get('don')?.[old].currencies[0].budget,null);assert.equal(data.get('don')?.[old].currencies[0].sales,2);
+ assert.equal(data.get('ana')?.[old].base,null);assert.equal(data.get('ana')?.[old].currencies[0].spend,null);assert.equal(data.get('ana')?.[old].currencies[0].sales,3);assert.equal(data.get('don')?.[old].assignmentPartial,false);
+ assert.equal(advisorMetaPeriods('don',changes,asOf)[0].from,null);
+ assert.equal(advisorAssignmentPeriods('don',changes,asOf)[0].from,'2026-10-29T17:00:00.000Z');
+ assert.equal(changes[0].effectiveAt.toISOString(),'2026-10-29T17:00:00.000Z');
+});
+test("Meta histórico: futuro cambio conserva principal inicial y no duplica el histórico ni huecos posteriores",async()=>{
+ const {advisorMetaPeriods}=await import('../lib/meta-ads/advisor-meta-periods');
+ const first={id:'first',previousAdvisorId:null,advisorId:'don',effectiveAt:new Date('2026-10-29T00:00:00-05:00'),createdAt:new Date('2026-10-29T00:00:00-05:00'),mode:'DAY',cutoffSales:null};
+ const next={...first,id:'next',previousAdvisorId:'don',advisorId:'ana',effectiveAt:new Date('2026-11-02T00:00:00-05:00'),createdAt:new Date('2026-11-02T00:00:00-05:00')};
+ const periods=advisorMetaPeriods('ana',[first,next],new Date('2026-11-03T20:00:00Z'));
+ assert.equal(periods.find(p=>p.advisorId==='don')?.from,null);
+ assert.equal(periods.find(p=>p.advisorId==='don')?.until,'2026-11-02T05:00:00.000Z');
+ assert.equal(periods.find(p=>p.advisorId==='ana')?.from,'2026-11-02T05:00:00.000Z');
+ const prior={...next,id:'legacy',previousAdvisorId:'old',effectiveAt:new Date('2026-10-29T00:00:00-05:00'),createdAt:new Date('2026-10-29T00:00:00-05:00')};
+ const legacy=advisorMetaPeriods('ana',[prior],new Date('2026-10-31T20:00:00Z'));
+ assert.equal(legacy.find(p=>p.from===null)?.advisorId,'old');
+});
