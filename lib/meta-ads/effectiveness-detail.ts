@@ -1,8 +1,11 @@
+import { recordedTableFloor } from "./recorded-starts";
 import { activePeriods } from "./active-periods";
 import { db } from "../db";
 import { ownerOnly } from "./financial-access";
 import { demand } from "../errors";
 import { inventoryEffectivenessSource } from "./effectiveness";
+import { inventoryReportSummary } from "./inventory-report-summary";
+import { activationSettings } from "./inventory-sheet-activation";
 import { inventoryLifetimeSummary } from "./inventory-lifetime-summary";
 import { accountWhere } from "./service";
 import { limaDay } from "./advisor-attribution";
@@ -135,6 +138,7 @@ export async function effectivenessDetail(
       const first =
         [
           firstDay._min.day,
+          await recordedTableFloor(tx, alias.tableId, today),
           ...meta.map((d) => d.day),
           ...allPeriods.map((p) => p.since),
         ]
@@ -183,6 +187,19 @@ export async function effectivenessDetail(
         })),
         rates: new Map(rates.map((r) => [r.day, r.rates as FxRates])),
       });
+      const inventory = alias.inventorySheetId
+        ? await tx.metaEffectivenessSheet.findUnique({
+            where: { id: alias.inventorySheetId },
+            select: { config: true },
+          })
+        : null;
+      const report = inventoryReportSummary({
+        row: lifetimeRow,
+        events: fullEvents.map(serialize),
+        asOf,
+        rates: new Map(rates.map((r) => [r.day, r.rates as FxRates])),
+        limits: activationSettings(inventory?.config ?? {}).limits,
+      });
       const legacyRemoval = !state
         ? await tx.auditEvent.findFirst({
             where: {
@@ -202,6 +219,7 @@ export async function effectivenessDetail(
         !(legacyRemoval.detail as Record<string, unknown>)?.preservedHistory;
       return {
         lifetime,
+        report,
         legacyHistoryUnavailable,
         removals: legacyHistoryUnavailable
           ? [

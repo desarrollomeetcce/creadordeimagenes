@@ -1,3 +1,4 @@
+import { recordedStarts } from "./recorded-starts";
 import { isPerformanceManager, performanceManager } from "./performance-access";
 import { performanceEffectivenessSource } from "./effectiveness";
 import { financialContext } from "./financial-access";
@@ -928,6 +929,7 @@ async function readAdvisorSheet(
         mode: string;
         cutoffSales: number | null;
       }[] = [];
+      const activityStarts = new Map<string, string>();
       for (const table of tables) {
         const sheet = managed
             ? await performanceEffectivenessSource(
@@ -956,6 +958,20 @@ async function readAdvisorSheet(
             { id: "asc" },
           ],
         });
+        const registrations =
+          !personal && !managed
+            ? await recordedStarts(
+                tx,
+                sheet.rows
+                  .filter(
+                    (r) =>
+                      (!filters.aliasId || r.aliasId === filters.aliasId) &&
+                      (!filters.country || r.country === filters.country),
+                  )
+                  .map((r) => r.aliasId),
+                limaDay(new Date()),
+              )
+            : new Map<string, string>();
         const approvals = await tx.metaAdvisorSalesApproval.findMany({
           where: {
             row: { alias: { tableId: table.id } },
@@ -974,6 +990,31 @@ async function readAdvisorSheet(
           const changes = assignments.filter(
             (e) => e.aliasId === row.aliasId && e.country === row.country,
           );
+          if (!personal && !managed) {
+            const saved = registrations.get(
+              JSON.stringify([row.aliasId, row.country]),
+            );
+            const ps = advisorAssignmentPeriods(
+              row.advisorId,
+              changes,
+            ).reverse();
+            for (let index = 0; index < ps.length; index++) {
+              const p = ps[index],
+                start =
+                  index === 0 && saved
+                    ? !p.since || saved < p.since
+                      ? saved
+                      : p.since
+                    : (p.since ?? saved);
+              if (
+                start &&
+                start <= limaDay(new Date()) &&
+                (!activityStarts.has(p.advisorId) ||
+                  start < activityStarts.get(p.advisorId)!)
+              )
+                activityStarts.set(p.advisorId, start);
+            }
+          }
           const financialRow: AdvisorFinancialRow = {
             ...row,
             changes,
@@ -1156,6 +1197,9 @@ async function readAdvisorSheet(
           : undefined,
         rows: people.map((p) => ({
           ...p,
+          ...(!personal && !managed
+            ? { activeSince: activityStarts.get(p.id) ?? null }
+            : {}),
           days: Object.fromEntries(
             dates.map((day) => {
               const att = attendanceByDay.get(key(p.id, day)),

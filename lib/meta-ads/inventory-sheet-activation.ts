@@ -1,3 +1,5 @@
+import { reportingActivity } from "./reporting-activity";
+import { recordedStarts, recordedTableFloor } from "./recorded-starts";
 import { z } from "zod";
 import { inventoryUsage } from "./inventory-usage";
 import type { Prisma } from "@prisma/client";
@@ -950,7 +952,11 @@ function periods(
   events: { active: boolean; createdAt: Date; snapshot: Prisma.JsonValue }[],
   active: boolean,
 ) {
-  const result: { since: string | null; until: string | null }[] = [];
+  const result: {
+    since: string | null;
+    until: string | null;
+    inferred?: boolean;
+  }[] = [];
   let start: string | null = null,
     on = events.length
       ? (((events[0].snapshot as Record<string, unknown>)?.priorActive as
@@ -1055,6 +1061,11 @@ async function activationReport(
         where: { day: { gte: floor, lte: today } },
       }),
       fx = new Map(rates.map((r) => [r.day, r.rates as FxRates]));
+    const registered = await recordedStarts(
+      tx,
+      aliases.map((a) => a.id),
+      today,
+    );
     const output = [];
     for (const tableId of tableIds) {
       const tableAliases = aliases.filter((a) => a.tableId === tableId);
@@ -1069,7 +1080,18 @@ async function activationReport(
         )
         .filter((day) => day >= floor && day <= today)
         .sort();
-      const sourceSince = starts[0] ?? today;
+      const linkedFloor = await recordedTableFloor(tx, tableId, today);
+      const sourceSince =
+        [
+          ...(linkedFloor && linkedFloor >= floor ? [linkedFloor] : []),
+          ...starts,
+          ...[...registered.entries()]
+            .filter(([key]) =>
+              tableAliases.some((a) => JSON.parse(key)[0] === a.id),
+            )
+            .map(([, d]) => d)
+            .filter((d) => d >= floor && d <= today),
+        ].sort()[0] ?? today;
       // Payments can arrive after stopping. Only the next activation closes the sales window.
       const sourceUntil = today;
       const source = await inventoryEffectivenessSource(
@@ -1102,12 +1124,38 @@ async function activationReport(
           const history: SheetInterval[] = [];
           for (const row of rows) {
             const state = states.find((s) => s.country === row.country),
-              ranges = periods(state?.events ?? [], row.active);
+              observed = reportingActivity(
+                row.days,
+                (state?.events ?? []).map((e) => ({
+                  id: e.id,
+                  active: e.active,
+                  createdAt: e.createdAt.toISOString(),
+                })),
+                new Date().toISOString(),
+              ),
+              ranges: {
+                since: string | null;
+                until: string | null;
+                inferred?: boolean;
+                through?: string;
+              }[] = observed.periods.length
+                ? observed.periods.map((p) => ({
+                    since: p.from,
+                    until: p.until,
+                    inferred: p.id.startsWith("registration:"),
+                    through: p.through,
+                  }))
+                : periods(state?.events ?? [], row.active).map((p) => ({
+                    ...p,
+                    through: undefined,
+                  }));
             for (const period of ranges.slice(0, q.historyName ? 100 : 1)) {
               const since = period.since
                   ? limaDay(new Date(period.since))
                   : null,
-                until = period.until ? limaDay(new Date(period.until)) : today;
+                until =
+                  period.through ??
+                  (period.until ? limaDay(new Date(period.until)) : today);
               const dates =
                 since && since >= floor ? trialDays(since, until, []) : [];
               const next = ranges[ranges.indexOf(period) - 1];
@@ -1190,16 +1238,17 @@ async function activationReport(
                         metaComplete && salesComplete,
                         settings.limits,
                       ),
-                      hours: period.since
-                        ? Math.max(
-                            0,
-                            (new Date(
-                              period.until ?? new Date().toISOString(),
-                            ).getTime() -
-                              new Date(period.since).getTime()) /
-                              3600000,
-                          )
-                        : null,
+                      hours:
+                        period.since && !period.inferred
+                          ? Math.max(
+                              0,
+                              (new Date(
+                                period.until ?? new Date().toISOString(),
+                              ).getTime() -
+                                new Date(period.since).getTime()) /
+                                3600000,
+                            )
+                          : null,
                     }
                   : {}),
                 days: dates.length || null,

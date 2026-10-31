@@ -372,6 +372,7 @@ export function EffectivenessTotals({
           aria-label="Fecha y filtros de totales"
         >
           <MetaDateRange
+            activityTableIds={data.map((t) => t.tableId)}
             maxDays={3660}
             from={since}
             to={until}

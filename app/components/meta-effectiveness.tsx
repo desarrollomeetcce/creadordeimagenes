@@ -1230,6 +1230,7 @@ export function MetaEffectiveness({
         </button>
       </div>
       <MetaDateRange
+        activityTableId={tableId}
         maxDays={3660}
         from={reportRange?.since ?? since}
         to={reportRange?.until ?? until}
@@ -1397,6 +1398,7 @@ export function MetaEffectiveness({
           aria-label="Período y filtros"
         >
           <MetaDateRange
+            activityTableId={tableId}
             maxDays={3660}
             from={reportRange?.since ?? since}
             to={reportRange?.until ?? until}

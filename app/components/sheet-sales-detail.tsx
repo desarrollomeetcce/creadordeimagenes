@@ -1,4 +1,8 @@
 "use client";
+import { SheetAnalysisCounters } from "./sheet-analysis-counters";
+import type { SheetAnalysis } from "../../lib/meta-ads/sheet-analysis";
+import { limaToday } from "./date-range";
+import { shiftCalendarDay } from "../../lib/meta-ads/calendar-presets";
 import { EffectivenessHistory } from "./effectiveness-history";
 import { InventorySheetReplacement } from "./inventory-sheet-replacement";
 import { countryName } from "../../lib/meta-ads/countries";
@@ -11,7 +15,10 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import type { EffectivenessSheet } from "../../lib/meta-ads/effectiveness";
+import type {
+  EffectivenessSheet,
+  EffectivenessRow,
+} from "../../lib/meta-ads/effectiveness";
 import {
   mergeTotalProductReports,
   type TotalProductPage,
@@ -76,8 +83,8 @@ export function SheetSalesDetail({
 }) {
   const dialog = useRef<HTMLDialogElement>(null),
     id = useId();
-  const [since, setSince] = useState(initialSince),
-    [until, setUntil] = useState(initialUntil),
+  const [since, setSince] = useState(limaToday()),
+    [until, setUntil] = useState(limaToday()),
     [country, setCountry] = useState("__all"),
     [blocks, setBlocks] = useState<SheetSalesBlock[]>([]),
     [fetching, setLoading] = useState(true),
@@ -90,6 +97,14 @@ export function SheetSalesDetail({
     [ascending, setAscending] = useState(true),
     [sortKey, setSortKey] = useState<SheetSalesSort>("sales"),
     [page, setPage] = useState(0);
+  const [profile, setProfile] = useState<"today" | "yesterday" | "meta">(
+    "today",
+  );
+  const [sourceRows, setSourceRows] = useState<EffectivenessRow[]>([]);
+  const [analysis, setAnalysis] = useState<SheetAnalysis>({
+    rows: [],
+    bases: [],
+  });
   const [detail, setDetail] = useState<{
     aliasId: string;
     name: string;
@@ -184,6 +199,25 @@ export function SheetSalesDetail({
           );
           result.push(...batch);
           if (!active) return;
+        }
+        const ap = await readRangePages<SheetAnalysis>(
+          "meta-ads/effectiveness/sheet-analysis",
+          { tableId, since, until },
+          () => active,
+        );
+        const combined = new Map<string, EffectivenessRow>();
+        for (const p of pages)
+          for (const r of p.rows) {
+            const key = JSON.stringify([r.aliasId, r.country, r.currency]),
+              old = combined.get(key);
+            combined.set(key, { ...r, days: { ...old?.days, ...r.days } });
+          }
+        if (active) {
+          setSourceRows([...combined.values()]);
+          setAnalysis({
+            rows: ap[0]?.rows ?? [],
+            bases: ap.flatMap((p) => p.bases),
+          });
         }
         sheetSalesProducts(result, dates);
         if (active) {
@@ -286,69 +320,96 @@ export function SheetSalesDetail({
             onCancel={onClose}
           >
             <DetailStickyHeader>
-              <header>
-                <h2>{name} · Análisis de toda la hoja</h2>
-              </header>
-              <DetailNavigation
-                onClose={onClose}
-                disabled={loading}
-                items={[
-                  {
-                    target: id + "compare",
-                    label: "Qué diplomados venden",
-                    tone: "sales",
-                  },
-                  {
-                    target: id + "evolution",
-                    label: "Evolución diaria",
-                    tone: "parameters",
-                  },
-                  {
-                    target: id + "history",
-                    label: "Qué vendió cada día",
-                    tone: "daily",
-                  },
-                  {
-                    target: id + "advisors",
-                    label: "Asesores",
-                    tone: "assignments",
-                  },
-                  {
-                    target: id + "data",
-                    label: "Datos por país",
-                    tone: "products",
-                  },
-                ].sort(
-                  (a, b) =>
-                    layout.order.indexOf(
-                      ("sheet-" +
-                        a.target.slice(
-                          id.length,
-                        )) as (typeof sheetModules)[number],
-                    ) -
-                    layout.order.indexOf(
-                      ("sheet-" +
-                        b.target.slice(
-                          id.length,
-                        )) as (typeof sheetModules)[number],
-                    ),
-                )}
-              />
+              <div className="sheet-analysis-topline">
+                <h2 title={name + " · Análisis de toda la hoja"}>
+                  {name} · Toda la hoja
+                </h2>
+                <DetailNavigation
+                  onClose={onClose}
+                  disabled={loading}
+                  items={[
+                    {
+                      target: id + "compare",
+                      label: "Qué diplomados venden",
+                      tone: "sales",
+                    },
+                    {
+                      target: id + "evolution",
+                      label: "Evolución diaria",
+                      tone: "parameters",
+                    },
+                    {
+                      target: id + "history",
+                      label: "Qué vendió cada día",
+                      tone: "daily",
+                    },
+                    {
+                      target: id + "advisors",
+                      label: "Asesores",
+                      tone: "assignments",
+                    },
+                    {
+                      target: id + "data",
+                      label: "Datos por país",
+                      tone: "products",
+                    },
+                  ].sort(
+                    (a, b) =>
+                      layout.order.indexOf(
+                        ("sheet-" +
+                          a.target.slice(
+                            id.length,
+                          )) as (typeof sheetModules)[number],
+                      ) -
+                      layout.order.indexOf(
+                        ("sheet-" +
+                          b.target.slice(
+                            id.length,
+                          )) as (typeof sheetModules)[number],
+                      ),
+                  )}
+                />
+              </div>
               <div className="row sheet-sales-detail-controls">
+                {(
+                  [
+                    ["today", "Hoy · avance"],
+                    ["yesterday", "Ayer · completo"],
+                    ["meta", "Datos Meta"],
+                  ] as const
+                ).map(([key, label]) => (
+                  <button
+                    type="button"
+                    key={key}
+                    aria-pressed={profile === key}
+                    onClick={() => {
+                      setProfile(key);
+                      if (key !== "meta") {
+                        const day =
+                          key === "today"
+                            ? limaToday()
+                            : shiftCalendarDay(limaToday(), -1);
+                        range(day, day);
+                      }
+                    }}
+                  >
+                    {label}
+                  </button>
+                ))}
                 <MetaDateRange
                   maxDays={3660}
+                  activeSince={
+                    analysis.rows
+                      .filter(
+                        (r) => country === "__all" || r.country === country,
+                      )
+                      .map((r) => r.report.since)
+                      .filter((d): d is string => !!d)
+                      .sort()[0]
+                  }
                   from={since}
                   to={until}
                   onChange={range}
-                />
-                <DetailPeriodPresets
-                  scope={"sheet-sales:" + tableId}
-                  sectionId={id + "periods"}
-                  label="Períodos guardados de la hoja"
-                  defaults={totalDetailPeriods}
-                  since={since}
-                  until={until}
-                  onSelect={range}
                 />
                 <SheetSearchSelect
                   label="País del análisis de toda la hoja"
@@ -372,13 +433,16 @@ export function SheetSalesDetail({
                 >
                   Actualizar detalle
                 </button>
+                <DetailPeriodPresets
+                  scope={"sheet-sales:" + tableId}
+                  sectionId={id + "periods"}
+                  label="Períodos guardados de la hoja"
+                  defaults={totalDetailPeriods}
+                  since={since}
+                  until={until}
+                  onSelect={range}
+                />
               </div>
-              <p className="hint">
-                Ventas del {since === until ? since : `${since} — ${until}`} ·
-                Lima. Toda la hoja, incluidos los diplomados desactivados.
-                Ventas registradas por asesor; cero, N.A. y falta de registro se
-                muestran por separado. No cambia los filtros de la tabla.
-              </p>
             </DetailStickyHeader>
             {loading && (
               <p role="status">Consultando todos los diplomados del período…</p>
@@ -389,38 +453,40 @@ export function SheetSalesDetail({
             )}
             {!loading && !error && (
               <>
-                <div className="sheet-sales-overview">
-                  {[
-                    ["Ventas registradas", format(total)],
-                    [
-                      "Diplomados con ventas",
-                      products.filter((p) => (p.sales.value ?? 0) > 0).length,
-                    ],
-                    [
-                      "Pocas ventas (≤ " + threshold + ")",
-                      products.filter(
-                        (p) => sheetSalesStatus(p, threshold) === "low",
-                      ).length,
-                    ],
-                    [
-                      "Cero registrado",
-                      products.filter(
-                        (p) => sheetSalesStatus(p, threshold) === "zero",
-                      ).length,
-                    ],
-                    [
-                      "Sin datos / N.A.",
-                      products.filter(
-                        (p) => sheetSalesStatus(p, threshold) === "unknown",
-                      ).length,
-                    ],
-                  ].map(([label, value]) => (
-                    <div key={label}>
-                      <span>{label}</span>
-                      <strong>{value}</strong>
-                    </div>
-                  ))}
-                </div>
+                <SheetAnalysisCounters
+                  rows={sourceRows}
+                  bases={analysis.bases}
+                  mode={profile}
+                  country={country}
+                  dates={dates}
+                  sales={format(total)}
+                />
+                <p className="sheet-analysis-counts">
+                  {products.filter((p) => (p.sales.value ?? 0) > 0).length} con
+                  ventas ·{" "}
+                  {
+                    products.filter(
+                      (p) => sheetSalesStatus(p, threshold) === "low",
+                    ).length
+                  }{" "}
+                  pocas ventas ·{" "}
+                  {
+                    products.filter(
+                      (p) => sheetSalesStatus(p, threshold) === "zero",
+                    ).length
+                  }{" "}
+                  con cero ·{" "}
+                  {
+                    products.filter(
+                      (p) => sheetSalesStatus(p, threshold) === "unknown",
+                    ).length
+                  }{" "}
+                  sin datos{" "}
+                  <span title="Los importes con * son parciales; — indica ausencia de datos.">
+                    {" "}
+                    · * Parcial
+                  </span>
+                </p>
                 {(() => {
                   const modules: Record<
                     (typeof sheetModules)[number],
@@ -496,7 +562,17 @@ export function SheetSalesDetail({
                           onSelect={selectProduct}
                         />
                         <div className="table-scroll">
-                          <table>
+                          <table className="sheet-diploma-comparison">
+                            <colgroup>
+                              <col className="diploma" />
+                              <col className="country" />
+                              <col className="sales" />
+                              <col className="result" />
+                              <col className="state" />
+                              <col className="tracking" />
+                              <col className="advisors" />
+                              <col className="actions" />
+                            </colgroup>
                             <thead>
                               <tr>
                                 {sortHeader("name", "Diplomado")}
@@ -504,6 +580,7 @@ export function SheetSalesDetail({
                                 {sortHeader("sales", "Ventas (V)")}
                                 {sortHeader("result", "Resultado del período")}
                                 {sortHeader("active", "Estado actual")}
+                                <th scope="col">Histórico · días · factor</th>
                                 {sortHeader("advisors", "Quiénes vendieron")}
                                 <th>Detalle</th>
                               </tr>
@@ -518,7 +595,7 @@ export function SheetSalesDetail({
                                     threshold,
                                   )}
                                 >
-                                  <th>{p.name}</th>
+                                  <th scope="row">{p.name}</th>
                                   <td>
                                     {p.countries
                                       .map((c) => c || "Sin país")
@@ -538,6 +615,54 @@ export function SheetSalesDetail({
                                         ? "Activado en algún país"
                                         : "Activado"
                                       : "Desactivado"}
+                                  </td>
+                                  <td>
+                                    {p.countries.map((c) => {
+                                      const r = analysis.rows.find(
+                                        (r) =>
+                                          r.aliasId === p.aliasId &&
+                                          r.country === c,
+                                      )?.report;
+                                      if (!r) return <div key={c}>—</div>;
+                                      const a =
+                                        profile === "meta"
+                                          ? r.metaAssessment
+                                          : r.budgetAssessment;
+                                      return (
+                                        <div
+                                          key={c}
+                                          className="sheet-diploma-tracking"
+                                        >
+                                          <span>
+                                            {p.countries.length > 1
+                                              ? c + " · "
+                                              : ""}
+                                            {r.since ?? "Sin inicio"} ·{" "}
+                                            {r.activeDays ?? "—"} días
+                                          </span>
+                                          <small>
+                                            {profile === "meta"
+                                              ? "Meta"
+                                              : "Presupuesto"}
+                                            :{" "}
+                                            {a.usage === null
+                                              ? "—"
+                                              : (a.usage * 100).toFixed(0) +
+                                                "%"}{" "}
+                                            ·{" "}
+                                            {
+                                              {
+                                                PENDING: "Datos pendientes",
+                                                CRITICAL: "Crítico",
+                                                ALERT: "Revisar",
+                                                TESTING: "En evaluación",
+                                                WITHIN: "Dentro del límite",
+                                              }[a.status]
+                                            }
+                                          </small>
+                                        </div>
+                                      );
+                                    })}
                                   </td>
                                   <td>
                                     {p.advisors
@@ -834,11 +959,19 @@ export function SheetSalesDetail({
                               <tr>
                                 <th>País</th>
                                 <th>Moneda</th>
-                                {sheetMetrics.map((m) => (
-                                  <th key={m.key}>
-                                    {m.name} ({m.label})
-                                  </th>
-                                ))}
+                                {sheetMetrics
+                                  .filter((m) =>
+                                    profile === "meta"
+                                      ? ["sales", "base", "spend"].includes(
+                                          m.key,
+                                        )
+                                      : ["sales", "budget"].includes(m.key),
+                                  )
+                                  .map((m) => (
+                                    <th key={m.key}>
+                                      {m.name} ({m.label})
+                                    </th>
+                                  ))}
                               </tr>
                             </thead>
                             <tbody>
@@ -848,15 +981,59 @@ export function SheetSalesDetail({
                                 >
                                   <th>{b.country || "Sin país"}</th>
                                   <td>{b.currency || "Sin moneda"}</td>
-                                  {sheetMetrics.map((m) => (
-                                    <td key={m.key}>
-                                      {format(
-                                        totalDetailSummary(
-                                          b.products.map((p) => p.sums[m.key]),
-                                        ),
-                                      )}
-                                    </td>
-                                  ))}
+                                  {sheetMetrics
+                                    .filter((m) =>
+                                      profile === "meta"
+                                        ? ["sales", "base", "spend"].includes(
+                                            m.key,
+                                          )
+                                        : ["sales", "budget"].includes(m.key),
+                                    )
+                                    .map((m) => (
+                                      <td key={m.key}>
+                                        {format(
+                                          totalDetailSummary(
+                                            b.products.map((p) =>
+                                              profile === "meta" &&
+                                              (m.key === "base" ||
+                                                m.key === "spend")
+                                                ? totalDetailSummary(
+                                                    dates.map((day) => {
+                                                      const d = sourceRows.find(
+                                                          (r) =>
+                                                            r.aliasId ===
+                                                              p.aliasId &&
+                                                            r.country ===
+                                                              b.country &&
+                                                            r.currency ===
+                                                              b.currency,
+                                                        )?.days[day],
+                                                        value =
+                                                          m.key === "base"
+                                                            ? d?.sourceBase
+                                                            : d?.metaSpend;
+                                                      return {
+                                                        value: value ?? null,
+                                                        known:
+                                                          typeof value ===
+                                                          "number"
+                                                            ? 1
+                                                            : 0,
+                                                        expected: 1,
+                                                        na: 0,
+                                                        pending: false,
+                                                        partial:
+                                                          typeof value !==
+                                                          "number",
+                                                      };
+                                                    }),
+                                                  )
+                                                : p.sums[m.key],
+                                            ),
+                                          ),
+                                        )}
+                                      </td>
+                                    ))}
                                 </tr>
                               ))}
                             </tbody>

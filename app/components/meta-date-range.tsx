@@ -1,4 +1,5 @@
 "use client";
+import { financialRequest } from "./financial-request";
 import { useEffect, useId, useRef, useState } from "react";
 import {
   calendarPresets,
@@ -23,7 +24,13 @@ export function MetaDateRange({
   triggerLabel,
   triggerAriaLabel,
   applyLabel = "Actualizar",
+  activeSince: suppliedActiveSince,
+  activityTableId,
+  activityTableIds,
 }: {
+  activityTableId?: string;
+  activityTableIds?: string[];
+  activeSince?: string | null;
   from: string;
   to: string;
   onChange: (a: string, b: string, preset?: string) => void;
@@ -62,8 +69,58 @@ export function MetaDateRange({
     document.addEventListener("pointerdown", close);
     return () => document.removeEventListener("pointerdown", close);
   }, [open]);
+  const [activityStart, setActivityStart] = useState<{
+    tableId: string;
+    since: string | null;
+  } | null>(null);
+  const activityKey = JSON.stringify(
+    [
+      ...new Set(
+        activityTableIds ?? (activityTableId ? [activityTableId] : []),
+      ),
+    ].sort(),
+  );
+  const activeSince =
+    suppliedActiveSince ??
+    (activityStart?.tableId === activityKey ? activityStart?.since : null);
+  useEffect(() => {
+    const tableIds = JSON.parse(activityKey) as string[];
+    if (!open || !tableIds.length || suppliedActiveSince) return;
+    let active = true;
+    void Promise.all(
+      tableIds.map((tableId) =>
+        financialRequest(
+          "meta-ads/effectiveness/activity-start?" +
+            new URLSearchParams({ tableId }),
+        ),
+      ),
+    )
+      .then((results) => {
+        if (active)
+          setActivityStart({
+            tableId: activityKey,
+            since:
+              results
+                .map((r) => r.since)
+                .filter((d): d is string => typeof d === "string")
+                .sort()[0] ?? null,
+          });
+      })
+      .catch(() => {
+        if (active) setActivityStart({ tableId: activityKey, since: null });
+      });
+    return () => {
+      active = false;
+    };
+  }, [open, activityKey, suppliedActiveSince]);
+  const presets = activeSince
+    ? [...calendarPresets, ["active", "Desde que se activó"] as const]
+    : calendarPresets;
   const selectPreset = (key: string) => {
-    const range = presetRange(key, today);
+    const range =
+      key === "active" && activeSince
+        ? ([activeSince, today] as [string, string])
+        : presetRange(key, today);
     setChosen(key);
     setPickingEnd(false);
     setHover("");
@@ -217,8 +274,11 @@ export function MetaDateRange({
           setPickingEnd(false);
           setHover("");
           setChosen(
-            calendarPresets.find(([k]) => {
-              const v = presetRange(k, today);
+            presets.find(([k]) => {
+              const v =
+                k === "active" && activeSince
+                  ? [activeSince, today]
+                  : presetRange(k, today);
               return v?.[0] === from && v?.[1] === to;
             })?.[0] ?? "custom",
           );
@@ -243,7 +303,8 @@ export function MetaDateRange({
               <>
                 <strong>Usados recientemente</strong>
                 {recent.map((k) => {
-                  const item = calendarPresets.find((p) => p[0] === k)!;
+                  const item = presets.find((p) => p[0] === k);
+                  if (!item) return null;
                   return (
                     <label key={"recent" + k}>
                       <input
@@ -259,7 +320,7 @@ export function MetaDateRange({
               </>
             )}
             <strong>Períodos</strong>
-            {calendarPresets.map(([k, label]) => (
+            {presets.map(([k, label]) => (
               <label key={k}>
                 <input
                   type="radio"
@@ -319,7 +380,7 @@ export function MetaDateRange({
                 onChange={(e) => selectPreset(e.target.value)}
               >
                 <option value="custom">Personalizado</option>
-                {calendarPresets.map(([k, label]) => (
+                {presets.map(([k, label]) => (
                   <option key={k} value={k}>
                     {label}
                   </option>

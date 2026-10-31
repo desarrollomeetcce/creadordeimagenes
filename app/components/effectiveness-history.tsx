@@ -29,11 +29,15 @@ const inventoryTargetModules: Record<string, InventoryDetailModuleId> = {
   activity: "activity",
 };
 type Cell = Record<SheetMetric, number | null> & {
+  sourceBase?: number | null;
+  metaSpend?: number | null;
   na: SheetMetric[];
   fxMissing: boolean;
 };
 import type { InventoryLifetimeSummary } from "../../lib/meta-ads/inventory-lifetime-summary";
+import type { InventoryReportSummary } from "../../lib/meta-ads/inventory-report-summary";
 type Detail = {
+  report: InventoryReportSummary;
   lifetime: InventoryLifetimeSummary;
   legacyHistoryUnavailable?: boolean;
   removals: {
@@ -88,6 +92,7 @@ export function EffectivenessHistory({
     [page, setPage] = useState(0),
     [reload, setReload] = useState(0),
     [expanded, setExpanded] = useState(false);
+  const [mode, setMode] = useState<"manual" | "meta">("manual");
   const [loadedQuery, setLoadedQuery] = useState("");
   useEffect(() => {
     if (autoOpen) pop.current?.showPopover();
@@ -98,7 +103,29 @@ export function EffectivenessHistory({
     valid =
       since <= until &&
       (Date.parse(until) - Date.parse(since)) / 86400000 < 3660;
-  const data = loadedQuery === query ? result : null;
+  const rawData = loadedQuery === query ? result : null;
+  const data =
+    rawData && mode === "meta"
+      ? {
+          ...rawData,
+          days: Object.fromEntries(
+            Object.entries(rawData.days).map(([day, d]) => [
+              day,
+              {
+                ...d,
+                base: d.sourceBase ?? null,
+                spend: d.metaSpend ?? null,
+                na: d.na.filter((k) => k !== "base" && k !== "spend"),
+              },
+            ]),
+          ),
+        }
+      : rawData;
+  const displayMetrics = sheetMetrics.filter((m) =>
+    mode === "meta"
+      ? ["sales", "base", "spend"].includes(m.key)
+      : ["sales", "budget"].includes(m.key),
+  );
   useEffect(() => {
     if (!open || !valid) return;
     let active = true;
@@ -253,8 +280,28 @@ export function EffectivenessHistory({
                     disabled={!data}
                   />
                   <div className="row alias-detail-controls">
+                    {(
+                      [
+                        ["manual", "Vista manual"],
+                        ["meta", "Datos Meta"],
+                      ] as const
+                    ).map(([key, label]) => (
+                      <button
+                        type="button"
+                        key={key}
+                        aria-pressed={mode === key}
+                        onClick={() => {
+                          setMode(key);
+                          setBars("sales");
+                          setLine(key === "meta" ? "spend" : "budget");
+                        }}
+                      >
+                        {label}
+                      </button>
+                    ))}
                     <MetaDateRange
                       maxDays={3660}
+                      activeSince={data?.report.since}
                       from={since}
                       to={until}
                       onChange={(a, b) => {
@@ -271,18 +318,10 @@ export function EffectivenessHistory({
                       Actualizar detalle
                     </button>
                   </div>
-                  <p className="hint">
-                    Ventas y parámetros del{" "}
-                    {since === until ? since : `${since} — ${until}`} · Lima.
-                    Cada cifra corresponde a su fecha, aunque se registre
-                    después.
-                  </p>
                   {data && (
-                    <p>
-                      Estado actual:{" "}
-                      <b>{data.active ? "Activado" : "Desactivado"}</b>.
-                      Historial de Efectividad de este inventario y país; no
-                      cambia estados en Meta Ads.
+                    <p className="hint">
+                      {data.active ? "Activado" : "Desactivado"} ·{" "}
+                      {since === until ? since : `${since} — ${until}`} · Lima
                     </p>
                   )}
                 </DetailStickyHeader>
@@ -299,7 +338,10 @@ export function EffectivenessHistory({
                   </p>
                 )}
                 {data?.lifetime && (
-                  <InventoryLifetimeCounters summary={data.lifetime} />
+                  <InventoryLifetimeCounters
+                    summary={data.report}
+                    mode={mode}
+                  />
                 )}
                 <p className="inventory-detail-order-hint">
                   Arrastra ⠿ para ordenar. Se aplica a los detalles de todos los
@@ -466,7 +508,7 @@ export function EffectivenessHistory({
                                         );
                                     }}
                                   >
-                                    {sheetMetrics.map((m) => (
+                                    {displayMetrics.map((m) => (
                                       <option key={m.key} value={m.key}>
                                         {m.key === "base" ? "Base" : m.name} (
                                         {m.label})
@@ -488,7 +530,7 @@ export function EffectivenessHistory({
                                         );
                                     }}
                                   >
-                                    {sheetMetrics.map((m) => (
+                                    {displayMetrics.map((m) => (
                                       <option key={m.key} value={m.key}>
                                         {m.key === "base" ? "Base" : m.name} (
                                         {m.label})
@@ -535,7 +577,7 @@ export function EffectivenessHistory({
                                   <thead>
                                     <tr>
                                       <th>Fecha</th>
-                                      {sheetMetrics.map((m) => (
+                                      {displayMetrics.map((m) => (
                                         <th key={m.key} title={m.name}>
                                           {m.label}
                                         </th>
@@ -546,7 +588,7 @@ export function EffectivenessHistory({
                                     {visibleDays.map((day) => (
                                       <tr key={day}>
                                         <th>{day}</th>
-                                        {sheetMetrics.map((m) => (
+                                        {displayMetrics.map((m) => (
                                           <td
                                             key={m.key}
                                             data-na={

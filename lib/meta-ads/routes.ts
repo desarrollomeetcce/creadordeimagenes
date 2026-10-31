@@ -1394,6 +1394,37 @@ export async function metaRoutes(
       ).setEffectivenessState(actor, b),
     );
   }
+  if (path === "effectiveness/activity-start" && method === "GET") {
+    ownerOnly(actor);
+    const q = z
+      .object({ tableId: z.string().min(1).max(100) })
+      .strict()
+      .parse(Object.fromEntries(req.nextUrl.searchParams));
+    return send(
+      await (
+        await import("./sheet-analysis")
+      ).sheetActivityStart(actor, q.tableId),
+    );
+  }
+  if (path === "effectiveness/sheet-analysis" && method === "GET") {
+    ownerOnly(actor);
+    const q = z
+      .object({
+        tableId: z.string().min(1).max(100),
+        since: z.string().date(),
+        until: z.string().date(),
+      })
+      .strict()
+      .parse(Object.fromEntries(req.nextUrl.searchParams));
+    demand(
+      q.since <= q.until &&
+        (Date.parse(q.until) - Date.parse(q.since)) / 86400000 < 31,
+      "Elige hasta 31 días.",
+    );
+    return send(
+      await (await import("./sheet-analysis")).sheetAnalysis(actor, q),
+    );
+  }
   if (path === "effectiveness/detail" && method === "GET") {
     ownerOnly(actor);
     const q = z

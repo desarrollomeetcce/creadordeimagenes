@@ -1393,6 +1393,10 @@ export function AdvisorDetail({
               <div className="advisor-period-controls">
                 <MetaDateRange
                   maxDays={3660}
+                  activeSince={
+                    data?.rows.find((p) => p.id === analysisAdvisor)
+                      ?.activeSince
+                  }
                   from={since}
                   to={until}
                   onChange={(a, b) => {

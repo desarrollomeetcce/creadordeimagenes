@@ -261,6 +261,12 @@ export function AdvisorTeamAnalysis({
               from={since}
               to={until}
               maxDays={3660}
+              activeSince={
+                data?.value.rows
+                  .map((p) => p.activeSince)
+                  .filter((d): d is string => !!d)
+                  .sort()[0]
+              }
               onChange={(a, b) => {
                 setAutoDay(false);
                 setSince(a);

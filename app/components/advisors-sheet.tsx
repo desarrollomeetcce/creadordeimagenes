@@ -328,6 +328,12 @@ export function AdvisorsSheet({
           </div>
           <MetaDateRange
             maxDays={3660}
+            activeSince={
+              rows
+                .map((p) => p.activeSince)
+                .filter((d): d is string => !!d)
+                .sort()[0]
+            }
             from={since}
             to={until}
             onChange={(a, b) => {

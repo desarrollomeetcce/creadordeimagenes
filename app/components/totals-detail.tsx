@@ -355,6 +355,7 @@ export function TotalsDetail({
                 />
                 <div className="totals-detail-period-controls">
                   <MetaDateRange
+                    activityTableId={block?.table.tableId}
                     maxDays={3660}
                     from={since}
                     to={until}
