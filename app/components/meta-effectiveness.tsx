@@ -59,7 +59,7 @@ import { SheetSearchSelect } from "./sheet-search-select";
 import { SheetMultiFilter } from "./sheet-multi-filter";
 import { useInventoryPinnedColumns } from "./use-inventory-pinned-columns";
 import { InventoryRowPinIcon } from "./inventory-country-evaluation";
-import { InventoryStatusLabel } from "./inventory-status-label";
+import { InventoryCacStatus as InventoryStatusLabel } from "./inventory-cac-status";
 import type { FinancialCatalogStatus } from "../../lib/meta-ads/inventory-sheet-activation";
 import { InventoryMultiSelect } from "./inventory-multi-select";
 import { useWorkbookPreference } from "./use-workbook-preference";
@@ -342,10 +342,12 @@ export function MetaEffectiveness({
       new Map(
         catalogStatus?.rows.map((r) => [
           JSON.stringify([r.aliasId, r.country]),
-          r.assessment,
+          (view === "automatic"
+            ? r.cac?.meta.assessment
+            : r.cac?.budget.assessment) ?? r.assessment,
         ]) ?? [],
       ),
-    [catalogStatus],
+    [catalogStatus, view],
   );
   const metadataControls = (key: string, label: string) => (
     <span className="financial-column-tools">
@@ -1469,7 +1471,7 @@ export function MetaEffectiveness({
             options={[
               { value: "zero", label: "Igual a 0" },
               { value: "positive", label: "Mayor que 0" },
-              { value: "na", label: "N.A. (no aplica)" },
+              { value: "na", label: "N/A · Sin actividad" },
             ]}
             value={valueFilter}
             onChange={setValueFilter}
@@ -1505,7 +1507,7 @@ export function MetaEffectiveness({
                 }
                 onClick={() => void fillVisible("NA")}
               >
-                Poner N.A. a todos los visibles
+                Marcar Sin actividad (N/A) en los visibles
               </button>
               <button
                 disabled={
@@ -2782,7 +2784,7 @@ export function MetaEffectiveness({
                           hidden={!metadataVisible.includes("evaluation")}
                           title={
                             catalogStatusError ||
-                            "Mismo semáforo de Inventario para esta hoja, país y último período de activación."
+                            `CAC ${view === "automatic" ? "Meta original" : "por presupuesto"} de los últimos 14 días: hoy y los 13 anteriores.`
                           }
                         >
                           <InventoryStatusLabel
@@ -2792,6 +2794,18 @@ export function MetaEffectiveness({
                               )?.status ?? "PENDING"
                             }
                           />
+                          <small className="inventory-cac-state">
+                            CAC{" "}
+                            {statusLookup.get(
+                              JSON.stringify([r.aliasId, r.country]),
+                            )?.usage == null
+                              ? "—"
+                              : "S/ " +
+                                statusLookup
+                                  .get(JSON.stringify([r.aliasId, r.country]))!
+                                  .usage!.toFixed(2)}{" "}
+                            · 14 días
+                          </small>
                         </td>
                         {days.flatMap((d) => {
                           const c = r.days[d],

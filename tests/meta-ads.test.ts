@@ -1,3 +1,4 @@
+import "./inventory-cac.test";
 import "./inventory-report-summary.test";
 import {advisorDayEffectiveness} from "../lib/meta-ads/advisor-day-effectiveness";
 import test from 'node:test';

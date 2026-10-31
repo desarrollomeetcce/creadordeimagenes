@@ -1433,6 +1433,8 @@ export async function metaRoutes(
         country: z.string().refine(isCountryCode),
         since: z.string().date(),
         until: z.string().date(),
+        reportSince:z.string().date().optional(),
+        reportUntil:z.string().date().optional(),
       })
       .strict()
       .parse(Object.fromEntries(req.nextUrl.searchParams));

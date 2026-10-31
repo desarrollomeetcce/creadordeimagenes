@@ -8,11 +8,20 @@ import { rateLimit } from "./auth";
 import { managesUsers, canManageAccount } from "./roles";
 import { issuePasswordReset } from "./accounts";
 
-const role = z.enum(["OWNER", "ADMIN", "USER", "OBSERVER", "SUPERVISOR", "ADVISOR"]);
+const role = z.enum([
+  "OWNER",
+  "ADMIN",
+  "USER",
+  "OBSERVER",
+  "SUPERVISOR",
+  "ADVISOR",
+]);
 const status = z.enum(["PENDING", "APPROVED", "REJECTED", "SUSPENDED"]);
 const password = z.string().min(12).max(128);
 const select = {
   id: true,
+  aiAccessEnabled: true,
+  archivedAt: true,
   name: true,
   email: true,
   role: true,
@@ -37,7 +46,14 @@ export async function userManagement(
     return send(
       await db.user.findMany({
         where:
-          actor.role === "OWNER" ? {} : { role: { in: ["USER", "OBSERVER"] } },
+          actor.role === "OWNER"
+            ? {
+                archivedAt:
+                  req.nextUrl.searchParams.get("archived") === "true"
+                    ? { not: null }
+                    : null,
+              }
+            : { archivedAt: null, role: { in: ["USER", "OBSERVER"] } },
         select,
         orderBy: { name: "asc" },
       }),
@@ -110,14 +126,16 @@ export async function userManagement(
           .pipe(z.email().max(200))
           .transform((v) => v.toLowerCase()),
         expectedEmail: z.string().max(200),
-        currentPassword: password,
+        currentPassword: password.optional(),
       })
       .strict()
       .parse(await body());
     await rateLimit(`account-email:${actor.id}`, 10);
     const issuer = await db.user.findUniqueOrThrow({ where: { id: actor.id } });
     demand(
-      await argon2.verify(issuer.passwordHash, b.currentPassword),
+      (actor.role === "OWNER" && !b.currentPassword) ||
+        (!!b.currentPassword &&
+          (await argon2.verify(issuer.passwordHash, b.currentPassword))),
       "Tu contraseña actual no es correcta.",
       403,
     );
@@ -139,7 +157,8 @@ export async function userManagement(
         demand(
           current?.status === "APPROVED" &&
             current.passwordHash === issuer.passwordHash &&
-            canManageAccount(current.role, target.role),
+            canManageAccount(current.role, target.role) &&
+            (actor.role !== "OWNER" || current.role === "OWNER"),
           "No puedes cambiar el correo de esta cuenta.",
           403,
         );
@@ -198,16 +217,17 @@ export async function userManagement(
       403,
     );
     const b = z
-      .object({ currentPassword: password, newPassword: password })
+      .object({ currentPassword: password.optional(), newPassword: password })
       .strict()
       .parse(await body());
     await rateLimit(`owner-password:${actor.id}`, 8);
     const issuer = await db.user.findUniqueOrThrow({ where: { id: actor.id } });
-    demand(
-      await argon2.verify(issuer.passwordHash, b.currentPassword),
-      "Tu contraseña actual no es correcta.",
-      403,
-    );
+    if (b.currentPassword)
+      demand(
+        await argon2.verify(issuer.passwordHash, b.currentPassword),
+        "Tu contraseña actual no es correcta.",
+        403,
+      );
     const hash = await argon2.hash(b.newPassword, { type: argon2.argon2id });
     await db.$transaction(async (tx) => {
       const rows = await tx.$queryRaw<
@@ -243,12 +263,113 @@ export async function userManagement(
     });
     return send({ ok: true, closesOwnSession: actor.id === parts[1] });
   }
+  if (
+    (parts.length === 2 && req.method === "DELETE") ||
+    (parts.length === 3 && parts[2] === "restore" && req.method === "POST")
+  ) {
+    demand(
+      actor.role === "OWNER",
+      "Solo OWNER puede retirar o restaurar cuentas.",
+      403,
+    );
+    const restoring = req.method === "POST";
+    const result = await db.$transaction(async (tx) => {
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(728291)`;
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(891234)`;
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(884411)`;
+      const issuer = await tx.user.findUnique({ where: { id: actor.id } }),
+        target = await tx.user.findUnique({ where: { id: parts[1] } });
+      demand(
+        issuer?.role === "OWNER" &&
+          issuer.status === "APPROVED" &&
+          !issuer.archivedAt,
+        "La autorización cambió.",
+        403,
+      );
+      demand(target, "Cuenta no encontrada.", 404);
+      if (
+        !restoring &&
+        target.role === "OWNER" &&
+        target.status === "APPROVED" &&
+        !target.archivedAt
+      )
+        demand(
+          (await tx.user.count({
+            where: { role: "OWNER", status: "APPROVED", archivedAt: null },
+          })) > 1,
+          "No puedes retirar al último OWNER activo.",
+          409,
+        );
+      if (!restoring) {
+        const grants = await tx.effectivenessGrant.findMany({
+          where: { userId: target.id },
+          select: { scope: true },
+        });
+        await tx.effectivenessGrant.deleteMany({
+          where: { userId: target.id },
+        });
+        for (const scope of new Set(grants.map((g) => g.scope)))
+          await tx.effectivenessSharing.upsert({
+            where: { scope },
+            create: { scope, revision: 1 },
+            update: { revision: { increment: 1 } },
+          });
+        const meta = await tx.metaWorkspaceGrant.deleteMany({
+          where: { userId: target.id },
+        });
+        if (meta.count)
+          await tx.metaWorkspaceSharing.upsert({
+            where: { id: "global" },
+            create: { id: "global", revision: 1 },
+            update: { revision: { increment: 1 } },
+          });
+      }
+      await tx.user.update({
+        where: { id: target.id },
+        data: {
+          archivedAt: restoring ? null : new Date(),
+          status: "SUSPENDED",
+        },
+      });
+      await tx.session.deleteMany({ where: { userId: target.id } });
+      await tx.passwordReset.deleteMany({ where: { userId: target.id } });
+      await tx.ownerRecovery.deleteMany({ where: { userId: target.id } });
+      await recordActivity(tx, {
+        data: {
+          actorId: actor.id,
+          action: restoring ? "USUARIO_RESTAURADO" : "USUARIO_RETIRADO",
+          resourceId: target.id,
+        },
+      });
+      return {
+        ok: true,
+        closesOwnSession: !restoring && target.id === actor.id,
+      };
+    });
+    return send(result);
+  }
   if (parts.length === 2 && req.method === "PATCH") {
     const b = z
-      .object({ role, status })
+      .object({
+        role,
+        status,
+        planId: z.string().min(1).max(100).nullable().optional(),
+        validUntil: z.iso.datetime().nullable().optional(),
+        aiAccessEnabled: z.boolean().optional(),
+        expected: z
+          .object({
+            role,
+            status,
+            planId: z.string().nullable(),
+            validUntil: z.iso.datetime().nullable(),
+            aiAccessEnabled: z.boolean().optional(),
+          })
+          .optional(),
+      })
       .strict()
       .parse(await body());
-    await db.$transaction(async (tx) => {
+    const result = await db.$transaction(async (tx) => {
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(728291)`;
       await tx.$executeRaw`SELECT pg_advisory_xact_lock(891234)`;
       const issuer = await tx.user.findUniqueOrThrow({
         where: { id: actor.id },
@@ -262,6 +383,47 @@ export async function userManagement(
         "Solo el OWNER puede administrar roles elevados.",
         403,
       );
+      if (b.expected)
+        demand(
+          target.role === b.expected.role &&
+            target.status === b.expected.status &&
+            target.planId === b.expected.planId &&
+            (b.expected.aiAccessEnabled === undefined ||
+              target.aiAccessEnabled === b.expected.aiAccessEnabled) &&
+            (target.planValidUntil?.toISOString() ?? null) ===
+              b.expected.validUntil,
+          "La cuenta cambió. Actualiza antes de guardar.",
+          409,
+        );
+      demand(!target.archivedAt, "Restaura la ficha antes de editarla.", 409);
+      const editsPlan =
+        b.planId !== undefined ||
+        b.validUntil !== undefined ||
+        b.aiAccessEnabled !== undefined;
+      if (editsPlan)
+        demand(
+          issuer.role === "OWNER",
+          "Solo OWNER puede asignar planes.",
+          403,
+        );
+      const planChanged =
+        editsPlan &&
+        ((b.planId === undefined ? target.planId : b.planId) !==
+          target.planId ||
+          (b.validUntil === undefined
+            ? (target.planValidUntil?.toISOString() ?? null)
+            : b.validUntil) !== (target.planValidUntil?.toISOString() ?? null));
+      if (planChanged && b.planId) {
+        const p = await tx.membershipPlan.findUnique({
+          where: { id: b.planId },
+        });
+        demand(p && !p.archivedAt, "Plan no disponible.", 404);
+        demand(
+          !p.customUserId || p.customUserId === target.id,
+          "Este plan personalizado pertenece a otra cuenta.",
+          403,
+        );
+      }
       if (
         target.role === "OWNER" &&
         target.status === "APPROVED" &&
@@ -273,10 +435,48 @@ export async function userManagement(
           })) > 1,
           "No puedes desactivar al último OWNER activo.",
         );
-      await tx.user.update({ where: { id: target.id }, data: b });
-      await tx.session.deleteMany({ where: { userId: target.id } });
-      await tx.passwordReset.deleteMany({ where: { userId: target.id } });
-      await tx.ownerRecovery.deleteMany({ where: { userId: target.id } });
+      const permissionChanged =
+        target.role !== b.role || target.status !== b.status;
+      const account = await tx.user.update({
+        where: { id: target.id },
+        data: {
+          role: b.role,
+          status: b.status,
+          ...(b.aiAccessEnabled !== undefined
+            ? { aiAccessEnabled: b.aiAccessEnabled }
+            : {}),
+          ...(editsPlan
+            ? {
+                ...(b.planId !== undefined ? { planId: b.planId } : {}),
+                ...(b.validUntil !== undefined
+                  ? {
+                      planValidUntil: b.validUntil
+                        ? new Date(b.validUntil)
+                        : null,
+                    }
+                  : {}),
+              }
+            : {}),
+        },
+        select,
+      });
+      if (permissionChanged) {
+        await tx.session.deleteMany({ where: { userId: target.id } });
+        await tx.passwordReset.deleteMany({ where: { userId: target.id } });
+        await tx.ownerRecovery.deleteMany({ where: { userId: target.id } });
+      }
+      if (planChanged)
+        await recordActivity(tx, {
+          data: {
+            actorId: actor.id,
+            action: "PLAN_ASIGNADO",
+            resourceId: target.id,
+            detail: {
+              plan: account.planId ?? "SIN_PLAN",
+              previousPlan: target.planId ?? "SIN_PLAN",
+            },
+          },
+        });
       await recordActivity(tx, {
         data: {
           actorId: actor.id,
@@ -284,8 +484,16 @@ export async function userManagement(
           resourceId: target.id,
         },
       });
+      return {
+        ok: true,
+        account,
+        closesOwnSession: permissionChanged && target.id === actor.id,
+        reloadOwn:
+          target.id === actor.id &&
+          target.aiAccessEnabled !== account.aiAccessEnabled,
+      };
     });
-    return send({ ok: true });
+    return send(result);
   }
   demand(false, "Operación de usuarios no encontrada.", 404);
 }

@@ -1,3 +1,9 @@
+import {
+  inventoryCacSummary,
+  cacWindow,
+  readCacRules,
+  type CacRules,
+} from "./inventory-cac";
 import { reportingActivity } from "./reporting-activity";
 import { recordedStarts, recordedTableFloor } from "./recorded-starts";
 import { z } from "zod";
@@ -39,6 +45,7 @@ type Control = {
   pendingAssignmentAt?: string;
 };
 type Settings = {
+  cacRules: CacRules;
   detachedAliases: string[];
   sheets: string[];
   countries: Record<string, string[]>;
@@ -49,6 +56,7 @@ export const activationSettings = (config: Prisma.JsonValue): Settings => {
   const v = (config as Record<string, unknown>)?.inventoryActivation as
     Partial<Settings> | undefined;
   return {
+    cacRules: readCacRules(v?.cacRules),
     detachedAliases: Array.isArray(v?.detachedAliases)
       ? v.detachedAliases.filter((x) => typeof x === "string")
       : [],
@@ -158,6 +166,7 @@ export async function inventoryActivationDirectory(
     return {
       revision: list.revision,
       limits: settings.limits,
+      cacRules: settings.cacRules,
       canEdit,
       canCreate:
         canEdit &&
@@ -201,11 +210,25 @@ export async function saveInventoryFactorLimits(actor: Actor, input: unknown) {
     .object({
       listId: id,
       revision: z.number().int().positive(),
+      cacRules: z
+        .object({
+          review: z.number().positive().finite(),
+          severe: z.number().positive().finite(),
+          critical: z.number().positive().finite(),
+          zero: z.number().positive().finite(),
+        })
+        .refine(
+          (r) => r.review < r.severe && r.severe < r.critical,
+          "Ordena los límites de menor a mayor.",
+        )
+        .optional(),
       limits: z
         .array(z.number().finite().min(0.01).max(10000000))
         .min(1)
-        .max(101),
+        .max(101)
+        .optional(),
     })
+    .refine((v) => !!v.limits || !!v.cacRules, "Faltan límites.")
     .strict()
     .parse(input);
   return db.$transaction(async (tx) => {
@@ -216,7 +239,8 @@ export async function saveInventoryFactorLimits(actor: Actor, input: unknown) {
       409,
     );
     const settings = activationSettings(list.config);
-    settings.limits = b.limits;
+    if (b.limits) settings.limits = b.limits;
+    if (b.cacRules) settings.cacRules = b.cacRules;
     const updated = await tx.metaEffectivenessSheet.update({
       where: { id: list.id },
       data: {
@@ -230,9 +254,9 @@ export async function saveInventoryFactorLimits(actor: Actor, input: unknown) {
     await recordActivity(tx, {
       data: {
         actorId: actor.id,
-        action: "INVENTARIO_LIMITES_FX",
+        action: b.cacRules ? "INVENTARIO_LIMITES_CAC" : "INVENTARIO_LIMITES_FX",
         resourceId: list.id,
-        detail: { salesRows: b.limits.length },
+        detail: { salesRows: b.limits?.length, cacRules: b.cacRules },
       },
     });
     return { revision: updated.revision, limits: b.limits };
@@ -932,6 +956,7 @@ export async function inventoryActivationReplaceBatch(
   );
 }
 export type SheetInterval = {
+  cac?: ReturnType<typeof inventoryCacSummary>;
   /** Inclusive daily sales window: activation start through the day before the next activation, or today. */
   salesUntil: string | null;
   metaSpend?: number | null;
@@ -1084,6 +1109,7 @@ async function activationReport(
       const sourceSince =
         [
           ...(linkedFloor && linkedFloor >= floor ? [linkedFloor] : []),
+          cacWindow(today).since,
           ...starts,
           ...[...registered.entries()]
             .filter(([key]) =>
@@ -1227,6 +1253,15 @@ async function activationReport(
               complete = complete && salesComplete;
               history.push({
                 ...period,
+                cac: since
+                  ? inventoryCacSummary({
+                      row,
+                      since,
+                      until: salesUntil,
+                      rates: fx,
+                      rules: settings.cacRules,
+                    })
+                  : undefined,
                 salesUntil: since ? salesUntil : null,
                 ...(q.historyName
                   ? {
@@ -1351,6 +1386,15 @@ async function activationReport(
             since: current[0]?.since ?? null,
             activeDays: current[0]?.days ?? null,
             history: q.historyName ? history : undefined,
+            cac:
+              rows.length === 1
+                ? inventoryCacSummary({
+                    row: rows[0],
+                    ...cacWindow(today),
+                    rates: fx,
+                    rules: settings.cacRules,
+                  })
+                : undefined,
           });
         }
       }
@@ -1405,7 +1449,7 @@ export async function financialCatalogStatus(actor: Actor, input: unknown) {
         if (!list) continue;
         const report = await activationReport(
           actor,
-          { listId, tableIds: q.tableId },
+          { listId, tableIds: q.tableId, byCountry: "true" },
           q.tableId,
           tx,
         );
@@ -1415,6 +1459,7 @@ export async function financialCatalogStatus(actor: Actor, input: unknown) {
             rows.push({
               aliasId: target.aliasId,
               country: target.country,
+              cac: row.cac,
               assessment:
                 row.countryAssessments.find((c) => c.country === target.country)
                   ?.assessment ?? row.assessment,

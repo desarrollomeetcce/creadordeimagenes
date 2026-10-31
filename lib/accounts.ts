@@ -65,11 +65,16 @@ export async function issuePasswordReset(
     "Solo OWNER o Administrador pueden recuperar cuentas autorizadas.",
     403,
   );
-  const b = z.object({ currentPassword: password }).strict().parse(input);
+  const b = z
+    .object({ currentPassword: password.optional() })
+    .strict()
+    .parse(input);
   await rateLimit(`recovery-issue:${user.id}`, 8);
   const account = await db.user.findUniqueOrThrow({ where: { id: user.id } });
   demand(
-    await argon2.verify(account.passwordHash, b.currentPassword),
+    (user.role === "OWNER" && !b.currentPassword) ||
+      (!!b.currentPassword &&
+        (await argon2.verify(account.passwordHash, b.currentPassword))),
     "Tu contraseña actual no es correcta.",
     403,
   );
@@ -90,6 +95,7 @@ export async function issuePasswordReset(
     demand(
       issuer?.role === user.role &&
         managesUsers(issuer.role) &&
+        (user.role !== "OWNER" || issuer.role === "OWNER") &&
         issuer.status === "APPROVED" &&
         issuer.passwordHash === account.passwordHash,
       "La cuenta que administra cambió. Inicia sesión nuevamente.",

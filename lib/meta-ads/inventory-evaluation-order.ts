@@ -1,4 +1,5 @@
 type EvaluationPoint = {
+  cac?:{budget:{assessment:{usage:number|null;status:string}}};
   activation: string;
   usage: string;
   assessment: { usage: number | null; status: string };
@@ -11,7 +12,8 @@ export function compareFinancialStatus(
   criticalFirst: boolean,
 ) {
   const ranks: Record<string, number> = {
-    CRITICAL: 4,
+    CRITICAL: 5,
+    SEVERE:4,
     ALERT: 3,
     TESTING: 2,
     WITHIN: 1,
@@ -45,15 +47,15 @@ export function compareInventoryEvaluation(
           >
         )[p.activation] ?? null
       );
-    if (metric === "factor") return p.assessment.usage;
+    if (metric === "factor") return (p.cac?.budget.assessment??p.assessment).usage;
     if (p.usage === "NEVER") return null;
     return (
       (
-        { CRITICAL: 4, ALERT: 3, TESTING: 2, WITHIN: 1, PENDING: 0 } as Record<
+        { CRITICAL: 5,SEVERE:4, ALERT: 3, TESTING: 2, WITHIN: 1, PENDING: 0 } as Record<
           string,
           number
         >
-      )[p.assessment.status] ?? null
+      )[(p.cac?.budget.assessment??p.assessment).status] ?? null
     );
   };
   const x = score(a),

@@ -1,3 +1,4 @@
+import { inventoryCacSummary, cacWindow } from "./inventory-cac";
 import { Prisma } from "@prisma/client";
 import { financialContext, checkFinancialContext } from "./financial-access";
 import { demand } from "../errors";
@@ -68,6 +69,7 @@ export async function sheetAnalysis(
       const since =
         [
           first._min.day,
+          cacWindow(today).since,
           await recordedTableFloor(tx, q.tableId, today),
           ...aliases.flatMap((a) =>
             a.effectivenessStates.flatMap((s) =>
@@ -96,6 +98,13 @@ export async function sheetAnalysis(
           return {
             aliasId: row.aliasId,
             country: row.country,
+            evaluation: inventoryCacSummary({
+              row,
+              ...cacWindow(today),
+              rates: fx,
+              rules: activationSettings(alias.inventorySheet?.config ?? {})
+                .cacRules,
+            }),
             report: inventoryReportSummary({
               row,
               events: (

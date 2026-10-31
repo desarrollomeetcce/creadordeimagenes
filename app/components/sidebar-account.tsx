@@ -7,7 +7,11 @@ export function SidebarAccount({
   navigate,
   logout,
 }: {
-  user: { name: string; role: keyof typeof roleLabels };
+  user: {
+    aiAccessEnabled?: boolean;
+    name: string;
+    role: keyof typeof roleLabels;
+  };
   view: string;
   navigate: (view: string) => void;
   logout: () => void;
@@ -22,7 +26,8 @@ export function SidebarAccount({
           ["ai", "⚙", "Ajustes de IA"],
         ]
       : []),
-    ...(!["OBSERVER", "SUPERVISOR", "ADVISOR"].includes(user.role)
+    ...((user.aiAccessEnabled !== false || user.role === "OWNER") &&
+    !["OBSERVER", "SUPERVISOR", "ADVISOR"].includes(user.role)
       ? [["usage", "↗", "Costos de IA"]]
       : []),
     ...(user.role === "OWNER" ? [["payments", "◇", "Ajustes de pago"]] : []),
@@ -108,10 +113,22 @@ export function SidebarAccount({
             )}
           </div>
         )}
-        {managesUsers(user.role) && item("users", "♙", "Usuarios")}
+        {managesUsers(user.role) && (
+          <div className="sidebar-admin-group">
+            <small>Equipo y planes</small>
+            {item("users", "♙", "Usuarios y accesos")}
+            {user.role === "OWNER" && (
+              <a className="sidebar-account-link" href="?view=users&tab=plans">
+                <span aria-hidden="true">◇</span>
+                <span>Planes de IA</span>
+              </a>
+            )}
+          </div>
+        )}
         {item("account", "♙", "Mi cuenta")}
-        {!["OBSERVER", "SUPERVISOR", "ADVISOR"].includes(user.role) &&
-          item("plans", "◇", "Mi plan")}
+        {user.aiAccessEnabled !== false &&
+          !["OBSERVER", "SUPERVISOR", "ADVISOR"].includes(user.role) &&
+          item("plans", "◇", "Mi plan IA")}
         <button type="button" className="sidebar-logout" onClick={logout}>
           <span aria-hidden="true">↪</span>
           <span>Cerrar sesión</span>

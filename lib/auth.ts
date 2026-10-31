@@ -18,7 +18,10 @@ export async function actor() {
     include: { user: true },
   });
   demand(
-    s && s.expiresAt > new Date() && s.user.status === "APPROVED",
+    s &&
+      s.expiresAt > new Date() &&
+      s.user.status === "APPROVED" &&
+      !s.user.archivedAt,
     "La sesión ha caducado o la cuenta no está aprobada.",
     401,
   );
@@ -98,9 +101,10 @@ export function categoryFullFilter(
 export function categoryFilter(
   u: AccessActor,
 ): import("@prisma/client").Prisma.CategoryWhereInput {
-  if (u.role === "OWNER") return { deletedAt:null, project: { deletedAt: null } };
+  if (u.role === "OWNER")
+    return { deletedAt: null, project: { deletedAt: null } };
   return {
-    deletedAt:null,
+    deletedAt: null,
     project: { deletedAt: null },
     OR: [
       categoryFullFilter(u),
@@ -116,10 +120,13 @@ export function subproductFilter(
   u: AccessActor,
 ): import("@prisma/client").Prisma.SubproductWhereInput {
   if (u.role === "OWNER")
-    return { deletedAt: null, category: { deletedAt:null, project: { deletedAt: null } } };
+    return {
+      deletedAt: null,
+      category: { deletedAt: null, project: { deletedAt: null } },
+    };
   return {
     deletedAt: null,
-    category: { deletedAt:null, project: { deletedAt: null } },
+    category: { deletedAt: null, project: { deletedAt: null } },
     OR: [
       { category: categoryFullFilter(u) },
       { members: { some: { userId: u.id } } },
@@ -136,7 +143,7 @@ export function projectFilter(
       {
         categories: {
           some: {
-            deletedAt:null,
+            deletedAt: null,
             OR: [
               { members: { some: { userId: u.id } } },
               {
@@ -204,7 +211,7 @@ export async function resourceAccess(
           ? categoryFilter(u)
           : categoryFullFilter(u)),
         project: { deletedAt: null },
-        deletedAt:null,
+        deletedAt: null,
       },
     });
     demand(c, "No tienes acceso a este producto.", 404);

@@ -1,5 +1,5 @@
 "use client";
-import { InventoryStatusLabel } from "./inventory-status-label";
+import { InventoryCacStatus as InventoryStatusLabel } from "./inventory-cac-status";
 import { useEffect, useRef, useState } from "react";
 import { financialRequest as api } from "./financial-request";
 import { trialStatusNames } from "../../lib/meta-ads/inventory-trial-policy";
@@ -98,7 +98,7 @@ export function InventorySheetHistory({
                 <th>Días</th>
                 <th>Ventas</th>
                 <th>Presupuesto · S/</th>
-                <th>FX</th>
+                <th>CAC · P/V</th>
                 <th>Estado</th>
               </tr>
             </thead>
@@ -113,22 +113,32 @@ export function InventorySheetHistory({
                   <td>{h.sales ?? "—"}</td>
                   <td>{h.budget === null ? "—" : h.budget.toFixed(2)}</td>
                   <td>
-                    {h.assessment.usage === null
+                    {(h.cac?.budget.assessment ?? h.assessment).usage === null
                       ? "—"
                       : new Intl.NumberFormat("es-PE", {
-                          style: "percent",
+                          style: "currency",
+                          currency: "PEN",
                           maximumFractionDigits: 1,
-                        }).format(h.assessment.usage)}
-                    {!h.complete && h.assessment.usage !== null ? " *" : ""}
+                        }).format(
+                          (h.cac?.budget.assessment ?? h.assessment).usage!,
+                        )}
+                    {!h.complete &&
+                    (h.cac?.budget.assessment ?? h.assessment).usage !== null
+                      ? " *"
+                      : ""}
                   </td>
                   <td>
                     <span
                       className={
                         "trial-status inventory-status-with-dot trial-" +
-                        h.assessment.status
+                        (h.cac?.budget.assessment ?? h.assessment).status
                       }
                     >
-                      <InventoryStatusLabel status={h.assessment.status} />
+                      <InventoryStatusLabel
+                        status={
+                          (h.cac?.budget.assessment ?? h.assessment).status
+                        }
+                      />
                     </span>
                   </td>
                 </tr>
@@ -138,12 +148,10 @@ export function InventorySheetHistory({
         </div>
       )}
       <p className="trial-help">
-        El FX usa los límites vigentes. Las fechas provienen del registro de
-        activaciones. Ventas y presupuesto se registran por día; no se atribuyen
-        por hora. Las ventas incluyen pagos posteriores al apagado, hasta la
-        siguiente activación o hasta hoy. Presupuesto y días solo cubren el
-        tiempo activo. Si el inicio no se registró o faltan datos, FX y estado
-        quedan pendientes. Se consultan hasta los últimos 366 días de métricas.
+        CAC del período de cada activación: presupuesto entre ventas. N/A se
+        excluye y cero cuenta como registro. Los importes permanecen en su
+        fuente. Las listas usan hoy y los 13 días anteriores; el detalle permite
+        otras fechas.
       </p>
     </dialog>
   );

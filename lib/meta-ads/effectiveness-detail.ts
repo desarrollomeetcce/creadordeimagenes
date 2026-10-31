@@ -1,3 +1,4 @@
+import { inventoryCacSummary } from "./inventory-cac";
 import { recordedTableFloor } from "./recorded-starts";
 import { activePeriods } from "./active-periods";
 import { db } from "../db";
@@ -14,7 +15,14 @@ import { aliasStateTimeline } from "./alias-state-timeline";
 import type { Actor } from "./service";
 export async function effectivenessDetail(
   actor: Actor,
-  b: { aliasId: string; country: string; since: string; until: string },
+  b: {
+    aliasId: string;
+    country: string;
+    since: string;
+    until: string;
+    reportSince?: string;
+    reportUntil?: string;
+  },
 ) {
   ownerOnly(actor);
   return db.$transaction(
@@ -138,6 +146,7 @@ export async function effectivenessDetail(
       const first =
         [
           firstDay._min.day,
+          b.reportSince ?? b.since,
           await recordedTableFloor(tx, alias.tableId, today),
           ...meta.map((d) => d.day),
           ...allPeriods.map((p) => p.since),
@@ -200,6 +209,21 @@ export async function effectivenessDetail(
         rates: new Map(rates.map((r) => [r.day, r.rates as FxRates])),
         limits: activationSettings(inventory?.config ?? {}).limits,
       });
+      const reportSince = b.reportSince ?? b.since,
+        reportUntil = b.reportUntil ?? b.until;
+      demand(
+        reportSince <= reportUntil &&
+          reportUntil <= today &&
+          (Date.parse(reportUntil) - Date.parse(reportSince)) / 86400000 < 3660,
+        "Elige un período válido de hasta diez años.",
+      );
+      const periodCac = inventoryCacSummary({
+        row: lifetimeRow,
+        since: reportSince,
+        until: reportUntil,
+        rates: new Map(rates.map((r) => [r.day, r.rates as FxRates])),
+        rules: activationSettings(inventory?.config ?? {}).cacRules,
+      });
       const legacyRemoval = !state
         ? await tx.auditEvent.findFirst({
             where: {
@@ -220,6 +244,7 @@ export async function effectivenessDetail(
       return {
         lifetime,
         report,
+        periodCac,
         legacyHistoryUnavailable,
         removals: legacyHistoryUnavailable
           ? [

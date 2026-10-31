@@ -6,9 +6,27 @@ export const roleLabels: Record<string, string> = {
   USER: "Usuario",
   OBSERVER: "Observador",
 };
+export const roleDescriptions: Record<string, string> = {
+  OWNER: "Control general de la plataforma, configuración y accesos elevados.",
+  ADMIN:
+    "Gestiona usuarios básicos y los proyectos de su ámbito; no tiene acceso global automático.",
+  USER: "Crea y trabaja en proyectos propios o asignados, incluida la generación de imágenes.",
+  OBSERVER:
+    "Consulta y descarga contenido compartido; no edita ni genera imágenes.",
+  ADVISOR:
+    "Consulta su propio Mi desempeño cuando está vinculado a un asesor. Sin Proyectos ni Biblioteca.",
+  SUPERVISOR:
+    "Gestiona metas y accesos de asesores y consulta el desempeño del equipo. Sin Proyectos ni Biblioteca.",
+};
 export const roleAbilities: Record<string, string[]> = {
-  SUPERVISOR: ["Administrar las metas y cuentas de asesores en Mi desempeño.", "Consultar el resumen del equipo y la vista individual de cada asesor."],
-  ADVISOR: ["Consultar únicamente tu desempeño y tus metas, sin editarlas.", "Cambiar tu propia contraseña."],
+  SUPERVISOR: [
+    "Administrar las metas y cuentas de asesores en Mi desempeño.",
+    "Consultar el resumen del equipo y la vista individual de cada asesor.",
+  ],
+  ADVISOR: [
+    "Consultar únicamente tu desempeño y tus metas, sin editarlas.",
+    "Cambiar tu propia contraseña.",
+  ],
   OWNER: [
     "Ver y administrar todos los proyectos, productos, subproductos y afiches.",
     "Crear cuentas de cualquier rol, aprobarlas, suspenderlas y cambiar contraseñas.",

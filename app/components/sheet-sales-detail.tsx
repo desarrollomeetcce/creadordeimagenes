@@ -1,5 +1,5 @@
 "use client";
-import { InventoryStatusLabel } from "./inventory-status-label";
+import { InventoryCacStatus as InventoryStatusLabel } from "./inventory-cac-status";
 import { SheetAnalysisCounters } from "./sheet-analysis-counters";
 import type { SheetAnalysis } from "../../lib/meta-ads/sheet-analysis";
 import { limaToday } from "./date-range";
@@ -581,7 +581,12 @@ export function SheetSalesDetail({
                                 {sortHeader("sales", "Ventas (V)")}
                                 {sortHeader("result", "Resultado del período")}
                                 {sortHeader("active", "Estado actual")}
-                                <th scope="col">Estado según límites</th>
+                                <th
+                                  scope="col"
+                                  title="Hoy y los 13 días anteriores"
+                                >
+                                  CAC · últimos 14 días
+                                </th>
                                 {sortHeader("advisors", "Quiénes vendieron")}
                                 <th>Detalle</th>
                               </tr>
@@ -623,12 +628,13 @@ export function SheetSalesDetail({
                                         (r) =>
                                           r.aliasId === p.aliasId &&
                                           r.country === c,
-                                      )?.report;
-                                      if (!r) return <div key={c}>—</div>;
+                                      );
+                                      const e = r?.evaluation;
+                                      if (!r || !e) return <div key={c}>—</div>;
                                       const a =
                                         profile === "meta"
-                                          ? r.metaAssessment
-                                          : r.budgetAssessment;
+                                          ? e.meta.assessment
+                                          : e.budget.assessment;
                                       return (
                                         <div
                                           key={c}
@@ -636,26 +642,35 @@ export function SheetSalesDetail({
                                           data-evaluation-country={c}
                                           data-evaluation-status={a.status}
                                         >
-                                          <span className={"trial-status inventory-status-with-dot trial-"+a.status}>
-                                            {p.countries.length>1 ? c+' · ':null}
-                                            <InventoryStatusLabel status={a.status} />
+                                          <span
+                                            className={
+                                              "trial-status inventory-status-with-dot trial-" +
+                                              a.status
+                                            }
+                                          >
+                                            {p.countries.length > 1
+                                              ? c + " · "
+                                              : null}
+                                            <InventoryStatusLabel
+                                              status={a.status}
+                                            />
                                           </span>
                                           <small>
                                             {p.countries.length > 1
                                               ? c + " · "
                                               : ""}
-                                            {r.since ?? "Sin inicio"} ·{" "}
-                                            {r.activeDays ?? "—"} días
+                                            {e.since} · {e.days} días
                                           </small>
-                                          <small title={a.limit===null?"Faltan ventas registradas para evaluar el límite.":`Límite establecido: S/ ${a.limit.toFixed(2)}. El factor compara el importe con este límite.`}>
+                                          <small
+                                            title={`CAC en soles · últimos 14 días (hoy provisional). Normal: menor de S/ ${e.rules.review}; Revisar: desde S/ ${e.rules.review}; Grave: desde S/ ${e.rules.severe}; Crítico: desde S/ ${e.rules.critical}.`}
+                                          >
                                             {profile === "meta"
-                                              ? "Meta"
-                                              : "Presupuesto"}
+                                              ? "CAC Meta"
+                                              : "CAC presupuesto"}
                                             :{" "}
                                             {a.usage === null
                                               ? "—"
-                                              : (a.usage * 100).toFixed(0) +
-                                                "%"}{" "}
+                                              : "S/ " + a.usage.toFixed(2)}{" "}
                                           </small>
                                         </div>
                                       );

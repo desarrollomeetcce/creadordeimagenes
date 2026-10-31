@@ -11,7 +11,7 @@ import {
   type InventoryCampaignChange,
 } from "./inventory-campaign-control";
 import { InventoryDeactivationConfirm } from "./inventory-deactivation-confirm";
-import { InventoryStatusLabel } from "./inventory-status-label";
+import { InventoryCacStatus as InventoryStatusLabel } from "./inventory-cac-status";
 import {
   useInventoryCountryEvaluation,
   type SheetPoint,
@@ -30,8 +30,8 @@ const rank = (p: SheetPoint) =>
       : 0;
 export const inventoryTopPriority = (point: SheetPoint) =>
   rank(point) * 10 +
-  { CRITICAL: 0, ALERT: 1, TESTING: 2, WITHIN: 3, PENDING: 4 }[
-    point.assessment.status
+  { CRITICAL: 0, SEVERE: 1, ALERT: 2, TESTING: 3, WITHIN: 4, PENDING: 5 }[
+    (point.cac?.budget.assessment ?? point.assessment).status
   ];
 const bucketNames = ["Activos", "Por hacer campaña", "Por desactivar campaña"];
 export function InventoryTop({
@@ -122,7 +122,12 @@ export function InventoryTop({
     .sort(
       (a, b) =>
         inventoryTopPriority(a.point) - inventoryTopPriority(b.point) ||
-        (b.point.assessment.usage ?? -1) - (a.point.assessment.usage ?? -1) ||
+        (b.point.cac?.budget.assessment.usage ??
+          b.point.assessment.usage ??
+          -1) -
+          (a.point.cac?.budget.assessment.usage ??
+            a.point.assessment.usage ??
+            -1) ||
         a.item.name.localeCompare(b.item.name, "es"),
     );
   async function mutate(action: () => Promise<unknown>, success: string) {
@@ -495,7 +500,9 @@ export function InventoryTop({
                 <th title="Presupuesto acumulado del último período registrado, en soles">
                   Pres. S/{handle(6, "Presupuesto")}
                 </th>
-                <th>FX{handle(7, "FX")}</th>
+                <th title="Hoy y los 13 días anteriores">
+                  CAC{handle(7, "CAC")}
+                </th>
                 <th>Estado{handle(8, "Estado")}</th>
                 <th>Acciones{handle(9, "Acciones")}</th>
               </tr>
@@ -590,46 +597,62 @@ export function InventoryTop({
                         onChange={(value) => void change(p, value)}
                       />
                     </td>
-                    <td>{p.sales ?? "—"}</td>
+                    <td>{(p.cac ? p.cac.sales : p.sales) ?? "—"}</td>
                     <td>
-                      {p.since
+                      {(p.cac ? p.cac.first : p.since)
                         ? new Intl.DateTimeFormat("es-PE", {
                             timeZone: "America/Lima",
                             dateStyle: "short",
-                          }).format(new Date(p.since))
+                          }).format(
+                            new Date(
+                              p.cac ? p.cac.first! + "T12:00:00Z" : p.since!,
+                            ),
+                          )
                         : "—"}
                     </td>
-                    <td>{p.activeDays ?? "—"}</td>
+                    <td>{p.cac?.days ?? p.activeDays ?? "—"}</td>
                     <td>
-                      {p.budget === null
+                      {(p.cac ? p.cac.budget.penAmount : p.budget) === null
                         ? "—"
                         : new Intl.NumberFormat("es-PE", {
                             maximumFractionDigits: 2,
-                          }).format(p.budget)}
+                          }).format(
+                            (p.cac ? p.cac.budget.penAmount : p.budget)!,
+                          )}
                     </td>
                     <td
                       title={
-                        !p.complete
+                        (p.cac ? p.cac.budget.partial : !p.complete)
                           ? "Datos incompletos; revisar detalle."
                           : undefined
                       }
                     >
-                      {p.assessment.usage === null
+                      {(p.cac?.budget.assessment ?? p.assessment).usage === null
                         ? "—"
                         : new Intl.NumberFormat("es-PE", {
-                            style: "percent",
+                            style: "currency",
+                            currency: "PEN",
                             maximumFractionDigits: 1,
-                          }).format(p.assessment.usage)}
-                      {!p.complete && p.assessment.usage !== null ? " *" : ""}
+                          }).format(
+                            (p.cac?.budget.assessment ?? p.assessment).usage!,
+                          )}
+                      {(p.cac ? p.cac.budget.partial : !p.complete) &&
+                      (p.cac?.budget.assessment ?? p.assessment).usage !== null
+                        ? " *"
+                        : ""}
                     </td>
                     <td>
                       <span
                         className={
                           "trial-status inventory-status-with-dot trial-" +
-                          p.assessment.status
+                          (p.cac?.budget.assessment ?? p.assessment).status
                         }
                       >
-                        <InventoryStatusLabel status={p.assessment.status} />
+                        <InventoryStatusLabel
+                          status={
+                            (p.cac?.budget.assessment ?? p.assessment).status
+                          }
+                        />
                       </span>
                     </td>
                     <td>

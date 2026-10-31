@@ -190,6 +190,7 @@ const shareSchema = z
       )
       .max(500),
     pinnedAccountIds: z.array(z.string().regex(/^\d{1,40}$/)).max(1000),
+    preservePins:z.boolean().optional(),
   })
   .strict();
 export async function saveWorkspaceSharing(actor: Actor, input: unknown) {
@@ -253,7 +254,7 @@ export async function saveWorkspaceSharing(actor: Actor, input: unknown) {
           update: {
             grantedById: actor.id,
             permission: g.permission,
-            pinnedAccountIds: pins.map((p) => p.id),
+            ...(!b.preservePins?{pinnedAccountIds: pins.map((p) => p.id)}:{}),
           },
         });
       await tx.metaWorkspaceSharing.update({

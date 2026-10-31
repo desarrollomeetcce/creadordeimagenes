@@ -60,6 +60,11 @@ export async function checkPlanAllowance(
     "La cuenta no está aprobada.",
     403,
   );
+  demand(
+    user.aiAccessEnabled !== false && !user.archivedAt,
+    "La cuenta no tiene acceso a IA.",
+    403,
+  );
   // Las cuentas existentes conservan su acceso hasta que OWNER les asigne un plan.
   if (user.role === "OWNER" || !user.plan) return;
   demand(
@@ -79,7 +84,8 @@ export async function checkPlanAllowance(
     403,
   );
   demand(
-    !checkAIBudget || user.plan.monthlyAIMicros === null ||
+    !checkAIBudget ||
+      user.plan.monthlyAIMicros === null ||
       current.micros + reserve <= user.plan.monthlyAIMicros,
     `Se supera el presupuesto mensual de IA de tu plan ${user.plan.name}. Revisa Mi plan.`,
     403,
@@ -155,6 +161,7 @@ export async function assignPlan(actor: Actor, id: string, input: unknown) {
       where: { id },
       data: {
         planId: b.planId,
+        ...(b.planId?{aiAccessEnabled:true}:{}),
         planValidUntil: b.validUntil ? new Date(b.validUntil) : null,
       },
     });
@@ -276,7 +283,7 @@ export async function createCustomPlan(actor: Actor, input: unknown) {
     });
     await tx.user.update({
       where: { id: user.id },
-      data: { planId: plan.id, planValidUntil: null },
+      data: { planId: plan.id, planValidUntil: null,aiAccessEnabled:true },
     });
     await recordActivity(tx, {
       data: {

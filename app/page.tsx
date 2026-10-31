@@ -21,7 +21,6 @@ import type { InstructionPolicy } from "../lib/instruction-policy";
 import { SidebarAccount } from "./components/sidebar-account";
 const SiteEditor = dynamic(() => import("./components/site-editor").then(m => m.SiteEditor), { loading: () => <p role="status">Cargando…</p> });
 const PaymentSettings = dynamic(() => import("./components/payment-settings").then(m => m.PaymentSettings), { loading: () => <p role="status">Cargando…</p> });
-const PlanSettings = dynamic(() => import("./components/membership-plans").then(m => m.PlanSettings), { loading: () => <p role="status">Cargando…</p> });
 const MyPlan = dynamic(() => import("./components/membership-plans").then(m => m.MyPlan), { loading: () => <p role="status">Cargando…</p> });
 const ProviderConnections = dynamic(() => import("./components/provider-connections").then(m => m.ProviderConnections), { loading: () => <p role="status">Cargando…</p> });
 import { folderScope } from "./components/folder-navigation";
@@ -71,7 +70,7 @@ const Library = LibraryWorkspace;
 const Presets = dynamic(() => import("./components/productivity").then(m => m.Presets));
 const PresetTools = dynamic(() => import("./components/productivity").then(m => m.PresetTools));
 import type { FormEvent } from "react";
-type User = { id: string; name: string; email: string; role: string; advisorLinked?: boolean; metaAdsShared?: boolean; effectivenessShared?:boolean };
+type User = { aiAccessEnabled?:boolean; id: string; name: string; email: string; role: string; advisorLinked?: boolean; metaAdsShared?: boolean; effectivenessShared?:boolean };
 type Settings = {
   count: number;
   textCount: number;
@@ -271,7 +270,7 @@ export default function Home() {
             : []),
         ];
         const nextView =
-          allowed.includes(requested) &&
+          allowed.includes(requested) && (user.aiAccessEnabled!==false||!['projects','library','presets','history','trash','jobs'].includes(requested)) &&
           (!["SUPERVISOR","ADVISOR"].includes(user.role) || ["performance","account"].includes(requested) || (requested==="metaads"&&user.metaAdsShared) || (requested==="products"&&user.effectivenessShared)) &&
           (user.role !== "OBSERVER" ||
             [
@@ -286,7 +285,7 @@ export default function Home() {
               ...(user.effectivenessShared?["products"]:[]),
             ].includes(requested))
             ? requested
-            : (["SUPERVISOR","ADVISOR"].includes(user.role)?"performance":"projects");
+            : (user.aiAccessEnabled===false?(user.effectivenessShared?'products':user.metaAdsShared?'metaads':user.advisorLinked||['SUPERVISOR','ADVISOR'].includes(user.role)?'performance':'account'):(["SUPERVISOR","ADVISOR"].includes(user.role)?"performance":"projects"));
         if (active) setView(nextView);
         if (nextView === "collection") {
           const scope = params.get("scope"),
@@ -490,7 +489,7 @@ export default function Home() {
             ]
               .filter(
                 ([v]) =>
-                  (!["SUPERVISOR","ADVISOR"].includes(user.role) || v==="performance" || (v==="metaads"&&!!user.metaAdsShared) || (v==="products"&&!!user.effectivenessShared)) && (user.role !== "OBSERVER" ||
+                  (user.aiAccessEnabled!==false||!['projects','library','presets','history','trash'].includes(v)) && (!["SUPERVISOR","ADVISOR"].includes(user.role) || v==="performance" || (v==="metaads"&&!!user.metaAdsShared) || (v==="products"&&!!user.effectivenessShared)) && (user.role !== "OBSERVER" ||
                   (["projects", "library", "presets", "account", "performance"].includes(v) || (v === "metaads" && !!user.metaAdsShared) || (v==="products"&&!!user.effectivenessShared))),
               )
               .map(([v, icon, label]) => (
@@ -582,7 +581,7 @@ export default function Home() {
             ) : view === "payments" && user.role === "OWNER" ? (
               <PaymentSettings />
             ) : view === "plans" ? (
-              <MyPlan canPurchase={user.role !== "OBSERVER"} />
+              <MyPlan canPurchase={user.role !== "OBSERVER"&&user.aiAccessEnabled!==false} />
             ) : view === "ai" ? (
               <AISettings />
             ) : view === "mail" && user.role === "OWNER" ? (
@@ -2643,7 +2642,7 @@ function AISettings() {
           proveedor. Los límites globales y particulares anteriores ya no
           bloquean la generación.
         </p>
-        <PlanSettings />
+        <p className="hint">Los planes y sus cuotas se administran en <a href="?view=users&tab=plans">Usuarios y accesos → Planes de IA</a>.</p>
       </section>
       <section  className="panel stack">
         <h2>03　Prueba real de generación · opcional</h2>

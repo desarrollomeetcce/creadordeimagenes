@@ -746,7 +746,7 @@ test("Activación por hoja: selección, pin, historial y permisos", async (t) =>
         assert(
           result.rows.every(
             (r) =>
-              Object.keys(r).sort().join(",") === "aliasId,assessment,country",
+              Object.keys(r).sort().join(",") === "aliasId,assessment,cac,country",
           ),
         );
         await db.effectivenessGrant.create({

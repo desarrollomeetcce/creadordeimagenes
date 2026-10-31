@@ -17,7 +17,8 @@ import {
 import type { InventoryDetailModuleId } from "../../lib/meta-ads/inventory-detail-order";
 import { DetailStickyHeader } from "./detail-sticky-header";
 import { DetailNavigation } from "./detail-navigation";
-import { InventoryLifetimeCounters } from "./inventory-lifetime-counters";
+import { InventoryCacCounters } from "./inventory-cac-counters";
+import type { InventoryCacSummary } from "../../lib/meta-ads/inventory-cac";
 import { MetaDailyChart } from "./meta-daily-chart";
 import type { ActivePeriod } from "../../lib/meta-ads/active-periods";
 import { InventoryAdvisorSales } from "./inventory-advisor-sales";
@@ -37,6 +38,7 @@ type Cell = Record<SheetMetric, number | null> & {
 import type { InventoryLifetimeSummary } from "../../lib/meta-ads/inventory-lifetime-summary";
 import type { InventoryReportSummary } from "../../lib/meta-ads/inventory-report-summary";
 type Detail = {
+  periodCac: InventoryCacSummary;
   report: InventoryReportSummary;
   lifetime: InventoryLifetimeSummary;
   legacyHistoryUnavailable?: boolean;
@@ -140,7 +142,14 @@ export function EffectivenessHistory({
       const request = ++version;
       void readRangePages<Detail>(
         "meta-ads/effectiveness/detail",
-        { aliasId, country, since, until },
+        {
+          aliasId,
+          country,
+          since,
+          until,
+          reportSince: since,
+          reportUntil: until,
+        },
         () => active && request === version,
       )
         .then((pages) => {
@@ -338,10 +347,7 @@ export function EffectivenessHistory({
                   </p>
                 )}
                 {data?.lifetime && (
-                  <InventoryLifetimeCounters
-                    summary={data.report}
-                    mode={mode}
-                  />
+                  <InventoryCacCounters summary={data.periodCac} mode={mode} />
                 )}
                 <p className="inventory-detail-order-hint">
                   Arrastra ⠿ para ordenar. Se aplica a los detalles de todos los

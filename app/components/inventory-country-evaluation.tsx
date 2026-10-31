@@ -3,15 +3,15 @@ import {
   InventoryCampaignControl,
   type InventoryCampaignChange,
 } from "./inventory-campaign-control";
-import { InventoryStatusLabel } from "./inventory-status-label";
+import { InventoryCacStatus as InventoryStatusLabel } from "./inventory-cac-status";
 import { Fragment, useEffect, useMemo, useState } from "react";
 import { financialRequest as api } from "./financial-request";
 import { categoryKey } from "../../lib/meta-ads/category-paste";
-import { trialStatusNames } from "../../lib/meta-ads/inventory-trial-policy";
+import { cacStatusNames as trialStatusNames } from "../../lib/meta-ads/inventory-cac-policy";
 import type { InventorySheetActivationReport } from "../../lib/meta-ads/inventory-sheet-activation";
 export const inventoryCountryMetrics = [
   { key: "activation", label: "Activación", width: 136 },
-  { key: "factor", label: "FX", width: 68 },
+  { key: "factor", label: "CAC", width: 68 },
   { key: "status", label: "Estado", width: 130 },
 ] as const;
 export type SheetPoint = InventorySheetActivationReport["rows"][number];
@@ -150,7 +150,7 @@ export function InventoryCountryCells({
           mixed = point?.activation === "MIXED",
           disabled =
             !canEdit || busy || !evaluation.ready || evaluation.loading,
-          assessment = point?.assessment;
+          assessment = point?.cac?.budget.assessment ?? point?.assessment;
         const title = `${name} · ${sheetLabel(tableId)}`,
           status = evaluation.error
             ? "No disponible"
@@ -228,19 +228,20 @@ export function InventoryCountryCells({
               hidden={hiddenColumns.includes(`country:${tableId}:factor`)}
               title={
                 point
-                  ? `Presupuesto: S/ ${point.budget ?? "—"} · Ventas: ${point.sales ?? "—"} · Límite: S/ ${assessment?.limit ?? "—"}. Datos diarios del período de activación.`
+                  ? `Presupuesto: S/ ${point.cac?.budget.penAmount ?? point.budget ?? "—"} · Ventas: ${point.cac?.sales ?? point.sales ?? "—"} · Límite: S/ ${assessment?.limit ?? "—"}. Últimos 14 días: hoy y 13 anteriores.`
                   : "Sin datos de evaluación"
               }
             >
               {assessment?.usage === null || assessment?.usage === undefined
                 ? "—"
                 : new Intl.NumberFormat("es-PE", {
-                    style: "percent",
+                    style: "currency",
+                    currency: "PEN",
                     maximumFractionDigits: 1,
                   }).format(assessment.usage)}
               {assessment?.usage !== null &&
               assessment?.usage !== undefined &&
-              !point?.complete
+              (point?.cac ? point.cac.budget.partial : !point?.complete)
                 ? " *"
                 : ""}
             </td>

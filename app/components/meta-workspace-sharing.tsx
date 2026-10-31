@@ -15,16 +15,20 @@ type Data = {
 export function MetaWorkspaceSharing({
   pinnedAccountIds = [],
   scope,
+  targetUserId,
+  targetName,
   onClose,
 }: {
   pinnedAccountIds?: string[];
   scope?: string;
+  targetUserId?: string;
+  targetName?: string;
   onClose: () => void;
 }) {
   const ref = useRef<HTMLDialogElement>(null),
     [data, setData] = useState<Data | null>(null),
     [grants, setGrants] = useState<Grant[]>([]),
-    [query, setQuery] = useState(""),
+    [query, setQuery] = useState(targetName ?? ""),
     [permission, setPermission] = useState<Permission>("VIEW"),
     [busy, setBusy] = useState(false),
     [message, setMessage] = useState("");
@@ -52,6 +56,7 @@ export function MetaWorkspaceSharing({
   const eligible = data?.users.filter((u) => u.role !== "OWNER") ?? [],
     matches = eligible.filter(
       (u) =>
+        (!targetUserId || u.id === targetUserId) &&
         !grants.some((g) => g.userId === u.id) &&
         matchesSearchWords(u.name + " " + u.email, query),
     );
@@ -91,36 +96,65 @@ export function MetaWorkspaceSharing({
         <p role="status">{message || "Cargando personas y accesos…"}</p>
       ) : (
         <>
-          <div className="meta-share-bulk">
-            <div>
-              <strong>Compartir con todos los usuarios</strong>
+          {targetUserId && (
+            <p>
+              <strong>{targetName}</strong> ·{" "}
+              {scope ? "Todas las hojas de Efectividad" : "Meta Ads"}
+              <br />
               <small>
-                Incluye las {eligible.length} cuentas habilitadas actuales. Los
-                OWNER ya tienen acceso.
+                Los demás accesos se conservan. Quitar el acceso global de
+                Efectividad no retira permisos individuales por hoja.
               </small>
+            </p>
+          )}
+          {targetUserId && (
+            <label>
+              Permiso inicial
+              <select
+                aria-label="Permiso inicial"
+                value={permission}
+                disabled={busy}
+                onChange={(e) => setPermission(e.target.value as Permission)}
+              >
+                <option value="VIEW">Puede ver</option>
+                <option value="EDIT">Puede editar</option>
+              </select>
+            </label>
+          )}
+          {!targetUserId && (
+            <div className="meta-share-bulk">
+              <div>
+                <strong>Compartir con todos los usuarios</strong>
+                <small>
+                  Incluye las {eligible.length} cuentas habilitadas actuales.
+                  Los OWNER ya tienen acceso.
+                </small>
+              </div>
+              <select
+                aria-label="Permiso para todos los usuarios"
+                value={permission}
+                disabled={busy}
+                onChange={(e) => setPermission(e.target.value as Permission)}
+              >
+                <option value="VIEW">Puede ver</option>
+                <option value="EDIT">Puede editar</option>
+              </select>
+              <button
+                type="button"
+                disabled={busy || !eligible.length}
+                onClick={() => {
+                  setGrants(
+                    eligible.map((u) => ({ userId: u.id, permission })),
+                  );
+                  setMessage(
+                    "Selección preparada para todos. Guarda para aplicar los permisos.",
+                  );
+                }}
+              >
+                Compartir con todos
+              </button>
             </div>
-            <select
-              aria-label="Permiso para todos los usuarios"
-              value={permission}
-              disabled={busy}
-              onChange={(e) => setPermission(e.target.value as Permission)}
-            >
-              <option value="VIEW">Puede ver</option>
-              <option value="EDIT">Puede editar</option>
-            </select>
-            <button
-              type="button"
-              disabled={busy || !eligible.length}
-              onClick={() => {
-                setGrants(eligible.map((u) => ({ userId: u.id, permission })));
-                setMessage(
-                  "Selección preparada para todos. Guarda para aplicar los permisos.",
-                );
-              }}
-            >
-              Compartir con todos
-            </button>
-          </div>
+          )}
           <label>
             Buscar por nombre o correo
             <input
@@ -171,7 +205,7 @@ export function MetaWorkspaceSharing({
             aria-label="Personas con acceso"
           >
             {data.users
-              .filter((u) => u.role === "OWNER")
+              .filter((u) => !targetUserId && u.role === "OWNER")
               .map((u) => (
                 <div className="meta-share-person" key={u.id}>
                   <div>
@@ -181,48 +215,53 @@ export function MetaWorkspaceSharing({
                   <span>OWNER · acceso completo</span>
                 </div>
               ))}
-            {grants.map((g) => {
-              const u = data.users.find((u) => u.id === g.userId);
-              return (
-                <div className="meta-share-person" key={g.userId}>
-                  <div>
-                    <strong>{u?.name ?? "Cuenta no habilitada"}</strong>
-                    <small>
-                      {u?.email ?? "Retira este acceso antes de guardar."}
-                    </small>
+            {grants
+              .filter((g) => !targetUserId || g.userId === targetUserId)
+              .map((g) => {
+                const u = data.users.find((u) => u.id === g.userId);
+                return (
+                  <div className="meta-share-person" key={g.userId}>
+                    <div>
+                      <strong>{u?.name ?? "Cuenta no habilitada"}</strong>
+                      <small>
+                        {u?.email ?? "Retira este acceso antes de guardar."}
+                      </small>
+                    </div>
+                    <select
+                      aria-label={`Permiso de ${u?.name ?? g.userId}`}
+                      value={g.permission}
+                      disabled={busy}
+                      onChange={(e) =>
+                        setGrants((old) =>
+                          old.map((x) =>
+                            x.userId === g.userId
+                              ? {
+                                  ...x,
+                                  permission: e.target.value as Permission,
+                                }
+                              : x,
+                          ),
+                        )
+                      }
+                    >
+                      <option value="VIEW">Puede ver</option>
+                      <option value="EDIT">Puede editar</option>
+                    </select>
+                    <button
+                      type="button"
+                      aria-label={`Quitar acceso compartido de ${u?.name ?? g.userId}`}
+                      disabled={busy}
+                      onClick={() =>
+                        setGrants((old) =>
+                          old.filter((x) => x.userId !== g.userId),
+                        )
+                      }
+                    >
+                      ×
+                    </button>
                   </div>
-                  <select
-                    aria-label={`Permiso de ${u?.name ?? g.userId}`}
-                    value={g.permission}
-                    disabled={busy}
-                    onChange={(e) =>
-                      setGrants((old) =>
-                        old.map((x) =>
-                          x.userId === g.userId
-                            ? { ...x, permission: e.target.value as Permission }
-                            : x,
-                        ),
-                      )
-                    }
-                  >
-                    <option value="VIEW">Puede ver</option>
-                    <option value="EDIT">Puede editar</option>
-                  </select>
-                  <button
-                    type="button"
-                    aria-label={`Quitar acceso compartido de ${u?.name ?? g.userId}`}
-                    disabled={busy}
-                    onClick={() =>
-                      setGrants((old) =>
-                        old.filter((x) => x.userId !== g.userId),
-                      )
-                    }
-                  >
-                    ×
-                  </button>
-                </div>
-              );
-            })}
+                );
+              })}
             {!grants.length && (
               <p>
                 Solo los OWNER tienen acceso completo. Añade personas o comparte
@@ -311,7 +350,7 @@ export function MetaWorkspaceSharing({
                   {
                     revision: data.revision,
                     grants,
-                    ...(scope ? { scope } : { pinnedAccountIds }),
+                    ...(scope ? { scope } : { pinnedAccountIds,...(targetUserId?{preservePins:true}:{}) }),
                   },
                 )
                   .then(onClose)

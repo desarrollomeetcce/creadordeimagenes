@@ -20,6 +20,9 @@ enum AccountStatus {
   SUSPENDED
 }
 model User {
+  aiAccessEnabled Boolean @default(true)
+  archivedAt DateTime?
+  @@index([archivedAt])
   id String @id @default(cuid())
   email String @unique
   name String

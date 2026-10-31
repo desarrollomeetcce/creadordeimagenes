@@ -6,7 +6,7 @@ import type {
   InventorySheetActivationReport,
   SheetInterval,
 } from "../../lib/meta-ads/inventory-sheet-activation";
-import { InventoryStatusLabel } from "./inventory-status-label";
+import { InventoryCacStatus as InventoryStatusLabel } from "./inventory-cac-status";
 import { EffectivenessHistory } from "./effectiveness-history";
 import { limaToday } from "./date-range";
 const money = (v: number | null | undefined) =>
@@ -17,7 +17,8 @@ const factor = (v: number | null | undefined) =>
   v === null || v === undefined
     ? "—"
     : new Intl.NumberFormat("es-PE", {
-        style: "percent",
+        style: "currency",
+        currency: "PEN",
         maximumFractionDigits: 1,
       }).format(v);
 const date = (s: string | null) =>
@@ -33,10 +34,12 @@ function Status({ period }: { period?: SheetInterval }) {
     <span
       className={
         "trial-status inventory-status-with-dot trial-" +
-        period.assessment.status
+        (period.cac?.budget.assessment ?? period.assessment).status
       }
     >
-      <InventoryStatusLabel status={period.assessment.status} />
+      <InventoryStatusLabel
+        status={(period.cac?.budget.assessment ?? period.assessment).status}
+      />
     </span>
   ) : (
     <>Sin historial</>
@@ -167,8 +170,8 @@ export function InventoryDiplomaObservations({
                   <th>Días</th>
                   <th>Pres. S/</th>
                   <th>G. Meta S/</th>
-                  <th>FX</th>
-                  <th>FX Meta</th>
+                  <th>CAC · P/V</th>
+                  <th>CAC Meta · G/V</th>
                   <th>Estado</th>
                 </tr>
               </thead>
@@ -200,8 +203,25 @@ export function InventoryDiplomaObservations({
                           ? " *"
                           : ""}
                       </td>
-                      <td>{factor(h?.assessment.usage)}</td>
-                      <td>{factor(h?.metaAssessment?.usage)}</td>
+                      <td>
+                        {factor(
+                          h?.cac?.budget.assessment.usage ??
+                            h?.assessment.usage,
+                        )}
+                      </td>
+                      <td>
+                        {factor(
+                          h?.cac?.meta.assessment.usage ??
+                            h?.metaAssessment?.usage,
+                        )}
+                        {h?.cac && (
+                          <small className="inventory-cac-state">
+                            <InventoryStatusLabel
+                              status={h.cac.meta.assessment.status}
+                            />
+                          </small>
+                        )}
+                      </td>
                       <td>
                         <Status period={h} />
                       </td>
@@ -260,8 +280,8 @@ export function InventoryDiplomaObservations({
                       <th>Ventas</th>
                       <th>Pres. S/</th>
                       <th>G. Meta S/</th>
-                      <th>FX</th>
-                      <th>FX Meta</th>
+                      <th>CAC · P/V</th>
+                      <th>CAC Meta · G/V</th>
                       <th>Estado</th>
                     </tr>
                   </thead>
@@ -280,12 +300,28 @@ export function InventoryDiplomaObservations({
                           {!h.metaComplete && h.metaSpend !== null ? " *" : ""}
                         </td>
                         <td>
-                          {factor(h.assessment.usage)}
-                          {!h.complete && h.assessment.usage !== null
+                          {factor(
+                            (h.cac?.budget.assessment ?? h.assessment).usage,
+                          )}
+                          {!h.complete &&
+                          (h.cac?.budget.assessment ?? h.assessment).usage !==
+                            null
                             ? " *"
                             : ""}
                         </td>
-                        <td>{factor(h.metaAssessment?.usage)}</td>
+                        <td>
+                          {factor(
+                            h.cac?.meta.assessment.usage ??
+                              h.metaAssessment?.usage,
+                          )}
+                          {h.cac && (
+                            <small className="inventory-cac-state">
+                              <InventoryStatusLabel
+                                status={h.cac.meta.assessment.status}
+                              />
+                            </small>
+                          )}
+                        </td>
                         <td>
                           <Status period={h} />
                         </td>
@@ -319,7 +355,7 @@ export function InventoryDiplomaObservations({
           )}
           <small>
             Presupuesto y G. Meta se muestran en soles; G. Meta usa únicamente
-            gasto recibido de Meta. FX Meta es una referencia adicional con los
+            gasto recibido de Meta. CAC Meta es una referencia adicional con los
             mismos límites, no cambia el estado principal. Las cifras son
             diarias, sin atribución por hora. Los períodos que comparten un día
             o tienen datos faltantes quedan pendientes (*). Se consultan hasta

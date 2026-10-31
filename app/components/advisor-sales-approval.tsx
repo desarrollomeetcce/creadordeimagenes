@@ -447,7 +447,7 @@ export function AdvisorSalesApproval({
               disabled={busy || saved || data.linked}
               onClick={() => void clearSales("NA")}
             >
-              Marcar N.A.
+              Sin actividad (N/A)
             </button>
           </div>
         </form>

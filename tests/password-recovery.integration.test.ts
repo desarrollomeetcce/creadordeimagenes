@@ -145,7 +145,7 @@ test("Recuperación por correo sin contraseña previa y enlace de un solo uso", 
       },
     );
     await t.test(
-      "Interno envía sin contraseña y respeta permisos; copiar enlace mantiene reautenticación",
+      "Interno envía sin contraseña; OWNER copia por sesión y Administrador conserva su prueba",
       async () => {
         await emailPasswordReset(admin, user.id, {}, adapter);
         assert.equal(messages.at(-1)!.to, user.email);
@@ -153,7 +153,11 @@ test("Recuperación por correo sin contraseña previa y enlace de un solo uso", 
           emailPasswordReset(admin, owner.id, {}, adapter),
           /OWNER/,
         );
-        await assert.rejects(issuePasswordReset(owner, user.id, {}));
+        assert.match(
+          (await issuePasswordReset(owner, user.id, {})).token,
+          /^[A-Za-z0-9_-]{43}$/,
+        );
+        await assert.rejects(issuePasswordReset(admin, user.id, {}));
         await db.user.update({
           where: { id: admin.id },
           data: { status: "SUSPENDED" },
