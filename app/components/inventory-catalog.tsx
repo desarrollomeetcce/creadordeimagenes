@@ -57,6 +57,7 @@ import { InventorySyllabusChips } from "./inventory-syllabus-chips";
 import { InventorySyllabi } from "./inventory-syllabi";
 import { InventoryPackageImport } from "./inventory-package-import";
 import { InventoryImport } from "./inventory-import";
+import { InventoryImportMenu } from "./inventory-import-menu";
 import { InventorySelectionDelete } from "./inventory-selection-delete";
 import { InventoryCategoryManager } from "./inventory-category-manager";
 import type {
@@ -222,6 +223,11 @@ export function InventoryCatalog({
     id?: string;
   } | null>(null);
   const [packageOpen, setPackageOpen] = useState(false);
+  const importTrigger = useRef<HTMLButtonElement>(null);
+  const restoreImportFocus = () =>
+    requestAnimationFrame(() =>
+      importTrigger.current?.focus({ preventScroll: true }),
+    );
   const [syllabiBusy, setSyllabiBusy] = useState(false);
   const [newRowOpen, setNewRowOpen] = useState(false);
   const duplicateReview = useInventoryDuplicateReview();
@@ -1906,7 +1912,10 @@ export function InventoryCatalog({
       )}
       {packageOpen && (
         <InventoryPackageImport
-          onClose={() => setPackageOpen(false)}
+          onClose={() => {
+            setPackageOpen(false);
+            restoreImportFocus();
+          }}
           onSaved={async (id) => {
             await onChanged();
             await reloadCategories();
@@ -1959,14 +1968,6 @@ export function InventoryCatalog({
           >
             Grupos
           </button>
-          <button
-            type="button"
-            title="Cargar catálogo preparado"
-            disabled={busy}
-            onClick={() => setPackageOpen(true)}
-          >
-            Cargar catálogo
-          </button>
           <div
             className="inventory-toolbar-main"
             role="group"
@@ -1981,14 +1982,13 @@ export function InventoryCatalog({
               <InventoryActionIcon name="paste" />
               Pegar inventario
             </button>
-            <button
-              type="button"
+            <InventoryImportMenu
+              triggerRef={importTrigger}
+              icon={<InventoryActionIcon name="import" />}
               disabled={busy || !categories}
-              onClick={() => setImportView("file")}
-            >
-              <InventoryActionIcon name="import" />
-              Importar inventario
-            </button>
+              onFile={() => setImportView("file")}
+              onCatalog={() => setPackageOpen(true)}
+            />
             <button
               type="button"
               disabled={busy || !categories}
@@ -3264,7 +3264,10 @@ export function InventoryCatalog({
           config={categories}
           inventoryNames={available.map((g) => g.name)}
           upload={importView === "file"}
-          onClose={() => setImportView(null)}
+          onClose={() => {
+            setImportView(null);
+            if (importView === "file") restoreImportFocus();
+          }}
           onSaved={async () => {
             await onChanged();
             await reloadCategories();
@@ -3278,6 +3281,11 @@ export function InventoryCatalog({
       {categoryManager && categories && (
         <InventoryCategoryManager
           config={categories}
+          onView={(names) => {
+            clearFilters();
+            selectCategories(names);
+            setCategoryManager(null);
+          }}
           selectedIds={selectedVisible}
           selectedCount={selectedGroups}
           initialView={categoryManager}

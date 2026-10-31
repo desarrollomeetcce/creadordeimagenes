@@ -2079,3 +2079,9 @@ El motor ya aplicaba n×S/50 para cantidades superiores a las11 filas iniciales.
 ## 30/10/2026 · Barra de Inventario en una línea
 
 Texto Cargar catálogo preparado reducido a Cargar catálogo; acceso Grupos conserva crear/modificar y Top en nombre accesible/ayuda. Botones30px, separaciones6px y fila sin wrap; Ver parámetros queda junto a las demás acciones. Escritorio muestra todo sin desbordamiento; móvil desplaza controles horizontalmente y conserva Compartir hoja.218 unitarias, tipos y build correctos. Chromium verifica anchos1850/1600/1280/390, altura≤58px y centros alineados, popover de parámetros/cambio Temarios, grupos/catálogo y selección sin escrituras ni erroresJS.
+
+## 30/10/2026 · Importación unificada y Ver categorías seleccionadas
+
+Se retira Cargar catálogo de la barra: Importar inventario ofrece Excel/CSV/texto para inventario actual o catálogo JSON preparado con su destino original. Ambos importadores se conservan; menú nativo movible dentro de viewport, teclado y retorno de foco. Cancelar un archivo ya no cierra accidentalmente el diálogo por propagación del evento cancel.
+
+Categorías del inventario elimina buscador superior redundante y empieza con Mostrar/todas, seguido del selector con búsqueda. Ver seleccionadas cierra y aplica filtro global por nombres en ambos niveles, limpia filtros conflictivos y conserva seleccionadas aunque el filtro de usos las oculte; considera variantes de nombre equivalentes en ambos niveles. No modifica asignaciones. Edición/fusión y revisión de eliminación sin cambios.218 unitarias, tipos/build correctos; seis comprobaciones Chromium de importación/cancelación/foco/móvil y vista de categorías cruzadas/selección/edición/revisión, sin escrituras ni erroresJS.

@@ -49,6 +49,7 @@ export function InventoryPackageImport({
       className="meta-detail inventory-package-dialog"
       aria-label="Cargar catálogo preparado"
       onCancel={(e) => {
+        if (e.target !== e.currentTarget) return;
         if (busy) e.preventDefault();
         else onClose();
       }}

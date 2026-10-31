@@ -1871,3 +1871,7 @@ Prueba de política compartida cubre cantidades1/10/11/100/1000/1000000, límite
 ### Barra de Inventario compacta en una fila
 
 218 unitarias, typecheck/build correctos. Chromium3 comprobaciones con fixture exclusiva: cuatro anchos1850/1600/1280/390 mantienen fila≤58px; escritorio sin scroll y móvil sin recorte exterior. Ver parámetros abre popover en viewport y alterna Temarios6/7→7/7; Grupos/catálogo conservan modal; seleccionar/quitar selección actualiza contador sin escrituras. Captura local inventory-one-line-desktop.png y log inventory-one-line-browser.txt.
+
+### Importación única y vista de categorías seleccionadas
+
+218 unitarias, typecheck/build correctos. Chromium import-menu3 comprobaciones: un botón sin catálogo separado, barra de una línea en1600/1280/390, menú con teclado/viewport móvil, JSON abre importador previo y Excel abre su selector; cancelar conserva ventana y foco, cero escrituras. category-view3 comprobaciones: sin buscador superior, Mostrar/todas antes del selector con búsqueda, selección única cubre nombre equivalente principal/secundaria y limpia filtro anterior; varias selecciones persisten al alternar usos, OR sin duplicar inventarios; móvil y edición/revisión de borrado intactas, sin mutaciones. Evidencia local import-menu-browser.txt y category-view-browser.txt.

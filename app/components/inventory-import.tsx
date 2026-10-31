@@ -64,6 +64,7 @@ export function InventoryImport({
       className="meta-detail inventory-import-dialog"
       aria-label="Pegar inventario"
       onCancel={(e) => {
+        if (e.target !== e.currentTarget) return;
         if (busy) e.preventDefault();
         else onClose();
       }}

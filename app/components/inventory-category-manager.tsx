@@ -4,7 +4,6 @@ import type {
   InventoryCategoryState,
   InventoryCategoryAction,
 } from "./inventory-category-types";
-import { matchesSearchWords } from "../../lib/search";
 import { categoryKey } from "../../lib/meta-ads/category-paste";
 import { SheetSearchSelect } from "./sheet-search-select";
 import { InventoryMultiSelect } from "./inventory-multi-select";
@@ -13,6 +12,7 @@ export function InventoryCategoryManager({
   onClose,
   onSave,
   onRefresh,
+  onView,
 }: {
   config: InventoryCategoryState;
   selectedIds: string[];
@@ -21,6 +21,7 @@ export function InventoryCategoryManager({
   onClose: () => void;
   onSave: (action: InventoryCategoryAction) => Promise<void>;
   onRefresh: () => Promise<void>;
+  onView: (names: string[]) => void;
 }) {
   const dialog = useRef<HTMLDialogElement>(null),
     [selected, setSelected] = useState<string[]>([]),
@@ -28,23 +29,12 @@ export function InventoryCategoryManager({
     [filter, setFilter] = useState<string[]>([]),
     [busy, setBusy] = useState(false),
     [error, setError] = useState(""),
-    [name, setName] = useState(""),
-    [kind, setKind] = useState("PRIMARY"),
     [usage, setUsage] = useState("ALL"),
     [editing, setEditing] = useState<string | null>(null),
     [editName, setEditName] = useState("");
   useEffect(() => {
     dialog.current?.showModal();
   }, []);
-  const normalize = (value: string) =>
-    value
-      .normalize("NFD")
-      .replace(/[\u0300-\u036f]/g, "")
-      .toLocaleLowerCase("es")
-      .trim();
-  const exists = config.categories.some(
-    (c) => normalize(c.name) === normalize(name),
-  );
   const grouped = new Map<
     string,
     { id: string; name: string; ids: string[]; kinds: string[] }
@@ -63,32 +53,10 @@ export function InventoryCategoryManager({
   const visible = groups.filter(
     (c) =>
       (!filter.length || filter.includes(c.id)) &&
-      (usage === "ALL" || c.kinds.includes(usage)) &&
-      matchesSearchWords(c.name, name),
+      (usage === "ALL" || c.kinds.includes(usage)),
   );
   const reviewGroups = groups.filter((c) => review?.includes(c.id));
   const reviewIds = reviewGroups.flatMap((c) => c.ids);
-  const addCategory = async () => {
-    if (!name.trim() || busy || exists) return;
-    setBusy(true);
-    setError("");
-    try {
-      await onSave({
-        action: "IMPORT",
-        rows: [
-          {
-            primary: kind === "PRIMARY" ? name.trim() : "",
-            secondary: kind === "SECONDARY" ? name.trim() : "",
-          },
-        ],
-      });
-      setName("");
-    } catch (e) {
-      setError((e as Error).message);
-    } finally {
-      setBusy(false);
-    }
-  };
   const editingGroup = groups.find((c) => c.id === editing);
   const destination = groups.find(
     (c) => c.id !== editing && categoryKey(c.name) === categoryKey(editName),
@@ -99,6 +67,15 @@ export function InventoryCategoryManager({
       ).length
     : 0;
   const chosen = selected.filter((id) => visible.some((c) => c.id === id));
+  const selectedGroups = groups.filter((c) => selected.includes(c.id));
+  const selectedCategoryIds = new Set(selectedGroups.flatMap((c) => c.ids));
+  const selectedNames = [
+    ...new Set(
+      config.categories
+        .filter((c) => selectedCategoryIds.has(c.id))
+        .map((c) => c.name),
+    ),
+  ];
   return (
     <dialog
       ref={dialog}
@@ -125,54 +102,6 @@ export function InventoryCategoryManager({
         usos, principales y secundarios, de esta lista. Los inventarios y sus
         cifras se conservan.
       </p>
-      <form
-        className="row"
-        onSubmit={(e) => {
-          e.preventDefault();
-        }}
-      >
-        <input
-          aria-label="Buscar categorías"
-          type="search"
-          placeholder="Buscar por nombre de categoría…"
-          value={name}
-          maxLength={80}
-          disabled={busy}
-          onChange={(e) => {
-            setName(e.target.value);
-            setFilter([]);
-          }}
-        />
-        <button type="submit" disabled={busy}>
-          Buscar
-        </button>
-        {name.trim() && !exists && (
-          <>
-            <select
-              aria-label="Tipo de categoría"
-              value={kind}
-              disabled={busy}
-              onChange={(e) => setKind(e.target.value)}
-            >
-              <option value="PRIMARY">Principal</option>
-              <option value="SECONDARY">Secundaria</option>
-            </select>
-            <button
-              type="button"
-              disabled={busy}
-              onClick={() => void addCategory()}
-            >
-              Añadir «{name.trim()}»
-            </button>
-          </>
-        )}
-      </form>
-      <p role="status" aria-live="polite">
-        {visible.length} categorías encontradas
-        {name.trim() && !exists
-          ? ". Si buscas una categoría nueva, puedes añadirla con el botón indicado."
-          : "."}
-      </p>
       <label className="inventory-category-usage-filter">
         Mostrar
         <select
@@ -192,7 +121,11 @@ export function InventoryCategoryManager({
         options={groups.map((c) => ({ value: c.id, label: c.name }))}
         values={filter}
         onChange={setFilter}
+        disabled={busy}
       />
+      <p role="status" aria-live="polite">
+        {visible.length} categorías encontradas.
+      </p>
       {editingGroup && (
         <section
           className="inventory-category-editor"
@@ -248,7 +181,6 @@ export function InventoryCategoryManager({
                   setEditing(null);
                   setSelected([]);
                   setFilter([]);
-                  setName("");
                 } catch (e) {
                   setError((e as Error).message);
                 } finally {
@@ -285,9 +217,7 @@ export function InventoryCategoryManager({
       </label>
       <div className="inventory-category-delete-list">
         {!visible.length && (
-          <p>
-            Sin coincidencias. Revisa el nombre o añade una categoría nueva.
-          </p>
+          <p>Sin coincidencias. Revisa los filtros de categorías.</p>
         )}
         {visible.map((c) => (
           <div key={c.id} className="inventory-category-delete-item">
@@ -350,14 +280,25 @@ export function InventoryCategoryManager({
           </div>
         ))}
       </div>
-      <button
-        type="button"
-        className="danger"
-        disabled={busy || !chosen.length}
-        onClick={() => setReview(chosen)}
-      >
-        Eliminar seleccionadas ({chosen.length})
-      </button>
+      <div className="row inventory-category-selection-actions">
+        <button
+          type="button"
+          className="primary"
+          disabled={busy || !selectedGroups.length}
+          title="Ver diplomados de las categorías marcadas, tanto principales como secundarias"
+          onClick={() => onView(selectedNames)}
+        >
+          Ver seleccionadas ({selectedGroups.length})
+        </button>
+        <button
+          type="button"
+          className="danger"
+          disabled={busy || !chosen.length}
+          onClick={() => setReview(chosen)}
+        >
+          Eliminar seleccionadas ({chosen.length})
+        </button>
+      </div>
       {error && (
         <p role="alert">
           {error}
