@@ -2067,3 +2067,7 @@ Regresión adicional del mismo cambio:26 pruebas de asignación Meta/selección/
 Causa identificada: ProductsCatalog mostraba aliases.length, incluyendo identidades conservadas por historial aunque todas sus filas estuvieran ocultas. La API ahora devuelve visibleAliasCount a partir de la misma política financialRowPresence que usa la hoja; una identidad en dos países cuenta una vez. Apagados fijados cuentan porque siguen presentes; retirados no. Se mantienen aliases e historia completos. La hoja actualiza la pestaña desde su respuesta completa al recargar datos, sin depender de filtros de pantalla.
 
 217 unitarias y25 pruebas de integración aprobadas; tipos/compilación correctos. Chromium reproduce4 presentes→retirar4→0 inmediato→recargar0; confirma catálogo4, historial/estados desactivados y3 ventas preservadas. Fixture propia eliminada. Sin migración, reparación destructiva ni llamadas Meta/IA.
+
+## 30/10/2026 · Cantidades por categoría en filtros del inventario
+
+Cabeceras Categoría principal y Categorías secundarias muestran nombre y cantidad entre paréntesis. Conteo independiente por nivel sobre diplomados agrupados de toda la lista: alias de varias hojas e ítem canónico no duplican. Categorías vacías muestran(0). Búsqueda conserva nombre simple y selección guarda el mismo valor original; no cambia categorías ni sus asignaciones.217 unitarias, typecheck/build aprobados; validación Chromium de conteos2/1 por nivel, ceros, identidad duplicada, búsqueda/selección/filtros y ausencia de escrituras.

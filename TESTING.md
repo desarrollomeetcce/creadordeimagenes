@@ -1859,3 +1859,7 @@ Regresión adicional del mismo cambio:26 pruebas de asignación Meta/selección/
 ### Regresión del contador de pestañas de hojas
 
 Tres pruebas unitarias en meta-ads.test.ts cubren cuatro retirados que cuentan cero, dedupe por país/presencia del apagado fijado y campaña que no resucita el país ocultado. financial-row-retirement.integration compara visibleAliasCount con la hoja vacía y conserva alias/ventas, además del caso de otro país visible y reincorporación.217 unitarias y25 integraciones de retiro/activación aprobadas. Chromium4 comprobaciones: contador4 real, baja completa0 sin recargar,0 persistente con4 identidades históricas y catálogo/detalle con3 ventas intactas. Typecheck/build aprobados; evidencia local sheet-count-{unit,integration,browser,build,typecheck}.txt.
+
+### Cantidades de categorías en cabecera de Inventario
+
+217 unitarias y typecheck/build aprobados. Fixture exclusiva con2 diplomados asignados tanto a alias como a ítems canónicos, Agricultura principal2/secundaria1, Cultivos secundaria2/principal0 y Sin uso0. Chromium verifica conteos sin duplicar, búsqueda por nombre sin creación falsa, filtros con valores originales y conteos totales estables al filtrar. Evidencia local /workspace/work/category-count-browser.txt; sin cambios de API/BD de producción.

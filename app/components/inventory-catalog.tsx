@@ -910,6 +910,21 @@ export function InventoryCatalog({
       available.filter((g) => membership.get(g.name)!.has(name)).length,
     ]),
   );
+  const levelCategoryCounts = {
+    PRIMARY: new Map<string, number>(),
+    SECONDARY: new Map<string, number>(),
+  };
+  for (const group of available) {
+    const assigned = groupCategories(group);
+    for (const kind of ["PRIMARY", "SECONDARY"] as const)
+      for (const name of new Set(
+        assigned.filter((c) => c.kind === kind).map((c) => c.name),
+      ))
+        levelCategoryCounts[kind].set(
+          name,
+          (levelCategoryCounts[kind].get(name) ?? 0) + 1,
+        );
+  }
   const categoryOptions = [
     { value: noCategory, label: "Sin categorías" },
     ...directoryNames.map((name) => ({
@@ -2339,7 +2354,8 @@ export function InventoryCatalog({
                     placeholder="Todas"
                     options={directoryNames.map((name) => ({
                       value: name,
-                      label: name,
+                      label: `${name} (${levelCategoryCounts[kind].get(name) ?? 0})`,
+                      searchLabel: name,
                     }))}
                     values={kind === "PRIMARY" ? primaryNames : secondaryNames}
                     disabled={busy || !categories}
