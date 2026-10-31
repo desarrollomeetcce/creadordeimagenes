@@ -8,7 +8,6 @@ import { AdvisorMetaNotice } from "./advisor-meta-notice";
 import { AdvisorFinancialSummary } from "./advisor-financial-summary";
 import { advisorDayEffectiveness } from "../../lib/meta-ads/advisor-day-effectiveness";
 import { summaryPeriod } from "../../lib/meta-ads/summary-period";
-import { SummaryPeriodNotice } from "./summary-period-notice";
 import {
   Fragment as ReactFragment,
   useEffect,
@@ -632,30 +631,38 @@ export function AdvisorDetail({
   );
   const summary = row ? (
     <div className="advisor-detail-summary" aria-label="Resumen del asesor">
-      <SummaryPeriodNotice
-        days={days}
-        view={analysisView}
-        today={limaToday()}
-      />
       {(analysisView === "today" || analysisView === "yesterday") && (
-        <div className="advisor-analysis-note" role="note">
-          <strong>Puedes cambiar el período para consultar más fechas.</strong>
+        <div
+          className="advisor-analysis-note advisor-compact-note"
+          role="note"
+          data-summary-view={analysisView}
+          data-cutoff={
+            summaryDays.at(-1) ??
+            summaryPeriod(days, analysisView, limaToday()).cutoff
+          }
+        >
+          <strong>
+            {analysisView === "yesterday"
+              ? summaryDays.length
+                ? `Días completos hasta ${summaryDays.at(-1)!.split("-").reverse().join("/")}`
+                : "Sin días completos en este período"
+              : `Avance hasta ${(summaryDays.at(-1) ?? limaToday()).split("-").reverse().join("/")}`}
+          </strong>
           <span>
             {aliasId
-              ? "BM y BC son del asesor y país completos; no se registran por diplomado."
-              : analysisView === "today"
-                ? "BC suma los cortes declarados por el asesor en las fechas elegidas; no equivale a una base de 24 horas."
-                : "Ventas y BM corresponden a las mismas fechas completas."}
+              ? "BM y BC son generales; consulta todo el inventario para comparar."
+              : "Puedes cambiar el período para consultar más fechas."}
           </span>
           {aliasId && (
             <button type="button" onClick={() => setAliasId("")}>
-              Volver a todo el inventario
+              Ver todo el inventario
             </button>
           )}
         </div>
       )}
       {analysisView === "meta" && (
         <AdvisorMetaNotice
+          hasMetaSource={financialSummary.hasMetaSource}
           updatedAt={financialSummary.updatedAt}
           partial={financialSummary.metaPartial}
         />
@@ -1308,57 +1315,57 @@ export function AdvisorDetail({
         >
           <DetailLayoutA11y />
           <DetailStickyHeader>
-            <header className="row advisor-detail-heading">
+            <div className="advisor-detail-topline">
               <h2>{advisorName}</h2>
-            </header>
-            <DetailNavigation
-              onClose={onClose}
-              items={[
-                {
-                  target: sectionId + "inventory-analysis",
-                  label: "Ventas por asesor",
-                  tone: "sales",
-                },
-                {
-                  target: sectionId + "sold-days",
-                  label: "Qué vendió cada día",
-                  tone: "sold",
-                },
-                {
-                  target: sectionId + "days",
-                  label: "Histórico por día",
-                  tone: "daily",
-                },
-                {
-                  target: sectionId + "chart",
-                  label: "Estadísticas",
-                  tone: "parameters",
-                },
-                {
-                  target: sectionId + "assignments",
-                  label: "Estadísticas de asesores",
-                  tone: "assignments",
-                },
-                {
-                  target: sectionId + "products",
-                  label: "Ventas por producto",
-                  tone: "products",
-                },
-              ].sort(
-                (a, b) =>
-                  moduleLayout.rows
-                    .flat()
-                    .indexOf(
-                      a.target.slice(sectionId.length) as AdvisorModuleId,
-                    ) -
-                  moduleLayout.rows
-                    .flat()
-                    .indexOf(
-                      b.target.slice(sectionId.length) as AdvisorModuleId,
-                    ),
-              )}
-              disabled={!row}
-            />
+              <DetailNavigation
+                onClose={onClose}
+                items={[
+                  {
+                    target: sectionId + "inventory-analysis",
+                    label: "Ventas por asesor",
+                    tone: "sales",
+                  },
+                  {
+                    target: sectionId + "sold-days",
+                    label: "Qué vendió cada día",
+                    tone: "sold",
+                  },
+                  {
+                    target: sectionId + "days",
+                    label: "Histórico por día",
+                    tone: "daily",
+                  },
+                  {
+                    target: sectionId + "chart",
+                    label: "Estadísticas",
+                    tone: "parameters",
+                  },
+                  {
+                    target: sectionId + "assignments",
+                    label: "Estadísticas de asesores",
+                    tone: "assignments",
+                  },
+                  {
+                    target: sectionId + "products",
+                    label: "Ventas por producto",
+                    tone: "products",
+                  },
+                ].sort(
+                  (a, b) =>
+                    moduleLayout.rows
+                      .flat()
+                      .indexOf(
+                        a.target.slice(sectionId.length) as AdvisorModuleId,
+                      ) -
+                    moduleLayout.rows
+                      .flat()
+                      .indexOf(
+                        b.target.slice(sectionId.length) as AdvisorModuleId,
+                      ),
+                )}
+                disabled={!row}
+              />
+            </div>
             <div
               className="row"
               role="group"
@@ -1382,16 +1389,6 @@ export function AdvisorDetail({
                 </button>
               ))}
             </div>
-            <p className="hint" role="status">
-              {analysisView === "meta"
-                ? "V / B × 100 y G / V · por inventario y país · según informes de Meta."
-                : analysisView === "today"
-                  ? "V / BC × 100 y P / V · cortes declarados, sin repartir BC por diplomado."
-                  : analysisView === "yesterday"
-                    ? "V / BM × 100 y P / V · datos de días completos, sin repartir BM por diplomado."
-                    : "Período elegido · ventas y bases de las mismas fechas."}{" "}
-              * Cobertura parcial; — sin dato.
-            </p>
             <div className="row advisor-detail-controls">
               <div className="advisor-period-controls">
                 <MetaDateRange
@@ -1476,6 +1473,20 @@ export function AdvisorDetail({
                   setCountry(v);
                 }}
               />
+              {!selectedPeriod && (
+                <SheetSearchSelect
+                  label="Asesor del análisis"
+                  value={analysisAdvisor}
+                  options={(people.length ? people : [person]).map((p) => ({
+                    value: p.id,
+                    label: ("label" in p ? p.label : undefined) ?? p.name,
+                  }))}
+                  onSelect={(id) => {
+                    setAnalysisAdvisor(id);
+                    setSelectedPeriod(null);
+                  }}
+                />
+              )}
               <button
                 type="button"
                 disabled={loading || !valid}
@@ -1507,29 +1518,7 @@ export function AdvisorDetail({
                   Volver al análisis general
                 </button>
               </div>
-            ) : (
-              <>
-                <SheetSearchSelect
-                  label="Asesor del análisis"
-                  value={analysisAdvisor}
-                  options={(people.length ? people : [person]).map((p) => ({
-                    value: p.id,
-                    label: ("label" in p ? p.label : undefined) ?? p.name,
-                  }))}
-                  onSelect={(id) => {
-                    setAnalysisAdvisor(id);
-                    setSelectedPeriod(null);
-                  }}
-                />
-              </>
-            )}
-            <p className="hint">
-              Ventas registradas por asesor en el inventario y país elegidos.
-              Todos suma las combinaciones de las hojas elegidas; el desglose
-              identifica cada producto. A, I y H corresponden al asesor,
-              independientemente del producto. Las ausencias abiertas no se
-              suman hasta registrar el regreso.
-            </p>
+            ) : null}
           </DetailStickyHeader>
           {!valid && (
             <p role="alert">

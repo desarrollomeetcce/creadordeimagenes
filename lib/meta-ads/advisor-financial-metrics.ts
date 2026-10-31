@@ -3,6 +3,7 @@ import { advisorAssignmentPeriods } from "./advisor-periods";
 import type { AssignmentChange } from "./advisor-attribution";
 import type { EffectivenessRow } from "./effectiveness";
 export type AdvisorFinancialDay = {
+  hasMetaSource?: boolean;
   currencies: {
     currency: string;
     budget: number | null;
@@ -29,7 +30,10 @@ export function advisorFinancialMetrics(
   const output = new Map<string, Record<string, AdvisorFinancialDay>>();
   for (const row of rows) {
     const periods = advisorAssignmentPeriods(row.advisorId, row.changes, asOf);
-    const metaPeriods = advisorMetaPeriods(row.advisorId, row.changes, asOf);
+    const metaPeriods = advisorMetaPeriods(row.advisorId, row.changes, asOf, {
+      mode: row.metaHistoryMode,
+      since: row.metaHistorySince,
+    });
     for (const day of dates) {
       const start = Date.parse(day + "T00:00:00-05:00"),
         end = Math.min(start + 86400000, asOf.getTime());
@@ -62,7 +66,7 @@ export function advisorFinancialMetrics(
       const cell = row.days[day];
       for (const id of owners.filter((id) => personIds.has(id))) {
         const days = output.get(id) ?? {};
-        const sum = days[day] ?? {
+        const sum: AdvisorFinancialDay = days[day] ?? {
           currencies: [],
           base: null,
           metaPartial: false,
@@ -70,6 +74,7 @@ export function advisorFinancialMetrics(
           updatedAt: null,
         };
         const hasMetaPeriod = metaOverlapping.some((p) => p.advisorId === id);
+        if (hasMetaPeriod) sum.hasMetaSource = true;
         sum.assignmentPartial ||= hasMetaPeriod && metaOwner !== id;
         const currency = row.currency || "";
         let money = sum.currencies.find((c) => c.currency === currency);

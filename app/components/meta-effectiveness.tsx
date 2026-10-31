@@ -122,6 +122,7 @@ type Cell = {
   }[];
 };
 type Row = {
+  supports?: { id: string; advisorId: string; name: string; until: string }[];
   aliasId: string;
   advisorId: string | null;
   country: string;
@@ -234,6 +235,7 @@ export function MetaEffectiveness({
     row: Row;
     advisorId: string | null;
     name: string;
+    manage?: boolean;
   } | null>(null);
   const [bulkAdvisor, setBulkAdvisor] = useState<{
     advisorId: string | null;
@@ -1353,6 +1355,8 @@ export function MetaEffectiveness({
       )}
       {assignment && (
         <AdvisorAssignment
+          manage={assignment.manage}
+          onRefresh={refresh}
           aliasId={assignment.row.aliasId}
           country={assignment.row.country}
           name={assignment.name}
@@ -2697,6 +2701,25 @@ export function MetaEffectiveness({
                                   });
                               }}
                             />
+                            {r.country && (
+                              <button
+                                type="button"
+                                className="advisor-manage-trigger"
+                                data-financial-write
+                                aria-label={`Gestionar titular y apoyos de ${name} ${r.country}`}
+                                title="Titular, apoyos temporales e histórico Meta"
+                                onClick={() =>
+                                  setAssignment({
+                                    row: r,
+                                    advisorId: r.advisorId,
+                                    name,
+                                    manage: true,
+                                  })
+                                }
+                              >
+                                ⋯
+                              </button>
+                            )}
                             {r.advisorId && r.country && (
                               <button
                                 type="button"
@@ -2721,6 +2744,18 @@ export function MetaEffectiveness({
                               </button>
                             )}
                           </div>
+                          {!!r.supports?.length && (
+                            <div className="advisor-support-badges">
+                              {r.supports.map((s) => (
+                                <span
+                                  key={s.id}
+                                  title={`Apoyo temporal hasta ${s.until}; la base sigue con el titular`}
+                                >
+                                  Apoyo: {s.name}
+                                </span>
+                              ))}
+                            </div>
+                          )}
                         </td>
 
                         <td

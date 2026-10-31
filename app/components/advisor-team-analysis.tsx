@@ -335,6 +335,7 @@ export function AdvisorTeamAnalysis({
         </DetailStickyHeader>
         {view === "meta" && (
           <AdvisorMetaNotice
+            hasMetaSource={[...financial.values()].some((f) => f.hasMetaSource)}
             updatedAt={
               [...financial.values()]
                 .map((f) => f.updatedAt)

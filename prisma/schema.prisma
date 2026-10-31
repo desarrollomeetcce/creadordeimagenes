@@ -735,6 +735,7 @@ model MetaAliasTable {
   aliases MetaAlias[]
 }
 model MetaAlias {
+ supports MetaAdvisorSupport[]
  categoryAssignments MetaInventoryCategoryAssignment[]
  inventorySheetId String @default("default-inventory")
  inventorySheet MetaEffectivenessSheet @relation(fields:[inventorySheetId],references:[id],onDelete:Restrict)
@@ -891,6 +892,8 @@ model MetaRecommendationSource {
 }
 
 model MetaEffectivenessRow {
+ metaHistoryMode String @default("ALL")
+ metaHistorySince String?
  salesApprovals MetaAdvisorSalesApproval[]
  advisorId String?
  advisor MetaAdvisor? @relation(fields:[advisorId],references:[id],onDelete:Restrict)
@@ -979,6 +982,8 @@ model MetaEffectivenessSync {
 }
 
 model MetaAdvisor {
+ commercialRole String @default("ADVISOR")
+ supports MetaAdvisorSupport[]
  portal MetaAdvisorPortal?
  inventoryAssignments MetaInventoryAdvisor[]
  targets MetaAdvisorTarget[]
@@ -1254,4 +1259,21 @@ model MetaInventoryTrialGroup {
  createdAt DateTime @default(now())
  updatedAt DateTime @updatedAt
  @@index([sheetId,archivedAt,createdAt])
+}
+
+model MetaAdvisorSupport {
+ id String @id @default(cuid())
+ aliasId String
+ alias MetaAlias @relation(fields:[aliasId],references:[id],onDelete:Cascade)
+ country String
+ advisorId String
+ advisor MetaAdvisor @relation(fields:[advisorId],references:[id],onDelete:Restrict)
+ since String
+ until String
+ cancelledAt DateTime?
+ revision Int @default(0)
+ actorId String
+ createdAt DateTime @default(now())
+ @@index([aliasId,country,since,until])
+ @@index([advisorId,since,until])
 }

@@ -47,6 +47,12 @@ export function advisorFinancialSummary(
     : null;
   return {
     money,
+    hasMetaSource: days.some(
+      (d) =>
+        d.financial?.hasMetaSource ||
+        d.financial?.base != null ||
+        d.financial?.currencies.some((c) => c.spend != null),
+    ),
     base,
     effectiveness: periodComparison(
       days.map((d) => ({

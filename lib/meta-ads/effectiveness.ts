@@ -61,6 +61,9 @@ export type EffectivenessCell = {
 };
 
 export type EffectivenessRow = {
+  metaHistoryMode?: string;
+  metaHistorySince?: string | null;
+  supports?: { id: string; advisorId: string; name: string; until: string }[];
   aliasId: string;
   advisorId: string | null;
   country: string;
@@ -322,72 +325,95 @@ async function readEffectiveness(
     },
   });
   demand(table, "Tabla no disponible.", 404);
-  const [campaigns, stored, snapshots, states, columnLink, assignmentLists] =
-    await Promise.all([
-      client.metaAdObject.findMany({
-        where: {
-          level: "campaign",
-          alias: { tableId },
-          aliasCountry: { not: null },
-          account: advisorScope ? {} : await accountWhere(actor),
-        },
-        select: {
-          aliasId: true,
-          aliasCountry: true,
-          account: { select: { currency: true, timezone: true } },
-          daily: {
-            where: {
-              day: { gte: since, lte: until },
-              scope: "7d_click,1d_view|impression",
-            },
-            select: { day: true, spend: true, actions: true, updatedAt: true },
+  const [
+    campaigns,
+    stored,
+    snapshots,
+    states,
+    columnLink,
+    assignmentLists,
+    supports,
+  ] = await Promise.all([
+    client.metaAdObject.findMany({
+      where: {
+        level: "campaign",
+        alias: { tableId },
+        aliasCountry: { not: null },
+        account: advisorScope ? {} : await accountWhere(actor),
+      },
+      select: {
+        aliasId: true,
+        aliasCountry: true,
+        account: { select: { currency: true, timezone: true } },
+        daily: {
+          where: {
+            day: { gte: since, lte: until },
+            scope: "7d_click,1d_view|impression",
           },
+          select: { day: true, spend: true, actions: true, updatedAt: true },
         },
-      }),
-      client.metaEffectivenessRow.findMany({
-        where: { legacy: false, alias: { tableId } },
-        include: {
-          days: { where: { day: { gte: since, lte: until } } },
-          legacySources: {
-            where: { hidden: false },
-            include: { days: { where: { day: { gte: since, lte: until } } } },
-          },
+      },
+    }),
+    client.metaEffectivenessRow.findMany({
+      where: { legacy: false, alias: { tableId } },
+      include: {
+        days: { where: { day: { gte: since, lte: until } } },
+        legacySources: {
+          where: { hidden: false },
+          include: { days: { where: { day: { gte: since, lte: until } } } },
         },
-      }),
-      client.metaFxDay.findMany({
-        where: { day: { gte: since, lte: until } },
-        select: {
-          day: true,
-          rates: true,
-          source: true,
-          sourceUrl: true,
-          fetchedAt: true,
+      },
+    }),
+    client.metaFxDay.findMany({
+      where: { day: { gte: since, lte: until } },
+      select: {
+        day: true,
+        rates: true,
+        source: true,
+        sourceUrl: true,
+        fetchedAt: true,
+      },
+    }),
+    client.metaEffectivenessState.findMany({
+      where: { alias: { tableId } },
+      select: {
+        aliasId: true,
+        country: true,
+        active: true,
+        revision: true,
+        events: {
+          orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+          take: 1,
+          select: { createdAt: true, active: true },
         },
-      }),
-      client.metaEffectivenessState.findMany({
-        where: { alias: { tableId } },
-        select: {
-          aliasId: true,
-          country: true,
-          active: true,
-          revision: true,
-          events: {
-            orderBy: [{ createdAt: "desc" }, { id: "desc" }],
-            take: 1,
-            select: { createdAt: true, active: true },
-          },
-        },
-      }),
-      ignoreLink
-        ? Promise.resolve(null)
-        : client.metaEffectivenessLink.findUnique({ where: { tableId } }),
-      includeHidden
-        ? Promise.resolve([])
-        : client.metaEffectivenessSheet.findMany({
-            where: { kind: "INVENTORY", inventory: { some: { tableId } } },
-            select: { config: true },
-          }),
-    ]);
+      },
+    }),
+    ignoreLink
+      ? Promise.resolve(null)
+      : client.metaEffectivenessLink.findUnique({ where: { tableId } }),
+    includeHidden
+      ? Promise.resolve([])
+      : client.metaEffectivenessSheet.findMany({
+          where: { kind: "INVENTORY", inventory: { some: { tableId } } },
+          select: { config: true },
+        }),
+    client.metaAdvisorSupport.findMany({
+      where: {
+        alias: { tableId },
+        cancelledAt: null,
+        since: { lte: limaDay() },
+        until: { gte: limaDay() },
+      },
+      select: {
+        id: true,
+        aliasId: true,
+        country: true,
+        advisorId: true,
+        until: true,
+        advisor: { select: { name: true } },
+      },
+    }),
+  ]);
   const pendingAssignments = new Map<string, string>();
   const campaignTasks = new Map<string, "NONE" | "CREATE" | "STOP">();
   for (const list of assignmentLists) {
@@ -428,6 +454,14 @@ async function readEffectiveness(
     if (!r) {
       r = {
         aliasId: a,
+        supports: supports
+          .filter((s) => s.aliasId === a && s.country === p)
+          .map((s) => ({
+            id: s.id,
+            advisorId: s.advisorId,
+            name: s.advisor.name,
+            until: s.until,
+          })),
         advisorId: null,
         country: p,
         currency: table!.defaultCurrency,
@@ -483,6 +517,8 @@ async function readEffectiveness(
     if (s.hidden && !includeHidden) continue;
     const r = get(s.aliasId, s.country);
     r.advisorId = s.advisorId;
+    r.metaHistoryMode = s.metaHistoryMode;
+    r.metaHistorySince = s.metaHistorySince;
     r.currency = s.displayCurrency;
     r.rowRevision = s.revision;
     for (const legacy of s.legacySources)

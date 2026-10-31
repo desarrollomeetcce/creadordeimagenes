@@ -21,6 +21,10 @@ export function AdvisorBulkAssignment({
 }) {
   const dialog = useRef<HTMLDialogElement>(null),
     now = new Date(Date.now() - 5 * 3600000).toISOString();
+  const [assignmentKind, setAssignmentKind] = useState<
+    "DEFINITIVE" | "TEMPORARY" | ""
+  >(advisorId ? "" : "DEFINITIVE");
+  const [until, setUntil] = useState(now.slice(0, 10));
   const [scope, setScope] = useState(
       selected.some((r) => r.country) ? "selected" : "visible",
     ),
@@ -67,6 +71,8 @@ export function AdvisorBulkAssignment({
               await api("meta-ads/effectiveness/advisors/batch", "PATCH", {
                 tableId,
                 advisorId,
+                assignmentKind,
+                ...(assignmentKind === "TEMPORARY" ? { until } : {}),
                 day,
                 mode,
                 ...(mode === "CLOCK" ? { time } : {}),
@@ -87,6 +93,43 @@ export function AdvisorBulkAssignment({
           })();
         }}
       >
+        <fieldset
+          disabled={busy || committed}
+          className="advisor-assignment-kinds"
+        >
+          <legend>¿Qué tipo de asignación?</legend>
+          <label>
+            <input
+              type="radio"
+              name="advisor-bulk-kind"
+              checked={assignmentKind === "TEMPORARY"}
+              disabled={!advisorId}
+              onChange={() => setAssignmentKind("TEMPORARY")}
+            />
+            Apoyo temporal · la base sigue con el titular
+          </label>
+          <label>
+            <input
+              type="radio"
+              name="advisor-bulk-kind"
+              checked={assignmentKind === "DEFINITIVE"}
+              onChange={() => setAssignmentKind("DEFINITIVE")}
+            />
+            Cambio definitivo · nueva responsabilidad
+          </label>
+          {assignmentKind === "TEMPORARY" && (
+            <label>
+              Último día del apoyo
+              <input
+                type="date"
+                required
+                min={day}
+                value={until}
+                onChange={(e) => setUntil(e.target.value)}
+              />
+            </label>
+          )}
+        </fieldset>
         <fieldset disabled={busy || committed}>
           <legend>Filas de esta visualización</legend>
           <label>
@@ -124,38 +167,43 @@ export function AdvisorBulkAssignment({
               onChange={(e) => setDay(e.target.value)}
             />
           </label>
-          <label>
-            <input
-              type="radio"
-              name="advisor-bulk-mode"
-              checked={mode === "CLOCK"}
-              onChange={() => setMode("CLOCK")}
-            />
-            Desde una hora
-          </label>
-          <label>
-            <input
-              type="radio"
-              name="advisor-bulk-mode"
-              checked={mode === "DAY"}
-              onChange={() => setMode("DAY")}
-            />
-            Todo el día · desde las 00:00
-          </label>
-          {mode === "CLOCK" && (
-            <label>
-              Hora del cambio (Lima)
-              <input
-                type="time"
-                required
-                value={time}
-                onChange={(e) => setTime(e.target.value)}
-              />
-            </label>
+          {assignmentKind === "DEFINITIVE" && (
+            <>
+              <label>
+                <input
+                  type="radio"
+                  name="advisor-bulk-mode"
+                  checked={mode === "CLOCK"}
+                  onChange={() => setMode("CLOCK")}
+                />
+                Desde una hora
+              </label>
+              <label>
+                <input
+                  type="radio"
+                  name="advisor-bulk-mode"
+                  checked={mode === "DAY"}
+                  onChange={() => setMode("DAY")}
+                />
+                Todo el día · desde las 00:00
+              </label>
+              {mode === "CLOCK" && (
+                <label>
+                  Hora del cambio (Lima)
+                  <input
+                    type="time"
+                    required
+                    value={time}
+                    onChange={(e) => setTime(e.target.value)}
+                  />
+                </label>
+              )}
+            </>
           )}
           <p className="hint">
-            Se conservan las ventas registradas por asesor. Cambia la
-            responsabilidad desde la fecha y hora indicadas.
+            {assignmentKind === "TEMPORARY"
+              ? "La base sigue con cada titular. Las ventas se registran para quien vende."
+              : "Cambia la responsabilidad desde la fecha indicada; las ventas guardadas se conservan."}
           </p>
         </fieldset>
         {error && (
@@ -170,7 +218,7 @@ export function AdvisorBulkAssignment({
             Cancelar
           </button>
           <button
-            disabled={busy || committed || !targets.length}
+            disabled={busy || committed || !targets.length || !assignmentKind}
             className="primary"
           >
             {busy ? "Guardando…" : `Asignar a ${targets.length} filas`}

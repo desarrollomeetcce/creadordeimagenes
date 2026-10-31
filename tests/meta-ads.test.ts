@@ -1061,3 +1061,19 @@ test("Meta histórico: futuro cambio conserva principal inicial y no duplica el 
  const legacy=advisorMetaPeriods('ana',[prior],new Date('2026-10-31T20:00:00Z'));
  assert.equal(legacy.find(p=>p.from===null)?.advisorId,'old');
 });
+
+test("Origen Meta editable: todo, incorporación y fecha personalizada conservan cambios posteriores",async()=>{
+ const {advisorMetaPeriods}=await import('../lib/meta-ads/advisor-meta-periods');
+ const a={id:'first',previousAdvisorId:null,advisorId:'ana',mode:'DAY',cutoffSales:null,effectiveAt:new Date('2026-10-29T00:00:00-05:00'),createdAt:new Date('2026-10-29T10:00:00-05:00')};
+ const b={...a,id:'new',previousAdvisorId:'ana',advisorId:'francesca',effectiveAt:new Date('2026-10-31T00:00:00-05:00'),createdAt:new Date('2026-10-31T10:00:00-05:00')};
+ const asOf=new Date('2026-10-31T20:00:00Z');
+ assert.equal(advisorMetaPeriods('francesca',[a,b],asOf,{mode:'ALL'}).find(p=>p.advisorId==='ana')?.from,null);
+ assert.equal(advisorMetaPeriods('francesca',[a,b],asOf,{mode:'ASSIGNMENT'}).find(p=>p.advisorId==='ana')?.from,a.effectiveAt.toISOString());
+ const custom=advisorMetaPeriods('francesca',[a,b],asOf,{mode:'CUSTOM',since:'2026-10-23'});
+ assert.equal(Date.parse(custom.find(p=>p.advisorId==='ana')!.from!),Date.parse('2026-10-23T00:00:00-05:00'));
+ assert.equal(custom.find(p=>p.advisorId==='francesca')?.from,b.effectiveAt.toISOString());
+ const sameDay={...b,effectiveAt:a.effectiveAt};
+ const bootstrap=advisorMetaPeriods('francesca',[a,sameDay],asOf);
+ assert.equal(bootstrap.find(p=>p.from===null)?.advisorId,'ana');
+ assert.equal(bootstrap.find(p=>p.advisorId==='francesca')?.from,a.effectiveAt.toISOString());
+});

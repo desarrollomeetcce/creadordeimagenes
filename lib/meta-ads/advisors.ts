@@ -79,6 +79,7 @@ export async function advisors(actor: Actor) {
       id: true,
       name: true,
       revision: true,
+      commercialRole: true,
       sheetId: true,
       sheet: { select: { id: true, name: true, archivedAt: true } },
     },
@@ -93,7 +94,13 @@ export async function advisors(actor: Actor) {
 }
 export async function saveAdvisor(
   actor: Actor,
-  b: { id?: string; name: string; revision?: number; sheetId?: string },
+  b: {
+    id?: string;
+    name: string;
+    revision?: number;
+    sheetId?: string;
+    commercialRole?: "ADVISOR" | "SUPERVISOR";
+  },
 ) {
   ownerOnly(actor);
   return db.$transaction(async (tx) => {
@@ -133,14 +140,25 @@ export async function saveAdvisor(
     const row = b.id
       ? await tx.metaAdvisor.update({
           where: { id: b.id },
-          data: { name: b.name, revision: { increment: 1 } },
+          data: {
+            name: b.name,
+            ...(b.commercialRole ? { commercialRole: b.commercialRole } : {}),
+            revision: { increment: 1 },
+          },
         })
-      : await tx.metaAdvisor.create({ data: { name: b.name, sheetId } });
+      : await tx.metaAdvisor.create({
+          data: {
+            name: b.name,
+            sheetId,
+            ...(b.commercialRole ? { commercialRole: b.commercialRole } : {}),
+          },
+        });
     await recordActivity(tx, {
       data: {
         actorId: actor.id,
         action: "META_ASESOR_GUARDADO",
         resourceId: row.id,
+        detail: { commercialRole: row.commercialRole },
       },
     });
     return row;
@@ -175,6 +193,12 @@ async function reviewAssignment(
     (r) => r.aliasId === aliasId && r.country === country,
   );
   demand(row, "Fila no disponible.", 404);
+  const supports = await tx.metaAdvisorSupport.findMany({
+    where: { aliasId, country },
+    include: { advisor: { select: { name: true, commercialRole: true } } },
+    orderBy: { createdAt: "desc" },
+    take: 1000,
+  });
   const changes = await tx.metaAdvisorAssignment.findMany({
     where: { aliasId, country },
     orderBy: [{ effectiveAt: "asc" }, { createdAt: "asc" }, { id: "asc" }],
@@ -194,6 +218,19 @@ async function reviewAssignment(
   ).reconciled;
   return {
     salesApprovalValid,
+    supports: supports.map((s) => ({
+      id: s.id,
+      advisorId: s.advisorId,
+      name: s.advisor.name,
+      commercialRole: s.advisor.commercialRole,
+      since: s.since,
+      until: s.until,
+      cancelledAt: s.cancelledAt?.toISOString() ?? null,
+      revision: s.revision,
+    })),
+    metaHistoryMode: row.metaHistoryMode ?? "ALL",
+    metaHistorySince: row.metaHistorySince ?? null,
+    firstAssignmentDay: changes[0] ? limaDay(changes[0].effectiveAt) : null,
     sales,
     rowRevision: row.rowRevision,
     advisorId: row.advisorId,
@@ -217,6 +254,8 @@ type RowAdvisorInput = {
   time?: string;
   cutoffSales?: number;
   token?: string;
+  metaHistoryMode?: "ALL" | "ASSIGNMENT" | "CUSTOM";
+  metaHistorySince?: string;
 };
 export async function assignRowAdvisor(actor: Actor, b: RowAdvisorInput) {
   ownerOnly(actor);
@@ -238,6 +277,14 @@ async function assignRowAdvisorInTransaction(
     include: { table: true },
   });
   demand(alias, "Inventario no disponible.", 404);
+  const assignmentContext = financialContext(actor);
+  demand(
+    !assignmentContext ||
+      assignmentContext.access.isOwner ||
+      assignmentContext.tableIds.includes(alias.tableId),
+    "La hoja del diplomado ya no está compartida en este documento.",
+    403,
+  );
   if (b.advisorId)
     demand(
       await tx.metaAdvisor.findFirst({
@@ -259,8 +306,56 @@ async function assignRowAdvisorInTransaction(
     "La fila cambió. Recarga antes de asignar.",
     409,
   );
+  let historyPolicyChanged = false;
+  if (!metaInitial && b.metaHistoryMode) {
+    const initial = await tx.metaAdvisorAssignment.findFirst({
+      where: { aliasId: b.aliasId, country: b.country },
+      orderBy: [{ effectiveAt: "asc" }, { createdAt: "asc" }, { id: "asc" }],
+    });
+    const since =
+      b.metaHistoryMode === "CUSTOM"
+        ? b.metaHistorySince
+        : b.metaHistoryMode === "ASSIGNMENT"
+          ? initial
+            ? limaDay(initial.effectiveAt)
+            : old?.advisorId
+              ? null
+              : (b.day ?? limaDay())
+          : null;
+    demand(
+      b.metaHistoryMode === "ALL" ||
+        (since &&
+          /^\d{4}-\d{2}-\d{2}$/.test(since) &&
+          Number.isFinite(Date.parse(since)) &&
+          new Date(since).toISOString().slice(0, 10) === since &&
+          since <= limaDay()),
+      "Elige una fecha válida para el histórico Meta. Si no hay inicio registrado, usa Fecha personalizada.",
+    );
+    historyPolicyChanged =
+      !!old &&
+      (old.metaHistoryMode !== b.metaHistoryMode ||
+        old.metaHistorySince !== since);
+    if (historyPolicyChanged) {
+      await tx.metaEffectivenessRow.update({
+        where: { id: old!.id },
+        data: {
+          metaHistoryMode: b.metaHistoryMode,
+          metaHistorySince: since,
+          revision: { increment: 1 },
+        },
+      });
+      await recordActivity(tx, {
+        data: {
+          actorId: actor.id,
+          action: "EFECTIVIDAD_INICIO_META",
+          resourceId: old!.id,
+          detail: { mode: b.metaHistoryMode, since },
+        },
+      });
+    }
+  }
   if ((old?.advisorId ?? null) === b.advisorId)
-    return { ok: true, changed: false };
+    return { ok: true, changed: historyPolicyChanged };
   const day = b.day ?? limaDay(),
     mode = b.mode ?? "DAY";
   demand(mode !== "CLOCK" || !!b.time, "Indica la hora del cambio.");
@@ -305,10 +400,33 @@ async function assignRowAdvisorInTransaction(
       currency: "",
       displayCurrency: alias.table.defaultCurrency,
       advisorId: b.advisorId,
+      ...(b.metaHistoryMode
+        ? {
+            metaHistoryMode: b.metaHistoryMode,
+            metaHistorySince:
+              b.metaHistoryMode === "CUSTOM"
+                ? b.metaHistorySince
+                : b.metaHistoryMode === "ASSIGNMENT"
+                  ? day
+                  : null,
+          }
+        : {}),
       revision: 1,
     },
     update: { advisorId: b.advisorId, revision: { increment: 1 } },
   });
+  if (!metaInitial && b.advisorId)
+    await tx.metaAdvisorSupport.updateMany({
+      where: {
+        aliasId: b.aliasId,
+        country: b.country,
+        advisorId: b.advisorId,
+        cancelledAt: null,
+        since: { lte: day },
+        until: { gte: day },
+      },
+      data: { cancelledAt: new Date(), revision: { increment: 1 } },
+    });
   const change = await tx.metaAdvisorAssignment.create({
     data: {
       aliasId: b.aliasId,
@@ -381,10 +499,16 @@ export async function assignRowsAdvisor(
     day: string;
     mode: "DAY" | "CLOCK";
     time?: string;
+    assignmentKind?: "DEFINITIVE" | "TEMPORARY";
+    until?: string;
     targets: { aliasId: string; country: string; revision: number }[];
   },
 ) {
   ownerOnly(actor);
+  demand(
+    b.assignmentKind !== "TEMPORARY" || !!b.advisorId,
+    "Elige a la persona que apoyará.",
+  );
   demand(
     b.targets.length > 0 &&
       b.targets.length <= 1500 &&
@@ -405,13 +529,23 @@ export async function assignRowsAdvisor(
       );
       let changed = 0;
       for (const target of b.targets) {
-        const r = await assignRowAdvisorInTransaction(tx, actor, {
-          ...target,
-          advisorId: b.advisorId,
-          day: b.day,
-          mode: b.mode,
-          time: b.time,
-        });
+        const r =
+          b.assignmentKind === "TEMPORARY"
+            ? await (
+                await import("./advisor-support")
+              ).addAdvisorSupportInTransaction(tx, actor, {
+                ...target,
+                advisorId: b.advisorId!,
+                since: b.day,
+                until: b.until ?? b.day,
+              })
+            : await assignRowAdvisorInTransaction(tx, actor, {
+                ...target,
+                advisorId: b.advisorId,
+                day: b.day,
+                mode: b.mode,
+                time: b.time,
+              });
         if (r.changed) changed++;
       }
       return { ok: true, changed, rows: b.targets.length };
@@ -637,6 +771,7 @@ async function readAdvisorSheet(
             id: true,
             name: true,
             revision: true,
+            commercialRole: true,
             sheetId: true,
             sheet: { select: { id: true, name: true, archivedAt: true } },
           },

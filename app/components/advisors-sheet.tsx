@@ -1,4 +1,5 @@
 "use client";
+import { AdvisorCommercialRole } from "./advisor-commercial-role";
 import { AdvisorContactBaseEditor } from "./advisor-contact-base-editor";
 import { notifyAdvisorSalesChanged } from "./advisor-sales-events";
 import { advisorDayEffectiveness } from "../../lib/meta-ads/advisor-day-effectiveness";
@@ -63,6 +64,7 @@ export function AdvisorsSheet({
     name: string;
     day: string;
   } | null>(null);
+  const [rolePerson, setRolePerson] = useState<Person | null>(null);
   const numbersTable = useRef<HTMLTableElement>(null);
   useSheetTextFit(
     numbersTable,
@@ -573,6 +575,17 @@ export function AdvisorsSheet({
                       <span className="advisor-name-label">{p.name}</span>
                       <button
                         type="button"
+                        className="advisor-commercial-badge"
+                        data-financial-write
+                        aria-label={`Editar función de ${p.name}`}
+                        onClick={() => setRolePerson(p)}
+                      >
+                        {p.commercialRole === "SUPERVISOR"
+                          ? "Supervisión"
+                          : "Asesoría"}
+                      </button>
+                      <button
+                        type="button"
                         className="advisor-name-edit"
                         disabled={busy || loading}
                         aria-label={`Editar nombre de ${p.name}`}
@@ -666,6 +679,21 @@ export function AdvisorsSheet({
             </p>
           )}
         </div>
+      )}
+      {rolePerson && (
+        <AdvisorCommercialRole
+          name={rolePerson.name}
+          value={rolePerson.commercialRole ?? "ADVISOR"}
+          onClose={() => setRolePerson(null)}
+          onSave={async (commercialRole) => {
+            await write("meta-ads/advisors", "PATCH", {
+              id: rolePerson.id,
+              name: rolePerson.name,
+              revision: rolePerson.revision,
+              commercialRole,
+            });
+          }}
+        />
       )}
       {teamAnalysis && (
         <AdvisorTeamAnalysis

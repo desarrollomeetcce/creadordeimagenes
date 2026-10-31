@@ -753,6 +753,7 @@ export async function metaRoutes(
         ? z
             .object({
               name: z.string().trim().min(1).max(100),
+              commercialRole: z.enum(["ADVISOR","SUPERVISOR"]).optional(),
               sheetId: z.string().min(1).max(100).optional(),
             })
             .strict()
@@ -760,6 +761,7 @@ export async function metaRoutes(
         : z
             .object({
               name: z.string().trim().min(1).max(100),
+              commercialRole: z.enum(["ADVISOR","SUPERVISOR"]).optional(),
               id: z.string().min(1).max(80),
               revision: z.number().int().nonnegative(),
             })
@@ -806,6 +808,10 @@ export async function metaRoutes(
       ).approveAdvisorSales(actor, b),
     );
   }
+  if (path === "effectiveness/advisor-support" && method === "POST")
+    return send(await (await import("./advisor-support")).addAdvisorSupport(actor,await body()));
+  if (path === "effectiveness/advisor-support" && method === "PATCH")
+    return send(await (await import("./advisor-support")).endAdvisorSupport(actor,await body()));
   if (path === "effectiveness/advisor-review" && method === "GET") {
     ownerOnly(actor);
     const q = z
@@ -822,7 +828,7 @@ export async function metaRoutes(
     );
   }
   if(path === "effectiveness/advisors/batch" && method === "PATCH"){
-   ownerOnly(actor);const b=z.object({tableId:z.string().min(1).max(100),advisorId:z.string().min(1).max(100).nullable(),...assignmentTimingSchema.shape,targets:z.array(z.object({aliasId:z.string().min(1).max(100),country:z.string().refine(isCountryCode,"Elige un país válido."),revision:z.number().int().nonnegative()}).strict()).min(1).max(1500)}).strict().parse(await body());
+   ownerOnly(actor);const b=z.object({tableId:z.string().min(1).max(100),advisorId:z.string().min(1).max(100).nullable(),...assignmentTimingSchema.shape,assignmentKind:z.enum(["DEFINITIVE","TEMPORARY"]).optional(),until:z.string().date().optional(),targets:z.array(z.object({aliasId:z.string().min(1).max(100),country:z.string().refine(isCountryCode,"Elige un país válido."),revision:z.number().int().nonnegative()}).strict()).min(1).max(1500)}).strict().parse(await body());
    return send(await(await import("./advisors")).assignRowsAdvisor(actor,b));
   }
   if (path === "effectiveness/advisor" && method === "PATCH") {
@@ -834,6 +840,8 @@ export async function metaRoutes(
         advisorId: z.string().min(1).max(80).nullable(),
         revision: z.number().int().nonnegative(),
         ...assignmentTimingSchema.partial().shape,
+        metaHistoryMode:z.enum(["ALL","ASSIGNMENT","CUSTOM"]).optional(),
+        metaHistorySince:z.string().date().optional(),
       })
       .strict()
       .parse(await body());
