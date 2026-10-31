@@ -2071,3 +2071,7 @@ Causa identificada: ProductsCatalog mostraba aliases.length, incluyendo identida
 ## 30/10/2026 · Cantidades por categoría en filtros del inventario
 
 Cabeceras Categoría principal y Categorías secundarias muestran nombre y cantidad entre paréntesis. Conteo independiente por nivel sobre diplomados agrupados de toda la lista: alias de varias hojas e ítem canónico no duplican. Categorías vacías muestran(0). Búsqueda conserva nombre simple y selección guarda el mismo valor original; no cambia categorías ni sus asignaciones.217 unitarias, typecheck/build aprobados; validación Chromium de conteos2/1 por nivel, ceros, identidad duplicada, búsqueda/selección/filtros y ausencia de escrituras.
+
+## 30/10/2026 · Factor proporcional sin tabla limitada a10 ventas
+
+El motor ya aplicaba n×S/50 para cantidades superiores a las11 filas iniciales. La interfaz ahora muestra regla automática sin tope, ejemplos10/100/1000, límite especial0 ventas y calculadora para cualquier cantidad válida. Ajustes específicos anteriores se conservan en sección opcional y se informa cuando existe una excepción. Guardado/revisiones/permisos intactos; no se cambia configuración al calcular.218 unitarias y24 pruebas de integración de activación/límites aprobadas, tipos/compilación correctos; Chromium verifica100→5000,1000→50000,1000000→50000000,0→25, móvil y excepción2→130 conservada tras guardar/reabrir.

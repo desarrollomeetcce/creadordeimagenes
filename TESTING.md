@@ -1863,3 +1863,7 @@ Tres pruebas unitarias en meta-ads.test.ts cubren cuatro retirados que cuentan c
 ### Cantidades de categorías en cabecera de Inventario
 
 217 unitarias y typecheck/build aprobados. Fixture exclusiva con2 diplomados asignados tanto a alias como a ítems canónicos, Agricultura principal2/secundaria1, Cultivos secundaria2/principal0 y Sin uso0. Chromium verifica conteos sin duplicar, búsqueda por nombre sin creación falsa, filtros con valores originales y conteos totales estables al filtrar. Evidencia local /workspace/work/category-count-browser.txt; sin cambios de API/BD de producción.
+
+### Factor automático para cualquier cantidad de ventas
+
+Prueba de política compartida cubre cantidades1/10/11/100/1000/1000000, límite cero25, alertas al100%, datos ausentes y excepción guardada sin cambiar la fórmula general.218 unitarias y24 integraciones de activación/límites correctas. Chromium valida fórmula visible, ejemplos, calculadora sin escrituras, Enter sin guardar, vista móvil y único PUT explícito que conserva la excepción al reabrir. Typecheck/build correctos; evidencia local factor-unlimited-{unit,integration,browser,typecheck,build}.txt.

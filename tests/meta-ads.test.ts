@@ -945,3 +945,16 @@ test('Hojas: una campaña vinculada no resucita el país retirado; otro país co
  assert.deepEqual(financialRowPresence(aliases,stored,[{aliasId:'a',aliasCountry:'PE'}],'PE'),[{aliasId:'b',country:'PE'}]);
  assert.deepEqual(financialRowPresence(aliases,stored,[{aliasId:'a',aliasCountry:'PE'},{aliasId:'a',aliasCountry:'EC'}],'PE'),[{aliasId:'a',country:'EC'},{aliasId:'b',country:'PE'}]);
 });
+
+
+test('Factor de Inventario: regla proporcional sin tope de ventas conserva cero, excepciones y datos pendientes',async()=>{
+ const {defaultInventoryLimits,inventoryFactorLimit,inventoryFactorAssessment}=await import('../lib/meta-ads/inventory-factor-policy');
+ const limits=defaultInventoryLimits();assert.equal(inventoryFactorLimit(0,limits),25);
+ for(const sales of [1,10,11,100,1000,1000000])assert.equal(inventoryFactorLimit(sales,limits),sales*50);
+ assert.equal(inventoryFactorAssessment(100,5000,true,limits).status,'ALERT');
+ assert.equal(inventoryFactorAssessment(100,4999,true,limits).status,'WITHIN');
+ assert.equal(inventoryFactorAssessment(0,25,true,limits).status,'CRITICAL');
+ assert.equal(inventoryFactorAssessment(null,5000,true,limits).status,'PENDING');
+ assert.equal(inventoryFactorAssessment(100,null,true,limits).status,'PENDING');
+ limits[2]=130;assert.equal(inventoryFactorLimit(2,limits),130);assert.equal(inventoryFactorLimit(100,limits),5000);assert.equal(limits.length,11);
+});
