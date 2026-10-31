@@ -1867,3 +1867,7 @@ Tres pruebas unitarias en meta-ads.test.ts cubren cuatro retirados que cuentan c
 ### Factor automático para cualquier cantidad de ventas
 
 Prueba de política compartida cubre cantidades1/10/11/100/1000/1000000, límite cero25, alertas al100%, datos ausentes y excepción guardada sin cambiar la fórmula general.218 unitarias y24 integraciones de activación/límites correctas. Chromium valida fórmula visible, ejemplos, calculadora sin escrituras, Enter sin guardar, vista móvil y único PUT explícito que conserva la excepción al reabrir. Typecheck/build correctos; evidencia local factor-unlimited-{unit,integration,browser,typecheck,build}.txt.
+
+### Barra de Inventario compacta en una fila
+
+218 unitarias, typecheck/build correctos. Chromium3 comprobaciones con fixture exclusiva: cuatro anchos1850/1600/1280/390 mantienen fila≤58px; escritorio sin scroll y móvil sin recorte exterior. Ver parámetros abre popover en viewport y alterna Temarios6/7→7/7; Grupos/catálogo conservan modal; seleccionar/quitar selección actualiza contador sin escrituras. Captura local inventory-one-line-desktop.png y log inventory-one-line-browser.txt.

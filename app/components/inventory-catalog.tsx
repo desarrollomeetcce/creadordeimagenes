@@ -1943,6 +1943,8 @@ export function InventoryCatalog({
         <div className="row sheet-toolbar-controls">
           <button
             type="button"
+            aria-label="Crear / modificar grupo"
+            title="Crear o modificar grupos y evaluar el Top"
             disabled={!trialDirectory || busy}
             onClick={() =>
               setGroupEditor({
@@ -1955,14 +1957,15 @@ export function InventoryCatalog({
               })
             }
           >
-            Crear / modificar grupo
+            Grupos
           </button>
           <button
             type="button"
+            title="Cargar catálogo preparado"
             disabled={busy}
             onClick={() => setPackageOpen(true)}
           >
-            Cargar catálogo preparado
+            Cargar catálogo
           </button>
           <div
             className="inventory-toolbar-main"
