@@ -278,9 +278,10 @@ export function MetaWorkspaceSharing({
                 pausar anuncios.
               </p>
               <small>
-                Se comparten los accesos y las cuentas fijadas. El rol general
-                de la persona no cambia. No se envían correos automáticamente.
-                Los permisos que ya existan por cuenta se conservan.
+                Las cuentas fijadas y principales se comparten y se actualizan
+                para todos los usuarios con acceso. El rol general de la persona
+                no cambia. No se envían correos automáticamente. Los permisos
+                que ya existan por cuenta se conservan.
               </small>
             </div>
           )}

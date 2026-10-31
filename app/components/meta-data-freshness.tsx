@@ -40,9 +40,11 @@ export function MetaDataFreshness({
             : `${t.ongoing} sin finalizar · ${accounts.length} cuentas`}{" "}
           ·{" "}
           {single
-            ? accounts[0].enabled && accounts[0].progress?.status !== "paused"
-              ? `Auto ${accounts[0].intervalMinutes} min`
-              : "Auto pausada"
+            ? accounts[0].progress?.authorizationRequired
+              ? "Necesita reconectar"
+              : accounts[0].enabled && accounts[0].progress?.status !== "paused"
+                ? `Auto ${accounts[0].intervalMinutes} min`
+                : "Auto pausada"
             : `Auto en ${t.automatic}`}{" "}
           · hora de Lima
         </summary>
@@ -60,12 +62,14 @@ export function MetaDataFreshness({
             </span>
             <span>Datos recibidos: {stamp(a.lastDataAt)}</span>
             <span>
-              {a.enabled && a.progress?.status !== "paused"
-                ? `Automática cada ${a.intervalMinutes} min, al terminar la importación actual.`
-                : "Automática pausada."}{" "}
+              {a.progress?.authorizationRequired
+                ? "Autorización vencida o rechazada. Reconectar Meta para continuar."
+                : a.enabled && a.progress?.status !== "paused"
+                  ? `Automática cada ${a.intervalMinutes} min, al terminar la importación actual.`
+                  : "Automática pausada."}{" "}
               {a.progress?.label}
             </span>
-            {a.progress?.nextSyncAt && (
+            {a.progress?.nextSyncAt && !a.progress.authorizationRequired && (
               <span>
                 {a.progress.status === "waiting"
                   ? "Reintento previsto"

@@ -57,6 +57,7 @@ export function groupFinancialRows<
   rows: T[],
   entries: FinancialCatalogEntry[],
   temporary: TemporaryCategoryMap,
+  preserveOrder = false,
 ) {
   const bands = new Map<
     string,
@@ -68,6 +69,10 @@ export function groupFinancialRows<
       temporaryCount: number;
     }
   >();
+  const orderedBands: (typeof bands extends Map<string, infer B>
+    ? B
+    : never)[] = [];
+  let previousKey = "";
   for (const row of rows) {
     const category = financialRowCategories(
         row,
@@ -76,7 +81,11 @@ export function groupFinancialRows<
       ),
       active = row.active !== false,
       key = JSON.stringify([active, category.temporary, category.names]);
-    let band = bands.get(key);
+    let band = preserveOrder
+      ? key === previousKey
+        ? orderedBands.at(-1)
+        : undefined
+      : bands.get(key);
     if (!band) {
       band = {
         active,
@@ -86,22 +95,26 @@ export function groupFinancialRows<
         temporaryCount: 0,
       };
       bands.set(key, band);
+      orderedBands.push(band);
     }
+    previousKey = key;
     band.rows.push(row);
     if (category.temporary) band.temporaryCount++;
   }
-  return [...bands.values()].sort((a, b) =>
-    a.active !== b.active
-      ? a.active
-        ? -1
-        : 1
-      : !a.names.length
-        ? 1
-        : !b.names.length
-          ? -1
-          : a.names.join(" · ").localeCompare(b.names.join(" · "), "es") ||
-            Number(a.temporary) - Number(b.temporary),
-  );
+  return preserveOrder
+    ? orderedBands
+    : [...bands.values()].sort((a, b) =>
+        a.active !== b.active
+          ? a.active
+            ? -1
+            : 1
+          : !a.names.length
+            ? 1
+            : !b.names.length
+              ? -1
+              : a.names.join(" · ").localeCompare(b.names.join(" · "), "es") ||
+                Number(a.temporary) - Number(b.temporary),
+      );
 }
 export function parseTemporaryCategories(
   raw: string | null,
@@ -157,6 +170,7 @@ export function groupFinancialRowsByAdvisor<
   entries: FinancialCatalogEntry[],
   temporary: TemporaryCategoryMap,
   advisors: { id: string; name: string; label?: string }[],
+  preserveOrder = false,
 ) {
   const names = new Map(advisors.map((a) => [a.id, a.label ?? a.name])),
     groups = new Map<string, { id: string; name: string; rows: T[] }>();
@@ -182,6 +196,6 @@ export function groupFinancialRowsByAdvisor<
     )
     .map((group) => ({
       ...group,
-      bands: groupFinancialRows(group.rows, entries, temporary),
+      bands: groupFinancialRows(group.rows, entries, temporary, preserveOrder),
     }));
 }

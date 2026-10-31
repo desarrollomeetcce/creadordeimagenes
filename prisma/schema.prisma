@@ -1193,6 +1193,9 @@ enum MetaWorkspacePermission {
 model MetaWorkspaceSharing {
   id String @id @default("global")
   revision Int @default(0)
+  pinnedAccountIds Json?
+  primaryAccountIds Json?
+  accountPreferencesRevision Int @default(0)
 }
 model MetaWorkspaceGrant {
   userId String @id

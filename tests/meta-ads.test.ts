@@ -958,3 +958,48 @@ test('Factor de Inventario: regla proporcional sin tope de ventas conserva cero,
  assert.equal(inventoryFactorAssessment(100,null,true,limits).status,'PENDING');
  limits[2]=130;assert.equal(inventoryFactorLimit(2,limits),130);assert.equal(inventoryFactorLimit(100,limits),5000);assert.equal(limits.length,11);
 });
+
+test('Meta: autorización vencida se distingue de cuota/transitorios y no cuenta como actualización automática disponible',async()=>{
+ const {requiresMetaReconnect,MetaGraphError}=await import('../lib/meta-ads/graph-error');
+ assert(requiresMetaReconnect('Meta Graph · HTTP 401 · código 190 / subcódigo 463: Session has expired'));
+ assert(requiresMetaReconnect(new MetaGraphError(400,{error:{code:190,message:'invalid session'}},'synthetic',{version:'v26.0',endpoint:'ads',fields:'id'})));
+ assert(!requiresMetaReconnect(new MetaGraphError(429,{error:{code:4,message:'quota'}},'synthetic',{version:'v26.0',endpoint:'ads',fields:'id'})));
+ assert(!requiresMetaReconnect('HTTP 400 · código 100: unknown field'));
+ const {syncTiming}=await import('../lib/meta-ads/sync-timing');assert.equal(syncTiming([{id:'a',name:'A',enabled:true,intervalMinutes:30,progress:{status:'error',label:'Reconectar Meta',authorizationRequired:true}}]).automatic,0);
+});
+test('Estado financiero: críticos primero o mejores primero, datos pendientes siempre al final',async()=>{
+ const {compareFinancialStatus}=await import('../lib/meta-ads/inventory-evaluation-order');const source=['PENDING','WITHIN','ALERT','CRITICAL','TESTING'].map(status=>({status}));
+ assert.deepEqual([...source].sort((a,b)=>compareFinancialStatus(a.status,b.status,true)).map(x=>x.status),['CRITICAL','ALERT','TESTING','WITHIN','PENDING']);
+ assert.deepEqual([...source].sort((a,b)=>compareFinancialStatus(a.status,b.status,false)).map(x=>x.status),['WITHIN','TESTING','ALERT','CRITICAL','PENDING']);assert.equal(compareFinancialStatus(undefined,'CRITICAL',true),1);assert.equal(compareFinancialStatus(undefined,'WITHIN',false),1);
+});
+test('Orden explícito conserva asesores y secuencia de estado entre categorías, sin duplicar filas ni alterar el agrupado predeterminado',async()=>{
+ const {groupFinancialRows,groupFinancialRowsByAdvisor}=await import('../lib/meta-ads/financial-categories');const entries=[{id:'a',name:'A',categoryAssignments:[{category:{id:'ca',name:'Agricultura',kind:'PRIMARY' as const}}]},{id:'b',name:'B',categoryAssignments:[{category:{id:'cb',name:'Calidad',kind:'PRIMARY' as const}}]}];const rows=[{aliasId:'a',country:'PE',advisorId:'d',active:true,rank:4},{aliasId:'b',country:'PE',advisorId:'d',active:true,rank:3},{aliasId:'a',country:'EC',advisorId:'d',active:true,rank:1}];
+ assert.deepEqual(groupFinancialRows(rows,entries,{},true).flatMap(b=>b.rows.map(r=>r.rank)),[4,3,1]);assert.equal(groupFinancialRows(rows,entries,{}).length,2);
+ const grouped=groupFinancialRowsByAdvisor(rows,entries,{},[{id:'d',name:'DONASYS'}],true);assert.equal(grouped.length,1);assert.deepEqual(grouped[0].bands.flatMap(b=>b.rows.map(r=>r.rank)),[4,3,1]);assert.equal(new Set(grouped[0].bands.flatMap(b=>b.rows.map(r=>r.aliasId+r.country))).size,3);
+});
+
+test("Ventas registradas: inicio automático, fecha manual independiente y duplicados por inventario/país", async () => {
+  const { parseMetaPreferences } = await import("../lib/meta-ads/preferences");
+  const { registeredSalesSummary, validSalesDate } = await import("../lib/meta-ads/registered-sales");
+  const base = { inventory: "inventory", name: "Veterinaria", country: "PE", partial: false };
+  const entries = [
+    { ...base, day: "2026-10-29", sales: null },
+    { ...base, day: "2026-10-30", sales: 3 },
+    { ...base, day: "2026-10-30", sales: 3 },
+    { ...base, day: "2026-10-31", sales: 2 },
+    { ...base, country: "EC", day: "2026-10-31", sales: 4 },
+    { ...base, day: "2026-11-01", sales: 99 },
+  ];
+  const auto = registeredSalesSummary(entries, "2026-10-31");
+  assert.equal(auto.total, 9);
+  assert.equal(auto.since, "2026-10-30");
+  assert.equal(auto.firstRecord, "2026-10-30");
+  assert.equal(auto.groups.length, 2);
+  const manual = registeredSalesSummary(entries, "2026-10-31", "2026-10-31");
+  assert.equal(manual.total, 6);
+  assert(manual.manual);
+  assert.equal(registeredSalesSummary([], "2026-10-31", "2026-10-30").total, null);
+  assert.equal(registeredSalesSummary([{ ...base, day: "2026-10-30", sales: 0 }], "2026-10-31").total, 0);
+  assert(!validSalesDate("2026-02-30"));
+  assert.equal(parseMetaPreferences(JSON.stringify({salesSince:"2026-10-30"})).salesSince,"2026-10-30");
+});

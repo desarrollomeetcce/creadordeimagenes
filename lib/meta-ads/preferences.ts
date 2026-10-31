@@ -29,6 +29,7 @@ export const metaDefaults = {
   direction: "asc",
   age: "",
   rating: "",
+  salesSince: "",
   since: "",
   until: "",
   calendar: "",
@@ -138,6 +139,13 @@ export function parseMetaPreferences(raw: string | null): MetaPreferences {
     result.aliasFilter = data.aliasFilter;
   if (data.countryFilter === "__none" || isCountryCode(data.countryFilter))
     result.countryFilter = data.countryFilter;
+  if (
+    typeof data.salesSince === "string" &&
+    /^\d{4}-\d{2}-\d{2}$/.test(data.salesSince) &&
+    Number.isFinite(Date.parse(data.salesSince)) &&
+    new Date(data.salesSince).toISOString().slice(0, 10) === data.salesSince
+  )
+    result.salesSince = data.salesSince;
   result.business = "";
   result.currency = "";
   result.age = "";

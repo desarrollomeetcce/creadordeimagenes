@@ -26,6 +26,7 @@ import { MetaDataFreshness } from "./meta-data-freshness";
 import { MetaSyncNotice } from "./meta-sync-notice";
 import { MetaDailyDetail } from "./meta-daily-detail";
 import { MetaAliasAction } from "./meta-alias-action";
+import { MetaSalesCounter } from "./meta-sales-counter";
 import { MetaSummaryCounters } from "./meta-summary-counters";
 import type { MetaSummary } from "../../lib/meta-ads/summary";
 import { MetaDeliveryFilter } from "./meta-delivery-filter";
@@ -303,7 +304,7 @@ function SyncIndicator({
             }
             onClick={onRefresh}
           >
-            Actualizar cuenta
+            {p.authorizationRequired ? "Reconectar Meta" : "Actualizar cuenta"}
           </button>
         )}
       </div>
@@ -350,13 +351,20 @@ function SyncIndicator({
           {displayTime(p.lastActivityAt)} · hora de Lima.
         </small>
       )}
+      {p.authorizationRequired && (
+        <p className="notice">
+          Meta necesita una autorización nueva. Reconecta desde Conexiones; los
+          datos y el avance se conservan. No se reintenta con la autorización
+          vencida.
+        </p>
+      )}
       {p.status === "stalled" && (
         <small>
           El servidor no ha confirmado avance reciente. Revisa el detalle del
           progreso antes de iniciar otra actualización.
         </small>
       )}
-      {p.status === "error" && (
+      {p.status === "error" && !p.authorizationRequired && (
         <small>
           La importación está detenida por un error; el avance guardado se
           conserva.
@@ -424,32 +432,63 @@ function SyncIndicator({
     </div>
   );
 }
+type MetaModuleAccess = {
+  permission: "VIEW" | "EDIT" | null;
+  canEdit: boolean;
+  canShare: boolean;
+  shared: boolean;
+  pinnedAccountIds: string[];
+  primaryAccountIds: string[];
+  pinsInitialized: boolean;
+  primaryInitialized: boolean;
+  accountPreferencesRevision: number;
+};
 export function MetaAds({ role, userId }: { role: string; userId: string }) {
-  const [moduleAccess, setModuleAccess] = useState<{
-    permission: "VIEW" | "EDIT" | null;
-    canEdit: boolean;
-    canShare: boolean;
-    shared: boolean;
-    pinnedAccountIds: string[];
-  } | null>(null);
+  const [moduleAccess, setModuleAccess] = useState<MetaModuleAccess | null>(
+    null,
+  );
+  const [sharedAccountsBusy, setSharedAccountsBusy] = useState(false);
+  const sharedAccountChanges = useRef(0),
+    importedAccountPreferences = useRef(new Set<string>()),
+    hadAccountGroupPreference = useRef(false),
+    primaryGroupSeeded = useRef(false);
+  const receiveModuleAccess = useCallback((next: MetaModuleAccess) => {
+    setModuleAccess((old) =>
+      old && old.accountPreferencesRevision > next.accountPreferencesRevision
+        ? {
+            ...next,
+            pinnedAccountIds: old.pinnedAccountIds,
+            primaryAccountIds: old.primaryAccountIds,
+            pinsInitialized: old.pinsInitialized,
+            primaryInitialized: old.primaryInitialized,
+            accountPreferencesRevision: old.accountPreferencesRevision,
+          }
+        : next,
+    );
+  }, []);
   const [sharingWorkspace, setSharingWorkspace] = useState(false);
   const owner = moduleAccess?.canEdit ?? role === "OWNER";
   const viewOnly = moduleAccess?.shared && !moduleAccess.canEdit;
-  const pinsSeeded = useRef(false);
   const moduleReady = !!moduleAccess;
   useEffect(() => {
     let live = true;
-    void api("meta-ads/workspace-access")
-      .then((a) => {
-        if (live) setModuleAccess(a);
-      })
-      .catch((e) => {
-        if (live) setMessage(e.message);
-      });
+    const load = () => {
+      if (document.visibilityState !== "visible") return;
+      void api("meta-ads/workspace-access")
+        .then((a: MetaModuleAccess) => {
+          if (live) receiveModuleAccess(a);
+        })
+        .catch((e) => {
+          if (live) setMessage(e.message);
+        });
+    };
+    load();
+    const timer = setInterval(load, 10000);
     return () => {
       live = false;
+      clearInterval(timer);
     };
-  }, [userId]);
+  }, [userId, receiveModuleAccess]);
   const stableViewport = useMetaStableViewport();
   const tableHeaderScroll = useRef<HTMLDivElement>(null);
   const masterSelection = useRef<HTMLInputElement>(null);
@@ -516,6 +555,7 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
     [direction, setDirection] = useState("asc"),
     [age, setAge] = useState(""),
     [rating, setRating] = useState(""),
+    [salesSince, setSalesSince] = useState(""),
     [since, setSince] = useState(""),
     [until, setUntil] = useState(""),
     [calendar, setCalendar] = useState(""),
@@ -657,10 +697,8 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
       setAdset("");
       setCampaignScope([]);
       setAdsetScope([]);
-      if (pin)
-        setPinnedAccountIds((old) =>
-          [...new Set([...old, ...ids])].slice(0, 100),
-        );
+      if (pin && ids.length)
+        void changeAccountPreferences("PINNED", "ADD", ids);
     });
   const commitSelection = (next: MetaSelection[], targetLevel: string) => {
     setSelectedObjects(next);
@@ -774,8 +812,21 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
     } catch {}
     const p = parseMetaPreferences(stored);
     setAccountIds(p.accountIds);
-    setPinnedAccountIds(p.pinnedAccountIds);
-    setPrimaryAccountIds(p.primaryAccountIds);
+    setPinnedAccountIds(
+      moduleAccess?.permission && moduleAccess.pinsInitialized
+        ? moduleAccess.pinnedAccountIds
+        : moduleAccess?.permission && !moduleAccess.canEdit
+          ? []
+          : p.pinnedAccountIds,
+    );
+    setPrimaryAccountIds(
+      moduleAccess?.permission && moduleAccess.primaryInitialized
+        ? moduleAccess.primaryAccountIds
+        : moduleAccess?.permission && !moduleAccess.canEdit
+          ? []
+          : p.primaryAccountIds,
+    );
+    hadAccountGroupPreference.current = !!stored;
     setAccountGroup(p.accountGroup);
     setSelectedObjects(p.selectedObjects);
     setCampaignScope(p.campaignScope);
@@ -796,6 +847,7 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
     setDirection(p.direction);
     setAge(p.age);
     setRating(p.rating);
+    setSalesSince(p.salesSince);
     setSince(p.since);
     setUntil(p.until);
     setCalendar(p.calendar);
@@ -846,6 +898,7 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
           direction,
           age,
           rating,
+          salesSince,
           since,
           until,
           calendar,
@@ -886,6 +939,7 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
     direction,
     age,
     rating,
+    salesSince,
     since,
     until,
     calendar,
@@ -896,6 +950,90 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
     accountListPage,
     accountPickerQuery,
     accountPickerActivity,
+  ]);
+  async function changeAccountPreferences(
+    kind: "PINNED" | "PRIMARY",
+    action: "ADD" | "REMOVE" | "INITIALIZE",
+    ids: string[],
+  ) {
+    if (!ids.length) return;
+    if (!moduleAccess?.permission) {
+      const update = (old: string[]) =>
+        action === "REMOVE"
+          ? old.filter((id) => !ids.includes(id))
+          : [...new Set([...old, ...ids])];
+      if (kind === "PINNED") setPinnedAccountIds(update);
+      else setPrimaryAccountIds(update);
+      return;
+    }
+    if (!moduleAccess.canEdit) return;
+    sharedAccountChanges.current++;
+    setSharedAccountsBusy(true);
+    try {
+      receiveModuleAccess(
+        await api("meta-ads/workspace-accounts", "PATCH", {
+          kind,
+          action,
+          accountIds: ids,
+        }),
+      );
+    } catch (e) {
+      setMessage(
+        e instanceof Error
+          ? e.message
+          : "No se pudieron guardar las cuentas compartidas.",
+      );
+    } finally {
+      sharedAccountChanges.current--;
+      setSharedAccountsBusy(sharedAccountChanges.current > 0);
+    }
+  }
+  useEffect(() => {
+    if (!preferencesReady || !accountsLoaded || !moduleAccess?.permission)
+      return;
+    const allowed = new Set(accounts.map((a) => a.id));
+    if (moduleAccess.pinsInitialized)
+      setPinnedAccountIds(
+        moduleAccess.pinnedAccountIds.filter((id) => allowed.has(id)),
+      );
+    if (moduleAccess.primaryInitialized) {
+      setPrimaryAccountIds(
+        moduleAccess.primaryAccountIds.filter((id) => allowed.has(id)),
+      );
+      if (!primaryGroupSeeded.current) {
+        primaryGroupSeeded.current = true;
+        if (
+          !hadAccountGroupPreference.current &&
+          moduleAccess.primaryAccountIds.length
+        )
+          setAccountGroup("primary");
+      }
+    }
+  }, [moduleAccess, preferencesReady, accountsLoaded, accounts]);
+  useEffect(() => {
+    if (!preferencesReady || !accountsLoaded || !moduleAccess?.canEdit) return;
+    const allowed = new Set(accounts.map((a) => a.id));
+    for (const [kind, initialized, ids] of [
+      ["PINNED", moduleAccess.pinsInitialized, pinnedAccountIds],
+      ["PRIMARY", moduleAccess.primaryInitialized, primaryAccountIds],
+    ] as const) {
+      const source = ids.filter((id) => allowed.has(id));
+      if (
+        !initialized &&
+        source.length &&
+        !importedAccountPreferences.current.has(kind)
+      ) {
+        importedAccountPreferences.current.add(kind);
+        void changeAccountPreferences(kind, "INITIALIZE", source);
+      }
+    }
+  }, [
+    moduleAccess,
+    preferencesReady,
+    accountsLoaded,
+    accounts,
+    pinnedAccountIds,
+    primaryAccountIds,
   ]);
   const businesses = [
     ...new Map(
@@ -914,9 +1052,7 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
       setMessage("Puedes marcar hasta 1000 cuentas principales.");
       return;
     }
-    setPrimaryAccountIds((old) =>
-      value ? [...new Set([...old, id])] : old.filter((v) => v !== id),
-    );
+    void changeAccountPreferences("PRIMARY", value ? "ADD" : "REMOVE", [id]);
   };
   const accountGroupControls = () => (
     <div
@@ -980,7 +1116,7 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
         api("meta-ads/accounts"),
         api("meta-ads/workspace-access"),
       ]);
-    setModuleAccess(permission);
+    receiveModuleAccess(permission);
     const key = rows
       .map((a) => a.id)
       .sort()
@@ -992,17 +1128,6 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
       setItems((old) => old.filter((item) => ids.has(item.accountId)));
       setSummary(null);
       setTotal(0);
-    }
-    if (!pinsSeeded.current) {
-      pinsSeeded.current = true;
-      if (permission.shared)
-        setPinnedAccountIds((old) =>
-          old.length
-            ? old
-            : permission.pinnedAccountIds.filter((id) =>
-                rows.some((a) => a.id === id),
-              ),
-        );
     }
     rows.forEach((a) => syncVersions.current.set(a.id, a.syncedAt));
     setAccounts(rows);
@@ -1079,6 +1204,7 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
         page: String(page),
         limit: "25",
         summary: "1",
+        salesSince,
         analysisPeriod: calendar ? "custom" : analysisPeriod,
         summarySelection: summarySelectionKey,
         ...(calendar ? { since, until } : {}),
@@ -1134,6 +1260,7 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
     rating,
     page,
     calendar,
+    salesSince,
     since,
     until,
     revision,
@@ -1321,6 +1448,13 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
     });
   const accountUpdatePending = useRef(false);
   const updateAccount = async (account: Account) => {
+    if (account.progress?.authorizationRequired) {
+      setTab("connections");
+      setMessage(
+        "Renueva la autorización de la conexión que usa esta cuenta. Después podrás continuar desde el avance guardado.",
+      );
+      return;
+    }
     if (accountUpdatePending.current || busy) return;
     accountUpdatePending.current = true;
     try {
@@ -1346,19 +1480,25 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
         let queued = 0,
           waiting = 0;
         const failed: string[] = [];
-        for (const account of targets) {
-          try {
-            const result = await requestAccountUpdate(account);
-            if (result.waiting) waiting++;
-            else queued++;
-          } catch (e) {
-            failed.push(
-              `${account.name}: ${e instanceof Error ? e.message : "No se pudo solicitar"}`,
-            );
-          }
-        }
+        let next = 0;
+        await Promise.all(
+          Array.from({ length: Math.min(3, targets.length) }, async () => {
+            while (next < targets.length) {
+              const account = targets[next++];
+              try {
+                const result = await requestAccountUpdate(account);
+                if (result.waiting) waiting++;
+                else queued++;
+              } catch (e) {
+                failed.push(
+                  `${account.name}: ${e instanceof Error ? e.message : "No se pudo solicitar"}`,
+                );
+              }
+            }
+          }),
+        );
         setMessage(
-          `${queued} ${queued === 1 ? "cuenta con actualización solicitada" : "cuentas con actualización solicitada"}${waiting ? ` · ${waiting} en espera de Meta` : ""}${failed.length ? ` · ${failed.length} ${failed.length === 1 ? "solicitud sin confirmar" : "solicitudes sin confirmar"}: ${failed.join("; ")}` : ""}.`,
+          `${queued} ${queued === 1 ? "cuenta con actualización solicitada" : "cuentas en cola de actualización en segundo plano"}${waiting ? ` · ${waiting} en espera de Meta` : ""}${failed.length ? ` · ${failed.length} ${failed.length === 1 ? "solicitud sin confirmar" : "solicitudes sin confirmar"}: ${failed.join("; ")}` : ""}.`,
         );
         setTab("panel");
         setSyncOpen(true);
@@ -1373,7 +1513,8 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
         a.canSync &&
         a.connection?.verifiedAt &&
         !a.connection.disconnectedAt &&
-        a.progress?.status !== "waiting",
+        a.progress?.status !== "waiting" &&
+        !a.progress?.authorizationRequired,
     );
     return (
       <button
@@ -2558,7 +2699,7 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
                     <input
                       type="checkbox"
                       checked={primarySet.has(a.id)}
-                      disabled={busy}
+                      disabled={busy || sharedAccountsBusy}
                       aria-label={`Cuenta principal ${a.name}`}
                       onChange={(e) =>
                         setPrimaryAccount(a.id, e.target.checked)
@@ -2866,6 +3007,7 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
               <div className="panel stack">
                 <div className="fields meta-filters meta-main-filters">
                   <MetaAccountPicker
+                    primaryAccountIds={primaryAccountIds}
                     accounts={accounts}
                     selected={accountIds}
                     business={business}
@@ -2991,6 +3133,14 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
                     >
                       Todas
                     </button>
+                    {sharedAccountsBusy && (
+                      <small
+                        role="status"
+                        className="meta-shared-accounts-saving"
+                      >
+                        Guardando cuentas compartidas…
+                      </small>
+                    )}
                     {pinnedAccountIds.map((id) => {
                       const a = accounts.find((a) => a.id === id);
                       return a ? (
@@ -3003,18 +3153,24 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
                           >
                             {a.name}
                           </button>
-                          <button
-                            type="button"
-                            className="meta-unpin"
-                            aria-label={`Desfijar ${a.name}`}
-                            onClick={() =>
-                              setPinnedAccountIds((old) =>
-                                old.filter((v) => v !== id),
-                              )
-                            }
-                          >
-                            <span aria-hidden="true">×</span>
-                          </button>
+                          {(!moduleAccess?.permission ||
+                            moduleAccess.canEdit) && (
+                            <button
+                              type="button"
+                              disabled={sharedAccountsBusy}
+                              className="meta-unpin"
+                              aria-label={`Desfijar ${a.name}`}
+                              onClick={() =>
+                                void changeAccountPreferences(
+                                  "PINNED",
+                                  "REMOVE",
+                                  [id],
+                                )
+                              }
+                            >
+                              <span aria-hidden="true">×</span>
+                            </button>
+                          )}
                         </div>
                       ) : null;
                     })}
@@ -3025,6 +3181,12 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
                   aria-label="Resumen y actualización"
                 >
                   <div className="meta-summary-date">
+                    <MetaSalesCounter
+                      sales={summary?.sales}
+                      loading={loading}
+                      manualSince={salesSince}
+                      onSinceChange={setSalesSince}
+                    />
                     <MetaSummaryCounters
                       summary={summary}
                       loading={loading}
@@ -3044,33 +3206,9 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
                             : "Selecciona una cuenta para actualizar desde Meta"
                         }
                         onClick={() =>
-                          void run(async () => {
-                            const targets = chosen.filter((a) => a.canSync);
-                            const failed: string[] = [];
-                            let queued = 0;
-                            for (const a of targets) {
-                              try {
-                                await api(
-                                  `meta-ads/accounts/${a.id}/sync`,
-                                  "POST",
-                                  {
-                                    focused: true,
-                                    inventory: "all",
-                                    recentDays: 7,
-                                    fresh: true,
-                                  },
-                                );
-                                queued++;
-                              } catch (e) {
-                                failed.push(
-                                  `${a.name}: ${e instanceof Error ? e.message : "No se pudo solicitar"}`,
-                                );
-                              }
-                            }
-                            setMessage(
-                              `${queued} cuenta(s) en actualización desde Meta. Los datos y miniaturas aparecerán conforme se reciban.${failed.length ? " " + failed.join(" · ") : ""}`,
-                            );
-                          })
+                          void updateAccountGroup(
+                            chosen.filter((a) => a.canSync),
+                          )
                         }
                       >
                         ↻ Actualizar desde Meta

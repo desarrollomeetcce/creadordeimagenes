@@ -1,4 +1,5 @@
 import test from "node:test";
+import { Prisma } from "@prisma/client";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import argon2 from "argon2";
@@ -289,9 +290,23 @@ test("Compartir Meta Ads separa visualizar/editar de los roles generales", async
     MetaReader.prototype.setStatus = set;
     await db.metaWorkspaceGrant.deleteMany({});
     if (previous.length)
-      await db.metaWorkspaceGrant.createMany({ data: previous.map(g=>({...g,pinnedAccountIds:Array.isArray(g.pinnedAccountIds)?g.pinnedAccountIds:[]})) });
+      await db.metaWorkspaceGrant.createMany({
+        data: previous.map((g) => ({
+          ...g,
+          pinnedAccountIds: Array.isArray(g.pinnedAccountIds)
+            ? g.pinnedAccountIds
+            : [],
+        })),
+      });
     await db.metaWorkspaceSharing.deleteMany({});
-    if (state) await db.metaWorkspaceSharing.create({ data: state });
+    if (state)
+      await db.metaWorkspaceSharing.create({
+        data: {
+          ...state,
+          pinnedAccountIds: state.pinnedAccountIds ?? Prisma.DbNull,
+          primaryAccountIds: state.primaryAccountIds ?? Prisma.DbNull,
+        },
+      });
     await db.metaAdAccount.delete({ where: { id: accountId } });
     await db.metaConnection.deleteMany({ where: { name: { contains: tag } } });
     await db.auditEvent.deleteMany({ where: { actorId: { in: ids } } });

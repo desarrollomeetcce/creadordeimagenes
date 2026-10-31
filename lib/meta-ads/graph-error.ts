@@ -42,6 +42,20 @@ export function redactGraphMessage(value: unknown, token: string) {
 export function isGraphQuota(status: number, code: number | null) {
   return status === 429 || [4, 17, 32, 613, 80000, 80004].includes(code ?? -1);
 }
+/** Stored diagnostics are already scrubbed; authorization failures require a person to reconnect. */
+export function requiresMetaReconnect(error: unknown): boolean {
+  if (error instanceof MetaGraphError)
+    return (
+      error.diagnostic.httpStatus === 401 ||
+      [102, 190].includes(error.diagnostic.code ?? -1)
+    );
+  return (
+    typeof error === "string" &&
+    /(?:c[oó]digo|code)\s*(?:190|102)\b|HTTP\s*401\b|(?:access token|token de acceso).*(?:expired|caduc|expir)/i.test(
+      error,
+    )
+  );
+}
 export function retryDelay(header: string | null, now = Date.now()) {
   if (!header || header.length > 100) return 0;
   const seconds = /^\d+(?:\.\d+)?$/.test(header)

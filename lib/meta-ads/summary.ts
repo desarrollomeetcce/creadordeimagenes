@@ -4,6 +4,7 @@ import { localDay, shiftDay } from "./analytics";
 import { focusedReportDay } from "./focused-labels";
 
 export type MetaSummary = {
+  sales?: import("./registered-sales").RegisteredSalesSummary;
   selected: boolean;
   objects: number;
   partial: boolean;

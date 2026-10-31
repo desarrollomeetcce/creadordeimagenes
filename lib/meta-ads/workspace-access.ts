@@ -5,6 +5,17 @@ import { demand } from "../errors";
 import { recordActivity } from "../activity";
 type Actor = { id: string; role: string };
 type Client = Prisma.TransactionClient;
+const accountIds = (value: Prisma.JsonValue | null | undefined) =>
+  Array.isArray(value)
+    ? [
+        ...new Set(
+          value.filter(
+            (id): id is string =>
+              typeof id === "string" && /^\d{1,40}$/.test(id),
+          ),
+        ),
+      ]
+    : [];
 export const metaEditorUserWhere = (id?: string): Prisma.UserWhereInput => ({
   ...(id ? { id } : {}),
   status: "APPROVED",
@@ -28,19 +39,94 @@ export async function workspaceAccess(actor: Actor, tx: Client = db) {
   const isOwner = user.role === "OWNER",
     grant = user.metaWorkspaceGrant,
     permission = isOwner ? "EDIT" : (grant?.permission ?? null);
+  const preferences = permission
+    ? await tx.metaWorkspaceSharing.findUnique({ where: { id: "global" } })
+    : null;
   return {
     permission,
     canEdit: permission === "EDIT",
     canShare: isOwner,
     shared: !isOwner && !!grant,
-    pinnedAccountIds:
-      grant && Array.isArray(grant.pinnedAccountIds)
-        ? grant.pinnedAccountIds.filter(
-            (x): x is string => typeof x === "string",
-          )
-        : [],
+    pinnedAccountIds: accountIds(
+      preferences?.pinnedAccountIds ?? grant?.pinnedAccountIds,
+    ),
+    primaryAccountIds: accountIds(preferences?.primaryAccountIds),
+    pinsInitialized: preferences?.pinnedAccountIds != null,
+    primaryInitialized: preferences?.primaryAccountIds != null,
+    accountPreferencesRevision: preferences?.accountPreferencesRevision ?? 0,
     sponsorId: isOwner ? actor.id : (grant?.grantedById ?? null),
   };
+}
+async function publicWorkspaceAccess(actor: Actor, tx: Client) {
+  const { sponsorId, ...access } = await workspaceAccess(actor, tx);
+  return access;
+}
+const accountChange = z
+  .object({
+    kind: z.enum(["PINNED", "PRIMARY"]),
+    action: z.enum(["ADD", "REMOVE", "INITIALIZE"]),
+    accountIds: z
+      .array(z.string().regex(/^\d{1,40}$/))
+      .min(1)
+      .max(1000),
+  })
+  .strict();
+/** Delta operations prevent one editor from replacing another editor's newer choices. */
+export async function changeWorkspaceAccounts(actor: Actor, input: unknown) {
+  const b = accountChange.parse(input);
+  return db.$transaction(
+    async (tx) => {
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(884411)`;
+      await metaEditorOnly(actor, tx);
+      const state = await tx.metaWorkspaceSharing.upsert({
+        where: { id: "global" },
+        create: { id: "global" },
+        update: {},
+      });
+      const field =
+        b.kind === "PINNED" ? "pinnedAccountIds" : "primaryAccountIds";
+      if (b.action === "INITIALIZE" && state[field] != null)
+        return publicWorkspaceAccess(actor, tx);
+      const requested = [...new Set(b.accountIds)];
+      if (b.action !== "REMOVE") {
+        const known = await tx.metaAdAccount.count({
+          where: { id: { in: requested } },
+        });
+        demand(
+          known === requested.length,
+          "Una cuenta ya no está disponible. Actualiza la lista.",
+          409,
+        );
+      }
+      const current = accountIds(state[field]);
+      const next =
+        b.action === "REMOVE"
+          ? current.filter((id) => !requested.includes(id))
+          : [...new Set([...current, ...requested])];
+      demand(
+        next.length <= 1000,
+        "Puedes compartir hasta 1000 cuentas en cada lista.",
+      );
+      if (
+        state[field] == null ||
+        JSON.stringify(current) !== JSON.stringify(next)
+      ) {
+        await tx.metaWorkspaceSharing.update({
+          where: { id: "global" },
+          data: { [field]: next, accountPreferencesRevision: { increment: 1 } },
+        });
+        await recordActivity(tx, {
+          data: {
+            actorId: actor.id,
+            action: "META_CUENTAS_COMPARTIDAS_ACTUALIZADAS",
+            detail: { kind: b.kind, action: b.action, count: requested.length },
+          },
+        });
+      }
+      return publicWorkspaceAccess(actor, tx);
+    },
+    { timeout: 30000 },
+  );
 }
 export async function metaEditorOnly(actor: Actor, tx: Client = db) {
   const access = await workspaceAccess(actor, tx);
@@ -140,12 +226,16 @@ export async function saveWorkspaceSharing(actor: Actor, input: unknown) {
         "Elige cuentas habilitadas; los OWNER ya tienen acceso.",
         409,
       );
+      const sharedPins =
+        state.pinnedAccountIds == null
+          ? b.pinnedAccountIds
+          : accountIds(state.pinnedAccountIds);
       const pins = await tx.metaAdAccount.findMany({
-        where: { id: { in: [...new Set(b.pinnedAccountIds)] } },
+        where: { id: { in: [...new Set(sharedPins)] } },
         select: { id: true },
       });
       demand(
-        pins.length === new Set(b.pinnedAccountIds).size,
+        pins.length === new Set(sharedPins).size,
         "Una cuenta fijada ya no está disponible.",
         409,
       );
@@ -168,7 +258,15 @@ export async function saveWorkspaceSharing(actor: Actor, input: unknown) {
         });
       await tx.metaWorkspaceSharing.update({
         where: { id: "global" },
-        data: { revision: { increment: 1 } },
+        data: {
+          revision: { increment: 1 },
+          ...(state.pinnedAccountIds == null && pins.length
+            ? {
+                pinnedAccountIds: pins.map((p) => p.id),
+                accountPreferencesRevision: { increment: 1 },
+              }
+            : {}),
+        },
       });
       await recordActivity(tx, {
         data: {

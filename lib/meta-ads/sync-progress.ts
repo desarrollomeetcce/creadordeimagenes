@@ -1,4 +1,5 @@
 import { focusedLabels } from "./focused-labels";
+import { requiresMetaReconnect } from "./graph-error";
 const labels = [
   "Campañas",
   "Conjuntos de anuncios",
@@ -8,6 +9,7 @@ const labels = [
   "Resultados de anuncios",
 ];
 export type SyncProgress = {
+  authorizationRequired: boolean;
   focused: boolean;
   inventory: "all" | "recent";
   recentReady: boolean;
@@ -116,6 +118,7 @@ export function syncProgress(
               ? "queued"
               : "complete";
   return {
+    authorizationRequired: requiresMetaReconnect(a.syncError),
     focused,
     inventory:
       (phase === null ? s.lastRun?.inventory : s.inventory) === "all"
@@ -147,8 +150,9 @@ export function syncProgress(
     status,
     phase: status === "complete" ? totalPhases : (phase ?? 0),
     totalPhases,
-    label:
-      status === "waiting"
+    label: requiresMetaReconnect(a.syncError)
+      ? "Reconectar Meta para continuar"
+      : status === "waiting"
         ? s.waitReason === "pacing"
           ? "Esperando el turno de consulta"
           : "En espera por límite de consultas de Meta"

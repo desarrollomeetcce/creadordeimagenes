@@ -8,6 +8,7 @@ import {
 } from "../../lib/meta-ads/account-filters";
 export function MetaAccountPicker({
   accounts,
+  primaryAccountIds = [],
   selected,
   business,
   onChange,
@@ -17,6 +18,7 @@ export function MetaAccountPicker({
   onActivityChange,
 }: {
   accounts: SearchableAccount[];
+  primaryAccountIds?: readonly string[];
   selected: string[];
   business: string;
   onChange: (ids: string[]) => void;
@@ -37,9 +39,17 @@ export function MetaAccountPicker({
     document.addEventListener("pointerdown", close);
     return () => document.removeEventListener("pointerdown", close);
   }, [open]);
-  const visible = accounts.filter((a) =>
-    matchesAccount(a, query, activity, business),
-  );
+  const [group, setGroup] = useState("all");
+  const primary = new Set(primaryAccountIds);
+  const visible = accounts
+    .filter(
+      (a) =>
+        matchesAccount(a, query, activity, business) &&
+        (group === "all" ||
+          (group === "primary" ? primary.has(a.id) : !primary.has(a.id))),
+    )
+    .sort((a, b) => Number(primary.has(b.id)) - Number(primary.has(a.id)));
+  const primaryCount = accounts.filter((a) => primary.has(a.id)).length;
   const selection = new Set(selected);
   const name =
     selected.length === 1
@@ -92,6 +102,32 @@ export function MetaAccountPicker({
                 ))}
               </select>
             </label>
+            <label>
+              Mostrar cuentas
+              <select
+                aria-label="Grupo de cuentas para rendimiento"
+                value={group}
+                onChange={(e) => setGroup(e.target.value)}
+              >
+                <option value="all">Todas</option>
+                <option value="primary">Principales ({primaryCount})</option>
+                <option value="secondary">
+                  Secundarias ({accounts.length - primaryCount})
+                </option>
+              </select>
+            </label>
+            {primaryCount > 0 && (
+              <button
+                type="button"
+                onClick={() =>
+                  onChange(
+                    accounts.filter((a) => primary.has(a.id)).map((a) => a.id),
+                  )
+                }
+              >
+                Ver principales ({primaryCount})
+              </button>
+            )}
             <small role="status">
               {visible.length} coinciden · {selected.length} seleccionadas
             </small>
@@ -111,6 +147,11 @@ export function MetaAccountPicker({
                   />
                   <span>
                     {a.name}
+                    {primary.has(a.id) && (
+                      <small className="meta-primary-account-label">
+                        Cuenta principal
+                      </small>
+                    )}
                     <small>
                       act_{a.id} · {a.currency}
                     </small>

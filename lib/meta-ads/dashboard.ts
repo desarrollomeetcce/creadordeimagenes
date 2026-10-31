@@ -1,5 +1,7 @@
 import { isCountryCode } from "./countries";
 import { parseDeliveryFilters } from "./state-filter";
+import { metaRegisteredSales } from "./effectiveness";
+import { validSalesDate } from "./registered-sales";
 import { metaSummary } from "./summary";
 import { compareMetaItems } from "./order";
 import { focusedReportDay } from "./focused-labels";
@@ -17,6 +19,12 @@ import {
   dayCount,
 } from "./analytics";
 export async function dashboard(actor: Actor, params: URLSearchParams) {
+  const salesSince = params.get("salesSince") ?? "";
+  demand(
+    !salesSince ||
+      (validSalesDate(salesSince) && salesSince <= localDay("America/Lima")),
+    "Fecha de inicio de ventas inválida.",
+  );
   const level = params.get("level") ?? "ad";
   demand(["campaign", "adset", "ad"].includes(level), "Nivel inválido.");
   const accounts = await db.metaAdAccount.findMany({
@@ -573,6 +581,25 @@ export async function dashboard(actor: Actor, params: URLSearchParams) {
       summarySelection.length > 0,
       limited && computedFilters,
     );
+  }
+  if (summary) {
+    // Independent of report dates and pagination; unique campaign parents only.
+    let refs = limited
+      ? await db.metaAdObject.findMany({
+          where,
+          select: { id: true, level: true, campaignId: true },
+        })
+      : items;
+    if (summarySelection.length)
+      refs = refs.filter((o) => summarySelection.includes(o.id));
+    const campaignIds = [
+      ...new Set(
+        refs
+          .map((o) => (o.level === "campaign" ? o.id : o.campaignId))
+          .filter((id): id is string => !!id),
+      ),
+    ];
+    summary.sales = await metaRegisteredSales(actor, campaignIds, salesSince);
   }
   items.sort((a, b) => compareMetaItems(a, b, sort, direction));
   const page = Math.max(1, Math.min(10000, Number(params.get("page")) || 1)),

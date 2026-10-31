@@ -18,6 +18,7 @@ async function metaEditorOnly(
 }
 import {
   workspaceAccess,
+  changeWorkspaceAccounts,
   metaEditorOnly as workspaceEditorOnly,
   metaCanSync,
   readWorkspaceSharing,
@@ -131,8 +132,14 @@ export async function metaRoutes(
       canShare: a.canShare,
       shared: a.shared,
       pinnedAccountIds: a.pinnedAccountIds,
+      primaryAccountIds: a.primaryAccountIds,
+      pinsInitialized: a.pinsInitialized,
+      primaryInitialized: a.primaryInitialized,
+      accountPreferencesRevision: a.accountPreferencesRevision,
     });
   }
+  if (path === "workspace-accounts" && method === "PATCH")
+    return send(await changeWorkspaceAccounts(actor, await body()));
   if (path === "workspace-inventories" && method === "GET") {
     await metaEditorOnly(actor);
     return send(

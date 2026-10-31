@@ -7,6 +7,7 @@ export type SyncTimingAccount = {
   lastCompletedAt?: string | null;
   progress?: {
     status: string;
+    authorizationRequired?: boolean;
     label: string;
     lastActivityAt?: string | null;
     nextSyncAt?: string | null;
@@ -28,7 +29,10 @@ export function syncTiming(accounts: SyncTimingAccount[]) {
     completed: completed[0] ?? null,
     pending: accounts.length - completed.length,
     automatic: accounts.filter(
-      (a) => a.enabled && a.progress?.status !== "paused",
+      (a) =>
+        a.enabled &&
+        a.progress?.status !== "paused" &&
+        !a.progress?.authorizationRequired,
     ).length,
     ongoing: accounts.filter(
       (a) =>

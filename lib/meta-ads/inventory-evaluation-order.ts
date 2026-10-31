@@ -4,6 +4,30 @@ type EvaluationPoint = {
   assessment: { usage: number | null; status: string };
 };
 export type EvaluationMetric = "activation" | "factor" | "status";
+/** Unknown/pending results stay last in either direction. */
+export function compareFinancialStatus(
+  a: string | undefined,
+  b: string | undefined,
+  criticalFirst: boolean,
+) {
+  const ranks: Record<string, number> = {
+    CRITICAL: 4,
+    ALERT: 3,
+    TESTING: 2,
+    WITHIN: 1,
+  };
+  const x = a ? ranks[a] : undefined,
+    y = b ? ranks[b] : undefined;
+  return x === undefined || y === undefined
+    ? x === y
+      ? 0
+      : x === undefined
+        ? 1
+        : -1
+    : criticalFirst
+      ? y - x
+      : x - y;
+}
 export function compareInventoryEvaluation(
   a: EvaluationPoint | undefined,
   b: EvaluationPoint | undefined,

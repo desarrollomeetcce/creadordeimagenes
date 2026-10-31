@@ -21,6 +21,7 @@ import { recordActivity } from "../activity";
 import { MetaReader, type Operation, type Query } from "./provider";
 import {
   MetaGraphError,
+  requiresMetaReconnect,
   internalErrorCode,
   type GraphDiagnostic,
 } from "./graph-error";
@@ -423,6 +424,21 @@ export async function discover(
         },
       },
     });
+    // Resume only accounts whose automatic synchronization was already enabled.
+    await db.metaAdAccount.updateMany({
+      where: { connectionId: id, enabled: true, nextSyncAt: null },
+      data: { nextSyncAt: new Date() },
+    });
+    const resumes = await db.metaAdAccount.findMany({
+      where: { connectionId: id, enabled: true },
+      select: { id: true },
+    });
+    for (const account of resumes)
+      await (
+        await import("./schedule")
+      )
+        .startMetaSchedule(account.id)
+        .catch(() => ({ scheduled: false }));
     return {
       accounts: count,
       tools: tools.map((t) => t.name),
@@ -674,6 +690,11 @@ export async function queueSync(
           (a.syncState as { plan?: string }).plan === "focus" &&
           ((a.syncState as State).inventory ?? "recent") !== inventory);
       const progress = syncProgress(a);
+      demand(
+        !progress.authorizationRequired,
+        "La autorización de Meta venció o ya no es válida. Reconecta la cuenta desde Conexiones para continuar; tus datos y el avance se conservan.",
+        409,
+      );
       const focusResume =
         !fresh &&
         focused &&
@@ -692,6 +713,18 @@ export async function queueSync(
       // The saved page cursor and imported records belong to the account, not the run.
       const recover =
         progress.status === "error" || progress.status === "stalled";
+      if (
+        !scopeChanged &&
+        a.syncToken &&
+        a.syncLeaseAt &&
+        a.syncLeaseAt.valueOf() >= Date.now() - 120000
+      )
+        return {
+          queued: true,
+          resumed: true,
+          waiting: !!deferredUntil,
+          alreadyRunning: true,
+        };
       const updated = await tx.metaAdAccount.updateMany({
         where: {
           id,
@@ -772,6 +805,11 @@ export async function syncStep(
   id: string,
   expectedSchedule?: string,
 ): Promise<boolean> {
+  const diagnostic = await db.metaAdAccount.findUnique({
+    where: { id },
+    select: { syncError: true },
+  });
+  if (requiresMetaReconnect(diagnostic?.syncError)) return false;
   const token = randomUUID(),
     now = new Date();
   const claimed = await db.metaAdAccount.updateMany({
@@ -1202,7 +1240,12 @@ export async function syncStep(
           syncToken: null,
           syncLeaseAt: null,
           syncError: message,
-          nextSyncAt: retryAt ?? new Date(Date.now() + 30 * 60000),
+          ...(requiresMetaReconnect(e)
+            ? { schedulerToken: null, schedulerRunId: null }
+            : {}),
+          nextSyncAt: requiresMetaReconnect(e)
+            ? null
+            : (retryAt ?? new Date(Date.now() + 30 * 60000)),
           ...(retryAt
             ? {
                 syncState: {

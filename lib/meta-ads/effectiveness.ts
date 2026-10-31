@@ -194,6 +194,94 @@ export async function inventoryEffectivenessSource(
     true,
   );
 }
+/** Internal Meta report aggregate. Scope is revalidated against accessible campaigns;
+ * raw financial rows and unrelated inventory never leave this function. */
+export async function metaRegisteredSales(
+  actor: Actor,
+  campaignIds: string[],
+  manualSince = "",
+) {
+  const { registeredSalesSummary } = await import("./registered-sales");
+  const today = limaDay();
+  const campaigns = await db.metaAdObject.findMany({
+    where: {
+      id: { in: campaignIds },
+      level: "campaign",
+      account: await accountWhere(actor),
+      aliasId: { not: null },
+      aliasCountry: { not: null },
+    },
+    select: {
+      aliasId: true,
+      aliasCountry: true,
+      alias: {
+        select: { id: true, tableId: true, inventorySheetId: true, name: true },
+      },
+    },
+  });
+  const targets = [
+    ...new Map(
+      campaigns
+        .filter((c) => c.alias && c.aliasCountry)
+        .map((c) => [key(c.aliasId!, c.aliasCountry!), c]),
+    ).values(),
+  ];
+  if (!targets.length) return registeredSalesSummary([], today, manualSince);
+  const tableIds = [...new Set(targets.map((c) => c.alias!.tableId))];
+  const sourceTables = new Set(tableIds);
+  let frontier = tableIds;
+  for (let depth = 0; frontier.length && depth < 9; depth++) {
+    const links = await db.metaEffectivenessLink.findMany({
+      where: { tableId: { in: frontier } },
+    });
+    frontier = links
+      .filter(
+        (l) =>
+          linkMetrics(l).includes("sales") &&
+          !sourceTables.has(l.sourceTableId),
+      )
+      .map((l) => l.sourceTableId);
+    frontier.forEach((id) => sourceTables.add(id));
+  }
+  const first = await db.metaEffectivenessDay.aggregate({
+    where: {
+      row: { alias: { tableId: { in: [...sourceTables] } } },
+      day: { lte: today },
+    },
+    _min: { day: true },
+  });
+  if (!first._min.day) return registeredSalesSummary([], today, manualSince);
+  const entries: import("./registered-sales").RegisteredSalesEntry[] = [];
+  for (const tableId of tableIds) {
+    const sheet = await readEffectiveness(
+      actor,
+      tableId,
+      first._min.day,
+      today,
+      db,
+      [],
+      false,
+      undefined,
+      true,
+    );
+    for (const target of targets.filter((c) => c.alias!.tableId === tableId)) {
+      const row = sheet.rows.find(
+        (r) =>
+          r.aliasId === target.aliasId && r.country === target.aliasCountry,
+      );
+      for (const [day, cell] of Object.entries(row?.days ?? {}))
+        entries.push({
+          inventory: target.alias!.inventorySheetId,
+          name: target.alias!.name,
+          country: target.aliasCountry!,
+          day,
+          sales: cell.na.includes("sales") ? null : cell.sales,
+          partial: cell.partialMetrics.includes("sales"),
+        });
+    }
+  }
+  return registeredSalesSummary(entries, today, manualSince);
+}
 async function readEffectiveness(
   actor: Actor,
   tableId: string,

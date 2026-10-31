@@ -1,4 +1,5 @@
 "use client";
+import { compareFinancialStatus } from "../../lib/meta-ads/inventory-evaluation-order";
 import {
   SheetHorizontalNavigation,
   horizontalSheetKey,
@@ -148,6 +149,7 @@ type Settings = {
   defaultCurrency: string;
 };
 type SheetSort =
+  | { kind: "evaluation"; direction: "asc" | "desc" }
   | {
       kind: "text";
       field: "alias" | "country" | "currency";
@@ -892,7 +894,8 @@ export function MetaEffectiveness({
           )),
     )
     .sort((a, b) => {
-      if (a.active !== b.active) return a.active ? -1 : 1;
+      if (activeSort.kind !== "evaluation" && a.active !== b.active)
+        return a.active ? -1 : 1;
       let result = 0;
       if (activeSort.kind === "text") {
         const av =
@@ -905,6 +908,12 @@ export function MetaEffectiveness({
               : b[activeSort.field];
         result = av.localeCompare(bv, "es", { numeric: true });
         if (activeSort.direction === "desc") result = -result;
+      } else if (activeSort.kind === "evaluation") {
+        result = compareFinancialStatus(
+          statusLookup.get(activationKey(a))?.status,
+          statusLookup.get(activationKey(b))?.status,
+          activeSort.direction === "desc",
+        );
       } else {
         const metric = activeSort.metric,
           av = a.days[activeSort.day]?.[metric] ?? null,
@@ -955,6 +964,7 @@ export function MetaEffectiveness({
           financialAliases,
           temporaryCategories.temporary,
           advisors,
+          activeSort.kind === "evaluation",
         )
       : [];
   const categoryBands =
@@ -964,6 +974,7 @@ export function MetaEffectiveness({
           normalRows,
           financialAliases,
           temporaryCategories.temporary,
+          activeSort.kind === "evaluation",
         );
   const showCategoryBands = financialAliases.some(
     (a) => (a as FinancialCatalogEntry).categoryAssignments?.length,
@@ -988,11 +999,13 @@ export function MetaEffectiveness({
       : [],
   );
   const inactiveSections =
-    grouping === "advisor"
-      ? advisorSections.map((g) =>
-          g.bands.flatMap((b) => b.rows).filter((r) => !r.active),
-        )
-      : [normalDisplayedRows.filter((r) => !r.active)];
+    activeSort.kind === "evaluation"
+      ? []
+      : grouping === "advisor"
+        ? advisorSections.map((g) =>
+            g.bands.flatMap((b) => b.rows).filter((r) => !r.active),
+          )
+        : [normalDisplayedRows.filter((r) => !r.active)];
   const firstInactiveBands = new Map(
     inactiveSections
       .filter((g) => g.length)
@@ -1157,7 +1170,11 @@ export function MetaEffectiveness({
     }
   };
   const sortId = (v: SheetSort) =>
-    v.kind === "text" ? v.field : v.day + "-" + v.metric;
+    v.kind === "evaluation"
+      ? "evaluation"
+      : v.kind === "text"
+        ? v.field
+        : v.day + "-" + v.metric;
   const order = (v: SheetSort) =>
     setSheetSort({
       ...v,
@@ -2257,9 +2274,43 @@ export function MetaEffectiveness({
                     rowSpan={visibleMetrics.length ? 2 : 1}
                     scope="col"
                     className="financial-evaluation"
+                    aria-sort={
+                      activeSort.kind === "evaluation"
+                        ? activeSort.direction === "desc"
+                          ? "descending"
+                          : "ascending"
+                        : "none"
+                    }
                     hidden={!metadataVisible.includes("evaluation")}
                   >
-                    Estado {metadataControls("evaluation", "Estado")}
+                    <button
+                      type="button"
+                      className="sheet-sort"
+                      aria-label="Ordenar por Estado"
+                      title={
+                        activeSort.kind !== "evaluation"
+                          ? "Ordenar: críticos primero"
+                          : activeSort.direction === "desc"
+                            ? "Ordenar: mejores primero"
+                            : "Restaurar orden de la hoja"
+                      }
+                      onClick={() =>
+                        setSheetSort(
+                          activeSort.kind !== "evaluation"
+                            ? { kind: "evaluation", direction: "desc" }
+                            : activeSort.direction === "desc"
+                              ? { kind: "evaluation", direction: "asc" }
+                              : {
+                                  kind: "text",
+                                  field: "alias",
+                                  direction: "asc",
+                                },
+                        )
+                      }
+                    >
+                      Estado{arrow({ kind: "evaluation", direction: "desc" })}
+                    </button>{" "}
+                    {metadataControls("evaluation", "Estado")}
                     <SheetColumnResizer
                       label="Estado"
                       onResize={(width) => resizeColumn("evaluation", width)}
