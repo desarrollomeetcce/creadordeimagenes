@@ -2600,8 +2600,11 @@ button.ui-close-button:disabled, button.window-close:disabled { opacity: .55; }
 .financial-pending-assignment-band small{font-size:11px;font-weight:400;color:var(--muted);}
 .effectiveness-grid tr[data-pending-assignment="true"]>.effectiveness-name{border-left:3px solid #a979e8;}
 
-.effectiveness-grid .sheet-alias-switch[data-campaign-task="CREATE"]{background:#e9d8fa;border-color:#a979e8;}
-.effectiveness-grid .sheet-alias-switch[data-campaign-task="CREATE"]>span{background:#9465c4;}
+/* Campaign tasks use the same colors as Inventory; STOP remains operationally active until confirmed. */
+.products-catalog .sheet-view .effectiveness-grid .sheet-alias-switch[data-campaign-task="CREATE"]{background:#9463dc;border-color:#9463dc;}
+.products-catalog .sheet-view .effectiveness-grid .sheet-alias-switch[data-campaign-task="STOP"]{background:#e89526;border-color:#e89526;}
+.products-catalog .sheet-view .effectiveness-grid .sheet-alias-switch:is([data-campaign-task="CREATE"],[data-campaign-task="STOP"])>span{background:#fff;}
+.products-catalog .sheet-view .effectiveness-grid .sheet-alias-switch[data-campaign-task="STOP"]>span{transform:translateX(0);}
 .meta-alias-details-row{display:grid;grid-template-columns:minmax(0,1fr) 82px;gap:6px;}
 .inventory-state-cell-content{display:flex;align-items:center;justify-content:space-between;gap:3px;}
 .inventory-country-detail{flex:0 0 auto;color:var(--accent);background:var(--soft);border:1px solid var(--accent);border-radius:5px;padding:3px 6px!important;font-weight:700;}

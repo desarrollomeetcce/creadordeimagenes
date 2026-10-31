@@ -2429,6 +2429,11 @@ export function MetaEffectiveness({
               <tbody>
                 {displayedRows.map((r) => {
                   const name = names.get(r.aliasId) ?? "Inventario";
+                  const campaignLabel = r.campaignTask === "CREATE"
+                    ? "Por hacer campaña"
+                    : r.campaignTask === "STOP"
+                      ? "Por desactivar campaña"
+                      : r.active ? "Activado" : "Desactivado";
                   const category = financialRowCategories(
                     r,
                     financialAliases.find((a) => a.id === r.aliasId),
@@ -2584,11 +2589,11 @@ export function MetaEffectiveness({
                               className="meta-status-switch sheet-alias-switch"
                               data-campaign-task={r.campaignTask ?? "NONE"}
                               disabled={busy || !r.country}
-                              aria-label={`${r.active ? "Desactivar" : "Activar"} ${name} ${r.country || "sin país"}`}
+                              aria-label={`${campaignLabel} · ${name} ${r.country || "sin país"}. ${r.active ? "Desactivar" : "Activar"}`}
                               title={
                                 !r.country
                                   ? "Elige un país para activar o desactivar esta fila"
-                                  : `${r.active ? "Activado" : "Desactivado"} · ${r.country}${r.lastStateChange ? " · " + new Date(r.lastStateChange).toLocaleString("es-PE", { timeZone: "America/Lima" }) : " · por defecto"}. Solo Efectividad.`
+                                  : `${campaignLabel} · ${r.country}${r.lastStateChange ? " · " + new Date(r.lastStateChange).toLocaleString("es-PE", { timeZone: "America/Lima" }) : " · por defecto"}. Solo Efectividad.`
                               }
                               onClick={() => void toggleState(r)}
                             >
