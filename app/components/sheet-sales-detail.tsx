@@ -1,4 +1,5 @@
 "use client";
+import { InventoryStatusLabel } from "./inventory-status-label";
 import { SheetAnalysisCounters } from "./sheet-analysis-counters";
 import type { SheetAnalysis } from "../../lib/meta-ads/sheet-analysis";
 import { limaToday } from "./date-range";
@@ -580,7 +581,7 @@ export function SheetSalesDetail({
                                 {sortHeader("sales", "Ventas (V)")}
                                 {sortHeader("result", "Resultado del período")}
                                 {sortHeader("active", "Estado actual")}
-                                <th scope="col">Histórico · días · factor</th>
+                                <th scope="col">Estado según límites</th>
                                 {sortHeader("advisors", "Quiénes vendieron")}
                                 <th>Detalle</th>
                               </tr>
@@ -632,15 +633,21 @@ export function SheetSalesDetail({
                                         <div
                                           key={c}
                                           className="sheet-diploma-tracking"
+                                          data-evaluation-country={c}
+                                          data-evaluation-status={a.status}
                                         >
-                                          <span>
+                                          <span className={"trial-status inventory-status-with-dot trial-"+a.status}>
+                                            {p.countries.length>1 ? c+' · ':null}
+                                            <InventoryStatusLabel status={a.status} />
+                                          </span>
+                                          <small>
                                             {p.countries.length > 1
                                               ? c + " · "
                                               : ""}
                                             {r.since ?? "Sin inicio"} ·{" "}
                                             {r.activeDays ?? "—"} días
-                                          </span>
-                                          <small>
+                                          </small>
+                                          <small title={a.limit===null?"Faltan ventas registradas para evaluar el límite.":`Límite establecido: S/ ${a.limit.toFixed(2)}. El factor compara el importe con este límite.`}>
                                             {profile === "meta"
                                               ? "Meta"
                                               : "Presupuesto"}
@@ -649,16 +656,6 @@ export function SheetSalesDetail({
                                               ? "—"
                                               : (a.usage * 100).toFixed(0) +
                                                 "%"}{" "}
-                                            ·{" "}
-                                            {
-                                              {
-                                                PENDING: "Datos pendientes",
-                                                CRITICAL: "Crítico",
-                                                ALERT: "Revisar",
-                                                TESTING: "En evaluación",
-                                                WITHIN: "Dentro del límite",
-                                              }[a.status]
-                                            }
                                           </small>
                                         </div>
                                       );
