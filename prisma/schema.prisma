@@ -1281,3 +1281,90 @@ model MetaAdvisorSupport {
  @@index([aliasId,country,since,until])
  @@index([advisorId,since,until])
 }
+
+// Cursos IA is isolated: no relation to image jobs, Meta sync, or image quotas.
+model AICourse {
+  id String @id @default(cuid())
+  actorId String
+  title String
+  kind String @default("course")
+  prompt String
+  settings Json
+  revision Int @default(1)
+  archivedAt DateTime?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  modules AICourseModule[]
+  tasks AICourseTask[]
+  @@index([archivedAt,updatedAt])
+}
+model AICourseModule {
+  id String @id @default(cuid())
+  courseId String
+  course AICourse @relation(fields:[courseId],references:[id])
+  title String
+  brief String @default("")
+  minutes Int @default(10)
+  style String @default("slides")
+  position Int
+  revision Int @default(1)
+  lesson Json @default("{}")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  materials AICourseMaterial[]
+  assets AICourseAsset[]
+  @@index([courseId,position])
+}
+model AICourseMaterial {
+  id String @id @default(cuid())
+  moduleId String
+  module AICourseModule @relation(fields:[moduleId],references:[id])
+  title String
+  kind String
+  instructions String @default("")
+  content Json @default("{}")
+  revision Int @default(1)
+  createdAt DateTime @default(now())
+  @@index([moduleId])
+}
+model AICourseTask {
+  id String @id @default(cuid())
+  courseId String
+  course AICourse @relation(fields:[courseId],references:[id])
+  actorId String
+  requestId String @unique
+  kind String
+  input Json
+  status String @default("PENDING")
+  error String?
+  usage Json @default("{}")
+  leaseToken String?
+  startedAt DateTime?
+  heartbeatAt DateTime?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@index([courseId,status])
+  @@index([status,heartbeatAt])
+}
+model AICourseAsset {
+  id String @id @default(cuid())
+  moduleId String
+  module AICourseModule @relation(fields:[moduleId],references:[id])
+  revision Int
+  scene Int
+  kind String
+  path String
+  mime String
+  createdAt DateTime @default(now())
+  @@unique([moduleId,revision,scene,kind])
+}
+model AICourseCredential {
+  provider String @id
+  encryptedKey String
+  maskedKey String
+  revision Int @default(1)
+  models Json @default("[]")
+  voices Json @default("[]")
+  verifiedAt DateTime?
+  updatedAt DateTime @updatedAt
+}

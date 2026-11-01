@@ -121,7 +121,7 @@ async function bounded(req: NextRequest, max: number) {
   return Buffer.concat(chunks);
 }
 async function body(req: NextRequest) {
-  const raw = (await bounded(req, ["/api/meta-ads/inventory/package/preview","/api/meta-ads/inventory/package/import"].includes(req.nextUrl.pathname) ? 8000000 : req.nextUrl.pathname === "/api/meta-ads/inventory/import" ? 4000000 : ["/api/meta-ads/inventory/categories/file","/api/meta-ads/inventory/file","/api/meta-ads/inventory/import"].includes(req.nextUrl.pathname) ? 3000000 : ["/api/meta-ads/effectiveness/cells","/api/meta-ads/effectiveness/states","/api/meta-ads/inventory/remove","/api/meta-ads/inventory/remove-preview","/api/meta-ads/inventory/categories","/api/meta-ads/inventory/import","/api/meta-ads/inventory/syllabi"].includes(req.nextUrl.pathname) ? 1000000 : 100000)).toString("utf8");
+  const raw = (await bounded(req, req.nextUrl.pathname.startsWith("/api/courses-ai") ? 800000 : ["/api/meta-ads/inventory/package/preview","/api/meta-ads/inventory/package/import"].includes(req.nextUrl.pathname) ? 8000000 : req.nextUrl.pathname === "/api/meta-ads/inventory/import" ? 4000000 : ["/api/meta-ads/inventory/categories/file","/api/meta-ads/inventory/file","/api/meta-ads/inventory/import"].includes(req.nextUrl.pathname) ? 3000000 : ["/api/meta-ads/effectiveness/cells","/api/meta-ads/effectiveness/states","/api/meta-ads/inventory/remove","/api/meta-ads/inventory/remove-preview","/api/meta-ads/inventory/categories","/api/meta-ads/inventory/import","/api/meta-ads/inventory/syllabi"].includes(req.nextUrl.pathname) ? 1000000 : 100000)).toString("utf8");
   try {
     return JSON.parse(raw);
   } catch {
@@ -318,6 +318,7 @@ async function handle(
       return send(result);
     }
     const user = await actor();
+    if(parts[0]==="courses-ai")return await (await import("@/lib/courses/routes")).courseRoutes(req,parts,user,()=>body(req));
     if(user.aiAccessEnabled===false && ['projects','categories','subproducts','variations','jobs','orders','attachments','library','exports','presets','folders','assets','generations','generate','tests','brands'].includes(parts[0]))demand(false,'Esta cuenta no tiene acceso a los módulos de IA.',403);
     if (["SUPERVISOR","ADVISOR"].includes(user.role)) demand(parts[0]==="meta-ads" || ["auth/me","auth/logout","auth/change-password"].includes(route),"Tu rol está destinado a Mi desempeño.",403);
     if(parts[0]==="meta-ads")return await (await import("@/lib/meta-ads/routes")).metaRoutes(req,parts,user,()=>body(req));

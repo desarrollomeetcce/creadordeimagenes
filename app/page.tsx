@@ -3,6 +3,7 @@ import dynamic from "next/dynamic";
 import {EffectivenessLegend} from "./components/effectiveness-legend";
 const ProductsCatalog=dynamic(()=>import("./components/products-catalog").then(m=>m.ProductsCatalog),{loading:()=> <p role="status">Cargando efectividad…</p>});
 const AdvisorPerformance=dynamic(()=>import("./components/advisor-performance").then(m=>m.AdvisorPerformance),{loading:()=> <p role="status">Cargando desempeño…</p>});
+const CoursesAI=dynamic(()=>import("./components/courses-ai").then(m=>m.CoursesAI),{loading:()=> <p role="status">Cargando Cursos IA…</p>});
 const MetaAds=dynamic(()=>import("./components/meta-ads").then(m=>m.MetaAds),{loading:()=> <p role="status">Cargando Meta Ads…</p>});
 import { reasoningLevel } from "../lib/creative-level";
 import {useGenerationChoices} from "./components/generation-choices";
@@ -260,6 +261,7 @@ export default function Home() {
           ...(user.role === "OWNER"
             ? [
                 "products",
+                ...(user.aiAccessEnabled!==false?["courses-ai"]:[]),
                 "ai",
                 "mail",
                 "payments",
@@ -432,6 +434,7 @@ export default function Home() {
     library: "Biblioteca",
     metaads: "Meta Ads",
     products: "Efectividad",
+    "courses-ai": "Cursos IA",
     performance: "Mi desempeño",
     presets: "Configuraciones guardadas",
     ai: "Ajustes de IA",
@@ -481,6 +484,7 @@ export default function Home() {
               ["trash", "⌫", "Papelera"],
               ...(user.role === "OWNER"
                 ? [
+                    ...(user.aiAccessEnabled!==false?[["courses-ai", "✦", "Cursos IA"]]:[]),
                     ["statistics", "▥", "Estadísticas"],
                     ["website", "◈", "Página web"],
                     ["visual-audit", "▧", "Auditoría visual"],
@@ -516,11 +520,11 @@ export default function Home() {
           <header className={view === "products" ? "topbar effectiveness-topbar" : "topbar"}>
             {view === "products" ? <div className="effectiveness-topbar-title"><div className="effectiveness-title-line"><h1>Efectividad</h1>{user.role==="OWNER"&&<button type="button" className="effectiveness-share-button" onClick={()=>window.dispatchEvent(new Event("share-effectiveness"))}>Compartir</button>}</div><EffectivenessLegend /></div> : <span className="muted">{view === "metaads" ? "Análisis y control de Meta" : titles[view]}</span>}
             {view === "metaads" && <span className="meta-topbar-role">Rol: <strong>{user.role}</strong></span>}
-            {view !== "performance" && view !== "products" && <span className="badge">Producción publicitaria</span>}
+            {view !== "performance" && view !== "products" && view !== "courses-ai" && <span className="badge">Producción publicitaria</span>}
 
           </header>
           <main className={view === "products" ? "effectiveness-main" : undefined}>
-            {!["metaads", "products", "performance"].includes(view) && <><RoleGuide name={user.name} role={user.role} /><VisualAuditNotice key={user.id} /></>}
+            {!["metaads", "products", "performance", "courses-ai"].includes(view) && <><RoleGuide name={user.name} role={user.role} /><VisualAuditNotice key={user.id} /></>}
             {project && view === "projects" && (
               <HierarchyBreadcrumbs
                 project={project}
@@ -576,6 +580,8 @@ export default function Home() {
 
             ) : view === "presets" ? (
               <Presets />
+            ) : view === "courses-ai" && user.role === "OWNER" && user.aiAccessEnabled!==false ? (
+              <CoursesAI />
             ) : view === "website" && user.role === "OWNER" ? (
               <SiteEditor />
             ) : view === "payments" && user.role === "OWNER" ? (
