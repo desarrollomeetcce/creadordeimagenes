@@ -1287,6 +1287,7 @@ model AICourse {
   id String @id @default(cuid())
   actorId String
   title String
+  description String @default("")
   kind String @default("course")
   prompt String
   settings Json
@@ -1360,11 +1361,20 @@ model AICourseAsset {
 }
 model AICourseCredential {
   provider String @id
-  encryptedKey String
-  maskedKey String
+  encryptedKey String?
+  maskedKey String?
+  shared Boolean @default(false)
+  sourceRevision Int?
   revision Int @default(1)
   models Json @default("[]")
   voices Json @default("[]")
   verifiedAt DateTime?
+  updatedAt DateTime @updatedAt
+}
+
+model AICourseDefaults {
+  id String @id
+  settings Json @default("{}")
+  revision Int @default(1)
   updatedAt DateTime @updatedAt
 }

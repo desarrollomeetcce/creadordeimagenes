@@ -1,52 +1,74 @@
-# Cursos IA
+# Cursos IA y Ajustes IA
 
-Módulo independiente de la plataforma, exclusivo para cuentas OWNER aprobadas, vigentes y con IA habilitada. Los permisos se comprueban también en cada API, archivo y paso de generación. No concede acceso a ADMIN ni comparte automáticamente cursos con alumnos.
+Cursos IA sigue siendo exclusivo de OWNER aprobado, vigente y con IA habilitada. Las comprobaciones también se hacen en el servidor, en archivos y antes de generar/publicar.
 
-## Uso
+## Un solo lugar para conectar proveedores
 
-1. Abre Cursos IA → Conexiones. Guarda las claves que quieras usar y pulsa Consultar modelos y voces. Los modelos seleccionables provienen de la respuesta de tu cuenta, filtrados por capacidad compatible.
-2. Crea un curso o diplomado. Describe tema, objetivos, edad, conocimientos previos, contexto, ejemplos y resultados esperados. Elige público, nivel, enfoque, idioma, tono, estilo, cantidad inicial de módulos y minutos objetivo.
-3. Genera el temario. Revisa y modifica módulos; puedes añadir más y cambiar el orden con las flechas. El temario existente nunca se reemplaza automáticamente.
-4. Desarrolla un módulo o los módulos pendientes. La cola trabaja por módulo; los ya desarrollados se conservan. Las nuevas versiones requieren una acción explícita.
-5. Revisa las escenas, pasos, narración, práctica y solución. Corrige una escena con sus campos de texto sin consumir IA. El JSON avanzado permite editar también estructuras de tablas.
-6. Genera primero una voz de prueba por escena. Si te convence, Generar voces pendientes completa las demás. Las voces ya guardadas de esa versión no se solicitan de nuevo.
-7. Abre Presentación y video. Puedes recorrer y reproducir las escenas; después de narrarlas todas, exporta el video en MP4 o WebM según las capacidades del navegador.
-8. Añade guías, libros, talleres, exámenes o diapositivas independientes. Puedes crear varios del mismo tipo, indicar instrucciones y corregir su contenido sin IA. Imprime o guarda en PDF; descarga Word y PowerPoint. El solucionario se incluye solo al elegirlo expresamente.
+Abre **Ajustes → Ajustes IA → Conexiones**. Las tarjetas están plegadas; abre un proveedor, guarda la clave y consulta su catálogo explícitamente. Abrir la pantalla o desplegar una tarjeta no genera contenido.
 
-## Proveedores y claves
+| Proveedor | Funciones integradas |
+| --- | --- |
+| OpenAI | Afiches, contenido de cursos, voz e ilustraciones |
+| Google AI / Gemini | Afiches, contenido, ilustraciones, voz y video compatibles con su API |
+| fal.ai | Afiches y clips de video de distintos fabricantes, según catálogo/esquema |
+| Replicate | Afiches; su catálogo de video no está integrado |
+| Anthropic Claude | Contenido y materiales de cursos |
+| ElevenLabs | Narración y clonación de voz autorizada |
 
-- OpenAI: contenido, narración e ilustraciones opcionales. Claves: https://platform.openai.com/api-keys
-- Google Gemini: contenido. Claves de API: https://aistudio.google.com/apikey
-- Anthropic Claude: contenido. Claves: https://console.anthropic.com/settings/keys
-- ElevenLabs: narración y clonación de voz. Claves: https://elevenlabs.io/app/settings/api-keys
+Una clave de un proveedor puede autorizar varios modelos del mismo proveedor. No se comparte una clave de Google con fal.ai ni con OpenAI. Las suscripciones de chat y Flow no equivalen a acceso/saldo de API. Cada cuenta determina los permisos, modelos y facturación disponibles.
 
-Recomendación inicial: OpenAI o Gemini para diseñar y desarrollar; ElevenLabs para elegir y probar voces. Claude es una alternativa para escritura. Solo se muestran los modelos devueltos por tu cuenta y compatibles con las operaciones integradas; no se garantiza disponibilidad de un modelo o de una clonación sin consultar tu cuenta. Las suscripciones de ChatGPT u otras interfaces web no sustituyen su facturación API.
+OpenAI/Google/fal de Cursos IA pueden usar la conexión compartida de la plataforma **por referencia, sin duplicar el secreto**. Los catálogos de afiches y cursos permanecen separados por capacidad y los parámetros de generación también. Cambiar la clave compartida invalida el catálogo correspondiente y detiene trabajos antiguos antes de usar una credencial nueva. El consumo y los límites del proveedor siguen compartidos cuando se usa la misma cuenta/API key.
 
-Las claves de Cursos IA están cifradas con AES-256-GCM y contexto propio `courses:proveedor`. No cambian las claves, modelos, planes ni configuración de generación de imágenes de la plataforma. Para empezar no es necesario configurar todos los proveedores. Guardar una clave no hace una llamada de generación.
+Las claves anteriores de Cursos IA no se sobrescriben: si existe una distinta, la tarjeta lo indica y ofrece **Usar clave compartida en Cursos IA**. La sustitución requiere esa elección explícita y una nueva consulta de modelos. Claude y ElevenLabs se administran en esta misma pantalla y conservan su contexto de cifrado propio. Ninguna clave se devuelve al navegador ni se incluye en URLs de seguimiento.
 
-La clonación utiliza la API de ElevenLabs. Debes confirmar que la muestra es tuya o que tienes autorización expresa. El plan, los permisos y una posible verificación de ElevenLabs determinan cuándo se puede usar. El audio se envía directamente desde el servidor al proveedor; no se guarda como muestra en nuestra plataforma.
+## Parámetros por uso
 
-## Presentación, pizarra y práctica
+- **Afiches:** conserva los controles existentes de proveedor/modelo/calidad/resolución y las pruebas autorizadas. El formulario se despliega al solicitarlo; no se monta ni sondea mientras estás en Conexiones o Cursos.
+- **Cursos · texto, voz y video:** configura valores iniciales para nuevos programas. No cambia cursos anteriores. Cada programa permite ajustar después su propia configuración.
+- **Texto:** OpenAI/Gemini/Claude; dificultad, enfoque, público, idioma y objetivos pedagógicos.
+- **Voz:** OpenAI, Gemini TTS o ElevenLabs; modelo y voz disponibles. OpenAI admite velocidad; el tono se transmite donde la API lo permite. La clonación integrada sigue siendo ElevenLabs, con consentimiento y posible verificación del proveedor.
+- **Ilustraciones:** OpenAI o Google; Nano Banana/FLUX pertenecen a imagen, no se muestran como video. Calidad baja/media/alta de ilustraciones OpenAI; Google usa los parámetros compatibles del adaptador existente.
+- **Clips:** Google o fal.ai; solo modelos de video compatibles devueltos por la cuenta. Resolución, duración y formato se ofrecen según el modelo; si no expone un parámetro se indica Automático. Duración de Google Omni se solicita como objetivo en el prompt, no se promete exactitud temporal.
+- **Clase narrada:** exportación local a720p/1080p, independiente del modelo que crea clips. No requiere contratar una IA de video para usar diapositivas/pizarra/código/tablas.
 
-Las escenas combinan diapositivas, escritura progresiva en pizarra, revelado de código, resaltado de tablas y cuentos con ilustraciones opcionales. No se necesita una cámara ni un rostro. Sin ilustración generada, los cuentos tienen una composición gráfica sencilla; una imagen generada requiere una solicitud explícita y un modelo de imagen OpenAI disponible.
+## Flujo de trabajo sencillo
 
-Código, Excel y Power BI se explican mediante demostraciones simuladas y recursos exportables. No se ejecuta código IA ni se controla una instalación real de Excel/Power BI/Python. Una grabación real de esas aplicaciones o un avatar animado con sincronización labial no forma parte de este módulo. Los pasos se revelan a lo largo del audio; no hay alineación fonética palabra por palabra. Revisa los contenidos y resultados antes de impartirlos.
+1. **Crear carpeta del programa.** Solo nombre, tipo (curso/diplomado/programa/taller/seminario), descripción breve y público. Incluye Otro público con texto personalizado. No pide prompt largo ni modelos; no llama a IA. La carpeta muestra descripción y destinatarios.
+2. **Entrar → Temario.** Elige Generar con IA o Pegar módulos. Objetivo, dificultad, enfoque, cantidad y demás parámetros se editan dentro del programa, sin un formulario emergente de configuración. Guarda los cambios antes de generar.
+3. **Pegar temario.** Un título por línea o encabezados Módulo1/Unidad1/Tema1 con descripciones debajo. Crea módulos independientes y ordenados en una transacción, sin IA. Añade al temario existente; no lo sustituye. Hasta100 módulos por programa.
+4. **Generar temario.** Propone hasta24 módulos según el objetivo y los parámetros guardados. Solo cuando la carpeta no tiene módulos; nunca reemplaza un temario ya definido.
+5. **Desarrollar.** Individualmente o por lotes de hasta24 pendientes. Los ya desarrollados se conservan; puedes reordenar y añadir módulos. El lote se registra atómicamente antes de arrancar.
+6. **Revisar escenas y materiales.** Diapositivas, pizarra, código, tablas y cuentos; pasos, narración, práctica y solución. Edita escenas y documentos sin consumir IA. Añade varios libros, guías, talleres, exámenes o presentaciones.
+7. **Crear voz o clip.** Prueba una escena antes de completar el resto. Los clips se piden por escena y requieren modelo de video configurado. El botón avisa que puede haber un cargo. El seguimiento privado se conserva; Recuperar video reutiliza la solicitud existente, sin reenviar la generación.
+8. **Reproducir y exportar.** Los clips guardados se integran con la narración del curso. La exportación usa el audio docente; el clip original con su propio audio puede revisarse por separado. Si la explicación dura más que el clip, conserva su último fotograma. PDF mediante impresión; Word/PPTX, CSV/código/JSON y video local. Solucionario excluido salvo elección explícita.
 
-Los minutos son una meta didáctica, no una duración medida. La duración final depende de las narraciones y de la profundidad generada. Los libros se generan como recursos estructurados y editables, dentro de los límites de salida del modelo; para un texto extenso conviene separarlo en materiales o capítulos. La calidad pedagógica, matemática y de la voz requiere revisión con contenido real.
+## Google, Veo y alternativas
 
-## Rendimiento y continuidad
+La integración usa documentación vigente al01/11/2026. Google retiró los IDs preview de Veo3.1 de su Gemini API el22/10/2026. No se ofrecen esos IDs obsoletos. Se admite la ruta documentada actual de **Gemini Omni Flash** y los IDs GA de Veo3.0 cuando el catálogo de la cuenta los devuelve. La disponibilidad de Veo en otros servicios de Google no implica acceso con una clave de AI Studio.
 
-- El código cliente, catálogo de cursos y credenciales se cargan solo al entrar en Cursos IA. El reproductor se carga al abrirlo. El resto de módulos no consulta estas tablas ni proveedores.
-- El curso muestra metadatos y contadores; el contenido completo se obtiene solo al abrir un módulo. No descarga audio hasta reproducir o exportar.
-- Solo hay seguimiento cada cinco segundos mientras existen trabajos pendientes/en curso y la pestaña está visible. Consulta estados pequeños; recarga contenido únicamente al cambiar el estado.
-- La generación usa un workflow separado, máximo dos solicitudes simultáneas globales y una por curso. Solo las acciones explícitas crean trabajos; los GET, la navegación, el foco y la recarga no generan IA.
-- Cada solicitud tiene identificador único y cada trabajo un claim interno. No se reintenta automáticamente una llamada que pudo tener cargo. Los fallos, respuestas incompletas y contenido inválido conservan la versión anterior; el uso recibido queda registrado. Una interrupción requiere revisión, nunca se presenta como reembolso.
-- La exportación de video usa Canvas, Web Audio y MediaRecorder del navegador, sin instalar un renderizador de video ni usar CPU del VPS para codificar. Mantén la ventana y pestaña visibles hasta terminar; al cerrar el reproductor se detiene esa exportación local. La generación de texto/voz ya despachada continúa independientemente.
-- PDF usa la impresión nativa del navegador; no requiere un servicio adicional. Word y PowerPoint se crean localmente en el servidor bajo demanda, sin IA.
-- Archivar conserva módulos, materiales, trabajos y archivos; no borra ni vuelve a generar recursos automáticamente.
+fal.ai permite buscar modelos de video de Wan, Kling, LTX, Veo y otros fabricantes. Se muestran hasta100 coincidencias por consulta y solo esquemas compatibles con texto a video y salida de video; utiliza la búsqueda para acotar. No se afirma que todos los modelos de fal estén integrados ni que alguno sea siempre el más barato. Compara su tarifa, resolución, segundos y funciones antes de generar. Empezar con clips cortos y resolución moderada permite evaluar resultados antes de gastar en un curso entero.
 
-## Instalación y comprobación
+Fuentes técnicas oficiales:
+- https://ai.google.dev/gemini-api/docs/omni
+- https://ai.google.dev/gemini-api/docs/veo
+- https://ai.google.dev/gemini-api/docs/generate-content/speech-generation
+- https://fal.ai/docs/api-reference/inference-api/queue/submit-path
+- https://fal.ai/models/fal-ai/wan/v2.7/text-to-video/api
+- https://fal.ai/models/fal-ai/ltx-2.3/text-to-video/api
 
-Aplicar la migración aditiva `202611010001_courses_ai` mediante `npm run db:deploy` y regenerar Prisma. No modifica tablas de Meta ni trabajos de imágenes. Reutiliza el mecanismo Workflow ya configurado por la plataforma (`WORKFLOW_TARGET_WORLD=local` en el VPS o el backend correspondiente en Vercel). Sin claves, permite crear y editar estructura, pero no producir IA.
+## Rendimiento, seguridad y límites
 
-Pruebas nuevas: `tests/courses-ai.test.ts` y `tests/courses-ai.integration.test.ts`. La integración requiere una base de pruebas exclusiva; el archivo exige el marcador de aislamiento usado en este entorno. Todos los proveedores son dobles explícitos. Las pruebas sintéticas acreditan ejecución y permisos, no naturalidad real de la voz ni exactitud académica.
+- Carga diferida del módulo y del reproductor. Proyectos/Meta/Efectividad no consultan Cursos IA. Ajustes puede leer expresamente los catálogos y valores iniciales; no carga cursos completos ni dispara generación.
+- Una carpeta devuelve metadatos y contadores; solo el módulo abierto descarga su contenido. Audios y clips no se descargan al listar carpetas.
+- Seguimiento cliente ligero cada5segundos únicamente con trabajos activos y pestaña visible. Solo recarga contenido al cambiar el estado. El workflow autorizado sigue en segundo plano aunque cierres la ventana.
+- Máximo2 trabajos globales y1 por curso, claim privado, control de revisiones y permiso actual. Envío de video una sola vez; después solo consulta la solicitud guardada. No se reintentan automáticamente llamadas que pudieron tener costo. Un fallo conserva contenido anterior y seguimiento disponible.
+- No se ejecuta código generado ni se controla una instalación real de Excel/Power BI. Las demostraciones de software son simuladas. El video generado se usa como ilustración; verifica números, textos y hechos antes de impartirlo.
+- La calidad académica, naturalidad de voz y acabado visual requieren revisión real. Minutos por módulo son objetivos; libros y narraciones están limitados por la salida del modelo.
+- Clips MP4 limitados a64MB, almacenamiento compartido y protegido por las mismas cuotas de espacio. Exportación local Canvas/WebAudio/MediaRecorder, sin añadir un renderizador de video ni nuevas dependencias al VPS. Mantén la pestaña visible mientras exporta; MP4/WebM según navegador.
+- Archivar conserva módulos, materiales, trabajos y archivos; no genera, cancela un cargo ni borra historia.
+
+## Instalación y pruebas
+
+Aplicar migración aditiva202611010002_ai_media_connections después de202611010001_courses_ai y regenerar Prisma. Se conservan los datos y las claves existentes. Usa el backend Workflow que ya tiene la plataforma.
+
+Pruebas permanentes: courses-ai.test.ts, courses-ai.integration.test.ts, ai-media.test.ts y ai-media.integration.test.ts. Proveedores sintéticos, ninguna llamada real facturable. La integración exige una base de pruebas exclusiva; sus fixtures se eliminan y las conexiones anteriores se restauran al terminar.

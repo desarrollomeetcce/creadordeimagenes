@@ -8,7 +8,7 @@ async function interrupted(id: string) {
   "use step";
   const { db } = await import("../lib/db");
   await db.aICourseTask.updateMany({
-    where: { id, status: { in: ["PENDING", "RUNNING"] } },
+    where: { id, status: { in: ["PENDING", "RUNNING", "RENDERING"] } },
     data: {
       status: "UNCERTAIN",
       error:

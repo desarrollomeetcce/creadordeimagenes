@@ -19,6 +19,8 @@ import {
   queueTask,
   queueTasks,
 } from "./service";
+import { courseConnections, useSharedCredential } from "./shared-credentials";
+import { settingsSchema } from "./schema";
 import { saveCredential, discover, providerSchema } from "./providers";
 import { lessonSchema, materialOutput } from "./schema";
 import {
@@ -42,24 +44,64 @@ export async function courseRoutes(
   if (p.length === 0 && method === "GET") return send(await courseList(u));
   if (p.length === 0 && method === "POST")
     return send(await createCourse(u, await body()), 201);
-  if (p[0] === "providers") {
-    if (p.length === 1 && method === "GET")
+  if (p[0] === "defaults" && p.length === 1) {
+    if (method === "GET") {
+      const c = await db.aICourseDefaults.findUnique({
+        where: { id: "global" },
+      });
+      return send({
+        revision: c?.revision ?? 0,
+        settings: settingsSchema.parse(c?.settings ?? {}),
+      });
+    }
+    if (method === "POST") {
+      const b = z
+        .object({ revision: z.number().int(), settings: settingsSchema })
+        .parse(await body());
       return send(
-        await db.aICourseCredential.findMany({
-          select: {
-            provider: true,
-            maskedKey: true,
-            models: true,
-            voices: true,
-            verifiedAt: true,
-          },
+        await db.$transaction(async (tx) => {
+          await tx.$executeRaw`SELECT pg_advisory_xact_lock(893127)`;
+          const c = await tx.aICourseDefaults.findUnique({
+            where: { id: "global" },
+          });
+          demand(
+            (c?.revision ?? 0) === b.revision,
+            "La configuración cambió. Actualiza antes de guardar.",
+            409,
+          );
+          return tx.aICourseDefaults.upsert({
+            where: { id: "global" },
+            create: { id: "global", settings: b.settings },
+            update: { settings: b.settings, revision: { increment: 1 } },
+          });
         }),
       );
+    }
+  }
+  if (p[0] === "providers") {
+    if (p.length === 1 && method === "GET")
+      return send(await courseConnections());
+    if (p.length === 3 && p[2] === "shared" && method === "POST")
+      return send(await useSharedCredential(providerSchema.parse(p[1])));
     if (p.length === 1 && method === "POST")
       return send(await saveCredential(await body()));
     if (p.length === 3 && p[2] === "discover" && method === "POST") {
       await rateLimit("courses:catalog:" + u.id, 12);
-      return send(await discover(providerSchema.parse(p[1])));
+      const b = z
+        .object({
+          query: z
+            .string()
+            .trim()
+            .max(100)
+            .regex(/^[\p{L}\p{N}._ /-]*$/u)
+            .refine(
+              (v) => !/(?:sk-|r8_|AIza)[A-Za-z0-9_-]{16,}/.test(v),
+              "Escribe el nombre del modelo, no una clave API.",
+            )
+            .default(""),
+        })
+        .parse(await body());
+      return send(await discover(providerSchema.parse(p[1]), b.query));
     }
   }
   if (p[0] === "assets" && p.length === 2 && method === "GET") {
@@ -76,6 +118,15 @@ export async function courseRoutes(
       },
     });
   }
+  if (
+    p.length === 4 &&
+    p[1] === "tasks" &&
+    p[3] === "resume" &&
+    method === "POST"
+  )
+    return send(
+      await (await import("./video-jobs")).resumeVideo(u, p[0], p[2]),
+    );
   const id = p[0];
   if (p.length === 2 && p[1] === "tasks" && method === "GET")
     return send(await courseTasks(u, id));
@@ -86,7 +137,11 @@ export async function courseRoutes(
       return send(await queueTasks(u, id, await body()), 202);
     if (p[1] === "tasks")
       return send(await queueTask(u, id, await body()), 202);
-    if (["save", "archive", "add-module", "reorder"].includes(p[1]))
+    if (
+      ["save", "archive", "add-module", "reorder", "import-modules"].includes(
+        p[1],
+      )
+    )
       return send(await mutateCourse(u, id, p[1], await body()));
   }
   if (p[1] === "modules" && p[2]) {

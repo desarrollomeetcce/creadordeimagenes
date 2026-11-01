@@ -41,10 +41,11 @@ export async function storageStatus() {
     };
   const sum = await db.storedAsset.aggregate({ _sum: { size: true } });
   const audit = await db.auditThumbnail.aggregate({ _sum: { size: true } });
-  const large = await db.largeAsset.aggregate({_sum:{size:true}});
+  const large = await db.largeAsset.aggregate({ _sum: { size: true } });
   return {
     backend,
-    usedBytes: (sum._sum.size ?? 0) + (audit._sum.size ?? 0) + (large._sum.size??0),
+    usedBytes:
+      (sum._sum.size ?? 0) + (audit._sum.size ?? 0) + (large._sum.size ?? 0),
     limitBytes: storageByteLimit(),
     maxUploadBytes: maxUploadBytes(),
   };
@@ -59,9 +60,17 @@ export async function requireStorageSpace(bytes = maxAssetBytes) {
     );
 }
 export async function store(bytes: Buffer) {
+  return storeBounded(bytes, maxAssetBytes);
+}
+export async function storeVideo(bytes: Buffer) {
+  return storeBounded(bytes, 64 * 1024 * 1024);
+}
+async function storeBounded(bytes: Buffer, limit: number) {
   demand(
-    bytes.length > 0 && bytes.length <= maxAssetBytes,
-    "El archivo procesado supera el máximo de 16 MB o está vacío.",
+    bytes.length > 0 && bytes.length <= limit,
+    limit === maxAssetBytes
+      ? "El archivo procesado supera el máximo de 16 MB o está vacío."
+      : "El clip supera el máximo de 64 MB o está vacío.",
     413,
   );
   if (storageBackend() === "postgres") {
@@ -70,9 +79,12 @@ export async function store(bytes: Buffer) {
       await tx.$executeRaw`SELECT pg_advisory_xact_lock(440819)`;
       const sum = await tx.storedAsset.aggregate({ _sum: { size: true } });
       const audit = await tx.auditThumbnail.aggregate({ _sum: { size: true } });
-      const large = await tx.largeAsset.aggregate({_sum:{size:true}});
+      const large = await tx.largeAsset.aggregate({ _sum: { size: true } });
       demand(
-        (sum._sum.size ?? 0) + (audit._sum.size ?? 0) + (large._sum.size??0) + bytes.length <=
+        (sum._sum.size ?? 0) +
+          (audit._sum.size ?? 0) +
+          (large._sum.size ?? 0) +
+          bytes.length <=
           storageByteLimit(),
         "El almacenamiento está lleno. Libera archivos temporales o amplía la capacidad.",
         413,
@@ -98,7 +110,11 @@ function databaseId(name: string) {
   return id;
 }
 export async function load(name: string) {
-  demand(!name.startsWith("large:"),"El original es grande. Utiliza su copia optimizada para generación o descárgalo desde Almacenamiento.",413);
+  demand(
+    !name.startsWith("large:"),
+    "El original es grande. Utiliza su copia optimizada para generación o descárgalo desde Almacenamiento.",
+    413,
+  );
   if (!name.startsWith("pg:")) return readFile(path(name));
   const asset = await db.storedAsset.findUnique({
     where: { id: databaseId(name) },
@@ -107,12 +123,24 @@ export async function load(name: string) {
   return Buffer.from(asset.data);
 }
 export async function remove(name: string) {
-  if(name.startsWith('large:')){
-    demand(/^large:[a-f0-9-]{36}$/.test(name),'Archivo no válido.');
-    if(await db.libraryDocument.count({where:{path:name,deletedAt:null}}))return;
-    const row=await db.largeAsset.findUnique({where:{id:name.slice(6)},select:{previewPath:true}});
-    await db.largeAsset.deleteMany({where:{id:name.slice(6)}});
-    if(row?.previewPath&&!await db.libraryDocument.count({where:{previewPath:row.previewPath,deletedAt:null}}))await remove(row.previewPath);
+  if (name.startsWith("large:")) {
+    demand(/^large:[a-f0-9-]{36}$/.test(name), "Archivo no válido.");
+    if (
+      await db.libraryDocument.count({ where: { path: name, deletedAt: null } })
+    )
+      return;
+    const row = await db.largeAsset.findUnique({
+      where: { id: name.slice(6) },
+      select: { previewPath: true },
+    });
+    await db.largeAsset.deleteMany({ where: { id: name.slice(6) } });
+    if (
+      row?.previewPath &&
+      !(await db.libraryDocument.count({
+        where: { previewPath: row.previewPath, deletedAt: null },
+      }))
+    )
+      await remove(row.previewPath);
     return;
   }
 

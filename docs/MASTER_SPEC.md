@@ -3197,3 +3197,9 @@ Si faltan claves externas, implementa las interfaces y un modo de prueba clarame
 ## Ampliación solicitada · Cursos IA · 01/11/2026 UTC
 
 Integrar Cursos IA exclusivamente OWNER, independiente de imágenes y Meta. Cursos/diplomados por prompt, público/nivel/enfoque/idioma/tono/minutos objetivo; temario revisable, módulos independientes reordenables y desarrollo individual o de pendientes. Escenas de diapositivas, pizarra, código, tablas y cuentos; voz natural seleccionable y clonación autorizada mediante proveedor. Varios materiales por módulo (guía/libro/taller/examen/diapositivas), edición y exportaciones PDF por impresión, Word, PowerPoint, CSV/código y video local. No genera ni consulta desde otros módulos. Diseño ligero, ventanas con maximizar/minimizar y cierre rojo claro. Ver docs/CURSOS_IA.md para alcance implementado, integraciones y diferencias entre demostración simulada y grabación real.
+
+## Ampliación posterior · Ajustes IA unificados y carpeta de programa
+
+Por instrucción explícita del usuario: conexiones compartidas en Ajustes IA, con tarjetas plegables y pestañas Afiches/Cursos para parámetros. Mantener claves previas hasta elegir compartir; una clave por proveedor puede servir a varios modelos con su consumo/límites compartidos. Mostrar solo capacidades aplicables (texto/voz/imagen/video). Google vigente y fal.ai permiten alternativas de clips; no incluir modelos retirados ni confundir FLUX/Nano Banana con video.
+
+Crear carpeta primero con nombre/tipo/descripción/público, incluido Otro. Dentro: Temario con generación por IA o pegado, cantidad, dificultad/enfoque y proveedores adecuados; configuración en línea. Generar/desarrollar módulos de forma independiente y conservar archivos/historia. Detalles implementados y límites en docs/CURSOS_IA.md.

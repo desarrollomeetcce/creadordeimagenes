@@ -21,7 +21,7 @@ test("Cursos: configuraciones y escenas conservan pasos independientes y límite
   assert.throws(() => settingsSchema.parse({ moduleCount: 100 }));
   assert.throws(() => settingsSchema.parse({ provider: "unknown" }));
   assert.throws(() =>
-    courseInput.parse({ title: "a", prompt: "x", settings: {} }),
+    courseInput.parse({ title: "", prompt: "x", settings: {} }),
   );
   const lesson = parseGenerated(
     "```json\n" +

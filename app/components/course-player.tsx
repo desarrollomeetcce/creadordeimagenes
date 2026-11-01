@@ -38,7 +38,52 @@ export function drawScene(
   number: number,
   total: number,
   image?: HTMLImageElement,
+  clip?: HTMLVideoElement,
 ) {
+  ctx.setTransform(
+    ctx.canvas.width / 1280,
+    0,
+    0,
+    ctx.canvas.height / 720,
+    0,
+    0,
+  );
+  if (clip && clip.readyState >= 2) {
+    ctx.fillStyle = "#142032";
+    ctx.fillRect(0, 0, 1280, 720);
+    const scale = Math.min(1280 / clip.videoWidth, 720 / clip.videoHeight);
+    ctx.drawImage(
+      clip,
+      (1280 - clip.videoWidth * scale) / 2,
+      (720 - clip.videoHeight * scale) / 2,
+      clip.videoWidth * scale,
+      clip.videoHeight * scale,
+    );
+    ctx.fillStyle = "#101926c9";
+    ctx.fillRect(0, 0, 1280, 90);
+    ctx.fillRect(0, 580, 1280, 140);
+    ctx.fillStyle = "#fff";
+    ctx.font = "bold 28px sans-serif";
+    wrap(ctx, scene.title, 40, 54, 1200, 32, 1);
+    ctx.font = "23px sans-serif";
+    wrap(
+      ctx,
+      scene.steps[
+        Math.min(
+          scene.steps.length - 1,
+          Math.floor(progress * scene.steps.length),
+        )
+      ] ?? "",
+      40,
+      624,
+      1200,
+      30,
+      2,
+    );
+    ctx.fillStyle = "#9070d6";
+    ctx.fillRect(0, 712, 1280 * Math.min(1, progress), 8);
+    return;
+  }
   const w = 1280,
     h = 720,
     p = Math.max(0, Math.min(1, progress)),
@@ -168,16 +213,41 @@ export function drawScene(
   ctx.fillStyle = dark ? "#5ee0c0" : "#8e70df";
   ctx.fillRect(56, 682, 1168 * p, 6);
 }
+async function loadClip(id: string) {
+  const video = document.createElement("video");
+  video.muted = true;
+  video.playsInline = true;
+  video.preload = "auto";
+  video.src = assetURL(id);
+  await new Promise<void>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      video.removeAttribute("src");
+      video.load();
+      reject(Error("No se pudo cargar el clip de video."));
+    }, 30000);
+    video.onloadeddata = () => {
+      clearTimeout(timer);
+      resolve();
+    };
+    video.onerror = () => {
+      clearTimeout(timer);
+      reject(Error("No se pudo leer el clip de video."));
+    };
+  });
+  return video;
+}
 export function CoursePlayer({
   lesson,
   assets,
   revision,
   title,
+  resolution = "720p",
 }: {
   lesson: Lesson;
   assets: Asset[];
   revision: number;
   title: string;
+  resolution?: "720p" | "1080p";
 }) {
   const canvas = useRef<HTMLCanvasElement>(null),
     stop = useRef(false),
@@ -203,6 +273,11 @@ export function CoursePlayer({
     if (busy) return;
     let active = true;
     const draw = async () => {
+      const va = currentAssets.find(
+        (a) => a.kind === "VIDEO" && a.scene === scene,
+      );
+      let clip: HTMLVideoElement | undefined;
+      if (va) clip = await loadClip(va.id).catch(() => undefined);
       const a = currentAssets.find(
         (a) => a.kind === "IMAGE" && a.scene === scene,
       );
@@ -223,7 +298,13 @@ export function CoursePlayer({
             scene,
             lesson.scenes.length,
             image,
+            clip,
           );
+      }
+      if (clip) {
+        clip.pause();
+        clip.removeAttribute("src");
+        clip.load();
       }
     };
     void draw();
@@ -241,6 +322,7 @@ export function CoursePlayer({
         ? "Exportando video; mantén esta ventana visible…"
         : "Reproduciendo…",
     );
+    let activeClip: HTMLVideoElement | null = null;
     let ctxAudio: AudioContext | null = null,
       recorder: MediaRecorder | null = null,
       stream: MediaStream | null = null,
@@ -269,11 +351,11 @@ export function CoursePlayer({
           throw Error(
             "Este navegador no admite exportación de video. Usa Chrome o Edge actualizado.",
           );
-        stream = cv.captureStream(20);
+        stream = cv.captureStream(24);
         dest.stream.getAudioTracks().forEach((t) => stream!.addTrack(t));
         recorder = new MediaRecorder(stream, {
           mimeType: mime,
-          videoBitsPerSecond: 1800000,
+          videoBitsPerSecond: resolution === "1080p" ? 4000000 : 1800000,
         });
         recorder.ondataavailable = (e) => {
           if (e.data.size) chunks.push(e.data);
@@ -301,6 +383,11 @@ export function CoursePlayer({
           await image.decode().catch(() => {});
           if (!image.naturalWidth) image = undefined;
         }
+        const videoAsset = currentAssets.find(
+          (a) => a.scene === i && a.kind === "VIDEO",
+        );
+        const clip = videoAsset ? await loadClip(videoAsset.id) : undefined;
+        activeClip = clip ?? null;
         let buffer: AudioBuffer | null = null,
           source: AudioBufferSourceNode | null = null;
         if (a) {
@@ -320,6 +407,7 @@ export function CoursePlayer({
           source.connect(ctxAudio.destination);
           source.start();
         }
+        if (clip) await clip.play();
         const start = ctxAudio.currentTime;
         await new Promise<void>((resolve) => {
           const frame = () => {
@@ -328,7 +416,7 @@ export function CoursePlayer({
               return;
             }
             const p = (ctxAudio!.currentTime - start) / duration;
-            drawScene(ctx, s, p, i, lesson.scenes.length, image);
+            drawScene(ctx, s, p, i, lesson.scenes.length, image, clip);
             if (p >= 1) resolve();
             else requestAnimationFrame(frame);
           };
@@ -336,6 +424,12 @@ export function CoursePlayer({
         });
         source?.stop();
         source?.disconnect();
+        if (clip) {
+          clip.pause();
+          clip.removeAttribute("src");
+          clip.load();
+          activeClip = null;
+        }
       }
       if (recorder && recorder.state !== "inactive") recorder.stop();
       await ended;
@@ -356,6 +450,11 @@ export function CoursePlayer({
       if (alive.current)
         setError(e instanceof Error ? e.message : "No se pudo reproducir.");
     } finally {
+      if (activeClip) {
+        activeClip.pause();
+        activeClip.removeAttribute("src");
+        activeClip.load();
+      }
       if (recorder?.state === "recording") recorder.stop();
       stream?.getTracks().forEach((t) => t.stop());
       if (ctxAudio && ctxAudio.state !== "closed")
@@ -372,8 +471,8 @@ export function CoursePlayer({
     <div className="course-player">
       <canvas
         ref={canvas}
-        width={1280}
-        height={720}
+        width={resolution === "1080p" ? 1920 : 1280}
+        height={resolution === "1080p" ? 1080 : 720}
         aria-label={"Presentación: " + lesson.scenes[scene].title}
       />
       <div className="course-toolbar">

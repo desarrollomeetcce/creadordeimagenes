@@ -1,0 +1,6 @@
+ALTER TABLE "AICourseCredential" ALTER COLUMN "encryptedKey" DROP NOT NULL;
+ALTER TABLE "AICourseCredential" ALTER COLUMN "maskedKey" DROP NOT NULL;
+ALTER TABLE "AICourseCredential" ADD COLUMN "shared" BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE "AICourseCredential" ADD COLUMN "sourceRevision" INTEGER;
+CREATE TABLE "AICourseDefaults"("id" TEXT PRIMARY KEY,"settings" JSONB NOT NULL DEFAULT '{}',"revision" INTEGER NOT NULL DEFAULT 1,"updatedAt" TIMESTAMP(3) NOT NULL);
+ALTER TABLE "AICourse" ADD COLUMN "description" TEXT NOT NULL DEFAULT '';

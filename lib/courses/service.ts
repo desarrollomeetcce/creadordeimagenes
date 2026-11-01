@@ -1,3 +1,4 @@
+import { parseCourseOutline } from "./outline";
 import { randomUUID } from "node:crypto";
 import type { Prisma } from "@prisma/client";
 import { db } from "../db";
@@ -66,6 +67,8 @@ export async function courseList(u: Actor) {
     select: {
       id: true,
       title: true,
+      description: true,
+      settings: true,
       kind: true,
       updatedAt: true,
       _count: { select: { modules: true } },
@@ -87,7 +90,7 @@ export async function courseTasks(u: Actor, id: string) {
   await db.aICourseTask.updateMany({
     where: {
       courseId: id,
-      status: "RUNNING",
+      status: { in: ["RUNNING", "RENDERING"] },
       heartbeatAt: { lt: new Date(Date.now() - 8 * 60000) },
     },
     data: {
@@ -96,7 +99,7 @@ export async function courseTasks(u: Actor, id: string) {
         "La ejecución se interrumpió. Revisa el proveedor antes de autorizar otra generación; puede haber cargos.",
     },
   });
-  return db.aICourseTask.findMany({
+  const tasks = await db.aICourseTask.findMany({
     where: { courseId: id },
     orderBy: { createdAt: "desc" },
     take: 40,
@@ -109,6 +112,16 @@ export async function courseTasks(u: Actor, id: string) {
       updatedAt: true,
     },
   });
+  const resumable = tasks.some(
+    (t) =>
+      t.kind === "VIDEO" && ["UNCERTAIN", "NEEDS_REVIEW"].includes(t.status),
+  )
+    ? await db.$queryRaw<
+        { id: string }[]
+      >`SELECT "id" FROM "AICourseTask" WHERE "courseId"=${id} AND "kind"='VIDEO' AND "status" IN ('UNCERTAIN','NEEDS_REVIEW') AND "input" ? 'remote'`
+    : [];
+  const ids = new Set(resumable.map((t) => t.id));
+  return tasks.map((t) => ({ ...t, canResume: ids.has(t.id) }));
 }
 export async function courseOverview(u: Actor, id: string) {
   await courseOwner(u);
@@ -170,7 +183,7 @@ export async function courseDetail(u: Actor, id: string) {
   await db.aICourseTask.updateMany({
     where: {
       courseId: id,
-      status: "RUNNING",
+      status: { in: ["RUNNING", "RENDERING"] },
       heartbeatAt: { lt: new Date(Date.now() - 8 * 60000) },
     },
     data: {
@@ -245,7 +258,10 @@ export async function mutateCourse(
     );
     demand(
       !(await tx.aICourseTask.count({
-        where: { courseId: id, status: { in: ["PENDING", "RUNNING"] } },
+        where: {
+          courseId: id,
+          status: { in: ["PENDING", "RUNNING", "RENDERING"] },
+        },
       })),
       "Espera a que termine el trabajo antes de modificar el curso.",
       409,
@@ -281,6 +297,29 @@ export async function mutateCourse(
           courseId: id,
           position: (max._max.position ?? -1) + 1,
         },
+      });
+      await tx.aICourse.update({
+        where: { id },
+        data: { revision: { increment: 1 } },
+      });
+    } else if (action === "import-modules") {
+      const text = z.object({ text: z.string().max(30000) }).parse(b.data).text;
+      const modules = parseCourseOutline(text),
+        settings = settingsSchema.parse(c.settings);
+      const count = await tx.aICourseModule.count({ where: { courseId: id } });
+      demand(count + modules.length <= 100, "Máximo 100 módulos por programa.");
+      const max = await tx.aICourseModule.aggregate({
+        where: { courseId: id },
+        _max: { position: true },
+      });
+      await tx.aICourseModule.createMany({
+        data: modules.map((m, i) => ({
+          ...m,
+          courseId: id,
+          minutes: settings.minutes,
+          style: settings.style,
+          position: (max._max.position ?? -1) + 1 + i,
+        })),
       });
       await tx.aICourse.update({
         where: { id },
@@ -337,7 +376,10 @@ export async function saveModule(
     );
     demand(
       !(await tx.aICourseTask.count({
-        where: { courseId, status: { in: ["PENDING", "RUNNING"] } },
+        where: {
+          courseId,
+          status: { in: ["PENDING", "RUNNING", "RENDERING"] },
+        },
       })),
       "Espera a que termine el trabajo.",
       409,
@@ -396,10 +438,11 @@ export async function dispatchCourse(id: string) {
 const taskInput = z
   .object({
     requestId: z.uuid(),
-    kind: z.enum(["OUTLINE", "LESSON", "MATERIAL", "SPEECH", "IMAGE"]),
+    kind: z.enum(["OUTLINE", "LESSON", "MATERIAL", "SPEECH", "IMAGE", "VIDEO"]),
     moduleId: z.string().optional(),
     materialId: z.string().optional(),
     scene: z.number().int().min(0).max(15).optional(),
+    prompt: z.string().trim().max(4000).optional(),
     revision: z.number().int(),
   })
   .strict();
@@ -481,7 +524,7 @@ async function prepareTask(
     );
   if (b.kind === "MATERIAL")
     demand(material, "Selecciona un material de este módulo.");
-  if (b.kind === "SPEECH" || b.kind === "IMAGE") {
+  if (b.kind === "SPEECH" || b.kind === "IMAGE" || b.kind === "VIDEO") {
     const lesson = lessonSchema.parse(module!.lesson);
     demand(
       b.scene !== undefined && lesson.scenes[b.scene],
@@ -502,7 +545,7 @@ async function prepareTask(
     );
   }
   const pending = await tx.aICourseTask.findMany({
-    where: { courseId, status: { in: ["PENDING", "RUNNING"] } },
+    where: { courseId, status: { in: ["PENDING", "RUNNING", "RENDERING"] } },
     select: { input: true, kind: true },
   });
   demand(pending.length < 24, "Espera a que avance la cola del curso.", 409);
@@ -518,11 +561,13 @@ async function prepareTask(
     409,
   );
   const provider =
-    b.kind === "SPEECH"
-      ? settings.voiceProvider
-      : b.kind === "IMAGE"
-        ? "openai"
-        : settings.provider;
+    b.kind === "VIDEO"
+      ? settings.videoProvider
+      : b.kind === "SPEECH"
+        ? settings.voiceProvider
+        : b.kind === "IMAGE"
+          ? settings.imageProvider
+          : settings.provider;
   const selectedCredential = await tx.aICourseCredential.findUnique({
     where: { provider },
     select: { revision: true },
@@ -536,7 +581,12 @@ async function prepareTask(
     ...b,
     credentialRevision: selectedCredential.revision,
     settings,
-    course: { title: course.title, prompt: course.prompt, kind: course.kind },
+    course: {
+      title: course.title,
+      description: course.description,
+      prompt: course.prompt,
+      kind: course.kind,
+    },
     module: module
       ? {
           id: module.id,
@@ -656,6 +706,12 @@ const exampleLesson = {
   references: [],
 };
 export async function processCourseTask(id: string) {
+  const remote = await db.aICourseTask.findUnique({
+    where: { id },
+    select: { status: true },
+  });
+  if (remote?.status === "RENDERING")
+    return (await import("./video-jobs")).pollVideoTask(id);
   const token = randomUUID();
   const claimed = await db.$transaction(async (tx) => {
     await lock(tx);
@@ -684,12 +740,12 @@ export async function processCourseTask(id: string) {
     }
     const active = await tx.aICourseTask.count({
       where: {
-        status: "RUNNING",
+        status: { in: ["RUNNING", "RENDERING"] },
         heartbeatAt: { gte: new Date(Date.now() - 8 * 60000) },
       },
     });
     const same = await tx.aICourseTask.count({
-      where: { courseId: t.courseId, status: "RUNNING" },
+      where: { courseId: t.courseId, status: { in: ["RUNNING", "RENDERING"] } },
     });
     if (active >= 2 || same) return "WAIT" as const;
     await tx.aICourseTask.update({
@@ -707,12 +763,35 @@ export async function processCourseTask(id: string) {
   if (typeof claimed === "string") return claimed;
   const t = claimed,
     b = t.input as any;
+  let assetMime = "image/png";
   let assetPath: string | null = null;
   let usage: unknown = {};
   try {
     await courseOwner({ id: t.actorId, role: "OWNER" });
     let output: unknown = null;
-    if (t.kind === "SPEECH") {
+    if (t.kind === "VIDEO") {
+      const lesson = lessonSchema.parse(b.module.lesson);
+      const scene = lesson.scenes[b.scene];
+      const { submitVideo } = await import("./video");
+      const remote = await submitVideo(
+        settingsSchema.parse(b.settings),
+        b.prompt ||
+          scene.illustrationPrompt ||
+          scene.title + " — " + scene.narration,
+        b.credentialRevision,
+      );
+      await db.aICourseTask.updateMany({
+        where: { id, status: "RUNNING", leaseToken: token },
+        data: {
+          status: "RENDERING",
+          leaseToken: null,
+          heartbeatAt: new Date(),
+          input: json({ ...b, remote }),
+          usage: json({ requestId: remote.requestId ?? null }),
+        },
+      });
+      return "WAIT" as const;
+    } else if (t.kind === "SPEECH") {
       const lesson = lessonSchema.parse(b.module.lesson);
       const audio = await speech(
         b.settings.voiceProvider,
@@ -720,26 +799,34 @@ export async function processCourseTask(id: string) {
         b.settings.voiceId,
         lesson.scenes[b.scene].narration,
         b.credentialRevision,
+        b.settings.voiceSpeed,
+        b.settings.tone,
       );
-      assetPath = await store(audio);
+      assetPath = await store(audio.bytes);
+      assetMime = audio.mime;
     } else if (t.kind === "IMAGE") {
       const lesson = lessonSchema.parse(b.module.lesson);
       const c = await requireModel(
-        "openai",
+        b.settings.imageProvider ?? "openai",
         b.settings.imageModel ?? "",
         "image",
         b.credentialRevision,
       );
       const { adapter } = await import("../providers");
-      const r = await adapter("openai").generate(c.key, {
+      const r = await adapter(
+        b.settings.imageProvider === "gemini" ? "google" : "openai",
+      ).generate(c.key, {
         model: b.settings.imageModel,
         prompt:
           "Ilustración educativa sin texto, apropiada para " +
           b.settings.audience +
           ". " +
           lesson.scenes[b.scene].illustrationPrompt,
-        quality: "low",
-        size: "1536x1024",
+        quality:
+          b.settings.imageProvider === "gemini"
+            ? "default"
+            : (b.settings.imageQuality ?? "low"),
+        size: b.settings.imageProvider === "gemini" ? "default" : "1536x1024",
       });
       usage = r.usage;
       assetPath = await store(r.bytes);
@@ -841,7 +928,7 @@ export async function processCourseTask(id: string) {
             scene: b.scene,
             kind: t.kind,
             path: assetPath!,
-            mime: t.kind === "SPEECH" ? "audio/mpeg" : "image/png",
+            mime: assetMime,
           },
         });
       await tx.aICourse.update({
@@ -916,7 +1003,10 @@ export async function saveMaterial(
     );
     demand(
       !(await tx.aICourseTask.count({
-        where: { courseId, status: { in: ["PENDING", "RUNNING"] } },
+        where: {
+          courseId,
+          status: { in: ["PENDING", "RUNNING", "RENDERING"] },
+        },
       })),
       "Espera a que termine el trabajo.",
       409,

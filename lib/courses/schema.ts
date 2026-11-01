@@ -16,8 +16,9 @@ export const styleLabels: Record<string, string> = {
 export const settingsSchema = z
   .object({
     audience: z
-      .enum(["professionals", "children", "families"])
+      .enum(["professionals", "children", "families", "other"])
       .default("professionals"),
+    audienceDetail: z.string().trim().max(200).default(""),
     level: z.enum(["basic", "intermediate", "advanced"]).default("basic"),
     approach: z.enum(["theory", "practice", "mixed"]).default("mixed"),
     style: z.enum(styles).default("slides"),
@@ -31,8 +32,19 @@ export const settingsSchema = z
     minutes: z.number().int().min(1).max(60).default(10),
     provider: z.enum(["openai", "gemini", "anthropic"]).default("openai"),
     model: z.string().trim().max(150).default(""),
+    imageProvider: z.enum(["openai", "gemini"]).default("openai"),
+    imageQuality: z.enum(["low", "medium", "high"]).default("low"),
+    videoProvider: z.enum(["gemini", "fal"]).default("gemini"),
+    videoModel: z.string().max(150).default(""),
+    videoResolution: z.string().max(30).default("720p"),
+    videoDuration: z.number().int().min(3).max(20).default(6),
+    videoAspect: z.enum(["16:9", "9:16"]).default("16:9"),
+    exportResolution: z.enum(["720p", "1080p"]).default("720p"),
+    voiceSpeed: z.number().min(0.5).max(2).default(1),
     imageModel: z.string().max(150).default(""),
-    voiceProvider: z.enum(["openai", "elevenlabs"]).default("elevenlabs"),
+    voiceProvider: z
+      .enum(["openai", "gemini", "elevenlabs"])
+      .default("elevenlabs"),
     voiceId: z.string().max(150).default(""),
     voiceModel: z.string().max(150).default(""),
     tone: z.string().max(300).default("Claro, cercano y profesional"),
@@ -41,8 +53,11 @@ export const settingsSchema = z
 export type CourseSettings = z.infer<typeof settingsSchema>;
 export const courseInput = z.object({
   title: z.string().trim().min(1).max(200),
-  kind: z.enum(["course", "diploma"]).default("course"),
-  prompt: z.string().trim().min(10).max(20000),
+  kind: z
+    .enum(["course", "diploma", "program", "workshop", "seminar"])
+    .default("course"),
+  description: z.string().trim().max(1000).default(""),
+  prompt: z.string().trim().max(20000).default(""),
   settings: settingsSchema,
 });
 export const moduleInput = z.object({

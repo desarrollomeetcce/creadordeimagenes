@@ -530,3 +530,61 @@ html.dark .course-window {
     padding: 30px 18px;
   }
 }
+.course-folder-description {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+.course-audience {
+  font-size: 10px !important;
+  color: var(--accent) !important;
+}
+.course-course strong {
+  line-height: 1.5;
+}
+.course-syllabus {
+  border: 1px solid #a69abe44;
+  border-radius: 14px;
+  padding: 18px;
+  margin-bottom: 18px;
+}
+.course-syllabus h3 {
+  margin: 0 0 8px;
+}
+.course-syllabus .course-toolbar button[aria-pressed="true"] {
+  background: #7955d4;
+  color: #fff;
+  border-color: #7955d4;
+}
+.course-settings-link {
+  color: #fff;
+  text-decoration: none;
+  border: 1px solid #ffffff40;
+  border-radius: 9px;
+  padding: 10px 13px;
+  font-size: 12px;
+}
+.course-generated-video {
+  width: 100%;
+  max-width: 700px;
+  border-radius: 10px;
+  max-height: 400px;
+}
+.course-video-action {
+  width: 100%;
+}
+.course-video-action form {
+  display: grid;
+  gap: 12px;
+}
+.course-syllabus > div.course-inline-form {
+  margin: 16px 0 0;
+}
+.course-inline-form textarea {
+  width: 100%;
+  box-sizing: border-box;
+}

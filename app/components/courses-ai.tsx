@@ -17,7 +17,7 @@ import {
   type CourseSettings,
   type Lesson,
 } from "@/lib/courses/schema";
-import { PasswordInput } from "./password-input";
+import { parseCourseOutline } from "@/lib/courses/outline";
 import "./courses-ai.css";
 const CoursePlayer = dynamic(
   () => import("./course-player").then((m) => m.CoursePlayer),
@@ -27,7 +27,12 @@ type Provider = {
   provider: string;
   maskedKey: string;
   verifiedAt: string | null;
-  models: { id: string; name: string; kind: string }[];
+  models: {
+    id: string;
+    name: string;
+    kind: string;
+    options?: { resolutions: string[]; durations: number[]; aspects: string[] };
+  }[];
   voices: { id: string; name: string }[];
 };
 type Material = {
@@ -52,6 +57,7 @@ type Module = {
   assets: { id: string; revision: number; scene: number; kind: string }[];
 };
 type Course = {
+  description: string;
   id: string;
   title: string;
   kind: string;
@@ -59,15 +65,25 @@ type Course = {
   revision: number;
   settings: CourseSettings;
   modules: Module[];
-  tasks: { id: string; kind: string; status: string; error: string | null }[];
+  tasks: {
+    id: string;
+    kind: string;
+    status: string;
+    error: string | null;
+    canResume?: boolean;
+  }[];
 };
 type Summary = {
+  description: string;
+  settings: CourseSettings;
   id: string;
   title: string;
   kind: string;
   _count: { modules: number };
 };
 const labels: Record<string, string> = {
+  VIDEO: "Clip de video",
+  RENDERING: "Procesando video",
   OUTLINE: "Temario",
   LESSON: "Módulo",
   MATERIAL: "Material",
@@ -205,34 +221,64 @@ function Select({
     </label>
   );
 }
+const programLabels: Record<string, string> = {
+  course: "Curso",
+  diploma: "Diplomado",
+  program: "Programa",
+  workshop: "Taller",
+  seminar: "Seminario",
+};
+const audienceLabels: Record<string, string> = {
+  professionals: "Profesionales y técnicos",
+  children: "Niños",
+  families: "Padres y familias",
+  other: "Otro público",
+};
+function audienceText(s: CourseSettings) {
+  return s.audience === "other"
+    ? s.audienceDetail || "Otro público"
+    : audienceLabels[s.audience];
+}
 function CourseForm({
   course,
   providers,
   busy,
   submit,
+  initialSettings,
+  settingsOnly = false,
 }: {
   course?: Course;
   providers: Provider[];
   busy: boolean;
-  submit: (b: unknown) => void;
+  submit: (b: any) => void;
+  initialSettings?: CourseSettings;
+  settingsOnly?: boolean;
 }) {
-  const s = course?.settings ?? settingsSchema.parse({}),
+  const s = settingsSchema.parse(course?.settings ?? initialSettings ?? {}),
     [provider, setProvider] = useState(s.provider),
     [voice, setVoice] = useState(s.voiceProvider),
-    textModels =
+    [image, setImage] = useState(s.imageProvider),
+    [video, setVideo] = useState(s.videoProvider),
+    [videoModel, setVideoModel] = useState(s.videoModel);
+  const models = (p: string, k: string) =>
       providers
-        .find((p) => p.provider === provider)
-        ?.models.filter((m) => m.kind === "text") ?? [],
-    voiceConfig = providers.find((p) => p.provider === voice),
-    imageModels =
-      providers
-        .find((p) => p.provider === "openai")
-        ?.models.filter((m) => m.kind === "image") ?? [];
+        .find((x) => x.provider === p)
+        ?.models.filter((m) => m.kind === k) ?? [],
+    v = models(video, "video").find((m) => m.id === videoModel),
+    opts = v?.options;
   function save(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
-    const f = new FormData(e.currentTarget);
-    const fields = [
+    const f = new FormData(e.currentTarget),
+      settings: Record<string, unknown> = {
+        provider,
+        voiceProvider: voice,
+        imageProvider: image,
+        videoProvider: video,
+        videoModel,
+      };
+    for (const k of [
       "audience",
+      "audienceDetail",
       "level",
       "approach",
       "style",
@@ -242,70 +288,100 @@ function CourseForm({
       "voiceId",
       "voiceModel",
       "imageModel",
-    ];
-    const settings: Record<string, unknown> = {
-      provider,
-      voiceProvider: voice,
-      moduleCount: Number(f.get("moduleCount")),
-      minutes: Number(f.get("minutes")),
-    };
-    fields.forEach((k) => (settings[k] = f.get(k) ?? ""));
-    submit({
-      title: f.get("title"),
-      kind: f.get("kind"),
-      prompt: f.get("prompt"),
-      settings,
-    });
+      "imageQuality",
+      "videoResolution",
+      "videoAspect",
+      "exportResolution",
+    ])
+      settings[k] = f.get(k) ?? s[k as keyof CourseSettings];
+    for (const k of ["moduleCount", "minutes", "voiceSpeed", "videoDuration"])
+      settings[k] = Number(f.get(k) ?? s[k as keyof CourseSettings]);
+    submit(
+      settingsOnly
+        ? { settings }
+        : {
+            title: f.get("title"),
+            kind: f.get("kind"),
+            description: f.get("description"),
+            prompt: f.get("prompt"),
+            settings,
+          },
+    );
   }
+  const selectModels = (p: string, kind: string) => [
+    { value: "", label: "Seleccionar modelo" },
+    ...models(p, kind).map((m) => ({ value: m.id, label: m.name })),
+  ];
   return (
-    <form onSubmit={save} className="course-form">
-      <div className="course-grid">
+    <form className="course-form" onSubmit={save}>
+      {!settingsOnly && (
+        <details>
+          <summary>Datos de la carpeta</summary>
+          <div className="course-grid">
+            <label>
+              Nombre
+              <input
+                required
+                name="title"
+                maxLength={200}
+                defaultValue={course?.title ?? ""}
+              />
+            </label>
+            <Select
+              name="kind"
+              label="Tipo de programa"
+              value={course?.kind ?? "course"}
+              options={Object.entries(programLabels).map(([value, label]) => ({
+                value,
+                label,
+              }))}
+            />
+          </div>
+          <label>
+            Descripción breve
+            <textarea
+              name="description"
+              rows={2}
+              maxLength={1000}
+              defaultValue={course?.description ?? ""}
+            />
+          </label>
+        </details>
+      )}
+      {!settingsOnly && (
         <label>
-          Nombre
-          <input
-            required
-            name="title"
-            maxLength={200}
-            defaultValue={course?.title ?? ""}
-            placeholder="Ej. Diplomado práctico de Python"
+          Objetivo o instrucciones del temario
+          <textarea
+            name="prompt"
+            rows={4}
+            maxLength={20000}
+            defaultValue={course?.prompt ?? ""}
+            placeholder="¿Qué deben aprender y practicar? También puedes pegar tus módulos más abajo."
           />
         </label>
-        <Select
-          name="kind"
-          label="Programa"
-          value={course?.kind ?? "course"}
-          options={[
-            { value: "course", label: "Curso" },
-            { value: "diploma", label: "Diplomado" },
-          ]}
-        />
-      </div>
-      <label>
-        ¿Qué quieres enseñar?
-        <textarea
-          required
-          minLength={10}
-          maxLength={20000}
-          name="prompt"
-          rows={5}
-          defaultValue={course?.prompt ?? ""}
-          placeholder="Explica el tema, a quién va dirigido, qué debe aprender y practicar. Puedes indicar edad, colegio, casos, tono y conocimientos previos."
-        />
-      </label>
+      )}
       <div className="course-grid">
         <Select
           name="audience"
-          label="Público"
+          label="Público objetivo"
           value={s.audience}
-          options={[
-            { value: "professionals", label: "Profesionales / técnicos" },
-            { value: "children", label: "Niños" },
-            { value: "families", label: "Padres y familias" },
-          ]}
+          options={Object.entries(audienceLabels).map(([value, label]) => ({
+            value,
+            label,
+          }))}
         />
+        <label>
+          Detalle del público · opcional
+          <input
+            name="audienceDetail"
+            maxLength={200}
+            defaultValue={s.audienceDetail}
+            placeholder="Edad, especialidad o público personalizado"
+          />
+        </label>
         <Select
           name="level"
-          label="Nivel"
+          label="Dificultad del curso"
           value={s.level}
           options={[
             { value: "basic", label: "Básico" },
@@ -323,6 +399,28 @@ function CourseForm({
             { value: "mixed", label: "Teoría + práctica" },
           ]}
         />
+        <label>
+          Cantidad de módulos al generar con IA
+          <input
+            name="moduleCount"
+            type="number"
+            required
+            min={1}
+            max={24}
+            defaultValue={s.moduleCount}
+          />
+        </label>
+        <label>
+          Minutos objetivo por módulo
+          <input
+            name="minutes"
+            type="number"
+            required
+            min={1}
+            max={60}
+            defaultValue={s.minutes}
+          />
+        </label>
         <Select
           name="style"
           label="Estilo inicial"
@@ -333,51 +431,22 @@ function CourseForm({
           }))}
         />
         <label>
-          Módulos iniciales
-          <input
-            name="moduleCount"
-            type="number"
-            min={1}
-            max={24}
-            required
-            defaultValue={s.moduleCount}
-          />
-        </label>
-        <label>
-          Minutos objetivo por módulo
-          <input
-            name="minutes"
-            type="number"
-            min={1}
-            max={60}
-            required
-            defaultValue={s.minutes}
-          />
-        </label>
-        <label>
           Idioma
           <input
             name="language"
-            maxLength={60}
             required
+            maxLength={60}
             defaultValue={s.language}
           />
         </label>
-        <label>
-          Tono docente
-          <input name="tone" maxLength={300} defaultValue={s.tone} />
-        </label>
       </div>
       <details open={!s.model}>
-        <summary>IA y voz</summary>
-        <p className="muted">
-          Primero guarda tus claves y consulta los modelos en Conexiones. Se
-          genera únicamente al solicitarlo; cada proveedor cobra su API.
-        </p>
+        <summary>Texto · desarrollar clases y materiales</summary>
         <div className="course-grid">
           <label>
-            IA de contenido
+            Proveedor
             <select
+              name="contentProvider"
               value={provider}
               onChange={(e) => setProvider(e.target.value as typeof provider)}
             >
@@ -389,227 +458,420 @@ function CourseForm({
           <Select
             key={provider}
             name="model"
-            label="Modelo disponible"
-            value={s.provider === provider ? s.model : ""}
-            options={[
-              { value: "", label: "Seleccionar modelo" },
-              ...textModels.map((m) => ({ value: m.id, label: m.name })),
-            ]}
+            label="Modelo de texto"
+            value={provider === s.provider ? s.model : ""}
+            options={selectModels(provider, "text")}
           />
+        </div>
+      </details>
+      <details>
+        <summary>Voz · narrar las clases</summary>
+        <div className="course-grid">
           <label>
-            Proveedor de voz
+            Proveedor
             <select
+              name="voiceProvider"
               value={voice}
               onChange={(e) => setVoice(e.target.value as typeof voice)}
             >
-              <option value="elevenlabs">ElevenLabs · voces y clonación</option>
-              <option value="openai">OpenAI · voces naturales</option>
+              <option value="openai">OpenAI</option>
+              <option value="gemini">Google Gemini</option>
+              <option value="elevenlabs">ElevenLabs</option>
             </select>
           </label>
           <Select
             key={voice + "model"}
             name="voiceModel"
             label="Modelo de voz"
-            value={s.voiceProvider === voice ? s.voiceModel : ""}
-            options={[
-              { value: "", label: "Seleccionar modelo" },
-              ...(
-                voiceConfig?.models.filter((m) => m.kind === "speech") ?? []
-              ).map((m) => ({ value: m.id, label: m.name })),
-            ]}
+            value={voice === s.voiceProvider ? s.voiceModel : ""}
+            options={selectModels(voice, "speech")}
           />
           <Select
             key={voice + "voice"}
             name="voiceId"
             label="Voz"
-            value={s.voiceProvider === voice ? s.voiceId : ""}
+            value={voice === s.voiceProvider ? s.voiceId : ""}
             options={[
               { value: "", label: "Seleccionar voz" },
-              ...(voiceConfig?.voices ?? []).map((m) => ({
+              ...(
+                providers.find((p) => p.provider === voice)?.voices ?? []
+              ).map((v) => ({ value: v.id, label: v.name })),
+            ]}
+          />
+          {voice === "openai" && (
+            <label>
+              Velocidad de voz · OpenAI
+              <input
+                type="number"
+                name="voiceSpeed"
+                step={0.05}
+                min={0.5}
+                max={2}
+                defaultValue={s.voiceSpeed}
+              />
+            </label>
+          )}
+          <label>
+            Tono del profesor
+            <input name="tone" maxLength={300} defaultValue={s.tone} />
+          </label>
+        </div>
+      </details>
+      <details>
+        <summary>Ilustraciones · opcionales</summary>
+        <div className="course-grid">
+          <label>
+            Proveedor
+            <select
+              name="imageProvider"
+              value={image}
+              onChange={(e) => setImage(e.target.value as typeof image)}
+            >
+              <option value="openai">OpenAI</option>
+              <option value="gemini">Google Gemini / Nano Banana</option>
+            </select>
+          </label>
+          <Select
+            key={image}
+            name="imageModel"
+            label="Modelo de imagen"
+            value={image === s.imageProvider ? s.imageModel : ""}
+            options={[
+              { value: "", label: "Sin ilustraciones generadas" },
+              ...models(image, "image").map((m) => ({
                 value: m.id,
                 label: m.name,
               })),
             ]}
           />
+          {image === "openai" && (
+            <Select
+              name="imageQuality"
+              label="Calidad de ilustración"
+              value={s.imageQuality}
+              options={[
+                { value: "low", label: "Baja · menor costo" },
+                { value: "medium", label: "Media" },
+                { value: "high", label: "Alta" },
+              ]}
+            />
+          )}
+        </div>
+      </details>
+      <details>
+        <summary>Video · clips generados y exportación</summary>
+        <p className="muted">
+          La presentación narrada funciona sin un modelo de video. Los clips con
+          IA se generan por escena, solo al solicitarlos. Los modelos de
+          imágenes no aparecen aquí.
+        </p>
+        <div className="course-grid">
+          <label>
+            Proveedor de clips
+            <select
+              name="videoProvider"
+              value={video}
+              onChange={(e) => {
+                setVideo(e.target.value as typeof video);
+                setVideoModel("");
+              }}
+            >
+              <option value="gemini">Google AI · modelos vigentes</option>
+              <option value="fal">fal.ai · Wan, Kling, LTX, Veo…</option>
+            </select>
+          </label>
+          <label>
+            Modelo de video
+            <select
+              value={videoModel}
+              onChange={(e) => setVideoModel(e.target.value)}
+            >
+              {selectModels(video, "video").map((m) => (
+                <option key={m.value} value={m.value}>
+                  {m.label}
+                </option>
+              ))}
+            </select>
+          </label>
           <Select
-            name="imageModel"
-            label="Ilustración opcional · OpenAI"
-            value={s.imageModel}
+            key={videoModel + "res"}
+            name="videoResolution"
+            label="Resolución del clip"
+            value={s.videoResolution}
+            options={
+              opts?.resolutions.length
+                ? opts.resolutions
+                : [{ value: "", label: "Automática del modelo" }]
+            }
+          />
+          <Select
+            key={videoModel + "duration"}
+            name="videoDuration"
+            label="Duración objetivo del clip"
+            value={s.videoDuration}
+            options={
+              opts?.durations.length
+                ? opts.durations.map((n) => ({
+                    value: String(n),
+                    label: n + " segundos",
+                  }))
+                : [
+                    {
+                      value: String(s.videoDuration),
+                      label: "Automática del modelo",
+                    },
+                  ]
+            }
+          />
+          <Select
+            key={videoModel + "aspect"}
+            name="videoAspect"
+            label="Formato del clip"
+            value={s.videoAspect}
+            options={
+              opts?.aspects.length
+                ? opts.aspects
+                : [{ value: "16:9", label: "Automático del modelo" }]
+            }
+          />
+          <Select
+            name="exportResolution"
+            label="Exportación de la clase narrada"
+            value={s.exportResolution}
             options={[
-              { value: "", label: "Sin imágenes generadas" },
-              ...imageModels.map((m) => ({ value: m.id, label: m.name })),
+              { value: "720p", label: "720p · más ligera" },
+              { value: "1080p", label: "1080p · más detalle" },
             ]}
           />
         </div>
       </details>
+      <p className="muted">
+        Las claves y los catálogos se administran en{" "}
+        <a href="/?view=ai&aiTab=connections">Ajustes IA → Conexiones</a>. Solo
+        se listan modelos compatibles consultados en la cuenta.
+      </p>
       <div className="course-toolbar">
-        <button className="course-primary" disabled={busy} type="submit">
+        <button className="course-primary" disabled={busy}>
           {busy
             ? "Guardando…"
-            : course
-              ? "Guardar configuración"
-              : "Crear curso"}
+            : settingsOnly
+              ? "Guardar valores para nuevos programas"
+              : "Guardar objetivo y parámetros"}
         </button>
         <span className="muted">Guardar no consume IA.</span>
       </div>
     </form>
   );
 }
-function Connections({
-  providers,
-  busy,
-  run,
-  refresh,
-}: {
-  providers: Provider[];
-  busy: boolean;
-  run: (fn: () => Promise<void>) => void;
-  refresh: () => Promise<void>;
-}) {
-  const [keys, setKeys] = useState<Record<string, string>>({}),
-    [cloned, setCloned] = useState("");
+export function CourseConfiguration() {
+  const [providers, setProviders] = useState<Provider[]>([]),
+    [defaults, setDefaults] = useState<{
+      revision: number;
+      settings: CourseSettings;
+    } | null>(null),
+    [busy, setBusy] = useState(false),
+    [error, setError] = useState(""),
+    [message, setMessage] = useState("");
+  useEffect(() => {
+    const c = new AbortController();
+    void Promise.all([
+      request("/providers", undefined, undefined, c.signal),
+      request("/defaults", undefined, undefined, c.signal),
+    ])
+      .then(([p, d]) => {
+        if (!c.signal.aborted) {
+          setProviders(p);
+          setDefaults(d);
+        }
+      })
+      .catch((e) => {
+        if (!c.signal.aborted) setError(e.message);
+      });
+    return () => c.abort();
+  }, []);
   return (
-    <div className="course-connections">
-      <p>
-        Para comenzar:{" "}
-        <strong>OpenAI o Gemini para contenido y ElevenLabs para voz</strong>.
-        Claude es otra opción para textos extensos. La naturalidad depende de la
-        voz, el idioma y la muestra; revisa una escena antes de producir el
-        resto.
-      </p>
+    <div className="courses-ai">
+      <h2>Parámetros de cursos</h2>
       <p className="muted">
-        Estas claves son independientes de los otros módulos. ChatGPT, Gemini
-        web y sus suscripciones no sustituyen una clave API.
+        Valores iniciales para nuevas carpetas. Cada programa conserva su propia
+        configuración; guardar aquí no modifica los anteriores.
       </p>
-      {["openai", "gemini", "anthropic", "elevenlabs"].map((id) => {
-        const p = providers.find((p) => p.provider === id);
-        return (
-          <form
-            key={id}
-            className="course-provider"
-            onSubmit={(e) => {
-              e.preventDefault();
-              run(async () => {
-                await request("/providers", { provider: id, key: keys[id] });
-                setKeys((k) => ({ ...k, [id]: "" }));
-                await refresh();
+      {error && <p role="alert">{error}</p>}
+      {message && <p role="status">{message}</p>}
+      {defaults ? (
+        <CourseForm
+          key={defaults.revision}
+          settingsOnly
+          initialSettings={defaults.settings}
+          providers={providers}
+          busy={busy}
+          submit={async (b) => {
+            setBusy(true);
+            setError("");
+            try {
+              const d = await request("/defaults", {
+                revision: defaults.revision,
+                ...b,
               });
-            }}
-          >
-            <div>
-              <strong>
-                {
-                  {
-                    openai: "OpenAI",
-                    gemini: "Google Gemini",
-                    anthropic: "Anthropic Claude",
-                    elevenlabs: "ElevenLabs",
-                  }[id]
-                }
-              </strong>
-              <span className="course-tag">
-                {p ? p.maskedKey : "Sin configurar"}
-              </span>
-            </div>
-            <label>
-              Clave API
-              <PasswordInput
-                secretLabel={"clave de " + id}
-                value={keys[id] ?? ""}
-                autoComplete="off"
-                onChange={(e) =>
-                  setKeys((k) => ({ ...k, [id]: e.target.value }))
-                }
-              />
-            </label>
-            <div className="course-toolbar">
-              <button disabled={busy || !keys[id]} type="submit">
-                Guardar clave
-              </button>
-              <button
-                disabled={busy || !p}
-                type="button"
-                onClick={() =>
-                  run(async () => {
-                    await request("/providers/" + id + "/discover", {});
-                    await refresh();
-                  })
-                }
-              >
-                Consultar modelos y voces
-              </button>
-              <span className="muted">
-                {p?.verifiedAt
-                  ? p.models.length + " modelos disponibles"
-                  : "Pendiente de consulta"}
-              </span>
-            </div>
-          </form>
-        );
-      })}
-      <details>
-        <summary>Clonar una voz con ElevenLabs</summary>
-        <p>
-          Usa una muestra limpia de tu voz o de una persona que te autorizó. La
-          disponibilidad y verificación dependen del plan de ElevenLabs. No se
-          requiere mostrar el rostro.
-        </p>
-        <form
-          className="course-form"
-          onSubmit={(e) => {
-            e.preventDefault();
-            const form = e.currentTarget,
-              fd = new FormData(form);
-            run(async () => {
-              const r = await fetch("/api/courses-ai/voices/clone", {
-                method: "POST",
-                body: fd,
-                signal: AbortSignal.timeout(150000),
-              });
-              const result = await r.json();
-              if (!r.ok) throw Error(result.error);
-              setCloned(
-                result.requiresVerification
-                  ? "Voz creada; completa la verificación en ElevenLabs antes de usarla."
-                  : "Voz creada. Ya puedes seleccionarla en la configuración del curso.",
-              );
-              form.reset();
-              await refresh();
-            });
-          }}
-        >
-          <label>
-            Nombre de voz
-            <input name="name" required maxLength={100} />
-          </label>
-          <label>
-            Muestra de audio
-            <input
-              type="file"
-              name="file"
-              accept="audio/mpeg,audio/wav,audio/mp4,audio/webm,audio/ogg"
-              required
-            />
-          </label>
-          <label className="course-check">
-            <input type="checkbox" name="consent" value="yes" required /> Es mi
-            voz o tengo autorización expresa para clonarla.
-          </label>
-          <button
-            disabled={
-              busy || !providers.some((p) => p.provider === "elevenlabs")
+              setDefaults(d);
+              setMessage("Valores guardados para nuevos programas.");
+            } catch (e) {
+              setError(e instanceof Error ? e.message : "No se pudo guardar.");
+            } finally {
+              setBusy(false);
             }
-            className="course-primary"
-          >
-            Crear voz · consume servicio de ElevenLabs
-          </button>
-        </form>
-        <p role="status">{cloned}</p>
-      </details>
+          }}
+        />
+      ) : (
+        <p role="status">Cargando parámetros…</p>
+      )}
+    </div>
+  );
+}
+function CreateFolder({
+  defaults,
+  busy,
+  submit,
+}: {
+  defaults: CourseSettings;
+  busy: boolean;
+  submit: (b: unknown) => void;
+}) {
+  const [audience, setAudience] = useState(defaults.audience);
+  return (
+    <form
+      className="course-form"
+      onSubmit={(e) => {
+        e.preventDefault();
+        const f = new FormData(e.currentTarget);
+        submit({
+          title: f.get("title"),
+          kind: f.get("kind"),
+          description: f.get("description"),
+          prompt: "",
+          settings: {
+            ...defaults,
+            audience,
+            audienceDetail: String(f.get("audienceDetail") ?? ""),
+          },
+        });
+      }}
+    >
+      <p className="muted">
+        Primero crea la carpeta. Dentro podrás generar o pegar el temario y
+        desarrollar cada módulo.
+      </p>
+      <label>
+        Nombre del programa
+        <input
+          name="title"
+          required
+          maxLength={200}
+          placeholder="Ej. Excel y Power BI"
+        />
+      </label>
+      <Select
+        name="kind"
+        label="Tipo de programa"
+        value="course"
+        options={Object.entries(programLabels).map(([value, label]) => ({
+          value,
+          label,
+        }))}
+      />
+      <label>
+        Descripción breve
+        <textarea
+          name="description"
+          rows={3}
+          maxLength={1000}
+          placeholder="Qué aprenderán y para qué les servirá."
+        />
+      </label>
+      <label>
+        Público objetivo
+        <select
+          value={audience}
+          onChange={(e) => setAudience(e.target.value as typeof audience)}
+        >
+          {Object.entries(audienceLabels).map(([value, label]) => (
+            <option key={value} value={value}>
+              {label}
+            </option>
+          ))}
+        </select>
+      </label>
+      {audience === "other" && (
+        <label>
+          ¿A quién va dirigido?
+          <input
+            name="audienceDetail"
+            required
+            maxLength={200}
+            placeholder="Describe tu público"
+          />
+        </label>
+      )}
+      <button disabled={busy} className="course-primary">
+        {busy ? "Creando…" : "Crear carpeta del programa"}
+      </button>
+    </form>
+  );
+}
+function PasteOutline({
+  course,
+  busy,
+  save,
+}: {
+  course: Course;
+  busy: boolean;
+  save: (text: string) => void;
+}) {
+  const [text, setText] = useState("");
+  let modules: { title: string; brief: string }[] = [],
+    error = "";
+  try {
+    if (text.trim()) modules = parseCourseOutline(text);
+  } catch (e) {
+    error = e instanceof Error ? e.message : "Temario no válido";
+  }
+  return (
+    <div className="course-inline-form">
+      <h3>Pegar temario</h3>
+      <p className="muted">
+        Un módulo por línea, o encabezados como «Módulo 1: Nombre» seguidos de
+        su descripción. Se añaden al programa; no reemplazan los existentes.
+      </p>
+      <label>
+        Módulos
+        <textarea
+          rows={7}
+          maxLength={30000}
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          placeholder={
+            "Módulo 1: Fundamentos de Excel\nTablas, fórmulas y ejercicios.\nMódulo 2: Power BI\nImportación y visualización."
+          }
+        />
+      </label>
+      {error && <p role="alert">{error}</p>}
+      {modules.length > 0 && <p>{modules.length} módulos detectados</p>}
+      <button
+        disabled={busy || !modules.length || !!error}
+        className="course-primary"
+        onClick={() => save(text)}
+      >
+        Crear módulos del temario · sin IA
+      </button>
     </div>
   );
 }
 export function CoursesAI() {
+  const [defaults, setDefaults] = useState<CourseSettings>(() =>
+      settingsSchema.parse({}),
+    ),
+    [settingsShown, setSettingsShown] = useState(false),
+    [outlineMode, setOutlineMode] = useState("ai");
   const busyRef = useRef(false);
   const [moduleDetail, setModuleDetail] = useState<Module | null>(null);
   const [list, setList] = useState<Summary[]>([]),
@@ -652,12 +914,14 @@ export function CoursesAI() {
     void Promise.allSettled([
       request("", undefined, undefined, ac.signal),
       request("/providers", undefined, undefined, ac.signal),
+      request("/defaults", undefined, undefined, ac.signal),
     ]).then((results) => {
       if (!mounted.current) return;
       results.forEach((r, i) => {
         if (r.status === "fulfilled") {
           if (i === 0) setList(r.value);
-          else setProviders(r.value);
+          else if (i === 1) setProviders(r.value);
+          else setDefaults(r.value.settings);
         } else
           setError(
             r.reason instanceof Error ? r.reason.message : "No se pudo cargar.",
@@ -674,6 +938,11 @@ export function CoursesAI() {
   useEffect(() => {
     setCourse(null);
     setWindow(null);
+    setSettingsShown(false);
+    setOutlineMode("ai");
+    setAdd(false);
+    setModuleDetail(null);
+    setModuleId("");
     if (!selected) return;
     const ac = new AbortController();
     setLoading(true);
@@ -689,8 +958,9 @@ export function CoursesAI() {
   const taskState =
     course?.tasks.map((t) => t.id + ":" + t.status).join("|") ?? "";
   const working =
-    course?.tasks.some((t) => ["PENDING", "RUNNING"].includes(t.status)) ??
-    false;
+    course?.tasks.some((t) =>
+      ["PENDING", "RUNNING", "RENDERING"].includes(t.status),
+    ) ?? false;
   useEffect(() => {
     if (!selected || !working) return;
     const ac = new AbortController();
@@ -784,6 +1054,7 @@ export function CoursesAI() {
       kind === "LESSON"
         ? course.modules
             .filter((x) => !x.lessonReady)
+            .slice(0, 24)
             .map((x) => ({ moduleId: x.id }))
         : lesson && m
           ? lesson.scenes.flatMap((_, i) =>
@@ -865,9 +1136,12 @@ export function CoursesAI() {
           <p>De tu idea a una experiencia para aprender.</p>
         </div>
         <div className="course-toolbar">
-          <button type="button" onClick={() => setWindow("connections")}>
-            ⚙ Conexiones
-          </button>
+          <a
+            className="course-settings-link"
+            href="/?view=ai&aiTab=connections"
+          >
+            ⚙ Ajustes IA
+          </a>
           <button
             type="button"
             className="course-primary"
@@ -915,10 +1189,18 @@ export function CoursesAI() {
                 setError("");
               }}
             >
-              <strong>{c.title}</strong>
+              <strong>
+                <span aria-hidden="true">📁 </span>
+                {c.title}
+              </strong>
+              <small className="course-folder-description">
+                {c.description}
+              </small>
+              <span className="course-audience">
+                {audienceText(c.settings)}
+              </span>
               <span>
-                {c.kind === "diploma" ? "Diplomado" : "Curso"} ·{" "}
-                {c._count.modules} módulos
+                {programLabels[c.kind] ?? c.kind} · {c._count.modules} módulos
               </span>
             </button>
           ))}
@@ -955,9 +1237,13 @@ export function CoursesAI() {
               <div className="course-heading">
                 <div>
                   <span className="course-tag">
-                    {course.kind === "diploma" ? "Diplomado" : "Curso"}
+                    {programLabels[course.kind] ?? course.kind}
                   </span>
                   <h2>{course.title}</h2>
+                  <p>{course.description}</p>
+                  <span className="course-tag">
+                    Dirigido a: {audienceText(course.settings)}
+                  </span>
                   <p className="muted">
                     {course.modules.length} módulos · Duración objetivo{" "}
                     {course.modules.reduce((a, m) => a + m.minutes, 0)} min
@@ -967,7 +1253,7 @@ export function CoursesAI() {
                   <button
                     type="button"
                     disabled={busy || working}
-                    onClick={() => setWindow("settings")}
+                    onClick={() => setSettingsShown(!settingsShown)}
                   >
                     Configurar
                   </button>
@@ -982,7 +1268,13 @@ export function CoursesAI() {
                     <button
                       type="button"
                       className="course-primary"
-                      disabled={busy || working || !course.settings.model}
+                      disabled={
+                        busy ||
+                        working ||
+                        settingsShown ||
+                        !course.settings.model
+                      }
+                      title="Procesar hasta 24 módulos pendientes por lote"
                       onClick={() => void batch("LESSON")}
                     >
                       ✦ Desarrollar módulos pendientes
@@ -990,7 +1282,73 @@ export function CoursesAI() {
                   )}
                 </div>
               </div>
-              {!course.modules.length && (
+              <section className="course-syllabus">
+                <div className="course-heading">
+                  <div>
+                    <h3>Temario</h3>
+                    <p className="muted">
+                      Define los módulos del programa y después desarrolla cada
+                      uno.
+                    </p>
+                  </div>
+                  <div className="course-toolbar">
+                    <button
+                      type="button"
+                      aria-pressed={outlineMode === "ai"}
+                      onClick={() => {
+                        setOutlineMode("ai");
+                        setSettingsShown(true);
+                      }}
+                    >
+                      ✦ Generar con IA
+                    </button>
+                    <button
+                      type="button"
+                      aria-pressed={outlineMode === "paste"}
+                      onClick={() => setOutlineMode("paste")}
+                    >
+                      ≡ Pegar módulos
+                    </button>
+                  </div>
+                </div>
+                {settingsShown && (
+                  <div className="course-inline-form">
+                    <CourseForm
+                      key={course.id + ":" + course.revision}
+                      course={course}
+                      providers={providers}
+                      busy={busy || working}
+                      submit={(b) =>
+                        void run(async () => {
+                          await request("/" + course.id + "/save", {
+                            revision: course.revision,
+                            data: b,
+                          });
+                          setSettingsShown(false);
+                          await refresh();
+                        })
+                      }
+                    />
+                  </div>
+                )}
+                {outlineMode === "paste" && (
+                  <PasteOutline
+                    course={course}
+                    busy={busy || working}
+                    save={(text) =>
+                      void run(async () => {
+                        await request("/" + course.id + "/import-modules", {
+                          revision: course.revision,
+                          data: { text },
+                        });
+                        setOutlineMode("ai");
+                        await refresh();
+                      })
+                    }
+                  />
+                )}
+              </section>
+              {!course.modules.length && outlineMode === "ai" && (
                 <div className="course-starter">
                   <h3>Primero, el mapa de aprendizaje</h3>
                   <p>
@@ -1001,11 +1359,19 @@ export function CoursesAI() {
                   <button
                     type="button"
                     className="course-primary"
-                    disabled={busy || working || !course.settings.model}
+                    disabled={
+                      busy || working || settingsShown || !course.settings.model
+                    }
                     onClick={() => void task("OUTLINE")}
                   >
                     ✦ Generar temario
                   </button>
+                  {settingsShown && (
+                    <p className="muted">
+                      Guarda primero el objetivo y los parámetros que estás
+                      editando.
+                    </p>
+                  )}
                   {!course.settings.model && (
                     <p>Configura un modelo de contenido para generar con IA.</p>
                   )}
@@ -1159,6 +1525,23 @@ export function CoursesAI() {
                     <div key={t.id} className="course-task">
                       <span>{labels[t.kind]}</span>
                       <strong>{labels[t.status] ?? t.status}</strong>
+                      {t.canResume && (
+                        <button
+                          type="button"
+                          disabled={busy}
+                          onClick={() =>
+                            void run(async () => {
+                              await request(
+                                "/" + course.id + "/tasks/" + t.id + "/resume",
+                                {},
+                              );
+                              await load(course.id);
+                            })
+                          }
+                        >
+                          Recuperar video · sin generar otro
+                        </button>
+                      )}
                       {t.error && <p role="alert">{t.error}</p>}
                     </div>
                   ))}
@@ -1197,8 +1580,8 @@ export function CoursesAI() {
       </div>
       {window === "new" && (
         <Window title="Crear curso" onClose={() => setWindow(null)}>
-          <CourseForm
-            providers={providers}
+          <CreateFolder
+            defaults={defaults}
             busy={busy}
             submit={(b) =>
               void run(async () => {
@@ -1208,35 +1591,6 @@ export function CoursesAI() {
                 setSelected(c.id);
               })
             }
-          />
-        </Window>
-      )}
-      {window === "settings" && course && (
-        <Window title="Configurar curso" onClose={() => setWindow(null)}>
-          <CourseForm
-            course={course}
-            providers={providers}
-            busy={busy || working}
-            submit={(b) =>
-              void run(async () => {
-                await request("/" + course.id + "/save", {
-                  revision: course.revision,
-                  data: b,
-                });
-                setWindow(null);
-                await refresh();
-              })
-            }
-          />
-        </Window>
-      )}
-      {window === "connections" && (
-        <Window title="Conexiones de Cursos IA" onClose={() => setWindow(null)}>
-          <Connections
-            providers={providers}
-            busy={busy}
-            run={(fn) => void run(fn)}
-            refresh={refreshProviders}
           />
         </Window>
       )}
@@ -1356,6 +1710,7 @@ export function CoursesAI() {
                     assets={m.assets}
                     revision={m.revision}
                     title={m.title}
+                    resolution={course.settings.exportResolution ?? "720p"}
                   />
                 )}
                 <div className="course-toolbar">
@@ -1551,6 +1906,72 @@ export function CoursesAI() {
                           </div>
                         )}
                         <div className="course-toolbar">
+                          {m.assets.find(
+                            (a) =>
+                              a.revision === m.revision &&
+                              a.scene === i &&
+                              a.kind === "VIDEO",
+                          ) ? (
+                            <video
+                              controls
+                              preload="none"
+                              className="course-generated-video"
+                              src={
+                                "/api/courses-ai/assets/" +
+                                m.assets.find(
+                                  (a) =>
+                                    a.revision === m.revision &&
+                                    a.scene === i &&
+                                    a.kind === "VIDEO",
+                                )!.id
+                              }
+                            />
+                          ) : (
+                            <details className="course-video-action">
+                              <summary>Crear clip de video con IA</summary>
+                              <form
+                                onSubmit={(e) => {
+                                  e.preventDefault();
+                                  const f = new FormData(e.currentTarget);
+                                  void task("VIDEO", m, {
+                                    scene: i,
+                                    prompt: String(f.get("prompt")),
+                                  });
+                                }}
+                              >
+                                <label>
+                                  Escena visual
+                                  <textarea
+                                    name="prompt"
+                                    maxLength={4000}
+                                    rows={3}
+                                    required
+                                    defaultValue={
+                                      s.illustrationPrompt ||
+                                      s.title + " — " + s.narration
+                                    }
+                                  />
+                                </label>
+                                <p className="muted">
+                                  Proveedor:{" "}
+                                  {course.settings.videoProvider ?? "gemini"} ·{" "}
+                                  {course.settings.videoModel ||
+                                    "Configura un modelo de video en el programa"}
+                                  . Esta solicitud puede generar un cargo.
+                                </p>
+                                <button
+                                  type="submit"
+                                  disabled={
+                                    busy ||
+                                    working ||
+                                    !course.settings.videoModel
+                                  }
+                                >
+                                  Generar este clip
+                                </button>
+                              </form>
+                            </details>
+                          )}
                           {audio ? (
                             <audio
                               controls

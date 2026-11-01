@@ -23,6 +23,7 @@ import { SidebarAccount } from "./components/sidebar-account";
 const SiteEditor = dynamic(() => import("./components/site-editor").then(m => m.SiteEditor), { loading: () => <p role="status">Cargando…</p> });
 const PaymentSettings = dynamic(() => import("./components/payment-settings").then(m => m.PaymentSettings), { loading: () => <p role="status">Cargando…</p> });
 const MyPlan = dynamic(() => import("./components/membership-plans").then(m => m.MyPlan), { loading: () => <p role="status">Cargando…</p> });
+const AISettingsHub=dynamic(()=>import("./components/ai-settings-hub").then(m=>m.AISettingsHub));
 const ProviderConnections = dynamic(() => import("./components/provider-connections").then(m => m.ProviderConnections), { loading: () => <p role="status">Cargando…</p> });
 import { folderScope } from "./components/folder-navigation";
 import { emptyHierarchy } from "./components/hierarchy-filters";
@@ -520,11 +521,11 @@ export default function Home() {
           <header className={view === "products" ? "topbar effectiveness-topbar" : "topbar"}>
             {view === "products" ? <div className="effectiveness-topbar-title"><div className="effectiveness-title-line"><h1>Efectividad</h1>{user.role==="OWNER"&&<button type="button" className="effectiveness-share-button" onClick={()=>window.dispatchEvent(new Event("share-effectiveness"))}>Compartir</button>}</div><EffectivenessLegend /></div> : <span className="muted">{view === "metaads" ? "Análisis y control de Meta" : titles[view]}</span>}
             {view === "metaads" && <span className="meta-topbar-role">Rol: <strong>{user.role}</strong></span>}
-            {view !== "performance" && view !== "products" && view !== "courses-ai" && <span className="badge">Producción publicitaria</span>}
+            {view !== "performance" && view !== "products" && view !== "courses-ai" && view !== "ai" && <span className="badge">Producción publicitaria</span>}
 
           </header>
           <main className={view === "products" ? "effectiveness-main" : undefined}>
-            {!["metaads", "products", "performance", "courses-ai"].includes(view) && <><RoleGuide name={user.name} role={user.role} /><VisualAuditNotice key={user.id} /></>}
+            {!["metaads", "products", "performance", "courses-ai", "ai"].includes(view) && <><RoleGuide name={user.name} role={user.role} /><VisualAuditNotice key={user.id} /></>}
             {project && view === "projects" && (
               <HierarchyBreadcrumbs
                 project={project}
@@ -1923,7 +1924,8 @@ function SubproductRow({
     </>
   );
 }
-function AISettings() {
+function AISettings(){return <AISettingsHub posters={<PosterAISettings/>}/>;}
+function PosterAISettings() {
   const [testMode, setTestMode] = useState<ExecutionMode>("background");
   const testProduction = useProductionController(undefined, {
     project: "none",
@@ -2204,7 +2206,7 @@ function AISettings() {
       <div className="heading">
         <div>
           <div className="eyebrow">Ajustes / Exclusivo del OWNER</div>
-          <h1>Ajustes de generación</h1>
+          <h2>Parámetros de afiches</h2>
           <p className="muted">
             Conecta tu proveedor y establece las reglas de generación de tu
             equipo.
@@ -2315,17 +2317,6 @@ function AISettings() {
           </div>
         )}
       </section>
-      <div ><ProviderConnections
-        providers={available}
-        changed={async () => {
-          if (!editing.current) await refresh();
-          else
-            setLiveError(
-              "Cambió una conexión. Se conservaron tus campos sin guardar; revisa, guarda y verifica la configuración antes de generar.",
-            );
-        }}
-      />
-      </div>
       <section
         id="ai-connection"
         className={
@@ -2333,7 +2324,7 @@ function AISettings() {
           ((!c.maskedKey || !verified || key) ? " needs-attention" : "")
         }
       >
-        <h2>01　Proveedor de imágenes y credenciales</h2>
+        <h2>01　Proveedor de imágenes</h2>
         <div className="fields">
           <label>
             Proveedor
@@ -2352,25 +2343,7 @@ function AISettings() {
               Selecciona la empresa que emitió tu clave de API. Una suscripción de chat no sustituye la facturación de su API.
             </span>
           </label>
-          <label >
-            {c.maskedKey ? "Reemplazar clave API" : "Clave API"}
-            <PasswordInput
-              value={key}
-              onChange={(e) => {
-                setKey(e.target.value);
-                setCharge(false);
-              }}
-              placeholder={c.maskedKey ?? "Introduce tu clave API"}
-              autoComplete="off"
-              spellCheck={false}
-              maxLength={1000}
-            />
-            <span className="hint">
-              Pega la clave secreta creada en la cuenta del proveedor. Déjalo
-              vacío para conservar la clave guardada. Nunca la compartas por
-              chat.
-            </span>
-          </label>
+          <p className="hint">Clave guardada: {c.maskedKey??"Sin configurar"}. Administra las credenciales en la pestaña Conexiones.</p>
         </div>
         <p className="hint">
           La clave se cifra en el servidor con una clave maestra externa a la

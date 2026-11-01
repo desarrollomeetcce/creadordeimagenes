@@ -231,7 +231,7 @@ test("Cursos IA: aislamiento, autorización, persistencia y proveedores sintéti
         const saved = await db.aICourseCredential.findUniqueOrThrow({
           where: { provider: "openai" },
         });
-        assert(!saved.encryptedKey.includes("synthetic"));
+        assert(!saved.encryptedKey!.includes("synthetic"));
         const catalog = await discover("openai");
         assert.deepEqual(
           catalog.voices.map((v) => v.id),
@@ -686,7 +686,7 @@ test("Cursos IA: aislamiento, autorización, persistencia y proveedores sintéti
           "voice-test",
           "Hola, aprendamos a sumar.",
         );
-        assert.equal(audio.length, 10);
+        assert.equal(audio.bytes.length, 10);
         const cloned = await cloneVoice(
           "Voz autorizada QA",
           new File([new Uint8Array([1, 2, 3])], "voz.wav", {

@@ -7,30 +7,55 @@ import {
   safeProviderError,
 } from "../providers/http";
 import { z } from "zod";
+import { sharedSource } from "./shared-credentials";
+import {
+  googleVideoModels,
+  googleSpeechModels,
+  falVideoModels,
+} from "./media-catalog";
 export const providerSchema = z.enum([
   "openai",
   "gemini",
   "anthropic",
   "elevenlabs",
+  "fal",
 ]);
 export type CatalogItem = {
   id: string;
   name: string;
-  kind: "text" | "speech" | "image";
+  kind: "text" | "speech" | "image" | "video";
+  options?: {
+    resolutions: string[];
+    durations: number[];
+    aspects: string[];
+    binding?: Record<string, string>;
+  };
 };
 const endpoints = {
   openai: "https://api.openai.com/v1/",
   gemini: "https://generativelanguage.googleapis.com/v1beta/",
   anthropic: "https://api.anthropic.com/v1/",
   elevenlabs: "https://api.elevenlabs.io/v1/",
+  fal: "https://api.fal.ai/v1/",
 };
 export async function credential(provider: string) {
   const c = await db.aICourseCredential.findUnique({ where: { provider } });
-  demand(
-    c,
-    "Guarda la clave de " + provider + " en Conexiones de Cursos IA.",
-    409,
-  );
+  if (!c || c.shared) {
+    const source = await sharedSource(provider);
+    demand(source, "Configura la clave en Ajustes IA → Conexiones.", 409);
+    return {
+      ...c,
+      provider,
+      revision: c?.revision ?? 0,
+      shared: true,
+      sourceRevision: source.revision,
+      verifiedAt: c?.sourceRevision === source.revision ? c?.verifiedAt : null,
+      models: c?.models ?? [],
+      voices: c?.voices ?? [],
+      key: source.key,
+    };
+  }
+  demand(c.encryptedKey, "Configura la clave en Ajustes IA → Conexiones.", 409);
   return { ...c, key: decryptKey(c.encryptedKey, "courses:" + provider) };
 }
 function headers(provider: string, key: string): Record<string, string> {
@@ -40,7 +65,9 @@ function headers(provider: string, key: string): Record<string, string> {
       ? { "x-goog-api-key": key }
       : provider === "anthropic"
         ? { "x-api-key": key, "anthropic-version": "2023-06-01" }
-        : { "xi-api-key": key };
+        : provider === "fal"
+          ? { Authorization: "Key " + key }
+          : { "xi-api-key": key };
 }
 async function json(
   provider: string,
@@ -75,10 +102,12 @@ export async function saveCredential(raw: unknown) {
     where: { provider: b.provider },
     create: {
       provider: b.provider,
+      shared: false,
       encryptedKey: encryptKey(b.key, "courses:" + b.provider),
       maskedKey: maskKey(b.key),
     },
     update: {
+      shared: false,
       encryptedKey: encryptKey(b.key, "courses:" + b.provider),
       maskedKey: maskKey(b.key),
       revision: { increment: 1 },
@@ -89,8 +118,17 @@ export async function saveCredential(raw: unknown) {
     select: { provider: true, maskedKey: true },
   });
 }
-export async function discover(provider: string) {
+export async function discover(provider: string, query = "") {
   providerSchema.parse(provider);
+  if (!(await db.aICourseCredential.findUnique({ where: { provider } }))) {
+    const source = await sharedSource(provider);
+    demand(source, "Configura primero una clave compartida.", 409);
+    await db.aICourseCredential.upsert({
+      where: { provider },
+      create: { provider, shared: true, sourceRevision: source.revision },
+      update: {},
+    });
+  }
   const c = await credential(provider);
   let models: CatalogItem[] = [],
     voices: { id: string; name: string }[] = [];
@@ -121,21 +159,43 @@ export async function discover(provider: string) {
           (page ? "&pageToken=" + encodeURIComponent(page) : ""),
       );
       models.push(
-        ...(r.models ?? [])
-          .filter(
-            (m: any) =>
-              m.supportedGenerationMethods?.includes("generateContent") &&
-              !/(image|tts|embedding|robotics)/.test(m.name),
+        ...(r.models ?? []).flatMap((m: any) => {
+          const id = String(m.name ?? "").replace(/^models\//, "");
+          if (googleVideoModels[id])
+            return [
+              {
+                id,
+                name: m.displayName ?? id,
+                kind: "video",
+                options: googleVideoModels[id],
+              },
+            ];
+          if (
+            /^gemini-[a-zA-Z0-9._-]*image[a-zA-Z0-9._-]*$/.test(id) &&
+            m.supportedGenerationMethods?.includes("generateContent")
           )
-          .map((m: any) => ({
-            id: m.name.replace(/^models\//, ""),
-            name: m.displayName ?? m.name,
-            kind: "text",
-          })),
+            return [{ id, name: m.displayName ?? id, kind: "image" }];
+          if (googleSpeechModels.has(id))
+            return [{ id, name: m.displayName ?? id, kind: "speech" }];
+          if (
+            !m.supportedGenerationMethods?.includes("generateContent") ||
+            /(image|tts|embedding|robotics|veo|omni)/.test(id)
+          )
+            return [];
+          return [{ id, name: m.displayName ?? id, kind: "text" }];
+        }),
       );
       page = r.nextPageToken ?? "";
       if (!page) break;
     }
+    if (models.some((m) => m.kind === "speech")) {
+      const v = await json(provider, c.key, "voices?page_size=100");
+      voices = (v.voices ?? [])
+        .filter((v: any) => typeof v.id === "string")
+        .map((v: any) => ({ id: v.id, name: v.display_name ?? v.id }));
+    }
+  } else if (provider === "fal") {
+    models = await falVideoModels(c.key, query);
   } else if (provider === "anthropic") {
     const r = await json(provider, c.key, "models?limit=100");
     models = (r.data ?? []).map((m: any) => ({
@@ -154,9 +214,21 @@ export async function discover(provider: string) {
       .map((m: any) => ({ id: m.voice_id, name: m.name }));
   }
   models = models.slice(0, 500);
+  const fresh = await credential(provider);
+  demand(
+    fresh.revision === c.revision && fresh.sourceRevision === c.sourceRevision,
+    "La clave cambió durante la consulta. Consulta de nuevo el catálogo.",
+    409,
+  );
   await db.aICourseCredential.updateMany({
     where: { provider, revision: c.revision },
-    data: { models, voices, verifiedAt: new Date() },
+    data: {
+      models,
+      voices,
+      verifiedAt: new Date(),
+      ...(c.shared ? { sourceRevision: c.sourceRevision } : {}),
+      revision: { increment: 1 },
+    },
   });
   return { models, voices };
 }
@@ -278,6 +350,8 @@ export async function speech(
   voice: string,
   text: string,
   expectedRevision?: number,
+  speed = 1,
+  tone = "",
 ) {
   const c = await requireModel(provider, model, "speech", expectedRevision);
   demand(
@@ -285,6 +359,49 @@ export async function speech(
     "Consulta las voces y elige una voz disponible.",
     409,
   );
+  if (provider === "gemini") {
+    const r = await json(
+      provider,
+      c.key,
+      "models/" + encodeURIComponent(model) + ":generateContent",
+      {
+        contents: [
+          {
+            role: "user",
+            parts: [
+              {
+                text,
+                speech_metadata: {
+                  style: tone || "Natural, clear teaching voice",
+                },
+              },
+            ],
+          },
+        ],
+        generationConfig: {
+          responseModalities: ["AUDIO"],
+          speechConfig: { voiceConfig: { voice } },
+        },
+      },
+    );
+    const audio = (r.candidates?.[0]?.content?.parts ?? []).find(
+      (p: any) => p.inlineData?.data,
+    )?.inlineData;
+    demand(
+      /^audio\/wav(?:;|$)/i.test(audio?.mimeType ?? "") &&
+        typeof audio.data === "string" &&
+        audio.data.length < 22000000,
+      "Google no entregó WAV válido.",
+      502,
+    );
+    const bytes = Buffer.from(audio.data, "base64");
+    demand(
+      bytes.subarray(0, 4).toString() === "RIFF",
+      "El audio WAV no es válido.",
+      502,
+    );
+    return { bytes, mime: "audio/wav" };
+  }
   let r: Response;
   try {
     r = await fetch(
@@ -300,7 +417,16 @@ export async function speech(
         },
         body: JSON.stringify(
           provider === "openai"
-            ? { model, voice, input: text, response_format: "mp3" }
+            ? {
+                model,
+                voice,
+                input: text,
+                response_format: "mp3",
+                speed,
+                ...(model.startsWith("gpt-4o-mini-tts") && tone
+                  ? { instructions: tone }
+                  : {}),
+              }
             : { text, model_id: model },
         ),
         signal: AbortSignal.timeout(180000),
@@ -320,7 +446,7 @@ export async function speech(
     "El proveedor no entregó audio.",
     502,
   );
-  return boundedBytes(r, 16000000);
+  return { bytes: await boundedBytes(r, 16000000), mime: "audio/mpeg" };
 }
 export async function cloneVoice(name: string, file: File) {
   const c = await credential("elevenlabs");
