@@ -43,9 +43,7 @@ export function MetaConnectionScope({
     >
       <strong>Alcance de sincronización</strong>
       <p>
-        Campañas, conjuntos y anuncios activos y desactivados sin límite de
-        antigüedad; excluye eliminados y archivados. Estadísticas diarias de 30
-        días e histórico acumulado disponible en Meta.
+        En Rendimiento, «Actualizar vista» consulta los estados y el gasto de hoy y ayer de los elementos visibles. El catálogo y el histórico se importan por separado.
       </p>
       <details
         className="meta-connection-accounts"
@@ -135,9 +133,7 @@ export function MetaConnectionScope({
         )}
       </details>
       <small>
-        Actualizar conexión comprueba el acceso guardado. Buscar cuentas nuevas
-        consulta la lista disponible; ninguna de estas acciones importa
-        campañas.
+        «Comprobar acceso» valida la credencial. «Buscar cuentas nuevas» recorre las cuentas disponibles: úsalo al incorporar cuentas, no para actualizar el gasto. Abrir esta lista no consulta Meta.
       </small>
     </section>
   );

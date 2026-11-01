@@ -680,6 +680,7 @@ model MetaConnection {
   sources MetaAccountSource[]
 }
 model MetaAdAccount {
+  realtimeState Json @default("{}")
   id String @id
   connectionId String
   connection MetaConnection @relation(fields:[connectionId], references:[id])

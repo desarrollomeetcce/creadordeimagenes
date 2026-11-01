@@ -1,3 +1,4 @@
+import { realtimeCoverage, statusIsStale } from "./realtime-policy";
 import { isCountryCode } from "./countries";
 import { parseDeliveryFilters } from "./state-filter";
 import { metaRegisteredSales } from "./effectiveness";
@@ -39,6 +40,8 @@ export async function dashboard(actor: Actor, params: URLSearchParams) {
       minResults: true,
       syncedAt: true,
       syncState: true,
+      realtimeState: true,
+      syncError: true,
       connectionId: true,
       historyFrom: true,
       selectionSince: true,
@@ -280,7 +283,7 @@ export async function dashboard(actor: Actor, params: URLSearchParams) {
           (focusedReportDay(a.syncState) ?? today) < today);
       const version = createHash("sha256")
         .update(
-          JSON.stringify([a.connectionId, a.syncedAt, a.syncState, a.timezone]),
+          JSON.stringify([a.connectionId, a.syncedAt, a.syncState, a.realtimeState, a.timezone]),
         )
         .digest("hex");
       return [
@@ -376,19 +379,22 @@ export async function dashboard(actor: Actor, params: URLSearchParams) {
           action = actionTypes[metric]?.find((k) => Object.hasOwn(actions, k)),
           results = action ? actions[action] : 0,
           spend = v?.spend ?? 0;
+        const shortFrom = key === "custom" ? customSince! : key === "today" ? today : "";
+        const shortUntil = key === "custom" ? customUntil! : today;
+        const liveCovered = !!shortFrom && realtimeCoverage(a.realtimeState,o.id,shortFrom,shortUntil);
         const state =
-          !a.syncedAt ||
+          (!liveCovered && !a.syncedAt) ||
           metric === "UNKNOWN" ||
           (focused &&
             key !== "lifetime" &&
             !!o.selectedAt &&
             (!a.syncedAt || o.selectedAt > a.syncedAt) &&
             stats.length === 0) ||
-          (key === "today" && stale) ||
+          (key === "today" && stale && !liveCovered) ||
           (focused && key === "lifetime" && !total) ||
           (focused &&
             key === "custom" &&
-            (customSince! < shiftDay(reportUntil, -29) ||
+            !liveCovered && (customSince! < shiftDay(reportUntil, -29) ||
               customUntil! > reportUntil))
             ? "UNAVAILABLE"
             : results > 0
@@ -456,6 +462,7 @@ export async function dashboard(actor: Actor, params: URLSearchParams) {
     return {
       ...o,
       stale,
+      statusStale: statusIsStale(o.seenAt, (a.realtimeState as {authorizationRequired?:boolean}).authorizationRequired || (!((a.realtimeState as {statusAt?:string}).statusAt) && a.syncError)),
       campaignName:
         c?.name ?? (o.level === "campaign" ? o.name : "Campaña no disponible"),
       adsetName:

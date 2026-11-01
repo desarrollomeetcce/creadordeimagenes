@@ -2023,6 +2023,9 @@ export async function metaRoutes(
       })),
     );
   }
+  if(parts[1]==="accounts" && parts[2] && parts[3]==="refresh-visible" && parts.length===4 && method==="POST"){
+    const b=await body();return send(await (await import("./realtime-refresh")).refreshVisibleMeta(actor,parts[2],b));
+  }
   if (path === "sync-status" && method === "GET") {
     const ids = [
       ...new Set(

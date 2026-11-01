@@ -23,6 +23,7 @@ export type Page = {
   warnings?: GraphDiagnostic[];
 };
 export type Query = {
+  statusOnly?: boolean;
   campaignId?: string;
   insightIds?: string[];
   objectId?: string;
@@ -518,7 +519,7 @@ export class MetaReader {
             ["adsets", "ads"].includes(op)),
         "Filtro de campaña inválido.",
       );
-      if (q.ids) {
+      if (q.ids && !q.statusOnly) {
         demand(
           ["campaigns", "adsets", "ads"].includes(op) &&
             q.ids.length > 0 &&
@@ -539,11 +540,12 @@ export class MetaReader {
         }
         return { data };
       }
+      demand(!q.statusOnly || (op !== "accounts" && op !== "insights" && !!q.ids?.length && q.ids.length <= 50 && new Set(q.ids).size === q.ids.length && q.ids.every(id => /^\d{1,40}$/.test(id))), "Selección de estados inválida.");
       demand(
         !q.objectId || /^\d{1,40}$/.test(q.objectId),
         "Identificador de objeto inválido.",
       );
-      const path = q.objectId
+      const path = q.statusOnly ? "" : q.objectId
         ? q.objectId + (op === "insights" ? "/insights" : "")
         : op === "accounts"
           ? "me/adaccounts"
@@ -559,13 +561,14 @@ export class MetaReader {
       };
       u.searchParams.set(
         "fields",
-        op === "accounts"
+        q.statusOnly ? "id,name,account_id,status,effective_status" : op === "accounts"
           ? accountFields[q.accountView ?? "minimal"]
           : ((q.objectId || q.activeOnly || q.inventoryAll) && op !== "insights"
               ? "account_id,"
               : "") + fields(op),
       );
-      u.searchParams.set("limit", "100");
+      if(q.statusOnly)u.searchParams.set("ids",q.ids!.join(","));
+      else u.searchParams.set("limit", "100");
       if (q.activeOnly)
         u.searchParams.set("effective_status", JSON.stringify(["ACTIVE"]));
       if (this.appSecret)
@@ -627,6 +630,17 @@ export class MetaReader {
         );
         throw error;
       }
+      if(q.statusOnly){
+        demand(payload && typeof payload === "object" && !Array.isArray(payload), "Meta no devolvió los estados solicitados.", 502);
+        const data:Record<string,unknown>[]=[];
+        for(const [id,raw]of Object.entries(payload as Record<string,unknown>)){
+          demand(q.ids!.includes(id)&&raw&&typeof raw==="object"&&!Array.isArray(raw),"Meta devolvió otro objeto.",502);
+          const row=raw as Record<string,unknown>;
+          if(row.error){const error=new MetaGraphError(400,row,this.token,{version:this.version,endpoint:"estados seleccionados",fields:"id,account_id,status,effective_status"});await this.quota?.limited(error,retryDelay(r.headers.get("retry-after")));throw error;}
+          demand(String(row.id)===id,"Meta devolvió otro objeto.",502);data.push(row);
+        }
+        return {data};
+      }
       if (q.objectId && op !== "insights") {
         demand(
           payload &&
@@ -640,7 +654,7 @@ export class MetaReader {
       return page(payload);
     }
     demand(
-      !q.campaignId &&
+      !q.statusOnly && !q.campaignId &&
         !q.insightIds &&
         !q.ids &&
         !q.objectId &&

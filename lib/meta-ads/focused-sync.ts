@@ -458,7 +458,7 @@ export async function focusedSyncStep(
         "Meta devolvió un objeto ajeno o de otro nivel.",
         502,
       );
-      await writeSyncPage(tx, objectRows, dailyRows, phase >= 3);
+      await writeSyncPage(tx, objectRows, dailyRows, phase >= 3, new Date(lastAttempt.at));
       if (phase < 6 && selected.length)
         await tx.metaAdObject.updateMany({
           where: { accountId: a.id, id: { in: selected } },

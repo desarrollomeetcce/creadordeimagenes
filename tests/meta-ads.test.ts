@@ -1079,3 +1079,5 @@ test("Origen Meta editable: todo, incorporación y fecha personalizada conservan
  assert.equal(bootstrap.find(p=>p.from===null)?.advisorId,'ana');
  assert.equal(bootstrap.find(p=>p.advisorId==='francesca')?.from,a.effectiveAt.toISOString());
 });
+
+import "./meta-realtime.test";

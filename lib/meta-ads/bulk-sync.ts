@@ -5,19 +5,20 @@ export async function writeSyncPage(
   objects: Record<string, unknown>[],
   daily: Record<string, unknown>[],
   metadata: boolean,
+  readAt: Date = new Date(),
 ) {
   const uniqueObjects = [
     ...new Map(objects.map((row) => [row.id, row])).values(),
   ];
   if (uniqueObjects.length) {
-    const data = JSON.stringify(uniqueObjects);
+    const data = JSON.stringify(uniqueObjects.map(row=>({...row,seenAt:readAt.toISOString()})));
     if (metadata)
       await tx.$executeRaw`
       INSERT INTO "MetaAdObject" (id,"accountId",level,name,"campaignId","adsetId",objective,"optimizationGoal",status,"effectiveStatus","createdTime","scheduledStart","thumbnailUrl","seenAt")
       SELECT id,"accountId",level,name,"campaignId","adsetId",objective,"optimizationGoal",status,"effectiveStatus","createdTime","scheduledStart","thumbnailUrl",COALESCE("seenAt",NOW())
       FROM jsonb_to_recordset(${data}::jsonb) AS r(id text,"accountId" text,level text,name text,"campaignId" text,"adsetId" text,objective text,"optimizationGoal" text,status text,"effectiveStatus" text,"createdTime" timestamp,"scheduledStart" timestamp,"thumbnailUrl" text,"seenAt" timestamp)
       ON CONFLICT (id) DO UPDATE SET name=EXCLUDED.name,level=EXCLUDED.level,"campaignId"=EXCLUDED."campaignId","adsetId"=EXCLUDED."adsetId",objective=EXCLUDED.objective,"optimizationGoal"=EXCLUDED."optimizationGoal",status=EXCLUDED.status,"effectiveStatus"=EXCLUDED."effectiveStatus","createdTime"=EXCLUDED."createdTime","scheduledStart"=EXCLUDED."scheduledStart","thumbnailUrl"=EXCLUDED."thumbnailUrl","seenAt"=EXCLUDED."seenAt"
-      WHERE "MetaAdObject"."accountId"=EXCLUDED."accountId"
+      WHERE "MetaAdObject"."accountId"=EXCLUDED."accountId" AND "MetaAdObject"."seenAt"<=EXCLUDED."seenAt"
     `;
     else
       await tx.metaAdObject.createMany({
@@ -33,9 +34,9 @@ export async function writeSyncPage(
   if (uniqueDaily.length)
     await tx.$executeRaw`
     INSERT INTO "MetaAdDaily" (id,"accountId","objectId",day,scope,spend,impressions,clicks,actions,"updatedAt")
-    SELECT id,"accountId","objectId",day,scope,spend,impressions,clicks,actions,NOW()
-    FROM jsonb_to_recordset(${JSON.stringify(uniqueDaily)}::jsonb) AS r(id text,"accountId" text,"objectId" text,day text,scope text,spend numeric,impressions double precision,clicks double precision,actions jsonb)
+    SELECT id,"accountId","objectId",day,scope,spend,impressions,clicks,actions,"readAt"
+    FROM jsonb_to_recordset(${JSON.stringify(uniqueDaily.map(row=>({...row,readAt:readAt.toISOString()})))}::jsonb) AS r(id text,"accountId" text,"objectId" text,day text,scope text,spend numeric,impressions double precision,clicks double precision,actions jsonb,"readAt" timestamp)
     ON CONFLICT ("objectId",day,scope) DO UPDATE SET spend=EXCLUDED.spend,impressions=EXCLUDED.impressions,clicks=EXCLUDED.clicks,actions=EXCLUDED.actions,"updatedAt"=EXCLUDED."updatedAt"
-    WHERE "MetaAdDaily"."accountId"=EXCLUDED."accountId"
+    WHERE "MetaAdDaily"."accountId"=EXCLUDED."accountId" AND "MetaAdDaily"."updatedAt"<=EXCLUDED."updatedAt"
   `;
 }

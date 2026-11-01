@@ -1123,7 +1123,7 @@ export async function syncStep(
             objectRows.push({ id: oid, accountId: id, ...data });
           }
         }
-        await writeSyncPage(tx, objectRows, dailyRows, !insight);
+        await writeSyncPage(tx, objectRows, dailyRows, !insight, new Date(lastAttempt.at));
         if (ids) {
           const returned = new Set(result.data.map((row) => String(row.id)));
           const unavailable = ids

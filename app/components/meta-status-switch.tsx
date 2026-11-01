@@ -5,12 +5,16 @@ export function MetaStatusSwitch({
   delivery,
   disabled,
   onToggle,
+  checkedAt,
+  stale = false,
 }: {
   name: string;
   status: string;
   delivery: string;
   disabled: boolean;
   onToggle: () => void;
+  checkedAt?: string;
+  stale?: boolean;
 }) {
   if (!["ACTIVE", "PAUSED"].includes(status))
     return <small>Estado no informado</small>;
@@ -20,9 +24,10 @@ export function MetaStatusSwitch({
       type="button"
       role="switch"
       aria-checked={active}
-      aria-label={`${active ? "Desactivar" : "Activar"} ${name} en Meta`}
-      title={`${active ? "Activado" : "Desactivado"} · Entrega: ${delivery}`}
+      aria-label={`${stale ? "Sin verificar. " : ""}${active ? "Desactivar" : "Activar"} ${name} en Meta`}
+      title={`${stale ? "Último estado guardado; necesita actualizar. " : ""}${active ? "Activado" : "Desactivado"} · Entrega: ${delivery}${checkedAt ? " · Consultado: " + new Date(checkedAt).toLocaleString("es-PE",{timeZone:"America/Lima"}) : ""}`}
       className="meta-status-switch"
+      data-stale={stale || undefined}
       disabled={disabled}
       onClick={onToggle}
     >

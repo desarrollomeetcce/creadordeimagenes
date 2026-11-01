@@ -21,6 +21,7 @@ import { MetaConnectionScope } from "./meta-connection-scope";
 import { MetaConnectionAccess } from "./meta-connection-access";
 import { MetaAnalysisPeriod } from "./meta-analysis-period";
 import { type MetaAliasOption } from "./meta-alias-directory";
+import { MetaVisibleRefresh } from "./meta-visible-refresh";
 import { MetaStatusSwitch } from "./meta-status-switch";
 import { MetaDataFreshness } from "./meta-data-freshness";
 import { MetaSyncNotice } from "./meta-sync-notice";
@@ -126,6 +127,7 @@ export type Item = {
   objective: string | null;
   thumbnailUrl: string | null;
   seenAt: string;
+  statusStale?: boolean;
   metric: string;
   metricName: string;
   periods: Record<string, Period>;
@@ -1444,6 +1446,7 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
       setBusy(false);
     }
   };
+  const visibleUpdated = useCallback(() => {setRevision(n=>n+1);void refresh();},[refresh]);
   const requestAccountUpdate = (account: Account) =>
     api(`meta-ads/accounts/${account.id}/sync`, "POST", {
       focused: true,
@@ -1696,6 +1699,8 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
         <MetaStatusSwitch
           name={o.name}
           status={o.status}
+          checkedAt={o.seenAt}
+          stale={o.statusStale}
           delivery={
             deliveryLabels[o.effectiveStatus] ??
             o.effectiveStatus ??
@@ -1932,6 +1937,8 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
           <MetaStatusSwitch
             name={o.name}
             status={o.status}
+            checkedAt={o.seenAt}
+            stale={o.statusStale}
             delivery={
               deliveryLabels[o.effectiveStatus] ??
               o.effectiveStatus ??
@@ -2411,16 +2418,19 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
                   c.transport === "API" &&
                   (showDisconnected || !c.disconnectedAt),
               )
-              .map((c) => (
-                <article className="panel stack" key={c.id}>
+              .map((c) => {
+                const linked = accounts.filter(a=>a.connectionId===c.id);
+                const needsAuth = linked.some(a=>a.progress?.authorizationRequired) || !!(c.tokenExpiresAt && Date.parse(c.tokenExpiresAt)<=Date.now()) || /(?:código|code)\s*(?:190|102)\b|HTTP\s*401/i.test(c.lastError??"");
+                const quotaWait = linked.some(a=>a.progress?.status==="waiting" && a.progress.waitReason==="quota") || /Meta limitó|HTTP\s*429|código\s*(?:4|17|32|613|80000|80004)\b/i.test(c.lastError??"");
+                return <article className="panel stack" key={c.id}>
                   <div className="row spread">
                     <h3>{c.name}</h3>
                     <span className="badge">
                       {c.transport} ·{" "}
                       {c.disconnectedAt
                         ? "Desconectada"
-                        : c.verifiedAt
-                          ? "Acceso verificado"
+                        : needsAuth ? "Requiere reconectar" : quotaWait ? "Límite de consultas" : c.verifiedAt
+                          ? "Acceso comprobado anteriormente"
                           : "Pendiente de verificar"}
                     </span>
                   </div>
@@ -2446,9 +2456,9 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
                         : ""}
                     </small>
                   )}
-                  <MetaConnectionScope
-                    accounts={accounts.filter((a) => a.connectionId === c.id)}
-                  />
+                  {needsAuth && <p className="notice" role="status">Meta rechazó o venció la autorización. Renueva el acceso de esta conexión para volver a recibir datos.</p>}
+                  {!needsAuth && quotaWait && <p className="notice" role="status">Meta limitó las consultas. Se conserva el avance. Evita repetir la búsqueda de cuentas o la carga del histórico durante la pausa.</p>}
+                  <MetaConnectionScope accounts={linked} />
                   {!c.disconnectedAt && (
                     <MetaConnectionAccess
                       connection={c}
@@ -2526,7 +2536,7 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
                             await api(`meta-ads/connections/${c.id}`, "PATCH", {
                               apiVersion,
                             });
-                          }, "Versión actualizada. Se conserva el token; pulsa Actualizar conexión.");
+                          }, "Versión actualizada. Se conserva el token; pulsa Comprobar acceso.");
                         }}
                       >
                         <label>
@@ -2567,7 +2577,7 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
                         )
                       }
                     >
-                      Actualizar conexión
+                      Comprobar acceso
                     </button>
                     <button
                       type="button"
@@ -2608,8 +2618,8 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
                         : "Eliminar conexión"}
                     </button>
                   </div>
-                </article>
-              ))}
+                </article>;
+              })}
           </>
         ) : tab === "accounts" && !viewOnly ? (
           <>
@@ -3199,6 +3209,7 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
                     {analysisControl()}
                   </div>
                   <div className="meta-pinned-actions">
+                    <MetaVisibleRefresh items={items} accounts={accounts} onUpdated={visibleUpdated} onReconnect={()=>setTab("connections")} />
                     {chosen.some((a) => a.canSync) && (
                       <button
                         type="button"
@@ -3206,7 +3217,7 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
                         disabled={busy || !accountIds.length}
                         title={
                           accountIds.length
-                            ? "Actualizar datos y miniaturas desde Meta"
+                            ? "Importación completa del catálogo, comparativos e histórico desde Meta"
                             : "Selecciona una cuenta para actualizar desde Meta"
                         }
                         onClick={() =>
@@ -3215,7 +3226,7 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
                           )
                         }
                       >
-                        ↻ Actualizar desde Meta
+                        ↻ Actualizar catálogo e histórico
                       </button>
                     )}
                     <MetaDataFreshness accounts={chosen} />
