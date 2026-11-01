@@ -22,6 +22,7 @@ export function MetaAliasAction({
   readOnly = false,
   bulkCount,
   onAssign,
+  onOpen,
 }: {
   name: string;
   value?: string | null;
@@ -34,6 +35,7 @@ export function MetaAliasAction({
   disabled?: boolean;
   readOnly?: boolean;
   bulkCount?: number;
+  onOpen?: () => void;
   onAssign: (
     id: string | null,
     country: string | null,
@@ -179,7 +181,7 @@ export function MetaAliasAction({
         id={id}
         ref={popover}
         popover="auto"
-        onToggle={(e) => setOpen(e.newState === "open")}
+        onToggle={(e) => {const next=e.newState === "open";setOpen(next);if(next)onOpen?.();}}
         className="meta-alias-popover"
         style={{
           ...position,

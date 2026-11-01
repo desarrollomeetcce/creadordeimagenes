@@ -472,25 +472,45 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
   const owner = moduleAccess?.canEdit ?? role === "OWNER";
   const viewOnly = moduleAccess?.shared && !moduleAccess.canEdit;
   const moduleReady = !!moduleAccess;
+  const [accessError, setAccessError] = useState("");
+  const [accessRetry, setAccessRetry] = useState(0);
+  const [accessLoading, setAccessLoading] = useState(true);
   useEffect(() => {
-    let live = true;
-    const load = () => {
-      if (document.visibilityState !== "visible") return;
-      void api("meta-ads/workspace-access")
-        .then((a: MetaModuleAccess) => {
-          if (live) receiveModuleAccess(a);
-        })
-        .catch((e) => {
-          if (live) setMessage(e.message);
+    let live = true, inFlight = false;
+    let controller: AbortController | undefined;
+    const load = async () => {
+      if (inFlight || document.visibilityState !== "visible") return;
+      inFlight = true;
+      controller = new AbortController();
+      setAccessLoading(true);
+      try {
+        const a: MetaModuleAccess = await fetchJsonResponse("/api/meta-ads/workspace-access", {
+          cache: "no-store",
+          signal: AbortSignal.any([controller.signal, AbortSignal.timeout(10000)]),
         });
+        if (live) { receiveModuleAccess(a); setAccessError(""); }
+      } catch (e) {
+        if (live) setAccessError(e instanceof Error && ["TimeoutError", "AbortError"].includes(e.name)
+          ? "El servidor tardó demasiado en comprobar tu acceso. Reintenta la carga. Este paso no depende del token de Meta."
+          : e instanceof Error ? e.message : "No se pudo comprobar tu acceso a Meta Ads.");
+      } finally {
+        inFlight = false;
+        if (live) setAccessLoading(false);
+      }
     };
-    load();
-    const timer = setInterval(load, 10000);
+    const update = () => { void load(); };
+    update();
+    const timer = setInterval(update, 30000);
+    window.addEventListener("focus", update);
+    document.addEventListener("visibilitychange", update);
     return () => {
       live = false;
+      controller?.abort();
       clearInterval(timer);
+      window.removeEventListener("focus", update);
+      document.removeEventListener("visibilitychange", update);
     };
-  }, [userId, receiveModuleAccess]);
+  }, [userId, receiveModuleAccess, accessRetry]);
   const stableViewport = useMetaStableViewport();
   const tableHeaderScroll = useRef<HTMLDivElement>(null);
   const masterSelection = useRef<HTMLInputElement>(null);
@@ -574,15 +594,16 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
     ),
     [revision, setRevision] = useState(0),
     [sharing, setSharing] = useState<Account | null>(null);
+  const [assignmentRequested,setAssignmentRequested]=useState(false);
   useEffect(() => {
     if (!moduleReady) return;
     let active = true;
     Promise.all([
       api("meta-ads/aliases"),
       api("meta-ads/alias-table-options"),
-      owner ? api("meta-ads/alias-catalog") : Promise.resolve([]),
-      owner ? api("meta-ads/meta-advisor-options") : Promise.resolve([]),
-      owner ? api("meta-ads/workspace-inventories") : Promise.resolve([]),
+      owner && assignmentRequested ? api("meta-ads/alias-catalog") : Promise.resolve([]),
+      owner && assignmentRequested ? api("meta-ads/meta-advisor-options") : Promise.resolve([]),
+      owner && assignmentRequested ? api("meta-ads/workspace-inventories") : Promise.resolve([]),
     ])
       .then(([rows, tables, catalog, people, sheets]) => {
         if (active) {
@@ -608,7 +629,7 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
     return () => {
       active = false;
     };
-  }, [revision, owner, moduleReady]);
+  }, [revision, owner, moduleReady, assignmentRequested]);
   const aliasControl = (o: Item) => (
     <MetaAliasAction
       name={o.name}
@@ -619,6 +640,7 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
       advisors={assignmentAdvisors}
       inventories={inventories}
       tables={aliasTables}
+      onOpen={()=>setAssignmentRequested(true)}
       disabled={busy}
       readOnly={!owner}
       onAssign={(aliasId, country, selection, details) =>
@@ -1116,13 +1138,11 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
     }, 200);
     return () => clearTimeout(timer);
   }, [q]);
+  const accountStatisticsNeeded = tab === "accounts" || accountListActivity !== "all" || accountPickerActivity !== "all";
   const refresh = useCallback(async () => {
-    const [rows, permission]: [Account[], NonNullable<typeof moduleAccess>] =
-      await Promise.all([
-        api("meta-ads/accounts"),
-        api("meta-ads/workspace-access"),
-      ]);
-    receiveModuleAccess(permission);
+    const rows: Account[] = await fetchJsonResponse("/api/meta-ads/accounts" + (accountStatisticsNeeded ? "" : "?light=1"), {
+      cache: "no-store", signal: AbortSignal.timeout(15000),
+    });
     const key = rows
       .map((a) => a.id)
       .sort()
@@ -1143,7 +1163,7 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
     setSelectedObjects((old) => old.filter((o) => allowed.has(o.accountId)));
     setAccountIds((ids) => ids.filter((id) => rows.some((a) => a.id === id)));
     setAccountsLoaded(true);
-  }, []);
+  }, [accountStatisticsNeeded]);
   useEffect(() => {
     if (!preferencesReady || !owner || tab !== "connections") return;
     let live = true;
@@ -1564,6 +1584,7 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
           advisors={assignmentAdvisors}
           inventories={inventories}
           tables={aliasTables}
+          onOpen={()=>setAssignmentRequested(true)}
           disabled={busy}
           bulkCount={
             summarySelectionKey ? summarySelectionKey.split(",").length : 0
@@ -2167,9 +2188,12 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
   };
   if (!preferencesReady || !moduleAccess)
     return (
-      <p role="status">
-        {message || "Restaurando tu selección y permisos de Meta Ads…"}
-      </p>
+      <section className="panel stack meta-access-loading" aria-label="Cargando acceso a Meta Ads" aria-busy={accessLoading}>
+        <p role={accessError ? "alert" : "status"}>
+          {accessError || "Comprobando tu acceso a Meta Ads…"}
+        </p>
+        {accessError && <button type="button" disabled={accessLoading} onClick={()=>{setAccessError("");setAccessRetry(n=>n+1);}}>Reintentar acceso</button>}
+      </section>
     );
   return (
     <section className="meta-ads stack" {...stableViewport}>
@@ -2266,8 +2290,9 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
       <div className="meta-content">
         {tab === "connections" && owner ? (
           <>
+            <details className="panel meta-new-connection"><summary>＋ Añadir conexión de Meta</summary>
             <section
-              className="panel stack"
+              className="stack"
               aria-label="Agregar conexión de Meta"
             >
               <h3>Conectar cuentas de Meta</h3>
@@ -2393,7 +2418,7 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
                   </form>
                 ) : null}
               </div>
-            </section>
+            </section></details>
             {connections.some(
               (c) => c.transport === "API" && c.disconnectedAt,
             ) && (
@@ -2422,10 +2447,11 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
                 const linked = accounts.filter(a=>a.connectionId===c.id);
                 const needsAuth = linked.some(a=>a.progress?.authorizationRequired) || !!(c.tokenExpiresAt && Date.parse(c.tokenExpiresAt)<=Date.now()) || /(?:código|code)\s*(?:190|102)\b|HTTP\s*401/i.test(c.lastError??"");
                 const quotaWait = linked.some(a=>a.progress?.status==="waiting" && a.progress.waitReason==="quota") || /Meta limitó|HTTP\s*429|código\s*(?:4|17|32|613|80000|80004)\b/i.test(c.lastError??"");
-                return <article className="panel stack" key={c.id}>
+                const retryAt=linked.filter(a=>a.progress?.status==="waiting"&&a.progress.waitReason==="quota").map(a=>a.progress?.nextSyncAt).filter((v):v is string=>!!v).sort()[0];
+                return <article className="panel stack meta-connection-card" key={c.id}>
                   <div className="row spread">
                     <h3>{c.name}</h3>
-                    <span className="badge">
+                    <span className="badge" data-health={needsAuth?"auth":quotaWait?"quota":c.verifiedAt?"verified":"pending"}>
                       {c.transport} ·{" "}
                       {c.disconnectedAt
                         ? "Desconectada"
@@ -2457,8 +2483,7 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
                     </small>
                   )}
                   {needsAuth && <p className="notice" role="status">Meta rechazó o venció la autorización. Renueva el acceso de esta conexión para volver a recibir datos.</p>}
-                  {!needsAuth && quotaWait && <p className="notice" role="status">Meta limitó las consultas. Se conserva el avance. Evita repetir la búsqueda de cuentas o la carga del histórico durante la pausa.</p>}
-                  <MetaConnectionScope accounts={linked} />
+                  {!needsAuth && quotaWait && <p className="notice" role="status"><strong>Meta limitó las consultas.</strong> Los datos pueden estar atrasados; se conserva el avance. {retryAt ? `Reintento previsto: ${displayTime(retryAt)}.` : "Es el último aviso guardado de la conexión."}</p>}
                   {!c.disconnectedAt && (
                     <MetaConnectionAccess
                       connection={c}
@@ -2469,6 +2494,8 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
                       }}
                     />
                   )}
+                  <details className="meta-connection-details"><summary>Cuentas y opciones avanzadas · {linked.length}</summary>
+                  <MetaConnectionScope accounts={linked} />
                   {!c.disconnectedAt && (
                     <details>
                       <summary>Permiso para activar y pausar en Meta</summary>
@@ -2561,7 +2588,8 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
                     </details>
                   )}
 
-                  <div className="row">
+                  </details>
+                  <div className="row meta-connection-actions">
                     <button
                       type="button"
                       disabled={busy || !c.tokenMask || !!c.disconnectedAt}

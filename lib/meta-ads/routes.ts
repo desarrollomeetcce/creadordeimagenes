@@ -1936,6 +1936,7 @@ export async function metaRoutes(
     }
   }
   if (path === "accounts" && method === "GET") {
+    const light = req.nextUrl.searchParams.get("light") === "1";
     const rows = await db.metaAdAccount.findMany({
       where: await accountWhere(actor),
       select: {
@@ -1973,8 +1974,8 @@ export async function metaRoutes(
       orderBy: { name: "asc" },
     });
     const [activity, stored, totals] = await Promise.all([
-      accountActivities(rows),
-      db.metaAdDaily.groupBy({
+      light ? Promise.resolve(new Map()) : accountActivities(rows),
+      light ? Promise.resolve([]) : db.metaAdDaily.groupBy({
         by: ["accountId"],
         where: {
           accountId: { in: rows.map((a) => a.id) },
@@ -1983,7 +1984,7 @@ export async function metaRoutes(
         _min: { day: true },
         _max: { day: true, updatedAt: true },
       }),
-      db.metaAdTotal.groupBy({
+      light ? Promise.resolve([]) : db.metaAdTotal.groupBy({
         by: ["accountId"],
         where: {
           accountId: { in: rows.map((a) => a.id) },

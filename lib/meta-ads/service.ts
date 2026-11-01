@@ -594,6 +594,7 @@ const phases = [
   "insights:ad",
 ];
 type State = {
+  refreshOnly?: boolean;
   plan?: "activity";
   recentDays?: number;
   inventory?: "all" | "recent";
@@ -685,7 +686,7 @@ export async function queueSync(
         409,
       );
       const scopeChanged =
-        fresh ||
+        fresh || (focused && !!(a.syncState as State).refreshOnly) ||
         (focused &&
           (a.syncState as { plan?: string }).plan === "focus" &&
           ((a.syncState as State).inventory ?? "recent") !== inventory);
@@ -696,7 +697,7 @@ export async function queueSync(
         409,
       );
       const focusResume =
-        !fresh &&
+        !fresh && !(a.syncState as State).refreshOnly &&
         focused &&
         ((a.syncState as State).inventory ?? "recent") === inventory &&
         (a.syncState as { plan?: string }).plan === "focus" &&
@@ -851,11 +852,12 @@ export async function syncStep(
       syncPhase = "actualización del análisis";
       return await focusedSyncStep(a, c, r, token, {
         plan: "focus",
+        refreshOnly: true,
         phase: 0,
         inventory:
           (state.lastRun as { inventory?: "all" | "recent" })?.inventory ??
           "all",
-        recentDays: state.lastRun?.recentDays ?? 7,
+        recentDays: 7,
         started: new Date().toISOString(),
         until: localDay(a.timezone),
         lastRun: state.lastRun as Prisma.InputJsonObject,

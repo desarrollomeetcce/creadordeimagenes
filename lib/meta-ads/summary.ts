@@ -122,16 +122,17 @@ export async function metaSummary(
       const rows =
         period === "lifetime"
           ? await db.$queryRaw<
-              { spend: number; conversations: number; reported: number }[]
+              { spend: number; conversations: number; reported: number; stale?: number }[]
             >(
-              Prisma.sql`SELECT COALESCE(sum(spend),0)::float8 spend, COALESCE(sum(COALESCE((actions->>'onsite_conversion.messaging_conversation_started_7d')::numeric,0)),0)::float8 conversations, count(DISTINCT "objectId")::int reported FROM "MetaAdTotal" WHERE "accountId"=${account.id} AND "objectId" IN (${Prisma.join(batch)}) AND scope=${scope}`,
+              Prisma.sql`SELECT COALESCE(sum(spend),0)::float8 spend, COALESCE(sum(COALESCE((actions->>'onsite_conversion.messaging_conversation_started_7d')::numeric,0)),0)::float8 conversations, count(DISTINCT "objectId")::int reported, count(*) FILTER(WHERE until < ${today})::int stale FROM "MetaAdTotal" WHERE "accountId"=${account.id} AND "objectId" IN (${Prisma.join(batch)}) AND scope=${scope}`,
             )
           : await db.$queryRaw<
-              { spend: number; conversations: number; reported: number }[]
+              { spend: number; conversations: number; reported: number; stale?: number }[]
             >(
               Prisma.sql`SELECT COALESCE(sum(spend),0)::float8 spend, COALESCE(sum(COALESCE((actions->>'onsite_conversion.messaging_conversation_started_7d')::numeric,0)),0)::float8 conversations, count(DISTINCT "objectId")::int reported FROM "MetaAdDaily" WHERE "accountId"=${account.id} AND "objectId" IN (${Prisma.join(batch)}) AND scope=${scope} AND day BETWEEN ${start} AND ${end}`,
             );
       const r = rows[0];
+      if(r.stale)result.partial=true;
       group.spend += r.spend;
       group.conversations += r.conversations;
       group.reported += r.reported;

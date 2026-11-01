@@ -1,4 +1,5 @@
 "use client";
+import { fetchJsonResponse } from "../../lib/http-response";
 import { compareFinancialStatus } from "../../lib/meta-ads/inventory-evaluation-order";
 import {
   SheetHorizontalNavigation,
@@ -530,10 +531,15 @@ export function MetaEffectiveness({
       setData(null);
       currentRange.current = query;
     }
+    let inFlight=false, queued=false;
+    let controller: AbortController | undefined;
     const load = () => {
-      if (document.hidden) return;
+      if (document.hidden || !active) return;
+      if(inFlight){queued=true;return;}
+      inFlight=true;
+      controller=new AbortController();
       const version = ++queryVersion.current;
-      void api(query)
+      void fetchJsonResponse("/api/"+query,{cache:"no-store",signal:AbortSignal.any([controller.signal,AbortSignal.timeout(15000)])})
         .then((v: Data) => {
           if (active && queryVersion.current === version) setData(v);
           const days = v.missingFxDays.filter(
@@ -551,15 +557,20 @@ export function MetaEffectiveness({
           }
         })
         .catch((e) => {
-          if (active) setMessage(e.message);
-        });
+          if (active) setMessage(e.name==="TimeoutError"?"La hoja tardó demasiado en responder. Se conservan los últimos datos recibidos.":e.message);
+        }).finally(()=>{inFlight=false;if(queued&&active){queued=false;load();}});
     };
     load();
     const timer = setInterval(load, 30000);
+    window.addEventListener("focus",load);
+    document.addEventListener("visibilitychange",load);
     const unsubscribe = subscribeAdvisorSalesChanged(load);
     return () => {
       active = false;
       clearInterval(timer);
+      controller?.abort();
+      window.removeEventListener("focus",load);
+      document.removeEventListener("visibilitychange",load);
       unsubscribe();
     };
   }, [query, valid]);

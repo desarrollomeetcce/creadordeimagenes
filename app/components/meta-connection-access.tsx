@@ -26,15 +26,7 @@ export function MetaConnectionAccess({
       className="stack meta-connection-access"
       aria-label={`Acceso de ${connection.name}`}
     >
-      <p>
-        Esta conexión usa una sola credencial. Guarda un token manual o completa
-        la autorización con Facebook para cambiarla.
-      </p>
-      {connection.tokenMask && (
-        <p className="meta-saved-token" aria-label="Token guardado">
-          Token guardado: <span aria-hidden="true">****************</span>
-        </p>
-      )}
+      <small>Un solo acceso en uso. Guardar otro lo sustituye y conserva las cuentas y el histórico.</small>
       <div
         className="row"
         role="group"
@@ -51,8 +43,8 @@ export function MetaConnectionAccess({
           }}
         >
           {!!connection.tokenMask && !oauth
-            ? "Actualizar solo token"
-            : "Manual (token)"}
+            ? "Actualizar token"
+            : "Usar token manual"}
         </button>
         <button
           type="button"
@@ -64,7 +56,7 @@ export function MetaConnectionAccess({
             setMessage("");
           }}
         >
-          OAuth (Facebook){!!connection.tokenMask && oauth && " · En uso"}
+          Facebook (OAuth){!!connection.tokenMask && oauth && " · En uso"}
         </button>
       </div>
       {editor === "manual" && (

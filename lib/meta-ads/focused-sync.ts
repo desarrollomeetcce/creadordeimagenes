@@ -14,6 +14,7 @@ import { writeSyncPage } from "./bulk-sync";
 import { focusedLabels } from "./focused-labels";
 export type FocusState = {
   plan: "focus";
+  refreshOnly?: boolean;
   recentDays: number;
   inventory?: "all" | "recent";
   phase: number;
@@ -143,7 +144,7 @@ export async function focusedSyncStep(
     phase = state.phase;
   demand(
     phase >= 0 &&
-      phase < focusedLabels.length &&
+      phase < (state.refreshOnly ? 10 : focusedLabels.length) &&
       [7, 15, 30, 90].includes(state.recentDays),
     "Estado de importación inválido.",
     409,
@@ -214,7 +215,7 @@ export async function focusedSyncStep(
   } else if (phase < 6) {
     result = await r.get(operations[phase - 3], {
       accountId: a.id,
-      ...(state.inventory === "all"
+      ...(!state.refreshOnly && state.inventory === "all"
         ? { inventoryAll: true }
         : { activeOnly: true }),
       after: state.after,
@@ -231,7 +232,7 @@ export async function focusedSyncStep(
         502,
       );
       if (
-        state.inventory === "all"
+        !state.refreshOnly && state.inventory === "all"
           ? ["DELETED", "ARCHIVED"].includes(String(row.effective_status))
           : row.effective_status !== "ACTIVE"
       )
@@ -245,15 +246,10 @@ export async function focusedSyncStep(
     const candidates = await db.metaAdObject.findMany({
       where: {
         accountId: a.id,
-        selectedAt: { gte: new Date(started) },
-        ...(phase < 9
-          ? {
-              level,
-              ...{
-                OR: [{ seenAt: { lt: new Date(started) } }, { status: null }],
-              },
-            }
-          : {}),
+        ...(phase < 9 ? {level,OR:[
+          {selectedAt:{gte:new Date(started)},OR:[{seenAt:{lt:new Date(started)}},{status:null}]},
+          ...(state.refreshOnly ? [{effectiveStatus:"ACTIVE",seenAt:{lt:new Date(started)}}] : []),
+        ]} : {selectedAt:{gte:new Date(started)}}),
         ...(state.objectAfter ? { id: { gt: state.objectAfter } } : {}),
       },
       orderBy: { id: "asc" },
@@ -271,7 +267,7 @@ export async function focusedSyncStep(
         page.data.forEach((row) => objectRows.push(metadata(row, a.id, level))),
       );
     } else if (phase === 9) {
-      const from = shiftDay(state.until, -29);
+      const from = shiftDay(state.until, state.refreshOnly ? -6 : -29);
       const groups: (typeof batch)[] = [];
       for (const level of levels) {
         const objects = batch.filter((o) => o.level === level);
@@ -412,7 +408,7 @@ export async function focusedSyncStep(
     502,
   );
   const nextPhase = nextAfter || objectAfter ? phase : phase + 1,
-    done = nextPhase === focusedLabels.length;
+    done = nextPhase === (state.refreshOnly ? 10 : focusedLabels.length);
   const recentReady = state.recentReady || nextPhase >= 10;
   const count = (state.pages ?? 0) + pages;
   demand(
@@ -470,7 +466,7 @@ export async function focusedSyncStep(
             accountId: a.id,
             objectId: { in: selected },
             scope,
-            day: { gte: shiftDay(state.until, -29), lte: state.until },
+            day: { gte: shiftDay(state.until, state.refreshOnly ? -6 : -29), lte: state.until },
             updatedAt: { lt: new Date(started) },
           },
         });
@@ -483,6 +479,7 @@ export async function focusedSyncStep(
       WHERE "MetaAdTotal"."accountId"=EXCLUDED."accountId"`;
       const common = {
         plan: "focus",
+        ...(state.refreshOnly ? {refreshOnly:true} : {}),
         recentDays: state.recentDays,
         inventory: state.inventory ?? "recent",
         since,
@@ -524,7 +521,7 @@ export async function focusedSyncStep(
                 ...(objectAfter ? { objectAfter } : {}),
                 ...(state.lastRun ? { lastRun: state.lastRun } : {}),
               },
-          ...(nextPhase >= 6 ? { selectionSince: new Date(started) } : {}),
+          ...(!state.refreshOnly && nextPhase >= 6 ? { selectionSince: new Date(started) } : {}),
           ...((nextPhase === 10 && phase === 9) || done
             ? { syncedAt: new Date() }
             : {}),

@@ -1,0 +1,13 @@
+import test from 'node:test';import assert from 'node:assert/strict';import{randomUUID}from'node:crypto';import{NextRequest}from'next/server';import{db}from'../lib/db';import{metaRoutes}from'../lib/meta-ads/routes';import{localDay}from'../lib/meta-ads/analytics';
+test('Meta: directorio ligero evita estadísticas y conserva permisos y respuesta completa',async t=>{
+assert(process.env.DATABASE_URL?.includes('library_organization_test')&&process.env.DATABASE_URL.includes('/workspace/work/pgdata'));
+const tag=randomUUID(),uid='light-'+tag,cid='light-c-'+tag,id=Date.now()+'81',oid=id+'1',actor={id:uid,role:'ADMIN'},base=globalThis.fetch;
+await db.user.create({data:{id:uid,name:'QA directorio',email:uid+'@example.test',passwordHash:'synthetic',role:'ADMIN',status:'APPROVED'}});await db.metaConnection.create({data:{id:cid,ownerId:uid,name:'QA lista',transport:'API'}});await db.metaAdAccount.create({data:{id,connectionId:cid,name:'QA ligera',currency:'PEN',timezone:'America/Lima',syncedAt:new Date(),grants:{create:{userId:uid,canSync:true}}}});await db.metaAdObject.create({data:{id:oid,accountId:id,level:'campaign',name:'QA',status:'ACTIVE',effectiveStatus:'ACTIVE'}});await db.metaAdDaily.create({data:{objectId:oid,accountId:id,day:localDay('America/Lima'),scope:'7d_click,1d_view|impression',spend:9}});
+globalThis.fetch=async()=>{throw Error('No provider access allowed');};
+const read=async(light:boolean)=>{const r=await metaRoutes(new NextRequest('http://localhost/api/meta-ads/accounts'+(light?'?light=1':'')),['meta-ads','accounts'],actor,async()=>({}));assert.equal(r.status,200);return r.json();};
+try{
+await t.test('Directorio ligero devuelve solo cuentas autorizadas y no inventa actividad',async()=>{const rows=await read(true);assert.equal(rows.length,1);assert.equal(rows[0].id,id);assert.equal(rows[0].activity,undefined);assert.equal(rows[0].coverage,null);assert.equal(rows[0].canSync,true);assert.equal(rows[0].grants,undefined);assert.equal(rows[0].realtimeState,undefined);});
+await t.test('Lectura completa conserva estadísticas cuando se solicitan',async()=>{const rows=await read(false);assert.equal(rows.length,1);assert.equal(rows[0].activity.state,'READY');assert.equal(rows[0].activity.spend30,9);assert.equal(rows[0].activity.activeCampaigns,1);assert(rows[0].coverage.since);});
+await t.test('Revocación se aplica también al directorio ligero sin caché de permisos',async()=>{await db.metaAccountGrant.deleteMany({where:{userId:uid}});assert.deepEqual(await read(true),[]);});
+}finally{globalThis.fetch=base;await db.metaAdAccount.delete({where:{id}});await db.metaConnection.delete({where:{id:cid}});await db.user.delete({where:{id:uid}});await db.$disconnect();}
+});
