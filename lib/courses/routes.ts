@@ -44,6 +44,49 @@ export async function courseRoutes(
   if (p.length === 0 && method === "GET") return send(await courseList(u));
   if (p.length === 0 && method === "POST")
     return send(await createCourse(u, await body()), 201);
+  if (p.length >= 2 && p[1] === "references") {
+    const refs = await import("./references");
+    if (p.length === 2 && method === "GET")
+      return send(await refs.listReferences(u, p[0]));
+    if (p.length === 2 && method === "POST") {
+      await refs.referenceAccess(u, p[0]);
+      await rateLimit("courses:reference-text:" + u.id, 30);
+      const { boundedUploadBody } = await import("../large-uploads");
+      const data = JSON.parse(
+        (await boundedUploadBody(req, 7_000_000)).toString("utf8"),
+      );
+      return send(await refs.addReference(u, p[0], data), 201);
+    }
+    if (p.length === 3 && p[2] === "web" && method === "POST")
+      return send(await refs.importWebReference(u, p[0], await body()), 201);
+    if (p.length === 3 && p[2] === "file" && method === "POST") {
+      await refs.referenceAccess(u, p[0]);
+      await rateLimit("courses:reference-file:" + u.id, 6);
+      const { boundedUploadBody } = await import("../large-uploads");
+      const bytes = await boundedUploadBody(req, 16 * 1024 * 1024);
+      const name = decodeURIComponent(
+        req.headers.get("x-file-name") ?? "",
+      ).slice(0, 200);
+      demand(
+        /\.(?:pdf|docx)$/i.test(name),
+        "Para extracción en servidor usa PDF o DOCX.",
+      );
+      const { validateUpload } = await import("../uploads");
+      const checked = await validateUpload(
+        new File([new Uint8Array(bytes)], name),
+      );
+      demand(
+        checked.text.trim().length >= 30,
+        "No hay texto extraíble. Si es un escaneo, realiza OCR y adjunta el texto.",
+      );
+      return send(
+        await refs.addReference(u, p[0], { name, text: checked.text }),
+        201,
+      );
+    }
+    if (p.length === 3 && method === "DELETE")
+      return send(await refs.removeReference(u, p[0], p[2]));
+  }
   if (p[0] === "defaults" && p.length === 1) {
     if (method === "GET") {
       const c = await db.aICourseDefaults.findUnique({
@@ -138,9 +181,14 @@ export async function courseRoutes(
     if (p[1] === "tasks")
       return send(await queueTask(u, id, await body()), 202);
     if (
-      ["save", "archive", "add-module", "reorder", "import-modules"].includes(
-        p[1],
-      )
+      [
+        "save",
+        "metadata",
+        "archive",
+        "add-module",
+        "reorder",
+        "import-modules",
+      ].includes(p[1])
     )
       return send(await mutateCourse(u, id, p[1], await body()));
   }

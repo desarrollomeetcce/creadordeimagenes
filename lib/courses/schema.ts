@@ -5,6 +5,8 @@ export const styles = [
   "code",
   "spreadsheet",
   "story",
+  "animation",
+  "presenter",
 ] as const;
 export const styleLabels: Record<string, string> = {
   slides: "Diapositivas",
@@ -12,12 +14,23 @@ export const styleLabels: Record<string, string> = {
   code: "Código en pantalla",
   spreadsheet: "Tablas y datos",
   story: "Cuento ilustrado",
+  animation: "Animación educativa",
+  presenter: "Profesor en pantalla · video IA",
 };
 export const settingsSchema = z
   .object({
     audience: z
-      .enum(["professionals", "children", "families", "other"])
+      .enum([
+        "adults",
+        "professionals",
+        "children",
+        "adolescents",
+        "families",
+        "other",
+      ])
       .default("professionals"),
+    libraryGroup: z.enum(["children", "adults", "families"]).optional(),
+    voiceMode: z.enum(["voiceover", "teacher"]).default("voiceover"),
     audienceDetail: z.string().trim().max(200).default(""),
     level: z.enum(["basic", "intermediate", "advanced"]).default("basic"),
     approach: z.enum(["theory", "practice", "mixed"]).default("mixed"),

@@ -17,11 +17,20 @@ import {
   type CourseSettings,
   type Lesson,
 } from "@/lib/courses/schema";
+import {
+  audienceLabels,
+  courseGroups,
+  courseGroup,
+} from "@/lib/courses/teaching";
 import { parseCourseOutline } from "@/lib/courses/outline";
 import "./courses-ai.css";
 const CoursePlayer = dynamic(
   () => import("./course-player").then((m) => m.CoursePlayer),
   { loading: () => <p role="status">Preparando presentación…</p> },
+);
+const CourseReferences = dynamic(
+  () => import("./course-references").then((m) => m.CourseReferences),
+  { loading: () => <p role="status">Abriendo referencias…</p> },
 );
 type Provider = {
   provider: string;
@@ -228,16 +237,250 @@ const programLabels: Record<string, string> = {
   workshop: "Taller",
   seminar: "Seminario",
 };
-const audienceLabels: Record<string, string> = {
-  professionals: "Profesionales y técnicos",
-  children: "Niños",
-  families: "Padres y familias",
-  other: "Otro público",
-};
 function audienceText(s: CourseSettings) {
   return s.audience === "other"
     ? s.audienceDetail || "Otro público"
     : audienceLabels[s.audience];
+}
+function InlineCourseField({
+  label,
+  value,
+  display,
+  placeholder,
+  options,
+  multiline = false,
+  heading = false,
+  disabled,
+  save,
+}: {
+  label: string;
+  value: string;
+  display?: string;
+  placeholder?: string;
+  options?: Record<string, string>;
+  multiline?: boolean;
+  heading?: boolean;
+  disabled: boolean;
+  save: (value: string) => Promise<void>;
+}) {
+  const [editing, setEditing] = useState(false),
+    [draft, setDraft] = useState(value),
+    [error, setError] = useState(""),
+    [saving, setSaving] = useState(false),
+    form = useRef<HTMLFormElement>(null),
+    pending = useRef(false),
+    cancelled = useRef(false);
+  useEffect(() => {
+    if (editing) {
+      const input = form.current?.querySelector<
+        HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement
+      >("input,textarea,select");
+      input?.focus();
+      if (input instanceof HTMLInputElement) input.select();
+    }
+  }, [editing]);
+  async function commit() {
+    if (cancelled.current || pending.current) return;
+    if (draft === value) {
+      setEditing(false);
+      return;
+    }
+    pending.current = true;
+    setSaving(true);
+    setError("");
+    try {
+      await save(draft);
+      setEditing(false);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "No se pudo guardar.");
+    } finally {
+      pending.current = false;
+      setSaving(false);
+    }
+  }
+  function cancel() {
+    cancelled.current = true;
+    setEditing(false);
+    setError("");
+  }
+  const button = (
+    <button
+      type="button"
+      className={"course-inline-value" + (!value ? " is-empty" : "")}
+      disabled={disabled}
+      aria-label={"Editar " + label.toLowerCase()}
+      title="Haz clic para editar"
+      onClick={() => {
+        cancelled.current = false;
+        setDraft(value);
+        setError("");
+        setEditing(true);
+      }}
+    >
+      {display || value || placeholder || label}
+      <span aria-hidden="true" className="course-inline-pencil">
+        ✎
+      </span>
+    </button>
+  );
+  if (!editing)
+    return heading ? <h2 className="course-inline-title">{button}</h2> : button;
+  return (
+    <form
+      ref={form}
+      className={"course-inline-editor" + (heading ? " is-title" : "")}
+      aria-label={"Editar " + label.toLowerCase()}
+      onSubmit={(e) => {
+        e.preventDefault();
+        void commit();
+      }}
+      onBlur={(e) => {
+        if (!e.currentTarget.contains(e.relatedTarget as Node | null))
+          void commit();
+      }}
+      onKeyDown={(e) => {
+        if (e.key === "Escape") {
+          e.preventDefault();
+          e.stopPropagation();
+          cancel();
+        } else if (multiline && e.key === "Enter" && !e.shiftKey) {
+          e.preventDefault();
+          void commit();
+        }
+      }}
+    >
+      <label className="course-inline-input">
+        {label}
+        {options ? (
+          <select
+            value={draft}
+            disabled={disabled || saving}
+            onChange={(e) => setDraft(e.target.value)}
+          >
+            {Object.entries(options).map(([value, label]) => (
+              <option key={value} value={value}>
+                {label}
+              </option>
+            ))}
+          </select>
+        ) : multiline ? (
+          <textarea
+            rows={2}
+            maxLength={1000}
+            value={draft}
+            disabled={disabled || saving}
+            onChange={(e) => setDraft(e.target.value)}
+          />
+        ) : (
+          <input
+            required={heading}
+            maxLength={heading ? 200 : 200}
+            value={draft}
+            disabled={disabled || saving}
+            onChange={(e) => setDraft(e.target.value)}
+          />
+        )}
+      </label>
+      <div className="course-inline-actions">
+        <button
+          type="submit"
+          disabled={disabled || saving}
+          aria-label={"Guardar " + label.toLowerCase()}
+          title="Guardar"
+        >
+          {saving ? "…" : "✓"}
+        </button>
+        <button
+          type="button"
+          disabled={saving}
+          aria-label={"Cancelar " + label.toLowerCase()}
+          title="Cancelar"
+          onMouseDown={(e) => e.preventDefault()}
+          onClick={cancel}
+        >
+          ×
+        </button>
+      </div>
+      {error && (
+        <p role="alert" className="course-inline-error">
+          {error}
+        </p>
+      )}
+    </form>
+  );
+}
+function CourseHeading({
+  course,
+  disabled,
+  save,
+}: {
+  course: Course;
+  disabled: boolean;
+  save: (data: Record<string, string>) => Promise<void>;
+}) {
+  return (
+    <div className="course-heading-content">
+      <div className="course-heading-summary">
+        <InlineCourseField
+          label="Carpeta"
+          value={courseGroup(course.settings)}
+          display={
+            courseGroups.find((g) => g.id === courseGroup(course.settings))!
+              .title
+          }
+          options={Object.fromEntries(courseGroups.map((g) => [g.id, g.title]))}
+          disabled={disabled}
+          save={(libraryGroup) => save({ libraryGroup })}
+        />
+        <InlineCourseField
+          label="Tipo de programa"
+          value={course.kind}
+          display={programLabels[course.kind] ?? course.kind}
+          options={programLabels}
+          disabled={disabled}
+          save={(kind) => save({ kind })}
+        />
+      </div>
+      <InlineCourseField
+        heading
+        label="Nombre del programa"
+        value={course.title}
+        disabled={disabled}
+        save={(title) => save({ title })}
+      />
+      <div className="course-heading-description">
+        <InlineCourseField
+          multiline
+          label="Descripción breve"
+          value={course.description}
+          placeholder="Añadir descripción breve"
+          disabled={disabled}
+          save={(description) => save({ description })}
+        />
+      </div>
+      <div className="course-heading-audience">
+        <InlineCourseField
+          label="Público objetivo"
+          value={course.settings.audience}
+          display={"Dirigido a: " + audienceLabels[course.settings.audience]}
+          options={audienceLabels}
+          disabled={disabled}
+          save={(audience) => save({ audience })}
+        />
+        <InlineCourseField
+          label="Detalle del público"
+          value={course.settings.audienceDetail ?? ""}
+          placeholder="Añadir detalle del público"
+          disabled={disabled}
+          save={(audienceDetail) => save({ audienceDetail })}
+        />
+      </div>
+      <p className="muted">
+        {course.modules.length} módulos · Duración objetivo{" "}
+        {course.modules.reduce((a, m) => a + m.minutes, 0)} min
+      </p>
+    </div>
+  );
 }
 function CourseForm({
   course,
@@ -277,6 +520,8 @@ function CourseForm({
         videoModel,
       };
     for (const k of [
+      "libraryGroup",
+      "voiceMode",
       "audience",
       "audienceDetail",
       "level",
@@ -300,9 +545,9 @@ function CourseForm({
       settingsOnly
         ? { settings }
         : {
-            title: f.get("title"),
-            kind: f.get("kind"),
-            description: f.get("description"),
+            title: course?.title,
+            kind: course?.kind,
+            description: course?.description,
             prompt: f.get("prompt"),
             settings,
           },
@@ -315,70 +560,39 @@ function CourseForm({
   return (
     <form className="course-form" onSubmit={save}>
       {!settingsOnly && (
-        <details>
-          <summary>Datos de la carpeta</summary>
-          <div className="course-grid">
-            <label>
-              Nombre
-              <input
-                required
-                name="title"
-                maxLength={200}
-                defaultValue={course?.title ?? ""}
-              />
-            </label>
-            <Select
-              name="kind"
-              label="Tipo de programa"
-              value={course?.kind ?? "course"}
-              options={Object.entries(programLabels).map(([value, label]) => ({
-                value,
-                label,
-              }))}
-            />
-          </div>
-          <label>
-            Descripción breve
-            <textarea
-              name="description"
-              rows={2}
-              maxLength={1000}
-              defaultValue={course?.description ?? ""}
-            />
-          </label>
-        </details>
-      )}
-      {!settingsOnly && (
         <label>
-          Objetivo o instrucciones del temario
+          Prompt del curso
           <textarea
+            placeholder="Qué deben aprender, conocimientos previos, ejemplos y forma de explicar. El público, nivel, estilo y voz seleccionados también se envían a la IA."
             name="prompt"
             rows={4}
             maxLength={20000}
             defaultValue={course?.prompt ?? ""}
-            placeholder="¿Qué deben aprender y practicar? También puedes pegar tus módulos más abajo."
           />
         </label>
       )}
       <div className="course-grid">
-        <Select
-          name="audience"
-          label="Público objetivo"
-          value={s.audience}
-          options={Object.entries(audienceLabels).map(([value, label]) => ({
-            value,
-            label,
-          }))}
-        />
-        <label>
-          Detalle del público · opcional
-          <input
-            name="audienceDetail"
-            maxLength={200}
-            defaultValue={s.audienceDetail}
-            placeholder="Edad, especialidad o público personalizado"
-          />
-        </label>
+        {settingsOnly && (
+          <>
+            <Select
+              name="audience"
+              label="Público objetivo"
+              value={s.audience}
+              options={Object.entries(audienceLabels).map(([value, label]) => ({
+                value,
+                label,
+              }))}
+            />
+            <label>
+              Detalle del público · opcional
+              <input
+                name="audienceDetail"
+                maxLength={200}
+                defaultValue={s.audienceDetail}
+              />
+            </label>
+          </>
+        )}
         <Select
           name="level"
           label="Dificultad del curso"
@@ -440,6 +654,13 @@ function CourseForm({
           />
         </label>
       </div>
+      <p className="muted course-format-help">
+        El enfoque indica teoría o práctica; el estilo indica cómo se verá.
+        Todos los estilos sirven para cualquier público. La animación local
+        mueve ilustraciones y revela pasos; para personajes en movimiento o un
+        profesor visible, genera escenas de video. No incluye sincronización
+        labial garantizada.
+      </p>
       <details open={!s.model}>
         <summary>Texto · desarrollar clases y materiales</summary>
         <div className="course-grid">
@@ -466,6 +687,26 @@ function CourseForm({
       </details>
       <details>
         <summary>Voz · narrar las clases</summary>
+        <Select
+          name="voiceMode"
+          label="Forma de narrar"
+          value={s.voiceMode}
+          options={[
+            {
+              value: "voiceover",
+              label: "Voz en off · narrador fuera de pantalla",
+            },
+            {
+              value: "teacher",
+              label: "Voz del profesor · explicación en primera persona",
+            },
+          ]}
+        />
+        <p className="muted">
+          Ambas opciones usan la voz elegida. Para ver al profesor, selecciona
+          Profesor en pantalla y genera sus escenas de video; esta voz no
+          sincroniza sus labios.
+        </p>
         <div className="course-grid">
           <label>
             Proveedor
@@ -559,15 +800,15 @@ function CourseForm({
         </div>
       </details>
       <details>
-        <summary>Video · clips generados y exportación</summary>
+        <summary>Video · escenas generadas y exportación</summary>
         <p className="muted">
-          La presentación narrada funciona sin un modelo de video. Los clips con
-          IA se generan por escena, solo al solicitarlos. Los modelos de
-          imágenes no aparecen aquí.
+          La clase puede usar diapositivas y voz. Opcionalmente puedes añadir
+          escenas de video cortas creadas con IA; se generan solo cuando las
+          solicitas.
         </p>
         <div className="course-grid">
           <label>
-            Proveedor de clips
+            Proveedor de escenas de video
             <select
               name="videoProvider"
               value={video}
@@ -596,7 +837,7 @@ function CourseForm({
           <Select
             key={videoModel + "res"}
             name="videoResolution"
-            label="Resolución del clip"
+            label="Resolución de la escena de video"
             value={s.videoResolution}
             options={
               opts?.resolutions.length
@@ -607,7 +848,7 @@ function CourseForm({
           <Select
             key={videoModel + "duration"}
             name="videoDuration"
-            label="Duración objetivo del clip"
+            label="Duración de la escena de video"
             value={s.videoDuration}
             options={
               opts?.durations.length
@@ -626,7 +867,7 @@ function CourseForm({
           <Select
             key={videoModel + "aspect"}
             name="videoAspect"
-            label="Formato del clip"
+            label="Formato de la escena de video"
             value={s.videoAspect}
             options={
               opts?.aspects.length
@@ -730,14 +971,16 @@ export function CourseConfiguration() {
 }
 function CreateFolder({
   defaults,
+  group,
   busy,
   submit,
 }: {
   defaults: CourseSettings;
+  group: "children" | "adults" | "families";
   busy: boolean;
   submit: (b: unknown) => void;
 }) {
-  const [audience, setAudience] = useState(defaults.audience);
+  const [audience, setAudience] = useState<CourseSettings["audience"]>(group);
   return (
     <form
       className="course-form"
@@ -751,6 +994,7 @@ function CreateFolder({
           prompt: "",
           settings: {
             ...defaults,
+            libraryGroup: group,
             audience,
             audienceDetail: String(f.get("audienceDetail") ?? ""),
           },
@@ -801,17 +1045,21 @@ function CreateFolder({
           ))}
         </select>
       </label>
-      {audience === "other" && (
-        <label>
-          ¿A quién va dirigido?
-          <input
-            name="audienceDetail"
-            required
-            maxLength={200}
-            placeholder="Describe tu público"
-          />
-        </label>
-      )}
+      <label>
+        {audience === "other"
+          ? "¿A quién va dirigido?"
+          : "Edad o detalle del público · opcional"}
+        <input
+          name="audienceDetail"
+          required={audience === "other"}
+          maxLength={200}
+          placeholder="Ej. 8 a 10 años, adolescentes de secundaria o ingenieros"
+        />
+      </label>
+      <p className="muted">
+        La carpeta organiza el programa. Puedes cambiar el público aquí y
+        después en la cabecera, sin limitar los estilos disponibles.
+      </p>
       <button disabled={busy} className="course-primary">
         {busy ? "Creando…" : "Crear carpeta del programa"}
       </button>
@@ -871,7 +1119,11 @@ export function CoursesAI() {
       settingsSchema.parse({}),
     ),
     [settingsShown, setSettingsShown] = useState(false),
-    [outlineMode, setOutlineMode] = useState("ai");
+    [referencesShown, setReferencesShown] = useState(false),
+    [outlineMode, setOutlineMode] = useState("ai"),
+    [newGroup, setNewGroup] = useState<"children" | "adults" | "families">(
+      "adults",
+    );
   const busyRef = useRef(false);
   const [moduleDetail, setModuleDetail] = useState<Module | null>(null);
   const [list, setList] = useState<Summary[]>([]),
@@ -939,6 +1191,7 @@ export function CoursesAI() {
     setCourse(null);
     setWindow(null);
     setSettingsShown(false);
+    setReferencesShown(false);
     setOutlineMode("ai");
     setAdd(false);
     setModuleDetail(null);
@@ -1142,14 +1395,28 @@ export function CoursesAI() {
           >
             ⚙ Ajustes IA
           </a>
-          <button
-            type="button"
-            className="course-primary"
-            onClick={() => setWindow("new")}
-          >
-            ＋ Crear curso
-          </button>
         </div>
+      </div>
+      <div
+        className="course-create-groups"
+        aria-label="Crear curso por público"
+      >
+        {courseGroups.map((g) => (
+          <button
+            key={g.id}
+            type="button"
+            className={"course-create-group group-" + g.id}
+            disabled={busy || loading}
+            onClick={() => {
+              setNewGroup(g.id);
+              setWindow("new");
+            }}
+          >
+            <span aria-hidden="true">{g.icon}</span>
+            <strong>{g.create}</strong>
+            <small>{g.description}</small>
+          </button>
+        ))}
       </div>
       {error && (
         <div className="course-error" role="alert">
@@ -1176,33 +1443,59 @@ export function CoursesAI() {
               ↻
             </button>
           </div>
-          {list.map((c) => (
-            <button
-              type="button"
-              key={c.id}
-              className={
-                selected === c.id ? "course-course selected" : "course-course"
-              }
-              aria-pressed={selected === c.id}
-              onClick={() => {
-                setSelected(c.id);
-                setError("");
-              }}
+          {courseGroups.map((group) => (
+            <details
+              key={group.id}
+              className={"course-library-group group-" + group.id}
+              open
             >
-              <strong>
-                <span aria-hidden="true">📁 </span>
-                {c.title}
-              </strong>
-              <small className="course-folder-description">
-                {c.description}
-              </small>
-              <span className="course-audience">
-                {audienceText(c.settings)}
-              </span>
-              <span>
-                {programLabels[c.kind] ?? c.kind} · {c._count.modules} módulos
-              </span>
-            </button>
+              <summary>
+                <span aria-hidden="true">{group.icon} </span>
+                {group.title}
+                <span className="course-group-count">
+                  {
+                    list.filter((c) => courseGroup(c.settings) === group.id)
+                      .length
+                  }
+                </span>
+              </summary>
+              {list
+                .filter((c) => courseGroup(c.settings) === group.id)
+                .map((c) => (
+                  <button
+                    type="button"
+                    key={c.id}
+                    className={
+                      selected === c.id
+                        ? "course-course selected"
+                        : "course-course"
+                    }
+                    aria-pressed={selected === c.id}
+                    onClick={() => {
+                      setSelected(c.id);
+                      setError("");
+                    }}
+                  >
+                    <strong>
+                      <span aria-hidden="true">📁 </span>
+                      {c.title}
+                    </strong>
+                    <small className="course-folder-description">
+                      {c.description}
+                    </small>
+                    <span className="course-audience">
+                      {audienceText(c.settings)}
+                    </span>
+                    <span>
+                      {programLabels[c.kind] ?? c.kind} · {c._count.modules}{" "}
+                      módulos
+                    </span>
+                  </button>
+                ))}
+              {!list.some((c) => courseGroup(c.settings) === group.id) && (
+                <p className="muted">Aún no hay programas en esta carpeta.</p>
+              )}
+            </details>
           ))}
           {!list.length && !loading && (
             <p className="muted">Tu próximo curso empieza con una idea.</p>
@@ -1224,31 +1517,34 @@ export function CoursesAI() {
                   <span key={s}>{styleLabels[s]}</span>
                 ))}
               </div>
-              <button
-                className="course-primary"
-                type="button"
-                onClick={() => setWindow("new")}
-              >
-                Crear mi primer curso
-              </button>
+              <p className="muted">
+                Elige arriba para quién crearás tu próximo programa.
+              </p>
             </div>
           ) : (
             <>
               <div className="course-heading">
-                <div>
-                  <span className="course-tag">
-                    {programLabels[course.kind] ?? course.kind}
-                  </span>
-                  <h2>{course.title}</h2>
-                  <p>{course.description}</p>
-                  <span className="course-tag">
-                    Dirigido a: {audienceText(course.settings)}
-                  </span>
-                  <p className="muted">
-                    {course.modules.length} módulos · Duración objetivo{" "}
-                    {course.modules.reduce((a, m) => a + m.minutes, 0)} min
-                  </p>
-                </div>
+                <CourseHeading
+                  key={course.id}
+                  course={course}
+                  disabled={busy || working}
+                  save={async (data) => {
+                    if (busyRef.current)
+                      throw Error("Espera a que termine el guardado.");
+                    busyRef.current = true;
+                    setBusy(true);
+                    try {
+                      await request("/" + course.id + "/metadata", {
+                        revision: course.revision,
+                        data,
+                      });
+                      await refresh();
+                    } finally {
+                      busyRef.current = false;
+                      if (mounted.current) setBusy(false);
+                    }
+                  }}
+                />
                 <div className="course-toolbar">
                   <button
                     type="button"
@@ -1282,6 +1578,21 @@ export function CoursesAI() {
                   )}
                 </div>
               </div>
+              <details
+                className="course-references-panel"
+                open={referencesShown}
+                onToggle={(e) => setReferencesShown(e.currentTarget.open)}
+              >
+                <summary>Referencias del curso · opcional</summary>
+                {referencesShown && (
+                  <CourseReferences
+                    key={course.id}
+                    courseId={course.id}
+                    disabled={busy || working}
+                    changed={refresh}
+                  />
+                )}
+              </details>
               <section className="course-syllabus">
                 <div className="course-heading">
                   <div>
@@ -1314,7 +1625,7 @@ export function CoursesAI() {
                 {settingsShown && (
                   <div className="course-inline-form">
                     <CourseForm
-                      key={course.id + ":" + course.revision}
+                      key={course.id}
                       course={course}
                       providers={providers}
                       busy={busy || working}
@@ -1579,8 +1890,13 @@ export function CoursesAI() {
         </main>
       </div>
       {window === "new" && (
-        <Window title="Crear curso" onClose={() => setWindow(null)}>
+        <Window
+          title={courseGroups.find((g) => g.id === newGroup)!.create}
+          onClose={() => setWindow(null)}
+        >
           <CreateFolder
+            key={newGroup}
+            group={newGroup}
             defaults={defaults}
             busy={busy}
             submit={(b) =>
@@ -1928,7 +2244,9 @@ export function CoursesAI() {
                             />
                           ) : (
                             <details className="course-video-action">
-                              <summary>Crear clip de video con IA</summary>
+                              <summary>
+                                Crear una escena de video con IA
+                              </summary>
                               <form
                                 onSubmit={(e) => {
                                   e.preventDefault();
@@ -1967,7 +2285,7 @@ export function CoursesAI() {
                                     !course.settings.videoModel
                                   }
                                 >
-                                  Generar este clip
+                                  Generar esta escena de video
                                 </button>
                               </form>
                             </details>

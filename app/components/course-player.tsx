@@ -88,7 +88,8 @@ export function drawScene(
     h = 720,
     p = Math.max(0, Math.min(1, progress)),
     dark = ["whiteboard", "code"].includes(scene.kind),
-    story = scene.kind === "story";
+    story = scene.kind === "story" || scene.kind === "animation",
+    animation = scene.kind === "animation";
   ctx.fillStyle =
     scene.kind === "whiteboard"
       ? "#123c36"
@@ -186,11 +187,28 @@ export function drawScene(
     }
     if (image) {
       const ratio = Math.min(490 / image.width, 425 / image.height);
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(730, 170, 500, 440);
+      ctx.clip();
+      if (animation) {
+        const zoom = 1 + p * 0.12;
+        ctx.translate(980, 390);
+        ctx.scale(zoom, zoom);
+        ctx.translate(-980 + Math.sin(p * Math.PI) * 12, -390);
+      }
       ctx.drawImage(image, 740, 190, image.width * ratio, image.height * ratio);
+      ctx.restore();
     } else if (story) {
       ctx.fillStyle = "#eadbfa";
       ctx.beginPath();
-      ctx.arc(986, 353, 160, 0, 2 * Math.PI);
+      ctx.arc(
+        986,
+        353 + (animation ? Math.sin(p * Math.PI * 4) * 12 : 0),
+        160,
+        0,
+        2 * Math.PI,
+      );
       ctx.fill();
       ctx.fillStyle = "#ffcc78";
       ctx.fillRect(872, 315, 108, 145);
@@ -207,6 +225,25 @@ export function drawScene(
       ctx.fillStyle = "#744d9e";
       ctx.fillText("✦", 958, 283);
     }
+  }
+  if (scene.kind === "presenter") {
+    ctx.fillStyle = "#594388";
+    ctx.font = "18px sans-serif";
+    ctx.fillText(
+      "Vista previa del guion · genera el video para ver al profesor",
+      56,
+      650,
+    );
+  } else if (animation) {
+    ctx.fillStyle = "#594388";
+    ctx.font = "18px sans-serif";
+    ctx.fillText(
+      image
+        ? "Ilustración con movimiento · narración por separado"
+        : "Vista previa · añade una ilustración o una escena de video",
+      56,
+      650,
+    );
   }
   ctx.fillStyle = dark ? "#264c49" : "#e3e1f0";
   ctx.fillRect(56, 682, 1168, 6);

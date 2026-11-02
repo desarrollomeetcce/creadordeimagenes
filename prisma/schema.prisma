@@ -1295,6 +1295,7 @@ model AICourse {
   archivedAt DateTime?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+  references AICourseReference[]
   modules AICourseModule[]
   tasks AICourseTask[]
   @@index([archivedAt,updatedAt])
@@ -1377,4 +1378,26 @@ model AICourseDefaults {
   settings Json @default("{}")
   revision Int @default(1)
   updatedAt DateTime @updatedAt
+}
+
+model AICourseReference {
+  id String @id @default(cuid())
+  courseId String
+  course AICourse @relation(fields:[courseId],references:[id],onDelete:Cascade)
+  name String
+  url String?
+  digest String
+  characters Int
+  createdAt DateTime @default(now())
+  chunks AICourseReferenceChunk[]
+  @@unique([courseId,digest])
+  @@index([courseId,createdAt])
+}
+model AICourseReferenceChunk {
+  id String @id @default(cuid())
+  referenceId String
+  reference AICourseReference @relation(fields:[referenceId],references:[id],onDelete:Cascade)
+  position Int
+  text String
+  @@unique([referenceId,position])
 }
