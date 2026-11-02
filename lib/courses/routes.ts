@@ -41,6 +41,13 @@ export async function courseRoutes(
     method = req.method;
   const send = (v: unknown, status = 200) =>
     NextResponse.json(v, { status, headers: { "Cache-Control": "no-store" } });
+  if (p.length === 1 && p[0] === "library") {
+    const library = await import("./library");
+    if (method === "GET")
+      return send(await library.readLibrary(u, req.nextUrl.searchParams));
+    if (method === "POST")
+      return send(await library.changeLibrary(u, await body()));
+  }
   if (p.length === 0 && method === "GET") return send(await courseList(u));
   if (p.length === 0 && method === "POST")
     return send(await createCourse(u, await body()), 201);

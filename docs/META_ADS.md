@@ -185,3 +185,14 @@ La selección semanal incluye activos actuales y pausados con entrega en el peri
 ### Estadísticas agrupadas y disponibilidad
 
 Los comparativos recientes se pueden abrir con «Ver análisis disponible» antes de terminar el acumulado. Las tarjetas se actualizan al completar grupos históricos; el progreso muestra elementos completados/total. El histórico usa Insights de cuenta con filtro obligatorio por IDs seleccionados/nivel (hasta50 por checkpoint); diarios30 agrupan3 IDs como máximo por consulta para acotar filas. Caché6h evita repetir acumulados vigentes. Se conservan cursores de ejecuciones previas, histórico y controles de pausa/cuota. El tiempo real depende de Meta y de los elementos seleccionados; los11 pasos no representan por sí solos cuántos objetos faltan.
+
+
+## Corrección de estados y distribución · 02/11/2026
+
+La actualización breve usaba un GET raíz con `ids`, que Graphv26 devuelve como obsoleto aunque el token siga siendo el mismo. Se sustituye por una envoltura POST `batch` con hasta50 subconsultas **GET por ID**: es lectura, sin activar/pausar campañas. Se valida cada respuesta, el ID, la cuenta autorizada y la revisión vigente; se mantienen cuota/cooldown, fencing, gasto hoy/ayer y cursores históricos. No se reimporta el pasado ni se sustituye la credencial. El lote reduce viajes HTTP; Meta puede contabilizar cada subconsulta en sus límites, por lo que no evita las cuotas del proveedor.
+
+En Rendimiento, ACTIVE se muestra verde y PAUSED gris. Un estado antiguo conserva su color con borde ámbar y aviso de falta de verificación; no se desatura hasta parecer apagado. Los controles de solo lectura conservan el color sin conceder permisos de cambio. Los configurados ACTIVE van antes de PAUSED incluso al ordenar costos o paginar; dentro de los activados se prioriza entrega efectiva ACTIVE. Un elemento activado puede tener entrega limitada por su campaña superior: configuración y entrega son datos distintos.
+
+Filtros/cuentas fijadas mantienen sus filas; resumen y periodo se alinean arriba, y actualización breve, catálogo e información de sincronización se distribuyen en una fila adaptable. Los avisos extensos se ajustan al ancho sin desplazar los otros bloques. La leyenda explica verde/gris/borde ámbar. El aviso técnico concreto de `ids` corresponde a la consulta, no prueba que el usuario haya cambiado mal su token. Otros errores de autorización o cuota requieren su diagnóstico correspondiente.
+
+Validado con proveedor sintético, sin usar ni modificar credenciales reales y sin activar campañas. Para confirmar datos de una cuenta real, el VPS debe aplicar la actualización y completar una lectura autorizada de Meta; el éxito de las pruebas y de Vercel no confirma ese estado real.

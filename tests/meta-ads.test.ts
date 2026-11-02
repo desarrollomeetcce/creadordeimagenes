@@ -128,7 +128,7 @@ test('Meta ordering: active objects first before pagination, costs within compar
  assert.deepEqual([...rows].sort((a,b)=>compareMetaItems(a,b,'today',1)).map(o=>o.id),['active-low','active-high','active-none','paused-cheap','paused-high']);
  assert.deepEqual([...rows].sort((a,b)=>compareMetaItems(a,b,'today',-1)).map(o=>o.id),['active-high','active-low','active-none','paused-high','paused-cheap']);
  assert(compareMetaItems(row('a','ACTIVE',5,'USD'),row('b','PAUSED',.1), 'today',1)<0);
- const inherited={...row('child','PAUSED',.1),status:'ACTIVE'};assert(compareMetaItems(inherited,row('live','ACTIVE',2),'today',1)>0);
+ const inherited={...row('child','PAUSED',.1),status:'ACTIVE'};assert(compareMetaItems(inherited,row('live','ACTIVE',2),'today',1)>0);assert(compareMetaItems(inherited,row('paused','PAUSED',.001),'today',1)<0);assert(compareMetaItems(inherited,row('paused','PAUSED',99),'today',-1)<0);
 });
 
 test('Meta links select the exact campaign, adset or ad in the correct account and level',async()=>{

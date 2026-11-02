@@ -491,6 +491,100 @@ export class MetaReader {
     }
     return { ...minimal, data: [...rows.values()], warnings };
   }
+  private async selectedStatuses(ids: string[]): Promise<Page> {
+    const selectedFields = "id,name,account_id,status,effective_status";
+    const proof = this.appSecret
+      ? createHmac("sha256", this.appSecret).update(this.token).digest("hex")
+      : undefined;
+    const batch = ids.map((id) => {
+      const query = new URLSearchParams({ fields: selectedFields });
+      if (proof) query.set("appsecret_proof", proof);
+      return {
+        method: "GET",
+        relative_url: id + "?" + query.toString(),
+        omit_response_on_success: false,
+      };
+    });
+    const body = new URLSearchParams({ batch: JSON.stringify(batch) });
+    if (proof) body.set("appsecret_proof", proof);
+    // Graph v26 retired multi-ID reads. This envelope contains GETs only, never mutations.
+    await this.quota?.beforeRead();
+    const r = await external(`https://graph.facebook.com/${this.version}/`, {
+      method: "POST",
+      headers: {
+        Authorization: "Bearer " + this.token,
+        "Content-Type": "application/x-www-form-urlencoded",
+      },
+      body,
+    });
+    let payload: unknown;
+    try {
+      payload = JSON.parse(await boundedResponse(r));
+    } catch {
+      if (r.ok)
+        throw new AppError("Meta devolvió un lote de estados ilegible.", 502);
+    }
+    const context = {
+      version: this.version,
+      endpoint: "estados seleccionados (lectura)",
+      fields: selectedFields,
+    };
+    if (
+      !r.ok ||
+      (!Array.isArray(payload) &&
+        payload &&
+        typeof payload === "object" &&
+        "error" in payload)
+    ) {
+      const error = new MetaGraphError(r.status, payload, this.token, context);
+      await this.quota?.limited(
+        error,
+        retryDelay(r.headers.get("retry-after")),
+      );
+      throw error;
+    }
+    demand(
+      Array.isArray(payload) && payload.length === ids.length,
+      "Meta no devolvió todos los estados solicitados.",
+      502,
+    );
+    const data: Record<string, unknown>[] = [];
+    for (let i = 0; i < ids.length; i++) {
+      const part = payload[i];
+      demand(
+        part &&
+          typeof part === "object" &&
+          typeof part.code === "number" &&
+          typeof part.body === "string",
+        "Respuesta de estado incompleta.",
+        502,
+      );
+      let row: Record<string, unknown>;
+      try {
+        row = JSON.parse(part.body);
+      } catch {
+        throw new AppError("Meta devolvió un estado ilegible.", 502);
+      }
+      if (part.code < 200 || part.code >= 300 || row?.error) {
+        const error = new MetaGraphError(part.code, row, this.token, context);
+        await this.quota?.limited(
+          error,
+          retryDelay(r.headers.get("retry-after")),
+        );
+        throw error;
+      }
+      demand(
+        row &&
+          typeof row === "object" &&
+          !Array.isArray(row) &&
+          String(row.id) === ids[i],
+        "Meta devolvió otro objeto.",
+        502,
+      );
+      data.push(row);
+    }
+    return { data };
+  }
   async get(op: Operation, q: Query = {}): Promise<Page> {
     if (this.transport === "API") {
       demand(
@@ -540,12 +634,26 @@ export class MetaReader {
         }
         return { data };
       }
-      demand(!q.statusOnly || (op !== "accounts" && op !== "insights" && !!q.ids?.length && q.ids.length <= 50 && new Set(q.ids).size === q.ids.length && q.ids.every(id => /^\d{1,40}$/.test(id))), "Selección de estados inválida.");
+      if (q.statusOnly) {
+        demand(
+          ["campaigns", "adsets", "ads"].includes(op) &&
+            !q.objectId &&
+            !q.after &&
+            !q.campaignId &&
+            !q.insightIds &&
+            !!q.ids?.length &&
+            q.ids.length <= 50 &&
+            new Set(q.ids).size === q.ids.length &&
+            q.ids.every((id) => /^\d{1,40}$/.test(id)),
+          "Selección de estados inválida.",
+        );
+        return this.selectedStatuses(q.ids);
+      }
       demand(
         !q.objectId || /^\d{1,40}$/.test(q.objectId),
         "Identificador de objeto inválido.",
       );
-      const path = q.statusOnly ? "" : q.objectId
+      const path = q.objectId
         ? q.objectId + (op === "insights" ? "/insights" : "")
         : op === "accounts"
           ? "me/adaccounts"
@@ -561,14 +669,13 @@ export class MetaReader {
       };
       u.searchParams.set(
         "fields",
-        q.statusOnly ? "id,name,account_id,status,effective_status" : op === "accounts"
+        op === "accounts"
           ? accountFields[q.accountView ?? "minimal"]
           : ((q.objectId || q.activeOnly || q.inventoryAll) && op !== "insights"
               ? "account_id,"
               : "") + fields(op),
       );
-      if(q.statusOnly)u.searchParams.set("ids",q.ids!.join(","));
-      else u.searchParams.set("limit", "100");
+      u.searchParams.set("limit", "100");
       if (q.activeOnly)
         u.searchParams.set("effective_status", JSON.stringify(["ACTIVE"]));
       if (this.appSecret)
@@ -630,17 +737,6 @@ export class MetaReader {
         );
         throw error;
       }
-      if(q.statusOnly){
-        demand(payload && typeof payload === "object" && !Array.isArray(payload), "Meta no devolvió los estados solicitados.", 502);
-        const data:Record<string,unknown>[]=[];
-        for(const [id,raw]of Object.entries(payload as Record<string,unknown>)){
-          demand(q.ids!.includes(id)&&raw&&typeof raw==="object"&&!Array.isArray(raw),"Meta devolvió otro objeto.",502);
-          const row=raw as Record<string,unknown>;
-          if(row.error){const error=new MetaGraphError(400,row,this.token,{version:this.version,endpoint:"estados seleccionados",fields:"id,account_id,status,effective_status"});await this.quota?.limited(error,retryDelay(r.headers.get("retry-after")));throw error;}
-          demand(String(row.id)===id,"Meta devolvió otro objeto.",502);data.push(row);
-        }
-        return {data};
-      }
       if (q.objectId && op !== "insights") {
         demand(
           payload &&
@@ -654,7 +750,8 @@ export class MetaReader {
       return page(payload);
     }
     demand(
-      !q.statusOnly && !q.campaignId &&
+      !q.statusOnly &&
+        !q.campaignId &&
         !q.insightIds &&
         !q.ids &&
         !q.objectId &&

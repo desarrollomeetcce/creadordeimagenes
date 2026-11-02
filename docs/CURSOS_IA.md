@@ -83,7 +83,7 @@ La pizarra es una simulación de escritura progresiva. Las demostraciones de sof
 
 ## Biblioteca por destinatarios, formatos y voz
 
-La pantalla inicial tiene cuatro accesos: **Crear curso para niños y adolescentes**, **Crear curso para adultos** **Crear curso para padres y familias** y **Crear curso para otros**. Cada uno preselecciona su público, que sigue siendo editable (incluidos adolescentes, profesionales y Otro). La biblioteca tiene esas cuatro carpetas principales. La carpeta organiza; el público dirige la enseñanza. Cambiar el público no cambia la carpeta elegida. Puedes corregir también la carpeta desde la cabecera. Los programas anteriores se agrupan por su público hasta que selecciones una carpeta explícita.
+La biblioteca muestra categorías compactas: niños y adolescentes, adultos, padres y familias, otros, y las que añadas mediante **Nueva categoría**. Pulsa el nombre para desplegar sus programas; **+ Crear curso** aparece primero dentro de la categoría y preselecciona el público. El público sigue siendo editable (incluidos adolescentes, profesionales y Otro), independientemente de la categoría. Los programas anteriores se agrupan por su público hasta que selecciones una categoría explícita. Puedes cambiarla desde la cabecera del curso.
 
 Todos los estilos están disponibles para cualquier público: diapositivas, pizarra, código, tablas, cuento ilustrado, **Animación educativa** y **Profesor en pantalla · video IA**. La animación local aplica movimiento a ilustraciones y revela pasos; para dibujos con acciones complejas, transiciones cinematográficas o profesor visible, genera y revisa las escenas de video. Sin video, Profesor en pantalla muestra una vista previa del guion, claramente identificada. No incorpora un servicio de avatar con sincronización labial. La voz nativa de los videos generados no se usa: el montaje añade la narración seleccionada.
 
@@ -104,3 +104,14 @@ Las referencias no se cargan desde otros módulos ni en el listado de carpetas; 
 Retirar una referencia borra sus fragmentos del banco; los resultados y las instantáneas de generaciones anteriores conservan su historia. Los permisos OWNER se revalidan al escribir y se bloquean cambios de referencias mientras hay generación activa. Ninguna carga o lectura de referencia genera IA facturable.
 
 La biblioteca también incluye **Crear curso para otros** y **Cursos para otros**. Preselecciona Otro público y permite describirlo; se puede cambiar el destinatario conservando esta carpeta. Los programas anteriores con público Otro, sin carpeta explícita, aparecen en este grupo.
+
+
+## Menú superior, vista completa y categorías propias
+
+Se retiró la columna lateral Mis cursos. Al abrir un programa, las categorías superiores funcionan como menú: el panel se superpone a la configuración, sin desplazarla. Se cierra desde el mismo botón, Cerrar o Escape; abrirlo nuevamente reutiliza la página ya cargada. **Vista completa** muestra la cuadrícula dentro de la misma página, sin ventana emergente. **Volver al curso abierto** conserva el editor y los cambios que aún no guardaste. Cambiar a otro curso carga sus propios módulos; guarda antes los cambios que quieras conservar al cambiar de programa.
+
+Cada cuadrícula comienza con **+ Crear curso** y utiliza tarjetas pequeñas: título, tipo, cantidad de módulos, público y breve descripción. Hasta50 programas por página, con Anterior/Siguiente cuando haga falta. Las categorías cerradas muestran sus conteos sin descargar los cursos; abrir una solicita solo sus resúmenes, sin lecciones, materiales, credenciales ni archivos. Se retiró de esta navegación la consulta legacy limitada a100 cursos globales. No hay sondeo automático de la biblioteca. Actualizar biblioteca permite consultar cambios de otros owners.
+
+**Nueva categoría** crea un nombre propio y color (por ejemplo, Cursos para técnicos), con público Otro inicialmente editable. El orden se cambia arrastrando el tirador ⠿, incluido desde dispositivos táctiles; con el tirador enfocado también sirven las flechas del teclado. Categorías y orden se guardan en el servidor, compartidos por los owners que ya comparten la biblioteca. Las escrituras validan permisos/revisión y rechazan conflictos concurrentes sin pisar el orden de otro usuario. Hasta60 categorías personalizadas; las cuatro originales se conservan.
+
+Las categorías organizan los mismos cursos y recursos; no crean copias de los archivos. Abrir un curso conserva su organización por módulos y materiales. Archivar mantiene el historial y los recursos, como antes; no libera almacenamiento eliminando archivos.

@@ -20,9 +20,14 @@ import {
 import {
   type CourseGroupId,
   audienceLabels,
-  courseGroups,
   courseGroup,
 } from "@/lib/courses/teaching";
+import { CourseLibrary } from "./course-library";
+import {
+  defaultCategories,
+  type LibraryCategory,
+  type LibraryHandle,
+} from "@/lib/courses/library-shared";
 import { parseCourseOutline } from "@/lib/courses/outline";
 import "./courses-ai.css";
 const CoursePlayer = dynamic(
@@ -82,14 +87,6 @@ type Course = {
     error: string | null;
     canResume?: boolean;
   }[];
-};
-type Summary = {
-  description: string;
-  settings: CourseSettings;
-  id: string;
-  title: string;
-  kind: string;
-  _count: { modules: number };
 };
 const labels: Record<string, string> = {
   VIDEO: "Clip de video",
@@ -238,11 +235,6 @@ const programLabels: Record<string, string> = {
   workshop: "Taller",
   seminar: "Seminario",
 };
-function audienceText(s: CourseSettings) {
-  return s.audience === "other"
-    ? s.audienceDetail || "Otro público"
-    : audienceLabels[s.audience];
-}
 function InlineCourseField({
   label,
   value,
@@ -412,10 +404,12 @@ function InlineCourseField({
 }
 function CourseHeading({
   course,
+  groups,
   disabled,
   save,
 }: {
   course: Course;
+  groups: LibraryCategory[];
   disabled: boolean;
   save: (data: Record<string, string>) => Promise<void>;
 }) {
@@ -426,10 +420,10 @@ function CourseHeading({
           label="Carpeta"
           value={courseGroup(course.settings)}
           display={
-            courseGroups.find((g) => g.id === courseGroup(course.settings))!
-              .title
+            groups.find((g) => g.id === courseGroup(course.settings))?.title ??
+            "Categoría"
           }
-          options={Object.fromEntries(courseGroups.map((g) => [g.id, g.title]))}
+          options={Object.fromEntries(groups.map((g) => [g.id, g.title]))}
           disabled={disabled}
           save={(libraryGroup) => save({ libraryGroup })}
         />
@@ -981,7 +975,11 @@ function CreateFolder({
   busy: boolean;
   submit: (b: unknown) => void;
 }) {
-  const [audience, setAudience] = useState<CourseSettings["audience"]>(group);
+  const [audience, setAudience] = useState<CourseSettings["audience"]>(
+    group.startsWith("custom:")
+      ? "other"
+      : (group as CourseSettings["audience"]),
+  );
   return (
     <form
       className="course-form"
@@ -1125,8 +1123,11 @@ export function CoursesAI() {
     [newGroup, setNewGroup] = useState<CourseGroupId>("adults");
   const busyRef = useRef(false);
   const [moduleDetail, setModuleDetail] = useState<Module | null>(null);
-  const [list, setList] = useState<Summary[]>([]),
-    [providers, setProviders] = useState<Provider[]>([]),
+  const [groups, setGroups] = useState<LibraryCategory[]>(defaultCategories),
+    [libraryOnly, setLibraryOnly] = useState(true),
+    [fullGroup, setFullGroup] = useState<CourseGroupId | "">("");
+  const libraryRef = useRef<LibraryHandle>(null);
+  const [providers, setProviders] = useState<Provider[]>([]),
     [selected, setSelected] = useState(""),
     [course, setCourse] = useState<Course | null>(null),
     [loading, setLoading] = useState(true),
@@ -1155,23 +1156,20 @@ export function CoursesAI() {
       setCourse(c);
   }, []);
   const refresh = useCallback(async () => {
-    const rows = await request("");
-    if (mounted.current) setList(rows);
+    await libraryRef.current?.refresh(selectedRef.current || undefined);
     if (selectedRef.current) await load(selectedRef.current);
   }, [load]);
   useEffect(() => {
     mounted.current = true;
     const ac = new AbortController();
     void Promise.allSettled([
-      request("", undefined, undefined, ac.signal),
       request("/providers", undefined, undefined, ac.signal),
       request("/defaults", undefined, undefined, ac.signal),
     ]).then((results) => {
       if (!mounted.current) return;
       results.forEach((r, i) => {
         if (r.status === "fulfilled") {
-          if (i === 0) setList(r.value);
-          else if (i === 1) setProviders(r.value);
+          if (i === 0) setProviders(r.value);
           else setDefaults(r.value.settings);
         } else
           setError(
@@ -1396,27 +1394,29 @@ export function CoursesAI() {
           </a>
         </div>
       </div>
-      <div
-        className="course-create-groups"
-        aria-label="Crear curso por público"
-      >
-        {courseGroups.map((g) => (
-          <button
-            key={g.id}
-            type="button"
-            className={"course-create-group group-" + g.id}
-            disabled={busy || loading}
-            onClick={() => {
-              setNewGroup(g.id);
-              setWindow("new");
-            }}
-          >
-            <span aria-hidden="true">{g.icon}</span>
-            <strong>{g.create}</strong>
-            <small>{g.description}</small>
-          </button>
-        ))}
-      </div>
+      <CourseLibrary
+        ref={libraryRef}
+        api={request}
+        groupsChanged={setGroups}
+        selected={selected}
+        disabled={busy}
+        fullGroup={fullGroup}
+        mode={selected && !libraryOnly ? "editor" : fullGroup ? "full" : "home"}
+        select={(id) => {
+          setSelected(id);
+          setLibraryOnly(false);
+          setError("");
+        }}
+        create={(id) => {
+          setNewGroup(id);
+          setWindow("new");
+        }}
+        full={(id) => {
+          setFullGroup(id);
+          setLibraryOnly(true);
+        }}
+        back={() => setLibraryOnly(false)}
+      />
       {error && (
         <div className="course-error" role="alert">
           {error}
@@ -1429,77 +1429,7 @@ export function CoursesAI() {
           </button>
         </div>
       )}
-      <div className="course-layout">
-        <aside className="course-directory">
-          <div className="course-toolbar">
-            <h2>Mis cursos</h2>
-            <button
-              type="button"
-              aria-label="Actualizar cursos"
-              disabled={busy}
-              onClick={() => void run(refresh)}
-            >
-              ↻
-            </button>
-          </div>
-          {courseGroups.map((group) => (
-            <details
-              key={group.id}
-              className={"course-library-group group-" + group.id}
-              open
-            >
-              <summary>
-                <span aria-hidden="true">{group.icon} </span>
-                {group.title}
-                <span className="course-group-count">
-                  {
-                    list.filter((c) => courseGroup(c.settings) === group.id)
-                      .length
-                  }
-                </span>
-              </summary>
-              {list
-                .filter((c) => courseGroup(c.settings) === group.id)
-                .map((c) => (
-                  <button
-                    type="button"
-                    key={c.id}
-                    className={
-                      selected === c.id
-                        ? "course-course selected"
-                        : "course-course"
-                    }
-                    aria-pressed={selected === c.id}
-                    onClick={() => {
-                      setSelected(c.id);
-                      setError("");
-                    }}
-                  >
-                    <strong>
-                      <span aria-hidden="true">📁 </span>
-                      {c.title}
-                    </strong>
-                    <small className="course-folder-description">
-                      {c.description}
-                    </small>
-                    <span className="course-audience">
-                      {audienceText(c.settings)}
-                    </span>
-                    <span>
-                      {programLabels[c.kind] ?? c.kind} · {c._count.modules}{" "}
-                      módulos
-                    </span>
-                  </button>
-                ))}
-              {!list.some((c) => courseGroup(c.settings) === group.id) && (
-                <p className="muted">Aún no hay programas en esta carpeta.</p>
-              )}
-            </details>
-          ))}
-          {!list.length && !loading && (
-            <p className="muted">Tu próximo curso empieza con una idea.</p>
-          )}
-        </aside>
+      <div className="course-editor-shell" hidden={libraryOnly || !selected}>
         <main className="course-main">
           {loading ? (
             <p role="status">Cargando Cursos IA…</p>
@@ -1522,9 +1452,27 @@ export function CoursesAI() {
             </div>
           ) : (
             <>
+              <div className="course-editor-navigation">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setFullGroup(courseGroup(course.settings));
+                    setLibraryOnly(true);
+                  }}
+                >
+                  ← Biblioteca
+                </button>
+                <span>
+                  {
+                    groups.find((g) => g.id === courseGroup(course.settings))
+                      ?.title
+                  }
+                </span>
+              </div>
               <div className="course-heading">
                 <CourseHeading
                   key={course.id}
+                  groups={groups}
                   course={course}
                   disabled={busy || working}
                   save={async (data) => {
@@ -1890,7 +1838,7 @@ export function CoursesAI() {
       </div>
       {window === "new" && (
         <Window
-          title={courseGroups.find((g) => g.id === newGroup)!.create}
+          title={groups.find((g) => g.id === newGroup)?.create ?? "Crear curso"}
           onClose={() => setWindow(null)}
         >
           <CreateFolder
@@ -1902,8 +1850,9 @@ export function CoursesAI() {
               void run(async () => {
                 const c = await request("", b);
                 setWindow(null);
-                await refresh();
+                await libraryRef.current?.refresh(c.id);
                 setSelected(c.id);
+                setLibraryOnly(false);
               })
             }
           />

@@ -37,12 +37,13 @@ export const courseGroups = [
     description: "Define un público personalizado para tu programa.",
   },
 ] as const;
-export type CourseGroupId = (typeof courseGroups)[number]["id"];
+export type CourseGroupId =
+  (typeof courseGroups)[number]["id"] | `custom:${string}`;
 export function courseGroup(
   s: Pick<CourseSettings, "libraryGroup" | "audience">,
 ) {
   return (
-    s.libraryGroup ??
+    (s.libraryGroup as CourseGroupId | undefined) ??
     (s.audience === "children" || s.audience === "adolescents"
       ? "children"
       : s.audience === "families"

@@ -15,9 +15,17 @@ export function compareMetaItems(
   sort: string,
   direction: number,
 ) {
-  const active = (o: SortableMetaItem) =>
-    (o.effectiveStatus ?? o.status) === "ACTIVE";
-  const priority = Number(active(b)) - Number(active(a));
+  const rank = (o: SortableMetaItem) =>
+    o.status === "ACTIVE"
+      ? o.effectiveStatus === "ACTIVE"
+        ? 0
+        : 1
+      : !o.status && o.effectiveStatus === "ACTIVE"
+        ? 1
+        : o.status === "PAUSED"
+          ? 2
+          : 3;
+  const priority = rank(a) - rank(b);
   if (priority) return priority;
   if (a.currency !== b.currency) return a.currency.localeCompare(b.currency);
   if (a.metric !== b.metric) return a.metric.localeCompare(b.metric);

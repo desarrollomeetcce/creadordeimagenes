@@ -30,7 +30,10 @@ export const settingsSchema = z
       ])
       .default("professionals"),
     libraryGroup: z
-      .enum(["children", "adults", "families", "other"])
+      .union([
+        z.enum(["children", "adults", "families", "other"]),
+        z.string().regex(/^custom:[a-f0-9-]{36}$/),
+      ])
       .optional(),
     voiceMode: z.enum(["voiceover", "teacher"]).default("voiceover"),
     audienceDetail: z.string().trim().max(200).default(""),

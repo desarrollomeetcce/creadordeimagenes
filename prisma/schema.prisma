@@ -1401,3 +1401,10 @@ model AICourseReferenceChunk {
   text String
   @@unique([referenceId,position])
 }
+
+model AICourseLibrary {
+  id String @id
+  revision Int @default(1)
+  state Json
+  updatedAt DateTime @updatedAt
+}

@@ -1,3 +1,4 @@
+import { assertLibraryCategory } from "./library";
 import { teachingDirection, courseVisualPrompt } from "./teaching";
 import { parseCourseOutline } from "./outline";
 import { randomUUID } from "node:crypto";
@@ -232,9 +233,14 @@ export async function courseDetail(u: Actor, id: string) {
 export async function createCourse(u: Actor, raw: unknown) {
   await courseOwner(u);
   const b = courseInput.parse(raw);
-  return db.aICourse.create({
-    data: { ...b, actorId: u.id, settings: json(b.settings) },
-    select: { id: true },
+  return db.$transaction(async (tx) => {
+    await lock(tx);
+    await current(tx, u);
+    await assertLibraryCategory(tx, b.settings.libraryGroup);
+    return tx.aICourse.create({
+      data: { ...b, actorId: u.id, settings: json(b.settings) },
+      select: { id: true },
+    });
   });
 }
 export async function mutateCourse(
@@ -286,6 +292,7 @@ export async function mutateCourse(
         )
         .parse(b.data);
       const { audience, audienceDetail, libraryGroup, ...fields } = data;
+      await assertLibraryCategory(tx, libraryGroup);
       await tx.aICourse.update({
         where: { id },
         data: {
@@ -307,6 +314,7 @@ export async function mutateCourse(
       });
     } else if (action === "save") {
       const data = courseInput.parse(b.data);
+      await assertLibraryCategory(tx, data.settings.libraryGroup);
       await tx.aICourse.update({
         where: { id },
         data: {

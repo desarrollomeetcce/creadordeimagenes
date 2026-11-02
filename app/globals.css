@@ -2700,3 +2700,26 @@ button.ui-close-button:disabled, button.window-close:disabled { opacity: .55; }
 .workspace button:focus-visible,.workspace a:focus-visible{outline:2px solid var(--selection,var(--accent));outline-offset:3px}.workspace input:focus-visible,.workspace select:focus-visible,.workspace textarea:focus-visible{outline:2px solid var(--accent);outline-offset:2px}.meta-access-loading{max-width:640px;border-left:4px solid #8d63d7;background:color-mix(in srgb,#8d63d7 6%,var(--surface))}.meta-connection-card>.row.spread{border-bottom:1px solid var(--line);padding-bottom:8px}.meta-connection-card .badge{border:1px solid color-mix(in srgb,var(--accent) 30%,var(--line));border-radius:6px;padding:3px 8px}.meta-connection-card .meta-connection-details>summary{color:var(--muted)}
 
 .meta-connection-card .badge[data-health="quota"]{background:color-mix(in srgb,#e89526 18%,var(--surface));border-color:#d99a24;color:var(--ink)}.meta-connection-card .badge[data-health="auth"]{background:color-mix(in srgb,#d84b62 15%,var(--surface));border-color:#d84b62;color:var(--ink)}.meta-connection-card .badge[data-health="pending"]{background:var(--paper);border-color:var(--line);color:var(--muted)}
+
+/* Meta: resumen y actualización en filas predecibles, también con mensajes largos. */
+.meta-ads .meta-summary-row{display:grid;grid-template-columns:minmax(0,1fr);justify-content:stretch;align-items:start;gap:10px;padding-top:10px;}
+.meta-ads .meta-summary-date{display:flex;justify-content:flex-start;flex-wrap:wrap;max-width:100%;gap:8px;}
+.meta-ads .meta-summary-row>.meta-pinned-actions{display:grid;grid-template-columns:minmax(240px,1fr) auto minmax(180px,330px);width:100%;margin:0;gap:12px;justify-content:stretch;align-items:start;}
+.meta-ads .meta-visible-refresh{display:grid;grid-template-columns:auto minmax(0,1fr);align-items:center;gap:5px 10px;max-width:none;min-width:0;margin:0;}
+.meta-ads .meta-visible-refresh button{justify-self:start;white-space:nowrap;}
+.meta-ads .meta-visible-refresh small{min-width:0;overflow-wrap:anywhere;line-height:1.45;}
+.meta-ads .meta-visible-refresh small:last-child{grid-column:1/-1;}
+.meta-ads .meta-summary-row .meta-live-refresh{height:auto;min-height:38px;white-space:normal;max-width:210px;margin:0;}
+.meta-ads .meta-summary-row .meta-sync-inline{max-width:none;margin:0;line-height:1.6;}
+.meta-ads .meta-main-filters{align-items:end;min-width:0;max-width:100%;}
+.meta-ads .meta-main-filters>label{min-width:0;}
+.meta-ads .meta-main-filters .meta-filter-actions{align-items:center;justify-content:flex-end;}
+.meta-ads .meta-status-switch{position:relative;opacity:1;filter:none;cursor:pointer;}
+.meta-ads .meta-status-switch[aria-checked=true]{background:#167b5b;border-color:#42c99a;}
+.meta-ads .meta-status-switch[aria-checked=true]>span{background:#f4fff9;transform:translateX(14px);}
+.meta-ads .meta-status-switch[aria-checked=false]{background:#647680;border-color:#899aa4;}
+.meta-ads .meta-status-switch[aria-checked=false]>span{background:#f1f4f5;transform:translateX(0);}
+.meta-ads .meta-status-switch[data-stale=true]{border:2px dashed #e5b454;filter:none;opacity:1;}
+.meta-ads .meta-status-switch:disabled{opacity:1;cursor:default;}
+@media(max-width:1150px){.meta-ads .meta-summary-row>.meta-pinned-actions{grid-template-columns:auto minmax(0,1fr);}.meta-ads .meta-visible-refresh{grid-column:1/-1;}}
+@media(max-width:650px){.meta-ads .meta-summary-row>.meta-pinned-actions{grid-template-columns:minmax(0,1fr);}.meta-ads .meta-visible-refresh{grid-template-columns:minmax(0,1fr);}.meta-ads .meta-visible-refresh small{grid-column:1;}.meta-ads .meta-summary-date{justify-content:flex-start;}.meta-ads .meta-summary-row .meta-live-refresh{max-width:none;justify-self:start;}}
