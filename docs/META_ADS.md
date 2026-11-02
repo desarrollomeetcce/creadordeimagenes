@@ -231,3 +231,10 @@ Las ventas por diplomado se registran con reparto Se desconoce cuando falta el v
 Al cambiar país de un placeholder sin datos manuales hacia destino con historia, se reutiliza fila existente, retira placeholder y preserva datos/historia del destino. Diferencias de asesor generan revisión; historias con datos manuales conflictivos mantienen rechazo. Al eliminar Sin país se conserva tombstone/auditoría sin insertar estados/eventos con país vacío.
 
 Meta Ads carga asesor/moneda de la fila al elegir diplomado/país. Si no hay asesor ni historia, único asesor activo del inventario es candidato; si hay varios, requiere elección. Cambiar asesor predefinido pide confirmación y usa revisión existente sin reescribir historia. Contexto incluye revisión de fila e inventario, validada bajo bloqueo al guardar. Consultar contexto no escribe ni llama a Meta.
+
+
+### Enlace privado sin descargar ni subir archivo
+
+Además de seleccionar JSON, OWNER puede abrir un enlace privado de carga preparada. El enlace contiene una clave aleatoria en su fragmento, nunca en query. Efectividad elimina esa clave de la dirección y la envía por POST autenticado a history-import/prepared. El servidor comprueba OWNER vigente antes de abrir el paquete AES-256-GCM comprimido, valida límite descomprimido1.8MB y esquema financiero y responde no-store. La clave no concede sesión ni permisos. Paquete cifrado solo de servidor; fuente legible y clave permanecen fuera del repositorio y del bundle cliente. No se conecta a Drive ni llama proveedores.
+
+Abrir prepara el formulario sin escribir. Elegir listas/tablas/equivalencias, Revisar archivo y Confirmar importación mantiene todas las comprobaciones del importador. Si hay varias listas del mismo tipo no se elige automáticamente la primera. Repetir el mismo archivo con los mismos destinos devuelve el recibo previo. En una página ya abierta, un nuevo fragmento vuelve a preparar el diálogo; la clave solo vive en memoria durante esa lectura y no se guarda en preferencias. Publicar esta función no demuestra carga en la base productiva.

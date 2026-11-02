@@ -6,6 +6,7 @@ import {
   previewHistoryImport,
   commitHistoryImport,
   historyImportOptions,
+  preparedHistoryImport,
   type HistoryFile,
 } from "../lib/meta-ads/financial-history-import";
 import { categoryKey } from "../lib/meta-ads/category-paste";
@@ -40,6 +41,33 @@ test("Histórico: fuentes independientes, importación OWNER revisada e idempote
   globalThis.fetch = async () => {
     throw Error("External calls forbidden");
   };
+  await t.test(
+    "Paquete privado exige OWNER vigente antes de abrirlo",
+    async () => {
+      await assert.rejects(
+        preparedHistoryImport(
+          { id: actor.id, role: "ADMIN" },
+          { key: "A".repeat(43) },
+        ),
+      );
+      await assert.rejects(
+        preparedHistoryImport(
+          { id: "not-a-user", role: "OWNER" },
+          { key: "A".repeat(43) },
+        ),
+      );
+      await assert.rejects(
+        preparedHistoryImport(actor, { key: "A".repeat(43) }),
+      );
+      await assert.rejects(preparedHistoryImport(actor, { key: "invalid" }));
+      assert.equal(
+        await db.metaFinancialHistoryImport.count({
+          where: { actorId: actor.id },
+        }),
+        0,
+      );
+    },
+  );
   const inventory = await db.metaEffectivenessSheet.create({
       data: { name: "Hist inv " + tag, kind: "INVENTORY" },
     }),

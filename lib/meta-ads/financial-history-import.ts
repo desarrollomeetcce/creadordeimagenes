@@ -155,6 +155,18 @@ async function authorized(u: Actor, tx: Tx | typeof db = db) {
     403,
   );
 }
+export async function preparedHistoryImport(u: Actor, raw: unknown) {
+  await authorized(u);
+  const { key } = z
+    .object({ key: z.string().regex(/^[A-Za-z0-9_-]{43}$/) })
+    .strict()
+    .parse(raw);
+  const [{ preparedHistory }, { unsealHistory }] = await Promise.all([
+    import("./prepared-history.sealed"),
+    import("./sealed-history"),
+  ]);
+  return historyFileSchema.parse(unsealHistory(preparedHistory, key));
+}
 export async function historyImportOptions(u: Actor) {
   await authorized(u);
   const [tables, sheets, aliases] = await Promise.all([

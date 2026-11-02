@@ -96,6 +96,8 @@ export async function metaRoutes(
     method = req.method;
   if (path.startsWith("history-import/")) {
     const history = await import("./financial-history-import");
+    if (path === "history-import/prepared" && method === "POST")
+      return send(await history.preparedHistoryImport(actor, await body()));
     if (path === "history-import/options" && method === "GET")
       return send(await history.historyImportOptions(actor));
     if (path === "history-import/preview" && method === "POST")

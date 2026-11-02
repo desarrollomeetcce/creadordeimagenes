@@ -2240,3 +2240,10 @@ Implementados importador JSON OWNER en Efectividad, revisión de tres listas/tab
 Corregido cambio de país de placeholder sin datos hacia una fila ya existente: reutiliza destino, conserva titular/moneda/ventas/historia, retira placeholder y registra revisión si difiere asesor. Se conserva protección cuando existen datos manuales conflictivos. Eliminar filas Sin país omite creación de State/Event con país vacío, causa concreta del error SQL, manteniendo tombstone/auditoría.
 
 Meta Ads consulta contexto local al completar diplomado/país y precarga asesor/moneda guardados; si no hay titular ni historia, propone único asesor de inventario. Varios candidatos quedan por elegir. Cambio de asesor predefinido pide confirmación, conserva titular/historia y genera revisión; CAS de fila e inventario rechaza decisiones obsoletas. No requiere Graph ni cambia campañas reales.
+
+
+## 2026-11-02 · Enlace privado de carga histórica sin descargar/subir
+
+El usuario solicita que el código lleve los datos preparados. Implementado paquete derivado comprimido y cifrado AES-256-GCM únicamente en servidor, sin datos legibles ni clave en el repositorio. Clave aleatoria en enlace privado con fragmento, eliminada de la dirección al consumir; nunca preferencias ni query. POST preparado exige OWNER vigente y clave correcta, responde no-store; no requiere credenciales Drive/servidor nuevas, AI_MASTER_KEY ni consultas externas. Tras abrir desde sesión OWNER, mismo diálogo muestra datos y destinos sin seleccionar archivo. La revisión/confirmación conserva permisos, CAS, equivalencias y recibo idempotente. Varias listas posibles quedan pendientes de elección. Cambios del fragmento se escuchan aun con la página abierta.
+
+Prueba en navegador con archivo completo exclusivamente en QA: apertura sin archivos, permiso anónimo rechazado, destinos revisados y una confirmación atómica. Reabrir conserva recibo sin duplicar; clave incorrecta rechazada. Cargar en producción sigue pendiente del enlace y sesión real; publicar código no se presenta como haber escrito datos reales.

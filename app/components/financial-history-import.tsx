@@ -18,6 +18,44 @@ type Choices = {
   aliases: Record<string, string>;
   people: Record<string, string>;
 };
+function initialChoices(f: HistoryFile, options: Options): Choices {
+  if (
+    f.version !== 1 ||
+    !Array.isArray(f.diplomas) ||
+    !Array.isArray(f.advisors) ||
+    !Array.isArray(f.totals) ||
+    !Array.isArray(f.manual)
+  )
+    throw Error(
+      "Usa el archivo de importación preparado, no el Excel original.",
+    );
+  const countries = [
+    ...new Set(
+      [...f.diplomas, ...f.advisors, ...f.totals, ...f.manual].map(
+        (r) => r.country,
+      ),
+    ),
+  ].sort();
+  const pick = (kind: string) => {
+    const found = options.sheets.filter((s) => s.kind === kind);
+    return found.length === 1 ? found[0].id : "";
+  };
+  return {
+    inventoryListId: pick("INVENTORY"),
+    advisorListId: pick("ADVISORS"),
+    totalsListId: pick("TOTALS"),
+    tables: countries.map((country) => {
+      const found = options.tables.filter(
+        (t) =>
+          t.defaultCountry === country ||
+          categoryKey(t.name) === categoryKey(countryName(country)),
+      );
+      return { country, tableId: found.length === 1 ? found[0].id : null };
+    }),
+    aliases: {},
+    people: {},
+  };
+}
 async function api(path: string, body?: unknown) {
   const r = await fetch("/api/meta-ads/history-import/" + path, {
     method: body ? "POST" : "GET",
@@ -35,6 +73,8 @@ export function FinancialHistoryImport() {
     dialog = useRef<HTMLDialogElement>(null),
     flight = useRef(false);
   const [open, setOpen] = useState(false),
+    [preparedKey, setPreparedKey] = useState<string | null>(null),
+    [preparedBusy, setPreparedBusy] = useState(false),
     [options, setOptions] = useState<Options | null>(null),
     [file, setFile] = useState<HistoryFile | null>(null),
     [choices, setChoices] = useState<Choices | null>(null),
@@ -53,6 +93,55 @@ export function FinancialHistoryImport() {
           .catch((e) => setError(e.message));
     }
   }, [open, options]);
+  useEffect(() => {
+    const consumeLink = () => {
+      const fragment = new URLSearchParams(window.location.hash.slice(1));
+      const key = fragment.get("historyImport");
+      if (!key) return;
+      fragment.delete("historyImport");
+      const rest = fragment.toString();
+      window.history.replaceState(
+        window.history.state,
+        "",
+        window.location.pathname +
+          window.location.search +
+          (rest ? "#" + rest : ""),
+      );
+      setPreparedKey(key);
+      setOpen(true);
+    };
+    consumeLink();
+    window.addEventListener("hashchange", consumeLink);
+    return () => window.removeEventListener("hashchange", consumeLink);
+  }, []);
+  useEffect(() => {
+    if (!open || !options || !preparedKey) return;
+    let active = true;
+    setPreparedBusy(true);
+    setError("");
+    void api("prepared", { key: preparedKey })
+      .then((f: HistoryFile) => {
+        if (!active) return;
+        setChoices(initialChoices(f, options));
+        setFile(f);
+        setPreview(null);
+        setReceipt(null);
+        setReviewed(false);
+        setReplace(false);
+      })
+      .catch((e) => {
+        if (active) setError(e.message);
+      })
+      .finally(() => {
+        if (active) {
+          setPreparedBusy(false);
+          setPreparedKey(null);
+        }
+      });
+    return () => {
+      active = false;
+    };
+  }, [open, options, preparedKey]);
   function resetPreview() {
     setPreview(null);
     setReviewed(false);
@@ -97,7 +186,7 @@ export function FinancialHistoryImport() {
     }
   }
   function close() {
-    if (busy) return;
+    if (busy || preparedBusy) return;
     dialog.current?.close();
     setOpen(false);
   }
@@ -173,14 +262,18 @@ export function FinancialHistoryImport() {
             independientes por asesor y país, BM y GM. No modifica campañas ni
             datos originales de Meta.
           </p>
-          {!receipt && (
+          {preparedBusy && (
+            <p role="status">Preparando tu histórico privado…</p>
+          )}
+          {!receipt && !preparedBusy && (
             <>
               <label>
-                Archivo preparado para la plataforma
+                Archivo preparado para la plataforma (opcional si abriste el
+                enlace privado)
                 <input
                   type="file"
                   accept=".json,application/json"
-                  disabled={busy || !options}
+                  disabled={busy || preparedBusy || !options}
                   onChange={async (e) => {
                     const selected = e.currentTarget.files?.[0];
                     if (!selected || !options) return;
@@ -203,38 +296,8 @@ export function FinancialHistoryImport() {
                         throw Error(
                           "Usa el archivo de importación preparado, no el Excel original.",
                         );
-                      const countries = [
-                        ...new Set(
-                          [
-                            ...f.diplomas,
-                            ...f.advisors,
-                            ...f.totals,
-                            ...f.manual,
-                          ].map((r) => r.country),
-                        ),
-                      ].sort();
-                      const pick = (kind: string) =>
-                        options.sheets.find((s) => s.kind === kind)?.id ?? "";
+                      setChoices(initialChoices(f, options));
                       setFile(f);
-                      setChoices({
-                        inventoryListId: pick("INVENTORY"),
-                        advisorListId: pick("ADVISORS"),
-                        totalsListId: pick("TOTALS"),
-                        tables: countries.map((country) => {
-                          const found = options.tables.filter(
-                            (t) =>
-                              t.defaultCountry === country ||
-                              categoryKey(t.name) ===
-                                categoryKey(countryName(country)),
-                          );
-                          return {
-                            country,
-                            tableId: found.length === 1 ? found[0].id : null,
-                          };
-                        }),
-                        aliases: {},
-                        people: {},
-                      });
                     } catch (e) {
                       setFile(null);
                       setChoices(null);
