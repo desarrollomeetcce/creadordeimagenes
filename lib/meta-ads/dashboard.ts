@@ -1,7 +1,9 @@
 import { realtimeCoverage, statusIsStale } from "./realtime-policy";
 import { isCountryCode } from "./countries";
 import { parseDeliveryFilters } from "./state-filter";
-import { metaRegisteredSales } from "./effectiveness";
+import { metaCampaignSalesData } from "./effectiveness";
+import { registeredSalesSummary } from "./registered-sales";
+import { campaignSalesPeriod } from "./campaign-performance";
 import { validSalesDate } from "./registered-sales";
 import { metaSummary } from "./summary";
 import { compareMetaItems } from "./order";
@@ -283,7 +285,13 @@ export async function dashboard(actor: Actor, params: URLSearchParams) {
           (focusedReportDay(a.syncState) ?? today) < today);
       const version = createHash("sha256")
         .update(
-          JSON.stringify([a.connectionId, a.syncedAt, a.syncState, a.realtimeState, a.timezone]),
+          JSON.stringify([
+            a.connectionId,
+            a.syncedAt,
+            a.syncState,
+            a.realtimeState,
+            a.timezone,
+          ]),
         )
         .digest("hex");
       return [
@@ -379,9 +387,12 @@ export async function dashboard(actor: Actor, params: URLSearchParams) {
           action = actionTypes[metric]?.find((k) => Object.hasOwn(actions, k)),
           results = action ? actions[action] : 0,
           spend = v?.spend ?? 0;
-        const shortFrom = key === "custom" ? customSince! : key === "today" ? today : "";
+        const shortFrom =
+          key === "custom" ? customSince! : key === "today" ? today : "";
         const shortUntil = key === "custom" ? customUntil! : today;
-        const liveCovered = !!shortFrom && realtimeCoverage(a.realtimeState,o.id,shortFrom,shortUntil);
+        const liveCovered =
+          !!shortFrom &&
+          realtimeCoverage(a.realtimeState, o.id, shortFrom, shortUntil);
         const state =
           (!liveCovered && !a.syncedAt) ||
           metric === "UNKNOWN" ||
@@ -394,7 +405,8 @@ export async function dashboard(actor: Actor, params: URLSearchParams) {
           (focused && key === "lifetime" && !total) ||
           (focused &&
             key === "custom" &&
-            !liveCovered && (customSince! < shiftDay(reportUntil, -29) ||
+            !liveCovered &&
+            (customSince! < shiftDay(reportUntil, -29) ||
               customUntil! > reportUntil))
             ? "UNAVAILABLE"
             : results > 0
@@ -415,6 +427,7 @@ export async function dashboard(actor: Actor, params: URLSearchParams) {
           key,
           {
             spend,
+            metaAvailable: !!v && state !== "UNAVAILABLE",
             impressions: v?.impressions ?? 0,
             results,
             cost: state === "RESULTS" ? spend / results : null,
@@ -462,7 +475,12 @@ export async function dashboard(actor: Actor, params: URLSearchParams) {
     return {
       ...o,
       stale,
-      statusStale: statusIsStale(o.seenAt, (a.realtimeState as {authorizationRequired?:boolean}).authorizationRequired || (!((a.realtimeState as {statusAt?:string}).statusAt) && a.syncError)),
+      statusStale: statusIsStale(
+        o.seenAt,
+        (a.realtimeState as { authorizationRequired?: boolean })
+          .authorizationRequired ||
+          (!(a.realtimeState as { statusAt?: string }).statusAt && a.syncError),
+      ),
       campaignName:
         c?.name ?? (o.level === "campaign" ? o.name : "Campaña no disponible"),
       adsetName:
@@ -589,8 +607,12 @@ export async function dashboard(actor: Actor, params: URLSearchParams) {
       limited && computedFilters,
     );
   }
+  items.sort((a, b) => compareMetaItems(a, b, sort, direction));
+  const page = Math.max(1, Math.min(10000, Number(params.get("page")) || 1)),
+    limit = Math.max(10, Math.min(100, Number(params.get("limit")) || 25));
+  const pageItems = items.slice((page - 1) * limit, page * limit);
+  let summaryCampaignIds: string[] = [];
   if (summary) {
-    // Independent of report dates and pagination; unique campaign parents only.
     let refs = limited
       ? await db.metaAdObject.findMany({
           where,
@@ -599,20 +621,72 @@ export async function dashboard(actor: Actor, params: URLSearchParams) {
       : items;
     if (summarySelection.length)
       refs = refs.filter((o) => summarySelection.includes(o.id));
-    const campaignIds = [
+    summaryCampaignIds = [
       ...new Set(
         refs
           .map((o) => (o.level === "campaign" ? o.id : o.campaignId))
           .filter((id): id is string => !!id),
       ),
     ];
-    summary.sales = await metaRegisteredSales(actor, campaignIds, salesSince);
   }
-  items.sort((a, b) => compareMetaItems(a, b, sort, direction));
-  const page = Math.max(1, Math.min(10000, Number(params.get("page")) || 1)),
-    limit = Math.max(10, Math.min(100, Number(params.get("limit")) || 25));
+  const salesIds = [
+    ...new Set([
+      ...summaryCampaignIds,
+      ...(level === "campaign" ? pageItems.map((o) => o.id) : []),
+    ]),
+  ];
+  const salesData = salesIds.length
+    ? await metaCampaignSalesData(
+        actor,
+        salesIds,
+        undefined,
+        localDay("America/Lima"),
+      )
+    : null;
+  if (summary) {
+    const ids = new Set(summaryCampaignIds);
+    const keys = new Set(
+      salesData?.campaigns
+        .filter((c) => ids.has(c.id))
+        .map((c) => JSON.stringify([c.aliasId, c.aliasCountry])) ?? [],
+    );
+    summary.sales = registeredSalesSummary(
+      [...keys].flatMap((k) => salesData?.entries.get(k) ?? []),
+      localDay("America/Lima"),
+      salesSince,
+    );
+  }
+  const reportedItems = pageItems.map((o) => {
+    if (o.level !== "campaign" || !salesData) return o;
+    const key = JSON.stringify([o.aliasId, o.aliasCountry]),
+      entries = salesData.entries.get(key) ?? [],
+      shared = salesData.sharing.filter(
+        (c) => c.aliasId === o.aliasId && c.aliasCountry === o.aliasCountry,
+      ).length;
+    return {
+      ...o,
+      periods: Object.fromEntries(
+        Object.entries(o.periods).map(([k, p]) => [
+          k,
+          {
+            ...p,
+            sales: campaignSalesPeriod(
+              entries,
+              p.since,
+              p.until,
+              p.spend,
+              p.results,
+              p.metaAvailable,
+              shared,
+              !!o.aliasId && !!o.aliasCountry,
+            ),
+          },
+        ]),
+      ),
+    };
+  });
   return {
-    items: items.slice((page - 1) * limit, page * limit),
+    items: reportedItems,
     total: items.length,
     page,
     limited,

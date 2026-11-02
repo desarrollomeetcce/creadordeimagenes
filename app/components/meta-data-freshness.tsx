@@ -13,15 +13,18 @@ const stamp = (value?: string | null) =>
     : "Pendiente";
 export function MetaDataFreshness({
   accounts,
+  compact = false,
 }: {
   accounts: SyncTimingAccount[];
+  compact?: boolean;
 }) {
   if (!accounts.length) return null;
   const t = syncTiming(accounts),
     single = accounts.length === 1;
   return (
     <section
-      className="meta-sync-inline"
+      className={"meta-sync-inline" + (compact ? " meta-sync-compact" : "")}
+      title={`Actividad: ${stamp(t.activity)} · Última completa: ${stamp(t.completed)}`}
       aria-label="Información de sincronización"
     >
       <span>
@@ -35,50 +38,59 @@ export function MetaDataFreshness({
       </span>
       <details>
         <summary>
-          {single
-            ? (accounts[0].progress?.label ?? "Ver sincronización")
-            : `${t.ongoing} sin finalizar · ${accounts.length} cuentas`}{" "}
-          ·{" "}
-          {single
-            ? accounts[0].progress?.authorizationRequired
-              ? "Necesita reconectar"
-              : accounts[0].enabled && accounts[0].progress?.status !== "paused"
-                ? `Auto ${accounts[0].intervalMinutes} min`
-                : "Auto pausada"
-            : `Auto en ${t.automatic}`}{" "}
-          · hora de Lima
+          {compact ? (
+            "Sincronización"
+          ) : (
+            <>
+              {single
+                ? (accounts[0].progress?.label ?? "Ver sincronización")
+                : `${t.ongoing} sin finalizar · ${accounts.length} cuentas`}{" "}
+              ·{" "}
+              {single
+                ? accounts[0].progress?.authorizationRequired
+                  ? "Necesita reconectar"
+                  : accounts[0].enabled &&
+                      accounts[0].progress?.status !== "paused"
+                    ? `Auto ${accounts[0].intervalMinutes} min`
+                    : "Auto pausada"
+                : `Auto en ${t.automatic}`}{" "}
+              · hora de Lima
+            </>
+          )}
         </summary>
-        <p>
-          Actividad es el último intento o avance, no confirma datos nuevos.
-          Completa es la última importación terminada. La actualización es
-          periódica, no continua en tiempo real.
-        </p>
-        {accounts.map((a) => (
-          <div key={a.id}>
-            <strong>{a.name}</strong>
-            <span>
-              Actividad: {stamp(a.progress?.lastActivityAt)} · Completa:{" "}
-              {stamp(a.lastCompletedAt)}
-            </span>
-            <span>Datos recibidos: {stamp(a.lastDataAt)}</span>
-            <span>
-              {a.progress?.authorizationRequired
-                ? "Autorización vencida o rechazada. Reconectar Meta para continuar."
-                : a.enabled && a.progress?.status !== "paused"
-                  ? `Automática cada ${a.intervalMinutes} min, al terminar la importación actual.`
-                  : "Automática pausada."}{" "}
-              {a.progress?.label}
-            </span>
-            {a.progress?.nextSyncAt && !a.progress.authorizationRequired && (
+        <div className="meta-freshness-body">
+          <p>
+            Actividad es el último intento o avance, no confirma datos nuevos.
+            Completa es la última importación terminada. La actualización es
+            periódica, no continua en tiempo real.
+          </p>
+          {accounts.map((a) => (
+            <div key={a.id}>
+              <strong>{a.name}</strong>
               <span>
-                {a.progress.status === "waiting"
-                  ? "Reintento previsto"
-                  : "Próxima ejecución prevista"}
-                : {stamp(a.progress.nextSyncAt)}
+                Actividad: {stamp(a.progress?.lastActivityAt)} · Completa:{" "}
+                {stamp(a.lastCompletedAt)}
               </span>
-            )}
-          </div>
-        ))}
+              <span>Datos recibidos: {stamp(a.lastDataAt)}</span>
+              <span>
+                {a.progress?.authorizationRequired
+                  ? "Autorización vencida o rechazada. Reconectar Meta para continuar."
+                  : a.enabled && a.progress?.status !== "paused"
+                    ? `Automática cada ${a.intervalMinutes} min, al terminar la importación actual.`
+                    : "Automática pausada."}{" "}
+                {a.progress?.label}
+              </span>
+              {a.progress?.nextSyncAt && !a.progress.authorizationRequired && (
+                <span>
+                  {a.progress.status === "waiting"
+                    ? "Reintento previsto"
+                    : "Próxima ejecución prevista"}
+                  : {stamp(a.progress.nextSyncAt)}
+                </span>
+              )}
+            </div>
+          ))}
+        </div>
       </details>
     </section>
   );

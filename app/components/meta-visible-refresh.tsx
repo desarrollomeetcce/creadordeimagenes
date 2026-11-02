@@ -114,18 +114,29 @@ export function MetaVisibleRefresh({
       >
         {busy ? "↻ Consultando Meta…" : "↻ Actualizar vista"}
       </button>
-      <small role="status">
-        {notice || "Estados y gasto de hoy/ayer · consulta cada 60 s"}
-      </small>
+      <details className="meta-refresh-notice">
+        <summary
+          title={notice || "Consulta estados y gasto de hoy/ayer"}
+          aria-label="Ver estado de actualización"
+        >
+          ⓘ
+        </summary>
+        <div>
+          {" "}
+          <small role="status">
+            {notice || "Estados y gasto de hoy/ayer · consulta cada 60 s"}
+          </small>
+          <small>
+            Verde: activado · Gris: pausado · Borde ámbar: último estado sin
+            verificar. Meta puede entregar métricas con retraso.
+          </small>
+        </div>
+      </details>
       {auth && (
         <button type="button" onClick={onReconnect}>
           Reconectar Meta
         </button>
       )}
-      <small>
-        Verde: activado · Gris: pausado · Borde ámbar: último estado sin
-        verificar. Meta puede entregar métricas con retraso.
-      </small>
     </section>
   );
 }

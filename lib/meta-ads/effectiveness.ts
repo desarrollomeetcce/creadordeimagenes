@@ -14,7 +14,7 @@ import { createHash } from "node:crypto";
 import { sheetMetrics, type SheetMetric } from "./period-summary";
 import { db } from "../db";
 import { financialRowPresence } from "./financial-row-presence";
-import type { Prisma } from "@prisma/client";
+import { Prisma } from "@prisma/client";
 import { ownerOnly } from "./financial-access";
 import { demand } from "../errors";
 import { recordActivity } from "../activity";
@@ -22,6 +22,13 @@ import { accountWhere, type Actor } from "./service";
 import { convertMoney, type FxRates } from "./exchange-rates";
 type Tx = Prisma.TransactionClient;
 const key = (a: string, p: string) => JSON.stringify([a, p]);
+const salesDayWhere: Prisma.MetaEffectivenessDayWhereInput = {
+  OR: [
+    { sales: { not: null } },
+    { salesOverridden: true },
+    { annotations: { path: ["sales"], not: Prisma.AnyNull } },
+  ],
+};
 export async function effectivenessLock(tx: Tx, actor: Actor) {
   await tx.$executeRaw`SELECT pg_advisory_xact_lock(884411)`;
   await checkFinancialContext(actor, tx);
@@ -202,13 +209,12 @@ export async function inventoryEffectivenessSource(
 }
 /** Internal Meta report aggregate. Scope is revalidated against accessible campaigns;
  * raw financial rows and unrelated inventory never leave this function. */
-export async function metaRegisteredSales(
+export async function metaCampaignSalesData(
   actor: Actor,
   campaignIds: string[],
-  manualSince = "",
+  since: string | undefined,
+  until: string,
 ) {
-  const { registeredSalesSummary } = await import("./registered-sales");
-  const today = limaDay();
   const campaigns = await db.metaAdObject.findMany({
     where: {
       id: { in: campaignIds },
@@ -218,6 +224,7 @@ export async function metaRegisteredSales(
       aliasCountry: { not: null },
     },
     select: {
+      id: true,
       aliasId: true,
       aliasCountry: true,
       alias: {
@@ -232,61 +239,111 @@ export async function metaRegisteredSales(
         .map((c) => [key(c.aliasId!, c.aliasCountry!), c]),
     ).values(),
   ];
-  if (!targets.length) return registeredSalesSummary([], today, manualSince);
-  const tableIds = [...new Set(targets.map((c) => c.alias!.tableId))];
-  const sourceTables = new Set(tableIds);
-  let frontier = tableIds;
-  for (let depth = 0; frontier.length && depth < 9; depth++) {
-    const links = await db.metaEffectivenessLink.findMany({
-      where: { tableId: { in: frontier } },
-    });
-    frontier = links
-      .filter(
-        (l) =>
-          linkMetrics(l).includes("sales") &&
-          !sourceTables.has(l.sourceTableId),
-      )
-      .map((l) => l.sourceTableId);
-    frontier.forEach((id) => sourceTables.add(id));
-  }
-  const first = await db.metaEffectivenessDay.aggregate({
-    where: {
-      row: { alias: { tableId: { in: [...sourceTables] } } },
-      day: { lte: today },
-    },
-    _min: { day: true },
-  });
-  if (!first._min.day) return registeredSalesSummary([], today, manualSince);
-  const entries: import("./registered-sales").RegisteredSalesEntry[] = [];
-  for (const tableId of tableIds) {
-    const sheet = await readEffectiveness(
-      actor,
-      tableId,
-      first._min.day,
-      today,
-      db,
-      [],
-      false,
-      undefined,
-      true,
-    );
-    for (const target of targets.filter((c) => c.alias!.tableId === tableId)) {
-      const row = sheet.rows.find(
-        (r) =>
-          r.aliasId === target.aliasId && r.country === target.aliasCountry,
-      );
-      for (const [day, cell] of Object.entries(row?.days ?? {}))
-        entries.push({
-          inventory: target.alias!.inventorySheetId,
-          name: target.alias!.name,
-          country: target.aliasCountry!,
-          day,
-          sales: cell.na.includes("sales") ? null : cell.sales,
-          partial: cell.partialMetrics.includes("sales"),
-        });
+  const tables = [...new Set(targets.map((c) => c.alias!.tableId))];
+  const entries = new Map<
+    string,
+    import("./registered-sales").RegisteredSalesEntry[]
+  >();
+  if (targets.length) {
+    // Inspect only the source chain and matching names; no Graph, reports, FX, advisors or unrelated inventory.
+    const sourceTables = new Set(tables);
+    let frontier = tables;
+    for (let depth = 0; frontier.length && depth < 9; depth++) {
+      const links = await db.metaEffectivenessLink.findMany({
+        where: { tableId: { in: frontier } },
+      });
+      frontier = links
+        .filter(
+          (l) =>
+            linkMetrics(l).includes("sales") &&
+            !sourceTables.has(l.sourceTableId),
+        )
+        .map((l) => l.sourceTableId);
+      frontier.forEach((id) => sourceTables.add(id));
     }
+    const first =
+      since ??
+      (
+        await db.metaEffectivenessDay.aggregate({
+          where: {
+            row: {
+              alias: {
+                tableId: { in: [...sourceTables] },
+                name: { in: targets.map((c) => c.alias!.name) },
+              },
+              country: { in: targets.map((c) => c.aliasCountry!) },
+            },
+            day: { lte: until },
+            ...salesDayWhere,
+          },
+          _min: { day: true },
+        })
+      )._min.day;
+    if (first && first <= until)
+      for (const tableId of tables) {
+        const wanted = targets.filter((c) => c.alias!.tableId === tableId);
+        const sheet = await readEffectiveness(
+          actor,
+          tableId,
+          first,
+          until,
+          db,
+          [],
+          false,
+          undefined,
+          true,
+          wanted.map((c) => ({
+            name: c.alias!.name,
+            country: c.aliasCountry!,
+          })),
+        );
+        const rows = new Map(
+          sheet.rows.map((r) => [key(r.aliasId, r.country), r]),
+        );
+        for (const c of wanted)
+          entries.set(
+            key(c.aliasId!, c.aliasCountry!),
+            Object.entries(
+              rows.get(key(c.aliasId!, c.aliasCountry!))?.days ?? {},
+            ).map(([day, cell]) => ({
+              inventory: c.alias!.inventorySheetId,
+              name: c.alias!.name,
+              country: c.aliasCountry!,
+              day,
+              sales: cell.na.includes("sales") ? null : cell.sales,
+              partial: cell.partialMetrics.includes("sales"),
+            })),
+          );
+      }
   }
-  return registeredSalesSummary(entries, today, manualSince);
+  const sharing = targets.length
+    ? await db.metaAdObject.findMany({
+        where: {
+          level: "campaign",
+          account: await accountWhere(actor),
+          OR: targets.map((c) => ({
+            aliasId: c.aliasId,
+            aliasCountry: c.aliasCountry,
+          })),
+        },
+        select: { id: true, aliasId: true, aliasCountry: true },
+      })
+    : [];
+  return { campaigns, entries, sharing };
+}
+export async function metaRegisteredSales(
+  actor: Actor,
+  campaignIds: string[],
+  manualSince = "",
+) {
+  const { registeredSalesSummary } = await import("./registered-sales");
+  const today = limaDay(),
+    data = await metaCampaignSalesData(actor, campaignIds, undefined, today);
+  return registeredSalesSummary(
+    [...data.entries.values()].flat(),
+    today,
+    manualSince,
+  );
 }
 async function readEffectiveness(
   actor: Actor,
@@ -298,6 +355,7 @@ async function readEffectiveness(
   ignoreLink = false,
   advisorScope?: string,
   includeHidden = false,
+  salesOnly?: { name: string; country: string }[],
 ): Promise<EffectivenessSheet> {
   demand(
     !path.includes(tableId) && path.length < 9,
@@ -313,6 +371,9 @@ async function readEffectiveness(
       defaultCountry: true,
       defaultCurrency: true,
       aliases: {
+        ...(salesOnly
+          ? { where: { name: { in: salesOnly.map((t) => t.name) } } }
+          : {}),
         select: {
           id: true,
           name: true,
@@ -335,60 +396,94 @@ async function readEffectiveness(
     assignmentLists,
     supports,
   ] = await Promise.all([
-    client.metaAdObject.findMany({
+    salesOnly
+      ? Promise.resolve([])
+      : client.metaAdObject.findMany({
+          where: {
+            level: "campaign",
+            alias: { tableId },
+            aliasCountry: { not: null },
+            account: advisorScope ? {} : await accountWhere(actor),
+          },
+          select: {
+            aliasId: true,
+            aliasCountry: true,
+            account: { select: { currency: true, timezone: true } },
+            daily: {
+              where: {
+                day: { gte: since, lte: until },
+                scope: "7d_click,1d_view|impression",
+              },
+              select: {
+                day: true,
+                spend: true,
+                actions: true,
+                updatedAt: true,
+              },
+            },
+          },
+        }),
+    client.metaEffectivenessRow.findMany({
       where: {
-        level: "campaign",
+        legacy: false,
         alias: { tableId },
-        aliasCountry: { not: null },
-        account: advisorScope ? {} : await accountWhere(actor),
+        ...(salesOnly
+          ? {
+              OR: salesOnly.map((t) => ({
+                alias: { name: t.name },
+                country: t.country,
+              })),
+            }
+          : {}),
       },
-      select: {
-        aliasId: true,
-        aliasCountry: true,
-        account: { select: { currency: true, timezone: true } },
-        daily: {
+      include: {
+        days: {
           where: {
             day: { gte: since, lte: until },
-            scope: "7d_click,1d_view|impression",
+            ...(salesOnly ? salesDayWhere : {}),
           },
-          select: { day: true, spend: true, actions: true, updatedAt: true },
         },
-      },
-    }),
-    client.metaEffectivenessRow.findMany({
-      where: { legacy: false, alias: { tableId } },
-      include: {
-        days: { where: { day: { gte: since, lte: until } } },
         legacySources: {
           where: { hidden: false },
-          include: { days: { where: { day: { gte: since, lte: until } } } },
+          include: {
+            days: {
+              where: {
+                day: { gte: since, lte: until },
+                ...(salesOnly ? salesDayWhere : {}),
+              },
+            },
+          },
         },
       },
     }),
-    client.metaFxDay.findMany({
-      where: { day: { gte: since, lte: until } },
-      select: {
-        day: true,
-        rates: true,
-        source: true,
-        sourceUrl: true,
-        fetchedAt: true,
-      },
-    }),
-    client.metaEffectivenessState.findMany({
-      where: { alias: { tableId } },
-      select: {
-        aliasId: true,
-        country: true,
-        active: true,
-        revision: true,
-        events: {
-          orderBy: [{ createdAt: "desc" }, { id: "desc" }],
-          take: 1,
-          select: { createdAt: true, active: true },
-        },
-      },
-    }),
+    salesOnly
+      ? Promise.resolve([])
+      : client.metaFxDay.findMany({
+          where: { day: { gte: since, lte: until } },
+          select: {
+            day: true,
+            rates: true,
+            source: true,
+            sourceUrl: true,
+            fetchedAt: true,
+          },
+        }),
+    salesOnly
+      ? Promise.resolve([])
+      : client.metaEffectivenessState.findMany({
+          where: { alias: { tableId } },
+          select: {
+            aliasId: true,
+            country: true,
+            active: true,
+            revision: true,
+            events: {
+              orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+              take: 1,
+              select: { createdAt: true, active: true },
+            },
+          },
+        }),
     ignoreLink
       ? Promise.resolve(null)
       : client.metaEffectivenessLink.findUnique({ where: { tableId } }),
@@ -398,22 +493,24 @@ async function readEffectiveness(
           where: { kind: "INVENTORY", inventory: { some: { tableId } } },
           select: { config: true },
         }),
-    client.metaAdvisorSupport.findMany({
-      where: {
-        alias: { tableId },
-        cancelledAt: null,
-        since: { lte: limaDay() },
-        until: { gte: limaDay() },
-      },
-      select: {
-        id: true,
-        aliasId: true,
-        country: true,
-        advisorId: true,
-        until: true,
-        advisor: { select: { name: true } },
-      },
-    }),
+    salesOnly
+      ? Promise.resolve([])
+      : client.metaAdvisorSupport.findMany({
+          where: {
+            alias: { tableId },
+            cancelledAt: null,
+            since: { lte: limaDay() },
+            until: { gte: limaDay() },
+          },
+          select: {
+            id: true,
+            aliasId: true,
+            country: true,
+            advisorId: true,
+            until: true,
+            advisor: { select: { name: true } },
+          },
+        }),
   ]);
   const pendingAssignments = new Map<string, string>();
   const advisorReviews = new Map<
@@ -674,7 +771,9 @@ async function readEffectiveness(
       c.fixedCost = overrides.fixedCost
         ? null
         : project(c.sourceFixedCost, "fixedCost");
-      for (const m of sheetMetrics) {
+      for (const m of salesOnly
+        ? sheetMetrics.filter((m) => m.key === "sales")
+        : sheetMetrics) {
         const override = overrides[m.key];
         if (!override) continue;
         c.manual.push(m.key);
@@ -706,7 +805,7 @@ async function readEffectiveness(
       }
     }
   let linkedSourceName = "";
-  if (columnLink) {
+  if (columnLink && (!salesOnly || linkMetrics(columnLink).includes("sales"))) {
     const source = await readEffectiveness(
       actor,
       columnLink.sourceTableId,
@@ -717,13 +816,14 @@ async function readEffectiveness(
       false,
       advisorScope,
       includeHidden,
+      salesOnly,
     );
     linkedSourceName = source.table.name;
     const names = new Map(source.table.aliases.map((a) => [a.id, a.name]));
     const sources = new Map(
       source.rows.map((r) => [key(names.get(r.aliasId)!, r.country), r]),
     );
-    const metrics = linkMetrics(columnLink);
+    const metrics = salesOnly ? ["sales" as const] : linkMetrics(columnLink);
     for (const r of rows.values()) {
       const name = table.aliases.find((a) => a.id === r.aliasId)!.name;
       const origin = r.country ? sources.get(key(name, r.country)) : undefined;
@@ -808,7 +908,9 @@ async function readEffectiveness(
           c = cell(r, day),
           overrides =
             annotations.get(key(r.aliasId, r.country))?.get(day) ?? {};
-        for (const m of sheetMetrics) {
+        for (const m of salesOnly
+          ? sheetMetrics.filter((m) => m.key === "sales")
+          : sheetMetrics) {
           if (c[m.key] !== null || c.na.includes(m.key)) continue;
           if (
             (m.key === "spend" && c.sourceSpend.length) ||
@@ -860,11 +962,20 @@ async function readEffectiveness(
       .digest("hex")
       .slice(0, 32);
   const [advisorHistory, approvals] = await Promise.all([
-    client.metaAdvisorAssignment.findMany({ where: { alias: { tableId } } }),
-    client.metaAdvisorSalesApproval.findMany({
-      where: { row: { alias: { tableId } }, day: { gte: since, lte: until } },
-      include: { row: { select: { aliasId: true, country: true } } },
-    }),
+    salesOnly
+      ? Promise.resolve([])
+      : client.metaAdvisorAssignment.findMany({
+          where: { alias: { tableId } },
+        }),
+    salesOnly
+      ? Promise.resolve([])
+      : client.metaAdvisorSalesApproval.findMany({
+          where: {
+            row: { alias: { tableId } },
+            day: { gte: since, lte: until },
+          },
+          include: { row: { select: { aliasId: true, country: true } } },
+        }),
   ]);
   for (const r of rows.values()) {
     const changes = advisorHistory.filter(

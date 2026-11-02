@@ -98,6 +98,7 @@ type Account = {
   }[];
 };
 type Period = {
+  sales?: import("../../lib/meta-ads/campaign-performance").CampaignSalesPeriod;
   cost: number | null;
   spend: number;
   results: number;
@@ -219,6 +220,53 @@ function cost(p: Period, currency: string) {
       : p.state === "INACTIVE"
         ? "Sin actividad"
         : "No disponible";
+}
+function campaignSales(p?: Period, start?: string | null) {
+  if (!p?.sales) return null;
+  const v = p.sales;
+  const hint = `${date(v.since)} – ${date(v.until)}. Ventas registradas del diplomado y país en las hojas.${v.sharedCampaigns > 1 ? ` Compartidas por ${v.sharedCampaigns} campañas; no atribución individual ni CAC por campaña.` : ""}${v.partial ? " Faltan días de ventas; suma parcial." : ""}${start ? ` Primera circulación guardada: ${date(start)}.` : ""}`;
+  return (
+    <small className="meta-sale-count" title={hint}>
+      {!v.linked
+        ? "Sin vincular"
+        : v.sales === null
+          ? "Ventas: sin registro"
+          : `${v.sales.toLocaleString("es-PE")}${v.partial ? "*" : ""} ventas${v.sharedCampaigns > 1 ? " · compartidas" : ""}`}
+    </small>
+  );
+}
+function campaignEvaluation(o: Item) {
+  const p = o.periods["7"];
+  if (o.level !== "campaign")
+    return <span title={ratings[o.rating]}>{ratings[o.rating]}</span>;
+  const v = p?.sales;
+  const label = !v?.linked
+    ? "Sin vincular"
+    : v.sales === null
+      ? "Ventas pendientes"
+      : v.sharedCampaigns > 1
+        ? "Ventas compartidas"
+        : v.partial
+          ? "Datos parciales"
+          : v.sales === 0
+            ? "Sin ventas registradas"
+            : `${v.sales} ventas · 7 días`;
+  return (
+    <>
+      <span
+        title={`${ratings[o.rating]} · resultados Meta de 7 días`}
+        aria-label={ratings[o.rating]}
+      >
+        ⓘ
+      </span>{" "}
+      <span>{label}</span>
+      <small>
+        {v?.cac !== null && v?.cac !== undefined
+          ? `CAC ${money(v.cac, o.currency)}`
+          : "CAC —"}
+      </small>
+    </>
+  );
 }
 function date(value: string | null, timezone = "UTC") {
   return value
@@ -476,7 +524,8 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
   const [accessRetry, setAccessRetry] = useState(0);
   const [accessLoading, setAccessLoading] = useState(true);
   useEffect(() => {
-    let live = true, inFlight = false;
+    let live = true,
+      inFlight = false;
     let controller: AbortController | undefined;
     const load = async () => {
       if (inFlight || document.visibilityState !== "visible") return;
@@ -484,21 +533,38 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
       controller = new AbortController();
       setAccessLoading(true);
       try {
-        const a: MetaModuleAccess = await fetchJsonResponse("/api/meta-ads/workspace-access", {
-          cache: "no-store",
-          signal: AbortSignal.any([controller.signal, AbortSignal.timeout(10000)]),
-        });
-        if (live) { receiveModuleAccess(a); setAccessError(""); }
+        const a: MetaModuleAccess = await fetchJsonResponse(
+          "/api/meta-ads/workspace-access",
+          {
+            cache: "no-store",
+            signal: AbortSignal.any([
+              controller.signal,
+              AbortSignal.timeout(10000),
+            ]),
+          },
+        );
+        if (live) {
+          receiveModuleAccess(a);
+          setAccessError("");
+        }
       } catch (e) {
-        if (live) setAccessError(e instanceof Error && ["TimeoutError", "AbortError"].includes(e.name)
-          ? "El servidor tardó demasiado en comprobar tu acceso. Reintenta la carga. Este paso no depende del token de Meta."
-          : e instanceof Error ? e.message : "No se pudo comprobar tu acceso a Meta Ads.");
+        if (live)
+          setAccessError(
+            e instanceof Error &&
+              ["TimeoutError", "AbortError"].includes(e.name)
+              ? "El servidor tardó demasiado en comprobar tu acceso. Reintenta la carga. Este paso no depende del token de Meta."
+              : e instanceof Error
+                ? e.message
+                : "No se pudo comprobar tu acceso a Meta Ads.",
+          );
       } finally {
         inFlight = false;
         if (live) setAccessLoading(false);
       }
     };
-    const update = () => { void load(); };
+    const update = () => {
+      void load();
+    };
     update();
     const timer = setInterval(update, 30000);
     window.addEventListener("focus", update);
@@ -594,16 +660,22 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
     ),
     [revision, setRevision] = useState(0),
     [sharing, setSharing] = useState<Account | null>(null);
-  const [assignmentRequested,setAssignmentRequested]=useState(false);
+  const [assignmentRequested, setAssignmentRequested] = useState(false);
   useEffect(() => {
     if (!moduleReady) return;
     let active = true;
     Promise.all([
       api("meta-ads/aliases"),
       api("meta-ads/alias-table-options"),
-      owner && assignmentRequested ? api("meta-ads/alias-catalog") : Promise.resolve([]),
-      owner && assignmentRequested ? api("meta-ads/meta-advisor-options") : Promise.resolve([]),
-      owner && assignmentRequested ? api("meta-ads/workspace-inventories") : Promise.resolve([]),
+      owner && assignmentRequested
+        ? api("meta-ads/alias-catalog")
+        : Promise.resolve([]),
+      owner && assignmentRequested
+        ? api("meta-ads/meta-advisor-options")
+        : Promise.resolve([]),
+      owner && assignmentRequested
+        ? api("meta-ads/workspace-inventories")
+        : Promise.resolve([]),
     ])
       .then(([rows, tables, catalog, people, sheets]) => {
         if (active) {
@@ -640,7 +712,7 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
       advisors={assignmentAdvisors}
       inventories={inventories}
       tables={aliasTables}
-      onOpen={()=>setAssignmentRequested(true)}
+      onOpen={() => setAssignmentRequested(true)}
       disabled={busy}
       readOnly={!owner}
       onAssign={(aliasId, country, selection, details) =>
@@ -1138,11 +1210,18 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
     }, 200);
     return () => clearTimeout(timer);
   }, [q]);
-  const accountStatisticsNeeded = tab === "accounts" || accountListActivity !== "all" || accountPickerActivity !== "all";
+  const accountStatisticsNeeded =
+    tab === "accounts" ||
+    accountListActivity !== "all" ||
+    accountPickerActivity !== "all";
   const refresh = useCallback(async () => {
-    const rows: Account[] = await fetchJsonResponse("/api/meta-ads/accounts" + (accountStatisticsNeeded ? "" : "?light=1"), {
-      cache: "no-store", signal: AbortSignal.timeout(15000),
-    });
+    const rows: Account[] = await fetchJsonResponse(
+      "/api/meta-ads/accounts" + (accountStatisticsNeeded ? "" : "?light=1"),
+      {
+        cache: "no-store",
+        signal: AbortSignal.timeout(15000),
+      },
+    );
     const key = rows
       .map((a) => a.id)
       .sort()
@@ -1449,7 +1528,12 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
         await refresh();
       }
       setRevision((r) => r + 1);
-      if (success) setMessage((result as { advisorReview?: boolean } | undefined)?.advisorReview ? "Vinculado. Los datos se incorporan a la hoja; hay una diferencia de asesor por revisar allí. Se conserva el asesor actual." : success);
+      if (success)
+        setMessage(
+          (result as { advisorReview?: boolean } | undefined)?.advisorReview
+            ? "Vinculado. Los datos se incorporan a la hoja; hay una diferencia de asesor por revisar allí. Se conserva el asesor actual."
+            : success,
+        );
     } catch (e) {
       setMessage(
         processed
@@ -1466,7 +1550,10 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
       setBusy(false);
     }
   };
-  const visibleUpdated = useCallback(() => {setRevision(n=>n+1);void refresh();},[refresh]);
+  const visibleUpdated = useCallback(() => {
+    setRevision((n) => n + 1);
+    void refresh();
+  }, [refresh]);
   const requestAccountUpdate = (account: Account) =>
     api(`meta-ads/accounts/${account.id}/sync`, "POST", {
       focused: true,
@@ -1584,7 +1671,7 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
           advisors={assignmentAdvisors}
           inventories={inventories}
           tables={aliasTables}
-          onOpen={()=>setAssignmentRequested(true)}
+          onOpen={() => setAssignmentRequested(true)}
           disabled={busy}
           bulkCount={
             summarySelectionKey ? summarySelectionKey.split(",").length : 0
@@ -1777,10 +1864,24 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
     {
       key: "start",
       width: "6%",
-      label: "Inicio · días",
+      label: (
+        <button
+          type="button"
+          className="meta-inline-detail"
+          onClick={() => orderByCost("start")}
+          title="Ordenar por primera circulación guardada; conserva primero los activos"
+        >
+          Inicio · días{" "}
+          {sort === "start" ? (direction === "asc" ? "↑" : "↓") : "↕"}
+        </button>
+      ),
       render: (o) => (
         <>
-          {date(o.firstDelivery)}
+          <span
+            title={`Primera circulación guardada: ${date(o.firstDelivery)}. Creación: ${date(o.createdTime)}. El histórico guardado puede comenzar después del inicio real.`}
+          >
+            {date(o.firstDelivery ?? o.createdTime)}
+          </span>
           <small>{o.ageDays ?? "—"} días</small>
         </>
       ),
@@ -1834,6 +1935,10 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
                 {o.periods.custom.results} resultados
               </small>
             )}
+          {calendar &&
+            o.periods.custom?.since === since &&
+            o.periods.custom?.until === until &&
+            campaignSales(o.periods.custom)}
         </>
       ),
     },
@@ -1846,18 +1951,38 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
       render: (o: Item) => (
         <>
           {cost(o.periods[key], o.currency)}
-          <small className="meta-result-count">
+          <small
+            className="meta-result-count"
+            title={
+              key === "lifetime"
+                ? `Primera circulación guardada: ${date(o.firstDelivery)}. Informe acumulado: ${date(o.periods[key].since)} – ${date(o.periods[key].until)}.`
+                : undefined
+            }
+          >
             {o.periods[key].results} resultados
           </small>
+          {campaignSales(
+            o.periods[key],
+            key === "lifetime" ? o.firstDelivery : null,
+          )}
         </>
       ),
     })),
     {
       key: "rating",
       width: "9%",
-      label: "Evaluación",
+      label: "Evaluación · estado",
       toolbarAction: bulkAliasControl(),
-      render: (o) => ratings[o.rating],
+      render: (o) => (
+        <button
+          type="button"
+          className="meta-campaign-evaluation"
+          onClick={() => setSelected(o)}
+          aria-label={`Ver evaluación de ${o.name}`}
+        >
+          {campaignEvaluation(o)}
+        </button>
+      ),
     },
   ];
   // Headers, cost controls and cells derive from this same ordered list, including future columns.
@@ -2105,6 +2230,10 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
                   </>
                 )}
               </small>
+              {campaignSales(
+                o.periods[key],
+                key === "lifetime" ? o.firstDelivery : null,
+              )}
             </div>
           ))}
           <div
@@ -2142,7 +2271,8 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
           </div>
         </div>
         <div className="meta-card-evaluation">
-          <span className="badge">{ratings[o.rating]}</span>
+          {campaignSales(summary)}
+          <span className="badge">{campaignEvaluation(o)}</span>
           <small>Evaluación orientativa · últimos 7 días</small>
         </div>
         <div className="meta-dates">
@@ -2188,11 +2318,26 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
   };
   if (!preferencesReady || !moduleAccess)
     return (
-      <section className="panel stack meta-access-loading" aria-label="Cargando acceso a Meta Ads" aria-busy={accessLoading}>
+      <section
+        className="panel stack meta-access-loading"
+        aria-label="Cargando acceso a Meta Ads"
+        aria-busy={accessLoading}
+      >
         <p role={accessError ? "alert" : "status"}>
           {accessError || "Comprobando tu acceso a Meta Ads…"}
         </p>
-        {accessError && <button type="button" disabled={accessLoading} onClick={()=>{setAccessError("");setAccessRetry(n=>n+1);}}>Reintentar acceso</button>}
+        {accessError && (
+          <button
+            type="button"
+            disabled={accessLoading}
+            onClick={() => {
+              setAccessError("");
+              setAccessRetry((n) => n + 1);
+            }}
+          >
+            Reintentar acceso
+          </button>
+        )}
       </section>
     );
   return (
@@ -2290,135 +2435,134 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
       <div className="meta-content">
         {tab === "connections" && owner ? (
           <>
-            <details className="panel meta-new-connection"><summary>＋ Añadir conexión de Meta</summary>
-            <section
-              className="stack"
-              aria-label="Agregar conexión de Meta"
-            >
-              <h3>Conectar cuentas de Meta</h3>
-              <p>
-                Elige cómo conectar. Cada conexión utiliza un único método de
-                acceso.
-              </p>
-              <div
-                className="row"
-                role="group"
-                aria-label="Opciones para conectar con Meta"
-              >
-                {[
-                  ["manual", "Manual (token)"],
-                  ["quick", "Conexión OAuth con Meta"],
-                  ["oauth", "Agregar conexión OAuth"],
-                ].map(([mode, label]) => (
-                  <button
-                    key={mode}
-                    type="button"
-                    className={apiMode === mode ? "primary" : ""}
-                    aria-expanded={apiMode === mode}
-                    onClick={() => setApiMode(apiMode === mode ? "" : mode)}
-                  >
-                    {label}
-                  </button>
-                ))}
-              </div>
-              <div className="stack">
-                {apiMode === "quick" && (
-                  <section
-                    className="stack"
-                    aria-label="Conexiones OAuth disponibles"
-                  >
-                    <p>
-                      Abre Facebook con una conexión cuya app ya esté
-                      configurada. Al completar la autorización se reemplazará
-                      su credencial actual.
-                    </p>
-                    {connections
-                      .filter(
+            <details className="panel meta-new-connection">
+              <summary>＋ Añadir conexión de Meta</summary>
+              <section className="stack" aria-label="Agregar conexión de Meta">
+                <h3>Conectar cuentas de Meta</h3>
+                <p>
+                  Elige cómo conectar. Cada conexión utiliza un único método de
+                  acceso.
+                </p>
+                <div
+                  className="row"
+                  role="group"
+                  aria-label="Opciones para conectar con Meta"
+                >
+                  {[
+                    ["manual", "Manual (token)"],
+                    ["quick", "Conexión OAuth con Meta"],
+                    ["oauth", "Agregar conexión OAuth"],
+                  ].map(([mode, label]) => (
+                    <button
+                      key={mode}
+                      type="button"
+                      className={apiMode === mode ? "primary" : ""}
+                      aria-expanded={apiMode === mode}
+                      onClick={() => setApiMode(apiMode === mode ? "" : mode)}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+                <div className="stack">
+                  {apiMode === "quick" && (
+                    <section
+                      className="stack"
+                      aria-label="Conexiones OAuth disponibles"
+                    >
+                      <p>
+                        Abre Facebook con una conexión cuya app ya esté
+                        configurada. Al completar la autorización se reemplazará
+                        su credencial actual.
+                      </p>
+                      {connections
+                        .filter(
+                          (c) =>
+                            c.transport === "API" &&
+                            !c.disconnectedAt &&
+                            c.appId &&
+                            c.appSecretConfiguredAt,
+                        )
+                        .map((c) => (
+                          <div className="panel stack" key={c.id}>
+                            <strong>{c.name}</strong>
+                            <MetaOAuthQuickConnect
+                              connection={c}
+                              info={marketingInfo}
+                            />
+                          </div>
+                        ))}
+                      {!connections.some(
                         (c) =>
                           c.transport === "API" &&
                           !c.disconnectedAt &&
                           c.appId &&
                           c.appSecretConfiguredAt,
-                      )
-                      .map((c) => (
-                        <div className="panel stack" key={c.id}>
-                          <strong>{c.name}</strong>
-                          <MetaOAuthQuickConnect
-                            connection={c}
-                            info={marketingInfo}
+                      ) && (
+                        <p>
+                          Primero usa «Agregar conexión OAuth» para configurar
+                          tu app de Meta.
+                        </p>
+                      )}
+                    </section>
+                  )}
+                  {apiMode === "oauth" ? (
+                    <MetaMarketingOAuth
+                      info={marketingInfo}
+                      onUpdated={() => {
+                        void refresh();
+                        setRevision((r) => r + 1);
+                      }}
+                    />
+                  ) : apiMode === "manual" ? (
+                    <form
+                      className="stack"
+                      onSubmit={(e) => {
+                        e.preventDefault();
+                        const form = e.currentTarget,
+                          data = new FormData(form);
+                        void run(async () => {
+                          await api("meta-ads/connections", "POST", {
+                            name: String(data.get("name")),
+                            transport: "API",
+                            apiVersion: String(data.get("version")),
+                            token: String(data.get("token")),
+                          });
+                          form.reset();
+                          setApiMode("");
+                        }, "Conexión guardada. El token aparece oculto en su tarjeta. Verifica el acceso para traer tus cuentas.");
+                      }}
+                    >
+                      <div className="fields">
+                        <label>
+                          Nombre
+                          <input name="name" required maxLength={100} />
+                        </label>
+                        <label>
+                          Versión Graph
+                          <input
+                            name="version"
+                            defaultValue="v26.0"
+                            required
+                            pattern="v[0-9]{2}\.0"
                           />
-                        </div>
-                      ))}
-                    {!connections.some(
-                      (c) =>
-                        c.transport === "API" &&
-                        !c.disconnectedAt &&
-                        c.appId &&
-                        c.appSecretConfiguredAt,
-                    ) && (
-                      <p>
-                        Primero usa «Agregar conexión OAuth» para configurar tu
-                        app de Meta.
-                      </p>
-                    )}
-                  </section>
-                )}
-                {apiMode === "oauth" ? (
-                  <MetaMarketingOAuth
-                    info={marketingInfo}
-                    onUpdated={() => {
-                      void refresh();
-                      setRevision((r) => r + 1);
-                    }}
-                  />
-                ) : apiMode === "manual" ? (
-                  <form
-                    className="stack"
-                    onSubmit={(e) => {
-                      e.preventDefault();
-                      const form = e.currentTarget,
-                        data = new FormData(form);
-                      void run(async () => {
-                        await api("meta-ads/connections", "POST", {
-                          name: String(data.get("name")),
-                          transport: "API",
-                          apiVersion: String(data.get("version")),
-                          token: String(data.get("token")),
-                        });
-                        form.reset();
-                        setApiMode("");
-                      }, "Conexión guardada. El token aparece oculto en su tarjeta. Verifica el acceso para traer tus cuentas.");
-                    }}
-                  >
-                    <div className="fields">
+                        </label>
+                      </div>
                       <label>
-                        Nombre
-                        <input name="name" required maxLength={100} />
-                      </label>
-                      <label>
-                        Versión Graph
-                        <input
-                          name="version"
-                          defaultValue="v26.0"
+                        Token oficial de Marketing API
+                        <PasswordInput
+                          name="token"
                           required
-                          pattern="v[0-9]{2}\.0"
+                          secretLabel="token de Meta"
+                          autoComplete="off"
                         />
                       </label>
-                    </div>
-                    <label>
-                      Token oficial de Marketing API
-                      <PasswordInput
-                        name="token"
-                        required
-                        secretLabel="token de Meta"
-                        autoComplete="off"
-                      />
-                    </label>
-                    <button disabled={busy}>Guardar conexión API</button>
-                  </form>
-                ) : null}
-              </div>
-            </section></details>
+                      <button disabled={busy}>Guardar conexión API</button>
+                    </form>
+                  ) : null}
+                </div>
+              </section>
+            </details>
             {connections.some(
               (c) => c.transport === "API" && c.disconnectedAt,
             ) && (
@@ -2444,209 +2588,276 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
                   (showDisconnected || !c.disconnectedAt),
               )
               .map((c) => {
-                const linked = accounts.filter(a=>a.connectionId===c.id);
-                const needsAuth = linked.some(a=>a.progress?.authorizationRequired) || !!(c.tokenExpiresAt && Date.parse(c.tokenExpiresAt)<=Date.now()) || /(?:código|code)\s*(?:190|102)\b|HTTP\s*401/i.test(c.lastError??"");
-                const quotaWait = linked.some(a=>a.progress?.status==="waiting" && a.progress.waitReason==="quota") || /Meta limitó|HTTP\s*429|código\s*(?:4|17|32|613|80000|80004)\b/i.test(c.lastError??"");
-                const retryAt=linked.filter(a=>a.progress?.status==="waiting"&&a.progress.waitReason==="quota").map(a=>a.progress?.nextSyncAt).filter((v):v is string=>!!v).sort()[0];
-                return <article className="panel stack meta-connection-card" key={c.id}>
-                  <div className="row spread">
-                    <h3>{c.name}</h3>
-                    <span className="badge" data-health={needsAuth?"auth":quotaWait?"quota":c.verifiedAt?"verified":"pending"}>
-                      {c.transport} ·{" "}
-                      {c.disconnectedAt
-                        ? "Desconectada"
-                        : needsAuth ? "Requiere reconectar" : quotaWait ? "Límite de consultas" : c.verifiedAt
-                          ? "Acceso comprobado anteriormente"
-                          : "Pendiente de verificar"}
-                    </span>
-                  </div>
-                  <small>
-                    {c.tokenMask ?? "Sin token guardado"} · Última verificación:{" "}
-                    {displayTime(c.verifiedAt)}
-                  </small>
-                  {c.transport === "API" && (
+                const linked = accounts.filter((a) => a.connectionId === c.id);
+                const needsAuth =
+                  linked.some((a) => a.progress?.authorizationRequired) ||
+                  !!(
+                    c.tokenExpiresAt &&
+                    Date.parse(c.tokenExpiresAt) <= Date.now()
+                  ) ||
+                  /(?:código|code)\s*(?:190|102)\b|HTTP\s*401/i.test(
+                    c.lastError ?? "",
+                  );
+                const quotaWait =
+                  linked.some(
+                    (a) =>
+                      a.progress?.status === "waiting" &&
+                      a.progress.waitReason === "quota",
+                  ) ||
+                  /Meta limitó|HTTP\s*429|código\s*(?:4|17|32|613|80000|80004)\b/i.test(
+                    c.lastError ?? "",
+                  );
+                const retryAt = linked
+                  .filter(
+                    (a) =>
+                      a.progress?.status === "waiting" &&
+                      a.progress.waitReason === "quota",
+                  )
+                  .map((a) => a.progress?.nextSyncAt)
+                  .filter((v): v is string => !!v)
+                  .sort()[0];
+                return (
+                  <article
+                    className="panel stack meta-connection-card"
+                    key={c.id}
+                  >
+                    <div className="row spread">
+                      <h3>{c.name}</h3>
+                      <span
+                        className="badge"
+                        data-health={
+                          needsAuth
+                            ? "auth"
+                            : quotaWait
+                              ? "quota"
+                              : c.verifiedAt
+                                ? "verified"
+                                : "pending"
+                        }
+                      >
+                        {c.transport} ·{" "}
+                        {c.disconnectedAt
+                          ? "Desconectada"
+                          : needsAuth
+                            ? "Requiere reconectar"
+                            : quotaWait
+                              ? "Límite de consultas"
+                              : c.verifiedAt
+                                ? "Acceso comprobado anteriormente"
+                                : "Pendiente de verificar"}
+                      </span>
+                    </div>
                     <small>
-                      Credencial:{" "}
-                      {!c.tokenMask
-                        ? "Sin autorización"
-                        : c.authMethod === "OAUTH"
-                          ? "OAuth de tu app"
-                          : "Token manual"}{" "}
-                      · Caducidad:{" "}
-                      {c.tokenExpiresAt
-                        ? displayTime(c.tokenExpiresAt)
-                        : "No informada"}
-                      {c.tokenExpiresAt &&
-                      Date.parse(c.tokenExpiresAt) <= Date.now()
-                        ? " · Reconecta con Facebook"
-                        : ""}
+                      {c.tokenMask ?? "Sin token guardado"} · Última
+                      verificación: {displayTime(c.verifiedAt)}
                     </small>
-                  )}
-                  {needsAuth && <p className="notice" role="status">Meta rechazó o venció la autorización. Renueva el acceso de esta conexión para volver a recibir datos.</p>}
-                  {!needsAuth && quotaWait && <p className="notice" role="status"><strong>Meta limitó las consultas.</strong> Los datos pueden estar atrasados; se conserva el avance. {retryAt ? `Reintento previsto: ${displayTime(retryAt)}.` : "Es el último aviso guardado de la conexión."}</p>}
-                  {!c.disconnectedAt && (
-                    <MetaConnectionAccess
-                      connection={c}
-                      info={marketingInfo}
-                      onUpdated={async () => {
-                        await refresh();
-                        setRevision((r) => r + 1);
-                      }}
-                    />
-                  )}
-                  <details className="meta-connection-details"><summary>Cuentas y opciones avanzadas · {linked.length}</summary>
-                  <MetaConnectionScope accounts={linked} />
-                  {!c.disconnectedAt && (
-                    <details>
-                      <summary>Permiso para activar y pausar en Meta</summary>
-                      <p>
-                        Estos controles requieren ads_management y acceso para
-                        administrar la cuenta. ads_read permite consultar
-                        estadísticas y miniaturas.
+                    {c.transport === "API" && (
+                      <small>
+                        Credencial:{" "}
+                        {!c.tokenMask
+                          ? "Sin autorización"
+                          : c.authMethod === "OAUTH"
+                            ? "OAuth de tu app"
+                            : "Token manual"}{" "}
+                        · Caducidad:{" "}
+                        {c.tokenExpiresAt
+                          ? displayTime(c.tokenExpiresAt)
+                          : "No informada"}
+                        {c.tokenExpiresAt &&
+                        Date.parse(c.tokenExpiresAt) <= Date.now()
+                          ? " · Reconecta con Facebook"
+                          : ""}
+                      </small>
+                    )}
+                    {needsAuth && (
+                      <p className="notice" role="status">
+                        Meta rechazó o venció la autorización. Renueva el acceso
+                        de esta conexión para volver a recibir datos.
                       </p>
-                      {c.appSecretConfiguredAt && c.appId && (
-                        <button
-                          type="button"
-                          disabled={busy}
-                          onClick={() => {
-                            if (
-                              !window.confirm(
-                                "Autorizar administración con Facebook sustituirá la credencial actual al completar el acceso. ¿Continuar?",
-                              )
-                            )
-                              return;
-                            void run(async () => {
-                              const r = await api(
-                                `meta-ads/connections/${c.id}/manage-oauth`,
+                    )}
+                    {!needsAuth && quotaWait && (
+                      <p className="notice" role="status">
+                        <strong>Meta limitó las consultas.</strong> Los datos
+                        pueden estar atrasados; se conserva el avance.{" "}
+                        {retryAt
+                          ? `Reintento previsto: ${displayTime(retryAt)}.`
+                          : "Es el último aviso guardado de la conexión."}
+                      </p>
+                    )}
+                    {!c.disconnectedAt && (
+                      <MetaConnectionAccess
+                        connection={c}
+                        info={marketingInfo}
+                        onUpdated={async () => {
+                          await refresh();
+                          setRevision((r) => r + 1);
+                        }}
+                      />
+                    )}
+                    <details className="meta-connection-details">
+                      <summary>
+                        Cuentas y opciones avanzadas · {linked.length}
+                      </summary>
+                      <MetaConnectionScope accounts={linked} />
+                      {!c.disconnectedAt && (
+                        <details>
+                          <summary>
+                            Permiso para activar y pausar en Meta
+                          </summary>
+                          <p>
+                            Estos controles requieren ads_management y acceso
+                            para administrar la cuenta. ads_read permite
+                            consultar estadísticas y miniaturas.
+                          </p>
+                          {c.appSecretConfiguredAt && c.appId && (
+                            <button
+                              type="button"
+                              disabled={busy}
+                              onClick={() => {
+                                if (
+                                  !window.confirm(
+                                    "Autorizar administración con Facebook sustituirá la credencial actual al completar el acceso. ¿Continuar?",
+                                  )
+                                )
+                                  return;
+                                void run(async () => {
+                                  const r = await api(
+                                    `meta-ads/connections/${c.id}/manage-oauth`,
+                                    "POST",
+                                    {},
+                                  );
+                                  window.location.assign(r.url);
+                                });
+                              }}
+                            >
+                              Autorizar activar y pausar con Facebook
+                            </button>
+                          )}
+                          {c.loginConfigId && (
+                            <p>
+                              En tu configuración de Facebook Login para
+                              empresas incluye ads_read y ads_management antes
+                              de autorizar.
+                            </p>
+                          )}
+                          <p>
+                            Si usas token manual, reemplázalo por uno que
+                            incluya ads_management y verifica la conexión.
+                          </p>
+                        </details>
+                      )}
+                      {c.lastError &&
+                        (c.verifiedAt ? (
+                          <details>
+                            <summary>Información de la verificación</summary>
+                            <p>{c.lastError}</p>
+                          </details>
+                        ) : (
+                          <p className="notice">{c.lastError}</p>
+                        ))}
+                      {c.transport === "API" && (
+                        <details>
+                          <summary>Versión de la API · avanzado</summary>
+                          <form
+                            className="row"
+                            onSubmit={(e) => {
+                              e.preventDefault();
+                              const apiVersion = String(
+                                new FormData(e.currentTarget).get("apiVersion"),
+                              );
+                              void run(async () => {
+                                await api(
+                                  `meta-ads/connections/${c.id}`,
+                                  "PATCH",
+                                  {
+                                    apiVersion,
+                                  },
+                                );
+                              }, "Versión actualizada. Se conserva el token; pulsa Comprobar acceso.");
+                            }}
+                          >
+                            <label>
+                              Versión Graph guardada
+                              <input
+                                name="apiVersion"
+                                defaultValue={c.apiVersion}
+                                key={c.apiVersion}
+                                required
+                                pattern="v[0-9]{2}\.0"
+                              />
+                            </label>
+                            <button disabled={busy}>
+                              Actualizar versión sin cambiar token
+                            </button>
+                            <small>
+                              Usa la misma versión que funcionó en Explorer.
+                              Actualizar el formulario de una conexión nueva no
+                              cambia esta conexión.
+                            </small>
+                          </form>
+                        </details>
+                      )}
+                    </details>
+                    <div className="row meta-connection-actions">
+                      <button
+                        type="button"
+                        disabled={busy || !c.tokenMask || !!c.disconnectedAt}
+                        onClick={() =>
+                          void run(
+                            () =>
+                              api(
+                                `meta-ads/connections/${c.id}/refresh`,
                                 "POST",
                                 {},
-                              );
-                              window.location.assign(r.url);
-                            });
-                          }}
-                        >
-                          Autorizar activar y pausar con Facebook
-                        </button>
-                      )}
-                      {c.loginConfigId && (
-                        <p>
-                          En tu configuración de Facebook Login para empresas
-                          incluye ads_read y ads_management antes de autorizar.
-                        </p>
-                      )}
-                      <p>
-                        Si usas token manual, reemplázalo por uno que incluya
-                        ads_management y verifica la conexión.
-                      </p>
-                    </details>
-                  )}
-                  {c.lastError &&
-                    (c.verifiedAt ? (
-                      <details>
-                        <summary>Información de la verificación</summary>
-                        <p>{c.lastError}</p>
-                      </details>
-                    ) : (
-                      <p className="notice">{c.lastError}</p>
-                    ))}
-                  {c.transport === "API" && (
-                    <details>
-                      <summary>Versión de la API · avanzado</summary>
-                      <form
-                        className="row"
-                        onSubmit={(e) => {
-                          e.preventDefault();
-                          const apiVersion = String(
-                            new FormData(e.currentTarget).get("apiVersion"),
-                          );
-                          void run(async () => {
-                            await api(`meta-ads/connections/${c.id}`, "PATCH", {
-                              apiVersion,
-                            });
-                          }, "Versión actualizada. Se conserva el token; pulsa Comprobar acceso.");
-                        }}
+                              ),
+                            "Conexión verificada con Meta. Se conservaron las cuentas y los datos; no se importaron anuncios.",
+                          )
+                        }
                       >
-                        <label>
-                          Versión Graph guardada
-                          <input
-                            name="apiVersion"
-                            defaultValue={c.apiVersion}
-                            key={c.apiVersion}
-                            required
-                            pattern="v[0-9]{2}\.0"
-                          />
-                        </label>
-                        <button disabled={busy}>
-                          Actualizar versión sin cambiar token
-                        </button>
-                        <small>
-                          Usa la misma versión que funcionó en Explorer.
-                          Actualizar el formulario de una conexión nueva no
-                          cambia esta conexión.
-                        </small>
-                      </form>
-                    </details>
-                  )}
-
-                  </details>
-                  <div className="row meta-connection-actions">
-                    <button
-                      type="button"
-                      disabled={busy || !c.tokenMask || !!c.disconnectedAt}
-                      onClick={() =>
-                        void run(
-                          () =>
-                            api(
-                              `meta-ads/connections/${c.id}/refresh`,
+                        Comprobar acceso
+                      </button>
+                      <button
+                        type="button"
+                        disabled={busy || !c.tokenMask || !!c.disconnectedAt}
+                        onClick={() =>
+                          void run(async () => {
+                            const r = await api(
+                              `meta-ads/connections/${c.id}/verify`,
                               "POST",
                               {},
-                            ),
-                          "Conexión verificada con Meta. Se conservaron las cuentas y los datos; no se importaron anuncios.",
-                        )
-                      }
-                    >
-                      Comprobar acceso
-                    </button>
-                    <button
-                      type="button"
-                      disabled={busy || !c.tokenMask || !!c.disconnectedAt}
-                      onClick={() =>
-                        void run(async () => {
-                          const r = await api(
-                            `meta-ads/connections/${c.id}/verify`,
-                            "POST",
-                            {},
-                          );
-                          setMessage(
-                            `Acceso verificado · ${r.accounts} cuentas disponibles.`,
-                          );
-                        })
-                      }
-                    >
-                      Buscar cuentas nuevas
-                    </button>
-                    <button
-                      type="button"
-                      className="danger"
-                      disabled={busy || !!c.disconnectedAt}
-                      onClick={() => {
-                        if (
-                          confirm(
-                            "¿Eliminar esta conexión de la lista activa? Se retirará su token y se desactivará su sincronización. Se conservan las cuentas y el histórico. No se modifica nada en Meta ni otras conexiones.",
+                            );
+                            setMessage(
+                              `Acceso verificado · ${r.accounts} cuentas disponibles.`,
+                            );
+                          })
+                        }
+                      >
+                        Buscar cuentas nuevas
+                      </button>
+                      <button
+                        type="button"
+                        className="danger"
+                        disabled={busy || !!c.disconnectedAt}
+                        onClick={() => {
+                          if (
+                            confirm(
+                              "¿Eliminar esta conexión de la lista activa? Se retirará su token y se desactivará su sincronización. Se conservan las cuentas y el histórico. No se modifica nada en Meta ni otras conexiones.",
+                            )
                           )
-                        )
-                          void run(
-                            () => api("meta-ads/connections/" + c.id, "DELETE"),
-                            "Conexión retirada de la lista activa. Se conserva el histórico; puedes consultarla en Ver conexiones retiradas.",
-                          );
-                      }}
-                    >
-                      {c.disconnectedAt
-                        ? "Conexión retirada"
-                        : "Eliminar conexión"}
-                    </button>
-                  </div>
-                </article>;
+                            void run(
+                              () =>
+                                api("meta-ads/connections/" + c.id, "DELETE"),
+                              "Conexión retirada de la lista activa. Se conserva el histórico; puedes consultarla en Ver conexiones retiradas.",
+                            );
+                        }}
+                      >
+                        {c.disconnectedAt
+                          ? "Conexión retirada"
+                          : "Eliminar conexión"}
+                      </button>
+                    </div>
+                  </article>
+                );
               })}
           </>
         ) : tab === "accounts" && !viewOnly ? (
@@ -3237,7 +3448,12 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
                     {analysisControl()}
                   </div>
                   <div className="meta-pinned-actions">
-                    <MetaVisibleRefresh items={items} accounts={accounts} onUpdated={visibleUpdated} onReconnect={()=>setTab("connections")} />
+                    <MetaVisibleRefresh
+                      items={items}
+                      accounts={accounts}
+                      onUpdated={visibleUpdated}
+                      onReconnect={() => setTab("connections")}
+                    />
                     {chosen.some((a) => a.canSync) && (
                       <button
                         type="button"
@@ -3257,7 +3473,7 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
                         ↻ Actualizar catálogo e histórico
                       </button>
                     )}
-                    <MetaDataFreshness accounts={chosen} />
+                    <MetaDataFreshness accounts={chosen} compact />
                   </div>
                 </div>
               </div>
@@ -3412,7 +3628,11 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
         )}
       </div>
       {selected && (
-        <MetaDetail item={selected} onClose={() => setSelected(null)} />
+        <MetaDetail
+          item={selected}
+          period={calendar ? "custom" : analysisPeriod}
+          onClose={() => setSelected(null)}
+        />
       )}
       {sharing && (
         <MetaSharing account={sharing} onClose={() => setSharing(null)} />
@@ -3420,7 +3640,15 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
     </section>
   );
 }
-function MetaDetail({ item: o, onClose }: { item: Item; onClose: () => void }) {
+function MetaDetail({
+  item: o,
+  period,
+  onClose,
+}: {
+  item: Item;
+  period: string;
+  onClose: () => void;
+}) {
   const ref = useRef<HTMLDialogElement>(null);
   useEffect(() => {
     ref.current?.showModal();
@@ -3458,7 +3686,70 @@ function MetaDetail({ item: o, onClose }: { item: Item; onClose: () => void }) {
         Inventario: <strong>{o.alias?.name ?? "Sin inventario"}</strong> · País:{" "}
         <strong>{countryName(o.aliasCountry)}</strong>
       </p>
-      <MetaDailyDetail key={o.id} item={o} />
+      {o.level === "campaign" && (
+        <div className="meta-table">
+          <table className="meta-campaign-periods">
+            <caption>
+              Ventas del diplomado y país · comparativos de campaña
+            </caption>
+            <thead>
+              <tr>
+                <th>Periodo</th>
+                <th>Ventas</th>
+                <th>Resultados Meta</th>
+                <th>Gasto Meta</th>
+                <th>CAC</th>
+                <th>Efectividad V/B</th>
+              </tr>
+            </thead>
+            <tbody>
+              {[["custom", "Por fecha"], ...periods]
+                .filter(([k]) => o.periods[k])
+                .map(([k, label]) => {
+                  const p = o.periods[k],
+                    v = p.sales;
+                  return (
+                    <tr key={k}>
+                      <th>
+                        {label}
+                        <small>
+                          {date(p.since)} – {date(p.until)}
+                        </small>
+                      </th>
+                      <td>{campaignSales(p)}</td>
+                      <td>{p.state === "UNAVAILABLE" ? "—" : p.results}</td>
+                      <td>
+                        {p.state === "UNAVAILABLE"
+                          ? "—"
+                          : money(p.spend, o.currency)}
+                      </td>
+                      <td>{v?.cac != null ? money(v.cac, o.currency) : "—"}</td>
+                      <td>
+                        {v?.effectiveness != null
+                          ? `${v.effectiveness.toFixed(1)}%`
+                          : "—"}
+                      </td>
+                    </tr>
+                  );
+                })}
+            </tbody>
+          </table>
+          <p className="hint">
+            Ventas registradas en hojas para el diplomado y país; no son compras
+            atribuidas por Meta. Si varias campañas comparten ese vínculo, se
+            muestran las mismas ventas y no se calcula CAC individual. * Suma
+            parcial: faltan días de ventas. Evaluación de resultados:{" "}
+            {ratings[o.rating]}.
+          </p>
+        </div>
+      )}
+      <MetaDailyDetail
+        key={o.id}
+        item={o}
+        initialPeriod={period}
+        initialSince={o.periods[period]?.since}
+        initialUntil={o.periods[period]?.until}
+      />
       <p>
         Primera circulación conocida: {date(o.firstDelivery)} ·{" "}
         {o.ageDays ?? "—"} días transcurridos. Última circulación:{" "}

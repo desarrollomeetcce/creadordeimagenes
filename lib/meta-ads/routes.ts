@@ -2645,12 +2645,13 @@ export async function metaRoutes(
     const { localDay } = await import("./analytics");
     const { dailyRange } = await import("./daily-range");
     const today = localDay(a.timezone);
+    const bounds = dailyRange(req.nextUrl.searchParams, today);
     const rows = await db.metaAdDaily.findMany({
       where: {
         objectId: obj.id,
         accountId: a.id,
         scope: "7d_click,1d_view|impression",
-        day: dailyRange(req.nextUrl.searchParams, today),
+        day: bounds,
       },
       select: {
         day: true,
@@ -2666,6 +2667,29 @@ export async function metaRoutes(
       rows.length <= 10000,
       "Hay demasiados días guardados. Acota el periodo en el calendario.",
     );
+    if (req.nextUrl.searchParams.get("sales") === "1") {
+      if (obj.level !== "campaign") return send({ rows, sales: null });
+      const { metaCampaignSalesData } = await import("./effectiveness");
+      const data = await metaCampaignSalesData(
+        actor,
+        [obj.id],
+        "gte" in bounds ? bounds.gte : undefined,
+        bounds.lte,
+      );
+      const key = JSON.stringify([obj.aliasId, obj.aliasCountry]);
+      return send({
+        rows,
+        sales: {
+          linked: !!obj.aliasId && !!obj.aliasCountry,
+          sharedCampaigns: data.sharing.length,
+          days: (data.entries.get(key) ?? []).map((r) => ({
+            day: r.day,
+            sales: r.sales,
+            partial: r.partial,
+          })),
+        },
+      });
+    }
     return send(rows);
   }
   if (path === "objects" && method === "GET") {

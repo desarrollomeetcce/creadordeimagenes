@@ -1105,3 +1105,24 @@ test("Vista automática: G y CAC Meta conservan moneda y no dividen sin ventas",
   const missing=advisorFinancialSummary([{day:'2026-11-02',sales:0,financial:{...financial,currencies:[{...financial.currencies[0],sales:0},{...financial.currencies[1],spend:null}]}}]);
   assert.equal(missing.money[0].metaCac,null);assert.equal(missing.money[1].spend,null);assert.equal(missing.money[1].metaCac,null);
 });
+
+test("Campañas: ventas por rango con CAC, ceros, faltantes y vínculos compartidos", async () => {
+ const {campaignSalesPeriod}=await import('../lib/meta-ads/campaign-performance');
+ const entry={inventory:'sheet',name:'Curso',country:'PE',day:'2026-10-01',sales:4,partial:false};
+ const p=campaignSalesPeriod([entry,{...entry,day:'2026-10-02',sales:2}],'2026-10-01','2026-10-02',30,20,true,1,true);
+ assert.equal(p.sales,6);assert.equal(p.cac,5);assert.equal(p.effectiveness,30);assert(!p.partial);
+ const partial=campaignSalesPeriod([entry],'2026-10-01','2026-10-02',30,20,true,1,true);assert(partial.partial);assert.equal(partial.cac,null);
+ const shared=campaignSalesPeriod([entry],'2026-10-01','2026-10-01',30,20,true,2,true);assert.equal(shared.sales,4);assert.equal(shared.cac,null);
+ assert.equal(campaignSalesPeriod([entry],'2026-10-01','2026-10-01',30,20,false,1,true).cac,null);
+ assert.equal(campaignSalesPeriod([entry],'2026-10-02','2026-10-02',30,20,true,1,true).sales,null);
+ const zero=campaignSalesPeriod([{...entry,sales:0}],'2026-10-01','2026-10-01',30,20,true,1,true);assert.equal(zero.sales,0);assert.equal(zero.cac,null);assert.equal(zero.effectiveness,0);
+ assert.equal(campaignSalesPeriod([entry],'2026-10-01','2026-10-01',30,20,true,1,false).sales,null);
+});
+test("Orden Inicio: fechas conocidas primero, activos conservados y preferencia persistente", async()=>{
+ const {compareMetaItems}=await import('../lib/meta-ads/order');
+ const a:any={currency:'PEN',metric:'MESSAGES',status:'ACTIVE',effectiveStatus:'ACTIVE',createdTime:null,ageDays:null,firstDelivery:'2026-10-01',periods:{}};
+ const b={...a,firstDelivery:'2026-10-10'},none={...a,firstDelivery:null};
+ assert(compareMetaItems(a,b,'start',1)<0);assert(compareMetaItems(a,b,'start',-1)>0);assert(compareMetaItems(none,b,'start',-1)>0);
+ assert(compareMetaItems({...a,status:'PAUSED'},b,'start',1)>0);
+ const {parseMetaPreferences}=await import('../lib/meta-ads/preferences');assert.equal(parseMetaPreferences(JSON.stringify({sort:'start'})).sort,'start');
+});

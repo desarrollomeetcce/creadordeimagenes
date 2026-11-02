@@ -5,6 +5,7 @@ type SortableMetaItem = {
   effectiveStatus: string | null;
   createdTime: Date | null;
   ageDays: number | null;
+  firstDelivery?: string | null;
   periods: Record<string, { cost: number | null; results: number }>;
 };
 // Apply before pagination, so all active objects precede inactive objects even
@@ -27,6 +28,14 @@ export function compareMetaItems(
           : 3;
   const priority = rank(a) - rank(b);
   if (priority) return priority;
+  if (sort === "start") {
+    const av =
+      a.firstDelivery ?? a.createdTime?.toISOString().slice(0, 10) ?? null;
+    const bv =
+      b.firstDelivery ?? b.createdTime?.toISOString().slice(0, 10) ?? null;
+    if (!av || !bv) return av === bv ? 0 : av ? -1 : 1;
+    return direction * av.localeCompare(bv);
+  }
   if (a.currency !== b.currency) return a.currency.localeCompare(b.currency);
   if (a.metric !== b.metric) return a.metric.localeCompare(b.metric);
   if (sort === "newest")
@@ -46,7 +55,7 @@ export type DailySort = {
 };
 type DailySortRow = {
   day: string;
-  spend: number;
+  spend: number | null;
   results: number | null;
   cost: number | null;
 };

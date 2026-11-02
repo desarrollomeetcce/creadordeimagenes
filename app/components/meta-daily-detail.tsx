@@ -7,6 +7,7 @@ import { quickRange } from "../../lib/meta-ads/date-range";
 import { MetaDailyTrend } from "./meta-daily-trend";
 import { MetaDailyChart } from "./meta-daily-chart";
 import type { DailyChartMetric } from "../../lib/meta-ads/daily-chart";
+import { campaignSalesPeriod } from "../../lib/meta-ads/campaign-performance";
 import { MetaAnalysisPeriod } from "./meta-analysis-period";
 type DailyRow = {
   day: string;
@@ -21,15 +22,36 @@ type DailyItem = {
   timezone: string;
   metric: string;
   metricName: string;
+  level?: string;
+};
+type DailySales = {
+  linked: boolean;
+  sharedCampaigns: number;
+  days: { day: string; sales: number | null; partial: boolean }[];
 };
 const date = (value: string) =>
   new Date(value + "T12:00:00Z").toLocaleDateString("es-PE", {
     timeZone: "UTC",
   });
-export function MetaDailyDetail({ item }: { item: DailyItem }) {
+export function MetaDailyDetail({
+  item,
+  initialPeriod = "30",
+  initialSince,
+  initialUntil,
+}: {
+  item: DailyItem;
+  initialPeriod?: string;
+  initialSince?: string;
+  initialUntil?: string;
+}) {
   const today = localDay(item.timezone);
-  const [preset, setPreset] = useState("30"),
-    [range, setRange] = useState(() => quickRange("30", today)),
+  const [preset, setPreset] = useState(initialPeriod),
+    [range, setRange] = useState<[string, string]>(() =>
+      initialSince && initialUntil
+        ? [initialSince, initialUntil]
+        : quickRange("30", today),
+    ),
+    [sales, setSales] = useState<DailySales | null>(null),
     [rows, setRows] = useState<DailyRow[]>([]),
     [loading, setLoading] = useState(true),
     [error, setError] = useState(""),
@@ -45,19 +67,23 @@ export function MetaDailyDetail({ item }: { item: DailyItem }) {
     setLoading(true);
     setError("");
     setRows([]);
+    setSales(null);
     const query =
       preset === "lifetime"
         ? new URLSearchParams({ all: "1" })
         : new URLSearchParams({ since, until });
-    void fetchJsonResponse<DailyRow[]>(
-      `/api/meta-ads/objects/${item.id}/daily?${query}`,
-      {
-        cache: "no-store",
-        signal: controller.signal,
-      },
-    )
+    if (item.level === "campaign") query.set("sales", "1");
+    void fetchJsonResponse<
+      DailyRow[] | { rows: DailyRow[]; sales: DailySales | null }
+    >(`/api/meta-ads/objects/${item.id}/daily?${query}`, {
+      cache: "no-store",
+      signal: controller.signal,
+    })
       .then((data) => {
-        if (!controller.signal.aborted) setRows(data);
+        if (!controller.signal.aborted) {
+          setRows(Array.isArray(data) ? data : data.rows);
+          setSales(Array.isArray(data) ? null : data.sales);
+        }
       })
       .catch((e) => {
         if (!controller.signal.aborted)
@@ -71,7 +97,7 @@ export function MetaDailyDetail({ item }: { item: DailyItem }) {
         if (!controller.signal.aborted) setLoading(false);
       });
     return () => controller.abort();
-  }, [item.id, preset, since, until]);
+  }, [item.id, item.level, preset, since, until]);
   const money = (value: number) =>
     new Intl.NumberFormat("es-PE", {
       style: "currency",
@@ -96,7 +122,66 @@ export function MetaDailyDetail({ item }: { item: DailyItem }) {
       clicks: row.clicks,
     };
   });
-  const sortedRows = [...values].sort((a, b) => compareDailyRows(a, b, sort));
+  const first =
+    preset === "lifetime"
+      ? ([
+          ...rows.map((r) => r.day),
+          ...(sales?.days.map((r) => r.day) ?? []),
+        ].sort()[0] ?? today)
+      : since;
+  const last = preset === "lifetime" ? today : until;
+  const entries = (sales?.days ?? []).map((r) => ({
+    ...r,
+    inventory: item.id,
+    name: item.id,
+    country: "",
+  }));
+  const selectedSales = sales
+    ? campaignSalesPeriod(
+        entries,
+        first,
+        last,
+        values.reduce((s, r) => s + r.spend, 0),
+        values.reduce((s, r) => s + (r.results ?? 0), 0),
+        values.length > 0 && knownMetric,
+        sales.sharedCampaigns,
+        sales.linked,
+      )
+    : null;
+  const days = new Map(values.map((r) => [r.day, r]));
+  const sortedRows = [
+    ...new Set([
+      ...values.map((r) => r.day),
+      ...(sales?.days.map((r) => r.day) ?? []),
+    ]),
+  ]
+    .map((day) => {
+      const row = days.get(day),
+        sold = sales?.days.find((r) => r.day === day);
+      const v =
+        row && sales
+          ? campaignSalesPeriod(
+              entries,
+              day,
+              day,
+              row.spend,
+              row.results ?? 0,
+              knownMetric,
+              sales.sharedCampaigns,
+              sales.linked,
+            )
+          : null;
+      return {
+        day,
+        spend: row?.spend ?? null,
+        results: row?.results ?? null,
+        cost: row?.cost ?? null,
+        sales: sold?.sales ?? null,
+        partial: sold?.partial,
+        cac: v?.cac ?? null,
+      };
+    })
+    .sort((a, b) => compareDailyRows(a, b, sort));
   return (
     <section className="meta-daily-detail stack" aria-label="Histórico diario">
       <div className="meta-daily-toolbar">
@@ -158,13 +243,40 @@ export function MetaDailyDetail({ item }: { item: DailyItem }) {
             : `${date(since)} – ${date(until)}`}{" "}
           · {item.timezone}
         </p>
+        {!loading && !error && selectedSales && (
+          <p className="meta-campaign-selected-sales">
+            <strong>
+              {!selectedSales.linked
+                ? "Campaña sin vincular"
+                : selectedSales.sales === null
+                  ? "Ventas sin registro"
+                  : `${selectedSales.sales}${selectedSales.partial ? "*" : ""} ventas`}
+            </strong>{" "}
+            · CAC {selectedSales.cac != null ? money(selectedSales.cac) : "—"} ·
+            Efectividad V/B{" "}
+            {selectedSales.effectiveness != null
+              ? `${selectedSales.effectiveness.toFixed(1)}%`
+              : "—"}
+            {selectedSales.sharedCampaigns > 1 && (
+              <small>
+                Ventas compartidas entre {selectedSales.sharedCampaigns}{" "}
+                campañas; no hay atribución ni CAC individual.
+              </small>
+            )}
+            {selectedSales.partial && (
+              <small>
+                * Faltan días de ventas. No se interpretan como cero.
+              </small>
+            )}
+          </p>
+        )}
         {loading ? (
           <p role="status">Cargando histórico diario…</p>
         ) : error ? (
           <p role="alert" className="notice">
             {error}
           </p>
-        ) : !rows.length ? (
+        ) : !sortedRows.length ? (
           <p role="status">
             No hay estadísticas diarias guardadas en este periodo. El acumulado
             histórico no contiene el desglose por día.
@@ -244,21 +356,35 @@ export function MetaDailyDetail({ item }: { item: DailyItem }) {
                         </button>
                       </th>
                     ))}
+                    {sales && (
+                      <>
+                        <th>Ventas</th>
+                        <th>CAC</th>
+                      </>
+                    )}
                   </tr>
                 </thead>
                 <tbody>
                   {sortedRows.map((row) => (
                     <tr key={row.day} data-day={row.day}>
                       <td>{date(row.day)}</td>
-                      <td>{money(row.spend)}</td>
+                      <td>{row.spend === null ? "—" : money(row.spend)}</td>
                       <td>
                         {row.results === null
                           ? "No identificado"
                           : row.results.toLocaleString("es-PE")}
                       </td>
-                      <td>
-                        {row.cost === null ? "Sin resultados" : money(row.cost)}
-                      </td>
+                      <td>{row.cost === null ? "—" : money(row.cost)}</td>
+                      {sales && (
+                        <>
+                          <td className="meta-sale-count">
+                            {row.sales === null
+                              ? "—"
+                              : `${row.sales}${row.partial ? "*" : ""}`}
+                          </td>
+                          <td>{row.cac !== null ? money(row.cac) : "—"}</td>
+                        </>
+                      )}
                     </tr>
                   ))}
                 </tbody>
