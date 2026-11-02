@@ -1,4 +1,5 @@
 "use client";
+import { advisorFinancialSummary } from "../../lib/meta-ads/advisor-financial-summary";
 import { AdvisorCommercialRole } from "./advisor-commercial-role";
 import { AdvisorContactBaseEditor } from "./advisor-contact-base-editor";
 import { notifyAdvisorSalesChanged } from "./advisor-sales-events";
@@ -36,6 +37,28 @@ const advisorRateFormat = new Intl.NumberFormat("es-PE", {
   style: "percent",
   maximumFractionDigits: 2,
 });
+const metaMoneyFormats = new Map<string, Intl.NumberFormat>();
+function formatMetaMoney(value: number | null, currency: string) {
+  if (value === null) return "—";
+  try {
+    let format = metaMoneyFormats.get(currency);
+    if (!format) {
+      format = new Intl.NumberFormat("es-PE", {
+        style: "currency",
+        currency,
+        maximumFractionDigits: 2,
+      });
+      metaMoneyFormats.set(currency, format);
+    }
+    return format.format(value);
+  } catch {
+    return (
+      value.toLocaleString("es-PE", { maximumFractionDigits: 2 }) +
+      " " +
+      (currency || "sin moneda")
+    );
+  }
+}
 const statuses = [
   { value: "", label: "Sin registrar" },
   { value: "PRESENT", label: "Presente" },
@@ -88,10 +111,20 @@ export function AdvisorsSheet({
   const [analysisView, setAnalysisView] = useState<
     "period" | "today" | "yesterday"
   >("period");
-  const showBM = analysisView !== "today",
-    showBC = analysisView !== "yesterday";
+  const [dataView, setDataView] = useWorkbookPreference<string>(
+    listId,
+    "dataView",
+    "manual",
+  );
+  const showMeta = dataView === "meta";
+  const showBM = !showMeta && analysisView !== "today",
+    showBC = !showMeta && analysisView !== "yesterday";
   const rateBasis =
-    analysisView === "period" ? null : analysisView === "today" ? "BC" : "BM";
+    showMeta || analysisView === "period"
+      ? null
+      : analysisView === "today"
+        ? "BC"
+        : "BM";
   const [teamAnalysis, setTeamAnalysis] = useState(false);
   const [teamViewOverride, setTeamViewOverride] = useState<"meta" | null>(null);
   const [detailVersion, setDetailVersion] = useState(0);
@@ -326,6 +359,28 @@ export function AdvisorsSheet({
               Datos Meta
             </button>
           </div>
+          <div
+            className="row"
+            role="group"
+            aria-label="Vista de datos del asesor"
+          >
+            <button
+              type="button"
+              aria-pressed={!showMeta}
+              className={!showMeta ? "primary" : ""}
+              onClick={() => setDataView("manual")}
+            >
+              Vista manual
+            </button>
+            <button
+              type="button"
+              aria-pressed={showMeta}
+              className={showMeta ? "primary" : ""}
+              onClick={() => setDataView("meta")}
+            >
+              Vista automática
+            </button>
+          </div>
           <MetaDateRange
             maxDays={3660}
             activeSince={
@@ -429,6 +484,12 @@ export function AdvisorsSheet({
                     (widths[d + "attendance"] ?? 84) +
                     (widths[d + "sales"] ?? 48) +
                     (widths[d + "absence"] ?? 56) +
+                    (showMeta
+                      ? (widths[d + "metaBase"] ?? 76) +
+                        (widths[d + "metaEffectiveness"] ?? 110) +
+                        (widths[d + "metaSpend"] ?? 110) +
+                        (widths[d + "metaCac"] ?? 100)
+                      : 0) +
                     (showBM ? (widths[d + "manualBase"] ?? 64) : 0) +
                     (showBC ? (widths[d + "advisorBase"] ?? 64) : 0) +
                     (rateBasis ? (widths[d + "effectiveness"] ?? 84) : 0),
@@ -447,10 +508,6 @@ export function AdvisorsSheet({
                   key={d + "absence"}
                   style={{ width: widths[d + "absence"] ?? 56 }}
                 />,
-                <col
-                  key={d + "sales"}
-                  style={{ width: widths[d + "sales"] ?? 48 }}
-                />,
                 ...(showBM
                   ? [
                       <col
@@ -464,6 +521,32 @@ export function AdvisorsSheet({
                       <col
                         key={d + "advisorBase"}
                         style={{ width: widths[d + "advisorBase"] ?? 64 }}
+                      />,
+                    ]
+                  : []),
+                <col
+                  key={d + "sales"}
+                  style={{ width: widths[d + "sales"] ?? 48 }}
+                />,
+                ...(showMeta
+                  ? [
+                      <col
+                        key={d + "metaBase"}
+                        style={{ width: widths[d + "metaBase"] ?? 76 }}
+                      />,
+                      <col
+                        key={d + "metaEffectiveness"}
+                        style={{
+                          width: widths[d + "metaEffectiveness"] ?? 110,
+                        }}
+                      />,
+                      <col
+                        key={d + "metaSpend"}
+                        style={{ width: widths[d + "metaSpend"] ?? 110 }}
+                      />,
+                      <col
+                        key={d + "metaCac"}
+                        style={{ width: widths[d + "metaCac"] ?? 100 }}
                       />,
                     ]
                   : []),
@@ -532,7 +615,11 @@ export function AdvisorsSheet({
                   <th
                     key={d}
                     colSpan={
-                      3 + Number(showBM) + Number(showBC) + Number(!!rateBasis)
+                      3 +
+                      Number(showBM) +
+                      Number(showBC) +
+                      Number(!!rateBasis) +
+                      (showMeta ? 4 : 0)
                     }
                     scope="colgroup"
                   >
@@ -548,6 +635,7 @@ export function AdvisorsSheet({
                     handle={handle}
                     showBM={showBM}
                     showBC={showBC}
+                    showMeta={showMeta}
                     rateBasis={rateBasis}
                   />
                 ))}
@@ -639,6 +727,7 @@ export function AdvisorsSheet({
                         cell={c}
                         showBM={showBM}
                         showBC={showBC}
+                        showMeta={showMeta}
                         rateBasis={rateBasis}
                         today={today}
                         disabled={busy || loading}
@@ -738,11 +827,13 @@ function FragmentHeaders({
   handle,
   showBM,
   showBC,
+  showMeta,
   rateBasis,
 }: {
   rateBasis: "BC" | "BM" | null;
   showBM: boolean;
   showBC: boolean;
+  showMeta: boolean;
   day: string;
   handle: (key: string, label: string) => ReactNode;
 }) {
@@ -765,15 +856,6 @@ function FragmentHeaders({
       >
         H{handle(day + "absence", "Horas ausentes " + day)}
         <SheetDataFillBadge kind="manual" />
-      </th>
-      <th
-        scope="col"
-        title="Ventas recibidas de las hojas"
-        aria-label="Ventas"
-        data-fill-kind="automatic"
-      >
-        V{handle(day + "sales", "Ventas " + day)}
-        <SheetDataFillBadge kind="automatic" />
       </th>
       {showBM && (
         <th
@@ -798,6 +880,57 @@ function FragmentHeaders({
           BC{handle(day + "advisorBase", "Base por contactar " + day)}
           <SheetDataFillBadge kind="manual" />
         </th>
+      )}
+      <th
+        scope="col"
+        title="Ventas recibidas de las hojas"
+        aria-label="Ventas"
+        data-fill-kind="automatic"
+      >
+        V{handle(day + "sales", "Ventas " + day)}
+        <SheetDataFillBadge kind="automatic" />
+      </th>
+      {showMeta && (
+        <>
+          <th
+            scope="col"
+            aria-label="Base Meta"
+            title="B Meta: suma de la base original de todas las campañas asignadas al asesor en las hojas, países y fecha consultados. No usa las anotaciones manuales de B."
+            data-fill-kind="automatic"
+          >
+            B Meta{handle(day + "metaBase", "Base Meta " + day)}
+            <SheetDataFillBadge kind="automatic" />
+          </th>
+          <th
+            scope="col"
+            aria-label="Efectividad Meta Ventas / B"
+            className="advisor-effectiveness advisor-effectiveness-meta"
+            title="Ventas / B Meta de esta misma fecha × 100. Los datos incompletos se marcan con asterisco."
+          >
+            Efect. Meta
+            {handle(day + "metaEffectiveness", "Efectividad Meta " + day)}
+            <small>V / B × 100</small>
+          </th>
+          <th
+            scope="col"
+            aria-label="Gasto Meta"
+            title="Suma del gasto original de las campañas asignadas, por moneda."
+            data-fill-kind="automatic"
+          >
+            G Meta{handle(day + "metaSpend", "Gasto Meta " + day)}
+            <SheetDataFillBadge kind="automatic" />
+          </th>
+          <th
+            scope="col"
+            aria-label="CAC Meta"
+            title="Costo de adquisición: gasto original de Meta / ventas de la misma fecha y moneda. Sin ventas no se divide."
+            data-fill-kind="automatic"
+            className="advisor-effectiveness"
+          >
+            CAC Meta{handle(day + "metaCac", "CAC Meta " + day)}
+            <small>G / V</small>
+          </th>
+        </>
       )}
       {rateBasis && (
         <th
@@ -833,6 +966,7 @@ function AdvisorDay({
   day,
   showBM,
   showBC,
+  showMeta,
   rateBasis,
   today,
   cell,
@@ -847,6 +981,7 @@ function AdvisorDay({
   day: string;
   showBM: boolean;
   showBC: boolean;
+  showMeta: boolean;
   rateBasis: "BC" | "BM" | null;
   today: string;
   cell: Day;
@@ -859,6 +994,21 @@ function AdvisorDay({
     v: import("../../lib/meta-ads/advisor-absence").AbsenceInput,
   ) => Promise<void>;
 }) {
+  const metaMoney = advisorFinancialSummary([
+    { day, sales: cell.sales, financial: cell.financial },
+  ]).money;
+  const metaPartial = !!(
+    cell.financial?.metaPartial || cell.financial?.assignmentPartial
+  );
+  const metaRate = advisorDayEffectiveness({
+    day,
+    today,
+    basis: "B",
+    sales: cell.sales,
+    base: cell.financial?.base,
+    na: cell.na,
+    partial: metaPartial || cell.partial,
+  });
   const rate = rateBasis
     ? advisorDayEffectiveness({
         day,
@@ -905,24 +1055,6 @@ function AdvisorDay({
           onError={onError}
         />
       </td>
-      <td
-        data-fill-kind="automatic"
-        title="Ventas recibidas de las hojas, registradas a nombre del asesor"
-      >
-        <button
-          type="button"
-          className="advisor-sales-detail-trigger"
-          aria-label={`Detalle de ventas ${person.name} ${day}`}
-          onClick={onDetail}
-        >
-          {cell.na
-            ? "N.A."
-            : cell.sales === null
-              ? "—"
-              : advisorCountFormat.format(cell.sales)}
-          {cell.partial ? " *" : ""}
-        </button>
-      </td>
       {showBM && (
         <td
           aria-label={`BM ${person.name} ${day}`}
@@ -955,6 +1087,87 @@ function AdvisorDay({
               : cell.advisorBase.toLocaleString("es-PE")}
           </button>
         </td>
+      )}
+      <td
+        data-fill-kind="automatic"
+        title="Ventas recibidas de las hojas, registradas a nombre del asesor"
+      >
+        <button
+          type="button"
+          className="advisor-sales-detail-trigger"
+          aria-label={`Detalle de ventas ${person.name} ${day}`}
+          onClick={onDetail}
+        >
+          {cell.na
+            ? "N.A."
+            : cell.sales === null
+              ? "—"
+              : advisorCountFormat.format(cell.sales)}
+          {cell.partial ? " *" : ""}
+        </button>
+      </td>
+      {showMeta && (
+        <>
+          <td
+            aria-label={`B Meta ${person.name} ${day}`}
+            data-readonly="true"
+            data-fill-kind="automatic"
+            title={
+              metaPartial
+                ? "Base original de Meta parcial o con atribución incompleta; no se inventan los datos pendientes."
+                : "Suma de la base original de Meta de las campañas asignadas al asesor en esta fecha."
+            }
+          >
+            {cell.financial?.base == null
+              ? "—"
+              : advisorCountFormat.format(cell.financial.base) +
+                (metaPartial ? " *" : "")}
+          </td>
+          <td
+            aria-label={`Efectividad Meta ${person.name} ${day}`}
+            data-readonly="true"
+            data-fill-kind="automatic"
+            className="advisor-effectiveness advisor-effectiveness-meta"
+            title={metaRate.reason}
+          >
+            {metaRate.value === null
+              ? "—"
+              : advisorRateFormat.format(metaRate.value) +
+                (metaPartial || cell.partial ? " *" : "")}
+          </td>
+          <td
+            aria-label={`G Meta ${person.name} ${day}`}
+            data-readonly="true"
+            data-fill-kind="automatic"
+            title="Gasto original de las campañas asignadas, separado por moneda."
+          >
+            {metaMoney.length
+              ? metaMoney.map((v) => (
+                  <span key={v.currency} style={{ display: "block" }}>
+                    {formatMetaMoney(v.spend, v.currency)}
+                    {v.spend !== null && metaPartial ? " *" : ""}
+                  </span>
+                ))
+              : "—"}
+          </td>
+          <td
+            aria-label={`CAC Meta ${person.name} ${day}`}
+            data-readonly="true"
+            data-fill-kind="automatic"
+            title="Gasto Meta / ventas de la misma moneda y fecha; sin ventas o datos suficientes se muestra —."
+          >
+            {metaMoney.length
+              ? metaMoney.map((v) => (
+                  <span key={v.currency} style={{ display: "block" }}>
+                    {formatMetaMoney(v.metaCac, v.currency)}
+                    {v.metaCac !== null && (metaPartial || v.partial)
+                      ? " *"
+                      : ""}
+                  </span>
+                ))
+              : "—"}
+          </td>
+        </>
       )}
       {rateBasis && rate && (
         <td

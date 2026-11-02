@@ -196,3 +196,13 @@ En Rendimiento, ACTIVE se muestra verde y PAUSED gris. Un estado antiguo conserv
 Filtros/cuentas fijadas mantienen sus filas; resumen y periodo se alinean arriba, y actualización breve, catálogo e información de sincronización se distribuyen en una fila adaptable. Los avisos extensos se ajustan al ancho sin desplazar los otros bloques. La leyenda explica verde/gris/borde ámbar. El aviso técnico concreto de `ids` corresponde a la consulta, no prueba que el usuario haya cambiado mal su token. Otros errores de autorización o cuota requieren su diagnóstico correspondiente.
 
 Validado con proveedor sintético, sin usar ni modificar credenciales reales y sin activar campañas. Para confirmar datos de una cuenta real, el VPS debe aplicar la actualización y completar una lectura autorizada de Meta; el éxito de las pruebas y de Vercel no confirma ese estado real.
+
+## Asesores: Vista manual y Vista automática · 02/11/2026
+
+La hoja de Asesores separa **Vista manual** y **Vista automática**. La elección es personal por usuario y hoja, se conserva al recargar y no modifica registros compartidos ni solicita datos adicionales a Graph.
+
+En manual, el orden es **A, H, BM, BC, V** (BM/BC y el porcentaje manual conservan las reglas de Hoy/Ayer). BM permanece de solo lectura, recibido del reparto manual de Totales; BC sigue editable por asesor/hoja/país.
+
+En automática el orden es **A, H, V, B Meta, Efect. Meta, G Meta, CAC Meta**. Solo A/H se registran manualmente. B y G son la suma original de las campañas atribuidas al asesor, para la misma fecha y los filtros autorizados de hoja/inventario/país; no usa anotaciones manuales de B/G ni las campañas de otros asesores. Se reutiliza `financial` ya presente en la lectura de Asesores, sin nuevas consultas o sincronizaciones.
+
+Efectividad = **V / B ×100**, CAC = **G / V**. El gasto y CAC se presentan separados por moneda, sin convertir ni sumar importes incompatibles. N.A., datos ausentes, base cero o ventas cero cuando impiden dividir muestran —; un cero conocido permanece cero cuando corresponde. Registros incompletos o atribución parcial llevan asterisco, sin inventar reportes. B Meta respeta la responsabilidad histórica existente; no atribuye todo un día a un asesor cuando hubo un cambio intradía sin desglose suficiente.

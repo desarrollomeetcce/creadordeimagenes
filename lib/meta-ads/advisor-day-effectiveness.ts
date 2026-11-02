@@ -2,7 +2,7 @@
 export function advisorDayEffectiveness(b: {
   day: string;
   today: string;
-  basis: "BC" | "BM";
+  basis: "BC" | "BM" | "B";
   sales: number | null;
   base: number | null | undefined;
   na?: boolean;
@@ -29,6 +29,6 @@ export function advisorDayEffectiveness(b: {
     };
   return {
     value: b.sales / b.base,
-    reason: `Ventas / ${b.basis} de esta misma fecha.${b.partial ? " Avance provisional con registros parciales." : ""}`,
+    reason: `Ventas / ${b.basis === "B" ? "B Meta" : b.basis} de esta misma fecha.${b.partial ? " Avance provisional con registros parciales." : ""}`,
   };
 }

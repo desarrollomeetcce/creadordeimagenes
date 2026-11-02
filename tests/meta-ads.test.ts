@@ -1081,3 +1081,27 @@ test("Origen Meta editable: todo, incorporación y fecha personalizada conservan
 });
 
 import "./meta-realtime.test";
+
+
+test("Asesores: efectividad Meta usa V/B de la misma fecha, sin dividir por cero ni inventar bases", () => {
+  const b = { day: "2026-11-02", today: "2026-11-02", basis: "B" as const, sales: 5, base: 300 };
+  assert.equal(advisorDayEffectiveness(b).value, 5 / 300);
+  assert.equal(advisorDayEffectiveness({ ...b, sales: 0 }).value, 0);
+  assert.equal(advisorDayEffectiveness({ ...b, base: 0 }).value, null);
+  assert.equal(advisorDayEffectiveness({ ...b, base: null }).value, null);
+  assert.equal(advisorDayEffectiveness({ ...b, sales: null }).value, null);
+  assert.equal(advisorDayEffectiveness({ ...b, na: true }).value, null);
+  assert.equal(advisorDayEffectiveness({ ...b, day: "2026-11-03" }).value, null);
+  const partial = advisorDayEffectiveness({ ...b, partial: true });
+  assert.equal(partial.value, 5 / 300);
+  assert.match(partial.reason, /B Meta.*provisional/);
+});
+
+test("Vista automática: G y CAC Meta conservan moneda y no dividen sin ventas", async () => {
+  const {advisorFinancialSummary}=await import('../lib/meta-ads/advisor-financial-summary');
+  const financial={base:300,metaPartial:false,assignmentPartial:false,updatedAt:null,currencies:[{currency:'PEN',budget:null,spend:20,sales:5,partial:false},{currency:'USD',budget:null,spend:6,sales:2,partial:false}]};
+  const result=advisorFinancialSummary([{day:'2026-11-02',sales:7,financial}]);
+  assert.deepEqual(result.money.map(m=>({currency:m.currency,spend:m.spend,cac:m.metaCac})),[{currency:'PEN',spend:20,cac:4},{currency:'USD',spend:6,cac:3}]);
+  const missing=advisorFinancialSummary([{day:'2026-11-02',sales:0,financial:{...financial,currencies:[{...financial.currencies[0],sales:0},{...financial.currencies[1],spend:null}]}}]);
+  assert.equal(missing.money[0].metaCac,null);assert.equal(missing.money[1].spend,null);assert.equal(missing.money[1].metaCac,null);
+});

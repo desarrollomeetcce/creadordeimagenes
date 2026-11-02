@@ -126,3 +126,15 @@ export function updateResourceSelection(
     },
   ];
 }
+
+/** Remove only the deleted module from scoped plans; all-module defaults remain reusable. */
+export function withoutResourceModule(
+  plan: ResourceChoice[],
+  moduleId: string,
+): ResourceChoice[] {
+  return plan.flatMap((r) => {
+    if (r.modules === "all") return [r];
+    const modules = r.modules.filter((id) => id !== moduleId);
+    return modules.length ? [{ ...r, modules }] : [];
+  });
+}

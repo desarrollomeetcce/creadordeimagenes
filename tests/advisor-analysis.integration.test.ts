@@ -152,6 +152,24 @@ test("Análisis de asesor: bases agregadas, P/V, Meta original, país/producto y
     assert.equal(d.sales, 5);
     assert.equal(d.advisorBase, 200);
     assert.equal(d.manualBase, 300);
+    assert.equal(
+      d.financial?.base,
+      300,
+      "B Meta suma ambas campañas originales, sin usar B manual=999",
+    );
+    const allPeople = await advisorSheet(owner, table.id, today, today, {
+      advisorListId: list.id,
+      country: "PE",
+    });
+    assert.equal(
+      allPeople.rows.find((p) => p.id === advisor.id)?.days[today].financial
+        ?.base,
+      300,
+    );
+    assert.equal(
+      allPeople.rows.find((p) => p.id === alternate.id)?.days[today].financial,
+      undefined,
+    );
     const summary = advisorFinancialSummary(
       Object.entries(data.rows[0].days).map(([day, d]) => ({
         day,

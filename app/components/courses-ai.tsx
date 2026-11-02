@@ -22,10 +22,12 @@ import {
   audienceLabels,
   courseGroup,
 } from "@/lib/courses/teaching";
+import { CourseStudioColumns } from "./course-studio-columns";
 import { CourseResources } from "./course-resources";
 import {
   defaultResources,
   resourceLabels,
+  withoutResourceModule,
   type ResourceChoice,
 } from "@/lib/courses/resources";
 import { CourseLibrary } from "./course-library";
@@ -1179,7 +1181,6 @@ export function CoursesAI() {
     >(null),
     [moduleId, setModuleId] = useState(""),
     [add, setAdd] = useState(false),
-    [material, setMaterial] = useState(false),
     [preview, setPreview] = useState(false);
   useEffect(() => {
     const open = () => {
@@ -1515,7 +1516,7 @@ export function CoursesAI() {
                   }
                 </span>
               </div>
-              <div className="course-studio-columns">
+              <CourseStudioColumns>
                 <aside className="course-sources-column course-settings-column">
                   <h2>Configuración</h2>
                   <label className="course-global-prompt" key={course.id}>
@@ -1899,11 +1900,62 @@ export function CoursesAI() {
                                 onClick={() => {
                                   setModuleId(mod.id);
                                   setPreview(false);
-                                  setMaterial(false);
                                   setWindow("module");
                                 }}
                               >
                                 ✎ Editar / ver
+                              </button>
+                              <button
+                                type="button"
+                                disabled={busy || working}
+                                aria-label={"Eliminar módulo " + mod.title}
+                                onClick={() => {
+                                  if (
+                                    !confirm(
+                                      "¿Eliminar el módulo «" +
+                                        mod.title +
+                                        "» y sus materiales? Esta acción no se puede deshacer.",
+                                    )
+                                  )
+                                    return;
+                                  void run(async () => {
+                                    const result = await request(
+                                      "/" + course.id + "/modules/" + mod.id,
+                                      {
+                                        revision: course.revision,
+                                        moduleRevision: mod.revision,
+                                      },
+                                      "DELETE",
+                                    );
+                                    setResources((prev) =>
+                                      withoutResourceModule(prev, mod.id),
+                                    );
+                                    setModuleSelection((prev) =>
+                                      prev === "all"
+                                        ? prev
+                                        : prev.filter((id) => id !== mod.id),
+                                    );
+                                    setModulePage((p) =>
+                                      Math.min(
+                                        p,
+                                        Math.max(
+                                          1,
+                                          Math.ceil(
+                                            (course.modules.length - 1) /
+                                              moduleSize,
+                                          ),
+                                        ),
+                                      ),
+                                    );
+                                    await refresh();
+                                    if (result.cleanupPending)
+                                      setError(
+                                        "El módulo se eliminó. Algunos archivos no pudieron liberarse del almacenamiento.",
+                                      );
+                                  });
+                                }}
+                              >
+                                Eliminar módulo
                               </button>
                               <div className="course-toolbar">
                                 {[-1, 1].map((d) => (
@@ -2059,7 +2111,7 @@ export function CoursesAI() {
                     })
                   }
                 />
-              </div>
+              </CourseStudioColumns>
             </>
           )}
         </main>
@@ -2111,7 +2163,9 @@ export function CoursesAI() {
         <Window title={m.title} onClose={() => setWindow(null)}>
           <div className="course-workbench">
             <div className="course-workbench-bar">
-              <span className="course-tag">{styleLabels[m.style]}</span>
+              <span className="course-tag">
+                {styleLabels[m.style] ?? styleLabels[course.settings.style]}
+              </span>
               <button
                 type="button"
                 className="course-primary"
@@ -2138,7 +2192,7 @@ export function CoursesAI() {
               )}
             </div>
             <details open={!lesson}>
-              <summary>Instrucciones del módulo</summary>
+              <summary>Prompt y ajustes del módulo · opcional</summary>
               <form
                 key={m.id + ":" + m.revision}
                 className="course-form"
@@ -2177,14 +2231,20 @@ export function CoursesAI() {
                   />
                 </label>
                 <label>
-                  Instrucciones
+                  Prompt del módulo · opcional
                   <textarea
                     name="brief"
                     rows={4}
                     maxLength={12000}
                     defaultValue={m.brief}
+                    placeholder="Indicaciones adicionales para este módulo. Si lo dejas vacío, se usa el prompt general del curso."
                   />
                 </label>
+                <p className="muted">
+                  Este prompt añade información específica al prompt general.
+                  Los documentos y enlaces se incorporan en Referencias del
+                  curso, a la izquierda; los recursos se eligen a la derecha.
+                </p>
                 <div className="course-grid">
                   <Select
                     name="mixStyles"
@@ -2226,9 +2286,7 @@ export function CoursesAI() {
                     />
                   </label>
                 </div>
-                <button disabled={busy || working}>
-                  Guardar instrucciones
-                </button>
+                <button disabled={busy || working}>Guardar ajustes</button>
                 {lesson && (
                   <p className="muted">
                     Cambiar instrucciones prepara una nueva versión; vuelve a
@@ -2367,6 +2425,7 @@ export function CoursesAI() {
                                       brief: m.brief,
                                       minutes: m.minutes,
                                       style: m.style,
+                                      mixStyles: m.mixStyles ?? null,
                                       lesson: next,
                                     },
                                   },
@@ -2584,6 +2643,7 @@ export function CoursesAI() {
                               brief: m.brief,
                               minutes: m.minutes,
                               style: m.style,
+                              mixStyles: m.mixStyles ?? null,
                               lesson: edited,
                             },
                           },
@@ -2608,244 +2668,190 @@ export function CoursesAI() {
                 </details>
               </>
             )}
-            <div className="course-materials">
-              <div className="course-heading">
-                <div>
-                  <h3>Material complementario</h3>
-                  <p className="muted">
-                    Añade tantos recursos independientes como necesites.
-                  </p>
-                </div>
-                <button type="button" onClick={() => setMaterial(!material)}>
-                  ＋ Material
-                </button>
-              </div>
-              {material && (
-                <form
-                  className="course-inline-form"
-                  onSubmit={(e) => {
-                    e.preventDefault();
-                    const f = new FormData(e.currentTarget);
-                    void run(async () => {
-                      await request(
-                        "/" + course.id + "/modules/" + m.id + "/materials",
-                        {
-                          title: f.get("title"),
-                          kind: f.get("kind"),
-                          instructions: f.get("instructions"),
-                        },
-                      );
-                      setMaterial(false);
-                      await refresh();
-                    });
-                  }}
-                >
-                  <label>
-                    Nombre
-                    <input
-                      name="title"
-                      required
-                      maxLength={200}
-                      placeholder="Ej. Taller 1 · Resolución de problemas"
-                    />
-                  </label>
-                  <Select
-                    name="kind"
-                    label="Tipo"
-                    value="workshop"
-                    options={[
-                      "guide",
-                      "book",
-                      "workshop",
-                      "exam",
-                      "slides",
-                    ].map((value) => ({ value, label: labels[value] }))}
-                  />
-                  <label>
-                    Instrucciones
-                    <textarea
-                      name="instructions"
-                      maxLength={8000}
-                      placeholder="Cantidad de ejercicios, capítulos, edad y objetivo…"
-                    />
-                  </label>
-                  <button disabled={busy}>Añadir material</button>
-                </form>
-              )}
-              {m.materials.map((mat) => (
-                <details key={mat.id}>
-                  <summary>
-                    {labels[mat.kind]} · {mat.title}{" "}
-                    <span className="course-tag">
-                      {mat.content.sections ? "Listo" : "Por generar"}
-                    </span>
-                  </summary>
-                  <p>{mat.instructions}</p>
-                  <details>
-                    <summary>Editar instrucciones y contenido</summary>
-                    <form
-                      key={mat.id + ":" + mat.revision}
-                      className="course-form"
-                      onSubmit={(e) => {
-                        e.preventDefault();
-                        const f = new FormData(e.currentTarget);
-                        void run(async () => {
-                          await request(
-                            "/" +
-                              course.id +
-                              "/modules/" +
-                              m.id +
-                              "/materials/" +
-                              mat.id,
-                            {
-                              revision: mat.revision,
-                              data: {
-                                title: f.get("title"),
-                                kind: f.get("kind"),
-                                instructions: f.get("instructions"),
-                                ...(mat.content.sections
-                                  ? {
-                                      content: {
-                                        sections: mat.content.sections.map(
-                                          (old, i) => ({
-                                            title: String(
-                                              f.get("sectionTitle" + i),
-                                            ),
-                                            body: String(
-                                              f.get("sectionBody" + i),
-                                            ),
-                                          }),
-                                        ),
-                                        answerKey: String(
-                                          f.get("answerKey") ?? "",
-                                        ),
-                                      },
-                                    }
-                                  : {}),
+            {m.materials.length > 0 && (
+              <div className="course-materials">
+                <h3>Resultados del módulo</h3>
+                <p className="muted">
+                  Aquí puedes consultar y descargar los materiales creados.
+                  Elige los recursos del módulo en la columna derecha del curso.
+                </p>
+                {m.materials.map((mat) => (
+                  <details key={mat.id}>
+                    <summary>
+                      {labels[mat.kind]} · {mat.title}{" "}
+                      <span className="course-tag">
+                        {mat.content.sections ? "Listo" : "Por generar"}
+                      </span>
+                    </summary>
+                    <p>{mat.instructions}</p>
+                    <details>
+                      <summary>Editar instrucciones y contenido</summary>
+                      <form
+                        key={mat.id + ":" + mat.revision}
+                        className="course-form"
+                        onSubmit={(e) => {
+                          e.preventDefault();
+                          const f = new FormData(e.currentTarget);
+                          void run(async () => {
+                            await request(
+                              "/" +
+                                course.id +
+                                "/modules/" +
+                                m.id +
+                                "/materials/" +
+                                mat.id,
+                              {
+                                revision: mat.revision,
+                                data: {
+                                  title: f.get("title"),
+                                  kind: f.get("kind"),
+                                  instructions: f.get("instructions"),
+                                  ...(mat.content.sections
+                                    ? {
+                                        content: {
+                                          sections: mat.content.sections.map(
+                                            (old, i) => ({
+                                              title: String(
+                                                f.get("sectionTitle" + i),
+                                              ),
+                                              body: String(
+                                                f.get("sectionBody" + i),
+                                              ),
+                                            }),
+                                          ),
+                                          answerKey: String(
+                                            f.get("answerKey") ?? "",
+                                          ),
+                                        },
+                                      }
+                                    : {}),
+                                },
                               },
-                            },
-                            "PATCH",
-                          );
-                          await refresh();
-                        });
-                      }}
-                    >
-                      <label>
-                        Nombre
-                        <input
-                          name="title"
-                          required
-                          maxLength={200}
-                          defaultValue={mat.title}
-                        />
-                      </label>
-                      <Select
-                        name="kind"
-                        label="Tipo"
-                        value={mat.kind}
-                        options={[
-                          "guide",
-                          "book",
-                          "workshop",
-                          "exam",
-                          "slides",
-                        ].map((value) => ({ value, label: labels[value] }))}
-                      />
-                      <label>
-                        Instrucciones
-                        <textarea
-                          name="instructions"
-                          maxLength={8000}
-                          defaultValue={mat.instructions}
-                        />
-                      </label>
-                      {mat.content.sections?.map((s, i) => (
-                        <fieldset key={i}>
-                          <legend>Sección {i + 1}</legend>
-                          <label>
-                            Título
-                            <input
-                              name={"sectionTitle" + i}
-                              required
-                              maxLength={200}
-                              defaultValue={s.title}
-                            />
-                          </label>
-                          <label>
-                            Contenido
-                            <textarea
-                              rows={7}
-                              name={"sectionBody" + i}
-                              maxLength={16000}
-                              defaultValue={s.body}
-                            />
-                          </label>
-                        </fieldset>
-                      ))}
-                      {mat.content.sections && (
+                              "PATCH",
+                            );
+                            await refresh();
+                          });
+                        }}
+                      >
                         <label>
-                          Solucionario del docente
-                          <textarea
-                            name="answerKey"
-                            maxLength={16000}
-                            rows={4}
-                            defaultValue={mat.content.answerKey ?? ""}
+                          Nombre
+                          <input
+                            name="title"
+                            required
+                            maxLength={200}
+                            defaultValue={mat.title}
                           />
                         </label>
-                      )}
-                      <button disabled={busy || working}>
-                        Guardar material · sin consumir IA
-                      </button>
-                    </form>
-                  </details>
-                  <div className="course-toolbar">
-                    <button
-                      type="button"
-                      disabled={busy || working || !course.settings.model}
-                      onClick={() => {
-                        if (
-                          mat.content.sections &&
-                          !confirm("¿Volver a generar este material?")
-                        )
-                          return;
-                        void task("MATERIAL", m, { materialId: mat.id });
-                      }}
-                    >
-                      ✦{" "}
-                      {mat.content.sections ? "Regenerar" : "Generar material"}
-                    </button>
-                    {mat.content.sections && (
-                      <>
-                        <button
-                          type="button"
-                          onClick={() => void print(mat.id)}
-                        >
-                          PDF / Imprimir
-                        </button>
-                        <a href={exportURL("docx", mat.id)}>↓ Word</a>
-                        {mat.kind === "slides" && (
-                          <a href={exportURL("pptx", mat.id)}>↓ PowerPoint</a>
+                        <Select
+                          name="kind"
+                          label="Tipo"
+                          value={mat.kind}
+                          options={[
+                            "guide",
+                            "book",
+                            "workshop",
+                            "exam",
+                            "slides",
+                          ].map((value) => ({ value, label: labels[value] }))}
+                        />
+                        <label>
+                          Indicaciones del recurso
+                          <textarea
+                            name="instructions"
+                            maxLength={8000}
+                            defaultValue={mat.instructions}
+                          />
+                        </label>
+                        {mat.content.sections?.map((s, i) => (
+                          <fieldset key={i}>
+                            <legend>Sección {i + 1}</legend>
+                            <label>
+                              Título
+                              <input
+                                name={"sectionTitle" + i}
+                                required
+                                maxLength={200}
+                                defaultValue={s.title}
+                              />
+                            </label>
+                            <label>
+                              Contenido
+                              <textarea
+                                rows={7}
+                                name={"sectionBody" + i}
+                                maxLength={16000}
+                                defaultValue={s.body}
+                              />
+                            </label>
+                          </fieldset>
+                        ))}
+                        {mat.content.sections && (
+                          <label>
+                            Solucionario del docente
+                            <textarea
+                              name="answerKey"
+                              maxLength={16000}
+                              rows={4}
+                              defaultValue={mat.content.answerKey ?? ""}
+                            />
+                          </label>
                         )}
-                        {mat.content.answerKey && (
+                        <button disabled={busy || working}>
+                          Guardar material · sin consumir IA
+                        </button>
+                      </form>
+                    </details>
+                    <div className="course-toolbar">
+                      <button
+                        type="button"
+                        disabled={busy || working || !course.settings.model}
+                        onClick={() => {
+                          if (
+                            mat.content.sections &&
+                            !confirm("¿Volver a generar este material?")
+                          )
+                            return;
+                          void task("MATERIAL", m, { materialId: mat.id });
+                        }}
+                      >
+                        ✦{" "}
+                        {mat.content.sections
+                          ? "Regenerar"
+                          : "Generar material"}
+                      </button>
+                      {mat.content.sections && (
+                        <>
                           <button
                             type="button"
-                            onClick={() => void print(mat.id, true)}
+                            onClick={() => void print(mat.id)}
                           >
-                            PDF con solucionario
+                            PDF / Imprimir
                           </button>
-                        )}
-                      </>
-                    )}
-                  </div>
-                  {mat.content.sections?.map((s, i) => (
-                    <section key={i}>
-                      <h4>{s.title}</h4>
-                      <p className="course-pre">{s.body}</p>
-                    </section>
-                  ))}
-                </details>
-              ))}
-            </div>
+                          <a href={exportURL("docx", mat.id)}>↓ Word</a>
+                          {mat.kind === "slides" && (
+                            <a href={exportURL("pptx", mat.id)}>↓ PowerPoint</a>
+                          )}
+                          {mat.content.answerKey && (
+                            <button
+                              type="button"
+                              onClick={() => void print(mat.id, true)}
+                            >
+                              PDF con solucionario
+                            </button>
+                          )}
+                        </>
+                      )}
+                    </div>
+                    {mat.content.sections?.map((s, i) => (
+                      <section key={i}>
+                        <h4>{s.title}</h4>
+                        <p className="course-pre">{s.body}</p>
+                      </section>
+                    ))}
+                  </details>
+                ))}
+              </div>
+            )}
             {working && (
               <p role="status" className="course-status">
                 ◌ Hay una generación en curso. Puedes minimizar esta ventana.

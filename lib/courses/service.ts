@@ -1,4 +1,5 @@
 import { assertNoBuild } from "./builds";
+import { withoutResourceModule } from "./resources";
 import { assertLibraryCategory } from "./library";
 import { teachingDirection, courseVisualPrompt } from "./teaching";
 import { parseCourseOutline } from "./outline";
@@ -412,6 +413,92 @@ export async function mutateCourse(
     } else throw new AppError("Acción desconocida.", 404);
     return { ok: true };
   });
+}
+export async function deleteModule(
+  u: Actor,
+  courseId: string,
+  id: string,
+  raw: unknown,
+) {
+  await courseOwner(u);
+  const b = z
+    .object({ revision: z.number().int(), moduleRevision: z.number().int() })
+    .strict()
+    .parse(raw);
+  const paths = await db.$transaction(async (tx) => {
+    await lock(tx);
+    await current(tx, u);
+    await assertNoBuild(tx, courseId);
+    const c = await tx.aICourse.findFirst({
+      where: { id: courseId, archivedAt: null },
+    });
+    demand(c, "Curso no encontrado.", 404);
+    demand(
+      c.revision === b.revision,
+      "El curso cambió. Actualiza antes de eliminar el módulo.",
+      409,
+    );
+    const m = await tx.aICourseModule.findFirst({
+      where: { id, courseId },
+      include: { assets: { select: { path: true } } },
+    });
+    demand(m, "Módulo no encontrado en este curso.", 404);
+    demand(
+      m.revision === b.moduleRevision,
+      "El módulo cambió. Actualiza antes de eliminarlo.",
+      409,
+    );
+    demand(
+      !(await tx.aICourseTask.count({
+        where: {
+          courseId,
+          status: {
+            in: [
+              "PENDING",
+              "RUNNING",
+              "RENDERING",
+              "UNCERTAIN",
+              "DISPATCH_UNCERTAIN",
+            ],
+          },
+        },
+      })),
+      "Hay trabajos pendientes o sin confirmar. Revisa la actividad antes de eliminar un módulo.",
+      409,
+    );
+    await tx.aICourseAsset.deleteMany({ where: { moduleId: id } });
+    await tx.aICourseMaterial.deleteMany({ where: { moduleId: id } });
+    await tx.aICourseModule.delete({ where: { id } });
+    const remaining = await tx.aICourseModule.findMany({
+      where: { courseId },
+      orderBy: { position: "asc" },
+      select: { id: true },
+    });
+    for (const [position, module] of remaining.entries())
+      await tx.aICourseModule.update({
+        where: { id: module.id },
+        data: { position },
+      });
+    const settings = settingsSchema.parse(c.settings);
+    await tx.aICourse.update({
+      where: { id: courseId },
+      data: {
+        settings: json({
+          ...settings,
+          resources: withoutResourceModule(settings.resources, id),
+        }),
+        revision: { increment: 1 },
+      },
+    });
+    return [...new Set(m.assets.map((a) => a.path))];
+  });
+  const removed = await Promise.allSettled(paths.map((path) => remove(path)));
+  const cleanupPending = removed.some(
+    (r) =>
+      r.status === "rejected" &&
+      (r.reason as { code?: string })?.code !== "ENOENT",
+  );
+  return { ok: true, cleanupPending };
 }
 export async function saveModule(
   u: Actor,

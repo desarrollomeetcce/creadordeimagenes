@@ -14,6 +14,7 @@ import {
   createCourse,
   mutateCourse,
   saveModule,
+  deleteModule,
   saveMaterial,
   addMaterial,
   queueTask,
@@ -224,6 +225,8 @@ export async function courseRoutes(
       return send(await saveMaterial(u, id, p[2], p[4], await body()));
     if (p.length === 3 && method === "GET")
       return send(await courseModule(u, id, p[2]));
+    if (p.length === 3 && method === "DELETE")
+      return send(await deleteModule(u, id, p[2], await body()));
     if (p.length === 3 && method === "PATCH")
       return send(await saveModule(u, id, p[2], await body()));
     if (p[3] === "materials" && method === "POST")
