@@ -131,6 +131,7 @@ type Row = {
   active: boolean;
   stateRevision: number;
   lastStateChange: string | null;
+  advisorReviews?: { advisorId: string; name: string; createdAt: string }[];
   pendingAssignmentAt?: string;
   campaignTask?: "NONE" | "CREATE" | "STOP";
   token: string;
@@ -2482,6 +2483,57 @@ export function MetaEffectiveness({
                     : undefined;
                   return (
                     <Fragment key={activationKey(r)}>
+                      {!!r.advisorReviews?.length && (
+                        <tr className="financial-advisor-review-row">
+                          <td
+                            colSpan={Math.max(
+                              1,
+                              visibleMetadata.length +
+                                days.length * visibleMetrics.length,
+                            )}
+                          >
+                            <strong>
+                              Asesor por revisar · {name} · {r.country}
+                            </strong>
+                            <span>
+                              Vinculado a Meta. Los datos se mantienen en la
+                              fila de este diplomado y país.
+                            </span>
+                            <button
+                              type="button"
+                              data-financial-write
+                              onClick={() =>
+                                setAssignment({
+                                  row: r,
+                                  advisorId: r.advisorId,
+                                  name,
+                                  manage: true,
+                                })
+                              }
+                            >
+                              Conservar{" "}
+                              {advisors.find((a) => a.id === r.advisorId)
+                                ?.name ?? "sin asesor"}
+                            </button>
+                            {r.advisorReviews.map((review) => (
+                              <button
+                                key={review.advisorId}
+                                type="button"
+                                data-financial-write
+                                onClick={() =>
+                                  setAssignment({
+                                    row: r,
+                                    advisorId: review.advisorId,
+                                    name,
+                                  })
+                                }
+                              >
+                                Revisar asignación a {review.name}
+                              </button>
+                            ))}
+                          </td>
+                        </tr>
+                      )}
                       {pendingAssignmentRows[0] &&
                         activationKey(pendingAssignmentRows[0]) ===
                           activationKey(r) && (
@@ -2971,6 +3023,80 @@ export function MetaEffectiveness({
                           );
                         })}
                       </SheetSizedRow>
+                      {r.advisorReviews?.map((review) => (
+                        <tr
+                          key={review.advisorId}
+                          className="financial-advisor-review-projection"
+                          data-review-of={activationKey(r)}
+                        >
+                          {visibleMetadata.map((column) => (
+                            <td key={column.value}>
+                              {column.value === "alias" ? (
+                                <>
+                                  <strong>Por revisar · {name}</strong>
+                                  <small>
+                                    Mismo diplomado y país · datos compartidos
+                                  </small>
+                                </>
+                              ) : column.value === "country" ? (
+                                r.country
+                              ) : column.value === "advisor" ? (
+                                review.name
+                              ) : column.value === "currency" ? (
+                                r.currency
+                              ) : (
+                                "Asesor por revisar"
+                              )}
+                            </td>
+                          ))}
+                          {days.flatMap((day) =>
+                            visibleMetrics.map((metric) => {
+                              const cell = r.days[day],
+                                n = cell?.[metric.key];
+                              const value = cell?.na?.includes(metric.key)
+                                ? "N.A."
+                                : n == null
+                                  ? "—"
+                                  : metric.money
+                                    ? n.toFixed(
+                                        new Intl.NumberFormat("en", {
+                                          style: "currency",
+                                          currency: r.currency || "USD",
+                                        }).resolvedOptions()
+                                          .maximumFractionDigits,
+                                      )
+                                    : String(n);
+                              return (
+                                <td
+                                  key={day + metric.key}
+                                  data-review-metric={metric.key}
+                                  data-review-day={day}
+                                  title="Mismo dato de la fila oficial; no se suma dos veces."
+                                >
+                                  {metric.key === "sales" &&
+                                  !cell?.linked?.sales ? (
+                                    <button
+                                      type="button"
+                                      aria-label={`Ver el mismo reparto de ventas de ${name} ${r.country} ${day}`}
+                                      onClick={() =>
+                                        setSalesReview({
+                                          aliasId: r.aliasId,
+                                          country: r.country,
+                                          day,
+                                        })
+                                      }
+                                    >
+                                      {value}
+                                    </button>
+                                  ) : (
+                                    value
+                                  )}
+                                </td>
+                              );
+                            }),
+                          )}
+                        </tr>
+                      ))}
                     </Fragment>
                   );
                 })}

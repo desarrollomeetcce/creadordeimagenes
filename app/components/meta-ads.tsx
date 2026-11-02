@@ -1441,7 +1441,7 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
     setMessage("");
     let processed = false;
     try {
-      await fn();
+      const result = await fn();
       processed = true;
       try {
         await refresh();
@@ -1449,7 +1449,7 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
         await refresh();
       }
       setRevision((r) => r + 1);
-      if (success) setMessage(success);
+      if (success) setMessage((result as { advisorReview?: boolean } | undefined)?.advisorReview ? "Vinculado. Los datos se incorporan a la hoja; hay una diferencia de asesor por revisar allí. Se conserva el asesor actual." : success);
     } catch (e) {
       setMessage(
         processed

@@ -43,6 +43,7 @@ type Control = {
   pinned: boolean;
   campaignTask?: InventoryCampaignTask;
   pendingAssignmentAt?: string;
+  advisorReviews?: { advisorId: string; name: string; createdAt: string }[];
 };
 type Settings = {
   cacRules: CacRules;

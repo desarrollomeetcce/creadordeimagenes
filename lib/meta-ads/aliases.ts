@@ -424,6 +424,8 @@ export async function assignAliases(
       );
     }
     let addedToTable = false;
+    let advisorReview = false;
+    let linkedAdvisorId = advisorId;
     if (aliasId && country) {
       const [state, row] = await Promise.all([
         tx.metaEffectivenessState.findUnique({
@@ -504,10 +506,10 @@ export async function assignAliases(
             hidden: false,
           },
         });
-      else if (active && row.hidden)
+      else if (row.hidden)
         await tx.metaEffectivenessRow.updateMany({
           where: { aliasId, country, legacy: false },
-          data: { hidden: false },
+          data: { hidden: false, revision: { increment: 1 } },
         });
       if (row && !row.displayCurrency && importedCurrency)
         await tx.metaEffectivenessRow.update({
@@ -517,12 +519,37 @@ export async function assignAliases(
             revision: { increment: 1 },
           },
         });
-      if (advisorId)
-        await (
+      if (advisorId === undefined && row?.advisorId)
+        linkedAdvisorId = row.advisorId;
+      if (advisorId) {
+        const result = await (
           await import("./advisors")
         ).assignMetaInitialAdvisor(tx, actor, aliasId, country, advisorId);
+        advisorReview = result.review;
+        if (advisorReview) linkedAdvisorId = result.currentAdvisorId;
+      }
+      let advisorReviews = control?.advisorReviews ?? [];
+      if (
+        advisorReview &&
+        advisorId &&
+        !advisorReviews.some((r) => r.advisorId === advisorId)
+      ) {
+        const person = await tx.metaAdvisor.findUniqueOrThrow({
+          where: { id: advisorId },
+          select: { name: true },
+        });
+        advisorReviews = [
+          ...advisorReviews,
+          { advisorId, name: person.name, createdAt: new Date().toISOString() },
+        ];
+        await tx.metaEffectivenessRow.updateMany({
+          where: { aliasId, country, currency: "" },
+          data: { revision: { increment: 1 } },
+        });
+      }
       const next = {
         ...control,
+        ...(advisorReviews.length ? { advisorReviews } : {}),
         pinned: active ? (control?.pinned ?? false) : true,
         campaignTask:
           control?.campaignTask === "STOP"
@@ -555,9 +582,9 @@ export async function assignAliases(
       data: {
         aliasId,
         ...(aliasId
-          ? advisorId === undefined
+          ? linkedAdvisorId === undefined
             ? {}
-            : { advisorId }
+            : { advisorId: linkedAdvisorId }
           : { advisorId: null }),
         ...(!aliasId
           ? { aliasCountry: null }
@@ -575,9 +602,10 @@ export async function assignAliases(
           detail: {
             aliasId,
             addedToTable,
-            ...(aliasId && advisorId === undefined
+            ...(advisorReview ? { advisorReview: true, requestedAdvisorId: advisorId } : {}),
+            ...(aliasId && linkedAdvisorId === undefined
               ? {}
-              : { advisorId: aliasId ? (advisorId ?? null) : null }),
+              : { advisorId: aliasId ? (linkedAdvisorId ?? null) : null }),
             country: aliasId
               ? country === undefined
                 ? "unchanged"
@@ -586,7 +614,13 @@ export async function assignAliases(
           },
         },
       });
-    return { ok: true, count: ids.length, aliasId, addedToTable };
+    return {
+      ok: true,
+      count: ids.length,
+      aliasId,
+      addedToTable,
+      advisorReview,
+    };
   });
 }
 

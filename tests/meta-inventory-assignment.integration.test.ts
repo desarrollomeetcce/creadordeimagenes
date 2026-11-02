@@ -23,6 +23,11 @@ import {
   inventoryActivationReport,
 } from "../lib/meta-ads/inventory-sheet-activation";
 import { metaRoutes } from "../lib/meta-ads/routes";
+import {
+  advisorSalesReview,
+  approveAdvisorSales,
+} from "../lib/meta-ads/advisor-sales-approval";
+import { assignRowAdvisor } from "../lib/meta-ads/advisors";
 import { limaDay } from "../lib/meta-ads/advisor-attribution";
 
 test("Meta inventory assignment materializes catalog choices atomically and flags advisor onboarding", async (t) => {
@@ -746,12 +751,229 @@ test("Meta inventory assignment materializes catalog choices atomically and flag
         assert.equal(detail.lifetime.timePartial, false);
       },
     );
+    await t.test(
+      "Ecuador Inocuidad: different advisor links and imports metrics once, review persists and manual choice resolves",
+      async () => {
+        const sheet = await db.metaEffectivenessSheet.findFirstOrThrow({
+          where: { name: "Advisors " + tag },
+        });
+        const first = await db.metaAdvisor.findFirstOrThrow({
+          where: { sheetId: sheet.id },
+        });
+        const second = await db.metaAdvisor.create({
+          data: { sheetId: sheet.id, name: "Otro asesor " + tag },
+        });
+        const name = "Inocuidad alimentaria " + tag;
+        const linked = await assignAliases(
+          actor,
+          [objectIds[2]],
+          null,
+          "EC",
+          undefined,
+          { tableId: table.id, inventorySheetId: list.id, name },
+        );
+        const aliasId = linked.aliasId!;
+        let row = await db.metaEffectivenessRow.findFirstOrThrow({
+          where: { aliasId, country: "EC", currency: "" },
+        });
+        await assignRowAdvisor(actor, {
+          aliasId,
+          country: "EC",
+          advisorId: first.id,
+          revision: row.revision,
+          day: today,
+          mode: "DAY",
+        });
+        row = await db.metaEffectivenessRow.findFirstOrThrow({
+          where: { aliasId, country: "EC", currency: "" },
+        });
+        await db.metaEffectivenessDay.create({
+          data: { rowId: row.id, day: today, sales: 6 },
+        });
+        const salesReview = await advisorSalesReview(actor, {
+          aliasId,
+          country: "EC",
+          day: today,
+        });
+        await approveAdvisorSales(actor, {
+          aliasId,
+          country: "EC",
+          day: today,
+          revision: salesReview.revision,
+          token: salesReview.token,
+          allocations: [
+            { advisorId: first.id, sales: 4 },
+            { advisorId: second.id, sales: 2 },
+          ],
+        });
+        await db.metaAdDaily.upsert({
+          where: {
+            objectId_day_scope: {
+              objectId: objectIds[2],
+              day: today,
+              scope: "7d_click,1d_view|impression",
+            },
+          },
+          create: {
+            objectId: objectIds[2],
+            accountId,
+            day: today,
+            scope: "7d_click,1d_view|impression",
+            spend: 7,
+            actions: {
+              "onsite_conversion.messaging_conversation_started_7d": 3,
+            },
+          },
+          update: { spend: 7 },
+        });
+        const before = (
+          await effectiveness(actor, table.id, today, today)
+        ).rows.find((r) => r.aliasId === aliasId && r.country === "EC")!;
+        assert.equal(before.days[today].metaSpend, 7);
+        assert.equal(before.days[today].sourceBase, 3);
+        const history = await db.metaAdvisorAssignment.count({
+          where: { aliasId, country: "EC" },
+        });
+        const result = await assignAliases(
+          actor,
+          [objectIds[2]],
+          aliasId,
+          "EC",
+          second.id,
+        );
+        assert.equal(result.advisorReview, true);
+        await assignAliases(actor, [objectIds[2]], aliasId, "EC", second.id);
+        let after = (
+          await effectiveness(actor, table.id, today, today)
+        ).rows.find((r) => r.aliasId === aliasId && r.country === "EC")!;
+        assert.equal(after.advisorId, first.id);
+        assert.deepEqual(after.days, before.days);
+        assert.equal(after.advisorReviews?.length, 1);
+        assert.equal(after.advisorReviews?.[0].advisorId, second.id);
+        assert.equal(
+          await db.metaAlias.count({ where: { tableId: table.id, name } }),
+          1,
+        );
+        assert.equal(
+          await db.metaInventoryItem.count({
+            where: { sheetId: list.id, name },
+          }),
+          1,
+        );
+        assert.equal(
+          await db.metaEffectivenessRow.count({
+            where: { aliasId, country: "EC", currency: "" },
+          }),
+          1,
+        );
+        assert.equal(
+          await db.metaAdvisorAssignment.count({
+            where: { aliasId, country: "EC" },
+          }),
+          history,
+        );
+        const object = await db.metaAdObject.findUniqueOrThrow({
+          where: { id: objectIds[2] },
+        });
+        assert.equal(object.aliasCountry, "EC");
+        assert.equal(object.aliasId, aliasId);
+        assert.equal(object.advisorId, first.id);
+        await assert.rejects(
+          assignRowAdvisor(actor, {
+            aliasId,
+            country: "EC",
+            advisorId: second.id,
+            revision: before.rowRevision,
+            day: today,
+            mode: "DAY",
+          }),
+          /fila cambió/,
+        );
+        await assignRowAdvisor(actor, {
+          aliasId,
+          country: "EC",
+          advisorId: first.id,
+          revision: after.rowRevision,
+          day: today,
+          mode: "DAY",
+        });
+        after = (await effectiveness(actor, table.id, today, today)).rows.find(
+          (r) => r.aliasId === aliasId && r.country === "EC",
+        )!;
+        assert(!after.advisorReviews?.length);
+        assert.equal(after.advisorId, first.id);
+        assert.equal(
+          (await assignAliases(actor, [objectIds[2]], aliasId, "EC", first.id))
+            .advisorReview,
+          false,
+        );
+        await assignAliases(actor, [objectIds[2]], aliasId, "EC", second.id);
+        row = await db.metaEffectivenessRow.findFirstOrThrow({
+          where: { aliasId, country: "EC", currency: "" },
+        });
+        await assignRowAdvisor(actor, {
+          aliasId,
+          country: "EC",
+          advisorId: second.id,
+          revision: row.revision,
+          day: today,
+          mode: "DAY",
+        });
+        after = (await effectiveness(actor, table.id, today, today)).rows.find(
+          (r) => r.aliasId === aliasId && r.country === "EC",
+        )!;
+        assert.equal(after.advisorId, second.id);
+        assert(!after.advisorReviews?.length);
+        const keptSales = await advisorSalesReview(actor, {
+          aliasId,
+          country: "EC",
+          day: today,
+        });
+        assert.equal(keptSales.total, 6);
+        assert.equal(
+          keptSales.allocations.find((a) => a.advisorId === first.id)?.sales,
+          4,
+        );
+        assert.equal(
+          keptSales.allocations.find((a) => a.advisorId === second.id)?.sales,
+          2,
+        );
+        await db.metaEffectivenessRow.updateMany({
+          where: { aliasId, country: "EC" },
+          data: { hidden: true },
+        });
+        await db.metaAdObject.update({
+          where: { id: objectIds[2] },
+          data: { status: "PAUSED", effectiveStatus: "PAUSED" },
+        });
+        await assignAliases(actor, [objectIds[2]], aliasId, "EC");
+        assert.equal(
+          (
+            await db.metaEffectivenessRow.findFirstOrThrow({
+              where: { aliasId, country: "EC", currency: "" },
+            })
+          ).hidden,
+          false,
+        );
+        assert.equal(
+          (
+            await db.metaAdObject.findUniqueOrThrow({
+              where: { id: objectIds[2] },
+            })
+          ).advisorId,
+          second.id,
+        );
+      },
+    );
   } finally {
     await db.metaAdObject.deleteMany({ where: { accountId } });
     await db.metaEffectivenessEvent.deleteMany({
       where: { state: { alias: { tableId: table.id } } },
     });
     await db.metaEffectivenessState.deleteMany({
+      where: { alias: { tableId: table.id } },
+    });
+    await db.metaAdvisorAssignment.deleteMany({
       where: { alias: { tableId: table.id } },
     });
     await db.metaEffectivenessRow.deleteMany({

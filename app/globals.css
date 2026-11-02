@@ -2723,3 +2723,16 @@ button.ui-close-button:disabled, button.window-close:disabled { opacity: .55; }
 .meta-ads .meta-status-switch:disabled{opacity:1;cursor:default;}
 @media(max-width:1150px){.meta-ads .meta-summary-row>.meta-pinned-actions{grid-template-columns:auto minmax(0,1fr);}.meta-ads .meta-visible-refresh{grid-column:1/-1;}}
 @media(max-width:650px){.meta-ads .meta-summary-row>.meta-pinned-actions{grid-template-columns:minmax(0,1fr);}.meta-ads .meta-visible-refresh{grid-template-columns:minmax(0,1fr);}.meta-ads .meta-visible-refresh small{grid-column:1;}.meta-ads .meta-summary-date{justify-content:flex-start;}.meta-ads .meta-summary-row .meta-live-refresh{max-width:none;justify-self:start;}}
+
+.financial-advisor-review-row td { background: color-mix(in srgb, #df4ba7 17%, var(--panel, #fff)); border-left: 4px solid #df4ba7; padding: 10px 14px !important; white-space: normal !important; }
+.financial-advisor-review-row strong { color: #b51c79; margin-right: 12px; }
+.financial-advisor-review-row span { margin-right: 12px; }
+.financial-advisor-review-row button { margin: 4px; border-color: #df4ba7; }
+[data-theme="dark"] .financial-advisor-review-row strong { color: #ff92d1; }
+
+.financial-advisor-review-projection td { background: color-mix(in srgb, #df4ba7 12%, var(--surface)); border-bottom: 1px solid #df4ba7; text-align: center; }
+.financial-advisor-review-projection td:first-child { border-left: 4px solid #df4ba7; text-align:left; }
+.financial-advisor-review-projection strong { color:#b51c79; }
+.financial-advisor-review-projection small { display:block; font-size:10px; }
+.financial-advisor-review-projection button { background:transparent; border:0; padding:2px 4px; font:inherit; color:inherit; }
+[data-theme="dark"] .financial-advisor-review-projection strong { color:#ff92d1; }

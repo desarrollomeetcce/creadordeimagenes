@@ -75,6 +75,7 @@ export type EffectivenessRow = {
   active: boolean;
   stateRevision: number;
   lastStateChange: string | null;
+  advisorReviews?: { advisorId: string; name: string; createdAt: string }[];
   pendingAssignmentAt?: string;
   campaignTask?: "NONE" | "CREATE" | "STOP";
   token: string;
@@ -415,6 +416,10 @@ async function readEffectiveness(
     }),
   ]);
   const pendingAssignments = new Map<string, string>();
+  const advisorReviews = new Map<
+    string,
+    NonNullable<EffectivenessRow["advisorReviews"]>
+  >();
   const campaignTasks = new Map<string, "NONE" | "CREATE" | "STOP">();
   for (const list of assignmentLists) {
     const controls =
@@ -424,6 +429,11 @@ async function readEffectiveness(
             rows?: Record<
               string,
               {
+                advisorReviews?: {
+                  advisorId: string;
+                  name: string;
+                  createdAt: string;
+                }[];
                 pendingAssignmentAt?: string;
                 campaignTask?: "NONE" | "CREATE" | "STOP";
               }
@@ -432,6 +442,11 @@ async function readEffectiveness(
         }
       )?.inventoryActivation?.rows ?? {};
     for (const [key, control] of Object.entries(controls)) {
+      if (
+        Array.isArray(control.advisorReviews) &&
+        control.advisorReviews.length
+      )
+        advisorReviews.set(key, control.advisorReviews);
       if (typeof control.pendingAssignmentAt === "string")
         pendingAssignments.set(key, control.pendingAssignmentAt);
       if (
@@ -463,6 +478,9 @@ async function readEffectiveness(
             until: s.until,
           })),
         advisorId: null,
+        ...(advisorReviews.has(a + "|" + p)
+          ? { advisorReviews: advisorReviews.get(a + "|" + p) }
+          : {}),
         country: p,
         currency: table!.defaultCurrency,
         rowRevision: 0,

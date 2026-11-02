@@ -307,6 +307,41 @@ async function assignRowAdvisorInTransaction(
     "La fila cambió. Recarga antes de asignar.",
     409,
   );
+  let reviewResolved = false;
+  if (!metaInitial) {
+    const list = await tx.metaEffectivenessSheet.findUniqueOrThrow({
+      where: { id: alias.inventorySheetId },
+    });
+    const { activationSettings } = await import("./inventory-sheet-activation");
+    const settings = activationSettings(list.config),
+      key = b.aliasId + "|" + b.country;
+    const control = settings.rows[key];
+    if (control?.advisorReviews?.length) {
+      const reviews = control.advisorReviews;
+      const { advisorReviews, ...remaining } = control;
+      settings.rows[key] = remaining;
+      await tx.metaEffectivenessSheet.update({
+        where: { id: list.id },
+        data: {
+          config: {
+            ...(list.config as import("@prisma/client").Prisma.JsonObject),
+            inventoryActivation:
+              settings as unknown as import("@prisma/client").Prisma.InputJsonValue,
+          },
+          revision: { increment: 1 },
+        },
+      });
+      await recordActivity(tx, {
+        data: {
+          actorId: actor.id,
+          action: "META_ASESOR_REVISION_RESUELTA",
+          resourceId: old?.id ?? alias.id,
+          detail: { advisorId: b.advisorId, country: b.country, reviews },
+        },
+      });
+      reviewResolved = true;
+    }
+  }
   let historyPolicyChanged = false;
   if (!metaInitial && b.metaHistoryMode) {
     const initial = await tx.metaAdvisorAssignment.findFirst({
@@ -355,8 +390,14 @@ async function assignRowAdvisorInTransaction(
       });
     }
   }
-  if ((old?.advisorId ?? null) === b.advisorId)
-    return { ok: true, changed: historyPolicyChanged };
+  if ((old?.advisorId ?? null) === b.advisorId) {
+    if (reviewResolved && !historyPolicyChanged && old)
+      await tx.metaEffectivenessRow.update({
+        where: { id: old!.id },
+        data: { revision: { increment: 1 } },
+      });
+    return { ok: true, changed: historyPolicyChanged || reviewResolved };
+  }
   const day = b.day ?? limaDay(),
     mode = b.mode ?? "DAY";
   demand(mode !== "CLOCK" || !!b.time, "Indica la hora del cambio.");
@@ -469,16 +510,14 @@ export async function assignMetaInitialAdvisor(
   const row = await tx.metaEffectivenessRow.findUnique({
     where: { aliasId_country_currency: { aliasId, country, currency: "" } },
   });
-  if (row?.advisorId === advisorId) return;
-  demand(
-    !row?.advisorId &&
-      (await tx.metaAdvisorAssignment.count({
-        where: { aliasId, country },
-      })) === 0,
-    "Esta fila ya tiene historial de asesor. Conserva su asesor o cámbialo desde la hoja.",
-    409,
-  );
-  return assignRowAdvisorInTransaction(
+  if (row?.advisorId === advisorId)
+    return { review: false, currentAdvisorId: advisorId };
+  if (
+    row?.advisorId ||
+    (await tx.metaAdvisorAssignment.count({ where: { aliasId, country } })) > 0
+  )
+    return { review: true, currentAdvisorId: row?.advisorId ?? null };
+  await assignRowAdvisorInTransaction(
     tx,
     actor,
     {
@@ -491,6 +530,7 @@ export async function assignMetaInitialAdvisor(
     },
     true,
   );
+  return { review: false, currentAdvisorId: advisorId };
 }
 export async function assignRowsAdvisor(
   actor: Actor,
