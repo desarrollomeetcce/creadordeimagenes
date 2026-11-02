@@ -732,7 +732,7 @@ html.dark .course-window {
 
 .course-create-groups {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 14px;
   margin: 0 0 22px;
 }
@@ -868,5 +868,14 @@ html.dark .course-window {
     min-width: 0;
     max-width: none;
     margin: 6px 0;
+  }
+}
+
+.course-create-group.group-other {
+  border-top: 3px solid #79a7ee;
+}
+@media (min-width: 761px) and (max-width: 1150px) {
+  .course-create-groups {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }

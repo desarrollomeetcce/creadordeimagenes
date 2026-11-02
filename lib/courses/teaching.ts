@@ -29,7 +29,15 @@ export const courseGroups = [
     icon: "♡",
     description: "Orientación y herramientas para acompañar.",
   },
+  {
+    id: "other",
+    title: "Cursos para otros",
+    create: "Crear curso para otros",
+    icon: "✧",
+    description: "Define un público personalizado para tu programa.",
+  },
 ] as const;
+export type CourseGroupId = (typeof courseGroups)[number]["id"];
 export function courseGroup(
   s: Pick<CourseSettings, "libraryGroup" | "audience">,
 ) {
@@ -39,7 +47,9 @@ export function courseGroup(
       ? "children"
       : s.audience === "families"
         ? "families"
-        : "adults")
+        : s.audience === "other"
+          ? "other"
+          : "adults")
   );
 }
 export function teachingDirection(s: CourseSettings, style = s.style) {

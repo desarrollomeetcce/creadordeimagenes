@@ -18,6 +18,7 @@ import {
   type Lesson,
 } from "@/lib/courses/schema";
 import {
+  type CourseGroupId,
   audienceLabels,
   courseGroups,
   courseGroup,
@@ -976,7 +977,7 @@ function CreateFolder({
   submit,
 }: {
   defaults: CourseSettings;
-  group: "children" | "adults" | "families";
+  group: CourseGroupId;
   busy: boolean;
   submit: (b: unknown) => void;
 }) {
@@ -1121,9 +1122,7 @@ export function CoursesAI() {
     [settingsShown, setSettingsShown] = useState(false),
     [referencesShown, setReferencesShown] = useState(false),
     [outlineMode, setOutlineMode] = useState("ai"),
-    [newGroup, setNewGroup] = useState<"children" | "adults" | "families">(
-      "adults",
-    );
+    [newGroup, setNewGroup] = useState<CourseGroupId>("adults");
   const busyRef = useRef(false);
   const [moduleDetail, setModuleDetail] = useState<Module | null>(null);
   const [list, setList] = useState<Summary[]>([]),

@@ -119,6 +119,16 @@ test("Cursos: carpetas organizativas no sustituyen al público y las selecciones
     "families",
   );
   assert.equal(
+    courseGroup(settingsSchema.parse({ audience: "other" })),
+    "other",
+  );
+  assert.equal(
+    courseGroup(
+      settingsSchema.parse({ libraryGroup: "other", audience: "children" }),
+    ),
+    "other",
+  );
+  assert.equal(
     courseGroup(settingsSchema.parse({ audience: "professionals" })),
     "adults",
   );

@@ -29,7 +29,9 @@ export const settingsSchema = z
         "other",
       ])
       .default("professionals"),
-    libraryGroup: z.enum(["children", "adults", "families"]).optional(),
+    libraryGroup: z
+      .enum(["children", "adults", "families", "other"])
+      .optional(),
     voiceMode: z.enum(["voiceover", "teacher"]).default("voiceover"),
     audienceDetail: z.string().trim().max(200).default(""),
     level: z.enum(["basic", "intermediate", "advanced"]).default("basic"),
