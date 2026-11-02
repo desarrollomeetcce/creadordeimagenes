@@ -10,24 +10,26 @@ Abre **Ajustes → Ajustes IA → Conexiones**. Las tarjetas están plegadas; ab
 | --- | --- |
 | OpenAI | Afiches, contenido de cursos, voz e ilustraciones |
 | Google AI / Gemini | Afiches, contenido, ilustraciones, voz y video compatibles con su API |
-| fal.ai | Afiches y clips de video de distintos fabricantes, según catálogo/esquema |
+| fal.ai | Afiches, ilustraciones FLUX y otros modelos, y escenas de video según catálogo/esquema |
 | Replicate | Afiches; su catálogo de video no está integrado |
 | Anthropic Claude | Contenido y materiales de cursos |
+| Mistral AI | Contenido y materiales de cursos |
+| Cartesia / Sonic | Voz desde modelos y voces disponibles en la cuenta |
 | ElevenLabs | Narración y clonación de voz autorizada |
 
 Una clave de un proveedor puede autorizar varios modelos del mismo proveedor. No se comparte una clave de Google con fal.ai ni con OpenAI. Las suscripciones de chat y Flow no equivalen a acceso/saldo de API. Cada cuenta determina los permisos, modelos y facturación disponibles.
 
 OpenAI/Google/fal de Cursos IA pueden usar la conexión compartida de la plataforma **por referencia, sin duplicar el secreto**. Los catálogos de afiches y cursos permanecen separados por capacidad y los parámetros de generación también. Cambiar la clave compartida invalida el catálogo correspondiente y detiene trabajos antiguos antes de usar una credencial nueva. El consumo y los límites del proveedor siguen compartidos cuando se usa la misma cuenta/API key.
 
-Las claves anteriores de Cursos IA no se sobrescriben: si existe una distinta, la tarjeta lo indica y ofrece **Usar clave compartida en Cursos IA**. La sustitución requiere esa elección explícita y una nueva consulta de modelos. Claude y ElevenLabs se administran en esta misma pantalla y conservan su contexto de cifrado propio. Ninguna clave se devuelve al navegador ni se incluye en URLs de seguimiento.
+Las claves anteriores de Cursos IA no se sobrescriben: si existe una distinta, la tarjeta lo indica y ofrece **Usar clave compartida en Cursos IA**. La sustitución requiere esa elección explícita y una nueva consulta de modelos. Claude, ElevenLabs, Mistral y Cartesia se administran en esta misma pantalla y conservan su contexto de cifrado propio. Ninguna clave se devuelve al navegador ni se incluye en URLs de seguimiento.
 
 ## Parámetros por uso
 
 - **Afiches:** conserva los controles existentes de proveedor/modelo/calidad/resolución y las pruebas autorizadas. El formulario se despliega al solicitarlo; no se monta ni sondea mientras estás en Conexiones o Cursos.
 - **Cursos · texto, voz y video:** configura valores iniciales para nuevos programas. No cambia cursos anteriores. Cada programa permite ajustar después su propia configuración.
-- **Texto:** OpenAI/Gemini/Claude; dificultad, enfoque, público, idioma y objetivos pedagógicos.
-- **Voz:** OpenAI, Gemini TTS o ElevenLabs; modelo y voz disponibles. OpenAI admite velocidad; el tono se transmite donde la API lo permite. La clonación integrada sigue siendo ElevenLabs, con consentimiento y posible verificación del proveedor.
-- **Ilustraciones:** OpenAI o Google; Nano Banana/FLUX pertenecen a imagen, no se muestran como video. Calidad baja/media/alta de ilustraciones OpenAI; Google usa los parámetros compatibles del adaptador existente.
+- **Texto:** OpenAI/Gemini/Claude/Mistral; dificultad, enfoque, público, idioma y objetivos pedagógicos.
+- **Voz:** OpenAI, Gemini TTS, ElevenLabs o Cartesia; modelo y voz disponibles. OpenAI admite velocidad; el tono se transmite donde la API lo permite. La clonación integrada sigue siendo ElevenLabs, con consentimiento y posible verificación del proveedor.
+- **Ilustraciones:** OpenAI, Google o fal.ai; Nano Banana/FLUX pertenecen a imagen, no se muestran como video. Calidad baja/media/alta de ilustraciones OpenAI; Google usa los parámetros compatibles del adaptador existente.
 - **Clips:** Google o fal.ai; solo modelos de video compatibles devueltos por la cuenta. Resolución, duración y formato se ofrecen según el modelo; si no expone un parámetro se indica Automático. Duración de Google Omni se solicita como objetivo en el prompt, no se promete exactitud temporal.
 - **Clase narrada:** exportación local a720p/1080p, independiente del modelo que crea clips. No requiere contratar una IA de video para usar diapositivas/pizarra/código/tablas.
 
@@ -93,11 +95,11 @@ En **Temario**, genera módulos con IA, pega módulos en su espacio propio o usa
 
 ## Referencias opcionales sin archivar originales
 
-Abre **Referencias del curso · opcional** dentro del programa. Puedes adjuntar TXT/CSV/MD, PDF/DOCX, pegar texto o leer un enlace HTTPS público. Se conserva texto extraído y su procedencia en un banco propio del curso; no se crea un archivo descargable ni se archiva el original. TXT/CSV/MD se leen en el navegador; PDF/Word se procesan en memoria del servidor. No se envían originales a los proveedores IA.
+Abre **Referencias · opcional** dentro del programa. Puedes adjuntar TXT/CSV/MD, PDF/DOCX, pegar texto o leer un enlace HTTPS público. Se conserva texto extraído y su procedencia en un banco propio del curso; no se crea un archivo descargable ni se archiva el original. TXT/CSV/MD se leen en el navegador; PDF/Word se procesan en memoria del servidor. No se envían originales a los proveedores IA.
 
 Límites actuales de procesamiento: hasta1 millón de caracteres por referencia de texto y10 millones por curso; PDF/DOCX hasta16 MiB,100000 caracteres extraídos y PDF hasta100 páginas, con protección del tamaño expandido de Word. No hay OCR ni extracción de audio/video. Para archivos mayores o escaneados, adjunta un extracto en texto/OCR. **No se ha implementado ni validado la carga de archivos binarios de2–10GB**. El proxy/hosting puede imponer un límite inferior al del manejador. El texto conservado también ocupa base de datos: no equivale a almacenamiento cero.
 
-Los enlaces se leen solo al solicitarlos, sin cookies ni credenciales; dominios/redes privados se rechazan, DNS se valida y fija por conexión, cada redirección se vuelve a validar y se acotan tamaño/tiempo. Sitios privados, páginas dependientes de JavaScript, videos y páginas no legibles requieren pegar texto. No se vuelve a descargar una web al entrar al curso. Para actualizarla, vuelve a añadir su contenido; el texto idéntico se deduplica.
+Los enlaces se leen solo al solicitarlos, sin cookies ni credenciales; dominios/redes privados se rechazan, DNS se valida y fija por conexión, cada redirección se vuelve a validar y se acotan tamaño/tiempo. Sitios privados, páginas dependientes de JavaScript, videos y páginas no legibles requieren pegar texto. No se vuelve a descargar una web al entrar al curso. Para actualizarla, usa Editar en la ventana de enlaces; solo Guardar vuelve a consultar esa web. El texto idéntico se deduplica.
 
 Las referencias no se cargan desde otros módulos ni en el listado de carpetas; la sección consulta solo sus metadatos al abrirse. Al generar temario, clase o material, una búsqueda de texto con índice selecciona hasta8 fragmentos de4000 caracteres. No es lectura exhaustiva de todas las fuentes ni búsqueda semántica con embeddings. Las referencias se tratan como datos, nunca instrucciones del sistema. La IA recibe nombre/procedencia y se le pide citar solo información presente, sin inventar fuentes. Revisa citas, hechos y ejercicios. Generar voz/imagen/video no consulta este banco adicionalmente.
 
@@ -138,3 +140,24 @@ Configuración empieza más ancha (380px) y se puede ajustar arrastrando la sepa
 Cada módulo tiene **Eliminar módulo** junto a **Editar/ver**. Una confirmación identifica el módulo y advierte que se borrarán contenido y materiales. La API comprueba OWNER vigente, curso/módulo y sus revisiones; rechaza trabajos activos o inciertos. Elimina el módulo y sus materiales/activos, reajusta posiciones y retira su ID de las asignaciones de recursos, conservando módulos hermanos y el historial de trabajos. Tras confirmar la transacción libera los archivos; si la limpieza falla, informa que el módulo ya se eliminó y que quedan archivos pendientes. No inicia IA. El último módulo de una página vuelve a la página anterior; eliminar todos no borra el curso.
 
 La ventana **Editar/ver** muestra **Prompt y ajustes del módulo · opcional**. El prompt añade instrucciones/información específica al prompt general; los documentos y enlaces siguen en Referencias a la izquierda y los recursos se eligen en la columna derecha. Se retiraron Material complementario y + Material de esta ventana. **Resultados del módulo** aparece solo si hay materiales existentes y conserva consulta, corrección y descarga; no duplica el formulario de creación de recursos.
+
+
+## Referencias compactas, suite y voz propia · 02/11/2026
+
+Referencias muestra solo **Archivos adjuntos (N)**, **Enlaces web (N)** y **Textos pegados (N)** y la capacidad de PDF/Word. Cada botón abre una única ventana. Puedes preparar varios documentos, pegar enlaces separados por comas/espacios/saltos de línea o añadir varios textos numerados. No exige nombres de referencia. La X retira un pendiente antes de subirlo o elimina una referencia guardada. Enlaces/textos guardados admiten Editar con revisión; los documentos se retiran y adjuntan de nuevo. Un lote conserva los éxitos y deja los errores editables, sin reenviar los elementos ya guardados. Listas sin contenido completo; carga de texto solo al editar. Los límites técnicos anteriores siguen vigentes y se explican aquí, sin llenar la columna con avisos.
+
+**Usar Google en todo** selecciona texto, voz, imagen y video entre los modelos compatibles consultados de esa cuenta; exige disponibilidad de las cuatro capacidades y de voces. Puedes cambiar después cualquier parte y guardar. No genera ni cambia cursos ajenos. Proveedor es la conexión/cuenta que factura; modelo es la herramienta específica para cada función. Gemini es la familia de Google; las imágenes se muestran con nombres reconocibles **Nano Banana** junto a su modelo. FLUX se ofrece mediante fal.ai cuando el catálogo/esquema consultado permite generar imágenes sin entradas adicionales obligatorias. No se añade una opción por el solo nombre de una plataforma ni se promete el menor precio sin consultar su tarifa.
+
+En Ajustes IA → Conexiones → ElevenLabs, **Actualizar mis voces** importa las voces propias y clonadas disponibles con la clave guardada. **Clonar una voz autorizada** recibe nombre/audio y consentimiento explícito dentro de la plataforma; ElevenLabs puede exigir plan/verificación. Al finalizar actualiza el catálogo. Si falla esa actualización después de crear la voz, indica que ya existe y pide actualizar la lista, sin repetir la clonación. Las voces siguen en su proveedor: seleccionar Google u OpenAI no importa ni clona automáticamente una voz de ElevenLabs.
+
+El estilo general admite **Se decidirá en cada módulo**. Idioma ofrece español latinoamericano/España, inglés, portugués y otras opciones; conserva valores heredados personalizados. La cabecera del programa tiene una franja con fondo de color y título de alto contraste. Video distingue proporción de escena IA y **formato final horizontal/vertical**; el reproductor compone también a720×1280/1080×1920 con disposición vertical, útil para Reels/TikTok/Shorts. Exporta MP4 o WebM según soporte del navegador.
+
+## Clips promocionales opcionales
+
+En Configuración abre **Clips promocionales · opcional** y elige Sin clips, Tráiler del diplomado/curso completo o Avance de cada módulo seleccionado. Configura duración objetivo15–90segundos y llamada a la acción. **Generar clips promocionales** es una acción explícita independiente del desarrollo de clases; guardar o elegir opciones no genera. Usa el contexto del programa/temario/público, guion con gancho, aprendizajes/beneficios y CTA, y la voz configurada. No inventar precios, fechas, acreditaciones, testimonios ni garantías.
+
+Cada clip conserva guion/voz y permite reproducción y exportación local con el formato final seleccionado. La duración es objetivo editorial, no recorte garantizado a segundos exactos. Este flujo genera texto y audio; no promete un avatar, lip-sync ni filmación de aplicaciones. Opciones de escenas generativas del módulo siguen siendo independientes.
+
+Plan y activos propios en AICoursePromo/AICoursePromoAsset, migraciones aditivas005(referencias tipo/revisión) y006(clips). Workflow secuencial, máximo2 llamadas globales/1curso, idempotencia y snapshots de credenciales; permisos/clave se revalidan antes de llamar/publicar. Cola pública no admite tareas internas de clip. Detener conserva resultados y espera lo ya enviado; error/cargo incierto no produce reintento automático. No hay generación desde GET/poll. Borrar un módulo elimina sus avances/archivos, conservando tráileres globales e historial.
+
+Documentación consultada: [Google, modelos de imagen/Nano Banana](https://ai.google.dev/gemini-api/docs/image-generation), [Mistral](https://docs.mistral.ai/api/endpoint/chat), [Cartesia TTS](https://docs.cartesia.ai/api-reference/tts/bytes). OpenAI [retiró Videos API/Sora el24/09/2026](https://developers.openai.com/api/docs/deprecations); no se ofrece como integración operativa. Google/fal.ai mantienen las opciones de escenas compatibles con cuenta/esquema. Suscripción de chat y saldo/API son conceptos distintos.

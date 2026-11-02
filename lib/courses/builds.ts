@@ -26,6 +26,25 @@ export async function assertNoBuild(
   courseId: string,
   allowed?: string,
 ) {
+  const allowedPromo = allowed
+    ? await tx.aICoursePromo.findUnique({
+        where: { id: allowed },
+        select: { batchId: true },
+      })
+    : null;
+  const promo = await tx.aICoursePromo.findFirst({
+    where: {
+      courseId,
+      status: { in: ["PENDING", "RUNNING", "STOPPING", "DISPATCH_UNCERTAIN"] },
+      ...(allowedPromo ? { batchId: { not: allowedPromo.batchId } } : {}),
+    },
+    select: { id: true },
+  });
+  demand(
+    !promo,
+    "Espera a que terminen los clips o detenlos antes de editar.",
+    409,
+  );
   const b = await tx.aICourseBuild.findFirst({
     where: { courseId, status: { in: activeBuildStates } },
     select: { id: true },

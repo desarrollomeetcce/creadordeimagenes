@@ -90,6 +90,16 @@ type Course = {
   revision: number;
   settings: CourseSettings;
   modules: Module[];
+  promos?: {
+    id: string;
+    batchId: string;
+    moduleId: string | null;
+    scope: string;
+    title: string;
+    seconds: number;
+    status: string;
+    error: string | null;
+  }[];
   build?: {
     id: string;
     status: string;
@@ -107,7 +117,9 @@ type Course = {
   }[];
 };
 const labels: Record<string, string> = {
-  VIDEO: "Clip de video",
+  VIDEO: "Escena de video",
+  PROMO_SCRIPT: "Guion promocional",
+  PROMO_SPEECH: "Voz del clip",
   RENDERING: "Procesando video",
   OUTLINE: "Temario",
   LESSON: "Módulo",
@@ -520,7 +532,15 @@ function CourseForm({
     [voice, setVoice] = useState(s.voiceProvider),
     [image, setImage] = useState(s.imageProvider),
     [video, setVideo] = useState(s.videoProvider),
-    [videoModel, setVideoModel] = useState(s.videoModel);
+    [videoModel, setVideoModel] = useState(s.videoModel),
+    [suite, setSuite] = useState<{
+      version: number;
+      model: string;
+      imageModel: string;
+      voiceModel: string;
+      voiceId: string;
+    } | null>(null),
+    [suiteNotice, setSuiteNotice] = useState("");
   const models = (p: string, k: string) =>
       providers
         .find((x) => x.provider === p)
@@ -556,9 +576,18 @@ function CourseForm({
       "videoResolution",
       "videoAspect",
       "exportResolution",
+      "exportAspect",
+      "promoScope",
+      "promoCTA",
     ])
       settings[k] = f.get(k) ?? s[k as keyof CourseSettings];
-    for (const k of ["moduleCount", "minutes", "voiceSpeed", "videoDuration"])
+    for (const k of [
+      "moduleCount",
+      "minutes",
+      "voiceSpeed",
+      "videoDuration",
+      "promoSeconds",
+    ])
       settings[k] = Number(f.get(k) ?? s[k as keyof CourseSettings]);
     settings.mixStyles = f.get("mixStyles") === "on";
     submit(
@@ -668,28 +697,136 @@ function CourseForm({
           name="style"
           label="Estilo inicial"
           value={s.style}
-          options={styles.map((value) => ({
-            value,
-            label: styleLabels[value],
-          }))}
+          options={[
+            { value: "per-module", label: "Se decidirá en cada módulo" },
+            ...styles.map((value) => ({ value, label: styleLabels[value] })),
+          ]}
         />
         <label>
           Idioma
-          <input
-            name="language"
-            required
-            maxLength={60}
-            defaultValue={s.language}
-          />
+          <select name="language" defaultValue={s.language}>
+            {[
+              "Español latinoamericano",
+              "Español de España",
+              "English",
+              "Português",
+              "Français",
+              "Deutsch",
+              "Italiano",
+              "中文",
+              "日本語",
+              "العربية",
+              ...(![
+                "Español latinoamericano",
+                "Español de España",
+                "English",
+                "Português",
+                "Français",
+                "Deutsch",
+                "Italiano",
+                "中文",
+                "日本語",
+                "العربية",
+              ].includes(s.language)
+                ? [s.language]
+                : []),
+            ].map((value) => (
+              <option key={value} value={value}>
+                {value}
+              </option>
+            ))}
+          </select>
         </label>
       </div>
-      <p className="muted course-format-help">
-        El enfoque indica teoría o práctica; el estilo indica cómo se verá.
-        Todos los estilos sirven para cualquier público. La animación local
-        mueve ilustraciones y revela pasos; para personajes en movimiento o un
-        profesor visible, genera escenas de video. No incluye sincronización
-        labial garantizada.
-      </p>
+      <button
+        type="button"
+        disabled={busy}
+        onClick={() => {
+          const g = providers.find((p) => p.provider === "gemini");
+          const pick = (kind: string) =>
+            g?.models
+              .filter((m) => m.kind === kind)
+              .sort(
+                (a, b) =>
+                  Number(/lite|fast/i.test(b.id)) -
+                  Number(/lite|fast/i.test(a.id)),
+              )[0]?.id ?? "";
+          if (
+            !pick("text") ||
+            !pick("speech") ||
+            !pick("image") ||
+            !pick("video") ||
+            !g?.voices.length
+          ) {
+            setSuiteNotice(
+              "Consulta los modelos y voces de Google en Ajustes IA para usar la suite completa.",
+            );
+            return;
+          }
+          setProvider("gemini");
+          setVoice("gemini");
+          setImage("gemini");
+          setVideo("gemini");
+          setVideoModel(pick("video"));
+          setSuite({
+            version: Date.now(),
+            model: pick("text"),
+            imageModel: pick("image"),
+            voiceModel: pick("speech"),
+            voiceId: g.voices[0].id,
+          });
+          setSuiteNotice(
+            "Google seleccionado para texto, voz, imagen y video. Revisa los modelos y guarda la configuración.",
+          );
+        }}
+      >
+        Usar Google en todo
+      </button>
+      {suiteNotice && <small role="status">{suiteNotice}</small>}
+      <small className="muted">
+        Puedes usar una suite o combinar proveedores. Cada parte utiliza el
+        modelo y la clave que selecciones.
+      </small>
+      <details className="course-promo-options">
+        <summary>Clips promocionales · opcional</summary>
+        <Select
+          name="promoScope"
+          label="Qué clip quieres preparar"
+          value={s.promoScope}
+          options={[
+            { value: "none", label: "Sin clips promocionales" },
+            {
+              value: "course",
+              label: "Tráiler del diplomado / curso completo",
+            },
+            { value: "modules", label: "Avance de cada módulo seleccionado" },
+          ]}
+        />
+        <label>
+          Duración objetivo del clip · segundos
+          <input
+            type="number"
+            name="promoSeconds"
+            min={15}
+            max={90}
+            defaultValue={s.promoSeconds}
+          />
+        </label>
+        <label>
+          Llamada a la acción
+          <input name="promoCTA" maxLength={300} defaultValue={s.promoCTA} />
+        </label>
+        <small className="muted">
+          Usa los temas, el público y la voz seleccionada. El formato final se
+          elige en Video. Generar el clip consume texto y voz; guardar esta
+          opción no genera nada.
+        </small>
+        {!settingsOnly && (
+          <button type="submit" data-action="promo" disabled={busy}>
+            ✦ Generar clips promocionales
+          </button>
+        )}
+      </details>
       <details open={!s.model}>
         <summary>Texto · desarrollar clases y materiales</summary>
         <div className="course-grid">
@@ -703,13 +840,20 @@ function CourseForm({
               <option value="openai">OpenAI</option>
               <option value="gemini">Google Gemini</option>
               <option value="anthropic">Anthropic Claude</option>
+              <option value="mistral">Mistral AI</option>
             </select>
           </label>
           <Select
-            key={provider}
+            key={provider + String(suite?.version ?? "")}
             name="model"
             label="Modelo de texto"
-            value={provider === s.provider ? s.model : ""}
+            value={
+              suite && provider === "gemini"
+                ? suite.model
+                : provider === s.provider
+                  ? s.model
+                  : ""
+            }
             options={selectModels(provider, "text")}
           />
         </div>
@@ -747,20 +891,33 @@ function CourseForm({
               <option value="openai">OpenAI</option>
               <option value="gemini">Google Gemini</option>
               <option value="elevenlabs">ElevenLabs</option>
+              <option value="cartesia">Cartesia / Sonic</option>
             </select>
           </label>
           <Select
-            key={voice + "model"}
+            key={voice + "model" + (suite?.version ?? "")}
             name="voiceModel"
             label="Modelo de voz"
-            value={voice === s.voiceProvider ? s.voiceModel : ""}
+            value={
+              suite && voice === "gemini"
+                ? suite.voiceModel
+                : voice === s.voiceProvider
+                  ? s.voiceModel
+                  : ""
+            }
             options={selectModels(voice, "speech")}
           />
           <Select
-            key={voice + "voice"}
+            key={voice + "voice" + (suite?.version ?? "")}
             name="voiceId"
             label="Voz"
-            value={voice === s.voiceProvider ? s.voiceId : ""}
+            value={
+              suite && voice === "gemini"
+                ? suite.voiceId
+                : voice === s.voiceProvider
+                  ? s.voiceId
+                  : ""
+            }
             options={[
               { value: "", label: "Seleccionar voz" },
               ...(
@@ -799,13 +956,20 @@ function CourseForm({
             >
               <option value="openai">OpenAI</option>
               <option value="gemini">Google Gemini / Nano Banana</option>
+              <option value="fal">fal.ai / FLUX y otros</option>
             </select>
           </label>
           <Select
-            key={image}
+            key={image + String(suite?.version ?? "")}
             name="imageModel"
             label="Modelo de imagen"
-            value={image === s.imageProvider ? s.imageModel : ""}
+            value={
+              suite && image === "gemini"
+                ? suite.imageModel
+                : image === s.imageProvider
+                  ? s.imageModel
+                  : ""
+            }
             options={[
               { value: "", label: "Sin ilustraciones generadas" },
               ...models(image, "image").map((m) => ({
@@ -903,6 +1067,15 @@ function CourseForm({
                 ? opts.aspects
                 : [{ value: "16:9", label: "Automático del modelo" }]
             }
+          />
+          <Select
+            name="exportAspect"
+            label="Formato de la videoclase"
+            value={s.exportAspect}
+            options={[
+              { value: "16:9", label: "Horizontal · YouTube / cursos" },
+              { value: "9:16", label: "Vertical · TikTok / Reels / Shorts" },
+            ]}
           />
           <Select
             name="exportResolution"
@@ -1181,7 +1354,8 @@ export function CoursesAI() {
     >(null),
     [moduleId, setModuleId] = useState(""),
     [add, setAdd] = useState(false),
-    [preview, setPreview] = useState(false);
+    [preview, setPreview] = useState(false),
+    [promoId, setPromoId] = useState("");
   useEffect(() => {
     const open = () => {
       setSharing(true);
@@ -1244,6 +1418,7 @@ export function CoursesAI() {
   }, []);
   useEffect(() => {
     setCourse(null);
+    setPromoId("");
     setWindow(null);
     setReferencesShown(false);
     setOutlineMode("");
@@ -1267,8 +1442,13 @@ export function CoursesAI() {
   const building =
     !!course?.build &&
     ["PENDING", "RUNNING", "STOPPING"].includes(course.build.status);
+  const promoActive =
+    course?.promos?.some((p) =>
+      ["PENDING", "RUNNING", "STOPPING"].includes(p.status),
+    ) ?? false;
   const working =
     (building ||
+      promoActive ||
       course?.tasks.some((t) =>
         ["PENDING", "RUNNING", "RENDERING"].includes(t.status),
       )) ??
@@ -1289,6 +1469,7 @@ export function CoursesAI() {
         const tasks = building ? status.tasks : status;
         if (
           building ||
+          promoActive ||
           tasks
             .map((t: { id: string; status: string }) => t.id + ":" + t.status)
             .join("|") !== taskState
@@ -1308,7 +1489,7 @@ export function CoursesAI() {
       document.removeEventListener("visibilitychange", tick);
       ac.abort();
     };
-  }, [selected, working, taskState, load, building]);
+  }, [selected, working, taskState, load, building, promoActive]);
   async function run(fn: () => Promise<void>) {
     if (busyRef.current) return;
     busyRef.current = true;
@@ -1542,7 +1723,7 @@ export function CoursesAI() {
                         key={course.id}
                         courseId={course.id}
                         disabled={busy || working}
-                        changed={refresh}
+                        changed={() => load(course.id)}
                       />
                     )}
                   </details>
@@ -1565,6 +1746,22 @@ export function CoursesAI() {
                             },
                           });
                           await refresh();
+                          if (action === "promo") {
+                            if (b.settings.promoScope === "none")
+                              throw Error(
+                                "Elige tráiler del curso o avances por módulo.",
+                              );
+                            const latest = await request("/" + course.id);
+                            await request("/" + course.id + "/promos", {
+                              requestId: crypto.randomUUID(),
+                              revision: latest.revision,
+                              scope: b.settings.promoScope,
+                              modules: moduleSelection,
+                              seconds: b.settings.promoSeconds,
+                              cta: b.settings.promoCTA,
+                            });
+                            await load(course.id);
+                          }
                           if (action === "develop" || action === "outline") {
                             const latest = await request("/" + course.id);
                             await request(
@@ -2026,6 +2223,63 @@ export function CoursesAI() {
                       </button>
                     </nav>
                   )}
+                  {!!course.promos?.length && (
+                    <details
+                      className="course-promo-results"
+                      open={promoActive}
+                    >
+                      <summary>
+                        Clips promocionales ({course.promos.length})
+                      </summary>
+                      {course.promos.map((p) => (
+                        <div key={p.id} className="course-promo-row">
+                          <span>
+                            <strong>{p.title}</strong>
+                            <small>
+                              {p.seconds} s objetivo ·{" "}
+                              {labels[p.status] ?? p.status}
+                            </small>
+                            {p.error && <small role="alert">{p.error}</small>}
+                          </span>
+                          {["COMPLETED", "CANCELLED", "NEEDS_REVIEW"].includes(
+                            p.status,
+                          ) && (
+                            <button
+                              type="button"
+                              onClick={() => setPromoId(p.id)}
+                            >
+                              Ver / exportar clip
+                            </button>
+                          )}
+                          {[
+                            "PENDING",
+                            "RUNNING",
+                            "DISPATCH_UNCERTAIN",
+                          ].includes(p.status) && (
+                            <button
+                              type="button"
+                              disabled={busy}
+                              onClick={() =>
+                                void run(async () => {
+                                  await request(
+                                    "/" +
+                                      course.id +
+                                      "/promos/" +
+                                      encodeURIComponent(p.batchId),
+                                    undefined,
+                                    "DELETE",
+                                  );
+                                  await load(course.id);
+                                })
+                              }
+                            >
+                              Detener clips
+                            </button>
+                          )}
+                        </div>
+                      ))}
+                    </details>
+                  )}
                   {course.tasks.length > 0 && (
                     <details className="course-task-list" open={working}>
                       <summary>
@@ -2116,6 +2370,13 @@ export function CoursesAI() {
           )}
         </main>
       </div>
+      {promoId && course && (
+        <PromoPreview
+          courseId={course.id}
+          id={promoId}
+          onClose={() => setPromoId("")}
+        />
+      )}
       {sharing && (
         <Window title="Compartir Cursos IA" onClose={() => setSharing(false)}>
           <p>
@@ -2305,6 +2566,7 @@ export function CoursesAI() {
                     revision={m.revision}
                     title={m.title}
                     resolution={course.settings.exportResolution ?? "720p"}
+                    aspect={course.settings.exportAspect}
                   />
                 )}
                 <div className="course-toolbar">
@@ -2861,5 +3123,54 @@ export function CoursesAI() {
         </Window>
       )}
     </section>
+  );
+}
+
+function PromoPreview({
+  courseId,
+  id,
+  onClose,
+}: {
+  courseId: string;
+  id: string;
+  onClose: () => void;
+}) {
+  const [data, setData] = useState<any>(null),
+    [error, setError] = useState("");
+  useEffect(() => {
+    const ac = new AbortController();
+    void request(
+      "/" + courseId + "/promos/" + id,
+      undefined,
+      undefined,
+      ac.signal,
+    )
+      .then(setData)
+      .catch((e) => {
+        if (!ac.signal.aborted) setError(e.message);
+      });
+    return () => ac.abort();
+  }, [courseId, id]);
+  const parsed = lessonSchema.safeParse(data?.lesson);
+  return (
+    <Window title={data?.title ?? "Clip promocional"} onClose={onClose}>
+      {error && <p role="alert">{error}</p>}
+      {data && parsed.success ? (
+        <CoursePlayer
+          title={data.title}
+          lesson={parsed.data}
+          assets={data.assets}
+          revision={data.revision}
+          aspect={data.settings.exportAspect}
+          resolution={data.settings.exportResolution}
+        />
+      ) : (
+        <p role="status">
+          {data
+            ? "El guion del clip aún no está disponible. Revisa la actividad del curso."
+            : "Abriendo clip…"}
+        </p>
+      )}
+    </Window>
   );
 }

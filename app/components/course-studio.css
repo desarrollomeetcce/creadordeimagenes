@@ -502,10 +502,9 @@
 }
 .course-studio-columns {
   position: relative;
-  grid-template-columns: minmax(0, var(--course-left-width, 380px)) minmax(
-      0,
-      1fr
-    ) minmax(0, var(--course-right-width, 275px));
+  grid-template-columns:
+    minmax(0, var(--course-left-width, 380px)) minmax(0, 1fr)
+    minmax(0, var(--course-right-width, 275px));
 }
 .course-column-resizer {
   position: absolute;
@@ -538,10 +537,9 @@
 }
 @media (max-width: 950px) {
   .course-studio-columns {
-    grid-template-columns: minmax(
-        220px,
-        var(--course-left-width, 380px)
-      ) minmax(0, 1fr);
+    grid-template-columns:
+      minmax(220px, var(--course-left-width, 380px))
+      minmax(0, 1fr);
   }
   .course-column-resizer {
     display: none;
@@ -551,4 +549,170 @@
   .course-studio-columns {
     grid-template-columns: minmax(0, 1fr);
   }
+}
+.course-configuration-column > .course-heading > .course-heading-content {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 14px 16px;
+  border-radius: 10px;
+  background: linear-gradient(
+    110deg,
+    color-mix(in srgb, #7955d4 27%, var(--surface)),
+    color-mix(in srgb, #28a99d 15%, var(--surface))
+  );
+  border: 1px solid color-mix(in srgb, #9575dd 55%, var(--line));
+  border-left: 4px solid #9575dd;
+}
+.course-configuration-column .course-heading-content .course-inline-title {
+  font-size: 21px !important;
+  font-weight: 800;
+  color: var(--ink);
+  line-height: 1.35;
+}
+.course-reference-shortcuts {
+  display: grid;
+  gap: 6px;
+}
+.course-reference-shortcuts button {
+  width: 100%;
+  text-align: left;
+  padding: 8px;
+}
+.course-reference-bank > small {
+  display: block;
+  margin-top: 7px;
+  font-size: 10px;
+  color: var(--muted);
+}
+.course-reference-dialog {
+  width: min(740px, calc(100vw - 24px));
+  max-height: 85dvh;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+  color: var(--ink);
+}
+.course-reference-dialog::backdrop {
+  background: #0008;
+}
+.course-reference-dialog > header,
+.course-reference-dialog > footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 16px;
+  background: var(--surface);
+  position: sticky;
+  z-index: 2;
+}
+.course-reference-dialog > header {
+  top: 0;
+  border-bottom: 1px solid var(--line);
+}
+.course-reference-dialog > footer {
+  bottom: 0;
+  border-top: 1px solid var(--line);
+}
+.course-reference-dialog h3 {
+  margin: 0;
+  font-size: 16px;
+}
+.course-reference-dialog-body {
+  padding: 16px;
+  display: grid;
+  gap: 12px;
+}
+.course-reference-dialog label {
+  display: grid;
+  gap: 7px;
+  font-size: 13px;
+}
+.course-reference-dialog textarea,
+.course-reference-dialog input {
+  width: 100%;
+  box-sizing: border-box;
+}
+.course-reference-dialog small {
+  color: var(--muted);
+  font-size: 11px;
+}
+.course-saved-references {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+.course-saved-references li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+.course-saved-references li > span {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.course-reference-draft {
+  position: relative;
+  padding: 12px 42px 12px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+.course-reference-draft > button {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+}
+.course-reference-draft [role="alert"] {
+  color: #e57a7a;
+  font-size: 12px;
+}
+.course-promo-options {
+  display: grid;
+  gap: 8px;
+}
+.course-promo-options label {
+  margin: 8px 0;
+}
+.course-promo-options small {
+  display: block;
+  font-size: 11px;
+  line-height: 1.5;
+}
+.course-promo-options button {
+  margin-top: 10px;
+}
+.course-promo-results {
+  margin-top: 12px;
+}
+.course-promo-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px;
+  border-bottom: 1px solid var(--line);
+}
+.course-promo-row > span {
+  min-width: 0;
+}
+.course-promo-row small {
+  display: block;
+  color: var(--muted);
+  font-size: 11px;
+  margin-top: 3px;
+}
+.course-promo-row button {
+  font-size: 11px;
+  flex-shrink: 0;
+}
+.course-player canvas {
+  max-width: 100%;
+  height: auto;
 }

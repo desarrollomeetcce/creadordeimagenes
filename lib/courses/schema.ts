@@ -17,10 +17,18 @@ export const styleLabels: Record<string, string> = {
   story: "Cuento ilustrado",
   animation: "Animación educativa",
   presenter: "Profesor en pantalla · video IA",
+  "per-module": "Se decidirá en cada módulo",
 };
 export const settingsSchema = z
   .object({
     resources: resourcePlanSchema.default(defaultResources),
+    promoScope: z.enum(["none", "course", "modules"]).default("none"),
+    promoSeconds: z.number().int().min(15).max(90).default(30),
+    promoCTA: z
+      .string()
+      .trim()
+      .max(300)
+      .default("Conoce el programa e inscríbete."),
     mixStyles: z.boolean().default(false),
     audience: z
       .enum([
@@ -42,7 +50,7 @@ export const settingsSchema = z
     audienceDetail: z.string().trim().max(200).default(""),
     level: z.enum(["basic", "intermediate", "advanced"]).default("basic"),
     approach: z.enum(["theory", "practice", "mixed"]).default("mixed"),
-    style: z.enum(styles).default("slides"),
+    style: z.enum([...styles, "per-module"]).default("slides"),
     language: z
       .string()
       .trim()
@@ -51,20 +59,23 @@ export const settingsSchema = z
       .default("Español latinoamericano"),
     moduleCount: z.number().int().min(1).max(100).default(6),
     minutes: z.number().int().min(1).max(60).default(10),
-    provider: z.enum(["openai", "gemini", "anthropic"]).default("openai"),
+    provider: z
+      .enum(["openai", "gemini", "anthropic", "mistral"])
+      .default("openai"),
     model: z.string().trim().max(150).default(""),
-    imageProvider: z.enum(["openai", "gemini"]).default("openai"),
+    imageProvider: z.enum(["openai", "gemini", "fal"]).default("openai"),
     imageQuality: z.enum(["low", "medium", "high"]).default("low"),
     videoProvider: z.enum(["gemini", "fal"]).default("gemini"),
     videoModel: z.string().max(150).default(""),
     videoResolution: z.string().max(30).default("720p"),
     videoDuration: z.number().int().min(3).max(20).default(6),
     videoAspect: z.enum(["16:9", "9:16"]).default("16:9"),
+    exportAspect: z.enum(["16:9", "9:16"]).default("16:9"),
     exportResolution: z.enum(["720p", "1080p"]).default("720p"),
     voiceSpeed: z.number().min(0.5).max(2).default(1),
     imageModel: z.string().max(150).default(""),
     voiceProvider: z
-      .enum(["openai", "gemini", "elevenlabs"])
+      .enum(["openai", "gemini", "elevenlabs", "cartesia"])
       .default("elevenlabs"),
     voiceId: z.string().max(150).default(""),
     voiceModel: z.string().max(150).default(""),

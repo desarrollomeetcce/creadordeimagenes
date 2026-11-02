@@ -132,3 +132,69 @@ export async function falVideoModels(key: string, query = "") {
   }
   return models;
 }
+
+export const googleImageNames: Record<string, string> = {
+  "gemini-nano-banana-2.1": "Nano Banana 2.1 · Gemini",
+  "gemini-3.1-flash-lite-image": "Nano Banana 2 Lite · Gemini",
+  "gemini-3.1-flash-image": "Nano Banana 2 · Gemini",
+  "gemini-3-pro-image": "Nano Banana Pro · Gemini",
+  "gemini-2.5-flash-image": "Nano Banana · Gemini 2.5",
+};
+export async function falImageModels(key: string, query = "") {
+  const { imageCapability } = await import("../providers/schema");
+  const models: CatalogItem[] = [];
+  let cursor = "";
+  for (let page = 0; page < 5; page++) {
+    const p = new URLSearchParams({
+      category: "text-to-image",
+      status: "active",
+      limit: "20",
+      expand: "openapi-3.0",
+    });
+    if (query) p.set("q", query);
+    if (cursor) p.set("cursor", cursor);
+    const r = await providerJSON(
+      "fal.ai",
+      "https://api.fal.ai/v1/models?" + p,
+      { headers: { Authorization: "Key " + key } },
+      6000000,
+    );
+    if (!Array.isArray(r.models)) throw Error("Catálogo de imágenes inválido");
+    for (const m of r.models) {
+      if (
+        typeof m.endpoint_id !== "string" ||
+        !/^fal-ai\/[a-zA-Z0-9._/-]+$/.test(m.endpoint_id) ||
+        m.endpoint_id.length > 100 ||
+        m.endpoint_id.includes("..")
+      )
+        continue;
+      const schemas = m.openapi?.components?.schemas ?? {};
+      const output =
+        schemas.Output ??
+        Object.values(schemas).find(
+          (v: any) => v?.properties?.images || v?.properties?.image,
+        );
+      if (
+        !(output as any)?.properties?.images &&
+        !(output as any)?.properties?.image
+      )
+        continue;
+      const cap = imageCapability(
+        m.endpoint_id,
+        m.metadata?.display_name ?? m.endpoint_id,
+        m.openapi,
+      );
+      if (cap && !cap.binding?.requiresReference)
+        models.push({
+          id: cap.id,
+          name: cap.label ?? cap.id,
+          kind: "image",
+          image: cap,
+        });
+    }
+    if (!r.has_more && !r.next_cursor) break;
+    if (typeof r.next_cursor !== "string" || r.next_cursor === cursor) break;
+    cursor = r.next_cursor;
+  }
+  return models;
+}

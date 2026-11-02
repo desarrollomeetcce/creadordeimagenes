@@ -12,6 +12,8 @@ import {
   googleVideoModels,
   googleSpeechModels,
   falVideoModels,
+  falImageModels,
+  googleImageNames,
 } from "./media-catalog";
 export const providerSchema = z.enum([
   "openai",
@@ -19,11 +21,14 @@ export const providerSchema = z.enum([
   "anthropic",
   "elevenlabs",
   "fal",
+  "mistral",
+  "cartesia",
 ]);
 export type CatalogItem = {
   id: string;
   name: string;
   kind: "text" | "speech" | "image" | "video";
+  image?: import("../providers").ModelCapability;
   options?: {
     resolutions: string[];
     durations: number[];
@@ -37,6 +42,8 @@ const endpoints = {
   anthropic: "https://api.anthropic.com/v1/",
   elevenlabs: "https://api.elevenlabs.io/v1/",
   fal: "https://api.fal.ai/v1/",
+  mistral: "https://api.mistral.ai/v1/",
+  cartesia: "https://api.cartesia.ai/",
 };
 export async function credential(provider: string) {
   const c = await db.aICourseCredential.findUnique({ where: { provider } });
@@ -59,7 +66,9 @@ export async function credential(provider: string) {
   return { ...c, key: decryptKey(c.encryptedKey, "courses:" + provider) };
 }
 function headers(provider: string, key: string): Record<string, string> {
-  return provider === "openai"
+  if (provider === "cartesia")
+    return { Authorization: "Bearer " + key, "Cartesia-Version": "2026-08-14" };
+  return ["openai", "mistral"].includes(provider)
     ? { Authorization: "Bearer " + key }
     : provider === "gemini"
       ? { "x-goog-api-key": key }
@@ -171,10 +180,23 @@ export async function discover(provider: string, query = "") {
               },
             ];
           if (
-            /^gemini-[a-zA-Z0-9._-]*image[a-zA-Z0-9._-]*$/.test(id) &&
+            (!!googleImageNames[id] ||
+              /^gemini-[a-zA-Z0-9._-]*image[a-zA-Z0-9._-]*$/.test(id)) &&
+            ![
+              "gemini-3.1-flash-image-preview",
+              "gemini-3-pro-image-preview",
+              "gemini-2.5-flash-image-preview",
+              "gemini-2.0-flash-preview-image-generation",
+            ].includes(id) &&
             m.supportedGenerationMethods?.includes("generateContent")
           )
-            return [{ id, name: m.displayName ?? id, kind: "image" }];
+            return [
+              {
+                id,
+                name: googleImageNames[id] ?? m.displayName ?? id,
+                kind: "image",
+              },
+            ];
           if (googleSpeechModels.has(id))
             return [{ id, name: m.displayName ?? id, kind: "speech" }];
           if (
@@ -195,7 +217,37 @@ export async function discover(provider: string, query = "") {
         .map((v: any) => ({ id: v.id, name: v.display_name ?? v.id }));
     }
   } else if (provider === "fal") {
-    models = await falVideoModels(c.key, query);
+    models = [
+      ...(await falVideoModels(c.key, query)),
+      ...(await falImageModels(c.key, query)),
+    ];
+  } else if (provider === "mistral") {
+    const r = await json(provider, c.key, "models");
+    models = (r.data ?? [])
+      .filter((m: any) => m.capabilities?.completion_chat === true)
+      .map((m: any) => ({ id: m.id, name: m.name ?? m.id, kind: "text" }));
+  } else if (provider === "cartesia") {
+    const r = await json(provider, c.key, "models");
+    models = (r.data ?? [])
+      .filter((m: any) => m.capability === "tts")
+      .map((m: any) => ({ id: m.id, name: m.id, kind: "speech" }));
+    let cursor = "";
+    for (let page = 0; page < 5; page++) {
+      const params = new URLSearchParams({ limit: "100" });
+      if (query) params.set("q", query);
+      if (cursor) params.set("starting_after", cursor);
+      const v = await json(provider, c.key, "voices?" + params);
+      voices.push(
+        ...(v.data ?? []).map((v: any) => ({ id: v.id, name: v.name ?? v.id })),
+      );
+      if (!v.has_more) break;
+      demand(
+        typeof v.next_page === "string" && v.next_page !== cursor,
+        "Paginación de voces inválida.",
+        502,
+      );
+      cursor = v.next_page;
+    }
   } else if (provider === "anthropic") {
     const r = await json(provider, c.key, "models?limit=100");
     models = (r.data ?? []).map((m: any) => ({
@@ -319,6 +371,23 @@ export async function generateText(
       .map((x: any) => x.text ?? "")
       .join("\n");
     usage = r.usageMetadata ?? {};
+  } else if (provider === "mistral") {
+    const r = await json(provider, c.key, "chat/completions", {
+      model,
+      messages: [
+        { role: "system", content: instruction },
+        { role: "user", content: prompt },
+      ],
+      response_format: { type: "json_object" },
+      max_tokens: 16000,
+    });
+    if (r.choices?.[0]?.finish_reason !== "stop")
+      throw new CourseOutputError(
+        "Mistral no terminó el contenido; no se reintentó.",
+        r.usage ?? {},
+      );
+    text = r.choices[0].message?.content ?? "";
+    usage = r.usage ?? {};
   } else {
     const r = await json(provider, c.key, "messages", {
       model,
@@ -359,6 +428,44 @@ export async function speech(
     "Consulta las voces y elige una voz disponible.",
     409,
   );
+  if (provider === "cartesia") {
+    let response: Response;
+    try {
+      response = await fetch(endpoints.cartesia + "tts/bytes", {
+        method: "POST",
+        headers: {
+          ...headers(provider, c.key),
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          model_id: model,
+          transcript: text,
+          voice,
+          output_format: {
+            container: "wav",
+            encoding: "pcm_s16le",
+            sample_rate: 44100,
+          },
+        }),
+        signal: AbortSignal.timeout(180000),
+        redirect: "error",
+        cache: "no-store",
+      });
+    } catch {
+      throw new AppError(
+        "La voz se interrumpió; no se reintentó y puede haber un cargo.",
+        502,
+      );
+    }
+    demand(response.ok, safeProviderError(provider, response.status), 502);
+    const bytes = await boundedBytes(response, 16000000);
+    demand(
+      bytes.subarray(0, 4).toString() === "RIFF",
+      "Cartesia no entregó WAV válido.",
+      502,
+    );
+    return { bytes, mime: "audio/wav" };
+  }
   if (provider === "gemini") {
     const r = await json(
       provider,

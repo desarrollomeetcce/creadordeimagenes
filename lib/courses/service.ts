@@ -173,6 +173,21 @@ export async function courseOverview(u: Actor, id: string) {
       },
       orderBy: { createdAt: "desc" },
     }),
+    promos: await db.aICoursePromo.findMany({
+      where: { courseId: id },
+      select: {
+        id: true,
+        batchId: true,
+        title: true,
+        scope: true,
+        moduleId: true,
+        status: true,
+        seconds: true,
+        error: true,
+      },
+      orderBy: { createdAt: "desc" },
+      take: 200,
+    }),
     tasks: await courseTasks(u, id),
   };
 }
@@ -466,6 +481,10 @@ export async function deleteModule(
       "Hay trabajos pendientes o sin confirmar. Revisa la actividad antes de eliminar un módulo.",
       409,
     );
+    const promoAssets = await tx.aICoursePromoAsset.findMany({
+      where: { promo: { moduleId: id } },
+      select: { path: true },
+    });
     await tx.aICourseAsset.deleteMany({ where: { moduleId: id } });
     await tx.aICourseMaterial.deleteMany({ where: { moduleId: id } });
     await tx.aICourseModule.delete({ where: { id } });
@@ -490,7 +509,7 @@ export async function deleteModule(
         revision: { increment: 1 },
       },
     });
-    return [...new Set(m.assets.map((a) => a.path))];
+    return [...new Set([...m.assets, ...promoAssets].map((a) => a.path))];
   });
   const removed = await Promise.allSettled(paths.map((path) => remove(path)));
   const cleanupPending = removed.some(
@@ -590,9 +609,19 @@ export async function dispatchCourse(id: string) {
 const taskInput = z
   .object({
     requestId: z.uuid(),
-    kind: z.enum(["OUTLINE", "LESSON", "MATERIAL", "SPEECH", "IMAGE", "VIDEO"]),
+    kind: z.enum([
+      "OUTLINE",
+      "LESSON",
+      "MATERIAL",
+      "SPEECH",
+      "IMAGE",
+      "VIDEO",
+      "PROMO_SCRIPT",
+      "PROMO_SPEECH",
+    ]),
     moduleId: z.string().optional(),
     materialId: z.string().optional(),
+    promoId: z.string().optional(),
     scene: z.number().int().min(0).max(15).optional(),
     prompt: z.string().trim().max(4000).optional(),
     revision: z.number().int(),
@@ -646,7 +675,8 @@ export async function prepareTask(
         old.kind === b.kind &&
         (old.input as any).moduleId === b.moduleId &&
         (old.input as any).scene === b.scene &&
-        (old.input as any).materialId === b.materialId,
+        (old.input as any).materialId === b.materialId &&
+        (old.input as any).promoId === b.promoId,
       "La solicitud ya se utilizó para otra operación.",
       409,
     );
@@ -674,6 +704,15 @@ export async function prepareTask(
     409,
   );
   const settings = settingsSchema.parse(course.settings);
+  if (b.kind === "PROMO_SCRIPT" || b.kind === "PROMO_SPEECH") {
+    demand(
+      typeof b.promoId === "string" && buildId === b.promoId,
+      "Inicia los clips desde su acción de generación.",
+      409,
+    );
+    return (await import("./promos")).preparePromoTask(tx, u, courseId, b);
+  }
+
   const module = b.moduleId
     ? await tx.aICourseModule.findFirst({ where: { id: b.moduleId, courseId } })
     : null;
@@ -951,6 +990,8 @@ export async function processCourseTask(id: string) {
   try {
     await courseOwner({ id: t.actorId, role: "OWNER" });
     let output: unknown = null;
+    if (t.kind === "PROMO_SCRIPT" || t.kind === "PROMO_SPEECH")
+      return await (await import("./promos")).processPromoTask(t, token);
     if (t.kind === "VIDEO") {
       const lesson = lessonSchema.parse(b.module.lesson);
       const scene = lesson.scenes[b.scene];
@@ -998,20 +1039,35 @@ export async function processCourseTask(id: string) {
         b.credentialRevision,
       );
       const { adapter } = await import("../providers");
+      const capability = (
+        c.models as unknown as import("./providers").CatalogItem[]
+      ).find((m) => m.id === b.settings.imageModel)?.image;
       const r = await adapter(
-        b.settings.imageProvider === "gemini" ? "google" : "openai",
+        b.settings.imageProvider === "gemini"
+          ? "google"
+          : b.settings.imageProvider,
       ).generate(c.key, {
         model: b.settings.imageModel,
+        ...(capability ? { capability } : {}),
         prompt: courseVisualPrompt(
           settingsSchema.parse(b.settings),
           lesson.scenes[b.scene],
           lesson.scenes[b.scene].illustrationPrompt,
         ),
-        quality:
-          b.settings.imageProvider === "gemini"
+        quality: capability
+          ? capability.qualities.includes("default")
+            ? "default"
+            : capability.qualities[0]
+          : b.settings.imageProvider !== "openai"
             ? "default"
             : (b.settings.imageQuality ?? "low"),
-        size: b.settings.imageProvider === "gemini" ? "default" : "1536x1024",
+        size: capability
+          ? capability.resolutions.includes("default")
+            ? "default"
+            : capability.resolutions[0]
+          : b.settings.imageProvider === "gemini"
+            ? "default"
+            : "1536x1024",
       });
       usage = r.usage;
       assetPath = await store(r.bytes);
@@ -1051,7 +1107,7 @@ export async function processCourseTask(id: string) {
           JSON.stringify(b.module) +
           "\nDevuelve esta estructura JSON (de 4 a 16 escenas según el tiempo objetivo): " +
           JSON.stringify(exampleLesson) +
-          "\nNarración en español natural y explicativa, con suficiente profundidad; los minutos son objetivo, no inventes duración real. Cada escena debe tener pasos ordenados que se revelarán progresivamente. Para pizarra, desarrolla cada transformación matemática sin saltar al resultado. Para código, incluye código real y explica resultados esperados; nunca afirmes que lo ejecutaste. Para tablas incluye columnas y filas concretas, operaciones y resultados. Para cuento, usa relato, personajes y un illustrationPrompt detallado por escena; adecuado a la edad. Para animation, diseña acciones y transiciones explicativas originales en illustrationPrompt; la narración y los pasos explican lo que sucede, sin convertirlo en una lista de diapositivas. Para presenter, describe al profesor, su comportamiento, entorno, vestuario y recursos según el público; se materializa solo al generar video. Conserva el estilo elegido para el módulo, salvo escenas complementarias justificadas. Puedes mezclar estilos para teoría-práctica. No uses Markdown en pasos. Nunca incluyas secretos ni ejecutes código. Las fuentes solo si son identificables, no inventadas.";
+          "\nNarración en el idioma seleccionado, natural y explicativa, con suficiente profundidad; los minutos son objetivo, no inventes duración real. Cada escena debe tener pasos ordenados que se revelarán progresivamente. Para pizarra, desarrolla cada transformación matemática sin saltar al resultado. Para código, incluye código real y explica resultados esperados; nunca afirmes que lo ejecutaste. Para tablas incluye columnas y filas concretas, operaciones y resultados. Para cuento, usa relato, personajes y un illustrationPrompt detallado por escena; adecuado a la edad. Para animation, diseña acciones y transiciones explicativas originales en illustrationPrompt; la narración y los pasos explican lo que sucede, sin convertirlo en una lista de diapositivas. Para presenter, describe al profesor, su comportamiento, entorno, vestuario y recursos según el público; se materializa solo al generar video. Conserva el estilo elegido para el módulo, salvo escenas complementarias justificadas. Si el estilo es per-module, elige el formato concreto según las instrucciones de este módulo; los tipos de escena siempre son slides,whiteboard,code,spreadsheet,story,animation o presenter. Mezcla formatos solo si está autorizado en la dirección educativa. No uses Markdown en pasos. Nunca incluyas secretos ni ejecutes código. Las fuentes solo si son identificables, no inventadas.";
       else
         prompt +=
           "Crea este material independiente: " +

@@ -23,7 +23,7 @@ const providers = [
   {
     id: "fal",
     name: "fal.ai",
-    uses: "Afiches · video · varios fabricantes",
+    uses: "Imágenes FLUX y otros · video · varios fabricantes",
     link: "https://fal.ai/dashboard/keys",
   },
   {
@@ -37,6 +37,18 @@ const providers = [
     name: "Anthropic Claude",
     uses: "Texto y materiales",
     link: "https://console.anthropic.com/settings/keys",
+  },
+  {
+    id: "mistral",
+    name: "Mistral AI",
+    uses: "Texto y materiales",
+    link: "https://console.mistral.ai/api-keys",
+  },
+  {
+    id: "cartesia",
+    name: "Cartesia / Sonic",
+    uses: "Voz",
+    link: "https://play.cartesia.ai/keys",
   },
   {
     id: "elevenlabs",
@@ -273,16 +285,53 @@ function UnifiedConnections() {
                       </a>
                     </div>
                   </form>
+                  {p.id === "elevenlabs" && (
+                    <div className="ai-provider-actions">
+                      <button
+                        type="button"
+                        disabled={busy || !configured}
+                        onClick={() =>
+                          void action(async () => {
+                            await api(
+                              "courses-ai/providers/elevenlabs/discover",
+                              {},
+                            );
+                            setMessage(
+                              "Voces de ElevenLabs actualizadas. Ya puedes elegirlas en Voz del curso.",
+                            );
+                          })
+                        }
+                      >
+                        Actualizar mis voces
+                      </button>
+                      <small>
+                        Incluye las voces propias o clonadas disponibles con
+                        esta clave.
+                      </small>
+                    </div>
+                  )}
+                  {catalog?.voices?.length > 0 && (
+                    <details>
+                      <summary>
+                        Voces disponibles ({catalog.voices.length})
+                      </summary>
+                      <ul>
+                        {catalog.voices.map((v: any) => (
+                          <li key={v.id}>{v.name}</li>
+                        ))}
+                      </ul>
+                    </details>
+                  )}
                   <details>
                     <summary>Modelos disponibles y opciones</summary>
                     {p.id === "fal" && (
                       <label>
-                        Buscar modelos de video
+                        Buscar modelos de imágenes o video
                         <input
                           value={query}
                           maxLength={100}
                           onChange={(e) => setQuery(e.target.value)}
-                          placeholder="Wan, Kling, LTX, Veo…"
+                          placeholder="FLUX, Wan, Kling, LTX, Veo…"
                         />
                       </label>
                     )}
@@ -319,7 +368,7 @@ function UnifiedConnections() {
                             })
                           }
                         >
-                          Consultar texto, voz y video
+                          Consultar modelos y voces para cursos
                         </button>
                       )}
                     </div>
@@ -383,7 +432,16 @@ function UnifiedConnections() {
                     </div>
                   )}
                   {p.id === "elevenlabs" && (
-                    <VoiceCloning disabled={!configured} />
+                    <VoiceCloning
+                      disabled={!configured}
+                      onCloned={async () => {
+                        await api(
+                          "courses-ai/providers/elevenlabs/discover",
+                          {},
+                        );
+                        await load();
+                      }}
+                    />
                   )}
                 </div>
               )}
@@ -408,7 +466,13 @@ function UnifiedConnections() {
     </>
   );
 }
-function VoiceCloning({ disabled }: { disabled: boolean }) {
+function VoiceCloning({
+  disabled,
+  onCloned,
+}: {
+  disabled: boolean;
+  onCloned: () => Promise<void>;
+}) {
   const [busy, setBusy] = useState(false),
     [message, setMessage] = useState("");
   return (
@@ -429,10 +493,18 @@ function VoiceCloning({ disabled }: { disabled: boolean }) {
             const b = await r.json();
             if (!r.ok) throw Error(b.error);
             form.reset();
+            try {
+              await onCloned();
+            } catch {
+              setMessage(
+                "Voz creada. No se pudo importar la lista; usa Actualizar mis voces antes de volver a clonar.",
+              );
+              return;
+            }
             setMessage(
               b.requiresVerification
                 ? "Voz creada; completa la verificación de ElevenLabs."
-                : "Voz creada. Consulta de nuevo las voces para seleccionarla.",
+                : "Voz creada e importada. Ya puedes elegirla en el curso.",
             );
           } catch (e) {
             setMessage(e instanceof Error ? e.message : "No se pudo clonar.");

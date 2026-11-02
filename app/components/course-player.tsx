@@ -40,6 +40,86 @@ export function drawScene(
   image?: HTMLImageElement,
   clip?: HTMLVideoElement,
 ) {
+  if (ctx.canvas.height > ctx.canvas.width) {
+    ctx.setTransform(
+      ctx.canvas.width / 720,
+      0,
+      0,
+      ctx.canvas.height / 1280,
+      0,
+      0,
+    );
+    ctx.fillStyle = "#142032";
+    ctx.fillRect(0, 0, 720, 1280);
+    ctx.fillStyle = "#bca2ff";
+    ctx.font = "600 20px system-ui";
+    ctx.fillText(String(number + 1).padStart(2, "0") + " / " + total, 44, 46);
+    ctx.fillStyle = "#ffffff";
+    ctx.font = "bold 32px system-ui";
+    wrap(ctx, scene.title, 44, 100, 632, 42, 3);
+    let y = 240;
+    if (clip && clip.readyState >= 2) {
+      const scale = Math.min(632 / clip.videoWidth, 760 / clip.videoHeight);
+      ctx.drawImage(
+        clip,
+        (720 - clip.videoWidth * scale) / 2,
+        220,
+        clip.videoWidth * scale,
+        clip.videoHeight * scale,
+      );
+      y = 1030;
+    } else if (image) {
+      const ratio = Math.min(632 / image.width, 450 / image.height);
+      ctx.drawImage(
+        image,
+        (720 - image.width * ratio) / 2,
+        210,
+        image.width * ratio,
+        image.height * ratio,
+      );
+      y = 710;
+    }
+    const visible = scene.steps.slice(
+      0,
+      Math.max(1, Math.ceil(progress * scene.steps.length)),
+    );
+    ctx.font = "26px system-ui";
+    ctx.fillStyle = "#f2f5ff";
+    for (const step of visible) {
+      y = wrap(ctx, "• " + step, 44, y, 632, 36, 3) + 18;
+      if (y > 1120) break;
+    }
+    if (scene.code && y < 1050) {
+      ctx.font = "20px monospace";
+      ctx.fillStyle = "#81e6c5";
+      wrap(
+        ctx,
+        scene.code,
+        44,
+        y + 12,
+        632,
+        28,
+        Math.max(1, Math.floor((1160 - y) / 28)),
+      );
+    } else if (scene.columns.length && y < 1050) {
+      ctx.font = "21px monospace";
+      wrap(
+        ctx,
+        [
+          scene.columns.join(" | "),
+          ...scene.rows.map((r) => r.join(" | ")),
+        ].join("\n"),
+        44,
+        y,
+        632,
+        30,
+        Math.max(1, Math.floor((1160 - y) / 30)),
+      );
+    }
+    ctx.fillStyle = "#a486ed";
+    ctx.fillRect(0, 1268, 720 * Math.min(1, progress), 12);
+    return;
+  }
   ctx.setTransform(
     ctx.canvas.width / 1280,
     0,
@@ -279,12 +359,14 @@ export function CoursePlayer({
   revision,
   title,
   resolution = "720p",
+  aspect = "16:9",
 }: {
   lesson: Lesson;
   assets: Asset[];
   revision: number;
   title: string;
   resolution?: "720p" | "1080p";
+  aspect?: "16:9" | "9:16";
 }) {
   const canvas = useRef<HTMLCanvasElement>(null),
     stop = useRef(false),
@@ -348,7 +430,7 @@ export function CoursePlayer({
     return () => {
       active = false;
     };
-  }, [scene, busy, lesson, assets, revision]);
+  }, [scene, busy, lesson, assets, revision, resolution, aspect]);
   async function play(exporting: boolean) {
     if (busy) return;
     stop.current = false;
@@ -508,8 +590,24 @@ export function CoursePlayer({
     <div className="course-player">
       <canvas
         ref={canvas}
-        width={resolution === "1080p" ? 1920 : 1280}
-        height={resolution === "1080p" ? 1080 : 720}
+        width={
+          aspect === "9:16"
+            ? resolution === "1080p"
+              ? 1080
+              : 720
+            : resolution === "1080p"
+              ? 1920
+              : 1280
+        }
+        height={
+          aspect === "9:16"
+            ? resolution === "1080p"
+              ? 1920
+              : 1280
+            : resolution === "1080p"
+              ? 1080
+              : 720
+        }
         aria-label={"Presentación: " + lesson.scenes[scene].title}
       />
       <div className="course-toolbar">

@@ -13,7 +13,7 @@ export const resourceKinds = [
   "videoScenes",
 ] as const;
 export const resourceLabels: Record<string, string> = {
-  video: "Videoclase narrada",
+  video: "Videoclase",
   audio: "Audio de la clase",
   slides: "Presentación",
   guide: "Guía",

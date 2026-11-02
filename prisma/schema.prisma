@@ -1296,6 +1296,7 @@ model AICourse {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   builds AICourseBuild[]
+  promos AICoursePromo[]
   references AICourseReference[]
   modules AICourseModule[]
   tasks AICourseTask[]
@@ -1315,6 +1316,7 @@ model AICourseModule {
   lesson Json @default("{}")
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+  promos AICoursePromo[]
   materials AICourseMaterial[]
   assets AICourseAsset[]
   @@index([courseId,position])
@@ -1384,6 +1386,8 @@ model AICourseDefaults {
 
 model AICourseReference {
   id String @id @default(cuid())
+  kind String @default("TEXT")
+  revision Int @default(1)
   courseId String
   course AICourse @relation(fields:[courseId],references:[id],onDelete:Cascade)
   name String
@@ -1429,4 +1433,44 @@ model AICourseBuild {
  createdAt DateTime @default(now())
  updatedAt DateTime @updatedAt
  @@index([courseId,status])
+}
+
+model AICoursePromo {
+ id String @id @default(cuid())
+ courseId String
+ course AICourse @relation(fields:[courseId],references:[id],onDelete:Cascade)
+ moduleId String?
+ module AICourseModule? @relation(fields:[moduleId],references:[id],onDelete:Cascade)
+ actorId String
+ requestId String @unique
+ batchId String
+ scope String
+ title String
+ seconds Int
+ cta String
+ status String @default("PENDING")
+ settings Json
+ context Json
+ credentialRevisions Json
+ lesson Json @default("{}")
+ revision Int @default(1)
+ currentTaskId String?
+ error String?
+ createdAt DateTime @default(now())
+ updatedAt DateTime @updatedAt
+ assets AICoursePromoAsset[]
+ @@index([courseId,status])
+ @@index([batchId])
+}
+model AICoursePromoAsset {
+ id String @id @default(cuid())
+ promoId String
+ promo AICoursePromo @relation(fields:[promoId],references:[id],onDelete:Cascade)
+ revision Int
+ scene Int
+ kind String
+ path String
+ mime String
+ createdAt DateTime @default(now())
+ @@unique([promoId,revision,scene,kind])
 }

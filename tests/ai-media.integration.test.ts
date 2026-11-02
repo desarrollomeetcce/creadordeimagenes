@@ -91,7 +91,7 @@ test("Ajustes unificados, carpetas, catálogos y video asíncrono aislado", asyn
             supportedGenerationMethods: ["predictLongRunning"],
           },
           {
-            name: "models/gemini-3.1-flash-image-preview",
+            name: "models/gemini-3.1-flash-image",
             supportedGenerationMethods: ["generateContent"],
           },
         ],

@@ -61,24 +61,30 @@ export async function courseConnections() {
       async (p) => [p, await sharedSource(p, false)] as const,
     ),
   );
-  return ["openai", "gemini", "fal", "anthropic", "elevenlabs"].flatMap(
-    (provider) => {
-      const c = rows.find((c) => c.provider === provider),
-        s = sources.find(([p]) => p === provider)?.[1],
-        shared = !c || c.shared,
-        ready = !!c && (!shared || c.sourceRevision === s?.revision);
-      if (!c && !s) return [];
-      return [
-        {
-          provider,
-          maskedKey: shared ? (s?.maskedKey ?? null) : c!.maskedKey,
-          shared,
-          hasShared: !!s,
-          verifiedAt: ready ? c?.verifiedAt : null,
-          models: ready ? (c?.models ?? []) : [],
-          voices: ready ? (c?.voices ?? []) : [],
-        },
-      ];
-    },
-  );
+  return [
+    "openai",
+    "gemini",
+    "fal",
+    "anthropic",
+    "elevenlabs",
+    "mistral",
+    "cartesia",
+  ].flatMap((provider) => {
+    const c = rows.find((c) => c.provider === provider),
+      s = sources.find(([p]) => p === provider)?.[1],
+      shared = !c || c.shared,
+      ready = !!c && (!shared || c.sourceRevision === s?.revision);
+    if (!c && !s) return [];
+    return [
+      {
+        provider,
+        maskedKey: shared ? (s?.maskedKey ?? null) : c!.maskedKey,
+        shared,
+        hasShared: !!s,
+        verifiedAt: ready ? c?.verifiedAt : null,
+        models: ready ? (c?.models ?? []) : [],
+        voices: ready ? (c?.voices ?? []) : [],
+      },
+    ];
+  });
 }

@@ -9,7 +9,8 @@ import { courseOwner } from "./service";
 import type { Prisma } from "@prisma/client";
 export const referenceInput = z
   .object({
-    name: z.string().trim().min(1).max(200),
+    name: z.string().trim().min(1).max(200).optional(),
+    kind: z.enum(["TEXT", "WEB", "FILE"]).optional(),
     text: z.string().trim().min(30).max(1_000_000),
     url: z
       .url()
@@ -81,11 +82,13 @@ export async function listReferences(
     select: {
       id: true,
       name: true,
+      kind: true,
+      revision: true,
       url: true,
       characters: true,
       createdAt: true,
     },
-    orderBy: { createdAt: "desc" },
+    orderBy: { createdAt: "asc" },
   });
 }
 export async function addReference(
@@ -116,7 +119,8 @@ export async function addReference(
       const ref = await tx.aICourseReference.create({
         data: {
           courseId,
-          name: b.name,
+          name: b.name ?? (b.url ? new URL(b.url).hostname : "Texto pegado"),
+          kind: b.url ? "WEB" : (b.kind ?? "TEXT"),
           url: b.url,
           digest,
           characters: b.text.length,
@@ -191,12 +195,130 @@ export async function importWebReference(
   input: unknown,
 ) {
   await referenceAccess(u, courseId);
-  await rateLimit("courses:reference-web:" + u.id, 12);
+  await rateLimit("courses:reference-web:" + u.id, 180);
   const b = z
-    .object({ name: z.string().trim().min(1).max(200), url: z.url().max(2000) })
+    .object({
+      name: z.string().trim().min(1).max(200).optional(),
+      url: z.url().max(2000),
+    })
     .strict()
     .parse(input);
   const { readWebReference } = await import("./reference-web");
   const r = await readWebReference(b.url);
   return addReference(u, courseId, { name: b.name, ...r });
+}
+
+export async function referenceDetail(
+  u: { id: string; role: string },
+  courseId: string,
+  id: string,
+) {
+  await referenceAccess(u, courseId);
+  const ref = await db.aICourseReference.findFirst({
+    where: { id, courseId },
+    include: {
+      chunks: {
+        orderBy: { position: "asc" },
+        select: { text: true, position: true },
+      },
+    },
+  });
+  demand(ref, "Referencia no encontrada.", 404);
+  const { chunks, ...meta } = ref;
+  return {
+    ...meta,
+    text: chunks
+      .map((c, i) => (i < chunks.length - 1 ? c.text.slice(0, 3800) : c.text))
+      .join(""),
+  };
+}
+export async function editReference(
+  u: { id: string; role: string },
+  courseId: string,
+  id: string,
+  input: unknown,
+) {
+  await referenceAccess(u, courseId);
+  const b = z
+    .object({
+      revision: z.number().int(),
+      text: z.string().trim().min(30).max(1_000_000).optional(),
+      url: z.string().max(2000).optional(),
+    })
+    .strict()
+    .parse(input);
+  const old = await db.aICourseReference.findFirst({ where: { id, courseId } });
+  demand(old, "Referencia no encontrada.", 404);
+  demand(
+    old.kind !== "FILE",
+    "Los documentos subidos se reemplazan adjuntándolos de nuevo.",
+    409,
+  );
+  let text = b.text,
+    url = old.url;
+  if (old.kind === "WEB") {
+    demand(b.url, "Indica el enlace.");
+    const { readWebReference } = await import("./reference-web");
+    const fresh = await readWebReference(b.url);
+    text = fresh.text;
+    url = fresh.url;
+  } else demand(text, "Pega el texto.");
+  const digest = createHash("sha256").update(text!).digest("hex");
+  return db.$transaction(
+    async (tx) => {
+      await writable(tx, u, courseId);
+      const current = await tx.aICourseReference.findFirst({
+        where: { id, courseId },
+      });
+      demand(
+        current?.revision === b.revision,
+        "La referencia cambió. Vuelve a abrirla.",
+        409,
+      );
+      const duplicate = await tx.aICourseReference.findUnique({
+        where: { courseId_digest: { courseId, digest } },
+        select: { id: true },
+      });
+      demand(
+        !duplicate || duplicate.id === id,
+        "Esta información ya está guardada en otra referencia.",
+        409,
+      );
+      const total = await tx.aICourseReference.aggregate({
+        where: { courseId },
+        _sum: { characters: true },
+      });
+      demand(
+        (total._sum.characters ?? 0) - current.characters + text!.length <=
+          10_000_000,
+        "El banco de texto alcanzó su capacidad.",
+        413,
+      );
+      await tx.aICourseReferenceChunk.deleteMany({
+        where: { referenceId: id },
+      });
+      await tx.aICourseReference.update({
+        where: { id },
+        data: {
+          url,
+          ...(old.kind === "WEB" && url ? { name: new URL(url).hostname } : {}),
+          digest,
+          characters: text!.length,
+          revision: { increment: 1 },
+          chunks: {
+            create: splitReferenceText(text!).map((text, position) => ({
+              text,
+              position,
+            })),
+          },
+        },
+      });
+      await tx.aICourse.update({
+        where: { id: courseId },
+        data: { revision: { increment: 1 } },
+      });
+      return { ok: true };
+    },
+    { timeout: 15000 },
+  );
 }

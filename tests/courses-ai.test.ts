@@ -278,3 +278,30 @@ test("Infografía exporta bloques visuales y escapa contenido", () => {
   assert.match(html, /&lt;script&gt;/);
   assert.doesNotMatch(html, /<img>/);
 });
+
+import { splitReferenceLinks } from "../app/components/course-references";
+test("Referencias múltiples separan comas, espacios y líneas sin romper comas internas de URL", () => {
+  assert.deepEqual(
+    splitReferenceLinks(
+      "https://example.org/a, https://example.org/b\nhttps://example.org/c https://example.org/a",
+    ),
+    ["https://example.org/a", "https://example.org/b", "https://example.org/c"],
+  );
+  assert.deepEqual(
+    splitReferenceLinks("https://example.org/?q=a,b,https://example.org/otro"),
+    ["https://example.org/?q=a,b", "https://example.org/otro"],
+  );
+});
+test("Configuración admite idiomas, estilos por módulo y proveedores opcionales sin generar", () => {
+  const s = settingsSchema.parse({
+    style: "per-module",
+    language: "English",
+    provider: "mistral",
+    voiceProvider: "cartesia",
+    imageProvider: "fal",
+    exportAspect: "9:16",
+  });
+  assert.equal(s.promoScope, "none");
+  assert.equal(s.exportAspect, "9:16");
+  assert.equal(s.style, "per-module");
+});

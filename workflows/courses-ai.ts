@@ -83,3 +83,35 @@ export async function courseBuildWorkflow(id: string) {
   } catch {}
   await buildInterrupted(id);
 }
+
+async function nextPromo(id: string) {
+  "use step";
+  return (await import("../lib/courses/promos")).nextPromoTask(id);
+}
+nextPromo.maxRetries = 0;
+async function stopInterruptedPromos(ids: string[]) {
+  "use step";
+  await (await import("../lib/courses/promos")).interruptPromos(ids);
+}
+stopInterruptedPromos.maxRetries = 0;
+export async function coursePromosWorkflow(ids: string[]) {
+  "use workflow";
+  try {
+    for (const id of ids) {
+      let complete = false;
+      for (let i = 0; i < 1000; i++) {
+        const n = await nextPromo(id);
+        if (n.state === "DONE") {
+          complete = true;
+          break;
+        }
+        if (n.state === "FAIL") throw Error("Clip incompleto");
+        if (n.taskId) await advance(n.taskId);
+        await sleep("5s");
+      }
+      if (!complete) throw Error("Clip sin confirmar");
+    }
+  } catch {
+    await stopInterruptedPromos(ids);
+  }
+}

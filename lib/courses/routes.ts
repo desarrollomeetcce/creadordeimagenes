@@ -62,6 +62,15 @@ export async function courseRoutes(
       return send(await build.startBuild(u, p[0], await body()), 202);
     if (method === "DELETE") return send(await build.stopBuild(u, p[0]));
   }
+  if (p[1] === "promos") {
+    const promos = await import("./promos");
+    if (p.length === 2 && method === "POST")
+      return send(await promos.startPromos(u, p[0], await body()), 202);
+    if (p.length === 3 && method === "GET")
+      return send(await promos.promoDetail(u, p[0], p[2]));
+    if (p.length === 3 && method === "DELETE")
+      return send(await promos.stopPromos(u, p[0], p[2]));
+  }
   if (p.length === 1 && p[0] === "library") {
     const library = await import("./library");
     if (method === "GET")
@@ -78,7 +87,7 @@ export async function courseRoutes(
       return send(await refs.listReferences(u, p[0]));
     if (p.length === 2 && method === "POST") {
       await refs.referenceAccess(u, p[0]);
-      await rateLimit("courses:reference-text:" + u.id, 30);
+      await rateLimit("courses:reference-text:" + u.id, 180);
       const { boundedUploadBody } = await import("../large-uploads");
       const data = JSON.parse(
         (await boundedUploadBody(req, 7_000_000)).toString("utf8"),
@@ -89,7 +98,7 @@ export async function courseRoutes(
       return send(await refs.importWebReference(u, p[0], await body()), 201);
     if (p.length === 3 && p[2] === "file" && method === "POST") {
       await refs.referenceAccess(u, p[0]);
-      await rateLimit("courses:reference-file:" + u.id, 6);
+      await rateLimit("courses:reference-file:" + u.id, 90);
       const { boundedUploadBody } = await import("../large-uploads");
       const bytes = await boundedUploadBody(req, 16 * 1024 * 1024);
       const name = decodeURIComponent(
@@ -108,10 +117,18 @@ export async function courseRoutes(
         "No hay texto extraíble. Si es un escaneo, realiza OCR y adjunta el texto.",
       );
       return send(
-        await refs.addReference(u, p[0], { name, text: checked.text }),
+        await refs.addReference(u, p[0], {
+          name,
+          kind: "FILE",
+          text: checked.text,
+        }),
         201,
       );
     }
+    if (p.length === 3 && method === "GET")
+      return send(await refs.referenceDetail(u, p[0], p[2]));
+    if (p.length === 3 && method === "PATCH")
+      return send(await refs.editReference(u, p[0], p[2], await body()));
     if (p.length === 3 && method === "DELETE")
       return send(await refs.removeReference(u, p[0], p[2]));
   }
@@ -179,6 +196,19 @@ export async function courseRoutes(
     const a = await db.aICourseAsset.findFirst({
       where: { id: p[1], module: { course: { archivedAt: null } } },
     });
+    if (!a) {
+      const clip = await db.aICoursePromoAsset.findFirst({
+        where: { id: p[1], promo: { course: { archivedAt: null } } },
+      });
+      demand(clip, "Archivo no encontrado.", 404);
+      return new NextResponse(new Uint8Array(await load(clip.path)), {
+        headers: {
+          "Content-Type": clip.mime,
+          "Cache-Control": "private, no-store",
+          "X-Content-Type-Options": "nosniff",
+        },
+      });
+    }
     demand(a, "Recurso no encontrado.", 404);
     const bytes = await load(a.path);
     return new NextResponse(new Uint8Array(bytes), {

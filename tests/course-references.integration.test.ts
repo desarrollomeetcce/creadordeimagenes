@@ -17,6 +17,8 @@ import {
   listReferences,
   removeReference,
   referenceContext,
+  referenceDetail,
+  editReference,
 } from "../lib/courses/references";
 import { saveCredential, discover } from "../lib/courses/providers";
 import { courseRoutes } from "../lib/courses/routes";
@@ -227,6 +229,53 @@ test("Referencias: banco de texto aislado y contexto pertinente sin archivar ori
           ((await courseDetail(u, courseId)).settings as any).libraryGroup,
           "families",
         );
+      },
+    );
+    await t.test(
+      "Textos sin nombre, tipos separados y edición con revisión sin originales",
+      async () => {
+        const r = await addReference(u, courseId, {
+          text: "Texto independiente sin nombre para la referencia. ".repeat(
+            200,
+          ),
+        });
+        const meta = (await listReferences(u, courseId)).find(
+          (x) => x.id === r.id,
+        )!;
+        assert.equal(meta.kind, "TEXT");
+        assert.equal(meta.name, "Texto pegado");
+        const opened = await referenceDetail(u, courseId, r.id);
+        assert.equal(
+          opened.text,
+          "Texto independiente sin nombre para la referencia. "
+            .repeat(200)
+            .trim(),
+        );
+        await editReference(u, courseId, r.id, {
+          revision: meta.revision,
+          text: "Texto editado con información específica del módulo. ".repeat(
+            3,
+          ),
+        });
+        await assert.rejects(
+          editReference(u, courseId, r.id, {
+            revision: meta.revision,
+            text: "No se debe pisar el cambio anterior. ".repeat(3),
+          }),
+          (e: any) => e.status === 409,
+        );
+        const file = (await listReferences(u, courseId)).find(
+          (x) => x.kind === "FILE",
+        )!;
+        assert(file);
+        await assert.rejects(
+          editReference(u, courseId, file.id, {
+            revision: file.revision,
+            text: "Cambiar un documento guardado no se permite. ".repeat(2),
+          }),
+          (e: any) => e.status === 409,
+        );
+        assert(!("text" in (await listReferences(u, courseId))[0]));
       },
     );
   } finally {
