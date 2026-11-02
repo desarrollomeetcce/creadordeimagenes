@@ -1,3 +1,4 @@
+import { resourcePlanSchema, defaultResources } from "./resources";
 import { z } from "zod";
 export const styles = [
   "slides",
@@ -19,6 +20,8 @@ export const styleLabels: Record<string, string> = {
 };
 export const settingsSchema = z
   .object({
+    resources: resourcePlanSchema.default(defaultResources),
+    mixStyles: z.boolean().default(false),
     audience: z
       .enum([
         "adults",
@@ -46,7 +49,7 @@ export const settingsSchema = z
       .min(2)
       .max(60)
       .default("Español latinoamericano"),
-    moduleCount: z.number().int().min(1).max(24).default(6),
+    moduleCount: z.number().int().min(1).max(100).default(6),
     minutes: z.number().int().min(1).max(60).default(10),
     provider: z.enum(["openai", "gemini", "anthropic"]).default("openai"),
     model: z.string().trim().max(150).default(""),
@@ -82,7 +85,8 @@ export const moduleInput = z.object({
   title: z.string().trim().min(1).max(200),
   brief: z.string().max(12000).default(""),
   minutes: z.number().int().min(1).max(60).default(10),
-  style: z.enum(styles).default("slides"),
+  style: z.enum([...styles, "inherit"]).default("inherit"),
+  mixStyles: z.boolean().nullable().default(null),
 });
 export const sceneSchema = z
   .object({
@@ -110,11 +114,19 @@ export const lessonSchema = z
   .strict();
 export type Lesson = z.infer<typeof lessonSchema>;
 export const outlineSchema = z
-  .object({ modules: z.array(moduleInput).min(1).max(24) })
+  .object({ modules: z.array(moduleInput).min(1).max(200) })
   .strict();
 export const materialInput = z.object({
   title: z.string().trim().min(1).max(200),
-  kind: z.enum(["guide", "book", "workshop", "exam", "slides"]),
+  kind: z.enum([
+    "guide",
+    "book",
+    "workshop",
+    "exam",
+    "slides",
+    "bibliography",
+    "infographic",
+  ]),
   instructions: z.string().max(8000).default(""),
 });
 export const materialOutput = z

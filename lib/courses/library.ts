@@ -5,6 +5,7 @@ import { db } from "../db";
 import { demand } from "../errors";
 import { courseOwner } from "./service";
 import {
+  foldCourseSearch,
   defaultCategories,
   categoryColors,
   type LibraryCategory,
@@ -190,18 +191,29 @@ export async function readLibrary(
     .min(1)
     .max(100000)
     .parse(params.get("page") ?? 1);
+  const pageSize = z.coerce
+    .number()
+    .refine((n) => [25, 50, 65, 100].includes(n), "Tamaño de página inválido.")
+    .parse(params.get("size") ?? 50);
+  const query = z
+    .string()
+    .trim()
+    .max(120)
+    .parse(params.get("q") ?? "");
+  const folded = foldCourseSearch(query).replace(/[\\%_]/g, "\\$&");
+  const search = Prisma.sql`AND translate(lower(c.title),'áàâäãåéèêëíìîïóòôöõúùûüñç','aaaaaaeeeeiiiiooooouuuunc') LIKE ${"%" + folded + "%"}`;
   return db.$transaction(
     async (tx) => {
       const totals = await tx.$queryRaw<Array<{ total: number }>>(
-        Prisma.sql`SELECT count(*)::int AS total FROM "AICourse" c WHERE c."archivedAt" IS NULL AND ${groupSQL}=${id}`,
+        Prisma.sql`SELECT count(*)::int AS total FROM "AICourse" c WHERE c."archivedAt" IS NULL AND ${groupSQL}=${id} ${search}`,
       );
       const total = totals[0].total,
-        last = Math.max(1, Math.ceil(total / 50)),
+        last = Math.max(1, Math.ceil(total / pageSize)),
         actualPage = Math.min(page, last);
       const courses = await tx.$queryRaw(
-        Prisma.sql`SELECT ${summarySQL} FROM "AICourse" c WHERE c."archivedAt" IS NULL AND ${groupSQL}=${id} ORDER BY c."updatedAt" DESC,c.id DESC LIMIT 50 OFFSET ${(actualPage - 1) * 50}`,
+        Prisma.sql`SELECT ${summarySQL} FROM "AICourse" c WHERE c."archivedAt" IS NULL AND ${groupSQL}=${id} ${search} ORDER BY c."updatedAt" DESC,c.id DESC LIMIT ${pageSize} OFFSET ${(actualPage - 1) * pageSize}`,
       );
-      return { groupId: id, page: actualPage, total, courses };
+      return { groupId: id, page: actualPage, pageSize, query, total, courses };
     },
     { isolationLevel: "RepeatableRead" },
   );

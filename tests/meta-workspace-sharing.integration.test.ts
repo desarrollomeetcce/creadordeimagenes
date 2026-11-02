@@ -130,6 +130,15 @@ test("Compartir Meta Ads separa visualizar/editar de los roles generales", async
     return { success: true };
   };
   try {
+    await db.metaWorkspaceGrant.deleteMany({});
+    await db.metaWorkspaceSharing.upsert({
+      where: { id: "global" },
+      create: { id: "global" },
+      update: {
+        pinnedAccountIds: Prisma.DbNull,
+        primaryAccountIds: Prisma.DbNull,
+      },
+    });
     await t.test(
       "Solo OWNER comparte; no cambia roles ni permite duplicados, cuentas no habilitadas o revisión antigua",
       async () => {

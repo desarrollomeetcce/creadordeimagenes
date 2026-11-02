@@ -777,6 +777,12 @@ export function ProductsCatalog() {
       Compartir hoja
     </button>
   ) : null;
+  if (!access)
+    return (
+      <section className="products-catalog effectiveness-workbook">
+        <p role="status">Verificando acceso a Efectividad…</p>
+      </section>
+    );
   if (access && !isOwner && !permission(documentScope))
     return (
       <section ref={root} className="products-catalog effectiveness-workbook">
@@ -939,6 +945,7 @@ export function ProductsCatalog() {
       )}
       {table && !totals && !advisorSheet && !inventorySheet && (
         <MetaEffectiveness
+          readOnly={!canEdit}
           key={table.id}
           inventoryLists={specials.filter((s) => s.kind === "INVENTORY")}
           view={view}

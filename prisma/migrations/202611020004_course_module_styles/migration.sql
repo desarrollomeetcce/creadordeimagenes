@@ -1,0 +1,1 @@
+ALTER TABLE "AICourseModule" ADD COLUMN "mixStyles" BOOLEAN;

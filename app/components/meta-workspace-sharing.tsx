@@ -76,8 +76,9 @@ export function MetaWorkspaceSharing({
             Compartir {scope ? (data?.name ?? "Efectividad") : "Meta Ads"}
           </h2>
           <p>
-            Decide quién puede consultar el rendimiento y quién puede
-            administrar Meta Ads.
+            {scope
+              ? "Decide quién puede ver o editar este documento de Efectividad. El rol general de la persona no cambia."
+              : "Decide quién puede consultar el rendimiento y quién puede administrar Meta Ads."}
           </p>
         </div>
         <button
@@ -350,7 +351,12 @@ export function MetaWorkspaceSharing({
                   {
                     revision: data.revision,
                     grants,
-                    ...(scope ? { scope } : { pinnedAccountIds,...(targetUserId?{preservePins:true}:{}) }),
+                    ...(scope
+                      ? { scope }
+                      : {
+                          pinnedAccountIds,
+                          ...(targetUserId ? { preservePins: true } : {}),
+                        }),
                   },
                 )
                   .then(onClose)

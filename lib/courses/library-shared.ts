@@ -35,6 +35,8 @@ export type LibraryConfig = { revision: number; groups: LibraryCategory[] };
 export type CategoryPage = {
   groupId: CourseGroupId;
   page: number;
+  pageSize: number;
+  query: string;
   total: number;
   courses: CourseSummary[];
 };
@@ -51,4 +53,12 @@ export function moveCategory(
   result.splice(start, 1);
   result.splice(end, 0, from);
   return result;
+}
+
+export function foldCourseSearch(value: string) {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLocaleLowerCase("es")
+    .trim();
 }

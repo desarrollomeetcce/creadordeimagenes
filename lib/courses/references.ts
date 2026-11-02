@@ -1,3 +1,4 @@
+import { assertNoBuild } from "./builds";
 import { publicReferenceURL } from "./reference-web";
 import { createHash } from "node:crypto";
 import { z } from "zod";
@@ -44,6 +45,7 @@ async function writable(
 ) {
   await tx.$executeRaw`SELECT pg_advisory_xact_lock(893127)`;
   await tx.$queryRaw`SELECT id FROM "User" WHERE id=${u.id} FOR SHARE`;
+  await assertNoBuild(tx, courseId);
   const user = await tx.user.findUnique({ where: { id: u.id } });
   demand(
     user?.role === "OWNER" &&

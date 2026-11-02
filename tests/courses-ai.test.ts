@@ -18,7 +18,7 @@ test("Cursos: configuraciones y escenas conservan pasos independientes y límite
   assert.equal(s.approach, "mixed");
   assert.equal(s.audience, "professionals");
   assert.equal(s.model, "");
-  assert.throws(() => settingsSchema.parse({ moduleCount: 100 }));
+  assert.throws(() => settingsSchema.parse({ moduleCount: 201 }));
   assert.throws(() => settingsSchema.parse({ provider: "unknown" }));
   assert.throws(() =>
     courseInput.parse({ title: "", prompt: "x", settings: {} }),
@@ -212,4 +212,69 @@ test("Referencias web: rechaza redes internas, credenciales y protocolos no perm
     ),
     "Aprender & practicar",
   );
+});
+
+import { parseModuleSelection } from "../lib/courses/resources";
+test("Cursos: recursos aceptan todos o rangos de módulos sin duplicados ni números ajenos", () => {
+  const modules = Array.from({ length: 6 }, (_, i) => ({ id: "m" + (i + 1) }));
+  assert.equal(parseModuleSelection("Todos", modules), "all");
+  assert.deepEqual(parseModuleSelection("1, 3-5, 3", modules), [
+    "m1",
+    "m3",
+    "m4",
+    "m5",
+  ]);
+  assert.throws(() => parseModuleSelection("0,2", modules));
+  assert.throws(() => parseModuleSelection("2-8", modules));
+  assert.throws(() => parseModuleSelection("5-3", modules));
+});
+
+import {
+  resourceSelectionState,
+  updateResourceSelection,
+  defaultResources,
+} from "../lib/courses/resources";
+test("Recursos por selección: cambiar un módulo conserva los demás y detecta mezcla", () => {
+  const ms = [{ id: "a" }, { id: "b" }, { id: "c" }];
+  let p = updateResourceSelection(defaultResources, "video", ms, ["a"], false);
+  assert.deepEqual(p.find((r) => r.kind === "video")?.modules, ["b", "c"]);
+  assert.equal(
+    resourceSelectionState(
+      p.find((r) => r.kind === "video"),
+      ms,
+      "all",
+    ),
+    "some",
+  );
+  p = updateResourceSelection(p, "exam", ms, ["a"], true);
+  assert.deepEqual(p.find((r) => r.kind === "exam")?.modules, ["a"]);
+  assert.equal(
+    resourceSelectionState(
+      p.find((r) => r.kind === "exam"),
+      ms,
+      ["a"],
+    ),
+    "all",
+  );
+  assert.equal(
+    resourceSelectionState(
+      p.find((r) => r.kind === "exam"),
+      ms,
+      ["c"],
+    ),
+    "none",
+  );
+  p = updateResourceSelection(p, "video", ms, ["a"], true);
+  assert.equal(p.find((r) => r.kind === "video")?.modules, "all");
+});
+test("Infografía exporta bloques visuales y escapa contenido", () => {
+  const html = documentHTML(
+    { title: "Mapa", sections: [{ title: "<script>", body: "<img>" }] },
+    false,
+    false,
+    true,
+  );
+  assert.match(html, /grid-template-columns:repeat\(2/);
+  assert.match(html, /&lt;script&gt;/);
+  assert.doesNotMatch(html, /<img>/);
 });

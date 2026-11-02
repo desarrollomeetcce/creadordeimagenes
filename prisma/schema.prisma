@@ -1295,6 +1295,7 @@ model AICourse {
   archivedAt DateTime?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+  builds AICourseBuild[]
   references AICourseReference[]
   modules AICourseModule[]
   tasks AICourseTask[]
@@ -1308,6 +1309,7 @@ model AICourseModule {
   brief String @default("")
   minutes Int @default(10)
   style String @default("slides")
+  mixStyles Boolean?
   position Int
   revision Int @default(1)
   lesson Json @default("{}")
@@ -1407,4 +1409,24 @@ model AICourseLibrary {
   revision Int @default(1)
   state Json
   updatedAt DateTime @updatedAt
+}
+
+model AICourseBuild {
+ id String @id @default(cuid())
+ courseId String
+ course AICourse @relation(fields:[courseId],references:[id],onDelete:Cascade)
+ actorId String
+ requestId String @unique
+ status String @default("PENDING")
+ resources Json
+ credentialRevisions Json
+ moduleIds Json
+ moduleIndex Int @default(0)
+ totalModules Int @default(0)
+ completed Int @default(0)
+ currentTaskId String?
+ error String?
+ createdAt DateTime @default(now())
+ updatedAt DateTime @updatedAt
+ @@index([courseId,status])
 }

@@ -49,15 +49,20 @@ export function documentHTML(
   doc: DocumentContent,
   answers = false,
   slides = false,
+  infographic = false,
 ) {
   return (
     '<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>' +
     escape(doc.title) +
     "</title><style>body{font:16px/1.7 system-ui,sans-serif;color:#172638;max-width:860px;margin:40px auto;padding:24px}h1{color:#5b3fc1}h2{color:#176b79}p{white-space:pre-wrap;overflow-wrap:anywhere}section{break-inside:avoid;" +
     (slides ? "break-after:page;min-height:65vh;" : "") +
-    "}header{border-bottom:3px solid #8c6ee8}@page{margin:18mm} @media print{body{margin:0;padding:0;font-size:12pt}}</style></head><body><header><h1>" +
+    "}" +
+    (infographic
+      ? "body{max-width:1000px;background:#f3f5fc}main{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;margin-top:24px}main section{background:white;border-radius:18px;padding:20px;border-top:6px solid #5b3fc1}main section:nth-child(even){border-color:#176b79}h2{font-size:22px;line-height:1.25}main p{font-size:17px;line-height:1.5}@media(max-width:550px){main{grid-template-columns:1fr}}"
+      : "") +
+    "header{border-bottom:3px solid #8c6ee8}@page{margin:18mm} @media print{body{margin:0;padding:0;font-size:12pt}}</style></head><body><header><h1>" +
     escape(doc.title) +
-    "</h1></header>" +
+    "</h1></header><main>" +
     doc.sections
       .map(
         (s) =>
@@ -68,6 +73,7 @@ export function documentHTML(
           "</p></section>",
       )
       .join("") +
+    "</main>" +
     (answers && doc.answerKey
       ? "<section><h2>Solucionario · uso del docente</h2><p>" +
         escape(doc.answerKey) +

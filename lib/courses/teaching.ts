@@ -82,6 +82,9 @@ export function teachingDirection(s: CourseSettings, style = s.style) {
     s.voiceMode === "teacher"
       ? "Narración del profesor en primera persona: explica, guía y acompaña como docente; el tono no cambia la audiencia."
       : "Voz en off: narrador fuera de pantalla, sin necesidad de mostrar una persona hablando.",
+    s.mixStyles
+      ? "Puedes combinar escenas de diapositivas, pizarra, código, tablas o relato según convenga al tema; conserva transiciones didácticas. Un profesor visible requiere video IA configurado."
+      : "Conserva el estilo del módulo. No mezcles formatos salvo indicación explícita del usuario.",
     "Tono del profesor/narrador: " + s.tone + ".",
     "Minutos por módulo son un objetivo editorial, nunca duración verificada. El prompt del curso aporta el tema y los ejemplos; si contradice público o nivel seleccionados, conserva la selección explícita y adapta los ejemplos.",
   ].join("\n");

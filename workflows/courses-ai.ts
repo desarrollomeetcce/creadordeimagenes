@@ -44,3 +44,42 @@ export async function coursesBatchWorkflow(ids: string[]) {
     if (!done) await interrupted(id);
   }
 }
+
+async function buildNext(id: string) {
+  "use step";
+  return (await import("../lib/courses/builds")).nextBuildStep(id);
+}
+buildNext.maxRetries = 0;
+async function buildFinished(id: string, taskId: string) {
+  "use step";
+  return (await import("../lib/courses/builds")).finishBuildTask(id, taskId);
+}
+buildFinished.maxRetries = 0;
+async function buildInterrupted(id: string) {
+  "use step";
+  await (await import("../lib/courses/builds")).interruptBuild(id);
+}
+buildInterrupted.maxRetries = 0;
+export async function courseBuildWorkflow(id: string) {
+  "use workflow";
+  try {
+    for (let step = 0; step < 10000; step++) {
+      const next = await buildNext(id);
+      if (next.state === "DONE") return;
+      if (next.state === "NEXT") continue;
+      if (next.taskId) {
+        let done = false;
+        for (let i = 0; i < 360; i++) {
+          if ((await advance(next.taskId)) === "DONE") {
+            done = true;
+            break;
+          }
+          await sleep("5s");
+        }
+        if (!done) await interrupted(next.taskId);
+        if ((await buildFinished(id, next.taskId)) === false) await sleep("5s");
+      }
+    }
+  } catch {}
+  await buildInterrupted(id);
+}

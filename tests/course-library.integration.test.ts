@@ -195,6 +195,39 @@ test("Biblioteca: categorías, orden y páginas ligeras sin afectar cursos o pro
       },
     );
     await t.test(
+      "Búsqueda por fragmentos sin mayúsculas/tildes y tamaños25/65/100",
+      async () => {
+        await db.aICourse.update({
+          where: { id: tag + "-000" },
+          data: { title: "Gestión Ambiental Técnica" },
+        });
+        const r = (await readLibrary(
+          u,
+          new URLSearchParams({
+            group: custom,
+            q: "gestion ambiental",
+            size: "25",
+          }),
+        )) as any;
+        assert.equal(r.total, 1);
+        assert.equal(r.courses.length, 1);
+        assert.equal(r.courses[0].title, "Gestión Ambiental Técnica");
+        for (const size of [25, 65, 100]) {
+          const p = (await readLibrary(
+            u,
+            new URLSearchParams({ group: custom, size: String(size) }),
+          )) as any;
+          assert.equal(p.pageSize, size);
+          assert.equal(p.courses.length, Math.min(53, size));
+        }
+        await assert.rejects(
+          () =>
+            readLibrary(u, new URLSearchParams({ group: custom, size: "60" })),
+          /página/,
+        );
+      },
+    );
+    await t.test(
       "Mover y archivar actualiza los conteos sin borrar contenido; permisos se revalidan",
       async () => {
         const id = tag + "-000",

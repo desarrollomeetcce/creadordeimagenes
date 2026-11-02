@@ -4,6 +4,7 @@ export async function financialRequest(
   path: string,
   method = "GET",
   data?: unknown,
+  options?: { signal?: AbortSignal },
 ) {
   const scope =
     typeof document === "undefined"
@@ -15,6 +16,7 @@ export async function financialRequest(
     "/api/" + path.replace(/^meta-ads\//, "meta-ads/financial/"),
     {
       method,
+      signal: options?.signal,
       cache: "no-store",
       headers: {
         ...(data ? { "Content-Type": "application/json" } : {}),

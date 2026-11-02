@@ -69,6 +69,15 @@ export const CourseLibrary = forwardRef<LibraryHandle, Props>(
       [color, setColor] = useState(categoryColors[4]),
       [moving, setMoving] = useState<CourseGroupId | "">(""),
       [over, setOver] = useState<CourseGroupId | "">("");
+    const [queries, setQueries] = useState<Record<string, string>>({}),
+      [sizes, setSizes] = useState<Record<string, number>>({}),
+      [offsets, setOffsets] = useState<Record<string, number>>({});
+    const searchTimers = useRef(
+        new Map<string, ReturnType<typeof setTimeout>>(),
+      ),
+      filters = useRef({ queries, sizes });
+    filters.current = { queries, sizes };
+    const lastFull = useRef("");
     const requests = useRef(new Map<string, AbortController>()),
       known = useRef(new Map<string, CourseGroupId>()),
       alive = useRef(true),
@@ -115,7 +124,7 @@ export const CourseLibrary = forwardRef<LibraryHandle, Props>(
           if (!ac.signal.aborted && alive.current) {
             for (const c of data.courses) known.current.set(c.id, id);
             setPages((p) => ({ ...p, [id]: data }));
-            setCounts((p) => ({ ...p, [id]: data.total }));
+            if (!data.query) setCounts((p) => ({ ...p, [id]: data.total }));
           }
           return data;
         } catch (e) {
@@ -171,16 +180,21 @@ export const CourseLibrary = forwardRef<LibraryHandle, Props>(
       return () => {
         alive.current = false;
         for (const ac of requests.current.values()) ac.abort();
+        for (const timer of searchTimers.current.values()) clearTimeout(timer);
       };
     }, [loadConfig]);
     useEffect(() => {
-      if (
-        mode === "full" &&
-        fullGroup &&
-        !statusRef.current.pages[fullGroup] &&
-        !requests.current.has(fullGroup)
-      )
-        void loadPage(fullGroup).catch(() => {});
+      if (mode === "full" && fullGroup && lastFull.current !== fullGroup) {
+        lastFull.current = fullGroup;
+        setExpanded(new Set([fullGroup]));
+        setOffsets((p) => ({ ...p, [fullGroup]: 0 }));
+        if (
+          !statusRef.current.pages[fullGroup] &&
+          !requests.current.has(fullGroup)
+        )
+          void loadPage(fullGroup).catch(() => {});
+      }
+      if (mode !== "full") lastFull.current = "";
     }, [mode, fullGroup, loadPage]);
     useImperativeHandle(
       ref,
@@ -242,9 +256,6 @@ export const CourseLibrary = forwardRef<LibraryHandle, Props>(
       setAdding(false);
       if (mode === "editor") {
         setMenu((p) => (p === id ? "" : id));
-      } else if (mode === "full") {
-        full(fullGroup === id ? "" : id);
-        return;
       } else
         setExpanded((p) => {
           const next = new Set(p);
@@ -252,6 +263,7 @@ export const CourseLibrary = forwardRef<LibraryHandle, Props>(
           else next.add(id);
           return next;
         });
+      if (mode === "full") full("");
       if (!statusRef.current.pages[id] && !requests.current.has(id))
         void loadPage(id).catch(() => {});
     }
@@ -328,23 +340,105 @@ export const CourseLibrary = forwardRef<LibraryHandle, Props>(
         </button>
       );
     }
+    function searchGroup(id: CourseGroupId, value: string) {
+      setQueries((p) => ({ ...p, [id]: value }));
+      filters.current.queries = { ...filters.current.queries, [id]: value };
+      clearTimeout(searchTimers.current.get(id));
+      searchTimers.current.set(
+        id,
+        setTimeout(() => {
+          setOffsets((p) => ({ ...p, [id]: 0 }));
+          void loadPage(id, 1).catch(() => {});
+        }, 350),
+      );
+    }
+    async function nextStrip(g: LibraryCategory, delta: number) {
+      const p = pages[g.id];
+      if (!p) return;
+      const offset = offsets[g.id] ?? 0,
+        step = 6;
+      if (delta > 0 && offset + step < p.courses.length + 1)
+        setOffsets((v) => ({ ...v, [g.id]: offset + step }));
+      else if (delta < 0 && offset > 0)
+        setOffsets((v) => ({ ...v, [g.id]: Math.max(0, offset - step) }));
+      else if (
+        p.page + delta >= 1 &&
+        p.page + delta <= Math.ceil(p.total / p.pageSize)
+      ) {
+        await loadPage(g.id, p.page + delta);
+        setOffsets((v) => ({ ...v, [g.id]: 0 }));
+      }
+    }
+    const visible =
+      mode === "editor"
+        ? groups.filter((g) => g.id === menu)
+        : [...expanded].flatMap((id) => {
+            const g = groups.find((g) => g.id === id);
+            return g ? [g] : [];
+          });
+    const ribbons = mode !== "editor" && visible.length > 1;
     function panel(g: LibraryCategory, compact = false) {
       const page = pages[g.id],
         current = page?.page ?? 1,
-        total = counts[g.id] ?? 0;
+        size = sizes[g.id] ?? 50,
+        total = page?.total ?? counts[g.id] ?? 0,
+        offset = offsets[g.id] ?? 0;
+      const cards = ribbons
+        ? page?.courses.slice(Math.max(0, offset - 1), offset + 5)
+        : page?.courses;
       return (
         <section
           key={g.id}
-          className={"library-course-section" + (compact ? " compact" : "")}
+          className={
+            "library-course-section" +
+            (compact ? " compact" : "") +
+            (ribbons ? " ribbon" : "")
+          }
           style={{ "--category-color": g.color } as CSSProperties}
           aria-label={g.title}
         >
           <header>
             <div>
               <h2>{g.title}</h2>
-              <small>{total} programas</small>
+              <small>
+                {total} programas{queries[g.id] ? " encontrados" : ""}
+              </small>
             </div>
+            <label className="library-category-search">
+              <span className="sr-only">Buscar en {g.title}</span>
+              <input
+                type="search"
+                aria-label={"Buscar en " + g.title}
+                maxLength={120}
+                value={queries[g.id] ?? ""}
+                onChange={(e) => searchGroup(g.id, e.target.value)}
+                placeholder="Buscar curso…"
+              />
+            </label>
             <div className="course-toolbar">
+              <label className="library-page-size">
+                Ver
+                <select
+                  aria-label={"Programas por página en " + g.title}
+                  value={size}
+                  onChange={(e) => {
+                    const n = Number(e.target.value);
+                    setSizes((p) => ({ ...p, [g.id]: n }));
+                    filters.current.sizes = {
+                      ...filters.current.sizes,
+                      [g.id]: n,
+                    };
+                    setOffsets((p) => ({ ...p, [g.id]: 0 }));
+                    void loadPage(g.id, 1).catch(() => {});
+                  }}
+                >
+                  {[25, 50, 65, 100].map((n) => (
+                    <option key={n} value={n}>
+                      {n}
+                    </option>
+                  ))}
+                </select>
+              </label>
               {compact && (
                 <button type="button" onClick={() => full(g.id)}>
                   Vista completa
@@ -355,13 +449,14 @@ export const CourseLibrary = forwardRef<LibraryHandle, Props>(
                 aria-label={"Cerrar " + g.title}
                 onClick={() => {
                   if (compact) setMenu("");
-                  else if (mode === "full") full("");
-                  else
+                  else {
                     setExpanded((p) => {
                       const n = new Set(p);
                       n.delete(g.id);
                       return n;
                     });
+                    if (mode === "full") full("");
+                  }
                 }}
               >
                 Cerrar ×
@@ -369,58 +464,89 @@ export const CourseLibrary = forwardRef<LibraryHandle, Props>(
             </div>
           </header>
           <div className="library-course-grid">
-            <button
-              type="button"
-              className="library-new-course"
-              disabled={disabled || busy || loading}
-              onClick={() => create(g.id)}
-            >
-              <span aria-hidden="true">＋</span>
-              <strong>Crear curso</strong>
-              <small>Curso, diplomado o programa</small>
-            </button>
-            {page?.courses.map(courseTile)}
+            {(!ribbons || offset === 0) && (
+              <button
+                type="button"
+                className="library-new-course"
+                disabled={disabled || busy || loading}
+                onClick={() => create(g.id)}
+              >
+                <span aria-hidden="true">＋</span>
+                <strong>Crear curso</strong>
+                <small>Curso, diplomado o programa</small>
+              </button>
+            )}
+            {cards?.map(courseTile)}
           </div>
           {!page && <p role="status">Cargando programas…</p>}
           {page && total === 0 && (
             <p className="muted">
-              Empieza creando tu primer programa en esta categoría.
+              {queries[g.id]
+                ? "No se encontraron cursos con ese nombre."
+                : "Empieza creando tu primer programa en esta categoría."}
             </p>
           )}
-          {total > 50 && (
+          {ribbons ? (
             <nav
               className="library-pagination"
-              aria-label={"Páginas de " + g.title}
+              aria-label={"Carrusel de " + g.title}
             >
               <button
                 type="button"
-                disabled={current === 1 || busy}
-                onClick={() => void loadPage(g.id, current - 1).catch(() => {})}
+                disabled={busy || (offset === 0 && current === 1)}
+                onClick={() => void nextStrip(g, -1)}
               >
                 ← Anterior
               </button>
               <span>
-                Página {current} de {Math.ceil(total / 50)} · hasta 50 programas
-                por página
+                Página {current} de {Math.max(1, Math.ceil(total / size))}
               </span>
               <button
                 type="button"
-                disabled={current >= Math.ceil(total / 50) || busy}
-                onClick={() => void loadPage(g.id, current + 1).catch(() => {})}
+                disabled={
+                  busy ||
+                  !page ||
+                  (offset + 6 >= page.courses.length + 1 &&
+                    current >= Math.ceil(total / size))
+                }
+                onClick={() => void nextStrip(g, 1)}
               >
-                Siguiente →
+                Continuar →
               </button>
             </nav>
+          ) : (
+            total > size && (
+              <nav
+                className="library-pagination"
+                aria-label={"Páginas de " + g.title}
+              >
+                <button
+                  type="button"
+                  disabled={current === 1 || busy}
+                  onClick={() =>
+                    void loadPage(g.id, current - 1).catch(() => {})
+                  }
+                >
+                  ← Anterior
+                </button>
+                <span>
+                  Página {current} de {Math.ceil(total / size)}
+                </span>
+                <button
+                  type="button"
+                  disabled={current >= Math.ceil(total / size) || busy}
+                  onClick={() =>
+                    void loadPage(g.id, current + 1).catch(() => {})
+                  }
+                >
+                  Siguiente →
+                </button>
+              </nav>
+            )
           )}
         </section>
       );
     }
-    const visible =
-      mode === "editor"
-        ? groups.filter((g) => g.id === menu)
-        : mode === "full"
-          ? groups.filter((g) => g.id === fullGroup)
-          : groups.filter((g) => expanded.has(g.id));
     return (
       <div
         className={"course-library mode-" + mode}
@@ -436,6 +562,30 @@ export const CourseLibrary = forwardRef<LibraryHandle, Props>(
             {mode === "editor" ? "Cambiar de programa" : "Biblioteca de cursos"}
           </span>
           <div className="course-toolbar">
+            {mode !== "editor" && (
+              <button
+                type="button"
+                aria-pressed={expanded.size === groups.length}
+                onClick={() => {
+                  const all = expanded.size !== groups.length;
+                  setExpanded(new Set(all ? groups.map((g) => g.id) : []));
+                  if (mode === "full") full("");
+                  if (all)
+                    void (async () => {
+                      for (const g of groups)
+                        if (
+                          !statusRef.current.pages[g.id] &&
+                          !requests.current.has(g.id)
+                        )
+                          await loadPage(g.id);
+                    })().catch(() => {});
+                }}
+              >
+                {expanded.size === groups.length
+                  ? "Quitar selección"
+                  : "Seleccionar todas"}
+              </button>
+            )}
             {mode === "full" && (
               <button type="button" onClick={() => full("")}>
                 Todas las categorías
@@ -480,6 +630,9 @@ export const CourseLibrary = forwardRef<LibraryHandle, Props>(
               data-category-id={g.id}
               className={
                 "library-category" +
+                ((mode === "editor" ? menu === g.id : expanded.has(g.id))
+                  ? " selected"
+                  : "") +
                 (moving === g.id ? " moving" : "") +
                 (over === g.id && moving !== g.id ? " drop-target" : "")
               }
@@ -489,11 +642,7 @@ export const CourseLibrary = forwardRef<LibraryHandle, Props>(
                 type="button"
                 className="library-category-toggle"
                 aria-expanded={
-                  mode === "editor"
-                    ? menu === g.id
-                    : mode === "full"
-                      ? fullGroup === g.id
-                      : expanded.has(g.id)
+                  mode === "editor" ? menu === g.id : expanded.has(g.id)
                 }
                 onClick={() => toggle(g.id)}
                 disabled={loading}

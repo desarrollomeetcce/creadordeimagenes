@@ -13,13 +13,18 @@ export function useFinancialReadOnly(
       { disabled?: boolean; readOnly?: boolean }
     >();
     const mutate =
-      /^(\+|×$|✎|Guardar|Eliminar|Borrar (?!filtros)|Asignar|Importar|Cargar|Pegar|Crear|Añadir|Agregar|Cambiar|Renombrar|Editar|Vincular|Desvincular|Sincronizar|Restablecer|Colores de|Resaltar columnas|Quitar selección)/i;
+      /^(\+|×$|✎|Guardar|Eliminar|Borrar (?!filtros)|Asignar|Importar|Cargar|Pegar|Crear|Añadir|Agregar|Cambiar|Renombrar|Editar|Vincular|Desvincular|Sincronizar|Restablecer|Colores de|Resaltar columnas)/i;
     const apply = () => {
       for (const el of root.querySelectorAll<
         HTMLInputElement | HTMLTextAreaElement
       >(
         "input.sheet-cell,.sheet-new-row input,tbody input:not([type=search]),dialog textarea,dialog input:not([type=search]):not([type=date])",
       )) {
+        if (
+          el.type === "checkbox" &&
+          /^Seleccionar (?!estado)/i.test(el.getAttribute("aria-label") ?? "")
+        )
+          continue;
         if (!originals.has(el))
           originals.set(el, { disabled: el.disabled, readOnly: el.readOnly });
         if (el.type === "checkbox") {

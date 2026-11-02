@@ -8,7 +8,8 @@ export function parseCourseOutline(text: string) {
     .split(/\r?\n/)
     .map((x) => x.trim())
     .filter(Boolean);
-  const heading = /^(?:m[oó]dulo|unidad|tema)\s*\d+\s*[:.\-–)]?\s*/i;
+  const heading =
+    /^(?:\d+[.)]\s*)?(?:m[oó]dulo|unidad|tema|paso)\s*(?:\d+|[IVXLCDM]+)\s*[:.\-–)]?\s*/i;
   const hasHeadings = lines.some((l) => heading.test(l));
   const modules: { title: string; brief: string }[] = [];
   for (const line of lines) {
@@ -29,8 +30,8 @@ export function parseCourseOutline(text: string) {
     modules.push({ title, brief: "" });
   }
   demand(
-    modules.length > 0 && modules.length <= 100,
-    "El temario debe contener entre 1 y 100 módulos.",
+    modules.length > 0 && modules.length <= 200,
+    "El temario debe contener entre 1 y 200 módulos.",
   );
   demand(
     modules.every((m) => m.brief.length <= 12000),

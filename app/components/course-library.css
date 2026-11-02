@@ -308,3 +308,82 @@
 .mode-editor .library-category-form {
   margin-bottom: 0;
 }
+.library-category.selected {
+  background: color-mix(in srgb, var(--category-color) 24%, var(--surface));
+  border-color: var(--category-color);
+  box-shadow: inset 0 0 0 1px var(--category-color);
+}
+.library-category.selected .library-category-toggle {
+  color: var(--ink);
+  font-weight: 800;
+}
+.library-category.selected .library-count {
+  background: var(--category-color);
+  color: #18242c;
+}
+.library-category-search {
+  flex: 1;
+  max-width: 320px;
+  min-width: 140px;
+}
+.library-category-search input {
+  width: 100%;
+  font-size: 12px;
+  padding: 7px 9px;
+  min-height: 34px;
+}
+.library-page-size {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+}
+.library-page-size select {
+  min-width: 60px;
+  padding: 5px;
+  font-size: 11px;
+}
+.library-course-section.ribbon .library-course-grid {
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+}
+.library-course-section.ribbon .library-course-tile,
+.library-course-section.ribbon .library-new-course {
+  min-height: 96px;
+}
+.library-course-section.ribbon .library-course-tile p {
+  display: none;
+}
+@media (max-width: 1000px) {
+  .library-course-section.ribbon .library-course-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+@media (max-width: 600px) {
+  .library-category-search {
+    max-width: none;
+    width: 100%;
+    order: 3;
+  }
+  .library-course-section.ribbon .library-course-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+.mode-editor .library-course-section.compact .library-course-grid {
+  grid-template-columns: minmax(0, 1fr);
+  max-height: min(480px, 55vh);
+}
+.mode-editor .library-course-section.compact .library-course-tile,
+.mode-editor .library-course-section.compact .library-new-course {
+  min-height: 48px;
+  padding: 8px 12px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  text-align: left;
+}
+.mode-editor .library-course-section.compact .library-course-tile p {
+  margin: 0 0 0 auto;
+}
+.mode-editor .library-course-section.compact .library-new-course > span {
+  font-size: 20px;
+}

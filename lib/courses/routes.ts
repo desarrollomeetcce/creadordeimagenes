@@ -41,6 +41,26 @@ export async function courseRoutes(
     method = req.method;
   const send = (v: unknown, status = 200) =>
     NextResponse.json(v, { status, headers: { "Cache-Control": "no-store" } });
+  if (p.length === 1 && p[0] === "access" && method === "GET")
+    return send({
+      users: await db.user.findMany({
+        where: {
+          role: "OWNER",
+          status: "APPROVED",
+          archivedAt: null,
+          aiAccessEnabled: true,
+        },
+        select: { id: true, name: true, email: true },
+        orderBy: { name: "asc" },
+      }),
+    });
+  if (p.length === 2 && p[1] === "build") {
+    const build = await import("./builds");
+    if (method === "GET") return send(await build.buildStatus(u, p[0]));
+    if (method === "POST")
+      return send(await build.startBuild(u, p[0], await body()), 202);
+    if (method === "DELETE") return send(await build.stopBuild(u, p[0]));
+  }
   if (p.length === 1 && p[0] === "library") {
     const library = await import("./library");
     if (method === "GET")
@@ -227,7 +247,12 @@ export async function courseRoutes(
       let bytes: Buffer, mime: string, ext: string;
       if (format === "html") {
         bytes = Buffer.from(
-          documentHTML(doc, answers, material?.kind === "slides"),
+          documentHTML(
+            doc,
+            answers,
+            material?.kind === "slides",
+            material?.kind === "infographic",
+          ),
         );
         mime = "text/html; charset=utf-8";
         ext = "html";

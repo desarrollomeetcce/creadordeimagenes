@@ -1,5 +1,4 @@
 "use client";
-import { fetchJsonResponse } from "../../lib/http-response";
 import { compareFinancialStatus } from "../../lib/meta-ads/inventory-evaluation-order";
 import {
   SheetHorizontalNavigation,
@@ -194,7 +193,9 @@ export function MetaEffectiveness({
   advisorPeriodRequest,
   onAdvisorPeriodHandled,
   initialPeriodLink,
+  readOnly = false,
 }: {
+  readOnly?: boolean;
   initialPeriodLink?: PeriodTableLink | null;
   inventoryLists: { id: string; name: string }[];
   onOpenAdvisorPeriod?: (period: AdvisorPeriodView) => void;
@@ -531,21 +532,30 @@ export function MetaEffectiveness({
       setData(null);
       currentRange.current = query;
     }
-    let inFlight=false, queued=false;
+    let inFlight = false,
+      queued = false;
     let controller: AbortController | undefined;
     const load = () => {
       if (document.hidden || !active) return;
-      if(inFlight){queued=true;return;}
-      inFlight=true;
-      controller=new AbortController();
+      if (inFlight) {
+        queued = true;
+        return;
+      }
+      inFlight = true;
+      controller = new AbortController();
       const version = ++queryVersion.current;
-      void fetchJsonResponse("/api/"+query,{cache:"no-store",signal:AbortSignal.any([controller.signal,AbortSignal.timeout(15000)])})
+      void api(query, "GET", undefined, {
+        signal: AbortSignal.any([
+          controller.signal,
+          AbortSignal.timeout(15000),
+        ]),
+      })
         .then((v: Data) => {
           if (active && queryVersion.current === version) setData(v);
           const days = v.missingFxDays.filter(
             (d) => !attemptedFx.current.has(d),
           );
-          if (days.length) {
+          if (days.length && !readOnly) {
             days.forEach((d) => attemptedFx.current.add(d));
             void api("meta-ads/effectiveness/fx", "POST", { days })
               .then(() => {
@@ -557,30 +567,42 @@ export function MetaEffectiveness({
           }
         })
         .catch((e) => {
-          if (active) setMessage(e.name==="TimeoutError"?"La hoja tardó demasiado en responder. Se conservan los últimos datos recibidos.":e.message);
-        }).finally(()=>{inFlight=false;if(queued&&active){queued=false;load();}});
+          if (active)
+            setMessage(
+              e.name === "TimeoutError"
+                ? "La hoja tardó demasiado en responder. Se conservan los últimos datos recibidos."
+                : e.message,
+            );
+        })
+        .finally(() => {
+          inFlight = false;
+          if (queued && active) {
+            queued = false;
+            load();
+          }
+        });
     };
     load();
     const timer = setInterval(load, 30000);
-    window.addEventListener("focus",load);
-    document.addEventListener("visibilitychange",load);
+    window.addEventListener("focus", load);
+    document.addEventListener("visibilitychange", load);
     const unsubscribe = subscribeAdvisorSalesChanged(load);
     return () => {
       active = false;
       clearInterval(timer);
       controller?.abort();
-      window.removeEventListener("focus",load);
-      document.removeEventListener("visibilitychange",load);
+      window.removeEventListener("focus", load);
+      document.removeEventListener("visibilitychange", load);
       unsubscribe();
     };
-  }, [query, valid]);
+  }, [query, valid, readOnly]);
   const refresh = async () => {
     const version = ++queryVersion.current;
     const v: Data = await api(query);
     if (queryVersion.current === version && currentRange.current === query)
       setData(v);
     const days = v.missingFxDays.filter((d) => !attemptedFx.current.has(d));
-    if (days.length) {
+    if (days.length && !readOnly) {
       days.forEach((d) => attemptedFx.current.add(d));
       void api("meta-ads/effectiveness/fx", "POST", { days })
         .then(async () => {
@@ -2440,11 +2462,14 @@ export function MetaEffectiveness({
               <tbody>
                 {displayedRows.map((r) => {
                   const name = names.get(r.aliasId) ?? "Inventario";
-                  const campaignLabel = r.campaignTask === "CREATE"
-                    ? "Por hacer campaña"
-                    : r.campaignTask === "STOP"
-                      ? "Por desactivar campaña"
-                      : r.active ? "Activado" : "Desactivado";
+                  const campaignLabel =
+                    r.campaignTask === "CREATE"
+                      ? "Por hacer campaña"
+                      : r.campaignTask === "STOP"
+                        ? "Por desactivar campaña"
+                        : r.active
+                          ? "Activado"
+                          : "Desactivado";
                   const category = financialRowCategories(
                     r,
                     financialAliases.find((a) => a.id === r.aliasId),

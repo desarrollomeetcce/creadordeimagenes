@@ -22,6 +22,12 @@ import {
   audienceLabels,
   courseGroup,
 } from "@/lib/courses/teaching";
+import { CourseResources } from "./course-resources";
+import {
+  defaultResources,
+  resourceLabels,
+  type ResourceChoice,
+} from "@/lib/courses/resources";
 import { CourseLibrary } from "./course-library";
 import {
   defaultCategories,
@@ -30,6 +36,7 @@ import {
 } from "@/lib/courses/library-shared";
 import { parseCourseOutline } from "@/lib/courses/outline";
 import "./courses-ai.css";
+import "./course-studio.css";
 const CoursePlayer = dynamic(
   () => import("./course-player").then((m) => m.CoursePlayer),
   { loading: () => <p role="status">Preparando presentación…</p> },
@@ -66,6 +73,7 @@ type Module = {
   brief: string;
   minutes: number;
   style: string;
+  mixStyles?: boolean | null;
   revision: number;
   lesson: unknown;
   materials: Material[];
@@ -80,6 +88,14 @@ type Course = {
   revision: number;
   settings: CourseSettings;
   modules: Module[];
+  build?: {
+    id: string;
+    status: string;
+    moduleIndex: number;
+    totalModules: number;
+    completed: number;
+    error: string | null;
+  };
   tasks: {
     id: string;
     kind: string;
@@ -103,6 +119,7 @@ const labels: Record<string, string> = {
   UNCERTAIN: "Revisar interrupción",
   DISPATCH_UNCERTAIN: "Inicio sin confirmar",
   CANCELLED: "Cancelado",
+  bibliography: "Bibliografía",
   guide: "Guía",
   book: "Libro",
   workshop: "Taller",
@@ -484,11 +501,15 @@ function CourseForm({
   submit,
   initialSettings,
   settingsOnly = false,
+  formId,
+  externalPrompt = false,
 }: {
   course?: Course;
   providers: Provider[];
   busy: boolean;
-  submit: (b: any) => void;
+  submit: (b: any, action?: string | null) => void;
+  formId?: string;
+  externalPrompt?: boolean;
   initialSettings?: CourseSettings;
   settingsOnly?: boolean;
 }) {
@@ -508,6 +529,7 @@ function CourseForm({
     e.preventDefault();
     const f = new FormData(e.currentTarget),
       settings: Record<string, unknown> = {
+        resources: s.resources,
         provider,
         voiceProvider: voice,
         imageProvider: image,
@@ -536,6 +558,7 @@ function CourseForm({
       settings[k] = f.get(k) ?? s[k as keyof CourseSettings];
     for (const k of ["moduleCount", "minutes", "voiceSpeed", "videoDuration"])
       settings[k] = Number(f.get(k) ?? s[k as keyof CourseSettings]);
+    settings.mixStyles = f.get("mixStyles") === "on";
     submit(
       settingsOnly
         ? { settings }
@@ -546,6 +569,7 @@ function CourseForm({
             prompt: f.get("prompt"),
             settings,
           },
+      (e.nativeEvent as SubmitEvent).submitter?.getAttribute("data-action"),
     );
   }
   const selectModels = (p: string, kind: string) => [
@@ -553,8 +577,8 @@ function CourseForm({
     ...models(p, kind).map((m) => ({ value: m.id, label: m.name })),
   ];
   return (
-    <form className="course-form" onSubmit={save}>
-      {!settingsOnly && (
+    <form id={formId} className="course-form" onSubmit={save}>
+      {!settingsOnly && !externalPrompt && (
         <label>
           Prompt del curso
           <textarea
@@ -566,6 +590,14 @@ function CourseForm({
           />
         </label>
       )}
+      <label className="course-mix-toggle">
+        <input type="checkbox" name="mixStyles" defaultChecked={s.mixStyles} />{" "}
+        Combinar formatos de video según el tema
+      </label>
+      <small className="muted">
+        Permite alternar profesor, pizarra, código, tablas o ilustraciones.
+        Describe la combinación en el prompt.
+      </small>
       <div className="course-grid">
         {settingsOnly && (
           <>
@@ -615,7 +647,7 @@ function CourseForm({
             type="number"
             required
             min={1}
-            max={24}
+            max={100}
             defaultValue={s.moduleCount}
           />
         </label>
@@ -892,7 +924,7 @@ function CourseForm({
             ? "Guardando…"
             : settingsOnly
               ? "Guardar valores para nuevos programas"
-              : "Guardar objetivo y parámetros"}
+              : "Guardar configuración"}
         </button>
         <span className="muted">Guardar no consume IA.</span>
       </div>
@@ -1086,8 +1118,10 @@ function PasteOutline({
     <div className="course-inline-form">
       <h3>Pegar temario</h3>
       <p className="muted">
-        Un módulo por línea, o encabezados como «Módulo 1: Nombre» seguidos de
-        su descripción. Se añaden al programa; no reemplazan los existentes.
+        Pega el temario: un módulo por línea o encabezados como «Módulo 1:
+        Nombre» seguidos de su descripción. Después pulsa Desarrollar curso
+        completo: la IA usará el prompt general para todos. Puedes ajustar un
+        módulo si lo necesitas.
       </p>
       <label>
         Módulos
@@ -1108,7 +1142,7 @@ function PasteOutline({
         className="course-primary"
         onClick={() => save(text)}
       >
-        Crear módulos del temario · sin IA
+        Usar este temario
       </button>
     </div>
   );
@@ -1117,9 +1151,16 @@ export function CoursesAI() {
   const [defaults, setDefaults] = useState<CourseSettings>(() =>
       settingsSchema.parse({}),
     ),
-    [settingsShown, setSettingsShown] = useState(false),
     [referencesShown, setReferencesShown] = useState(false),
-    [outlineMode, setOutlineMode] = useState("ai"),
+    [outlineMode, setOutlineMode] = useState(""),
+    [moduleSelection, setModuleSelection] = useState<"all" | string[]>("all"),
+    [modulePage, setModulePage] = useState(1),
+    [moduleSize, setModuleSize] = useState(25),
+    [resources, setResources] = useState<ResourceChoice[]>(defaultResources),
+    [sharing, setSharing] = useState(false),
+    [owners, setOwners] = useState<
+      { id: string; name: string; email: string }[] | null
+    >(null),
     [newGroup, setNewGroup] = useState<CourseGroupId>("adults");
   const busyRef = useRef(false);
   const [moduleDetail, setModuleDetail] = useState<Module | null>(null);
@@ -1140,6 +1181,22 @@ export function CoursesAI() {
     [add, setAdd] = useState(false),
     [material, setMaterial] = useState(false),
     [preview, setPreview] = useState(false);
+  useEffect(() => {
+    const open = () => {
+      setSharing(true);
+      setOwners(null);
+      void request("/access")
+        .then((d) => setOwners(d.users))
+        .catch((e) => setError(e.message));
+    };
+    globalThis.window.addEventListener("share-courses", open);
+    return () => globalThis.window.removeEventListener("share-courses", open);
+  }, []);
+  useEffect(() => {
+    setResources(course?.settings.resources ?? defaultResources);
+    setModuleSelection("all");
+    setModulePage(1);
+  }, [course?.id]);
   const mounted = useRef(true),
     loadId = useRef(0),
     inFlight = useRef(false),
@@ -1187,9 +1244,8 @@ export function CoursesAI() {
   useEffect(() => {
     setCourse(null);
     setWindow(null);
-    setSettingsShown(false);
     setReferencesShown(false);
-    setOutlineMode("ai");
+    setOutlineMode("");
     setAdd(false);
     setModuleDetail(null);
     setModuleId("");
@@ -1207,10 +1263,15 @@ export function CoursesAI() {
   }, [selected, load]);
   const taskState =
     course?.tasks.map((t) => t.id + ":" + t.status).join("|") ?? "";
+  const building =
+    !!course?.build &&
+    ["PENDING", "RUNNING", "STOPPING"].includes(course.build.status);
   const working =
-    course?.tasks.some((t) =>
-      ["PENDING", "RUNNING", "RENDERING"].includes(t.status),
-    ) ?? false;
+    (building ||
+      course?.tasks.some((t) =>
+        ["PENDING", "RUNNING", "RENDERING"].includes(t.status),
+      )) ??
+    false;
   useEffect(() => {
     if (!selected || !working) return;
     const ac = new AbortController();
@@ -1218,13 +1279,15 @@ export function CoursesAI() {
       if (document.visibilityState !== "visible" || inFlight.current) return;
       inFlight.current = true;
       try {
-        const tasks = await request(
-          "/" + selected + "/tasks",
+        const status = await request(
+          "/" + selected + (building ? "/build" : "/tasks"),
           undefined,
           undefined,
           ac.signal,
         );
+        const tasks = building ? status.tasks : status;
         if (
+          building ||
           tasks
             .map((t: { id: string; status: string }) => t.id + ":" + t.status)
             .join("|") !== taskState
@@ -1244,7 +1307,7 @@ export function CoursesAI() {
       document.removeEventListener("visibilitychange", tick);
       ac.abort();
     };
-  }, [selected, working, taskState, load]);
+  }, [selected, working, taskState, load, building]);
   async function run(fn: () => Promise<void>) {
     if (busyRef.current) return;
     busyRef.current = true;
@@ -1377,23 +1440,6 @@ export function CoursesAI() {
   }
   return (
     <section className="courses-ai">
-      <div className="course-hero">
-        <div>
-          <span className="course-eyebrow">ESTUDIO EDUCATIVO · OWNER</span>
-          <h1>
-            Cursos IA <span>✦</span>
-          </h1>
-          <p>De tu idea a una experiencia para aprender.</p>
-        </div>
-        <div className="course-toolbar">
-          <a
-            className="course-settings-link"
-            href="/?view=ai&aiTab=connections"
-          >
-            ⚙ Ajustes IA
-          </a>
-        </div>
-      </div>
       <CourseLibrary
         ref={libraryRef}
         api={request}
@@ -1469,373 +1515,576 @@ export function CoursesAI() {
                   }
                 </span>
               </div>
-              <div className="course-heading">
-                <CourseHeading
-                  key={course.id}
-                  groups={groups}
-                  course={course}
-                  disabled={busy || working}
-                  save={async (data) => {
-                    if (busyRef.current)
-                      throw Error("Espera a que termine el guardado.");
-                    busyRef.current = true;
-                    setBusy(true);
-                    try {
-                      await request("/" + course.id + "/metadata", {
-                        revision: course.revision,
-                        data,
-                      });
-                      await refresh();
-                    } finally {
-                      busyRef.current = false;
-                      if (mounted.current) setBusy(false);
-                    }
-                  }}
-                />
-                <div className="course-toolbar">
-                  <button
-                    type="button"
-                    disabled={busy || working}
-                    onClick={() => setSettingsShown(!settingsShown)}
+              <div className="course-studio-columns">
+                <aside className="course-sources-column course-settings-column">
+                  <h2>Configuración</h2>
+                  <label className="course-global-prompt" key={course.id}>
+                    Prompt general del curso
+                    <textarea
+                      form="course-settings-form"
+                      name="prompt"
+                      rows={5}
+                      maxLength={20000}
+                      defaultValue={course.prompt}
+                      placeholder="Qué deben aprender, ejemplos y cómo quieres explicarlo."
+                    />
+                  </label>
+                  <details
+                    className="course-source-details"
+                    onToggle={(e) => {
+                      if (e.currentTarget.open) setReferencesShown(true);
+                    }}
                   >
-                    Configurar
-                  </button>
-                  <button
-                    type="button"
-                    disabled={busy || working}
-                    onClick={() => setAdd(!add)}
-                  >
-                    ＋ Módulo
-                  </button>
-                  {course.modules.some((x) => !x.lessonReady) && (
-                    <button
-                      type="button"
-                      className="course-primary"
-                      disabled={
-                        busy ||
-                        working ||
-                        settingsShown ||
-                        !course.settings.model
-                      }
-                      title="Procesar hasta 24 módulos pendientes por lote"
-                      onClick={() => void batch("LESSON")}
-                    >
-                      ✦ Desarrollar módulos pendientes
-                    </button>
-                  )}
-                </div>
-              </div>
-              <details
-                className="course-references-panel"
-                open={referencesShown}
-                onToggle={(e) => setReferencesShown(e.currentTarget.open)}
-              >
-                <summary>Referencias del curso · opcional</summary>
-                {referencesShown && (
-                  <CourseReferences
-                    key={course.id}
-                    courseId={course.id}
-                    disabled={busy || working}
-                    changed={refresh}
-                  />
-                )}
-              </details>
-              <section className="course-syllabus">
-                <div className="course-heading">
-                  <div>
-                    <h3>Temario</h3>
-                    <p className="muted">
-                      Define los módulos del programa y después desarrolla cada
-                      uno.
-                    </p>
-                  </div>
-                  <div className="course-toolbar">
-                    <button
-                      type="button"
-                      aria-pressed={outlineMode === "ai"}
-                      onClick={() => {
-                        setOutlineMode("ai");
-                        setSettingsShown(true);
-                      }}
-                    >
-                      ✦ Generar con IA
-                    </button>
-                    <button
-                      type="button"
-                      aria-pressed={outlineMode === "paste"}
-                      onClick={() => setOutlineMode("paste")}
-                    >
-                      ≡ Pegar módulos
-                    </button>
-                  </div>
-                </div>
-                {settingsShown && (
+                    <summary>Referencias · opcional</summary>
+                    {referencesShown && (
+                      <CourseReferences
+                        key={course.id}
+                        courseId={course.id}
+                        disabled={busy || working}
+                        changed={refresh}
+                      />
+                    )}
+                  </details>
+
                   <div className="course-inline-form">
                     <CourseForm
                       key={course.id}
+                      formId="course-settings-form"
+                      externalPrompt
                       course={course}
                       providers={providers}
                       busy={busy || working}
-                      submit={(b) =>
+                      submit={(b, action) =>
                         void run(async () => {
                           await request("/" + course.id + "/save", {
                             revision: course.revision,
-                            data: b,
+                            data: {
+                              ...b,
+                              settings: { ...b.settings, resources },
+                            },
                           });
-                          setSettingsShown(false);
                           await refresh();
+                          if (action === "develop" || action === "outline") {
+                            const latest = await request("/" + course.id);
+                            await request(
+                              "/" +
+                                course.id +
+                                (action === "outline" ? "/tasks" : "/build"),
+                              {
+                                ...(action === "outline"
+                                  ? { kind: "OUTLINE" }
+                                  : {}),
+                                requestId: crypto.randomUUID(),
+                                revision: latest.revision,
+                                ...(action === "outline"
+                                  ? {}
+                                  : { resources, modules: moduleSelection }),
+                              },
+                            );
+                            setOutlineMode("");
+                            await load(course.id);
+                          }
                         })
                       }
                     />
                   </div>
-                )}
-                {outlineMode === "paste" && (
-                  <PasteOutline
-                    course={course}
-                    busy={busy || working}
-                    save={(text) =>
-                      void run(async () => {
-                        await request("/" + course.id + "/import-modules", {
-                          revision: course.revision,
-                          data: { text },
-                        });
-                        setOutlineMode("ai");
-                        await refresh();
-                      })
-                    }
-                  />
-                )}
-              </section>
-              {!course.modules.length && outlineMode === "ai" && (
-                <div className="course-starter">
-                  <h3>Primero, el mapa de aprendizaje</h3>
-                  <p>
-                    La IA propondrá {course.settings.moduleCount} módulos.
-                    Podrás cambiar títulos, orden y enfoque antes de desarrollar
-                    el contenido.
-                  </p>
-                  <button
-                    type="button"
-                    className="course-primary"
-                    disabled={
-                      busy || working || settingsShown || !course.settings.model
-                    }
-                    onClick={() => void task("OUTLINE")}
-                  >
-                    ✦ Generar temario
-                  </button>
-                  {settingsShown && (
-                    <p className="muted">
-                      Guarda primero el objetivo y los parámetros que estás
-                      editando.
-                    </p>
-                  )}
-                  {!course.settings.model && (
-                    <p>Configura un modelo de contenido para generar con IA.</p>
-                  )}
-                </div>
-              )}
-              {add && (
-                <form
-                  className="course-inline-form"
-                  onSubmit={(e) => {
-                    e.preventDefault();
-                    const form = e.currentTarget,
-                      f = new FormData(form);
-                    void run(async () => {
-                      await request("/" + course.id + "/add-module", {
-                        revision: course.revision,
-                        data: {
-                          title: f.get("title"),
-                          brief: f.get("brief"),
-                          minutes: Number(f.get("minutes")),
-                          style: f.get("style"),
-                        },
-                      });
-                      setAdd(false);
-                      await refresh();
-                    });
-                  }}
-                >
-                  <h3>Añadir módulo independiente</h3>
-                  <label>
-                    Nombre
-                    <input name="title" required maxLength={200} />
-                  </label>
-                  <label>
-                    ¿Qué debe desarrollar?
-                    <textarea name="brief" maxLength={12000} />
-                  </label>
-                  <div className="course-grid">
-                    <label>
-                      Minutos objetivo
-                      <input
-                        name="minutes"
-                        type="number"
-                        defaultValue={course.settings.minutes}
-                        min={1}
-                        max={60}
-                        required
-                      />
-                    </label>
-                    <Select
-                      name="style"
-                      label="Estilo"
-                      value={course.settings.style}
-                      options={styles.map((value) => ({
-                        value,
-                        label: styleLabels[value],
-                      }))}
-                    />
-                  </div>
-                  <div className="course-toolbar">
-                    <button
+                </aside>
+                <section className="course-configuration-column">
+                  <div className="course-heading">
+                    <CourseHeading
+                      key={course.id}
+                      groups={groups}
+                      course={course}
                       disabled={busy || working}
-                      className="course-primary"
-                    >
-                      Guardar módulo
-                    </button>
-                    <button type="button" onClick={() => setAdd(false)}>
-                      Cancelar
-                    </button>
+                      save={async (data) => {
+                        if (busyRef.current)
+                          throw Error("Espera a que termine el guardado.");
+                        busyRef.current = true;
+                        setBusy(true);
+                        try {
+                          await request("/" + course.id + "/metadata", {
+                            revision: course.revision,
+                            data,
+                          });
+                          await refresh();
+                        } finally {
+                          busyRef.current = false;
+                          if (mounted.current) setBusy(false);
+                        }
+                      }}
+                    />
+                    <div className="course-toolbar">
+                      <button
+                        type="button"
+                        disabled={busy || working}
+                        onClick={() => setAdd(!add)}
+                      >
+                        ＋ Módulo
+                      </button>
+                    </div>
                   </div>
-                </form>
-              )}
-              <div className="course-modules">
-                {course.modules.map((mod, i) => {
-                  const ready = !!mod.lessonReady;
-                  return (
-                    <article className="course-module-card" key={mod.id}>
-                      <span className="course-module-number">
-                        {String(i + 1).padStart(2, "0")}
-                      </span>
+                  <section className="course-syllabus">
+                    <div className="course-heading">
                       <div>
-                        <span className="course-tag">
-                          {styleLabels[mod.style]} · {mod.minutes} min objetivo
-                        </span>
-                        <h3>{mod.title}</h3>
-                        <p>{mod.brief}</p>
-                        <span
-                          className={
-                            ready ? "course-status ready" : "course-status"
-                          }
-                        >
-                          {ready ? "Contenido desarrollado" : "Por desarrollar"}{" "}
-                          · {mod.materialCount ?? 0} materiales
-                        </span>
+                        <h3>Temario</h3>
+                        <p className="muted">
+                          Define los módulos del programa y después desarrolla
+                          cada uno.
+                        </p>
                       </div>
-                      <div className="course-module-actions">
+                      <div className="course-toolbar">
                         <button
                           type="button"
-                          className="course-primary"
+                          aria-pressed={outlineMode === "ai"}
                           onClick={() => {
-                            setModuleId(mod.id);
-                            setPreview(false);
-                            setMaterial(false);
-                            setWindow("module");
+                            setOutlineMode("ai");
                           }}
                         >
-                          Abrir módulo →
+                          ✦ Generar con IA
                         </button>
-                        <div className="course-toolbar">
-                          {[-1, 1].map((d) => (
+                        <button
+                          type="button"
+                          aria-pressed={outlineMode === "paste"}
+                          onClick={() => setOutlineMode("paste")}
+                        >
+                          ≡ Pegar módulos
+                        </button>
+                      </div>
+                    </div>
+                    {outlineMode === "paste" && (
+                      <Window
+                        title="Pegar temario"
+                        onClose={() => setOutlineMode("")}
+                      >
+                        <PasteOutline
+                          course={course}
+                          busy={busy || working}
+                          save={(text) =>
+                            void run(async () => {
+                              await request(
+                                "/" + course.id + "/import-modules",
+                                {
+                                  revision: course.revision,
+                                  data: { text },
+                                },
+                              );
+                              setOutlineMode("");
+                              await refresh();
+                            })
+                          }
+                        />
+                      </Window>
+                    )}
+                  </section>
+                  {outlineMode === "ai" && (
+                    <Window
+                      title="Generar temario con IA"
+                      onClose={() => setOutlineMode("")}
+                    >
+                      <div className="course-starter">
+                        <h3>Primero, el mapa de aprendizaje</h3>
+                        <p>
+                          La IA propondrá {course.settings.moduleCount} módulos.
+                          Podrás cambiar títulos, orden y enfoque antes de
+                          desarrollar el contenido.
+                        </p>
+                        <button
+                          type="submit"
+                          className="course-primary"
+                          disabled={busy || working || !course.settings.model}
+                          form="course-settings-form"
+                          data-action="outline"
+                        >
+                          ✦ Generar temario
+                        </button>
+                        {!course.settings.model && (
+                          <p>
+                            Configura un modelo de contenido para generar con
+                            IA.
+                          </p>
+                        )}
+                      </div>
+                    </Window>
+                  )}
+                  {add && (
+                    <form
+                      className="course-inline-form"
+                      onSubmit={(e) => {
+                        e.preventDefault();
+                        const form = e.currentTarget,
+                          f = new FormData(form);
+                        void run(async () => {
+                          await request("/" + course.id + "/add-module", {
+                            revision: course.revision,
+                            data: {
+                              title: f.get("title"),
+                              brief: f.get("brief"),
+                              minutes: Number(f.get("minutes")),
+                              style: f.get("style"),
+                              mixStyles:
+                                f.get("mixStyles") === "inherit"
+                                  ? null
+                                  : f.get("mixStyles") === "yes",
+                            },
+                          });
+                          setAdd(false);
+                          await refresh();
+                        });
+                      }}
+                    >
+                      <h3>Añadir módulo independiente</h3>
+                      <label>
+                        Nombre
+                        <input name="title" required maxLength={200} />
+                      </label>
+                      <label>
+                        ¿Qué debe desarrollar?
+                        <textarea name="brief" maxLength={12000} />
+                      </label>
+                      <div className="course-grid">
+                        <label>
+                          Minutos objetivo
+                          <input
+                            name="minutes"
+                            type="number"
+                            defaultValue={course.settings.minutes}
+                            min={1}
+                            max={60}
+                            required
+                          />
+                        </label>
+                        <Select
+                          name="style"
+                          label="Estilo"
+                          value={course.settings.style}
+                          options={styles.map((value) => ({
+                            value,
+                            label: styleLabels[value],
+                          }))}
+                        />
+                      </div>
+                      <div className="course-toolbar">
+                        <button
+                          disabled={busy || working}
+                          className="course-primary"
+                        >
+                          Guardar módulo
+                        </button>
+                        <button type="button" onClick={() => setAdd(false)}>
+                          Cancelar
+                        </button>
+                      </div>
+                    </form>
+                  )}
+                  <div className="course-module-selection">
+                    <label>
+                      <input
+                        type="checkbox"
+                        checked={moduleSelection === "all"}
+                        disabled={busy || working}
+                        onChange={(e) =>
+                          setModuleSelection(e.target.checked ? "all" : [])
+                        }
+                      />{" "}
+                      Todos los módulos
+                    </label>
+                    <button
+                      type="button"
+                      disabled={busy || working}
+                      onClick={() =>
+                        setModuleSelection(
+                          course.modules
+                            .slice(
+                              (modulePage - 1) * moduleSize,
+                              modulePage * moduleSize,
+                            )
+                            .map((m) => m.id),
+                        )
+                      }
+                    >
+                      Seleccionar esta página
+                    </button>
+                    <span>
+                      {moduleSelection === "all"
+                        ? course.modules.length
+                        : moduleSelection.length}{" "}
+                      seleccionados
+                    </span>
+                    <label>
+                      Ver por página
+                      <select
+                        value={moduleSize}
+                        onChange={(e) => {
+                          setModuleSize(Number(e.target.value));
+                          setModulePage(1);
+                        }}
+                      >
+                        {[25, 50, 100, 200].map((n) => (
+                          <option key={n} value={n}>
+                            {n}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  </div>
+                  <div className="course-modules">
+                    {course.modules
+                      .slice(
+                        (modulePage - 1) * moduleSize,
+                        modulePage * moduleSize,
+                      )
+                      .map((mod, pageIndex) => {
+                        const i = (modulePage - 1) * moduleSize + pageIndex;
+                        const ready = !!mod.lessonReady;
+                        return (
+                          <article className="course-module-card" key={mod.id}>
+                            <label className="course-module-number">
+                              <input
+                                type="checkbox"
+                                aria-label={"Seleccionar módulo " + (i + 1)}
+                                disabled={busy || working}
+                                checked={
+                                  moduleSelection === "all" ||
+                                  moduleSelection.includes(mod.id)
+                                }
+                                onChange={(e) =>
+                                  setModuleSelection((prev) => {
+                                    const ids =
+                                      prev === "all"
+                                        ? course.modules.map((m) => m.id)
+                                        : prev;
+                                    return e.target.checked
+                                      ? [...new Set([...ids, mod.id])]
+                                      : ids.filter((id) => id !== mod.id);
+                                  })
+                                }
+                              />
+                              {String(i + 1).padStart(2, "0")}
+                            </label>
+                            <div>
+                              <span className="course-tag">
+                                {mod.style === "inherit"
+                                  ? styleLabels[course.settings.style]
+                                  : styleLabels[mod.style]}{" "}
+                                · {mod.minutes} min objetivo
+                              </span>
+                              <h3>{mod.title}</h3>
+                              <small className="course-module-resource-summary">
+                                {resources
+                                  .filter(
+                                    (r) =>
+                                      r.modules === "all" ||
+                                      r.modules.includes(mod.id),
+                                  )
+                                  .map((r) => resourceLabels[r.kind])
+                                  .join(" · ") || "Sin recursos seleccionados"}
+                              </small>
+                              <span
+                                className={
+                                  ready
+                                    ? "course-status ready"
+                                    : "course-status"
+                                }
+                              >
+                                {ready
+                                  ? "Contenido desarrollado"
+                                  : "Por desarrollar"}{" "}
+                                · {mod.materialCount ?? 0} materiales
+                              </span>
+                            </div>
+                            <div className="course-module-actions">
+                              <button
+                                type="button"
+                                className="course-primary"
+                                onClick={() => {
+                                  setModuleId(mod.id);
+                                  setPreview(false);
+                                  setMaterial(false);
+                                  setWindow("module");
+                                }}
+                              >
+                                ✎ Editar / ver
+                              </button>
+                              <div className="course-toolbar">
+                                {[-1, 1].map((d) => (
+                                  <button
+                                    key={d}
+                                    type="button"
+                                    disabled={
+                                      busy ||
+                                      working ||
+                                      i + d < 0 ||
+                                      i + d >= course.modules.length
+                                    }
+                                    aria-label={
+                                      (d === -1 ? "Subir " : "Bajar ") +
+                                      mod.title
+                                    }
+                                    onClick={() =>
+                                      void run(async () => {
+                                        const ids = course.modules.map(
+                                          (m) => m.id,
+                                        );
+                                        [ids[i], ids[i + d]] = [
+                                          ids[i + d],
+                                          ids[i],
+                                        ];
+                                        await request(
+                                          "/" + course.id + "/reorder",
+                                          {
+                                            revision: course.revision,
+                                            data: ids,
+                                          },
+                                        );
+                                        await load(course.id);
+                                      })
+                                    }
+                                  >
+                                    {d === -1 ? "↑" : "↓"}
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+                          </article>
+                        );
+                      })}
+                  </div>
+                  {course.modules.length > moduleSize && (
+                    <nav
+                      className="library-pagination"
+                      aria-label="Páginas de módulos"
+                    >
+                      <button
+                        disabled={modulePage === 1}
+                        onClick={() => setModulePage((p) => p - 1)}
+                      >
+                        Anterior
+                      </button>
+                      <span>
+                        Página {modulePage} de{" "}
+                        {Math.ceil(course.modules.length / moduleSize)}
+                      </span>
+                      <button
+                        disabled={
+                          modulePage * moduleSize >= course.modules.length
+                        }
+                        onClick={() => setModulePage((p) => p + 1)}
+                      >
+                        Siguiente
+                      </button>
+                    </nav>
+                  )}
+                  {course.tasks.length > 0 && (
+                    <details className="course-task-list" open={working}>
+                      <summary>
+                        {working
+                          ? "◌ Generación en curso"
+                          : "Actividad de generación"}
+                      </summary>
+                      {course.tasks.slice(0, 12).map((t) => (
+                        <div key={t.id} className="course-task">
+                          <span>{labels[t.kind]}</span>
+                          <strong>{labels[t.status] ?? t.status}</strong>
+                          {t.canResume && (
                             <button
-                              key={d}
                               type="button"
-                              disabled={
-                                busy ||
-                                working ||
-                                i + d < 0 ||
-                                i + d >= course.modules.length
-                              }
-                              aria-label={
-                                (d === -1 ? "Subir " : "Bajar ") + mod.title
-                              }
+                              disabled={busy}
                               onClick={() =>
                                 void run(async () => {
-                                  const ids = course.modules.map((m) => m.id);
-                                  [ids[i], ids[i + d]] = [ids[i + d], ids[i]];
-                                  await request("/" + course.id + "/reorder", {
-                                    revision: course.revision,
-                                    data: ids,
-                                  });
+                                  await request(
+                                    "/" +
+                                      course.id +
+                                      "/tasks/" +
+                                      t.id +
+                                      "/resume",
+                                    {},
+                                  );
                                   await load(course.id);
                                 })
                               }
                             >
-                              {d === -1 ? "↑" : "↓"}
+                              Recuperar video · sin generar otro
                             </button>
-                          ))}
+                          )}
+                          {t.error && <p role="alert">{t.error}</p>}
                         </div>
-                      </div>
-                    </article>
-                  );
-                })}
-              </div>
-              {course.tasks.length > 0 && (
-                <details className="course-task-list" open={working}>
-                  <summary>
-                    {working
-                      ? "◌ Generación en curso"
-                      : "Actividad de generación"}
-                  </summary>
-                  {course.tasks.slice(0, 12).map((t) => (
-                    <div key={t.id} className="course-task">
-                      <span>{labels[t.kind]}</span>
-                      <strong>{labels[t.status] ?? t.status}</strong>
-                      {t.canResume && (
-                        <button
-                          type="button"
-                          disabled={busy}
-                          onClick={() =>
-                            void run(async () => {
-                              await request(
-                                "/" + course.id + "/tasks/" + t.id + "/resume",
-                                {},
-                              );
-                              await load(course.id);
-                            })
-                          }
-                        >
-                          Recuperar video · sin generar otro
-                        </button>
-                      )}
-                      {t.error && <p role="alert">{t.error}</p>}
-                    </div>
-                  ))}
-                </details>
-              )}
-              <details className="course-archive">
-                <summary>Administrar curso</summary>
-                <button
-                  type="button"
+                      ))}
+                    </details>
+                  )}
+                  <details className="course-archive">
+                    <summary>Administrar curso</summary>
+                    <button
+                      type="button"
+                      disabled={busy || working}
+                      onClick={() => {
+                        if (
+                          !confirm(
+                            "¿Archivar «" +
+                              course.title +
+                              "»? Se conservarán sus módulos y recursos.",
+                          )
+                        )
+                          return;
+                        void run(async () => {
+                          await request("/" + course.id + "/archive", {
+                            revision: course.revision,
+                          });
+                          setSelected("");
+                          setCourse(null);
+                          await refresh();
+                        });
+                      }}
+                    >
+                      Archivar curso
+                    </button>
+                  </details>
+                </section>
+                <CourseResources
+                  key={course.id}
+                  modules={course.modules}
+                  value={resources}
+                  selection={moduleSelection}
+                  onChange={setResources}
                   disabled={busy || working}
-                  onClick={() => {
-                    if (
-                      !confirm(
-                        "¿Archivar «" +
-                          course.title +
-                          "»? Se conservarán sus módulos y recursos.",
-                      )
-                    )
-                      return;
+                  build={course.build}
+                  onRefresh={() => void run(() => load(course.id))}
+                  onStop={() =>
                     void run(async () => {
-                      await request("/" + course.id + "/archive", {
-                        revision: course.revision,
-                      });
-                      setSelected("");
-                      setCourse(null);
-                      await refresh();
-                    });
-                  }}
-                >
-                  Archivar curso
-                </button>
-              </details>
+                      await request(
+                        "/" + course.id + "/build",
+                        undefined,
+                        "DELETE",
+                      );
+                      await load(course.id);
+                    })
+                  }
+                />
+              </div>
             </>
           )}
         </main>
       </div>
+      {sharing && (
+        <Window title="Compartir Cursos IA" onClose={() => setSharing(false)}>
+          <p>
+            Actualmente solo los OWNER aprobados con acceso a IA pueden ver
+            todas las categorías y cursos. Otros roles no tienen acceso.
+          </p>
+          {owners ? (
+            <ul className="courses-owner-list">
+              {owners.map((u) => (
+                <li key={u.id}>
+                  <strong>{u.name}</strong>
+                  <span>{u.email}</span>
+                  <small>OWNER · acceso completo</small>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p role="status">Consultando accesos…</p>
+          )}
+        </Window>
+      )}
       {window === "new" && (
         <Window
           title={groups.find((g) => g.id === newGroup)?.create ?? "Crear curso"}
@@ -1906,6 +2155,10 @@ export function CoursesAI() {
                           brief: f.get("brief"),
                           minutes: Number(f.get("minutes")),
                           style: f.get("style"),
+                          mixStyles:
+                            f.get("mixStyles") === "inherit"
+                              ? null
+                              : f.get("mixStyles") === "yes",
                         },
                       },
                       "PATCH",
@@ -1934,13 +2187,32 @@ export function CoursesAI() {
                 </label>
                 <div className="course-grid">
                   <Select
+                    name="mixStyles"
+                    label="Combinación de formatos"
+                    value={
+                      m.mixStyles == null
+                        ? "inherit"
+                        : m.mixStyles
+                          ? "yes"
+                          : "no"
+                    }
+                    options={[
+                      { value: "inherit", label: "Usar configuración general" },
+                      { value: "yes", label: "Combinar según instrucciones" },
+                      { value: "no", label: "Mantener el estilo elegido" },
+                    ]}
+                  />
+                  <Select
                     name="style"
                     label="Estilo"
                     value={m.style}
-                    options={styles.map((value) => ({
-                      value,
-                      label: styleLabels[value],
-                    }))}
+                    options={[
+                      { value: "inherit", label: "Usar estilo general" },
+                      ...styles.map((value) => ({
+                        value,
+                        label: styleLabels[value],
+                      })),
+                    ]}
                   />
                   <label>
                     Minutos objetivo
