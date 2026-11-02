@@ -1,4 +1,8 @@
 "use client";
+import dynamic from "next/dynamic";
+const FinancialHistoryImport = dynamic(() =>
+  import("./financial-history-import").then((m) => m.FinancialHistoryImport),
+);
 import type { FinancialTableWindowMode } from "./financial-table-window";
 import { MetaWorkspaceSharing } from "./meta-workspace-sharing";
 import { useFinancialReadOnly } from "./financial-read-only";
@@ -768,14 +772,17 @@ export function ProductsCatalog() {
     </nav>
   );
   const documentShare = isOwner ? (
-    <button
-      type="button"
-      className="sheet-document-share"
-      title={"Compartir " + (special?.name ?? table?.name ?? "esta hoja")}
-      onClick={() => setSharingScope(documentScope)}
-    >
-      Compartir hoja
-    </button>
+    <>
+      <FinancialHistoryImport />
+      <button
+        type="button"
+        className="sheet-document-share"
+        title={"Compartir " + (special?.name ?? table?.name ?? "esta hoja")}
+        onClick={() => setSharingScope(documentScope)}
+      >
+        Compartir hoja
+      </button>
+    </>
   ) : null;
   if (!access)
     return (

@@ -800,9 +800,11 @@ export function EffectivenessTotals({
                             {m.sum ? (
                               <span
                                 title={
-                                  sum
-                                    ? `${sum.known}/${sum.expected} inventario con dato; ${sum.na} N.A.${sum.pending ? " Falta conversión." : ""}`
-                                    : "Sin datos"
+                                  cell?.historicalSales && m.key === "sales"
+                                    ? "Total histórico importado por país y día; independiente del desglose por diplomado."
+                                    : sum
+                                      ? `${sum.known}/${sum.expected} inventario con dato; ${sum.na} N.A.${sum.pending ? " Falta conversión." : ""}`
+                                      : "Sin datos"
                                 }
                               >
                                 {sum?.value === null || sum?.value === undefined

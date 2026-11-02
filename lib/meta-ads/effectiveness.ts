@@ -1083,6 +1083,135 @@ export async function changeEffectivenessIdentity(
       "La fila cambió. Recarga antes de editar.",
       409,
     );
+    if (b.country && b.country !== b.fromCountry) {
+      const [sourceDays, sourceHistory, destination, destinationHistory] =
+        await Promise.all([
+          tx.metaEffectivenessDay.findMany({
+            where: { row: { aliasId: b.aliasId, country: b.fromCountry } },
+            select: { sales: true, fixedCost: true, annotations: true },
+          }),
+          tx.metaAdvisorAssignment.count({
+            where: { aliasId: b.aliasId, country: b.fromCountry },
+          }),
+          tx.metaEffectivenessRow.findUnique({
+            where: {
+              aliasId_country_currency: {
+                aliasId: b.aliasId,
+                country: b.country,
+                currency: "",
+              },
+            },
+          }),
+          tx.metaAdvisorAssignment.findMany({
+            where: { aliasId: b.aliasId, country: b.country },
+            orderBy: [
+              { effectiveAt: "desc" },
+              { createdAt: "desc" },
+              { id: "desc" },
+            ],
+          }),
+        ]);
+      if (
+        !sourceDays.some(
+          (d) =>
+            d.sales !== null ||
+            d.fixedCost !== null ||
+            Object.keys((d.annotations ?? {}) as object).length > 0,
+        ) &&
+        (destination || destinationHistory.length)
+      ) {
+        const target = destination
+          ? await tx.metaEffectivenessRow.update({
+              where: { id: destination.id },
+              data: {
+                hidden: false,
+                revision: { increment: 1 },
+                ...(!destination.displayCurrency
+                  ? { displayCurrency: b.currency }
+                  : {}),
+              },
+            })
+          : await tx.metaEffectivenessRow.create({
+              data: {
+                aliasId: b.aliasId,
+                country: b.country,
+                currency: "",
+                displayCurrency: b.currency,
+                advisorId: destinationHistory[0]?.advisorId ?? null,
+                revision: 1,
+              },
+            });
+        if (old?.advisorId && old.advisorId !== target.advisorId) {
+          const list = await tx.metaEffectivenessSheet.findUniqueOrThrow({
+              where: { id: a.inventorySheetId },
+            }),
+            settings = (
+              await import("./inventory-sheet-activation")
+            ).activationSettings(list.config),
+            key = b.aliasId + "|" + b.country,
+            control = settings.rows[key] ?? { pinned: false };
+          const person = await tx.metaAdvisor.findUniqueOrThrow({
+            where: { id: old.advisorId },
+            select: { name: true },
+          });
+          if (
+            !control.advisorReviews?.some((r) => r.advisorId === old.advisorId)
+          ) {
+            settings.rows[key] = {
+              ...control,
+              advisorReviews: [
+                ...(control.advisorReviews ?? []),
+                {
+                  advisorId: old.advisorId,
+                  name: person.name,
+                  createdAt: new Date().toISOString(),
+                },
+              ],
+            };
+            await tx.metaEffectivenessSheet.update({
+              where: { id: list.id },
+              data: {
+                config: {
+                  ...(list.config as Prisma.JsonObject),
+                  inventoryActivation:
+                    settings as unknown as Prisma.InputJsonValue,
+                },
+                revision: { increment: 1 },
+              },
+            });
+          }
+        }
+        if (old)
+          await tx.metaEffectivenessRow.update({
+            where: { id: old.id },
+            data: { hidden: true, revision: { increment: 1 } },
+          });
+        else
+          await tx.metaEffectivenessRow.create({
+            data: {
+              aliasId: b.aliasId,
+              country: b.fromCountry,
+              currency: "",
+              hidden: true,
+              revision: 1,
+            },
+          });
+        await recordActivity(tx, {
+          data: {
+            actorId: actor.id,
+            action: "META_EFECTIVIDAD_DESTINO_REUTILIZADO",
+            resourceId: target.id,
+            detail: {
+              fromCountry: b.fromCountry,
+              country: b.country,
+              preservedHistory: true,
+              preservedSourceHistory: sourceHistory,
+            },
+          },
+        });
+        return { ok: true, reused: true };
+      }
+    }
     if (b.country !== b.fromCountry) {
       demand(
         !(await tx.metaAdvisorAssignment.count({

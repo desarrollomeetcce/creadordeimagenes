@@ -152,28 +152,31 @@ export async function deleteEffectivenessRows(
           (row) =>
             row.aliasId === target.aliasId && row.country === target.country,
         )!;
-        const state = await tx.metaEffectivenessState.upsert({
-          where: { aliasId_country: target },
-          create: { ...target, active: false, revision: 1 },
-          update: { active: false, revision: { increment: 1 } },
-        });
-        const sales = summarizePeriod(row.days, dates, "sales");
-        await tx.metaEffectivenessEvent.create({
-          data: {
-            stateId: state.id,
-            active: false,
-            actorId: actor.id,
-            snapshot: {
-              reason: "ROW_REMOVED_FROM_SHEET",
-              priorActive: row.active,
-              since: request.since,
-              until: request.until,
-              sales: sales.total,
-              salesPartial: sales.partial,
-              tableId: request.tableId,
+        // States require a real country. An unassigned row is retired by its tombstone and audit, without inventing a country.
+        if (target.country) {
+          const state = await tx.metaEffectivenessState.upsert({
+            where: { aliasId_country: target },
+            create: { ...target, active: false, revision: 1 },
+            update: { active: false, revision: { increment: 1 } },
+          });
+          const sales = summarizePeriod(row.days, dates, "sales");
+          await tx.metaEffectivenessEvent.create({
+            data: {
+              stateId: state.id,
+              active: false,
+              actorId: actor.id,
+              snapshot: {
+                reason: "ROW_REMOVED_FROM_SHEET",
+                priorActive: row.active,
+                since: request.since,
+                until: request.until,
+                sales: sales.total,
+                salesPartial: sales.partial,
+                tableId: request.tableId,
+              },
             },
-          },
-        });
+          });
+        }
         await tx.metaEffectivenessRow.upsert({
           where: { aliasId_country_currency: { ...target, currency: "" } },
           create: {

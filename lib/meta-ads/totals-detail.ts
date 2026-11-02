@@ -12,6 +12,7 @@ export const formatTotalDetail = (v: TotalValue) =>
 export type ManualTotalMetric =
   "baseManual" | "advisorBase" | "totalSpend" | "fixedCost";
 export type TotalDay = {
+  historicalSales?: boolean;
   sharedManualBase?: boolean;
   sums: Record<SheetMetric, TotalValue>;
   manual: Partial<Record<ManualTotalMetric, number | "NA">>;

@@ -2736,3 +2736,5 @@ button.ui-close-button:disabled, button.window-close:disabled { opacity: .55; }
 .financial-advisor-review-projection small { display:block; font-size:10px; }
 .financial-advisor-review-projection button { background:transparent; border:0; padding:2px 4px; font:inherit; color:inherit; }
 [data-theme="dark"] .financial-advisor-review-projection strong { color:#ff92d1; }
+
+.financial-history-import{width:min(960px,95vw);max-height:90dvh;overflow:auto;padding:20px;}.financial-history-import label{display:flex;flex-direction:column;gap:5px;margin:10px 0;}.financial-history-import label:has(input[type=checkbox]){flex-direction:row;align-items:center;}.history-import-targets{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px;}.history-import-aliases{max-height:45vh;overflow:auto;}.history-import-preview{margin-top:16px;padding:14px;border:1px solid var(--border);border-radius:10px;}

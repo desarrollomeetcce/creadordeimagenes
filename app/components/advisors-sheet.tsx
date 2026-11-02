@@ -1090,7 +1090,11 @@ function AdvisorDay({
       )}
       <td
         data-fill-kind="automatic"
-        title="Ventas recibidas de las hojas, registradas a nombre del asesor"
+        title={
+          cell.historicalSales
+            ? "Total histórico importado del asesor, independiente de los diplomados sin vendedor identificado."
+            : "Ventas recibidas de las hojas, registradas a nombre del asesor"
+        }
       >
         <button
           type="button"

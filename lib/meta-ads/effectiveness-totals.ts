@@ -4,7 +4,7 @@ import {
 } from "./manual-base-policy";
 import { activeWorkbookSheetId } from "./workbook-scope";
 import { db } from "../db";
-import {ownerOnly} from "./financial-access";
+import { ownerOnly } from "./financial-access";
 import { demand } from "../errors";
 import { recordActivity } from "../activity";
 import { effectiveness, effectivenessLock } from "./effectiveness";
@@ -103,10 +103,28 @@ export async function effectivenessTotals(
             if (value === null) delete manual.advisorBase;
             else manual.advisorBase = value;
           }
+          const sums = sumEffectivenessDay(g.rows, day);
+          const historical = (
+            entry?.values as Record<string, unknown> | undefined
+          )?.historicalSales;
+          if (
+            typeof historical === "number" &&
+            Number.isInteger(historical) &&
+            historical >= 0
+          )
+            sums.sales = {
+              value: historical,
+              known: 1,
+              expected: 1,
+              na: 0,
+              pending: false,
+              partial: false,
+            };
           return [
             day,
             {
-              sums: sumEffectivenessDay(g.rows, day),
+              historicalSales: typeof historical === "number",
+              sums,
               manual,
               sharedManualBase: !!base,
               revision: entry?.revision ?? 0,

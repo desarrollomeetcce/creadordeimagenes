@@ -94,6 +94,15 @@ export async function metaRoutes(
 ) {
   const path = parts.slice(1).join("/"),
     method = req.method;
+  if (path.startsWith("history-import/")) {
+    const history = await import("./financial-history-import");
+    if (path === "history-import/options" && method === "GET")
+      return send(await history.historyImportOptions(actor));
+    if (path === "history-import/preview" && method === "POST")
+      return send(await history.previewHistoryImport(actor, await body()));
+    if (path === "history-import/commit" && method === "POST")
+      return send(await history.commitHistoryImport(actor, await body()));
+  }
   if (path === "effectiveness-access" && method === "GET")
     return send(await financialCapabilities(actor));
   if (path === "effectiveness-sharing") {
@@ -155,10 +164,12 @@ export async function metaRoutes(
     if (method === "PUT")
       return send(await saveWorkspaceSharing(actor, await body()));
   }
-  const performanceRequest=path==="my-performance"||path.startsWith("my-performance/");
-  const moduleAccess = (isFinancialActor(actor)||performanceRequest)
-    ? { shared: false, canEdit: false, permission: null }
-    : await workspaceAccess(actor);
+  const performanceRequest =
+    path === "my-performance" || path.startsWith("my-performance/");
+  const moduleAccess =
+    isFinancialActor(actor) || performanceRequest
+      ? { shared: false, canEdit: false, permission: null }
+      : await workspaceAccess(actor);
   if (
     !isFinancialActor(actor) &&
     !performanceRequest &&
@@ -189,13 +200,43 @@ export async function metaRoutes(
       ).setMetaStatus(actor, parts[2], b.status, b.expectedStatus),
     );
   }
-  if(path === "my-performance/team" && method === "GET")return send(await(await import("./advisor-performance")).performanceTeam(actor));
-  if(path === "my-performance/targets" && method === "PUT")return send(await(await import("./advisor-performance")).saveAdvisorTargets(actor,await body()));
-  if(path === "my-performance/accounts" && method === "POST")return send(await(await import("./advisor-performance")).createAdvisorAccess(actor,await body()),201);
-  if((path === "advisors/contact-base" || path === "advisors/contact-base/bucket") && method === "GET"){
-   const service=await import("./advisor-contact-base");return send(await(path.endsWith("/bucket")?service.advisorContactBaseBucket:service.advisorContactBase)(actor,Object.fromEntries(req.nextUrl.searchParams)));
+  if (path === "my-performance/team" && method === "GET")
+    return send(
+      await (await import("./advisor-performance")).performanceTeam(actor),
+    );
+  if (path === "my-performance/targets" && method === "PUT")
+    return send(
+      await (
+        await import("./advisor-performance")
+      ).saveAdvisorTargets(actor, await body()),
+    );
+  if (path === "my-performance/accounts" && method === "POST")
+    return send(
+      await (
+        await import("./advisor-performance")
+      ).createAdvisorAccess(actor, await body()),
+      201,
+    );
+  if (
+    (path === "advisors/contact-base" ||
+      path === "advisors/contact-base/bucket") &&
+    method === "GET"
+  ) {
+    const service = await import("./advisor-contact-base");
+    return send(
+      await (
+        path.endsWith("/bucket")
+          ? service.advisorContactBaseBucket
+          : service.advisorContactBase
+      )(actor, Object.fromEntries(req.nextUrl.searchParams)),
+    );
   }
-  if(path === "advisors/contact-base" && method === "POST")return send(await(await import("./advisor-contact-base")).saveAdvisorContactBase(actor,await body()));
+  if (path === "advisors/contact-base" && method === "POST")
+    return send(
+      await (
+        await import("./advisor-contact-base")
+      ).saveAdvisorContactBase(actor, await body()),
+    );
   if (path === "my-performance" && method === "GET")
     return send(
       await (
@@ -275,24 +316,132 @@ export async function metaRoutes(
       ).importCatalogPackage(actor, await body()),
     );
   }
-  if(path === "inventory/sheets/batch" && method === "POST"){
-   ownerOnly(actor);const b=z.object({listId:z.string().min(1).max(100),revision:z.number().int().nonnegative(),tableIds:z.array(z.string().min(1).max(100)).min(1).max(1500),items:z.array(z.object({inventoryId:z.string().min(1).max(100),expectedName:z.string().min(1).max(150)}).strict()).min(1).max(1500)}).strict().parse(await body());
-   return send(await(await import("./inventory-import")).linkInventorySheetsBatch(actor,b));
+  if (path === "inventory/sheets/batch" && method === "POST") {
+    ownerOnly(actor);
+    const b = z
+      .object({
+        listId: z.string().min(1).max(100),
+        revision: z.number().int().nonnegative(),
+        tableIds: z.array(z.string().min(1).max(100)).min(1).max(1500),
+        items: z
+          .array(
+            z
+              .object({
+                inventoryId: z.string().min(1).max(100),
+                expectedName: z.string().min(1).max(150),
+              })
+              .strict(),
+          )
+          .min(1)
+          .max(1500),
+      })
+      .strict()
+      .parse(await body());
+    return send(
+      await (
+        await import("./inventory-import")
+      ).linkInventorySheetsBatch(actor, b),
+    );
   }
-  if(path==="effectiveness/catalog-status" && method==="GET")return send(await(await import("./inventory-sheet-activation")).financialCatalogStatus(actor,Object.fromEntries(req.nextUrl.searchParams)));
-  if(path==="inventory/sheet-activation/replace-batch" && method==="POST")return send(await(await import("./inventory-sheet-activation")).inventoryActivationReplaceBatch(actor,await body()));
-  if(path==="inventory/sheet-activation/replace" && method==="POST")return send(await(await import("./inventory-sheet-activation")).inventoryActivationReplace(actor,await body()));
-  if(path==="inventory/sheet-activation/limits" && method==="PUT")return send(await(await import("./inventory-sheet-activation")).saveInventoryFactorLimits(actor,await body()));
-  if(path==="inventory/sheet-activation/directory" && method==="GET")return send(await(await import("./inventory-sheet-activation")).inventoryActivationDirectory(actor,Object.fromEntries(req.nextUrl.searchParams)));
-  if(path==="inventory/sheet-activation/report" && method==="GET")return send(await(await import("./inventory-sheet-activation")).inventoryActivationReport(actor,Object.fromEntries(req.nextUrl.searchParams)));
-  if(path==="inventory/sheet-activation/sheet" && method==="POST")return send(await(await import("./inventory-sheet-activation")).inventoryActivationAddSheet(actor,await body()));
-  if(path==="inventory/sheet-activation" && method==="PATCH")return send(await(await import("./inventory-sheet-activation")).inventoryActivationChange(actor,await body()));
-  if(path==="inventory/trials" && method==="GET")return send(await(await import("./inventory-trials")).inventoryTrials(actor,Object.fromEntries(req.nextUrl.searchParams)));
-  if(path==="inventory/trials/catalog-report" && method==="GET")return send(await(await import("./inventory-trials")).inventoryCatalogTrialReport(actor,Object.fromEntries(req.nextUrl.searchParams)));
-  if(path==="inventory/trials/report" && method==="GET")return send(await(await import("./inventory-trials")).inventoryTrialReport(actor,Object.fromEntries(req.nextUrl.searchParams)));
-  if(path==="inventory/trials" && method==="POST")return send(await(await import("./inventory-trials")).saveInventoryTrial(actor,await body()));
-  if(path==="inventory/advisors" && method==="GET")return send(await(await import("./inventory-advisors")).inventoryAdvisors(actor,Object.fromEntries(req.nextUrl.searchParams)));
-  if(path==="inventory/advisors" && method==="POST")return send(await(await import("./inventory-advisors")).saveInventoryAdvisors(actor,await body()));
+  if (path === "effectiveness/catalog-status" && method === "GET")
+    return send(
+      await (
+        await import("./inventory-sheet-activation")
+      ).financialCatalogStatus(
+        actor,
+        Object.fromEntries(req.nextUrl.searchParams),
+      ),
+    );
+  if (path === "inventory/sheet-activation/replace-batch" && method === "POST")
+    return send(
+      await (
+        await import("./inventory-sheet-activation")
+      ).inventoryActivationReplaceBatch(actor, await body()),
+    );
+  if (path === "inventory/sheet-activation/replace" && method === "POST")
+    return send(
+      await (
+        await import("./inventory-sheet-activation")
+      ).inventoryActivationReplace(actor, await body()),
+    );
+  if (path === "inventory/sheet-activation/limits" && method === "PUT")
+    return send(
+      await (
+        await import("./inventory-sheet-activation")
+      ).saveInventoryFactorLimits(actor, await body()),
+    );
+  if (path === "inventory/sheet-activation/directory" && method === "GET")
+    return send(
+      await (
+        await import("./inventory-sheet-activation")
+      ).inventoryActivationDirectory(
+        actor,
+        Object.fromEntries(req.nextUrl.searchParams),
+      ),
+    );
+  if (path === "inventory/sheet-activation/report" && method === "GET")
+    return send(
+      await (
+        await import("./inventory-sheet-activation")
+      ).inventoryActivationReport(
+        actor,
+        Object.fromEntries(req.nextUrl.searchParams),
+      ),
+    );
+  if (path === "inventory/sheet-activation/sheet" && method === "POST")
+    return send(
+      await (
+        await import("./inventory-sheet-activation")
+      ).inventoryActivationAddSheet(actor, await body()),
+    );
+  if (path === "inventory/sheet-activation" && method === "PATCH")
+    return send(
+      await (
+        await import("./inventory-sheet-activation")
+      ).inventoryActivationChange(actor, await body()),
+    );
+  if (path === "inventory/trials" && method === "GET")
+    return send(
+      await (
+        await import("./inventory-trials")
+      ).inventoryTrials(actor, Object.fromEntries(req.nextUrl.searchParams)),
+    );
+  if (path === "inventory/trials/catalog-report" && method === "GET")
+    return send(
+      await (
+        await import("./inventory-trials")
+      ).inventoryCatalogTrialReport(
+        actor,
+        Object.fromEntries(req.nextUrl.searchParams),
+      ),
+    );
+  if (path === "inventory/trials/report" && method === "GET")
+    return send(
+      await (
+        await import("./inventory-trials")
+      ).inventoryTrialReport(
+        actor,
+        Object.fromEntries(req.nextUrl.searchParams),
+      ),
+    );
+  if (path === "inventory/trials" && method === "POST")
+    return send(
+      await (
+        await import("./inventory-trials")
+      ).saveInventoryTrial(actor, await body()),
+    );
+  if (path === "inventory/advisors" && method === "GET")
+    return send(
+      await (
+        await import("./inventory-advisors")
+      ).inventoryAdvisors(actor, Object.fromEntries(req.nextUrl.searchParams)),
+    );
+  if (path === "inventory/advisors" && method === "POST")
+    return send(
+      await (
+        await import("./inventory-advisors")
+      ).saveInventoryAdvisors(actor, await body()),
+    );
   if (path === "inventory/sheets" && method === "POST") {
     ownerOnly(actor);
     const b = z
@@ -430,8 +579,23 @@ export async function metaRoutes(
             categoryIds: z.array(z.string().min(1).max(100)).max(40),
           })
           .strict(),
-        z.object({...base,action:z.literal("CLEAR_BULK"),ids:z.array(z.string().min(1).max(100)).min(1).max(1500),kind:z.enum(["PRIMARY","SECONDARY"])}).strict(),
-        z.object({...base,action:z.literal("REMOVE_BULK"),ids:z.array(z.string().min(1).max(100)).min(1).max(1500),names:z.array(z.string().trim().min(1).max(300)).min(1).max(100),kind:z.enum(["PRIMARY","SECONDARY"])}).strict(),
+        z
+          .object({
+            ...base,
+            action: z.literal("CLEAR_BULK"),
+            ids: z.array(z.string().min(1).max(100)).min(1).max(1500),
+            kind: z.enum(["PRIMARY", "SECONDARY"]),
+          })
+          .strict(),
+        z
+          .object({
+            ...base,
+            action: z.literal("REMOVE_BULK"),
+            ids: z.array(z.string().min(1).max(100)).min(1).max(1500),
+            names: z.array(z.string().trim().min(1).max(300)).min(1).max(100),
+            kind: z.enum(["PRIMARY", "SECONDARY"]),
+          })
+          .strict(),
         z
           .object({
             ...base,
@@ -518,7 +682,7 @@ export async function metaRoutes(
     const b = z
       .object({
         listId: z.string().min(1).max(100),
-        preserveCatalog:z.boolean().optional(),
+        preserveCatalog: z.boolean().optional(),
         entries: z
           .array(
             z
@@ -753,7 +917,7 @@ export async function metaRoutes(
         ? z
             .object({
               name: z.string().trim().min(1).max(100),
-              commercialRole: z.enum(["ADVISOR","SUPERVISOR"]).optional(),
+              commercialRole: z.enum(["ADVISOR", "SUPERVISOR"]).optional(),
               sheetId: z.string().min(1).max(100).optional(),
             })
             .strict()
@@ -761,7 +925,7 @@ export async function metaRoutes(
         : z
             .object({
               name: z.string().trim().min(1).max(100),
-              commercialRole: z.enum(["ADVISOR","SUPERVISOR"]).optional(),
+              commercialRole: z.enum(["ADVISOR", "SUPERVISOR"]).optional(),
               id: z.string().min(1).max(80),
               revision: z.number().int().nonnegative(),
             })
@@ -809,9 +973,17 @@ export async function metaRoutes(
     );
   }
   if (path === "effectiveness/advisor-support" && method === "POST")
-    return send(await (await import("./advisor-support")).addAdvisorSupport(actor,await body()));
+    return send(
+      await (
+        await import("./advisor-support")
+      ).addAdvisorSupport(actor, await body()),
+    );
   if (path === "effectiveness/advisor-support" && method === "PATCH")
-    return send(await (await import("./advisor-support")).endAdvisorSupport(actor,await body()));
+    return send(
+      await (
+        await import("./advisor-support")
+      ).endAdvisorSupport(actor, await body()),
+    );
   if (path === "effectiveness/advisor-review" && method === "GET") {
     ownerOnly(actor);
     const q = z
@@ -827,9 +999,33 @@ export async function metaRoutes(
       ).assignmentReview(actor, q.aliasId, q.country, q.day),
     );
   }
-  if(path === "effectiveness/advisors/batch" && method === "PATCH"){
-   ownerOnly(actor);const b=z.object({tableId:z.string().min(1).max(100),advisorId:z.string().min(1).max(100).nullable(),...assignmentTimingSchema.shape,assignmentKind:z.enum(["DEFINITIVE","TEMPORARY"]).optional(),until:z.string().date().optional(),targets:z.array(z.object({aliasId:z.string().min(1).max(100),country:z.string().refine(isCountryCode,"Elige un país válido."),revision:z.number().int().nonnegative()}).strict()).min(1).max(1500)}).strict().parse(await body());
-   return send(await(await import("./advisors")).assignRowsAdvisor(actor,b));
+  if (path === "effectiveness/advisors/batch" && method === "PATCH") {
+    ownerOnly(actor);
+    const b = z
+      .object({
+        tableId: z.string().min(1).max(100),
+        advisorId: z.string().min(1).max(100).nullable(),
+        ...assignmentTimingSchema.shape,
+        assignmentKind: z.enum(["DEFINITIVE", "TEMPORARY"]).optional(),
+        until: z.string().date().optional(),
+        targets: z
+          .array(
+            z
+              .object({
+                aliasId: z.string().min(1).max(100),
+                country: z
+                  .string()
+                  .refine(isCountryCode, "Elige un país válido."),
+                revision: z.number().int().nonnegative(),
+              })
+              .strict(),
+          )
+          .min(1)
+          .max(1500),
+      })
+      .strict()
+      .parse(await body());
+    return send(await (await import("./advisors")).assignRowsAdvisor(actor, b));
   }
   if (path === "effectiveness/advisor" && method === "PATCH") {
     ownerOnly(actor);
@@ -840,8 +1036,8 @@ export async function metaRoutes(
         advisorId: z.string().min(1).max(80).nullable(),
         revision: z.number().int().nonnegative(),
         ...assignmentTimingSchema.partial().shape,
-        metaHistoryMode:z.enum(["ALL","ASSIGNMENT","CUSTOM"]).optional(),
-        metaHistorySince:z.string().date().optional(),
+        metaHistoryMode: z.enum(["ALL", "ASSIGNMENT", "CUSTOM"]).optional(),
+        metaHistorySince: z.string().date().optional(),
       })
       .strict()
       .parse(await body());
@@ -1049,7 +1245,12 @@ export async function metaRoutes(
       (path === "manual-base" || path === "advisor-base") &&
       method === "POST"
     ) {
-      if(path==="advisor-base")demand(actor.role==="OWNER","BC se registra desde la pestaña de Asesores.",403);
+      if (path === "advisor-base")
+        demand(
+          actor.role === "OWNER",
+          "BC se registra desde la pestaña de Asesores.",
+          403,
+        );
       const { manualBaseAllocationsSchema } =
         await import("./manual-base-policy");
       const b = scope
@@ -1433,8 +1634,8 @@ export async function metaRoutes(
         country: z.string().refine(isCountryCode),
         since: z.string().date(),
         until: z.string().date(),
-        reportSince:z.string().date().optional(),
-        reportUntil:z.string().date().optional(),
+        reportSince: z.string().date().optional(),
+        reportUntil: z.string().date().optional(),
       })
       .strict()
       .parse(Object.fromEntries(req.nextUrl.searchParams));
@@ -1691,8 +1892,12 @@ export async function metaRoutes(
       201,
     );
   }
-  if (path === "meta-advisor-options" && method === "GET") return send(await (await import("./aliases")).metaAssignmentAdvisors(actor));
-  if (path === "alias-catalog" && method === "GET") return send(await (await import("./aliases")).metaAliasCatalog(actor));
+  if (path === "meta-advisor-options" && method === "GET")
+    return send(
+      await (await import("./aliases")).metaAssignmentAdvisors(actor),
+    );
+  if (path === "alias-catalog" && method === "GET")
+    return send(await (await import("./aliases")).metaAliasCatalog(actor));
   if (path === "aliases" && method === "GET")
     return send(await (await import("./aliases")).aliases(actor));
   if (path === "aliases" && method === "POST") {
@@ -1727,6 +1932,21 @@ export async function metaRoutes(
       await (await import("./aliases")).saveAlias(actor, b.name, parts[2]),
     );
   }
+  if (path === "objects/alias-context" && method === "GET") {
+    const q = z
+      .object({
+        tableId: z.string().min(1).max(100),
+        country: z.string().refine(isCountryCode),
+        aliasId: z.string().min(1).max(100).optional(),
+        catalogId: z.string().min(1).max(120).optional(),
+        name: z.string().trim().min(1).max(150).optional(),
+      })
+      .strict()
+      .parse(Object.fromEntries(req.nextUrl.searchParams));
+    return send(
+      await (await import("./aliases")).metaAssignmentContext(actor, q),
+    );
+  }
   if (path === "objects/alias" && method === "PATCH") {
     await metaEditorOnly(actor);
     const b = z
@@ -1735,8 +1955,27 @@ export async function metaRoutes(
           .array(z.string().regex(/^\d{1,40}$/))
           .min(1)
           .max(100),
-        currency: z.string().refine(isCurrency,"Moneda inválida.").optional(),
-        selection: z.object({tableId:z.string().min(1).max(100),catalogId:z.string().min(1).max(120).optional(),name:z.string().trim().min(1).max(150).optional(),inventorySheetId:z.string().min(1).max(100).optional()}).strict().optional(),
+        assignmentContext: z
+          .object({
+            aliasId: z.string().min(1).max(100).nullable(),
+            tableId: z.string().min(1).max(100),
+            country: z.string().refine(isCountryCode),
+            revision: z.number().int().min(0),
+            inventoryId: z.string().min(1).max(100).optional(),
+            advisorRevision: z.number().int().min(0).optional(),
+          })
+          .strict()
+          .optional(),
+        currency: z.string().refine(isCurrency, "Moneda inválida.").optional(),
+        selection: z
+          .object({
+            tableId: z.string().min(1).max(100),
+            catalogId: z.string().min(1).max(120).optional(),
+            name: z.string().trim().min(1).max(150).optional(),
+            inventorySheetId: z.string().min(1).max(100).optional(),
+          })
+          .strict()
+          .optional(),
         aliasId: z.string().min(1).max(80).nullable(),
         advisorId: z.string().min(1).max(80).nullable().optional(),
         country: z
@@ -1750,7 +1989,16 @@ export async function metaRoutes(
     return send(
       await (
         await import("./aliases")
-      ).assignAliases(actor, b.objectIds, b.aliasId, b.country, b.advisorId, b.selection, b.currency),
+      ).assignAliases(
+        actor,
+        b.objectIds,
+        b.aliasId,
+        b.country,
+        b.advisorId,
+        b.selection,
+        b.currency,
+        b.assignmentContext,
+      ),
     );
   }
   if (
@@ -1763,8 +2011,27 @@ export async function metaRoutes(
     await metaEditorOnly(actor);
     const b = z
       .object({
-        currency: z.string().refine(isCurrency,"Moneda inválida.").optional(),
-        selection: z.object({tableId:z.string().min(1).max(100),catalogId:z.string().min(1).max(120).optional(),name:z.string().trim().min(1).max(150).optional(),inventorySheetId:z.string().min(1).max(100).optional()}).strict().optional(),
+        assignmentContext: z
+          .object({
+            aliasId: z.string().min(1).max(100).nullable(),
+            tableId: z.string().min(1).max(100),
+            country: z.string().refine(isCountryCode),
+            revision: z.number().int().min(0),
+            inventoryId: z.string().min(1).max(100).optional(),
+            advisorRevision: z.number().int().min(0).optional(),
+          })
+          .strict()
+          .optional(),
+        currency: z.string().refine(isCurrency, "Moneda inválida.").optional(),
+        selection: z
+          .object({
+            tableId: z.string().min(1).max(100),
+            catalogId: z.string().min(1).max(120).optional(),
+            name: z.string().trim().min(1).max(150).optional(),
+            inventorySheetId: z.string().min(1).max(100).optional(),
+          })
+          .strict()
+          .optional(),
         aliasId: z.string().max(80).nullable(),
         advisorId: z.string().min(1).max(80).nullable().optional(),
         country: z
@@ -1778,7 +2045,16 @@ export async function metaRoutes(
     return send(
       await (
         await import("./aliases")
-      ).assignAlias(actor, parts[2], b.aliasId, b.country, b.advisorId, b.selection, b.currency),
+      ).assignAlias(
+        actor,
+        parts[2],
+        b.aliasId,
+        b.country,
+        b.advisorId,
+        b.selection,
+        b.currency,
+        b.assignmentContext,
+      ),
     );
   }
   if (path === "marketing-oauth-config" && method === "GET") {
@@ -1975,23 +2251,27 @@ export async function metaRoutes(
     });
     const [activity, stored, totals] = await Promise.all([
       light ? Promise.resolve(new Map()) : accountActivities(rows),
-      light ? Promise.resolve([]) : db.metaAdDaily.groupBy({
-        by: ["accountId"],
-        where: {
-          accountId: { in: rows.map((a) => a.id) },
-          scope: "7d_click,1d_view|impression",
-        },
-        _min: { day: true },
-        _max: { day: true, updatedAt: true },
-      }),
-      light ? Promise.resolve([]) : db.metaAdTotal.groupBy({
-        by: ["accountId"],
-        where: {
-          accountId: { in: rows.map((a) => a.id) },
-          scope: "7d_click,1d_view|impression",
-        },
-        _max: { updatedAt: true },
-      }),
+      light
+        ? Promise.resolve([])
+        : db.metaAdDaily.groupBy({
+            by: ["accountId"],
+            where: {
+              accountId: { in: rows.map((a) => a.id) },
+              scope: "7d_click,1d_view|impression",
+            },
+            _min: { day: true },
+            _max: { day: true, updatedAt: true },
+          }),
+      light
+        ? Promise.resolve([])
+        : db.metaAdTotal.groupBy({
+            by: ["accountId"],
+            where: {
+              accountId: { in: rows.map((a) => a.id) },
+              scope: "7d_click,1d_view|impression",
+            },
+            _max: { updatedAt: true },
+          }),
     ]);
     const coverage = new Map(
       stored.map((s) => [
@@ -2024,8 +2304,19 @@ export async function metaRoutes(
       })),
     );
   }
-  if(parts[1]==="accounts" && parts[2] && parts[3]==="refresh-visible" && parts.length===4 && method==="POST"){
-    const b=await body();return send(await (await import("./realtime-refresh")).refreshVisibleMeta(actor,parts[2],b));
+  if (
+    parts[1] === "accounts" &&
+    parts[2] &&
+    parts[3] === "refresh-visible" &&
+    parts.length === 4 &&
+    method === "POST"
+  ) {
+    const b = await body();
+    return send(
+      await (
+        await import("./realtime-refresh")
+      ).refreshVisibleMeta(actor, parts[2], b),
+    );
   }
   if (path === "sync-status" && method === "GET") {
     const ids = [

@@ -12,6 +12,7 @@ export type AdvisorDayData = {
   baseTimeUnavailable?: boolean;
   status: Attendance;
   revision: number;
+  historicalSales?: boolean;
   sales: number | null;
   partial: boolean;
   na: boolean;

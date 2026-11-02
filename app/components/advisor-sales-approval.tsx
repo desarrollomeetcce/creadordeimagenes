@@ -314,9 +314,9 @@ export function AdvisorSalesApproval({
                   <SheetSearchSelect
                     label={`Asesor ${index + 1} del reparto`}
                     value={entry.advisorId ?? ""}
-                    placeholder="Sin asesor"
+                    placeholder="Se desconoce"
                     options={[
-                      { value: "", label: "Sin asesor" },
+                      { value: "", label: "Se desconoce" },
                       ...data.advisors.map((a) => ({
                         value: a.id,
                         label: a.label ?? a.name,
@@ -401,7 +401,7 @@ export function AdvisorSalesApproval({
               {data.allocations.map((a, i) => (
                 <li key={i}>
                   {data.advisors.find((p) => p.id === a.advisorId)?.label ??
-                    "Sin asesor"}
+                    "Se desconoce"}
                   : {a.sales ?? "Sin dato"}
                 </li>
               ))}

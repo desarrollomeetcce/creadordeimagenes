@@ -51,6 +51,144 @@ export type MetaInventorySelection = {
   inventorySheetId?: string;
 };
 
+export type AssignmentContext = {
+  aliasId: string | null;
+  tableId: string;
+  country: string;
+  revision: number;
+  inventoryId?: string;
+  advisorRevision?: number;
+};
+export async function metaAssignmentContext(
+  actor: Actor,
+  input: {
+    tableId: string;
+    country: string;
+    aliasId?: string;
+    catalogId?: string;
+    name?: string;
+  },
+) {
+  await workspaceEditorOnly(actor);
+  demand(isCountryCode(input.country), "País inválido.");
+  return db.$transaction(async (tx) => {
+    await workspaceEditorOnly(actor, tx);
+    demand(
+      await tx.metaAliasTable.findUnique({ where: { id: input.tableId } }),
+      "Hoja no disponible.",
+      404,
+    );
+    let alias = input.aliasId
+      ? await tx.metaAlias.findFirst({
+          where: {
+            id: input.aliasId,
+            tableId: input.tableId,
+            inventorySheet: { archivedAt: null },
+          },
+        })
+      : null;
+    if (input.aliasId)
+      demand(alias, "Diplomado no disponible en esta hoja.", 404);
+    if (!input.aliasId) {
+      let name = input.name;
+      if (input.catalogId?.startsWith("item:")) {
+        const item = await tx.metaInventoryItem.findFirst({
+          where: { id: input.catalogId.slice(5), sheet: { archivedAt: null } },
+        });
+        demand(item, "Diplomado del catálogo no disponible.", 404);
+        name = item.name;
+      } else if (input.catalogId?.startsWith("alias:")) {
+        const item = await tx.metaAlias.findFirst({
+          where: {
+            id: input.catalogId.slice(6),
+            inventorySheet: { archivedAt: null },
+          },
+        });
+        demand(item, "Diplomado del catálogo no disponible.", 404);
+        name = item.name;
+      }
+      demand(name, "Elige un diplomado.");
+      const matches = await tx.metaAlias.findMany({
+        where: { tableId: input.tableId, inventorySheet: { archivedAt: null } },
+      });
+      const found = matches.filter(
+        (a) => categoryKey(a.name) === categoryKey(name),
+      );
+      demand(
+        found.length < 2,
+        "Hay varios nombres equivalentes. Elige la ficha existente.",
+        409,
+      );
+      alias = found[0] ?? null;
+    }
+    const row = alias
+      ? await tx.metaEffectivenessRow.findUnique({
+          where: {
+            aliasId_country_currency: {
+              aliasId: alias.id,
+              country: input.country,
+              currency: "",
+            },
+          },
+          select: {
+            advisorId: true,
+            displayCurrency: true,
+            revision: true,
+            advisor: { select: { name: true } },
+          },
+        })
+      : null;
+    const item = input.catalogId?.startsWith("item:")
+      ? await tx.metaInventoryItem.findUnique({
+          where: { id: input.catalogId.slice(5) },
+          include: {
+            advisors: { include: { advisor: { include: { sheet: true } } } },
+          },
+        })
+      : alias
+        ? await tx.metaInventoryItem.findUnique({
+            where: {
+              sheetId_name: {
+                sheetId: alias.inventorySheetId,
+                name: alias.name,
+              },
+            },
+            include: {
+              advisors: { include: { advisor: { include: { sheet: true } } } },
+            },
+          })
+        : null;
+    const assigned =
+      item?.advisors.filter((a) => !a.advisor.sheet.archivedAt) ?? [];
+    const hasHistory = alias
+      ? await tx.metaAdvisorAssignment.count({
+          where: { aliasId: alias.id, country: input.country },
+        })
+      : 0;
+    const suggested =
+      !row?.advisorId && !hasHistory && assigned.length === 1
+        ? assigned[0].advisor
+        : null;
+    return {
+      aliasId: alias?.id ?? null,
+      tableId: input.tableId,
+      country: input.country,
+      revision: row?.revision ?? 0,
+      advisorId: row?.advisorId ?? suggested?.id ?? null,
+      advisorName: row?.advisor?.name ?? suggested?.name ?? null,
+      source: row?.advisorId ? "row" : suggested ? "inventory" : null,
+      ...(suggested && item
+        ? { inventoryId: item.id, advisorRevision: item.advisorRevision }
+        : {}),
+      inventoryAdvisors: assigned.map((a) => ({
+        id: a.advisorId,
+        name: a.advisor.name,
+      })),
+      currency: row?.displayCurrency ?? "",
+    };
+  });
+}
+
 export async function metaAssignmentAdvisors(actor: Actor) {
   await workspaceEditorOnly(actor);
   return db.$transaction(async (tx) => {
@@ -335,6 +473,7 @@ export async function assignAlias(
   advisorId?: string | null,
   selection?: MetaInventorySelection,
   currency?: string,
+  assignmentContext?: AssignmentContext,
 ) {
   return assignAliases(
     actor,
@@ -344,6 +483,7 @@ export async function assignAlias(
     advisorId,
     selection,
     currency,
+    assignmentContext,
   );
 }
 export async function assignAliases(
@@ -354,6 +494,7 @@ export async function assignAliases(
   advisorId?: string | null,
   selection?: MetaInventorySelection,
   currency?: string,
+  assignmentContext?: AssignmentContext,
 ) {
   await metaEditorOnly(actor);
   demand(currency === undefined || isCurrency(currency), "Moneda inválida.");
@@ -439,6 +580,30 @@ export async function assignAliases(
         where: { id: aliasId },
         include: { table: true, inventorySheet: true },
       });
+      if (assignmentContext) {
+        demand(
+          (!assignmentContext.aliasId ||
+            assignmentContext.aliasId === aliasId) &&
+            assignmentContext.tableId === alias.tableId &&
+            assignmentContext.country === country &&
+            assignmentContext.revision === (row?.revision ?? 0),
+          "El asesor o la moneda de la hoja cambiaron. Abre de nuevo la vinculación para ver los datos actuales.",
+          409,
+        );
+        if (assignmentContext.inventoryId) {
+          const item = await tx.metaInventoryItem.findUnique({
+            where: { id: assignmentContext.inventoryId },
+          });
+          demand(
+            item &&
+              item.sheetId === alias.inventorySheetId &&
+              categoryKey(item.name) === categoryKey(alias.name) &&
+              item.advisorRevision === assignmentContext.advisorRevision,
+            "Los asesores del inventario cambiaron. Abre de nuevo la vinculación.",
+            409,
+          );
+        }
+      }
       if (
         await setInventoryMembership(
           tx,
@@ -602,7 +767,9 @@ export async function assignAliases(
           detail: {
             aliasId,
             addedToTable,
-            ...(advisorReview ? { advisorReview: true, requestedAdvisorId: advisorId } : {}),
+            ...(advisorReview
+              ? { advisorReview: true, requestedAdvisorId: advisorId }
+              : {}),
             ...(aliasId && linkedAdvisorId === undefined
               ? {}
               : { advisorId: aliasId ? (linkedAdvisorId ?? null) : null }),

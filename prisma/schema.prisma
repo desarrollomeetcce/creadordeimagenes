@@ -986,6 +986,7 @@ model MetaEffectivenessSync {
 }
 
 model MetaAdvisor {
+ historicalSales MetaHistoricalAdvisorSale[]
  commercialRole String @default("ADVISOR")
  supports MetaAdvisorSupport[]
  portal MetaAdvisorPortal?
@@ -1473,4 +1474,27 @@ model AICoursePromoAsset {
  mime String
  createdAt DateTime @default(now())
  @@unique([promoId,revision,scene,kind])
+}
+
+model MetaFinancialHistoryImport {
+ id String @id @default(cuid())
+ digest String @unique
+ actorId String
+ source Json
+ payload Json
+ before Json
+ summary Json
+ createdAt DateTime @default(now())
+ sales MetaHistoricalAdvisorSale[]
+}
+model MetaHistoricalAdvisorSale {
+ advisorId String
+ advisor MetaAdvisor @relation(fields:[advisorId],references:[id],onDelete:Restrict)
+ country String
+ day String
+ sales Int
+ importId String
+ source MetaFinancialHistoryImport @relation(fields:[importId],references:[id],onDelete:Restrict)
+ @@id([advisorId,country,day])
+ @@index([day,country])
 }

@@ -932,6 +932,30 @@ async function readAdvisorSheet(
           absences.map((a) => [key(a.advisorId, a.day), a]),
         );
       const personIds = new Set(people.map((p) => p.id));
+      const historicalTotals = new Map<string, number>();
+      const historyScope = financialContext(actor);
+      if (
+        tableId === "all" &&
+        !filters.aliasId &&
+        !filters.periodId &&
+        (!historyScope ||
+          historyScope.kind === "ADVISORS" ||
+          historyScope.scope === "ALL")
+      ) {
+        const historical = await tx.metaHistoricalAdvisorSale.findMany({
+          where: {
+            advisorId: { in: [...personIds] },
+            day: { gte: since, lte: until },
+            ...(filters.country ? { country: filters.country } : {}),
+          },
+          select: { advisorId: true, day: true, sales: true },
+        });
+        for (const row of historical) {
+          const k = key(row.advisorId, row.day);
+          historicalTotals.set(k, (historicalTotals.get(k) ?? 0) + row.sales);
+        }
+      }
+
       const totals = new Map<
         string,
         Map<
@@ -1262,12 +1286,18 @@ async function readAdvisorSheet(
                   baseTimeUnavailable: false,
                   status: att?.status ?? null,
                   revision: att?.revision ?? 0,
-                  sales: sum?.sales ?? null,
+                  sales:
+                    historicalTotals.get(key(p.id, day)) ?? sum?.sales ?? null,
+                  historicalSales: historicalTotals.has(key(p.id, day)),
                   partial:
+                    !historicalTotals.has(key(p.id, day)) &&
                     !!sum &&
                     (sum.partial ||
                       (sum.known > 0 && sum.known + sum.na < sum.expected)),
-                  na: !!sum && sum.na === sum.expected,
+                  na:
+                    !historicalTotals.has(key(p.id, day)) &&
+                    !!sum &&
+                    sum.na === sum.expected,
                   absence,
                 },
               ];

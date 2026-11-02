@@ -13,6 +13,7 @@ import { db } from "../lib/db";
 import { encryptKey } from "../lib/crypto";
 import {
   assignAliases,
+  metaAssignmentContext,
   metaAliasCatalog,
   aliasTables,
 } from "../lib/meta-ads/aliases";
@@ -749,6 +750,140 @@ test("Meta inventory assignment materializes catalog choices atomically and flag
         assert.equal(detail.lifetime.activeDays, 1);
         assert.equal(detail.lifetime.activeHours, 1);
         assert.equal(detail.lifetime.timePartial, false);
+      },
+    );
+    await t.test(
+      "Meta trae asesor/moneda de hoja o asesor único de inventario; no escribe al consultar y rechaza contexto antiguo",
+      async () => {
+        const person = await db.metaAdvisor.findFirstOrThrow({
+          where: { sheet: { name: "Advisors " + tag } },
+        });
+        const second = await db.metaAdvisor.create({
+          data: { sheetId: person.sheetId, name: "Segundo contexto " + tag },
+        });
+        const item = await db.metaInventoryItem.create({
+          data: { sheetId: list.id, name: "Contexto " + tag },
+        });
+        await db.metaInventoryAdvisor.create({
+          data: { itemId: item.id, advisorId: person.id },
+        });
+        const before = await db.metaAlias.count({
+          where: { tableId: table.id },
+        });
+        const ctx = await metaAssignmentContext(actor, {
+          tableId: table.id,
+          country: "PE",
+          catalogId: "item:" + item.id,
+        });
+        assert.equal(ctx.advisorId, person.id);
+        assert.equal(ctx.source, "inventory");
+        assert.equal(ctx.currency, "");
+        assert.equal(ctx.aliasId, null);
+        assert.equal(
+          await db.metaAlias.count({ where: { tableId: table.id } }),
+          before,
+        );
+        await assert.rejects(
+          metaAssignmentContext(
+            { id: viewer.id, role: viewer.role },
+            { tableId: table.id, country: "PE", catalogId: "item:" + item.id },
+          ),
+        );
+        const expected = {
+          aliasId: ctx.aliasId,
+          tableId: ctx.tableId,
+          country: ctx.country,
+          revision: ctx.revision,
+          inventoryId: ctx.inventoryId,
+          advisorRevision: ctx.advisorRevision,
+        };
+        await db.metaInventoryItem.update({
+          where: { id: item.id },
+          data: { advisorRevision: { increment: 1 } },
+        });
+        await assert.rejects(
+          assignAliases(
+            actor,
+            [objectIds[2]],
+            null,
+            "PE",
+            person.id,
+            { tableId: table.id, catalogId: "item:" + item.id },
+            "PEN",
+            expected,
+          ),
+          /inventario cambiaron/,
+        );
+        assert.equal(
+          await db.metaAlias.count({ where: { tableId: table.id } }),
+          before,
+        );
+        const fresh = await metaAssignmentContext(actor, {
+          tableId: table.id,
+          country: "PE",
+          catalogId: "item:" + item.id,
+        });
+        const linked = await assignAliases(
+          actor,
+          [objectIds[2]],
+          null,
+          "PE",
+          person.id,
+          { tableId: table.id, catalogId: "item:" + item.id },
+          "PEN",
+          {
+            aliasId: fresh.aliasId,
+            tableId: fresh.tableId,
+            country: fresh.country,
+            revision: fresh.revision,
+            inventoryId: fresh.inventoryId,
+            advisorRevision: fresh.advisorRevision,
+          },
+        );
+        const saved = await metaAssignmentContext(actor, {
+          tableId: table.id,
+          country: "PE",
+          aliasId: linked.aliasId!,
+        });
+        assert.equal(saved.source, "row");
+        assert.equal(saved.advisorId, person.id);
+        assert.equal(saved.currency, "PEN");
+        await db.metaInventoryAdvisor.create({
+          data: { itemId: item.id, advisorId: second.id },
+        });
+        await db.metaInventoryItem.update({
+          where: { id: item.id },
+          data: { advisorRevision: { increment: 1 } },
+        });
+        const otherCountry = await metaAssignmentContext(actor, {
+          tableId: table.id,
+          country: "EC",
+          aliasId: linked.aliasId!,
+        });
+        assert.equal(otherCountry.advisorId, null);
+        assert.equal(otherCountry.inventoryAdvisors.length, 2);
+        await db.metaEffectivenessRow.updateMany({
+          where: { aliasId: linked.aliasId!, country: "PE" },
+          data: { revision: { increment: 1 } },
+        });
+        await assert.rejects(
+          assignAliases(
+            actor,
+            [objectIds[2]],
+            linked.aliasId!,
+            "PE",
+            person.id,
+            undefined,
+            "PEN",
+            {
+              aliasId: saved.aliasId,
+              tableId: saved.tableId,
+              country: saved.country,
+              revision: saved.revision,
+            },
+          ),
+          /hoja cambiaron/,
+        );
       },
     );
     await t.test(
