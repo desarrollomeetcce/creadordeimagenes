@@ -71,6 +71,8 @@ export function parseMetaPreferences(raw: string | null): MetaPreferences {
       "newest",
       "age",
       "start",
+      "cac",
+      "evaluation",
     ],
     analysisPeriod: ["today", "7", "15", "30", "lifetime"],
     direction: ["asc", "desc"],

@@ -2759,3 +2759,6 @@ button.ui-close-button:disabled, button.window-close:disabled { opacity: .55; }
 .meta-campaign-evaluation .meta-evaluation-dates{font-size:10px;font-weight:500;color:var(--muted)}
 
 .meta-period-spend{display:block!important;font-size:10px!important;line-height:1.4;font-weight:650;color:var(--text)}
+
+.meta-evaluation-order { display: flex; align-items: center; gap: 4px; }
+.meta-evaluation-order > button { flex: 1; min-width: 0; }

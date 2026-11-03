@@ -73,3 +73,30 @@ export function compareDailyRows(
     return av === bv ? a.day.localeCompare(b.day) : av === null ? 1 : -1;
   return direction * (av - bv) || a.day.localeCompare(b.day);
 }
+
+/** Missing CAC/state remain last in both directions. Compare money only within its currency. */
+export function compareCampaignEvaluations(
+  a: { currency: string; cac: number | null; status: string },
+  b: { currency: string; cac: number | null; status: string },
+  sort: "cac" | "evaluation",
+  direction: number,
+) {
+  if (sort === "cac") {
+    const av = a.cac,
+      bv = b.cac;
+    if (av === null || bv === null) return av === bv ? 0 : av === null ? 1 : -1;
+    return a.currency.localeCompare(b.currency) || direction * (av - bv);
+  }
+  const ranks: Record<string, number> = {
+    WITHIN: 0,
+    TESTING: 1,
+    ALERT: 2,
+    SEVERE: 3,
+    CRITICAL: 4,
+  };
+  const av = ranks[a.status],
+    bv = ranks[b.status];
+  if (av === undefined || bv === undefined)
+    return av === bv ? 0 : av === undefined ? 1 : -1;
+  return direction * (av - bv);
+}

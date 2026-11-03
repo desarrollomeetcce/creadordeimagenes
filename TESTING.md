@@ -1,5 +1,10 @@
 # Pruebas y evidencia
 
+## Verificación · controles CAC / estado (2026-11-03)
+
+272 pruebas unitarias y 7 de integración correctas, typecheck/build correctos. Comparador: CAC numérico reversible, severidad reversible, pendientes al final y monedas separadas; preferencias preservan ambos órdenes. Integración QA añade doce campañas independientes (incluida una pausada), verifica orden global ascendente/descendente entre páginas y ventana reciente cuando se elige un rango histórico. Las lecturas externas están bloqueadas y los fixtures se eliminan en finally. Navegador valida posición de botones, flechas/consultas de orden, selección de inventario trasladada, persistencia tras recarga, tarjetas y móvil oscuro; sin errores JS ni mutaciones de anuncios. La actualización visible existente conserva su POST de lectura/sincronización; no es una edición de anuncios. No verificación directa de Hostinger.
+
+
 ## Verificación · gráfico diario de ventas / Meta (2026-11-03)
 
 Typecheck, build y 271 pruebas unitarias correctos; 6 integraciones de ventas por campaña correctas. Prueba nueva cubre ventas enteras, cero real frente a ausencia, fechas solo con ventas, inversión de ejes y compatibilidad con filas anteriores. Chromium confirma un gráfico con ventas/barras y gasto Meta diario/línea, cuatro métricas por eje, ninguna petición adicional al cambiar ejes, formatos reutilizados al interactuar y una petición acotada al cambiar a 14 días. Verifica compartidas explícitas, anuncios sin opción ni petición de ventas, móvil oscuro sin desbordar página y cero errores JS. Datos sintéticos en base QA exclusiva; se validaron sumas y se retiró únicamente el fixture. No llamadas reales a Graph, cargos ni mutaciones publicitarias. Hostinger real no comprobado sin acceso directo.

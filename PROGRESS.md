@@ -1,5 +1,12 @@
 # Avance por fases · continuación del desarrollo
 
+## Actualización · ordenar campañas por CAC y estado (2026-11-03)
+
+CAC y Estado con flechas reemplazan Asignar inventario junto a Desde el inicio, tanto en tabla como en tarjetas. El botón de asignación pasa a la fila de actualización, inmediatamente después de Sincronización, manteniendo selección y permisos. Los órdenes son reversibles y persistidos; se aplican a todos los candidatos filtrados antes de paginar, sin prioridad publicitaria que oculte campañas al ordenar la evaluación. Usan la misma ventana reciente que la evaluación visible, mantienen CAC por moneda y valores pendientes al final.
+
+Solo los nuevos órdenes solicitan una lectura agrupada adicional de ventas, acotada a la ventana de evaluación (7–14 días según selección); no consultan Graph ni hacen una consulta por campaña. Reutilizan el día calculado por cuenta. Verificados 272 unitarios, 7 integraciones con doce campañas y paginación, y navegador de escritorio/móvil. Hostinger sigue sin acceso directo para confirmar recepción; publicación del código y despliegue automático se documentan aparte.
+
+
 ## Actualización · ventas y gasto diario en el mismo gráfico (2026-11-03)
 
 El detalle de campaña permite Ventas por día en ambos selectores existentes; inicia con barras de ventas y línea de Gasto Meta por día. Resultados y costo por resultado también indican que son diarios; el resumen identifica explícitamente el gasto total del período. Conserva calendario, un solo gráfico y escalas independientes. Fechas solo con ventas se mantienen; ausencia no se transforma en cero, parciales llevan asterisco y vínculos compartidos se identifican sin CAC individual. Anuncios/conjuntos conservan sus métricas sin ventas atribuidas.

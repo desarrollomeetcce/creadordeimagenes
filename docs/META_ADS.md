@@ -1,5 +1,12 @@
 # Meta Ads: consulta y análisis
 
+## Ordenar por CAC o estado
+
+Junto a Desde el inicio, las campañas ofrecen CAC y Estado con flechas para alternar el sentido. El orden considera todas las campañas filtradas antes de paginar y usa el período indicado en Evaluación · estado (la misma regla de ventana reciente). CAC se ordena numéricamente dentro de cada moneda. Estado asciende Normal → Sin ventas → Revisar → Grave → Crítico y se invierte al volver a pulsar. Valores pendientes y ventas compartidas sin CAC individual quedan al final; no se convierten en cero.
+
+Asignar inventario está junto a Sincronización en la fila de actualización. Mantiene los elementos seleccionados y permisos existentes. Tabla y tarjetas comparten el orden, que se recuerda al recargar. Estos órdenes usan ventas locales agrupadas y limitadas al período de evaluación; no solicitan todo el histórico de Meta ni consultan por cada campaña.
+
+
 ## Comparar ventas y gasto por día
 
 En campaña → Ver detalle, el histórico usa un único gráfico: ventas por día en barras (izquierda) y gasto Meta por día en línea (derecha). Ambos selectores permiten ventas, resultados, gasto Meta y costo por resultado diarios; cambiar ejes reutiliza los datos descargados. El calendario conserva el rango elegido y consulta solo el período solicitado; por defecto se ofrecen siete días cuando no se recibe un rango inicial. El gasto del resumen corresponde al total del período y se etiqueta como tal.

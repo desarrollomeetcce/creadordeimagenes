@@ -6065,3 +6065,43 @@ test("Meta gráfico ventas/gasto diario: conteos enteros, cero real, ausencia y 
     null,
   );
 });
+
+test("Meta CAC/estado: orden numérico y severidad reversible, pendientes al final y preferencias persistidas", async () => {
+  const { compareCampaignEvaluations } = await import("../lib/meta-ads/order");
+  const { parseMetaPreferences } = await import("../lib/meta-ads/preferences");
+  const rows = [
+    { currency: "PEN", cac: null, status: "PENDING" },
+    { currency: "PEN", cac: 100, status: "CRITICAL" },
+    { currency: "PEN", cac: 9, status: "WITHIN" },
+    { currency: "PEN", cac: 40, status: "ALERT" },
+    { currency: "PEN", cac: null, status: "TESTING" },
+  ];
+  for (const direction of [1, -1]) {
+    const cac = [...rows].sort((a, b) =>
+      compareCampaignEvaluations(a, b, "cac", direction),
+    );
+    assert.deepEqual(
+      cac.map((r) => r.cac),
+      direction === 1 ? [9, 40, 100, null, null] : [100, 40, 9, null, null],
+    );
+    const state = [...rows].sort((a, b) =>
+      compareCampaignEvaluations(a, b, "evaluation", direction),
+    );
+    assert.deepEqual(
+      state.map((r) => r.status),
+      direction === 1
+        ? ["WITHIN", "TESTING", "ALERT", "CRITICAL", "PENDING"]
+        : ["CRITICAL", "ALERT", "TESTING", "WITHIN", "PENDING"],
+    );
+  }
+  for (const sort of ["cac", "evaluation"])
+    assert.equal(parseMetaPreferences(JSON.stringify({ sort })).sort, sort);
+  assert(
+    compareCampaignEvaluations(
+      { currency: "PEN", cac: 100, status: "WITHIN" },
+      { currency: "USD", cac: 1, status: "WITHIN" },
+      "cac",
+      1,
+    ) < 0,
+  );
+});

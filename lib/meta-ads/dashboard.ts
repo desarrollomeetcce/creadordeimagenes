@@ -6,7 +6,8 @@ import { registeredSalesSummary } from "./registered-sales";
 import { campaignSalesPeriod } from "./campaign-performance";
 import { validSalesDate } from "./registered-sales";
 import { metaSummary } from "./summary";
-import { compareMetaItems } from "./order";
+import { compareMetaItems, compareCampaignEvaluations } from "./order";
+import { campaignEvaluationWindow } from "./campaign-evaluation-window";
 import { focusedReportDay } from "./focused-labels";
 import { createHash } from "node:crypto";
 import { insightSummaries } from "./insight-cache";
@@ -607,7 +608,85 @@ export async function dashboard(actor: Actor, params: URLSearchParams) {
       limited && computedFilters,
     );
   }
-  items.sort((a, b) => compareMetaItems(a, b, sort, direction));
+  if (
+    level === "campaign" &&
+    (sort === "cac" || sort === "evaluation") &&
+    items.length
+  ) {
+    // Explicit evaluation sorting needs all candidates before pagination. Read one
+    // bounded source batch (7–14 days), never full history or one query per campaign.
+    const windows = new Map(
+      items.map((o) => [
+        o.id,
+        campaignEvaluationWindow(
+          o.periods,
+          analysisPeriod,
+          accountContext.get(o.accountId)!.today,
+        ).period,
+      ]),
+    );
+    const ranges = [...windows.values()].filter((p) => p !== null);
+    const data = ranges.length
+      ? await metaCampaignSalesData(
+          actor,
+          items.map((o) => o.id),
+          ranges.map((p) => p.since).sort()[0],
+          ranges
+            .map((p) => p.until)
+            .sort()
+            .at(-1)!,
+          true,
+        )
+      : null;
+    const sharing = new Map<string, number>();
+    for (const c of data?.sharing ?? []) {
+      const k = JSON.stringify([c.aliasId, c.aliasCountry]);
+      sharing.set(k, (sharing.get(k) ?? 0) + 1);
+    }
+    const rules = new Map(
+      (data?.campaigns ?? []).map((c) => [
+        c.id,
+        data?.rules.get(c.alias?.inventorySheetId ?? ""),
+      ]),
+    );
+    const evaluations = new Map(
+      items.map((o) => {
+        const p = windows.get(o.id),
+          key = JSON.stringify([o.aliasId, o.aliasCountry]);
+        const v =
+          p && data
+            ? campaignSalesPeriod(
+                data.entries.get(key) ?? [],
+                p.since,
+                p.until,
+                p.spend,
+                p.results,
+                p.metaAvailable,
+                sharing.get(key) ?? 0,
+                !!o.aliasId && !!o.aliasCountry,
+                { currency: o.currency, rules: rules.get(o.id) },
+              )
+            : null;
+        return [
+          o.id,
+          {
+            currency: o.currency,
+            cac: v?.cac ?? null,
+            status: v?.status ?? "PENDING",
+          },
+        ];
+      }),
+    );
+    items.sort(
+      (a, b) =>
+        compareCampaignEvaluations(
+          evaluations.get(a.id)!,
+          evaluations.get(b.id)!,
+          sort,
+          direction,
+        ) || a.id.localeCompare(b.id),
+    );
+  } else items.sort((a, b) => compareMetaItems(a, b, sort, direction));
   const page = Math.max(1, Math.min(10000, Number(params.get("page")) || 1)),
     limit = Math.max(10, Math.min(100, Number(params.get("limit")) || 25));
   const pageItems = items.slice((page - 1) * limit, page * limit);

@@ -1698,6 +1698,28 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
       setSort(id);
       setDirection(sort === id && direction === "asc" ? "desc" : "asc");
     });
+  const evaluationOrderControls = () => (
+    <div
+      className="meta-evaluation-order"
+      role="group"
+      aria-label="Ordenar evaluación"
+    >
+      {[
+        ["cac", "CAC"],
+        ["evaluation", "Estado"],
+      ].map(([id, label]) => (
+        <MetaCostButton
+          key={id}
+          id={id}
+          label={label}
+          value={sort}
+          direction={direction}
+          calendar={!!calendar}
+          onChange={orderByCost}
+        />
+      ))}
+    </div>
+  );
   const bulkAliasControl = () => (
     <>
       {owner && (
@@ -2016,7 +2038,7 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
       key: "rating",
       width: "190px",
       label: "Evaluación · estado",
-      toolbarAction: bulkAliasControl(),
+      toolbarAction: level === "campaign" ? evaluationOrderControls() : null,
       render: (o) => (
         <button
           type="button"
@@ -3527,6 +3549,7 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
                       </button>
                     )}
                     <MetaDataFreshness accounts={chosen} compact />
+                    {bulkAliasControl()}
                   </div>
                 </div>
               </div>
@@ -3538,7 +3561,9 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
                     value={sort}
                     direction={direction}
                     onChange={orderByCost}
-                    afterLifetime={bulkAliasControl()}
+                    afterLifetime={
+                      level === "campaign" ? evaluationOrderControls() : null
+                    }
                   />
                 </div>
               )}

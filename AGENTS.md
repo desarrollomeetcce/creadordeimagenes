@@ -1,5 +1,7 @@
 # Instrucciones para desarrollo
 
+- Orden Meta por CAC/estado: usar el mismo campaignEvaluationWindow visible y ordenar todos los candidatos antes de paginar. Ausencias/compartidas al final, CAC separado por moneda. Solo al pedir ese orden, lectura canónica agrupada y acotada al período reciente; no Graph ni una consulta por campaña. Asignar inventario permanece junto a Sincronización y conserva autorización/selección.
+
 - Histórico diario Meta: campañas ofrecen ventas en ambos ejes del único gráfico (por defecto barras de ventas y línea de gasto Meta por día). Unir fechas Meta/ventas, conservar ausencia frente a cero y marcar parciales/compartidas; no atribuir ventas a anuncios. Reutilizar el GET existente: cambiar ejes no consulta; memorizar layout/formatos para interacción. Mantener etiquetas/unidades personalizadas de otros consumidores.
 
 - Leer docs/MASTER_SPEC.md, docs/MASTER_SPEC_PDF.txt y PROGRESS.md antes de ampliar el alcance.

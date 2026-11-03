@@ -425,6 +425,113 @@ test("Campañas: períodos de ventas locales, fuentes canónicas acotadas y anun
         await assert.rejects(route(ids.foreign));
       },
     );
+    await t.test(
+      "Orden CAC/estado global antes de paginar; mismo período reciente, pendientes al final",
+      async () => {
+        const orderTable = await db.metaAliasTable.create({
+          data: { name: "QA orden " + tag },
+        });
+        tableIds.push(orderTable.id);
+        const orderIds: string[] = [];
+        for (let i = 1; i <= 12; i++) {
+          const a = await db.metaAlias.create({
+            data: {
+              tableId: orderTable.id,
+              name: `Orden ${i} ${tag}`,
+              inventorySheetId: inventory.id,
+            },
+          });
+          await db.metaEffectivenessRow.create({
+            data: {
+              aliasId: a.id,
+              country: "PE",
+              currency: "",
+              days: {
+                create: Array.from({ length: 7 }, (_, d) => ({
+                  day: shiftDay(since7, d),
+                  sales: 1,
+                  salesOverridden: true,
+                })),
+              },
+            },
+          });
+          const id = base + String(100 + i);
+          orderIds.push(id);
+          await db.metaAdObject.create({
+            data: {
+              id,
+              accountId,
+              level: "campaign",
+              name: `Orden ${i} ${tag}`,
+              aliasId: a.id,
+              aliasCountry: "PE",
+              status: i === 12 ? "PAUSED" : "ACTIVE",
+              effectiveStatus: i === 12 ? "PAUSED" : "ACTIVE",
+            },
+          });
+          await db.metaAdDaily.createMany({
+            data: Array.from({ length: 7 }, (_, d) => ({
+              objectId: id,
+              accountId,
+              day: shiftDay(since7, d),
+              scope: "7d_click,1d_view|impression",
+              spend: 20 * i,
+              actions: {
+                "onsite_conversion.messaging_conversation_started_7d": 20,
+              },
+            })),
+          });
+        }
+        for (const direction of ["asc", "desc"]) {
+          const q = new URLSearchParams({
+            accounts: accountId,
+            level: "campaign",
+            sort: "cac",
+            direction,
+            analysisPeriod: "today",
+            limit: "10",
+          });
+          const r = await dashboard(viewer, q);
+          const ordered =
+            direction === "asc" ? orderIds : [...orderIds].reverse();
+          assert.deepEqual(
+            r.items.map((o) => o.id),
+            ordered.slice(0, 10),
+          );
+          q.set("page", "2");
+          const next = await dashboard(viewer, q);
+          assert.deepEqual(
+            next.items.slice(0, 2).map((o) => o.id),
+            ordered.slice(10),
+          );
+          assert(
+            next.items
+              .slice(2)
+              .every((o) => (o as any).periods["7"].sales.cac === null),
+          );
+          q.set("page", "1");
+          q.set("sort", "evaluation");
+          const states = await dashboard(viewer, q);
+          assert.equal(
+            (states.items[0] as any).periods["7"].sales.status,
+            direction === "asc" ? "WITHIN" : "CRITICAL",
+          );
+        }
+        const historical = await dashboard(
+          viewer,
+          new URLSearchParams({
+            accounts: accountId,
+            level: "campaign",
+            sort: "cac",
+            direction: "desc",
+            analysisPeriod: "custom",
+            since: "2026-10-01",
+            until: "2026-10-01",
+          }),
+        );
+        assert.equal(historical.items[0].id, orderIds.at(-1));
+      },
+    );
   } finally {
     globalThis.fetch = originalFetch;
     await db.metaAdAccount.deleteMany({
