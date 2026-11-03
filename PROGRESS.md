@@ -1,5 +1,12 @@
 # Avance por fases · continuación del desarrollo
 
+## Actualización · ventas y gasto diario en el mismo gráfico (2026-11-03)
+
+El detalle de campaña permite Ventas por día en ambos selectores existentes; inicia con barras de ventas y línea de Gasto Meta por día. Resultados y costo por resultado también indican que son diarios; el resumen identifica explícitamente el gasto total del período. Conserva calendario, un solo gráfico y escalas independientes. Fechas solo con ventas se mantienen; ausencia no se transforma en cero, parciales llevan asterisco y vínculos compartidos se identifican sin CAC individual. Anuncios/conjuntos conservan sus métricas sin ventas atribuidas.
+
+Sin nuevos endpoints ni llamadas Graph: los ejes usan la respuesta diaria existente. Mapas por fecha y memorización evitan recorridos repetidos y reconstruir formatos/layout al pasar el cursor. Verificado con 271 pruebas unitarias, 6 de integración y navegador (4 controles). Fixture QA retirado. Publicación del código y despliegue de Hostinger se verifican por separado; no se dispone de acceso directo al VPS para confirmar su recepción.
+
+
 ## Actualización · explorador de Biblioteca y revisión de muestras
 
 Biblioteca y Generaciones comparten árbol de Proyecto → Producto → Subproducto, rutas clicables y carpeta Pruebas exclusiva OWNER. Las carpetas automáticas se derivan de metadatos autorizados, sin copiar originales ni crear duplicados por imagen. Los botones Ver afiches de proyecto/producto/subproducto abren Biblioteca en ese ámbito. Se conservan enlaces antiguos de galerías por compatibilidad. Observador puede consultar/descargar Biblioteca en espacios compartidos, sin mutaciones ni acceso a Generaciones/costos.

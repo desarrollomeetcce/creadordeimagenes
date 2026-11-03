@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import {
   dailyChartLayout,
   type DailyChartRow,
@@ -27,28 +27,58 @@ export function MetaDailyChart({
   units?: Partial<Record<DailyChartMetric, "count" | "hours" | "currency">>;
 }) {
   const [active, setActive] = useState<string | null>(null);
-  const layout = dailyChartLayout(rows, bars, line, since, until);
+  const layout = useMemo(
+    () => dailyChartLayout(rows, bars, line, since, until),
+    [rows, bars, line, since, until],
+  );
+  const formats = useMemo(
+    () => ({
+      money: new Intl.NumberFormat("es-PE", {
+        style: "currency",
+        currency: currency || "PEN",
+        maximumFractionDigits: 2,
+      }),
+      count: new Intl.NumberFormat("es-PE", { maximumFractionDigits: 2 }),
+      sales: new Intl.NumberFormat("es-PE", { maximumFractionDigits: 0 }),
+      hours: new Intl.NumberFormat("es-PE", { maximumFractionDigits: 8 }),
+      date: new Intl.DateTimeFormat("es-PE", { timeZone: "UTC" }),
+    }),
+    [currency],
+  );
   const name = (key: DailyChartMetric) =>
     labels?.[key] ??
     (key === "cost"
       ? "Costo por resultado"
       : key === "spend"
         ? "Gasto"
-        : metricName);
-  const format = (value: number | null, key: DailyChartMetric) =>
-    value === null
-      ? "Sin dato"
-      : new Intl.NumberFormat(
-          "es-PE",
-          (units?.[key] ?? (key === "results" ? "count" : "currency")) !==
-            "currency"
-            ? { maximumFractionDigits: units?.[key] === "hours" ? 8 : 2 }
-            : { style: "currency", currency, maximumFractionDigits: 2 },
-        ).format(value) + (units?.[key] === "hours" ? " h" : "");
+        : key === "sales"
+          ? "Ventas por día"
+          : metricName);
+  const format = (value: number | null, key: DailyChartMetric) => {
+    if (value === null) return "Sin dato";
+    const unit =
+      units?.[key] ??
+      (key === "results" || key === "sales" ? "count" : "currency");
+    return (
+      (unit === "currency"
+        ? formats.money
+        : unit === "hours"
+          ? formats.hours
+          : key === "sales"
+            ? formats.sales
+            : formats.count
+      ).format(value) + (unit === "hours" ? " h" : "")
+    );
+  };
+  const pointFormat = (
+    value: number | null,
+    key: DailyChartMetric,
+    row: DailyChartRow,
+  ) =>
+    format(value, key) +
+    (value !== null && key === "sales" && row.salesPartial ? "*" : "");
   const date = (value: string) =>
-    new Date(value + "T12:00:00Z").toLocaleDateString("es-PE", {
-      timeZone: "UTC",
-    });
+    formats.date.format(new Date(value + "T12:00:00Z"));
   let lastLabelX = -Infinity;
   const labelledDays = new Set(
     layout.points
@@ -146,11 +176,11 @@ export function MetaDailyChart({
                 data-day={p.row.day}
                 className="meta-chart-day"
                 tabIndex={0}
-                aria-label={`${date(p.row.day)}. 1 ${name(bars)}: ${format(p.bar, bars)}. 2 ${name(line)}: ${format(p.dot, line)}.`}
+                aria-label={`${date(p.row.day)}. 1 ${name(bars)}: ${pointFormat(p.bar, bars, p.row)}. 2 ${name(line)}: ${pointFormat(p.dot, line, p.row)}.`}
                 onFocus={() => setActive(p.row.day)}
                 onMouseEnter={() => setActive(p.row.day)}
               >
-                <title>{`${date(p.row.day)} · 1 ${name(bars)}: ${format(p.bar, bars)} · 2 ${name(line)}: ${format(p.dot, line)}`}</title>
+                <title>{`${date(p.row.day)} · 1 ${name(bars)}: ${pointFormat(p.bar, bars, p.row)} · 2 ${name(line)}: ${pointFormat(p.dot, line, p.row)}`}</title>
                 <rect
                   x={p.x - layout.barWidth / 2}
                   y={layout.top}
@@ -184,7 +214,7 @@ export function MetaDailyChart({
       </div>
       <div className="meta-chart-readout" role="status" aria-live="polite">
         {selected
-          ? `${date(selected.row.day)} · 1 ${name(bars)}: ${format(selected.bar, bars)} · 2 ${name(line)}: ${format(selected.dot, line)}`
+          ? `${date(selected.row.day)} · 1 ${name(bars)}: ${pointFormat(selected.bar, bars, selected.row)} · 2 ${name(line)}: ${pointFormat(selected.dot, line, selected.row)}`
           : "Pasa el cursor o selecciona un día para ver ambas variables."}
       </div>
     </div>

@@ -2,7 +2,7 @@
 import { MetaCampaignAssessment } from "./meta-campaign-assessment";
 import type { CacRules } from "../../lib/meta-ads/inventory-cac-policy";
 import { fetchJsonResponse } from "../../lib/http-response";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { compareDailyRows, type DailySort } from "../../lib/meta-ads/order";
 import { localDay, summarize } from "../../lib/meta-ads/analytics";
 import { quickRange } from "../../lib/meta-ads/date-range";
@@ -38,7 +38,7 @@ const date = (value: string) =>
   });
 export function MetaDailyDetail({
   item,
-  initialPeriod = "30",
+  initialPeriod = "7",
   initialSince,
   initialUntil,
 }: {
@@ -52,14 +52,18 @@ export function MetaDailyDetail({
     [range, setRange] = useState<[string, string]>(() =>
       initialSince && initialUntil
         ? [initialSince, initialUntil]
-        : quickRange("30", today),
+        : quickRange("7", today),
     ),
     [sales, setSales] = useState<DailySales | null>(null),
     [rows, setRows] = useState<DailyRow[]>([]),
     [loading, setLoading] = useState(true),
     [error, setError] = useState(""),
-    [chart, setChart] = useState<DailyChartMetric>("cost"),
-    [line, setLine] = useState<DailyChartMetric>("results");
+    [chart, setChart] = useState<DailyChartMetric>(
+      item.level === "campaign" ? "sales" : "cost",
+    ),
+    [line, setLine] = useState<DailyChartMetric>(
+      item.level === "campaign" ? "spend" : "results",
+    );
   const [sort, setSort] = useState<DailySort>({
     key: "day",
     direction: "desc",
@@ -107,24 +111,28 @@ export function MetaDailyDetail({
       currency: item.currency,
     }).format(value);
   const knownMetric = item.metric !== "UNKNOWN";
-  const values = rows.map((row) => {
-    const spend = Number(row.spend),
-      summary = summarize(
-        [{ ...row, spend }],
-        item.metric,
-        row.day,
-        row.day,
-        true,
-      );
-    return {
-      day: row.day,
-      spend,
-      results: knownMetric ? summary.results : null,
-      cost: summary.cost,
-      impressions: row.impressions,
-      clicks: row.clicks,
-    };
-  });
+  const values = useMemo(
+    () =>
+      rows.map((row) => {
+        const spend = Number(row.spend),
+          summary = summarize(
+            [{ ...row, spend }],
+            item.metric,
+            row.day,
+            row.day,
+            true,
+          );
+        return {
+          day: row.day,
+          spend,
+          results: knownMetric ? summary.results : null,
+          cost: summary.cost,
+          impressions: row.impressions,
+          clicks: row.clicks,
+        };
+      }),
+    [rows, item.metric, knownMetric],
+  );
   const first =
     preset === "lifetime"
       ? ([
@@ -133,60 +141,81 @@ export function MetaDailyDetail({
         ].sort()[0] ?? today)
       : since;
   const last = preset === "lifetime" ? today : until;
-  const entries = (sales?.days ?? []).map((r) => ({
-    ...r,
-    inventory: item.id,
-    name: item.id,
-    country: "",
-  }));
-  const selectedSales = sales
-    ? campaignSalesPeriod(
-        entries,
-        first,
-        last,
-        values.reduce((s, r) => s + r.spend, 0),
-        values.reduce((s, r) => s + (r.results ?? 0), 0),
-        values.length > 0 && knownMetric,
-        sales.sharedCampaigns,
-        sales.linked,
-        { currency: item.currency, rules: sales.rules },
-      )
-    : null;
-  const days = new Map(values.map((r) => [r.day, r]));
-  const sortedRows = [
-    ...new Set([
-      ...values.map((r) => r.day),
-      ...(sales?.days.map((r) => r.day) ?? []),
-    ]),
-  ]
-    .map((day) => {
-      const row = days.get(day),
-        sold = sales?.days.find((r) => r.day === day);
-      const v =
-        row && sales
-          ? campaignSalesPeriod(
-              entries,
-              day,
-              day,
-              row.spend,
-              row.results ?? 0,
-              knownMetric,
-              sales.sharedCampaigns,
-              sales.linked,
-              { currency: item.currency, rules: sales.rules },
-            )
-          : null;
-      return {
-        day,
-        spend: row?.spend ?? null,
-        results: row?.results ?? null,
-        cost: row?.cost ?? null,
-        sales: sold?.sales ?? null,
-        partial: sold?.partial,
-        cac: v?.cac ?? null,
-      };
-    })
-    .sort((a, b) => compareDailyRows(a, b, sort));
+  const entries = useMemo(
+    () =>
+      (sales?.days ?? []).map((r) => ({
+        ...r,
+        inventory: item.id,
+        name: item.id,
+        country: "",
+      })),
+    [sales, item.id],
+  );
+  const selectedSales = useMemo(
+    () =>
+      sales
+        ? campaignSalesPeriod(
+            entries,
+            first,
+            last,
+            values.reduce((s, r) => s + r.spend, 0),
+            values.reduce((s, r) => s + (r.results ?? 0), 0),
+            values.length > 0 && knownMetric,
+            sales.sharedCampaigns,
+            sales.linked,
+            { currency: item.currency, rules: sales.rules },
+          )
+        : null,
+    [entries, first, last, values, knownMetric, sales, item.currency],
+  );
+  const sortedRows = useMemo(() => {
+    const days = new Map(values.map((r) => [r.day, r]));
+    const salesDays = new Map((sales?.days ?? []).map((r) => [r.day, r]));
+    return [
+      ...new Set([
+        ...values.map((r) => r.day),
+        ...(sales?.days.map((r) => r.day) ?? []),
+      ]),
+    ]
+      .map((day) => {
+        const row = days.get(day),
+          sold = salesDays.get(day);
+        const v =
+          row && sales
+            ? campaignSalesPeriod(
+                sold
+                  ? [
+                      {
+                        ...sold,
+                        inventory: item.id,
+                        name: item.id,
+                        country: "",
+                      },
+                    ]
+                  : [],
+                day,
+                day,
+                row.spend,
+                row.results ?? 0,
+                knownMetric,
+                sales.sharedCampaigns,
+                sales.linked,
+                { currency: item.currency, rules: sales.rules },
+              )
+            : null;
+        return {
+          day,
+          spend: row?.spend ?? null,
+          results: row?.results ?? null,
+          cost: row?.cost ?? null,
+          sales: sold?.sales ?? null,
+          partial: sold?.partial,
+          salesPartial: sold?.partial,
+          cac: v?.cac ?? null,
+        };
+      })
+      .sort((a, b) => compareDailyRows(a, b, sort));
+  }, [values, sales, knownMetric, item.id, item.currency, sort]);
   return (
     <section className="meta-daily-detail stack" aria-label="Histórico diario">
       <div className="meta-daily-toolbar">
@@ -218,9 +247,12 @@ export function MetaDailyDetail({
               setChart(next);
             }}
           >
-            <option value="results">{item.metricName}</option>
-            <option value="spend">Gasto</option>
-            <option value="cost">Costo por resultado</option>
+            {item.level === "campaign" && (
+              <option value="sales">Ventas por día</option>
+            )}
+            <option value="results">{item.metricName} por día</option>
+            <option value="spend">Gasto Meta por día</option>
+            <option value="cost">Costo por resultado por día</option>
           </select>
         </label>
         <label>
@@ -234,9 +266,12 @@ export function MetaDailyDetail({
               setLine(next);
             }}
           >
-            <option value="results">{item.metricName}</option>
-            <option value="spend">Gasto</option>
-            <option value="cost">Costo por resultado</option>
+            {item.level === "campaign" && (
+              <option value="sales">Ventas por día</option>
+            )}
+            <option value="results">{item.metricName} por día</option>
+            <option value="spend">Gasto Meta por día</option>
+            <option value="cost">Costo por resultado por día</option>
           </select>
         </label>
       </div>
@@ -269,7 +304,7 @@ export function MetaDailyDetail({
             {" · "}
             <MetaCampaignAssessment value={selectedSales} today={today} />
             <small>
-              Gasto Meta:{" "}
+              Gasto Meta del período:{" "}
               {values.length
                 ? money(values.reduce((n, r) => n + r.spend, 0))
                 : "—"}{" "}
@@ -307,17 +342,35 @@ export function MetaDailyDetail({
         ) : (
           <>
             <p className="meta-daily-chart-title">
-              {rows.length} día(s) con datos · barras y línea por fecha
+              {sortedRows.length} día(s) con registros · valores diarios, sin
+              acumulados
             </p>
             <MetaDailyChart
-              rows={values}
+              rows={sortedRows}
               bars={chart}
               line={line}
               currency={item.currency}
               metricName={item.metricName}
-              since={preset === "lifetime" ? undefined : since}
-              until={preset === "lifetime" ? undefined : until}
+              since={first}
+              until={last}
+              labels={{
+                sales:
+                  sales && sales.sharedCampaigns > 1
+                    ? "Ventas por día · compartidas"
+                    : "Ventas por día",
+                spend: "Gasto Meta por día",
+                cost: "Costo por resultado por día",
+                results: item.metricName + " por día",
+              }}
             />
+            {item.level === "campaign" && (
+              <p className="hint">
+                Ventas registradas del diplomado y país vinculados. Días sin
+                registro de ventas quedan sin dato; cero significa una cifra
+                registrada. * Ventas parciales. El gasto es el importe de Meta
+                de cada día, no un acumulado.
+              </p>
+            )}
             <MetaDailyTrend
               rows={values}
               since={
@@ -338,9 +391,9 @@ export function MetaDailyDetail({
                     {(
                       [
                         ["day", "Fecha"],
-                        ["spend", "Gasto"],
-                        ["results", "Resultados"],
-                        ["cost", "Costo por resultado"],
+                        ["spend", "Gasto Meta por día"],
+                        ["results", "Resultados por día"],
+                        ["cost", "Costo por resultado por día"],
                       ] as const
                     ).map(([key, label]) => (
                       <th
@@ -381,7 +434,7 @@ export function MetaDailyDetail({
                     ))}
                     {sales && (
                       <>
-                        <th>Ventas</th>
+                        <th>Ventas por día</th>
                         <th>CAC</th>
                       </>
                     )}

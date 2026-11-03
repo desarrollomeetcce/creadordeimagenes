@@ -1,5 +1,7 @@
 # Instrucciones para desarrollo
 
+- Histórico diario Meta: campañas ofrecen ventas en ambos ejes del único gráfico (por defecto barras de ventas y línea de gasto Meta por día). Unir fechas Meta/ventas, conservar ausencia frente a cero y marcar parciales/compartidas; no atribuir ventas a anuncios. Reutilizar el GET existente: cambiar ejes no consulta; memorizar layout/formatos para interacción. Mantener etiquetas/unidades personalizadas de otros consumidores.
+
 - Leer docs/MASTER_SPEC.md, docs/MASTER_SPEC_PDF.txt y PROGRESS.md antes de ampliar el alcance.
 - La jerarquía es Proyecto → Producto → Subproducto → Variaciones. Cada proyecto tiene identidad independiente.
 - No introducir campos comerciales obligatorios de país, precio o moneda.

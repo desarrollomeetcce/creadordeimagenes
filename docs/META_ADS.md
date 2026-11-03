@@ -1,5 +1,12 @@
 # Meta Ads: consulta y análisis
 
+## Comparar ventas y gasto por día
+
+En campaña → Ver detalle, el histórico usa un único gráfico: ventas por día en barras (izquierda) y gasto Meta por día en línea (derecha). Ambos selectores permiten ventas, resultados, gasto Meta y costo por resultado diarios; cambiar ejes reutiliza los datos descargados. El calendario conserva el rango elegido y consulta solo el período solicitado; por defecto se ofrecen siete días cuando no se recibe un rango inicial. El gasto del resumen corresponde al total del período y se etiqueta como tal.
+
+Las fechas sin registro de ventas muestran Sin dato, distintas de cero ventas registradas; se incluyen fechas que solo tengan ventas. El asterisco señala ventas parciales. Las ventas compartidas se identifican y no representan atribución individual. Anuncios y conjuntos no muestran ventas propias. Las otras gráficas que reutilizan el componente mantienen sus etiquetas y unidades.
+
+
 La primera entrega amplía la plataforma existente: Meta Ads en el menú lateral, tres niveles, tarjetas/tabla, cinco periodos simultáneos, calendario opcional, ranking con mínimo de resultados, alertas explicables y detalle de gasto diario. Solo lectura publicitaria: no publica, pausa ni cambia presupuestos. No llama a modelos de IA. La infraestructura y los servicios externos mantienen sus propias condiciones y límites.
 
 ## Conectar Marketing API

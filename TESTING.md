@@ -1,5 +1,10 @@
 # Pruebas y evidencia
 
+## Verificación · gráfico diario de ventas / Meta (2026-11-03)
+
+Typecheck, build y 271 pruebas unitarias correctos; 6 integraciones de ventas por campaña correctas. Prueba nueva cubre ventas enteras, cero real frente a ausencia, fechas solo con ventas, inversión de ejes y compatibilidad con filas anteriores. Chromium confirma un gráfico con ventas/barras y gasto Meta diario/línea, cuatro métricas por eje, ninguna petición adicional al cambiar ejes, formatos reutilizados al interactuar y una petición acotada al cambiar a 14 días. Verifica compartidas explícitas, anuncios sin opción ni petición de ventas, móvil oscuro sin desbordar página y cero errores JS. Datos sintéticos en base QA exclusiva; se validaron sumas y se retiró únicamente el fixture. No llamadas reales a Graph, cargos ni mutaciones publicitarias. Hostinger real no comprobado sin acceso directo.
+
+
 ## Actualización · explorador de Biblioteca y revisión de muestras
 
 Biblioteca y Generaciones comparten árbol de Proyecto → Producto → Subproducto, rutas clicables y carpeta Pruebas exclusiva OWNER. Las carpetas automáticas se derivan de metadatos autorizados, sin copiar originales ni crear duplicados por imagen. Los botones Ver afiches de proyecto/producto/subproducto abren Biblioteca en ese ámbito. Se conservan enlaces antiguos de galerías por compatibilidad. Observador puede consultar/descargar Biblioteca en espacios compartidos, sin mutaciones ni acceso a Generaciones/costos.

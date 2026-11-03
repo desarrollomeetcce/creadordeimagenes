@@ -6033,3 +6033,35 @@ test("Formatos Meta reutilizables conservan importes, ceros, moneda y cambio de 
     "2026-11-03",
   );
 });
+
+test("Meta gráfico ventas/gasto diario: conteos enteros, cero real, ausencia y días solo con ventas", async () => {
+  const { dailyChartLayout: layout } =
+    await import("../lib/meta-ads/daily-chart");
+  const rows = [
+    { day: "2026-11-01", spend: 20.15, cost: 0.5, results: 40, sales: 2 },
+    { day: "2026-11-02", spend: 5, cost: null, results: 0, sales: null },
+    { day: "2026-11-03", spend: null, cost: null, results: null, sales: 0 },
+    { day: "2026-11-04", spend: null, cost: null, results: null, sales: 3 },
+  ];
+  const graph = layout(rows, "sales", "spend", "2026-11-01", "2026-11-04");
+  assert.equal(graph.points[0].bar, 2);
+  assert.equal(graph.points[0].dot, 20.15);
+  assert.equal(graph.points[1].bar, null);
+  assert.equal(graph.points[1].dot, 5);
+  assert.equal(graph.points[2].bar, 0);
+  assert.equal(graph.points[2].y, null);
+  assert.equal(graph.points[3].bar, 3);
+  assert.equal(graph.points[3].dot, null);
+  assert(graph.left.ticks.every(Number.isInteger));
+  const line = layout(rows, "spend", "sales");
+  assert.equal(line.segments.length, 2);
+  assert.equal(line.points[1].y, null);
+  assert.equal(
+    layout(
+      [{ day: "2026-11-01", spend: 0, cost: null, results: 0 }],
+      "sales",
+      "spend",
+    ).points[0].bar,
+    null,
+  );
+});

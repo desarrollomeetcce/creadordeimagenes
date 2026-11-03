@@ -1,9 +1,11 @@
-export type DailyChartMetric = "cost" | "spend" | "results";
+export type DailyChartMetric = "cost" | "spend" | "results" | "sales";
 export type DailyChartRow = {
   day: string;
   spend: number | null;
   cost: number | null;
   results: number | null;
+  sales?: number | null;
+  salesPartial?: boolean;
 };
 const dayNumber = (day: string) => Date.parse(day + "T00:00:00Z") / 86400000;
 export function dailyChartLayout(
@@ -23,21 +25,21 @@ export function dailyChartLayout(
     plotHeight = 200;
   const value = (row: DailyChartRow, key: DailyChartMetric) => {
     const v = row[key];
-    return v !== null && Number.isFinite(v) && v >= 0 ? v : null;
+    return typeof v === "number" && Number.isFinite(v) && v >= 0 ? v : null;
   };
   const scale = (key: DailyChartMetric) => {
     const maximum = Math.max(0, ...ordered.map((r) => value(r, key) ?? 0));
+    const count = key === "results" || key === "sales";
     if (maximum === 0)
       return {
-        max: key === "results" ? 4 : 1,
-        ticks: key === "results" ? [4, 3, 2, 1, 0] : [1, 0.75, 0.5, 0.25, 0],
+        max: count ? 4 : 1,
+        ticks: count ? [4, 3, 2, 1, 0] : [1, 0.75, 0.5, 0.25, 0],
       };
     const rough = maximum / 4,
       unit = 10 ** Math.floor(Math.log10(rough)),
-      step =
-        key === "results"
-          ? Math.max(1, Math.ceil(rough))
-          : Math.ceil(rough / unit) * unit,
+      step = count
+        ? Math.max(1, Math.ceil(rough))
+        : Math.ceil(rough / unit) * unit,
       max = step * 4;
     return { max, ticks: [max, max * 0.75, max * 0.5, max * 0.25, 0] };
   };
