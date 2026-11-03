@@ -1,5 +1,12 @@
 # Meta Ads: consulta y análisis
 
+## Ampliar Lista de Diplomados y ajustar columnas de reemplazo
+
+En Lista de Diplomados → barra de acciones, Maximizar inventario amplía toda la tabla con sus encabezados, áreas/categorías, grupos, países y demás columnas. Restaurar, minimizar, cerrar o Escape devuelven el catálogo a su vista habitual conservando selección, filtros, borradores y desplazamiento. Ampliar no vuelve a consultar el inventario.
+
+En Reemplazar diplomado, arrastra la división del borde derecho de cada encabezado para cambiar su ancho; con el control enfocado, las flechas ajustan y Shift acelera. Doble clic o Inicio restablecen el ancho inicial. Los anchos quedan guardados para ese usuario y lista, incluso tras cerrar/reabrir. La cuadrícula separa las celdas y los nombres largos ocupan varias líneas dentro de su columna. Ajustar anchos no cambia estados, ventas ni decisiones de reemplazo.
+
+
 ## Buscar diplomados sin repetir filas
 
 En la hoja, marca diplomados y pulsa Buscar (acción resaltada). Agregar es secundaria: solo incorpora los que faltan en esa hoja y país; si ya existen todos, queda deshabilitada y explica que uses Buscar. Si seleccionas existentes y nuevos, envía únicamente los nuevos. Usa el país filtrado o el predeterminado de la hoja; se mantiene la protección de unicidad del servidor y los estados existentes. No agrega al escribir ni al buscar.

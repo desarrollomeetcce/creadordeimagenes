@@ -11,7 +11,9 @@ export function SheetColumnResizer({
   onResize: (width: number) => void;
   onReset: () => void;
 }) {
-  const drag = useRef<{ x: number; width: number } | null>(null);
+  const drag = useRef<{ x: number; width: number; moved: boolean } | null>(
+    null,
+  );
   const width = (element: HTMLElement) =>
     element.closest("th")!.getBoundingClientRect().width;
   const resize = (value: number) =>
@@ -33,17 +35,27 @@ export function SheetColumnResizer({
       onPointerDown={(e) => {
         if (e.button !== 0) return;
         e.stopPropagation();
-        drag.current = { x: e.clientX, width: width(e.currentTarget) };
+        drag.current = {
+          x: e.clientX,
+          width: width(e.currentTarget),
+          moved: false,
+        };
         e.currentTarget.setPointerCapture(e.pointerId);
       }}
       onPointerMove={(e) => {
         if (drag.current) e.preventDefault();
-        if (drag.current)
+        if (
+          drag.current &&
+          (drag.current.moved || e.clientX !== drag.current.x)
+        ) {
+          drag.current.moved = true;
           resize(drag.current.width + e.clientX - drag.current.x);
+        }
       }}
       onPointerUp={(e) => {
         if (!drag.current) return;
-        resize(drag.current.width + e.clientX - drag.current.x);
+        if (drag.current.moved || e.clientX !== drag.current.x)
+          resize(drag.current.width + e.clientX - drag.current.x);
         drag.current = null;
         e.currentTarget.releasePointerCapture(e.pointerId);
       }}

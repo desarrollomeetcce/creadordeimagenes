@@ -1,5 +1,14 @@
 # Avance por fases · continuación del desarrollo
 
+## Actualización · inventario maximizado y columnas de reemplazo (2026-11-03)
+
+Lista de Diplomados incorpora Maximizar inventario en su barra de acciones. Promueve la misma tabla a una ventana de pantalla completa con todos sus encabezados y columnas (inventario, categorías/áreas, grupos, países, etc.), un área desplazable y controles de restaurar/cerrar. Conserva selección, borradores, filtros y desplazamiento; no remonta filas ni consulta de nuevo. Las hojas de países conservan su funcionamiento propio.
+
+Reemplazar diplomado / Top ahora usa la clase de tabla redimensionable: desaparecen los pequeños botones sin estilo y se muestran divisiones verticales arrastrables, cuadrícula completa y anchos iniciales proporcionados. Los nombres largos se alinean a la izquierda y envuelven dentro de su celda, sin invadir activación/ventas. Una sola lista define los anchos iniciales; las preferencias siguen guardándose por usuario/lista. El control compartido evita actualizaciones de ancho en clics sin arrastre y conserva doble clic/Inicio para restablecer. Sin cambios de estados, cálculos, reemplazos o permisos.
+
+Verificados typecheck/build, 273 unitarios y ocho controles de navegador: pantalla completa del inventario con82 ítems, edición no guardada/selección/scroll conservados, cero GET adicionales al ampliar; tabla de reemplazo con rejilla, nombre largo, teclado y arrastre real (+90px), persistencia al reabrir y doble clic de reinicio; escritorio y móvil oscuro sin errores ni escrituras. Fixture QA retirado. Publicación Git/Vercel separada de Hostinger, sin acceso directo para confirmar recepción.
+
+
 ## Actualización · búsqueda TEA, filas únicas, cancelación y orden de ventas (2026-11-03)
 
 Titular y apoyos / Asignar asesor muestran Cancelar rojo arriba y al final, con el estilo compartido, sin guardar al cerrar y deshabilitados mientras se guarda. Buscar pasa a ser la acción principal del selector de diplomados; Agregar es secundaria, avisa de los existentes y solo envía los faltantes de esa hoja y país. Si todos existen, queda deshabilitada. Se respeta el país filtrado, o el predeterminado sin filtro. No cambia la identidad de los diplomados ni activa filas ya existentes.

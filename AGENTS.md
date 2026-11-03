@@ -1,5 +1,7 @@
 # Instrucciones para desarrollo
 
+- Lista de Diplomados maximiza únicamente su tabla mediante FinancialTableWindow: conservar DOM, selección, borradores, filtros y scroll; no recargar ni alterar hojas de países. Reemplazar diplomado/Top usa sheet-resizable-table, un solo catálogo de anchos, cuadrícula visible y nombres que envuelven dentro de su columna; anchos por usuario/lista. Resizer compartido no escribe ancho en un clic sin desplazamiento y permite arrastre, teclado y restablecimiento.
+
 - Hojas: Buscar es la acción principal del selector de inventario. Agregar solo envía faltantes de la hoja/país visible (o país por defecto) y se deshabilita si todos existen; conservar unicidad canónica del servidor, historial y activación. Las celdas fijadas deben superar en z-index a las que se desplazan, sin que el asesor capture clics del nombre. Menor a mayor venta: cero confirmado, luego sin registro (—), luego positivos; nunca convertir ausencia en cero. Cancelar de asignación usa ui-close-button arriba y al final, type=button y bloqueo busy.
 
 - Estado en la fila de orden abre menú de filtro CAC y orden por criticidad; usar catálogo único cacSeverityOrder/cacStatusNames. Filtrar antes de paginar y calcular resumen con el mismo ámbito. Orden/paginación reutilizan resumen solo si todas sus entradas y revisión coinciden, sin TTL; filtros/fecha/cuentas/selección/revisión lo invalidan. Proteger viewport también en encabezados de tabla/menú; no desplazar scroll al responder.

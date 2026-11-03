@@ -70,7 +70,7 @@ export function InventoryTop({
   const { widths, resize, warning } = useSheetWidths(
     "inventory-top:" + directory.listId,
   );
-  const sizes = [32, 260, 72, 50, 80, 65, 75, 60, 120, 300];
+  const sizes = [34, 360, 110, 70, 105, 85, 100, 90, 180, 200];
   const handle = (i: number, label: string) => (
     <SheetColumnResizer
       label={label}
@@ -277,7 +277,7 @@ export function InventoryTop({
       </div>
       <p className="inventory-top-hint">
         Conserva los que funcionan. Reemplaza solo los que quieres cambiar en
-        este país.
+        este país. Ajusta las columnas arrastrando sus divisiones.
       </p>
       {warning && <small role="status">{warning}</small>}
       {(error || evaluation.error) && (
@@ -444,7 +444,7 @@ export function InventoryTop({
       ) : (
         <div className="inventory-top-scroll">
           <table
-            className="inventory-top-table"
+            className="inventory-top-table sheet-resizable-table"
             style={{
               width: sizes.reduce(
                 (n, v, i) => n + (widths["column" + i] ?? v),
@@ -454,14 +454,12 @@ export function InventoryTop({
             }}
           >
             <colgroup>
-              {[32, 260, 72, 50, 80, 65, 75, 60, 120, 300].map(
-                (width, index) => (
-                  <col
-                    key={index}
-                    style={{ width: widths["column" + index] ?? width }}
-                  />
-                ),
-              )}
+              {sizes.map((width, index) => (
+                <col
+                  key={index}
+                  style={{ width: widths["column" + index] ?? width }}
+                />
+              ))}
             </colgroup>
             <thead>
               <tr>

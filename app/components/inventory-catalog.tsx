@@ -28,6 +28,10 @@ import { InventoryAddEvaluationSheet } from "./inventory-add-evaluation-sheet";
 import { countryName } from "../../lib/meta-ads/countries";
 import type { InventorySheetActivationDirectory } from "../../lib/meta-ads/inventory-sheet-activation";
 import { InventoryActionMenu } from "./inventory-action-menu";
+import {
+  FinancialTableWindow,
+  type FinancialTableWindowMode,
+} from "./financial-table-window";
 import { useInventoryPinnedColumns } from "./use-inventory-pinned-columns";
 import dynamic from "next/dynamic";
 const InventoryTrials = dynamic(
@@ -147,6 +151,12 @@ export function InventoryCatalog({
   onChanged: () => Promise<void>;
   onOpenInventory?: (id: string) => void;
 }) {
+  const inventoryScroll = useRef<HTMLDivElement>(null);
+  const inventoryWindowControls = useRef<{
+    changeMode: (mode: FinancialTableWindowMode) => void;
+  }>(null);
+  const [inventoryWindowMode, setInventoryWindowMode] =
+    useState<FinancialTableWindowMode>("inline");
   const [trialDirectory, setTrialDirectory] = useState<TrialDirectory | null>(
     null,
   );
@@ -1952,6 +1962,17 @@ export function InventoryCatalog({
         <div className="row sheet-toolbar-controls">
           <button
             type="button"
+            className="inventory-maximize-trigger"
+            aria-label="Maximizar inventario"
+            title="Ampliar toda la tabla de Lista de Diplomados"
+            onClick={() =>
+              inventoryWindowControls.current?.changeMode("maximized")
+            }
+          >
+            ⛶ Maximizar inventario
+          </button>
+          <button
+            type="button"
             aria-label="Crear / modificar grupo"
             title="Crear o modificar grupos y evaluar el Top"
             disabled={!trialDirectory || busy}
@@ -2200,364 +2221,215 @@ export function InventoryCatalog({
           </div>
         )}
       </div>
-      <div
-        className="table-scroll inventory-table-scroll"
-        role="region"
-        aria-label="Tabla de inventario desplazable"
-        tabIndex={0}
+      <FinancialTableWindow
+        title="Lista de Diplomados · Inventario"
+        scrollRef={inventoryScroll}
+        mode={inventoryWindowMode}
+        onModeChange={setInventoryWindowMode}
+        controlsRef={inventoryWindowControls}
+        toolbar={
+          <div className="financial-table-window-toolbar">
+            <strong>Lista de Diplomados · Inventario</strong>
+          </div>
+        }
       >
-        <table
-          ref={tableRef}
-          hidden={!columns.length}
-          className="inventory-catalog-grid inventory-categorized-grid sheet-resizable-table"
-          style={{
-            width: columns.reduce((n, c) => n + (widths[c.key] ?? c.width), 0),
-          }}
+        <div
+          ref={inventoryScroll}
+          className="table-scroll inventory-table-scroll"
+          role="region"
+          aria-label="Tabla de inventario desplazable"
+          tabIndex={0}
         >
-          <colgroup>
-            {columns.map((c) => (
-              <col
-                key={c.key}
-                data-column-key={c.key}
-                style={{ width: widths[c.key] ?? c.width }}
-              />
-            ))}
-          </colgroup>
-          <thead>
-            <tr>
-              <th
-                scope="col"
-                rowSpan={hasCountryColumns ? 2 : 1}
-                hidden={!showParameter("inventory")}
-              >
-                {columnHandle("inventory", "Inventario")}
-                <div className="inventory-header-title">
-                  <InventoryCheck
-                    label="Seleccionar todo el inventario visible"
-                    checked={
-                      !!visibleIds.length &&
-                      selectedVisible.length === visibleIds.length
-                    }
-                    mixed={
-                      selectedVisible.length > 0 &&
-                      selectedVisible.length < visibleIds.length
-                    }
-                    disabled={busy || !visibleIds.length}
-                    onChange={(checked) => choose(visibleIds, checked)}
-                  />
-                  <span>Inventario ({visible.length})</span>
-                </div>
-                <div className="inventory-header-category-filter">
-                  <InventoryCategoryFilter
-                    label="Categorías del inventario"
-                    values={activeCategories}
-                    options={categoryOptions}
-                    onChange={selectCategories}
-                    onCreate={async (name) =>
-                      createHeaderCategory("PRIMARY", name)
-                    }
-                    onError={setMessage}
-                    disabled={busy || !categories}
-                  />
-                </div>
-                <div className="inventory-item-filter">
-                  <InventoryMultiSelect
-                    label="Inventario del catálogo"
-                    placeholder={
-                      activeCategories.length === 1 &&
-                      activeCategories[0] === noCategory
-                        ? "Inventario sin categorías"
-                        : activeCategories.length
-                          ? "Inventario de las categorías elegidas"
-                          : "Todo el inventario"
-                    }
-                    options={categoryInventory.map((g) => ({
-                      value: g.links[0].id,
-                      label: g.name,
-                    }))}
-                    values={filters.items}
-                    disabled={busy || !categories}
-                    description={
-                      activeCategories.length
-                        ? "Busca por nombre dentro de las categorías elegidas. Para ver otros inventarios, cambia o quita la categoría de arriba."
-                        : "Busca por el nombre del inventario. Para buscar un área, usa el selector de categorías de arriba."
-                    }
-                    createLabel="Crear inventario"
-                    onCreate={async (name) =>
-                      saveNewRow(
-                        { name, primary: [], secondary: [], sheets: [] },
-                        { closeDraft: false, selectItem: true },
-                      )
-                    }
-                    onError={setMessage}
-                    onChange={(v) => setFilters({ ...filters, items: v })}
-                  />
-                  {categories && itemFilterChips.length > 0 && (
-                    <div
-                      ref={itemFilterTrack}
-                      className="inventory-item-filter-chips"
-                      role="group"
-                      aria-label="Inventarios filtrados"
-                      tabIndex={0}
-                    >
-                      {itemFilterChips.map((chip) => (
-                        <span
-                          key={chip.key}
-                          data-inventory-filter-chip={chip.name}
-                        >
-                          <span title={chip.name}>{chip.name}</span>
-                          <button
-                            type="button"
-                            aria-label={`Quitar filtro de inventario ${chip.name}`}
-                            title={`Quitar ${chip.name}`}
-                            disabled={busy}
-                            onClick={() =>
-                              setFilters({
-                                ...filters,
-                                items: filters.items.filter(
-                                  (id) => !chip.ids.includes(id),
-                                ),
-                              })
-                            }
-                          >
-                            ×
-                          </button>
-                        </span>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              </th>
-              {(["PRIMARY", "SECONDARY"] as const).map((kind) => (
+          <table
+            ref={tableRef}
+            hidden={!columns.length}
+            className="inventory-catalog-grid inventory-categorized-grid sheet-resizable-table"
+            style={{
+              width: columns.reduce(
+                (n, c) => n + (widths[c.key] ?? c.width),
+                0,
+              ),
+            }}
+          >
+            <colgroup>
+              {columns.map((c) => (
+                <col
+                  key={c.key}
+                  data-column-key={c.key}
+                  style={{ width: widths[c.key] ?? c.width }}
+                />
+              ))}
+            </colgroup>
+            <thead>
+              <tr>
                 <th
-                  key={kind}
                   scope="col"
                   rowSpan={hasCountryColumns ? 2 : 1}
-                  hidden={
-                    !showParameter(kind === "PRIMARY" ? "primary" : "secondary")
-                  }
+                  hidden={!showParameter("inventory")}
                 >
-                  {columnHandle(
-                    kind === "PRIMARY" ? "primary" : "secondary",
-                    kind === "PRIMARY"
-                      ? "Categoría principal"
-                      : "Categorías secundarias",
-                  )}
-                  <div>
-                    {kind === "PRIMARY"
-                      ? "Categoría principal"
-                      : "Categorías secundarias"}
-                  </div>
-                  <InventoryMultiSelect
-                    label={
-                      kind === "PRIMARY"
-                        ? "Filtro de categorías principales"
-                        : "Filtro de categorías secundarias"
-                    }
-                    placeholder="Todas"
-                    options={directoryNames.map((name) => ({
-                      value: name,
-                      label: `${name} (${levelCategoryCounts[kind].get(name) ?? 0})`,
-                      searchLabel: name,
-                    }))}
-                    values={kind === "PRIMARY" ? primaryNames : secondaryNames}
-                    disabled={busy || !categories}
-                    description="Busca una categoría o escribe una nueva para añadirla al catálogo."
-                    onCreate={async (name) => createHeaderCategory(kind, name)}
-                    createLabel="Añadir categoría"
-                    onError={setMessage}
-                    onChange={(v) =>
-                      setFilters({
-                        ...filters,
-                        [kind === "PRIMARY" ? "primary" : "secondary"]: v,
-                      })
-                    }
-                  />
-                  <button
-                    type="button"
-                    className="inventory-header-assign"
-                    aria-label={`Asignar o quitar categoría ${kind === "PRIMARY" ? "principal" : "secundaria"} a seleccionados`}
-                    disabled={busy || !categories || !selectedGroups}
-                    title={
-                      selectedGroups
-                        ? `Asignar a ${selectedGroups} inventarios seleccionados visibles`
-                        : "Marca los inventarios que deseas actualizar"
-                    }
-                    onClick={() =>
-                      setAssignment({
-                        kind,
-                        ids: [...selectedVisible],
-                        names: visible
-                          .filter((g) =>
-                            g.links.some((a) => selectedVisible.includes(a.id)),
-                          )
-                          .map((g) => g.name),
-                      })
-                    }
-                  >
-                    Asignar o quitar
-                    {selectedGroups ? ` (${selectedGroups})` : ""}
-                  </button>
-                </th>
-              ))}
-              <th
-                scope="col"
-                rowSpan={hasCountryColumns ? 2 : 1}
-                hidden={!showParameter("sheets")}
-              >
-                {columnHandle("sheets", "Hojas")}
-                <div>Hojas</div>
-                <InventoryMultiSelect
-                  label="Hojas del inventario"
-                  placeholder="Todas las hojas"
-                  options={tables.map((t) => ({ value: t.id, label: t.name }))}
-                  values={filters.sheets}
-                  onChange={(v) => setFilters({ ...filters, sheets: v })}
-                />
-                <InventoryActionMenu
-                  label="Asignar o quitar hojas"
-                  disabled={busy || !selectedGroups}
-                >
-                  <InventoryMultiSelect
-                    label="Asignar hojas a inventarios seleccionados"
-                    onOpen={() => {
-                      sheetAssignment.current = categories
-                        ? {
-                            revision: categories.revision,
-                            items: visible
-                              .filter((g) =>
-                                g.links.some((a) =>
-                                  selectedVisible.includes(a.id),
-                                ),
-                              )
-                              .map((g) => ({
-                                inventoryId: g.links.find((a) =>
-                                  selectedVisible.includes(a.id),
-                                )!.id,
-                                expectedName: g.name,
-                              })),
-                          }
-                        : null;
-                    }}
-                    placeholder={
-                      "Asignar hojas" +
-                      (selectedGroups ? " (" + selectedGroups + ")" : "")
-                    }
-                    values={[]}
-                    all={false}
-                    options={tables.map((t) => ({
-                      value: t.id,
-                      label: t.name,
-                    }))}
-                    disabled={busy || !categories || !selectedGroups}
-                    description={
-                      "Añade las hojas elegidas a " +
-                      selectedGroups +
-                      " inventarios seleccionados visibles. Los vínculos actuales se conservan."
-                    }
-                    onError={setMessage}
-                    onChange={async (tableIds) => {
-                      if (!tableIds.length || !categories) return;
-                      const snapshot = sheetAssignment.current;
-                      if (!snapshot)
-                        throw Error(
-                          "Vuelve a abrir Asignar hojas para revisar la selección.",
-                        );
-                      const items = snapshot.items;
-                      if (!items.length) return;
-                      setBusy(true);
-                      let committed = false;
-                      try {
-                        const result = await api(
-                          "meta-ads/inventory/sheets/batch",
-                          "POST",
-                          {
-                            listId,
-                            revision: snapshot.revision,
-                            tableIds,
-                            items,
-                          },
-                        );
-                        committed = true;
-                        setSelected([]);
-                        await onChanged();
-                        await reloadCategories();
-                        setMessage(
-                          result.created
-                            ? `Hojas asignadas a ${result.items} inventarios: ${result.created} vínculos nuevos.`
-                            : "Los inventarios ya están en las hojas elegidas.",
-                        );
-                      } catch (e) {
-                        if (committed)
-                          setMessage(
-                            "Las hojas se asignaron. Actualiza para ver los cambios.",
-                          );
-                        else throw e;
-                      } finally {
-                        setBusy(false);
+                  {columnHandle("inventory", "Inventario")}
+                  <div className="inventory-header-title">
+                    <InventoryCheck
+                      label="Seleccionar todo el inventario visible"
+                      checked={
+                        !!visibleIds.length &&
+                        selectedVisible.length === visibleIds.length
                       }
-                    }}
-                  />
-                  <button
-                    type="button"
-                    className="inventory-header-assign"
-                    disabled={
-                      busy ||
-                      !trialDirectory?.canEdit ||
-                      !visible.some(
-                        (g) =>
-                          g.links.some((a) => selectedVisible.includes(a.id)) &&
-                          g.links.some((a) => !a.standalone),
-                      )
-                    }
-                    onClick={() =>
-                      setSheetRemoval(
-                        visible
-                          .filter((g) =>
-                            g.links.some((a) => selectedVisible.includes(a.id)),
-                          )
-                          .flatMap((g) =>
-                            g.links
-                              .filter((a) => !a.standalone)
-                              .map((a) => a.id),
-                          ),
+                      mixed={
+                        selectedVisible.length > 0 &&
+                        selectedVisible.length < visibleIds.length
+                      }
+                      disabled={busy || !visibleIds.length}
+                      onChange={(checked) => choose(visibleIds, checked)}
+                    />
+                    <span>Inventario ({visible.length})</span>
+                  </div>
+                  <div className="inventory-header-category-filter">
+                    <InventoryCategoryFilter
+                      label="Categorías del inventario"
+                      values={activeCategories}
+                      options={categoryOptions}
+                      onChange={selectCategories}
+                      onCreate={async (name) =>
+                        createHeaderCategory("PRIMARY", name)
+                      }
+                      onError={setMessage}
+                      disabled={busy || !categories}
+                    />
+                  </div>
+                  <div className="inventory-item-filter">
+                    <InventoryMultiSelect
+                      label="Inventario del catálogo"
+                      placeholder={
+                        activeCategories.length === 1 &&
+                        activeCategories[0] === noCategory
+                          ? "Inventario sin categorías"
+                          : activeCategories.length
+                            ? "Inventario de las categorías elegidas"
+                            : "Todo el inventario"
+                      }
+                      options={categoryInventory.map((g) => ({
+                        value: g.links[0].id,
+                        label: g.name,
+                      }))}
+                      values={filters.items}
+                      disabled={busy || !categories}
+                      description={
+                        activeCategories.length
+                          ? "Busca por nombre dentro de las categorías elegidas. Para ver otros inventarios, cambia o quita la categoría de arriba."
+                          : "Busca por el nombre del inventario. Para buscar un área, usa el selector de categorías de arriba."
+                      }
+                      createLabel="Crear inventario"
+                      onCreate={async (name) =>
+                        saveNewRow(
+                          { name, primary: [], secondary: [], sheets: [] },
+                          { closeDraft: false, selectItem: true },
+                        )
+                      }
+                      onError={setMessage}
+                      onChange={(v) => setFilters({ ...filters, items: v })}
+                    />
+                    {categories && itemFilterChips.length > 0 && (
+                      <div
+                        ref={itemFilterTrack}
+                        className="inventory-item-filter-chips"
+                        role="group"
+                        aria-label="Inventarios filtrados"
+                        tabIndex={0}
+                      >
+                        {itemFilterChips.map((chip) => (
+                          <span
+                            key={chip.key}
+                            data-inventory-filter-chip={chip.name}
+                          >
+                            <span title={chip.name}>{chip.name}</span>
+                            <button
+                              type="button"
+                              aria-label={`Quitar filtro de inventario ${chip.name}`}
+                              title={`Quitar ${chip.name}`}
+                              disabled={busy}
+                              onClick={() =>
+                                setFilters({
+                                  ...filters,
+                                  items: filters.items.filter(
+                                    (id) => !chip.ids.includes(id),
+                                  ),
+                                })
+                              }
+                            >
+                              ×
+                            </button>
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </th>
+                {(["PRIMARY", "SECONDARY"] as const).map((kind) => (
+                  <th
+                    key={kind}
+                    scope="col"
+                    rowSpan={hasCountryColumns ? 2 : 1}
+                    hidden={
+                      !showParameter(
+                        kind === "PRIMARY" ? "primary" : "secondary",
                       )
                     }
                   >
-                    Quitar hojas de seleccionados
-                    {selectedGroups ? ` (${selectedGroups})` : ""}
-                  </button>
-                </InventoryActionMenu>
-              </th>
-              <th
-                scope="col"
-                rowSpan={hasCountryColumns ? 2 : 1}
-                hidden={!showParameter("group")}
-              >
-                {columnHandle("group", "Grupo")}
-                <div className="inventory-group-heading">
-                  <span>Grupo</span>
-                  <button
-                    type="button"
-                    aria-label="Ordenar inventario por grupos"
-                    aria-pressed={groupOrder === "groups"}
-                    onClick={() =>
-                      setGroupOrder(groupOrder === "groups" ? "" : "groups")
-                    }
-                  >
-                    {groupOrder === "groups"
-                      ? "Ordenado por grupos ✓"
-                      : "Ordenar por grupos"}
-                  </button>
-                </div>
-                <div className="inventory-group-filter-control">
-                  <select
-                    title="Filtrar filas; no cambia sus asignaciones"
-                    aria-label="Filtrar inventario por grupo"
-                    value={groupFilter}
-                    onChange={(e) => {
-                      if (e.target.value === "new")
-                        setGroupEditor({
+                    {columnHandle(
+                      kind === "PRIMARY" ? "primary" : "secondary",
+                      kind === "PRIMARY"
+                        ? "Categoría principal"
+                        : "Categorías secundarias",
+                    )}
+                    <div>
+                      {kind === "PRIMARY"
+                        ? "Categoría principal"
+                        : "Categorías secundarias"}
+                    </div>
+                    <InventoryMultiSelect
+                      label={
+                        kind === "PRIMARY"
+                          ? "Filtro de categorías principales"
+                          : "Filtro de categorías secundarias"
+                      }
+                      placeholder="Todas"
+                      options={directoryNames.map((name) => ({
+                        value: name,
+                        label: `${name} (${levelCategoryCounts[kind].get(name) ?? 0})`,
+                        searchLabel: name,
+                      }))}
+                      values={
+                        kind === "PRIMARY" ? primaryNames : secondaryNames
+                      }
+                      disabled={busy || !categories}
+                      description="Busca una categoría o escribe una nueva para añadirla al catálogo."
+                      onCreate={async (name) =>
+                        createHeaderCategory(kind, name)
+                      }
+                      createLabel="Añadir categoría"
+                      onError={setMessage}
+                      onChange={(v) =>
+                        setFilters({
+                          ...filters,
+                          [kind === "PRIMARY" ? "primary" : "secondary"]: v,
+                        })
+                      }
+                    />
+                    <button
+                      type="button"
+                      className="inventory-header-assign"
+                      aria-label={`Asignar o quitar categoría ${kind === "PRIMARY" ? "principal" : "secundaria"} a seleccionados`}
+                      disabled={busy || !categories || !selectedGroups}
+                      title={
+                        selectedGroups
+                          ? `Asignar a ${selectedGroups} inventarios seleccionados visibles`
+                          : "Marca los inventarios que deseas actualizar"
+                      }
+                      onClick={() =>
+                        setAssignment({
+                          kind,
+                          ids: [...selectedVisible],
                           names: visible
                             .filter((g) =>
                               g.links.some((a) =>
@@ -2565,698 +2437,907 @@ export function InventoryCatalog({
                               ),
                             )
                             .map((g) => g.name),
-                        });
-                      else setGroupFilter(e.target.value);
-                    }}
-                  >
-                    <option value="">Ver: todos los grupos</option>
-                    <option value="none">Ver: sin grupo</option>
-                    <option
-                      value="new"
-                      disabled={!trialDirectory?.canEdit || busy}
-                    >
-                      + Crear grupo…
-                    </option>
-                    {trialGroups.map((g) => (
-                      <option key={g.id} value={g.id}>
-                        Ver: {g.name} ({g.members.length})
-                      </option>
-                    ))}
-                  </select>
-                  {groupFilter && (
-                    <button
-                      type="button"
-                      aria-label="Quitar filtro de grupo"
-                      title="Volver a ver todo el inventario"
-                      onClick={() => setGroupFilter("")}
-                    >
-                      ×
-                    </button>
-                  )}
-                </div>
-                <InventoryActionMenu
-                  label="Asignar o quitar grupos"
-                  disabled={busy || !selectedGroups}
-                >
-                  <InventoryGroupSelect
-                    groups={trialGroups}
-                    value={commonSelectedGroup}
-                    placeholder={
-                      selectedAssignedGroups.size > 1
-                        ? "Varios grupos seleccionados"
-                        : "Asignar grupo a seleccionados…"
-                    }
-                    label="Asignar grupo a inventarios seleccionados"
-                    disabled={
-                      !trialDirectory?.canEdit ||
-                      !selectedVisible.length ||
-                      busy
-                    }
-                    onSelect={(id) =>
-                      assignGroupDirectly(
-                        id,
-                        visible
-                          .filter((g) =>
-                            g.links.some((a) => selectedVisible.includes(a.id)),
-                          )
-                          .map((g) => g.name),
-                      )
-                    }
-                  />
-                  <button
-                    type="button"
-                    className="inventory-remove-group-bulk"
-                    disabled={!trialDirectory?.canEdit || busy || !removalCount}
-                    onClick={() => void removeGroupMembers(removalGroups)}
-                    title="Quita la asignación solo de los diplomados seleccionados visibles; conserva los grupos y el inventario"
-                  >
-                    Quitar grupo a seleccionados
-                    {removalCount ? ` (${removalCount})` : ""}
-                  </button>
-                </InventoryActionMenu>
-              </th>
-              {countryCodes.map((country) => (
-                <th
-                  key={country}
-                  scope="colgroup"
-                  hidden={!visibleCountryMetrics(country).length}
-                  colSpan={Math.max(1, visibleCountryMetrics(country).length)}
-                  className="inventory-country-heading"
-                  data-country-block={country}
-                >
-                  {pinControl(
-                    visibleCountryMetrics(country).map(
-                      (metric) => `country:${country}:${metric.key}`,
-                    ),
-                    sheetLabel(country),
-                  )}
-                  {hideControl(
-                    inventoryCountryMetrics.map(
-                      (metric) => `country:${country}:${metric.key}`,
-                    ),
-                    sheetLabel(country),
-                  )}
-                  <span className="inventory-sheet-heading-name">
-                    {sheetLabel(country)}
-                  </span>
-                  <button
-                    type="button"
-                    className="inventory-sheet-top-control"
-                    aria-label={`Ver Top de ${sheetLabel(country)}`}
-                    aria-pressed={topSheet === country}
-                    title="Activos y pendientes primero, seguidos de los grupos"
-                    onClick={() => {
-                      setTopPreference(topSheet === country ? "" : country);
-                      setGroupFilter("");
-                      setGroupOrder("groups");
-                    }}
-                  >
-                    Top
-                  </button>{" "}
-                  <button
-                    type="button"
-                    aria-label={`Analizar Top de ${sheetLabel(country)}`}
-                    title="Ver resultados y reemplazar diplomados"
-                    disabled={busy || !trialDirectory}
-                    onClick={() =>
-                      setGroupEditor({ names: [], tab: "top", column: country })
-                    }
-                  >
-                    ↗
-                  </button>
-                  <select
-                    className="inventory-campaign-filter"
-                    aria-label={`Filtrar campañas de ${sheetLabel(country)}`}
-                    value={
-                      campaignFilterSheet === country ? campaignFilter : ""
-                    }
-                    onChange={(e) => {
-                      setCampaignFilterSheet(country);
-                      setCampaignFilter(e.target.value);
-                    }}
-                  >
-                    <option value="">Todos</option>
-                    <option value="ACTIVE">Activos</option>
-                    <option value="CREATE">Por hacer campaña</option>
-                    <option value="STOP">Por desactivar campaña</option>
-                    <option value="INACTIVE">Desactivados</option>
-                    <option value="HISTORY">Con historial de activación</option>
-                    <option value="NEVER">Nunca activados</option>
-                    <option value="TEST">Pruebas · menos de 12 h</option>
-                    <option value="USED">Usados · 12 h o más</option>
-                    <option value="UNKNOWN">Tiempo no registrado</option>
-                  </select>
-                </th>
-              ))}
-              <th
-                rowSpan={hasCountryColumns ? 2 : 1}
-                hidden={!columns.some((c) => c.key === "gap")}
-                aria-hidden="true"
-                className="inventory-column-gap"
-              />
-              <th
-                scope="col"
-                rowSpan={hasCountryColumns ? 2 : 1}
-                hidden={!showParameter("syllabi")}
-              >
-                {columnHandle("syllabi", "Temarios")}Temarios
-              </th>
-            </tr>
-            {hasCountryColumns && (
-              <tr className="inventory-country-subheaders">
-                {countryCodes.flatMap((country) =>
-                  visibleCountryMetrics(country).map((metric) => (
-                    <th
-                      scope="col"
-                      key={country + ":" + metric.key}
-                      data-country-block={country}
-                      data-country-metric={metric.key}
-                      aria-sort={
-                        activeCountrySort?.country === country &&
-                        activeCountrySort.metric === metric.key
-                          ? activeCountrySort.ascending
-                            ? "ascending"
-                            : "descending"
-                          : "none"
+                        })
                       }
                     >
-                      <SheetColumnResizer
-                        label={sheetLabel(country) + " · " + metric.label}
-                        onResize={(v) =>
-                          resize(`country:${country}:${metric.key}`, v)
+                      Asignar o quitar
+                      {selectedGroups ? ` (${selectedGroups})` : ""}
+                    </button>
+                  </th>
+                ))}
+                <th
+                  scope="col"
+                  rowSpan={hasCountryColumns ? 2 : 1}
+                  hidden={!showParameter("sheets")}
+                >
+                  {columnHandle("sheets", "Hojas")}
+                  <div>Hojas</div>
+                  <InventoryMultiSelect
+                    label="Hojas del inventario"
+                    placeholder="Todas las hojas"
+                    options={tables.map((t) => ({
+                      value: t.id,
+                      label: t.name,
+                    }))}
+                    values={filters.sheets}
+                    onChange={(v) => setFilters({ ...filters, sheets: v })}
+                  />
+                  <InventoryActionMenu
+                    label="Asignar o quitar hojas"
+                    disabled={busy || !selectedGroups}
+                  >
+                    <InventoryMultiSelect
+                      label="Asignar hojas a inventarios seleccionados"
+                      onOpen={() => {
+                        sheetAssignment.current = categories
+                          ? {
+                              revision: categories.revision,
+                              items: visible
+                                .filter((g) =>
+                                  g.links.some((a) =>
+                                    selectedVisible.includes(a.id),
+                                  ),
+                                )
+                                .map((g) => ({
+                                  inventoryId: g.links.find((a) =>
+                                    selectedVisible.includes(a.id),
+                                  )!.id,
+                                  expectedName: g.name,
+                                })),
+                            }
+                          : null;
+                      }}
+                      placeholder={
+                        "Asignar hojas" +
+                        (selectedGroups ? " (" + selectedGroups + ")" : "")
+                      }
+                      values={[]}
+                      all={false}
+                      options={tables.map((t) => ({
+                        value: t.id,
+                        label: t.name,
+                      }))}
+                      disabled={busy || !categories || !selectedGroups}
+                      description={
+                        "Añade las hojas elegidas a " +
+                        selectedGroups +
+                        " inventarios seleccionados visibles. Los vínculos actuales se conservan."
+                      }
+                      onError={setMessage}
+                      onChange={async (tableIds) => {
+                        if (!tableIds.length || !categories) return;
+                        const snapshot = sheetAssignment.current;
+                        if (!snapshot)
+                          throw Error(
+                            "Vuelve a abrir Asignar hojas para revisar la selección.",
+                          );
+                        const items = snapshot.items;
+                        if (!items.length) return;
+                        setBusy(true);
+                        let committed = false;
+                        try {
+                          const result = await api(
+                            "meta-ads/inventory/sheets/batch",
+                            "POST",
+                            {
+                              listId,
+                              revision: snapshot.revision,
+                              tableIds,
+                              items,
+                            },
+                          );
+                          committed = true;
+                          setSelected([]);
+                          await onChanged();
+                          await reloadCategories();
+                          setMessage(
+                            result.created
+                              ? `Hojas asignadas a ${result.items} inventarios: ${result.created} vínculos nuevos.`
+                              : "Los inventarios ya están en las hojas elegidas.",
+                          );
+                        } catch (e) {
+                          if (committed)
+                            setMessage(
+                              "Las hojas se asignaron. Actualiza para ver los cambios.",
+                            );
+                          else throw e;
+                        } finally {
+                          setBusy(false);
                         }
-                        onReset={() =>
-                          resize(`country:${country}:${metric.key}`)
-                        }
-                      />
-                      {countrySortButton(country, metric)}
-                      {metric.key === "activation" && (
-                        <span className="inventory-sheet-bulk-controls">
-                          <button
-                            type="button"
-                            aria-label={`Activar en ${sheetLabel(country)}`}
-                            title="Activar seleccionados"
-                            disabled={
-                              busy ||
-                              !selectedGroups ||
-                              !sheetDirectory?.canEdit ||
-                              !countryEvaluation.ready ||
-                              countryEvaluation.loading
-                            }
-                            onClick={() =>
-                              void changeSheetActivation(
-                                country,
-                                visible
-                                  .filter((g) =>
-                                    g.links.some((a) =>
-                                      selectedVisible.includes(a.id),
-                                    ),
-                                  )
-                                  .map((g) => g.name),
-                                { active: true },
+                      }}
+                    />
+                    <button
+                      type="button"
+                      className="inventory-header-assign"
+                      disabled={
+                        busy ||
+                        !trialDirectory?.canEdit ||
+                        !visible.some(
+                          (g) =>
+                            g.links.some((a) =>
+                              selectedVisible.includes(a.id),
+                            ) && g.links.some((a) => !a.standalone),
+                        )
+                      }
+                      onClick={() =>
+                        setSheetRemoval(
+                          visible
+                            .filter((g) =>
+                              g.links.some((a) =>
+                                selectedVisible.includes(a.id),
+                              ),
+                            )
+                            .flatMap((g) =>
+                              g.links
+                                .filter((a) => !a.standalone)
+                                .map((a) => a.id),
+                            ),
+                        )
+                      }
+                    >
+                      Quitar hojas de seleccionados
+                      {selectedGroups ? ` (${selectedGroups})` : ""}
+                    </button>
+                  </InventoryActionMenu>
+                </th>
+                <th
+                  scope="col"
+                  rowSpan={hasCountryColumns ? 2 : 1}
+                  hidden={!showParameter("group")}
+                >
+                  {columnHandle("group", "Grupo")}
+                  <div className="inventory-group-heading">
+                    <span>Grupo</span>
+                    <button
+                      type="button"
+                      aria-label="Ordenar inventario por grupos"
+                      aria-pressed={groupOrder === "groups"}
+                      onClick={() =>
+                        setGroupOrder(groupOrder === "groups" ? "" : "groups")
+                      }
+                    >
+                      {groupOrder === "groups"
+                        ? "Ordenado por grupos ✓"
+                        : "Ordenar por grupos"}
+                    </button>
+                  </div>
+                  <div className="inventory-group-filter-control">
+                    <select
+                      title="Filtrar filas; no cambia sus asignaciones"
+                      aria-label="Filtrar inventario por grupo"
+                      value={groupFilter}
+                      onChange={(e) => {
+                        if (e.target.value === "new")
+                          setGroupEditor({
+                            names: visible
+                              .filter((g) =>
+                                g.links.some((a) =>
+                                  selectedVisible.includes(a.id),
+                                ),
                               )
-                            }
-                          >
-                            ◉
-                          </button>
-                          <button
-                            type="button"
-                            aria-label={`Desactivar en ${sheetLabel(country)}`}
-                            title="Desactivar seleccionados"
-                            disabled={
-                              busy ||
-                              !selectedGroups ||
-                              !sheetDirectory?.canEdit ||
-                              !countryEvaluation.ready ||
-                              countryEvaluation.loading
-                            }
-                            onClick={() =>
-                              void changeSheetActivation(
-                                country,
-                                visible
-                                  .filter((g) =>
-                                    g.links.some((a) =>
-                                      selectedVisible.includes(a.id),
-                                    ),
-                                  )
-                                  .map((g) => g.name),
-                                { active: false },
-                              )
-                            }
-                          >
-                            ○
-                          </button>
-                        </span>
-                      )}
-                    </th>
-                  )),
-                )}
+                              .map((g) => g.name),
+                          });
+                        else setGroupFilter(e.target.value);
+                      }}
+                    >
+                      <option value="">Ver: todos los grupos</option>
+                      <option value="none">Ver: sin grupo</option>
+                      <option
+                        value="new"
+                        disabled={!trialDirectory?.canEdit || busy}
+                      >
+                        + Crear grupo…
+                      </option>
+                      {trialGroups.map((g) => (
+                        <option key={g.id} value={g.id}>
+                          Ver: {g.name} ({g.members.length})
+                        </option>
+                      ))}
+                    </select>
+                    {groupFilter && (
+                      <button
+                        type="button"
+                        aria-label="Quitar filtro de grupo"
+                        title="Volver a ver todo el inventario"
+                        onClick={() => setGroupFilter("")}
+                      >
+                        ×
+                      </button>
+                    )}
+                  </div>
+                  <InventoryActionMenu
+                    label="Asignar o quitar grupos"
+                    disabled={busy || !selectedGroups}
+                  >
+                    <InventoryGroupSelect
+                      groups={trialGroups}
+                      value={commonSelectedGroup}
+                      placeholder={
+                        selectedAssignedGroups.size > 1
+                          ? "Varios grupos seleccionados"
+                          : "Asignar grupo a seleccionados…"
+                      }
+                      label="Asignar grupo a inventarios seleccionados"
+                      disabled={
+                        !trialDirectory?.canEdit ||
+                        !selectedVisible.length ||
+                        busy
+                      }
+                      onSelect={(id) =>
+                        assignGroupDirectly(
+                          id,
+                          visible
+                            .filter((g) =>
+                              g.links.some((a) =>
+                                selectedVisible.includes(a.id),
+                              ),
+                            )
+                            .map((g) => g.name),
+                        )
+                      }
+                    />
+                    <button
+                      type="button"
+                      className="inventory-remove-group-bulk"
+                      disabled={
+                        !trialDirectory?.canEdit || busy || !removalCount
+                      }
+                      onClick={() => void removeGroupMembers(removalGroups)}
+                      title="Quita la asignación solo de los diplomados seleccionados visibles; conserva los grupos y el inventario"
+                    >
+                      Quitar grupo a seleccionados
+                      {removalCount ? ` (${removalCount})` : ""}
+                    </button>
+                  </InventoryActionMenu>
+                </th>
+                {countryCodes.map((country) => (
+                  <th
+                    key={country}
+                    scope="colgroup"
+                    hidden={!visibleCountryMetrics(country).length}
+                    colSpan={Math.max(1, visibleCountryMetrics(country).length)}
+                    className="inventory-country-heading"
+                    data-country-block={country}
+                  >
+                    {pinControl(
+                      visibleCountryMetrics(country).map(
+                        (metric) => `country:${country}:${metric.key}`,
+                      ),
+                      sheetLabel(country),
+                    )}
+                    {hideControl(
+                      inventoryCountryMetrics.map(
+                        (metric) => `country:${country}:${metric.key}`,
+                      ),
+                      sheetLabel(country),
+                    )}
+                    <span className="inventory-sheet-heading-name">
+                      {sheetLabel(country)}
+                    </span>
+                    <button
+                      type="button"
+                      className="inventory-sheet-top-control"
+                      aria-label={`Ver Top de ${sheetLabel(country)}`}
+                      aria-pressed={topSheet === country}
+                      title="Activos y pendientes primero, seguidos de los grupos"
+                      onClick={() => {
+                        setTopPreference(topSheet === country ? "" : country);
+                        setGroupFilter("");
+                        setGroupOrder("groups");
+                      }}
+                    >
+                      Top
+                    </button>{" "}
+                    <button
+                      type="button"
+                      aria-label={`Analizar Top de ${sheetLabel(country)}`}
+                      title="Ver resultados y reemplazar diplomados"
+                      disabled={busy || !trialDirectory}
+                      onClick={() =>
+                        setGroupEditor({
+                          names: [],
+                          tab: "top",
+                          column: country,
+                        })
+                      }
+                    >
+                      ↗
+                    </button>
+                    <select
+                      className="inventory-campaign-filter"
+                      aria-label={`Filtrar campañas de ${sheetLabel(country)}`}
+                      value={
+                        campaignFilterSheet === country ? campaignFilter : ""
+                      }
+                      onChange={(e) => {
+                        setCampaignFilterSheet(country);
+                        setCampaignFilter(e.target.value);
+                      }}
+                    >
+                      <option value="">Todos</option>
+                      <option value="ACTIVE">Activos</option>
+                      <option value="CREATE">Por hacer campaña</option>
+                      <option value="STOP">Por desactivar campaña</option>
+                      <option value="INACTIVE">Desactivados</option>
+                      <option value="HISTORY">
+                        Con historial de activación
+                      </option>
+                      <option value="NEVER">Nunca activados</option>
+                      <option value="TEST">Pruebas · menos de 12 h</option>
+                      <option value="USED">Usados · 12 h o más</option>
+                      <option value="UNKNOWN">Tiempo no registrado</option>
+                    </select>
+                  </th>
+                ))}
+                <th
+                  rowSpan={hasCountryColumns ? 2 : 1}
+                  hidden={!columns.some((c) => c.key === "gap")}
+                  aria-hidden="true"
+                  className="inventory-column-gap"
+                />
+                <th
+                  scope="col"
+                  rowSpan={hasCountryColumns ? 2 : 1}
+                  hidden={!showParameter("syllabi")}
+                >
+                  {columnHandle("syllabi", "Temarios")}Temarios
+                </th>
               </tr>
-            )}
-          </thead>
-          <tbody>
-            {sections.map(([key, section]) => {
-              // Sections are built from `visible`: never select the whole category directory.
-              const sectionIds = section.groups.flatMap((g) =>
-                g.links.map((a) => a.id),
-              );
-              const selectedSectionIds = sectionIds.filter((id) =>
-                selected.includes(id),
-              );
-              const selectedSectionGroups = section.groups.filter((g) =>
-                g.links.some((a) => selected.includes(a.id)),
-              ).length;
-              return (
-                <Fragment key={key}>
-                  {section.trialTitle && (
+              {hasCountryColumns && (
+                <tr className="inventory-country-subheaders">
+                  {countryCodes.flatMap((country) =>
+                    visibleCountryMetrics(country).map((metric) => (
+                      <th
+                        scope="col"
+                        key={country + ":" + metric.key}
+                        data-country-block={country}
+                        data-country-metric={metric.key}
+                        aria-sort={
+                          activeCountrySort?.country === country &&
+                          activeCountrySort.metric === metric.key
+                            ? activeCountrySort.ascending
+                              ? "ascending"
+                              : "descending"
+                            : "none"
+                        }
+                      >
+                        <SheetColumnResizer
+                          label={sheetLabel(country) + " · " + metric.label}
+                          onResize={(v) =>
+                            resize(`country:${country}:${metric.key}`, v)
+                          }
+                          onReset={() =>
+                            resize(`country:${country}:${metric.key}`)
+                          }
+                        />
+                        {countrySortButton(country, metric)}
+                        {metric.key === "activation" && (
+                          <span className="inventory-sheet-bulk-controls">
+                            <button
+                              type="button"
+                              aria-label={`Activar en ${sheetLabel(country)}`}
+                              title="Activar seleccionados"
+                              disabled={
+                                busy ||
+                                !selectedGroups ||
+                                !sheetDirectory?.canEdit ||
+                                !countryEvaluation.ready ||
+                                countryEvaluation.loading
+                              }
+                              onClick={() =>
+                                void changeSheetActivation(
+                                  country,
+                                  visible
+                                    .filter((g) =>
+                                      g.links.some((a) =>
+                                        selectedVisible.includes(a.id),
+                                      ),
+                                    )
+                                    .map((g) => g.name),
+                                  { active: true },
+                                )
+                              }
+                            >
+                              ◉
+                            </button>
+                            <button
+                              type="button"
+                              aria-label={`Desactivar en ${sheetLabel(country)}`}
+                              title="Desactivar seleccionados"
+                              disabled={
+                                busy ||
+                                !selectedGroups ||
+                                !sheetDirectory?.canEdit ||
+                                !countryEvaluation.ready ||
+                                countryEvaluation.loading
+                              }
+                              onClick={() =>
+                                void changeSheetActivation(
+                                  country,
+                                  visible
+                                    .filter((g) =>
+                                      g.links.some((a) =>
+                                        selectedVisible.includes(a.id),
+                                      ),
+                                    )
+                                    .map((g) => g.name),
+                                  { active: false },
+                                )
+                              }
+                            >
+                              ○
+                            </button>
+                          </span>
+                        )}
+                      </th>
+                    )),
+                  )}
+                </tr>
+              )}
+            </thead>
+            <tbody>
+              {sections.map(([key, section]) => {
+                // Sections are built from `visible`: never select the whole category directory.
+                const sectionIds = section.groups.flatMap((g) =>
+                  g.links.map((a) => a.id),
+                );
+                const selectedSectionIds = sectionIds.filter((id) =>
+                  selected.includes(id),
+                );
+                const selectedSectionGroups = section.groups.filter((g) =>
+                  g.links.some((a) => selected.includes(a.id)),
+                ).length;
+                return (
+                  <Fragment key={key}>
+                    {section.trialTitle && (
+                      <tr
+                        className="inventory-trial-group-band"
+                        data-inventory-trial-group={section.trialTitle}
+                      >
+                        <th
+                          colSpan={Math.max(1, columns.length)}
+                          scope="rowgroup"
+                        >
+                          <div className="inventory-band-heading">
+                            <strong>{section.trialTitle}</strong>
+                            <small>{section.trialCount} diplomados</small>
+                            {section.trialId && (
+                              <>
+                                <button
+                                  disabled={!trialDirectory?.canEdit}
+                                  onClick={() =>
+                                    setGroupEditor({
+                                      id: section.trialId,
+                                      names: [],
+                                    })
+                                  }
+                                >
+                                  Editar grupo
+                                </button>
+                                <button
+                                  aria-label={
+                                    "Detalle de evaluación de " +
+                                    section.trialTitle +
+                                    " por país"
+                                  }
+                                  onClick={() =>
+                                    setEvaluation(section.trialId!)
+                                  }
+                                >
+                                  Evaluar por país ↗
+                                </button>
+                              </>
+                            )}
+                          </div>
+                        </th>
+                      </tr>
+                    )}
                     <tr
-                      className="inventory-trial-group-band"
-                      data-inventory-trial-group={section.trialTitle}
+                      hidden={section.hideBand}
+                      className={
+                        "inventory-group-band" +
+                        (section.accent === "blue"
+                          ? " inventory-filter-band"
+                          : "") +
+                        (section.top ? " inventory-top-band" : "")
+                      }
+                      data-category-group={section.title}
+                      data-inventory-top={section.top ? topSheet : undefined}
                     >
                       <th
                         colSpan={Math.max(1, columns.length)}
                         scope="rowgroup"
                       >
                         <div className="inventory-band-heading">
-                          <strong>{section.trialTitle}</strong>
-                          <small>{section.trialCount} diplomados</small>
-                          {section.trialId && (
+                          <InventoryCheck
+                            label={`Seleccionar visibles de ${section.title}`}
+                            checked={
+                              !!sectionIds.length &&
+                              selectedSectionIds.length === sectionIds.length
+                            }
+                            mixed={
+                              selectedSectionIds.length > 0 &&
+                              selectedSectionIds.length < sectionIds.length
+                            }
+                            disabled={busy || !sectionIds.length}
+                            onChange={(checked) => choose(sectionIds, checked)}
+                          />
+                          <span
+                            className="inventory-band-title"
+                            title={section.title}
+                          >
+                            {section.title}
+                          </span>
+                          <small>
+                            {section.groups.length}{" "}
+                            {section.groups.length === 1 ? "ítem" : "ítems"}
+                          </small>
+                          {!section.top && bandCategorySelector(section)}
+                          {selectedSectionGroups > 0 && (
                             <>
+                              <small
+                                className="inventory-band-selected"
+                                role="status"
+                              >
+                                {selectedSectionGroups} seleccionado
+                                {selectedSectionGroups === 1 ? "" : "s"}
+                              </small>
                               <button
-                                disabled={!trialDirectory?.canEdit}
+                                type="button"
+                                className="inventory-band-delete"
+                                aria-label={`Eliminar seleccionados visibles de ${section.title}`}
+                                disabled={busy}
                                 onClick={() =>
-                                  setGroupEditor({
-                                    id: section.trialId,
-                                    names: [],
-                                  })
+                                  setBulkIds([...selectedSectionIds])
                                 }
                               >
-                                Editar grupo
-                              </button>
-                              <button
-                                aria-label={
-                                  "Detalle de evaluación de " +
-                                  section.trialTitle +
-                                  " por país"
-                                }
-                                onClick={() => setEvaluation(section.trialId!)}
-                              >
-                                Evaluar por país ↗
+                                Eliminar seleccionados ({selectedSectionGroups})
                               </button>
                             </>
                           )}
                         </div>
                       </th>
                     </tr>
-                  )}
-                  <tr
-                    hidden={section.hideBand}
-                    className={
-                      "inventory-group-band" +
-                      (section.accent === "blue"
-                        ? " inventory-filter-band"
-                        : "") +
-                      (section.top ? " inventory-top-band" : "")
-                    }
-                    data-category-group={section.title}
-                    data-inventory-top={section.top ? topSheet : undefined}
-                  >
-                    <th colSpan={Math.max(1, columns.length)} scope="rowgroup">
-                      <div className="inventory-band-heading">
-                        <InventoryCheck
-                          label={`Seleccionar visibles de ${section.title}`}
-                          checked={
-                            !!sectionIds.length &&
-                            selectedSectionIds.length === sectionIds.length
-                          }
-                          mixed={
-                            selectedSectionIds.length > 0 &&
-                            selectedSectionIds.length < sectionIds.length
-                          }
-                          disabled={busy || !sectionIds.length}
-                          onChange={(checked) => choose(sectionIds, checked)}
-                        />
-                        <span
-                          className="inventory-band-title"
-                          title={section.title}
+                    {section.groups.map((g) => (
+                      <SheetSizedRow
+                        label={g.name}
+                        height={rowsLayout.heights[g.links[0].id]}
+                        onResize={(v) => rowsLayout.resize(g.links[0].id, v)}
+                        onReset={() => rowsLayout.resize(g.links[0].id)}
+                        key={g.name}
+                        data-inventory-name={g.name}
+                        data-selected={
+                          g.links.some((a) => selected.includes(a.id)) ||
+                          undefined
+                        }
+                      >
+                        <td
+                          hidden={!showParameter("inventory")}
+                          data-fill-kind="manual"
                         >
-                          {section.title}
-                        </span>
-                        <small>
-                          {section.groups.length}{" "}
-                          {section.groups.length === 1 ? "ítem" : "ítems"}
-                        </small>
-                        {!section.top && bandCategorySelector(section)}
-                        {selectedSectionGroups > 0 && (
-                          <>
-                            <small
-                              className="inventory-band-selected"
-                              role="status"
-                            >
-                              {selectedSectionGroups} seleccionado
-                              {selectedSectionGroups === 1 ? "" : "s"}
-                            </small>
-                            <button
-                              type="button"
-                              className="inventory-band-delete"
-                              aria-label={`Eliminar seleccionados visibles de ${section.title}`}
+                          <div className="inventory-name-cell">
+                            <InventoryCheck
+                              label={`Seleccionar inventario ${g.name}`}
+                              checked={g.links.every((a) =>
+                                selected.includes(a.id),
+                              )}
+                              mixed={
+                                g.links.some((a) => selected.includes(a.id)) &&
+                                !g.links.every((a) => selected.includes(a.id))
+                              }
                               disabled={busy}
-                              onClick={() =>
-                                setBulkIds([...selectedSectionIds])
-                              }
-                            >
-                              Eliminar seleccionados ({selectedSectionGroups})
-                            </button>
-                          </>
-                        )}
-                      </div>
-                    </th>
-                  </tr>
-                  {section.groups.map((g) => (
-                    <SheetSizedRow
-                      label={g.name}
-                      height={rowsLayout.heights[g.links[0].id]}
-                      onResize={(v) => rowsLayout.resize(g.links[0].id, v)}
-                      onReset={() => rowsLayout.resize(g.links[0].id)}
-                      key={g.name}
-                      data-inventory-name={g.name}
-                      data-selected={
-                        g.links.some((a) => selected.includes(a.id)) ||
-                        undefined
-                      }
-                    >
-                      <td
-                        hidden={!showParameter("inventory")}
-                        data-fill-kind="manual"
-                      >
-                        <div className="inventory-name-cell">
-                          <InventoryCheck
-                            label={`Seleccionar inventario ${g.name}`}
-                            checked={g.links.every((a) =>
-                              selected.includes(a.id),
-                            )}
-                            mixed={
-                              g.links.some((a) => selected.includes(a.id)) &&
-                              !g.links.every((a) => selected.includes(a.id))
-                            }
-                            disabled={busy}
-                            onChange={(checked) =>
-                              choose(
-                                g.links.map((a) => a.id),
-                                checked,
-                              )
-                            }
-                          />
-                          <EffectivenessCell
-                            label={`Nombre de inventario ${g.name}`}
-                            value={g.name}
-                            onError={setMessage}
-                            onSave={async (value) => {
-                              await api("meta-ads/inventory/rename", "POST", {
-                                listId,
-                                expectedName: g.name,
-                                name: value.trim(),
-                                ids: g.links.map((a) => a.id),
-                              });
-                              await onChanged();
-                              await reloadCategories();
-                            }}
-                          />
-                        </div>
-                      </td>
-                      {categoryCell(g, "PRIMARY")}
-                      {categoryCell(g, "SECONDARY")}
-                      <td
-                        hidden={!showParameter("sheets")}
-                        data-fill-kind="manual"
-                      >
-                        <div className="inventory-sheet-toolbar">
-                          <div className="inventory-sheet-links">
-                            {g.links
-                              .filter((a) => !a.standalone)
-                              .map((a) => (
-                                <span
-                                  key={a.id}
-                                  className="inventory-sheet-chip"
-                                  data-inventory-id={a.id}
-                                >
-                                  <span
-                                    className="inventory-sheet-chip-label"
-                                    title={a.tableName}
-                                  >
-                                    {a.tableName}
-                                  </span>
-                                  <button
-                                    type="button"
-                                    className="inventory-remove"
-                                    aria-label={`Quitar ${g.name} de ${a.tableName}`}
-                                    title={`Quitar vínculo de ${a.tableName}; conservar historial`}
-                                    disabled={busy}
-                                    onClick={() => setSheetRemoval([a.id])}
-                                  >
-                                    ×
-                                  </button>
-                                </span>
-                              ))}
-                          </div>
-                          <InventoryMultiSelect
-                            label={`Añadir hojas a ${g.name}`}
-                            placeholder="+"
-                            compact
-                            all={false}
-                            values={[]}
-                            options={tables
-                              .filter(
-                                (t) => !g.links.some((a) => a.tableId === t.id),
-                              )
-                              .map((t) => ({ value: t.id, label: t.name }))}
-                            disabled={busy || !categories}
-                            description={
-                              tables.length === 0
-                                ? "Aún no hay hojas creadas."
-                                : tables.every((t) =>
-                                      g.links.some((a) => a.tableId === t.id),
-                                    )
-                                  ? "El diplomado ya está vinculado a todas las hojas disponibles."
-                                  : "Busca y marca una o varias hojas. Pulsa Listo para añadir este diplomado; sus vínculos actuales se conservan."
-                            }
-                            onError={setMessage}
-                            onChange={async (tableIds) => {
-                              if (!tableIds.length || !categories) return;
-                              setBusy(true);
-                              let committed = false;
-                              try {
-                                const result = await api(
-                                  "meta-ads/inventory/sheets",
-                                  "POST",
-                                  {
-                                    listId,
-                                    revision: categories.revision,
-                                    inventoryId: g.links[0].id,
-                                    expectedName: g.name,
-                                    tableIds,
-                                  },
-                                );
-                                committed = true;
-                                if (
-                                  g.links.some((a) => selected.includes(a.id))
+                              onChange={(checked) =>
+                                choose(
+                                  g.links.map((a) => a.id),
+                                  checked,
                                 )
-                                  setSelected((old) => [
-                                    ...new Set([...old, ...result.aliasIds]),
-                                  ]);
-                                await onChanged();
-                                await reloadCategories();
-                                setMessage(
-                                  result.created
-                                    ? `«${g.name}» añadido a ${result.created} hoja${result.created === 1 ? "" : "s"}.`
-                                    : "El diplomado ya está vinculado a las hojas elegidas.",
-                                );
-                              } catch (e) {
-                                if (committed)
-                                  setMessage(
-                                    "Las hojas se vincularon. Actualiza para ver todos los cambios.",
-                                  );
-                                else throw e;
-                              } finally {
-                                setBusy(false);
-                              }
-                            }}
-                          />
-                        </div>
-                      </td>
-                      <td hidden={!showParameter("group")}>
-                        {(() => {
-                          const assigned = trialGroupByName.get(
-                            categoryKey(g.name),
-                          );
-                          return assigned ? (
-                            <div className="inventory-group-cell">
-                              <button
-                                disabled={!trialDirectory?.canEdit}
-                                onClick={() =>
-                                  setGroupEditor({ id: assigned.id, names: [] })
-                                }
-                              >
-                                {assigned.name}
-                              </button>
-                              <button
-                                type="button"
-                                className="inventory-remove"
-                                aria-label={`Quitar ${assigned.name} de ${g.name}`}
-                                title={`Quitar ${assigned.name} de este diplomado`}
-                                disabled={!trialDirectory?.canEdit || busy}
-                                onClick={() =>
-                                  void removeGroupMembers([
-                                    {
-                                      groupId: assigned.id,
-                                      revision: assigned.revision,
-                                      itemIds: assigned.members
-                                        .filter(
-                                          (m) =>
-                                            categoryKey(
-                                              trialItemsById.get(m.itemId)
-                                                ?.name ?? m.name,
-                                            ) === categoryKey(g.name),
-                                        )
-                                        .map((m) => m.itemId),
-                                    },
-                                  ])
-                                }
-                              >
-                                ×
-                              </button>
-                              <button
-                                aria-label={
-                                  "Detalle de evaluación de " +
-                                  assigned.name +
-                                  " por país"
-                                }
-                                onClick={() => setEvaluation(assigned.id)}
-                              >
-                                Evaluar ↗
-                              </button>
-                            </div>
-                          ) : (
-                            <InventoryGroupSelect
-                              groups={trialGroups}
-                              label={"Asignar grupo a " + g.name}
-                              disabled={!trialDirectory?.canEdit || busy}
-                              onSelect={(id) =>
-                                assignGroupDirectly(id, [g.name])
                               }
                             />
-                          );
-                        })()}
-                      </td>
-                      {hasCountryColumns && (
-                        <InventoryCountryCells
-                          canEdit={!!sheetDirectory?.canEdit}
-                          busy={busy}
-                          name={g.name}
-                          countries={countryCodes}
-                          hiddenColumns={hiddenColumnKeys}
-                          evaluation={countryEvaluation}
-                          sheetLabel={sheetLabel}
-                          onReplace={(tableId, name) =>
-                            setGroupEditor({
-                              names: [],
-                              tab: "top",
-                              column: tableId,
-                              replaceName: name,
-                            })
-                          }
+                            <EffectivenessCell
+                              label={`Nombre de inventario ${g.name}`}
+                              value={g.name}
+                              onError={setMessage}
+                              onSave={async (value) => {
+                                await api("meta-ads/inventory/rename", "POST", {
+                                  listId,
+                                  expectedName: g.name,
+                                  name: value.trim(),
+                                  ids: g.links.map((a) => a.id),
+                                });
+                                await onChanged();
+                                await reloadCategories();
+                              }}
+                            />
+                          </div>
+                        </td>
+                        {categoryCell(g, "PRIMARY")}
+                        {categoryCell(g, "SECONDARY")}
+                        <td
+                          hidden={!showParameter("sheets")}
+                          data-fill-kind="manual"
+                        >
+                          <div className="inventory-sheet-toolbar">
+                            <div className="inventory-sheet-links">
+                              {g.links
+                                .filter((a) => !a.standalone)
+                                .map((a) => (
+                                  <span
+                                    key={a.id}
+                                    className="inventory-sheet-chip"
+                                    data-inventory-id={a.id}
+                                  >
+                                    <span
+                                      className="inventory-sheet-chip-label"
+                                      title={a.tableName}
+                                    >
+                                      {a.tableName}
+                                    </span>
+                                    <button
+                                      type="button"
+                                      className="inventory-remove"
+                                      aria-label={`Quitar ${g.name} de ${a.tableName}`}
+                                      title={`Quitar vínculo de ${a.tableName}; conservar historial`}
+                                      disabled={busy}
+                                      onClick={() => setSheetRemoval([a.id])}
+                                    >
+                                      ×
+                                    </button>
+                                  </span>
+                                ))}
+                            </div>
+                            <InventoryMultiSelect
+                              label={`Añadir hojas a ${g.name}`}
+                              placeholder="+"
+                              compact
+                              all={false}
+                              values={[]}
+                              options={tables
+                                .filter(
+                                  (t) =>
+                                    !g.links.some((a) => a.tableId === t.id),
+                                )
+                                .map((t) => ({ value: t.id, label: t.name }))}
+                              disabled={busy || !categories}
+                              description={
+                                tables.length === 0
+                                  ? "Aún no hay hojas creadas."
+                                  : tables.every((t) =>
+                                        g.links.some((a) => a.tableId === t.id),
+                                      )
+                                    ? "El diplomado ya está vinculado a todas las hojas disponibles."
+                                    : "Busca y marca una o varias hojas. Pulsa Listo para añadir este diplomado; sus vínculos actuales se conservan."
+                              }
+                              onError={setMessage}
+                              onChange={async (tableIds) => {
+                                if (!tableIds.length || !categories) return;
+                                setBusy(true);
+                                let committed = false;
+                                try {
+                                  const result = await api(
+                                    "meta-ads/inventory/sheets",
+                                    "POST",
+                                    {
+                                      listId,
+                                      revision: categories.revision,
+                                      inventoryId: g.links[0].id,
+                                      expectedName: g.name,
+                                      tableIds,
+                                    },
+                                  );
+                                  committed = true;
+                                  if (
+                                    g.links.some((a) => selected.includes(a.id))
+                                  )
+                                    setSelected((old) => [
+                                      ...new Set([...old, ...result.aliasIds]),
+                                    ]);
+                                  await onChanged();
+                                  await reloadCategories();
+                                  setMessage(
+                                    result.created
+                                      ? `«${g.name}» añadido a ${result.created} hoja${result.created === 1 ? "" : "s"}.`
+                                      : "El diplomado ya está vinculado a las hojas elegidas.",
+                                  );
+                                } catch (e) {
+                                  if (committed)
+                                    setMessage(
+                                      "Las hojas se vincularon. Actualiza para ver todos los cambios.",
+                                    );
+                                  else throw e;
+                                } finally {
+                                  setBusy(false);
+                                }
+                              }}
+                            />
+                          </div>
+                        </td>
+                        <td hidden={!showParameter("group")}>
+                          {(() => {
+                            const assigned = trialGroupByName.get(
+                              categoryKey(g.name),
+                            );
+                            return assigned ? (
+                              <div className="inventory-group-cell">
+                                <button
+                                  disabled={!trialDirectory?.canEdit}
+                                  onClick={() =>
+                                    setGroupEditor({
+                                      id: assigned.id,
+                                      names: [],
+                                    })
+                                  }
+                                >
+                                  {assigned.name}
+                                </button>
+                                <button
+                                  type="button"
+                                  className="inventory-remove"
+                                  aria-label={`Quitar ${assigned.name} de ${g.name}`}
+                                  title={`Quitar ${assigned.name} de este diplomado`}
+                                  disabled={!trialDirectory?.canEdit || busy}
+                                  onClick={() =>
+                                    void removeGroupMembers([
+                                      {
+                                        groupId: assigned.id,
+                                        revision: assigned.revision,
+                                        itemIds: assigned.members
+                                          .filter(
+                                            (m) =>
+                                              categoryKey(
+                                                trialItemsById.get(m.itemId)
+                                                  ?.name ?? m.name,
+                                              ) === categoryKey(g.name),
+                                          )
+                                          .map((m) => m.itemId),
+                                      },
+                                    ])
+                                  }
+                                >
+                                  ×
+                                </button>
+                                <button
+                                  aria-label={
+                                    "Detalle de evaluación de " +
+                                    assigned.name +
+                                    " por país"
+                                  }
+                                  onClick={() => setEvaluation(assigned.id)}
+                                >
+                                  Evaluar ↗
+                                </button>
+                              </div>
+                            ) : (
+                              <InventoryGroupSelect
+                                groups={trialGroups}
+                                label={"Asignar grupo a " + g.name}
+                                disabled={!trialDirectory?.canEdit || busy}
+                                onSelect={(id) =>
+                                  assignGroupDirectly(id, [g.name])
+                                }
+                              />
+                            );
+                          })()}
+                        </td>
+                        {hasCountryColumns && (
+                          <InventoryCountryCells
+                            canEdit={!!sheetDirectory?.canEdit}
+                            busy={busy}
+                            name={g.name}
+                            countries={countryCodes}
+                            hiddenColumns={hiddenColumnKeys}
+                            evaluation={countryEvaluation}
+                            sheetLabel={sheetLabel}
+                            onReplace={(tableId, name) =>
+                              setGroupEditor({
+                                names: [],
+                                tab: "top",
+                                column: tableId,
+                                replaceName: name,
+                              })
+                            }
 
-                          onChange={(tableId, name, change) =>
-                            void changeSheetActivation(tableId, [name], change)
-                          }
-                          onDetail={(column, name, aliasId) =>
-                            aliasId
-                              ? setFullDetail({
-                                  tableId: column.split(":")[0],
-                                  country: column.split(":")[1],
-                                  name,
-                                  aliasId,
-                                })
-                              : setActivationHistory({ tableId: column, name })
-                          }
-                          onHistory={(tableId, name) =>
-                            setActivationHistory({ tableId, name })
-                          }
+                            onChange={(tableId, name, change) =>
+                              void changeSheetActivation(
+                                tableId,
+                                [name],
+                                change,
+                              )
+                            }
+                            onDetail={(column, name, aliasId) =>
+                              aliasId
+                                ? setFullDetail({
+                                    tableId: column.split(":")[0],
+                                    country: column.split(":")[1],
+                                    name,
+                                    aliasId,
+                                  })
+                                : setActivationHistory({
+                                    tableId: column,
+                                    name,
+                                  })
+                            }
+                            onHistory={(tableId, name) =>
+                              setActivationHistory({ tableId, name })
+                            }
+                          />
+                        )}
+                        <td
+                          hidden={!columns.some((c) => c.key === "gap")}
+                          aria-hidden="true"
+                          className="inventory-column-gap"
                         />
-                      )}
-                      <td
-                        hidden={!columns.some((c) => c.key === "gap")}
-                        aria-hidden="true"
-                        className="inventory-column-gap"
-                      />
-                      <td
-                        hidden={!showParameter("syllabi")}
-                        className="inventory-syllabi-cell"
-                      >
-                        <InventorySyllabusChips
-                          label={g.name}
-                          syllabi={syllabiByName.get(g.name) ?? []}
-                          disabled={busy || syllabiBusy}
-                          onOpen={(id) => setSyllabiOpen({ name: g.name, id })}
-                          onRename={(id, title) =>
-                            renameSyllabus(g.name, id, title)
-                          }
-                          onRemove={(id) => void removeSyllabus(g.name, id)}
-                          onAdd={() =>
-                            setSyllabiOpen({ name: g.name, id: "__new" })
-                          }
-                        />
-                      </td>
-                    </SheetSizedRow>
-                  ))}
-                </Fragment>
-              );
-            })}
-          </tbody>
-          <tfoot>
-            {newRowOpen && (
-              <InventoryNewRow
-                visibleParameters={parameters}
-                countryColumnCount={
-                  columns.filter((column) => column.key.startsWith("country:"))
-                    .length
-                }
-                directory={directoryNames}
-                tables={tables}
-                disabled={busy}
-                onSave={saveNewRow}
-                onCancel={() => setNewRowOpen(false)}
-              />
-            )}
-            <tr className="inventory-add-row">
-              <td colSpan={Math.max(1, columns.length)}>
-                <button
-                  type="button"
-                  disabled={
-                    busy ||
-                    !categories ||
-                    newRowOpen ||
-                    !showParameter("inventory")
+                        <td
+                          hidden={!showParameter("syllabi")}
+                          className="inventory-syllabi-cell"
+                        >
+                          <InventorySyllabusChips
+                            label={g.name}
+                            syllabi={syllabiByName.get(g.name) ?? []}
+                            disabled={busy || syllabiBusy}
+                            onOpen={(id) =>
+                              setSyllabiOpen({ name: g.name, id })
+                            }
+                            onRename={(id, title) =>
+                              renameSyllabus(g.name, id, title)
+                            }
+                            onRemove={(id) => void removeSyllabus(g.name, id)}
+                            onAdd={() =>
+                              setSyllabiOpen({ name: g.name, id: "__new" })
+                            }
+                          />
+                        </td>
+                      </SheetSizedRow>
+                    ))}
+                  </Fragment>
+                );
+              })}
+            </tbody>
+            <tfoot>
+              {newRowOpen && (
+                <InventoryNewRow
+                  visibleParameters={parameters}
+                  countryColumnCount={
+                    columns.filter((column) =>
+                      column.key.startsWith("country:"),
+                    ).length
                   }
-                  onClick={() => setNewRowOpen(true)}
-                >
-                  + Agregar fila
-                </button>
-              </td>
-            </tr>
-          </tfoot>
-        </table>
-        {!columns.length && (
-          <p className="sheet-help">
-            Elige las columnas que quieres mostrar en «Ver parámetros».
-          </p>
-        )}
-        {!visible.length && (
-          <p className="sheet-help">
-            No hay elementos que coincidan con los filtros.
-          </p>
-        )}
-      </div>
+                  directory={directoryNames}
+                  tables={tables}
+                  disabled={busy}
+                  onSave={saveNewRow}
+                  onCancel={() => setNewRowOpen(false)}
+                />
+              )}
+              <tr className="inventory-add-row">
+                <td colSpan={Math.max(1, columns.length)}>
+                  <button
+                    type="button"
+                    disabled={
+                      busy ||
+                      !categories ||
+                      newRowOpen ||
+                      !showParameter("inventory")
+                    }
+                    onClick={() => setNewRowOpen(true)}
+                  >
+                    + Agregar fila
+                  </button>
+                </td>
+              </tr>
+            </tfoot>
+          </table>
+          {!columns.length && (
+            <p className="sheet-help">
+              Elige las columnas que quieres mostrar en «Ver parámetros».
+            </p>
+          )}
+          {!visible.length && (
+            <p className="sheet-help">
+              No hay elementos que coincidan con los filtros.
+            </p>
+          )}
+        </div>
+      </FinancialTableWindow>
       {importView && categories && (
         <InventoryImport
           listId={listId}

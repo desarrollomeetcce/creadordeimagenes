@@ -1,5 +1,12 @@
 # Pruebas y evidencia
 
+## Verificación · inventario completo y columnas de reemplazo (2026-11-03)
+
+Typecheck, build y 273 unitarios correctos. Chromium con fixture QA exclusivo (82 inventarios): cuatro controles de catálogo comprueban botón propio, todas las columnas/encabezados, mismo DOM y borrador de nueva fila sin guardar, selección marcada, scroll horizontal/vertical conservado y ningún GET al maximizar/restaurar/cerrar. Vista móvil oscura cabe en pantalla; Escape vuelve al catálogo con borrador intacto; cero escrituras/errores JS.
+
+Cuatro controles de Reemplazar diplomado comprueban nueve divisiones de arrastre de8px, borde derecho/inferior en cada celda, nombre largo en varias líneas dentro de su columna; Shift+flecha aumenta20px y arrastre real aumenta70px, sin peticiones API; maximizar conserva ancho, cerrar/reabrir recupera preferencias y doble clic nativo restablece360px (evento comprobado). Móvil oscuro mantiene tabla desplazable dentro del diálogo. Cero errores JS y cero escrituras. Limpieza verificó V10/G1400.91/B140 originales y ventas únicas31 antes de retirar solo el fixture. No llamadas facturables ni nuevas consultas Graph. Hostinger sin confirmación directa.
+
+
 ## Verificación · TEA / Cancelar / ventas ascendentes (2026-11-03)
 
 273 unitarios, 24 integraciones, typecheck/build correctos. Unitario de orden verifica 0 → ausencia → positivos ascendente, descendente y conservación de null. Integración existente reforzada: repetir importación conserva exactamente una fila canónica por diplomado/país, sin alterar días/categorías/estados. Proveedor externo bloqueado.
