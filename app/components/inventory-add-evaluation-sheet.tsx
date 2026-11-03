@@ -104,9 +104,10 @@ export function InventoryAddEvaluationSheet({
               const table = directory.tables.find((t) => t.id === id);
               setCountry(
                 table
-                  ? isCountryCode(table.defaultCountry)
-                    ? table.defaultCountry
-                    : resolveCountry(table.name) || ""
+                  ? resolveCountry(table.name) ||
+                      (isCountryCode(table.defaultCountry)
+                        ? table.defaultCountry
+                        : "")
                   : "",
               );
             }}

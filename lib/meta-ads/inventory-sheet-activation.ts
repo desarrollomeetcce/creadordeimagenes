@@ -1,3 +1,4 @@
+import { inventorySheetCountries } from "./inventory-sheet-column-policy";
 import {
   inventoryCacSummary,
   cacWindow,
@@ -177,23 +178,17 @@ export async function inventoryActivationDirectory(
       columns: tables
         .filter((t) => visible.has(t.id))
         .flatMap((t) => {
-          const countryList = [
-            ...new Set([
-              ...(settings.countries[t.id] ?? []),
-              ...linked
-                .filter((a) => a.tableId === t.id)
-                .flatMap((a) =>
-                  [...a.effectivenessRows, ...a.effectivenessStates].map(
-                    (r) => r.country,
-                  ),
+          const countryList = inventorySheetCountries(
+            t,
+            settings.countries[t.id] ?? [],
+            linked
+              .filter((a) => a.tableId === t.id)
+              .flatMap((a) =>
+                [...a.effectivenessRows, ...a.effectivenessStates].map(
+                  (r) => r.country,
                 ),
-              ...(isCountryCode(t.defaultCountry) ? [t.defaultCountry] : []),
-            ]),
-          ].filter(isCountryCode);
-          if (!countryList.length) {
-            const code = resolveCountry(t.name);
-            if (code) countryList.push(code);
-          }
+              ),
+          );
           return countryList.length
             ? countryList.map((country) => ({
                 id: t.id + ":" + country,
@@ -323,6 +318,12 @@ export async function inventoryActivationAddSheet(
         },
       });
     }
+    const namedCountry = resolveCountry(table.name);
+    demand(
+      !namedCountry || !b.country || namedCountry === b.country,
+      "Esta hoja tiene el nombre de un país. Usa ese país o elige su hoja correspondiente.",
+      409,
+    );
     if (b.country)
       settings.countries[table.id] = [
         ...new Set([...(settings.countries[table.id] ?? []), b.country]),

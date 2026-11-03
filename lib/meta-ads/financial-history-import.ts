@@ -129,6 +129,7 @@ const inputSchema = z
     choices: choicesSchema,
     token: z.string().optional(),
     replaceConflicts: z.boolean().default(false),
+    repairMissing: z.boolean().default(false),
   })
   .strict();
 type Actor = { id: string; role: string };
@@ -656,8 +657,60 @@ async function plan(tx: Tx, u: Actor, raw: unknown) {
       });
   }
 
+  const missingDiploma = (r: (typeof resolvedDiplomas)[number]) => {
+    const row = rowFor(r);
+    if (!row) return true;
+    const d = days.find((d) => d.rowId === row.id && d.day === r.day);
+    return (
+      d?.sales == null &&
+      !(d?.annotations as any)?.sales &&
+      !approvals.some((a) => a.rowId === row.id && a.day === r.day)
+    );
+  };
+  const missingAdvisor = (r: (typeof resolvedAdvisors)[number]) => {
+    const person = personFor(r.name);
+    return (
+      !person ||
+      !historical.some(
+        (h) =>
+          h.advisorId === person.id &&
+          h.country === r.country &&
+          h.day === r.day,
+      )
+    );
+  };
+  const oldTotal = (r: { country: string; day: string }) =>
+    totals.find(
+      (t) =>
+        t.tableId === target.get(r.country) &&
+        t.country === r.country &&
+        t.currency === "PEN" &&
+        t.day === r.day,
+    );
+  const missingTotal = (r: { country: string; day: string }, metric: string) =>
+    !Object.hasOwn((oldTotal(r)?.values as object) ?? {}, metric);
+  const missingManual = (r: HistoryFile["manual"][number]) =>
+    r.metric === "baseManual"
+      ? !bases.some(
+          (b) =>
+            b.tableId === target.get(r.country) &&
+            b.country === r.country &&
+            b.day === r.day,
+        )
+      : missingTotal(r, r.metric);
   const summary = {
     source: f.source,
+    recovery: b.repairMissing
+      ? {
+          diplomaCells: resolvedDiplomas.filter(missingDiploma).length,
+          advisorCells: resolvedAdvisors.filter(missingAdvisor).length,
+          countryCells: f.totals.filter((r) =>
+            missingTotal(r, "historicalSales"),
+          ).length,
+          manualCells: f.manual.filter(missingManual).length,
+          preservedDifferences: conflicts.length,
+        }
+      : null,
     diplomaSales: f.diplomas.reduce((n, r) => n + r.sales, 0),
     advisorSales: f.advisors.reduce((n, r) => n + r.sales, 0),
     countrySales: f.totals.reduce((n, r) => n + r.sales, 0),
@@ -723,6 +776,10 @@ async function plan(tx: Tx, u: Actor, raw: unknown) {
     });
   return {
     resolvedFingerprint,
+    missingDiploma,
+    missingAdvisor,
+    missingTotal,
+    missingManual,
     b,
     f,
     choices,
@@ -753,7 +810,7 @@ export async function previewHistoryImport(u: Actor, raw: unknown) {
           where: { digest },
           select: { id: true, summary: true },
         });
-      if (old)
+      if (old && !b.repairMissing)
         return {
           token: "",
           summary: old.summary as unknown as Awaited<
@@ -771,7 +828,7 @@ export async function previewHistoryImport(u: Actor, raw: unknown) {
         },
         select: { id: true, summary: true },
       });
-      if (previous)
+      if (previous && !b.repairMissing)
         return {
           token: "",
           summary: previous.summary as unknown as typeof p.summary,
@@ -788,7 +845,9 @@ export async function commitHistoryImport(u: Actor, raw: unknown) {
       await tx.$executeRaw`SELECT pg_advisory_xact_lock(884411)`;
       await authorized(u, tx);
       const b = inputSchema.parse(raw),
-        digest = requestDigest(b),
+        digest = b.repairMissing
+          ? hash({ recovery: requestDigest(b), token: b.token ?? "" })
+          : requestDigest(b),
         old = await tx.metaFinancialHistoryImport.findUnique({
           where: { digest },
           select: { id: true, summary: true },
@@ -804,25 +863,25 @@ export async function commitHistoryImport(u: Actor, raw: unknown) {
         },
         select: { id: true, summary: true },
       });
-      if (previous) return { ...previous, reused: true };
+      if (previous && !b.repairMissing) return { ...previous, reused: true };
       demand(
         p.b.token === p.token,
         "Los datos de destino cambiaron. Revisa una nueva vista previa.",
         409,
       );
       demand(
-        !p.summary.conflicts.some((c) => c.blocked),
+        b.repairMissing || !p.summary.conflicts.some((c) => c.blocked),
         "Hay cantidades ya atribuidas a personas; resuelve esos conflictos en la hoja antes de importar.",
         409,
       );
       demand(
-        !p.summary.conflicts.length || p.b.replaceConflicts,
+        b.repairMissing || !p.summary.conflicts.length || p.b.replaceConflicts,
         "Hay valores existentes diferentes. Revisa los conflictos antes de reemplazarlos.",
         409,
       );
       const batch = await tx.metaFinancialHistoryImport.create({
         data: {
-          digest: p.digest,
+          digest,
           actorId: u.id,
           source: json(p.f.source),
           payload: json({ file: p.f, choices: p.choices }),
@@ -921,6 +980,7 @@ export async function commitHistoryImport(u: Actor, raw: unknown) {
           });
           rowMap.set(k, row);
         }
+        if (b.repairMissing && !p.missingDiploma(r)) continue;
         const d = p.before.days.find(
           (d) => d.rowId === row!.id && d.day === r.day,
         );
@@ -976,6 +1036,7 @@ export async function commitHistoryImport(u: Actor, raw: unknown) {
       const freshHistory: Prisma.MetaHistoricalAdvisorSaleCreateManyInput[] =
         [];
       for (const r of p.resolvedAdvisors) {
+        if (b.repairMissing && !p.missingAdvisor(r)) continue;
         const advisorId = personMap.get(categoryKey(r.name))!,
           old = p.before.historical.find(
             (h) =>
@@ -1039,11 +1100,13 @@ export async function commitHistoryImport(u: Actor, raw: unknown) {
         return totalCells.get(k)!;
       };
       for (const r of p.f.totals) {
+        if (b.repairMissing && !p.missingTotal(r, "historicalSales")) continue;
         const cell = totalCell(r.country, r.day);
         cell.values.historicalSales = r.sales;
         cell.values.historicalSalesImport = batch.id;
       }
       for (const r of p.f.manual) {
+        if (b.repairMissing && !p.missingManual(r)) continue;
         if (r.metric === "baseManual") {
           const tableId = p.target.get(r.country)!,
             old = p.before.bases.find(
@@ -1105,7 +1168,9 @@ export async function commitHistoryImport(u: Actor, raw: unknown) {
       await recordActivity(tx, {
         data: {
           actorId: u.id,
-          action: "EFECTIVIDAD_IMPORTAR_HISTORICO",
+          action: b.repairMissing
+            ? "EFECTIVIDAD_RECUPERAR_HISTORICO"
+            : "EFECTIVIDAD_IMPORTAR_HISTORICO",
           resourceId: batch.id,
           detail: {
             digest: p.digest,

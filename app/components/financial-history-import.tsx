@@ -50,6 +50,7 @@ export function FinancialHistoryImport() {
     [error, setError] = useState(""),
     [reviewed, setReviewed] = useState(false),
     [replace, setReplace] = useState(false),
+    [repairMissing, setRepairMissing] = useState(false),
     [createConfirmed, setCreateConfirmed] = useState<string[]>([]),
     [adjusting, setAdjusting] = useState(false);
   useEffect(() => {
@@ -97,6 +98,7 @@ export function FinancialHistoryImport() {
         setReceipt(null);
         setReviewed(false);
         setReplace(false);
+        setRepairMissing(false);
       })
       .catch((e) => {
         if (active) setError(e.message);
@@ -144,7 +146,7 @@ export function FinancialHistoryImport() {
     setCreateConfirmed([]);
     resetPreview();
   }
-  async function run(commit: boolean) {
+  async function run(commit: boolean, recover = repairMissing) {
     if (
       !file ||
       !choices ||
@@ -160,6 +162,7 @@ export function FinancialHistoryImport() {
       const result = await api(commit ? "commit" : "preview", {
         file,
         choices,
+        repairMissing: recover,
         ...(commit ? { token: preview.token, replaceConflicts: replace } : {}),
       });
       if (commit) setReceipt(result);
@@ -728,6 +731,19 @@ export function FinancialHistoryImport() {
                       ))}
                     </ul>
                   </details>
+                  <label className="row">
+                    <input
+                      type="checkbox"
+                      checked={repairMissing}
+                      disabled={busy}
+                      onChange={(e) => {
+                        setRepairMissing(e.target.checked);
+                        resetPreview();
+                        setReceipt(null);
+                      }}
+                    />
+                    Recuperar solo faltantes y volver a mostrar filas retiradas
+                  </label>
                   <button
                     type="button"
                     disabled={
@@ -744,7 +760,24 @@ export function FinancialHistoryImport() {
                   </button>
                   {preview && (
                     <section className="history-import-preview">
-                      <h3>Vista previa</h3>
+                      <h3>
+                        {preview.summary.recovery
+                          ? "Recuperar solo faltantes"
+                          : "Vista previa"}
+                      </h3>
+                      {preview.summary.recovery && (
+                        <p role="status">
+                          Se completarán {preview.summary.recovery.diplomaCells}{" "}
+                          celdas de diplomados,{" "}
+                          {preview.summary.recovery.advisorCells} de asesores,{" "}
+                          {preview.summary.recovery.countryCells} totales y{" "}
+                          {preview.summary.recovery.manualCells} de BM/GM. Se
+                          volverán a mostrar {preview.summary.restoredRows}{" "}
+                          filas retiradas. Los valores existentes, ceros, N.A. y
+                          repartos por asesor se conservan; los diplomados no se
+                          reactivan.
+                        </p>
+                      )}
                       <p>
                         Diplomados: {preview.summary.diplomaSales} ventas ·
                         Asesores: {preview.summary.advisorSales} · Total por
@@ -780,35 +813,43 @@ export function FinancialHistoryImport() {
                       </details>
                       {!!preview.summary.conflicts.length && (
                         <>
-                          <h4>Valores existentes diferentes</h4>
+                          <h4>
+                            {repairMissing
+                              ? "Diferencias que se conservarán"
+                              : "Valores existentes diferentes"}
+                          </h4>
                           <ul>
                             {preview.summary.conflicts.map(
                               (c: any, i: number) => (
                                 <li key={i}>
-                                  {c.label}: {String(c.old)} → {String(c.next)}
-                                  {c.blocked
+                                  {c.label}: {String(c.old)}{" "}
+                                  {repairMissing ? "· fuente:" : "→"}{" "}
+                                  {String(c.next)}
+                                  {c.blocked && !repairMissing
                                     ? " · Resolver antes en la hoja"
                                     : ""}
                                 </li>
                               ),
                             )}
                           </ul>
-                          <label>
-                            <input
-                              type="checkbox"
-                              checked={replace}
-                              disabled={
-                                busy ||
-                                preview.summary.conflicts.some(
-                                  (c: any) => c.blocked,
-                                )
-                              }
-                              onChange={(e) => setReplace(e.target.checked)}
-                            />
-                            Reemplazar solo los valores en conflicto de este
-                            archivo; conservar copia anterior en el registro de
-                            importación.
-                          </label>
+                          {!repairMissing && (
+                            <label>
+                              <input
+                                type="checkbox"
+                                checked={replace}
+                                disabled={
+                                  busy ||
+                                  preview.summary.conflicts.some(
+                                    (c: any) => c.blocked,
+                                  )
+                                }
+                                onChange={(e) => setReplace(e.target.checked)}
+                              />
+                              Reemplazar solo los valores en conflicto de este
+                              archivo; conservar copia anterior en el registro
+                              de importación.
+                            </label>
+                          )}
                         </>
                       )}
                       <p>
@@ -833,14 +874,20 @@ export function FinancialHistoryImport() {
                         disabled={
                           busy ||
                           !reviewed ||
-                          preview.summary.conflicts.some(
-                            (c: any) => c.blocked,
-                          ) ||
-                          (preview.summary.conflicts.length > 0 && !replace)
+                          (!repairMissing &&
+                            (preview.summary.conflicts.some(
+                              (c: any) => c.blocked,
+                            ) ||
+                              (preview.summary.conflicts.length > 0 &&
+                                !replace)))
                         }
                         onClick={() => void run(true)}
                       >
-                        {busy ? "Importando…" : "Confirmar importación"}
+                        {busy
+                          ? "Procesando…"
+                          : repairMissing
+                            ? "Confirmar recuperación de faltantes"
+                            : "Confirmar importación"}
                       </button>
                     </section>
                   )}
@@ -853,12 +900,27 @@ export function FinancialHistoryImport() {
               <h3>
                 {receipt.reused
                   ? "Esta carga ya estaba guardada"
-                  : "Histórico guardado"}
+                  : receipt.summary?.recovery
+                    ? "Faltantes recuperados"
+                    : "Histórico guardado"}
               </h3>
               <p>
                 Registro {receipt.id}. No se sumó una segunda copia de las
                 ventas.
               </p>
+              {file && choices && (
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => {
+                    setRepairMissing(true);
+                    setReceipt(null);
+                    void run(false, true);
+                  }}
+                >
+                  Revisar y recuperar faltantes
+                </button>
+              )}
               <button type="button" onClick={showImported}>
                 Ver datos importados
               </button>
