@@ -138,7 +138,12 @@ export function AdvisorAssignment({
               ? "Titular y apoyos"
               : "Asignar asesor"}
         </h2>
-        <button type="button" disabled={busy} onClick={onClose}>
+        <button
+          className="ui-close-button"
+          type="button"
+          disabled={busy}
+          onClick={onClose}
+        >
           Cancelar
         </button>
       </header>
@@ -486,6 +491,16 @@ export function AdvisorAssignment({
           </ul>
         </details>
       )}
+      <footer className="row">
+        <button
+          className="ui-close-button"
+          type="button"
+          disabled={busy}
+          onClick={onClose}
+        >
+          Cancelar
+        </button>
+      </footer>
     </dialog>
   );
 }

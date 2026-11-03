@@ -564,6 +564,20 @@ test("Activación por hoja: selección, pin, historial y permisos", async (t) =>
           ).categoryRevision,
           true,
         );
+        for (const entry of rows) {
+          assert.equal(
+            await db.metaEffectivenessRow.count({
+              where: {
+                alias: { tableId: pe.id, name: entry.name },
+                country: entry.country,
+                currency: "",
+                legacy: false,
+              },
+            }),
+            1,
+            "Repetir Agregar conserva una sola fila canónica por diplomado y país",
+          );
+        }
         await assert.rejects(
           () =>
             importEffectiveness(
@@ -746,7 +760,8 @@ test("Activación por hoja: selección, pin, historial y permisos", async (t) =>
         assert(
           result.rows.every(
             (r) =>
-              Object.keys(r).sort().join(",") === "aliasId,assessment,cac,country",
+              Object.keys(r).sort().join(",") ===
+              "aliasId,assessment,cac,country",
           ),
         );
         await db.effectivenessGrant.create({

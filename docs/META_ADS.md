@@ -1,5 +1,12 @@
 # Meta Ads: consulta y análisis
 
+## Buscar diplomados sin repetir filas
+
+En la hoja, marca diplomados y pulsa Buscar (acción resaltada). Agregar es secundaria: solo incorpora los que faltan en esa hoja y país; si ya existen todos, queda deshabilitada y explica que uses Buscar. Si seleccionas existentes y nuevos, envía únicamente los nuevos. Usa el país filtrado o el predeterminado de la hoja; se mantiene la protección de unicidad del servidor y los estados existentes. No agrega al escribir ni al buscar.
+
+Al desplazar horizontalmente, nombre y país fijados permanecen por delante del asesor para que no tape el texto ni intercepte sus clics. En análisis de ventas, Menor a mayor muestra primero los ceros confirmados, después sin registros (—) y luego positivos. El guion sigue indicando ausencia de datos. Titular y apoyos tiene Cancelar rojo al principio y al final, sin guardar cambios al cerrar.
+
+
 ## Menú Estado y actualización eficiente
 
 El botón Estado junto a CAC abre un menú con Mostrar estado (Todos, Crítico, Grave, Revisar, Sin ventas, Normal y Datos pendientes) y dos órdenes: Crítico → Normal o Normal → Crítico. El orden de criticidad es Crítico, Grave, Revisar, Sin ventas, Normal; pendientes al final. El filtro considera todas las campañas del ámbito antes de paginar y actualiza el resumen para las campañas mostradas. Se conserva la misma ventana de evaluación indicada por campaña.

@@ -1,5 +1,7 @@
 # Instrucciones para desarrollo
 
+- Hojas: Buscar es la acción principal del selector de inventario. Agregar solo envía faltantes de la hoja/país visible (o país por defecto) y se deshabilita si todos existen; conservar unicidad canónica del servidor, historial y activación. Las celdas fijadas deben superar en z-index a las que se desplazan, sin que el asesor capture clics del nombre. Menor a mayor venta: cero confirmado, luego sin registro (—), luego positivos; nunca convertir ausencia en cero. Cancelar de asignación usa ui-close-button arriba y al final, type=button y bloqueo busy.
+
 - Estado en la fila de orden abre menú de filtro CAC y orden por criticidad; usar catálogo único cacSeverityOrder/cacStatusNames. Filtrar antes de paginar y calcular resumen con el mismo ámbito. Orden/paginación reutilizan resumen solo si todas sus entradas y revisión coinciden, sin TTL; filtros/fecha/cuentas/selección/revisión lo invalidan. Proteger viewport también en encabezados de tabla/menú; no desplazar scroll al responder.
 
 - Rendimiento Meta no expone filtro de Evaluación ni restaura/envía ratings guardados de ese control retirado; Alertas conserva su ámbito explícito. La evaluación visible y orden CAC/Estado continúan. Resumen/fecha/acciones compactos en una fila de escritorio, inventario al final; móvil puede adaptar sin desbordar.

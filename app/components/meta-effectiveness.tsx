@@ -900,6 +900,19 @@ export function MetaEffectiveness({
     () => new Map(financialAliases.map((a) => [a.id, a.name])),
     [financialAliases],
   );
+  const inventoryAddCountry =
+    country === "__none" ? "" : country || settings.defaultCountry;
+  const existingInventoryNames = useMemo(
+    () => [
+      ...new Set(
+        (data?.rows ?? [])
+          .filter((r) => r.country === inventoryAddCountry)
+          .map((r) => names.get(r.aliasId))
+          .filter((name): name is string => !!name),
+      ),
+    ],
+    [data?.rows, inventoryAddCountry, names],
+  );
   const activeSort: SheetSort =
     sheetSort.kind === "day" &&
     (sheetSort.day < since ||
@@ -2096,7 +2109,8 @@ export function MetaEffectiveness({
                           .filter((name): name is string => !!name)}
                         disabled={busy || !inventoryId}
                         addDisabled={inventoryState?.listId !== inventoryId}
-                        description="Marca diplomados y elige Buscar o Agregar."
+                        existingValues={existingInventoryNames}
+                        description="Marca diplomados y pulsa Buscar. Agregar solo incorpora los que faltan en esta hoja y país."
                         onError={setMessage}
                         onChange={(names) => {
                           const ids = financialAliases
@@ -2118,7 +2132,13 @@ export function MetaEffectiveness({
                             throw Error(
                               "Actualiza el catálogo antes de agregar.",
                             );
-                          const chosen = [...new Set(names)];
+                          const chosen = [...new Set(names)].filter(
+                            (name) => !existingInventoryNames.includes(name),
+                          );
+                          if (!chosen.length)
+                            throw Error(
+                              "Los seleccionados ya están en esta hoja y país. Pulsa Buscar para verlos.",
+                            );
                           if (
                             chosen.some(
                               (name) => !inventoryNames.includes(name),
@@ -2139,10 +2159,10 @@ export function MetaEffectiveness({
                                 existingOnly: true,
                                 rows: chosen.map((name) => ({
                                   name,
-                                  country: settings.defaultCountry,
+                                  country: inventoryAddCountry,
                                   currency: settings.defaultCurrency,
                                 })),
-                                ...(settings.defaultCountry
+                                ...(inventoryAddCountry
                                   ? { initialActive: false }
                                   : {}),
                               },
@@ -2154,7 +2174,7 @@ export function MetaEffectiveness({
                             setStateFilter("");
                             setValueFilter(null);
                             setMessage(
-                              `${chosen.length} diplomado${chosen.length === 1 ? "" : "s"} agregado${chosen.length === 1 ? "" : "s"} o ya presente${chosen.length === 1 ? "" : "s"} en la hoja.`,
+                              `${chosen.length} diplomado${chosen.length === 1 ? "" : "s"} agregado${chosen.length === 1 ? "" : "s"} en la hoja.`,
                             );
                           } finally {
                             setBusy(false);

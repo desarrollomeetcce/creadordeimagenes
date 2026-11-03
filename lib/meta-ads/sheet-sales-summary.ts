@@ -17,7 +17,7 @@ export type SheetSalesProduct = {
 };
 export type SheetSalesSort =
   "name" | "country" | "sales" | "result" | "active" | "advisors";
-/** Missing sales always sort last; ties use the displayed name, never a fabricated zero. */
+/** Ascending sales starts with confirmed zero, then missing records, then positive counts. Missing values retain their identity. */
 export function sortSheetSalesProducts(
   products: SheetSalesProduct[],
   key: SheetSalesSort,
@@ -50,8 +50,12 @@ export function sortSheetSalesProducts(
     };
     const x = value(a),
       y = value(b);
-    if (x === null || y === null)
-      return x === y ? a.name.localeCompare(b.name, "es") : x === null ? 1 : -1;
+    if (x === null || y === null) {
+      if (x === y) return a.name.localeCompare(b.name, "es");
+      if (key === "sales" && ascending)
+        return x === null ? (y === 0 ? 1 : -1) : (x === 0 ? -1 : 1);
+      return x === null ? 1 : -1;
+    }
     const compared =
       typeof x === "number" && typeof y === "number"
         ? x - y

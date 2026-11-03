@@ -4846,7 +4846,7 @@ test("Vista por asesor repite categorías dentro de cada persona sin duplicar fi
   assert.equal(filtered.flatMap((g) => g.rows).length, 2);
 });
 
-test("sheet analysis sorts sales both ways with missing data last and retains stable ties", async () => {
+test("sheet analysis ascending starts with zero and missing records without fabricating sales; ties stay stable", async () => {
   const { sortSheetSalesProducts, emptySales } =
     await import("../lib/meta-ads/sheet-sales-summary");
   const product = (name: string, value: number | null) => ({
@@ -4866,13 +4866,14 @@ test("sheet analysis sorts sales both ways with missing data last and retains st
   ];
   assert.deepEqual(
     sortSheetSalesProducts(rows, "sales", true, 2).map((p) => p.name),
-    ["Cero", "Dos", "Dos B", "Sin dato"],
+    ["Cero", "Sin dato", "Dos", "Dos B"],
   );
   assert.deepEqual(
     sortSheetSalesProducts(rows, "sales", false, 2).map((p) => p.name),
     ["Dos", "Dos B", "Cero", "Sin dato"],
   );
   assert.equal(rows[0].name, "Sin dato");
+  assert.equal(rows[0].sales.value, null);
 });
 test("Top full-sheet link focuses an item without changing legacy filtered period links", async () => {
   const { periodTableUrl, parsePeriodTableLink } =

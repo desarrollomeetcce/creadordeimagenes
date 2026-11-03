@@ -1,5 +1,12 @@
 # Pruebas y evidencia
 
+## Verificación · TEA / Cancelar / ventas ascendentes (2026-11-03)
+
+273 unitarios, 24 integraciones, typecheck/build correctos. Unitario de orden verifica 0 → ausencia → positivos ascendente, descendente y conservación de null. Integración existente reforzada: repetir importación conserva exactamente una fila canónica por diplomado/país, sin alterar días/categorías/estados. Proveedor externo bloqueado.
+
+Chromium con fixture QA: Cancelar arriba/abajo comparten rojo159/36/55 y texto blanco; ambos cierran sin submit en escritorio, oscuro y móvil, cero escrituras financieras. Buscar TEA resalta como principal y no envía importación; Agregar existente queda deshabilitado con aviso. Con anchos guardados de inventario520/parámetros60 y desplazamiento horizontal real, nombre fijado z4 supera asesor z2 y recibe los clics. Selección mixta envía solo un diplomado faltante; una segunda alta queda bloqueada y el original sigue único. Gráfico real muestra cero primero y ausencia como — antes de positivos. Cero errores JS. Se verifican ventas/gasto/base originales y se retira solo el fixture etiquetado, incluyendo el asesor de prueba. Hostinger sin verificación directa.
+
+
 Revalidación A/B/A: con respuestas demoradas, cambiar rápidamente de Crítico a Normal y volver a Crítico cancela la petición intermedia y solicita summary=1 para recuperar el resumen. Se repitieron los otros cinco controles de navegador, typecheck/build y 273 unitarios. Todos correctos; nuevo fixture QA retirado.
 
 ## Verificación · filtro Estado y carga estable (2026-11-03)

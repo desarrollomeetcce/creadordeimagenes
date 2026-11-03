@@ -1,5 +1,14 @@
 # Avance por fases · continuación del desarrollo
 
+## Actualización · búsqueda TEA, filas únicas, cancelación y orden de ventas (2026-11-03)
+
+Titular y apoyos / Asignar asesor muestran Cancelar rojo arriba y al final, con el estilo compartido, sin guardar al cerrar y deshabilitados mientras se guarda. Buscar pasa a ser la acción principal del selector de diplomados; Agregar es secundaria, avisa de los existentes y solo envía los faltantes de esa hoja y país. Si todos existen, queda deshabilitada. Se respeta el país filtrado, o el predeterminado sin filtro. No cambia la identidad de los diplomados ni activa filas ya existentes.
+
+Corregida superposición: las reglas antiguas dejaban nombre/país fijados y asesor con z-index2; el asesor posterior podía pintarse por delante y capturar clics al desplazar. Las celdas fijadas ahora conservan prioridad4 y sus encabezados9. El gráfico ascendente de ventas coloca cero real primero, sin registro (—) a continuación y positivos después; descendente conserva desconocidos al final. La leyenda explica — Sin registros.
+
+273 unitarios, 24 integraciones de activación/importación, typecheck/build y navegador correctos: tres controles de cancelación y cuatro de búsqueda/capas/alta única/gráfico. Importar dos veces conserva una fila canónica por diplomado/país y los datos previos. Fixture QA retirado; no datos reales ni llamadas Graph nuevas. Publicación del código/despliegue automático separada de la recepción en Hostinger, sin acceso directo al VPS.
+
+
 Revalidación final: al limpiar el resumen también se invalida su clave de ámbito. Cambiar A → B → A antes de responder B recupera el resumen de A, incluso tras cancelación, en vez de reutilizar una clave con datos ya vaciados. Repetidos typecheck/build, 273 unitarios y seis controles de navegador; fixture QA retirado.
 
 ## Actualización · menú Estado, carga y pantalla estables (2026-11-03)

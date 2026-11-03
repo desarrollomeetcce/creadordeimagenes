@@ -485,7 +485,7 @@ export function SheetSalesDetail({
                   sin datos{" "}
                   <span title="Los importes con * son parciales; — indica ausencia de datos.">
                     {" "}
-                    · * Parcial
+                    · * Parcial · — Sin registros
                   </span>
                 </p>
                 {(() => {

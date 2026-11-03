@@ -27,10 +27,12 @@ export function InventoryMultiSelect({
   confirmLabel = "Listo",
   onAdd,
   addDisabled = false,
+  existingValues = [],
 }: {
   confirmLabel?: string;
   onAdd?: (values: string[]) => Promise<void>;
   addDisabled?: boolean;
+  existingValues?: string[];
   onOpen?: () => void;
   label: string;
   options: SheetOption[];
@@ -66,6 +68,9 @@ export function InventoryMultiSelect({
     ? searchOptions(options, query, (o) => o.searchLabel ?? o.label)
     : [];
   const chosen = all ? values : draft;
+  const existing = new Set(existingValues);
+  const additions = draft.filter((v) => !existing.has(v));
+  const alreadyPresent = draft.length - additions.length;
   const change = async (next: string[]) => {
     if (!all) {
       setDraft(next);
@@ -259,9 +264,17 @@ export function InventoryMultiSelect({
               + {createLabel} «{query.trim()}»
             </button>
           )}
+        {onAdd && alreadyPresent > 0 && (
+          <small role="status" className="inventory-picker-existing">
+            {additions.length
+              ? `${alreadyPresent} ya están en esta hoja y país. Solo se agregarán ${additions.length} nuevos.`
+              : "Ya está en esta hoja y país. Pulsa Buscar para verlo; no se agregará otra fila."}
+          </small>
+        )}
         <div className={onAdd ? "inventory-picker-actions" : undefined}>
           <button
             type="button"
+            className={onAdd ? "inventory-picker-search" : undefined}
             disabled={busy || disabled}
             onClick={async () => {
               if (pending.current) return;
@@ -286,14 +299,14 @@ export function InventoryMultiSelect({
               type="button"
               className="inventory-picker-add"
               data-financial-write
-              disabled={busy || disabled || addDisabled || !draft.length}
+              disabled={busy || disabled || addDisabled || !additions.length}
               onClick={async () => {
                 if (pending.current) return;
                 pending.current = true;
                 setBusy(true);
                 try {
                   setLocalError("");
-                  await onAdd(draft);
+                  await onAdd(additions);
                   popover.current?.hidePopover();
                   trigger.current?.focus({ preventScroll: true });
                 } catch (e) {
