@@ -238,6 +238,17 @@ function campaignSales(p?: Period, start?: string | null) {
     </small>
   );
 }
+function periodSpend(p: Period | undefined, currency: string) {
+  if (!p) return null;
+  return (
+    <small
+      className="meta-period-spend"
+      title={`Gasto real de Meta para ${date(p.since)} – ${date(p.until)}. Moneda de la cuenta; no presupuesto ni gasto manual.`}
+    >
+      Gasto {p.state === "UNAVAILABLE" ? "—" : money(p.spend, currency)}
+    </small>
+  );
+}
 function campaignEvaluation(o: Item, selectedPeriod = "7") {
   if (o.level !== "campaign")
     return <span title={ratings[o.rating]}>{ratings[o.rating]}</span>;
@@ -1954,6 +1965,10 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
           {calendar &&
             o.periods.custom?.since === since &&
             o.periods.custom?.until === until &&
+            periodSpend(o.periods.custom, o.currency)}
+          {calendar &&
+            o.periods.custom?.since === since &&
+            o.periods.custom?.until === until &&
             campaignSales(o.periods.custom)}
         </>
       ),
@@ -1975,8 +1990,11 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
                 : undefined
             }
           >
-            {o.periods[key].results} resultados
+            {o.periods[key].state === "UNAVAILABLE"
+              ? "Resultados: —"
+              : `${o.periods[key].results} resultados`}
           </small>
+          {periodSpend(o.periods[key], o.currency)}
           {campaignSales(
             o.periods[key],
             key === "lifetime" ? o.firstDelivery : null,
@@ -2233,19 +2251,19 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
             >
               <span>{label}</span>
               <strong>{cost(o.periods[key], o.currency)}</strong>
-              <small>
+              <small className="meta-result-count">
                 {o.periods[key].state === "UNAVAILABLE" ? (
                   "Informe todavía no recibido de Meta"
                 ) : (
                   <>
-                    {o.periods[key].results} resultados ·{" "}
-                    {money(o.periods[key].spend, o.currency)}
+                    {o.periods[key].results} resultados
                     {o.periods[key].state === "PARTIAL"
                       ? " · registros recibidos, cobertura parcial"
                       : ""}
                   </>
                 )}
               </small>
+              {periodSpend(o.periods[key], o.currency)}
               {campaignSales(
                 o.periods[key],
                 key === "lifetime" ? o.firstDelivery : null,
@@ -2279,11 +2297,18 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
               o.periods.custom?.since === since &&
               o.periods.custom.until === until &&
               o.periods.custom.state !== "UNAVAILABLE" && (
-                <small>
-                  {o.periods.custom.results} resultados ·{" "}
-                  {money(o.periods.custom.spend, o.currency)}
+                <small className="meta-result-count">
+                  {o.periods.custom.results} resultados
                 </small>
               )}
+            {calendar &&
+              o.periods.custom?.since === since &&
+              o.periods.custom?.until === until &&
+              periodSpend(o.periods.custom, o.currency)}
+            {calendar &&
+              o.periods.custom?.since === since &&
+              o.periods.custom?.until === until &&
+              campaignSales(o.periods.custom)}
           </div>
         </div>
         <div className="meta-card-evaluation">

@@ -18,6 +18,7 @@ export function campaignEvaluationWindow<T extends Range>(
   if (
     selected !== "lifetime" &&
     chosen &&
+    (Date.parse(chosen.until) - Date.parse(chosen.since)) / 86400000 + 1 >= 7 &&
     isRecentCampaignPeriod(chosen, today)
   )
     return { key: selected, period: chosen, label: "Por el período" };

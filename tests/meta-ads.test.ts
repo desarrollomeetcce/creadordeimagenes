@@ -5929,6 +5929,22 @@ test("Estado reciente de campañas: fechas,14d elegidos y sin usar histórico co
     old,
   };
   assert.equal(select(periods, "custom", today).period, fourteen);
+  assert.equal(
+    select(
+      { ...periods, today: { since: today, until: today } },
+      "today",
+      today,
+    ).period,
+    seven,
+  );
+  assert.equal(
+    select(
+      { ...periods, custom: { since: today, until: today } },
+      "custom",
+      today,
+    ).period,
+    seven,
+  );
   assert.equal(select(periods, "old", today).period, seven);
   assert.equal(select(periods, "lifetime", today).period, seven);
   assert.equal(select({ old }, "old", today).period, null);
