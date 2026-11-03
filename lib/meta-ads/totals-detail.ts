@@ -25,6 +25,7 @@ export type TotalSheet = {
   groups: {
     country: string;
     currency: string;
+    hasData?: boolean;
     days: Record<string, TotalDay>;
   }[];
 };

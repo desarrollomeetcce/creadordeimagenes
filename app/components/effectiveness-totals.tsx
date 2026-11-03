@@ -26,6 +26,15 @@ import {
   type TotalSheet,
 } from "../../lib/meta-ads/totals-detail";
 import { readTotalsRange } from "./workbook-range-request";
+import {
+  FinancialTableWindow,
+  type FinancialTableWindowMode,
+} from "./financial-table-window";
+import {
+  SheetHorizontalNavigation,
+  horizontalSheetKey,
+} from "./sheet-horizontal-navigation";
+import { previousMonthStart } from "../../lib/meta-ads/report-day-pages";
 import { useReportDayPages } from "./report-day-pages";
 import { ManualBaseEditor } from "./manual-base-editor";
 import {
@@ -56,6 +65,20 @@ export function EffectivenessTotals({
   initialSelected?: string[] | null;
 }) {
   const numbersTable = useRef<HTMLTableElement>(null);
+  const horizontalScroll = useRef<HTMLDivElement>(null),
+    windowControls = useRef<{
+      changeMode: (mode: FinancialTableWindowMode) => void;
+    }>(null);
+  const [windowMode, setWindowMode] =
+    useState<FinancialTableWindowMode>("inline");
+  const [dayCount, setDayCount] = useWorkbookPreference<string>(
+    listId,
+    "daysPerPage",
+    "62",
+  );
+  const pageSize = ["31", "62", "93", "183", "366"].includes(dayCount)
+    ? Number(dayCount)
+    : 62;
   useSheetTextFit(
     numbersTable,
     "td[data-metric].sheet-derived, td[data-metric] input.sheet-cell, td[data-metric] .manual-base-cell",
@@ -81,7 +104,7 @@ export function EffectivenessTotals({
   const [periodSince, setSince] = useWorkbookPreference<string>(
       listId,
       "since",
-      today.slice(0, 8) + (Number(today.slice(8)) >= 20 ? "20" : "01"),
+      previousMonthStart(today),
     ),
     [periodUntil, setUntil] = useWorkbookPreference<string>(
       listId,
@@ -203,10 +226,13 @@ export function EffectivenessTotals({
       result.push(new Date(d).toISOString().slice(0, 10));
     return result;
   }, [since, until]);
-  const { visibleDays, navigation } = useReportDayPages(days);
+  const { visibleDays, navigation } = useReportDayPages(days, pageSize);
   const blocks = useMemo(
     () => totalSourceBlocks(data, country, currency),
     [data, country, currency],
+  );
+  const displayTables = data.filter((t) =>
+    blocks.some((b) => b.table.tableId === t.tableId),
   );
   const effectiveMode = analysisView === "period" ? mode : "manual";
   const columnTools = useTotalsColumnTools(
@@ -315,11 +341,85 @@ export function EffectivenessTotals({
       if (queues.current.get(key) === job) queues.current.delete(key);
     });
   };
+  const datePicker = (
+    <MetaDateRange
+      activityTableIds={data.map((t) => t.tableId)}
+      maxDays={3660}
+      from={since}
+      to={until}
+      onChange={(a, b) => {
+        if (
+          !a ||
+          !b ||
+          a > b ||
+          (Date.parse(b) - Date.parse(a)) / 86400000 >= 3660
+        ) {
+          setMessage("Elige un período válido de hasta diez años.");
+          return;
+        }
+        setSince(a);
+        setUntil(b);
+      }}
+    />
+  );
+  const rowPicker = (
+    <label>
+      Filas
+      <select
+        aria-label="Fechas por página"
+        value={String(pageSize)}
+        onChange={(e) => setDayCount(e.target.value)}
+      >
+        {[31, 62, 93, 183, 366].map((n) => (
+          <option key={n} value={n}>
+            {n} fechas
+          </option>
+        ))}
+      </select>
+    </label>
+  );
+  const expandedToolbar = (
+    <div className="financial-table-window-toolbar row">
+      <strong>Por totales de día</strong>
+      <button
+        type="button"
+        aria-pressed={mode === "manual" && analysisView === "period"}
+        onClick={() => {
+          setAnalysisView("period");
+          setMode("manual");
+        }}
+      >
+        Total manual
+      </button>
+      <button
+        type="button"
+        aria-pressed={mode === "automatic" && analysisView === "period"}
+        onClick={() => {
+          setAnalysisView("period");
+          setMode("automatic");
+        }}
+      >
+        Total automático
+      </button>
+      {datePicker}
+      {rowPicker}
+      <button
+        type="button"
+        onClick={() => {
+          if (since > today) setSince(previousMonthStart(today));
+          setUntil(today);
+        }}
+      >
+        Hasta hoy
+      </button>
+    </div>
+  );
   return (
     <section
-      className="effectiveness sheet-view"
+      className="effectiveness sheet-view financial-sheet-view financial-totals-view"
       aria-label="Totales de efectividad"
       aria-busy={loading}
+      onKeyDown={(e) => horizontalSheetKey(e, horizontalScroll.current)}
     >
       <div className="sheet-toolbar sheet-totals-toolbar">
         <div className="row sheet-view-buttons" aria-label="Vista de totales">
@@ -371,25 +471,25 @@ export function EffectivenessTotals({
           className="row sheet-totals-filters"
           aria-label="Fecha y filtros de totales"
         >
-          <MetaDateRange
-            activityTableIds={data.map((t) => t.tableId)}
-            maxDays={3660}
-            from={since}
-            to={until}
-            onChange={(a, b) => {
-              if (
-                !a ||
-                !b ||
-                a > b ||
-                (Date.parse(b) - Date.parse(a)) / 86400000 >= 3660
-              ) {
-                setMessage("Elige un período válido de hasta diez años.");
-                return;
-              }
-              setSince(a);
-              setUntil(b);
+          {datePicker}
+          {rowPicker}
+          <button
+            type="button"
+            disabled={!data.length}
+            onClick={() => windowControls.current?.changeMode("maximized")}
+            aria-label="Maximizar toda la tabla"
+          >
+            ⛶ Maximizar tabla
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              if (since > today) setSince(previousMonthStart(today));
+              setUntil(today);
             }}
-          />
+          >
+            Hasta hoy
+          </button>
           <SheetMultiFilter
             label="Hojas de origen"
             value={selected}
@@ -539,350 +639,383 @@ export function EffectivenessTotals({
       )}
       {sheetTabs}
       {!!data.length && (
-        <div className="table-scroll effectiveness-scroll sheet-scroll">
-          <table
-            ref={numbersTable}
-            className="effectiveness-grid sheet-totals-grid sheet-resizable-table"
-            style={{
-              width: layoutColumns.reduce(
-                (n, c) => n + (widths[c.key] ?? c.width),
-                0,
-              ),
-            }}
+        <FinancialTableWindow
+          title="Por totales de día"
+          scrollRef={horizontalScroll}
+          controlsRef={windowControls}
+          mode={windowMode}
+          onModeChange={setWindowMode}
+          toolbar={expandedToolbar}
+        >
+          <div
+            ref={horizontalScroll}
+            className="table-scroll effectiveness-scroll sheet-scroll totals-scroll"
+            tabIndex={0}
+            aria-label="Datos de Totales, desplazamiento vertical"
           >
-            <colgroup>
-              {layoutColumns.map((c) => (
-                <col key={c.key} style={{ width: widths[c.key] ?? c.width }} />
-              ))}
-            </colgroup>
-            <thead>
-              <tr>
-                <th rowSpan={2}>Fecha{handle("date", "Fecha")}</th>
-                {data.map((t, index) => (
-                  <th
-                    key={t.tableId}
-                    colSpan={
-                      blocks.filter((b) => b.table.tableId === t.tableId)
-                        .length *
-                      (columns.length + 2)
-                    }
-                  >
-                    <div className="totals-source-heading">
-                      <span>{t.name}</span>
-                      <button
-                        type="button"
-                        className="totals-source-detail"
-                        aria-label={`Ver detalle de la hoja ${t.name}`}
-                        onClick={() => {
-                          const candidates = blocks.filter(
-                            (b) => b.table.tableId === t.tableId,
-                          );
-                          const first =
-                            candidates.find((b) => {
-                              const group = b.table.groups.find(
-                                (g) =>
-                                  g.country === b.country &&
-                                  g.currency === b.currency,
-                              );
-                              return Object.values(group?.days ?? {}).some(
-                                (d) => (d.sums?.sales?.known ?? 0) > 0,
-                              );
-                            }) ?? candidates[0];
-                          if (!first) return;
-                          setDetailSelection({ blockKey: first.key, day: "" });
-                          setDetailOpen(true);
-                        }}
-                      >
-                        Ver detalle
-                      </button>
-                      {index === data.length - 1 &&
-                        selected !== null &&
-                        tables.some(
-                          (source) => !selected.includes(source.id),
-                        ) && (
-                          <SheetSearchSelect
-                            label="Agregar hoja junto a las hojas de Totales"
-                            className="totals-source-add"
-                            value=""
-                            placeholder="+"
-                            options={tables
-                              .filter((source) => !selected.includes(source.id))
-                              .map((source) => ({
-                                value: source.id,
-                                label: source.name,
-                              }))}
-                            onSelect={(id) =>
-                              setSelected((old) =>
-                                old === null
-                                  ? null
-                                  : [...new Set([...old, id])],
-                              )
-                            }
-                          />
-                        )}
-                    </div>
-                  </th>
+            <table
+              ref={numbersTable}
+              className="effectiveness-grid sheet-totals-grid sheet-resizable-table"
+              style={{
+                width: layoutColumns.reduce(
+                  (n, c) => n + (widths[c.key] ?? c.width),
+                  0,
+                ),
+              }}
+            >
+              <colgroup>
+                {layoutColumns.map((c) => (
+                  <col
+                    key={c.key}
+                    style={{ width: widths[c.key] ?? c.width }}
+                  />
                 ))}
-              </tr>
-              <tr>
-                {blocks.flatMap((block) => [
-                  <th key={block.key + ":country"}>
-                    País
-                    {handle(
-                      block.key + ":country",
-                      block.table.name +
-                        " " +
-                        block.country +
-                        " " +
-                        block.currency +
-                        " País",
-                      66,
-                    )}
-                  </th>,
-                  <th key={block.key + ":currency"}>
-                    Moneda
-                    {handle(
-                      block.key + ":currency",
-                      block.table.name +
-                        " " +
-                        block.country +
-                        " " +
-                        block.currency +
-                        " Moneda",
-                      66,
-                    )}
-                  </th>,
-                  ...columns.map((m) => (
+              </colgroup>
+              <thead>
+                <tr>
+                  <th rowSpan={2}>Fecha{handle("date", "Fecha")}</th>
+                  {displayTables.map((t, index) => (
                     <th
-                      key={block.key + ":" + m.key}
-                      data-entry={
-                        m.sum || m.key === "advisorBase" ? "derived" : "manual"
+                      key={t.tableId}
+                      colSpan={
+                        blocks.filter((b) => b.table.tableId === t.tableId)
+                          .length *
+                        (columns.length + 2)
                       }
-                      data-total-column={m.key}
-                      data-fill-kind={columnTools.kind(m.key)}
-                      data-fill-timing={
-                        fillNextDay(m.key) ? "next-day" : "same-day"
-                      }
-                      data-total-tone={
-                        columnTools.kind(m.key) === "automatic"
-                          ? "green"
-                          : columnTools.kind(m.key) === "next-day"
-                            ? "brown"
-                            : "blue"
-                      }
-                      data-column-drop={
-                        columnTools.drop?.key === m.key
-                          ? columnTools.drop.after
-                            ? "after"
-                            : "before"
-                          : undefined
-                      }
-                      style={columnTools.style(m.key, true)}
-                      title={`${m.name} (${m.label}) · ${sheetDataFillLabels[columnTools.kind(m.key)]}`}
                     >
-                      {m.label}
-                      {m.sum || m.key === "advisorBase" ? " Σ" : ""}
-                      {columnTools.handle(
-                        m,
-                        `${block.table.name} ${block.country} ${block.currency}`,
-                      )}
+                      <div className="totals-source-heading">
+                        <span>{t.name}</span>
+                        <button
+                          type="button"
+                          className="totals-source-detail"
+                          aria-label={`Ver detalle de la hoja ${t.name}`}
+                          onClick={() => {
+                            const candidates = blocks.filter(
+                              (b) => b.table.tableId === t.tableId,
+                            );
+                            const first =
+                              candidates.find((b) => {
+                                const group = b.table.groups.find(
+                                  (g) =>
+                                    g.country === b.country &&
+                                    g.currency === b.currency,
+                                );
+                                return Object.values(group?.days ?? {}).some(
+                                  (d) => (d.sums?.sales?.known ?? 0) > 0,
+                                );
+                              }) ?? candidates[0];
+                            if (!first) return;
+                            setDetailSelection({
+                              blockKey: first.key,
+                              day: "",
+                            });
+                            setDetailOpen(true);
+                          }}
+                        >
+                          Ver detalle
+                        </button>
+                        {index === displayTables.length - 1 &&
+                          selected !== null &&
+                          tables.some(
+                            (source) => !selected.includes(source.id),
+                          ) && (
+                            <SheetSearchSelect
+                              label="Agregar hoja junto a las hojas de Totales"
+                              className="totals-source-add"
+                              value=""
+                              placeholder="+"
+                              options={tables
+                                .filter(
+                                  (source) => !selected.includes(source.id),
+                                )
+                                .map((source) => ({
+                                  value: source.id,
+                                  label: source.name,
+                                }))}
+                              onSelect={(id) =>
+                                setSelected((old) =>
+                                  old === null
+                                    ? null
+                                    : [...new Set([...old, id])],
+                                )
+                              }
+                            />
+                          )}
+                      </div>
+                    </th>
+                  ))}
+                </tr>
+                <tr>
+                  {blocks.flatMap((block) => [
+                    <th key={block.key + ":country"}>
+                      País
                       {handle(
-                        block.key + ":" + m.key,
+                        block.key + ":country",
                         block.table.name +
                           " " +
                           block.country +
                           " " +
                           block.currency +
-                          " " +
-                          m.label,
-                        76,
+                          " País",
+                        66,
                       )}
-                      <SheetDataFillBadge kind={columnTools.kind(m.key)} />
+                    </th>,
+                    <th key={block.key + ":currency"}>
+                      Moneda
+                      {handle(
+                        block.key + ":currency",
+                        block.table.name +
+                          " " +
+                          block.country +
+                          " " +
+                          block.currency +
+                          " Moneda",
+                        66,
+                      )}
+                    </th>,
+                    ...columns.map((m) => (
+                      <th
+                        key={block.key + ":" + m.key}
+                        data-entry={
+                          m.sum || m.key === "advisorBase"
+                            ? "derived"
+                            : "manual"
+                        }
+                        data-total-column={m.key}
+                        data-fill-kind={columnTools.kind(m.key)}
+                        data-fill-timing={
+                          fillNextDay(m.key) ? "next-day" : "same-day"
+                        }
+                        data-total-tone={
+                          columnTools.kind(m.key) === "automatic"
+                            ? "green"
+                            : columnTools.kind(m.key) === "next-day"
+                              ? "brown"
+                              : "blue"
+                        }
+                        data-column-drop={
+                          columnTools.drop?.key === m.key
+                            ? columnTools.drop.after
+                              ? "after"
+                              : "before"
+                            : undefined
+                        }
+                        style={columnTools.style(m.key, true)}
+                        title={`${m.name} (${m.label}) · ${sheetDataFillLabels[columnTools.kind(m.key)]}`}
+                      >
+                        {m.label}
+                        {m.sum || m.key === "advisorBase" ? " Σ" : ""}
+                        {columnTools.handle(
+                          m,
+                          `${block.table.name} ${block.country} ${block.currency}`,
+                        )}
+                        {handle(
+                          block.key + ":" + m.key,
+                          block.table.name +
+                            " " +
+                            block.country +
+                            " " +
+                            block.currency +
+                            " " +
+                            m.label,
+                          76,
+                        )}
+                        <SheetDataFillBadge kind={columnTools.kind(m.key)} />
+                      </th>
+                    )),
+                  ])}
+                </tr>
+              </thead>
+              <tbody>
+                {visibleDays.map((day) => (
+                  <SheetSizedRow
+                    key={day}
+                    data-total-day={day}
+                    label={day}
+                    height={
+                      rowsLayout.heights["date:" + day] ??
+                      Math.max(
+                        0,
+                        ...blocks.map(
+                          (b) =>
+                            rowsLayout.heights[
+                              day + ":" + b.country + ":" + b.currency
+                            ] ?? 0,
+                        ),
+                      )
+                    }
+                    onResize={(value) =>
+                      rowsLayout.resize("date:" + day, value)
+                    }
+                    onReset={() => rowsLayout.resize("date:" + day, 30)}
+                  >
+                    <th>
+                      {day.slice(8)}.{day.slice(5, 7)}.{day.slice(0, 4)}
                     </th>
-                  )),
-                ])}
-              </tr>
-            </thead>
-            <tbody>
-              {visibleDays.map((day) => (
-                <SheetSizedRow
-                  key={day}
-                  data-total-day={day}
-                  label={day}
-                  height={
-                    rowsLayout.heights["date:" + day] ??
-                    Math.max(
-                      0,
-                      ...blocks.map(
-                        (b) =>
-                          rowsLayout.heights[
-                            day + ":" + b.country + ":" + b.currency
-                          ] ?? 0,
-                      ),
-                    )
-                  }
-                  onResize={(value) => rowsLayout.resize("date:" + day, value)}
-                  onReset={() => rowsLayout.resize("date:" + day, 30)}
-                >
-                  <th>
-                    {day.slice(8)}.{day.slice(5, 7)}.{day.slice(0, 4)}
-                  </th>
-                  {blocks.flatMap((block) => {
-                    const t = block.table,
-                      g = { country: block.country, currency: block.currency },
-                      cell = t.groups.find(
-                        (x) =>
-                          x.country === g.country && x.currency === g.currency,
-                      )?.days[day];
-                    return [
-                      <td
-                        key={block.key + ":country"}
-                        data-source-table={t.tableId}
-                        data-country={g.country}
-                        data-currency={g.currency}
-                        data-metric="country"
-                      >
-                        <button
-                          type="button"
-                          className="totals-country-detail"
-                          aria-label={`Ver detalle de ${t.name}, ${g.country || "sin país"}, ${g.currency || "sin moneda"}, ${day}`}
-                          onClick={() => {
-                            setDetailSelection({ blockKey: block.key, day });
-                            setDetailOpen(true);
-                          }}
+                    {blocks.flatMap((block) => {
+                      const t = block.table,
+                        g = {
+                          country: block.country,
+                          currency: block.currency,
+                        },
+                        cell = t.groups.find(
+                          (x) =>
+                            x.country === g.country &&
+                            x.currency === g.currency,
+                        )?.days[day];
+                      return [
+                        <td
+                          key={block.key + ":country"}
+                          data-source-table={t.tableId}
+                          data-country={g.country}
+                          data-currency={g.currency}
+                          data-metric="country"
                         >
-                          {g.country || "—"} <small aria-hidden="true">↗</small>
-                        </button>
-                      </td>,
-                      <td
-                        key={block.key + ":currency"}
-                        data-source-table={t.tableId}
-                        data-country={g.country}
-                        data-currency={g.currency}
-                        data-metric="currency"
-                      >
-                        {g.currency || "—"}
-                      </td>,
-                      ...columns.map((m) => {
-                        const sum = m.sum
-                          ? cell?.sums?.[m.key as SheetMetric]
-                          : undefined;
-                        return (
-                          <td
-                            key={block.key + m.key}
-                            data-source-table={t.tableId}
-                            data-country={g.country}
-                            data-currency={g.currency}
-                            data-metric={m.key}
-                            data-fill-kind={columnTools.kind(m.key)}
-                            data-fill-timing={
-                              fillNextDay(m.key) ? "next-day" : "same-day"
-                            }
-                            className={
-                              m.sum || m.key === "advisorBase"
-                                ? "sheet-derived"
-                                : ""
-                            }
-                            data-total-tone={
-                              columnTools.kind(m.key) === "automatic"
-                                ? "green"
-                                : columnTools.kind(m.key) === "next-day"
-                                  ? "brown"
-                                  : "blue"
-                            }
-                            style={columnTools.style(m.key)}
-                            data-entry={
-                              m.sum || m.key === "advisorBase"
-                                ? "derived"
-                                : "manual"
-                            }
+                          <button
+                            type="button"
+                            className="totals-country-detail"
+                            aria-label={`Ver detalle de ${t.name}, ${g.country || "sin país"}, ${g.currency || "sin moneda"}, ${day}`}
+                            onClick={() => {
+                              setDetailSelection({ blockKey: block.key, day });
+                              setDetailOpen(true);
+                            }}
                           >
-                            {m.sum ? (
-                              <span
-                                title={
-                                  cell?.historicalSales && m.key === "sales"
-                                    ? "Total histórico importado por país y día; independiente del desglose por diplomado."
-                                    : sum
-                                      ? `${sum.known}/${sum.expected} inventario con dato; ${sum.na} N.A.${sum.pending ? " Falta conversión." : ""}`
-                                      : "Sin datos"
-                                }
-                              >
-                                {sum?.value === null || sum?.value === undefined
-                                  ? sum?.pending
-                                    ? "Sin tasa"
-                                    : "—"
-                                  : sum.value.toLocaleString("es-PE", {
-                                      maximumFractionDigits: 2,
-                                    }) + (sum.partial ? " *" : "")}
-                              </span>
-                            ) : m.key === "advisorBase" ? (
-                              <span title="BC automática: suma de los registros de Asesores para esta hoja, país y fecha">
-                                {cell?.manual.advisorBase === "NA"
-                                  ? "N.A."
-                                  : (cell?.manual.advisorBase?.toLocaleString(
-                                      "es-PE",
-                                    ) ?? "—")}
-                              </span>
-                            ) : m.key === "baseManual" ? (
-                              <button
-                                type="button"
-                                className="manual-base-cell"
-                                aria-label={`${m.label} total ${t.name} ${g.country} ${g.currency} ${day}`}
-                                title={`Repartir ${m.name.toLowerCase()} por asesor`}
-                                onClick={() =>
-                                  setBaseEditor({
-                                    metric: "BM",
-                                    tableId: t.tableId,
-                                    country: g.country,
-                                    currency: g.currency,
-                                    day,
-                                  })
-                                }
-                              >
-                                {cell?.manual[m.key] === "NA"
-                                  ? "N.A."
-                                  : (cell?.manual[m.key]?.toLocaleString(
-                                      "es-PE",
-                                    ) ?? "—")}
-                              </button>
-                            ) : (
-                              <EffectivenessCell
-                                allowNA
-                                label={`${m.label} total ${t.name} ${g.country} ${g.currency} ${day}`}
-                                value={
-                                  cell?.manual?.[m.key as ManualMetric] ===
-                                  undefined
-                                    ? ""
-                                    : cell.manual[m.key as ManualMetric] ===
-                                        "NA"
-                                      ? "N.A."
-                                      : String(
-                                          cell.manual[m.key as ManualMetric],
-                                        )
-                                }
-                                onError={setMessage}
-                                onSave={(text) =>
-                                  save(
-                                    t,
-                                    g,
-                                    day,
-                                    cell,
-                                    m.key as ManualMetric,
-                                    text,
-                                  )
-                                }
-                              />
-                            )}
-                          </td>
-                        );
-                      }),
-                    ];
-                  })}
-                </SheetSizedRow>
-              ))}
-            </tbody>
-          </table>
-        </div>
+                            {g.country || "—"}{" "}
+                            <small aria-hidden="true">↗</small>
+                          </button>
+                        </td>,
+                        <td
+                          key={block.key + ":currency"}
+                          data-source-table={t.tableId}
+                          data-country={g.country}
+                          data-currency={g.currency}
+                          data-metric="currency"
+                        >
+                          {g.currency || "—"}
+                        </td>,
+                        ...columns.map((m) => {
+                          const sum = m.sum
+                            ? cell?.sums?.[m.key as SheetMetric]
+                            : undefined;
+                          return (
+                            <td
+                              key={block.key + m.key}
+                              data-source-table={t.tableId}
+                              data-country={g.country}
+                              data-currency={g.currency}
+                              data-metric={m.key}
+                              data-fill-kind={columnTools.kind(m.key)}
+                              data-fill-timing={
+                                fillNextDay(m.key) ? "next-day" : "same-day"
+                              }
+                              className={
+                                m.sum || m.key === "advisorBase"
+                                  ? "sheet-derived"
+                                  : ""
+                              }
+                              data-total-tone={
+                                columnTools.kind(m.key) === "automatic"
+                                  ? "green"
+                                  : columnTools.kind(m.key) === "next-day"
+                                    ? "brown"
+                                    : "blue"
+                              }
+                              style={columnTools.style(m.key)}
+                              data-entry={
+                                m.sum || m.key === "advisorBase"
+                                  ? "derived"
+                                  : "manual"
+                              }
+                            >
+                              {m.sum ? (
+                                <span
+                                  title={
+                                    cell?.historicalSales && m.key === "sales"
+                                      ? "Total histórico importado por país y día; independiente del desglose por diplomado."
+                                      : sum
+                                        ? `${sum.known}/${sum.expected} inventario con dato; ${sum.na} N.A.${sum.pending ? " Falta conversión." : ""}`
+                                        : "Sin datos"
+                                  }
+                                >
+                                  {sum?.value === null ||
+                                  sum?.value === undefined
+                                    ? sum?.pending
+                                      ? "Sin tasa"
+                                      : "—"
+                                    : sum.value.toLocaleString("es-PE", {
+                                        maximumFractionDigits: 2,
+                                      }) + (sum.partial ? " *" : "")}
+                                </span>
+                              ) : m.key === "advisorBase" ? (
+                                <span title="BC automática: suma de los registros de Asesores para esta hoja, país y fecha">
+                                  {cell?.manual.advisorBase === "NA"
+                                    ? "N.A."
+                                    : (cell?.manual.advisorBase?.toLocaleString(
+                                        "es-PE",
+                                      ) ?? "—")}
+                                </span>
+                              ) : m.key === "baseManual" ? (
+                                <button
+                                  type="button"
+                                  className="manual-base-cell"
+                                  aria-label={`${m.label} total ${t.name} ${g.country} ${g.currency} ${day}`}
+                                  title={`Repartir ${m.name.toLowerCase()} por asesor`}
+                                  onClick={() =>
+                                    setBaseEditor({
+                                      metric: "BM",
+                                      tableId: t.tableId,
+                                      country: g.country,
+                                      currency: g.currency,
+                                      day,
+                                    })
+                                  }
+                                >
+                                  {cell?.manual[m.key] === "NA"
+                                    ? "N.A."
+                                    : (cell?.manual[m.key]?.toLocaleString(
+                                        "es-PE",
+                                      ) ?? "—")}
+                                </button>
+                              ) : (
+                                <EffectivenessCell
+                                  allowNA
+                                  label={`${m.label} total ${t.name} ${g.country} ${g.currency} ${day}`}
+                                  value={
+                                    cell?.manual?.[m.key as ManualMetric] ===
+                                    undefined
+                                      ? ""
+                                      : cell.manual[m.key as ManualMetric] ===
+                                          "NA"
+                                        ? "N.A."
+                                        : String(
+                                            cell.manual[m.key as ManualMetric],
+                                          )
+                                  }
+                                  onError={setMessage}
+                                  onSave={(text) =>
+                                    save(
+                                      t,
+                                      g,
+                                      day,
+                                      cell,
+                                      m.key as ManualMetric,
+                                      text,
+                                    )
+                                  }
+                                />
+                              )}
+                            </td>
+                          );
+                        }),
+                      ];
+                    })}
+                  </SheetSizedRow>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <SheetHorizontalNavigation target={horizontalScroll} />
+        </FinancialTableWindow>
       )}
     </section>
   );

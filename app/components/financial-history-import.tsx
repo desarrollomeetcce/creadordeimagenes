@@ -2,6 +2,7 @@
 import { useContext, useEffect, useMemo, useRef, useState } from "react";
 import { CurrentUserId } from "./role-guide";
 import { categoryKey } from "../../lib/meta-ads/category-paste";
+import { importTotalsUntil } from "../../lib/meta-ads/report-day-pages";
 import { countryName } from "../../lib/meta-ads/countries";
 import type { HistoryFile } from "../../lib/meta-ads/financial-history-import";
 import {
@@ -193,7 +194,15 @@ export function FinancialHistoryImport() {
         choices.totalsListId,
         {
           since: file.source.salesSince,
-          until: file.source.marketingUntil,
+          until: importTotalsUntil(
+            file.source.marketingUntil,
+            new Intl.DateTimeFormat("en-CA", {
+              timeZone: "America/Lima",
+              year: "numeric",
+              month: "2-digit",
+              day: "2-digit",
+            }).format(new Date()),
+          ),
           selected: tableIds,
           country: "",
           currency: "PEN",

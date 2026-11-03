@@ -3,6 +3,8 @@ import {
   createContext,
   useContext,
   useLayoutEffect,
+  useImperativeHandle,
+  type Ref,
   useRef,
   type ReactNode,
   type RefObject,
@@ -21,6 +23,7 @@ export function FinancialTableWindow({
   mode,
   onModeChange,
   toolbar,
+  controlsRef,
 }: {
   children: ReactNode;
   title: string;
@@ -28,6 +31,7 @@ export function FinancialTableWindow({
   mode: Mode;
   onModeChange: (mode: Mode) => void;
   toolbar?: ReactNode;
+  controlsRef?: Ref<{ changeMode: (mode: Mode) => void }>;
 }) {
   const dialog = useRef<HTMLDialogElement>(null),
     position = useRef({ left: 0, top: 0 }),
@@ -40,6 +44,7 @@ export function FinancialTableWindow({
       opener.current = document.activeElement as HTMLElement;
     onModeChange(next);
   };
+  useImperativeHandle(controlsRef, () => ({ changeMode: change }));
   useLayoutEffect(() => {
     const node = dialog.current;
     if (!node) return;

@@ -78,6 +78,27 @@ export async function effectivenessTotals(
     groups: [...groups.values()].map((g) => ({
       country: g.country,
       currency: g.currency,
+      hasData:
+        g.rows.some((r) =>
+          Object.values(r.days).some(
+            (c) =>
+              [c.sales, c.base, c.spend, c.budget, c.fixedCost].some(
+                (v) => typeof v === "number",
+              ) || c.na.some((m) => !c.automaticNa.includes(m)),
+          ),
+        ) ||
+        stored.some(
+          (r) =>
+            r.country === g.country &&
+            r.currency === g.currency &&
+            Object.values(r.values as object).some(
+              (v) => v !== null && v !== undefined,
+            ),
+        ) ||
+        manualBase.some(
+          (r) => r.country === g.country && r.state !== "EMPTY",
+        ) ||
+        advisorBase.some((r) => r.country === g.country && r.state !== "EMPTY"),
       days: Object.fromEntries(
         days.map((day) => {
           const entry = saved.get(JSON.stringify([g.country, g.currency, day]));

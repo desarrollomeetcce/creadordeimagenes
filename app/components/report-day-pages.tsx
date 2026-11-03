@@ -1,12 +1,15 @@
 "use client";
+import { reportDayPage } from "../../lib/meta-ads/report-day-pages";
 import { useState } from "react";
-export function useReportDayPages(days: string[]) {
+export function useReportDayPages(days: string[], pageSize = 31) {
   const [selection, setSelection] = useState({ context: "", page: 0 });
-  const context = `${days[0]}:${days.at(-1)}`;
-  const pages = Math.max(1, Math.ceil(days.length / 31));
-  const page =
-    selection.context === context ? Math.min(selection.page, pages - 1) : 0;
-  const visibleDays = days.slice(page * 31, (page + 1) * 31);
+  const context = `${days[0]}:${days.at(-1)}:${pageSize}`;
+  const { page, pages, start, end } = reportDayPage(
+    days.length,
+    selection.context === context ? selection.page : 0,
+    pageSize,
+  );
+  const visibleDays = days.slice(start, end);
   const navigation =
     pages > 1 ? (
       <nav className="row report-day-pages" aria-label="Páginas de fechas">

@@ -79,7 +79,17 @@ export async function readTotalsRange(
     for (const group of page.groups) {
       const key = JSON.stringify([group.country, group.currency]),
         old = groups.get(key);
-      groups.set(key, { ...group, days: { ...old?.days, ...group.days } });
+      groups.set(key, {
+        ...group,
+        hasData: !old
+          ? group.hasData
+          : old.hasData === true || group.hasData === true
+            ? true
+            : old.hasData === false && group.hasData === false
+              ? false
+              : undefined,
+        days: { ...old?.days, ...group.days },
+      });
     }
   return {
     ...pages[0],

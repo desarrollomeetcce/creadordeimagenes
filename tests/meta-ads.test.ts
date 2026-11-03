@@ -1126,3 +1126,23 @@ test("Orden Inicio: fechas conocidas primero, activos conservados y preferencia 
  assert(compareMetaItems({...a,status:'PAUSED'},b,'start',1)>0);
  const {parseMetaPreferences}=await import('../lib/meta-ads/preferences');assert.equal(parseMetaPreferences(JSON.stringify({sort:'start'})).sort,'start');
 });
+
+test("Totales: omitir solo bloques vacíos duplicados, preservar ceros/N.A./fuentes reales",async()=>{
+ const {totalSourceBlocks}=await import('../lib/meta-ads/total-source-blocks');
+ const blank={country:'',currency:'PEN',hasData:false,days:{}},ar={country:'AR',currency:'PEN',hasData:true,days:{}};
+ const table={tableId:'ar',name:'ARGENTINA',groups:[blank,ar]};assert.equal(totalSourceBlocks([table]).length,1);assert.equal(totalSourceBlocks([table])[0].country,'AR');assert.equal(table.groups.length,2);
+ assert.equal(totalSourceBlocks([table],'__none').length,1);
+ assert.equal(totalSourceBlocks([{...table,groups:[blank]}]).length,1);
+ assert.equal(totalSourceBlocks([{...table,groups:[{...blank,hasData:true},ar]}]).length,2);
+ const empty={tableId:'empty',name:'Argentina',groups:[blank]};assert.equal(totalSourceBlocks([empty,table]).length,1);
+ assert.equal(totalSourceBlocks([{...empty,groups:[{...blank,hasData:true}]},table]).length,2);
+ assert.equal(totalSourceBlocks([{...empty,name:'Fuente independiente'},table]).length,2);
+ assert.equal(totalSourceBlocks([{tableId:'zero',groups:[{country:'',currency:'PEN',days:{'2026-10-01':{manual:{baseManual:0}}}},ar]}]).length,2);
+ assert.equal(totalSourceBlocks([{tableId:'na',groups:[{country:'',currency:'PEN',days:{'2026-10-01':{manual:{baseManual:'NA'}}}},ar]}]).length,2);
+});
+test("Totales: filas configurables y octubre junto a noviembre sin cambiar rango de datos",async()=>{
+ const {reportDayPage,previousMonthStart,importTotalsUntil}=await import('../lib/meta-ads/report-day-pages');
+ assert.deepEqual(reportDayPage(33,0,62),{page:0,pages:1,start:0,end:62});assert.equal(reportDayPage(33,0).pages,2);assert.equal(reportDayPage(400,99,62).page,6);assert.equal(reportDayPage(5,-2,0).page,0);
+ assert.equal(previousMonthStart('2026-11-02'),'2026-10-01');assert.equal(previousMonthStart('2027-01-02'),'2026-12-01');
+ assert.equal(importTotalsUntil('2026-10-31','2026-11-02'),'2026-11-02');assert.equal(importTotalsUntil('2025-10-31','2026-11-02'),'2025-10-31');
+});
