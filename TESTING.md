@@ -1,5 +1,7 @@
 # Pruebas y evidencia
 
+Revalidación A/B/A: con respuestas demoradas, cambiar rápidamente de Crítico a Normal y volver a Crítico cancela la petición intermedia y solicita summary=1 para recuperar el resumen. Se repitieron los otros cinco controles de navegador, typecheck/build y 273 unitarios. Todos correctos; nuevo fixture QA retirado.
+
 ## Verificación · filtro Estado y carga estable (2026-11-03)
 
 273 unitarios y 7 integraciones correctos; typecheck/build correctos. Catálogo de severidad y preferencias validado. Integración comprueba seis estados sobre doce campañas adicionales, resumen filtrado (Crítico: 9 campañas/63 ventas), filtro antes de paginación, ausencia de resumen cuando summary=0 y rechazo de estado inválido. Graph bloqueado.

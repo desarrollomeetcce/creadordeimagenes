@@ -1,5 +1,7 @@
 # Avance por fases · continuación del desarrollo
 
+Revalidación final: al limpiar el resumen también se invalida su clave de ámbito. Cambiar A → B → A antes de responder B recupera el resumen de A, incluso tras cancelación, en vez de reutilizar una clave con datos ya vaciados. Repetidos typecheck/build, 273 unitarios y seis controles de navegador; fixture QA retirado.
+
 ## Actualización · menú Estado, carga y pantalla estables (2026-11-03)
 
 Estado, junto a CAC, abre un menú para mostrar Todos, Crítico, Grave, Revisar, Sin ventas, Normal o Datos pendientes y ordenar Crítico → Normal / Normal → Crítico. Un catálogo central define la criticidad; pendientes quedan al final. El filtro se aplica sobre todos los candidatos antes de paginar y el resumen se calcula con las campañas filtradas. Se conservan ventana reciente, monedas, parciales y vínculos compartidos. El selector superior Evaluación permanece retirado.

@@ -1261,6 +1261,7 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
       serial.current++;
       const ids = new Set(rows.map((a) => a.id));
       setItems((old) => old.filter((item) => ids.has(item.accountId)));
+      summaryScope.current = "";
       setSummary(null);
       setTotal(0);
     }
@@ -1352,7 +1353,10 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
         summarySelectionKey,
       ]);
       const withSummary = summaryScope.current !== summaryKey;
-      if (withSummary) setSummary(null);
+      if (withSummary) {
+        summaryScope.current = "";
+        setSummary(null);
+      }
       const p = new URLSearchParams({
         level,
         accounts: accountKey,
