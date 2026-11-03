@@ -1410,7 +1410,7 @@ html:has(.meta-ads),.meta-ads { overflow-anchor:none; }
 .meta-ads{align-content:start;gap:10px;}
 .meta-content{gap:8px;}
 .meta-ads .panel.stack{padding:12px;gap:8px;margin-bottom:0;}
-.meta-main-filters{grid-template-columns:repeat(6,minmax(110px,1fr)) auto;gap:8px;}
+.meta-main-filters{grid-template-columns:repeat(5,minmax(110px,1fr)) auto;gap:8px;}
 .meta-main-filters>label{gap:4px;}
 .meta-main-filters .meta-filter-actions{gap:5px;}
 .meta-main-filters .meta-filter-actions>button:not(.meta-refresh){padding:10px;white-space:nowrap;}
@@ -2762,3 +2762,31 @@ button.ui-close-button:disabled, button.window-close:disabled { opacity: .55; }
 
 .meta-evaluation-order { display: flex; align-items: center; gap: 4px; }
 .meta-evaluation-order > button { flex: 1; min-width: 0; }
+
+/* Keep the summary actions on one desktop row, including inventory assignment. */
+@media (min-width: 1400px) {
+  .meta-ads .meta-summary-row { flex-wrap: nowrap; gap: 5px; }
+  .meta-ads .meta-summary-date > .meta-analysis-period { flex: 0 1 180px; width: 180px; min-width: 155px; }
+  .meta-ads .meta-summary-date .meta-period-trigger { padding: 6px; gap: 4px; font-size: 10px; }
+  .meta-ads .meta-summary-row .meta-sales-counter { padding-inline: 7px; }
+  .meta-ads .meta-summary-row .meta-counters-inline { padding: 5px 6px; gap: 5px; }
+  .meta-ads .meta-summary-row .meta-counter-grid { gap: 7px; }
+  .meta-ads .meta-summary-row .meta-counter-grid > div { min-width: 35px; }
+  .meta-ads .meta-summary-row .meta-counter-grid span { font-size: 10px; }
+  .meta-ads .meta-summary-row .meta-counter-grid strong { font-size: 13px; }
+  .meta-ads .meta-summary-row .meta-visible-refresh { flex: 0 0 auto; gap: 4px; }
+  .meta-ads .meta-summary-row .meta-visible-refresh button,
+  .meta-ads .meta-summary-row .meta-live-refresh,
+  .meta-ads .meta-summary-row .meta-bulk-alias { font-size: 11px; padding: 7px; white-space: nowrap; min-width: 0; }
+  .meta-ads .meta-summary-row .meta-sync-compact summary { padding: 5px 3px; }
+}
+.meta-evaluation-order > button { display:flex; align-items:center; justify-content:center; height:38px; white-space:nowrap; }
+.meta-evaluation-order > button > span:first-child { overflow:hidden; text-overflow:ellipsis; }
+.meta-evaluation-menu { position:fixed; inset:auto; margin:0; width:270px; max-width:calc(100vw - 16px); box-sizing:border-box; padding:12px; border:1px solid var(--line); border-radius:8px; background:var(--surface); color:var(--text); box-shadow:0 8px 24px #0004; text-align:left; }
+.meta-evaluation-menu:popover-open { display:grid; gap:8px; }
+.meta-evaluation-menu label { display:grid; gap:5px; font-size:12px; }
+.meta-evaluation-menu select { width:100%; min-width:0; }
+.meta-evaluation-menu > span { font-size:11px; font-weight:700; }
+.meta-evaluation-menu > button { text-align:left; font-size:12px; padding:8px; }
+.meta-evaluation-menu > button[aria-pressed=true] { background:var(--accent); color:var(--accent-ink,white); }
+.meta-evaluation-menu small { font-size:10px; line-height:1.5; color:var(--muted); }

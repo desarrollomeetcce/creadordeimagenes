@@ -19,6 +19,15 @@ export const cacStatusNames = {
   PENDING: "Datos pendientes",
 };
 export type CacStatus = keyof typeof cacStatusNames;
+// Ascending financial severity. Pending is intentionally unranked.
+export const cacSeverityOrder: CacStatus[] = [
+  "WITHIN",
+  "TESTING",
+  "ALERT",
+  "SEVERE",
+  "CRITICAL",
+];
+
 export function readCacRules(v: unknown): CacRules {
   const r = v as CacRules | undefined;
   return r &&

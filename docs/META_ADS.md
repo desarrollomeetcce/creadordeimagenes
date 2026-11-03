@@ -1,5 +1,17 @@
 # Meta Ads: consulta y análisis
 
+## Menú Estado y actualización eficiente
+
+El botón Estado junto a CAC abre un menú con Mostrar estado (Todos, Crítico, Grave, Revisar, Sin ventas, Normal y Datos pendientes) y dos órdenes: Crítico → Normal o Normal → Crítico. El orden de criticidad es Crítico, Grave, Revisar, Sin ventas, Normal; pendientes al final. El filtro considera todas las campañas del ámbito antes de paginar y actualiza el resumen para las campañas mostradas. Se conserva la misma ventana de evaluación indicada por campaña.
+
+Cambiar únicamente orden o página conserva el resumen del mismo ámbito, evitando recalcularlo y evitando parpadeos de los contadores. Fechas, filtros, cuentas, selección y actualización de datos invalidan esa reutilización; no se retienen métricas con TTL. Las lecturas de ventas para evaluar candidatos son agrupadas y acotadas a la ventana reciente, sin nuevas llamadas Graph. La posición de la página y del desplazamiento horizontal se conserva al ordenar y al reducir resultados.
+
+
+## Fila compacta de Rendimiento
+
+Se retira el filtro superior Evaluación y sus valores previamente guardados dejan de aplicarse en Rendimiento. Evaluación · estado de cada campaña y los botones de orden CAC/Estado se mantienen; la sección Alertas conserva su propio ámbito. Los demás controles aprovechan el espacio disponible. En escritorio amplio, resumen, fecha y acciones quedan en una fila compacta con Asignar inventario al final, después de Sincronización. En móvil se adaptan al espacio disponible.
+
+
 ## Ordenar por CAC o estado
 
 Junto a Desde el inicio, las campañas ofrecen CAC y Estado con flechas para alternar el sentido. El orden considera todas las campañas filtradas antes de paginar y usa el período indicado en Evaluación · estado (la misma regla de ventana reciente). CAC se ordena numéricamente dentro de cada moneda. Estado asciende Normal → Sin ventas → Revisar → Grave → Crítico y se invierte al volver a pulsar. Valores pendientes y ventas compartidas sin CAC individual quedan al final; no se convierten en cero.

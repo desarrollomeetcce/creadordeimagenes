@@ -10,7 +10,7 @@ export function useMetaStableViewport() {
       !(target instanceof Element) ||
       target.closest("dialog") ||
       !target.closest(
-        ".meta-main-filters,.meta-result-controls,.meta-search-row,.meta-account-pins,.meta-recommendations>header,.meta-source-fetch",
+        ".meta-aligned-order,.meta-fixed-table-head,.meta-summary-row,.meta-evaluation-order,.meta-main-filters,.meta-result-controls,.meta-search-row,.meta-account-pins,.meta-recommendations>header,.meta-source-fetch",
       )
     )
       return;

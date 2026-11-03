@@ -29,6 +29,7 @@ export const metaDefaults = {
   direction: "asc",
   age: "",
   rating: "",
+  evaluationStatus: "",
   salesSince: "",
   since: "",
   until: "",
@@ -75,6 +76,15 @@ export function parseMetaPreferences(raw: string | null): MetaPreferences {
       "evaluation",
     ],
     analysisPeriod: ["today", "7", "15", "30", "lifetime"],
+    evaluationStatus: [
+      "",
+      "WITHIN",
+      "TESTING",
+      "ALERT",
+      "SEVERE",
+      "CRITICAL",
+      "PENDING",
+    ],
     direction: ["asc", "desc"],
     age: ["", "7", "15", "30", "older"],
     rating: [

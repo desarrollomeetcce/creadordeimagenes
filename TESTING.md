@@ -1,5 +1,17 @@
 # Pruebas y evidencia
 
+## Verificación · filtro Estado y carga estable (2026-11-03)
+
+273 unitarios y 7 integraciones correctos; typecheck/build correctos. Catálogo de severidad y preferencias validado. Integración comprueba seis estados sobre doce campañas adicionales, resumen filtrado (Crítico: 9 campañas/63 ventas), filtro antes de paginación, ausencia de resumen cuando summary=0 y rechazo de estado inválido. Graph bloqueado.
+
+Chromium QA, 37 campañas y respuestas artificialmente demoradas: retirar filtro superior/ignorar STALE guardado; ordenar costo/CAC/estado conserva scroll vertical y horizontal durante carga y después, con una petición y summary=0; filtrar Crítico/Normal/Revisar solicita una petición summary=1 y mantiene viewport al reducir a una fila; menú visible fuera del recorte de tabla; refresco explícito invalida resumen; filtro/orden persisten al recargar; fila de acciones única a 1400/1530px y móvil oscuro sin desbordamiento/errores JS. Se verificó gasto/base originales y suma45 de ventas únicas del fixture (31 previas +14 de las dos campañas nuevas), luego se retiró únicamente ese fixture. Sin modificaciones de campañas reales ni pruebas facturables. Hostinger sin confirmación directa.
+
+
+## Verificación · filtro retirado y fila compacta (2026-11-03)
+
+Typecheck, build y 272 unitarios correctos. Chromium con fixture QA exclusivo y rating STALE guardado confirma: ausencia del selector Evaluación, campañas visibles sin enviar ese filtro, cinco campos más acciones y conservación de Evaluación · estado / orden CAC-Estado. Con importes/contadores del tamaño de la captura, resumen, fecha, actualización, sincronización e inventario quedan centrados en una sola fila a 1400/1530px sin recorte; móvil adapta sin desbordamiento y recargar no restaura el filtro eliminado. Cero errores JS. Sin nuevas consultas ni modificaciones de campañas; fixture QA retirado y sumas verificadas. No comprobación directa de recepción en Hostinger.
+
+
 ## Verificación · controles CAC / estado (2026-11-03)
 
 272 pruebas unitarias y 7 de integración correctas, typecheck/build correctos. Comparador: CAC numérico reversible, severidad reversible, pendientes al final y monedas separadas; preferencias preservan ambos órdenes. Integración QA añade doce campañas independientes (incluida una pausada), verifica orden global ascendente/descendente entre páginas y ventana reciente cuando se elige un rango histórico. Las lecturas externas están bloqueadas y los fixtures se eliminan en finally. Navegador valida posición de botones, flechas/consultas de orden, selección de inventario trasladada, persistencia tras recarga, tarjetas y móvil oscuro; sin errores JS ni mutaciones de anuncios. La actualización visible existente conserva su POST de lectura/sincronización; no es una edición de anuncios. No verificación directa de Hostinger.

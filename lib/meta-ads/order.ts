@@ -1,3 +1,7 @@
+import { cacSeverityOrder } from "./inventory-cac-policy";
+const ranks: Record<string, number> = Object.fromEntries(
+  cacSeverityOrder.map((s, i) => [s, i]),
+);
 type SortableMetaItem = {
   currency: string;
   metric: string;
@@ -87,13 +91,6 @@ export function compareCampaignEvaluations(
     if (av === null || bv === null) return av === bv ? 0 : av === null ? 1 : -1;
     return a.currency.localeCompare(b.currency) || direction * (av - bv);
   }
-  const ranks: Record<string, number> = {
-    WITHIN: 0,
-    TESTING: 1,
-    ALERT: 2,
-    SEVERE: 3,
-    CRITICAL: 4,
-  };
   const av = ranks[a.status],
     bv = ranks[b.status];
   if (av === undefined || bv === undefined)

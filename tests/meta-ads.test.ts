@@ -6105,3 +6105,24 @@ test("Meta CAC/estado: orden numérico y severidad reversible, pendientes al fin
     ) < 0,
   );
 });
+
+test("Meta menú de estado: catálogo de severidad único y filtro persistido validado", async () => {
+  const { cacSeverityOrder, cacStatusNames } =
+    await import("../lib/meta-ads/inventory-cac-policy");
+  const { parseMetaPreferences } = await import("../lib/meta-ads/preferences");
+  assert.deepEqual(
+    cacSeverityOrder.map((s) => cacStatusNames[s]),
+    ["Normal", "Sin ventas", "Revisar", "Grave", "Crítico"],
+  );
+  for (const evaluationStatus of [...cacSeverityOrder, "PENDING"])
+    assert.equal(
+      parseMetaPreferences(JSON.stringify({ evaluationStatus }))
+        .evaluationStatus,
+      evaluationStatus,
+    );
+  assert.equal(
+    parseMetaPreferences(JSON.stringify({ evaluationStatus: "INVALID" }))
+      .evaluationStatus,
+    "",
+  );
+});

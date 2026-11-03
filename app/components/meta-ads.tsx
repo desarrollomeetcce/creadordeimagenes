@@ -6,6 +6,7 @@ import {
 } from "../../lib/meta-ads/display-format";
 import { joinPendingMetaRead } from "../../lib/meta-ads/pending-read";
 import { campaignEvaluationWindow } from "../../lib/meta-ads/campaign-evaluation-window";
+import { MetaEvaluationOrder } from "./meta-evaluation-order";
 import { MetaCampaignAssessment } from "./meta-campaign-assessment";
 import { SheetSearchSelect } from "./sheet-search-select";
 import { MetaWorkspaceSharing } from "./meta-workspace-sharing";
@@ -650,13 +651,13 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
     [q, setQ] = useState(""),
     [search, setSearch] = useState(""),
     [state, setState] = useState("all"),
+    [evaluationStatus, setEvaluationStatus] = useState(""),
     [metric, setMetric] = useState("MESSAGES"),
     [currency, setCurrency] = useState(""),
     [sort, setSort] = useState("7"),
     [analysisPeriod, setAnalysisPeriod] = useState("today"),
     [direction, setDirection] = useState("asc"),
     [age, setAge] = useState(""),
-    [rating, setRating] = useState(""),
     [salesSince, setSalesSince] = useState(""),
     [since, setSince] = useState(""),
     [until, setUntil] = useState(""),
@@ -890,8 +891,8 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
       setCurrency("");
       setAge("");
       setState("all");
+      setEvaluationStatus("");
       setMetric("MESSAGES");
-      setRating("");
       setAliasFilter("");
       setCountryFilter("");
       setQ("");
@@ -960,13 +961,13 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
     setQ(p.q);
     setSearch(p.q);
     setState(p.state);
+    setEvaluationStatus(p.evaluationStatus);
     setMetric(p.metric);
     setCurrency(p.currency);
     setSort(p.sort);
     setAnalysisPeriod(p.analysisPeriod);
     setDirection(p.direction);
     setAge(p.age);
-    setRating(p.rating);
     setSalesSince(p.salesSince);
     setSince(p.since);
     setUntil(p.until);
@@ -1015,13 +1016,13 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
           aliasFilter,
           countryFilter,
           state,
+          evaluationStatus,
           metric,
           currency,
           sort,
           analysisPeriod,
           direction,
           age,
-          rating,
           salesSince,
           since,
           until,
@@ -1056,13 +1057,13 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
     aliasFilter,
     countryFilter,
     state,
+    evaluationStatus,
     metric,
     currency,
     sort,
     analysisPeriod,
     direction,
     age,
-    rating,
     salesSince,
     since,
     until,
@@ -1224,6 +1225,7 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
   const campaignScopeKey = level === "campaign" ? "" : campaignScope.join(",");
   const adsetScopeKey = level === "ad" ? adsetScope.join(",") : "";
   const serial = useRef(0);
+  const summaryScope = useRef("");
   const syncVersions = useRef(new Map<string, string | null>());
   const historicalVersions = useRef(new Map<string, number>());
   const analyticsTab = ["panel", "alerts"].includes(tab);
@@ -1323,7 +1325,34 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
     const current = ++serial.current;
     void (async () => {
       setLoading(true);
-      setSummary(null);
+      const summaryKey = JSON.stringify([
+        tab,
+        level,
+        accountKey,
+        visibleAccountsKey,
+        business,
+        campaign,
+        adset,
+        campaignScopeKey,
+        adsetScopeKey,
+        search,
+        aliasFilter,
+        countryFilter,
+        state,
+        evaluationStatus,
+        metric,
+        currency,
+        age,
+        salesSince,
+        analysisPeriod,
+        calendar,
+        since,
+        until,
+        revision,
+        summarySelectionKey,
+      ]);
+      const withSummary = summaryScope.current !== summaryKey;
+      if (withSummary) setSummary(null);
       const p = new URLSearchParams({
         level,
         accounts: accountKey,
@@ -1336,16 +1365,17 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
         alias: aliasFilter,
         country: countryFilter,
         state,
+        evaluationStatus,
         metric,
         currency,
         sort,
         direction,
         age,
-        rating: tab === "alerts" ? "alerts" : rating,
+        rating: tab === "alerts" ? "alerts" : "",
         ranking: "0",
         page: String(page),
         limit: "25",
-        summary: "1",
+        summary: withSummary ? "1" : "0",
         salesSince,
         analysisPeriod: calendar ? "custom" : analysisPeriod,
         summarySelection: summarySelectionKey,
@@ -1358,7 +1388,10 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
         .then((data) => {
           if (serial.current === current) {
             setItems(data.items);
-            setSummary(data.summary ?? null);
+            if (withSummary) {
+              setSummary(data.summary ?? null);
+              summaryScope.current = summaryKey;
+            }
             setTotal(data.total);
             setLimited(data.limited);
           }
@@ -1394,12 +1427,12 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
     aliasFilter,
     countryFilter,
     state,
+    evaluationStatus,
     metric,
     currency,
     sort,
     direction,
     age,
-    rating,
     page,
     calendar,
     salesSince,
@@ -1699,26 +1732,19 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
       setDirection(sort === id && direction === "asc" ? "desc" : "asc");
     });
   const evaluationOrderControls = () => (
-    <div
-      className="meta-evaluation-order"
-      role="group"
-      aria-label="Ordenar evaluación"
-    >
-      {[
-        ["cac", "CAC"],
-        ["evaluation", "Estado"],
-      ].map(([id, label]) => (
-        <MetaCostButton
-          key={id}
-          id={id}
-          label={label}
-          value={sort}
-          direction={direction}
-          calendar={!!calendar}
-          onChange={orderByCost}
-        />
-      ))}
-    </div>
+    <MetaEvaluationOrder
+      sort={sort}
+      direction={direction}
+      status={evaluationStatus}
+      onStatus={(value) => resetPage(() => setEvaluationStatus(value))}
+      onOrder={(value) =>
+        resetPage(() => {
+          setSort("evaluation");
+          setDirection(value);
+        })
+      }
+      onCac={() => orderByCost("cac")}
+    />
   );
   const bulkAliasControl = () => (
     <>
@@ -3369,22 +3395,6 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
                   />
 
                   <label>
-                    Evaluación
-                    <select
-                      value={rating}
-                      onChange={(e) =>
-                        resetPage(() => setRating(e.target.value))
-                      }
-                    >
-                      <option value="">Todas</option>
-                      {Object.entries(ratings).map(([id, label]) => (
-                        <option key={id} value={id}>
-                          {label}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <label>
                     Buscar por palabra
                     <input
                       type="search"
@@ -3511,13 +3521,13 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
                   <div className="meta-summary-date">
                     <MetaSalesCounter
                       sales={summary?.sales}
-                      loading={loading}
+                      loading={loading && !summary}
                       manualSince={salesSince}
                       onSinceChange={setSalesSince}
                     />
                     <MetaSummaryCounters
                       summary={summary}
-                      loading={loading}
+                      loading={loading && !summary}
                       compact
                     />
                     {analysisControl()}

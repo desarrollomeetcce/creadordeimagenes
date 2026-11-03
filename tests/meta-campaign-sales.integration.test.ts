@@ -530,6 +530,55 @@ test("Campañas: períodos de ventas locales, fuentes canónicas acotadas y anun
           }),
         );
         assert.equal(historical.items[0].id, orderIds.at(-1));
+        for (const [status, expected] of [
+          ["WITHIN", 1],
+          ["ALERT", 1],
+          ["SEVERE", 1],
+          ["CRITICAL", 9],
+          ["TESTING", 0],
+          ["PENDING", 3],
+        ] as const) {
+          const report = await dashboard(
+            viewer,
+            new URLSearchParams({
+              accounts: accountId,
+              level: "campaign",
+              sort: "evaluation",
+              direction: "desc",
+              evaluationStatus: status,
+              analysisPeriod: "today",
+              summary: "1",
+            }),
+          );
+          assert.equal(report.total, expected, status);
+          assert.equal(report.summary?.objects, expected, status);
+          assert(
+            report.items.every(
+              (o) => (o as any).periods["7"].sales.status === status,
+            ),
+          );
+          if (status === "CRITICAL")
+            assert.equal(report.summary?.sales?.total, 63);
+        }
+        const noSummary = await dashboard(
+          viewer,
+          new URLSearchParams({
+            accounts: accountId,
+            level: "campaign",
+            summary: "0",
+            sort: "cac",
+          }),
+        );
+        assert(!("summary" in noSummary));
+        await assert.rejects(
+          dashboard(
+            viewer,
+            new URLSearchParams({
+              accounts: accountId,
+              evaluationStatus: "INVALID",
+            }),
+          ),
+        );
       },
     );
   } finally {

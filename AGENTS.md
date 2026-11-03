@@ -1,5 +1,9 @@
 # Instrucciones para desarrollo
 
+- Estado en la fila de orden abre menú de filtro CAC y orden por criticidad; usar catálogo único cacSeverityOrder/cacStatusNames. Filtrar antes de paginar y calcular resumen con el mismo ámbito. Orden/paginación reutilizan resumen solo si todas sus entradas y revisión coinciden, sin TTL; filtros/fecha/cuentas/selección/revisión lo invalidan. Proteger viewport también en encabezados de tabla/menú; no desplazar scroll al responder.
+
+- Rendimiento Meta no expone filtro de Evaluación ni restaura/envía ratings guardados de ese control retirado; Alertas conserva su ámbito explícito. La evaluación visible y orden CAC/Estado continúan. Resumen/fecha/acciones compactos en una fila de escritorio, inventario al final; móvil puede adaptar sin desbordar.
+
 - Orden Meta por CAC/estado: usar el mismo campaignEvaluationWindow visible y ordenar todos los candidatos antes de paginar. Ausencias/compartidas al final, CAC separado por moneda. Solo al pedir ese orden, lectura canónica agrupada y acotada al período reciente; no Graph ni una consulta por campaña. Asignar inventario permanece junto a Sincronización y conserva autorización/selección.
 
 - Histórico diario Meta: campañas ofrecen ventas en ambos ejes del único gráfico (por defecto barras de ventas y línea de gasto Meta por día). Unir fechas Meta/ventas, conservar ausencia frente a cero y marcar parciales/compartidas; no atribuir ventas a anuncios. Reutilizar el GET existente: cambiar ejes no consulta; memorizar layout/formatos para interacción. Mantener etiquetas/unidades personalizadas de otros consumidores.

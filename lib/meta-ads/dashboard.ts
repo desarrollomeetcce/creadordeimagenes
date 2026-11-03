@@ -8,6 +8,7 @@ import { validSalesDate } from "./registered-sales";
 import { metaSummary } from "./summary";
 import { compareMetaItems, compareCampaignEvaluations } from "./order";
 import { campaignEvaluationWindow } from "./campaign-evaluation-window";
+import { cacStatusNames } from "./inventory-cac-policy";
 import { focusedReportDay } from "./focused-labels";
 import { createHash } from "node:crypto";
 import { insightSummaries } from "./insight-cache";
@@ -551,6 +552,11 @@ export async function dashboard(actor: Actor, params: URLSearchParams) {
               ? o.ageDays > 15 && o.ageDays <= 30
               : o.ageDays > 30),
     );
+  const evaluationStatus = params.get("evaluationStatus") ?? "";
+  demand(
+    !evaluationStatus || Object.hasOwn(cacStatusNames, evaluationStatus),
+    "Estado de evaluación inválido.",
+  );
   const sort = params.get("sort") ?? "7",
     direction = params.get("direction") === "desc" ? -1 : 1;
   const excludedForRanking =
@@ -569,48 +575,9 @@ export async function dashboard(actor: Actor, params: URLSearchParams) {
         (o.periods[sort] ?? o.periods["7"]).results >= o.minResults &&
         (o.periods[sort] ?? o.periods["7"]).cost !== null,
     );
-  let summary;
-  if (params.get("summary") === "1") {
-    const computedFilters =
-      state === "campaign-active" ||
-      hasFilter("delivery") ||
-      !!params.get("rating") ||
-      !!age ||
-      params.get("ranking") === "1";
-    // Full catalogue scope can exceed the table's safety cap. Only derived filters need its calculated rows.
-    let refs =
-      limited && !computedFilters
-        ? await db.metaAdObject.findMany({
-            where,
-            select: {
-              id: true,
-              accountId: true,
-              level: true,
-              campaignId: true,
-            },
-          })
-        : items;
-    if (params.get("currency"))
-      refs = refs.filter(
-        (o) =>
-          scoped.find((a) => a.id === o.accountId)?.currency ===
-          params.get("currency"),
-      );
-    if (summarySelection.length)
-      refs = refs.filter((o) => summarySelection.includes(o.id));
-    summary = await metaSummary(
-      refs,
-      scoped,
-      analysisPeriod,
-      customSince,
-      customUntil,
-      summarySelection.length > 0,
-      limited && computedFilters,
-    );
-  }
   if (
     level === "campaign" &&
-    (sort === "cac" || sort === "evaluation") &&
+    (sort === "cac" || sort === "evaluation" || !!evaluationStatus) &&
     items.length
   ) {
     // Explicit evaluation sorting needs all candidates before pagination. Read one
@@ -677,27 +644,74 @@ export async function dashboard(actor: Actor, params: URLSearchParams) {
         ];
       }),
     );
-    items.sort(
-      (a, b) =>
-        compareCampaignEvaluations(
-          evaluations.get(a.id)!,
-          evaluations.get(b.id)!,
-          sort,
-          direction,
-        ) || a.id.localeCompare(b.id),
-    );
+    if (evaluationStatus)
+      items = items.filter(
+        (o) => evaluations.get(o.id)?.status === evaluationStatus,
+      );
+    if (sort === "cac" || sort === "evaluation")
+      items.sort(
+        (a, b) =>
+          compareCampaignEvaluations(
+            evaluations.get(a.id)!,
+            evaluations.get(b.id)!,
+            sort,
+            direction,
+          ) || a.id.localeCompare(b.id),
+      );
+    else items.sort((a, b) => compareMetaItems(a, b, sort, direction));
   } else items.sort((a, b) => compareMetaItems(a, b, sort, direction));
+  let summary;
+  if (params.get("summary") === "1") {
+    const computedFilters =
+      state === "campaign-active" ||
+      hasFilter("delivery") ||
+      !!params.get("rating") ||
+      !!evaluationStatus ||
+      !!age ||
+      params.get("ranking") === "1";
+    // Full catalogue scope can exceed the table's safety cap. Only derived filters need its calculated rows.
+    let refs =
+      limited && !computedFilters
+        ? await db.metaAdObject.findMany({
+            where,
+            select: {
+              id: true,
+              accountId: true,
+              level: true,
+              campaignId: true,
+            },
+          })
+        : items;
+    if (params.get("currency"))
+      refs = refs.filter(
+        (o) =>
+          scoped.find((a) => a.id === o.accountId)?.currency ===
+          params.get("currency"),
+      );
+    if (summarySelection.length)
+      refs = refs.filter((o) => summarySelection.includes(o.id));
+    summary = await metaSummary(
+      refs,
+      scoped,
+      analysisPeriod,
+      customSince,
+      customUntil,
+      summarySelection.length > 0,
+      limited && computedFilters,
+    );
+  }
   const page = Math.max(1, Math.min(10000, Number(params.get("page")) || 1)),
     limit = Math.max(10, Math.min(100, Number(params.get("limit")) || 25));
   const pageItems = items.slice((page - 1) * limit, page * limit);
   let summaryCampaignIds: string[] = [];
   if (summary) {
-    let refs = limited
-      ? await db.metaAdObject.findMany({
-          where,
-          select: { id: true, level: true, campaignId: true },
-        })
-      : items;
+    let refs =
+      limited && !evaluationStatus
+        ? await db.metaAdObject.findMany({
+            where,
+            select: { id: true, level: true, campaignId: true },
+          })
+        : items;
     if (summarySelection.length)
       refs = refs.filter((o) => summarySelection.includes(o.id));
     summaryCampaignIds = [

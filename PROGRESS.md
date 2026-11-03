@@ -1,5 +1,21 @@
 # Avance por fases · continuación del desarrollo
 
+## Actualización · menú Estado, carga y pantalla estables (2026-11-03)
+
+Estado, junto a CAC, abre un menú para mostrar Todos, Crítico, Grave, Revisar, Sin ventas, Normal o Datos pendientes y ordenar Crítico → Normal / Normal → Crítico. Un catálogo central define la criticidad; pendientes quedan al final. El filtro se aplica sobre todos los candidatos antes de paginar y el resumen se calcula con las campañas filtradas. Se conservan ventana reciente, monedas, parciales y vínculos compartidos. El selector superior Evaluación permanece retirado.
+
+Ordenar o paginar con el mismo ámbito reutiliza el resumen ya cargado y pide summary=0; cambiar filtro/fecha/cuentas/selección/revisión solicita summary=1. No hay TTL de métricas ni nuevas consultas Graph. Los contadores no se sustituyen por guiones al ordenar. La protección de altura incluye los botones del encabezado y el menú, evitando saltos verticales u horizontales al responder o reducir resultados. Fila de acciones compacta, inventario al final.
+
+Verificación final: 273 unitarios, 7 integraciones, typecheck/build y cinco comprobaciones de navegador con 37 campañas sintéticas, respuestas demoradas, paginación, filtros y refresco explícito. Todos correctos; fixture retirado sin tocar datos reales. Publicación Git/Vercel verificable; Hostinger requiere acceso directo para confirmar recepción.
+
+
+## Actualización · retirar filtro Evaluación y compactar fila de acciones (2026-11-03)
+
+Se elimina el selector Evaluación de Rendimiento y su estado local/persistido; un rating de preferencias antiguas no sigue filtrando silenciosamente. Alertas mantiene su ámbito propio y continúan la evaluación por campaña y botones de orden CAC/Estado. La cuadrícula superior pasa a cinco campos más acciones.
+
+En escritorio desde 1400px se compactan fecha, contadores y botones para mantener resumen, actualización, sincronización e inventario en una sola fila, con inventario al final. Móvil conserva adaptación. Sin cambios de endpoints, consultas, sincronización ni datos. Typecheck/build y 272 unitarios correctos; navegador verifica preferencias antiguas, evaluación/orden conservados, una fila a 1400/1530px y móvil. Código y despliegue automático se verifican aparte de Hostinger, sin acceso directo al VPS.
+
+
 ## Actualización · ordenar campañas por CAC y estado (2026-11-03)
 
 CAC y Estado con flechas reemplazan Asignar inventario junto a Desde el inicio, tanto en tabla como en tarjetas. El botón de asignación pasa a la fila de actualización, inmediatamente después de Sincronización, manteniendo selección y permisos. Los órdenes son reversibles y persistidos; se aplican a todos los candidatos filtrados antes de paginar, sin prioridad publicitaria que oculte campañas al ordenar la evaluación. Usan la misma ventana reciente que la evaluación visible, mantienen CAC por moneda y valores pendientes al final.
