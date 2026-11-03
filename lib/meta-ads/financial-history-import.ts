@@ -5,6 +5,7 @@ import { db } from "../db";
 import { demand } from "../errors";
 import { ownerOnly } from "../auth";
 import { recordActivity } from "../activity";
+import { historyName } from "./history-matching";
 import { categoryKey } from "./category-paste";
 import { countryName, isCountryCode } from "./countries";
 import { assertUnlinkedColumns } from "./column-link-policy";
@@ -119,6 +120,7 @@ const choicesSchema = z
       .max(100),
     aliases: z.record(z.string(), z.string()).default({}),
     people: z.record(z.string(), z.string()).default({}),
+    catalog: z.record(z.string(), z.string()).default({}),
   })
   .strict();
 const inputSchema = z
@@ -135,7 +137,11 @@ const requestDigest = (b: z.infer<typeof inputSchema>) =>
   hash({
     file: b.file,
     choices: {
-      ...b.choices,
+      ...Object.fromEntries(
+        Object.entries(b.choices).filter(
+          ([k, v]) => k !== "catalog" || Object.keys(v as object).length > 0,
+        ),
+      ),
       tables: [...b.choices.tables].sort((a, b) =>
         a.country.localeCompare(b.country),
       ),
@@ -185,7 +191,7 @@ export async function historyImportOptions(u: Actor) {
       orderBy: { createdAt: "asc" },
     }),
     db.metaAlias.findMany({
-      select: { id: true, name: true, tableId: true },
+      select: { id: true, name: true, tableId: true, inventorySheetId: true },
       orderBy: { name: "asc" },
     }),
   ]);
@@ -194,7 +200,12 @@ export async function historyImportOptions(u: Actor) {
     select: { id: true, name: true, sheetId: true },
     orderBy: { name: "asc" },
   });
-  return { tables, sheets, aliases, people };
+  const items = await db.metaInventoryItem.findMany({
+    where: { sheet: { archivedAt: null } },
+    select: { id: true, name: true, sheetId: true },
+    orderBy: { name: "asc" },
+  });
+  return { tables, sheets, aliases, people, items };
 }
 async function plan(tx: Tx, u: Actor, raw: unknown) {
   await authorized(u, tx);
@@ -330,6 +341,28 @@ async function plan(tx: Tx, u: Actor, raw: unknown) {
       orderBy: [{ tableId: "asc" }, { country: "asc" }, { day: "asc" }],
     }),
   ]);
+  const catalogAliases = Object.values(choices.catalog).some((id) =>
+    id.startsWith("alias:"),
+  )
+    ? await tx.metaAlias.findMany({
+        where: { inventorySheetId: choices.inventoryListId },
+        select: { id: true, name: true },
+        orderBy: { id: "asc" },
+      })
+    : [];
+  const catalogName = (ref: string) => {
+    const found = ref.startsWith("item:")
+      ? items.find((i) => i.id === ref.slice(5))
+      : ref.startsWith("alias:")
+        ? catalogAliases.find((a) => a.id === ref.slice(6))
+        : undefined;
+    demand(
+      found,
+      "La ficha de catálogo elegida ya no pertenece al inventario.",
+      409,
+    );
+    return found.name;
+  };
   const aliasByKey = new Map<string, (typeof aliases)[number]>(),
     conflicts: {
       label: string;
@@ -345,7 +378,14 @@ async function plan(tx: Tx, u: Actor, raw: unknown) {
   for (const r of f.diplomas) {
     const k = r.country + "|" + categoryKey(r.name);
     if (aliasByKey.has(k) || freshAliases.has(k)) continue;
-    const selected = choices.aliases[k];
+    const selected = choices.aliases[k],
+      catalogRef = choices.catalog[k];
+    demand(
+      !(selected && catalogRef),
+      "Elige una sola equivalencia por diplomado.",
+    );
+    const canonicalName = catalogRef ? catalogName(catalogRef) : r.name;
+    if (catalogRef) usedOverrides.add(k);
     let a = selected
       ? aliases.find(
           (a) => a.id === selected && a.tableId === target.get(r.country),
@@ -362,7 +402,9 @@ async function plan(tx: Tx, u: Actor, raw: unknown) {
       const matches = aliases.filter(
         (a) =>
           a.tableId === target.get(r.country) &&
-          categoryKey(a.name) === categoryKey(r.name),
+          (catalogRef
+            ? historyName(a.name) === historyName(canonicalName)
+            : categoryKey(a.name) === categoryKey(canonicalName)),
       );
       demand(
         matches.length < 2,
@@ -374,20 +416,27 @@ async function plan(tx: Tx, u: Actor, raw: unknown) {
     if (a) aliasByKey.set(k, a);
     else
       freshAliases.set(k, {
-        name: r.name,
+        name: canonicalName,
         country: r.country,
         table: target.get(r.country)!,
       });
   }
   demand(
-    Object.keys(choices.aliases).every((k) => usedOverrides.has(k)),
+    [...Object.keys(choices.aliases), ...Object.keys(choices.catalog)].every(
+      (k) => usedOverrides.has(k),
+    ),
     "Hay equivalencias ajenas al archivo.",
   );
   const resolved = new Map<string, HistoryFile["diplomas"][number]>();
   for (const r of f.diplomas) {
     const a = aliasByKey.get(r.country + "|" + categoryKey(r.name)),
       key = JSON.stringify([
-        a?.id ?? r.country + "|" + categoryKey(r.name),
+        a?.id ??
+          r.country +
+            "|" +
+            categoryKey(
+              freshAliases.get(r.country + "|" + categoryKey(r.name))!.name,
+            ),
         r.country,
         r.day,
       ]);
@@ -402,7 +451,13 @@ async function plan(tx: Tx, u: Actor, raw: unknown) {
   }
   const resolvedDiplomas = [...resolved.values()];
   demand(
-    (await tx.metaAlias.count()) + freshAliases.size <= 1500,
+    (await tx.metaAlias.count()) +
+      new Set(
+        [...freshAliases.values()].map(
+          (a) => a.table + "|" + categoryKey(a.name),
+        ),
+      ).size <=
+      1500,
     "El catálogo supera 1500 fichas; divide o vincula las equivalencias.",
   );
   const rowFor = (r: { country: string; name: string }) => {
@@ -526,6 +581,7 @@ async function plan(tx: Tx, u: Actor, raw: unknown) {
       aliases,
       people,
       items,
+      catalogAliases,
       sheets: sheets.map((s) => ({
         id: s.id,
         revision: s.revision,
@@ -617,11 +673,56 @@ async function plan(tx: Tx, u: Actor, raw: unknown) {
     newTables: choices.tables
       .filter((r) => !r.tableId)
       .map((r) => countryName(r.country)),
-    newDiplomas: [...freshAliases.values()],
+    newDiplomas: [
+      ...new Map(
+        [...freshAliases.values()].map((a) => [
+          a.table + "|" + categoryKey(a.name),
+          a,
+        ]),
+      ).values(),
+    ],
     newAdvisors: personNames.filter((n) => !personFor(n)),
     conflicts,
   };
+  const resolvedFingerprint = (
+    materializedAliases?: Map<string, string>,
+    materializedPeople?: Map<string, string>,
+  ) =>
+    hash({
+      file: f,
+      lists: [
+        choices.inventoryListId,
+        choices.advisorListId,
+        choices.totalsListId,
+      ],
+      tables: [...target].sort(),
+      diplomas: [
+        ...new Map(
+          f.diplomas.map((r) => {
+            const k = r.country + "|" + categoryKey(r.name);
+            return [
+              k,
+              materializedAliases?.get(k) ??
+                aliasByKey.get(k)?.id ??
+                "new:" +
+                  r.country +
+                  ":" +
+                  categoryKey(freshAliases.get(k)!.name),
+            ];
+          }),
+        ).entries(),
+      ].sort(),
+      people: personNames
+        .map((n) => [
+          categoryKey(n),
+          materializedPeople?.get(categoryKey(n)) ??
+            personFor(n)?.id ??
+            "new:" + categoryKey(n),
+        ])
+        .sort(),
+    });
   return {
+    resolvedFingerprint,
     b,
     f,
     choices,
@@ -661,6 +762,21 @@ export async function previewHistoryImport(u: Actor, raw: unknown) {
           previous: old,
         };
       const p = await plan(tx, u, raw);
+      const previous = await tx.metaFinancialHistoryImport.findFirst({
+        where: {
+          summary: {
+            path: ["resolvedFingerprint"],
+            equals: p.resolvedFingerprint(),
+          },
+        },
+        select: { id: true, summary: true },
+      });
+      if (previous)
+        return {
+          token: "",
+          summary: previous.summary as unknown as typeof p.summary,
+          previous,
+        };
       return { token: p.token, summary: p.summary, previous: null };
     },
     { timeout: 60000 },
@@ -679,6 +795,16 @@ export async function commitHistoryImport(u: Actor, raw: unknown) {
         });
       if (old) return { ...old, reused: true };
       const p = await plan(tx, u, raw);
+      const previous = await tx.metaFinancialHistoryImport.findFirst({
+        where: {
+          summary: {
+            path: ["resolvedFingerprint"],
+            equals: p.resolvedFingerprint(),
+          },
+        },
+        select: { id: true, summary: true },
+      });
+      if (previous) return { ...previous, reused: true };
       demand(
         p.b.token === p.token,
         "Los datos de destino cambiaron. Revisa una nueva vista previa.",
@@ -717,7 +843,19 @@ export async function commitHistoryImport(u: Actor, raw: unknown) {
         }
       const aliases = new Map([...p.aliasByKey].map(([k, a]) => [k, a.id]));
       const itemNames = new Set(p.items.map((i) => categoryKey(i.name)));
+      const createdAliases = new Map<string, string>();
       for (const [key, a] of p.freshAliases) {
+        const canonical = p.target.get(a.country)! + "|" + categoryKey(a.name);
+        if (createdAliases.has(canonical)) {
+          const aliasId = createdAliases.get(canonical)!;
+          aliases.set(key, aliasId);
+          await tx.metaEffectivenessState.upsert({
+            where: { aliasId_country: { aliasId, country: a.country } },
+            create: { aliasId, country: a.country, active: false },
+            update: {},
+          });
+          continue;
+        }
         if (!itemNames.has(categoryKey(a.name))) {
           await tx.metaInventoryItem.create({
             data: { sheetId: p.choices.inventoryListId, name: a.name },
@@ -732,6 +870,7 @@ export async function commitHistoryImport(u: Actor, raw: unknown) {
           },
         });
         aliases.set(key, alias.id);
+        createdAliases.set(canonical, alias.id);
         await tx.metaEffectivenessState.create({
           data: { aliasId: alias.id, country: a.country, active: false },
         });
@@ -980,6 +1119,7 @@ export async function commitHistoryImport(u: Actor, raw: unknown) {
       const finalSummary = {
         ...p.summary,
         tableIds: [...new Set(p.target.values())],
+        resolvedFingerprint: p.resolvedFingerprint(aliases, personMap),
       };
       await tx.metaFinancialHistoryImport.update({
         where: { id: batch.id },

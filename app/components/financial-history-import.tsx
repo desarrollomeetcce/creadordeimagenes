@@ -1,23 +1,15 @@
 "use client";
-import { useContext, useEffect, useRef, useState } from "react";
+import { useContext, useEffect, useMemo, useRef, useState } from "react";
 import { CurrentUserId } from "./role-guide";
 import { categoryKey } from "../../lib/meta-ads/category-paste";
 import { countryName } from "../../lib/meta-ads/countries";
 import type { HistoryFile } from "../../lib/meta-ads/financial-history-import";
-type Options = {
-  people: { id: string; name: string; sheetId: string }[];
-  tables: { id: string; name: string; defaultCountry: string }[];
-  sheets: { id: string; name: string; kind: string }[];
-  aliases: { id: string; name: string; tableId: string }[];
-};
-type Choices = {
-  inventoryListId: string;
-  advisorListId: string;
-  totalsListId: string;
-  tables: { country: string; tableId: string | null }[];
-  aliases: Record<string, string>;
-  people: Record<string, string>;
-};
+import {
+  prepareHistoryChoices,
+  historyMatches,
+  type HistoryOptions as Options,
+  type HistoryChoices as Choices,
+} from "../../lib/meta-ads/history-matching";
 function initialChoices(f: HistoryFile, options: Options): Choices {
   if (
     f.version !== 1 ||
@@ -26,35 +18,8 @@ function initialChoices(f: HistoryFile, options: Options): Choices {
     !Array.isArray(f.totals) ||
     !Array.isArray(f.manual)
   )
-    throw Error(
-      "Usa el archivo de importación preparado, no el Excel original.",
-    );
-  const countries = [
-    ...new Set(
-      [...f.diplomas, ...f.advisors, ...f.totals, ...f.manual].map(
-        (r) => r.country,
-      ),
-    ),
-  ].sort();
-  const pick = (kind: string) => {
-    const found = options.sheets.filter((s) => s.kind === kind);
-    return found.length === 1 ? found[0].id : "";
-  };
-  return {
-    inventoryListId: pick("INVENTORY"),
-    advisorListId: pick("ADVISORS"),
-    totalsListId: pick("TOTALS"),
-    tables: countries.map((country) => {
-      const found = options.tables.filter(
-        (t) =>
-          t.defaultCountry === country ||
-          categoryKey(t.name) === categoryKey(countryName(country)),
-      );
-      return { country, tableId: found.length === 1 ? found[0].id : null };
-    }),
-    aliases: {},
-    people: {},
-  };
+    throw Error("Usa el archivo histórico preparado.");
+  return prepareHistoryChoices(f, options);
 }
 async function api(path: string, body?: unknown) {
   const r = await fetch("/api/meta-ads/history-import/" + path, {
@@ -83,7 +48,9 @@ export function FinancialHistoryImport() {
     [busy, setBusy] = useState(false),
     [error, setError] = useState(""),
     [reviewed, setReviewed] = useState(false),
-    [replace, setReplace] = useState(false);
+    [replace, setReplace] = useState(false),
+    [createConfirmed, setCreateConfirmed] = useState<string[]>([]),
+    [adjusting, setAdjusting] = useState(false);
   useEffect(() => {
     if (open) {
       dialog.current?.showModal();
@@ -122,6 +89,7 @@ export function FinancialHistoryImport() {
     void api("prepared", { key: preparedKey })
       .then((f: HistoryFile) => {
         if (!active) return;
+        setCreateConfirmed([]);
         setChoices(initialChoices(f, options));
         setFile(f);
         setPreview(null);
@@ -148,15 +116,42 @@ export function FinancialHistoryImport() {
     setReplace(false);
     setError("");
   }
-  const aliasRows = file
-    ? [
-        ...new Map(
-          file.diplomas.map((r) => [r.country + "|" + categoryKey(r.name), r]),
-        ).entries(),
-      ]
-    : [];
+  const matches = useMemo(
+    () =>
+      file && choices && options
+        ? historyMatches(file, options, choices)
+        : null,
+    [file, choices, options],
+  );
+  const pendingDiplomas =
+    matches?.diplomas.filter(
+      (r) =>
+        !r.selected &&
+        r.candidates.length > 1 &&
+        !createConfirmed.includes(r.key),
+    ) ?? [];
+  const pendingPeople =
+    matches?.people.filter(
+      (r) =>
+        !r.selected &&
+        r.candidates.length > 1 &&
+        !createConfirmed.includes("person:" + r.key),
+    ) ?? [];
+  function reselect(next: Choices) {
+    if (!file || !options) return;
+    setChoices(prepareHistoryChoices(file, options, next));
+    setCreateConfirmed([]);
+    resetPreview();
+  }
   async function run(commit: boolean) {
-    if (!file || !choices || flight.current) return;
+    if (
+      !file ||
+      !choices ||
+      flight.current ||
+      pendingDiplomas.length ||
+      pendingPeople.length
+    )
+      return;
     flight.current = true;
     setBusy(true);
     setError("");
@@ -296,6 +291,7 @@ export function FinancialHistoryImport() {
                         throw Error(
                           "Usa el archivo de importación preparado, no el Excel original.",
                         );
+                      setCreateConfirmed([]);
                       setChoices(initialChoices(f, options));
                       setFile(f);
                     } catch (e) {
@@ -330,14 +326,16 @@ export function FinancialHistoryImport() {
                           value={choices[key]}
                           disabled={busy}
                           onChange={(e) => {
-                            setChoices({
+                            reselect({
                               ...choices,
                               [key]: e.target.value,
                               ...(key === "advisorListId"
                                 ? { people: {} }
                                 : {}),
+                              ...(key === "inventoryListId"
+                                ? { aliases: {}, catalog: {} }
+                                : {}),
                             });
-                            resetPreview();
                           }}
                         >
                           <option value="">Elige una pestaña</option>
@@ -352,8 +350,11 @@ export function FinancialHistoryImport() {
                       </label>
                     ))}
                   </div>
-                  <details open>
-                    <summary>Hojas de destino por país</summary>
+                  <details>
+                    <summary>
+                      Hojas de destino por país · {choices.tables.length}{" "}
+                      preparadas
+                    </summary>
                     <div className="history-import-targets">
                       {choices.tables.map((c) => (
                         <label key={c.country}>
@@ -362,16 +363,22 @@ export function FinancialHistoryImport() {
                             value={c.tableId ?? ""}
                             disabled={busy}
                             onChange={(e) => {
-                              setChoices({
+                              const keep = (map: Record<string, string>) =>
+                                Object.fromEntries(
+                                  Object.entries(map).filter(
+                                    ([k]) => !k.startsWith(c.country + "|"),
+                                  ),
+                                );
+                              reselect({
                                 ...choices,
                                 tables: choices.tables.map((t) =>
                                   t.country === c.country
                                     ? { ...t, tableId: e.target.value || null }
                                     : t,
                                 ),
-                                aliases: {},
+                                aliases: keep(choices.aliases),
+                                catalog: keep(choices.catalog),
                               });
-                              resetPreview();
                             }}
                           >
                             <option value="">
@@ -387,106 +394,323 @@ export function FinancialHistoryImport() {
                       ))}
                     </div>
                   </details>
-                  <details open>
-                    <summary>Equivalencias de asesores</summary>
-                    <p>
-                      Relaciona los nombres completos del archivo con los
-                      asesores que ya tienes para evitar duplicados por
-                      abreviaturas.
-                    </p>
-                    <div className="history-import-targets">
-                      {[...new Set(file.advisors.map((r) => r.name))].map(
-                        (name) => {
-                          const key = categoryKey(name),
-                            people = options.people.filter(
-                              (p) => p.sheetId === choices.advisorListId,
-                            ),
-                            exact = people.find(
-                              (p) => categoryKey(p.name) === key,
-                            );
-                          return (
-                            <label key={key}>
-                              {name}
+                  {matches && (
+                    <>
+                      <p className="history-matching-summary" role="status">
+                        <strong>
+                          Equivalencias preparadas automáticamente
+                        </strong>
+                        <br />
+                        {matches.diplomas.filter((r) => r.selected).length}{" "}
+                        diplomados reconocidos ·{" "}
+                        {matches.people.filter((r) => r.selected).length}{" "}
+                        asesores reconocidos ·{" "}
+                        {pendingDiplomas.length + pendingPeople.length} por
+                        revisar.
+                      </p>
+                      {(pendingDiplomas.length > 0 ||
+                        pendingPeople.length > 0) && (
+                        <section className="history-matching-pending">
+                          <h3>Solo estas coincidencias necesitan revisión</h3>
+                          <p>
+                            Hay varias fichas posibles. Las demás ya están
+                            seleccionadas.
+                          </p>
+                          {pendingDiplomas.map((r) => (
+                            <label key={r.key}>
+                              {r.country} · {r.source}
                               <select
+                                aria-label={
+                                  "Resolver " + r.country + " " + r.source
+                                }
+                                value=""
                                 disabled={busy}
-                                value={choices.people[key] ?? ""}
                                 onChange={(e) => {
-                                  const next = { ...choices.people };
-                                  if (e.target.value)
-                                    next[key] = e.target.value;
-                                  else delete next[key];
-                                  setChoices({ ...choices, people: next });
+                                  if (e.target.value === "__new") {
+                                    setCreateConfirmed((v) => [...v, r.key]);
+                                    resetPreview();
+                                    return;
+                                  }
+                                  const aliases = { ...choices.aliases },
+                                    catalog = { ...choices.catalog };
+                                  delete aliases[r.key];
+                                  delete catalog[r.key];
+                                  const tableId = choices.tables.find(
+                                    (t) => t.country === r.country,
+                                  )?.tableId;
+                                  const local =
+                                    e.target.value.startsWith("alias:") &&
+                                    options.aliases.find(
+                                      (a) =>
+                                        a.id === e.target.value.slice(6) &&
+                                        a.tableId === tableId,
+                                    );
+                                  if (local) aliases[r.key] = local.id;
+                                  else catalog[r.key] = e.target.value;
+                                  setChoices({ ...choices, aliases, catalog });
                                   resetPreview();
                                 }}
                               >
                                 <option value="">
-                                  {exact
-                                    ? "Usar " + exact.name
-                                    : "Crear con este nombre"}
+                                  Elige entre las coincidencias
                                 </option>
-                                {people.map((p) => (
-                                  <option key={p.id} value={p.id}>
-                                    {p.name}
+                                {r.candidates.map((c) => (
+                                  <option key={c.ref} value={c.ref}>
+                                    {c.name}
                                   </option>
                                 ))}
+                                <option value="__new">
+                                  Crear un diplomado diferente con el nombre de
+                                  origen
+                                </option>
                               </select>
                             </label>
-                          );
-                        },
-                      )}
-                    </div>
-                  </details>
-                  <details>
-                    <summary>
-                      Equivalencias de diplomados · revisar nombres abreviados
-                    </summary>
-                    <p>
-                      Elige la ficha existente cuando un nombre abreviado
-                      corresponda a un diplomado con título completo. Sin
-                      equivalencia ni nombre coincidente se creará una ficha con
-                      el nombre del archivo.
-                    </p>
-                    <div className="history-import-aliases">
-                      {aliasRows.map(([key, r]) => {
-                        const tableId = choices.tables.find(
-                            (t) => t.country === r.country,
-                          )?.tableId,
-                          aliases = options.aliases.filter(
-                            (a) => a.tableId === tableId,
-                          ),
-                          exact = aliases.find(
-                            (a) => categoryKey(a.name) === categoryKey(r.name),
-                          );
-                        return (
-                          <label key={key}>
-                            {r.country} · {r.name}
-                            <select
-                              value={choices.aliases[key] ?? ""}
-                              disabled={busy}
-                              onChange={(e) => {
-                                const next = { ...choices.aliases };
-                                if (e.target.value) next[key] = e.target.value;
-                                else delete next[key];
-                                setChoices({ ...choices, aliases: next });
-                                resetPreview();
-                              }}
-                            >
-                              <option value="">
-                                {exact
-                                  ? "Usar " + exact.name
-                                  : "Crear con este nombre"}
-                              </option>
-                              {aliases.map((a) => (
-                                <option key={a.id} value={a.id}>
-                                  {a.name}
+                          ))}
+                          {pendingPeople.map((r) => (
+                            <label key={r.key}>
+                              {r.source}
+                              <select
+                                aria-label={"Resolver asesor " + r.source}
+                                value=""
+                                disabled={busy}
+                                onChange={(e) => {
+                                  if (e.target.value === "__new") {
+                                    setCreateConfirmed((v) => [
+                                      ...v,
+                                      "person:" + r.key,
+                                    ]);
+                                    resetPreview();
+                                    return;
+                                  }
+                                  setChoices({
+                                    ...choices,
+                                    people: {
+                                      ...choices.people,
+                                      [r.key]: e.target.value,
+                                    },
+                                  });
+                                  resetPreview();
+                                }}
+                              >
+                                <option value="">
+                                  Elige entre las coincidencias
                                 </option>
+                                {r.candidates.map((c) => (
+                                  <option key={c.id} value={c.id}>
+                                    {c.name}
+                                  </option>
+                                ))}
+                                <option value="__new">
+                                  Crear otra persona con este nombre
+                                </option>
+                              </select>
+                            </label>
+                          ))}
+                        </section>
+                      )}
+                      <details>
+                        <summary>
+                          Ver diplomados reconocidos y nuevos ·{" "}
+                          {matches.diplomas.length}
+                        </summary>
+                        <div className="history-import-mapping-table">
+                          <table>
+                            <thead>
+                              <tr>
+                                <th>País</th>
+                                <th>Nombre de origen</th>
+                                <th>Diplomado de destino</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {matches.diplomas.map((r) => (
+                                <tr key={r.key}>
+                                  <td>{r.country}</td>
+                                  <td>{r.source}</td>
+                                  <td>
+                                    {r.selected ??
+                                      (r.candidates.length > 1 &&
+                                      !createConfirmed.includes(r.key)
+                                        ? "Por revisar"
+                                        : "Nuevo: " + r.source)}
+                                  </td>
+                                </tr>
                               ))}
-                            </select>
-                          </label>
-                        );
-                      })}
-                    </div>
-                  </details>
+                            </tbody>
+                          </table>
+                        </div>
+                      </details>
+                      <details>
+                        <summary>
+                          Ver asesores reconocidos y nuevos ·{" "}
+                          {matches.people.length}
+                        </summary>
+                        <div className="history-import-mapping-table">
+                          <table>
+                            <thead>
+                              <tr>
+                                <th>Nombre de origen</th>
+                                <th>Asesor de destino</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {matches.people.map((r) => (
+                                <tr key={r.key}>
+                                  <td>{r.source}</td>
+                                  <td>
+                                    {r.selected ??
+                                      (r.candidates.length > 1 &&
+                                      !createConfirmed.includes(
+                                        "person:" + r.key,
+                                      )
+                                        ? "Por revisar"
+                                        : "Nuevo: " + r.source)}
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </details>
+                      <details
+                        onToggle={(e) => setAdjusting(e.currentTarget.open)}
+                      >
+                        <summary>
+                          Ajustar una equivalencia reconocida (opcional)
+                        </summary>
+                        {adjusting && (
+                          <div className="history-import-targets">
+                            {matches.people.map((r) => (
+                              <label key={r.key}>
+                                {r.source}
+                                <select
+                                  aria-label={"Asesor de " + r.source}
+                                  value={choices.people[r.key] ?? ""}
+                                  disabled={busy}
+                                  onChange={(e) => {
+                                    const people = { ...choices.people };
+                                    if (e.target.value)
+                                      people[r.key] = e.target.value;
+                                    else {
+                                      delete people[r.key];
+                                      setCreateConfirmed((v) => [
+                                        ...v,
+                                        "person:" + r.key,
+                                      ]);
+                                    }
+                                    setChoices({ ...choices, people });
+                                    resetPreview();
+                                  }}
+                                >
+                                  <option value="">
+                                    Crear con este nombre
+                                  </option>
+                                  {options.people
+                                    .filter(
+                                      (p) =>
+                                        p.sheetId === choices.advisorListId,
+                                    )
+                                    .map((p) => (
+                                      <option key={p.id} value={p.id}>
+                                        {p.name}
+                                      </option>
+                                    ))}
+                                </select>
+                              </label>
+                            ))}
+                            {matches.diplomas.map((r) => {
+                              const tableId = choices.tables.find(
+                                (t) => t.country === r.country,
+                              )?.tableId;
+                              return (
+                                <label key={r.key}>
+                                  {r.country} · {r.source}
+                                  <select
+                                    aria-label={
+                                      "Diplomado de " +
+                                      r.country +
+                                      " " +
+                                      r.source
+                                    }
+                                    value={
+                                      choices.aliases[r.key]
+                                        ? "local:" + choices.aliases[r.key]
+                                        : (choices.catalog[r.key] ?? "")
+                                    }
+                                    disabled={busy}
+                                    onChange={(e) => {
+                                      const aliases = { ...choices.aliases },
+                                        catalog = { ...choices.catalog };
+                                      delete aliases[r.key];
+                                      delete catalog[r.key];
+                                      if (e.target.value.startsWith("local:"))
+                                        aliases[r.key] =
+                                          e.target.value.slice(6);
+                                      else if (e.target.value)
+                                        catalog[r.key] = e.target.value;
+                                      else
+                                        setCreateConfirmed((v) => [
+                                          ...v,
+                                          r.key,
+                                        ]);
+                                      setChoices({
+                                        ...choices,
+                                        aliases,
+                                        catalog,
+                                      });
+                                      resetPreview();
+                                    }}
+                                  >
+                                    <option value="">
+                                      Crear con este nombre
+                                    </option>
+                                    {options.aliases
+                                      .filter((a) => a.tableId === tableId)
+                                      .map((a) => (
+                                        <option
+                                          key={"local:" + a.id}
+                                          value={"local:" + a.id}
+                                        >
+                                          {a.name}
+                                        </option>
+                                      ))}
+                                    {options.items
+                                      .filter(
+                                        (i) =>
+                                          i.sheetId === choices.inventoryListId,
+                                      )
+                                      .map((i) => (
+                                        <option
+                                          key={"item:" + i.id}
+                                          value={"item:" + i.id}
+                                        >
+                                          {i.name} · catálogo
+                                        </option>
+                                      ))}
+                                    {options.aliases
+                                      .filter(
+                                        (a) =>
+                                          a.inventorySheetId ===
+                                            choices.inventoryListId &&
+                                          a.tableId !== tableId,
+                                      )
+                                      .map((a) => (
+                                        <option
+                                          key={"alias:" + a.id}
+                                          value={"alias:" + a.id}
+                                        >
+                                          {a.name} · catálogo
+                                        </option>
+                                      ))}
+                                  </select>
+                                </label>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </details>
+                    </>
+                  )}
                   <details>
                     <summary>Notas del archivo</summary>
                     <ul>
@@ -499,6 +723,8 @@ export function FinancialHistoryImport() {
                     type="button"
                     disabled={
                       busy ||
+                      pendingDiplomas.length > 0 ||
+                      pendingPeople.length > 0 ||
                       !choices.inventoryListId ||
                       !choices.advisorListId ||
                       !choices.totalsListId
