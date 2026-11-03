@@ -11,7 +11,11 @@ import { facts, day } from "./focused-sync";
 import { writeSyncPage } from "./bulk-sync";
 import { MetaGraphError, requiresMetaReconnect } from "./graph-error";
 import { MetaQuotaWait, metaQuotaScope, recoverMetaQuota } from "./quota";
-import { realtimeCoverage, type RealtimeState } from "./realtime-policy";
+import {
+  realtimeCoverage,
+  statusIsStale,
+  type RealtimeState,
+} from "./realtime-policy";
 const scope = "7d_click,1d_view|impression";
 const schema = z
   .object({
@@ -38,7 +42,13 @@ export async function refreshVisibleMeta(
   );
   const objects = await db.metaAdObject.findMany({
     where: { id: { in: b.objects }, accountId },
-    select: { id: true, level: true },
+    select: {
+      id: true,
+      level: true,
+      status: true,
+      effectiveStatus: true,
+      seenAt: true,
+    },
   });
   demand(
     objects.length === b.objects.length,
@@ -155,13 +165,34 @@ export async function refreshVisibleMeta(
   let statusUpdated = false;
   try {
     const { reader: r } = await reader(a.connectionId, false, true);
-    const response = await r.get("campaigns", {
-      accountId,
-      ids: b.objects,
-      statusOnly: true,
-    });
-    const allowed = new Set(b.objects),
-      seen = new Set<string>();
+    // Reuse only already-verified states within the existing120s freshness window.
+    // The spend report below still runs; stale/missing states and explicit recovery recheck Meta.
+    const stale = objects.filter(
+      (o) =>
+        b.recover ||
+        !o.status ||
+        !o.effectiveStatus ||
+        statusIsStale(o.seenAt, false, at.valueOf()) ||
+        o.seenAt > at,
+    );
+    const allowed = new Set(stale.map((o) => o.id)),
+      seen = new Set(
+        objects.filter((o) => !allowed.has(o.id)).map((o) => o.id),
+      );
+    const response = stale.length
+      ? await r.get("campaigns", {
+          accountId,
+          ids: stale.map((o) => o.id),
+          statusOnly: true,
+        })
+      : { data: [] };
+    const statusAt = new Date(
+      Math.min(
+        ...objects.map((o) =>
+          allowed.has(o.id) ? at.valueOf() : o.seenAt.valueOf(),
+        ),
+      ),
+    ).toISOString();
     for (const row of response.data) {
       const id = String(row.id);
       demand(
@@ -191,7 +222,7 @@ export async function refreshVisibleMeta(
             seenAt: at,
           },
         });
-      const missing = b.objects.filter((id) => !seen.has(id));
+      const missing = stale.map((o) => o.id).filter((id) => !seen.has(id));
       if (missing.length)
         await tx.metaAdObject.updateMany({
           where: { accountId, id: { in: missing }, seenAt: { lte: at } },
@@ -202,14 +233,14 @@ export async function refreshVisibleMeta(
         data: {
           realtimeState: {
             ...s,
-            statusAt: at.toISOString(),
+            statusAt,
             error: null,
             authorizationRequired: false,
           },
         },
       });
     });
-    statusUpdated = true;
+    statusUpdated = stale.length > 0;
     const daily: Record<string, unknown>[] = [];
     for (const level of ["campaign", "adset", "ad"]) {
       const ids = objects
@@ -287,7 +318,7 @@ export async function refreshVisibleMeta(
             quotaScopeHash: s.quotaScopeHash ?? "",
             priorityUntil: new Date(at.getTime() + 90000).toISOString(),
             checkedAt: at.toISOString(),
-            statusAt: at.toISOString(),
+            statusAt,
             since,
             until: today,
             objects: [...seen],
@@ -299,7 +330,7 @@ export async function refreshVisibleMeta(
     });
     return {
       updated: true,
-      statusUpdated: true,
+      statusUpdated,
       covered: true,
       checkedAt: at.toISOString(),
       count: seen.size,

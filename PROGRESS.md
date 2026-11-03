@@ -1,5 +1,16 @@
 # Avance por fases · continuación del desarrollo
 
+## Investigación · repetición de estados en refresco Meta (2026-11-03)
+
+También se verificó la pista del usuario sobre cuentas secundarias: primaryAccountIds pertenece a la agrupación compartida de interfaz; runDueSync y workflow seleccionan por enabled/nextSyncAt, sin filtrar principales. Por tanto, una secundaria habilitada sigue consumiendo Graph aunque se esté viendo Principales. Esto está confirmado en código; no se ha contado cuántas secundarias estaban habilitadas en el VPS. El usuario tiene pendiente decidir si deben quedar solo a petición, sin modificar aún esa configuración global.
+
+Revisión del refresco visible, focused-sync, worker, workflow, cuentas y sync-status: el GET de progreso/directorio consulta DB, no Graph; no es prueba de descargar306 cuentas. Background y visible comparten cuota por app/usuario o token. El refresco visible enviaba hasta25 GET individuales de estados dentro de un POST batch cada ciclo de60s, además del informe de gasto, incluso si el fondo acababa de confirmar esos mismos estados. Es un factor de carga comprobado en código, no prueba de qué solicitud produjo el primer límite en Hostinger. No se dispone de los logs/BD de esa instalación.
+
+Ahora solo se vuelven a pedir estados ausentes o con más de120s, usando la ventana de vigencia ya existente. Se conservan seenAt y la hora real más antigua de los estados, sin rejuvenecerlos al consultar gasto. Gasto hoy/ayer continúa fresco cada ciclo y Comprobar Meta fuerza estados reales. Selección/permisos/revisión/lease, ausencias frente a cero e histórico quedan protegidos. En un ciclo con todos los estados recientes desaparecen25 GET internos; permanece el informe, sin modificar la cadencia del gasto.
+
+284 unitarios,22 integraciones de refresco/recuperación, typecheck/build. Pruebas comprueban solo un GET de informe con estados recientes, timestamps sin cambiar y nuevo GET de estados tras superar120s; token vencido, cambio de revisión, respuesta ajena, recuperación8h y permisos siguen cubiertos. No pruebas con credenciales reales ni cambios de anuncios/ventas. El backoff largo y el ámbito compartido explican propagación/duración; el detonante exacto requiere logs del VPS. Publicación Git/Vercel separada de recepción Hostinger.
+
+
 ## Actualización · recuperar informes tras una pausa guardada (2026-11-03)
 
 La corrección anterior conservaba pausas antiguas de hasta8h y deshabilitaba la acción de actualizar. Comprobar Meta permite ahora una recuperación explícita y acotada de la página visible. Revalida permisos, conexión/revisión, selección y lease antes de tocar la espera. Serializa la liberación de una pausa interna por ámbito compartido (bloqueo884412); espera al menos1min desde el último límite y permite solo una liberación cada15min si el límite vuelve. Conserva contadores de fallos, agenda del histórico, cursores, ventas y anuncios. Si el proveedor vuelve a rechazar, se guarda la nueva pausa. No hay prueba automática de recuperación.

@@ -1,5 +1,12 @@
 # Pruebas y evidencia
 
+## Verificación · estados Meta ya verificados (2026-11-03)
+
+284 unitarios,22 integraciones y typecheck/build correctos. Una segunda lectura permitida con estados de menos de120s consulta únicamente insights; statusUpdated=false, seenAt de cada objeto y statusAt real conservados. Al envejecer los estados vuelve a consultar estados+informe. El gasto mantiene valor y fecha reales, sin cachear respuesta financiera ni permisos. Se mantiene lectura forzada por recuperación explícita y la suite de cuota compartida/Retry-After/autorización/cambio de credencial/respuesta ajena/conservación de agenda.
+
+Auditoría estática confirma que directorio/progreso de cuentas leen DB; el envío de estados seleccionado contiene un GET por objeto dentro del batch. Así, un ciclo con25 estados recientes pasa de25 GET internos+informe a solo informe. Esto no cuantifica el consumo total en producción ni identifica el primer código de límite: faltan logs autenticados de Hostinger. Sin cambios frontend ni esquema, no fixture de navegador adicional ni datos de producción modificados.
+
+
 ## Verificación · recuperación de pausa Meta (2026-11-03)
 
 284 unitarios,20 integraciones (14 de refresco visible,6 de recuperación), typecheck/build y tres controles Chromium correctos. Integración contra base QA aislada verifica pausa interna8h: lectura normal no consulta, recover explícito recupera estados e informes con dos llamadas simuladas, mantiene syncState/nextSyncAt y un segundo clic no consulta. Otra página con error antiguo retoma al desaparecer la pausa compartida. VIEW sigue rechazado antes de leer.

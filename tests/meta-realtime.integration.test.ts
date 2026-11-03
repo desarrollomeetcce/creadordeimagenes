@@ -182,9 +182,15 @@ test("Meta visible: estado actual y gasto breve independientes del histórico", 
     });
   };
   const reset = () =>
-    db.metaAdAccount.update({
-      where: { id: root },
-      data: { realtimeState: {} },
+    db.$transaction(async (tx) => {
+      await tx.metaAdObject.updateMany({
+        where: { accountId: root },
+        data: { seenAt: old },
+      });
+      return tx.metaAdAccount.update({
+        where: { id: root },
+        data: { realtimeState: {} },
+      });
     });
   try {
     await t.test(
@@ -237,6 +243,50 @@ test("Meta visible: estado actual y gasto breve independientes del histórico", 
       assert(r.nextAt);
       assert.equal(calls, n);
     });
+    await t.test(
+      "Estados recientes se reutilizan sin repetir GETs; gasto sigue consultándose",
+      async () => {
+        const before = await db.metaAdObject.findMany({
+          where: { accountId: root },
+          orderBy: { id: "asc" },
+        });
+        await db.metaAdAccount.update({
+          where: { id: root },
+          data: { realtimeState: {} },
+        });
+        const n = calls,
+          r = await refreshVisibleMeta(actor, root, { objects: ids });
+        assert(r.updated);
+        assert.equal(r.statusUpdated, false);
+        assert.equal(calls, n + 1);
+        const after = await db.metaAdObject.findMany({
+          where: { accountId: root },
+          orderBy: { id: "asc" },
+        });
+        assert.deepEqual(
+          after.map((o) => o.seenAt),
+          before.map((o) => o.seenAt),
+        );
+        const saved = await db.metaAdAccount.findUniqueOrThrow({
+          where: { id: root },
+        });
+        assert.equal(
+          (saved.realtimeState as any).statusAt,
+          before[0].seenAt.toISOString(),
+        );
+      },
+    );
+    await t.test(
+      "Estado que supera120s se vuelve a comprobar además del gasto",
+      async () => {
+        await reset();
+        const n = calls;
+        const r = await refreshVisibleMeta(actor, root, { objects: ids });
+        assert(r.updated);
+        assert(r.statusUpdated);
+        assert.equal(calls, n + 2);
+      },
+    );
     await t.test(
       "Visible reads postpone only the saved history tail without Graph or losing its cursor",
       async () => {

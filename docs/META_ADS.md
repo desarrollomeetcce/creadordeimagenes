@@ -1,5 +1,12 @@
 # Meta Ads: consulta y análisis
 
+## Consultas de estados y gasto
+
+El gasto de hoy/ayer se sigue actualizando en cada ciclo visible. Los estados que ya confirmó el fondo o un refresco hace menos de dos minutos se reutilizan con su hora original; los estados faltantes o más antiguos se comprueban otra vez. Comprobar Meta fuerza la comprobación explícita. Consultar gasto no convierte un estado antiguo en recién verificado.
+
+Un envío agrupado de estados contiene un GET por cada elemento; por eso repetirlo para25 filas podía consumir más cuota de lo que aparenta una sola petición HTTP. Los sondeos de progreso consultan nuestra base de datos, no Meta. Las cuentas pueden compartir límite por conexión/usuario; una pausa común no prueba que todas estén descargando su histórico. El origen exacto de un límite requiere su código y registro del servidor.
+
+
 ## Recuperar una pausa guardada
 
 Si aparece Meta en pausa, Comprobar Meta permite comprobar una vez los estados y el gasto de hoy/ayer de la página visible. Sirve para recuperar esperas antiguas retenidas por la app sin reiniciar catálogo o histórico. Si Meta responde, se actualiza la tabla; si rechaza la consulta, se muestra la nueva espera. No se borran ventas, vínculos ni anuncios.
