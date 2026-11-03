@@ -2137,3 +2137,7 @@ Los datos de navegador son sintéticos y se retiran con controles de identidad y
 ### 2026-11-03 · Buscar y cambiar período en Meta ampliado
 
 277/277 unitarias, typecheck y build correctos. Chromium: ampliar no consulta y conserva DOM/selección; palabra PSICOLOGÍA aplica el filtro común con una petición; calendario Ayer cambia rango una vez sin cerrar ampliación y Escape cierra solo calendario; restaurar conserva búsqueda/fechas/selección; móvil390px muestra controles íntegros y calendario dentro del viewport. Cinco comprobaciones, cero errores JS y sin escrituras de usuario/llamadas Graph. Datos sintéticos conservados y retirados con verificaciones de identidad y V/G originales.
+
+### 2026-11-03 · Revisión de refresco visible Meta
+
+277/277 unitarias; meta-realtime.integration10/10; typecheck/build correctos. Chromium con fixture aislada y respuesta HTTP simulada: cobertura completada por otro lector refresca el dashboard una vez, sello repetido no repite lectura; cero lectura adicional de cuentas; reordenar objetos no reinicia consulta Meta; pestaña oculta no consulta y visibilitychange reanuda; statusUpdated refresca tras fallo de informe. Tres comprobaciones, cero errores JS y Graph bloqueado. Integración conserva gasto anterior, cursor histórico, agenda, estados autorizados y rechaza credencial cambiada. Limpieza controlada conserva V10/V21 y G1400.91 originales antes de retirar fixture. No equivale a verificar las credenciales/entrega de la instalación real.

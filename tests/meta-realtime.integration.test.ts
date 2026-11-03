@@ -192,6 +192,9 @@ test("Meta visible: estado actual y gasto breve independientes del histórico", 
       async () => {
         const r = await refreshVisibleMeta(actor, root, { objects: ids });
         assert(r.updated);
+        assert.equal(r.statusUpdated, true);
+        assert.equal(r.covered, true);
+        assert(r.nextAt);
         assert.equal(calls, 2);
         const a = await db.metaAdAccount.findUniqueOrThrow({
           where: { id: root },
@@ -229,6 +232,9 @@ test("Meta visible: estado actual y gasto breve independientes del histórico", 
       const n = calls;
       const r = await refreshVisibleMeta(actor, root, { objects: ids });
       assert(r.waiting);
+      assert.equal(r.covered, true);
+      assert(r.checkedAt);
+      assert(r.nextAt);
       assert.equal(calls, n);
     });
     await t.test(
@@ -328,6 +334,7 @@ test("Meta visible: estado actual y gasto breve independientes del histórico", 
         mode = "report-error";
         const r = await refreshVisibleMeta(actor, root, { objects: ids });
         assert(!r.updated && r.error);
+        assert.equal(r.statusUpdated, true);
         assert.equal(
           (await db.metaAdObject.findUniqueOrThrow({ where: { id: ids[0] } }))
             .status,
@@ -397,6 +404,7 @@ test("Meta visible: estado actual y gasto breve independientes del histórico", 
         });
         const r = await refreshVisibleMeta(actor, root, { objects: ids });
         assert(!r.updated);
+        assert.equal(r.statusUpdated, false);
         assert.match(r.error!, /conexión cambió/i);
         assert.equal(
           (

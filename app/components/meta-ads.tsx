@@ -1662,8 +1662,7 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
   };
   const visibleUpdated = useCallback(() => {
     setRevision((n) => n + 1);
-    void refresh();
-  }, [refresh]);
+  }, []);
   const requestAccountUpdate = (account: Account) =>
     api(`meta-ads/accounts/${account.id}/sync`, "POST", {
       focused: true,

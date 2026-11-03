@@ -4,6 +4,9 @@ import { fetchJsonResponse } from "../../lib/http-response";
 type Target = { id: string; accountId: string };
 type Result = {
   updated: boolean;
+  statusUpdated?: boolean;
+  covered?: boolean;
+  nextAt?: string | null;
   checkedAt?: string | null;
   waiting?: boolean;
   authorizationRequired?: boolean;
@@ -24,19 +27,30 @@ export function MetaVisibleRefresh({
   const [busy, setBusy] = useState(false),
     [notice, setNotice] = useState(""),
     [auth, setAuth] = useState(false),
+    [checkedAt, setCheckedAt] = useState(""),
     running = useRef(false);
   const allowed = new Set(accounts.filter((a) => a.canSync).map((a) => a.id));
   const key = JSON.stringify(
     items
       .filter((o) => allowed.has(o.accountId))
-      .map((o) => [o.accountId, o.id]),
+      .map((o) => [o.accountId, o.id])
+      .sort((a, b) => a[0].localeCompare(b[0]) || a[1].localeCompare(b[1])),
   );
+  const currentKey = useRef(key);
+  currentKey.current = key;
+  const updated = useRef(onUpdated);
+  updated.current = onUpdated;
+  const mounted = useRef(false),
+    timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const refreshRef = useRef<() => Promise<void>>(async () => {});
+  const notified = useRef(new Map<string, string>());
   const refresh = useCallback(async () => {
     if (running.current || document.visibilityState !== "visible") return;
     const pairs = JSON.parse(key) as string[][];
     if (!pairs.length) return;
     running.current = true;
     setBusy(true);
+    let nextAt = Date.now() + 60000;
     let changed = false,
       needsAuth = false,
       latest = "",
@@ -47,6 +61,12 @@ export function MetaVisibleRefresh({
         grouped.set(a, [...(grouped.get(a) ?? []), id]);
       // Sequential accounts share the provider's quota and avoid bursts across a large selection.
       for (const [accountId, objects] of grouped) {
+        if (
+          !mounted.current ||
+          currentKey.current !== key ||
+          document.visibilityState !== "visible"
+        )
+          break;
         try {
           const r: Result = await fetchJsonResponse(
             "/api/meta-ads/accounts/" + accountId + "/refresh-visible",
@@ -56,11 +76,29 @@ export function MetaVisibleRefresh({
               body: JSON.stringify({ objects }),
             },
           );
-          changed ||= r.updated;
+          changed ||=
+            r.updated ||
+            !!r.statusUpdated ||
+            !!(
+              r.covered &&
+              r.checkedAt &&
+              notified.current.get(accountId) !== r.checkedAt
+            );
+          if (r.checkedAt && (r.updated || r.covered)) {
+            if (
+              notified.current.size >= 1000 &&
+              !notified.current.has(accountId)
+            )
+              notified.current.clear();
+            notified.current.set(accountId, r.checkedAt);
+          }
+          const due = r.nextAt ? Date.parse(r.nextAt) : NaN;
+          if (Number.isFinite(due)) nextAt = Math.min(nextAt, due + 100);
           needsAuth ||= !!r.authorizationRequired;
-          if (r.checkedAt && r.checkedAt > latest) latest = r.checkedAt;
+          if ((r.updated || r.covered) && r.checkedAt && r.checkedAt > latest)
+            latest = r.checkedAt;
           if (r.error) errors.push(r.error);
-          else if (r.waiting && !r.checkedAt)
+          else if (r.waiting && !r.covered)
             errors.push("Esperando el turno de actualización de Meta.");
         } catch (e) {
           errors.push(
@@ -70,7 +108,9 @@ export function MetaVisibleRefresh({
           );
         }
       }
+      if (!mounted.current || currentKey.current !== key) return;
       setAuth(needsAuth);
+      if (latest) setCheckedAt(latest);
       setNotice(
         errors.length
           ? errors[0]
@@ -81,25 +121,41 @@ export function MetaVisibleRefresh({
               })
             : "Esperando la próxima lectura.",
       );
-      if (changed) onUpdated();
+      if (changed) updated.current();
     } finally {
       running.current = false;
-      setBusy(false);
+      if (mounted.current) {
+        setBusy(false);
+        if (timer.current) clearTimeout(timer.current);
+        if (document.visibilityState === "visible")
+          timer.current = setTimeout(
+            () => void refreshRef.current(),
+            currentKey.current !== key
+              ? 0
+              : Math.max(1000, Math.min(60000, nextAt - Date.now())),
+          );
+      }
     }
-  }, [key, onUpdated]);
+  }, [key]);
+  refreshRef.current = refresh;
   useEffect(() => {
+    mounted.current = true;
+    setCheckedAt("");
+    setNotice("");
     const tick = () => {
-      void refresh();
+      void refreshRef.current();
     };
-    const first = setTimeout(tick, 1000),
-      timer = setInterval(tick, 60000);
+    if (timer.current) clearTimeout(timer.current);
+    timer.current = setTimeout(tick, 0);
     window.addEventListener("focus", tick);
+    document.addEventListener("visibilitychange", tick);
     return () => {
-      clearTimeout(first);
-      clearInterval(timer);
+      mounted.current = false;
+      if (timer.current) clearTimeout(timer.current);
       window.removeEventListener("focus", tick);
+      document.removeEventListener("visibilitychange", tick);
     };
-  }, [refresh]);
+  }, [key]);
   if (key === "[]") return null;
   return (
     <section
@@ -110,9 +166,19 @@ export function MetaVisibleRefresh({
         type="button"
         disabled={busy}
         onClick={() => void refresh()}
-        title="Consulta estados y gasto de hoy y ayer de los elementos visibles. No espera al histórico ni cambia las campañas."
+        title={
+          (notice ? notice + ". " : "") +
+          "Consulta estados y gasto de hoy y ayer de los elementos visibles cada 60 s. No espera al histórico ni cambia las campañas."
+        }
       >
-        {busy ? "↻ Consultando Meta…" : "↻ Actualizar vista"}
+        {busy
+          ? "↻ Consultando Meta…"
+          : checkedAt
+            ? "↻ Meta · " +
+              new Date(checkedAt).toLocaleTimeString("es-PE", {
+                timeZone: "America/Lima",
+              })
+            : "↻ Actualizar vista"}
       </button>
       <details className="meta-refresh-notice">
         <summary

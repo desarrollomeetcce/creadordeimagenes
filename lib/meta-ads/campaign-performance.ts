@@ -57,7 +57,7 @@ export function campaignSalesPeriod(
       : !available
         ? "Informe Meta pendiente"
         : summary.total === null
-          ? "Ventas pendientes"
+          ? "Sin ventas registradas"
           : currency !== "PEN"
             ? "Umbrales en PEN; moneda diferente"
             : summary.partial && summary.total === 0

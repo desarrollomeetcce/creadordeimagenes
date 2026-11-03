@@ -2374,3 +2374,9 @@ Validación:277 pruebas unitarias,25 activación/país/período,15 asignación/c
 ### 2026-11-03 · Filtros de Meta en tabla ampliada
 
 La cabecera maximizada/restaurada incorpora Buscar por palabra y el mismo calendario del panel. Comparte q/período y su lectura con debounce, conservando selección, tabla y filtros al cerrar. Altura propia adaptable evita el recorte del calendario y respeta los controles flotantes en móvil. Validado con277 unitarias, typecheck/build y5 comprobaciones de navegador con datos sintéticos, sin Graph ni cambios publicitarios.
+
+### 2026-11-03 · Actualización breve Meta y explicación de ventas
+
+Lectura visible inicial inmediata, reanudación al volver a la pestaña y siguiente turno basado en nextAt en lugar de intervalo fijo que podía perder el vencimiento. Ordenar no cambia la identidad de consulta. Si otro lector completó el alcance, covered+checkedAt nuevo provoca una sola recarga local; si se guardaron estados antes de fallar el informe, statusUpdated refresca esos estados sin inventar gasto. Se elimina lectura adicional de cuentas después de cada actualización breve. La hora consultada queda en el botón; Sin ventas registradas aclara ausencia de V del período de hoja. Se mantiene límite de hoy/ayer, permisos, leases, cuota y datos anteriores ante errores.
+
+Verificado con277 unitarias,10 integración realtime y3 comprobaciones Chromium con respuestas sintéticas. No se ha comprobado la conexión real del cliente en Hostinger ni se afirma latencia cero de Meta. Continúa el rediseño del detalle seleccionado hacia análisis por diplomado y reemplazo.
