@@ -1,3 +1,4 @@
+import { metaQuotaPauseMs } from "./realtime-policy";
 import { createHash } from "node:crypto";
 import { db } from "../db";
 import { AppError } from "../errors";
@@ -82,10 +83,7 @@ export function quotaHooks(scope: string, paced: boolean) {
           : row.lastLimitedAt && now - row.lastLimitedAt.valueOf() < 86400000
             ? Math.min(row.failures + 1, 5)
             : 1;
-        const delay = Math.max(
-          30 * 60000 * 2 ** Math.max(0, failures - 1),
-          retryMs,
-        );
+        const delay = metaQuotaPauseMs(failures, retryMs);
         const until = new Date(
           Math.max(
             row.blockedUntil?.valueOf() ?? 0,

@@ -1,5 +1,14 @@
 # Meta Ads: consulta y análisis
 
+## Actualización reciente y pausa de Meta
+
+Actualizar vista consulta hoy y ayer de los elementos visibles, sin esperar a descargar el histórico. Si Meta limita las consultas, el botón indica Meta en pausa y el símbolo ⓘ muestra cuándo se intentará de nuevo, con hora Lima. Ordenar, buscar o volver a la pestaña no interrumpe esa pausa. Los valores guardados se conservan; un informe pendiente no significa gasto cero. Meta puede entregar métricas con retraso.
+
+Mientras se consulta una página, el histórico de cuentas que comparten credenciales cede prioridad temporalmente; conserva su avance. Los nuevos límites sin plazo explícito usan espera gradual1–15min; se respeta un plazo mayor informado por Meta y no se borra una pausa vigente.
+
+Para cambiar el nombre de una hoja, haz clic derecho en su pestaña y elige Editar nombre. El nombre visible no cambia sus vínculos Meta ni el país original de la hoja, sus diplomados o sus ventas. El campo superior Nombre de tabla se retiró para evitar ediciones accidentales. Renombrar Perú como Uganda no transforma los registros peruanos en ugandeses ni cambia segmentación publicitaria.
+
+
 ## Ampliar Lista de Diplomados y ajustar columnas de reemplazo
 
 En Lista de Diplomados → barra de acciones, Maximizar inventario amplía toda la tabla con sus encabezados, áreas/categorías, grupos, países y demás columnas. Restaurar, minimizar, cerrar o Escape devuelven el catálogo a su vista habitual conservando selección, filtros, borradores y desplazamiento. Ampliar no vuelve a consultar el inventario.

@@ -1,5 +1,12 @@
 # Pruebas y evidencia
 
+## Verificación · cuota Meta / prioridad reciente / renombrado (2026-11-03)
+
+284 unitarios,40 integraciones (13 refresco,26 activación y1 incremental),16 integraciones de asignación, typecheck y build correctos. Las pruebas verifican espera gradual1/2/15min y Retry-After30min/24h, respeto de nextAt sin máximo60s, prioridad histórica de la cuenta y de otra cuenta con el mismo hash de credenciales, liberación de lease y cursor intacto. Ventas, país y vínculos originales permanecen iguales tras renombrar una hoja de país a un nombre genérico y luego a otro país. No migraciones.
+
+Chromium con fixture exclusivo QA comprueba: temporizador real de30min, botón Meta en pausa y próximo intento Lima; cero POST adicionales por foco/visibilidad/orden; búsqueda operativa durante la pausa; aviso móvil; revisión nueva de credenciales permite retomar sin usar la pausa antigua; ausencia del editor superior y renombrado mediante clic derecho. Proveedor bloqueado, ningún dato real modificado. La limpieza comprueba V10, ventas compartidas21 contadas una vez y G1400.91/B140 originales antes de retirar solo el fixture. Publicación de código no equivale a comprobación de Hostinger ni garantía de métricas instantáneas del proveedor.
+
+
 ## Verificación · inventario completo y columnas de reemplazo (2026-11-03)
 
 Typecheck, build y 273 unitarios correctos. Chromium con fixture QA exclusivo (82 inventarios): cuatro controles de catálogo comprueban botón propio, todas las columnas/encabezados, mismo DOM y borrador de nueva fila sin guardar, selección marcada, scroll horizontal/vertical conservado y ningún GET al maximizar/restaurar/cerrar. Vista móvil oscura cabe en pantalla; Escape vuelve al catálogo con borrador intacto; cero escrituras/errores JS.

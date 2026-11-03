@@ -1,5 +1,6 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { visibleRefreshDelay } from "../../lib/meta-ads/realtime-policy";
 import { fetchJsonResponse } from "../../lib/http-response";
 type Target = { id: string; accountId: string };
 type Result = {
@@ -20,7 +21,12 @@ export function MetaVisibleRefresh({
   onReconnect,
 }: {
   items: Target[];
-  accounts: { id: string; canSync: boolean }[];
+  accounts: {
+    id: string;
+    canSync: boolean;
+    connectionId?: string;
+    connection?: { revision?: number };
+  }[];
   onUpdated: () => void;
   onReconnect: () => void;
 }) {
@@ -28,6 +34,7 @@ export function MetaVisibleRefresh({
     [notice, setNotice] = useState(""),
     [auth, setAuth] = useState(false),
     [checkedAt, setCheckedAt] = useState(""),
+    [pausedUntil, setPausedUntil] = useState<number | null>(null),
     running = useRef(false);
   const allowed = new Set(accounts.filter((a) => a.canSync).map((a) => a.id));
   const key = JSON.stringify(
@@ -36,8 +43,18 @@ export function MetaVisibleRefresh({
       .map((o) => [o.accountId, o.id])
       .sort((a, b) => a[0].localeCompare(b[0]) || a[1].localeCompare(b[1])),
   );
-  const currentKey = useRef(key);
-  currentKey.current = key;
+  const visibleAccountIds = new Set(items.map((o) => o.accountId));
+  const connectionKey = JSON.stringify(
+    accounts
+      .filter((a) => allowed.has(a.id) && visibleAccountIds.has(a.id))
+      .map((a) => [a.id, a.connectionId ?? a.id, a.connection?.revision ?? 0])
+      .sort((a, b) => String(a[0]).localeCompare(String(b[0]))),
+  );
+  const fetchScope = key + connectionKey;
+  const currentKey = useRef(fetchScope);
+  currentKey.current = fetchScope;
+  const paused = useRef(new Map<string, { until: number; error: string }>());
+
   const updated = useRef(onUpdated);
   updated.current = onUpdated;
   const mounted = useRef(false),
@@ -50,7 +67,8 @@ export function MetaVisibleRefresh({
     if (!pairs.length) return;
     running.current = true;
     setBusy(true);
-    let nextAt = Date.now() + 60000;
+    let nextAt: number | null = null;
+    let pauseAt: number | null = null;
     let changed = false,
       needsAuth = false,
       latest = "",
@@ -63,10 +81,22 @@ export function MetaVisibleRefresh({
       for (const [accountId, objects] of grouped) {
         if (
           !mounted.current ||
-          currentKey.current !== key ||
+          currentKey.current !== fetchScope ||
           document.visibilityState !== "visible"
         )
           break;
+        const account = accounts.find((a) => a.id === accountId),
+          scope = JSON.stringify([
+            account?.connectionId ?? accountId,
+            account?.connection?.revision ?? 0,
+          ]);
+        const hold = paused.current.get(scope);
+        if (hold && hold.until > Date.now()) {
+          nextAt = Math.min(nextAt ?? Infinity, hold.until + 100);
+          pauseAt = Math.min(pauseAt ?? Infinity, hold.until);
+          errors.push(hold.error);
+          continue;
+        }
         try {
           const r: Result = await fetchJsonResponse(
             "/api/meta-ads/accounts/" + accountId + "/refresh-visible",
@@ -93,7 +123,19 @@ export function MetaVisibleRefresh({
             notified.current.set(accountId, r.checkedAt);
           }
           const due = r.nextAt ? Date.parse(r.nextAt) : NaN;
-          if (Number.isFinite(due)) nextAt = Math.min(nextAt, due + 100);
+          if (Number.isFinite(due))
+            nextAt = Math.min(nextAt ?? Infinity, due + 100);
+          if (
+            r.waiting &&
+            r.error &&
+            Number.isFinite(due) &&
+            due > Date.now()
+          ) {
+            if (paused.current.size >= 1000 && !paused.current.has(scope))
+              paused.current.clear();
+            paused.current.set(scope, { until: due, error: r.error });
+            pauseAt = Math.min(pauseAt ?? Infinity, due);
+          } else if (!r.error) paused.current.delete(scope);
           needsAuth ||= !!r.authorizationRequired;
           if ((r.updated || r.covered) && r.checkedAt && r.checkedAt > latest)
             latest = r.checkedAt;
@@ -108,12 +150,20 @@ export function MetaVisibleRefresh({
           );
         }
       }
-      if (!mounted.current || currentKey.current !== key) return;
+      if (!mounted.current || currentKey.current !== fetchScope) return;
       setAuth(needsAuth);
+      setPausedUntil(pauseAt);
       if (latest) setCheckedAt(latest);
       setNotice(
         errors.length
-          ? errors[0]
+          ? errors[0] +
+              (pauseAt
+                ? " Próximo intento: " +
+                  new Date(pauseAt).toLocaleString("es-PE", {
+                    timeZone: "America/Lima",
+                  }) +
+                  " (Lima)."
+                : "")
           : latest
             ? "Vista consultada: " +
               new Date(latest).toLocaleTimeString("es-PE", {
@@ -130,18 +180,17 @@ export function MetaVisibleRefresh({
         if (document.visibilityState === "visible")
           timer.current = setTimeout(
             () => void refreshRef.current(),
-            currentKey.current !== key
-              ? 0
-              : Math.max(1000, Math.min(60000, nextAt - Date.now())),
+            currentKey.current !== fetchScope ? 0 : visibleRefreshDelay(nextAt),
           );
       }
     }
-  }, [key]);
+  }, [key, connectionKey]);
   refreshRef.current = refresh;
   useEffect(() => {
     mounted.current = true;
     setCheckedAt("");
     setNotice("");
+    setPausedUntil(null);
     const tick = () => {
       void refreshRef.current();
     };
@@ -155,7 +204,7 @@ export function MetaVisibleRefresh({
       window.removeEventListener("focus", tick);
       document.removeEventListener("visibilitychange", tick);
     };
-  }, [key]);
+  }, [fetchScope]);
   if (key === "[]") return null;
   return (
     <section
@@ -164,7 +213,7 @@ export function MetaVisibleRefresh({
     >
       <button
         type="button"
-        disabled={busy}
+        disabled={busy || (pausedUntil !== null && pausedUntil > Date.now())}
         onClick={() => void refresh()}
         title={
           (notice ? notice + ". " : "") +
@@ -173,12 +222,14 @@ export function MetaVisibleRefresh({
       >
         {busy
           ? "↻ Consultando Meta…"
-          : checkedAt
-            ? "↻ Meta · " +
-              new Date(checkedAt).toLocaleTimeString("es-PE", {
-                timeZone: "America/Lima",
-              })
-            : "↻ Actualizar vista"}
+          : pausedUntil && pausedUntil > Date.now()
+            ? "Meta en pausa"
+            : checkedAt
+              ? "↻ Meta · " +
+                new Date(checkedAt).toLocaleTimeString("es-PE", {
+                  timeZone: "America/Lima",
+                })
+              : "↻ Actualizar vista"}
       </button>
       <details className="meta-refresh-notice">
         <summary

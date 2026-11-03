@@ -6225,3 +6225,30 @@ test("Sheet detail seeds omitted members with real zero or missing sales, withou
 });
 
 import "./meta-selection-diplomas.test";
+
+test("Renamed sheet labels never reinterpret a saved country identity", async () => {
+  const { inventorySheetCountries, inventorySheetForeignCountries } =
+    await import("../lib/meta-ads/inventory-sheet-column-policy");
+  assert.deepEqual(
+    inventorySheetCountries(
+      { name: "Uganda", defaultCountry: "PE", identityCountry: "PE" },
+      ["PE"],
+      ["PE"],
+    ),
+    ["PE"],
+  );
+  assert.deepEqual(
+    inventorySheetForeignCountries({ name: "Uganda", identityCountry: "PE" }, [
+      "PE",
+    ]),
+    [],
+  );
+  assert.deepEqual(
+    inventorySheetCountries(
+      { name: "Perú", defaultCountry: "EC", identityCountry: "" },
+      ["EC"],
+      ["GT"],
+    ),
+    ["EC", "GT"],
+  );
+});

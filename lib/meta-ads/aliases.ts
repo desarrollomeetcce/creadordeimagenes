@@ -1,4 +1,9 @@
 import {
+  sheetCountryIdentities,
+  renamedTableCountries,
+} from "./sheet-country-identity";
+import { resolveCountry } from "./effectiveness-paste";
+import {
   ownerOnly as financialOnly,
   isFinancialActor,
   financialContext,
@@ -927,11 +932,8 @@ export async function renameAliasTable(actor: Actor, id: string, name: string) {
       "Sin permiso.",
       403,
     );
-    demand(
-      await tx.metaAliasTable.findUnique({ where: { id } }),
-      "Tabla no disponible.",
-      404,
-    );
+    const before = await tx.metaAliasTable.findUnique({ where: { id } });
+    demand(before, "Tabla no disponible.", 404);
     demand(
       !(await tx.metaAliasTable.findFirst({
         where: { name: { equals: name, mode: "insensitive" }, id: { not: id } },
@@ -939,6 +941,58 @@ export async function renameAliasTable(actor: Actor, id: string, name: string) {
       "Ya existe una tabla con ese nombre.",
       409,
     );
+    const identities = await sheetCountryIdentities(tx, [id]);
+    const identity = identities.has(id)
+      ? identities.get(id)!
+      : (resolveCountry(before.name) ?? "");
+    const lists = await tx.metaEffectivenessSheet.findMany({
+      where: {
+        kind: "INVENTORY",
+        OR: [
+          { inventory: { some: { tableId: id } } },
+          {
+            config: {
+              path: ["inventoryActivation", "sheets"],
+              array_contains: [id],
+            },
+          },
+        ],
+      },
+      select: { id: true, config: true },
+    });
+    for (const list of lists) {
+      const root = (
+        list.config &&
+        typeof list.config === "object" &&
+        !Array.isArray(list.config)
+          ? list.config
+          : {}
+      ) as Record<string, Prisma.JsonValue>;
+      const activation = (
+        root.inventoryActivation &&
+        typeof root.inventoryActivation === "object" &&
+        !Array.isArray(root.inventoryActivation)
+          ? root.inventoryActivation
+          : {}
+      ) as Record<string, Prisma.JsonValue>;
+      if (renamedTableCountries(list.config)[id] === identity) continue;
+      await tx.metaEffectivenessSheet.update({
+        where: { id: list.id },
+        data: {
+          config: {
+            ...root,
+            inventoryActivation: {
+              ...activation,
+              renamedTableCountries: {
+                ...renamedTableCountries(list.config),
+                [id]: identity,
+              },
+            },
+          } as Prisma.InputJsonObject,
+          revision: { increment: 1 },
+        },
+      });
+    }
     const row = await tx.metaAliasTable.update({
       where: { id },
       data: { name },

@@ -238,6 +238,74 @@ test("Meta visible: estado actual y gasto breve independientes del histórico", 
       assert.equal(calls, n);
     });
     await t.test(
+      "Visible reads postpone only the saved history tail without Graph or losing its cursor",
+      async () => {
+        const { syncStep } = await import("../lib/meta-ads/service");
+        const count = calls;
+        const state = {
+          ...cursor,
+          recentReady: true,
+          phase: 10,
+          after: "saved-history-cursor",
+        };
+        await db.metaAdAccount.update({
+          where: { id: root },
+          data: { syncState: state, nextSyncAt: old },
+        });
+        assert.equal(await syncStep(root), false);
+        assert.equal(calls, count);
+        const saved = await db.metaAdAccount.findUniqueOrThrow({
+          where: { id: root },
+        });
+        assert.deepEqual(saved.syncState, state);
+        assert(saved.nextSyncAt! > new Date());
+        assert.equal(saved.syncToken, null);
+        await db.metaAdAccount.update({
+          where: { id: root },
+          data: { syncState: cursor, nextSyncAt: old },
+        });
+      },
+    );
+    await t.test(
+      "A visible read reserves the shared credential budget ahead of another account's history",
+      async () => {
+        const { syncStep } = await import("../lib/meta-ads/service");
+        const other = root + "99";
+        const count = calls;
+        const state = {
+          ...cursor,
+          recentReady: true,
+          phase: 10,
+          objectAfter: "history-shared-credential",
+        };
+        await db.metaAdAccount.create({
+          data: {
+            id: other,
+            connectionId: cid,
+            name: "QA other history",
+            currency: "PEN",
+            timezone: "America/Lima",
+            metric: "MESSAGES",
+            enabled: true,
+            nextSyncAt: old,
+            syncState: state,
+          },
+        });
+        try {
+          assert.equal(await syncStep(other), false);
+          assert.equal(calls, count);
+          const saved = await db.metaAdAccount.findUniqueOrThrow({
+            where: { id: other },
+          });
+          assert.deepEqual(saved.syncState, state);
+          assert(saved.nextSyncAt! > new Date());
+          assert.equal(saved.syncToken, null);
+        } finally {
+          await db.metaAdAccount.delete({ where: { id: other } });
+        }
+      },
+    );
+    await t.test(
       "Dashboard muestra gasto recibido sin fingir histórico completo y mantiene parciales",
       async () => {
         const r = await dashboard(

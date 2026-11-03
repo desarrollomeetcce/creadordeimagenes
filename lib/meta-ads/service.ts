@@ -1,3 +1,7 @@
+import {
+  historicalReadDeferral,
+  isHistoricalMetaRead,
+} from "./realtime-policy";
 import { isFinancialActor } from "./financial-access";
 import {
   workspaceAccess,
@@ -114,8 +118,10 @@ export async function reader(
     409,
   );
   const token = decryptKey(c.encryptedToken, `meta:${c.id}`);
+  const quotaScope = c.transport === "API" ? metaQuotaScope(c, token) : null;
   return {
     connection: c,
+    quotaScope,
     reader: new MetaReader(
       token,
       c.transport,
@@ -123,9 +129,7 @@ export async function reader(
       c.transport === "API" && c.authMethod === "OAUTH" && c.encryptedAppSecret
         ? decryptKey(c.encryptedAppSecret, `meta-app:${c.id}`)
         : undefined,
-      c.transport === "API"
-        ? quotaHooks(metaQuotaScope(c, token), paced)
-        : undefined,
+      c.transport === "API" ? quotaHooks(quotaScope!, paced) : undefined,
     ),
   };
 }
@@ -686,7 +690,8 @@ export async function queueSync(
         409,
       );
       const scopeChanged =
-        fresh || (focused && !!(a.syncState as State).refreshOnly) ||
+        fresh ||
+        (focused && !!(a.syncState as State).refreshOnly) ||
         (focused &&
           (a.syncState as { plan?: string }).plan === "focus" &&
           ((a.syncState as State).inventory ?? "recent") !== inventory);
@@ -697,7 +702,8 @@ export async function queueSync(
         409,
       );
       const focusResume =
-        !fresh && !(a.syncState as State).refreshOnly &&
+        !fresh &&
+        !(a.syncState as State).refreshOnly &&
         focused &&
         ((a.syncState as State).inventory ?? "recent") === inventory &&
         (a.syncState as { plan?: string }).plan === "focus" &&
@@ -808,9 +814,28 @@ export async function syncStep(
 ): Promise<boolean> {
   const diagnostic = await db.metaAdAccount.findUnique({
     where: { id },
-    select: { syncError: true },
+    select: { syncError: true, syncState: true, realtimeState: true },
   });
   if (requiresMetaReconnect(diagnostic?.syncError)) return false;
+  const liveUntil = historicalReadDeferral(
+    diagnostic?.syncState,
+    diagnostic?.realtimeState,
+  );
+  if (liveUntil) {
+    await db.metaAdAccount.updateMany({
+      where: {
+        id,
+        enabled: true,
+        connection: { disconnectedAt: null },
+        syncToken: null,
+        nextSyncAt: { lte: new Date() },
+        ...(expectedSchedule ? { schedulerToken: expectedSchedule } : {}),
+      },
+      data: { nextSyncAt: liveUntil },
+    });
+    return false;
+  }
+
   const token = randomUUID(),
     now = new Date();
   const claimed = await db.metaAdAccount.updateMany({
@@ -832,9 +857,43 @@ export async function syncStep(
     syncPhase = "inicio";
   try {
     const a = await db.metaAdAccount.findUniqueOrThrow({ where: { id } }),
-      { connection: c, reader: r } = await reader(a.connectionId, false, true);
+      {
+        connection: c,
+        reader: r,
+        quotaScope,
+      } = await reader(a.connectionId, false, true);
     revision = c.revision;
     const state = a.syncState as State;
+    if (quotaScope && isHistoricalMetaRead(state)) {
+      const active = await db.metaAdAccount.findFirst({
+        where: {
+          connection: { disconnectedAt: null },
+          AND: [
+            { realtimeState: { path: ["quotaScopeHash"], equals: quotaScope } },
+            {
+              realtimeState: {
+                path: ["priorityUntil"],
+                gt: new Date().toISOString(),
+              },
+            },
+          ],
+        },
+        select: { realtimeState: true },
+      });
+      const until = historicalReadDeferral(state, active?.realtimeState);
+      if (until) {
+        await db.metaAdAccount.updateMany({
+          where: {
+            id,
+            syncToken: token,
+            connection: { revision: c.revision, disconnectedAt: null },
+          },
+          data: { syncToken: null, syncLeaseAt: null, nextSyncAt: until },
+        });
+        return false;
+      }
+    }
+
     if ((state as { plan?: string }).plan === "focus") {
       syncPhase = "análisis seleccionado";
       return await focusedSyncStep(
@@ -1125,7 +1184,13 @@ export async function syncStep(
             objectRows.push({ id: oid, accountId: id, ...data });
           }
         }
-        await writeSyncPage(tx, objectRows, dailyRows, !insight, new Date(lastAttempt.at));
+        await writeSyncPage(
+          tx,
+          objectRows,
+          dailyRows,
+          !insight,
+          new Date(lastAttempt.at),
+        );
         if (ids) {
           const returned = new Set(result.data.map((row) => String(row.id)));
           const unavailable = ids

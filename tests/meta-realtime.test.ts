@@ -209,3 +209,54 @@ test("Meta: lote incompleto, objeto ajeno y límite por subconsulta no reintenta
     globalThis.fetch = original;
   }
 });
+
+test("Meta pause scheduling honors a long server backoff and recent reads take precedence over history only", async () => {
+  const { visibleRefreshDelay, historicalReadDeferral } =
+    await import("../lib/meta-ads/realtime-policy");
+  const now = Date.parse("2026-11-03T12:00:00Z");
+  assert.equal(visibleRefreshDelay(now + 1800000, now), 1800000);
+  assert.equal(visibleRefreshDelay(null, now), 60000);
+  assert.equal(visibleRefreshDelay(now - 1, now), 1000);
+  const live = { priorityUntil: new Date(now + 90000).toISOString() };
+  assert.equal(
+    historicalReadDeferral(
+      { plan: "focus", phase: 10, recentReady: true },
+      live,
+      now,
+    )?.getTime(),
+    now + 90000,
+  );
+  assert.equal(
+    historicalReadDeferral(
+      { plan: "focus", phase: 9, recentReady: false },
+      live,
+      now,
+    ),
+    null,
+  );
+  assert.equal(
+    historicalReadDeferral(
+      { plan: "focus", phase: 10, recentReady: true, refreshOnly: true },
+      live,
+      now,
+    ),
+    null,
+  );
+  assert.equal(
+    historicalReadDeferral(
+      { plan: "focus", phase: 10, recentReady: true },
+      live,
+      now + 90001,
+    ),
+    null,
+  );
+});
+
+test("Meta backoff is gradual, bounded and never shorter than a supplied provider deadline", async () => {
+  const { metaQuotaPauseMs } = await import("../lib/meta-ads/realtime-policy");
+  assert.equal(metaQuotaPauseMs(1, 0), 60000);
+  assert.equal(metaQuotaPauseMs(2, 0), 120000);
+  assert.equal(metaQuotaPauseMs(5, 0), 900000);
+  assert.equal(metaQuotaPauseMs(1, 1800000), 1800000);
+  assert.equal(metaQuotaPauseMs(1, 864000000), 86400000);
+});

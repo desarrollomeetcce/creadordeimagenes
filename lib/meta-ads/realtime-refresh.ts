@@ -1,3 +1,4 @@
+import { decryptKey } from "../crypto";
 import { randomUUID } from "node:crypto";
 import type { Prisma } from "@prisma/client";
 import { z } from "zod";
@@ -9,7 +10,7 @@ import { localDay, shiftDay } from "./analytics";
 import { facts, day } from "./focused-sync";
 import { writeSyncPage } from "./bulk-sync";
 import { MetaGraphError, requiresMetaReconnect } from "./graph-error";
-import { MetaQuotaWait } from "./quota";
+import { MetaQuotaWait, metaQuotaScope } from "./quota";
 import { realtimeCoverage, type RealtimeState } from "./realtime-policy";
 const scope = "7d_click,1d_view|impression";
 const schema = z
@@ -89,6 +90,16 @@ export async function refreshVisibleMeta(
         realtimeState: {
           ...s,
           claim,
+          quotaScopeHash: a.connection.encryptedToken
+            ? metaQuotaScope(
+                a.connection,
+                decryptKey(
+                  a.connection.encryptedToken,
+                  `meta:${a.connectionId}`,
+                ),
+              )
+            : "",
+          priorityUntil: new Date(at.getTime() + 90000).toISOString(),
           revision: a.connection.revision,
           leaseUntil: new Date(Date.now() + 120000).toISOString(),
           nextAt: new Date(Date.now() + 60000).toISOString(),
@@ -245,6 +256,8 @@ export async function refreshVisibleMeta(
         where: { id: accountId },
         data: {
           realtimeState: {
+            quotaScopeHash: s.quotaScopeHash ?? "",
+            priorityUntil: new Date(at.getTime() + 90000).toISOString(),
             checkedAt: at.toISOString(),
             statusAt: at.toISOString(),
             since,

@@ -13,6 +13,8 @@ import { db } from "../lib/db";
 import { encryptKey } from "../lib/crypto";
 import {
   assignAliases,
+  renameAliasTable,
+  aliasTableOptions,
   inventoryMetaCandidates,
   metaAssignmentContext,
   metaAliasCatalog,
@@ -1201,6 +1203,53 @@ test("Meta inventory assignment materializes catalog choices atomically and flag
           ).advisorId,
           second.id,
         );
+      },
+    );
+    await t.test(
+      "Display-only table renames preserve Meta alias/country links, assignment context and financial facts",
+      async () => {
+        const object = await db.metaAdObject.findFirstOrThrow({
+          where: {
+            accountId,
+            aliasId: { not: null },
+            aliasCountry: { not: null },
+          },
+        });
+        const args = {
+          tableId: table.id,
+          country: object.aliasCountry!,
+          aliasId: object.aliasId!,
+        };
+        const context = await metaAssignmentContext(actor, args);
+        const links = await db.metaAdObject.findMany({
+          where: { accountId },
+          orderBy: { id: "asc" },
+        });
+        const days = await db.metaEffectivenessDay.findMany({
+          where: { row: { alias: { tableId: table.id } } },
+          orderBy: [{ rowId: "asc" }, { day: "asc" }],
+        });
+        const newName = "Uganda rename " + tag;
+        await renameAliasTable(actor, table.id, newName);
+        assert.equal(
+          (await aliasTableOptions(actor)).find((t) => t.id === table.id)!.name,
+          newName,
+        );
+        assert.deepEqual(
+          await db.metaAdObject.findMany({
+            where: { accountId },
+            orderBy: { id: "asc" },
+          }),
+          links,
+        );
+        assert.deepEqual(
+          await db.metaEffectivenessDay.findMany({
+            where: { row: { alias: { tableId: table.id } } },
+            orderBy: [{ rowId: "asc" }, { day: "asc" }],
+          }),
+          days,
+        );
+        assert.deepEqual(await metaAssignmentContext(actor, args), context);
       },
     );
   } finally {

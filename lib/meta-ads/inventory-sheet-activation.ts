@@ -1,4 +1,9 @@
 import {
+  renamedTableCountries,
+  sheetCountryIdentities,
+} from "./sheet-country-identity";
+import {
+  inventoryNamedCountry,
   inventorySheetCountries,
   inventorySheetForeignCountries,
 } from "./inventory-sheet-column-policy";
@@ -54,6 +59,7 @@ type Settings = {
   detachedAliases: string[];
   sheets: string[];
   countries: Record<string, string[]>;
+  renamedTableCountries: Record<string, string>;
   rows: Record<string, Control>;
   limits: number[];
 };
@@ -62,6 +68,7 @@ export const activationSettings = (config: Prisma.JsonValue): Settings => {
     Partial<Settings> | undefined;
   return {
     cacRules: readCacRules(v?.cacRules),
+    renamedTableCountries: renamedTableCountries(config),
     detachedAliases: Array.isArray(v?.detachedAliases)
       ? v.detachedAliases.filter((x) => typeof x === "string")
       : [],
@@ -156,7 +163,7 @@ export async function inventoryActivationDirectory(
         },
       }),
       visible = new Set([...settings.sheets, ...linked.map((a) => a.tableId)]);
-    const tables = await tx.metaAliasTable.findMany({
+    const rawTables = await tx.metaAliasTable.findMany({
       where:
         access.isOwner || scopePermission(access, "ALL")
           ? {}
@@ -169,6 +176,16 @@ export async function inventoryActivationDirectory(
         defaultCurrency: true,
       },
     });
+    const identities = await sheetCountryIdentities(
+      tx,
+      rawTables.map((t) => t.id),
+    );
+    const tables = rawTables.map((t) => ({
+      ...t,
+      ...(identities.has(t.id)
+        ? { identityCountry: identities.get(t.id)! }
+        : {}),
+    }));
     const countryIssues = linked.flatMap((a) => {
       const table = tables.find((t) => t.id === a.tableId);
       if (!table) return [];
@@ -182,7 +199,7 @@ export async function inventoryActivationDirectory(
         tableId: a.tableId,
         tableName: table.name,
         country,
-        expectedCountry: resolveCountry(table.name)!,
+        expectedCountry: inventoryNamedCountry(table)!,
       }));
     });
     const issueNames = countryIssues.length
@@ -358,7 +375,15 @@ export async function inventoryActivationAddSheet(
         },
       });
     }
-    const namedCountry = resolveCountry(table.name);
+    const identities = await sheetCountryIdentities(tx, [table.id]);
+    const namedCountry = inventoryNamedCountry({
+      ...table,
+      ...(identities.has(table.id)
+        ? { identityCountry: identities.get(table.id)! }
+        : {}),
+    });
+    if (identities.has(table.id))
+      settings.renamedTableCountries[table.id] = identities.get(table.id)!;
     demand(
       !namedCountry || !b.country || namedCountry === b.country,
       "Esta hoja tiene el nombre de un país. Usa ese país o elige su hoja correspondiente.",

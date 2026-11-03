@@ -1,5 +1,14 @@
 # Avance por fases · continuación del desarrollo
 
+## Actualización · Meta reciente y nombres estables de hojas (2026-11-03)
+
+El diagnóstico aportado por el usuario confirma una pausa por cuota de Meta. El refresco visible respeta íntegramente nextAt, recuerda la pausa por conexión/revisión y evita nuevos POST al ordenar, buscar o recuperar foco durante ese plazo. El aviso muestra próximo intento en Lima. Si cambia la revisión de credenciales, se reevalúa la conexión. El histórico pendiente de la misma cuenta o ámbito de credenciales cede temporalmente prioridad a la lectura breve de hoy/ayer; conserva cursores y se reanuda al vencer la prioridad. No se habilitan cuentas ni modifican anuncios. Las nuevas cuotas sin Retry-After usan espera gradual de1–15min en vez de imponer30min al primer evento; plazos explícitos superiores y pausas ya guardadas se conservan.
+
+Retirado Nombre de tabla de la barra superior; Editar nombre continúa en el menú contextual de pestaña. Antes del primer renombrado se conserva el país lógico de las hojas vinculadas en metadatos de inventario. Cambiar Perú por Perú1 o Uganda modifica solo la etiqueta: mismos IDs de tabla/diplomado/campaña, país físico, ventas e histórico. Las hojas genéricas conservan su carácter multpaís. Sin migraciones ni reasignaciones automáticas.
+
+Validación:284 unitarios,40 integraciones de refresco/prioridad/activación/sync y16 de asignación, typecheck y build. Chromium comprueba pausa larga sin repetición, búsqueda/orden/foco, aviso móvil, cambio de revisión y renombrado contextual sin editor superior. Pruebas contra base QA aislada y Graph simulado; no acreditan recepción del despliegue en Hostinger ni fin de la cuota real. La consulta directa autorizada a Meta respondió con gasto de hoy para la cuenta, pero no verifica las credenciales de la instalación VPS.
+
+
 ## Actualización · inventario maximizado y columnas de reemplazo (2026-11-03)
 
 Lista de Diplomados incorpora Maximizar inventario en su barra de acciones. Promueve la misma tabla a una ventana de pantalla completa con todos sus encabezados y columnas (inventario, categorías/áreas, grupos, países, etc.), un área desplazable y controles de restaurar/cerrar. Conserva selección, borradores, filtros y desplazamiento; no remonta filas ni consulta de nuevo. Las hojas de países conservan su funcionamiento propio.

@@ -24,7 +24,6 @@ import { MetaEffectiveness } from "./meta-effectiveness";
 import { DeleteAliasTable } from "./delete-alias-table";
 import { AdvisorsSheet } from "./advisors-sheet";
 import { EffectivenessTotals } from "./effectiveness-totals";
-import { EffectivenessCell } from "./effectiveness-cell";
 import {
   parsePeriodTableLink,
   type PeriodTableLink,
@@ -850,31 +849,6 @@ export function ProductsCatalog() {
               </button>
             </div>
           )}
-          {locationReady &&
-            table &&
-            !totals &&
-            !advisorSheet &&
-            !inventorySheet && (
-              <label className="sheet-table-title">
-                Nombre de tabla
-                <EffectivenessCell
-                  key={table.id}
-                  value={table.name}
-                  label="Nombre de la tabla"
-                  onError={setMessage}
-                  onSave={async (name) => {
-                    if (!name || name.length > 100)
-                      throw Error(
-                        "El nombre de la tabla admite de 1 a 100 caracteres.",
-                      );
-                    await api("meta-ads/alias-tables/" + table.id, "PATCH", {
-                      name,
-                    });
-                    await load();
-                  }}
-                />
-              </label>
-            )}
           {documentShare}
         </div>
       )}

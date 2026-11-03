@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
-import { createAliasTable } from "../lib/meta-ads/aliases";
+import { createAliasTable, renameAliasTable } from "../lib/meta-ads/aliases";
 import { db } from "../lib/db";
 import {
   inventoryActivationDirectory,
@@ -1693,6 +1693,79 @@ test("Activación por hoja: selección, pin, historial y permisos", async (t) =>
             orderBy: [{ rowId: "asc" }, { day: "asc" }],
           }),
           before,
+        );
+      },
+    );
+    await t.test(
+      "Renaming a country sheet preserves its country columns, V and IDs through a different country name",
+      async () => {
+        let name = "PERU";
+        while (await db.metaAliasTable.findUnique({ where: { name } }))
+          name += " ";
+        const table = await db.metaAliasTable.create({
+          data: { name, defaultCountry: "PE", defaultCurrency: "PEN" },
+        });
+        autoTables.push(table.id);
+        const alias = await db.metaAlias.create({
+          data: {
+            tableId: table.id,
+            inventorySheetId: list.id,
+            name: "Rename " + tag,
+          },
+        });
+        const row = await db.metaEffectivenessRow.create({
+          data: {
+            aliasId: alias.id,
+            country: "PE",
+            currency: "",
+            displayCurrency: "PEN",
+            days: { create: { day: today, sales: 11, salesOverridden: true } },
+          },
+        });
+        const before = await db.metaEffectivenessDay.findMany({
+          where: { rowId: row.id },
+        });
+        let otherName = "Uganda";
+        while (
+          await db.metaAliasTable.findFirst({
+            where: { name: { equals: otherName, mode: "insensitive" } },
+          })
+        )
+          otherName += " ";
+        for (const renamed of ["Perú 1 " + tag, otherName]) {
+          await renameAliasTable(owner, table.id, renamed);
+          const directory = await inventoryActivationDirectory(owner, {
+            listId: list.id,
+          });
+          assert.deepEqual(
+            directory.columns
+              .filter((c) => c.tableId === table.id)
+              .map((c) => c.country),
+            ["PE"],
+          );
+          assert.equal(
+            directory.tables.find((t) => t.id === table.id)!.name,
+            renamed,
+          );
+          assert.equal(
+            directory.countryIssues?.some((i) => i.aliasId === alias.id) ??
+              false,
+            false,
+          );
+        }
+        // Exact recognized name is covered without changing the saved physical PE country.
+        const identities = (
+          await inventoryActivationDirectory(owner, { listId: list.id })
+        ).tables.find((t) => t.id === table.id)!;
+        assert.equal(identities.identityCountry, "PE");
+        assert.deepEqual(
+          await db.metaEffectivenessDay.findMany({ where: { rowId: row.id } }),
+          before,
+        );
+        assert.equal(
+          (await db.metaAlias.findUniqueOrThrow({ where: { id: alias.id } }))
+            .tableId,
+          table.id,
         );
       },
     );
