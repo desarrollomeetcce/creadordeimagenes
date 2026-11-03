@@ -12,6 +12,7 @@ export type RealtimeState = {
   revision?: number;
   error?: string;
   authorizationRequired?: boolean;
+  authorizationSource?: "META" | "EXPIRED" | null;
 };
 export function realtimeCoverage(
   raw: unknown,

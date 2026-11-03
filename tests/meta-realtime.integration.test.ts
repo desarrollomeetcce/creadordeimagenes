@@ -511,12 +511,77 @@ test("Meta visible: estado actual y gasto breve independientes del histórico", 
       },
     );
     await t.test(
+      "Conexión pendiente y aviso heredado se verifican con informe acotado, sin descubrir cuentas",
+      async () => {
+        mode = "ok";
+        await reset();
+        await db.metaConnection.update({
+          where: { id: cid },
+          data: { verifiedAt: null, lastError: "Verificación pendiente" },
+        });
+        const c = await db.metaConnection.findUniqueOrThrow({
+          where: { id: cid },
+        });
+        await db.metaAdAccount.update({
+          where: { id: root },
+          data: {
+            realtimeState: {
+              revision: c.revision,
+              authorizationRequired: true,
+              error: "La autorización de Meta venció o fue rechazada.",
+              nextAt: new Date(Date.now() + 30000).toISOString(),
+            },
+          },
+        });
+        const n = calls;
+        const waiting = await refreshVisibleMeta(actor, root, { objects: ids });
+        assert(waiting.waiting);
+        assert.equal(waiting.authorizationRequired, false);
+        assert.match(waiting.error!, /pendiente de comprobar/);
+        assert.equal(calls, n);
+        const pending = await db.metaAdAccount.findUniqueOrThrow({
+          where: { id: root },
+        });
+        await db.metaAdAccount.update({
+          where: { id: root },
+          data: {
+            realtimeState: {
+              ...(pending.realtimeState as any),
+              nextAt: "2000-01-01T00:00:00Z",
+            },
+          },
+        });
+        const r = await refreshVisibleMeta(actor, root, { objects: ids });
+        assert(r.updated);
+        assert.equal(calls, n + 2);
+        assert(
+          (await db.metaConnection.findUniqueOrThrow({ where: { id: cid } }))
+            .verifiedAt,
+        );
+        const saved = await db.metaAdAccount.findUniqueOrThrow({
+          where: { id: root },
+        });
+        assert.deepEqual(saved.syncState, cursor);
+        assert(!(saved.realtimeState as any).authorizationRequired);
+      },
+    );
+    await t.test(
       "Token vencido requiere reconectar sin reiniciar histórico ni publicar ceros",
       async () => {
         await reset();
         mode = "expired";
+        await db.metaConnection.update({
+          where: { id: cid },
+          data: { verifiedAt: null },
+        });
         const r = await refreshVisibleMeta(actor, root, { objects: ids });
         assert(r.authorizationRequired);
+        assert.match(r.error!, /código 190/);
+        assert.equal(
+          (await db.metaConnection.findUniqueOrThrow({ where: { id: cid } }))
+            .verifiedAt,
+          null,
+        );
         assert.match(r.error!, /autorización|Reconecta/);
         const a = await db.metaAdAccount.findUniqueOrThrow({
           where: { id: root },
@@ -540,6 +605,11 @@ test("Meta visible: estado actual y gasto breve independientes del histórico", 
           n,
           "No se reintenta el token vencido hasta renovar revisión",
         );
+        assert.equal((a.realtimeState as any).authorizationSource, "META");
+        await db.metaConnection.update({
+          where: { id: cid },
+          data: { verifiedAt: new Date() },
+        });
         assert.equal(
           Number(
             (

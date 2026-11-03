@@ -1,5 +1,14 @@
 # Pruebas y evidencia
 
+## Verificación · pendientes de conexión frente a rechazo real (2026-11-03)
+
+284 unitarios,36 integraciones y typecheck/build correctos. Subsuite final de17 refrescos repetida tras completar los casos de espera heredada. Conexión verifiedAt=null y aviso genérico heredado: durante cooldown se informa pendiente de comprobar, no token vencido; al permitir lectura se obtienen estados/informe y se confirma solo la revisión y cuenta consultadas. No directorio de cuentas, ni FX, ni histórico completo, ni cambios de selección/agenda/V.
+
+Multicuenta verifica primera cuenta pendiente y segunda con aviso heredado después de que la primera confirme la conexión: ambas se recuperan, con gasto independiente17.50/26.75 y cursores intactos. Ante HTTP401/código190 se registra procedencia META, se conserva gasto y no se reintenta sin revisión nueva. Token conocido caducado conserva su bloqueo local; permisos/cambio de credencial y respuestas ajenas siguen cubiertos.
+
+Tres controles Chromium: rechazo auténtico con nextAt ya vencido no genera sondeo cada segundo; foco/visibilidad/búsqueda de la misma conexión no repiten POST; revisión nueva reanuda lectura y quita Reconectar Meta sin errores JS. Proveedor simulado, preferencias globales QA restauradas y solo fixture etiquetado retirado tras comprobar V10/V compartidas21/G1400.91/B140/estado original. No se acredita todavía la conexión o actualización real de Hostinger.
+
+
 ## Verificación · ámbito automático principal (2026-11-03)
 
 284 unitarios,30 integraciones de sincronización/recuperación/refresco/incremental,9 regresiones de cuentas compartidas, typecheck y build correctos. Nuevas pruebas ejecutan el step advance sin compilador (use step es directiva sin efecto en el runner TSX) y verifican que un workflow secundario antiguo finaliza sin Graph, liberando solo el programador; enabled, cursor y gasto histórico77 permanecen. Worker selecciona principal, syncStep automático rechaza secundaria, refresco automático secundario devuelve automaticDisabled sin Graph y manual consulta solo el informe. Ciclo explícito secundario avanza y termina al completar su solicitud; configuración principal compartida y compatibilidad sin inicializar verificadas.

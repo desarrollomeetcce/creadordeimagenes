@@ -62,6 +62,7 @@ export function MetaVisibleRefresh({
   const fetchScope = key + connectionKey;
   const currentKey = useRef(fetchScope);
   currentKey.current = fetchScope;
+  const authHolds = useRef(new Map<string, string>());
   const paused = useRef(new Map<string, { until: number; error: string }>());
 
   const updated = useRef(onUpdated);
@@ -82,6 +83,7 @@ export function MetaVisibleRefresh({
       setBusy(true);
       let nextAt: number | null = null;
       let pauseAt: number | null = null;
+      let retryable = false;
       let changed = false,
         needsAuth = false,
         latest = "",
@@ -103,8 +105,15 @@ export function MetaVisibleRefresh({
               account?.connectionId ?? accountId,
               account?.connection?.revision ?? 0,
             ]);
+          const authError = authHolds.current.get(scope);
+          if (authError) {
+            needsAuth = true;
+            errors.push(authError);
+            continue;
+          }
           const hold = paused.current.get(scope);
           if (!recover && hold && hold.until > Date.now()) {
+            retryable = true;
             nextAt = Math.min(nextAt ?? Infinity, hold.until + 100);
             pauseAt = Math.min(pauseAt ?? Infinity, hold.until);
             errors.push(hold.error);
@@ -155,6 +164,17 @@ export function MetaVisibleRefresh({
               paused.current.set(scope, { until: due, error: r.error });
               pauseAt = Math.min(pauseAt ?? Infinity, due);
             } else if (!r.error) paused.current.delete(scope);
+            if (r.authorizationRequired) {
+              if (
+                authHolds.current.size >= 1000 &&
+                !authHolds.current.has(scope)
+              )
+                authHolds.current.clear();
+              authHolds.current.set(
+                scope,
+                r.error ?? "Reconecta Meta para renovar la autorización.",
+              );
+            } else retryable ||= !r.automaticDisabled;
             needsAuth ||= !!r.authorizationRequired;
             if ((r.updated || r.covered) && r.checkedAt && r.checkedAt > latest)
               latest = r.checkedAt;
@@ -166,6 +186,7 @@ export function MetaVisibleRefresh({
             else if (r.waiting && !r.covered)
               errors.push("Esperando el turno de actualización de Meta.");
           } catch (e) {
+            retryable = true;
             errors.push(
               e instanceof Error
                 ? e.message
@@ -200,7 +221,10 @@ export function MetaVisibleRefresh({
         if (mounted.current) {
           setBusy(false);
           if (timer.current) clearTimeout(timer.current);
-          if (document.visibilityState === "visible")
+          if (
+            document.visibilityState === "visible" &&
+            (retryable || currentKey.current !== fetchScope)
+          )
             timer.current = setTimeout(
               () => void refreshRef.current(),
               currentKey.current !== fetchScope

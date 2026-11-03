@@ -1,5 +1,16 @@
 # Avance por fases · continuación del desarrollo
 
+## Corrección · informe visible verifica conexión pendiente (2026-11-03)
+
+Las capturas nuevas muestran gasto mayor en Ads Manager de la misma cuenta y aviso de autorización en la app. La revisión identificó un error reproducible: reader exigía verifiedAt antes de leer el informe y el catch convertía todavía no se verificó en autorización vencida, bloqueando esa revisión sin consultar Meta. No se afirma que este sea el único fallo de la instalación: falta su diagnóstico autenticado.
+
+La lectura visible ahora permite credencial local pendiente, pero conserva permisos, propiedad de cuenta/IDs, caducidad conocida, cuotas, lease y CAS de revisión. Solo el informe completo de hoy/ayer confirma verifiedAt y el vínculo de esa cuenta; no se descubren306 cuentas ni se modifican las demás fuentes. Un aviso heredado sin procedencia permite una comprobación acotada; un rechazo auténtico registra authorizationSource=META o EXPIRED y permanece bloqueado hasta renovar revisión. El mensaje real incluye HTTP/código; la espera local no se anuncia como token vencido. Se conservan V/G y cursor si falla.
+
+También se corrigió la repetición de peticiones del navegador cuando un rechazo tenía nextAt vencido: la autorización rechazada se retiene por conexión/revisión, sin temporizador ni nuevas peticiones al enfocar/buscar. Una credencial renovada vuelve a consultar; otras conexiones sanas mantienen sus ciclos.
+
+284 unitarios,36 integraciones (17 de refresco,6 cuota,7 ámbito principal,1 incremental,5 multicuentas), typecheck/build y3 controles Chromium correctos. Dos cuentas de la misma conexión recuperan informes17.50/26.75 con cuatro lecturas simuladas y sin directorio; ambas conservan gasto al recibir190 y dejan de repetir hasta renovar. Preferencias QA restauradas y fixture limpiado con V/G/B originales verificados. Corrección común, no cambios de credenciales/datos/anuncios reales; Hostinger requiere verificación efectiva posterior a la publicación.
+
+
 ## Actualización · principales automáticas y secundarias a petición (2026-11-03)
 
 Por autorización del usuario, la lista compartida de principales pasa a limitar las consultas automáticas, no solo la interfaz. Worker, workflow durable, recuperación de programadores y refresco visible respetan esa lista y enabled. La lista aún no inicializada conserva compatibilidad; una lista vacía ya configurada no hace consultas automáticas. No se modifica activación publicitaria ni se borran cuentas/datos/cursores.

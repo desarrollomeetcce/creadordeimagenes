@@ -111,7 +111,9 @@ export async function refreshVisibleMeta(
         )
       : null;
     if (s.revision === a.connection.revision) {
-      if (s.authorizationRequired) return false;
+      // Legacy pending-verification errors were incorrectly labelled as expired.
+      // Permit one bounded provider check; a genuine rejection below records its source.
+      if (s.authorizationRequired && s.authorizationSource) return false;
       if (s.leaseUntil && Date.parse(s.leaseUntil) > Date.now()) return false;
       if (s.nextAt && Date.parse(s.nextAt) > Date.now()) {
         const heldByQuota =
@@ -169,15 +171,18 @@ export async function refreshVisibleMeta(
       recoveryAt: recovery.wait?.toISOString() ?? null,
       checkedAt: s.checkedAt ?? null,
       covered: b.objects.every((id) => realtimeCoverage(s, id, since, today)),
-      authorizationRequired: !!s.authorizationRequired,
+      authorizationRequired:
+        !!s.authorizationRequired && !!s.authorizationSource,
       error: recovery.wait
         ? "La comprobación está en espera. Se respeta el plazo de Meta y una comprobación por conexión cada 15 minutos."
-        : (s.error ?? null),
+        : s.authorizationRequired && !s.authorizationSource
+          ? "Conexión pendiente de comprobar con el informe de Meta."
+          : (s.error ?? null),
     };
   }
   let statusUpdated = false;
   try {
-    const { reader: r } = await reader(a.connectionId, false, true);
+    const { reader: r } = await reader(a.connectionId, true, true);
     // Reuse only already-verified states within the existing120s freshness window.
     // The spend report below still runs; stale/missing states and explicit recovery recheck Meta.
     const stale = objects.filter(
@@ -324,6 +329,29 @@ export async function refreshVisibleMeta(
     await transaction(async (tx, s) => {
       demand(s.claim === claim, "Otra actualización tomó el turno.", 409);
       await writeSyncPage(tx, [], daily, false, at);
+      if (!a.connection.verifiedAt) {
+        const verified = await tx.metaConnection.updateMany({
+          where: {
+            id: a.connectionId,
+            revision: a.connection.revision,
+            disconnectedAt: null,
+          },
+          data: { verifiedAt: at, lastError: null },
+        });
+        demand(
+          verified.count === 1,
+          "La conexión cambió antes de verificar el informe.",
+          409,
+        );
+        await tx.metaAccountSource.updateMany({
+          where: {
+            accountId,
+            connectionId: a.connectionId,
+            revision: a.connection.revision,
+          },
+          data: { verifiedAt: at },
+        });
+      }
       await tx.metaAdAccount.update({
         where: { id: accountId },
         data: {
@@ -354,8 +382,7 @@ export async function refreshVisibleMeta(
   } catch (error) {
     const auth =
       requiresMetaReconnect(error) ||
-      (error instanceof Error &&
-        /token.*caduc|todavía no se verificó/i.test(error.message));
+      (error instanceof Error && /token.*caduc/i.test(error.message));
     const retryAt =
       error instanceof MetaQuotaWait
         ? error.retryAt
@@ -363,7 +390,11 @@ export async function refreshVisibleMeta(
           ? error.retryAt
           : undefined;
     const message = auth
-      ? "La autorización de Meta venció o fue rechazada. Reconecta la conexión para volver a consultar estados y gasto."
+      ? "Meta requiere renovar la autorización" +
+        (error instanceof MetaGraphError
+          ? ` (HTTP ${error.diagnostic.httpStatus}, código ${error.diagnostic.code ?? "sin código"})`
+          : " por caducidad de la credencial") +
+        ". Reconecta la conexión para volver a consultar estados y gasto."
       : error instanceof MetaGraphError || error instanceof AppError
         ? error.message
         : "No se pudo completar la lectura breve de Meta. Se conservan los datos anteriores.";
@@ -377,6 +408,11 @@ export async function refreshVisibleMeta(
             ...rest,
             error: message,
             authorizationRequired: auth,
+            authorizationSource: auth
+              ? error instanceof MetaGraphError
+                ? "META"
+                : "EXPIRED"
+              : null,
             nextAt: (retryAt ?? new Date(Date.now() + 60000)).toISOString(),
           },
         },

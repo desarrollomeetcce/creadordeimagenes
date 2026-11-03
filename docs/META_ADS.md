@@ -1,5 +1,14 @@
 # Meta Ads: consulta y análisis
 
+## Conexión pendiente y autorización rechazada
+
+Un token guardado que aún no terminó su verificación puede comprobarse con el informe reciente de los elementos visibles. No es necesario recorrer todas las cuentas para esa lectura. La conexión se marca verificada únicamente tras recibir correctamente el informe, conservando la revisión y permisos vigentes.
+
+Si el aviso procedía de una verificación local pendiente, el sistema vuelve a comprobarlo de forma acotada. Si Meta rechaza realmente la autorización, el aviso muestra HTTP/código y se detienen los reintentos de esa conexión hasta renovar la credencial. HTTP401 o código190 requieren reconectar mediante Facebook; una fecha de caducidad futura no descarta revocación. No se borra el gasto guardado ni se presenta como cero.
+
+Esta lógica es común para todas las cuentas, incluidas las principales y las secundarias cuando solicites su actualización. Una conexión rechazada no debe generar peticiones cada segundo por tener una hora de reintento antigua.
+
+
 ## Principales automáticas; secundarias a voluntad
 
 Las cuentas marcadas Cuenta principal y con sincronización habilitada reciben actualizaciones automáticas. Las secundarias conservan sus informes e histórico, pero se consultan cuando pulses Actualizar. Entrar en una secundaria, volver a la pestaña o dejarla abierta no activa un refresco periódico. Si la marcas como principal, pasa al ámbito automático compartido.
