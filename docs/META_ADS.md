@@ -1,5 +1,12 @@
 # Meta Ads: consulta y análisis
 
+## Conservar informes al recargar o cambiar de página
+
+La confirmación de un informe reciente se conserva por campaña, conjunto o anuncio dentro de su mismo período y credencial. Consultar otra página no vuelve a poner pendientes las filas ya completadas. Cada una conserva su hora real; cambiar la credencial o pasar al día siguiente requiere la comprobación correspondiente.
+
+Los importes se leen de los datos guardados, no de estas confirmaciones. Un informe realmente pendiente continúa identificado y las ventas ausentes no se convierten en cero. El CAC reciente necesita ventas registradas en ese mismo período; tener ventas en30d no permite calcular automáticamente un CAC de7d sin esas ventas.
+
+
 ## Conexión pendiente y autorización rechazada
 
 Un token guardado que aún no terminó su verificación puede comprobarse con el informe reciente de los elementos visibles. No es necesario recorrer todas las cuentas para esa lectura. La conexión se marca verificada únicamente tras recibir correctamente el informe, conservando la revisión y permisos vigentes.

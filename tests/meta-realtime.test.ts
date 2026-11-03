@@ -2,6 +2,8 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   realtimeCoverage,
+  mergeRealtimeCoverage,
+  realtimeSelectionCheckedAt,
   statusIsStale,
 } from "../lib/meta-ads/realtime-policy";
 import { MetaReader } from "../lib/meta-ads/provider";
@@ -259,4 +261,75 @@ test("Meta backoff is gradual, bounded and never shorter than a supplied provide
   assert.equal(metaQuotaPauseMs(5, 0), 900000);
   assert.equal(metaQuotaPauseMs(1, 1800000), 1800000);
   assert.equal(metaQuotaPauseMs(1, 864000000), 86400000);
+});
+
+test("Meta conserva cobertura por fila al cambiar página sin rejuvenecer las anteriores", () => {
+  const one = "2026-11-03T15:00:00Z",
+    two = "2026-11-03T15:01:00Z",
+    since = "2026-11-02",
+    until = "2026-11-03";
+  const first = { since, until, revision: 2, checkedAt: one, objects: ["11"] };
+  const coverage = mergeRealtimeCoverage(
+    first,
+    ["22"],
+    ["22"],
+    since,
+    until,
+    2,
+    two,
+  );
+  const second = {
+    since,
+    until,
+    revision: 2,
+    checkedAt: two,
+    objects: ["22"],
+    coverage,
+  };
+  assert(realtimeCoverage(second, "11", until, until));
+  assert(realtimeCoverage(second, "22", until, until));
+  assert.equal(realtimeSelectionCheckedAt(second, ["11"], since, until), one);
+  assert.equal(
+    realtimeSelectionCheckedAt(second, ["11", "22"], since, until),
+    one,
+  );
+  assert.equal(realtimeSelectionCheckedAt(second, ["33"], since, until), null);
+  assert(!realtimeCoverage(second, "11", "2026-11-01", until));
+  assert.deepEqual(
+    mergeRealtimeCoverage(
+      second,
+      ["33"],
+      ["33"],
+      "2026-11-03",
+      "2026-11-04",
+      2,
+      two,
+    ),
+    { "33": two },
+  );
+  assert.deepEqual(
+    mergeRealtimeCoverage(second, ["33"], ["33"], since, until, 3, two),
+    { "33": two },
+  );
+  assert.deepEqual(
+    mergeRealtimeCoverage(second, ["11"], [], since, until, 2, two),
+    { "22": two },
+  );
+  const large = {
+    ...second,
+    coverage: Object.fromEntries(
+      Array.from({ length: 700 }, (_, i) => [String(i + 1), one]),
+    ),
+  };
+  const bounded = mergeRealtimeCoverage(
+    large,
+    ["9999"],
+    ["9999"],
+    since,
+    until,
+    2,
+    two,
+  );
+  assert.equal(Object.keys(bounded).length, 500);
+  assert.equal(bounded["9999"], two);
 });

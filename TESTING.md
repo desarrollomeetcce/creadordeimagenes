@@ -1,5 +1,12 @@
 # Pruebas y evidencia
 
+## Verificación · cobertura entre páginas y Ctrl+F5 (2026-11-03)
+
+285 unitarios,42 integraciones completas y7 casos de regresión posteriores (43 casos únicos), typecheck/build correctos. Unitario verifica unión de recibos por fila, hora de la más antigua de la selección, límites de período/revisión, exclusión de faltantes y cota500. Integración con cuenta sincronizada ayer: primera fila importa11, segunda22 y tres lecturas nuevas conservan ambas disponibles en Hoy y fecha. Se retira solo coverage del estado y se reproduce UNAVAILABLE aunque el gasto11 continúe en DB; restaurarlo recupera la vista sin Meta. Espera de la primera fila devuelve su hora, no la de la segunda. Error posterior no elimina recibos, nueva revisión con error no los hereda, importes quedan intactos.
+
+Chromium con latest objects de una sola fila y coverage de tres: aparecen todos los importes; tres recargas con caché deshabilitada conservan texto exacto y disponibilidad; ordenar por costo mantiene datos. Cero POST de refresco y errores JS. Se restauran preferencias QA y se retira solo fixture verificando V10+21 compartidas, G1400.91/B140 y estado de anuncio original. Sin llamadas reales ni cambios de ventas/vínculos, sin migraciones. Hostinger sin verificación autenticada.
+
+
 ## Verificación · pendientes de conexión frente a rechazo real (2026-11-03)
 
 284 unitarios,36 integraciones y typecheck/build correctos. Subsuite final de17 refrescos repetida tras completar los casos de espera heredada. Conexión verifiedAt=null y aviso genérico heredado: durante cooldown se informa pendiente de comprobar, no token vencido; al permitir lectura se obtienen estados/informe y se confirma solo la revisión y cuenta consultadas. No directorio de cuentas, ni FX, ni histórico completo, ni cambios de selección/agenda/V.

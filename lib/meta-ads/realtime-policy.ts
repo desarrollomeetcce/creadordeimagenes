@@ -9,6 +9,7 @@ export type RealtimeState = {
   since?: string;
   until?: string;
   objects?: string[];
+  coverage?: Record<string, string>;
   revision?: number;
   error?: string;
   authorizationRequired?: boolean;
@@ -25,10 +26,52 @@ export function realtimeCoverage(
     !!s.checkedAt &&
     !!s.since &&
     !!s.until &&
-    !!s.objects?.includes(objectId) &&
+    (s.coverage ? !!s.coverage[objectId] : !!s.objects?.includes(objectId)) &&
     since >= s.since &&
     until <= s.until
   );
+}
+/** Keep completed rows from other pages of the same two-day window/revision.
+ * These are receipts, not spend caches: every amount still comes from MetaAdDaily. */
+export function mergeRealtimeCoverage(
+  raw: unknown,
+  requested: string[],
+  completed: string[],
+  since: string,
+  until: string,
+  revision: number,
+  checkedAt: string,
+) {
+  const s = (raw ?? {}) as RealtimeState;
+  const receipts: Record<string, string> = {};
+  if (s.since === since && s.until === until && s.revision === revision) {
+    for (const [id, at] of Object.entries(
+      s.coverage ??
+        Object.fromEntries(
+          (s.objects ?? []).map((id) => [id, s.checkedAt ?? ""]),
+        ),
+    ))
+      if (/^\d{1,40}$/.test(id) && Number.isFinite(Date.parse(at)))
+        receipts[id] = at;
+  }
+  for (const id of requested) delete receipts[id];
+  for (const id of completed) receipts[id] = checkedAt;
+  return Object.fromEntries(
+    Object.entries(receipts)
+      .sort((a, b) => b[1].localeCompare(a[1]) || a[0].localeCompare(b[0]))
+      .slice(0, 500),
+  );
+}
+export function realtimeSelectionCheckedAt(
+  raw: unknown,
+  ids: string[],
+  since: string,
+  until: string,
+) {
+  const s = (raw ?? {}) as RealtimeState;
+  if (!ids.length || !ids.every((id) => realtimeCoverage(s, id, since, until)))
+    return null;
+  return ids.map((id) => s.coverage?.[id] ?? s.checkedAt!).sort()[0];
 }
 export function statusIsStale(
   seenAt: Date | string,

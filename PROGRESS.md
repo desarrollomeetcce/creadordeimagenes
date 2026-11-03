@@ -1,5 +1,14 @@
 # Avance por fases · continuación del desarrollo
 
+## Corrección · informes por fila que desaparecían al recargar (2026-11-03)
+
+Las capturas nuevas mostraban resumen actualizado pero Hoy/fecha pendientes y cambios al usar Ctrl+F5. Se reprodujo el fallo: realtimeState.objects conservaba solo la última tanda; al completar otra página se perdía la confirmación de las anteriores. Dashboard seguía guardando11/22 de gasto, pero volvía a marcar UNAVAILABLE por sincronizado general antiguo. El problema era disponibilidad por fila, no borrado de cifras.
+
+Se conserva una confirmación temporal por objeto dentro del mismo período breve y revisión, acotada a500 entradas. No cachea importes: los valores siguen viniendo de MetaAdDaily. Cada fila conserva su propia hora, la tanda solicitada se reemplaza sin rejuvenecer las otras y no se heredan confirmaciones en otro día o credencial. La respuesta de espera usa la hora real de la selección, no la última de otra página. Sin llamadas Meta/SQL adicionales ni migraciones.
+
+285 unitarios,42 integraciones completas y7 controles de regresión por páginas (43 casos únicos), typecheck/build y3 controles Chromium correctos. Se reprodujo estado legado sin recibos: gasto existente11 quedaba pendiente; restaurar las confirmaciones devuelve ambas filas sin Graph. Dos tandas y varias lecturas conservan Hoy/fecha y cifras; fallo posterior preserva datos, credencial nueva con fallo no finge cobertura. Browser conserva tres importes en tres recargas con caché deshabilitada y al ordenar, sin POST de refresco ni errores JS. Preferencias QA restauradas y fixture retirado verificando V/G/B originales. Publicación del código no acredita recepción ni cifras reales en Hostinger.
+
+
 ## Corrección · informe visible verifica conexión pendiente (2026-11-03)
 
 Las capturas nuevas muestran gasto mayor en Ads Manager de la misma cuenta y aviso de autorización en la app. La revisión identificó un error reproducible: reader exigía verifiedAt antes de leer el informe y el catch convertía todavía no se verificó en autorización vencida, bloqueando esa revisión sin consultar Meta. No se afirma que este sea el único fallo de la instalación: falta su diagnóstico autenticado.

@@ -14,6 +14,8 @@ import { MetaGraphError, requiresMetaReconnect } from "./graph-error";
 import { MetaQuotaWait, metaQuotaScope, recoverMetaQuota } from "./quota";
 import {
   realtimeCoverage,
+  mergeRealtimeCoverage,
+  realtimeSelectionCheckedAt,
   statusIsStale,
   type RealtimeState,
 } from "./realtime-policy";
@@ -140,6 +142,9 @@ export async function refreshVisibleMeta(
         realtimeState: {
           ...s,
           claim,
+          ...(s.revision !== a.connection.revision
+            ? { coverage: {}, objects: [], checkedAt: null }
+            : {}),
           quotaScopeHash: a.connection.encryptedToken
             ? metaQuotaScope(
                 a.connection,
@@ -169,7 +174,10 @@ export async function refreshVisibleMeta(
       waiting: true,
       nextAt: recovery.wait?.toISOString() ?? s.nextAt ?? null,
       recoveryAt: recovery.wait?.toISOString() ?? null,
-      checkedAt: s.checkedAt ?? null,
+      checkedAt:
+        realtimeSelectionCheckedAt(s, b.objects, since, today) ??
+        s.checkedAt ??
+        null,
       covered: b.objects.every((id) => realtimeCoverage(s, id, since, today)),
       authorizationRequired:
         !!s.authorizationRequired && !!s.authorizationSource,
@@ -363,6 +371,15 @@ export async function refreshVisibleMeta(
             since,
             until: today,
             objects: [...seen],
+            coverage: mergeRealtimeCoverage(
+              s,
+              b.objects,
+              [...seen],
+              since,
+              today,
+              a.connection.revision,
+              at.toISOString(),
+            ),
             revision: a.connection.revision,
             nextAt: s.nextAt ?? new Date(Date.now() + 60000).toISOString(),
           },
