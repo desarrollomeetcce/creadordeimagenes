@@ -1,3 +1,4 @@
+import type { Prisma } from "@prisma/client";
 import { metaQuotaPauseMs } from "./realtime-policy";
 import { createHash } from "node:crypto";
 import { db } from "../db";
@@ -35,6 +36,43 @@ export async function quotaUntil(scope: string) {
   return row?.blockedUntil && row.blockedUntil.valueOf() > Date.now()
     ? row.blockedUntil
     : null;
+}
+/** Explicit, bounded availability check of an app-held pause. Separate quota keys
+ * retain provider deadlines and serialize recovery across all shared accounts. */
+export async function recoverMetaQuota(
+  tx: Prisma.TransactionClient,
+  scope: string,
+) {
+  await tx.$executeRaw`SELECT pg_advisory_xact_lock(884412)`;
+  const rows = await tx.metaApiQuota.findMany({
+    where: { scope: { in: [scope, "provider:" + scope, "recovery:" + scope] } },
+  });
+  const now = Date.now(),
+    row = rows.find((r) => r.scope === scope),
+    provider = rows.find((r) => r.scope === "provider:" + scope),
+    recovery = rows.find((r) => r.scope === "recovery:" + scope);
+  if (provider?.blockedUntil && provider.blockedUntil.valueOf() > now)
+    return provider.blockedUntil;
+  if (!row?.blockedUntil || row.blockedUntil.valueOf() <= now) return null;
+  const earliest = Math.max(
+    (row.lastLimitedAt?.valueOf() ?? 0) + 60000,
+    recovery?.nextReadAt.valueOf() ?? 0,
+  );
+  if (earliest > now) return new Date(earliest);
+  await tx.metaApiQuota.upsert({
+    where: { scope: "recovery:" + scope },
+    create: {
+      scope: "recovery:" + scope,
+      nextReadAt: new Date(now + 15 * 60000),
+    },
+    update: { nextReadAt: new Date(now + 15 * 60000) },
+  });
+  // Do not change account schedules/cursors, data, failures, tokens or permissions.
+  await tx.metaApiQuota.update({
+    where: { scope },
+    data: { blockedUntil: null },
+  });
+  return null;
 }
 export function quotaHooks(scope: string, paced: boolean) {
   return {
@@ -75,6 +113,23 @@ export function quotaHooks(scope: string, paced: boolean) {
           update: {},
         });
         const now = Date.now();
+        if (Number.isFinite(retryMs) && retryMs > 0) {
+          const providerScope = "provider:" + scope;
+          const existing = await tx.metaApiQuota.findUnique({
+            where: { scope: providerScope },
+          });
+          const deadline = new Date(
+            Math.max(
+              existing?.blockedUntil?.valueOf() ?? 0,
+              now + Math.min(retryMs, 86400000),
+            ),
+          );
+          await tx.metaApiQuota.upsert({
+            where: { scope: providerScope },
+            create: { scope: providerScope, blockedUntil: deadline },
+            update: { blockedUntil: deadline },
+          });
+        }
         // Concurrent failures belong to the same event, not several exponential retries.
         const recent =
           row.lastLimitedAt && now - row.lastLimitedAt.valueOf() < 30000;

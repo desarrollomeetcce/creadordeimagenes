@@ -1,5 +1,12 @@
 # Pruebas y evidencia
 
+## Verificación · recuperación de pausa Meta (2026-11-03)
+
+284 unitarios,20 integraciones (14 de refresco visible,6 de recuperación), typecheck/build y tres controles Chromium correctos. Integración contra base QA aislada verifica pausa interna8h: lectura normal no consulta, recover explícito recupera estados e informes con dos llamadas simuladas, mantiene syncState/nextSyncAt y un segundo clic no consulta. Otra página con error antiguo retoma al desaparecer la pausa compartida. VIEW sigue rechazado antes de leer.
+
+Pruebas de cuota comprueban espera mínima1min, una liberación por15min, contadores conservados, aislamiento de otro ámbito y Retry-After2h imposible de liberar. Chromium comprueba recover:true solo en clic, mismos IDs y máximo25 por página, actualización única del dashboard, ausencia del botón tras éxito; rechazo mantiene próximo plazo/deshabilita repetición, aviso móvil sin errores JS. Proveedor simulado, fixture exclusivo y limpieza que comprueba V10, V compartidas21 contadas una vez, G1400.91/B140 y estado original. Sin datos reales modificados ni migraciones. No se acredita conexión/despliegue efectivo de Hostinger.
+
+
 ## Verificación · cuota Meta / prioridad reciente / renombrado (2026-11-03)
 
 284 unitarios,40 integraciones (13 refresco,26 activación y1 incremental),16 integraciones de asignación, typecheck y build correctos. Las pruebas verifican espera gradual1/2/15min y Retry-After30min/24h, respeto de nextAt sin máximo60s, prioridad histórica de la cuenta y de otra cuenta con el mismo hash de credenciales, liberación de lease y cursor intacto. Ventas, país y vínculos originales permanecen iguales tras renombrar una hoja de país a un nombre genérico y luego a otro país. No migraciones.

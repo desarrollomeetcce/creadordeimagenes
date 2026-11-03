@@ -10,11 +10,12 @@ import { localDay, shiftDay } from "./analytics";
 import { facts, day } from "./focused-sync";
 import { writeSyncPage } from "./bulk-sync";
 import { MetaGraphError, requiresMetaReconnect } from "./graph-error";
-import { MetaQuotaWait, metaQuotaScope } from "./quota";
+import { MetaQuotaWait, metaQuotaScope, recoverMetaQuota } from "./quota";
 import { realtimeCoverage, type RealtimeState } from "./realtime-policy";
 const scope = "7d_click,1d_view|impression";
 const schema = z
   .object({
+    recover: z.boolean().optional(),
     objects: z
       .array(z.string().regex(/^\d{1,40}$/))
       .min(1)
@@ -78,11 +79,35 @@ export async function refreshVisibleMeta(
       { timeout: 15000 },
     );
   }
+  const recovery = { wait: null as Date | null };
   const acquired = await transaction(async (tx, s) => {
+    const quotaScope = a.connection.encryptedToken
+      ? metaQuotaScope(
+          a.connection,
+          decryptKey(a.connection.encryptedToken, `meta:${a.connectionId}`),
+        )
+      : null;
     if (s.revision === a.connection.revision) {
       if (s.authorizationRequired) return false;
       if (s.leaseUntil && Date.parse(s.leaseUntil) > Date.now()) return false;
-      if (s.nextAt && Date.parse(s.nextAt) > Date.now()) return false;
+      if (s.nextAt && Date.parse(s.nextAt) > Date.now()) {
+        const heldByQuota =
+          !!s.error &&
+          /Meta limitó las consultas|código (?:4|17|32|613|80000|80004)\b|HTTP 429/.test(
+            s.error,
+          );
+        if (!heldByQuota || !quotaScope) return false;
+        if (b.recover) {
+          recovery.wait = await recoverMetaQuota(tx, quotaScope);
+          if (recovery.wait) return false;
+        } else {
+          const quota = await tx.metaApiQuota.findUnique({
+            where: { scope: quotaScope },
+          });
+          if (quota?.blockedUntil && quota.blockedUntil > new Date())
+            return false;
+        }
+      }
     }
     await tx.metaAdAccount.update({
       where: { id: accountId },
@@ -117,11 +142,14 @@ export async function refreshVisibleMeta(
     return {
       updated: false,
       waiting: true,
-      nextAt: s.nextAt ?? null,
+      nextAt: recovery.wait?.toISOString() ?? s.nextAt ?? null,
+      recoveryAt: recovery.wait?.toISOString() ?? null,
       checkedAt: s.checkedAt ?? null,
       covered: b.objects.every((id) => realtimeCoverage(s, id, since, today)),
       authorizationRequired: !!s.authorizationRequired,
-      error: s.error ?? null,
+      error: recovery.wait
+        ? "La comprobación está en espera. Se respeta el plazo de Meta y una comprobación por conexión cada 15 minutos."
+        : (s.error ?? null),
     };
   }
   let statusUpdated = false;

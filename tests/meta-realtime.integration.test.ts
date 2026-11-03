@@ -409,6 +409,7 @@ test("Meta visible: estado actual y gasto breve independientes del histórico", 
         await assert.rejects(
           () =>
             refreshVisibleMeta({ id: viewer, role: "OBSERVER" }, root, {
+              recover: true,
               objects: ids,
             }),
           /permiso/i,
@@ -485,6 +486,92 @@ test("Meta visible: estado actual y gasto breve independientes del histórico", 
           ),
           9,
         );
+      },
+    );
+    await t.test(
+      "Recupera informe visible desde pausa antigua sin tocar agenda ni histórico",
+      async () => {
+        const { metaQuotaScope } = await import("../lib/meta-ads/quota");
+        const c = await db.metaConnection.findUniqueOrThrow({
+            where: { id: cid },
+          }),
+          q = metaQuotaScope(c, "synthetic-live-token");
+        const keys = [q, "provider:" + q, "recovery:" + q];
+        try {
+          mode = "ok";
+          await reset();
+          const pause = new Date(Date.now() + 8 * 3600000).toISOString();
+          const saved = await db.metaAdAccount.findUniqueOrThrow({
+            where: { id: root },
+          });
+          await db.metaApiQuota.upsert({
+            where: { scope: q },
+            create: {
+              scope: q,
+              blockedUntil: new Date(pause),
+              lastLimitedAt: old,
+              failures: 5,
+            },
+            update: {
+              blockedUntil: new Date(pause),
+              lastLimitedAt: old,
+              failures: 5,
+            },
+          });
+          await db.metaAdAccount.update({
+            where: { id: root },
+            data: {
+              realtimeState: {
+                revision: c.revision,
+                nextAt: pause,
+                error:
+                  "Meta limitó las consultas. El avance está guardado; se volverá a intentar después de la pausa.",
+              },
+            },
+          });
+          const n = calls;
+          const waiting = await refreshVisibleMeta(actor, root, {
+            objects: ids,
+          });
+          assert(waiting.waiting);
+          assert.equal(calls, n);
+          const r = await refreshVisibleMeta(actor, root, {
+            objects: ids,
+            recover: true,
+          });
+          assert(r.updated);
+          assert.equal(calls, n + 2);
+          const after = await db.metaAdAccount.findUniqueOrThrow({
+            where: { id: root },
+          });
+          assert.deepEqual(after.syncState, saved.syncState);
+          assert.equal(
+            after.nextSyncAt?.valueOf(),
+            saved.nextSyncAt?.valueOf(),
+          );
+          const repeat = await refreshVisibleMeta(actor, root, {
+            objects: ids,
+            recover: true,
+          });
+          assert(repeat.waiting);
+          assert.equal(calls, n + 2);
+          // Other pages with the old local error resume normally once the shared pause is gone.
+          await db.metaAdAccount.update({
+            where: { id: root },
+            data: {
+              realtimeState: {
+                revision: c.revision,
+                nextAt: pause,
+                error: "Meta limitó las consultas.",
+              },
+            },
+          });
+          assert(
+            (await refreshVisibleMeta(actor, root, { objects: ids })).updated,
+          );
+        } finally {
+          await db.metaApiQuota.deleteMany({ where: { scope: { in: keys } } });
+        }
       },
     );
     await t.test(

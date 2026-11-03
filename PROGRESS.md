@@ -1,5 +1,14 @@
 # Avance por fases · continuación del desarrollo
 
+## Actualización · recuperar informes tras una pausa guardada (2026-11-03)
+
+La corrección anterior conservaba pausas antiguas de hasta8h y deshabilitaba la acción de actualizar. Comprobar Meta permite ahora una recuperación explícita y acotada de la página visible. Revalida permisos, conexión/revisión, selección y lease antes de tocar la espera. Serializa la liberación de una pausa interna por ámbito compartido (bloqueo884412); espera al menos1min desde el último límite y permite solo una liberación cada15min si el límite vuelve. Conserva contadores de fallos, agenda del histórico, cursores, ventas y anuncios. Si el proveedor vuelve a rechazar, se guarda la nueva pausa. No hay prueba automática de recuperación.
+
+Los Retry-After recibidos desde esta versión se conservan por separado en MetaApiQuota con clave provider:<hash>; recovery:<hash> conserva únicamente el cooldown. Ninguna contiene secretos. No hay cambios de esquema ni migraciones. Pausas heredadas carecen de procedencia distinguible; la comprobación explícita realiza una lectura breve para verificar disponibilidad, no presume que Meta ya la concedió. Tras liberarse la pausa compartida, un error local antiguo no bloquea otra página hasta su vieja hora.
+
+284 unitarios,20 integraciones, typecheck/build y tres controles Chromium correctos. Verificados recuperación desde8h con dos lecturas de Meta simuladas, bloqueo de repetición/Retry-After, rechazo VIEW y conservación de agenda/histórico; UI manda recover solo al clic explícito, recarga una vez, deshabilita repetición y mantiene aviso móvil. Fixture QA retirado con V/G/B originales verificados. La publicación en main/Vercel se distingue de la recepción real en Hostinger, sin acceso autenticado al VPS.
+
+
 ## Actualización · Meta reciente y nombres estables de hojas (2026-11-03)
 
 El diagnóstico aportado por el usuario confirma una pausa por cuota de Meta. El refresco visible respeta íntegramente nextAt, recuerda la pausa por conexión/revisión y evita nuevos POST al ordenar, buscar o recuperar foco durante ese plazo. El aviso muestra próximo intento en Lima. Si cambia la revisión de credenciales, se reevalúa la conexión. El histórico pendiente de la misma cuenta o ámbito de credenciales cede temporalmente prioridad a la lectura breve de hoy/ayer; conserva cursores y se reanuda al vencer la prioridad. No se habilitan cuentas ni modifican anuncios. Las nuevas cuotas sin Retry-After usan espera gradual de1–15min en vez de imponer30min al primer evento; plazos explícitos superiores y pausas ya guardadas se conservan.

@@ -1,5 +1,12 @@
 # Meta Ads: consulta y análisis
 
+## Recuperar una pausa guardada
+
+Si aparece Meta en pausa, Comprobar Meta permite comprobar una vez los estados y el gasto de hoy/ayer de la página visible. Sirve para recuperar esperas antiguas retenidas por la app sin reiniciar catálogo o histórico. Si Meta responde, se actualiza la tabla; si rechaza la consulta, se muestra la nueva espera. No se borran ventas, vínculos ni anuncios.
+
+La comprobación explícita se limita por conexión/ámbito compartido: espera al menos un minuto tras un límite y no permite liberar otra pausa interna durante15min. Los plazos explícitos Retry-After recibidos desde esta versión se respetan. No se puede deducir retrospectivamente si una pausa antigua procedía de un Retry-After o del cálculo anterior; el botón realiza una comprobación limitada y no garantiza disponibilidad. Los refrescos automáticos nunca pulsan esta recuperación.
+
+
 ## Actualización reciente y pausa de Meta
 
 Actualizar vista consulta hoy y ayer de los elementos visibles, sin esperar a descargar el histórico. Si Meta limita las consultas, el botón indica Meta en pausa y el símbolo ⓘ muestra cuándo se intentará de nuevo, con hora Lima. Ordenar, buscar o volver a la pestaña no interrumpe esa pausa. Los valores guardados se conservan; un informe pendiente no significa gasto cero. Meta puede entregar métricas con retraso.
