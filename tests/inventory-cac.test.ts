@@ -144,3 +144,29 @@ test("CAC thresholds use daily PEN equivalents while retaining display currency;
     "PENDING",
   );
 });
+
+test("Meta inventory CAC uses known positive partial sales provisionally and keeps absent/zero partial pending", () => {
+  const positive = report({ "2026-10-30": day(2, null, 200) });
+  assert.equal(positive.meta.assessment.status, "CRITICAL");
+  assert.equal(positive.meta.provisional, true);
+  assert.equal(positive.meta.cac, 100);
+  assert.equal(positive.budget.assessment.status, "PENDING");
+  assert.equal(
+    report({ "2026-10-30": day(null, null, 200) }).meta.assessment.status,
+    "PENDING",
+  );
+  assert.equal(
+    report({ "2026-10-30": day(0, null, 200) }).meta.assessment.status,
+    "PENDING",
+  );
+});
+
+test("Partial Meta CAC cannot classify a mix of converted and missing-FX spend", () => {
+  const a = day(1, null, 100),
+    b = day(1, null, 100);
+  b.sourceSpend = [{ amount: 100, currency: "USD" }];
+  const r = report({ "2026-10-30": a, "2026-10-31": b });
+  assert.equal(r.meta.partial, true);
+  assert.equal(r.meta.assessment.status, "PENDING");
+  assert.equal(r.meta.provisional, false);
+});

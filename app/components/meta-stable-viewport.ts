@@ -8,7 +8,7 @@ export function useMetaStableViewport() {
     const target = event.target;
     if (
       !(target instanceof Element) ||
-      target.closest("dialog") ||
+      target.closest('dialog:not([data-table-window-mode="inline"])') ||
       !target.closest(
         ".meta-aligned-order,.meta-fixed-table-head,.meta-summary-row,.meta-evaluation-order,.meta-main-filters,.meta-result-controls,.meta-search-row,.meta-account-pins,.meta-recommendations>header,.meta-source-fetch",
       )

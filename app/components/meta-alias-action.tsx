@@ -1,6 +1,13 @@
 "use client";
 import { SheetSearchSelect } from "./sheet-search-select";
-import { useEffect, useId, useMemo, useRef, useState } from "react";
+import {
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import { categoryKey } from "../../lib/meta-ads/category-paste";
 import { currencyCodes } from "../../lib/meta-ads/currency-codes";
 import type {
@@ -26,7 +33,21 @@ export function MetaAliasAction({
   bulkCount,
   onAssign,
   onOpen,
+  triggerLabel,
+  initialTableId,
+  initialListId,
+  extraFields,
+  extraSaveDisabled = false,
+  allowRemove = true,
+  lockIdentity = false,
 }: {
+  triggerLabel?: string;
+  initialTableId?: string;
+  initialListId?: string;
+  extraFields?: ReactNode;
+  extraSaveDisabled?: boolean;
+  allowRemove?: boolean;
+  lockIdentity?: boolean;
   name: string;
   value?: string | null;
   country?: string | null;
@@ -195,11 +216,13 @@ export function MetaAliasAction({
     ).values(),
   ];
   const bulk = bulkCount !== undefined,
-    label = bulk
-      ? "Asignar inventario"
-      : value
-        ? `Con inventario${country ? ` · ${country}` : ""}`
-        : "Sin inventario";
+    label =
+      triggerLabel ??
+      (bulk
+        ? "Asignar inventario"
+        : value
+          ? `Con inventario${country ? ` · ${country}` : ""}`
+          : "Sin inventario");
   if (readOnly)
     return (
       <span className="meta-alias-indicator" title={countryName(country)}>
@@ -237,6 +260,7 @@ export function MetaAliasAction({
           );
           const currentList =
             aliases.find((a) => a.id === value)?.inventorySheetId ??
+            initialListId ??
             "default-inventory";
           setDraftList(
             bulk || !value || !inventories.some((i) => i.id === currentList)
@@ -246,8 +270,10 @@ export function MetaAliasAction({
           setDraftAlias(bulk ? "" : (value ?? ""));
           setDraftTable(
             bulk || !value
-              ? ""
-              : (aliases.find((a) => a.id === value)?.tableId ?? "diplomados"),
+              ? (initialTableId ?? "")
+              : (aliases.find((a) => a.id === value)?.tableId ??
+                  initialTableId ??
+                  "diplomados"),
           );
           setDraftCountry(bulk ? "" : (country ?? ""));
           const r = e.currentTarget.getBoundingClientRect();
@@ -288,6 +314,7 @@ export function MetaAliasAction({
         <form
           onSubmit={(e) => {
             e.preventDefault();
+            if (extraSaveDisabled) return;
             const item = catalog.find((c) => c.catalogId === draftAlias);
             if (item || (customName && draftAlias === "new:" + customName)) {
               popover.current?.hidePopover();
@@ -311,89 +338,95 @@ export function MetaAliasAction({
             } else assign(draftAlias || null, draftAlias ? draftCountry : null);
           }}
         >
-          <label>
-            Lista de inventario
-            <SheetSearchSelect
-              label="Lista de inventario"
-              placeholder="Todas las listas"
-              value={draftList}
-              options={[
-                { value: "", label: "Todas las listas" },
-                ...inventories.map((t) => ({ value: t.id, label: t.name })),
-              ]}
-              onSelect={(v) => {
-                setDraftList(v);
-                setDraftTable("");
-                setDraftAlias("");
-                setDraftCountry("");
-                setCustomName("");
-              }}
-            />
-          </label>
-          <label>
-            Tabla
-            <SheetSearchSelect
-              label="Tabla de inventario"
-              placeholder="Elige una tabla"
-              value={draftTable}
-              disabled={disabled}
-              options={[
-                { value: "", label: "Elige una tabla" },
-                ...tables.map((t) => ({ value: t.id, label: t.name })),
-              ]}
-              onSelect={(v) => {
-                setDraftTable(v);
-                setDraftCurrency(
-                  providedTables?.find((t) => t.id === v)?.defaultCurrency ??
-                    "",
-                );
-                setDraftAlias("");
-                setDraftCountry("");
-                setCustomName("");
-              }}
-            />
-          </label>
-          <label>
-            {bulk ? `Inventario para ${bulkCount} seleccionados` : "Inventario"}
-            <SheetSearchSelect
-              label={
-                bulk ? "Inventario para seleccionados" : `Inventario de ${name}`
-              }
-              placeholder="Elige un elemento del inventario"
-              value={draftAlias}
-              disabled={disabled || !draftTable}
-              options={options}
-              onCreate={(name) => {
-                setCustomName(name);
-                setDraftAlias("new:" + name);
-              }}
-              createLabel="Añadir nuevo a esta tabla"
-              createOnEnter
-              onSelect={(v) => {
-                setDraftAlias(v);
-                if (!v) setDraftCountry("");
-              }}
-            />
-          </label>
-          <label>
-            País
-            <SheetSearchSelect
-              label="País del inventario"
-              placeholder="Selecciona un país"
-              value={draftCountry}
-              disabled={
-                disabled || !draftAlias || contextLoading || !!contextError
-              }
-              options={[
-                { value: "", label: "Selecciona un país" },
-                ...countryOptions.map((c) => ({
-                  value: c.code,
-                  label: `${c.code} · ${c.name}`,
-                })),
-              ]}
-              onSelect={setDraftCountry}
-            />
-          </label>
+          <fieldset disabled={lockIdentity} className="meta-sync-identity">
+            <label>
+              Lista de inventario
+              <SheetSearchSelect
+                label="Lista de inventario"
+                placeholder="Todas las listas"
+                value={draftList}
+                options={[
+                  { value: "", label: "Todas las listas" },
+                  ...inventories.map((t) => ({ value: t.id, label: t.name })),
+                ]}
+                onSelect={(v) => {
+                  setDraftList(v);
+                  setDraftTable("");
+                  setDraftAlias("");
+                  setDraftCountry("");
+                  setCustomName("");
+                }}
+              />
+            </label>
+            <label>
+              Tabla
+              <SheetSearchSelect
+                label="Tabla de inventario"
+                placeholder="Elige una tabla"
+                value={draftTable}
+                disabled={disabled}
+                options={[
+                  { value: "", label: "Elige una tabla" },
+                  ...tables.map((t) => ({ value: t.id, label: t.name })),
+                ]}
+                onSelect={(v) => {
+                  setDraftTable(v);
+                  setDraftCurrency(
+                    providedTables?.find((t) => t.id === v)?.defaultCurrency ??
+                      "",
+                  );
+                  setDraftAlias("");
+                  setDraftCountry("");
+                  setCustomName("");
+                }}
+              />
+            </label>
+            <label>
+              {bulk
+                ? `Inventario para ${bulkCount} seleccionados`
+                : "Inventario"}
+              <SheetSearchSelect
+                label={
+                  bulk
+                    ? "Inventario para seleccionados"
+                    : `Inventario de ${name}`
+                }
+                placeholder="Elige un elemento del inventario"
+                value={draftAlias}
+                disabled={disabled || !draftTable}
+                options={options}
+                onCreate={(name) => {
+                  setCustomName(name);
+                  setDraftAlias("new:" + name);
+                }}
+                createLabel="Añadir nuevo a esta tabla"
+                createOnEnter
+                onSelect={(v) => {
+                  setDraftAlias(v);
+                  if (!v) setDraftCountry("");
+                }}
+              />
+            </label>
+            <label>
+              País
+              <SheetSearchSelect
+                label="País del inventario"
+                placeholder="Selecciona un país"
+                value={draftCountry}
+                disabled={
+                  disabled || !draftAlias || contextLoading || !!contextError
+                }
+                options={[
+                  { value: "", label: "Selecciona un país" },
+                  ...countryOptions.map((c) => ({
+                    value: c.code,
+                    label: `${c.code} · ${c.name}`,
+                  })),
+                ]}
+                onSelect={setDraftCountry}
+              />
+            </label>
+          </fieldset>
           <div className="meta-alias-details-row">
             <label>
               Asesor
@@ -493,12 +526,14 @@ export function MetaAliasAction({
           {!aliases.length && !catalog.length && (
             <p className="hint">Crea los nombres en «Efectividad».</p>
           )}
+          {extraFields}
           <div className="row">
             <button
               type="submit"
               className="primary"
               disabled={
                 disabled ||
+                extraSaveDisabled ||
                 !draftTable ||
                 !draftAlias ||
                 !draftCountry ||
@@ -506,7 +541,9 @@ export function MetaAliasAction({
                 !!contextError
               }
             >
-              Guardar inventario y país
+              {triggerLabel
+                ? "Guardar sincronización"
+                : "Guardar inventario y país"}
             </button>
             <button
               type="button"
@@ -516,7 +553,7 @@ export function MetaAliasAction({
             </button>
           </div>
         </form>
-        {!bulk && !!value && (
+        {allowRemove && !bulk && !!value && (
           <button
             type="button"
             disabled={disabled}
@@ -525,7 +562,7 @@ export function MetaAliasAction({
             Quitar inventario de esta fila
           </button>
         )}
-        {bulk && (
+        {allowRemove && bulk && (
           <button
             type="button"
             disabled={disabled}

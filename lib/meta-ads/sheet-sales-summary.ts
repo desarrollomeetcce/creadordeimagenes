@@ -1,3 +1,6 @@
+import type { EffectivenessSheet } from "./effectiveness";
+import { mergeTotalProductReports } from "./totals-product-summary";
+import { sumEffectivenessDay } from "./effectiveness-total-values";
 import type { TotalProduct, ProductAdvisor } from "./totals-product-summary";
 import type { TotalValue } from "./effectiveness-total-values";
 import { totalDetailSummary } from "./totals-detail";
@@ -53,7 +56,7 @@ export function sortSheetSalesProducts(
     if (x === null || y === null) {
       if (x === y) return a.name.localeCompare(b.name, "es");
       if (key === "sales" && ascending)
-        return x === null ? (y === 0 ? 1 : -1) : (x === 0 ? -1 : 1);
+        return x === null ? (y === 0 ? 1 : -1) : x === 0 ? -1 : 1;
       return x === null ? 1 : -1;
     }
     const compared =
@@ -184,4 +187,59 @@ export function sheetSalesStatus(p: SheetSalesProduct, threshold: number) {
       : p.sales.value <= threshold
         ? "low"
         : "selling";
+}
+
+/** Keep sheet membership even if the advisor-enriched response omitted a record. No fabricated zero. */
+export function includeSheetMembers(
+  products: TotalProduct[],
+  pages: EffectivenessSheet[],
+  dates: string[],
+  country: string,
+  currency: string,
+) {
+  const known = new Set(products.map((p) => p.aliasId));
+  const seeds = pages.map((page) => ({
+    products: page.rows
+      .filter(
+        (r) =>
+          r.country === country &&
+          r.currency === currency &&
+          !known.has(r.aliasId),
+      )
+      .map((r) => ({
+        aliasId: r.aliasId,
+        name:
+          page.table.aliases.find((a) => a.id === r.aliasId)?.name ??
+          "Inventario",
+        active: r.active,
+        days: Object.fromEntries(
+          dates
+            .filter((day) => r.days[day])
+            .map((day) => [
+              day,
+              { sums: sumEffectivenessDay([r], day), advisors: [] },
+            ]),
+        ),
+      })),
+  }));
+  if (!seeds.some((p) => p.products.length)) return products;
+  return [...products, ...mergeTotalProductReports(seeds, dates)];
+}
+export function filterSheetSalesBlocks(
+  blocks: SheetSalesBlock[],
+  country: string,
+  activity: string,
+  selection?: string[],
+) {
+  const selected = selection ? new Set(selection) : null;
+  return blocks
+    .filter((b) => country === "__all" || b.country === country)
+    .map((b) => ({
+      ...b,
+      products: b.products.filter(
+        (p) =>
+          (activity === "all" || p.active === (activity === "active")) &&
+          (!selected || selected.has(JSON.stringify([p.aliasId, b.country]))),
+      ),
+    }));
 }

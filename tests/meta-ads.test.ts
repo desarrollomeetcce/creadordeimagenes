@@ -1,4 +1,7 @@
-import { inventorySheetCountries } from "../lib/meta-ads/inventory-sheet-column-policy";
+import {
+  inventorySheetCountries,
+  inventorySheetForeignCountries,
+} from "../lib/meta-ads/inventory-sheet-column-policy";
 import "./inventory-cac.test";
 import "./inventory-report-summary.test";
 import { advisorDayEffectiveness } from "../lib/meta-ads/advisor-day-effectiveness";
@@ -4944,7 +4947,12 @@ test("country header order keeps missing FX last, active first and recorded pend
     usage: string,
     fx: number | null,
     status: string,
-  ) => ({ activation, usage, assessment: { usage: fx, status } });
+  ) => ({
+    activation,
+    usage,
+    assessment: { usage: fx, status },
+    cac: { meta: { assessment: { usage: fx, status } } },
+  });
   const active = point("ACTIVE", "USED", 1.2, "CRITICAL"),
     off = point("INACTIVE", "USED", 0.2, "WITHIN"),
     pending = point("INACTIVE", "TEST", null, "PENDING"),
@@ -5844,7 +5852,15 @@ test("Columnas de hoja país: Argentina no hereda Perú/Angola vacíos; datos y 
       ["PE", "AO"],
       ["PE"],
     ),
-    ["AR", "PE"],
+    ["AR"],
+  );
+  assert.deepEqual(
+    inventorySheetForeignCountries({ name: "ECUADOR" }, ["EC", "GT", "GT"]),
+    ["GT"],
+  );
+  assert.deepEqual(
+    inventorySheetForeignCountries({ name: "GUATEMALA" }, ["GT", "EC"]),
+    ["EC"],
   );
   assert.deepEqual(
     inventorySheetCountries(
@@ -6126,4 +6142,84 @@ test("Meta menú de estado: catálogo de severidad único y filtro persistido va
       .evaluationStatus,
     "",
   );
+});
+
+test("Sheet detail activity and selection preserve zero and missing records across countries", async () => {
+  const { filterSheetSalesBlocks, sheetSalesProducts, emptySales } =
+    await import("../lib/meta-ads/sheet-sales-summary");
+  const product = (id: string, active: boolean, value: number | null) =>
+    ({
+      aliasId: id,
+      name: id,
+      active,
+      sums: { sales: { ...emptySales, value } },
+      days: {},
+    }) as any;
+  const blocks = [
+    {
+      country: "PE",
+      currency: "PEN",
+      products: [product("a", true, 0), product("b", false, null)],
+    },
+    { country: "EC", currency: "USD", products: [product("a", false, 3)] },
+  ];
+  const active = filterSheetSalesBlocks(blocks, "__all", "active");
+  assert.equal(active[0].products.length, 1);
+  assert.equal(active[0].products[0].sums.sales.value, 0);
+  assert.equal(active[1].products.length, 0);
+  const off = filterSheetSalesBlocks(blocks, "__all", "inactive");
+  assert.equal(off[0].products[0].sums.sales.value, null);
+  assert.equal(off[1].products[0].aliasId, "a");
+  const scope = filterSheetSalesBlocks(blocks, "__all", "all", [
+    JSON.stringify(["a", "EC"]),
+  ]);
+  assert.equal(scope[0].products.length, 0);
+  assert.equal(scope[1].products.length, 1);
+  assert.equal(
+    filterSheetSalesBlocks(blocks, "PE", "all")[0].products.length,
+    2,
+  );
+  assert.equal(blocks[0].products.length, 2);
+});
+test("Sheet detail seeds omitted members with real zero or missing sales, without overwriting enrichment", async () => {
+  const { includeSheetMembers } =
+    await import("../lib/meta-ads/sheet-sales-summary");
+  const day = "2026-11-03";
+  const pages = [
+    {
+      table: {
+        aliases: [
+          { id: "zero", name: "Cero" },
+          { id: "missing", name: "Sin registro" },
+        ],
+      },
+      rows: [
+        {
+          aliasId: "zero",
+          country: "PE",
+          currency: "PEN",
+          active: true,
+          campaigns: 0,
+          days: { [day]: { sales: 0, na: [] } },
+        },
+        {
+          aliasId: "missing",
+          country: "PE",
+          currency: "PEN",
+          active: false,
+          campaigns: 0,
+          days: {},
+        },
+      ],
+    },
+  ] as any;
+  const seeded = includeSheetMembers([], pages, [day], "PE", "PEN");
+  assert.equal(seeded.length, 2);
+  assert.equal(seeded[0].sums.sales.value, 0);
+  assert.equal(seeded[1].sums.sales.value, null);
+  assert.equal(seeded[1].active, false);
+  const enriched = { ...seeded[0], name: "Nombre enriquecido" };
+  const kept = includeSheetMembers([enriched], pages, [day], "PE", "PEN");
+  assert.equal(kept[0], enriched);
+  assert.equal(kept.length, 2);
 });

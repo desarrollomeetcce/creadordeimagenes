@@ -1,6 +1,6 @@
 import { isCountryCode } from "./countries";
 import { resolveCountry } from "./effectiveness-paste";
-/** Country-named sheets use their own country; preserve every recorded foreign identity. */
+/** Country-named sheets expose their own country. Foreign records are reviewed separately, never rewritten. */
 export function inventorySheetCountries(
   table: { name: string; defaultCountry: string },
   configured: string[],
@@ -10,7 +10,7 @@ export function inventorySheetCountries(
   return [
     ...new Set(
       named
-        ? [named, ...recorded]
+        ? [named]
         : [
             ...configured,
             ...recorded,
@@ -20,4 +20,14 @@ export function inventorySheetCountries(
           ],
     ),
   ].filter(isCountryCode);
+}
+
+export function inventorySheetForeignCountries(
+  table: { name: string },
+  recorded: string[],
+) {
+  const named = resolveCountry(table.name);
+  return named
+    ? [...new Set(recorded.filter((c) => isCountryCode(c) && c !== named))]
+    : [];
 }

@@ -26,6 +26,8 @@ import {
 } from "../../lib/meta-ads/totals-product-summary";
 import {
   sheetSalesProducts,
+  includeSheetMembers,
+  filterSheetSalesBlocks,
   sortSheetSalesProducts,
   type SheetSalesSort,
   sheetSalesStatus,
@@ -70,12 +72,14 @@ const statusNames: Record<string, string> = {
 export function SheetSalesDetail({
   tableId,
   inventoryAliases = [],
+  selection,
   name,
   initialSince,
   initialUntil,
   onClose,
 }: {
   tableId: string;
+  selection?: string[];
   inventoryAliases?: { id: string; inventorySheetId?: string }[];
   name: string;
   initialSince: string;
@@ -94,6 +98,7 @@ export function SheetSalesDetail({
     [selected, setSelected] = useState("__all"),
     [query, setQuery] = useState(""),
     [status, setStatus] = useState("all"),
+    [activity, setActivity] = useState("all"),
     [threshold, setThreshold] = useState(2),
     [ascending, setAscending] = useState(true),
     [sortKey, setSortKey] = useState<SheetSalesSort>("sales"),
@@ -194,7 +199,13 @@ export function SheetSalesDetail({
               );
               return {
                 ...group,
-                products: mergeTotalProductReports(pp, dates),
+                products: includeSheetMembers(
+                  mergeTotalProductReports(pp, dates),
+                  pages,
+                  dates,
+                  group.country,
+                  group.currency,
+                ),
               };
             }),
           );
@@ -253,12 +264,15 @@ export function SheetSalesDetail({
         ...(country !== "__all" ? [country] : []),
       ]),
     ].sort(),
-    visibleBlocks = blocks.filter(
-      (b) => country === "__all" || b.country === country,
+    visibleBlocks = filterSheetSalesBlocks(
+      blocks,
+      country,
+      activity,
+      selection,
     ),
     products = useMemo(
       () => sheetSalesProducts(visibleBlocks, dates),
-      [blocks, country, dates],
+      [blocks, country, dates, activity, selection],
     ),
     chosen = products.find((p) => p.aliasId === selected),
     focus = chosen ? [chosen] : products;
@@ -281,6 +295,14 @@ export function SheetSalesDetail({
     ),
     shown = filtered.slice(currentPage * 50, (currentPage + 1) * 50);
 
+  const scopeKeys = new Set(
+    visibleBlocks.flatMap((b) =>
+      b.products.map((p) => JSON.stringify([p.aliasId, b.country, b.currency])),
+    ),
+  );
+  const visibleSourceRows = sourceRows.filter((r) =>
+    scopeKeys.has(JSON.stringify([r.aliasId, r.country, r.currency])),
+  );
   const total = totalDetailSummary(products.map((p) => p.sales)),
     people = sumSalesAdvisors(products.flatMap((p) => p.advisors)),
     { visibleDays, navigation } = useReportDayPages(dates);
@@ -323,7 +345,7 @@ export function SheetSalesDetail({
             <DetailStickyHeader>
               <div className="sheet-analysis-topline">
                 <h2 title={name + " · Análisis de toda la hoja"}>
-                  {name} · Toda la hoja
+                  {name} · {selection ? "Selección" : "Toda la hoja"}
                 </h2>
                 <DetailNavigation
                   onClose={onClose}
@@ -427,6 +449,22 @@ export function SheetSalesDetail({
                     setPage(0);
                   }}
                 />
+                <label>
+                  Estado actual
+                  <select
+                    aria-label="Estado de los diplomados del análisis"
+                    value={activity}
+                    onChange={(e) => {
+                      setActivity(e.target.value);
+                      setPage(0);
+                      setSelected("__all");
+                    }}
+                  >
+                    <option value="all">Todos · activos e inactivos</option>
+                    <option value="active">Activos</option>
+                    <option value="inactive">Inactivos</option>
+                  </select>
+                </label>
                 <button
                   type="button"
                   disabled={loading || !dates.length}
@@ -455,8 +493,8 @@ export function SheetSalesDetail({
             {!loading && !error && (
               <>
                 <SheetAnalysisCounters
-                  rows={sourceRows}
-                  bases={analysis.bases}
+                  rows={visibleSourceRows}
+                  bases={activity === "all" && !selection ? analysis.bases : []}
                   mode={profile}
                   country={country}
                   dates={dates}
@@ -1011,15 +1049,16 @@ export function SheetSalesDetail({
                                                 m.key === "spend")
                                                 ? totalDetailSummary(
                                                     dates.map((day) => {
-                                                      const d = sourceRows.find(
-                                                          (r) =>
-                                                            r.aliasId ===
-                                                              p.aliasId &&
-                                                            r.country ===
-                                                              b.country &&
-                                                            r.currency ===
-                                                              b.currency,
-                                                        )?.days[day],
+                                                      const d =
+                                                          visibleSourceRows.find(
+                                                            (r) =>
+                                                              r.aliasId ===
+                                                                p.aliasId &&
+                                                              r.country ===
+                                                                b.country &&
+                                                              r.currency ===
+                                                                b.currency,
+                                                          )?.days[day],
                                                         value =
                                                           m.key === "base"
                                                             ? d?.sourceBase

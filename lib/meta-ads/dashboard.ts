@@ -91,6 +91,21 @@ export async function dashboard(actor: Actor, params: URLSearchParams) {
   };
   const summarySelection =
     params.get("summary") === "1" ? selectionIds("summarySelection") : [];
+  const objectSelection = selectionIds("objectSelection");
+  if (objectSelection.length) {
+    const permitted = await db.metaAdObject.count({
+      where: {
+        id: { in: objectSelection },
+        level,
+        accountId: { in: scoped.map((a) => a.id) },
+      },
+    });
+    demand(
+      permitted === objectSelection.length,
+      "Selección no autorizada o no disponible.",
+      404,
+    );
+  }
   const analysisPeriod = params.get("analysisPeriod") ?? "today";
   demand(
     ["today", "7", "15", "30", "lifetime", "custom"].includes(analysisPeriod),
@@ -118,6 +133,7 @@ export async function dashboard(actor: Actor, params: URLSearchParams) {
     "País no válido.",
   );
   const where: Prisma.MetaAdObjectWhereInput = {
+    ...(objectSelection.length ? { id: { in: objectSelection } } : {}),
     accountId: { in: scoped.map((a) => a.id) },
     level,
     ...(country ? { aliasCountry: country === "__none" ? null : country } : {}),
@@ -203,6 +219,12 @@ export async function dashboard(actor: Actor, params: URLSearchParams) {
     include: { alias: { select: { id: true, name: true } } },
     take: 10001,
   });
+  if (objectSelection.length)
+    demand(
+      objects.length === objectSelection.length,
+      "La selección cambió. Actualiza los elementos seleccionados.",
+      409,
+    );
   const limited = objects.length > 10000;
   const visible = objects.slice(0, 10000);
   if (!visible.length)
@@ -728,11 +750,25 @@ export async function dashboard(actor: Actor, params: URLSearchParams) {
       ...(level === "campaign" ? pageItems.map((o) => o.id) : []),
     ]),
   ];
+  // Selection comparisons need only the chosen range plus the recent evaluation window.
+  // Lifetime is fetched only when explicitly requested; the normal dashboard keeps all comparatives.
+  const selectionSalesKeys =
+    objectSelection.length && !summary ? new Set([analysisPeriod, "7"]) : null;
+  const selectionSalesSince =
+    selectionSalesKeys && analysisPeriod !== "lifetime"
+      ? pageItems
+          .flatMap((o) => [
+            o.periods[analysisPeriod]?.since,
+            o.periods["7"]?.since,
+          ])
+          .filter((d): d is string => !!d)
+          .sort()[0]
+      : undefined;
   const salesData = salesIds.length
     ? await metaCampaignSalesData(
         actor,
         salesIds,
-        undefined,
+        selectionSalesSince,
         localDay("America/Lima"),
         level === "campaign" && pageItems.length > 0,
       )
@@ -762,26 +798,28 @@ export async function dashboard(actor: Actor, params: URLSearchParams) {
       periods: Object.fromEntries(
         Object.entries(o.periods).map(([k, p]) => [
           k,
-          {
-            ...p,
-            sales: campaignSalesPeriod(
-              entries,
-              p.since,
-              p.until,
-              p.spend,
-              p.results,
-              p.metaAvailable,
-              shared,
-              !!o.aliasId && !!o.aliasCountry,
-              {
-                currency: o.currency,
-                rules: salesData.rules.get(
-                  salesData.campaigns.find((c) => c.id === o.id)?.alias
-                    ?.inventorySheetId ?? "",
+          selectionSalesKeys && !selectionSalesKeys.has(k)
+            ? p
+            : {
+                ...p,
+                sales: campaignSalesPeriod(
+                  entries,
+                  p.since,
+                  p.until,
+                  p.spend,
+                  p.results,
+                  p.metaAvailable,
+                  shared,
+                  !!o.aliasId && !!o.aliasCountry,
+                  {
+                    currency: o.currency,
+                    rules: salesData.rules.get(
+                      salesData.campaigns.find((c) => c.id === o.id)?.alias
+                        ?.inventorySheetId ?? "",
+                    ),
+                  },
                 ),
               },
-            ),
-          },
         ]),
       ),
     };

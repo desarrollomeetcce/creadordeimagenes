@@ -35,6 +35,7 @@ export function inventoryCacSummary(input: {
   let salesPartial = false,
     budgetPartial = false,
     metaPartial = false,
+    metaFxPending = false,
     days = 0,
     first: string | null = null;
   for (let at = Date.parse(since); at <= Date.parse(until); at += 86400000) {
@@ -88,13 +89,17 @@ export function inventoryCacSummary(input: {
           "PEN",
           input.rates.get(day),
         );
-        if (pen === null) metaPartial = true;
-        else spendPen = (spendPen ?? 0) + pen;
+        if (pen === null) {
+          metaPartial = true;
+          metaFxPending = true;
+        } else spendPen = (spendPen ?? 0) + pen;
       }
     } else if (g !== null) {
       const pen = convertMoney(g, row.currency, "PEN", input.rates.get(day));
-      if (pen === null) metaPartial = true;
-      else spendPen = (spendPen ?? 0) + pen;
+      if (pen === null) {
+        metaPartial = true;
+        metaFxPending = true;
+      } else spendPen = (spendPen ?? 0) + pen;
     } else if (registered && !noActivity) metaPartial = true;
     if (g !== null && v === null && !d.na.includes("sales"))
       salesPartial = true;
@@ -103,12 +108,26 @@ export function inventoryCacSummary(input: {
     value: number | null,
     pen: number | null,
     partial: boolean,
+    meta = false,
   ) => ({
     amount: value,
     penAmount: pen,
     cac: sales !== null && sales > 0 && value !== null ? value / sales : null,
     partial: partial || salesPartial,
-    assessment: cacAssessment(sales, pen, !partial && !salesPartial, rules),
+    provisional:
+      meta &&
+      (partial || salesPartial) &&
+      sales !== null &&
+      sales > 0 &&
+      pen !== null &&
+      !metaFxPending,
+    assessment: cacAssessment(
+      sales,
+      pen,
+      (!partial && !salesPartial) ||
+        (meta && !metaFxPending && sales !== null && sales > 0 && pen !== null),
+      rules,
+    ),
   });
   return {
     since,
@@ -120,7 +139,7 @@ export function inventoryCacSummary(input: {
     days,
     first,
     budget: amount(budget, budgetPen, budgetPartial),
-    meta: amount(spend, spendPen, metaPartial),
+    meta: amount(spend, spendPen, metaPartial, true),
   };
 }
 export type InventoryCacSummary = ReturnType<typeof inventoryCacSummary>;

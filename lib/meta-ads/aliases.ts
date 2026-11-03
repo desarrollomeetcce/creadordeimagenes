@@ -495,6 +495,7 @@ export async function assignAliases(
   selection?: MetaInventorySelection,
   currency?: string,
   assignmentContext?: AssignmentContext,
+  inventorySync = false,
 ) {
   await metaEditorOnly(actor);
   demand(currency === undefined || isCurrency(currency), "Moneda inválida.");
@@ -537,6 +538,9 @@ export async function assignAliases(
       where: { id: { in: ids }, account: await accountWhere(actor) },
       select: {
         id: true,
+        aliasId: true,
+        aliasCountry: true,
+        level: true,
         status: true,
         effectiveStatus: true,
         account: { select: { currency: true } },
@@ -548,6 +552,20 @@ export async function assignAliases(
       404,
     );
     if (selection) aliasId = (await materializeMetaInventory(tx, selection)).id;
+    if (inventorySync)
+      demand(
+        aliasId &&
+          country &&
+          objects.every(
+            (o) =>
+              o.level === "campaign" &&
+              (!o.aliasId ||
+                (o.aliasId === aliasId &&
+                  (!o.aliasCountry || o.aliasCountry === country))),
+          ),
+        "Una campaña cambió de vínculo. Actualiza y revisa la selección antes de guardar.",
+        409,
+      );
     if (aliasId)
       demand(
         await tx.metaAlias.findFirst({
@@ -958,4 +976,72 @@ export async function aliasTableOptions(actor: Actor) {
     orderBy: { name: "asc" },
     take: 100,
   });
+}
+
+/** Stored campaign directory only. Opening a link never requests Graph or modifies delivery. */
+export async function inventoryMetaCandidates(
+  actor: Actor,
+  input: {
+    tableId: string;
+    country: string;
+    aliasId?: string;
+    catalogId?: string;
+    q?: string;
+  },
+) {
+  await workspaceEditorOnly(actor);
+  const context = await metaAssignmentContext(actor, input);
+  const q = input.q?.trim() ?? "";
+  demand(!q || q.length >= 2, "Escribe al menos dos caracteres.");
+  const target = context.aliasId;
+  const campaigns =
+    !target && !q
+      ? []
+      : await db.metaAdObject.findMany({
+          where: {
+            account: await accountWhere(actor),
+            level: "campaign",
+            ...(q
+              ? {
+                  name: { contains: q, mode: "insensitive" as const },
+                  AND: [
+                    {
+                      OR: [
+                        { aliasId: null },
+                        ...(target ? [{ aliasId: target }] : []),
+                      ],
+                    },
+                    {
+                      OR: [
+                        { aliasCountry: null },
+                        { aliasCountry: input.country },
+                      ],
+                    },
+                  ],
+                }
+              : { aliasId: target, aliasCountry: input.country }),
+          },
+          select: {
+            id: true,
+            name: true,
+            status: true,
+            aliasId: true,
+            aliasCountry: true,
+            account: { select: { name: true } },
+          },
+          orderBy: [{ name: "asc" }, { id: "asc" }],
+          take: 51,
+        });
+  return {
+    campaigns: campaigns.slice(0, 50).map((c) => ({
+      id: c.id,
+      name: c.name,
+      accountName: c.account.name,
+      status: c.status,
+      linkedHere:
+        !!target && c.aliasId === target && c.aliasCountry === input.country,
+    })),
+    hasMore: campaigns.length > 50,
+    advisors: await metaAssignmentAdvisors(actor),
+  };
 }

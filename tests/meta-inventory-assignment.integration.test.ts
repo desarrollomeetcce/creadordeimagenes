@@ -13,6 +13,7 @@ import { db } from "../lib/db";
 import { encryptKey } from "../lib/crypto";
 import {
   assignAliases,
+  inventoryMetaCandidates,
   metaAssignmentContext,
   metaAliasCatalog,
   aliasTables,
@@ -178,6 +179,108 @@ test("Meta inventory assignment materializes catalog choices atomically and flag
             })
           ).aliasId,
           null,
+        );
+      },
+    );
+    await t.test(
+      "Row sync candidates are read-only, campaign-only, preserve country and require Meta editor",
+      async () => {
+        const alias = await db.metaAlias.findFirstOrThrow({
+          where: { tableId: table.id, name: items[0].name },
+        });
+        const before = await db.metaAdObject.findMany({
+          where: { accountId },
+          orderBy: { id: "asc" },
+        });
+        const linked = await inventoryMetaCandidates(actor, {
+          tableId: table.id,
+          country: "PE",
+          aliasId: alias.id,
+        });
+        assert.deepEqual(
+          linked.campaigns.map((c) => c.id).sort(),
+          objectIds.slice(0, 2).sort(),
+        );
+        assert(linked.campaigns.every((c) => c.linkedHere));
+        const fromCatalog = await inventoryMetaCandidates(actor, {
+          tableId: table.id,
+          country: "PE",
+          catalogId: "item:" + items[1].id,
+        });
+        assert.deepEqual(fromCatalog.campaigns, []);
+        const unlinked = await inventoryMetaCandidates(actor, {
+          tableId: table.id,
+          country: "PE",
+          catalogId: "item:" + items[1].id,
+          q: objectIds[2],
+        });
+        assert.deepEqual(
+          unlinked.campaigns.map((c) => c.id),
+          [objectIds[2]],
+        );
+        const wrongCountry = await inventoryMetaCandidates(actor, {
+          tableId: table.id,
+          country: "EC",
+          aliasId: alias.id,
+        });
+        assert.deepEqual(wrongCountry.campaigns, []);
+        await assert.rejects(() =>
+          inventoryMetaCandidates(
+            { id: viewer.id, role: "OBSERVER" },
+            { tableId: table.id, country: "PE", aliasId: alias.id },
+          ),
+        );
+        await assert.rejects(() =>
+          inventoryMetaCandidates(actor, {
+            tableId: table.id,
+            country: "PE",
+            aliasId: "missing",
+          }),
+        );
+        await assert.rejects(() =>
+          inventoryMetaCandidates(actor, {
+            tableId: table.id,
+            country: "PE",
+            aliasId: alias.id,
+            q: "x",
+          }),
+        );
+        await assert.rejects(() =>
+          assignAliases(
+            actor,
+            [objectIds[0]],
+            alias.id,
+            "EC",
+            undefined,
+            undefined,
+            undefined,
+            undefined,
+            true,
+          ),
+        );
+        await assignAliases(
+          actor,
+          [objectIds[0]],
+          alias.id,
+          "PE",
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          true,
+        );
+        assert.equal(
+          await db.metaEffectivenessRow.count({
+            where: { aliasId: alias.id, country: "PE", legacy: false },
+          }),
+          1,
+        );
+        assert.deepEqual(
+          await db.metaAdObject.findMany({
+            where: { accountId },
+            orderBy: { id: "asc" },
+          }),
+          before,
         );
       },
     );

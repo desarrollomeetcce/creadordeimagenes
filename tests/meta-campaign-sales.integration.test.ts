@@ -581,6 +581,41 @@ test("Campañas: períodos de ventas locales, fuentes canónicas acotadas y anun
         );
       },
     );
+    await t.test(
+      "Selección comparativa acotada, respeta permisos/nivel y no enriquece históricos no pedidos",
+      async () => {
+        const idsChosen = [ids.campaign, base + "112"];
+        const q = new URLSearchParams({
+          accounts: accountId,
+          level: "campaign",
+          objectSelection: idsChosen.join(","),
+          limit: "100",
+          summary: "0",
+          analysisPeriod: "custom",
+          since: since7,
+          until: today,
+        });
+        const r = await dashboard(viewer, q);
+        assert.equal(r.total, 2);
+        assert.deepEqual(new Set(r.items.map((o) => o.id)), new Set(idsChosen));
+        assert(!("summary" in r));
+        for (const o of r.items as any[]) {
+          assert(o.periods.custom.sales);
+          assert(o.periods["7"].sales);
+          assert.equal(o.periods.lifetime.sales, undefined);
+          assert.equal(o.periods["30"].sales, undefined);
+        }
+        q.set("objectSelection", ids.foreign);
+        await assert.rejects(dashboard(viewer, q), /no autorizada/i);
+        q.set("objectSelection", ids.ad);
+        await assert.rejects(dashboard(viewer, q), /no autorizada/i);
+        q.set(
+          "objectSelection",
+          Array.from({ length: 101 }, (_, i) => String(i + 1)).join(","),
+        );
+        await assert.rejects(dashboard(viewer, q), /selección/i);
+      },
+    );
   } finally {
     globalThis.fetch = originalFetch;
     await db.metaAdAccount.deleteMany({

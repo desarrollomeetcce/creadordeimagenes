@@ -4,7 +4,7 @@ import {
   type InventoryCampaignChange,
 } from "./inventory-campaign-control";
 import { InventoryCacStatus as InventoryStatusLabel } from "./inventory-cac-status";
-import { Fragment, useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState, type ReactNode } from "react";
 import { financialRequest as api } from "./financial-request";
 import { categoryKey } from "../../lib/meta-ads/category-paste";
 import { cacStatusNames as trialStatusNames } from "../../lib/meta-ads/inventory-cac-policy";
@@ -19,9 +19,13 @@ export function useInventoryCountryEvaluation(
   listId: string,
   tableIds: string[],
   nonce: number,
+  period?: { since?: string; until?: string; fromActivation?: boolean },
 ) {
   const key = tableIds.join(","),
-    stamp = JSON.stringify([listId, key, nonce]);
+    since = period?.since ?? "",
+    until = period?.until ?? "",
+    fromActivation = period?.fromActivation ?? false,
+    stamp = JSON.stringify([listId, key, nonce, since, until, fromActivation]);
   const [state, setState] = useState<{
       stamp: string;
       report: InventorySheetActivationReport;
@@ -46,6 +50,8 @@ export function useInventoryCountryEvaluation(
                 ...new Set(tableIds.map((id) => id.split(":")[0])),
               ].join(","),
               byCountry: "true",
+              ...(since && until ? { since, until } : {}),
+              ...(fromActivation ? { fromActivation: "true" } : {}),
             }),
         );
         if (alive) {
@@ -73,7 +79,7 @@ export function useInventoryCountryEvaluation(
       clearInterval(timer);
       document.removeEventListener("visibilitychange", visible);
     };
-  }, [listId, key, nonce]);
+  }, [listId, key, nonce, since, until, fromActivation]);
   const report = state?.stamp === stamp ? state.report : null;
   const lookup = useMemo(
     () =>
@@ -117,7 +123,9 @@ export function InventoryCountryCells({
   onHistory,
   onReplace,
   onDetail,
+  renderSync,
 }: {
+  renderSync?: (column: string, point?: SheetPoint) => ReactNode;
   name: string;
   countries: string[];
   hiddenColumns: string[];
@@ -150,7 +158,11 @@ export function InventoryCountryCells({
           mixed = point?.activation === "MIXED",
           disabled =
             !canEdit || busy || !evaluation.ready || evaluation.loading,
-          assessment = point?.cac?.budget.assessment ?? point?.assessment;
+          assessment = point?.cac?.meta.assessment ?? {
+            status: "PENDING" as const,
+            usage: null,
+            limit: point?.cac?.rules.review ?? 35,
+          };
         const title = `${name} · ${sheetLabel(tableId)}`,
           status = evaluation.error
             ? "No disponible"
@@ -167,6 +179,7 @@ export function InventoryCountryCells({
               hidden={hiddenColumns.includes(`country:${tableId}:activation`)}
             >
               <div className="inventory-sheet-row-controls">
+                {renderSync?.(tableId, point)}
                 <InventoryCampaignControl
                   title={title}
                   activation={point?.activation ?? "INACTIVE"}
@@ -228,7 +241,7 @@ export function InventoryCountryCells({
               hidden={hiddenColumns.includes(`country:${tableId}:factor`)}
               title={
                 point
-                  ? `Presupuesto: S/ ${point.cac?.budget.penAmount ?? point.budget ?? "—"} · Ventas: ${point.cac?.sales ?? point.sales ?? "—"} · Límite: S/ ${assessment?.limit ?? "—"}. Últimos 14 días: hoy y 13 anteriores.`
+                  ? `Gasto Meta: S/ ${point.cac?.meta.penAmount ?? "—"} · Ventas: ${point.cac?.sales ?? point.sales ?? "—"} · Límite: S/ ${assessment?.limit ?? "—"}. Últimos 14 días: hoy y 13 anteriores.`
                   : "Sin datos de evaluación"
               }
             >
@@ -241,7 +254,7 @@ export function InventoryCountryCells({
                   }).format(assessment.usage)}
               {assessment?.usage !== null &&
               assessment?.usage !== undefined &&
-              (point?.cac ? point.cac.budget.partial : !point?.complete)
+              (point?.cac ? point.cac.meta.partial : !point?.complete)
                 ? " *"
                 : ""}
             </td>
@@ -266,6 +279,7 @@ export function InventoryCountryCells({
                     }
                   >
                     <InventoryStatusLabel status={assessment!.status} />
+                    {point.cac?.meta.provisional ? " *" : ""}
                   </button>
                 ) : (
                   <small title={evaluation.error || undefined}>

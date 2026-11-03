@@ -1,4 +1,5 @@
 "use client";
+import { InventoryMetaSync } from "./inventory-meta-sync";
 import { compareFinancialStatus } from "../../lib/meta-ads/inventory-evaluation-order";
 import {
   SheetHorizontalNavigation,
@@ -222,6 +223,9 @@ export function MetaEffectiveness({
 }) {
   const sheetName = tables.find((t) => t.id === tableId)?.name ?? "Hoja";
   const [sheetSalesDetailOpen, setSheetSalesDetailOpen] = useState(false);
+  const [sheetDetailSelection, setSheetDetailSelection] = useState<
+    string[] | undefined
+  >(undefined);
   const inventoryColumnName =
     settings.aliasColumnName.trim().toLowerCase() === "alias"
       ? "Inventario"
@@ -1646,6 +1650,18 @@ export function MetaEffectiveness({
           </button>
           {selectedPairs.length > 0 && (
             <button
+              type="button"
+              className="sheet-analysis-trigger"
+              onClick={() => {
+                setSheetDetailSelection([...selectedPairs]);
+                setSheetSalesDetailOpen(true);
+              }}
+            >
+              Ver detalle de selección ({selectedPairs.length})
+            </button>
+          )}
+          {selectedPairs.length > 0 && (
+            <button
               aria-label="Limpiar selección de inventario"
               disabled={busy}
               onClick={() => setSelectedPairs([])}
@@ -2064,7 +2080,10 @@ export function MetaEffectiveness({
                       type="button"
                       className="sheet-analysis-trigger"
                       aria-label={`Ver detalle de toda la hoja ${sheetName}`}
-                      onClick={() => setSheetSalesDetailOpen(true)}
+                      onClick={() => {
+                        setSheetDetailSelection(undefined);
+                        setSheetSalesDetailOpen(true);
+                      }}
                     >
                       Ver detalle de la hoja
                     </button>
@@ -2493,7 +2512,9 @@ export function MetaEffectiveness({
                           : "Desactivado";
                   const category = financialRowCategories(
                     r,
-                    financialAliases.find((a) => a.id === r.aliasId),
+                    tables
+                      .find((t) => t.id === tableId)
+                      ?.aliases.find((a) => a.id === r.aliasId),
                     temporaryCategories.temporary,
                   );
                   const advisorBand = firstAdvisorBands.get(activationKey(r)),
@@ -2752,6 +2773,38 @@ export function MetaEffectiveness({
                                 />
                               </span>
                             )}
+                            <InventoryMetaSync
+                              tableId={tableId}
+                              tableName={
+                                tables.find((t) => t.id === tableId)?.name ??
+                                "Hoja"
+                              }
+                              listId={
+                                tables
+                                  .find((t) => t.id === tableId)
+                                  ?.aliases.find((a) => a.id === r.aliasId)
+                                  ?.inventorySheetId ?? inventoryId
+                              }
+                              listName={
+                                inventoryLists.find(
+                                  (i) =>
+                                    i.id ===
+                                    (tables
+                                      .find((t) => t.id === tableId)
+                                      ?.aliases.find((a) => a.id === r.aliasId)
+                                      ?.inventorySheetId ?? inventoryId),
+                                )?.name
+                              }
+                              name={name}
+                              country={r.country}
+                              aliasId={r.aliasId}
+                              disabled={busy || readOnly || !r.country}
+                              onSynced={async () => {
+                                notifyAdvisorSalesChanged();
+                                await onNamesChanged();
+                                await refresh();
+                              }}
+                            />
                             <EffectivenessHistory
                               tableId={tableId}
                               aliasId={r.aliasId}
@@ -3286,6 +3339,7 @@ export function MetaEffectiveness({
       )}
       {sheetSalesDetailOpen && (
         <SheetSalesDetail
+          selection={sheetDetailSelection}
           inventoryAliases={tables.find((t) => t.id === tableId)?.aliases ?? []}
           tableId={tableId}
           name={sheetName}

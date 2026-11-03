@@ -1,4 +1,5 @@
 "use client";
+import { InventoryMetaSync } from "./inventory-meta-sync";
 import { compareInventoryEvaluation } from "../../lib/meta-ads/inventory-evaluation-order";
 import {
   InventoryColumnVisibility,
@@ -1008,7 +1009,7 @@ export function InventoryCatalog({
               const point = countryEvaluation.lookup.get(
                 JSON.stringify([categoryKey(name), topSheet]),
               );
-              return point ? inventoryTopPriority(point) : 99;
+              return point ? inventoryTopPriority(point, "meta") : 99;
             };
             return (
               rank(a.name) - rank(b.name) || a.name.localeCompare(b.name, "es")
@@ -1955,6 +1956,41 @@ export function InventoryCatalog({
           {warning || rowsLayout.warning}
         </p>
       )}
+      {!!sheetDirectory?.countryIssues?.length && (
+        <details className="inventory-country-review">
+          <summary>
+            Asociaciones de país por revisar (
+            {sheetDirectory.countryIssues.length})
+          </summary>
+          <p>
+            Estos registros están guardados en una hoja con otro país. Se
+            conservan íntegros, sin mover ni cambiar ventas.
+          </p>
+          <ul>
+            {sheetDirectory.countryIssues.map((issue) => (
+              <li key={issue.aliasId + ":" + issue.country}>
+                <span>
+                  <strong>{issue.name}</strong> · {countryName(issue.country)} ·
+                  hoja de origen: {issue.tableName}
+                </span>
+                <button
+                  type="button"
+                  onClick={() =>
+                    setFullDetail({
+                      tableId: issue.tableId,
+                      aliasId: issue.aliasId,
+                      country: issue.country,
+                      name: issue.name,
+                    })
+                  }
+                >
+                  Ver datos e histórico
+                </button>
+              </li>
+            ))}
+          </ul>
+        </details>
+      )}
       <div
         className="row inventory-actions-toolbar sheet-toolbar-with-actions"
         aria-label="Acciones del inventario"
@@ -2147,7 +2183,7 @@ export function InventoryCatalog({
           />
           <small>
             {hasCountryColumns
-              ? "Evaluación en S/ · Factor = presupuesto acumulado ÷ límite × 100. Desde 100%: alerta."
+              ? "CAC y estado: gasto de Meta ÷ ventas registradas · últimos 14 días. * Datos parciales."
               : "Incluye categorías principales y secundarias."}
           </small>
           <div
@@ -3226,6 +3262,40 @@ export function InventoryCatalog({
                             countries={countryCodes}
                             hiddenColumns={hiddenColumnKeys}
                             evaluation={countryEvaluation}
+                            renderSync={(column, point) => {
+                              const tableId = column.split(":")[0],
+                                country = column.split(":")[1];
+                              const aliasId = point?.targets[0]?.aliasId;
+                              const source = g.links[0];
+                              return (
+                                <InventoryMetaSync
+                                  tableId={tableId}
+                                  tableName={
+                                    tables.find((t) => t.id === tableId)
+                                      ?.name ?? "Hoja"
+                                  }
+                                  listId={listId}
+                                  name={g.name}
+                                  country={country}
+                                  aliasId={aliasId}
+                                  catalogId={
+                                    source
+                                      ? (source.standalone
+                                          ? "item:"
+                                          : "alias:") + source.id
+                                      : undefined
+                                  }
+                                  disabled={busy || !sheetDirectory?.canEdit}
+                                  onSynced={async () => {
+                                    setCountryReload((v) => v + 1);
+                                    await onChanged();
+                                    await reloadCategories();
+                                    await reloadSheetDirectory();
+                                  }}
+                                />
+                              );
+                            }}
+
                             sheetLabel={sheetLabel}
                             onReplace={(tableId, name) =>
                               setGroupEditor({

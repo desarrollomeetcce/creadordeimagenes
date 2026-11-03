@@ -1934,6 +1934,21 @@ export async function metaRoutes(
       await (await import("./aliases")).saveAlias(actor, b.name, parts[2]),
     );
   }
+  if (path === "objects/inventory-candidates" && method === "GET") {
+    const q = z
+      .object({
+        tableId: z.string().min(1).max(100),
+        country: z.string().refine(isCountryCode),
+        aliasId: z.string().min(1).max(100).optional(),
+        catalogId: z.string().min(1).max(120).optional(),
+        q: z.string().trim().min(2).max(100).optional(),
+      })
+      .strict()
+      .parse(Object.fromEntries(req.nextUrl.searchParams));
+    return send(
+      await (await import("./aliases")).inventoryMetaCandidates(actor, q),
+    );
+  }
   if (path === "objects/alias-context" && method === "GET") {
     const q = z
       .object({
@@ -1953,6 +1968,7 @@ export async function metaRoutes(
     await metaEditorOnly(actor);
     const b = z
       .object({
+        inventorySync: z.literal(true).optional(),
         objectIds: z
           .array(z.string().regex(/^\d{1,40}$/))
           .min(1)
@@ -2000,6 +2016,7 @@ export async function metaRoutes(
         b.selection,
         b.currency,
         b.assignmentContext,
+        b.inventorySync,
       ),
     );
   }
@@ -2683,7 +2700,10 @@ export async function metaRoutes(
         sales: {
           linked: !!obj.aliasId && !!obj.aliasCountry,
           sharedCampaigns: data.sharing.length,
-          rules: data.rules.get(data.campaigns.find(c=>c.id===obj.id)?.alias?.inventorySheetId ?? ""),
+          rules: data.rules.get(
+            data.campaigns.find((c) => c.id === obj.id)?.alias
+              ?.inventorySheetId ?? "",
+          ),
           days: (data.entries.get(key) ?? []).map((r) => ({
             day: r.day,
             sales: r.sales,

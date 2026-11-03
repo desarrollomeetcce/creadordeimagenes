@@ -345,3 +345,17 @@ Una selección diaria/Hoy no deja la evaluación principal en Ventas pendientes 
 Carga inicial y eventos de foco/visibilidad/polling comparten una lectura de cuentas si la misma ruta light/full ya está en curso en ese componente. Al terminar o fallar se libera; el siguiente evento vuelve a consultar. Actualizaciones explícitas tras acciones mantienen lectura propia y se ignoran respuestas más antiguas que otra lectura ya iniciada. No se guardan respuestas financieras ni permisos en la caché de presentación.
 
 Moneda/fecha reutilizan objetos Intl con límite32 por moneda/zona, manteniendo números recibidos y fecha actual por llamada. Se conserva carga ligera de cuentas en panel,25 filas por página y actualización breve de elementos visibles con sus60s/cooldown existentes. El gasto agregado se toma del payload ya recibido; tabla/tarjetas no agregan consultas. Optimización validada por comparación de solicitudes y constructores en QA, sin prometer una latencia global específica del servidor.
+
+### Análisis por selección y sincronización en hojas
+
+El detalle de toda la hoja admite Todos/Activos/Inactivos y conserva diplomados con cero ventas o sin registro. El detalle de selección usa únicamente sus alias/país. Cambiar ese filtro no consulta de nuevo el servidor. Las bases manuales de país no se atribuyen a un subconjunto de diplomados.
+
+En Rendimiento, Maximizar amplía la misma tabla; Detalle compara hasta100 elementos seleccionados entre páginas con el mismo período, gasto Meta por moneda, V de campañas y evaluación reciente. Las ventas compartidas conservan su etiqueta y no reciben CAC individual; conjuntos/anuncios no reciben ventas individuales. El histórico diario completo se carga solo al expandir cada elemento.
+
+Sincronización en cada fila o país del inventario abre el panel de vinculación con la identidad y el asesor/moneda guardados. Busca campañas ya importadas y vincula solo las marcadas; no consulta Graph ni cambia entrega. Desmarcar una campaña no elimina su vínculo existente. El servidor exige permiso Meta y revalida contexto/revisión; una campaña que ahora pertenece a otro diplomado/país requiere revisar nuevamente la selección.
+
+CAC/estado de cabeceras de inventario proceden de gasto Meta; ventas parciales positivas muestran clasificación provisional con asterisco y FX incompleto queda pendiente. Las hojas con nombre de país solo generan columna de ese país; asociaciones de otros países siguen guardadas y accesibles en Asociaciones de país por revisar, sin reasignar ni borrar ventas.
+
+### Calendario en Top/reemplazo
+
+Últimos7 días es el rango inicial (hoy y seis anteriores, Lima). El calendario compartido de Meta permite rangos y Desde que se activó, que usa la última activación registrada de cada diplomado hasta hoy, incluso si fue reactivado. V, presupuesto registrado, CAC presupuesto y estado del Top usan ese rango; Desde/Días activos describen el ciclo. Presupuesto manual no se presenta como gasto Meta. Seleccionar fechas solo consulta el reporte; no cambia estados operativos ni registros. Otros consumidores mantienen sus14 días anteriores si no especifican rango.

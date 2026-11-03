@@ -1,5 +1,7 @@
 "use client";
 import { Fragment, useRef, useState } from "react";
+import { MetaAnalysisPeriod } from "./meta-analysis-period";
+import { quickRange } from "../../lib/meta-ads/date-range";
 import { useSheetWidths } from "./use-sheet-widths";
 import { SheetColumnResizer } from "./sheet-column-resizer";
 import { InventoryBatchReplacement } from "./inventory-batch-replacement";
@@ -28,10 +30,15 @@ const rank = (p: SheetPoint) =>
     : p.campaignTasks.includes("CREATE")
       ? 1
       : 0;
-export const inventoryTopPriority = (point: SheetPoint) =>
+export const inventoryTopPriority = (
+  point: SheetPoint,
+  source: "budget" | "meta" = "budget",
+) =>
   rank(point) * 10 +
   { CRITICAL: 0, SEVERE: 1, ALERT: 2, TESTING: 3, WITHIN: 4, PENDING: 5 }[
-    (point.cac?.budget.assessment ?? point.assessment).status
+    source === "meta"
+      ? (point.cac?.meta.assessment.status ?? "PENDING")
+      : (point.cac?.budget.assessment ?? point.assessment).status
   ];
 const bucketNames = ["Activos", "Por hacer campaña", "Por desactivar campaña"];
 export function InventoryTop({
@@ -64,6 +71,12 @@ export function InventoryTop({
     [message, setMessage] = useState(""),
     [error, setError] = useState(""),
     [kept, setKept] = useState<string[]>([]);
+  const [period, setPeriod] = useState("7");
+  const [range, setRange] = useState<[string, string]>(() =>
+    quickRange("7", limaToday()),
+  );
+  const today = limaToday();
+  const dates = period === "custom" ? range : quickRange(period, today);
   const [selected, setSelected] = useState<string[]>([]);
   const [batch, setBatch] = useState<string[]>([]);
   const [inspect, setInspect] = useState("");
@@ -83,6 +96,9 @@ export function InventoryTop({
     directory.listId,
     column ? [column] : [],
     nonce,
+    period === "lifetime"
+      ? { fromActivation: true }
+      : { since: dates[0], until: dates[1] },
   );
   const [confirm, setConfirm] = useState<{
     point: SheetPoint;
@@ -251,6 +267,19 @@ export function InventoryTop({
             onSelect={setPrimary}
           />
         </label>
+        <MetaAnalysisPeriod
+          label="Período de evaluación y reemplazo"
+          lifetimeLabel="Desde que se activó"
+          value={period}
+          since={dates[0]}
+          until={dates[1]}
+          today={today}
+          onPreset={(value) => setPeriod(value)}
+          onRange={(since, until) => {
+            setRange([since, until]);
+            setPeriod("custom");
+          }}
+        />
       </div>
       <div className="inventory-top-counts">
         {bucketNames.map((name, index) => (
@@ -277,7 +306,12 @@ export function InventoryTop({
       </div>
       <p className="inventory-top-hint">
         Conserva los que funcionan. Reemplaza solo los que quieres cambiar en
-        este país. Ajusta las columnas arrastrando sus divisiones.
+        este país. Ventas, presupuesto, CAC y estado corresponden al período
+        elegido.
+        {period === "lifetime"
+          ? " Cada diplomado usa su última activación registrada hasta hoy; sin fecha conocida no se supone un inicio."
+          : ` ${dates[0]} — ${dates[1]} · Lima.`}
+        Ajusta las columnas arrastrando sus divisiones.
       </p>
       {warning && <small role="status">{warning}</small>}
       {(error || evaluation.error) && (
@@ -495,10 +529,10 @@ export function InventoryTop({
                 <th title="Días calendario del último período de activación registrado">
                   Días activos{handle(5, "Días activos")}
                 </th>
-                <th title="Presupuesto acumulado del último período registrado, en soles">
+                <th title="Presupuesto registrado del período seleccionado, en soles">
                   Pres. S/{handle(6, "Presupuesto")}
                 </th>
-                <th title="Hoy y los 13 días anteriores">
+                <th title="CAC del período seleccionado; presupuesto registrado entre ventas">
                   CAC{handle(7, "CAC")}
                 </th>
                 <th>Estado{handle(8, "Estado")}</th>
@@ -597,18 +631,14 @@ export function InventoryTop({
                     </td>
                     <td>{(p.cac ? p.cac.sales : p.sales) ?? "—"}</td>
                     <td>
-                      {(p.cac ? p.cac.first : p.since)
+                      {p.since
                         ? new Intl.DateTimeFormat("es-PE", {
                             timeZone: "America/Lima",
                             dateStyle: "short",
-                          }).format(
-                            new Date(
-                              p.cac ? p.cac.first! + "T12:00:00Z" : p.since!,
-                            ),
-                          )
+                          }).format(new Date(p.since!))
                         : "—"}
                     </td>
-                    <td>{p.cac?.days ?? p.activeDays ?? "—"}</td>
+                    <td>{p.activeDays ?? "—"}</td>
                     <td>
                       {(p.cac ? p.cac.budget.penAmount : p.budget) === null
                         ? "—"

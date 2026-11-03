@@ -1501,6 +1501,43 @@ test("Activación por hoja: selección, pin, historial y permisos", async (t) =>
         ).rows[0];
         assert.equal(summary.sales, 5);
         assert.equal(summary.budget, 50);
+        const inRange = await inventoryActivationReport(owner, {
+          listId: list.id,
+          tableIds: table.id,
+          byCountry: "true",
+          since: dates[2],
+          until: today,
+        });
+        assert.equal(inRange.rows[0].cac!.sales, 5);
+        assert.equal(inRange.rows[0].cac!.budget.penAmount, 1998);
+        assert.equal(inRange.rows[0].cac!.since, dates[2]);
+        assert.equal(inRange.rows[0].cac!.until, today);
+        assert.equal(inRange.rows[0].since, summary.since);
+        const zeroRange = await inventoryActivationReport(owner, {
+          listId: list.id,
+          tableIds: table.id,
+          byCountry: "true",
+          since: dates[0],
+          until: dates[1],
+        });
+        assert.equal(zeroRange.rows[0].cac!.sales, 0);
+        assert.equal(zeroRange.rows[0].cac!.budget.penAmount, 50);
+        for (const invalid of [
+          { since: today },
+          { until: today },
+          { since: today, until: dates[0] },
+          { since: "2026-02-30", until: today },
+          { since: today, until: "2099-01-01" },
+          { since: dates[0], until: today, fromActivation: "true" },
+        ])
+          await assert.rejects(() =>
+            inventoryActivationReport(owner, {
+              listId: list.id,
+              tableIds: table.id,
+              ...invalid,
+            }),
+          );
+
         await db.metaEffectivenessState.update({
           where: { id: state.id },
           data: { active: true, revision: { increment: 1 } },
@@ -1518,6 +1555,16 @@ test("Activación por hoja: selección, pin, historial y permisos", async (t) =>
         assert.equal(result.history!.length, 2);
         const [current, prior] = result.history!;
         assert.equal(current.sales, 4);
+        const fromActivation = await inventoryActivationReport(owner, {
+          listId: list.id,
+          tableIds: table.id,
+          byCountry: "true",
+          fromActivation: "true",
+        });
+        assert.equal(fromActivation.rows[0].cac!.since, today);
+        assert.equal(fromActivation.rows[0].cac!.sales, 4);
+        assert.equal(fromActivation.rows[0].cac!.budget.penAmount, 999);
+
         assert.equal(prior.sales, 1);
         assert.equal(prior.salesUntil, dates[2]);
         assert.equal(prior.budget, 50);
@@ -1558,6 +1605,94 @@ test("Activación por hoja: selección, pin, historial y permisos", async (t) =>
         assert.deepEqual(
           (updated.config as any).inventoryActivation,
           (current.config as any).inventoryActivation,
+        );
+      },
+    );
+    await t.test(
+      "Países únicos: asociaciones Ecuador/Guatemala cruzadas quedan revisables sin alterar ventas ni historial",
+      async () => {
+        const used = new Set(
+          (await db.metaAliasTable.findMany({ select: { name: true } })).map(
+            (t) => t.name,
+          ),
+        );
+        const uniqueCountry = (name: string) => {
+          let n = name;
+          while (used.has(n)) n += " ";
+          used.add(n);
+          return n;
+        };
+        const e = await db.metaAliasTable.create({
+            data: {
+              name: uniqueCountry("ECUADOR"),
+              defaultCountry: "EC",
+              defaultCurrency: "PEN",
+            },
+          }),
+          g = await db.metaAliasTable.create({
+            data: {
+              name: uniqueCountry("GUATEMALA"),
+              defaultCountry: "GT",
+              defaultCurrency: "PEN",
+            },
+          });
+        autoTables.push(e.id, g.id);
+        const foreign: string[] = [];
+        for (const [table, country, sales] of [
+          [e, "GT", 13],
+          [g, "EC", 17],
+        ] as const) {
+          const a = await db.metaAlias.create({
+            data: {
+              tableId: table.id,
+              name: "Cruce " + country + tag,
+              inventorySheetId: list.id,
+            },
+          });
+          foreign.push(a.id);
+          await db.metaEffectivenessRow.create({
+            data: {
+              aliasId: a.id,
+              country,
+              currency: "",
+              displayCurrency: "PEN",
+              hidden: true,
+              days: { create: { day: today, sales, salesOverridden: true } },
+            },
+          });
+        }
+        const before = await db.metaEffectivenessDay.findMany({
+          where: { row: { aliasId: { in: foreign } } },
+          orderBy: [{ rowId: "asc" }, { day: "asc" }],
+        });
+        const d = await inventoryActivationDirectory(owner, {
+          listId: list.id,
+        });
+        assert.deepEqual(
+          d.columns.filter((c) => c.tableId === e.id).map((c) => c.country),
+          ["EC"],
+        );
+        assert.deepEqual(
+          d.columns.filter((c) => c.tableId === g.id).map((c) => c.country),
+          ["GT"],
+        );
+        assert.equal(
+          d.countryIssues?.filter((i) => foreign.includes(i.aliasId)).length,
+          2,
+        );
+        const preserved = await effectivenessDetail(owner, {
+          aliasId: foreign[0],
+          country: "GT",
+          since: today,
+          until: today,
+        });
+        assert.equal(preserved.days[today].sales, 13);
+        assert.deepEqual(
+          await db.metaEffectivenessDay.findMany({
+            where: { row: { aliasId: { in: foreign } } },
+            orderBy: [{ rowId: "asc" }, { day: "asc" }],
+          }),
+          before,
         );
       },
     );

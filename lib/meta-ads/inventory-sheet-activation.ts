@@ -1,4 +1,7 @@
-import { inventorySheetCountries } from "./inventory-sheet-column-policy";
+import {
+  inventorySheetCountries,
+  inventorySheetForeignCountries,
+} from "./inventory-sheet-column-policy";
 import {
   inventoryCacSummary,
   cacWindow,
@@ -143,6 +146,7 @@ export async function inventoryActivationDirectory(
     const linked = await tx.metaAlias.findMany({
         where: { inventorySheetId: q.listId },
         select: {
+          id: true,
           tableId: true,
           effectivenessRows: {
             where: { legacy: false },
@@ -165,7 +169,43 @@ export async function inventoryActivationDirectory(
         defaultCurrency: true,
       },
     });
+    const countryIssues = linked.flatMap((a) => {
+      const table = tables.find((t) => t.id === a.tableId);
+      if (!table) return [];
+      return inventorySheetForeignCountries(
+        table,
+        [...a.effectivenessRows, ...a.effectivenessStates].map(
+          (r) => r.country,
+        ),
+      ).map((country) => ({
+        aliasId: a.id,
+        tableId: a.tableId,
+        tableName: table.name,
+        country,
+        expectedCountry: resolveCountry(table.name)!,
+      }));
+    });
+    const issueNames = countryIssues.length
+      ? new Map(
+          (
+            await tx.metaAlias.findMany({
+              where: {
+                id: { in: [...new Set(countryIssues.map((i) => i.aliasId))] },
+              },
+              select: { id: true, name: true },
+            })
+          ).map((a) => [a.id, a.name]),
+        )
+      : new Map<string, string>();
     return {
+      ...(countryIssues.length
+        ? {
+            countryIssues: countryIssues.map((i) => ({
+              ...i,
+              name: issueNames.get(i.aliasId) ?? "Inventario",
+            })),
+          }
+        : {}),
       revision: list.revision,
       limits: settings.limits,
       cacRules: settings.cacRules,
@@ -1007,6 +1047,9 @@ async function activationReport(
 ) {
   const q = z
     .object({
+      since: z.iso.date().optional(),
+      until: z.iso.date().optional(),
+      fromActivation: z.literal("true").optional(),
       listId: id,
       tableIds: z.string().max(2500),
       byCountry: z.literal("true").optional(),
@@ -1016,6 +1059,14 @@ async function activationReport(
     })
     .strict()
     .parse(input);
+  const reportToday = limaDay(new Date());
+  demand(!!q.since === !!q.until, "Indica ambas fechas del período.");
+  demand(!q.fromActivation || !q.since, "Elige rango o desde activación.");
+  if (q.since && q.until)
+    demand(
+      q.since >= "2004-01-01" && q.since <= q.until && q.until <= reportToday,
+      "Período de análisis inválido.",
+    );
   const tableIds = q.tableIds.split(",").filter(Boolean);
   demand(
     tableIds.length <= 20 && new Set(tableIds).size === tableIds.length,
@@ -1081,9 +1132,14 @@ async function activationReport(
       403,
     );
     const today = limaDay(new Date()),
-      floor = new Date(Date.parse(today) - 365 * 86400000)
-        .toISOString()
-        .slice(0, 10),
+      floor = q.fromActivation
+        ? "2004-01-01"
+        : [
+            new Date(Date.parse(today) - 365 * 86400000)
+              .toISOString()
+              .slice(0, 10),
+            ...(q.since ? [q.since] : []),
+          ].sort()[0],
       rates = await tx.metaFxDay.findMany({
         where: { day: { gte: floor, lte: today } },
       }),
@@ -1111,7 +1167,7 @@ async function activationReport(
       const sourceSince =
         [
           ...(linkedFloor && linkedFloor >= floor ? [linkedFloor] : []),
-          cacWindow(today).since,
+          q.since ?? cacWindow(today).since,
           ...starts,
           ...[...registered.entries()]
             .filter(([key]) =>
@@ -1392,7 +1448,16 @@ async function activationReport(
               rows.length === 1
                 ? inventoryCacSummary({
                     row: rows[0],
-                    ...cacWindow(today),
+                    ...(q.fromActivation
+                      ? {
+                          since: current[0]?.since
+                            ? limaDay(new Date(current[0].since))
+                            : today,
+                          until: today,
+                        }
+                      : q.since && q.until
+                        ? { since: q.since, until: q.until }
+                        : cacWindow(today)),
                     rates: fx,
                     rules: settings.cacRules,
                   })

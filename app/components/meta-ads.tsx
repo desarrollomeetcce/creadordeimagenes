@@ -7,6 +7,11 @@ import {
 import { joinPendingMetaRead } from "../../lib/meta-ads/pending-read";
 import { campaignEvaluationWindow } from "../../lib/meta-ads/campaign-evaluation-window";
 import { MetaEvaluationOrder } from "./meta-evaluation-order";
+import {
+  FinancialTableWindow,
+  type FinancialTableWindowMode,
+} from "./financial-table-window";
+import { MetaSelectionDetail } from "./meta-selection-detail";
 import { MetaCampaignAssessment } from "./meta-campaign-assessment";
 import { SheetSearchSelect } from "./sheet-search-select";
 import { MetaWorkspaceSharing } from "./meta-workspace-sharing";
@@ -107,6 +112,7 @@ type Account = {
   }[];
 };
 type Period = {
+  metaAvailable?: boolean;
   sales?: import("../../lib/meta-ads/campaign-performance").CampaignSalesPeriod;
   cost: number | null;
   spend: number;
@@ -594,6 +600,36 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
   }, [userId, receiveModuleAccess, accessRetry]);
   const stableViewport = useMetaStableViewport();
   const tableHeaderScroll = useRef<HTMLDivElement>(null);
+  const metaContentScroll = useRef<HTMLDivElement>(null);
+  const tableBodyScroll = useRef<HTMLDivElement>(null);
+  const metaWindowControls = useRef<{
+    changeMode: (mode: FinancialTableWindowMode) => void;
+  }>(null);
+  const [metaWindowMode, setMetaWindowMode] =
+    useState<FinancialTableWindowMode>("inline");
+  const metaInlineX = useRef(0);
+  const metaInlinePage = useRef<{ x: number; y: number } | null>(null);
+  const [selectionDetail, setSelectionDetail] = useState<{
+    ids: string[];
+    accounts: string[];
+    level: string;
+  } | null>(null);
+  useEffect(() => {
+    if (metaWindowMode !== "inline") return;
+    const frame = requestAnimationFrame(() => {
+      if (tableBodyScroll.current)
+        tableBodyScroll.current.scrollLeft = metaInlineX.current;
+      if (metaInlinePage.current) {
+        window.scrollTo({
+          left: metaInlinePage.current.x,
+          top: metaInlinePage.current.y,
+          behavior: "instant",
+        });
+        metaInlinePage.current = null;
+      }
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [metaWindowMode]);
   const masterSelection = useRef<HTMLInputElement>(null);
   const accessibleAccounts = useRef("");
   const performanceTab = useRef<HTMLButtonElement>(null);
@@ -1730,6 +1766,16 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
       (!accountIds.length || accountIds.includes(a.id)) &&
       (!business || a.businessId === business),
   );
+  useEffect(() => {
+    if (!analyticsTab) setMetaWindowMode("inline");
+  }, [analyticsTab]);
+  const changeMetaWindowMode = (next: FinancialTableWindowMode) => {
+    if (metaWindowMode === "inline" && next !== "inline") {
+      metaInlineX.current = tableBodyScroll.current?.scrollLeft ?? 0;
+      metaInlinePage.current = { x: window.scrollX, y: window.scrollY };
+    }
+    setMetaWindowMode(next);
+  };
   const orderByCost = (id: string) =>
     resetPage(() => {
       setSort(id);
@@ -1809,7 +1855,7 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
       >
         {[
           ["campaign", "Campañas"],
-          ["adset", "Conjuntos de anuncios"],
+          ["adset", "Conjuntos"],
           ["ad", "Anuncios"],
         ].map(([id, label]) => (
           <button
@@ -1826,6 +1872,37 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
           </button>
         ))}
       </div>
+      <button
+        type="button"
+        className="meta-maximize-table"
+        aria-label="Maximizar tabla de Meta Ads"
+        title="Maximizar tabla de Meta Ads"
+        onClick={() => {
+          setView("table");
+          metaWindowControls.current?.changeMode("maximized");
+        }}
+      >
+        ⛶ <span>Maximizar</span>
+      </button>
+      <button
+        type="button"
+        className="meta-selection-detail-trigger"
+        aria-label={`Ver detalle de ${summarySelectionKey ? summarySelectionKey.split(",").length : 0} seleccionados`}
+        disabled={!summarySelectionKey || loading}
+        onClick={() => {
+          const ids = summarySelectionKey.split(",").filter(Boolean);
+          if (!ids.length) return;
+          const refs = selectedObjects.filter((o) => ids.includes(o.id));
+          setSelectionDetail({
+            ids,
+            accounts: [...new Set(refs.map((o) => o.accountId))],
+            level,
+          });
+        }}
+      >
+        Detalle (
+        {summarySelectionKey ? summarySelectionKey.split(",").length : 0})
+      </button>
       <button
         className="meta-view-toggle"
         type="button"
@@ -2537,1188 +2614,1247 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
           se haya detenido.
         </p>
       )}
-      <div className="meta-content">
-        {tab === "connections" && owner ? (
-          <>
-            <details className="panel meta-new-connection">
-              <summary>＋ Añadir conexión de Meta</summary>
-              <section className="stack" aria-label="Agregar conexión de Meta">
-                <h3>Conectar cuentas de Meta</h3>
-                <p>
-                  Elige cómo conectar. Cada conexión utiliza un único método de
-                  acceso.
-                </p>
-                <div
-                  className="row"
-                  role="group"
-                  aria-label="Opciones para conectar con Meta"
+      <FinancialTableWindow
+        title="Meta Ads"
+        scrollRef={metaContentScroll}
+        mode={metaWindowMode}
+        onModeChange={changeMetaWindowMode}
+        controlsRef={metaWindowControls}
+        toolbar={
+          <div className="financial-table-window-toolbar">
+            <strong>
+              Meta Ads ·{" "}
+              {level === "campaign"
+                ? "Campañas"
+                : level === "adset"
+                  ? "Conjuntos"
+                  : "Anuncios"}
+            </strong>
+            <span>
+              {calendar
+                ? `${date(since)} – ${date(until)}`
+                : "Comparativos por período"}
+            </span>
+          </div>
+        }
+      >
+        <div className="meta-content" ref={metaContentScroll}>
+          {tab === "connections" && owner ? (
+            <>
+              <details className="panel meta-new-connection">
+                <summary>＋ Añadir conexión de Meta</summary>
+                <section
+                  className="stack"
+                  aria-label="Agregar conexión de Meta"
                 >
-                  {[
-                    ["manual", "Manual (token)"],
-                    ["quick", "Conexión OAuth con Meta"],
-                    ["oauth", "Agregar conexión OAuth"],
-                  ].map(([mode, label]) => (
-                    <button
-                      key={mode}
-                      type="button"
-                      className={apiMode === mode ? "primary" : ""}
-                      aria-expanded={apiMode === mode}
-                      onClick={() => setApiMode(apiMode === mode ? "" : mode)}
-                    >
-                      {label}
-                    </button>
-                  ))}
-                </div>
-                <div className="stack">
-                  {apiMode === "quick" && (
-                    <section
-                      className="stack"
-                      aria-label="Conexiones OAuth disponibles"
-                    >
-                      <p>
-                        Abre Facebook con una conexión cuya app ya esté
-                        configurada. Al completar la autorización se reemplazará
-                        su credencial actual.
-                      </p>
-                      {connections
-                        .filter(
+                  <h3>Conectar cuentas de Meta</h3>
+                  <p>
+                    Elige cómo conectar. Cada conexión utiliza un único método
+                    de acceso.
+                  </p>
+                  <div
+                    className="row"
+                    role="group"
+                    aria-label="Opciones para conectar con Meta"
+                  >
+                    {[
+                      ["manual", "Manual (token)"],
+                      ["quick", "Conexión OAuth con Meta"],
+                      ["oauth", "Agregar conexión OAuth"],
+                    ].map(([mode, label]) => (
+                      <button
+                        key={mode}
+                        type="button"
+                        className={apiMode === mode ? "primary" : ""}
+                        aria-expanded={apiMode === mode}
+                        onClick={() => setApiMode(apiMode === mode ? "" : mode)}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                  <div className="stack">
+                    {apiMode === "quick" && (
+                      <section
+                        className="stack"
+                        aria-label="Conexiones OAuth disponibles"
+                      >
+                        <p>
+                          Abre Facebook con una conexión cuya app ya esté
+                          configurada. Al completar la autorización se
+                          reemplazará su credencial actual.
+                        </p>
+                        {connections
+                          .filter(
+                            (c) =>
+                              c.transport === "API" &&
+                              !c.disconnectedAt &&
+                              c.appId &&
+                              c.appSecretConfiguredAt,
+                          )
+                          .map((c) => (
+                            <div className="panel stack" key={c.id}>
+                              <strong>{c.name}</strong>
+                              <MetaOAuthQuickConnect
+                                connection={c}
+                                info={marketingInfo}
+                              />
+                            </div>
+                          ))}
+                        {!connections.some(
                           (c) =>
                             c.transport === "API" &&
                             !c.disconnectedAt &&
                             c.appId &&
                             c.appSecretConfiguredAt,
-                        )
-                        .map((c) => (
-                          <div className="panel stack" key={c.id}>
-                            <strong>{c.name}</strong>
-                            <MetaOAuthQuickConnect
-                              connection={c}
-                              info={marketingInfo}
-                            />
-                          </div>
-                        ))}
-                      {!connections.some(
-                        (c) =>
-                          c.transport === "API" &&
-                          !c.disconnectedAt &&
-                          c.appId &&
-                          c.appSecretConfiguredAt,
-                      ) && (
-                        <p>
-                          Primero usa «Agregar conexión OAuth» para configurar
-                          tu app de Meta.
-                        </p>
-                      )}
-                    </section>
-                  )}
-                  {apiMode === "oauth" ? (
-                    <MetaMarketingOAuth
-                      info={marketingInfo}
-                      onUpdated={() => {
-                        void refresh();
-                        setRevision((r) => r + 1);
-                      }}
-                    />
-                  ) : apiMode === "manual" ? (
-                    <form
-                      className="stack"
-                      onSubmit={(e) => {
-                        e.preventDefault();
-                        const form = e.currentTarget,
-                          data = new FormData(form);
-                        void run(async () => {
-                          await api("meta-ads/connections", "POST", {
-                            name: String(data.get("name")),
-                            transport: "API",
-                            apiVersion: String(data.get("version")),
-                            token: String(data.get("token")),
-                          });
-                          form.reset();
-                          setApiMode("");
-                        }, "Conexión guardada. El token aparece oculto en su tarjeta. Verifica el acceso para traer tus cuentas.");
-                      }}
-                    >
-                      <div className="fields">
-                        <label>
-                          Nombre
-                          <input name="name" required maxLength={100} />
-                        </label>
-                        <label>
-                          Versión Graph
-                          <input
-                            name="version"
-                            defaultValue="v26.0"
-                            required
-                            pattern="v[0-9]{2}\.0"
-                          />
-                        </label>
-                      </div>
-                      <label>
-                        Token oficial de Marketing API
-                        <PasswordInput
-                          name="token"
-                          required
-                          secretLabel="token de Meta"
-                          autoComplete="off"
-                        />
-                      </label>
-                      <button disabled={busy}>Guardar conexión API</button>
-                    </form>
-                  ) : null}
-                </div>
-              </section>
-            </details>
-            {connections.some(
-              (c) => c.transport === "API" && c.disconnectedAt,
-            ) && (
-              <label className="row">
-                <input
-                  type="checkbox"
-                  checked={showDisconnected}
-                  onChange={(e) => setShowDisconnected(e.target.checked)}
-                />
-                Ver conexiones retiradas (
-                {
-                  connections.filter(
-                    (c) => c.transport === "API" && c.disconnectedAt,
-                  ).length
-                }
-                )
-              </label>
-            )}
-            {connections
-              .filter(
-                (c) =>
-                  c.transport === "API" &&
-                  (showDisconnected || !c.disconnectedAt),
-              )
-              .map((c) => {
-                const linked = accounts.filter((a) => a.connectionId === c.id);
-                const needsAuth =
-                  linked.some((a) => a.progress?.authorizationRequired) ||
-                  !!(
-                    c.tokenExpiresAt &&
-                    Date.parse(c.tokenExpiresAt) <= Date.now()
-                  ) ||
-                  /(?:código|code)\s*(?:190|102)\b|HTTP\s*401/i.test(
-                    c.lastError ?? "",
-                  );
-                const quotaWait =
-                  linked.some(
-                    (a) =>
-                      a.progress?.status === "waiting" &&
-                      a.progress.waitReason === "quota",
-                  ) ||
-                  /Meta limitó|HTTP\s*429|código\s*(?:4|17|32|613|80000|80004)\b/i.test(
-                    c.lastError ?? "",
-                  );
-                const retryAt = linked
-                  .filter(
-                    (a) =>
-                      a.progress?.status === "waiting" &&
-                      a.progress.waitReason === "quota",
-                  )
-                  .map((a) => a.progress?.nextSyncAt)
-                  .filter((v): v is string => !!v)
-                  .sort()[0];
-                return (
-                  <article
-                    className="panel stack meta-connection-card"
-                    key={c.id}
-                  >
-                    <div className="row spread">
-                      <h3>{c.name}</h3>
-                      <span
-                        className="badge"
-                        data-health={
-                          needsAuth
-                            ? "auth"
-                            : quotaWait
-                              ? "quota"
-                              : c.verifiedAt
-                                ? "verified"
-                                : "pending"
-                        }
-                      >
-                        {c.transport} ·{" "}
-                        {c.disconnectedAt
-                          ? "Desconectada"
-                          : needsAuth
-                            ? "Requiere reconectar"
-                            : quotaWait
-                              ? "Límite de consultas"
-                              : c.verifiedAt
-                                ? "Acceso comprobado anteriormente"
-                                : "Pendiente de verificar"}
-                      </span>
-                    </div>
-                    <small>
-                      {c.tokenMask ?? "Sin token guardado"} · Última
-                      verificación: {displayTime(c.verifiedAt)}
-                    </small>
-                    {c.transport === "API" && (
-                      <small>
-                        Credencial:{" "}
-                        {!c.tokenMask
-                          ? "Sin autorización"
-                          : c.authMethod === "OAUTH"
-                            ? "OAuth de tu app"
-                            : "Token manual"}{" "}
-                        · Caducidad:{" "}
-                        {c.tokenExpiresAt
-                          ? displayTime(c.tokenExpiresAt)
-                          : "No informada"}
-                        {c.tokenExpiresAt &&
-                        Date.parse(c.tokenExpiresAt) <= Date.now()
-                          ? " · Reconecta con Facebook"
-                          : ""}
-                      </small>
+                        ) && (
+                          <p>
+                            Primero usa «Agregar conexión OAuth» para configurar
+                            tu app de Meta.
+                          </p>
+                        )}
+                      </section>
                     )}
-                    {needsAuth && (
-                      <p className="notice" role="status">
-                        Meta rechazó o venció la autorización. Renueva el acceso
-                        de esta conexión para volver a recibir datos.
-                      </p>
-                    )}
-                    {!needsAuth && quotaWait && (
-                      <p className="notice" role="status">
-                        <strong>Meta limitó las consultas.</strong> Los datos
-                        pueden estar atrasados; se conserva el avance.{" "}
-                        {retryAt
-                          ? `Reintento previsto: ${displayTime(retryAt)}.`
-                          : "Es el último aviso guardado de la conexión."}
-                      </p>
-                    )}
-                    {!c.disconnectedAt && (
-                      <MetaConnectionAccess
-                        connection={c}
+                    {apiMode === "oauth" ? (
+                      <MetaMarketingOAuth
                         info={marketingInfo}
-                        onUpdated={async () => {
-                          await refresh();
+                        onUpdated={() => {
+                          void refresh();
                           setRevision((r) => r + 1);
                         }}
                       />
-                    )}
-                    <details className="meta-connection-details">
-                      <summary>
-                        Cuentas y opciones avanzadas · {linked.length}
-                      </summary>
-                      <MetaConnectionScope accounts={linked} />
-                      {!c.disconnectedAt && (
-                        <details>
-                          <summary>
-                            Permiso para activar y pausar en Meta
-                          </summary>
-                          <p>
-                            Estos controles requieren ads_management y acceso
-                            para administrar la cuenta. ads_read permite
-                            consultar estadísticas y miniaturas.
-                          </p>
-                          {c.appSecretConfiguredAt && c.appId && (
-                            <button
-                              type="button"
-                              disabled={busy}
-                              onClick={() => {
-                                if (
-                                  !window.confirm(
-                                    "Autorizar administración con Facebook sustituirá la credencial actual al completar el acceso. ¿Continuar?",
-                                  )
-                                )
-                                  return;
-                                void run(async () => {
-                                  const r = await api(
-                                    `meta-ads/connections/${c.id}/manage-oauth`,
-                                    "POST",
-                                    {},
-                                  );
-                                  window.location.assign(r.url);
-                                });
-                              }}
-                            >
-                              Autorizar activar y pausar con Facebook
-                            </button>
-                          )}
-                          {c.loginConfigId && (
-                            <p>
-                              En tu configuración de Facebook Login para
-                              empresas incluye ads_read y ads_management antes
-                              de autorizar.
-                            </p>
-                          )}
-                          <p>
-                            Si usas token manual, reemplázalo por uno que
-                            incluya ads_management y verifica la conexión.
-                          </p>
-                        </details>
-                      )}
-                      {c.lastError &&
-                        (c.verifiedAt ? (
-                          <details>
-                            <summary>Información de la verificación</summary>
-                            <p>{c.lastError}</p>
-                          </details>
-                        ) : (
-                          <p className="notice">{c.lastError}</p>
-                        ))}
-                      {c.transport === "API" && (
-                        <details>
-                          <summary>Versión de la API · avanzado</summary>
-                          <form
-                            className="row"
-                            onSubmit={(e) => {
-                              e.preventDefault();
-                              const apiVersion = String(
-                                new FormData(e.currentTarget).get("apiVersion"),
-                              );
-                              void run(async () => {
-                                await api(
-                                  `meta-ads/connections/${c.id}`,
-                                  "PATCH",
-                                  {
-                                    apiVersion,
-                                  },
-                                );
-                              }, "Versión actualizada. Se conserva el token; pulsa Comprobar acceso.");
-                            }}
-                          >
-                            <label>
-                              Versión Graph guardada
-                              <input
-                                name="apiVersion"
-                                defaultValue={c.apiVersion}
-                                key={c.apiVersion}
-                                required
-                                pattern="v[0-9]{2}\.0"
-                              />
-                            </label>
-                            <button disabled={busy}>
-                              Actualizar versión sin cambiar token
-                            </button>
-                            <small>
-                              Usa la misma versión que funcionó en Explorer.
-                              Actualizar el formulario de una conexión nueva no
-                              cambia esta conexión.
-                            </small>
-                          </form>
-                        </details>
-                      )}
-                    </details>
-                    <div className="row meta-connection-actions">
-                      <button
-                        type="button"
-                        disabled={busy || !c.tokenMask || !!c.disconnectedAt}
-                        onClick={() =>
-                          void run(
-                            () =>
-                              api(
-                                `meta-ads/connections/${c.id}/refresh`,
-                                "POST",
-                                {},
-                              ),
-                            "Conexión verificada con Meta. Se conservaron las cuentas y los datos; no se importaron anuncios.",
-                          )
-                        }
-                      >
-                        Comprobar acceso
-                      </button>
-                      <button
-                        type="button"
-                        disabled={busy || !c.tokenMask || !!c.disconnectedAt}
-                        onClick={() =>
+                    ) : apiMode === "manual" ? (
+                      <form
+                        className="stack"
+                        onSubmit={(e) => {
+                          e.preventDefault();
+                          const form = e.currentTarget,
+                            data = new FormData(form);
                           void run(async () => {
-                            const r = await api(
-                              `meta-ads/connections/${c.id}/verify`,
-                              "POST",
-                              {},
-                            );
-                            setMessage(
-                              `Acceso verificado · ${r.accounts} cuentas disponibles.`,
-                            );
-                          })
-                        }
-                      >
-                        Buscar cuentas nuevas
-                      </button>
-                      <button
-                        type="button"
-                        className="danger"
-                        disabled={busy || !!c.disconnectedAt}
-                        onClick={() => {
-                          if (
-                            confirm(
-                              "¿Eliminar esta conexión de la lista activa? Se retirará su token y se desactivará su sincronización. Se conservan las cuentas y el histórico. No se modifica nada en Meta ni otras conexiones.",
-                            )
-                          )
-                            void run(
-                              () =>
-                                api("meta-ads/connections/" + c.id, "DELETE"),
-                              "Conexión retirada de la lista activa. Se conserva el histórico; puedes consultarla en Ver conexiones retiradas.",
-                            );
+                            await api("meta-ads/connections", "POST", {
+                              name: String(data.get("name")),
+                              transport: "API",
+                              apiVersion: String(data.get("version")),
+                              token: String(data.get("token")),
+                            });
+                            form.reset();
+                            setApiMode("");
+                          }, "Conexión guardada. El token aparece oculto en su tarjeta. Verifica el acceso para traer tus cuentas.");
                         }}
                       >
-                        {c.disconnectedAt
-                          ? "Conexión retirada"
-                          : "Eliminar conexión"}
-                      </button>
-                    </div>
-                  </article>
-                );
-              })}
-          </>
-        ) : tab === "accounts" && !viewOnly ? (
-          <>
-            <div className="row">
-              <h2>Cuentas autorizadas · {accounts.length}</h2>
-              <button type="button" disabled={busy} onClick={reload}>
-                Actualizar vista
-              </button>
-            </div>
-            {accountGroupControls()}
-            {groupUpdateButton(filteredAccounts)}
-            <p className="hint">
-              Marca Cuenta principal para tenerla a mano. Las demás aparecen en
-              Cuentas secundarias.
-            </p>
-            <div className="fields meta-filters panel">
-              <label>
-                Buscar cuenta por nombre o ID
-                <input
-                  type="search"
-                  value={accountListQuery}
-                  onChange={(e) => {
-                    setAccountListQuery(e.target.value);
-                    setAccountListPage(1);
-                  }}
-                  placeholder="Nombre, negocio o act_…"
-                />
-              </label>
-              <label>
-                Actividad de cuentas
-                <select
-                  value={accountListActivity}
-                  onChange={(e) => {
-                    setAccountListActivity(e.target.value);
-                    setAccountListPage(1);
-                  }}
-                >
-                  {activityOptions.map(([value, label]) => (
-                    <option key={value} value={value}>
-                      {label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label>
-                Negocio informado por Meta
-                <select
-                  value={accountListBusiness}
-                  onChange={(e) => {
-                    setAccountListBusiness(e.target.value);
-                    setAccountListPage(1);
-                  }}
-                >
-                  <option value="">Todos los autorizados</option>
-                  <option value="__unknown">Sin agrupación disponible</option>
-                  {businesses.map(([id, name]) => (
-                    <option key={id} value={id}>
-                      {name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            </div>
-            <small>
-              {filteredAccounts.length} de {groupAccounts.length} cuentas{" "}
-              {accountGroup === "primary" ? "principales" : "secundarias"} ·
-              actividad basada en la última importación completa de hoy. Antes
-              de sincronizar, el gasto y las campañas activas son desconocidos.
-            </small>
-            {!!accounts.length && !filteredAccounts.length && (
-              <p className="panel">
-                {accountGroup === "primary" && !primaryCount
-                  ? "Todavía no has marcado cuentas principales. Abre Cuentas secundarias y marca Cuenta principal."
-                  : "No hay cuentas que coincidan en esta vista. Prueba otro nombre o revisa los filtros."}
-              </p>
-            )}
-            {!accounts.length && (
-              <p className="panel">
-                {owner
-                  ? "Conecta Meta y pulsa Buscar cuentas nuevas para empezar."
-                  : "El OWNER todavía no te ha asignado cuentas publicitarias."}
-              </p>
-            )}
-            {visibleAccounts.map((a) => (
-              <article className="panel stack" key={a.id}>
-                <div className="row spread">
-                  <h3>
-                    {a.name} <small>act_{a.id}</small>
-                  </h3>
-                  <label className="check meta-account-primary">
-                    <input
-                      type="checkbox"
-                      checked={primarySet.has(a.id)}
-                      disabled={busy || sharedAccountsBusy}
-                      aria-label={`Cuenta principal ${a.name}`}
-                      onChange={(e) =>
-                        setPrimaryAccount(a.id, e.target.checked)
-                      }
-                    />
-                    Cuenta principal
-                  </label>
-                </div>
-                <p>
-                  {a.businessName ? `${a.businessName} · ` : ""}
-                  {a.currency} · {a.timezone}
-                </p>
-                <div className="row spread">
-                  <small>Datos recientes: {displayTime(a.syncedAt)}</small>
-                  {owner && a.sources && (
-                    <label>
-                      Conexión
-                      <select
-                        aria-label={`Conexión de ${a.name}`}
-                        value={a.connectionId}
-                        disabled={busy}
-                        onChange={(e) =>
-                          void run(
-                            () =>
-                              api(`meta-ads/accounts/${a.id}`, "PATCH", {
-                                connectionId: e.target.value,
-                              }),
-                            "Conexión actualizada.",
-                          )
-                        }
-                      >
-                        {a.sources
-                          .filter(
-                            (source) =>
-                              source.connection.transport === "API" &&
-                              !source.connection.disconnectedAt,
-                          )
-                          .map((source) => (
-                            <option
-                              key={source.connectionId}
-                              value={source.connectionId}
-                            >
-                              {source.connection.name}
-                            </option>
+                        <div className="fields">
+                          <label>
+                            Nombre
+                            <input name="name" required maxLength={100} />
+                          </label>
+                          <label>
+                            Versión Graph
+                            <input
+                              name="version"
+                              defaultValue="v26.0"
+                              required
+                              pattern="v[0-9]{2}\.0"
+                            />
+                          </label>
+                        </div>
+                        <label>
+                          Token oficial de Marketing API
+                          <PasswordInput
+                            name="token"
+                            required
+                            secretLabel="token de Meta"
+                            autoComplete="off"
+                          />
+                        </label>
+                        <button disabled={busy}>Guardar conexión API</button>
+                      </form>
+                    ) : null}
+                  </div>
+                </section>
+              </details>
+              {connections.some(
+                (c) => c.transport === "API" && c.disconnectedAt,
+              ) && (
+                <label className="row">
+                  <input
+                    type="checkbox"
+                    checked={showDisconnected}
+                    onChange={(e) => setShowDisconnected(e.target.checked)}
+                  />
+                  Ver conexiones retiradas (
+                  {
+                    connections.filter(
+                      (c) => c.transport === "API" && c.disconnectedAt,
+                    ).length
+                  }
+                  )
+                </label>
+              )}
+              {connections
+                .filter(
+                  (c) =>
+                    c.transport === "API" &&
+                    (showDisconnected || !c.disconnectedAt),
+                )
+                .map((c) => {
+                  const linked = accounts.filter(
+                    (a) => a.connectionId === c.id,
+                  );
+                  const needsAuth =
+                    linked.some((a) => a.progress?.authorizationRequired) ||
+                    !!(
+                      c.tokenExpiresAt &&
+                      Date.parse(c.tokenExpiresAt) <= Date.now()
+                    ) ||
+                    /(?:código|code)\s*(?:190|102)\b|HTTP\s*401/i.test(
+                      c.lastError ?? "",
+                    );
+                  const quotaWait =
+                    linked.some(
+                      (a) =>
+                        a.progress?.status === "waiting" &&
+                        a.progress.waitReason === "quota",
+                    ) ||
+                    /Meta limitó|HTTP\s*429|código\s*(?:4|17|32|613|80000|80004)\b/i.test(
+                      c.lastError ?? "",
+                    );
+                  const retryAt = linked
+                    .filter(
+                      (a) =>
+                        a.progress?.status === "waiting" &&
+                        a.progress.waitReason === "quota",
+                    )
+                    .map((a) => a.progress?.nextSyncAt)
+                    .filter((v): v is string => !!v)
+                    .sort()[0];
+                  return (
+                    <article
+                      className="panel stack meta-connection-card"
+                      key={c.id}
+                    >
+                      <div className="row spread">
+                        <h3>{c.name}</h3>
+                        <span
+                          className="badge"
+                          data-health={
+                            needsAuth
+                              ? "auth"
+                              : quotaWait
+                                ? "quota"
+                                : c.verifiedAt
+                                  ? "verified"
+                                  : "pending"
+                          }
+                        >
+                          {c.transport} ·{" "}
+                          {c.disconnectedAt
+                            ? "Desconectada"
+                            : needsAuth
+                              ? "Requiere reconectar"
+                              : quotaWait
+                                ? "Límite de consultas"
+                                : c.verifiedAt
+                                  ? "Acceso comprobado anteriormente"
+                                  : "Pendiente de verificar"}
+                        </span>
+                      </div>
+                      <small>
+                        {c.tokenMask ?? "Sin token guardado"} · Última
+                        verificación: {displayTime(c.verifiedAt)}
+                      </small>
+                      {c.transport === "API" && (
+                        <small>
+                          Credencial:{" "}
+                          {!c.tokenMask
+                            ? "Sin autorización"
+                            : c.authMethod === "OAUTH"
+                              ? "OAuth de tu app"
+                              : "Token manual"}{" "}
+                          · Caducidad:{" "}
+                          {c.tokenExpiresAt
+                            ? displayTime(c.tokenExpiresAt)
+                            : "No informada"}
+                          {c.tokenExpiresAt &&
+                          Date.parse(c.tokenExpiresAt) <= Date.now()
+                            ? " · Reconecta con Facebook"
+                            : ""}
+                        </small>
+                      )}
+                      {needsAuth && (
+                        <p className="notice" role="status">
+                          Meta rechazó o venció la autorización. Renueva el
+                          acceso de esta conexión para volver a recibir datos.
+                        </p>
+                      )}
+                      {!needsAuth && quotaWait && (
+                        <p className="notice" role="status">
+                          <strong>Meta limitó las consultas.</strong> Los datos
+                          pueden estar atrasados; se conserva el avance.{" "}
+                          {retryAt
+                            ? `Reintento previsto: ${displayTime(retryAt)}.`
+                            : "Es el último aviso guardado de la conexión."}
+                        </p>
+                      )}
+                      {!c.disconnectedAt && (
+                        <MetaConnectionAccess
+                          connection={c}
+                          info={marketingInfo}
+                          onUpdated={async () => {
+                            await refresh();
+                            setRevision((r) => r + 1);
+                          }}
+                        />
+                      )}
+                      <details className="meta-connection-details">
+                        <summary>
+                          Cuentas y opciones avanzadas · {linked.length}
+                        </summary>
+                        <MetaConnectionScope accounts={linked} />
+                        {!c.disconnectedAt && (
+                          <details>
+                            <summary>
+                              Permiso para activar y pausar en Meta
+                            </summary>
+                            <p>
+                              Estos controles requieren ads_management y acceso
+                              para administrar la cuenta. ads_read permite
+                              consultar estadísticas y miniaturas.
+                            </p>
+                            {c.appSecretConfiguredAt && c.appId && (
+                              <button
+                                type="button"
+                                disabled={busy}
+                                onClick={() => {
+                                  if (
+                                    !window.confirm(
+                                      "Autorizar administración con Facebook sustituirá la credencial actual al completar el acceso. ¿Continuar?",
+                                    )
+                                  )
+                                    return;
+                                  void run(async () => {
+                                    const r = await api(
+                                      `meta-ads/connections/${c.id}/manage-oauth`,
+                                      "POST",
+                                      {},
+                                    );
+                                    window.location.assign(r.url);
+                                  });
+                                }}
+                              >
+                                Autorizar activar y pausar con Facebook
+                              </button>
+                            )}
+                            {c.loginConfigId && (
+                              <p>
+                                En tu configuración de Facebook Login para
+                                empresas incluye ads_read y ads_management antes
+                                de autorizar.
+                              </p>
+                            )}
+                            <p>
+                              Si usas token manual, reemplázalo por uno que
+                              incluya ads_management y verifica la conexión.
+                            </p>
+                          </details>
+                        )}
+                        {c.lastError &&
+                          (c.verifiedAt ? (
+                            <details>
+                              <summary>Información de la verificación</summary>
+                              <p>{c.lastError}</p>
+                            </details>
+                          ) : (
+                            <p className="notice">{c.lastError}</p>
                           ))}
-                      </select>
-                    </label>
-                  )}
-                </div>
-                {a.connection && !a.connection.verifiedAt && (
-                  <p className="notice">
-                    Verifica esta conexión en Conexiones antes de sincronizar.
-                  </p>
-                )}
-                <small className="meta-account-activity">
-                  {accountActivityText(a)}
-                </small>
-                {a.progress && (
-                  <SyncIndicator
-                    account={a}
-                    onRefresh={
-                      a.canSync ? () => void updateAccount(a) : undefined
-                    }
-                    onAnalyze={() => {
-                      chooseAccounts([a.id]);
-                      setBusiness("");
-                      setPage(1);
-                      setTab("panel");
-                      setRevision((r) => r + 1);
-                    }}
-                    busy={busy}
-                    onResume={
-                      a.canSync
-                        ? () =>
-                            void run(
-                              () =>
-                                api(`meta-ads/accounts/${a.id}/sync`, "POST", {
-                                  focused: true,
-                                  inventory: "all",
-                                  recentDays: a.progress?.focused
-                                    ? a.progress.recentDays
-                                    : 7,
-                                }),
-                              "Sincronización retomada.",
-                            )
-                        : undefined
-                    }
-                    onControl={
-                      a.canSync
-                        ? (action) =>
+                        {c.transport === "API" && (
+                          <details>
+                            <summary>Versión de la API · avanzado</summary>
+                            <form
+                              className="row"
+                              onSubmit={(e) => {
+                                e.preventDefault();
+                                const apiVersion = String(
+                                  new FormData(e.currentTarget).get(
+                                    "apiVersion",
+                                  ),
+                                );
+                                void run(async () => {
+                                  await api(
+                                    `meta-ads/connections/${c.id}`,
+                                    "PATCH",
+                                    {
+                                      apiVersion,
+                                    },
+                                  );
+                                }, "Versión actualizada. Se conserva el token; pulsa Comprobar acceso.");
+                              }}
+                            >
+                              <label>
+                                Versión Graph guardada
+                                <input
+                                  name="apiVersion"
+                                  defaultValue={c.apiVersion}
+                                  key={c.apiVersion}
+                                  required
+                                  pattern="v[0-9]{2}\.0"
+                                />
+                              </label>
+                              <button disabled={busy}>
+                                Actualizar versión sin cambiar token
+                              </button>
+                              <small>
+                                Usa la misma versión que funcionó en Explorer.
+                                Actualizar el formulario de una conexión nueva
+                                no cambia esta conexión.
+                              </small>
+                            </form>
+                          </details>
+                        )}
+                      </details>
+                      <div className="row meta-connection-actions">
+                        <button
+                          type="button"
+                          disabled={busy || !c.tokenMask || !!c.disconnectedAt}
+                          onClick={() =>
                             void run(
                               () =>
                                 api(
-                                  `meta-ads/accounts/${a.id}/control`,
+                                  `meta-ads/connections/${c.id}/refresh`,
                                   "POST",
-                                  { action },
+                                  {},
                                 ),
-                              action === "pause"
-                                ? "Sincronización pausada; puedes retomarla."
-                                : "Sincronización cancelada. Los datos guardados se conservan.",
+                              "Conexión verificada con Meta. Se conservaron las cuentas y los datos; no se importaron anuncios.",
                             )
-                        : undefined
-                    }
-                  />
-                )}
-                <MetaSyncNotice userId={userId} account={a} />
-                {a.canSync && (
-                  <form
-                    className="row meta-sync-actions"
-                    onSubmit={(e) => {
-                      e.preventDefault();
-                      void run(async () => {
-                        const r = await api(
-                          `meta-ads/accounts/${a.id}/sync`,
-                          "POST",
-                          { focused: true, recentDays: 7, inventory: "all" },
-                        );
-                        setMessage(
-                          r.waiting
-                            ? "Sincronización programada después de la pausa por límite de Meta."
-                            : (r.syncError ??
-                                (r.resumed
-                                  ? "Sincronización retomada."
-                                  : "Análisis iniciado. Primero se cargarán los datos recientes y después el histórico.")),
-                        );
-                      });
-                    }}
-                  >
-                    <button
-                      className="primary"
-                      disabled={
-                        busy ||
-                        !a.connection?.verifiedAt ||
-                        a.progress?.status === "waiting"
-                      }
-                    >
-                      {busy
-                        ? "Procesando…"
-                        : a.progress?.status === "waiting"
-                          ? "Esperando a Meta"
-                          : a.progress &&
-                              [
-                                "running",
-                                "stalled",
-                                "error",
-                                "paused",
-                              ].includes(a.progress.status)
-                            ? a.progress?.inventory === "all"
-                              ? "Continuar sincronización"
-                              : "Sincronizar todos"
-                            : "Sincronizar todos"}
-                    </button>
-                  </form>
-                )}
-                <small>
-                  Incluye campañas, conjuntos y anuncios activos y desactivados
-                  de cualquier antigüedad. Los comparativos muestran hoy, 7, 15,
-                  30 días y el histórico disponible en Meta.
-                </small>
-                {role === "OWNER" && (
-                  <div className="row">
-                    <button
-                      type="button"
-                      disabled={busy}
-                      onClick={() => setSharing(a)}
-                    >
-                      Permisos de esta cuenta
-                    </button>
-                    <small>
-                      Elige quién puede ver esta cuenta o actualizar sus datos.
-                    </small>
-                  </div>
-                )}
-              </article>
-            ))}
-            {!!filteredAccounts.length && (
-              <div className="row" aria-label="Paginación de cuentas">
-                <button
-                  type="button"
-                  disabled={accountPage === 1}
-                  onClick={() => setAccountListPage(accountPage - 1)}
-                >
-                  Anterior
-                </button>
-                <span>
-                  {filteredAccounts.length} cuentas · Página {accountPage} de{" "}
-                  {accountPages}
-                </span>
-                <button
-                  type="button"
-                  disabled={accountPage === accountPages}
-                  onClick={() => setAccountListPage(accountPage + 1)}
-                >
-                  Siguiente
-                </button>
-              </div>
-            )}
-            <p className="hint">
-              La actualización continúa en segundo plano. Consultar estadísticas
-              no consume IA.
-            </p>
-          </>
-        ) : (
-          <>
-            {syncOpen && tab === "panel" && !viewOnly && (
-              <section
-                className="meta-account-sync-panel"
-                id="meta-account-sync-panel"
-                aria-label="Sincronización de cuentas"
-              >
-                <div className="row spread">
-                  <h2>Sincronización de cuentas</h2>
-                  <button type="button" onClick={minimizeSync}>
-                    Minimizar
-                  </button>
-                </div>
-                {accountGroupControls()}
-                {groupUpdateButton(groupAccounts)}
-                <div className="meta-sync-grid">
-                  {groupAccounts
-                    .filter(
-                      (a) =>
-                        a.progress &&
-                        !["complete", "disabled", "cancelled"].includes(
-                          a.progress.status,
-                        ),
-                    )
-                    .map((a) => (
-                      <div className="panel meta-analysis-progress" key={a.id}>
-                        <SyncIndicator
-                          compactHeader
-                          account={a}
-                          primary={primarySet.has(a.id)}
-                          onPrimaryChange={(value) =>
-                            setPrimaryAccount(a.id, value)
                           }
-                          onRefresh={
-                            a.canSync ? () => void updateAccount(a) : undefined
+                        >
+                          Comprobar acceso
+                        </button>
+                        <button
+                          type="button"
+                          disabled={busy || !c.tokenMask || !!c.disconnectedAt}
+                          onClick={() =>
+                            void run(async () => {
+                              const r = await api(
+                                `meta-ads/connections/${c.id}/verify`,
+                                "POST",
+                                {},
+                              );
+                              setMessage(
+                                `Acceso verificado · ${r.accounts} cuentas disponibles.`,
+                              );
+                            })
                           }
-                          busy={busy}
-                          onResume={
-                            a.canSync
-                              ? () =>
-                                  void run(
-                                    () =>
-                                      api(
-                                        `meta-ads/accounts/${a.id}/sync`,
-                                        "POST",
-                                        {
-                                          focused: true,
-                                          inventory: "all",
-                                          recentDays: a.progress?.focused
-                                            ? a.progress.recentDays
-                                            : 7,
-                                        },
-                                      ),
-                                    "Sincronización retomada.",
-                                  )
-                              : undefined
-                          }
-                          onControl={
-                            a.canSync
-                              ? (action) =>
-                                  void run(
-                                    () =>
-                                      api(
-                                        `meta-ads/accounts/${a.id}/control`,
-                                        "POST",
-                                        { action },
-                                      ),
-                                    action === "pause"
-                                      ? "Sincronización pausada; puedes retomarla."
-                                      : "Sincronización cancelada. Los datos guardados se conservan.",
-                                  )
-                              : undefined
-                          }
-                        />
-                        <MetaSyncNotice userId={userId} account={a} />
+                        >
+                          Buscar cuentas nuevas
+                        </button>
+                        <button
+                          type="button"
+                          className="danger"
+                          disabled={busy || !!c.disconnectedAt}
+                          onClick={() => {
+                            if (
+                              confirm(
+                                "¿Eliminar esta conexión de la lista activa? Se retirará su token y se desactivará su sincronización. Se conservan las cuentas y el histórico. No se modifica nada en Meta ni otras conexiones.",
+                              )
+                            )
+                              void run(
+                                () =>
+                                  api("meta-ads/connections/" + c.id, "DELETE"),
+                                "Conexión retirada de la lista activa. Se conserva el histórico; puedes consultarla en Ver conexiones retiradas.",
+                              );
+                          }}
+                        >
+                          {c.disconnectedAt
+                            ? "Conexión retirada"
+                            : "Eliminar conexión"}
+                        </button>
                       </div>
-                    ))}
-                </div>
-                {!groupAccounts.some(
-                  (a) =>
-                    a.progress &&
-                    !["complete", "disabled", "cancelled"].includes(
-                      a.progress.status,
-                    ),
-                ) && (
-                  <p className="hint">
-                    No hay sincronizaciones en curso en esta vista.
-                  </p>
-                )}
-                <button type="button" onClick={minimizeSync}>
-                  Minimizar y volver a Rendimiento
+                    </article>
+                  );
+                })}
+            </>
+          ) : tab === "accounts" && !viewOnly ? (
+            <>
+              <div className="row">
+                <h2>Cuentas autorizadas · {accounts.length}</h2>
+                <button type="button" disabled={busy} onClick={reload}>
+                  Actualizar vista
                 </button>
-              </section>
-            )}
-            <div
-              className={
-                "meta-sticky-controls" +
-                (view === "table" ? " meta-table-sticky" : "")
-              }
-              aria-label="Filtros y niveles de Meta Ads"
-            >
-              <div className="panel stack">
-                <div className="fields meta-filters meta-main-filters">
-                  <MetaAccountPicker
-                    primaryAccountIds={primaryAccountIds}
-                    accounts={accounts}
-                    selected={accountIds}
-                    business={business}
-                    query={accountPickerQuery}
-                    activity={accountPickerActivity}
-                    onQueryChange={setAccountPickerQuery}
-                    onActivityChange={setAccountPickerActivity}
-                    onChange={(ids) => chooseAccounts(ids)}
-                  />
-                  <label>
-                    Medir resultado
-                    <select
-                      value={metric}
-                      onChange={(e) =>
-                        resetPage(() => setMetric(e.target.value))
-                      }
-                    >
-                      <option value="">Automático según objetivo</option>
-                      {metrics
-                        .filter(([id]) => id !== "AUTO")
-                        .map(([id, label]) => (
-                          <option key={id} value={id}>
-                            {label}
-                          </option>
-                        ))}
-                    </select>
-                  </label>
-                  <MetaDeliveryFilter
-                    value={state}
-                    onChange={(value) => resetPage(() => setState(value))}
-                  />
-
-                  <label>
-                    Buscar por palabra
-                    <input
-                      type="search"
-                      aria-label="Buscar campañas, conjuntos o anuncios"
-                      placeholder="Escribe parte del nombre"
-                      value={q}
-                      onChange={(e) => setQ(e.target.value)}
-                    />
-                  </label>
-                  <div className="meta-alias-country-filter">
-                    <span>Buscar por inventario y país</span>
-                    <div>
-                      <SheetSearchSelect
-                        label="Buscar por inventario"
-                        placeholder="Todo el inventario"
-                        value={aliasFilter}
-                        options={[
-                          { value: "", label: "Todo el inventario" },
-                          { value: "__none", label: "Sin inventario" },
-                          ...aliases.map((a) => ({
-                            value: a.id,
-                            label: a.name,
-                          })),
-                        ]}
-                        onSelect={(v) => resetPage(() => setAliasFilter(v))}
-                      />
-                      <SheetSearchSelect
-                        label="Filtrar por país del inventario"
-                        placeholder="País: todos"
-                        value={countryFilter}
-                        options={[
-                          { value: "", label: "País: todos" },
-                          { value: "__none", label: "Sin país" },
-                          ...countryOptions.map((c) => ({
-                            value: c.code,
-                            label: `${c.code} · ${c.name}`,
-                          })),
-                        ]}
-                        onSelect={(v) => resetPage(() => setCountryFilter(v))}
-                      />
-                    </div>
-                  </div>
-                  <div className="meta-filter-actions">
-                    <button
-                      type="button"
-                      onClick={clearFilters}
-                      title="Volver a todas las cuentas y al periodo Hoy; conserva tus checks y cuentas fijadas"
-                    >
-                      Borrar filtros
-                    </button>
-                    <button
-                      className="meta-refresh"
-                      type="button"
-                      onClick={reload}
-                      disabled={busy || loading}
-                      aria-label="Actualizar datos guardados"
-                      title="Actualizar vista con los datos guardados"
-                    >
-                      ↻
-                    </button>
-                  </div>
-                </div>
-                <div
-                  className="meta-pinned-accounts"
-                  aria-label="Cuentas fijadas"
-                >
-                  <div className="meta-pins-list">
-                    <span>Cuentas fijadas</span>
-                    <button
-                      type="button"
-                      aria-pressed={!accountIds.length}
-                      className={!accountIds.length ? "primary" : ""}
-                      onClick={() => chooseAccounts([], false)}
-                    >
-                      Todas
-                    </button>
-                    {sharedAccountsBusy && (
-                      <small
-                        role="status"
-                        className="meta-shared-accounts-saving"
-                      >
-                        Guardando cuentas compartidas…
-                      </small>
-                    )}
-                    {pinnedAccountIds.map((id) => {
-                      const a = accounts.find((a) => a.id === id);
-                      return a ? (
-                        <div className="meta-account-pin" key={id}>
-                          <button
-                            type="button"
-                            aria-pressed={accountIds.includes(id)}
-                            className={accountIds.includes(id) ? "primary" : ""}
-                            onClick={() => chooseAccounts([id], false)}
-                          >
-                            {a.name}
-                          </button>
-                          {(!moduleAccess?.permission ||
-                            moduleAccess.canEdit) && (
-                            <button
-                              type="button"
-                              disabled={sharedAccountsBusy}
-                              className="meta-unpin"
-                              aria-label={`Desfijar ${a.name}`}
-                              onClick={() =>
-                                void changeAccountPreferences(
-                                  "PINNED",
-                                  "REMOVE",
-                                  [id],
-                                )
-                              }
-                            >
-                              <span aria-hidden="true">×</span>
-                            </button>
-                          )}
-                        </div>
-                      ) : null;
-                    })}
-                  </div>
-                </div>
-                <div
-                  className="meta-summary-row"
-                  aria-label="Resumen y actualización"
-                >
-                  <div className="meta-summary-date">
-                    <MetaSalesCounter
-                      sales={summary?.sales}
-                      loading={loading && !summary}
-                      manualSince={salesSince}
-                      onSinceChange={setSalesSince}
-                    />
-                    <MetaSummaryCounters
-                      summary={summary}
-                      loading={loading && !summary}
-                      compact
-                    />
-                    {analysisControl()}
-                  </div>
-                  <div className="meta-pinned-actions">
-                    <MetaVisibleRefresh
-                      items={items}
-                      accounts={accounts}
-                      onUpdated={visibleUpdated}
-                      onReconnect={() => setTab("connections")}
-                    />
-                    {chosen.some((a) => a.canSync) && (
-                      <button
-                        type="button"
-                        className="meta-live-refresh"
-                        disabled={busy || !accountIds.length}
-                        title={
-                          accountIds.length
-                            ? "Importación completa del catálogo, comparativos e histórico desde Meta"
-                            : "Selecciona una cuenta para actualizar desde Meta"
-                        }
-                        onClick={() =>
-                          void updateAccountGroup(
-                            chosen.filter((a) => a.canSync),
-                          )
-                        }
-                      >
-                        ↻ Actualizar catálogo e histórico
-                      </button>
-                    )}
-                    <MetaDataFreshness accounts={chosen} compact />
-                    {bulkAliasControl()}
-                  </div>
-                </div>
               </div>
-              {view === "cards" && (
-                <div className="meta-result-controls">
-                  {levelControls()}
-                  <MetaCostOrder
-                    calendar={!!calendar}
-                    value={sort}
-                    direction={direction}
-                    onChange={orderByCost}
-                    afterLifetime={
-                      level === "campaign" ? evaluationOrderControls() : null
-                    }
+              {accountGroupControls()}
+              {groupUpdateButton(filteredAccounts)}
+              <p className="hint">
+                Marca Cuenta principal para tenerla a mano. Las demás aparecen
+                en Cuentas secundarias.
+              </p>
+              <div className="fields meta-filters panel">
+                <label>
+                  Buscar cuenta por nombre o ID
+                  <input
+                    type="search"
+                    value={accountListQuery}
+                    onChange={(e) => {
+                      setAccountListQuery(e.target.value);
+                      setAccountListPage(1);
+                    }}
+                    placeholder="Nombre, negocio o act_…"
                   />
-                </div>
-              )}
-              {view === "table" && (
-                <div className="meta-fixed-table-head" ref={tableHeaderScroll}>
-                  <table role="presentation">
-                    {tableColumns()}
-                    {tableHead()}
-                  </table>
-                </div>
-              )}
-            </div>
-            <div data-meta-result-region className="meta-results-stage">
-              <div className="meta-results" aria-busy={loading}>
-                {limited && (
-                  <p className="notice">
-                    Hay más de 10.000 elementos: filtra por cuenta o campaña
-                    para acotar los resultados.
-                  </p>
-                )}
-                <div
-                  className="meta-load-status"
-                  role="status"
-                  aria-live="polite"
-                >
-                  {loading ? "Consultando estadísticas guardadas…" : ""}
-                </div>
-                {!loading && !items.length && (
-                  <section className="panel meta-empty">
-                    <h2>
-                      {accounts.length
-                        ? "No hay resultados para esta selección"
-                        : "Conecta tus cuentas publicitarias"}
-                    </h2>
-                    <p>
-                      {accounts.length
-                        ? "Habilita y sincroniza una cuenta, o ajusta los filtros. Las estadísticas aparecerán cuando termine la importación."
-                        : owner
-                          ? "Conecta tu cuenta de Facebook para empezar."
-                          : "Solicita al OWNER acceso a las cuentas que necesitas consultar."}
-                    </p>
-                    {owner && (
-                      <button
-                        type="button"
-                        onClick={() =>
-                          setTab(accounts.length ? "accounts" : "connections")
-                        }
-                      >
-                        {accounts.length
-                          ? "Configurar cuentas"
-                          : "Conectar Meta"}
-                      </button>
-                    )}
-                  </section>
-                )}
-                {view === "table" ? (
-                  <div
-                    className="meta-table"
-                    onScroll={(e) => {
-                      if (tableHeaderScroll.current)
-                        tableHeaderScroll.current.scrollLeft =
-                          e.currentTarget.scrollLeft;
+                </label>
+                <label>
+                  Actividad de cuentas
+                  <select
+                    value={accountListActivity}
+                    onChange={(e) => {
+                      setAccountListActivity(e.target.value);
+                      setAccountListPage(1);
                     }}
                   >
-                    <table>
-                      {tableColumns()}
-                      {tableHead(true)}
-                      <tbody>
-                        {items
-                          .filter(
-                            (o) =>
-                              tab !== "alerts" ||
-                              ["CRITICAL", "WATCH", "DETERIORATING"].includes(
-                                o.rating,
-                              ),
-                          )
-                          .map((o) => (
-                            <tr
-                              key={o.id}
-                              data-object-id={o.id}
-                              aria-selected={selectedIds.has(o.id)}
-                              className={
-                                selectedIds.has(o.id)
-                                  ? "meta-object-selected"
-                                  : ""
-                              }
-                            >
-                              {tableColumnSpecs.map((column) => (
-                                <td
-                                  key={column.key}
-                                  className={columnClass(column)}
-                                >
-                                  {column.render(o)}
-                                </td>
-                              ))}
-                            </tr>
-                          ))}
-                      </tbody>
-                    </table>
+                    {activityOptions.map(([value, label]) => (
+                      <option key={value} value={value}>
+                        {label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  Negocio informado por Meta
+                  <select
+                    value={accountListBusiness}
+                    onChange={(e) => {
+                      setAccountListBusiness(e.target.value);
+                      setAccountListPage(1);
+                    }}
+                  >
+                    <option value="">Todos los autorizados</option>
+                    <option value="__unknown">Sin agrupación disponible</option>
+                    {businesses.map(([id, name]) => (
+                      <option key={id} value={id}>
+                        {name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+              <small>
+                {filteredAccounts.length} de {groupAccounts.length} cuentas{" "}
+                {accountGroup === "primary" ? "principales" : "secundarias"} ·
+                actividad basada en la última importación completa de hoy. Antes
+                de sincronizar, el gasto y las campañas activas son
+                desconocidos.
+              </small>
+              {!!accounts.length && !filteredAccounts.length && (
+                <p className="panel">
+                  {accountGroup === "primary" && !primaryCount
+                    ? "Todavía no has marcado cuentas principales. Abre Cuentas secundarias y marca Cuenta principal."
+                    : "No hay cuentas que coincidan en esta vista. Prueba otro nombre o revisa los filtros."}
+                </p>
+              )}
+              {!accounts.length && (
+                <p className="panel">
+                  {owner
+                    ? "Conecta Meta y pulsa Buscar cuentas nuevas para empezar."
+                    : "El OWNER todavía no te ha asignado cuentas publicitarias."}
+                </p>
+              )}
+              {visibleAccounts.map((a) => (
+                <article className="panel stack" key={a.id}>
+                  <div className="row spread">
+                    <h3>
+                      {a.name} <small>act_{a.id}</small>
+                    </h3>
+                    <label className="check meta-account-primary">
+                      <input
+                        type="checkbox"
+                        checked={primarySet.has(a.id)}
+                        disabled={busy || sharedAccountsBusy}
+                        aria-label={`Cuenta principal ${a.name}`}
+                        onChange={(e) =>
+                          setPrimaryAccount(a.id, e.target.checked)
+                        }
+                      />
+                      Cuenta principal
+                    </label>
                   </div>
-                ) : (
-                  <div className="meta-cards">
-                    {items
-                      .filter(
-                        (o) =>
-                          tab !== "alerts" ||
-                          [
-                            "CRITICAL",
-                            "WATCH",
-                            "DETERIORATING",
-                            "STALE",
-                          ].includes(o.rating),
-                      )
-                      .map(renderCard)}
+                  <p>
+                    {a.businessName ? `${a.businessName} · ` : ""}
+                    {a.currency} · {a.timezone}
+                  </p>
+                  <div className="row spread">
+                    <small>Datos recientes: {displayTime(a.syncedAt)}</small>
+                    {owner && a.sources && (
+                      <label>
+                        Conexión
+                        <select
+                          aria-label={`Conexión de ${a.name}`}
+                          value={a.connectionId}
+                          disabled={busy}
+                          onChange={(e) =>
+                            void run(
+                              () =>
+                                api(`meta-ads/accounts/${a.id}`, "PATCH", {
+                                  connectionId: e.target.value,
+                                }),
+                              "Conexión actualizada.",
+                            )
+                          }
+                        >
+                          {a.sources
+                            .filter(
+                              (source) =>
+                                source.connection.transport === "API" &&
+                                !source.connection.disconnectedAt,
+                            )
+                            .map((source) => (
+                              <option
+                                key={source.connectionId}
+                                value={source.connectionId}
+                              >
+                                {source.connection.name}
+                              </option>
+                            ))}
+                        </select>
+                      </label>
+                    )}
                   </div>
-                )}
-                <div className="row">
+                  {a.connection && !a.connection.verifiedAt && (
+                    <p className="notice">
+                      Verifica esta conexión en Conexiones antes de sincronizar.
+                    </p>
+                  )}
+                  <small className="meta-account-activity">
+                    {accountActivityText(a)}
+                  </small>
+                  {a.progress && (
+                    <SyncIndicator
+                      account={a}
+                      onRefresh={
+                        a.canSync ? () => void updateAccount(a) : undefined
+                      }
+                      onAnalyze={() => {
+                        chooseAccounts([a.id]);
+                        setBusiness("");
+                        setPage(1);
+                        setTab("panel");
+                        setRevision((r) => r + 1);
+                      }}
+                      busy={busy}
+                      onResume={
+                        a.canSync
+                          ? () =>
+                              void run(
+                                () =>
+                                  api(
+                                    `meta-ads/accounts/${a.id}/sync`,
+                                    "POST",
+                                    {
+                                      focused: true,
+                                      inventory: "all",
+                                      recentDays: a.progress?.focused
+                                        ? a.progress.recentDays
+                                        : 7,
+                                    },
+                                  ),
+                                "Sincronización retomada.",
+                              )
+                          : undefined
+                      }
+                      onControl={
+                        a.canSync
+                          ? (action) =>
+                              void run(
+                                () =>
+                                  api(
+                                    `meta-ads/accounts/${a.id}/control`,
+                                    "POST",
+                                    { action },
+                                  ),
+                                action === "pause"
+                                  ? "Sincronización pausada; puedes retomarla."
+                                  : "Sincronización cancelada. Los datos guardados se conservan.",
+                              )
+                          : undefined
+                      }
+                    />
+                  )}
+                  <MetaSyncNotice userId={userId} account={a} />
+                  {a.canSync && (
+                    <form
+                      className="row meta-sync-actions"
+                      onSubmit={(e) => {
+                        e.preventDefault();
+                        void run(async () => {
+                          const r = await api(
+                            `meta-ads/accounts/${a.id}/sync`,
+                            "POST",
+                            { focused: true, recentDays: 7, inventory: "all" },
+                          );
+                          setMessage(
+                            r.waiting
+                              ? "Sincronización programada después de la pausa por límite de Meta."
+                              : (r.syncError ??
+                                  (r.resumed
+                                    ? "Sincronización retomada."
+                                    : "Análisis iniciado. Primero se cargarán los datos recientes y después el histórico.")),
+                          );
+                        });
+                      }}
+                    >
+                      <button
+                        className="primary"
+                        disabled={
+                          busy ||
+                          !a.connection?.verifiedAt ||
+                          a.progress?.status === "waiting"
+                        }
+                      >
+                        {busy
+                          ? "Procesando…"
+                          : a.progress?.status === "waiting"
+                            ? "Esperando a Meta"
+                            : a.progress &&
+                                [
+                                  "running",
+                                  "stalled",
+                                  "error",
+                                  "paused",
+                                ].includes(a.progress.status)
+                              ? a.progress?.inventory === "all"
+                                ? "Continuar sincronización"
+                                : "Sincronizar todos"
+                              : "Sincronizar todos"}
+                      </button>
+                    </form>
+                  )}
+                  <small>
+                    Incluye campañas, conjuntos y anuncios activos y
+                    desactivados de cualquier antigüedad. Los comparativos
+                    muestran hoy, 7, 15, 30 días y el histórico disponible en
+                    Meta.
+                  </small>
+                  {role === "OWNER" && (
+                    <div className="row">
+                      <button
+                        type="button"
+                        disabled={busy}
+                        onClick={() => setSharing(a)}
+                      >
+                        Permisos de esta cuenta
+                      </button>
+                      <small>
+                        Elige quién puede ver esta cuenta o actualizar sus
+                        datos.
+                      </small>
+                    </div>
+                  )}
+                </article>
+              ))}
+              {!!filteredAccounts.length && (
+                <div className="row" aria-label="Paginación de cuentas">
                   <button
                     type="button"
-                    disabled={page <= 1}
-                    onClick={() => setPage((p) => p - 1)}
+                    disabled={accountPage === 1}
+                    onClick={() => setAccountListPage(accountPage - 1)}
                   >
                     Anterior
                   </button>
                   <span>
-                    {total} elementos · Página {page} de{" "}
-                    {Math.max(1, Math.ceil(total / 25))}
+                    {filteredAccounts.length} cuentas · Página {accountPage} de{" "}
+                    {accountPages}
                   </span>
                   <button
                     type="button"
-                    disabled={page * 25 >= total}
-                    onClick={() => setPage((p) => p + 1)}
+                    disabled={accountPage === accountPages}
+                    onClick={() => setAccountListPage(accountPage + 1)}
                   >
                     Siguiente
                   </button>
                 </div>
+              )}
+              <p className="hint">
+                La actualización continúa en segundo plano. Consultar
+                estadísticas no consume IA.
+              </p>
+            </>
+          ) : (
+            <>
+              {syncOpen && tab === "panel" && !viewOnly && (
+                <section
+                  className="meta-account-sync-panel"
+                  id="meta-account-sync-panel"
+                  aria-label="Sincronización de cuentas"
+                >
+                  <div className="row spread">
+                    <h2>Sincronización de cuentas</h2>
+                    <button type="button" onClick={minimizeSync}>
+                      Minimizar
+                    </button>
+                  </div>
+                  {accountGroupControls()}
+                  {groupUpdateButton(groupAccounts)}
+                  <div className="meta-sync-grid">
+                    {groupAccounts
+                      .filter(
+                        (a) =>
+                          a.progress &&
+                          !["complete", "disabled", "cancelled"].includes(
+                            a.progress.status,
+                          ),
+                      )
+                      .map((a) => (
+                        <div
+                          className="panel meta-analysis-progress"
+                          key={a.id}
+                        >
+                          <SyncIndicator
+                            compactHeader
+                            account={a}
+                            primary={primarySet.has(a.id)}
+                            onPrimaryChange={(value) =>
+                              setPrimaryAccount(a.id, value)
+                            }
+                            onRefresh={
+                              a.canSync
+                                ? () => void updateAccount(a)
+                                : undefined
+                            }
+                            busy={busy}
+                            onResume={
+                              a.canSync
+                                ? () =>
+                                    void run(
+                                      () =>
+                                        api(
+                                          `meta-ads/accounts/${a.id}/sync`,
+                                          "POST",
+                                          {
+                                            focused: true,
+                                            inventory: "all",
+                                            recentDays: a.progress?.focused
+                                              ? a.progress.recentDays
+                                              : 7,
+                                          },
+                                        ),
+                                      "Sincronización retomada.",
+                                    )
+                                : undefined
+                            }
+                            onControl={
+                              a.canSync
+                                ? (action) =>
+                                    void run(
+                                      () =>
+                                        api(
+                                          `meta-ads/accounts/${a.id}/control`,
+                                          "POST",
+                                          { action },
+                                        ),
+                                      action === "pause"
+                                        ? "Sincronización pausada; puedes retomarla."
+                                        : "Sincronización cancelada. Los datos guardados se conservan.",
+                                    )
+                                : undefined
+                            }
+                          />
+                          <MetaSyncNotice userId={userId} account={a} />
+                        </div>
+                      ))}
+                  </div>
+                  {!groupAccounts.some(
+                    (a) =>
+                      a.progress &&
+                      !["complete", "disabled", "cancelled"].includes(
+                        a.progress.status,
+                      ),
+                  ) && (
+                    <p className="hint">
+                      No hay sincronizaciones en curso en esta vista.
+                    </p>
+                  )}
+                  <button type="button" onClick={minimizeSync}>
+                    Minimizar y volver a Rendimiento
+                  </button>
+                </section>
+              )}
+              <div
+                className={
+                  "meta-sticky-controls" +
+                  (view === "table" ? " meta-table-sticky" : "")
+                }
+                aria-label="Filtros y niveles de Meta Ads"
+              >
+                <div className="panel stack">
+                  <div className="fields meta-filters meta-main-filters">
+                    <MetaAccountPicker
+                      primaryAccountIds={primaryAccountIds}
+                      accounts={accounts}
+                      selected={accountIds}
+                      business={business}
+                      query={accountPickerQuery}
+                      activity={accountPickerActivity}
+                      onQueryChange={setAccountPickerQuery}
+                      onActivityChange={setAccountPickerActivity}
+                      onChange={(ids) => chooseAccounts(ids)}
+                    />
+                    <label>
+                      Medir resultado
+                      <select
+                        value={metric}
+                        onChange={(e) =>
+                          resetPage(() => setMetric(e.target.value))
+                        }
+                      >
+                        <option value="">Automático según objetivo</option>
+                        {metrics
+                          .filter(([id]) => id !== "AUTO")
+                          .map(([id, label]) => (
+                            <option key={id} value={id}>
+                              {label}
+                            </option>
+                          ))}
+                      </select>
+                    </label>
+                    <MetaDeliveryFilter
+                      value={state}
+                      onChange={(value) => resetPage(() => setState(value))}
+                    />
+
+                    <label>
+                      Buscar por palabra
+                      <input
+                        type="search"
+                        aria-label="Buscar campañas, conjuntos o anuncios"
+                        placeholder="Escribe parte del nombre"
+                        value={q}
+                        onChange={(e) => setQ(e.target.value)}
+                      />
+                    </label>
+                    <div className="meta-alias-country-filter">
+                      <span>Buscar por inventario y país</span>
+                      <div>
+                        <SheetSearchSelect
+                          label="Buscar por inventario"
+                          placeholder="Todo el inventario"
+                          value={aliasFilter}
+                          options={[
+                            { value: "", label: "Todo el inventario" },
+                            { value: "__none", label: "Sin inventario" },
+                            ...aliases.map((a) => ({
+                              value: a.id,
+                              label: a.name,
+                            })),
+                          ]}
+                          onSelect={(v) => resetPage(() => setAliasFilter(v))}
+                        />
+                        <SheetSearchSelect
+                          label="Filtrar por país del inventario"
+                          placeholder="País: todos"
+                          value={countryFilter}
+                          options={[
+                            { value: "", label: "País: todos" },
+                            { value: "__none", label: "Sin país" },
+                            ...countryOptions.map((c) => ({
+                              value: c.code,
+                              label: `${c.code} · ${c.name}`,
+                            })),
+                          ]}
+                          onSelect={(v) => resetPage(() => setCountryFilter(v))}
+                        />
+                      </div>
+                    </div>
+                    <div className="meta-filter-actions">
+                      <button
+                        type="button"
+                        onClick={clearFilters}
+                        title="Volver a todas las cuentas y al periodo Hoy; conserva tus checks y cuentas fijadas"
+                      >
+                        Borrar filtros
+                      </button>
+                      <button
+                        className="meta-refresh"
+                        type="button"
+                        onClick={reload}
+                        disabled={busy || loading}
+                        aria-label="Actualizar datos guardados"
+                        title="Actualizar vista con los datos guardados"
+                      >
+                        ↻
+                      </button>
+                    </div>
+                  </div>
+                  <div
+                    className="meta-pinned-accounts"
+                    aria-label="Cuentas fijadas"
+                  >
+                    <div className="meta-pins-list">
+                      <span>Cuentas fijadas</span>
+                      <button
+                        type="button"
+                        aria-pressed={!accountIds.length}
+                        className={!accountIds.length ? "primary" : ""}
+                        onClick={() => chooseAccounts([], false)}
+                      >
+                        Todas
+                      </button>
+                      {sharedAccountsBusy && (
+                        <small
+                          role="status"
+                          className="meta-shared-accounts-saving"
+                        >
+                          Guardando cuentas compartidas…
+                        </small>
+                      )}
+                      {pinnedAccountIds.map((id) => {
+                        const a = accounts.find((a) => a.id === id);
+                        return a ? (
+                          <div className="meta-account-pin" key={id}>
+                            <button
+                              type="button"
+                              aria-pressed={accountIds.includes(id)}
+                              className={
+                                accountIds.includes(id) ? "primary" : ""
+                              }
+                              onClick={() => chooseAccounts([id], false)}
+                            >
+                              {a.name}
+                            </button>
+                            {(!moduleAccess?.permission ||
+                              moduleAccess.canEdit) && (
+                              <button
+                                type="button"
+                                disabled={sharedAccountsBusy}
+                                className="meta-unpin"
+                                aria-label={`Desfijar ${a.name}`}
+                                onClick={() =>
+                                  void changeAccountPreferences(
+                                    "PINNED",
+                                    "REMOVE",
+                                    [id],
+                                  )
+                                }
+                              >
+                                <span aria-hidden="true">×</span>
+                              </button>
+                            )}
+                          </div>
+                        ) : null;
+                      })}
+                    </div>
+                  </div>
+                  <div
+                    className="meta-summary-row"
+                    aria-label="Resumen y actualización"
+                  >
+                    <div className="meta-summary-date">
+                      <MetaSalesCounter
+                        sales={summary?.sales}
+                        loading={loading && !summary}
+                        manualSince={salesSince}
+                        onSinceChange={setSalesSince}
+                      />
+                      <MetaSummaryCounters
+                        summary={summary}
+                        loading={loading && !summary}
+                        compact
+                      />
+                      {analysisControl()}
+                    </div>
+                    <div className="meta-pinned-actions">
+                      <MetaVisibleRefresh
+                        items={items}
+                        accounts={accounts}
+                        onUpdated={visibleUpdated}
+                        onReconnect={() => setTab("connections")}
+                      />
+                      {chosen.some((a) => a.canSync) && (
+                        <button
+                          type="button"
+                          className="meta-live-refresh"
+                          disabled={busy || !accountIds.length}
+                          title={
+                            accountIds.length
+                              ? "Importación completa del catálogo, comparativos e histórico desde Meta"
+                              : "Selecciona una cuenta para actualizar desde Meta"
+                          }
+                          onClick={() =>
+                            void updateAccountGroup(
+                              chosen.filter((a) => a.canSync),
+                            )
+                          }
+                        >
+                          ↻ Actualizar catálogo e histórico
+                        </button>
+                      )}
+                      <MetaDataFreshness accounts={chosen} compact />
+                      {bulkAliasControl()}
+                    </div>
+                  </div>
+                </div>
+                {view === "cards" && (
+                  <div className="meta-result-controls">
+                    {levelControls()}
+                    <MetaCostOrder
+                      calendar={!!calendar}
+                      value={sort}
+                      direction={direction}
+                      onChange={orderByCost}
+                      afterLifetime={
+                        level === "campaign" ? evaluationOrderControls() : null
+                      }
+                    />
+                  </div>
+                )}
+                {view === "table" && (
+                  <div
+                    className="meta-fixed-table-head"
+                    ref={tableHeaderScroll}
+                  >
+                    <table role="presentation">
+                      {tableColumns()}
+                      {tableHead()}
+                    </table>
+                  </div>
+                )}
               </div>
-            </div>
-          </>
-        )}
-      </div>
+              <div data-meta-result-region className="meta-results-stage">
+                <div className="meta-results" aria-busy={loading}>
+                  {limited && (
+                    <p className="notice">
+                      Hay más de 10.000 elementos: filtra por cuenta o campaña
+                      para acotar los resultados.
+                    </p>
+                  )}
+                  <div
+                    className="meta-load-status"
+                    role="status"
+                    aria-live="polite"
+                  >
+                    {loading ? "Consultando estadísticas guardadas…" : ""}
+                  </div>
+                  {!loading && !items.length && (
+                    <section className="panel meta-empty">
+                      <h2>
+                        {accounts.length
+                          ? "No hay resultados para esta selección"
+                          : "Conecta tus cuentas publicitarias"}
+                      </h2>
+                      <p>
+                        {accounts.length
+                          ? "Habilita y sincroniza una cuenta, o ajusta los filtros. Las estadísticas aparecerán cuando termine la importación."
+                          : owner
+                            ? "Conecta tu cuenta de Facebook para empezar."
+                            : "Solicita al OWNER acceso a las cuentas que necesitas consultar."}
+                      </p>
+                      {owner && (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setTab(accounts.length ? "accounts" : "connections")
+                          }
+                        >
+                          {accounts.length
+                            ? "Configurar cuentas"
+                            : "Conectar Meta"}
+                        </button>
+                      )}
+                    </section>
+                  )}
+                  {view === "table" ? (
+                    <div
+                      ref={tableBodyScroll}
+                      className="meta-table"
+                      onScroll={(e) => {
+                        if (tableHeaderScroll.current)
+                          tableHeaderScroll.current.scrollLeft =
+                            e.currentTarget.scrollLeft;
+                      }}
+                    >
+                      <table>
+                        {tableColumns()}
+                        {tableHead(true)}
+                        <tbody>
+                          {items
+                            .filter(
+                              (o) =>
+                                tab !== "alerts" ||
+                                ["CRITICAL", "WATCH", "DETERIORATING"].includes(
+                                  o.rating,
+                                ),
+                            )
+                            .map((o) => (
+                              <tr
+                                key={o.id}
+                                data-object-id={o.id}
+                                aria-selected={selectedIds.has(o.id)}
+                                className={
+                                  selectedIds.has(o.id)
+                                    ? "meta-object-selected"
+                                    : ""
+                                }
+                              >
+                                {tableColumnSpecs.map((column) => (
+                                  <td
+                                    key={column.key}
+                                    className={columnClass(column)}
+                                  >
+                                    {column.render(o)}
+                                  </td>
+                                ))}
+                              </tr>
+                            ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  ) : (
+                    <div className="meta-cards">
+                      {items
+                        .filter(
+                          (o) =>
+                            tab !== "alerts" ||
+                            [
+                              "CRITICAL",
+                              "WATCH",
+                              "DETERIORATING",
+                              "STALE",
+                            ].includes(o.rating),
+                        )
+                        .map(renderCard)}
+                    </div>
+                  )}
+                  <div className="row">
+                    <button
+                      type="button"
+                      disabled={page <= 1}
+                      onClick={() => setPage((p) => p - 1)}
+                    >
+                      Anterior
+                    </button>
+                    <span>
+                      {total} elementos · Página {page} de{" "}
+                      {Math.max(1, Math.ceil(total / 25))}
+                    </span>
+                    <button
+                      type="button"
+                      disabled={page * 25 >= total}
+                      onClick={() => setPage((p) => p + 1)}
+                    >
+                      Siguiente
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </>
+          )}
+        </div>
+      </FinancialTableWindow>
+      {selectionDetail && (
+        <MetaSelectionDetail
+          {...selectionDetail}
+          initialPeriod={calendar ? "custom" : analysisPeriod}
+          initialSince={calendar ? since : undefined}
+          initialUntil={calendar ? until : undefined}
+          onClose={() => setSelectionDetail(null)}
+        />
+      )}
       {selected && (
         <MetaDetail
           item={selected}
