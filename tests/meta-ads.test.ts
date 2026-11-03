@@ -6223,3 +6223,5 @@ test("Sheet detail seeds omitted members with real zero or missing sales, withou
   assert.equal(kept[0], enriched);
   assert.equal(kept.length, 2);
 });
+
+import "./meta-selection-diplomas.test";

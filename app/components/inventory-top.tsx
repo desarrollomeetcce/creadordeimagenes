@@ -38,7 +38,7 @@ export const inventoryTopPriority = (
   { CRITICAL: 0, SEVERE: 1, ALERT: 2, TESTING: 3, WITHIN: 4, PENDING: 5 }[
     source === "meta"
       ? (point.cac?.meta.assessment.status ?? "PENDING")
-      : (point.cac?.budget.assessment ?? point.assessment).status
+      : (point.cac?.[source].assessment ?? point.assessment).status
   ];
 const bucketNames = ["Activos", "Por hacer campaña", "Por desactivar campaña"];
 export function InventoryTop({
@@ -49,7 +49,11 @@ export function InventoryTop({
   onChanged,
   onDetail,
   onBusyChange,
+  source = "budget",
+  initialRange,
 }: {
+  source?: "budget" | "meta";
+  initialRange?: [string, string];
   directory: TrialDirectory;
   columns: { value: string; label: string }[];
   initialColumn?: string;
@@ -71,9 +75,9 @@ export function InventoryTop({
     [message, setMessage] = useState(""),
     [error, setError] = useState(""),
     [kept, setKept] = useState<string[]>([]);
-  const [period, setPeriod] = useState("7");
-  const [range, setRange] = useState<[string, string]>(() =>
-    quickRange("7", limaToday()),
+  const [period, setPeriod] = useState(initialRange ? "custom" : "7");
+  const [range, setRange] = useState<[string, string]>(
+    () => initialRange ?? quickRange("7", limaToday()),
   );
   const today = limaToday();
   const dates = period === "custom" ? range : quickRange(period, today);
@@ -137,12 +141,13 @@ export function InventoryTop({
     )
     .sort(
       (a, b) =>
-        inventoryTopPriority(a.point) - inventoryTopPriority(b.point) ||
-        (b.point.cac?.budget.assessment.usage ??
-          b.point.assessment.usage ??
+        inventoryTopPriority(a.point, source) -
+          inventoryTopPriority(b.point, source) ||
+        (b.point.cac?.[source].assessment.usage ??
+          (source === "budget" ? b.point.assessment.usage : null) ??
           -1) -
-          (a.point.cac?.budget.assessment.usage ??
-            a.point.assessment.usage ??
+          (a.point.cac?.[source].assessment.usage ??
+            (source === "budget" ? a.point.assessment.usage : null) ??
             -1) ||
         a.item.name.localeCompare(b.item.name, "es"),
     );
@@ -306,8 +311,8 @@ export function InventoryTop({
       </div>
       <p className="inventory-top-hint">
         Conserva los que funcionan. Reemplaza solo los que quieres cambiar en
-        este país. Ventas, presupuesto, CAC y estado corresponden al período
-        elegido.
+        este país. Ventas, {source === "meta" ? "gasto Meta" : "presupuesto"},
+        CAC y estado corresponden al período elegido.
         {period === "lifetime"
           ? " Cada diplomado usa su última activación registrada hasta hoy; sin fecha conocida no se supone un inicio."
           : ` ${dates[0]} — ${dates[1]} · Lima.`}
@@ -529,10 +534,23 @@ export function InventoryTop({
                 <th title="Días calendario del último período de activación registrado">
                   Días activos{handle(5, "Días activos")}
                 </th>
-                <th title="Presupuesto registrado del período seleccionado, en soles">
-                  Pres. S/{handle(6, "Presupuesto")}
+                <th
+                  title={
+                    source === "meta"
+                      ? "Gasto recibido de Meta para el período, en soles"
+                      : "Presupuesto registrado del período seleccionado, en soles"
+                  }
+                >
+                  {source === "meta" ? "Gasto Meta S/" : "Pres. S/"}
+                  {handle(6, source === "meta" ? "Gasto Meta" : "Presupuesto")}
                 </th>
-                <th title="CAC del período seleccionado; presupuesto registrado entre ventas">
+                <th
+                  title={
+                    source === "meta"
+                      ? "CAC del período seleccionado; gasto Meta entre ventas"
+                      : "CAC del período seleccionado; presupuesto registrado entre ventas"
+                  }
+                >
                   CAC{handle(7, "CAC")}
                 </th>
                 <th>Estado{handle(8, "Estado")}</th>
@@ -640,32 +658,55 @@ export function InventoryTop({
                     </td>
                     <td>{p.activeDays ?? "—"}</td>
                     <td>
-                      {(p.cac ? p.cac.budget.penAmount : p.budget) === null
+                      {(p.cac
+                        ? p.cac[source].penAmount
+                        : source === "budget"
+                          ? p.budget
+                          : null) === null
                         ? "—"
                         : new Intl.NumberFormat("es-PE", {
                             maximumFractionDigits: 2,
                           }).format(
-                            (p.cac ? p.cac.budget.penAmount : p.budget)!,
+                            (p.cac
+                              ? p.cac[source].penAmount
+                              : source === "budget"
+                                ? p.budget
+                                : null)!,
                           )}
                     </td>
                     <td
                       title={
-                        (p.cac ? p.cac.budget.partial : !p.complete)
+                        (p.cac ? p.cac[source].partial : !p.complete)
                           ? "Datos incompletos; revisar detalle."
                           : undefined
                       }
                     >
-                      {(p.cac?.budget.assessment ?? p.assessment).usage === null
+                      {(
+                        p.cac?.[source].assessment ??
+                        (source === "budget"
+                          ? p.assessment
+                          : { status: "PENDING" as const, usage: null })
+                      ).usage === null
                         ? "—"
                         : new Intl.NumberFormat("es-PE", {
                             style: "currency",
                             currency: "PEN",
                             maximumFractionDigits: 1,
                           }).format(
-                            (p.cac?.budget.assessment ?? p.assessment).usage!,
+                            (
+                              p.cac?.[source].assessment ??
+                              (source === "budget"
+                                ? p.assessment
+                                : { status: "PENDING" as const, usage: null })
+                            ).usage!,
                           )}
-                      {(p.cac ? p.cac.budget.partial : !p.complete) &&
-                      (p.cac?.budget.assessment ?? p.assessment).usage !== null
+                      {(p.cac ? p.cac[source].partial : !p.complete) &&
+                      (
+                        p.cac?.[source].assessment ??
+                        (source === "budget"
+                          ? p.assessment
+                          : { status: "PENDING" as const, usage: null })
+                      ).usage !== null
                         ? " *"
                         : ""}
                     </td>
@@ -673,12 +714,22 @@ export function InventoryTop({
                       <span
                         className={
                           "trial-status inventory-status-with-dot trial-" +
-                          (p.cac?.budget.assessment ?? p.assessment).status
+                          (
+                            p.cac?.[source].assessment ??
+                            (source === "budget"
+                              ? p.assessment
+                              : { status: "PENDING" as const, usage: null })
+                          ).status
                         }
                       >
                         <InventoryStatusLabel
                           status={
-                            (p.cac?.budget.assessment ?? p.assessment).status
+                            (
+                              p.cac?.[source].assessment ??
+                              (source === "budget"
+                                ? p.assessment
+                                : { status: "PENDING" as const, usage: null })
+                            ).status
                           }
                         />
                       </span>

@@ -216,7 +216,11 @@ export async function dashboard(actor: Actor, params: URLSearchParams) {
   const objects = await db.metaAdObject.findMany({
     where,
     orderBy: { id: "asc" },
-    include: { alias: { select: { id: true, name: true } } },
+    include: {
+      alias: {
+        select: { id: true, name: true, tableId: true, inventorySheetId: true },
+      },
+    },
     take: 10001,
   });
   if (objectSelection.length)
@@ -452,6 +456,8 @@ export async function dashboard(actor: Actor, params: URLSearchParams) {
           {
             spend,
             metaAvailable: !!v && state !== "UNAVAILABLE",
+            reportedMeta: !!v && metric !== "UNKNOWN",
+            metaPartial: !!v && state === "UNAVAILABLE",
             impressions: v?.impressions ?? 0,
             results,
             cost: state === "RESULTS" ? spend / results : null,

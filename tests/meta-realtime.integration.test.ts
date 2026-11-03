@@ -260,6 +260,31 @@ test("Meta visible: estado actual y gasto breve independientes del histórico", 
       },
     );
     await t.test(
+      "Incomplete selected date range exposes stored Meta amount as partial without claiming complete coverage",
+      async () => {
+        const result = await dashboard(
+          actor,
+          new URLSearchParams({
+            accounts: root,
+            level: "campaign",
+            objectSelection: ids.join(","),
+            since: shiftDay(today, -6),
+            until: today,
+            analysisPeriod: "custom",
+            summary: "0",
+          }),
+        );
+        const period = result.items.find((o) => o.id === ids[0])!.periods
+          .custom;
+        assert.equal(period.state, "UNAVAILABLE");
+        assert.equal(period.metaAvailable, false);
+        assert.equal(period.reportedMeta, true);
+        assert.equal(period.metaPartial, true);
+        assert.equal(period.spend, 9);
+        assert(result.items[0].alias === null);
+      },
+    );
+    await t.test(
       "Página antigua no revierte estado ni gasto recién leído",
       async () => {
         await db.$transaction(async (tx) => {

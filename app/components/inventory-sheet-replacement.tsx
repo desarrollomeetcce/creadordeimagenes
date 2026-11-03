@@ -17,7 +17,9 @@ export function InventorySheetReplacement({
   until,
   onChanged,
   onClose,
+  source = "budget",
 }: {
+  source?: "budget" | "meta";
   listId: string;
   tableId: string;
   country: string;
@@ -87,6 +89,10 @@ export function InventorySheetReplacement({
       ) : (
         <InventoryTop
           directory={directory}
+          source={source}
+          initialRange={
+            source === "meta" && since && until ? [since, until] : undefined
+          }
           columns={[
             {
               value: tableId + ":" + country,

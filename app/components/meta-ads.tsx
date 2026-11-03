@@ -113,6 +113,8 @@ type Account = {
 };
 type Period = {
   metaAvailable?: boolean;
+  reportedMeta?: boolean;
+  metaPartial?: boolean;
   sales?: import("../../lib/meta-ads/campaign-performance").CampaignSalesPeriod;
   cost: number | null;
   spend: number;
@@ -3853,6 +3855,7 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
       </FinancialTableWindow>
       {selectionDetail && (
         <MetaSelectionDetail
+          dataRevision={revision}
           {...selectionDetail}
           initialPeriod={calendar ? "custom" : analysisPeriod}
           initialSince={calendar ? since : undefined}

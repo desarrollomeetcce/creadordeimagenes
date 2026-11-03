@@ -10,6 +10,7 @@ import { quickRange } from "../../lib/meta-ads/date-range";
 import { campaignEvaluationWindow } from "../../lib/meta-ads/campaign-evaluation-window";
 import { MetaCampaignAssessment } from "./meta-campaign-assessment";
 import { MetaAnalysisPeriod } from "./meta-analysis-period";
+import { MetaDiplomaOverview } from "./meta-diploma-overview";
 import { MetaDailyDetail } from "./meta-daily-detail";
 type MetricRow = {
   id: string;
@@ -62,7 +63,9 @@ export function MetaSelectionDetail({
   initialSince,
   initialUntil,
   onClose,
+  dataRevision = 0,
 }: {
+  dataRevision?: number;
   ids: string[];
   accounts: string[];
   level: string;
@@ -84,6 +87,7 @@ export function MetaSelectionDetail({
             today,
           ),
     );
+  const requestedScope = useRef("");
   const [rows, setRows] = useState<Item[]>([]),
     [loading, setLoading] = useState(true),
     [error, setError] = useState(""),
@@ -100,8 +104,19 @@ export function MetaSelectionDetail({
     const controller = new AbortController();
     setLoading(true);
     setError("");
-    setRows([]);
-    setExpanded(new Set());
+    const scope = JSON.stringify([
+      accountsKey,
+      idsKey,
+      level,
+      period,
+      since,
+      until,
+    ]);
+    if (requestedScope.current !== scope) {
+      setRows([]);
+      setExpanded(new Set());
+      requestedScope.current = scope;
+    }
     const q = new URLSearchParams({
       accounts: accountsKey,
       level,
@@ -131,13 +146,15 @@ export function MetaSelectionDetail({
         if (!controller.signal.aborted) setLoading(false);
       });
     return () => controller.abort();
-  }, [accountsKey, idsKey, level, period, since, until, reload]);
+  }, [accountsKey, idsKey, level, period, since, until, reload, dataRevision]);
   const comparison = useMemo(
     () =>
       rows.map((o) => {
         const p = o.periods[period],
           available =
-            !!p && p.state !== "UNAVAILABLE" && p.metaAvailable !== false;
+            !!p &&
+            (p.reportedMeta ||
+              (p.state !== "UNAVAILABLE" && p.metaAvailable !== false));
         const evaluation = campaignEvaluationWindow(
           o.periods,
           period,
@@ -214,9 +231,26 @@ export function MetaSelectionDetail({
           Actualizar comparación
         </button>
       </div>
-      {loading ? (
+      {level === "campaign" && (
+        <div hidden={!rows.length}>
+          <MetaDiplomaOverview
+            items={rows}
+            period={period}
+            since={since}
+            until={until}
+            onChanged={() => setReload((v) => v + 1)}
+          />
+        </div>
+      )}
+      {loading && rows.length > 0 && (
+        <small role="status">Actualizando métricas del período…</small>
+      )}
+      {error && rows.length > 0 && (
+        <p role="alert">{error} Se conserva la última lectura.</p>
+      )}
+      {loading && !rows.length ? (
         <p role="status">Consultando los elementos seleccionados…</p>
-      ) : error ? (
+      ) : error && !rows.length ? (
         <p role="alert">{error}</p>
       ) : (
         <>
@@ -235,191 +269,206 @@ export function MetaSelectionDetail({
                       ? formatMetaMoney(
                           known.reduce((n, r) => n + r.spend!, 0),
                           currency,
-                        ) + (known.length < values.length ? "*" : "")
+                        ) +
+                        (known.length < values.length ||
+                        known.some((r) => r.p?.metaPartial)
+                          ? "*"
+                          : "")
                       : "Sin informe"}
                   </b>
                 </span>
               );
             })}
           </div>
-          <div className="meta-selection-chart-grid">
-            {level === "campaign" ? (
-              <ComparisonBars
-                title="Ventas registradas"
-                rows={salesRows}
-                tone="sales"
-              />
-            ) : (
-              <section className="meta-selection-bars">
-                <h3>Resultados por elemento</h3>
-                <p>
-                  Las ventas se vinculan a campañas. Este nivel no tiene ventas
-                  propias atribuidas.
-                </p>
-                {[...new Set(rows.map((o) => o.metric))].map((metric) => (
+          <details
+            className="meta-selection-campaign-breakdown"
+            open={level !== "campaign"}
+          >
+            <summary>
+              Campañas seleccionadas e histórico individual ({rows.length})
+            </summary>
+            <div className="meta-selection-chart-grid">
+              {level === "campaign" ? (
+                <ComparisonBars
+                  title="Ventas registradas"
+                  rows={salesRows}
+                  tone="sales"
+                />
+              ) : (
+                <section className="meta-selection-bars">
+                  <h3>Resultados por elemento</h3>
+                  <p>
+                    Las ventas se vinculan a campañas. Este nivel no tiene
+                    ventas propias atribuidas.
+                  </p>
+                  {[...new Set(rows.map((o) => o.metric))].map((metric) => (
+                    <ComparisonBars
+                      key={metric}
+                      title={
+                        rows.find((o) => o.metric === metric)?.metricName ??
+                        metric
+                      }
+                      tone="results"
+                      rows={comparison
+                        .filter((r) => r.o.metric === metric)
+                        .map((r) => ({
+                          id: r.o.id,
+                          name: r.o.name,
+                          value: r.results,
+                          text:
+                            r.results === null
+                              ? "Sin informe"
+                              : String(r.results),
+                        }))}
+                    />
+                  ))}
+                </section>
+              )}
+              <div>
+                {currencies.map((currency) => (
                   <ComparisonBars
-                    key={metric}
-                    title={
-                      rows.find((o) => o.metric === metric)?.metricName ??
-                      metric
-                    }
-                    tone="results"
+                    key={currency}
+                    title={`Gasto Meta · ${currency}`}
+                    tone="spend"
                     rows={comparison
-                      .filter((r) => r.o.metric === metric)
+                      .filter((r) => r.o.currency === currency)
                       .map((r) => ({
                         id: r.o.id,
                         name: r.o.name,
-                        value: r.results,
+                        value: r.spend,
                         text:
-                          r.results === null
+                          r.spend === null
                             ? "Sin informe"
-                            : String(r.results),
+                            : formatMetaMoney(r.spend, currency) +
+                              (r.p?.metaPartial ? "*" : ""),
                       }))}
                   />
                 ))}
-              </section>
-            )}
-            <div>
-              {currencies.map((currency) => (
-                <ComparisonBars
-                  key={currency}
-                  title={`Gasto Meta · ${currency}`}
-                  tone="spend"
-                  rows={comparison
-                    .filter((r) => r.o.currency === currency)
-                    .map((r) => ({
-                      id: r.o.id,
-                      name: r.o.name,
-                      value: r.spend,
-                      text:
-                        r.spend === null
-                          ? "Sin informe"
-                          : formatMetaMoney(r.spend, currency),
-                    }))}
-                />
-              ))}
+              </div>
             </div>
-          </div>
-          <p className="hint">
-            Cada barra corresponde a un elemento seleccionado. Las ventas
-            compartidas se señalan; no se suman como ventas distintas. *
-            Parcial; sin registro no equivale a cero. Monedas separadas.
-          </p>
-          <div className="meta-table">
-            <table className="meta-selection-comparison">
-              <caption>
-                Comparación del período · estado reciente indicado por campaña
-              </caption>
-              <thead>
-                <tr>
-                  <th>Campaña / elemento</th>
-                  <th>Ventas</th>
-                  <th>Resultados</th>
-                  <th>Gasto Meta</th>
-                  <th>CAC del período</th>
-                  <th>Efectividad V/B</th>
-                  <th>Evaluación / entrega</th>
-                  <th>Histórico</th>
-                </tr>
-              </thead>
-              <tbody>
-                {comparison.map(({ o, p, v, spend, results, evaluation }) => (
-                  <Fragment key={o.id}>
-                    <tr data-selected-detail-id={o.id}>
-                      <th>
-                        {o.name}
-                        <small>
-                          {o.accountName} · {o.alias?.name ?? "Sin inventario"}{" "}
-                          · {o.aliasCountry ?? "Sin país"}
-                        </small>
-                      </th>
-                      <td>
-                        {o.level !== "campaign"
-                          ? "No atribuibles"
-                          : v?.sales == null
-                            ? "Sin registro"
-                            : `${v.sales}${v.partial ? "*" : ""}${(v.sharedCampaigns ?? 0) > 1 ? " · compartidas" : ""}`}
-                      </td>
-                      <td>{results ?? "Sin informe"}</td>
-                      <td>
-                        {spend === null
-                          ? "Sin informe"
-                          : formatMetaMoney(spend, o.currency)}
-                      </td>
-                      <td>
-                        {v?.cac == null
-                          ? "—"
-                          : formatMetaMoney(v.cac, o.currency) +
-                            (v.provisional ? "*" : "")}
-                      </td>
-                      <td>
-                        {v?.effectiveness == null
-                          ? "—"
-                          : `${v.effectiveness.toFixed(2)}%${v.provisional ? "*" : ""}`}
-                      </td>
-                      <td>
-                        {o.level === "campaign" ? (
-                          <>
-                            <MetaCampaignAssessment
-                              value={evaluation.period?.sales}
-                              compact
-                              today={localMetaDay(o.timezone)}
-                            />
-                            <small>
-                              {evaluation.label} ·{" "}
-                              {evaluation.period
-                                ? `${evaluation.period.since} – ${evaluation.period.until}`
-                                : "Sin período reciente"}
-                            </small>
-                          </>
-                        ) : (
-                          <span>
-                            {o.status === "ACTIVE"
-                              ? "Activo"
-                              : o.status === "PAUSED"
-                                ? "Pausado"
-                                : o.status}
-                          </span>
-                        )}
-                      </td>
-                      <td>
-                        <button
-                          type="button"
-                          aria-expanded={expanded.has(o.id)}
-                          aria-label={`Ver histórico de ${o.name}`}
-                          onClick={() =>
-                            setExpanded((prev) => {
-                              const next = new Set(prev);
-                              if (next.has(o.id)) next.delete(o.id);
-                              else next.add(o.id);
-                              return next;
-                            })
-                          }
-                        >
-                          {expanded.has(o.id)
-                            ? "Ocultar histórico"
-                            : "Ver histórico"}
-                        </button>
-                      </td>
-                    </tr>
-                    {expanded.has(o.id) && (
-                      <tr>
-                        <td colSpan={8}>
-                          <section aria-label={`Histórico de ${o.name}`}>
-                            <h3>{o.name} · histórico guardado</h3>
-                            <MetaDailyDetail
-                              item={o}
-                              initialPeriod="lifetime"
-                            />
-                          </section>
+            <p className="hint">
+              Cada barra corresponde a un elemento seleccionado. Las ventas
+              compartidas se señalan; no se suman como ventas distintas. *
+              Parcial; sin registro no equivale a cero. Monedas separadas.
+            </p>
+            <div className="meta-table">
+              <table className="meta-selection-comparison">
+                <caption>
+                  Comparación del período · estado reciente indicado por campaña
+                </caption>
+                <thead>
+                  <tr>
+                    <th>Campaña / elemento</th>
+                    <th>Ventas</th>
+                    <th>Resultados</th>
+                    <th>Gasto Meta</th>
+                    <th>CAC del período</th>
+                    <th>Efectividad V/B</th>
+                    <th>Evaluación / entrega</th>
+                    <th>Histórico</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {comparison.map(({ o, p, v, spend, results, evaluation }) => (
+                    <Fragment key={o.id}>
+                      <tr data-selected-detail-id={o.id}>
+                        <th>
+                          {o.name}
+                          <small>
+                            {o.accountName} ·{" "}
+                            {o.alias?.name ?? "Sin inventario"} ·{" "}
+                            {o.aliasCountry ?? "Sin país"}
+                          </small>
+                        </th>
+                        <td>
+                          {o.level !== "campaign"
+                            ? "No atribuibles"
+                            : v?.sales == null
+                              ? "Sin registro"
+                              : `${v.sales}${v.partial ? "*" : ""}${(v.sharedCampaigns ?? 0) > 1 ? " · compartidas" : ""}`}
+                        </td>
+                        <td>{results ?? "Sin informe"}</td>
+                        <td>
+                          {spend === null
+                            ? "Sin informe"
+                            : formatMetaMoney(spend, o.currency) +
+                              (p?.metaPartial ? "*" : "")}
+                        </td>
+                        <td>
+                          {v?.cac == null
+                            ? "—"
+                            : formatMetaMoney(v.cac, o.currency) +
+                              (v.provisional ? "*" : "")}
+                        </td>
+                        <td>
+                          {v?.effectiveness == null
+                            ? "—"
+                            : `${v.effectiveness.toFixed(2)}%${v.provisional ? "*" : ""}`}
+                        </td>
+                        <td>
+                          {o.level === "campaign" ? (
+                            <>
+                              <MetaCampaignAssessment
+                                value={evaluation.period?.sales}
+                                compact
+                                today={localMetaDay(o.timezone)}
+                              />
+                              <small>
+                                {evaluation.label} ·{" "}
+                                {evaluation.period
+                                  ? `${evaluation.period.since} – ${evaluation.period.until}`
+                                  : "Sin período reciente"}
+                              </small>
+                            </>
+                          ) : (
+                            <span>
+                              {o.status === "ACTIVE"
+                                ? "Activo"
+                                : o.status === "PAUSED"
+                                  ? "Pausado"
+                                  : o.status}
+                            </span>
+                          )}
+                        </td>
+                        <td>
+                          <button
+                            type="button"
+                            aria-expanded={expanded.has(o.id)}
+                            aria-label={`Ver histórico de ${o.name}`}
+                            onClick={() =>
+                              setExpanded((prev) => {
+                                const next = new Set(prev);
+                                if (next.has(o.id)) next.delete(o.id);
+                                else next.add(o.id);
+                                return next;
+                              })
+                            }
+                          >
+                            {expanded.has(o.id)
+                              ? "Ocultar histórico"
+                              : "Ver histórico"}
+                          </button>
                         </td>
                       </tr>
-                    )}
-                  </Fragment>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                      {expanded.has(o.id) && (
+                        <tr>
+                          <td colSpan={8}>
+                            <section aria-label={`Histórico de ${o.name}`}>
+                              <h3>{o.name} · histórico guardado</h3>
+                              <MetaDailyDetail
+                                item={o}
+                                initialPeriod="lifetime"
+                              />
+                            </section>
+                          </td>
+                        </tr>
+                      )}
+                    </Fragment>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </details>
           <p className="hint">
             El histórico diario se consulta solo al desplegar un elemento. Desde
             el inicio incluye lo guardado; no descarga automáticamente el

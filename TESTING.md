@@ -2141,3 +2141,9 @@ Los datos de navegador son sintéticos y se retiran con controles de identidad y
 ### 2026-11-03 · Revisión de refresco visible Meta
 
 277/277 unitarias; meta-realtime.integration10/10; typecheck/build correctos. Chromium con fixture aislada y respuesta HTTP simulada: cobertura completada por otro lector refresca el dashboard una vez, sello repetido no repite lectura; cero lectura adicional de cuentas; reordenar objetos no reinicia consulta Meta; pestaña oculta no consulta y visibilitychange reanuda; statusUpdated refresca tras fallo de informe. Tres comprobaciones, cero errores JS y Graph bloqueado. Integración conserva gasto anterior, cursor histórico, agenda, estados autorizados y rechaza credencial cambiada. Limpieza controlada conserva V10/V21 y G1400.91 originales antes de retirar fixture. No equivale a verificar las credenciales/entrega de la instalación real.
+
+### 2026-11-03 · Detalle por diplomado y reemplazo Meta
+
+281/281 unitarias,19/19 meta-realtime + meta-campaign-sales y25/25 inventory-sheet-activation; typecheck/build correctos. Nuevas reglas cubren agrupación V única/G seleccionado, bloqueo de CAC compartido incompleto, cero frente a ausencia, conflictos, monedas separadas y objetivos mixtos. Integración conserva números Meta reales de rango incompleto con reportedMeta/metaPartial sin metaAvailable completo.
+
+Chromium7 comprobaciones:5 campañas→4 diplomados, V compartida21 una vez y total31, estado crítico reciente; revisión en vivo conserva DOM/filtro; ordenar0/ausente/positivos y cambiar búsqueda/métrica no consulta; reemplazo abre con país/inventario/G Meta sin escribir; evolución consulta solo una campaña y rango; mes fuera de cobertura muestra800.52* guardados y conserva métrica; móvil oscuro con scroll, cero errores JS/escrituras de usuario. Fuente sintética exclusiva, Graph bloqueado, estados/ventas/gasto comprobados antes de limpieza. No certifica credenciales/latencia de la instalación real.
