@@ -1,4 +1,5 @@
 "use client";
+import { MetaCampaignAssessment } from "./meta-campaign-assessment";
 import { SheetSearchSelect } from "./sheet-search-select";
 import { MetaWorkspaceSharing } from "./meta-workspace-sharing";
 import { countryName, countryOptions } from "../../lib/meta-ads/countries";
@@ -235,39 +236,35 @@ function campaignSales(p?: Period, start?: string | null) {
     </small>
   );
 }
-function campaignEvaluation(o: Item) {
-  const p = o.periods["7"];
+function campaignEvaluation(o: Item, selectedPeriod = "7") {
   if (o.level !== "campaign")
     return <span title={ratings[o.rating]}>{ratings[o.rating]}</span>;
-  const v = p?.sales;
-  const label = !v?.linked
-    ? "Sin vincular"
-    : v.sales === null
-      ? "Ventas pendientes"
-      : v.sharedCampaigns > 1
-        ? "Ventas compartidas"
-        : v.partial
-          ? "Datos parciales"
-          : v.sales === 0
-            ? "Sin ventas registradas"
-            : `${v.sales} ventas · 7 días`;
+  const p = o.periods[selectedPeriod] ?? o.periods.custom ?? o.periods["7"],
+    v = p?.sales;
   return (
-    <>
-      <span
-        title={`${ratings[o.rating]} · resultados Meta de 7 días`}
-        aria-label={ratings[o.rating]}
+    <span className="meta-campaign-evaluation">
+      <span className="meta-campaign-evaluation-main">
+        <strong>
+          CAC {v?.cac != null ? money(v.cac, o.currency) : "—"}
+          {v?.provisional && v.cac != null ? "*" : ""}
+        </strong>
+        <MetaCampaignAssessment value={v} compact />
+      </span>
+      <small
+        title={
+          p
+            ? `Evaluación: ${date(p.since)} – ${date(p.until)}${v?.provisional ? ". Provisional: faltan días de ventas." : ""}`
+            : ""
+        }
       >
-        ⓘ
-      </span>{" "}
-      <span>{label}</span>
-      <small>
-        {v?.cac !== null && v?.cac !== undefined
-          ? `CAC ${money(v.cac, o.currency)}`
-          : "CAC —"}
+        Por el período · Efect.{" "}
+        {v?.effectiveness != null ? `${v.effectiveness.toFixed(2)}%` : "—"}
+        {v?.provisional && v.effectiveness != null ? "*" : ""}
       </small>
-    </>
+    </span>
   );
 }
+
 function date(value: string | null, timezone = "UTC") {
   return value
     ? new Date(
@@ -1970,7 +1967,7 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
     })),
     {
       key: "rating",
-      width: "9%",
+      width: "190px",
       label: "Evaluación · estado",
       toolbarAction: bulkAliasControl(),
       render: (o) => (
@@ -1980,7 +1977,7 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
           onClick={() => setSelected(o)}
           aria-label={`Ver evaluación de ${o.name}`}
         >
-          {campaignEvaluation(o)}
+          {campaignEvaluation(o, calendar ? "custom" : analysisPeriod)}
         </button>
       ),
     },
@@ -2272,7 +2269,9 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
         </div>
         <div className="meta-card-evaluation">
           {campaignSales(summary)}
-          <span className="badge">{campaignEvaluation(o)}</span>
+          <span className="badge">
+            {campaignEvaluation(o, calendar ? "custom" : analysisPeriod)}
+          </span>
           <small>Evaluación orientativa · últimos 7 días</small>
         </div>
         <div className="meta-dates">
@@ -3700,6 +3699,7 @@ function MetaDetail({
                 <th>Gasto Meta</th>
                 <th>CAC</th>
                 <th>Efectividad V/B</th>
+                <th>Estado CAC</th>
               </tr>
             </thead>
             <tbody>
@@ -3723,11 +3723,19 @@ function MetaDetail({
                           ? "—"
                           : money(p.spend, o.currency)}
                       </td>
-                      <td>{v?.cac != null ? money(v.cac, o.currency) : "—"}</td>
+                      <td>
+                        {v?.cac != null
+                          ? money(v.cac, o.currency) +
+                            (v.provisional ? "*" : "")
+                          : "—"}
+                      </td>
                       <td>
                         {v?.effectiveness != null
-                          ? `${v.effectiveness.toFixed(1)}%`
+                          ? `${v.effectiveness.toFixed(2)}%${v.provisional ? "*" : ""}`
                           : "—"}
+                      </td>
+                      <td>
+                        <MetaCampaignAssessment value={v} />
                       </td>
                     </tr>
                   );
@@ -3738,8 +3746,9 @@ function MetaDetail({
             Ventas registradas en hojas para el diplomado y país; no son compras
             atribuidas por Meta. Si varias campañas comparten ese vínculo, se
             muestran las mismas ventas y no se calcula CAC individual. * Suma
-            parcial: faltan días de ventas. Evaluación de resultados:{" "}
-            {ratings[o.rating]}.
+            parcial: faltan días de ventas; CAC y efectividad con asterisco son
+            provisionales y usan las ventas registradas. Evaluación de
+            resultados: {ratings[o.rating]}.
           </p>
         </div>
       )}

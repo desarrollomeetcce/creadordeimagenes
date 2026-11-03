@@ -308,6 +308,65 @@ test("Campañas: períodos de ventas locales, fuentes canónicas acotadas y anun
       },
     );
     await t.test(
+      "CAC provisional visible y reglas actuales del inventario compartidas entre panel y detalle",
+      async () => {
+        const q = new URLSearchParams({
+          accounts: accountId,
+          level: "campaign",
+        });
+        const r = await dashboard(viewer, q),
+          o = r.items.find((o) => o.id === ids.campaign)! as any;
+        assert(o.periods["15"].sales.provisional);
+        assert.equal(
+          o.periods["15"].sales.cac,
+          o.periods["15"].spend / o.periods["15"].sales.sales,
+        );
+        assert.equal(o.periods["7"].sales.status, "WITHIN");
+        const old = await db.metaEffectivenessSheet.findUniqueOrThrow({
+          where: { id: inventory.id },
+        });
+        await db.metaEffectivenessSheet.update({
+          where: { id: inventory.id },
+          data: {
+            config: {
+              inventoryActivation: {
+                cacRules: { review: 3, severe: 4, critical: 6, zero: 25 },
+              },
+              unrelatedSecret: "not-for-response",
+            },
+          },
+        });
+        try {
+          const updated = await dashboard(viewer, q),
+            v = updated.items.find((o) => o.id === ids.campaign)! as any;
+          assert.equal(v.periods["7"].sales.cac, 5);
+          assert.equal(v.periods["7"].sales.status, "SEVERE");
+          const response = await metaRoutes(
+            new NextRequest(
+              `http://localhost/api/meta-ads/objects/${ids.campaign}/daily?since=${since7}&until=${today}&sales=1`,
+            ),
+            ["meta-ads", "objects", ids.campaign, "daily"],
+            viewer,
+            async () => ({}),
+          );
+          const d = await response!.json();
+          assert.deepEqual(d.sales.rules, {
+            review: 3,
+            severe: 4,
+            critical: 6,
+            zero: 25,
+          });
+          assert(!JSON.stringify(updated).includes("not-for-response"));
+          assert(!JSON.stringify(d).includes("not-for-response"));
+        } finally {
+          await db.metaEffectivenessSheet.update({
+            where: { id: inventory.id },
+            data: { config: old.config as any },
+          });
+        }
+      },
+    );
+    await t.test(
       "Vínculos compartidos proyectan V una vez por resumen y no inventan CAC individual",
       async () => {
         await db.metaAdObject.update({

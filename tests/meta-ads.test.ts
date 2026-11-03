@@ -5653,7 +5653,10 @@ test("Campañas: ventas por rango con CAC, ceros, faltantes y vínculos comparti
     true,
   );
   assert(partial.partial);
-  assert.equal(partial.cac, null);
+  assert.equal(partial.cac, 7.5);
+  assert.equal(partial.effectiveness, 20);
+  assert(partial.provisional);
+  assert.equal(partial.status, "WITHIN");
   const shared = campaignSalesPeriod(
     [entry],
     "2026-10-01",
@@ -5857,5 +5860,57 @@ test("Columnas de hoja país: Argentina no hereda Perú/Angola vacíos; datos y 
       ["AR"],
     ),
     ["EC", "AR", "PE"],
+  );
+});
+
+test("CAC de campañas: estados de inventario, parcial explícito, cero, permisos de moneda y reglas", async () => {
+  const { campaignSalesPeriod: calc } =
+    await import("../lib/meta-ads/campaign-performance");
+  const e = {
+    inventory: "test",
+    name: "curso",
+    country: "PE",
+    day: "2026-10-01",
+    sales: 2,
+    partial: false,
+  };
+  const p = (spend: number, extra = {}) =>
+    calc([e], e.day, e.day, spend, 30, true, 1, true, extra);
+  assert.equal(p(60).status, "WITHIN");
+  assert.equal(p(70).status, "ALERT");
+  assert.equal(p(100).status, "SEVERE");
+  assert.equal(p(130).status, "CRITICAL");
+  assert.equal(p(130).effectiveness, (2 / 30) * 100);
+  assert.equal(
+    p(130, { rules: { review: 100, severe: 120, critical: 140, zero: 40 } })
+      .status,
+    "WITHIN",
+  );
+  assert.equal(p(130, { currency: "USD" }).cac, 65);
+  assert.equal(p(130, { currency: "USD" }).status, "PENDING");
+  const partial = calc([e], e.day, "2026-10-02", 89.78, 212, true, 1, true);
+  assert.equal(partial.cac, 44.89);
+  assert(partial.provisional);
+  assert.equal(partial.status, "ALERT");
+  assert.equal(partial.effectiveness, (2 / 212) * 100);
+  const zero = calc([{ ...e, sales: 0 }], e.day, e.day, 30, 30, true, 1, true);
+  assert.equal(zero.cac, null);
+  assert.equal(zero.effectiveness, 0);
+  assert.equal(zero.status, "ALERT");
+  const missing = calc(
+    [{ ...e, sales: 0 }],
+    e.day,
+    "2026-10-02",
+    30,
+    30,
+    true,
+    1,
+    true,
+  );
+  assert.equal(missing.status, "PENDING");
+  assert.equal(calc([], e.day, e.day, 30, 30, true, 1, true).cac, null);
+  assert.equal(
+    calc([e], e.day, e.day, 30, 30, false, 1, true).status,
+    "PENDING",
   );
 });

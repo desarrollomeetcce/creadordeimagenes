@@ -1,4 +1,6 @@
 "use client";
+import { MetaCampaignAssessment } from "./meta-campaign-assessment";
+import type { CacRules } from "../../lib/meta-ads/inventory-cac-policy";
 import { fetchJsonResponse } from "../../lib/http-response";
 import { useEffect, useState } from "react";
 import { compareDailyRows, type DailySort } from "../../lib/meta-ads/order";
@@ -25,6 +27,7 @@ type DailyItem = {
   level?: string;
 };
 type DailySales = {
+  rules?: CacRules;
   linked: boolean;
   sharedCampaigns: number;
   days: { day: string; sales: number | null; partial: boolean }[];
@@ -146,6 +149,7 @@ export function MetaDailyDetail({
         values.length > 0 && knownMetric,
         sales.sharedCampaigns,
         sales.linked,
+        { currency: item.currency, rules: sales.rules },
       )
     : null;
   const days = new Map(values.map((r) => [r.day, r]));
@@ -169,6 +173,7 @@ export function MetaDailyDetail({
               knownMetric,
               sales.sharedCampaigns,
               sales.linked,
+              { currency: item.currency, rules: sales.rules },
             )
           : null;
       return {
@@ -252,11 +257,28 @@ export function MetaDailyDetail({
                   ? "Ventas sin registro"
                   : `${selectedSales.sales}${selectedSales.partial ? "*" : ""} ventas`}
             </strong>{" "}
-            · CAC {selectedSales.cac != null ? money(selectedSales.cac) : "—"} ·
-            Efectividad V/B{" "}
+            · CAC{" "}
+            {selectedSales.cac != null
+              ? money(selectedSales.cac) +
+                (selectedSales.provisional ? "*" : "")
+              : "—"}{" "}
+            · Efectividad V/B{" "}
             {selectedSales.effectiveness != null
-              ? `${selectedSales.effectiveness.toFixed(1)}%`
+              ? `${selectedSales.effectiveness.toFixed(2)}%${selectedSales.provisional ? "*" : ""}`
               : "—"}
+            {" · "}
+            <MetaCampaignAssessment value={selectedSales} />
+            <small>
+              Gasto Meta:{" "}
+              {values.length
+                ? money(values.reduce((n, r) => n + r.spend, 0))
+                : "—"}{" "}
+              · Resultados Meta:{" "}
+              {values.length && knownMetric
+                ? values.reduce((n, r) => n + (r.results ?? 0), 0)
+                : "—"}
+              . CAC = G/V; efectividad = V/B × 100.
+            </small>
             {selectedSales.sharedCampaigns > 1 && (
               <small>
                 Ventas compartidas entre {selectedSales.sharedCampaigns}{" "}
@@ -265,7 +287,8 @@ export function MetaDailyDetail({
             )}
             {selectedSales.partial && (
               <small>
-                * Faltan días de ventas. No se interpretan como cero.
+                * Cálculo provisional con las ventas registradas: faltan días de
+                ventas. CAC y efectividad pueden cambiar al completarlos.
               </small>
             )}
           </p>

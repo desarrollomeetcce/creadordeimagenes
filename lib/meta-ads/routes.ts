@@ -2675,6 +2675,7 @@ export async function metaRoutes(
         [obj.id],
         "gte" in bounds ? bounds.gte : undefined,
         bounds.lte,
+        true,
       );
       const key = JSON.stringify([obj.aliasId, obj.aliasCountry]);
       return send({
@@ -2682,6 +2683,7 @@ export async function metaRoutes(
         sales: {
           linked: !!obj.aliasId && !!obj.aliasCountry,
           sharedCampaigns: data.sharing.length,
+          rules: data.rules.get(data.campaigns.find(c=>c.id===obj.id)?.alias?.inventorySheetId ?? ""),
           days: (data.entries.get(key) ?? []).map((r) => ({
             day: r.day,
             sales: r.sales,

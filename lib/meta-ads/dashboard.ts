@@ -641,6 +641,7 @@ export async function dashboard(actor: Actor, params: URLSearchParams) {
         salesIds,
         undefined,
         localDay("America/Lima"),
+        level === "campaign" && pageItems.length > 0,
       )
     : null;
   if (summary) {
@@ -679,6 +680,13 @@ export async function dashboard(actor: Actor, params: URLSearchParams) {
               p.metaAvailable,
               shared,
               !!o.aliasId && !!o.aliasCountry,
+              {
+                currency: o.currency,
+                rules: salesData.rules.get(
+                  salesData.campaigns.find((c) => c.id === o.id)?.alias
+                    ?.inventorySheetId ?? "",
+                ),
+              },
             ),
           },
         ]),

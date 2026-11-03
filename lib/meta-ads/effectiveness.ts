@@ -1,3 +1,4 @@
+import { readCacRules, type CacRules } from "./inventory-cac-policy";
 import { isPerformanceManager, performanceManager } from "./performance-access";
 import { checkFinancialContext } from "./financial-access";
 import {
@@ -214,6 +215,7 @@ export async function metaCampaignSalesData(
   campaignIds: string[],
   since: string | undefined,
   until: string,
+  withCacRules = false,
 ) {
   const campaigns = await db.metaAdObject.findMany({
     where: {
@@ -329,7 +331,18 @@ export async function metaCampaignSalesData(
         select: { id: true, aliasId: true, aliasCountry: true },
       })
     : [];
-  return { campaigns, entries, sharing };
+  const rules = new Map<string, CacRules>();
+  const inventoryIds = [
+    ...new Set(targets.map((c) => c.alias!.inventorySheetId)),
+  ];
+  if (withCacRules && inventoryIds.length) {
+    const settings = await db.$queryRaw<
+      { id: string; rules: unknown }[]
+    >`SELECT "id", "config" #> '{inventoryActivation,cacRules}' AS "rules" FROM "MetaEffectivenessSheet" WHERE "id" IN (${Prisma.join(inventoryIds)})`;
+    for (const setting of settings)
+      rules.set(setting.id, readCacRules(setting.rules));
+  }
+  return { campaigns, entries, sharing, rules };
 }
 export async function metaRegisteredSales(
   actor: Actor,
