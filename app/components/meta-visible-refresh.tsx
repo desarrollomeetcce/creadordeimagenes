@@ -5,6 +5,7 @@ import { fetchJsonResponse } from "../../lib/http-response";
 type Target = { id: string; accountId: string };
 type Result = {
   updated: boolean;
+  automaticDisabled?: boolean;
   statusUpdated?: boolean;
   covered?: boolean;
   nextAt?: string | null;
@@ -25,6 +26,7 @@ export function MetaVisibleRefresh({
   accounts: {
     id: string;
     canSync: boolean;
+    autoSync?: boolean;
     connectionId?: string;
     connection?: { revision?: number };
   }[];
@@ -49,7 +51,12 @@ export function MetaVisibleRefresh({
   const connectionKey = JSON.stringify(
     accounts
       .filter((a) => allowed.has(a.id) && visibleAccountIds.has(a.id))
-      .map((a) => [a.id, a.connectionId ?? a.id, a.connection?.revision ?? 0])
+      .map((a) => [
+        a.id,
+        a.connectionId ?? a.id,
+        a.connection?.revision ?? 0,
+        a.autoSync !== false,
+      ])
       .sort((a, b) => String(a[0]).localeCompare(String(b[0]))),
   );
   const fetchScope = key + connectionKey;
@@ -64,9 +71,12 @@ export function MetaVisibleRefresh({
   const refreshRef = useRef<() => Promise<void>>(async () => {});
   const notified = useRef(new Map<string, string>());
   const refresh = useCallback(
-    async (recover = false) => {
+    async (recover = false, manual = false) => {
       if (running.current || document.visibilityState !== "visible") return;
-      const pairs = JSON.parse(key) as string[][];
+      const pairs = (JSON.parse(key) as string[][]).filter(
+        ([id]) =>
+          manual || accounts.find((a) => a.id === id)?.autoSync !== false,
+      );
       if (!pairs.length) return;
       running.current = true;
       setBusy(true);
@@ -109,6 +119,7 @@ export function MetaVisibleRefresh({
                 body: JSON.stringify({
                   objects,
                   ...(recover ? { recover: true } : {}),
+                  ...(manual ? { manual: true } : {}),
                 }),
               },
             );
@@ -147,6 +158,10 @@ export function MetaVisibleRefresh({
             needsAuth ||= !!r.authorizationRequired;
             if ((r.updated || r.covered) && r.checkedAt && r.checkedAt > latest)
               latest = r.checkedAt;
+            if (r.automaticDisabled)
+              errors.push(
+                "Actualización a petición: pulsa Actualizar vista para consultar esta cuenta.",
+              );
             if (r.error) errors.push(r.error);
             else if (r.waiting && !r.covered)
               errors.push("Esperando el turno de actualización de Meta.");
@@ -226,7 +241,7 @@ export function MetaVisibleRefresh({
       <button
         type="button"
         disabled={busy || (pausedUntil !== null && pausedUntil > Date.now())}
-        onClick={() => void refresh()}
+        onClick={() => void refresh(false, true)}
         title={
           (notice ? notice + ". " : "") +
           "Consulta estados y gasto de hoy y ayer de los elementos visibles cada 60 s. No espera al histórico ni cambia las campañas."
@@ -249,7 +264,7 @@ export function MetaVisibleRefresh({
           disabled={
             busy || (recoveryUntil !== null && recoveryUntil > Date.now())
           }
-          onClick={() => void refresh(true)}
+          onClick={() => void refresh(true, true)}
           title="Comprueba una vez estados y gasto de hoy/ayer de esta página. No reinicia el histórico. Respeta los plazos indicados por Meta y limita las comprobaciones por conexión."
         >
           Comprobar Meta

@@ -1,3 +1,4 @@
+import { automaticSyncWhere, automaticSyncAllowed } from "./automatic-sync";
 import {
   historicalReadDeferral,
   isHistoricalMetaRead,
@@ -811,7 +812,27 @@ export async function queueSync(
 export async function syncStep(
   id: string,
   expectedSchedule?: string,
+  automatic = false,
 ): Promise<boolean> {
+  if (automatic) {
+    const current = await db.metaAdAccount.findUnique({
+      where: { id },
+      select: { id: true, schedulerToken: true, syncState: true },
+    });
+    if (!current) return false;
+    if (!(await automaticSyncAllowed(current))) {
+      if (current.schedulerToken)
+        await db.metaAdAccount.updateMany({
+          where: {
+            id,
+            schedulerToken: current.schedulerToken,
+            syncToken: null,
+          },
+          data: { schedulerToken: null, schedulerRunId: null },
+        });
+      return false;
+    }
+  }
   const diagnostic = await db.metaAdAccount.findUnique({
     where: { id },
     select: { syncError: true, syncState: true, realtimeState: true },
@@ -1335,9 +1356,11 @@ export async function syncStep(
   }
 }
 export async function runDueSync(limit = 3) {
+  const policy = await automaticSyncWhere();
   const accounts = await db.metaAdAccount.findMany({
     where: {
       enabled: true,
+      AND: [policy],
       nextSyncAt: { lte: new Date() },
       connection: { disconnectedAt: null },
     },
@@ -1345,7 +1368,7 @@ export async function runDueSync(limit = 3) {
     take: limit,
     orderBy: { nextSyncAt: "asc" },
   });
-  for (const a of accounts) await syncStep(a.id);
+  for (const a of accounts) await syncStep(a.id, undefined, true);
   return accounts.length;
 }
 

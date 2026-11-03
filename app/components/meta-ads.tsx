@@ -3091,8 +3091,9 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
               {accountGroupControls()}
               {groupUpdateButton(filteredAccounts)}
               <p className="hint">
-                Marca Cuenta principal para tenerla a mano. Las demás aparecen
-                en Cuentas secundarias.
+                Se actualizan automáticamente las cuentas principales
+                habilitadas. Las secundarias se actualizan cuando lo pides;
+                conservan sus datos e histórico.
               </p>
               <div className="fields meta-filters panel">
                 <label>
@@ -3668,7 +3669,13 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
                     <div className="meta-pinned-actions">
                       <MetaVisibleRefresh
                         items={items}
-                        accounts={accounts}
+                        accounts={accounts.map((a) => ({
+                          ...a,
+                          autoSync:
+                            a.enabled &&
+                            (!moduleAccess?.primaryInitialized ||
+                              primarySet.has(a.id)),
+                        }))}
                         onUpdated={visibleUpdated}
                         onReconnect={() => setTab("connections")}
                       />

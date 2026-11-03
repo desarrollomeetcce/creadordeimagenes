@@ -2421,7 +2421,7 @@ export async function metaRoutes(
       // The explicit action checks one page immediately; remaining pages stay durable.
       const advanced = b.focused ? false : await syncStep(id);
       const { startMetaSchedule } = await import("./schedule");
-      const scheduled = await startMetaSchedule(id);
+      const scheduled = await startMetaSchedule(id,true);
       const account = await db.metaAdAccount.findUnique({
         where: { id },
         select: { schedulerRunId: true },

@@ -1,5 +1,5 @@
 import { sleep } from "workflow";
-async function advance(accountId: string, scheduleToken: string) {
+export async function advance(accountId: string, scheduleToken: string) {
   "use step";
   const { db } = await import("../lib/db");
   const { syncStep } = await import("../lib/meta-ads/service");
@@ -14,13 +14,22 @@ async function advance(accountId: string, scheduleToken: string) {
   });
   if (!a || requiresMetaReconnect(a.syncError))
     return { active: false, delay: 0 };
+  const { automaticSyncAllowed } =
+    await import("../lib/meta-ads/automatic-sync");
+  if (!(await automaticSyncAllowed(a))) {
+    await db.metaAdAccount.updateMany({
+      where: { id: accountId, schedulerToken: scheduleToken },
+      data: { schedulerToken: null, schedulerRunId: null },
+    });
+    return { active: false, delay: 0 };
+  }
   const delay = Math.max(
     0,
     (a.nextSyncAt?.valueOf() ?? Date.now()) - Date.now(),
   );
   if (delay > 0) return { active: true, delay };
   console.info("meta_sync_step", { accountId });
-  await syncStep(accountId, scheduleToken);
+  await syncStep(accountId, scheduleToken, true);
   return { active: true, delay: 2000 };
 }
 export async function metaSyncWorkflow(

@@ -65,6 +65,20 @@ test("Meta visible: estado actual y gasto breve independientes del histórico", 
       encryptedToken: encryptKey("synthetic-live-token", "meta:" + cid),
     },
   });
+  const sharedBefore = await db.metaWorkspaceSharing.findUnique({
+    where: { id: "global" },
+  });
+  const changedPrimary = Array.isArray(sharedBefore?.primaryAccountIds);
+  if (changedPrimary)
+    await db.metaWorkspaceSharing.update({
+      where: { id: "global" },
+      data: {
+        primaryAccountIds: [
+          ...(sharedBefore!.primaryAccountIds as string[]),
+          root,
+        ],
+      },
+    });
   await db.metaAdAccount.create({
     data: {
       id: root,
@@ -669,6 +683,11 @@ test("Meta visible: estado actual y gasto breve independientes del histórico", 
       where: { userId: { in: [uid, viewer] } },
     });
     await db.user.deleteMany({ where: { id: { in: [uid, viewer] } } });
+    if (changedPrimary)
+      await db.metaWorkspaceSharing.update({
+        where: { id: "global" },
+        data: { primaryAccountIds: sharedBefore!.primaryAccountIds! },
+      });
     await db.$disconnect();
   }
 });

@@ -1,5 +1,14 @@
 # Meta Ads: consulta y análisis
 
+## Principales automáticas; secundarias a voluntad
+
+Las cuentas marcadas Cuenta principal y con sincronización habilitada reciben actualizaciones automáticas. Las secundarias conservan sus informes e histórico, pero se consultan cuando pulses Actualizar. Entrar en una secundaria, volver a la pestaña o dejarla abierta no activa un refresco periódico. Si la marcas como principal, pasa al ámbito automático compartido.
+
+Una importación que solicites expresamente de una secundaria puede continuar en segundo plano hasta completar su ciclo y después se detiene. No reinicia ciclos periódicos. Actualizar vista puede consultar solo los estados/informes recientes visibles; Actualizar catálogo e histórico mantiene su alcance explícito. Estos controles afectan a la importación de datos del sistema, no a la entrega de anuncios en Meta.
+
+Ventas, gasto por período y evaluación se calculan con registros guardados: mostrar esas columnas no vuelve a descargar todo Meta. Los datos se actualizan con las lecturas recientes y la sincronización autorizada.
+
+
 ## Consultas de estados y gasto
 
 El gasto de hoy/ayer se sigue actualizando en cada ciclo visible. Los estados que ya confirmó el fondo o un refresco hace menos de dos minutos se reutilizan con su hora original; los estados faltantes o más antiguos se comprueban otra vez. Comprobar Meta fuerza la comprobación explícita. Consultar gasto no convierte un estado antiguo en recién verificado.

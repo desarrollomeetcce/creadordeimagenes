@@ -1,8 +1,9 @@
+import { automaticSyncAllowed, automaticSyncWhere } from "./automatic-sync";
 import { randomUUID } from "node:crypto";
 import { db } from "../db";
 import { requiresMetaReconnect } from "./graph-error";
-export async function startMetaSchedule(id: string) {
-  const current = await db.metaAdAccount.findUnique({
+export async function startMetaSchedule(id: string, manual = false) {
+  let current = await db.metaAdAccount.findUnique({
     where: { id },
     include: {
       connection: { select: { verifiedAt: true, disconnectedAt: true } },
@@ -15,6 +16,20 @@ export async function startMetaSchedule(id: string) {
     requiresMetaReconnect(current.syncError)
   )
     return { scheduled: false };
+  if (!manual && !(await automaticSyncAllowed(current)))
+    return { scheduled: false };
+  if (
+    manual &&
+    current.schedulerToken &&
+    !current.schedulerToken.startsWith("manual:")
+  ) {
+    const retired = await db.metaAdAccount.updateMany({
+      where: { id, schedulerToken: current.schedulerToken },
+      data: { schedulerToken: null, schedulerRunId: null },
+    });
+    if (!retired.count) return { scheduled: false };
+    current = { ...current, schedulerToken: null, schedulerRunId: null };
+  }
   if (current?.schedulerToken && current.schedulerRunId) {
     try {
       const { getRun } = await import("workflow/api");
@@ -28,7 +43,7 @@ export async function startMetaSchedule(id: string) {
       return { scheduled: false };
     }
   }
-  const token = randomUUID();
+  const token = (manual ? "manual:" + Date.now() + ":" : "") + randomUUID();
   const claimed = await db.metaAdAccount.updateMany({
     where: { id, enabled: true, schedulerToken: null },
     data: { schedulerToken: token },
@@ -57,9 +72,11 @@ export async function startMetaSchedule(id: string) {
   }
 }
 export async function recoverMetaSchedules() {
+  const policy = await automaticSyncWhere();
   const accounts = await db.metaAdAccount.findMany({
     where: {
       enabled: true,
+      AND: [policy],
       connection: { disconnectedAt: null, verifiedAt: { not: null } },
     },
     select: { id: true },
@@ -71,7 +88,10 @@ export async function recoverMetaSchedules() {
 export async function continueMetaSchedule(
   id: string,
   previousToken: string,
-  start: (id: string) => Promise<{ scheduled: boolean }> = startMetaSchedule,
+  start: (
+    id: string,
+    manual?: boolean,
+  ) => Promise<{ scheduled: boolean }> = startMetaSchedule,
 ): Promise<"done" | "wait"> {
   const current = await db.metaAdAccount.findFirst({
     where: { id, enabled: true, schedulerToken: previousToken },
@@ -86,6 +106,13 @@ export async function continueMetaSchedule(
     current.connection.disconnectedAt
   )
     return "done";
+  if (!(await automaticSyncAllowed(current))) {
+    await db.metaAdAccount.updateMany({
+      where: { id, schedulerToken: previousToken },
+      data: { schedulerToken: null, schedulerRunId: null },
+    });
+    return "done";
+  }
   if (
     current.syncToken &&
     current.syncLeaseAt &&
@@ -98,7 +125,8 @@ export async function continueMetaSchedule(
   });
   if (!retired.count) return "done";
   try {
-    if (!(await start(id)).scheduled) throw new Error("Schedule not confirmed");
+    if (!(await start(id, previousToken.startsWith("manual:"))).scheduled)
+      throw new Error("Schedule not confirmed");
     return "done";
   } catch {
     await db.metaAdAccount.updateMany({

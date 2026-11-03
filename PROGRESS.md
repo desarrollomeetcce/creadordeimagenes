@@ -1,5 +1,14 @@
 # Avance por fases · continuación del desarrollo
 
+## Actualización · principales automáticas y secundarias a petición (2026-11-03)
+
+Por autorización del usuario, la lista compartida de principales pasa a limitar las consultas automáticas, no solo la interfaz. Worker, workflow durable, recuperación de programadores y refresco visible respetan esa lista y enabled. La lista aún no inicializada conserva compatibilidad; una lista vacía ya configurada no hace consultas automáticas. No se modifica activación publicitaria ni se borran cuentas/datos/cursores.
+
+Las secundarias pueden consultar hoy/ayer con Actualizar vista manual, sin temporizador posterior. Una importación explícita utiliza un schedulerToken interno con prefijo manual y fecha, limitado al ciclo solicitado: conserva paginación/handoff y termina tras lastRun.finishedAt; no vuelve a arrancar periódicamente. Los workflows secundarios anteriores se retiran sin Graph ni pérdida de avance. Servidor vuelve a comprobar el ámbito incluso para clientes antiguos; el navegador no envía lecturas automáticas de secundarias o cuentas deshabilitadas. La marca principal actualiza ese comportamiento sin cambiar anuncios.
+
+Verificados284 unitarios,30 integraciones específicas,9 regresiones de cuentas compartidas, typecheck/build y5 controles Chromium. Pruebas reales contra DB QA y proveedor simulado confirman principal avanzada, secundaria excluida aun habilitada, workflow anterior retirado sin consultas, secundarias manuales de una sola ejecución, histórico77 conservado, filtros de permiso/recuperación y estados recientes. Chromium comprueba principal automática, secundaria sin POST al abrir/foco/visibilidad, clic manual único, marcar principal reanuda automático y móvil sin errores. Preferencias globales QA restauradas y fixture retirado conservando V/G/B originales. Publicación verificable Git/Vercel; Hostinger sigue sin acceso autenticado para confirmar datos reales.
+
+
 ## Investigación · repetición de estados en refresco Meta (2026-11-03)
 
 También se verificó la pista del usuario sobre cuentas secundarias: primaryAccountIds pertenece a la agrupación compartida de interfaz; runDueSync y workflow seleccionan por enabled/nextSyncAt, sin filtrar principales. Por tanto, una secundaria habilitada sigue consumiendo Graph aunque se esté viendo Principales. Esto está confirmado en código; no se ha contado cuántas secundarias estaban habilitadas en el VPS. El usuario tiene pendiente decidir si deben quedar solo a petición, sin modificar aún esa configuración global.

@@ -1,3 +1,4 @@
+import { automaticSyncAllowed } from "./automatic-sync";
 import { decryptKey } from "../crypto";
 import { randomUUID } from "node:crypto";
 import type { Prisma } from "@prisma/client";
@@ -20,6 +21,7 @@ const scope = "7d_click,1d_view|impression";
 const schema = z
   .object({
     recover: z.boolean().optional(),
+    manual: z.boolean().optional(),
     objects: z
       .array(z.string().regex(/^\d{1,40}$/))
       .min(1)
@@ -55,6 +57,17 @@ export async function refreshVisibleMeta(
     "Hay elementos de otra cuenta o no disponibles.",
     404,
   );
+  if (
+    !b.manual &&
+    !b.recover &&
+    (!a.enabled || !(await automaticSyncAllowed(a, db, false)))
+  )
+    return {
+      updated: false,
+      automaticDisabled: true,
+      nextAt: null,
+      error: null,
+    };
   const claim = randomUUID(),
     at = new Date(),
     today = localDay(a.timezone),

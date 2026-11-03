@@ -1,5 +1,12 @@
 # Pruebas y evidencia
 
+## Verificación · ámbito automático principal (2026-11-03)
+
+284 unitarios,30 integraciones de sincronización/recuperación/refresco/incremental,9 regresiones de cuentas compartidas, typecheck y build correctos. Nuevas pruebas ejecutan el step advance sin compilador (use step es directiva sin efecto en el runner TSX) y verifican que un workflow secundario antiguo finaliza sin Graph, liberando solo el programador; enabled, cursor y gasto histórico77 permanecen. Worker selecciona principal, syncStep automático rechaza secundaria, refresco automático secundario devuelve automaticDisabled sin Graph y manual consulta solo el informe. Ciclo explícito secundario avanza y termina al completar su solicitud; configuración principal compartida y compatibilidad sin inicializar verificadas.
+
+Cinco comprobaciones Chromium con fixture QA aislado: principal hace POST inicial automático; secundaria no hace POST al abrir/foco/visibilidad; clic manda manual:true una vez y foco posterior no continúa; marcar principal mediante ruta autorizada reactiva automático; móvil accesible sin errores. Se restauran preferencias globales QA y se comprueba V10+compartidas21 contadas una vez, G1400.91/B140 y anuncio original antes de borrar solo el fixture. Proveedor interceptado, sin datos reales ni migraciones. Recepción Hostinger no acreditada.
+
+
 ## Verificación · estados Meta ya verificados (2026-11-03)
 
 284 unitarios,22 integraciones y typecheck/build correctos. Una segunda lectura permitida con estados de menos de120s consulta únicamente insights; statusUpdated=false, seenAt de cada objeto y statusAt real conservados. Al envejecer los estados vuelve a consultar estados+informe. El gasto mantiene valor y fecha reales, sin cachear respuesta financiera ni permisos. Se mantiene lectura forzada por recuperación explícita y la suite de cuota compartida/Retry-After/autorización/cambio de credencial/respuesta ajena/conservación de agenda.
