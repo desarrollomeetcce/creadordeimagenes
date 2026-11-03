@@ -1,5 +1,14 @@
 # Meta Ads: consulta y análisis
 
+## Filas por página y actualización sin Ctrl+F5
+
+El pie indica cuántas campañas, conjuntos o anuncios hay en la página actual, el total y el número de página. Escribe de1 a100 en Por página y pulsa Aplicar o Enter; se guarda para ese usuario y conserva filtros/selección. Cambiarlo no descarga todo Meta. Las consultas recientes se mantienen en turnos de hasta25 elementos.
+
+Mientras el análisis está abierto, se aprovecha la comprobación de progreso para detectar cambios en los datos guardados. La tabla se actualiza sola cuando cambia esa versión, sin necesitar Ctrl+F5 ni volver a consultar el catálogo. El resumen conserva sus cifras mientras llega la nueva lectura del mismo ámbito. Los filtros de fechas/cuentas siguen definiendo qué datos se muestran.
+
+Si hay ventas en30d pero no están registradas en7d, se muestra esa explicación; el CAC de7d continúa sin valor hasta disponer de ventas de su propio período. No se sustituyen por ventas de otra ventana ni se convierten ausencias en cero.
+
+
 ## Conservar informes al recargar o cambiar de página
 
 La confirmación de un informe reciente se conserva por campaña, conjunto o anuncio dentro de su mismo período y credencial. Consultar otra página no vuelve a poner pendientes las filas ya completadas. Cada una conserva su hora real; cambiar la credencial o pasar al día siguiente requiere la comprobación correspondiente.

@@ -1,5 +1,16 @@
 # Avance por fases · continuación del desarrollo
 
+## Actualización · contador por página y pantalla que usa cambios guardados (2026-11-03)
+
+Meta muestra el número real de campañas/conjuntos/anuncios de la página, total y páginas. Por página admite enteros1–100 (25 predeterminado), aplica solo al confirmar, vuelve a primera página y conserva filtros/selección/preferencia por usuario. El servidor limita la lectura a100. Mostrar100 no envía100 IDs a Meta: la lectura reciente rota en tandas globales de hasta25 y conserva recibos de las demás filas.
+
+El sondeo de progreso existente solicita una versión compacta de los datos recientes solo al mostrar análisis. Si cambia, vuelve a leer el dashboard guardado; no añade un temporizador ni consultas Graph. Un MAX(updatedAt) acotado a hoy/ayer y cuentas ya autorizadas permite también invalidar agregados cuando cambian los hechos aunque el estado general no cambie. Actualizaciones de informes usan reportRevision separada de catálogos, evitando volver a pedir inventarios/asesores. El resumen conserva sus valores durante la carga del mismo ámbito, pero se invalida y recalcula con cada revisión; filtros/cuentas/fechas nuevos limpian el ámbito anterior.
+
+CAC reciente no mezcla ventas de otros períodos. Si faltan ventas del período actual pero hay ventas en15/30d/inicio, se explica el dato existente junto al CAC sin calcular un valor ficticio. Gasto por fecha permanece visible cuando hay informe.
+
+286 unitarios,48 integraciones y9 regresiones compartidas, typecheck/build y8 comprobaciones Chromium correctos. Se prueban tamaños5/35/65/100, última página23 de123, persistencia y selección, nombres de conjuntos/anuncios, cuatro tandas25 sin payload excesivo, cambio guardado que actualiza resumen sin POST Meta/catálogos y sin dejarlo vacío durante espera; móvil/límite100. Caso adicional muestra gasto10, ventas3 en30d y CAC7d sin inventar, sin Graph. Preferencias QA restauradas; fixtures eliminados comprobando V10+21/G1400.91/B140 originales. Sin migraciones ni cambios reales de anuncios/ventas. Publicación Git/Vercel separada de confirmación de Hostinger.
+
+
 ## Corrección · informes por fila que desaparecían al recargar (2026-11-03)
 
 Las capturas nuevas mostraban resumen actualizado pero Hoy/fecha pendientes y cambios al usar Ctrl+F5. Se reprodujo el fallo: realtimeState.objects conservaba solo la última tanda; al completar otra página se perdía la confirmación de las anteriores. Dashboard seguía guardando11/22 de gasto, pero volvía a marcar UNAVAILABLE por sincronizado general antiguo. El problema era disponibilidad por fila, no borrado de cifras.

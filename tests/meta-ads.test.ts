@@ -6252,3 +6252,10 @@ test("Renamed sheet labels never reinterpret a saved country identity", async ()
     ["EC", "GT"],
   );
 });
+
+test("Meta admite tamaño de página manual1–100 y conserva25 por defecto",async()=>{
+ const{parseMetaPreferences}=await import('../lib/meta-ads/preferences');
+ for(const n of[1,5,35,50,60,65,70,100])assert.equal(parseMetaPreferences(JSON.stringify({pageSize:n})).pageSize,n);
+ for(const n of[0,-1,101,4.5,"65",null])assert.equal(parseMetaPreferences(JSON.stringify({pageSize:n})).pageSize,25);
+ assert.equal(parseMetaPreferences(null).pageSize,25);
+});

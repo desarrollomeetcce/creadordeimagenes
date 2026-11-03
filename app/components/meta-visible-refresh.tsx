@@ -62,6 +62,7 @@ export function MetaVisibleRefresh({
   const fetchScope = key + connectionKey;
   const currentKey = useRef(fetchScope);
   currentKey.current = fetchScope;
+  const rotation = useRef({ key: "", offset: 0 });
   const authHolds = useRef(new Map<string, string>());
   const paused = useRef(new Map<string, { until: number; error: string }>());
 
@@ -74,11 +75,15 @@ export function MetaVisibleRefresh({
   const refresh = useCallback(
     async (recover = false, manual = false) => {
       if (running.current || document.visibilityState !== "visible") return;
-      const pairs = (JSON.parse(key) as string[][]).filter(
+      const allPairs = (JSON.parse(key) as string[][]).filter(
         ([id]) =>
           manual || accounts.find((a) => a.id === id)?.autoSync !== false,
       );
-      if (!pairs.length) return;
+      if (!allPairs.length) return;
+      const rotationKey = fetchScope + JSON.stringify(allPairs);
+      const offset =
+        rotation.current.key === rotationKey ? rotation.current.offset : 0;
+      const pairs = allPairs.slice(offset, offset + 25);
       running.current = true;
       setBusy(true);
       let nextAt: number | null = null;
@@ -195,6 +200,11 @@ export function MetaVisibleRefresh({
           }
         }
         if (!mounted.current || currentKey.current !== fetchScope) return;
+        rotation.current = {
+          key: rotationKey,
+          offset: offset + 25 >= allPairs.length ? 0 : offset + 25,
+        };
+        retryable ||= allPairs.length > pairs.length;
         setAuth(needsAuth);
         setPausedUntil(pauseAt);
         if (latest) setCheckedAt(latest);
@@ -209,7 +219,7 @@ export function MetaVisibleRefresh({
                     " (Lima)."
                   : "")
             : latest
-              ? "Vista consultada: " +
+              ? "Última consulta de datos recientes: " +
                 new Date(latest).toLocaleTimeString("es-PE", {
                   timeZone: "America/Lima",
                 })

@@ -2355,6 +2355,7 @@ export async function metaRoutes(
       where: { AND: [await accountWhere(actor), { id: { in: ids } }] },
       select: {
         id: true,
+        timezone:true,
         enabled: true,
         syncedAt: true,
         nextSyncAt: true,
@@ -2367,10 +2368,13 @@ export async function metaRoutes(
       "Hay cuentas no autorizadas en la selección.",
       404,
     );
+    const withData=req.nextUrl.searchParams.get("dataRevision")==="1";
+    const revisionByAccount=withData ? await (await import("./data-versions")).recentMetaDataVersions(rows):new Map<string,string|null>();
     return send(
       rows.map((a) => ({
         id: a.id,
         syncedAt: a.syncedAt,
+        ...(withData ? {dataUpdatedAt:revisionByAccount.get(a.id)??null}:{}),
         syncError: a.syncError,
         syncState: { phase: (a.syncState as { phase?: number }).phase ?? null },
         progress: syncProgress(a),

@@ -75,6 +75,7 @@ type Connection = {
 };
 type Account = {
   lastDataAt?: string | null;
+  dataUpdatedAt?: string | null;
   lastCompletedAt?: string | null;
   coverage?: { since: string; until: string } | null;
   activity?: AccountActivity;
@@ -265,6 +266,12 @@ function campaignEvaluation(o: Item, selectedPeriod = "7") {
     evaluation = campaignEvaluationWindow(o.periods, selectedPeriod, today),
     p = evaluation.period,
     v = p?.sales;
+  const olderSales =
+    v?.statusReason === "Sin ventas registradas"
+      ? (["15", "30", "lifetime"] as const)
+          .map((key) => ({ key, p: o.periods[key] }))
+          .find((x) => (x.p?.sales?.sales ?? 0) > 0 && x.p.since < v.since)
+      : null;
   return (
     <span className="meta-campaign-evaluation">
       <span className="meta-campaign-evaluation-main">
@@ -285,6 +292,19 @@ function campaignEvaluation(o: Item, selectedPeriod = "7") {
         {v?.effectiveness != null ? `${v.effectiveness.toFixed(2)}%` : "—"}
         {v?.provisional && v.effectiveness != null ? "*" : ""}
       </small>
+      {olderSales && (
+        <small
+          className="muted"
+          title="El CAC actual usa ventas y gasto de su mismo período. Las ventas de otro período se muestran aparte, sin mezclarlas."
+        >
+          {olderSales.p.sales!.sales}
+          {olderSales.p.sales!.partial ? "*" : ""} ventas{" "}
+          {olderSales.key === "lifetime"
+            ? "desde el inicio"
+            : `en ${olderSales.key} días`}
+          ; sin registro en el período del CAC.
+        </small>
+      )}
       <small className="meta-evaluation-dates">
         {p
           ? `${date(p.since)} – ${date(p.until)}`
@@ -701,6 +721,8 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
     [until, setUntil] = useState(""),
     [calendar, setCalendar] = useState(""),
     [page, setPage] = useState(1),
+    [pageSize, setPageSize] = useState(25),
+    [pageSizeDraft, setPageSizeDraft] = useState("25"),
     [view, setView] = useState("cards"),
     [selected, setSelected] = useState<Item | null>(null),
     [detailPeriod, setDetailPeriod] = useState<string | null>(null),
@@ -713,6 +735,7 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
       null,
     ),
     [revision, setRevision] = useState(0),
+    [reportRevision, setReportRevision] = useState(0),
     [sharing, setSharing] = useState<Account | null>(null);
   const [assignmentRequested, setAssignmentRequested] = useState(false);
   useEffect(() => {
@@ -1011,6 +1034,8 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
     setUntil(p.until);
     setCalendar(p.calendar);
     setView(p.view);
+    setPageSize(p.pageSize);
+    setPageSizeDraft(String(p.pageSize));
     setAccountListQuery(p.accountListQuery);
     setAccountListActivity(p.accountListActivity);
     setAccountListBusiness(p.accountListBusiness);
@@ -1047,6 +1072,7 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
           adsetScope,
           tab,
           level,
+          pageSize,
           business,
           campaign,
           adset,
@@ -1088,6 +1114,7 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
     adsetScope,
     tab,
     level,
+    pageSize,
     business,
     campaign,
     adset,
@@ -1264,6 +1291,8 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
   const adsetScopeKey = level === "ad" ? adsetScope.join(",") : "";
   const serial = useRef(0);
   const summaryScope = useRef("");
+  const summaryDisplayScope = useRef("");
+  const storedVersions = useRef(new Map<string, string | null>());
   const syncVersions = useRef(new Map<string, string | null>());
   const historicalVersions = useRef(new Map<string, number>());
   const analyticsTab = ["panel", "alerts"].includes(tab);
@@ -1364,7 +1393,7 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
     const current = ++serial.current;
     void (async () => {
       setLoading(true);
-      const summaryKey = JSON.stringify([
+      const summaryInputs = [
         tab,
         level,
         accountKey,
@@ -1387,13 +1416,18 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
         calendar,
         since,
         until,
-        revision,
         summarySelectionKey,
+      ];
+      const summaryKey = JSON.stringify([
+        ...summaryInputs,
+        revision,
+        reportRevision,
       ]);
+      const summaryViewKey = JSON.stringify(summaryInputs);
       const withSummary = summaryScope.current !== summaryKey;
       if (withSummary) {
         summaryScope.current = "";
-        setSummary(null);
+        if (summaryDisplayScope.current !== summaryViewKey) setSummary(null);
       }
       const p = new URLSearchParams({
         level,
@@ -1416,7 +1450,7 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
         rating: tab === "alerts" ? "alerts" : "",
         ranking: "0",
         page: String(page),
-        limit: "25",
+        limit: String(pageSize),
         summary: withSummary ? "1" : "0",
         salesSince,
         analysisPeriod: calendar ? "custom" : analysisPeriod,
@@ -1433,6 +1467,7 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
             if (withSummary) {
               setSummary(data.summary ?? null);
               summaryScope.current = summaryKey;
+              summaryDisplayScope.current = summaryViewKey;
             }
             setTotal(data.total);
             setLimited(data.limited);
@@ -1476,11 +1511,13 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
     direction,
     age,
     page,
+    pageSize,
     calendar,
     salesSince,
     since,
     until,
     revision,
+    reportRevision,
   ]);
   useEffect(() => {
     if (!viewOnly) return;
@@ -1510,7 +1547,9 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
         a.enabled &&
         (syncOpen || tab === "accounts"
           ? isInAccountGroup(a)
-          : !accountIds.length || accountIds.includes(a.id)),
+          : accountIds.length
+            ? accountIds.includes(a.id)
+            : !moduleAccess?.primaryInitialized || primarySet.has(a.id)),
     )
     .map((a) => a.id)
     .slice(0, 1000)
@@ -1530,7 +1569,12 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
       try {
         const updates: Pick<
           Account,
-          "id" | "syncedAt" | "syncError" | "syncState" | "progress"
+          | "id"
+          | "syncedAt"
+          | "syncError"
+          | "syncState"
+          | "progress"
+          | "dataUpdatedAt"
         >[] = [];
         const ids = pendingKey.split(",");
         for (let i = 0; i < ids.length; i += 100) {
@@ -1538,6 +1582,7 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
             "/api/meta-ads/sync-status?" +
               new URLSearchParams({
                 accounts: ids.slice(i, i + 100).join(","),
+                ...(analyticsTab ? { dataRevision: "1" } : {}),
               }),
             {
               cache: "no-store",
@@ -1599,7 +1644,19 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
             u.progress?.historyProcessed ?? 0,
           );
         });
+        const storedChanged =
+          analyticsTab &&
+          updates.some(
+            (u) =>
+              storedVersions.current.has(u.id) &&
+              storedVersions.current.get(u.id) !== (u.dataUpdatedAt ?? null),
+          );
+        if (analyticsTab)
+          updates.forEach((u) =>
+            storedVersions.current.set(u.id, u.dataUpdatedAt ?? null),
+          );
         if (finished || historyChanged) setRevision((n) => n + 1);
+        else if (storedChanged) setReportRevision((n) => n + 1);
         setAccounts((old) =>
           old.map((a) => {
             const update = updates.find((u) => u.id === a.id);
@@ -1663,7 +1720,7 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
     }
   };
   const visibleUpdated = useCallback(() => {
-    setRevision((n) => n + 1);
+    setReportRevision((n) => n + 1);
   }, []);
   const requestAccountUpdate = (account: Account) =>
     api(`meta-ads/accounts/${account.id}/sync`, "POST", {
@@ -3843,16 +3900,56 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
                       Anterior
                     </button>
                     <span>
-                      {total} elementos · Página {page} de{" "}
-                      {Math.max(1, Math.ceil(total / 25))}
+                      {items.length}{" "}
+                      {level === "campaign"
+                        ? "campañas"
+                        : level === "adset"
+                          ? "conjuntos de anuncios"
+                          : "anuncios"}{" "}
+                      en esta página · {total.toLocaleString("es-PE")} en total
+                      · Página {page} de{" "}
+                      {Math.max(1, Math.ceil(total / pageSize))}
                     </span>
                     <button
                       type="button"
-                      disabled={page * 25 >= total}
+                      disabled={page * pageSize >= total}
                       onClick={() => setPage((p) => p + 1)}
                     >
                       Siguiente
                     </button>
+                    <form
+                      className="meta-page-size"
+                      onSubmit={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        const n = Number(pageSizeDraft);
+                        if (Number.isInteger(n) && n >= 1 && n <= 100) {
+                          setPageSize(n);
+                          setPageSizeDraft(String(n));
+                          setPage(1);
+                        }
+                      }}
+                    >
+                      <label>
+                        Por página{" "}
+                        <input
+                          aria-label="Elementos por página en Meta Ads"
+                          type="number"
+                          min="1"
+                          max="100"
+                          step="1"
+                          required
+                          value={pageSizeDraft}
+                          onChange={(e) => setPageSizeDraft(e.target.value)}
+                        />
+                      </label>
+                      <button
+                        type="submit"
+                        disabled={loading || Number(pageSizeDraft) === pageSize}
+                      >
+                        Aplicar
+                      </button>
+                    </form>
                   </div>
                 </div>
               </div>
@@ -3862,7 +3959,7 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
       </FinancialTableWindow>
       {selectionDetail && (
         <MetaSelectionDetail
-          dataRevision={revision}
+          dataRevision={revision + reportRevision}
           {...selectionDetail}
           initialPeriod={calendar ? "custom" : analysisPeriod}
           initialSince={calendar ? since : undefined}

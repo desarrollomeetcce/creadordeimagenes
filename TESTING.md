@@ -1,5 +1,12 @@
 # Pruebas y evidencia
 
+## Verificación · tamaño de página y actualización desde DB (2026-11-03)
+
+286 unitarios,48 integraciones y9 regresiones de cuentas compartidas, typecheck/build. Preferencia válida1–100 y default25; servidor devuelve1/5/35/65/100, última página23 de123 y límite100; cada nivel tiene conteo independiente. sync-status sin señal no agrega el campo ni consulta su versión; con señal detecta cambios guardados y rechaza IDs no autorizados. Dashboard invalida agregado al cambiar un hecho reciente sin cambiar syncState y devuelve999 correcto. Ninguna prueba de este bloque consulta Graph.
+
+Siete controles Chromium: pie inicial25 de123; aplicación5/35/65/100 sin consulta al escribir y selección intacta;100 filas usan cuatro tandas de25 IDs distintos; última23 y reload recupera100/selección; conjuntos7/anuncios11 y etiquetas correctas; versión guardada refresca resumen, conserva el importe anterior durante respuesta retenida y no reconsulta Meta ni aliases; límite/móvil sin errores. Caso adicional verifica gasto10 visible con3 ventas30d y CAC actual vacío sin sustituir el período, cero POSTs. Preferencias globales QA restauradas y original V10/V compartidas21/G1400.91/B140/estado preservados antes de borrar solo fixtures. No cambios de esquema ni comprobación autenticada del VPS.
+
+
 ## Verificación · cobertura entre páginas y Ctrl+F5 (2026-11-03)
 
 285 unitarios,42 integraciones completas y7 casos de regresión posteriores (43 casos únicos), typecheck/build correctos. Unitario verifica unión de recibos por fila, hora de la más antigua de la selección, límites de período/revisión, exclusión de faltantes y cota500. Integración con cuenta sincronizada ayer: primera fila importa11, segunda22 y tres lecturas nuevas conservan ambas disponibles en Hoy y fecha. Se retira solo coverage del estado y se reproduce UNAVAILABLE aunque el gasto11 continúe en DB; restaurarlo recupera la vista sin Meta. Espera de la primera fila devuelve su hora, no la de la segunda. Error posterior no elimina recibos, nueva revisión con error no los hereda, importes quedan intactos.

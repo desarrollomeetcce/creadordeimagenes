@@ -1,3 +1,4 @@
+import { recentMetaDataVersions } from "./data-versions";
 import { realtimeCoverage, statusIsStale } from "./realtime-policy";
 import { isCountryCode } from "./countries";
 import { parseDeliveryFilters } from "./state-filter";
@@ -304,6 +305,7 @@ export async function dashboard(actor: Actor, params: URLSearchParams) {
     analysisPeriod !== "custom" || (!!customSince && !!customUntil),
     "Selecciona fechas de análisis.",
   );
+  const dataVersions = await recentMetaDataVersions(scoped);
   const accountContext = new Map(
     scoped.map((a) => {
       const today = localDay(a.timezone);
@@ -318,6 +320,7 @@ export async function dashboard(actor: Actor, params: URLSearchParams) {
             a.syncedAt,
             a.syncState,
             a.realtimeState,
+            dataVersions.get(a.id) ?? null,
             a.timezone,
           ]),
         )
@@ -729,7 +732,10 @@ export async function dashboard(actor: Actor, params: URLSearchParams) {
     );
   }
   const page = Math.max(1, Math.min(10000, Number(params.get("page")) || 1)),
-    limit = Math.max(10, Math.min(100, Number(params.get("limit")) || 25));
+    limit = Math.max(
+      1,
+      Math.min(100, Math.trunc(Number(params.get("limit")) || 25)),
+    );
   const pageItems = items.slice((page - 1) * limit, page * limit);
   let summaryCampaignIds: string[] = [];
   if (summary) {

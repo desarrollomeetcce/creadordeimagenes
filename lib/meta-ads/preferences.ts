@@ -15,6 +15,7 @@ export const metaDefaults = {
   adsetScope: [] as string[],
   tab: "panel",
   level: "ad",
+  pageSize: 25,
   business: "",
   campaign: "",
   adset: "",
@@ -57,6 +58,13 @@ export function parseMetaPreferences(raw: string | null): MetaPreferences {
     return result;
   }
   if (!data || typeof data !== "object" || Array.isArray(data)) return result;
+  if (
+    typeof data.pageSize === "number" &&
+    Number.isInteger(data.pageSize) &&
+    data.pageSize >= 1 &&
+    data.pageSize <= 100
+  )
+    result.pageSize = data.pageSize;
   const choices: Record<string, string[]> = {
     tab: ["panel", "alerts", "accounts", "connections"],
     accountGroup: ["primary", "secondary"],
