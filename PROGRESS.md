@@ -2370,3 +2370,7 @@ Detalle de hoja incluye activos/inactivos sin ventas y distingue cero de ausenci
 Sincronización disponible por fila y país del catálogo: identidad y contexto guardados, campañas elegidas explícitamente del catálogo local y asignación existente con revisiones. Rechaza cambio concurrente a otro vínculo; nunca modifica anuncios en Meta. Cabeceras de inventario muestran CAC/estado de gasto Meta, provisional con V positivo parcial y pendiente ante FX incompleto. Columnas de países nominales dejan de combinar países ajenos; registros cruzados conservan revisión e histórico, sin migrarlos ni eliminarlos.
 
 Validación:277 pruebas unitarias,25 activación/país/período,15 asignación/contexto/candidatos,14 CAC/campañas; compilación y navegador contra datos sintéticos. Publicación y verificación de Hostinger se registran fuera del repositorio; no se afirma reparación física de datos del cliente.
+
+### 2026-11-03 · Filtros de Meta en tabla ampliada
+
+La cabecera maximizada/restaurada incorpora Buscar por palabra y el mismo calendario del panel. Comparte q/período y su lectura con debounce, conservando selección, tabla y filtros al cerrar. Altura propia adaptable evita el recorte del calendario y respeta los controles flotantes en móvil. Validado con277 unitarias, typecheck/build y5 comprobaciones de navegador con datos sintéticos, sin Graph ni cambios publicitarios.

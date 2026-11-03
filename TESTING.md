@@ -2133,3 +2133,7 @@ QA exclusiva library_organization_test; Graph/IA bloqueados con dobles del entor
 Navegador Chromium: calendario7/activación/Ayer/móvil y Escape; filtro global de activos/inactivos conserva V0 y sin registro sin GET extra, detalle solo de filas seleccionadas; maximizar/restaurar Meta conserva selección y posición sin GET, orden coste/CAC mantiene viewport; comparación de tres campañas de páginas distintas con una petición, ventas compartidas explícitas, histórico diario solo al expandir. Sincronización por fila precarga asesor y USD guardados y campaña vinculada; guardado idempotente manda contexto e inventorySync, sin cambiar entrega de anuncios. Directorio y tests de servidor conservan países cruzados para revisión/historia.
 
 Los datos de navegador son sintéticos y se retiran con controles de identidad y conservación de V/G. No se hacen llamadas pagadas ni se prueba contra la base real del cliente.
+
+### 2026-11-03 · Buscar y cambiar período en Meta ampliado
+
+277/277 unitarias, typecheck y build correctos. Chromium: ampliar no consulta y conserva DOM/selección; palabra PSICOLOGÍA aplica el filtro común con una petición; calendario Ayer cambia rango una vez sin cerrar ampliación y Escape cierra solo calendario; restaurar conserva búsqueda/fechas/selección; móvil390px muestra controles íntegros y calendario dentro del viewport. Cinco comprobaciones, cero errores JS y sin escrituras de usuario/llamadas Graph. Datos sintéticos conservados y retirados con verificaciones de identidad y V/G originales.

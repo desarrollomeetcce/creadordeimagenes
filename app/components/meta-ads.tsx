@@ -2621,7 +2621,7 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
         onModeChange={changeMetaWindowMode}
         controlsRef={metaWindowControls}
         toolbar={
-          <div className="financial-table-window-toolbar">
+          <div className="financial-table-window-toolbar meta-expanded-filters">
             <strong>
               Meta Ads ·{" "}
               {level === "campaign"
@@ -2630,11 +2630,17 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
                   ? "Conjuntos"
                   : "Anuncios"}
             </strong>
-            <span>
-              {calendar
-                ? `${date(since)} – ${date(until)}`
-                : "Comparativos por período"}
-            </span>
+            <label className="meta-expanded-search">
+              Buscar por palabra
+              <input
+                type="search"
+                aria-label="Buscar por palabra en Meta Ads ampliado"
+                placeholder="Escribe parte del nombre"
+                value={q}
+                onChange={(e) => setQ(e.target.value)}
+              />
+            </label>
+            {analysisControl()}
           </div>
         }
       >

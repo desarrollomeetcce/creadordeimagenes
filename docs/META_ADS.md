@@ -359,3 +359,5 @@ CAC/estado de cabeceras de inventario proceden de gasto Meta; ventas parciales p
 ### Calendario en Top/reemplazo
 
 Últimos7 días es el rango inicial (hoy y seis anteriores, Lima). El calendario compartido de Meta permite rangos y Desde que se activó, que usa la última activación registrada de cada diplomado hasta hoy, incluso si fue reactivado. V, presupuesto registrado, CAC presupuesto y estado del Top usan ese rango; Desde/Días activos describen el ciclo. Presupuesto manual no se presenta como gasto Meta. Seleccionar fechas solo consulta el reporte; no cambia estados operativos ni registros. Otros consumidores mantienen sus14 días anteriores si no especifican rango.
+
+La cabecera de la tabla Meta ampliada incluye búsqueda por palabra y selector editable de período con el calendario del panel. Ambos usan los mismos filtros que la vista normal y los conservan al restaurar. Abrir la ampliación o el calendario no consulta; cambiar palabra reutiliza el debounce y aplicar fechas actualiza el reporte una sola vez. En móvil la cabecera se adapta sin recortar los controles; Escape sobre el calendario mantiene abierta la tabla.
