@@ -298,3 +298,10 @@ Al pulsar evaluación se abre exactamente esa ventana reciente. Ver detalle cons
 Tabla y tarjetas ordenan Por fecha/Hoy/7/15/30/Desde el inicio como costo por resultado, resultados, gasto Meta y ventas. La línea Gasto reutiliza spend original de ese mismo objeto/período y su moneda; incluye fechas de fuente en tooltip. No multiplica costo redondeado por resultados ni usa presupuesto/gasto manual. Sin reporte muestra guion; cero disponible sigue cero. Renderer común a cualquier cuenta/administrador y nivel; V sigue solo en campañas vinculadas. Sin nuevas consultas ni sincronizaciones.
 
 Una selección diaria/Hoy no deja la evaluación principal en Ventas pendientes si la semana tiene registros: usa explícitamente últimos7 con sus fechas. Rango reciente elegido de7–14 días sigue respetado; detalle puede analizar Hoy sin inventar ventas y conserva etiqueta histórica para otros rangos.
+
+
+### Refresco y coste de presentación
+
+Carga inicial y eventos de foco/visibilidad/polling comparten una lectura de cuentas si la misma ruta light/full ya está en curso en ese componente. Al terminar o fallar se libera; el siguiente evento vuelve a consultar. Actualizaciones explícitas tras acciones mantienen lectura propia y se ignoran respuestas más antiguas que otra lectura ya iniciada. No se guardan respuestas financieras ni permisos en la caché de presentación.
+
+Moneda/fecha reutilizan objetos Intl con límite32 por moneda/zona, manteniendo números recibidos y fecha actual por llamada. Se conserva carga ligera de cuentas en panel,25 filas por página y actualización breve de elementos visibles con sus60s/cooldown existentes. El gasto agregado se toma del payload ya recibido; tabla/tarjetas no agregan consultas. Optimización validada por comparación de solicitudes y constructores en QA, sin prometer una latencia global específica del servidor.

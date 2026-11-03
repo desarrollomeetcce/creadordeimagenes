@@ -5957,3 +5957,79 @@ test("Estado reciente de campañas: fechas,14d elegidos y sin usar histórico co
   assert(!recent({ since: "2026-10-20", until: today }, today));
   assert(!recent({ since: "invalid", until: today }, today));
 });
+
+test("Refresco Meta: lecturas superpuestas comparten vuelo y después vuelven a leer fresco", async () => {
+  const { joinPendingMetaRead: join } =
+    await import("../lib/meta-ads/pending-read");
+  const pending = new Map<string, Promise<number>>();
+  let reads = 0,
+    resolve!: (value: number) => void;
+  const first = join(pending, "light", () => {
+      reads++;
+      return new Promise<number>((done) => (resolve = done));
+    }),
+    second = join(pending, "light", async () => {
+      reads++;
+      return 99;
+    });
+  assert.equal(first, second);
+  await Promise.resolve();
+  assert.equal(reads, 1);
+  const other = join(pending, "full", async () => {
+    reads++;
+    return 20;
+  });
+  assert.equal(await other, 20);
+  resolve(10);
+  assert.equal(await first, 10);
+  assert.equal(pending.size, 0);
+  assert.equal(
+    await join(pending, "light", async () => {
+      reads++;
+      return 30;
+    }),
+    30,
+  );
+  assert.equal(reads, 3);
+  await assert.rejects(
+    join(pending, "light", async () => {
+      throw Error("temporary");
+    }),
+  );
+  assert.equal(await join(pending, "light", async () => 40), 40);
+  assert.equal(pending.size, 0);
+});
+test("Formatos Meta reutilizables conservan importes, ceros, moneda y cambio de fecha en Lima", async () => {
+  const {
+    formatMetaMoney: money,
+    formatMetaDate: date,
+    localMetaDay: day,
+  } = await import("../lib/meta-ads/display-format");
+  assert.equal(
+    money(200.13, "PEN"),
+    new Intl.NumberFormat("es-PE", {
+      style: "currency",
+      currency: "PEN",
+      maximumFractionDigits: 2,
+    }).format(200.13),
+  );
+  assert.notEqual(money(23.47, "PEN"), money(23.47, "USD"));
+  assert(money(0, "PEN").includes("0.00"));
+  assert(money(1400.91, "PEN").includes("1,400.91"));
+  assert.equal(
+    date("2026-11-03"),
+    new Date("2026-11-03T12:00:00Z").toLocaleDateString("es-PE", {
+      timeZone: "UTC",
+    }),
+  );
+  assert.equal(date(null), "No conocida");
+  assert.equal(date("invalid"), "Invalid Date");
+  assert.equal(
+    day("America/Lima", new Date("2026-11-03T04:59:00Z")),
+    "2026-11-02",
+  );
+  assert.equal(
+    day("America/Lima", new Date("2026-11-03T05:01:00Z")),
+    "2026-11-03",
+  );
+});

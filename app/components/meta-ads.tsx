@@ -1,5 +1,10 @@
 "use client";
-import { localDay } from "../../lib/meta-ads/analytics";
+import {
+  formatMetaMoney,
+  formatMetaDate,
+  localMetaDay as localDay,
+} from "../../lib/meta-ads/display-format";
+import { joinPendingMetaRead } from "../../lib/meta-ads/pending-read";
 import { campaignEvaluationWindow } from "../../lib/meta-ads/campaign-evaluation-window";
 import { MetaCampaignAssessment } from "./meta-campaign-assessment";
 import { SheetSearchSelect } from "./sheet-search-select";
@@ -207,13 +212,8 @@ function MetaObjectLink({ item }: { item: Item }) {
     </a>
   ) : null;
 }
-function money(n: number, currency: string) {
-  return new Intl.NumberFormat("es-PE", {
-    style: "currency",
-    currency,
-    maximumFractionDigits: 2,
-  }).format(n);
-}
+const money = formatMetaMoney;
+
 function cost(p: Period, currency: string) {
   if (p.state === "UNAVAILABLE") return "Informe pendiente";
   return p.cost !== null
@@ -286,12 +286,9 @@ function campaignEvaluation(o: Item, selectedPeriod = "7") {
 }
 
 function date(value: string | null, timezone = "UTC") {
-  return value
-    ? new Date(
-        value.includes("T") ? value : value + "T12:00:00Z",
-      ).toLocaleDateString("es-PE", { timeZone: "UTC" })
-    : "No conocida";
+  return formatMetaDate(value);
 }
+
 function displayTime(value: string | null) {
   return value
     ? new Date(value).toLocaleString("es-PE", { timeZone: "America/Lima" })
@@ -1237,11 +1234,14 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
     }, 200);
     return () => clearTimeout(timer);
   }, [q]);
+  const accountReadVersion = useRef(0),
+    backgroundAccountReads = useRef(new Map<string, Promise<void>>());
   const accountStatisticsNeeded =
     tab === "accounts" ||
     accountListActivity !== "all" ||
     accountPickerActivity !== "all";
   const refresh = useCallback(async () => {
+    const requestVersion = ++accountReadVersion.current;
     const rows: Account[] = await fetchJsonResponse(
       "/api/meta-ads/accounts" + (accountStatisticsNeeded ? "" : "?light=1"),
       {
@@ -1249,6 +1249,7 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
         signal: AbortSignal.timeout(15000),
       },
     );
+    if (requestVersion !== accountReadVersion.current) return;
     const key = rows
       .map((a) => a.id)
       .sort()
@@ -1270,6 +1271,15 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
     setAccountIds((ids) => ids.filter((id) => rows.some((a) => a.id === id)));
     setAccountsLoaded(true);
   }, [accountStatisticsNeeded]);
+  const refreshBackground = useCallback(
+    () =>
+      joinPendingMetaRead(
+        backgroundAccountReads.current,
+        accountStatisticsNeeded ? "full" : "light",
+        refresh,
+      ),
+    [refresh, accountStatisticsNeeded],
+  );
   useEffect(() => {
     if (!preferencesReady || !owner || tab !== "connections") return;
     let live = true;
@@ -1293,13 +1303,13 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
   useEffect(() => {
     if (!preferencesReady) return;
     let live = true;
-    refresh().catch((e) => {
+    refreshBackground().catch((e) => {
       if (live) setMessage(e.message);
     });
     return () => {
       live = false;
     };
-  }, [refresh, preferencesReady]);
+  }, [refreshBackground, preferencesReady]);
   const visibleAccountsKey = accounts
     .map((a) => a.id)
     .sort()
@@ -1408,7 +1418,7 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
     if (!preferencesReady) return;
     const update = () => {
       if (document.visibilityState === "visible")
-        void refresh().catch((e) => setMessage(e.message));
+        void refreshBackground().catch((e) => setMessage(e.message));
     };
     window.addEventListener("focus", update);
     document.addEventListener("visibilitychange", update);
@@ -1418,7 +1428,7 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
       document.removeEventListener("visibilitychange", update);
       window.clearInterval(timer);
     };
-  }, [preferencesReady, refresh]);
+  }, [preferencesReady, refreshBackground]);
   const pendingKey = accounts
     .filter(
       (a) =>
