@@ -2755,3 +2755,5 @@ button.ui-close-button:disabled, button.window-close:disabled { opacity: .55; }
 .meta-campaign-evaluation-main{display:flex;align-items:center;gap:5px;flex-wrap:nowrap}.meta-campaign-evaluation-main>strong{font-size:12px;white-space:nowrap}
 
 .meta-campaign-evaluation-main>.meta-cac-status{flex-shrink:0;white-space:nowrap}
+
+.meta-campaign-evaluation .meta-evaluation-dates{font-size:10px;font-weight:500;color:var(--muted)}

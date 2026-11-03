@@ -1,4 +1,6 @@
 "use client";
+import { localDay } from "../../lib/meta-ads/analytics";
+import { campaignEvaluationWindow } from "../../lib/meta-ads/campaign-evaluation-window";
 import { MetaCampaignAssessment } from "./meta-campaign-assessment";
 import { SheetSearchSelect } from "./sheet-search-select";
 import { MetaWorkspaceSharing } from "./meta-workspace-sharing";
@@ -239,7 +241,9 @@ function campaignSales(p?: Period, start?: string | null) {
 function campaignEvaluation(o: Item, selectedPeriod = "7") {
   if (o.level !== "campaign")
     return <span title={ratings[o.rating]}>{ratings[o.rating]}</span>;
-  const p = o.periods[selectedPeriod] ?? o.periods.custom ?? o.periods["7"],
+  const today = localDay(o.timezone),
+    evaluation = campaignEvaluationWindow(o.periods, selectedPeriod, today),
+    p = evaluation.period,
     v = p?.sales;
   return (
     <span className="meta-campaign-evaluation">
@@ -248,7 +252,7 @@ function campaignEvaluation(o: Item, selectedPeriod = "7") {
           CAC {v?.cac != null ? money(v.cac, o.currency) : "—"}
           {v?.provisional && v.cac != null ? "*" : ""}
         </strong>
-        <MetaCampaignAssessment value={v} compact />
+        <MetaCampaignAssessment value={v} compact today={today} />
       </span>
       <small
         title={
@@ -257,9 +261,14 @@ function campaignEvaluation(o: Item, selectedPeriod = "7") {
             : ""
         }
       >
-        Por el período · Efect.{" "}
+        {evaluation.label} · Efect.{" "}
         {v?.effectiveness != null ? `${v.effectiveness.toFixed(2)}%` : "—"}
         {v?.provisional && v.effectiveness != null ? "*" : ""}
+      </small>
+      <small className="meta-evaluation-dates">
+        {p
+          ? `${date(p.since)} – ${date(p.until)}`
+          : "Sin período reciente disponible"}
       </small>
     </span>
   );
@@ -647,6 +656,7 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
     [page, setPage] = useState(1),
     [view, setView] = useState("cards"),
     [selected, setSelected] = useState<Item | null>(null),
+    [detailPeriod, setDetailPeriod] = useState<string | null>(null),
     [message, setMessage] = useState(""),
     [progressError, setProgressError] = useState(""),
     [busy, setBusy] = useState(false),
@@ -833,10 +843,19 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
     }
     commitSelection(next, o.level);
   };
+  const openDetail = (o: Item, evaluation = false) => {
+    const chosen = calendar ? "custom" : analysisPeriod;
+    setDetailPeriod(
+      evaluation && o.level === "campaign"
+        ? campaignEvaluationWindow(o.periods, chosen, localDay(o.timezone)).key
+        : chosen,
+    );
+    setSelected(o);
+  };
   const openChildren = (o: Item) => {
     if (!selectedIds.has(o.id)) selectObject(o, true);
     if (o.level === "ad") {
-      setSelected(o);
+      openDetail(o);
       return;
     }
     resetPage(() => {
@@ -1837,7 +1856,7 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
             <button
               type="button"
               className="meta-inline-detail"
-              onClick={() => setSelected(o)}
+              onClick={() => openDetail(o)}
             >
               Ver detalle
             </button>
@@ -1974,7 +1993,7 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
         <button
           type="button"
           className="meta-campaign-evaluation"
-          onClick={() => setSelected(o)}
+          onClick={() => openDetail(o, true)}
           aria-label={`Ver evaluación de ${o.name}`}
         >
           {campaignEvaluation(o, calendar ? "custom" : analysisPeriod)}
@@ -2151,7 +2170,7 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
               <button
                 type="button"
                 className="meta-inline-detail"
-                onClick={() => setSelected(o)}
+                onClick={() => openDetail(o)}
               >
                 Ver detalle
               </button>
@@ -3629,8 +3648,11 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
       {selected && (
         <MetaDetail
           item={selected}
-          period={calendar ? "custom" : analysisPeriod}
-          onClose={() => setSelected(null)}
+          period={detailPeriod ?? (calendar ? "custom" : analysisPeriod)}
+          onClose={() => {
+            setSelected(null);
+            setDetailPeriod(null);
+          }}
         />
       )}
       {sharing && (
@@ -3735,7 +3757,10 @@ function MetaDetail({
                           : "—"}
                       </td>
                       <td>
-                        <MetaCampaignAssessment value={v} />
+                        <MetaCampaignAssessment
+                          value={v}
+                          today={localDay(o.timezone)}
+                        />
                       </td>
                     </tr>
                   );

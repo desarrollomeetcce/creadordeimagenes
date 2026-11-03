@@ -267,7 +267,7 @@ export function MetaDailyDetail({
               ? `${selectedSales.effectiveness.toFixed(2)}%${selectedSales.provisional ? "*" : ""}`
               : "—"}
             {" · "}
-            <MetaCampaignAssessment value={selectedSales} />
+            <MetaCampaignAssessment value={selectedSales} today={today} />
             <small>
               Gasto Meta:{" "}
               {values.length

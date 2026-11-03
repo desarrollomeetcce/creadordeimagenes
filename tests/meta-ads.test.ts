@@ -5914,3 +5914,30 @@ test("CAC de campañas: estados de inventario, parcial explícito, cero, permiso
     "PENDING",
   );
 });
+
+test("Estado reciente de campañas: fechas,14d elegidos y sin usar histórico como estado actual", async () => {
+  const { campaignEvaluationWindow: select, isRecentCampaignPeriod: recent } =
+    await import("../lib/meta-ads/campaign-evaluation-window");
+  const today = "2026-11-03",
+    seven = { since: "2026-10-28", until: today },
+    fourteen = { since: "2026-10-21", until: today },
+    old = { since: "2025-11-01", until: "2025-11-03" };
+  const periods = {
+    "7": seven,
+    custom: fourteen,
+    lifetime: { since: "2020-01-01", until: today },
+    old,
+  };
+  assert.equal(select(periods, "custom", today).period, fourteen);
+  assert.equal(select(periods, "old", today).period, seven);
+  assert.equal(select(periods, "lifetime", today).period, seven);
+  assert.equal(select({ old }, "old", today).period, null);
+  assert.equal(select({ "7": old }, "7", today).period, null);
+  assert(recent(seven, today));
+  assert(!recent(old, today));
+  assert(!recent({ since: "2026-11-04", until: "2026-11-04" }, today));
+  assert(recent({ since: "2026-10-27", until: "2026-11-02" }, today));
+  assert(!recent({ since: "2026-11-01", until: "2026-11-01" }, today));
+  assert(!recent({ since: "2026-10-20", until: today }, today));
+  assert(!recent({ since: "invalid", until: today }, today));
+});

@@ -1,3 +1,4 @@
+import { isRecentCampaignPeriod } from "../../lib/meta-ads/campaign-evaluation-window";
 import type { CampaignSalesPeriod } from "../../lib/meta-ads/campaign-performance";
 import {
   cacStatusNames,
@@ -6,10 +7,13 @@ import {
 export function MetaCampaignAssessment({
   value,
   compact = false,
+  today,
 }: {
   value?: CampaignSalesPeriod | null;
   compact?: boolean;
+  today?: string;
 }) {
+  const historical = value && today && !isRecentCampaignPeriod(value, today);
   const status = value?.status ?? "PENDING";
   const rules = value?.rules ?? defaultCacRules();
   const label =
@@ -30,6 +34,7 @@ export function MetaCampaignAssessment({
         aria-hidden="true"
       />
       {label}
+      {historical ? " · histórico" : ""}
       {value?.provisional && status !== "PENDING"
         ? compact
           ? "*"
