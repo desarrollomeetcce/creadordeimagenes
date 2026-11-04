@@ -1,4 +1,5 @@
 "use client";
+import { financialTaskSections } from "../../lib/meta-ads/financial-task-sections";
 import { InventoryMetaSync } from "./inventory-meta-sync";
 import { compareFinancialStatus } from "../../lib/meta-ads/inventory-evaluation-order";
 import {
@@ -992,26 +993,15 @@ export function MetaEffectiveness({
         a.country.localeCompare(b.country)
       );
     });
-  const pendingAssignmentRows = rows
-    .filter(
-      (r) =>
-        r.campaignTask === "CREATE" ||
-        (!!r.pendingAssignmentAt && (!r.advisorId || !r.currency)),
-    )
-    .sort(
-      (a, b) =>
-        Number(b.campaignTask === "CREATE") -
-          Number(a.campaignTask === "CREATE") ||
-        (b.pendingAssignmentAt ?? "").localeCompare(
-          a.pendingAssignmentAt ?? "",
-        ),
-    );
+  const {
+    assignment: pendingAssignmentRows,
+    stopping: pendingStopRows,
+    normal: normalRows,
+  } = financialTaskSections(rows);
   const pendingAssignmentKeys = new Set(
     pendingAssignmentRows.map(activationKey),
   );
-  const normalRows = rows.filter(
-    (r) => !pendingAssignmentKeys.has(activationKey(r)),
-  );
+  const pendingStopKeys = new Set(pendingStopRows.map(activationKey));
   const advisorSections =
     grouping === "advisor"
       ? groupFinancialRowsByAdvisor(
@@ -1042,7 +1032,11 @@ export function MetaEffectiveness({
       : showCategoryBands
         ? categoryBands.flatMap((b) => b.rows)
         : normalRows;
-  const displayedRows = [...pendingAssignmentRows, ...normalDisplayedRows];
+  const displayedRows = [
+    ...pendingAssignmentRows,
+    ...pendingStopRows,
+    ...normalDisplayedRows,
+  ];
   const firstAdvisorBands = new Map(
     grouping === "advisor"
       ? advisorSections.map((g) => {
@@ -2596,6 +2590,27 @@ export function MetaEffectiveness({
                             </th>
                           </tr>
                         )}
+                      {pendingStopRows[0] &&
+                        activationKey(pendingStopRows[0]) ===
+                          activationKey(r) && (
+                          <tr className="financial-pending-stop-band">
+                            <th
+                              colSpan={Math.max(
+                                1,
+                                visibleMetadata.length +
+                                  days.length * visibleMetrics.length,
+                              )}
+                            >
+                              <span>
+                                <strong>Por desactivar</strong>
+                                <small>
+                                  Desactivación pendiente ·{" "}
+                                  {pendingStopRows.length}
+                                </small>
+                              </span>
+                            </th>
+                          </tr>
+                        )}
                       {advisorBand && (
                         <tr
                           className="financial-advisor-band"
@@ -2678,6 +2693,9 @@ export function MetaEffectiveness({
                         data-currency={r.currency}
                         data-active={r.active}
                         data-campaign-task={r.campaignTask ?? "NONE"}
+                        data-pending-stop={
+                          pendingStopKeys.has(activationKey(r)) || undefined
+                        }
                         data-pending-assignment={
                           pendingAssignmentKeys.has(activationKey(r)) ||
                           undefined
@@ -2798,7 +2816,13 @@ export function MetaEffectiveness({
                               name={name}
                               country={r.country}
                               aliasId={r.aliasId}
-                              syncState={r.advisorId && r.currency && !r.advisorReviews?.length ? "ready" : "pending"}
+                              syncState={
+                                r.advisorId &&
+                                r.currency &&
+                                !r.advisorReviews?.length
+                                  ? "ready"
+                                  : "pending"
+                              }
                               disabled={busy || readOnly || !r.country}
                               onSynced={async () => {
                                 notifyAdvisorSalesChanged();

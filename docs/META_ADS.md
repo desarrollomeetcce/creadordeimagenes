@@ -1,5 +1,12 @@
 # Meta Ads: consulta y análisis
 
+## Hojas: Por asignar y Por desactivar siempre antes de grupos normales · 2026-11-04
+
+Partición local compartida de las hojas de países: Por asignar primero, Por desactivar después y luego agrupación normal por asesor/categoría. STOP se separa antes de comprobar falta de asesor/moneda para que no caiga en Por asignar. Nueva banda ámbar y borde en nombres; pendientes quedan fuera de cabeceras normales. Se respeta el orden elegido dentro de cada bloque y los filtros existentes. pendingAssignmentAt heredado no devuelve una fila inactiva a Por asignar tras confirmación.
+
+No se modifican tareas al cambiar de vista, ordenar o recargar; no se añaden lecturas ni sondeos. La desactivación manual existente cambia estado y limpia tarea en servidor; el bloque desaparece solo para esa fila, conservando las restantes.290 unitarias (nuevo caso de precedencia/transición/inmutabilidad),26 integraciones de activación, typecheck/build y6 recorridos Chromium: EC con2 STOP y PE con1, faltante de asesor, categoría/asesor, órdenes asc/desc/estado, tabla ampliada, manual/automático, F5, desactivar y móvil. Snapshot exacto conserva todos los alias/hojas/países/asesores/cifras/días/eventos previos/vínculos/estado publicitario/gasto, permitiendo solo1 desactivación explícita y su nuevo evento/revisión. Auditoría1, controles de otras filas intactos. Fixture retirado con baseV1/G10.25. Sin cambios en registros reales Hostinger ni comprobación de ese despliegue desde este entorno.
+
+
 ## Editar grupos: mismo formato compacto de reemplazo del Top · 2026-11-04
 
 Se reemplaza la tabla de5 columnas del diálogo por selector individual o lista compacta de parejas, según la cantidad. Encabezado Reemplazo en el grupo con nombre y tono violeta diferencia esta acción del Top verde. Filtro de grupos y azar/categorías permanecen locales, sin filtro de activación/país. Individual muestra buscador/Antecedentes/Confirmar y destino del saliente; múltiple muestra Sale/Entra y destino por pareja. X, Cancelar y ampliación conservan propuesta; antecedentes abre informe existente bajo demanda.
