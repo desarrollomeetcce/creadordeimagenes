@@ -6334,3 +6334,12 @@ test("random category addition excludes current/queued ids, uses both category r
  for(const count of [0,-1,NaN])assert.equal(randomCategoryAdditions(items,"Calidad",count).length,0);
  assert.equal(randomCategoryAdditions(items,"",2).length,0);assert.equal(randomCategoryAdditions(items,"Otro",2).length,0);
 });
+
+
+test("plain random group additions include uncategorized diplomas and multiple diplomas of the same category", async () => {
+ const {randomInventoryAdditions}=await import("../lib/meta-ads/inventory-group-addition-policy");
+ const items=[{id:"a",name:"A",primaryIds:["same"],primaryNames:["Calidad"]},{id:"b",name:"B",primaryIds:["same"],primaryNames:["Calidad"]},{id:"c",name:"C",primaryIds:[],primaryNames:[]}];
+ const original=JSON.stringify(items);assert.deepEqual(randomInventoryAdditions(items,3,[],()=>0.999).map(i=>i.id),["a","b","c"]);
+ assert.deepEqual(randomInventoryAdditions([...items,items[2]],10,["a","b"],()=>0.999).map(i=>i.id),["c"]);
+ assert.equal(randomInventoryAdditions(items,2).length,2);assert.equal(JSON.stringify(items),original);
+});

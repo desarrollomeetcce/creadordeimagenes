@@ -17,17 +17,14 @@ export function categoryAdditionSections(items: TrialItem[], category: string) {
     : [];
   return { primary, secondary };
 }
-export function randomCategoryAdditions(
+export function randomInventoryAdditions(
   items: TrialItem[],
-  category: string,
   count: number,
   excluded: string[] = [],
   random = Math.random,
 ) {
-  if (!category.trim()) return [];
-  const sections = categoryAdditionSections(items, category),
-    removed = new Set(excluded),
-    pool = [...sections.primary, ...sections.secondary].filter(
+  const removed = new Set(excluded),
+    pool = [...new Map(items.map((item) => [item.id, item])).values()].filter(
       (item) => !removed.has(item.id),
     );
   const limit = Number.isFinite(count)
@@ -38,4 +35,20 @@ export function randomCategoryAdditions(
     [pool[i], pool[j]] = [pool[j], pool[i]];
   }
   return pool.slice(0, limit);
+}
+export function randomCategoryAdditions(
+  items: TrialItem[],
+  category: string,
+  count: number,
+  excluded: string[] = [],
+  random = Math.random,
+) {
+  if (!category.trim()) return [];
+  const sections = categoryAdditionSections(items, category);
+  return randomInventoryAdditions(
+    [...sections.primary, ...sections.secondary],
+    count,
+    excluded,
+    random,
+  );
 }
