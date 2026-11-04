@@ -1,3 +1,9 @@
+## Grupos: ampliaciones, encabezados y chips · 2026-11-04
+
+- npm test:286 correctos; typecheck y build correctos. No cambia persistencia/rutas/esquema; se usa el guardado existente.
+-6 verificaciones Chromium: tabla amplía desde encabezado independientemente de ventana junto a X y conserva mismo DOM/franja nombre; búsquedas consecutivas retienen selección y chip-X quita solo uno sin GET; categorías se buscan/aplican desde encabezados con selector compacto/drag/max/restaurar/X/Cancelar; diálogo de uso tiene esos controles sin escribir; guardado conserva nombre y único miembro seleccionado aunque no esté en consulta actual; móvil390px sin desbordamiento ni errores JS.
+- Evidencia /workspace/work/group-controls-{unit,types,build,browser,cleanup}.txt; group-controls-desktop/mobile.png. Borrado exclusivo de fixtures con V1/G10.25/asesor/alias/estado intactos. Sin Graph/generaciones ni comprobación autenticada de Hostinger.
+
 ## Respuesta de inventario y maximizar tabla de grupos · 2026-11-04
 
 - npm test:286 correctos; typecheck/build de producción correctos.

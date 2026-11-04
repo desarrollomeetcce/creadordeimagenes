@@ -467,3 +467,8 @@ Popover de asignación monta cuerpo/formulario solo abierto; cerrar no conserva 
 Directorio entrega snapshot ligero de sincronización por nombre canónico/tabla/país con aliasId y ready. Directorio/informe exigen fila de presentación currency vacía, asesor y displayCurrency guardados y ausencia de advisorReviews. Moneda por defecto de tabla no acredita configuración guardada. Evaluación ausente temporalmente usa snapshot de directorio, no degrada a gris; disabled mantiene color de estado sin conceder escritura. Datos/configuración siguen validados al abrir y guardar.
 
 Maximizar tabla en grupos muestra búsqueda/resumen y cuerpo amplio con13px, plegando controles secundarios por CSS; Mostrar controles/Restaurar conservan misma tabla, preferencias, selección y borrador, sin recargar. Top mantiene expansión de ventana.
+
+
+## Selección de grupos y controles separados (2026-11-04)
+
+Estado local de ampliación de tabla independiente del tamaño de ventana. Tabla se controla junto a Diplomado; ventana junto a X. Franja única: nombre editable del grupo antes de Mis grupos y selector de guardados, visible también en foco de tabla. Buscar inventario separado y chips de selección con eliminación individual; limpiar consulta no limpia selección. Categorías desde encabezados usan diálogo compacto y buscable, drag/max/restaurar/X/Cancelar; aplicar cambia lista local, no asignaciones. Cuadro de uso conserva sus propias acciones de ventana. Operaciones de presentación no hacen GET ni mutan datos; guardar mantiene API, exclusividad de miembros, CAS e historial existentes.

@@ -1,5 +1,13 @@
 # Avance por fases · continuación del desarrollo
 
+## Grupos: controles independientes y selección visible entre búsquedas (2026-11-04)
+
+Se separan tableExpanded y expanded: Maximizar/Restaurar tabla en encabezado Diplomado pliega controles secundarios; Maximizar/Restaurar ventana está junto a X y cambia tamaño del cuadro. Se pueden usar juntos o por separado, con mismo DOM, anchos y selección. Nombre del nuevo grupo/editado aparece antes de Mis grupos en misma franja y permanece visible al ampliar tabla. Buscar inventario se mantiene independiente por corrección posterior del usuario, con chips pequeños a su lado/debajo; X retira solo ese diplomado, las consultas se pueden borrar/cambiar sin perder otros seleccionados y el catálogo se indexa para resolver nombres sin búsquedas repetidas por chip.
+
+Principal/secundaria abren desde encabezados un selector compacto con búsqueda y selección múltiple, drag compartido, maximizar/restaurar, X y Cancelar. Aplicar solo restringe la lista local para elegir diplomados; no modifica asignaciones de categorías. Se monta solo el selector abierto. Diálogo de uso también permite maximizar/restaurar con X visible. No nuevas consultas ni cambios de API/esquema; guardado de grupo sigue canónico y conserva historial.
+
+286 unitarios, typecheck/build y6 controles Chromium correctos: ampliaciones independientes y mismo nodo de tabla; dos búsquedas conservan chips y X quita uno sin GET; selector de categorías busca/aplica/cancela y se mueve/amplía; ventana de uso mueve/amplía/cierra; nombre+miembro elegido fuera de la búsqueda actual persisten al guardar/reabrir; móvil sin desbordamiento/errores JS. V1/G10.25 y asesor/vínculos/estado originales se validan antes de retirar solo fixtureQA. Hostinger no autenticado, despliegue real pendiente de comprobación.
+
 ## Lista de Diplomados: respuesta ágil, estado estable y tabla de grupos ampliada (2026-11-04)
 
 Se reprodujo la demora con768 diplomados y3 países:2304 formularios cerrados y198996 nodos; carga54743ms y mediana de tres selecciones3249.6ms en Chromium local. MetaAliasAction conserva el disparador/popover y monta formulario solo abierto; InventoryMetaSync memoriza props y usa callback estable. Celdas no dependientes de selección conservan su contenido montado con token de modelos/permisos y firma por fila; referencias de selección actuales evitan handlers antiguos al añadir vínculos. Con mismos768x3:90708 nodos,0 formularios cerrados, carga8001ms y mediana328.1ms (alrededor de10x menos espera en selección). Son medidas sintéticas locales, no latencia comprobada en Hostinger.

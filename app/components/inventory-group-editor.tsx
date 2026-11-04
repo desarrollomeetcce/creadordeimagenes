@@ -1,7 +1,6 @@
 "use client";
 import { Fragment, useEffect, useRef, useState, type ReactNode } from "react";
 import { financialRequest as api } from "./financial-request";
-import { InventoryMultiSelect } from "./inventory-multi-select";
 import { SheetSearchSelect } from "./sheet-search-select";
 import { matchesSearchWords } from "../../lib/search";
 import { categoryKey } from "../../lib/meta-ads/category-paste";
@@ -52,6 +51,10 @@ export function InventoryGroupEditor({
     initialTab ?? (group ? "edit" : "create"),
   );
   const [showExpandedControls, setShowExpandedControls] = useState(false);
+  const [tableExpanded, setTableExpanded] = useState(false);
+  const [categoryPicker, setCategoryPicker] = useState<
+    "primary" | "secondary" | null
+  >(null);
   const [expanded, setExpanded] = useState(false),
     [observations, setObservations] = useState(""),
     [evaluationColumn, setEvaluationColumn] = useState(
@@ -154,6 +157,7 @@ export function InventoryGroupEditor({
     dialog.current?.showModal();
   }, []);
   const catalog = directory.catalog;
+  const catalogById = new Map(catalog.map((item) => [item.id, item]));
   const occupied = new Map(
     directory.groups
       .filter((g) => g.id !== group?.id)
@@ -280,7 +284,7 @@ export function InventoryGroupEditor({
       ref={dialog}
       className="trial-dialog inventory-group-editor"
       data-expanded={expanded || undefined}
-      data-table-focus={(expanded && managementTab !== "top") || undefined}
+      data-table-focus={(tableExpanded && managementTab !== "top") || undefined}
       data-show-controls={showExpandedControls || undefined}
       aria-label={
         group ? "Editar " + group.name : "Crear grupo desde inventario"
@@ -298,29 +302,49 @@ export function InventoryGroupEditor({
               ? "Editar grupo"
               : "Crear grupo"}
         </h2>
-        <button
-          type="button"
-          aria-pressed={expanded}
-          onClick={() => {
-            setExpanded((v) => !v);
-            setShowExpandedControls(false);
-          }}
-        >
-          {expanded
-            ? "↙ Restaurar vista"
-            : managementTab === "top"
-              ? "⛶ Maximizar"
-              : "⛶ Maximizar tabla"}
-        </button>
-        <button
-          className="ui-close-button"
-          aria-label="Cerrar edición de grupo"
-          disabled={busy || externalBusy}
-          onClick={onClose}
-        >
-          ×
-        </button>
+        <div className="inventory-group-window-actions">
+          <button
+            type="button"
+            aria-label={
+              expanded
+                ? "Restaurar ventana de grupos"
+                : "Maximizar ventana de grupos"
+            }
+            aria-pressed={expanded}
+            onClick={() => setExpanded((v) => !v)}
+          >
+            {expanded ? "↙ Restaurar ventana" : "⛶ Maximizar ventana"}
+          </button>
+          <button
+            type="button"
+            className="ui-close-button"
+            aria-label="Cerrar edición de grupo"
+            disabled={busy || externalBusy}
+            onClick={onClose}
+          >
+            ×
+          </button>
+        </div>
       </header>
+      {categoryPicker && (
+        <InventoryGroupCategoryDialog
+          title={
+            categoryPicker === "primary"
+              ? "Categoría principal"
+              : "Categoría secundaria"
+          }
+          options={
+            categoryPicker === "primary" ? primaryOptions : secondaryOptions
+          }
+          values={categoryPicker === "primary" ? primary : secondary}
+          onApply={(values) => {
+            if (categoryPicker === "primary") setPrimary(values);
+            else setSecondary(values);
+            setCategoryPicker(null);
+          }}
+          onClose={() => setCategoryPicker(null)}
+        />
+      )}
       {usageEditing && (
         <InventoryGroupUsageDialog
           item={usageEditing.item.name}
@@ -389,25 +413,37 @@ export function InventoryGroupEditor({
         topContent
       ) : (
         <>
-          {onChooseGroup && !!directory.groups.length && (
-            <div
-              className="inventory-saved-groups"
-              aria-label="Grupos guardados"
-            >
-              <strong>Mis grupos</strong>
-              {directory.groups.map((g) => (
-                <button
-                  type="button"
-                  key={g.id}
-                  aria-pressed={group?.id === g.id && managementTab === "edit"}
+          <div className="inventory-saved-groups" aria-label="Grupos guardados">
+            {(managementTab !== "edit" || group) && (
+              <label className="inventory-group-name">
+                {group ? "Nombre del grupo" : "Nombre del nuevo grupo"}
+                <input
+                  aria-label="Nombre del grupo"
+                  value={name}
+                  maxLength={100}
                   disabled={busy || externalBusy}
-                  onClick={() => onChooseGroup(g.id)}
-                >
-                  {g.name} <span>{g.members.length}</span>
-                </button>
-              ))}
+                  onChange={(e) => setName(e.target.value)}
+                />
+              </label>
+            )}
+            <strong>Mis grupos</strong>
+            {directory.groups.map((g) => (
+              <button
+                type="button"
+                key={g.id}
+                aria-pressed={group?.id === g.id && managementTab === "edit"}
+                disabled={busy || externalBusy || !onChooseGroup}
+                onClick={() => onChooseGroup?.(g.id)}
+              >
+                {g.name} <span>{g.members.length}</span>
+              </button>
+            ))}
+            {!directory.groups.length && (
+              <small>Aún no hay grupos guardados.</small>
+            )}
+            {onChooseGroup && !!directory.groups.length && (
               <label>
-                Filtrar grupo
+                Elegir grupo
                 <SheetSearchSelect
                   label="Filtrar grupo"
                   value={group?.id ?? ""}
@@ -419,8 +455,20 @@ export function InventoryGroupEditor({
                   onSelect={onChooseGroup}
                 />
               </label>
-            </div>
-          )}
+            )}
+            {tableExpanded && (
+              <button
+                type="button"
+                className="inventory-group-extra-controls"
+                aria-expanded={showExpandedControls}
+                onClick={() => setShowExpandedControls((v) => !v)}
+              >
+                {showExpandedControls
+                  ? "Ocultar controles"
+                  : "Mostrar controles"}
+              </button>
+            )}
+          </div>
           {managementTab === "edit" && !group && (
             <p className="inventory-group-empty">
               Elige un grupo guardado para ver sus diplomados y editarlo.
@@ -428,45 +476,7 @@ export function InventoryGroupEditor({
           )}
           {(managementTab !== "edit" || group) && (
             <>
-              {expanded && (
-                <div className="inventory-group-focused-summary">
-                  <strong>{name || "Crear grupo"}</strong>
-                  <span>
-                    {ids.length} seleccionados · {filtered.length} diplomados
-                  </span>
-                  <button
-                    type="button"
-                    aria-expanded={showExpandedControls}
-                    onClick={() => setShowExpandedControls((v) => !v)}
-                  >
-                    {showExpandedControls
-                      ? "Ocultar controles"
-                      : "Mostrar controles"}
-                  </button>
-                </div>
-              )}
-
-              <div className="inventory-group-identity">
-                <label>
-                  {group ? "✎ Nombre del grupo" : "Nombre del nuevo grupo"}
-                  <input
-                    aria-label="Nombre del grupo"
-                    value={name}
-                    maxLength={100}
-                    disabled={busy || externalBusy}
-                    onChange={(e) => setName(e.target.value)}
-                  />
-                </label>
-                <div>
-                  <strong>{ids.length} diplomados</strong>
-                  <span>
-                    {group
-                      ? "Edita la selección o reemplaza un diplomado; confirma con Guardar cambios."
-                      : "Marca diplomados de la lista o prepara una propuesta al azar."}
-                  </span>
-                </div>
-              </div>
-              <div className="inventory-group-editor-controls">
+              <div className="inventory-group-search-section">
                 <label>
                   Buscar inventario
                   <input
@@ -477,30 +487,46 @@ export function InventoryGroupEditor({
                     onChange={(e) => setQuery(e.target.value)}
                   />
                 </label>
-                <label>
-                  Categoría principal
-                  <InventoryMultiSelect
-                    label="Categoría principal para grupo"
-                    options={primaryOptions.map((n) => ({
-                      value: n,
-                      label: n,
-                    }))}
-                    values={primary}
-                    onChange={setPrimary}
-                  />
-                </label>
-                <label>
-                  Categorías secundarias
-                  <InventoryMultiSelect
-                    label="Categorías secundarias para grupo"
-                    options={secondaryOptions.map((n) => ({
-                      value: n,
-                      label: n,
-                    }))}
-                    values={secondary}
-                    onChange={setSecondary}
-                  />
-                </label>
+                <div
+                  className="inventory-group-selected"
+                  aria-label="Diplomados seleccionados para el grupo"
+                >
+                  <strong>{ids.length} seleccionados</strong>
+                  <div className="inventory-group-selected-chips">
+                    {ids.map((id) => (
+                      <span key={id} className="inventory-group-selection-chip">
+                        <span
+                          title={
+                            catalogById.get(id)?.name ??
+                            "Diplomado no disponible"
+                          }
+                        >
+                          {catalogById.get(id)?.name ??
+                            "Diplomado no disponible"}
+                        </span>
+                        <button
+                          type="button"
+                          disabled={busy || externalBusy}
+                          aria-label={
+                            "Quitar de selección " +
+                            (catalogById.get(id)?.name ?? "diplomado")
+                          }
+                          onClick={() => {
+                            setIds((current) =>
+                              current.filter((value) => value !== id),
+                            );
+                            if (replacing === id) setReplacing(null);
+                          }}
+                        >
+                          ×
+                        </button>
+                      </span>
+                    ))}
+                    {!ids.length && (
+                      <small>Los diplomados que marques aparecerán aquí.</small>
+                    )}
+                  </div>
+                </div>
               </div>
               <div className="row inventory-group-proposal">
                 <label>
@@ -624,11 +650,54 @@ export function InventoryGroupEditor({
                             )
                           }
                         />{" "}
-                        Diplomado ({filtered.length}){handle(0)}
+                        Diplomado ({filtered.length})
+                        <button
+                          type="button"
+                          className="inventory-group-table-max"
+                          title={
+                            tableExpanded
+                              ? "Restaurar tabla de grupos"
+                              : "Maximizar tabla de grupos"
+                          }
+                          aria-label={
+                            tableExpanded
+                              ? "Restaurar tabla de grupos"
+                              : "Maximizar tabla de grupos"
+                          }
+                          aria-pressed={tableExpanded}
+                          onClick={() => {
+                            setTableExpanded((v) => !v);
+                            setShowExpandedControls(false);
+                          }}
+                        >
+                          {tableExpanded ? "Restaurar tabla" : "Maximizar tabla"}
+                        </button>
+                        {handle(0)}
                       </th>
                       {columnSpecs.slice(1).map((c, index) => (
                         <th key={c.key}>
                           {c.label}
+                          {(c.key === "primary" || c.key === "secondary") && (
+                            <button
+                              type="button"
+                              className="inventory-group-category-heading"
+                              aria-label={
+                                c.key === "primary"
+                                  ? "Elegir categoría principal para grupo"
+                                  : "Elegir categoría secundaria para grupo"
+                              }
+                              onClick={() =>
+                                setCategoryPicker(
+                                  c.key === "primary" ? "primary" : "secondary",
+                                )
+                              }
+                            >
+                              {(c.key === "primary" ? primary : secondary).join(
+                                " · ",
+                              ) || "Elegir…"}{" "}
+                              ▾
+                            </button>
+                          )}
                           {handle(index + 1)}
                         </th>
                       ))}
@@ -917,6 +986,119 @@ export function InventoryGroupEditor({
   );
 }
 
+function InventoryGroupCategoryDialog({
+  title,
+  options,
+  values,
+  onApply,
+  onClose,
+}: {
+  title: string;
+  options: string[];
+  values: string[];
+  onApply: (values: string[]) => void;
+  onClose: () => void;
+}) {
+  const ref = useRef<HTMLDialogElement>(null);
+  const search = useRef<HTMLInputElement>(null);
+  const [expanded, setExpanded] = useState(false),
+    [query, setQuery] = useState(""),
+    [draft, setDraft] = useState(values);
+  useEffect(() => {
+    ref.current?.showModal();
+    search.current?.focus();
+  }, []);
+  const choices = options.filter((option) => matchesSearchWords(option, query));
+  return (
+    <dialog
+      ref={ref}
+      className="trial-dialog inventory-group-category-dialog"
+      data-expanded={expanded || undefined}
+      aria-label={`Elegir ${title.toLocaleLowerCase("es")}`}
+      onCancel={(e) => {
+        e.preventDefault();
+        onClose();
+      }}
+    >
+      <header>
+        <h3>{title}</h3>
+        <button
+          type="button"
+          aria-label={
+            expanded
+              ? "Restaurar selector de categorías"
+              : "Maximizar selector de categorías"
+          }
+          aria-pressed={expanded}
+          onClick={() => setExpanded((v) => !v)}
+        >
+          {expanded ? "↙ Restaurar" : "⛶ Maximizar"}
+        </button>
+        <button
+          type="button"
+          className="ui-close-button"
+          aria-label="Cerrar selector de categorías"
+          onClick={onClose}
+        >
+          ×
+        </button>
+      </header>
+      <input
+        ref={search}
+        type="search"
+        aria-label={`Buscar ${title.toLocaleLowerCase("es")}`}
+        placeholder="Buscar categoría…"
+        value={query}
+        onChange={(e) => setQuery(e.target.value)}
+      />
+      <fieldset>
+        <label>
+          <input
+            type="checkbox"
+            checked={!draft.length}
+            onChange={() => setDraft([])}
+          />{" "}
+          Todas las categorías
+        </label>
+        {choices.map((option) => (
+          <label key={option}>
+            <input
+              type="checkbox"
+              checked={draft.includes(option)}
+              onChange={(e) =>
+                setDraft((current) =>
+                  e.target.checked
+                    ? [...current, option]
+                    : current.filter((v) => v !== option),
+                )
+              }
+            />
+            {option}
+          </label>
+        ))}
+        {!choices.length && <p>Sin coincidencias.</p>}
+      </fieldset>
+      <footer>
+        <span>
+          {draft.length
+            ? `${draft.length} seleccionadas`
+            : "Todas las categorías"}
+        </span>
+        <button type="button" onClick={onClose}>
+          Cancelar
+        </button>
+        <button
+          type="button"
+          className="primary"
+          onClick={() => onApply(draft)}
+        >
+          Ver diplomados
+        </button>
+      </footer>
+    </dialog>
+  );
+}
+
 function InventoryGroupUsageDialog({
   item,
   country,
@@ -935,6 +1117,7 @@ function InventoryGroupUsageDialog({
   onClose: () => void;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
+  const [expanded, setExpanded] = useState(false);
   useEffect(() => {
     ref.current?.showModal();
   }, []);
@@ -942,6 +1125,7 @@ function InventoryGroupUsageDialog({
     <dialog
       ref={ref}
       className="trial-dialog inventory-group-usage-dialog"
+      data-expanded={expanded || undefined}
       aria-label={`Uso de ${item} en ${country}`}
       onCancel={(e) => {
         e.preventDefault();
@@ -950,6 +1134,16 @@ function InventoryGroupUsageDialog({
     >
       <header>
         <h3>Uso en {country}</h3>
+        <button
+          type="button"
+          aria-label={
+            expanded ? "Restaurar ventana de uso" : "Maximizar ventana de uso"
+          }
+          aria-pressed={expanded}
+          onClick={() => setExpanded((v) => !v)}
+        >
+          {expanded ? "↙ Restaurar" : "⛶ Maximizar"}
+        </button>
         <button
           type="button"
           className="ui-close-button"
