@@ -6259,3 +6259,14 @@ test("Meta admite tamaño de página manual1–100 y conserva25 por defecto",asy
  for(const n of[0,-1,101,4.5,"65",null])assert.equal(parseMetaPreferences(JSON.stringify({pageSize:n})).pageSize,25);
  assert.equal(parseMetaPreferences(null).pageSize,25);
 });
+
+test("Group replacement proposals respect categories, unique targets and source identities", async()=>{
+ const {groupReplacementMatches,proposeGroupReplacements}=await import("../lib/meta-ads/inventory-group-replacement-policy");
+ const item=(id:string,primaryIds:string[])=>({id,name:id,primaryIds,primaryNames:primaryIds});
+ const sources=[item("oldA",["A"]),item("oldB",["B"])],targets=[item("newA",["A"]),item("newB",["B"]),item("newA2",["A"]),item("uncategorized",[])];
+ assert.equal(groupReplacementMatches(sources[0],targets[0],"SAME"),true);assert.equal(groupReplacementMatches(sources[0],targets[1],"SAME"),false);assert.equal(groupReplacementMatches(sources[0],targets[1],"OTHER"),true);assert.equal(groupReplacementMatches(sources[0],targets[0],"OTHER"),false);assert.equal(groupReplacementMatches(sources[0],targets[3],"DIVERSE"),false);
+ const same=proposeGroupReplacements(sources,[...sources,...targets],"SAME",()=>0.5);assert.deepEqual(same.map(entry=>entry.replacementId),["newA","newB"]);
+ const other=proposeGroupReplacements(sources,targets,"OTHER",()=>0.5);assert.deepEqual(other.map(entry=>entry.replacementId),["newB","newA"]);
+ const diverse=proposeGroupReplacements(sources,targets,"DIVERSE",()=>0.5);assert.equal(new Set(diverse.map(entry=>entry.replacementId)).size,2);assert.deepEqual(diverse.map(entry=>entry.replacementId),["newA","newB"]);
+ const shortage=proposeGroupReplacements(sources,[targets[0]],"SAME",()=>0.5);assert.equal(shortage[1].replacementId,"");assert.deepEqual(sources.map(item=>item.id),["oldA","oldB"]);
+});

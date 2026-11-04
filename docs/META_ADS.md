@@ -1,5 +1,11 @@
 # Meta Ads: consulta y análisis
 
+## Editar grupos sin confundir selección y pertenencia (2026-11-04)
+
+Casillas de trabajo son independientes de miembros/borrador; editar abre grupo completo desmarcado. Quitar selección/desmarcar no retira integrantes ni afecta Guardar. Añadir inventario y Proponer al azar incorporan al borrador sin sustituir existentes; nuevos quedan marcados y Ver seleccionados filtra explícitamente. Mis grupos/fijado abre edición directa sin listado pequeño duplicado; administrar por desplegable o ⋯/clic derecho, sin Eliminar grande ni Unificar dentro de grupos. Unificar duplicados se conserva en catálogo general. Detalle queda escrito debajo de ✓/— con nombre completo accesible del país.
+
+POST inventory/trials MOVE_MEMBER requiere source groupId/revision, itemId, targetGroupId/targetRevision/since; bajo884411 valida ambos grupos de la misma lista y pertenencia exclusiva, conserva ciclos anteriores y no toca datos físicos. REPLACE_MEMBERS recibe grupo fuente, revisiones de todos los grupos afectados, pares itemId/replacementId/replacementGroupId, mode ANY/SAME/OTHER/DIVERSE y since. Cuadro local muestra ambos grupos y destino del saliente; solamente Aprobar escribe. Sin otra pertenencia el saliente queda sin grupo; con pertenencia se intercambian. Pares/revisiones/categorías/asignaciones se revalidan íntegramente antes de escribir; cambio concurrente bloquea, sin lote parcial ni reintento automático. Historial de ciclos se conserva. Uso registrado por diplomado/país, hojas, ventas, gasto, estados y campañas siguen al diplomado sin cambios ni Graph. Modelos existentes, sin migración de esquema; límite100 pares por aprobación.
+
 Países de Grupos usan columnas compactas48px, encabezado abreviado3 letras con nombre completo accesible y símbolos ✓ usado/— falta usar; ◷ en prueba y ? desconocido conservan significado. Detalle ↗ y corrección manual siguen accesibles; anchos se pueden ajustar. Verificación Chromium con12 hojas configuradas confirma matriz completa sin scroll horizontal a1660px y cambio manual→AUTO sin tocar hechos.
 
 ## Grupos: asignar y unificar sin perder hojas (2026-11-04)

@@ -144,6 +144,93 @@ test("Asignar, nombres únicos y eliminar solo grupo", async (t) => {
       },
     );
     await t.test(
+      "traslado entre grupos valida ambas revisiones y conserva ciclos anteriores",
+      async () => {
+        const args = {
+          action: "MOVE_MEMBER",
+          listId: list.id,
+          groupId: g.id,
+          revision,
+          itemId: items[1].id,
+          targetGroupId: g2.id,
+          targetRevision: g2.revision,
+          since: "2026-11-04",
+        };
+        const originalSource =
+          await db.metaInventoryTrialGroup.findUniqueOrThrow({
+            where: { id: g.id },
+          });
+        const originalTarget =
+          await db.metaInventoryTrialGroup.findUniqueOrThrow({
+            where: { id: g2.id },
+          });
+        await assert.rejects(
+          () =>
+            saveInventoryTrial(actor, {
+              ...args,
+              targetRevision: g2.revision + 1,
+            }),
+          /cambió/,
+        );
+        await assert.rejects(
+          () => saveInventoryTrial(actor, { ...args, revision: revision + 1 }),
+          /cambió/,
+        );
+        await assert.rejects(
+          () =>
+            saveInventoryTrial(actor, {
+              ...args,
+              targetGroupId: g.id,
+              targetRevision: revision,
+            }),
+          /otro grupo/,
+        );
+        assert.deepEqual(
+          (
+            await db.metaInventoryTrialGroup.findUniqueOrThrow({
+              where: { id: g.id },
+            })
+          ).payload,
+          originalSource.payload,
+        );
+        const next = await saveInventoryTrial(actor, args);
+        assert("members" in next && next.members);
+        assert.deepEqual(
+          next.members.map((entry) => entry.itemId).sort(),
+          [items[1].id, items[2].id].sort(),
+        );
+        const source = await db.metaInventoryTrialGroup.findUniqueOrThrow({
+          where: { id: g.id },
+        });
+        revision = source.revision;
+        const payload = source.payload as unknown as TrialPayload;
+        assert.equal(payload.members.length, 1);
+        assert.equal(payload.members[0].itemId, items[0].id);
+        const old = originalSource.payload as unknown as TrialPayload;
+        assert.deepEqual(
+          payload.cycles.map((c) => c.id),
+          old.cycles.map((c) => c.id),
+        );
+        assert(
+          payload.cycles
+            .filter((c) => c.itemId === items[1].id)
+            .every((c) => c.until === "2026-11-03"),
+        );
+        const target = next as unknown as TrialPayload;
+        assert.equal(
+          target.cycles[0].id,
+          (originalTarget.payload as unknown as TrialPayload).cycles[0].id,
+        );
+        assert(
+          target.cycles.some(
+            (c) =>
+              c.itemId === items[1].id && c.since === "2026-11-04" && !c.until,
+          ),
+        );
+        await assert.rejects(() => saveInventoryTrial(actor, args), /cambió/);
+      },
+    );
+    await t.test(
       "eliminar grupo lo retira de directorio conservando fichas e historial",
       async () => {
         const before = await db.metaInventoryTrialGroup.findUniqueOrThrow({

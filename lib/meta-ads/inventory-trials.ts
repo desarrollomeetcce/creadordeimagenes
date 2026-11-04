@@ -1,3 +1,4 @@
+import { groupReplacementMatches } from "./inventory-group-replacement-policy";
 import {
   detachedInventoryAliases,
   physicallyHiddenInventoryAliases,
@@ -108,6 +109,45 @@ export const trialChange = z.discriminatedUnion("action", [
       action: z.enum(["MEMBERS", "ADD_MEMBERS"]),
       name: z.string().trim().min(1).max(100).optional(),
       itemIds: z.array(id).max(1500),
+      since: day,
+    })
+    .strict(),
+  z
+    .object({
+      ...edit,
+      action: z.literal("MOVE_MEMBER"),
+      itemId: id,
+      targetGroupId: id,
+      targetRevision: z.number().int().positive(),
+      since: day,
+    })
+    .strict(),
+  z
+    .object({
+      action: z.literal("REPLACE_MEMBERS"),
+      listId: id,
+      groupId: id,
+      groups: z
+        .array(
+          z
+            .object({ groupId: id, revision: z.number().int().positive() })
+            .strict(),
+        )
+        .min(1)
+        .max(100),
+      pairs: z
+        .array(
+          z
+            .object({
+              itemId: id,
+              replacementId: id,
+              replacementGroupId: id.nullable(),
+            })
+            .strict(),
+        )
+        .min(1)
+        .max(100),
+      mode: z.enum(["ANY", "SAME", "OTHER", "DIVERSE"]),
       since: day,
     })
     .strict(),
@@ -414,6 +454,283 @@ export async function saveInventoryTrial(actor: Actor, input: unknown) {
   return db.$transaction(
     async (tx) => {
       await context(tx, actor, b.listId, true);
+      if (b.action === "REPLACE_MEMBERS") {
+        dateCheck(b.since);
+        const groups = await tx.metaInventoryTrialGroup.findMany({
+          where: { sheetId: b.listId, archivedAt: null },
+        });
+        const revisions = new Map(
+          b.groups.map((entry) => [entry.groupId, entry.revision]),
+        );
+        demand(revisions.size === b.groups.length, "No repitas grupos.");
+        const required = new Set([
+          b.groupId,
+          ...b.pairs.flatMap((pair) =>
+            pair.replacementGroupId ? [pair.replacementGroupId] : [],
+          ),
+        ]);
+        demand(
+          required.size === revisions.size &&
+            [...required].every((id) => revisions.has(id)),
+          "Revisa los grupos de ambos lados del reemplazo.",
+          409,
+        );
+        for (const id of required) {
+          const group = groups.find((entry) => entry.id === id);
+          demand(
+            group && group.revision === revisions.get(id),
+            "Un grupo cambió. Revisa los reemplazos antes de aprobar.",
+            409,
+          );
+        }
+        const payloads = new Map(
+          groups
+            .filter((group) => required.has(group.id))
+            .map((group) => [
+              group.id,
+              structuredClone(group.payload) as unknown as TrialPayload,
+            ]),
+        );
+        const source = payloads.get(b.groupId)!;
+        const items = await catalog(tx, b.listId);
+        const oldIds = new Set(b.pairs.map((pair) => pair.itemId)),
+          newIds = new Set(b.pairs.map((pair) => pair.replacementId));
+        demand(
+          oldIds.size === b.pairs.length &&
+            newIds.size === b.pairs.length &&
+            ![...newIds].some((id) => oldIds.has(id)),
+          "No repitas diplomados en los reemplazos.",
+          409,
+        );
+        const areas = new Set<string>();
+        const swaps = b.pairs.map((pair) => {
+          const old = source.members.find(
+            (member) => member.itemId === pair.itemId,
+          );
+          const oldItem = items.find((item) => item.id === pair.itemId),
+            nextItem = items.find((item) => item.id === pair.replacementId);
+          demand(
+            old && oldItem && nextItem,
+            "Un diplomado cambió. Revisa la propuesta.",
+            409,
+          );
+          demand(
+            groupReplacementMatches(oldItem, nextItem, b.mode),
+            "Una categoría o propuesta cambió. Propón los reemplazos de nuevo.",
+            409,
+          );
+          if (b.mode === "DIVERSE") {
+            demand(
+              !nextItem.primaryIds.some((id) => areas.has(id)),
+              "La propuesta repite categorías principales.",
+              409,
+            );
+            nextItem.primaryIds.forEach((id) => areas.add(id));
+          }
+          const memberships = groups.flatMap((group) =>
+            (group.payload as unknown as TrialPayload).members
+              .filter(
+                (member) =>
+                  categoryKey(member.name) === categoryKey(nextItem.name),
+              )
+              .map((member) => ({ group, member })),
+          );
+          demand(
+            memberships.length <= 1 && memberships[0]?.group.id !== b.groupId,
+            "El sustituto ya pertenece a este grupo o tiene una asignación ambigua.",
+            409,
+          );
+          demand(
+            (memberships[0]?.group.id ?? null) === pair.replacementGroupId,
+            "La asignación del sustituto cambió. Revisa ambos grupos.",
+            409,
+          );
+          return {
+            old,
+            oldItem,
+            nextItem,
+            other: pair.replacementGroupId,
+            otherMember: memberships[0]?.member,
+          };
+        });
+        const replacementSince = b.since;
+        function replaceMember(
+          payload: TrialPayload,
+          oldSlot: string,
+          item: TrialItem,
+        ) {
+          for (const cycle of payload.cycles)
+            if (cycle.slotId === oldSlot && !cycle.until) {
+              demand(
+                replacementSince >= cycle.since,
+                "La fecha no puede preceder al ciclo reemplazado.",
+                409,
+              );
+              cycle.until =
+                replacementSince === cycle.since
+                  ? replacementSince
+                  : shift(replacementSince, -1);
+            }
+          const member = {
+            slotId: randomUUID(),
+            itemId: item.id,
+            name: item.name,
+          };
+          payload.members = payload.members.map((entry) =>
+            entry.slotId === oldSlot ? member : entry,
+          );
+          if (!payload.reserve)
+            for (const country of payload.countries)
+              payload.cycles.push({
+                id: randomUUID(),
+                ...member,
+                country,
+                since: replacementSince,
+                until: null,
+                pauses: [],
+                decision: "AUTO",
+              });
+          demand(
+            payload.cycles.length <= 100000,
+            "Un grupo alcanzó su límite de historial.",
+            409,
+          );
+        }
+        for (const swap of swaps) {
+          replaceMember(source, swap.old.slotId, swap.nextItem);
+          if (swap.other && swap.otherMember)
+            replaceMember(
+              payloads.get(swap.other)!,
+              swap.otherMember.slotId,
+              swap.oldItem,
+            );
+        }
+        const updated = [];
+        for (const [id, payload] of payloads)
+          updated.push(
+            await tx.metaInventoryTrialGroup.update({
+              where: { id },
+              data: { payload: json(payload), revision: { increment: 1 } },
+            }),
+          );
+        await recordActivity(tx, {
+          data: {
+            actorId: actor.id,
+            action: "INVENTARIO_GRUPOS_REEMPLAZADOS",
+            resourceId: b.listId,
+            detail: {
+              groupId: b.groupId,
+              mode: b.mode,
+              since: b.since,
+              pairs: b.pairs,
+              groups: b.groups,
+            },
+          },
+        });
+        return serialize(updated.find((group) => group.id === b.groupId)!);
+      }
+      if (b.action === "MOVE_MEMBER") {
+        demand(b.groupId !== b.targetGroupId, "Elige otro grupo.");
+        dateCheck(b.since);
+        const sourceGroup = await tx.metaInventoryTrialGroup.findFirst({
+          where: { id: b.groupId, sheetId: b.listId, archivedAt: null },
+        });
+        const targetGroup = await tx.metaInventoryTrialGroup.findFirst({
+          where: { id: b.targetGroupId, sheetId: b.listId, archivedAt: null },
+        });
+        demand(sourceGroup && targetGroup, "Grupo no disponible.", 404);
+        demand(
+          sourceGroup.revision === b.revision &&
+            targetGroup.revision === b.targetRevision,
+          "Un grupo cambió. Revisa el traslado de nuevo.",
+          409,
+        );
+        const sourcePayload = structuredClone(
+          sourceGroup.payload,
+        ) as unknown as TrialPayload;
+        const targetPayload = structuredClone(
+          targetGroup.payload,
+        ) as unknown as TrialPayload;
+        const member = sourcePayload.members.find(
+          (entry) => entry.itemId === b.itemId,
+        );
+        demand(member, "El diplomado ya no pertenece al grupo de origen.", 409);
+        const candidate = (await catalog(tx, b.listId)).find(
+          (item) => item.id === member.itemId,
+        );
+        demand(candidate, "El diplomado ya no está disponible.", 409);
+        demand(
+          !targetPayload.members.some(
+            (entry) => categoryKey(entry.name) === categoryKey(candidate.name),
+          ),
+          "El destino ya contiene este diplomado.",
+          409,
+        );
+        demand(
+          targetPayload.members.length < 1500,
+          "El grupo destino admite hasta1500 diplomados.",
+          409,
+        );
+        for (const cycle of sourcePayload.cycles)
+          if (cycle.slotId === member.slotId && !cycle.until) {
+            demand(
+              b.since >= cycle.since,
+              "La fecha no puede preceder al ciclo de origen.",
+              409,
+            );
+            cycle.until =
+              b.since === cycle.since ? b.since : shift(b.since, -1);
+          }
+        sourcePayload.members = sourcePayload.members.filter(
+          (entry) => entry.slotId !== member.slotId,
+        );
+        await tx.metaInventoryTrialGroup.update({
+          where: { id: sourceGroup.id },
+          data: { payload: json(sourcePayload), revision: { increment: 1 } },
+        });
+        await exclusiveMembers(tx, b.listId, [candidate], targetGroup.id);
+        const nextMember = {
+          slotId: randomUUID(),
+          itemId: candidate.id,
+          name: candidate.name,
+        };
+        targetPayload.members.push(nextMember);
+        if (!targetPayload.reserve)
+          for (const country of targetPayload.countries)
+            targetPayload.cycles.push({
+              id: randomUUID(),
+              ...nextMember,
+              country,
+              since: b.since,
+              until: null,
+              pauses: [],
+              decision: "AUTO",
+            });
+        demand(
+          targetPayload.cycles.length <= 100000,
+          "El destino alcanzó su límite de historial.",
+          409,
+        );
+        const updated = await tx.metaInventoryTrialGroup.update({
+          where: { id: targetGroup.id },
+          data: { payload: json(targetPayload), revision: { increment: 1 } },
+        });
+        await recordActivity(tx, {
+          data: {
+            actorId: actor.id,
+            action: "INVENTARIO_DIPLOMADO_TRASLADADO_GRUPO",
+            resourceId: b.listId,
+            detail: {
+              from: sourceGroup.id,
+              to: targetGroup.id,
+              itemId: candidate.id,
+              name: candidate.name,
+              since: b.since,
+            },
+          },
+        });
+        return serialize(updated);
+      }
       if (b.action === "USAGE") {
         const source = await catalog(tx, b.listId);
         const item = source.find((i) => i.id === b.itemId);

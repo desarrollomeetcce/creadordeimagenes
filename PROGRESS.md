@@ -1,5 +1,15 @@
 # Avance por fases · continuación del desarrollo
 
+## Edición de grupos: pertenencia independiente, añadir y reemplazar con aprobación (2026-11-04)
+
+Se separan miembros/borrador de casillas de selección. Editar abre todos los integrantes con casillas vacías; desmarcar/Quitar selección no retira diplomados y Guardar envía miembros completos. Mis grupos/fijados en Editar abre el documento directamente; se retiran el listado pequeño duplicado, botones redundantes Editar/Eliminar y Unificar con oficial de esta ventana. Administración queda en opción del buscador o ⋯/clic derecho; unificación de duplicados pasa al catálogo general con explicación. Nombre sube al borde superior de franja y Detalle se escribe debajo de cada símbolo de país, conservando columnas compactas/ancho editable.
+
+Añadir inventario usa catálogo local; propuesta aleatoria añade sin retirar integrantes y marca incorporaciones, Ver seleccionados filtra solo casillas. Guardar incorpora el borrador completo. Asignar a grupo desde Crear sigue disponible; en Editar las incorporaciones se hacen directamente. Cambiar grupo en la celda abre confirmación MOVE_MEMBER: ambas revisiones/países/ciclos se validan bajo884411, cierra ciclo de pertenencia anterior y abre nuevo sin tocar alias/hechos/activación/campañas.
+
+Reemplazo individual y de seleccionados persistidos abre cuadro compacto arrastrable/ampliable con X/Cancelar, políticas al azar/misma/otra/una por categoría y selección manual. Matriz de propuesta muestra saliente, grupo, entrante, grupo actual y destino del saliente. Sin escritura hasta Aprobar reemplazos. REPLACE_MEMBERS valida pares únicos, categorías, pertenencia y revisiones de todos los grupos afectados bajo884411; si el entrante está en otro grupo se intercambian ambos; si está sin grupo, el saliente queda sin grupo. Preserva ciclos anteriores y crea los nuevos; ningún país/hoja/fila/estado/asesor/vínculo/métrica se mueve. Uso global por diplomado+país permanece exactamente igual y se muestra en el nuevo grupo. Mapas de catálogo/pertenencia evitan búsquedas anidadas al proponer; buscar/proponer/cambiar filtros no consulta Graph.
+
+287 unitarios,57 integraciones, typecheck/build y8 comprobaciones Chromium correctas. Snapshot DB de hechos/asesores/eventos/campaña y gasto se compara después de traslado y dos reemplazos recíprocos, y tras archivar otro grupo; luego cleanup exclusivo conserva base V1/G10.25. No ejecución sobre datos reales ni acceso autenticado Hostinger.
+
 Países de Grupos usan columnas compactas48px, encabezado abreviado3 letras con nombre completo accesible y símbolos ✓ usado/— falta usar; ◷ en prueba y ? desconocido conservan significado. Detalle ↗ y corrección manual siguen accesibles; anchos se pueden ajustar. Verificación Chromium con12 hojas configuradas confirma matriz completa sin scroll horizontal a1660px y cambio manual→AUTO sin tocar hechos.
 
 ## Grupos: búsqueda/fijación, asignación y unificación al oficial (2026-11-04)

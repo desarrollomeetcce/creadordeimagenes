@@ -178,7 +178,6 @@ export function InventoryCatalog({
     replaceName?: string;
   } | null>(null);
   const [groupUnification,setGroupUnification]=useState<string[]|null>(null);
-  const [unifiedSelection,setUnifiedSelection]=useState<{sourceIds:string[];targetId:string}|null>(null);
   const [evaluation, setEvaluation] = useState<string | null>(null);
   const [groupFilter, setGroupFilter] = useState("");
   const [groupOrder, setGroupOrder] = useWorkbookPreference<string>(
@@ -200,7 +199,7 @@ export function InventoryCatalog({
     setGroupEditor(null);
 
     setGroupUnification(null);
-    setUnifiedSelection(null);
+
 
     setEvaluation(null);
     void api("meta-ads/inventory/trials?" + new URLSearchParams({ listId }))
@@ -1828,8 +1827,6 @@ export function InventoryCatalog({
             </>
           }
           directory={trialDirectory}
-          onUnifySelection={sheetDirectory?.canCorrectCountry ? setGroupUnification : undefined}
-          unifiedSelection={unifiedSelection}
           onGroupsChanged={async () => { await Promise.all([reloadGroups(), reloadCategories(), onChanged()]); }}
           onUsageChange={(key,cell)=>setTrialDirectory(previous=>previous ? {...previous,usage:{...previous.usage,[key]:cell}} : previous)}
           group={trialGroups.find((g) => g.id === groupEditor.id)}
@@ -2690,6 +2687,7 @@ export function InventoryCatalog({
                       </button>
                     )}
                   </div>
+                  {sheetDirectory?.canCorrectCountry && selectedVisible.length>0 && <button type="button" disabled={busy || !trialDirectory} title="Reúne diplomados duplicados conservando hojas e historial; no elimina grupos" onClick={()=>{const names=visible.filter(entry=>entry.links.some(alias=>selectedVisible.includes(alias.id))).map(entry=>categoryKey(entry.name));const ids=trialDirectory?.catalog.filter(item=>names.includes(categoryKey(item.name))).map(item=>item.id)??[];if(ids.length)setGroupUnification(ids);}}>Unificar duplicados…</button>}
                   <InventoryActionMenu
                     label="Asignar o quitar grupos"
                     disabled={busy || !selectedGroups}
@@ -3467,7 +3465,6 @@ export function InventoryCatalog({
       )}
       {groupUnification && trialDirectory && <InventoryDiplomaUnification listId={listId} sourceIds={groupUnification} catalog={trialDirectory.catalog} onClose={()=>setGroupUnification(null)} onUnified={async result=>{
         await Promise.all([onChanged(),reloadCategories(),reloadGroups(),reloadSheetDirectory()]);
-        setUnifiedSelection({sourceIds:result.sourceIds,targetId:result.targetId});
         setCountryReload(current=>current+1);
         setSelected([]);
         setGroupUnification(null);

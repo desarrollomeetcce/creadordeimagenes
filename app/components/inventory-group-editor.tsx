@@ -1,4 +1,5 @@
 "use client";
+import { InventoryGroupReplacements } from "./inventory-group-replacements";
 import {
   Fragment,
   useContext,
@@ -37,8 +38,6 @@ export function InventoryGroupEditor({
   onSaved,
   onGroupsChanged,
   onUsageChange,
-  onUnifySelection,
-  unifiedSelection,
   topContent,
   initialTab,
   onChooseGroup,
@@ -57,14 +56,14 @@ export function InventoryGroupEditor({
   onSaved: (id: string) => Promise<void>;
   onGroupsChanged?: () => Promise<void>;
   onUsageChange?: (key: string, cell: GroupUsageCell) => void;
-  onUnifySelection?: (ids: string[]) => void;
-  unifiedSelection?: { sourceIds: string[]; targetId: string } | null;
 }) {
   const dialog = useRef<HTMLDialogElement>(null);
   const userId = useContext(CurrentUserId);
   const pinKey = `inventory-group-pins:v1:${userId}:${directory.listId}`;
   const [groupAction, setGroupAction] = useState<{
-    kind: "assign" | "archive" | "rename" | "menu";
+    kind: "assign" | "archive" | "rename" | "menu" | "move";
+    source?: TrialGroup;
+    item?: TrialItem;
     group: TrialGroup | null;
   } | null>(null);
   const groupActionPending = useRef(false);
@@ -166,6 +165,19 @@ export function InventoryGroupEditor({
         .map((i) => i.id),
     ]),
   ]);
+  const editing = managementTab === "edit" && !!group;
+  const [checkedIds, setCheckedIds] = useState<string[]>([]);
+  const [replacementIds, setReplacementIds] = useState<string[] | null>(null);
+  const [replacementMode, setReplacementMode] = useState<
+    "ANY" | "SAME" | "OTHER" | "DIVERSE"
+  >("ANY");
+  const [onlyChecked, setOnlyChecked] = useState(false);
+  const selectedIds = editing ? checkedIds : ids;
+  const setSelectedIds = editing ? setCheckedIds : setIds;
+  const showGroup = (id: string) => {
+    if (managementTab === "edit" && id && onChooseGroup) onChooseGroup(id);
+    else setBrowsedGroupId(id);
+  };
   const countries = group?.countries ?? countryOptions.map((c) => c.code);
   const [browsedGroupId, setBrowsedGroupId] = useState(group?.id ?? "");
   const [pinnedGroupIds, setPinnedGroupIds] = useState<string[]>([]);
@@ -209,16 +221,6 @@ export function InventoryGroupEditor({
     [error, setError] = useState(""),
     [committed, setCommitted] = useState(false);
   useEffect(() => {
-    if (!unifiedSelection) return;
-    const sources = new Set(unifiedSelection.sourceIds);
-    setIds((current) => [
-      ...new Set(
-        current.map((id) => (sources.has(id) ? unifiedSelection.targetId : id)),
-      ),
-    ]);
-    if (replacing && sources.has(replacing)) setReplacing(null);
-  }, [unifiedSelection]);
-  useEffect(() => {
     dialog.current?.showModal();
   }, []);
   const catalog = directory.catalog;
@@ -253,17 +255,24 @@ export function InventoryGroupEditor({
   const pool = catalog.filter((i) => !occupied.has(categoryKey(i.name)));
   const matching = catalog.filter(
     (i) =>
-      (!browsedMembers || browsedMembers.has(i.id)) &&
-      matchesSearchWords(i.name, query) &&
+      (editing && !replacing
+        ? ids.includes(i.id)
+        : replacing || !browsedMembers || browsedMembers.has(i.id)) &&
+      ((editing && !replacing) || matchesSearchWords(i.name, query)) &&
       (!primary.length || i.primaryNames.some((n) => primary.includes(n))) &&
       (!secondary.length ||
         i.secondaryNames?.some((n) => secondary.includes(n))) &&
       (!sheets.length || i.sheets?.some((s) => sheets.includes(s.id))),
   );
-  const filtered = matching.filter((i) => !onlySelected || ids.includes(i.id));
+  const filtered = matching.filter((i) =>
+    editing
+      ? !onlyChecked || checkedIds.includes(i.id)
+      : !onlySelected || ids.includes(i.id),
+  );
   const eligible = filtered;
-  const proposalPool = matching.filter(
-    (i) => !occupied.has(categoryKey(i.name)),
+  const proposalPool = (editing ? catalog : matching).filter(
+    (i) =>
+      !occupied.has(categoryKey(i.name)) && (!editing || !ids.includes(i.id)),
   );
   const [page, setPage] = useState(1),
     [pageSize, setPageSize] = useState(50);
@@ -286,7 +295,9 @@ export function InventoryGroupEditor({
     currentPage * pageSize,
   );
   const toggle = (id: string) =>
-    setIds((v) => (v.includes(id) ? v.filter((x) => x !== id) : [...v, id]));
+    setSelectedIds((v) =>
+      v.includes(id) ? v.filter((x) => x !== id) : [...v, id],
+    );
   function replaceRandom(item: TrialItem, same: boolean) {
     const candidates = pool.filter(
       (i) =>
@@ -305,6 +316,9 @@ export function InventoryGroupEditor({
       return;
     }
     setIds((v) => v.map((x) => (x === item.id ? next.id : x)));
+    setCheckedIds((current) =>
+      current.map((id) => (id === item.id ? next.id : id)),
+    );
     setError("");
   }
   async function applyGroupAction() {
@@ -321,23 +335,44 @@ export function InventoryGroupEditor({
     let saved = false;
     try {
       const target = groupAction.group;
-      await api("meta-ads/inventory/trials", "POST", {
-        action:
-          groupAction.kind === "assign"
-            ? "ADD_MEMBERS"
-            : groupAction.kind === "rename"
-              ? "RENAME"
-              : "ARCHIVE",
-        listId: directory.listId,
-        groupId: target.id,
-        revision: target.revision,
-        ...(groupAction.kind === "assign"
-          ? { itemIds: ids, since: limaToday() }
-          : groupAction.kind === "rename"
-            ? { name: renameValue }
-            : {}),
-      });
+      await api(
+        "meta-ads/inventory/trials",
+        "POST",
+        groupAction.kind === "move" && groupAction.source && groupAction.item
+          ? {
+              action: "MOVE_MEMBER",
+              listId: directory.listId,
+              groupId: groupAction.source.id,
+              revision: groupAction.source.revision,
+              targetGroupId: target.id,
+              targetRevision: target.revision,
+              itemId: groupAction.item.id,
+              since: limaToday(),
+            }
+          : {
+              action:
+                groupAction.kind === "assign"
+                  ? "ADD_MEMBERS"
+                  : groupAction.kind === "rename"
+                    ? "RENAME"
+                    : "ARCHIVE",
+              listId: directory.listId,
+              groupId: target.id,
+              revision: target.revision,
+              ...(groupAction.kind === "assign"
+                ? { itemIds: selectedIds, since: limaToday() }
+                : groupAction.kind === "rename"
+                  ? { name: renameValue }
+                  : {}),
+            },
+      );
       saved = true;
+      if (groupAction.kind === "move" && groupAction.item) {
+        const moved = groupAction.item.id;
+        setCheckedIds((current) => current.filter((id) => id !== moved));
+        if (group?.id === groupAction.source?.id)
+          setIds((current) => current.filter((id) => id !== moved));
+      }
       setGroupAction(null);
       if (groupAction.kind === "archive") setBrowsedGroupId("");
       if (groupAction.kind === "rename" && group?.id === target.id)
@@ -346,9 +381,11 @@ export function InventoryGroupEditor({
       setNotice(
         groupAction.kind === "assign"
           ? `Diplomados asignados a ${target.name}.`
-          : groupAction.kind === "rename"
-            ? `Nombre actualizado: ${renameValue}.`
-            : `Grupo ${target.name} eliminado de la lista. Sus diplomados e historial se conservan.`,
+          : groupAction.kind === "move"
+            ? `Diplomado trasladado a ${target.name}.`
+            : groupAction.kind === "rename"
+              ? `Nombre actualizado: ${renameValue}.`
+              : `Grupo ${target.name} eliminado de la lista. Sus diplomados e historial se conservan.`,
       );
     } catch (error) {
       setError(
@@ -472,22 +509,44 @@ export function InventoryGroupEditor({
           </button>
         </div>
       </header>
+      {replacementIds && group && (
+        <InventoryGroupReplacements
+          directory={directory}
+          group={group}
+          itemIds={replacementIds}
+          initialMode={replacementMode}
+          onClose={() => setReplacementIds(null)}
+          onApplied={async (result) => {
+            setIds(result.members.map((member) => member.itemId));
+            setCheckedIds([]);
+            setOnlyChecked(false);
+
+            setReplacementIds(null);
+            await onGroupsChanged?.();
+            setNotice(
+              "Reemplazos aprobados. El uso por país sigue a cada diplomado.",
+            );
+          }}
+        />
+      )}
       {groupAction && (
         <InventoryGroupActionDialog
           title={
             groupAction.kind === "assign"
               ? "Asignar a grupo"
-              : groupAction.kind === "rename"
-                ? "Editar nombre del grupo"
-                : groupAction.kind === "menu"
-                  ? (groupAction.group?.name ?? "Grupo")
-                  : "Eliminar grupo"
+              : groupAction.kind === "move"
+                ? "Trasladar diplomado de grupo"
+                : groupAction.kind === "rename"
+                  ? "Editar nombre del grupo"
+                  : groupAction.kind === "menu"
+                    ? (groupAction.group?.name ?? "Grupo")
+                    : "Eliminar grupo"
           }
           busy={busy}
           error={error}
           canAccept={
             !!groupAction.group &&
-            (groupAction.kind !== "assign" || ids.length > 0) &&
+            (groupAction.kind !== "assign" || selectedIds.length > 0) &&
             (groupAction.kind !== "rename" || !!renameValue.trim())
           }
           showAccept={groupAction.kind !== "menu"}
@@ -502,8 +561,8 @@ export function InventoryGroupEditor({
           {groupAction.kind === "assign" ? (
             <>
               <p>
-                Agregar {ids.length} diplomados seleccionados sin retirar los
-                que ya tiene el grupo.
+                Agregar {selectedIds.length} diplomados seleccionados sin
+                retirar los que ya tiene el grupo.
               </p>
               <SheetSearchSelect
                 label="Grupo para asignar seleccionados"
@@ -527,6 +586,13 @@ export function InventoryGroupEditor({
                 cambiar su asignación.
               </small>
             </>
+          ) : groupAction.kind === "move" ? (
+            <p>
+              ¿Trasladar «{groupAction.item?.name}» de «
+              {groupAction.source?.name}» a «{groupAction.group?.name}»? Se
+              retira del grupo de origen y se añade al destino. Sus hojas,
+              países, ventas, vínculos e historial se conservan.
+            </p>
           ) : groupAction.kind === "rename" ? (
             <label>
               Nombre del grupo
@@ -662,12 +728,25 @@ export function InventoryGroupEditor({
                   disabled={busy || externalBusy}
                   options={[
                     { value: "", label: "Todos los grupos" },
+                    ...(browsedGroup
+                      ? [
+                          {
+                            value: "__actions__",
+                            label: "Administrar grupo seleccionado…",
+                          },
+                        ]
+                      : []),
                     ...directory.groups.map((entry) => ({
                       value: entry.id,
                       label: `${entry.name} (${entry.members.length})`,
                     })),
                   ]}
-                  onSelect={setBrowsedGroupId}
+                  onSelect={(id) => {
+                    if (id === "__actions__" && browsedGroup) {
+                      setError("");
+                      setGroupAction({ kind: "menu", group: browsedGroup });
+                    } else showGroup(id);
+                  }}
                 />
               </label>
               <button
@@ -702,7 +781,7 @@ export function InventoryGroupEditor({
                       type="button"
                       aria-pressed={browsedGroupId === id}
                       disabled={busy || externalBusy}
-                      onClick={() => setBrowsedGroupId(id)}
+                      onClick={() => showGroup(id)}
                     >
                       {entry.name} <small>{entry.members.length}</small>
                     </button>
@@ -732,100 +811,113 @@ export function InventoryGroupEditor({
                   </span>
                 ) : null;
               })}
-              {managementTab === "edit" &&
-                browsedGroup &&
-                onChooseGroup &&
-                browsedGroup.id !== group?.id && (
-                  <button
-                    type="button"
-                    disabled={busy || externalBusy}
-                    onClick={() => onChooseGroup(browsedGroup.id)}
-                  >
-                    Editar {browsedGroup.name}
-                  </button>
-                )}
-              {managementTab === "edit" && browsedGroup && onGroupsChanged && (
-                <button
-                  type="button"
-                  className="danger"
-                  disabled={busy || externalBusy || !directory.canEdit}
-                  onClick={() => {
-                    setError("");
-                    setGroupAction({ kind: "archive", group: browsedGroup });
-                  }}
-                >
-                  Eliminar grupo
-                </button>
-              )}
-              {managementTab === "edit" && onChooseGroup && (
-                <div
-                  className="inventory-group-edit-list"
-                  aria-label="Todos los grupos para editar"
-                >
-                  {directory.groups.map((entry) => (
-                    <button
-                      type="button"
-                      key={entry.id}
-                      aria-pressed={group?.id === entry.id}
-                      disabled={busy || externalBusy}
-                      onClick={() => onChooseGroup(entry.id)}
-                    >
-                      {entry.name} <small>{entry.members.length}</small>
-                    </button>
-                  ))}
-                </div>
-              )}
             </div>
             {(managementTab !== "edit" || group) && (
               <div className="row inventory-group-proposal">
                 <label className="inventory-group-inline-search">
-                  Buscar inventario
-                  <input
-                    type="search"
-                    aria-label="Buscar inventario para grupo"
-                    placeholder="Nombre del diplomado…"
-                    value={query}
-                    onChange={(event) => setQuery(event.target.value)}
-                  />
+                  {editing && !replacing
+                    ? "Añadir inventario"
+                    : "Buscar inventario"}
+                  {editing && !replacing ? (
+                    <SheetSearchSelect
+                      label="Añadir diplomado al grupo"
+                      value=""
+                      placeholder="Buscar diplomado para añadir…"
+                      disabled={busy || externalBusy || !directory.canEdit}
+                      options={pool
+                        .filter((item) => !ids.includes(item.id))
+                        .map((item) => ({ value: item.id, label: item.name }))}
+                      onSelect={(id) => {
+                        setIds((current) => [...new Set([...current, id])]);
+                        setCheckedIds((current) => [
+                          ...new Set([...current, id]),
+                        ]);
+                        setNotice(
+                          "Diplomado añadido al borrador. Guarda los cambios del grupo.",
+                        );
+                      }}
+                    />
+                  ) : (
+                    <input
+                      type="search"
+                      aria-label="Buscar inventario para grupo"
+                      placeholder="Nombre del diplomado…"
+                      value={query}
+                      onChange={(event) => setQuery(event.target.value)}
+                    />
+                  )}
                 </label>
-                <button
-                  disabled={busy || !count || count > 100}
-                  onClick={() => {
-                    const proposal = diverseTrialItems(proposalPool, count, []);
-                    setIds((current) => [
-                      ...new Set([...current, ...proposal.map((i) => i.id)]),
-                    ]);
-                    setOnlySelected(true);
-                    setReplacing(null);
-                    setError(
-                      proposal.length < count
-                        ? `Se encontraron ${proposal.length} categorías principales diferentes con los filtros actuales. Revisa la propuesta.`
-                        : "",
-                    );
-                  }}
-                >
-                  Proponer al azar
-                </button>
-                <label>
-                  Cantidad
-                  <input
-                    type="number"
-                    aria-label="Cantidad aleatoria del grupo"
-                    min={1}
-                    max={100}
-                    value={count}
-                    onChange={(e) => setCount(Number(e.target.value))}
-                  />
-                </label>
-
-                <label>
-                  <input
-                    type="checkbox"
-                    checked={onlySelected}
-                    onChange={(e) => setOnlySelected(e.target.checked)}
-                  />{" "}
-                  Ver seleccionados ({ids.length})
-                </label>
+                {
+                  <>
+                    <button
+                      disabled={busy || !count || count > 100}
+                      onClick={() => {
+                        const proposal = diverseTrialItems(
+                          proposalPool,
+                          count,
+                          [],
+                        );
+                        setIds((current) => [
+                          ...new Set([
+                            ...current,
+                            ...proposal.map((i) => i.id),
+                          ]),
+                        ]);
+                        setOnlySelected(true);
+                        if (editing) {
+                          setCheckedIds((current) => [
+                            ...new Set([
+                              ...current,
+                              ...proposal.map((item) => item.id),
+                            ]),
+                          ]);
+                          setOnlyChecked(true);
+                        }
+                        setReplacing(null);
+                        setError(
+                          proposal.length < count
+                            ? `Se encontraron ${proposal.length} categorías principales diferentes con los filtros actuales. Revisa la propuesta.`
+                            : "",
+                        );
+                      }}
+                    >
+                      Proponer al azar
+                    </button>
+                    <label>
+                      Cantidad
+                      <input
+                        type="number"
+                        aria-label="Cantidad aleatoria del grupo"
+                        min={1}
+                        max={100}
+                        value={count}
+                        onChange={(e) => setCount(Number(e.target.value))}
+                      />
+                    </label>
+                  </>
+                }
+                {!editing && (
+                  <label>
+                    <input
+                      type="checkbox"
+                      checked={onlySelected}
+                      onChange={(e) => setOnlySelected(e.target.checked)}
+                    />{" "}
+                    {editing ? "Selección" : "Ver seleccionados"} (
+                    {selectedIds.length})
+                  </label>
+                )}
+                {editing && (
+                  <label>
+                    <input
+                      type="checkbox"
+                      aria-label="Ver seleccionados para reemplazar"
+                      checked={onlyChecked}
+                      onChange={(event) => setOnlyChecked(event.target.checked)}
+                    />
+                    Ver seleccionados
+                  </label>
+                )}
                 <button
                   type="button"
                   className="inventory-group-clear"
@@ -835,8 +927,10 @@ export function InventoryGroupEditor({
                     setPrimary([]);
                     setSecondary([]);
                     setSheets([]);
-                    setBrowsedGroupId("");
+                    setBrowsedGroupId(group?.id ?? "");
                     setOnlySelected(false);
+
+                    setOnlyChecked(false);
                   }}
                 >
                   Limpiar filtros
@@ -844,10 +938,11 @@ export function InventoryGroupEditor({
                 <button
                   type="button"
                   className="inventory-group-deselect"
-                  disabled={busy || !ids.length}
+                  disabled={busy || !selectedIds.length}
                   onClick={() => {
-                    setIds([]);
+                    setSelectedIds([]);
                     setOnlySelected(false);
+                    setOnlyChecked(false);
                   }}
                 >
                   Quitar selección
@@ -857,21 +952,42 @@ export function InventoryGroupEditor({
           </div>
           {managementTab === "edit" && !group && (
             <p className="inventory-group-empty">
-              Busca un grupo para ver sus diplomados. Pulsa Editar para
-              modificarlo.
+              Elige un grupo en Mis grupos para ver y editar sus diplomados.
             </p>
           )}
           {(managementTab !== "edit" || group) && (
             <>
-              {ids.length > 0 && (
+              {selectedIds.length > 0 && (
                 <div className="inventory-group-search-section">
                   <div
                     className="inventory-group-selected"
                     aria-label="Diplomados seleccionados para el grupo"
                   >
                     <div className="inventory-group-selection-actions">
-                      <strong>{ids.length} seleccionados</strong>
-                      {onGroupsChanged && (
+                      <strong>{selectedIds.length} seleccionados</strong>
+                      {editing && group && onGroupsChanged && (
+                        <button
+                          type="button"
+                          disabled={
+                            busy ||
+                            externalBusy ||
+                            selectedIds.length > 100 ||
+                            selectedIds.some(
+                              (id) =>
+                                !group.members.some(
+                                  (member) => member.itemId === id,
+                                ),
+                            )
+                          }
+                          onClick={() => {
+                            setReplacementMode("ANY");
+                            setReplacementIds([...selectedIds]);
+                          }}
+                        >
+                          Reemplazar seleccionados
+                        </button>
+                      )}
+                      {onGroupsChanged && !editing && (
                         <button
                           type="button"
                           className="primary"
@@ -880,7 +996,7 @@ export function InventoryGroupEditor({
                             externalBusy ||
                             !directory.canEdit ||
                             !directory.groups.length ||
-                            ids.length > 1500
+                            selectedIds.length > 1500
                           }
                           onClick={() => {
                             setError("");
@@ -890,24 +1006,9 @@ export function InventoryGroupEditor({
                           Asignar a grupo
                         </button>
                       )}
-                      {onUnifySelection && (
-                        <button
-                          type="button"
-                          disabled={
-                            busy ||
-                            externalBusy ||
-                            committed ||
-                            !directory.canEdit ||
-                            ids.length > 100
-                          }
-                          onClick={() => onUnifySelection([...ids])}
-                        >
-                          Unificar con oficial
-                        </button>
-                      )}
                     </div>
                     <div className="inventory-group-selected-chips">
-                      {ids.map((id) => (
+                      {selectedIds.map((id) => (
                         <span
                           key={id}
                           className="inventory-group-selection-chip"
@@ -929,7 +1030,7 @@ export function InventoryGroupEditor({
                               (catalogById.get(id)?.name ?? "diplomado")
                             }
                             onClick={() => {
-                              setIds((current) =>
+                              setSelectedIds((current) =>
                                 current.filter((value) => value !== id),
                               );
                               if (replacing === id) setReplacing(null);
@@ -939,7 +1040,7 @@ export function InventoryGroupEditor({
                           </button>
                         </span>
                       ))}
-                      {!ids.length && (
+                      {!selectedIds.length && (
                         <small>
                           Los diplomados que marques aparecerán aquí.
                         </small>
@@ -996,10 +1097,10 @@ export function InventoryGroupEditor({
                           disabled={busy || !eligible.length || !!replacing}
                           checked={
                             !!eligible.length &&
-                            eligible.every((i) => ids.includes(i.id))
+                            eligible.every((i) => selectedIds.includes(i.id))
                           }
                           onChange={(e) =>
-                            setIds((v) =>
+                            setSelectedIds((v) =>
                               e.target.checked
                                 ? [
                                     ...new Set([
@@ -1075,14 +1176,16 @@ export function InventoryGroupEditor({
                           )}
                           <tr
                             data-group-candidate={i.name}
-                            data-selected={ids.includes(i.id) || undefined}
+                            data-selected={
+                              selectedIds.includes(i.id) || undefined
+                            }
                           >
                             <td>
                               <label>
                                 <input
                                   type="checkbox"
                                   aria-label={"Incluir " + i.name}
-                                  checked={ids.includes(i.id)}
+                                  checked={selectedIds.includes(i.id)}
                                   disabled={
                                     busy ||
                                     (!!assigned && !!replacing) ||
@@ -1093,6 +1196,11 @@ export function InventoryGroupEditor({
                                       setIds((v) =>
                                         v.map((x) =>
                                           x === replacing ? i.id : x,
+                                        ),
+                                      );
+                                      setCheckedIds((current) =>
+                                        current.map((id) =>
+                                          id === replacing ? i.id : id,
                                         ),
                                       );
                                       setReplacing(null);
@@ -1106,10 +1214,40 @@ export function InventoryGroupEditor({
                             <td>{i.primaryNames.join(" · ") || "—"}</td>
                             <td>{i.secondaryNames?.join(" · ") || "—"}</td>
                             <td>
-                              <span className="inventory-group-chip">
-                                {memberGroup?.name ??
-                                  (ids.includes(i.id) ? name : "Sin grupo")}
-                              </span>
+                              {memberGroup && onGroupsChanged ? (
+                                <SheetSearchSelect
+                                  label={`Cambiar grupo de ${i.name}`}
+                                  value={memberGroup.id}
+                                  placeholder={memberGroup.name}
+                                  disabled={
+                                    busy || externalBusy || !directory.canEdit
+                                  }
+                                  options={directory.groups.map((entry) => ({
+                                    value: entry.id,
+                                    label: entry.name,
+                                  }))}
+                                  onSelect={(targetId) => {
+                                    if (targetId === memberGroup.id) return;
+                                    const target = directory.groups.find(
+                                      (entry) => entry.id === targetId,
+                                    );
+                                    if (target) {
+                                      setError("");
+                                      setGroupAction({
+                                        kind: "move",
+                                        group: target,
+                                        source: memberGroup,
+                                        item: i,
+                                      });
+                                    }
+                                  }}
+                                />
+                              ) : (
+                                <span className="inventory-group-chip">
+                                  {memberGroup?.name ??
+                                    (ids.includes(i.id) ? name : "Sin grupo")}
+                                </span>
+                              )}
                             </td>
                             {countryOptions.map((c) => {
                               const cell = usageCell(i, c.code),
@@ -1186,7 +1324,7 @@ export function InventoryGroupEditor({
                                       setObservations(i.name);
                                     }}
                                   >
-                                    ↗
+                                    Detalle
                                   </button>
                                 </td>
                               );
@@ -1207,6 +1345,16 @@ export function InventoryGroupEditor({
                                     <button
                                       disabled={busy}
                                       onClick={() => {
+                                        if (
+                                          editing &&
+                                          group?.members.some(
+                                            (member) => member.itemId === i.id,
+                                          )
+                                        ) {
+                                          setReplacementMode("ANY");
+                                          setReplacementIds([i.id]);
+                                          return;
+                                        }
                                         setReplacing(i.id);
                                         setOnlySelected(false);
                                         setQuery("");
@@ -1219,24 +1367,47 @@ export function InventoryGroupEditor({
                                     </button>
                                     <button
                                       disabled={busy}
-                                      onClick={() => replaceRandom(i, true)}
+                                      onClick={() => {
+                                        if (
+                                          editing &&
+                                          group?.members.some(
+                                            (member) => member.itemId === i.id,
+                                          )
+                                        ) {
+                                          setReplacementMode("SAME");
+                                          setReplacementIds([i.id]);
+                                        } else replaceRandom(i, true);
+                                      }}
                                     >
                                       Azar · misma
                                     </button>
                                     <button
                                       disabled={busy}
-                                      onClick={() => replaceRandom(i, false)}
+                                      onClick={() => {
+                                        if (
+                                          editing &&
+                                          group?.members.some(
+                                            (member) => member.itemId === i.id,
+                                          )
+                                        ) {
+                                          setReplacementMode("OTHER");
+                                          setReplacementIds([i.id]);
+                                        } else replaceRandom(i, false);
+                                      }}
                                     >
                                       Azar · otra
                                     </button>
                                     <button
                                       disabled={busy}
                                       aria-label={"Quitar del grupo " + i.name}
-                                      onClick={() =>
+                                      onClick={() => {
                                         setIds((v) =>
                                           v.filter((x) => x !== i.id),
-                                        )
-                                      }
+                                        );
+                                        setCheckedIds((v) =>
+                                          v.filter((x) => x !== i.id),
+                                        );
+                                      }}
                                     >
                                       ×
                                     </button>
