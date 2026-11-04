@@ -1,5 +1,11 @@
 # Meta Ads: consulta y análisis
 
+## Guardar sin cerrar y destino de grupo en preparación (2026-11-04)
+
+Crear/Guardar conserva diálogo y expansión, muestra el grupo guardado en Editar y permite continuar. Crear otro parte de borrador limpio/requestId nuevo. Pendiente por ref evita doble clic; si se confirmó la escritura y falló actualizar la vista, se informa y bloquea repetirla hasta recuperar directorio. Solo X/Cancelar cierra; F5 conserva la elección guardada.
+
+Asignar a grupo ofrece nombre del borrador «En preparación» en acción masiva/celda, separado de guardados y disponible antes de guardar. Aceptar conserva IDs en memoria del borrador, sin API ni grupo persistido hasta Crear grupo; etiqueta sigue nombre y requiere nombre no vacío. Si el diplomado pertenece a otro guardado, se conserva y avisa: no se traslada silenciosamente a grupo inexistente. Elegir destino guardado desde celda confirma únicamente esa fila, independiente de otras selecciones. Servicios vigentes revalidan permisos, nombres y pertenencia al persistir.
+
 ## Último grupo seleccionado y navegación sin reiniciar (2026-11-04)
 
 Crear/Editar comparten ventana estable, con borradores separados por vista/grupo en memoria. Crear no vacía la elección de Editar. Preferencias locales por usuario/lista guardan último grupo, pestaña y estado abierto/cerrado; F5 vuelve a los datos guardados autorizados, no a hechos financieros copiados del navegador. Un ID ya no disponible se descarta. Cerrar evita reapertura automática al recargar; abrir manualmente recupera la elección.

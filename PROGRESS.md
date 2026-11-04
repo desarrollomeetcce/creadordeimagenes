@@ -1,5 +1,13 @@
 # Avance por fases · continuación del desarrollo
 
+## Crear grupo permanece abierto y asigna al grupo en preparación (2026-11-04)
+
+Se retiran setGroupEditor(null) y preferencia de cierre de onSaved. Crear/Guardar mantiene el mismo diálogo y expansión, selecciona el grupo recién guardado en Editar y deja seguir trabajando; solo X/Cancelar cierra. Guardar actualiza revisión base local, y tras crear se limpia únicamente el borrador de Crear y se renueva su requestId para el siguiente grupo. Ref pending impide doble envío, committed evita repetir una escritura confirmada si falló la recarga de metadatos. Mensaje diferencia grupo guardado de fallo posterior de vista. F5 recupera grupo/pestaña abierta.
+
+Asignar a grupo y la celda Grupo incluyen nombre del borrador como «En preparación», separado de Guardados. Elegirlo añade IDs al borrador actual sin API, sin crear grupos vacíos y sin asignar ID persistente falso; renombrar el borrador cambia la etiqueta. Nombre vacío no ofrece ese destino. Puede funcionar sin grupos guardados. Un integrante de otro grupo se rechaza localmente con aviso, conservando asignación; el servidor sigue revalidando al guardar. Selección de un destino guardado en una fila abre confirmación para solo esa fila; Cancelar no altera datos.
+
+287 unitarios, typecheck/build y6 verificaciones Chromium correctas: borrador en fila/masivo sin POST; renombre y protección de pertenencia; Crear sin cerrar/doble clic único; Guardar sin cerrar/F5; segundo grupo con borrador limpio/requestId diferente/móvil; fallo503 de ambas lecturas permitidas después de CREATE mantiene ventana y bloquea repetición, F5 recupera registro. Verificación DB solo3 grupos nuevos +1 edición solicitados, otros grupos y catálogo/alias/países/finanzas/estados/campañas intactos; cleanup exclusivo V1/G10.25. Sin cambios de servicios/esquema ni operaciones sobre grupos reales de Hostinger.
+
 ## Grupos: conservar selección de documento y agilizar pestañas (2026-11-04)
 
 Se corrige el borrado de groupEditor.id al pulsar Crear y la key que desmontaba el editor por id/tab. El grupo elegido permanece seleccionado al regresar a Editar; elegir otro lo sustituye explícitamente. Preferencias de usuario/lista recuerdan último ID, pestaña y ventana abierta: F5 restaura desde directorio autorizado, ignora IDs ya no disponibles y respeta cierre explícito. La tabla y el diálogo conservan identidad DOM entre cambios de vistas válidas; nombre, selección, filtros y borradores de Crear/cada grupo quedan separados en memoria mediante useGroupDraftState. No se guardan hechos ni borradores financieros en localStorage.

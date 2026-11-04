@@ -1841,8 +1841,9 @@ export function InventoryCatalog({
             setLastGroupId(id);
             await reloadGroups();
             await Promise.all([onChanged(), reloadCategories()]);
-            setGroupWasOpen("no");
-            setGroupEditor(null);
+            setGroupWasOpen("yes");
+            setLastGroupTab("edit");
+            setGroupEditor(previous=>({...previous,id,names:[],tab:"edit"}));
             setSelected([]);
             setMessage("Grupo guardado.");
           }}

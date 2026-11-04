@@ -1,5 +1,11 @@
 ## Eliminar desde grupos y una sola barra inferior · 2026-11-04
 
+## Mantener ventana al guardar y asignar borrador actual · 2026-11-04
+
+- npm test287, typecheck/build correctos.6 recorridos Chromium: asignar al grupo «En preparación» desde celda y masivo conserva borrador sin POST; etiqueta sigue nombre y un miembro de otro grupo no se roba, Cancelar destino guardado inocuo; doble clic Crear envía uno, mantiene identidad DOM/expansión y muestra grupo guardado; Guardar posterior mantiene ventana/revisión y F5; segundo grupo obtiene requestId distinto/borrador limpio y móvil cabe; fallo de recarga después de CREATE confirmado conserva ventana/recibo e impide otra escritura, F5 muestra grupo y solo Cancelar explícito cierra.
+- La prueba de fallo intercepta ambos intentos GET locales permitidos; el primer runner interceptaba solo uno y la lectura se recuperaba correctamente. Ejecución final completa6 PASS. Backend QA real conserva exactamente3 grupos nuevos y1 edición; no duplicados, catálogo5 y grupos previos sin cambios, snapshots PE/BO/HN/asesores/eventos/campaña+gasto idénticos. Cleanup verifica base V1/G10.25 antes de retirar solo fixtures.
+- Evidencia /workspace/work/group-stay-{unit,types,build,browser,cleanup}.txt y group-stay-mobile.png. Solo cambios de interfaz/estado local, sin migración de esquema ni cambios Graph/servicios. Hostinger no autenticado ni datos reales alterados.
+
 ## Recordar grupo/F5 y optimizar cambio de pestaña · 2026-11-04
 
 - npm test287, typecheck y build correctos.6 verificaciones Chromium nuevas: borradores Crear/Editar conservan nombre/búsqueda/selección; elegir otro grupo lo recuerda sin remonte ni requests; F5 restaura ventana abierta/pestaña/grupo y cierre permanece cerrado; ID no disponible se descarta contra directorio autorizado; ADD_MEMBERS desde Crear refresca editor limpio; borrador sucio permanece local y Guardar obsoleto409 conserva incorporaciones guardadas. Snapshot DB confirma miembros3/revisión3 y otro grupo intacto, alias/países/ventas/costos/estados/eventos/campañas/asesores/métricas sin cambios fuera de las2 incorporaciones QA aprobadas.

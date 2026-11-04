@@ -68,9 +68,11 @@ export function InventoryGroupEditor({
     kind: "assign" | "archive" | "rename" | "menu" | "move";
     source?: TrialGroup;
     item?: TrialItem;
+    itemIds?: string[];
     group: TrialGroup | null;
   } | null>(null);
   const groupActionPending = useRef(false);
+  const [assignDraft, setAssignDraft] = useState(false);
   const [renameValue, setRenameValue] = useState("");
   const [notice, setNotice] = useState("");
   const [managementTab, setManagementTab] = useState<"create" | "edit" | "top">(
@@ -166,7 +168,8 @@ export function InventoryGroupEditor({
       onReset={() => resize(columnSpecs[index].key)}
     />
   );
-  const [requestId] = useState(() => crypto.randomUUID());
+  const [requestId, setRequestId] = useState(() => crypto.randomUUID());
+  const savePending = useRef(false);
   const [name, setName] = useGroupDraftState(
     draftKey,
     group?.name ?? "Grupo " + (directory.groups.length + 1),
@@ -217,6 +220,11 @@ export function InventoryGroupEditor({
   const [onlyChecked, setOnlyChecked] = useGroupDraftState(draftKey, false);
   const selectedIds = editing ? checkedIds : ids;
   const setSelectedIds = editing ? setCheckedIds : setIds;
+  const draftAvailable = managementTab === "create" && !group && !!name.trim();
+  const assignmentIds =
+    groupAction?.kind === "assign"
+      ? (groupAction.itemIds ?? selectedIds)
+      : selectedIds;
   const showGroup = (id: string) => {
     if (managementTab === "edit" && id && onChooseGroup) {
       onChooseGroup(id);
@@ -309,6 +317,21 @@ export function InventoryGroupEditor({
       ),
     [groupsByName, group?.id],
   );
+  function assignToDraft(itemIds: string[]) {
+    const assigned = itemIds.flatMap((id) => {
+      const item = catalogById.get(id);
+      const existing = item && groupsByName.get(categoryKey(item.name));
+      return existing ? [existing.name] : [];
+    });
+    if (assigned.length)
+      throw new Error(
+        `Un diplomado ya pertenece a ${[...new Set(assigned)].join(", ")}. Para trasladarlo, guarda primero el grupo nuevo y cambia su grupo desde la fila.`,
+      );
+    setIds((current) => [...new Set([...current, ...itemIds])]);
+    setNotice(
+      `Asignado al borrador «${name.trim()}». Se guardará al pulsar Crear grupo.`,
+    );
+  }
   const primaryOptions = useMemo(
     () =>
       [...new Set(catalog.flatMap((i) => i.primaryNames))].sort((a, b) =>
@@ -429,6 +452,24 @@ export function InventoryGroupEditor({
     setError("");
   }
   async function applyGroupAction() {
+    if (groupAction?.kind === "assign" && assignDraft) {
+      try {
+        if (!draftAvailable)
+          throw new Error("Escribe el nombre del grupo que estás preparando.");
+        assignToDraft(assignmentIds);
+        setGroupAction(null);
+        setAssignDraft(false);
+        setError("");
+      } catch (error) {
+        setError(
+          error instanceof Error
+            ? error.message
+            : "No se pudo asignar al borrador.",
+        );
+      }
+      return;
+    }
+
     if (
       !groupAction?.group ||
       groupAction.kind === "menu" ||
@@ -467,13 +508,17 @@ export function InventoryGroupEditor({
               groupId: target.id,
               revision: target.revision,
               ...(groupAction.kind === "assign"
-                ? { itemIds: selectedIds, since: limaToday() }
+                ? { itemIds: assignmentIds, since: limaToday() }
                 : groupAction.kind === "rename"
                   ? { name: renameValue }
                   : {}),
             },
       );
       saved = true;
+      if (groupAction.kind === "assign" && groupAction.itemIds && !editing)
+        setIds((current) =>
+          current.filter((id) => !groupAction.itemIds!.includes(id)),
+        );
       if (groupAction.kind === "move" && groupAction.item) {
         const moved = groupAction.item.id;
         setCheckedIds((current) => current.filter((id) => id !== moved));
@@ -519,8 +564,12 @@ export function InventoryGroupEditor({
     }
   }
   async function save() {
+    if (savePending.current || committed) return;
+    savePending.current = true;
     setBusy(true);
     setError("");
+    let saved = false;
+    const creating = !group;
     try {
       const result: TrialGroup = await api(
         "meta-ads/inventory/trials",
@@ -548,11 +597,42 @@ export function InventoryGroupEditor({
               rules: { zero: 25, perSale: 50 },
             },
       );
+      saved = true;
       setCommitted(true);
+      if (!creating) {
+        setIds(result.members.map((member) => member.itemId));
+        setDraftBase({
+          revision: result.revision,
+          name: result.name,
+          ids: result.members.map((member) => member.itemId),
+        });
+      }
       await onSaved(result.id);
+      if (creating) {
+        setIds([]);
+        setName("Grupo " + (directory.groups.length + 2));
+        setQuery("");
+        setPrimary([]);
+        setSecondary([]);
+        setSheets([]);
+        setOnlySelected(false);
+        setBrowsedGroupId("");
+        setRequestId(crypto.randomUUID());
+      }
+      setCommitted(false);
+      setNotice(
+        creating
+          ? `Grupo «${result.name}» creado. Puedes seguir editándolo o crear otro.`
+          : `Cambios de «${result.name}» guardados.`,
+      );
     } catch (e) {
-      setError(e instanceof Error ? e.message : "No se pudo guardar.");
+      setError(
+        (saved
+          ? "El grupo se guardó. No se pudo actualizar la vista; cierra y vuelve a abrir antes de continuar. "
+          : "") + (e instanceof Error ? e.message : "No se pudo guardar."),
+      );
     } finally {
+      savePending.current = false;
       setBusy(false);
     }
   }
@@ -683,8 +763,11 @@ export function InventoryGroupEditor({
           busy={busy}
           error={error}
           canAccept={
-            !!groupAction.group &&
-            (groupAction.kind !== "assign" || selectedIds.length > 0) &&
+            (!!groupAction.group ||
+              (groupAction.kind === "assign" &&
+                assignDraft &&
+                draftAvailable)) &&
+            (groupAction.kind !== "assign" || assignmentIds.length > 0) &&
             (groupAction.kind !== "rename" || !!renameValue.trim())
           }
           showAccept={groupAction.kind !== "menu"}
@@ -699,29 +782,47 @@ export function InventoryGroupEditor({
           {groupAction.kind === "assign" ? (
             <>
               <p>
-                Agregar {selectedIds.length} diplomados seleccionados sin
+                Agregar {assignmentIds.length} diplomados seleccionados sin
                 retirar los que ya tiene el grupo.
               </p>
               <SheetSearchSelect
                 label="Grupo para asignar seleccionados"
-                value={groupAction.group?.id ?? ""}
+                value={
+                  assignDraft ? "__draft__" : (groupAction.group?.id ?? "")
+                }
                 placeholder="Busca el grupo destino…"
                 disabled={busy}
-                options={directory.groups.map((entry) => ({
-                  value: entry.id,
-                  label: entry.name,
-                }))}
-                onSelect={(id) =>
+                options={[
+                  ...(draftAvailable
+                    ? [
+                        {
+                          value: "__draft__",
+                          label: `${name.trim()} · En preparación`,
+                          group: "En preparación",
+                        },
+                      ]
+                    : []),
+                  ...directory.groups.map((entry) => ({
+                    value: entry.id,
+                    label: entry.name,
+                    group: "Guardados",
+                  })),
+                ]}
+                onSelect={(id) => {
+                  setAssignDraft(id === "__draft__");
                   setGroupAction({
+                    ...groupAction,
                     kind: "assign",
                     group:
                       directory.groups.find((entry) => entry.id === id) ?? null,
-                  })
-                }
+                  });
+                  setError("");
+                }}
               />
               <small>
-                Si un diplomado ya pertenece a otro grupo, se avisará sin
-                cambiar su asignación.
+                {assignDraft
+                  ? "En preparación: la asignación se conserva en este borrador hasta pulsar Crear grupo."
+                  : "Si un diplomado ya pertenece a otro grupo, se avisará sin cambiar su asignación."}
               </small>
             </>
           ) : groupAction.kind === "move" ? (
@@ -1136,11 +1237,12 @@ export function InventoryGroupEditor({
                             busy ||
                             externalBusy ||
                             !directory.canEdit ||
-                            !directory.groups.length ||
+                            (!directory.groups.length && !draftAvailable) ||
                             selectedIds.length > 1500
                           }
                           onClick={() => {
                             setError("");
+                            setAssignDraft(false);
                             setGroupAction({ kind: "assign", group: null });
                           }}
                         >
@@ -1351,31 +1453,67 @@ export function InventoryGroupEditor({
                             <td>{i.primaryNames.join(" · ") || "—"}</td>
                             <td>{i.secondaryNames?.join(" · ") || "—"}</td>
                             <td>
-                              {memberGroup && onGroupsChanged ? (
+                              {onGroupsChanged &&
+                              (memberGroup || draftAvailable) ? (
                                 <SheetSearchSelect
-                                  label={`Cambiar grupo de ${i.name}`}
-                                  value={memberGroup.id}
-                                  placeholder={memberGroup.name}
+                                  label={
+                                    memberGroup
+                                      ? `Cambiar grupo de ${i.name}`
+                                      : `Asignar grupo a ${i.name}`
+                                  }
+                                  value={
+                                    memberGroup?.id ??
+                                    (ids.includes(i.id) ? "__draft__" : "")
+                                  }
+                                  placeholder={
+                                    memberGroup?.name ?? "Asignar grupo…"
+                                  }
                                   disabled={
                                     busy || externalBusy || !directory.canEdit
                                   }
-                                  options={directory.groups.map((entry) => ({
-                                    value: entry.id,
-                                    label: entry.name,
-                                  }))}
+                                  options={[
+                                    ...(draftAvailable
+                                      ? [
+                                          {
+                                            value: "__draft__",
+                                            label: `${name.trim()} · En preparación`,
+                                            group: "En preparación",
+                                          },
+                                        ]
+                                      : []),
+                                    ...directory.groups.map((entry) => ({
+                                      value: entry.id,
+                                      label: entry.name,
+                                      group: "Guardados",
+                                    })),
+                                  ]}
+                                  onError={setError}
                                   onSelect={(targetId) => {
-                                    if (targetId === memberGroup.id) return;
+                                    if (targetId === "__draft__") {
+                                      assignToDraft([i.id]);
+                                      return;
+                                    }
+                                    if (targetId === memberGroup?.id) return;
                                     const target = directory.groups.find(
                                       (entry) => entry.id === targetId,
                                     );
                                     if (target) {
                                       setError("");
-                                      setGroupAction({
-                                        kind: "move",
-                                        group: target,
-                                        source: memberGroup,
-                                        item: i,
-                                      });
+                                      setAssignDraft(false);
+                                      setGroupAction(
+                                        memberGroup
+                                          ? {
+                                              kind: "move",
+                                              group: target,
+                                              source: memberGroup,
+                                              item: i,
+                                            }
+                                          : {
+                                              kind: "assign",
+                                              group: target,
+                                              itemIds: [i.id],
+                                            },
+                                      );
                                     }
                                   }}
                                 />
