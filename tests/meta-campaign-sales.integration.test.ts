@@ -601,9 +601,16 @@ test("Campañas: períodos de ventas locales, fuentes canónicas acotadas y anun
         assert(!("summary" in r));
         for (const o of r.items as any[]) {
           assert(o.periods.custom.sales);
-          assert(o.periods["7"].sales);
+          assert(o.periods["14"].sales);
           assert.equal(o.periods.lifetime.sales, undefined);
           assert.equal(o.periods["30"].sales, undefined);
+        }
+        q.set("analysisPeriod", "7");
+        const seven = await dashboard(viewer, q);
+        for (const o of seven.items as any[]) {
+          assert(o.periods["7"].sales);
+          assert.equal(o.periods["7"].since, since7);
+          assert(o.periods["14"].sales);
         }
         q.set("objectSelection", ids.foreign);
         await assert.rejects(dashboard(viewer, q), /no autorizada/i);

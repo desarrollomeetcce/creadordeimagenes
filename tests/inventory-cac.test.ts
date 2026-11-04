@@ -145,20 +145,19 @@ test("CAC thresholds use daily PEN equivalents while retaining display currency;
   );
 });
 
-test("Meta inventory CAC uses known positive partial sales provisionally and keeps absent/zero partial pending", () => {
+test("Meta inventory CAC keeps CAC absent without sales but flags high spend provisionally", () => {
   const positive = report({ "2026-10-30": day(2, null, 200) });
   assert.equal(positive.meta.assessment.status, "CRITICAL");
   assert.equal(positive.meta.provisional, true);
   assert.equal(positive.meta.cac, 100);
   assert.equal(positive.budget.assessment.status, "PENDING");
-  assert.equal(
-    report({ "2026-10-30": day(null, null, 200) }).meta.assessment.status,
-    "PENDING",
-  );
-  assert.equal(
-    report({ "2026-10-30": day(0, null, 200) }).meta.assessment.status,
-    "PENDING",
-  );
+  for (const sales of [null, 0]) {
+    const result = report({ "2026-10-30": day(sales, null, 200) });
+    assert.equal(result.meta.assessment.status, "CRITICAL");
+    assert.equal(result.meta.cac, null);
+    assert.equal(result.meta.provisional, true);
+    assert.equal(result.sales, sales);
+  }
 });
 
 test("Partial Meta CAC cannot classify a mix of converted and missing-FX spend", () => {
@@ -169,4 +168,16 @@ test("Partial Meta CAC cannot classify a mix of converted and missing-FX spend",
   assert.equal(r.meta.partial, true);
   assert.equal(r.meta.assessment.status, "PENDING");
   assert.equal(r.meta.provisional, false);
+});
+
+test("zero-sales risk escalates with verified spend without inventing CAC or sales", () => {
+  for (const sales of [null, 0]) {
+    assert.equal(cacAssessment(sales, 82.77, false, undefined, true).status, "CRITICAL");
+    assert.equal(cacAssessment(sales, 50, false, undefined, true).status, "SEVERE");
+    assert.equal(cacAssessment(sales, 25, false, undefined, true).status, "ALERT");
+    assert.equal(cacAssessment(sales, 82.77, false, undefined, true).value, null);
+  }
+  assert.equal(cacAssessment(null, 24.99, false, undefined, true).status, "PENDING");
+  assert.equal(cacAssessment(null, 82.77, false).status, "PENDING");
+  assert.equal(cacAssessment(0, 82.77, true).status, "CRITICAL");
 });

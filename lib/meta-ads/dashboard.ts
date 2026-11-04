@@ -109,7 +109,7 @@ export async function dashboard(actor: Actor, params: URLSearchParams) {
   }
   const analysisPeriod = params.get("analysisPeriod") ?? "today";
   demand(
-    ["today", "7", "15", "30", "lifetime", "custom"].includes(analysisPeriod),
+    ["today", "7", "14", "15", "30", "lifetime", "custom"].includes(analysisPeriod),
     "Periodo de análisis inválido.",
   );
   if (summarySelection.length) {
@@ -335,6 +335,7 @@ export async function dashboard(actor: Actor, params: URLSearchParams) {
           ranges: {
             today: { since: today, until: today },
             "7": { since: shiftDay(today, -6), until: today },
+            "14": { since: shiftDay(today, -13), until: today },
             "15": { since: shiftDay(today, -14), until: today },
             "30": { since: shiftDay(today, -29), until: today },
             previous7: {
@@ -403,6 +404,7 @@ export async function dashboard(actor: Actor, params: URLSearchParams) {
       [
         "today",
         "7",
+        "14",
         "15",
         "30",
         "lifetime",
@@ -765,13 +767,13 @@ export async function dashboard(actor: Actor, params: URLSearchParams) {
   // Selection comparisons need only the chosen range plus the recent evaluation window.
   // Lifetime is fetched only when explicitly requested; the normal dashboard keeps all comparatives.
   const selectionSalesKeys =
-    objectSelection.length && !summary ? new Set([analysisPeriod, "7"]) : null;
+    objectSelection.length && !summary ? new Set([analysisPeriod, "14"]) : null;
   const selectionSalesSince =
     selectionSalesKeys && analysisPeriod !== "lifetime"
       ? pageItems
           .flatMap((o) => [
             o.periods[analysisPeriod]?.since,
-            o.periods["7"]?.since,
+            o.periods["14"]?.since,
           ])
           .filter((d): d is string => !!d)
           .sort()[0]

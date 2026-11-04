@@ -22,10 +22,10 @@ export function campaignEvaluationWindow<T extends Range>(
     isRecentCampaignPeriod(chosen, today)
   )
     return { key: selected, period: chosen, label: "Por el período" };
-  const recent = periods["7"];
+  const recent = periods["14"];
   return {
-    key: "7",
+    key: "14",
     period: recent && isRecentCampaignPeriod(recent, today) ? recent : null,
-    label: "Últimos 7 días",
+    label: "Últimos 14 días",
   };
 }

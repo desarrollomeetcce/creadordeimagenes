@@ -5924,7 +5924,13 @@ test("CAC de campañas: estados de inventario, parcial explícito, cero, permiso
     1,
     true,
   );
-  assert.equal(missing.status, "PENDING");
+  assert.equal(missing.status, "ALERT");
+  assert.equal(missing.provisional, true);
+  const risk = calc([], e.day, e.day, 82.77, 49, true, 1, true);
+  assert.equal(risk.status, "CRITICAL");
+  assert.equal(risk.sales, null);
+  assert.equal(risk.cac, null);
+  assert.equal(risk.provisional, true);
   assert.equal(calc([], e.day, e.day, 30, 30, true, 1, true).cac, null);
   assert.equal(
     calc([e], e.day, e.day, 30, 30, false, 1, true).status,
@@ -5940,19 +5946,22 @@ test("Estado reciente de campañas: fechas,14d elegidos y sin usar histórico co
     fourteen = { since: "2026-10-21", until: today },
     old = { since: "2025-11-01", until: "2025-11-03" };
   const periods = {
-    "7": seven,
     custom: fourteen,
+    "7": seven,
+    "14": fourteen,
     lifetime: { since: "2020-01-01", until: today },
     old,
   };
   assert.equal(select(periods, "custom", today).period, fourteen);
+  assert.equal(select(periods, "7", today).period, seven);
+  assert.equal(select(periods, "today", today).key, "14");
   assert.equal(
     select(
       { ...periods, today: { since: today, until: today } },
       "today",
       today,
     ).period,
-    seven,
+    fourteen,
   );
   assert.equal(
     select(
@@ -5960,10 +5969,10 @@ test("Estado reciente de campañas: fechas,14d elegidos y sin usar histórico co
       "custom",
       today,
     ).period,
-    seven,
+    fourteen,
   );
-  assert.equal(select(periods, "old", today).period, seven);
-  assert.equal(select(periods, "lifetime", today).period, seven);
+  assert.equal(select(periods, "old", today).period, fourteen);
+  assert.equal(select(periods, "lifetime", today).period, fourteen);
   assert.equal(select({ old }, "old", today).period, null);
   assert.equal(select({ "7": old }, "7", today).period, null);
   assert(recent(seven, today));

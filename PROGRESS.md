@@ -1,3 +1,11 @@
+## Evaluación:14 días predeterminados y riesgo sin ventas · 2026-11-04
+
+Por aclaración posterior del usuario, evaluación reciente usa14 días inclusivos por defecto;7 días explícitos permanece independiente. Meta incorpora agregado14 en la misma consulta agrupada local, sin Graph ni consultas por campaña. Caché cambia versión una vez, también conserva agregados vacíos válidos; selección carga solo período elegido+14. Ventanas antiguas no sustituyen estado actual.
+
+Gasto Meta acreditado en PEN sin ventas anotadas permite alerta provisional por gasto: desde zero(default25) Revisar, desde severe(default50) Grave y critical(default65) Crítico; cero confirmado escala también. CAC y ventas ausentes permanecen null, no se fabrican ventas0 ni CAC infinito. Ventas positivas mantienen gasto/ventas y umbrales existentes. Moneda incompatible, falta de FX, campañas sin vincular/compartidas o gasto no disponible conservan protecciones. Resumen CAC de inventario aplica riesgo con gasto convertido conocido, incluso sin presupuesto manual. No cambios de activación/publicidad/ventas.
+
+204 pruebas unitarias específicas correctas; integración CAC/hojas y campañas con pruebas de permisos, separación de países/fuentes, orden antes de paginar y períodos14/7; typecheck/build comprobados antes de publicación. Calendario específico Evaluar por fecha y unificación visual de fuente entre hojas/inventario siguen pendientes: este bloque no acredita que estén implementados ni datos reales Hostinger corregidos. Todo código previamente listo pendiente queda incluido; cambios anteriores de grupos ya estaban publicados en2f685c8. Sin verificación autenticada del dominio generator.agenciamagneto.org.
+
 ## Grupos: estados por país, uso en lote y orden de columnas · 2026-11-04
 
 Editar grupos muestra bajo Detalle el estado operativo de cada diplomado/país: Activado, Desactivado, Por hacer campaña o Por desactivar. Se calcula con estados, filas y tareas de las lecturas agrupadas existentes, respetando países lógicos de cada hoja; sin registro se indica Sin registro y fuentes contradictorias Varios estados. No se deduce activación de la marca de uso, ni se añaden consultas por celda. Crear/Top conservan su presentación.

@@ -117,8 +117,7 @@ export function inventoryCacSummary(input: {
     provisional:
       meta &&
       (partial || salesPartial) &&
-      sales !== null &&
-      sales > 0 &&
+      (sales === null || sales >= 0) &&
       pen !== null &&
       !metaFxPending,
     assessment: cacAssessment(
@@ -127,6 +126,7 @@ export function inventoryCacSummary(input: {
       (!partial && !salesPartial) ||
         (meta && !metaFxPending && sales !== null && sales > 0 && pen !== null),
       rules,
+      meta && !metaFxPending && pen !== null,
     ),
   });
   return {

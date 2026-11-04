@@ -52,22 +52,40 @@ export function cacAssessment(
   amount: number | null,
   complete: boolean,
   rules: CacRules = defaultCacRules(),
+  spendRiskWithoutSales = false,
 ) {
   const value =
     sales !== null && sales > 0 && amount !== null ? amount / sales : null;
+  const noSalesRisk: CacStatus | null =
+    spendRiskWithoutSales &&
+    (sales === null || sales === 0) &&
+    amount !== null &&
+    Number.isFinite(amount) &&
+    amount >= rules.zero
+      ? amount >= rules.critical
+        ? "CRITICAL"
+        : amount >= rules.severe
+          ? "SEVERE"
+          : "ALERT"
+      : null;
   const status: CacStatus =
-    !complete || sales === null || amount === null
+    noSalesRisk ??
+    (!complete || sales === null || amount === null
       ? "PENDING"
       : sales === 0
-        ? amount >= rules.zero
-          ? "ALERT"
-          : "TESTING"
+        ? amount >= rules.critical
+          ? "CRITICAL"
+          : amount >= rules.severe
+            ? "SEVERE"
+            : amount >= rules.zero
+              ? "ALERT"
+              : "TESTING"
         : value! >= rules.critical
           ? "CRITICAL"
           : value! >= rules.severe
             ? "SEVERE"
             : value! >= rules.review
               ? "ALERT"
-              : "WITHIN";
+              : "WITHIN");
   return { value, limit: rules.review, usage: value, status };
 }

@@ -47,6 +47,10 @@ export function campaignSalesPeriod(
     spend,
     complete && (summary.total !== 0 || !summary.partial),
     options.rules,
+    linked &&
+      sharedCampaigns <= 1 &&
+      available &&
+      (options.currency ?? "PEN") === "PEN",
   );
   const rules = options.rules ?? defaultCacRules();
   const currency = options.currency ?? "PEN";
@@ -66,7 +70,10 @@ export function campaignSalesPeriod(
                 ? "Provisional: faltan días de ventas"
                 : "";
   return {
-    provisional: complete && summary.partial,
+    provisional:
+      (complete && summary.partial) ||
+      (assessment.status !== "PENDING" &&
+        (summary.total === null || summary.partial)),
     status: currency === "PEN" ? assessment.status : "PENDING",
     rulesCurrency: "PEN",
     rules,
