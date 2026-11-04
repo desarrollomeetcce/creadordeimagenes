@@ -1,3 +1,7 @@
+## Cabecera compacta de grupos · 2026-11-04
+
+npm test286 correctos, typecheck/build correctos y7 controles Chromium. Se confirma nav dentro de header sin h2 visible duplicado, fila de navegación menor45px, búsqueda en franja verde y sin espacio de chips vacíos. Se conservan las6 regresiones de controles/selección/guardado/categorías/uso/móvil del bloque anterior, sin GET al buscar. Evidencia /workspace/work/group-spacing-{unit,types,build,browser,cleanup}.txt y group-spacing-desktop/mobile.png. Cleanup conserva V1/G10.25/asesor/vínculo/publicidad. Hostinger no verificado.
+
 ## Grupos: ampliaciones, encabezados y chips · 2026-11-04
 
 - npm test:286 correctos; typecheck y build correctos. No cambia persistencia/rutas/esquema; se usa el guardado existente.

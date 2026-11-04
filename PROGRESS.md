@@ -1,5 +1,11 @@
 # Avance por fases · continuación del desarrollo
 
+## Grupos: cabecera única y búsqueda en franja verde (2026-11-04)
+
+Se retira el h2 visible repetido Crear/Editar/Top y se sube navegación al header, junto a ampliar ventana/X. Dialog conserva aria-label y header arrastrable. Buscar inventario pasa a franja verde como cuadro independiente junto al nombre, Mis grupos y selector. Chips conservan estado, eliminación individual y selección entre búsquedas, pero no reservan fila cuando están vacíos. CSS explícito flex-row/margen cero evita que nav global vertical consuma altura; móvil adapta filas.
+
+286 unitarios, typecheck/build y7 controles Chromium correctos. Nuevo control comprueba ausencia de h2 duplicado, nav en header menor45px, buscador dentro de franja y ninguna fila vacía. Regresiones verifican tabla/ventana independientes, selección entre búsquedas sin GET, categorías/uso con drag/max/X, guardado/reapertura y móvil. Limpieza valida V1/G10.25/asesor/alias/estado originales antes de borrar fixture. Sin cambios de API ni consultas nuevas; Hostinger no autenticado.
+
 ## Grupos: controles independientes y selección visible entre búsquedas (2026-11-04)
 
 Se separan tableExpanded y expanded: Maximizar/Restaurar tabla en encabezado Diplomado pliega controles secundarios; Maximizar/Restaurar ventana está junto a X y cambia tamaño del cuadro. Se pueden usar juntos o por separado, con mismo DOM, anchos y selección. Nombre del nuevo grupo/editado aparece antes de Mis grupos en misma franja y permanece visible al ampliar tabla. Buscar inventario se mantiene independiente por corrección posterior del usuario, con chips pequeños a su lado/debajo; X retira solo ese diplomado, las consultas se pueden borrar/cambiar sin perder otros seleccionados y el catálogo se indexa para resolver nombres sin búsquedas repetidas por chip.

@@ -472,3 +472,8 @@ Maximizar tabla en grupos muestra búsqueda/resumen y cuerpo amplio con13px, ple
 ## Selección de grupos y controles separados (2026-11-04)
 
 Estado local de ampliación de tabla independiente del tamaño de ventana. Tabla se controla junto a Diplomado; ventana junto a X. Franja única: nombre editable del grupo antes de Mis grupos y selector de guardados, visible también en foco de tabla. Buscar inventario separado y chips de selección con eliminación individual; limpiar consulta no limpia selección. Categorías desde encabezados usan diálogo compacto y buscable, drag/max/restaurar/X/Cancelar; aplicar cambia lista local, no asignaciones. Cuadro de uso conserva sus propias acciones de ventana. Operaciones de presentación no hacen GET ni mutan datos; guardar mantiene API, exclusividad de miembros, CAS e historial existentes.
+
+
+### Ajuste de altura de grupos (2026-11-04)
+
+Navegación ocupa header junto a controles de ventana, sin título visible redundante. Búsqueda independiente dentro de franja verde de nombre/Mis grupos; los chips aparecen debajo solo con selección. Estado, dos ampliaciones, anchos y guardado permanecen; no consultas por modificar distribución o buscar.

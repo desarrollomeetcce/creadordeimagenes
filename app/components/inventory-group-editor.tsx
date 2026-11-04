@@ -294,14 +294,43 @@ export function InventoryGroupEditor({
         if (!busy && !externalBusy) onClose();
       }}
     >
-      <header>
-        <h2>
-          {managementTab === "top"
-            ? "Top · evaluar y reemplazar"
-            : managementTab === "edit"
-              ? "Editar grupo"
-              : "Crear grupo"}
-        </h2>
+      <header className="inventory-group-header">
+        {(topContent || onChooseGroup) && (
+          <nav
+            className="inventory-management-tabs"
+            aria-label="Gestionar inventario"
+          >
+            {topContent && (
+              <button
+                type="button"
+                aria-pressed={managementTab === "top"}
+                disabled={busy || externalBusy}
+                onClick={() => setManagementTab("top")}
+              >
+                Top · evaluar y reemplazar
+              </button>
+            )}
+            <button
+              type="button"
+              aria-pressed={managementTab === "create"}
+              disabled={busy || externalBusy || !directory.canEdit}
+              onClick={() => {
+                if (group && onChooseGroup) onChooseGroup("");
+                else setManagementTab("create");
+              }}
+            >
+              Crear
+            </button>
+            <button
+              type="button"
+              aria-pressed={managementTab === "edit"}
+              disabled={busy || externalBusy || !directory.canEdit}
+              onClick={() => setManagementTab("edit")}
+            >
+              Grupos guardados
+            </button>
+          </nav>
+        )}
         <div className="inventory-group-window-actions">
           <button
             type="button"
@@ -373,42 +402,6 @@ export function InventoryGroupEditor({
           onClose={() => setObservations("")}
         />
       )}
-      {(topContent || onChooseGroup) && (
-        <nav
-          className="inventory-management-tabs"
-          aria-label="Gestionar inventario"
-        >
-          {topContent && (
-            <button
-              type="button"
-              aria-pressed={managementTab === "top"}
-              disabled={busy || externalBusy}
-              onClick={() => setManagementTab("top")}
-            >
-              Top · evaluar y reemplazar
-            </button>
-          )}
-          <button
-            type="button"
-            aria-pressed={managementTab === "create"}
-            disabled={busy || externalBusy || !directory.canEdit}
-            onClick={() => {
-              if (group && onChooseGroup) onChooseGroup("");
-              else setManagementTab("create");
-            }}
-          >
-            Crear
-          </button>
-          <button
-            type="button"
-            aria-pressed={managementTab === "edit"}
-            disabled={busy || externalBusy || !directory.canEdit}
-            onClick={() => setManagementTab("edit")}
-          >
-            Grupos guardados
-          </button>
-        </nav>
-      )}
       {managementTab === "top" ? (
         topContent
       ) : (
@@ -440,6 +433,18 @@ export function InventoryGroupEditor({
             ))}
             {!directory.groups.length && (
               <small>Aún no hay grupos guardados.</small>
+            )}
+            {(managementTab !== "edit" || group) && (
+              <label className="inventory-group-inline-search">
+                Buscar inventario
+                <input
+                  type="search"
+                  aria-label="Buscar inventario para grupo"
+                  placeholder="Nombre del diplomado…"
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                />
+              </label>
             )}
             {onChooseGroup && !!directory.groups.length && (
               <label>
@@ -476,58 +481,55 @@ export function InventoryGroupEditor({
           )}
           {(managementTab !== "edit" || group) && (
             <>
-              <div className="inventory-group-search-section">
-                <label>
-                  Buscar inventario
-                  <input
-                    type="search"
-                    aria-label="Buscar inventario para grupo"
-                    placeholder="Nombre del diplomado…"
-                    value={query}
-                    onChange={(e) => setQuery(e.target.value)}
-                  />
-                </label>
-                <div
-                  className="inventory-group-selected"
-                  aria-label="Diplomados seleccionados para el grupo"
-                >
-                  <strong>{ids.length} seleccionados</strong>
-                  <div className="inventory-group-selected-chips">
-                    {ids.map((id) => (
-                      <span key={id} className="inventory-group-selection-chip">
+              {ids.length > 0 && (
+                <div className="inventory-group-search-section">
+                  <div
+                    className="inventory-group-selected"
+                    aria-label="Diplomados seleccionados para el grupo"
+                  >
+                    <strong>{ids.length} seleccionados</strong>
+                    <div className="inventory-group-selected-chips">
+                      {ids.map((id) => (
                         <span
-                          title={
-                            catalogById.get(id)?.name ??
-                            "Diplomado no disponible"
-                          }
+                          key={id}
+                          className="inventory-group-selection-chip"
                         >
-                          {catalogById.get(id)?.name ??
-                            "Diplomado no disponible"}
+                          <span
+                            title={
+                              catalogById.get(id)?.name ??
+                              "Diplomado no disponible"
+                            }
+                          >
+                            {catalogById.get(id)?.name ??
+                              "Diplomado no disponible"}
+                          </span>
+                          <button
+                            type="button"
+                            disabled={busy || externalBusy}
+                            aria-label={
+                              "Quitar de selección " +
+                              (catalogById.get(id)?.name ?? "diplomado")
+                            }
+                            onClick={() => {
+                              setIds((current) =>
+                                current.filter((value) => value !== id),
+                              );
+                              if (replacing === id) setReplacing(null);
+                            }}
+                          >
+                            ×
+                          </button>
                         </span>
-                        <button
-                          type="button"
-                          disabled={busy || externalBusy}
-                          aria-label={
-                            "Quitar de selección " +
-                            (catalogById.get(id)?.name ?? "diplomado")
-                          }
-                          onClick={() => {
-                            setIds((current) =>
-                              current.filter((value) => value !== id),
-                            );
-                            if (replacing === id) setReplacing(null);
-                          }}
-                        >
-                          ×
-                        </button>
-                      </span>
-                    ))}
-                    {!ids.length && (
-                      <small>Los diplomados que marques aparecerán aquí.</small>
-                    )}
+                      ))}
+                      {!ids.length && (
+                        <small>
+                          Los diplomados que marques aparecerán aquí.
+                        </small>
+                      )}
+                    </div>
                   </div>
                 </div>
-              </div>
+              )}
               <div className="row inventory-group-proposal">
                 <label>
                   Cantidad
@@ -670,7 +672,9 @@ export function InventoryGroupEditor({
                             setShowExpandedControls(false);
                           }}
                         >
-                          {tableExpanded ? "Restaurar tabla" : "Maximizar tabla"}
+                          {tableExpanded
+                            ? "Restaurar tabla"
+                            : "Maximizar tabla"}
                         </button>
                         {handle(0)}
                       </th>
