@@ -1,4 +1,6 @@
 "use client";
+import { InventoryCountryCorrection } from "./inventory-country-correction";
+import { inventorySheetCountryLabel } from "../../lib/meta-ads/inventory-sheet-column-policy";
 import { InventoryMetaSync } from "./inventory-meta-sync";
 import { compareInventoryEvaluation } from "../../lib/meta-ads/inventory-evaluation-order";
 import {
@@ -361,6 +363,9 @@ export function InventoryCatalog({
   const showParameter = (key: string) => parameters.includes(key);
   const [sheetDirectory, setSheetDirectory] =
     useState<InventorySheetActivationDirectory | null>(null);
+  const [countryCorrection, setCountryCorrection] = useState<
+    { aliasId: string; country: string }[] | null
+  >(null);
   const [sheetAddOpen, setSheetAddOpen] = useState(false);
   const [factorOpen, setFactorOpen] = useState(false);
   const [factorLoading, setFactorLoading] = useState(false);
@@ -411,9 +416,8 @@ export function InventoryCatalog({
       (table) => table.id === id.split(":")[0],
     );
     const label = table?.name ?? "Hoja";
-    return column?.country &&
-      categoryKey(label) !== categoryKey(countryName(column.country))
-      ? label + " · " + countryName(column.country)
+    return column?.country
+      ? inventorySheetCountryLabel(table ?? { name: label }, column.country)
       : label;
   };
   const countryCodes = showParameter("countries")
@@ -1956,6 +1960,18 @@ export function InventoryCatalog({
           {warning || rowsLayout.warning}
         </p>
       )}
+      {countryCorrection && (
+        <InventoryCountryCorrection
+          listId={listId}
+          items={countryCorrection}
+          onClose={() => setCountryCorrection(null)}
+          onSaved={async () => {
+            await onChanged();
+            await reloadCategories();
+            await reloadSheetDirectory();
+          }}
+        />
+      )}
       {!!sheetDirectory?.countryIssues?.length && (
         <details className="inventory-country-review">
           <summary>
@@ -1966,6 +1982,22 @@ export function InventoryCatalog({
             Estos registros están guardados en una hoja con otro país. Se
             conservan íntegros, sin mover ni cambiar ventas.
           </p>
+          {sheetDirectory.canCorrectCountry && (
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() =>
+                setCountryCorrection(
+                  sheetDirectory.countryIssues!.map((i) => ({
+                    aliasId: i.aliasId,
+                    country: i.country,
+                  })),
+                )
+              }
+            >
+              Corregir asociaciones de país
+            </button>
+          )}
           <ul>
             {sheetDirectory.countryIssues.map((issue) => (
               <li key={issue.aliasId + ":" + issue.country}>
@@ -1986,6 +2018,19 @@ export function InventoryCatalog({
                 >
                   Ver datos e histórico
                 </button>
+                {sheetDirectory.canCorrectCountry && (
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() =>
+                      setCountryCorrection([
+                        { aliasId: issue.aliasId, country: issue.country },
+                      ])
+                    }
+                  >
+                    Corregir asociación
+                  </button>
+                )}
               </li>
             ))}
           </ul>

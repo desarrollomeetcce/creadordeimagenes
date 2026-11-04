@@ -1,5 +1,12 @@
 # Pruebas y evidencia
 
+## Corrección explícita de asociaciones de país (2026-11-03)
+
+Integración dedicada inventory-country-correction.integration.test.ts: preview sin escrituras y token estable, traslado de IDs con días/anotaciones/aprobaciones/activación/eventos originales, gasto Meta inalterado y lectura canónica V posterior, otro país y totales generales conservados; reintento idempotente, rechazo de histórico de destino con datos, CAS ante edición concurrente, permisos actuales/inventario ajeno, lote mixto sin reactivar ni destapar filas y creación de hoja de país ausente. Etiquetas PERU/Perú/MEXICO/BOLIVIA/BOLVIA y hoja genérica/cruzada. Todos los accesos externos bloqueados.
+
+Chromium contra servidor de producción local y BD QA exclusiva: botón por fila, vista previa y cancelación sin corrección; lote muestra conflicto y aplica solo uno, aviso corregido desaparece tras recarga, pantalla390px y etiqueta de país única. Cleanup verifica V3 en fila movida y V4/V9 conflictivos intactos, borra solo fixture etiquetado. Pruebas sintéticas no prueban corrección de registros reales en Hostinger.
+
+
 ## Verificación · tamaño de página y actualización desde DB (2026-11-03)
 
 286 unitarios,48 integraciones y9 regresiones de cuentas compartidas, typecheck/build. Preferencia válida1–100 y default25; servidor devuelve1/5/35/65/100, última página23 de123 y límite100; cada nivel tiene conteo independiente. sync-status sin señal no agrega el campo ni consulta su versión; con señal detecta cambios guardados y rechaza IDs no autorizados. Dashboard invalida agregado al cambiar un hecho reciente sin cambiar syncState y devuelve999 correcto. Ninguna prueba de este bloque consulta Graph.

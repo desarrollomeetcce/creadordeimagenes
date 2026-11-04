@@ -1,5 +1,12 @@
 # Meta Ads: consulta y análisis
 
+## Corregir asociación de país (2026-11-03)
+
+En Lista de Diplomados → Asociaciones de país por revisar se ofrece Corregir asociación por fila y Corregir asociaciones de país para el lote. Solo OWNER actual. La revisión muestra diplomado, país guardado, origen y destino. Confirmar traslada los compatibles a su hoja del mismo país; si no existe se crea. No cambia el país ni presupone que el nombre visible de una hoja renombrada sea su identidad.
+
+Conserva identidades de filas/estados y todos sus días/aprobaciones/eventos; Meta continúa vinculado por alias/país, sin alterar campañas ni gasto guardado. Los totales/bases manuales generales quedan en su hoja original. Si hay información material de destino que colisiona, activaciones/asignaciones incompatibles, varios destinos o columnas vinculadas, el caso queda en revisión sin sobrescribir. La vista previa es solo lectura; confirmación valida de nuevo permisos/datos bajo bloqueo y conserva recibo para reintentos. No se ejecuta al cargar la página. Etiquetas de países reconocidos no repiten nombre por tildes/mayúsculas; no se fusionan datos por cambiar una etiqueta.
+
+
 ## Filas por página y actualización sin Ctrl+F5
 
 El pie indica cuántas campañas, conjuntos o anuncios hay en la página actual, el total y el número de página. Escribe de1 a100 en Por página y pulsa Aplicar o Enter; se guarda para ese usuario y conserva filtros/selección. Cambiarlo no descarga todo Meta. Las consultas recientes se mantienen en turnos de hasta25 elementos.

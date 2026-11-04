@@ -1,5 +1,12 @@
 # Avance por fases · continuación del desarrollo
 
+## Corregir asociaciones de país y etiquetas únicas (2026-11-03)
+
+Se añade acción individual y por lote al aviso del inventario. La vista previa usa país guardado e identidad estable de hoja, muestra origen/destino, días y vínculos; no escribe. Confirmar mueve filas con sus IDs y mantiene días, anotaciones, aprobaciones, estados/eventos y datos Meta; reasocia objetos y asignaciones/soportes del país. Otros países y totales/bases manuales generales quedan íntegros. Copia categorías y controles correspondientes, conserva visibilidad/retirada y revisiones. Destino ausente se crea al confirmar. Conflictos materiales, varios destinos, asignaciones o activaciones incompatibles y columnas vinculadas se muestran sin sobrescribir. OWNER actual, bloqueo884411, CAS de datos y recibo de auditoría idempotente; sin migración ni consultas Graph.
+
+El selector muestra una sola etiqueta cuando nombre y país representan la misma identidad, aun con mayúsculas o sin tildes (PERU/Perú, MEXICO/México). BOLVIA se muestra BOLIVIA para BO; no renombra hojas ni cambia países físicos. Pruebas de traslado real QA conservan V3/aprobaciones/eventos/G14.45, dejan AR9 y totales44 intactos, reintento no duplica y conflicto V4/V8 no se modifica. Browser comprueba cancelar, lote parcial seguro, móvil y persistencia tras recarga. No se ha ejecutado sobre la base real de Hostinger: requiere su sesión autenticada; publicar el botón no acredita corregir registros reales.
+
+
 ## Actualización · contador por página y pantalla que usa cambios guardados (2026-11-03)
 
 Meta muestra el número real de campañas/conjuntos/anuncios de la página, total y páginas. Por página admite enteros1–100 (25 predeterminado), aplica solo al confirmar, vuelve a primera página y conserva filtros/selección/preferencia por usuario. El servidor limita la lectura a100. Mostrar100 no envía100 IDs a Meta: la lectura reciente rota en tandas globales de hasta25 y conserva recibos de las demás filas.

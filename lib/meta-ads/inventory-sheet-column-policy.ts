@@ -1,4 +1,4 @@
-import { isCountryCode } from "./countries";
+import { countryName, isCountryCode } from "./countries";
 import { resolveCountry } from "./effectiveness-paste";
 export function inventoryNamedCountry(table: {
   name: string;
@@ -40,4 +40,23 @@ export function inventorySheetForeignCountries(
   return named
     ? [...new Set(recorded.filter((c) => isCountryCode(c) && c !== named))]
     : [];
+}
+
+/** Display country identity once; punctuation/case/accents are not additional countries. */
+export function inventorySheetCountryLabel(
+  table: { name: string; identityCountry?: string },
+  country: string,
+) {
+  if (!isCountryCode(country)) return table.name;
+  if (
+    resolveCountry(table.name) === country ||
+    inventoryNamedCountry(table) === country
+  )
+    return table.name;
+  if (
+    country === "BO" &&
+    table.name.trim().toLocaleUpperCase("es") === "BOLVIA"
+  )
+    return "BOLIVIA";
+  return table.name + " · " + countryName(country);
 }

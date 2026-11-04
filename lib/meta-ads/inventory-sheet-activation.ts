@@ -227,6 +227,7 @@ export async function inventoryActivationDirectory(
       limits: settings.limits,
       cacRules: settings.cacRules,
       canEdit,
+      canCorrectCountry: access.isOwner,
       canCreate:
         canEdit &&
         (access.isOwner || scopePermission(access, "ALL") === "EDIT"),

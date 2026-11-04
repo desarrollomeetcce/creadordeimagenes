@@ -372,6 +372,10 @@ export async function metaRoutes(
         await import("./inventory-sheet-activation")
       ).saveInventoryFactorLimits(actor, await body()),
     );
+  if (path === "inventory/country-correction/preview" && method === "POST")
+    return send(await (await import("./inventory-country-correction")).previewInventoryCountryCorrection(actor, await body()));
+  if (path === "inventory/country-correction" && method === "POST")
+    return send(await (await import("./inventory-country-correction")).correctInventoryCountries(actor, await body()));
   if (path === "inventory/sheet-activation/directory" && method === "GET")
     return send(
       await (
