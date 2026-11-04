@@ -1,5 +1,15 @@
 # Avance por fases · continuación del desarrollo
 
+## Revisar azar, quitar solo del grupo y encabezados fijos (2026-11-04)
+
+Proponer al azar ahora prepara una lista local en cuadro compacto arrastrable/ampliable con X/Cancelar y Aprobar propuesta. Antes de aprobar no modifica selección/borrador ni API; muestra cantidad encontrada y categorías, excluye IDs ya incorporados y no repite áreas en una propuesta. Cancelar conserva selección previa; aprobar suma a borrador sin retirar anteriores, con aviso para Crear/Guardar después. Si no hay suficientes candidatos lo informa antes de aprobar.
+
+Se reemplaza X de acciones por Quitar del grupo con texto y confirmación. Se añade la misma acción junto a Reemplazar seleccionados. Un pendiente no guardado se retira solo localmente; un miembro guardado usa REMOVE_MEMBERS con revisión base y protección pending, cierra ciclos de pertenencia y actualiza revisión/borrador sin tocar catálogo/alias/hechos. Un cambio concurrente bloquea íntegramente; no se retira parcialmente. Ventana principal permanece abierta y selección/filtros quedan coherentes. No llamadas inventory/remove ni Graph. Todos los diplomados retirados siguen en catálogo con uso, hojas, ventas, eventos, asesores y vínculos existentes.
+
+Se corrige conflicto de especificidad: regla genérica de products-catalog anulaba position:sticky. Selector específico de matriz de grupos fija los17 encabezados (Diplomado/categorías/grupo/12 países/acciones) top0, fondo opaco y z4/esquina z5; nombres de fila fijados quedan debajo. Se mide desplazamiento real800px en ventana normal/maximizada y se verifica selector de categoría clickable.
+
+287 unitarios, typecheck/build y7 comprobaciones Chromium correctos. Snapshot final conserva65 diplomados y todos los hechos/bindings/métricas; se retiran solo3 pertenencias, mantiene incorporación concurrente y todos los ciclos anteriores;2 auditorías exitosas, CAS fallido no cambia revisión. Base QA y caché temporal se restablecieron tras reinicio de entorno antes de validación final; sin alterar configuración productiva. Cleanup exclusivo V1/G10.25. Hostinger sigue sin acceso autenticado ni verificación.
+
 ## Crear grupo permanece abierto y asigna al grupo en preparación (2026-11-04)
 
 Se retiran setGroupEditor(null) y preferencia de cierre de onSaved. Crear/Guardar mantiene el mismo diálogo y expansión, selecciona el grupo recién guardado en Editar y deja seguir trabajando; solo X/Cancelar cierra. Guardar actualiza revisión base local, y tras crear se limpia únicamente el borrador de Crear y se renueva su requestId para el siguiente grupo. Ref pending impide doble envío, committed evita repetir una escritura confirmada si falló la recarga de metadatos. Mensaje diferencia grupo guardado de fallo posterior de vista. F5 recupera grupo/pestaña abierta.

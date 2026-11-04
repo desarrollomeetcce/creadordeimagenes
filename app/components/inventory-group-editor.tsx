@@ -89,6 +89,22 @@ export function InventoryGroupEditor({
   useEffect(() => {
     if (initialTab) setManagementTab(initialTab);
   }, [initialTab]);
+  const [proposal, setProposal] = useState<{
+    items: TrialItem[];
+    requested: number;
+    key: string;
+  } | null>(null);
+  const [removal, setRemoval] = useState<{
+    ids: string[];
+    persisted: string[];
+    groupId?: string;
+    revision: number;
+    groupName: string;
+    baseName: string;
+    baseIds: string[];
+  } | null>(null);
+  const [reviewError, setReviewError] = useState("");
+  const removePending = useRef(false);
   const [categoryPicker, setCategoryPicker] = useState<
     "primary" | "secondary" | null
   >(null);
@@ -451,6 +467,101 @@ export function InventoryGroupEditor({
     );
     setError("");
   }
+  function approveProposal() {
+    if (!proposal || proposal.key !== draftKey) return;
+    if (
+      proposal.items.some(
+        (item) =>
+          !catalogById.has(item.id) || occupied.has(categoryKey(item.name)),
+      )
+    ) {
+      setReviewError(
+        "El inventario o sus grupos cambiaron. Cierra y propón otra vez.",
+      );
+      return;
+    }
+    const additions = proposal.items.map((item) => item.id);
+    setIds((current) => [...new Set([...current, ...additions])]);
+    setOnlySelected(true);
+    if (editing) {
+      setCheckedIds((current) => [...new Set([...current, ...additions])]);
+      setOnlyChecked(true);
+    }
+    setReplacing(null);
+    setProposal(null);
+    setReviewError("");
+    setError("");
+    setNotice(
+      `Propuesta aprobada: ${additions.length} diplomados. ${editing ? "Guarda los cambios para incorporarlos al grupo." : "Pulsa Crear grupo para guardar el borrador."}`,
+    );
+  }
+  function reviewRemoval(itemIds: string[]) {
+    const target = [...new Set(itemIds)].filter((id) => ids.includes(id));
+    if (!target.length) return;
+    setReviewError("");
+    setRemoval({
+      ids: target,
+      persisted: target.filter((id) =>
+        group?.members.some((member) => member.itemId === id),
+      ),
+      groupId: group?.id,
+      revision: draftBase.revision,
+      groupName: group?.name ?? name,
+      baseName: draftBase.name,
+      baseIds: draftBase.ids,
+    });
+  }
+  async function removeFromGroup() {
+    if (!removal || removePending.current) return;
+    removePending.current = true;
+    setBusy(true);
+    setReviewError("");
+    let written = false;
+    try {
+      if (removal.groupId && removal.persisted.length) {
+        await api("meta-ads/inventory/trials", "POST", {
+          action: "REMOVE_MEMBERS",
+          listId: directory.listId,
+          groups: [
+            {
+              groupId: removal.groupId,
+              revision: removal.revision,
+              itemIds: removal.persisted,
+            },
+          ],
+        });
+        written = true;
+        setDraftBase({
+          revision: removal.revision + 1,
+          name: removal.baseName,
+          ids: removal.baseIds.filter((id) => !removal.persisted.includes(id)),
+        });
+      }
+      const target = new Set(removal.ids);
+      setIds((current) => current.filter((id) => !target.has(id)));
+      setCheckedIds((current) => current.filter((id) => !target.has(id)));
+      setOnlyChecked(false);
+      if (replacing && target.has(replacing)) setReplacing(null);
+      setRemoval(null);
+      setNotice(
+        `${target.size} diplomados quitados ${removal.groupId ? "del grupo" : "del borrador"}. Se conservan en el inventario con sus datos.`,
+      );
+      if (written) await onGroupsChanged?.();
+    } catch (error) {
+      const message =
+        (written
+          ? "Se quitaron del grupo, pero no se pudo actualizar la vista. "
+          : "") +
+        (error instanceof Error
+          ? error.message
+          : "No se pudo quitar del grupo.");
+      if (written) setError(message);
+      else setReviewError(message);
+    } finally {
+      removePending.current = false;
+      setBusy(false);
+    }
+  }
   async function applyGroupAction() {
     if (groupAction?.kind === "assign" && assignDraft) {
       try {
@@ -707,6 +818,70 @@ export function InventoryGroupEditor({
           </button>
         </div>
       </header>
+      {proposal && (
+        <InventoryGroupActionDialog
+          title="Revisar propuesta al azar"
+          busy={false}
+          error={reviewError}
+          canAccept={proposal.items.length > 0}
+          acceptLabel="Aprobar propuesta"
+          onAccept={approveProposal}
+          onClose={() => {
+            setProposal(null);
+            setReviewError("");
+          }}
+        >
+          <p>
+            Se añadirán {proposal.items.length} diplomados al borrador «{name}».
+            Revisa antes de aprobar; todavía no se ha cambiado la selección ni
+            el grupo.
+          </p>
+          {proposal.items.length < proposal.requested && (
+            <p>
+              Se encontraron {proposal.items.length} categorías principales
+              diferentes de las {proposal.requested} solicitadas.
+            </p>
+          )}
+          <ul className="inventory-group-review-list">
+            {proposal.items.map((item) => (
+              <li key={item.id}>
+                <strong>{item.name}</strong>
+                <small>
+                  {item.primaryNames.join(" · ") || "Sin categoría principal"}
+                </small>
+              </li>
+            ))}
+          </ul>
+        </InventoryGroupActionDialog>
+      )}
+      {removal && (
+        <InventoryGroupActionDialog
+          title="Quitar del grupo"
+          busy={busy}
+          error={reviewError}
+          canAccept={removal.ids.length > 0}
+          acceptLabel="Quitar del grupo"
+          onAccept={() => void removeFromGroup()}
+          onClose={() => {
+            if (!busy) {
+              setRemoval(null);
+              setReviewError("");
+            }
+          }}
+        >
+          <p>
+            ¿Quitar {removal.ids.length} diplomados{" "}
+            {removal.groupId ? "del grupo" : "del borrador"} «
+            {removal.groupName}»? Los diplomados, hojas, ventas, campañas e
+            historial se conservan en el inventario.
+          </p>
+          <ul className="inventory-group-review-list">
+            {removal.ids.map((id) => (
+              <li key={id}>{catalogById.get(id)?.name ?? id}</li>
+            ))}
+          </ul>
+        </InventoryGroupActionDialog>
+      )}
       {replacementIds && group && (
         <InventoryGroupReplacements
           directory={directory}
@@ -1097,30 +1272,14 @@ export function InventoryGroupEditor({
                         const proposal = diverseTrialItems(
                           proposalPool,
                           count,
-                          [],
+                          ids,
                         );
-                        setIds((current) => [
-                          ...new Set([
-                            ...current,
-                            ...proposal.map((i) => i.id),
-                          ]),
-                        ]);
-                        setOnlySelected(true);
-                        if (editing) {
-                          setCheckedIds((current) => [
-                            ...new Set([
-                              ...current,
-                              ...proposal.map((item) => item.id),
-                            ]),
-                          ]);
-                          setOnlyChecked(true);
-                        }
-                        setReplacing(null);
-                        setError(
-                          proposal.length < count
-                            ? `Se encontraron ${proposal.length} categorías principales diferentes con los filtros actuales. Revisa la propuesta.`
-                            : "",
-                        );
+                        setReviewError("");
+                        setProposal({
+                          items: proposal,
+                          requested: count,
+                          key: draftKey,
+                        });
                       }}
                     >
                       Proponer al azar
@@ -1227,6 +1386,21 @@ export function InventoryGroupEditor({
                           }}
                         >
                           Reemplazar seleccionados
+                        </button>
+                      )}
+                      {editing && (
+                        <button
+                          type="button"
+                          disabled={
+                            busy ||
+                            externalBusy ||
+                            !directory.canEdit ||
+                            !selectedIds.length ||
+                            selectedIds.length > 1500
+                          }
+                          onClick={() => reviewRemoval(selectedIds)}
+                        >
+                          Quitar del grupo
                         </button>
                       )}
                       {onGroupsChanged && !editing && (
@@ -1675,16 +1849,10 @@ export function InventoryGroupEditor({
                                     <button
                                       disabled={busy}
                                       aria-label={"Quitar del grupo " + i.name}
-                                      onClick={() => {
-                                        setIds((v) =>
-                                          v.filter((x) => x !== i.id),
-                                        );
-                                        setCheckedIds((v) =>
-                                          v.filter((x) => x !== i.id),
-                                        );
-                                      }}
+                                      title="Quita solo la pertenencia al grupo; conserva el diplomado y sus datos en el inventario"
+                                      onClick={() => reviewRemoval([i.id])}
                                     >
-                                      ×
+                                      Quitar del grupo
                                     </button>
                                   </div>
                                 )
@@ -2041,6 +2209,7 @@ function InventoryGroupActionDialog({
   error,
   canAccept,
   showAccept = true,
+  acceptLabel = "Aceptar",
   onAccept,
   onClose,
   children,
@@ -2050,6 +2219,7 @@ function InventoryGroupActionDialog({
   error: string;
   canAccept: boolean;
   showAccept?: boolean;
+  acceptLabel?: string;
   onAccept: () => void;
   onClose: () => void;
   children: ReactNode;
@@ -2104,7 +2274,7 @@ function InventoryGroupActionDialog({
             disabled={busy || !canAccept}
             onClick={onAccept}
           >
-            {busy ? "Guardando…" : "Aceptar"}
+            {busy ? "Guardando…" : acceptLabel}
           </button>
         )}
       </footer>

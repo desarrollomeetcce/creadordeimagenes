@@ -1,5 +1,13 @@
 # Meta Ads: consulta y análisis
 
+## Proponer con aprobación y quitar solo pertenencia (2026-11-04)
+
+Proponer al azar abre revisión local con nombres/categorías y cantidad, sin modificar selección hasta Aprobar propuesta; excluye IDs ya incluidos. Aprobar añade al borrador; Crear/Guardar persiste según flujo existente. Cancelar no cambia nada. Cuadro compacto con X, Cancelar y ampliación.
+
+Quitar del grupo sustituye X por fila y acompaña Reemplazar seleccionados. Confirma nombres y explica que conserva diplomados/hojas/ventas/campañas/historial. Pendientes se retiran localmente; persistidos usan REMOVE_MEMBERS existente con revisión base y cierre de ciclos, nunca eliminación de catálogo. CAS obsoleto rechaza todo; acuse actualiza base/borrador y recarga solo metadatos guardados. No Graph ni API inventory/remove.
+
+Cabeceras de todas las columnas quedan sticky en su scroll, con selector específico sobre regla genérica products-catalog, fondo opaco y esquina encima de nombres fijados. Desplazamiento real800px comprobado en normal/maximizado y controles del encabezado interactuables. Solo UI/CSS: sin migración de esquema ni cambios de endpoints.
+
 ## Guardar sin cerrar y destino de grupo en preparación (2026-11-04)
 
 Crear/Guardar conserva diálogo y expansión, muestra el grupo guardado en Editar y permite continuar. Crear otro parte de borrador limpio/requestId nuevo. Pendiente por ref evita doble clic; si se confirmó la escritura y falló actualizar la vista, se informa y bloquea repetirla hasta recuperar directorio. Solo X/Cancelar cierra; F5 conserva la elección guardada.
