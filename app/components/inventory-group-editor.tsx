@@ -4,11 +4,13 @@ import {
   Fragment,
   useContext,
   useEffect,
+  useMemo,
   useRef,
   useState,
   type ReactNode,
 } from "react";
 import { financialRequest as api } from "./financial-request";
+import { useGroupDraftState } from "./use-group-draft-state";
 import { CurrentUserId } from "./role-guide";
 import { SheetSearchSelect } from "./sheet-search-select";
 import { matchesSearchWords } from "../../lib/search";
@@ -32,7 +34,7 @@ import { InventoryDiplomaObservations } from "./inventory-diploma-observations";
 
 export function InventoryGroupEditor({
   directory,
-  group,
+  group: selectedGroup,
   initialNames,
   onClose,
   onSaved,
@@ -41,6 +43,7 @@ export function InventoryGroupEditor({
   topContent,
   initialTab,
   onChooseGroup,
+  onTabChange,
   externalBusy = false,
   evaluationColumns = [],
 }: {
@@ -49,6 +52,7 @@ export function InventoryGroupEditor({
   topContent?: ReactNode;
   initialTab?: "create" | "edit" | "top";
   onChooseGroup?: (id: string) => void;
+  onTabChange?: (tab: "create" | "edit" | "top") => void;
   directory: TrialDirectory;
   group?: TrialGroup;
   initialNames: string[];
@@ -70,8 +74,19 @@ export function InventoryGroupEditor({
   const [renameValue, setRenameValue] = useState("");
   const [notice, setNotice] = useState("");
   const [managementTab, setManagementTab] = useState<"create" | "edit" | "top">(
-    initialTab ?? (group ? "edit" : "create"),
+    initialTab ?? (selectedGroup ? "edit" : "create"),
   );
+  const group = managementTab === "edit" ? selectedGroup : undefined;
+  const draftKey = group ? "edit:" + group.id : "create";
+  function changeTab(tab: "create" | "edit" | "top") {
+    setManagementTab(tab);
+    setError("");
+    setNotice("");
+    onTabChange?.(tab);
+  }
+  useEffect(() => {
+    if (initialTab) setManagementTab(initialTab);
+  }, [initialTab]);
   const [categoryPicker, setCategoryPicker] = useState<
     "primary" | "secondary" | null
   >(null);
@@ -152,34 +167,67 @@ export function InventoryGroupEditor({
     />
   );
   const [requestId] = useState(() => crypto.randomUUID());
-  const [name, setName] = useState(
+  const [name, setName] = useGroupDraftState(
+    draftKey,
     group?.name ?? "Grupo " + (directory.groups.length + 1),
   );
-  const [ids, setIds] = useState(() => [
+  const [ids, setIds] = useGroupDraftState(draftKey, () => [
     ...new Set([
       ...(group?.members.map((m) => m.itemId) ?? []),
-      ...directory.catalog
-        .filter((i) =>
-          initialNames.some((n) => categoryKey(n) === categoryKey(i.name)),
-        )
-        .map((i) => i.id),
+      ...(!group
+        ? directory.catalog
+            .filter((i) =>
+              initialNames.some((n) => categoryKey(n) === categoryKey(i.name)),
+            )
+            .map((i) => i.id)
+        : []),
     ]),
   ]);
+  const [draftBase, setDraftBase] = useGroupDraftState(draftKey, () => ({
+    revision: group?.revision ?? 0,
+    name: group?.name ?? "",
+    ids: group?.members.map((member) => member.itemId) ?? [],
+  }));
+  useEffect(() => {
+    if (!group || draftBase.revision === group.revision) return;
+    const clean =
+      name === draftBase.name &&
+      ids.length === draftBase.ids.length &&
+      ids.every((id) => draftBase.ids.includes(id));
+    if (clean) {
+      const next = group.members.map((member) => member.itemId);
+      setName(group.name);
+      setIds(next);
+      setCheckedIds((current) => current.filter((id) => next.includes(id)));
+      setDraftBase({ revision: group.revision, name: group.name, ids: next });
+    } else
+      setNotice(
+        "El grupo cambió mientras tienes cambios pendientes. Revisa antes de guardar.",
+      );
+  }, [group?.id, group?.revision, draftKey]);
   const editing = managementTab === "edit" && !!group;
-  const [checkedIds, setCheckedIds] = useState<string[]>([]);
+  const [checkedIds, setCheckedIds] = useGroupDraftState<string[]>(
+    draftKey,
+    [],
+  );
   const [replacementIds, setReplacementIds] = useState<string[] | null>(null);
   const [replacementMode, setReplacementMode] = useState<
     "ANY" | "SAME" | "OTHER" | "DIVERSE"
   >("ANY");
-  const [onlyChecked, setOnlyChecked] = useState(false);
+  const [onlyChecked, setOnlyChecked] = useGroupDraftState(draftKey, false);
   const selectedIds = editing ? checkedIds : ids;
   const setSelectedIds = editing ? setCheckedIds : setIds;
   const showGroup = (id: string) => {
-    if (managementTab === "edit" && id && onChooseGroup) onChooseGroup(id);
-    else setBrowsedGroupId(id);
+    if (managementTab === "edit" && id && onChooseGroup) {
+      onChooseGroup(id);
+      setManagementTab("edit");
+    } else setBrowsedGroupId(id);
   };
   const countries = group?.countries ?? countryOptions.map((c) => c.code);
-  const [browsedGroupId, setBrowsedGroupId] = useState(group?.id ?? "");
+  const [browsedGroupId, setBrowsedGroupId] = useGroupDraftState(
+    draftKey,
+    group?.id ?? "",
+  );
   const [pinnedGroupIds, setPinnedGroupIds] = useState<string[]>([]);
   useEffect(() => {
     try {
@@ -207,16 +255,23 @@ export function InventoryGroupEditor({
   const browsedGroup = directory.groups.find(
     (entry) => entry.id === browsedGroupId,
   );
-  const browsedMembers = browsedGroup
-    ? new Set(browsedGroup.members.map((member) => member.itemId))
-    : null;
-  const [query, setQuery] = useState(""),
-    [primary, setPrimary] = useState<string[]>([]),
-    [secondary, setSecondary] = useState<string[]>([]),
-    [sheets, setSheets] = useState<string[]>([]);
-  const [count, setCount] = useState(10),
-    [onlySelected, setOnlySelected] = useState(!!group),
-    [replacing, setReplacing] = useState<string | null>(null);
+  const browsedMembers = useMemo(
+    () =>
+      browsedGroup
+        ? new Set(browsedGroup.members.map((member) => member.itemId))
+        : null,
+    [browsedGroup],
+  );
+  const [query, setQuery] = useGroupDraftState(draftKey, ""),
+    [primary, setPrimary] = useGroupDraftState<string[]>(draftKey, []),
+    [secondary, setSecondary] = useGroupDraftState<string[]>(draftKey, []),
+    [sheets, setSheets] = useGroupDraftState<string[]>(draftKey, []);
+  const [count, setCount] = useGroupDraftState(draftKey, 10),
+    [onlySelected, setOnlySelected] = useGroupDraftState(draftKey, !!group),
+    [replacing, setReplacing] = useGroupDraftState<string | null>(
+      draftKey,
+      null,
+    );
   const [busy, setBusy] = useState(false),
     [error, setError] = useState(""),
     [committed, setCommitted] = useState(false);
@@ -224,70 +279,122 @@ export function InventoryGroupEditor({
     dialog.current?.showModal();
   }, []);
   const catalog = directory.catalog;
-  const catalogById = new Map(catalog.map((item) => [item.id, item]));
-  const occupied = new Map(
-    directory.groups
-      .filter((g) => g.id !== group?.id)
-      .flatMap((g) =>
-        g.members.map(
-          (m) =>
-            [
-              categoryKey(
-                directory.catalog.find((i) => i.id === m.itemId)?.name ??
-                  m.name,
-              ),
-              g.name,
-            ] as const,
+  const catalogById = useMemo(
+    () => new Map(catalog.map((item) => [item.id, item])),
+    [catalog],
+  );
+  const groupsByName = useMemo(
+    () =>
+      new Map(
+        directory.groups.flatMap((group) =>
+          group.members.map(
+            (member) =>
+              [
+                categoryKey(
+                  catalogById.get(member.itemId)?.name ?? member.name,
+                ),
+                group,
+              ] as const,
+          ),
         ),
       ),
+    [directory.groups, catalogById],
   );
-  const primaryOptions = [
-    ...new Set(catalog.flatMap((i) => i.primaryNames)),
-  ].sort((a, b) => a.localeCompare(b, "es"));
-  const secondaryOptions = [
-    ...new Set(catalog.flatMap((i) => i.secondaryNames ?? [])),
-  ].sort((a, b) => a.localeCompare(b, "es"));
-  const sheetOptions = [
-    ...new Map(
-      catalog.flatMap((i) => (i.sheets ?? []).map((s) => [s.id, s] as const)),
-    ).values(),
-  ];
-  const pool = catalog.filter((i) => !occupied.has(categoryKey(i.name)));
-  const matching = catalog.filter(
-    (i) =>
-      (editing && !replacing
-        ? ids.includes(i.id)
-        : replacing || !browsedMembers || browsedMembers.has(i.id)) &&
-      ((editing && !replacing) || matchesSearchWords(i.name, query)) &&
-      (!primary.length || i.primaryNames.some((n) => primary.includes(n))) &&
-      (!secondary.length ||
-        i.secondaryNames?.some((n) => secondary.includes(n))) &&
-      (!sheets.length || i.sheets?.some((s) => sheets.includes(s.id))),
+  const occupied = useMemo(
+    () =>
+      new Map(
+        [...groupsByName]
+          .filter(([, entry]) => entry.id !== group?.id)
+          .map(([key, entry]) => [key, entry.name]),
+      ),
+    [groupsByName, group?.id],
   );
-  const filtered = matching.filter((i) =>
-    editing
-      ? !onlyChecked || checkedIds.includes(i.id)
-      : !onlySelected || ids.includes(i.id),
+  const primaryOptions = useMemo(
+    () =>
+      [...new Set(catalog.flatMap((i) => i.primaryNames))].sort((a, b) =>
+        a.localeCompare(b, "es"),
+      ),
+    [catalog],
+  );
+  const secondaryOptions = useMemo(
+    () =>
+      [...new Set(catalog.flatMap((i) => i.secondaryNames ?? []))].sort(
+        (a, b) => a.localeCompare(b, "es"),
+      ),
+    [catalog],
+  );
+  const sheetOptions = useMemo(
+    () => [
+      ...new Map(
+        catalog.flatMap((i) => (i.sheets ?? []).map((s) => [s.id, s] as const)),
+      ).values(),
+    ],
+    [catalog],
+  );
+  const pool = useMemo(
+    () => catalog.filter((i) => !occupied.has(categoryKey(i.name))),
+    [catalog, occupied],
+  );
+  const matching = useMemo(
+    () =>
+      catalog.filter(
+        (i) =>
+          (editing && !replacing
+            ? ids.includes(i.id)
+            : replacing || !browsedMembers || browsedMembers.has(i.id)) &&
+          ((editing && !replacing) || matchesSearchWords(i.name, query)) &&
+          (!primary.length ||
+            i.primaryNames.some((n) => primary.includes(n))) &&
+          (!secondary.length ||
+            i.secondaryNames?.some((n) => secondary.includes(n))) &&
+          (!sheets.length || i.sheets?.some((s) => sheets.includes(s.id))),
+      ),
+    [
+      catalog,
+      editing,
+      replacing,
+      ids,
+      browsedMembers,
+      query,
+      primary,
+      secondary,
+      sheets,
+    ],
+  );
+  const filtered = useMemo(
+    () =>
+      editing
+        ? onlyChecked
+          ? matching.filter((item) => checkedIds.includes(item.id))
+          : matching
+        : onlySelected
+          ? matching.filter((item) => ids.includes(item.id))
+          : matching,
+    [matching, editing, onlyChecked, checkedIds, onlySelected, ids],
   );
   const eligible = filtered;
   const proposalPool = (editing ? catalog : matching).filter(
     (i) =>
       !occupied.has(categoryKey(i.name)) && (!editing || !ids.includes(i.id)),
   );
-  const [page, setPage] = useState(1),
-    [pageSize, setPageSize] = useState(50);
+  const [page, setPage] = useGroupDraftState(draftKey, 1),
+    [pageSize, setPageSize] = useGroupDraftState(draftKey, 50);
   useEffect(() => {
     setPage(1);
   }, [query, primary, secondary, onlySelected, browsedGroupId]);
-  const ordered = filtered
-    .slice()
-    .sort(
-      (a, b) =>
-        a.primaryNames
-          .join(" · ")
-          .localeCompare(b.primaryNames.join(" · "), "es") ||
-        a.name.localeCompare(b.name, "es"),
-    );
+  const ordered = useMemo(
+    () =>
+      filtered
+        .slice()
+        .sort(
+          (a, b) =>
+            a.primaryNames
+              .join(" · ")
+              .localeCompare(b.primaryNames.join(" · "), "es") ||
+            a.name.localeCompare(b.name, "es"),
+        ),
+    [filtered],
+  );
   const pages = Math.max(1, Math.ceil(ordered.length / pageSize)),
     currentPage = Math.min(page, pages);
   const visibleItems = ordered.slice(
@@ -370,13 +477,27 @@ export function InventoryGroupEditor({
       if (groupAction.kind === "move" && groupAction.item) {
         const moved = groupAction.item.id;
         setCheckedIds((current) => current.filter((id) => id !== moved));
-        if (group?.id === groupAction.source?.id)
+        if (group?.id === groupAction.source?.id) {
           setIds((current) => current.filter((id) => id !== moved));
+          setDraftBase({
+            revision: groupAction.source!.revision + 1,
+            name: groupAction.source!.name,
+            ids: groupAction
+              .source!.members.filter((member) => member.itemId !== moved)
+              .map((member) => member.itemId),
+          });
+        }
       }
       setGroupAction(null);
       if (groupAction.kind === "archive") setBrowsedGroupId("");
-      if (groupAction.kind === "rename" && group?.id === target.id)
+      if (groupAction.kind === "rename" && group?.id === target.id) {
         setName(renameValue);
+        setDraftBase({
+          ...draftBase,
+          revision: target.revision + 1,
+          name: renameValue,
+        });
+      }
       await onGroupsChanged?.();
       setNotice(
         groupAction.kind === "assign"
@@ -410,7 +531,7 @@ export function InventoryGroupEditor({
               name,
               listId: directory.listId,
               groupId: group.id,
-              revision: group.revision,
+              revision: draftBase.revision,
               itemIds: ids,
               since: limaToday(),
             }
@@ -459,7 +580,7 @@ export function InventoryGroupEditor({
                 type="button"
                 aria-pressed={managementTab === "top"}
                 disabled={busy || externalBusy}
-                onClick={() => setManagementTab("top")}
+                onClick={() => changeTab("top")}
               >
                 Top · evaluar y reemplazar
               </button>
@@ -468,10 +589,7 @@ export function InventoryGroupEditor({
               type="button"
               aria-pressed={managementTab === "create"}
               disabled={busy || externalBusy || !directory.canEdit}
-              onClick={() => {
-                if (group && onChooseGroup) onChooseGroup("");
-                else setManagementTab("create");
-              }}
+              onClick={() => changeTab("create")}
             >
               Crear
             </button>
@@ -479,7 +597,7 @@ export function InventoryGroupEditor({
               type="button"
               aria-pressed={managementTab === "edit"}
               disabled={busy || externalBusy || !directory.canEdit}
-              onClick={() => setManagementTab("edit")}
+              onClick={() => changeTab("edit")}
             >
               Editar grupos
             </button>
@@ -517,7 +635,27 @@ export function InventoryGroupEditor({
           initialMode={replacementMode}
           onClose={() => setReplacementIds(null)}
           onApplied={async (result) => {
-            setIds(result.members.map((member) => member.itemId));
+            setIds((current) => [
+              ...new Set([
+                ...result.members
+                  .filter(
+                    (member) =>
+                      current.includes(member.itemId) ||
+                      !group.members.some(
+                        (old) => old.itemId === member.itemId,
+                      ),
+                  )
+                  .map((member) => member.itemId),
+                ...current.filter(
+                  (id) => !group.members.some((member) => member.itemId === id),
+                ),
+              ]),
+            ]);
+            setDraftBase({
+              revision: result.revision,
+              name: result.name,
+              ids: result.members.map((member) => member.itemId),
+            });
             setCheckedIds([]);
             setOnlyChecked(false);
 
@@ -622,7 +760,10 @@ export function InventoryGroupEditor({
                   onClick={() => {
                     const id = groupAction.group?.id;
                     setGroupAction(null);
-                    if (id) onChooseGroup(id);
+                    if (id) {
+                      onChooseGroup(id);
+                      setManagementTab("edit");
+                    }
                   }}
                 >
                   Editar diplomados
@@ -1158,11 +1299,7 @@ export function InventoryGroupEditor({
                       const heading =
                         i.primaryNames.join(" · ") || "Sin categoría principal";
                       const assigned = occupied.get(categoryKey(i.name));
-                      const memberGroup = directory.groups.find((g) =>
-                        g.members.some(
-                          (m) => categoryKey(m.name) === categoryKey(i.name),
-                        ),
-                      );
+                      const memberGroup = groupsByName.get(categoryKey(i.name));
                       return (
                         <Fragment key={i.id}>
                           {(index === 0 ||

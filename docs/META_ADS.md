@@ -1,5 +1,11 @@
 # Meta Ads: consulta y análisis
 
+## Último grupo seleccionado y navegación sin reiniciar (2026-11-04)
+
+Crear/Editar comparten ventana estable, con borradores separados por vista/grupo en memoria. Crear no vacía la elección de Editar. Preferencias locales por usuario/lista guardan último grupo, pestaña y estado abierto/cerrado; F5 vuelve a los datos guardados autorizados, no a hechos financieros copiados del navegador. Un ID ya no disponible se descarta. Cerrar evita reapertura automática al recargar; abrir manualmente recupera la elección.
+
+Navegación usa directorio cargado y mapas/memorias de catálogo/pertenencia/categorías; no GET ni Graph por cambiar pestaña. Documento/grupo actualizado entra automáticamente si el borrador estaba limpio; cambios pendientes mantienen su revisión base y CAS impide sobrescribir otros cambios. Mover/renombrar/reemplazar propios actualizan esa base, conservando incorporaciones/retiros pendientes no incluidos en la operación. Medición sintética local768×12/página50 reduce mediana417.5→361.7ms; no acredita latencia real de Hostinger.
+
 ## Editar grupos sin confundir selección y pertenencia (2026-11-04)
 
 Casillas de trabajo son independientes de miembros/borrador; editar abre grupo completo desmarcado. Quitar selección/desmarcar no retira integrantes ni afecta Guardar. Añadir inventario y Proponer al azar incorporan al borrador sin sustituir existentes; nuevos quedan marcados y Ver seleccionados filtra explícitamente. Mis grupos/fijado abre edición directa sin listado pequeño duplicado; administrar por desplegable o ⋯/clic derecho, sin Eliminar grande ni Unificar dentro de grupos. Unificar duplicados se conserva en catálogo general. Detalle queda escrito debajo de ✓/— con nombre completo accesible del país.

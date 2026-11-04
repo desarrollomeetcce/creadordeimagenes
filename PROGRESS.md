@@ -1,5 +1,13 @@
 # Avance por fases · continuación del desarrollo
 
+## Grupos: conservar selección de documento y agilizar pestañas (2026-11-04)
+
+Se corrige el borrado de groupEditor.id al pulsar Crear y la key que desmontaba el editor por id/tab. El grupo elegido permanece seleccionado al regresar a Editar; elegir otro lo sustituye explícitamente. Preferencias de usuario/lista recuerdan último ID, pestaña y ventana abierta: F5 restaura desde directorio autorizado, ignora IDs ya no disponibles y respeta cierre explícito. La tabla y el diálogo conservan identidad DOM entre cambios de vistas válidas; nombre, selección, filtros y borradores de Crear/cada grupo quedan separados en memoria mediante useGroupDraftState. No se guardan hechos ni borradores financieros en localStorage.
+
+Se memorizan catálogo por ID, grupos por nombre, ocupación, categorías, conjuntos y orden; se eliminan búsquedas anidadas de catálogo por miembro y grupos por cada fila. Cambiar pestaña no consulta APIs ni Graph. La revisión base del borrador se conserva: asignaciones guardadas en Crear actualizan un editor limpio al regresar, mientras cambios pendientes se conservan y Guardar usa CAS antiguo para no sobrescribir incorporaciones ajenas. Acciones propias actualizan la base y conservan altas/bajas pendientes no incluidas en reemplazos.
+
+287 unitarios, typecheck/build y14 verificaciones Chromium correctos (6 nuevas,8 regresiones de añadir/mover/reemplazar/archivar). Benchmark local sintético con catálogo768/12 países/página50: mediana de5 cambios Editar→Crear pasa417.5ms→361.7ms (aprox13%); antes perdió grupo al volver5/5, después0/5. Cero requests al navegar en ambos; mejora es de reconstrucción/cálculo del cliente. No es medición de rendimiento de Hostinger. Snapshot posterior verifica datos físicos/campañas/gasto y preservación de incorporaciones ante borrador obsoleto; cleanup exclusivo. No cambios en rutas/esquema ni en datos reales.
+
 ## Edición de grupos: pertenencia independiente, añadir y reemplazar con aprobación (2026-11-04)
 
 Se separan miembros/borrador de casillas de selección. Editar abre todos los integrantes con casillas vacías; desmarcar/Quitar selección no retira diplomados y Guardar envía miembros completos. Mis grupos/fijados en Editar abre el documento directamente; se retiran el listado pequeño duplicado, botones redundantes Editar/Eliminar y Unificar con oficial de esta ventana. Administración queda en opción del buscador o ⋯/clic derecho; unificación de duplicados pasa al catálogo general con explicación. Nombre sube al borde superior de franja y Detalle se escribe debajo de cada símbolo de país, conservando columnas compactas/ancho editable.

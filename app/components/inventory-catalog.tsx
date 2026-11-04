@@ -177,6 +177,11 @@ export function InventoryCatalog({
     column?: string;
     replaceName?: string;
   } | null>(null);
+  const [lastGroupId,setLastGroupId]=useWorkbookPreference<string>(listId,"group-editor-last-id","");
+  const [lastGroupTab,setLastGroupTab]=useWorkbookPreference<string>(listId,"group-editor-last-tab","create");
+  const [groupWasOpen,setGroupWasOpen]=useWorkbookPreference<string>(listId,"group-editor-open","no");
+  const groupRestoreList=useRef<string|null>(null);
+  const rememberedTab: "create"|"edit"|"top"=["create","edit","top"].includes(lastGroupTab)?lastGroupTab as "create"|"edit"|"top":"create";
   const [groupUnification,setGroupUnification]=useState<string[]|null>(null);
   const [evaluation, setEvaluation] = useState<string | null>(null);
   const [groupFilter, setGroupFilter] = useState("");
@@ -194,6 +199,7 @@ export function InventoryCatalog({
   }
   useEffect(() => {
     let active = true;
+    groupRestoreList.current=null;
     setTrialDirectory(null);
     setGroupFilter("");
     setGroupEditor(null);
@@ -213,6 +219,15 @@ export function InventoryCatalog({
       active = false;
     };
   }, [listId]);
+  useEffect(()=>{
+    if(!trialDirectory||trialDirectory.listId!==listId||groupRestoreList.current===listId)return;
+    groupRestoreList.current=listId;
+    const valid=trialDirectory.groups.some(group=>group.id===lastGroupId);
+    if(lastGroupId&&!valid)setLastGroupId("");
+    if(groupWasOpen==="yes"&&!groupEditor)setGroupEditor({names:[],id:valid?lastGroupId:undefined,tab:rememberedTab});
+  },[trialDirectory,listId,lastGroupId,groupWasOpen,rememberedTab]);
+  useEffect(()=>{if(groupEditor?.id&&trialDirectory?.listId===listId&&trialDirectory.groups.some(group=>group.id===groupEditor.id))setLastGroupId(groupEditor.id);},[groupEditor?.id,listId]);
+  useEffect(()=>{if(groupEditor&&trialDirectory?.listId===listId&&groupRestoreList.current===listId)setGroupWasOpen("yes");},[!!groupEditor,listId,trialDirectory?.listId]);
   useEffect(() => {
     if (evaluation) evaluationDialog.current?.showModal();
   }, [evaluation]);
@@ -1779,24 +1794,14 @@ export function InventoryCatalog({
     >
       {groupEditor && trialDirectory && (
         <InventoryGroupEditor
-          key={[
-            groupEditor.id,
-            groupEditor.tab,
-            groupEditor.column,
-            groupEditor.replaceName,
-          ].join(":")}
+          key={[listId,groupEditor.column,groupEditor.replaceName].join(":")}
           evaluationColumns={knownCountries
             .filter((id) => id.includes(":"))
             .map((id) => ({ value: id, label: sheetLabel(id) }))}
-          initialTab={groupEditor.tab}
+          initialTab={groupEditor.tab ?? rememberedTab}
+          onTabChange={tab=>{setLastGroupTab(tab);setGroupEditor(previous=>previous?{...previous,tab}:previous);}}
           externalBusy={busy}
-          onChooseGroup={(id) =>
-            setGroupEditor({
-              id: id || undefined,
-              names: [],
-              tab: id ? "edit" : "create",
-            })
-          }
+          onChooseGroup={id=>{if(id)setLastGroupId(id);setLastGroupTab(id?"edit":"create");setGroupEditor(previous=>({...previous,names:previous?.names??[],id:id||undefined,tab:id?"edit":"create"}));}}
           topContent={
             <>
               <InventoryTop
@@ -1829,12 +1834,14 @@ export function InventoryCatalog({
           directory={trialDirectory}
           onGroupsChanged={async () => { await Promise.all([reloadGroups(), reloadCategories(), onChanged()]); }}
           onUsageChange={(key,cell)=>setTrialDirectory(previous=>previous ? {...previous,usage:{...previous.usage,[key]:cell}} : previous)}
-          group={trialGroups.find((g) => g.id === groupEditor.id)}
+          group={trialGroups.find((g) => g.id === (groupEditor.id ?? lastGroupId))}
           initialNames={groupEditor.names}
-          onClose={() => setGroupEditor(null)}
-          onSaved={async () => {
+          onClose={() => {setGroupWasOpen("no");setGroupEditor(null);}}
+          onSaved={async id => {
+            setLastGroupId(id);
             await reloadGroups();
             await Promise.all([onChanged(), reloadCategories()]);
+            setGroupWasOpen("no");
             setGroupEditor(null);
             setSelected([]);
             setMessage("Grupo guardado.");
@@ -2017,7 +2024,7 @@ export function InventoryCatalog({
             disabled={!trialDirectory || busy}
             onClick={() =>
               setGroupEditor({
-                tab: selectedVisible.length ? "create" : "top",
+                tab: selectedVisible.length ? "create" : rememberedTab,
                 names: available
                   .filter((g) =>
                     g.links.some((a) => selectedVisible.includes(a.id)),
