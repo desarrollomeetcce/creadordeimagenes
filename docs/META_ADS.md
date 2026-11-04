@@ -1,5 +1,12 @@
 # Meta Ads: consulta y análisis
 
+## Uso binario por país · 2026-11-04
+
+Crear, Editar, catálogo y reemplazos comparten Usado (✓) desde12 horas registradas y Sin usar (—) por debajo del umbral o sin evidencia suficiente. Manual Usado/Sin usar prevalece; Automático restaura el cálculo. Se retiran interrogación, reloj, En prueba y Uso sin confirmar de esta vista. Filtro Todos solo reúne ambos estados; Sin usar primero mantiene prioridad. Preferencias antiguas TEST/UNKNOWN se muestran como Sin usar sin vaciar el selector.
+
+Historial bruto conserva TEST/UNKNOWN y horas nulas para informes, sin modificar eventos, activaciones, hojas, vínculos, finanzas ni grupos. No se añaden lecturas ni Graph. Verificado con289 unitarias,27 integraciones, typecheck/build y5 recorridos Chromium: umbral, ambos overrides, AUTO, F5, reemplazo y filtros locales. Snapshot completo de hechos idéntico, solo5 correcciones manuales aprobadas en fixture; limpieza exclusiva completada. Hostinger real sin verificación desde este entorno.
+
+
 ## Proponer con aprobación y quitar solo pertenencia (2026-11-04)
 
 Proponer al azar abre revisión local con nombres/categorías y cantidad, sin modificar selección hasta Aprobar propuesta; excluye IDs ya incluidos. Aprobar añade al borrador; Crear/Guardar persiste según flujo existente. Cancelar no cambia nada. Cuadro compacto con X, Cancelar y ampliación.

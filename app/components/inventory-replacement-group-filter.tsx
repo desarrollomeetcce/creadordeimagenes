@@ -45,10 +45,9 @@ export function InventoryReplacementGroupFilter({
             onChange(groupId, e.target.value as ReplacementUsageFilter)
           }
         >
-          <option value="ALL">Todos · sin usar primero</option>
-          <option value="UNUSED">Sin usar · menos de 12 horas</option>
-          <option value="USED">Usados · 12 horas o manual</option>
-          <option value="UNKNOWN">Uso sin confirmar</option>
+          <option value="ALL">Todos</option>
+          <option value="UNUSED">Sin usar</option>
+          <option value="USED">Usado</option>
         </select>
       </label>
       <small>

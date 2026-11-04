@@ -6270,3 +6270,28 @@ test("Group replacement proposals respect categories, unique targets and source 
  const diverse=proposeGroupReplacements(sources,targets,"DIVERSE",()=>0.5);assert.equal(new Set(diverse.map(entry=>entry.replacementId)).size,2);assert.deepEqual(diverse.map(entry=>entry.replacementId),["newA","newB"]);
  const shortage=proposeGroupReplacements(sources,[targets[0]],"SAME",()=>0.5);assert.equal(shortage[1].replacementId,"");assert.deepEqual(sources.map(item=>item.id),["oldA","oldB"]);
 });
+
+test("Group usage is binary at12 recorded hours and manual choice takes priority", async()=>{
+ const {groupUsageStatus}=await import("../lib/meta-ads/inventory-group-usage-policy");
+ const now=Date.parse("2026-11-04T12:00:00Z");
+ for(const activationHours of [0,0.01,11,11.999999])assert.equal(groupUsageStatus({mode:"AUTO",automatic:"TEST",activationHours},now),"NEVER");
+ for(const activationHours of [12,12.000001,25])assert.equal(groupUsageStatus({mode:"AUTO",automatic:"TEST",activationHours},now),"USED");
+ const unknown={mode:"AUTO" as const,automatic:"UNKNOWN" as const,activationHours:null};assert.equal(groupUsageStatus(unknown,now),"NEVER");assert.equal(unknown.automatic,"UNKNOWN");assert.equal(unknown.activationHours,null);
+ assert.equal(groupUsageStatus(undefined,now),"NEVER");
+ assert.equal(groupUsageStatus({...unknown,nextUsedAt:new Date(now+1).toISOString()},now),"NEVER");assert.equal(groupUsageStatus({...unknown,nextUsedAt:new Date(now).toISOString()},now),"USED");
+ assert.equal(groupUsageStatus({mode:"USED",automatic:"TEST",activationHours:1},now),"USED");assert.equal(groupUsageStatus({mode:"UNUSED",automatic:"USED",activationHours:100,nextUsedAt:new Date(now-1).toISOString()},now),"NEVER");
+ assert.equal(groupUsageStatus({...unknown,nextUsedAt:"invalid",activationHours:Infinity},now),"NEVER");
+});
+
+test("Replacement filters combine brief and unverified records as unused without losing country/manual precedence", async()=>{
+ const {groupReplacementCandidates,replacementUsageLabel,replacementUsage}=await import("../lib/meta-ads/inventory-replacement-groups");const {categoryKey}=await import("../lib/meta-ads/category-paste");
+ const items=["Usado","Sin registro","Breve","Manual usado","Manual sin usar"].map((name,i)=>({id:String(i),name,primaryIds:[],primaryNames:[]}));
+ const cell=(automatic:"USED"|"TEST"|"UNKNOWN",mode:"AUTO"|"USED"|"UNUSED"="AUTO")=>({automatic,mode,activationHours:automatic==="USED"?15:automatic==="TEST"?1:null,revision:null});
+ const usage=Object.fromEntries(items.map((item,i)=>[JSON.stringify([categoryKey(item.name),"PE"]),[cell("USED"),cell("UNKNOWN"),cell("TEST"),cell("TEST","USED"),cell("USED","UNUSED")][i]]));
+ const directory={groups:[{id:"g",members:items.map(item=>({itemId:item.id,name:item.name}))}],usage} as any;
+ assert.deepEqual(groupReplacementCandidates(items,directory,"PE","g","USED").map(i=>i.name).sort(),["Manual usado","Usado"].sort());
+ assert.deepEqual(groupReplacementCandidates(items,directory,"PE","g","UNUSED").map(i=>i.name).sort(),["Breve","Manual sin usar","Sin registro"].sort());
+ assert.equal(groupReplacementCandidates(items,directory,"EC","g","USED").length,0);assert.equal(groupReplacementCandidates(items,directory,"EC","g","UNUSED").length,5);
+ assert.equal(replacementUsageLabel(replacementUsage(directory,"Sin registro","PE")),"Sin usar");assert.equal(replacementUsageLabel(replacementUsage(directory,"Usado","PE")),"Usado");
+ const all=groupReplacementCandidates(items,directory,"PE","g","ALL");assert(all.slice(0,3).every(item=>replacementUsage(directory,item.name,"PE")==="NEVER"));
+});

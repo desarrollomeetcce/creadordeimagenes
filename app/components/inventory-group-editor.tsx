@@ -9,6 +9,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
+import { groupUsageStatus } from "../../lib/meta-ads/inventory-group-usage-policy";
 import { financialRequest as api } from "./financial-request";
 import { useGroupDraftState } from "./use-group-draft-state";
 import { CurrentUserId } from "./role-guide";
@@ -1700,23 +1701,9 @@ export function InventoryGroupEditor({
                             </td>
                             {countryOptions.map((c) => {
                               const cell = usageCell(i, c.code),
-                                status =
-                                  cell.mode === "USED"
-                                    ? "USED"
-                                    : cell.mode === "UNUSED"
-                                      ? "NEVER"
-                                      : cell.nextUsedAt &&
-                                          Date.parse(cell.nextUsedAt) <= clock
-                                        ? "USED"
-                                        : cell.automatic;
+                                status = groupUsageStatus(cell, clock);
                               const label =
-                                status === "USED"
-                                  ? "✓ Usado"
-                                  : status === "TEST"
-                                    ? "◷ En prueba"
-                                    : status === "UNKNOWN"
-                                      ? "? Sin confirmar"
-                                      : "○ Falta usar";
+                                status === "USED" ? "✓ Usado" : "— Sin usar";
                               return (
                                 <td
                                   key={c.code}
@@ -1730,7 +1717,7 @@ export function InventoryGroupEditor({
                                       cell.mode !== "AUTO" || undefined
                                     }
                                     aria-label={`Editar uso de ${i.name} en ${c.name}: ${label}`}
-                                    title={`${label} · ${cell.mode === "AUTO" ? "Automático" : "Manual"}${cell.activationHours === null ? " · Inicio desconocido" : ` · ${cell.activationHours.toFixed(1)} h registradas`}`}
+                                    title={`${label} · ${cell.mode === "AUTO" ? "Automático" : "Manual"}${cell.activationHours === null ? "" : ` · ${cell.activationHours.toFixed(1)} h registradas`}`}
                                     disabled={
                                       busy || externalBusy || !directory.canEdit
                                     }
@@ -1742,13 +1729,7 @@ export function InventoryGroupEditor({
                                     }
                                   >
                                     <span aria-hidden="true">
-                                      {status === "USED"
-                                        ? "✓"
-                                        : status === "TEST"
-                                          ? "◷"
-                                          : status === "UNKNOWN"
-                                            ? "?"
-                                            : "—"}
+                                      {status === "USED" ? "✓" : "—"}
                                     </span>
                                     {cell.mode !== "AUTO" && (
                                       <small aria-hidden="true">•</small>
@@ -2130,23 +2111,19 @@ function InventoryGroupUsageDialog({
       </p>
       <small>
         Registro automático:{" "}
-        {cell.automatic === "USED"
+        {groupUsageStatus({ ...cell, mode: "AUTO" }) === "USED"
           ? "Usado"
-          : cell.automatic === "TEST"
-            ? "En prueba"
-            : cell.automatic === "UNKNOWN"
-              ? "Sin confirmar"
-              : "Falta usar"}
+          : "Sin usar"}
         {cell.activationHours !== null
           ? ` · ${cell.activationHours.toFixed(1)} horas`
-          : " · Sin inicio verificable"}
+          : ""}
         .
       </small>
       <div className="inventory-group-usage-options">
         {(
           [
             ["USED", "✓ Marcar usado"],
-            ["UNUSED", "○ Marcar falta usar"],
+            ["UNUSED", "— Marcar sin usar"],
             ["AUTO", "↻ Automático · 12 horas"],
           ] as const
         ).map(([mode, label]) => (

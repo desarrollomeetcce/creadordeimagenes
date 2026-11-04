@@ -1,4 +1,5 @@
 "use client";
+import { groupUsageStatus } from "../../lib/meta-ads/inventory-group-usage-policy";
 import {InventoryDiplomaUnification} from "./inventory-diploma-unification";
 import { InventoryCountryCorrection } from "./inventory-country-correction";
 import { inventorySheetCountryLabel } from "../../lib/meta-ads/inventory-sheet-column-policy";
@@ -550,11 +551,12 @@ export function InventoryCatalog({
     const point = countryEvaluation.lookup.get(
       JSON.stringify([categoryKey(name), campaignFilterSheet]),
     );
-    if (["NEVER", "TEST", "USED", "UNKNOWN"].includes(activeCampaignFilter))
-      return (
-        countryEvaluation.ready &&
-        (point?.usage ?? "NEVER") === activeCampaignFilter
-      );
+    if (["NEVER", "TEST", "USED", "UNKNOWN"].includes(activeCampaignFilter)) {
+      const code=campaignFilterSheet.slice(campaignFilterSheet.lastIndexOf(":")+1);
+      const cell=trialDirectory?.usage[JSON.stringify([categoryKey(name),code])];
+      const status=groupUsageStatus(cell??{automatic:point?.usage??"NEVER",mode:"AUTO"});
+      return countryEvaluation.ready && status === (activeCampaignFilter === "USED" ? "USED" : "NEVER");
+    }
     if (activeCampaignFilter === "HISTORY")
       return countryEvaluation.ready && !!point && point.usage !== "NEVER";
     if (activeCampaignFilter === "ACTIVE")
@@ -2798,7 +2800,7 @@ export function InventoryCatalog({
                       className="inventory-campaign-filter"
                       aria-label={`Filtrar campañas de ${sheetLabel(country)}`}
                       value={
-                        campaignFilterSheet === country ? campaignFilter : ""
+                        campaignFilterSheet === country ? (["TEST","UNKNOWN"].includes(campaignFilter)?"NEVER":campaignFilter) : ""
                       }
                       onChange={(e) => {
                         setCampaignFilterSheet(country);
@@ -2813,10 +2815,8 @@ export function InventoryCatalog({
                       <option value="HISTORY">
                         Con historial de activación
                       </option>
-                      <option value="NEVER">Nunca activados</option>
-                      <option value="TEST">Pruebas · menos de 12 h</option>
-                      <option value="USED">Usados · 12 h o más</option>
-                      <option value="UNKNOWN">Tiempo no registrado</option>
+                      <option value="NEVER">Sin usar</option>
+                      <option value="USED">Usado</option>
                     </select>
                   </th>
                 ))}

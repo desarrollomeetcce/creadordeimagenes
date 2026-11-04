@@ -1,3 +1,9 @@
+## Uso binario por país · 2026-11-04
+
+Crear, Editar, catálogo y reemplazos comparten Usado (✓) desde12 horas registradas y Sin usar (—) por debajo del umbral o sin evidencia suficiente. Manual Usado/Sin usar prevalece; Automático restaura el cálculo. Se retiran interrogación, reloj, En prueba y Uso sin confirmar de esta vista. Filtro Todos solo reúne ambos estados; Sin usar primero mantiene prioridad. Preferencias antiguas TEST/UNKNOWN se muestran como Sin usar sin vaciar el selector.
+
+Historial bruto conserva TEST/UNKNOWN y horas nulas para informes, sin modificar eventos, activaciones, hojas, vínculos, finanzas ni grupos. No se añaden lecturas ni Graph. Verificado con289 unitarias,27 integraciones, typecheck/build y5 recorridos Chromium: umbral, ambos overrides, AUTO, F5, reemplazo y filtros locales. Snapshot completo de hechos idéntico, solo5 correcciones manuales aprobadas en fixture; limpieza exclusiva completada. Hostinger real sin verificación desde este entorno.
+
 # Avance por fases · continuación del desarrollo
 
 ## Revisar azar, quitar solo del grupo y encabezados fijos (2026-11-04)
