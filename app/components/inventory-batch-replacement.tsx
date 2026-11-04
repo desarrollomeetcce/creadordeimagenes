@@ -104,63 +104,68 @@ export function InventoryBatchReplacement({
           ×
         </button>
       </header>
-      <InventoryReplacementGroupFilter
-        directory={directory}
-        country={country}
-        groupId={groupId}
-        usage={usage}
-        busy={busy}
-        onChange={(id, filter) => {
-          setGroupId(id);
-          setUsage(filter);
-          setPlan((current) =>
-            current.map((p) => ({ ...p, to: "", mode: "MANUAL" })),
-          );
-          setError("");
-        }}
-      />
-      <div className="row">
-        {groupId && (
-          <button
-            type="button"
-            disabled={busy || !filteredCandidates.length}
-            onClick={() => {
-              setPlan(
-                origins.map((i, index) => ({
-                  from: i.name,
-                  to: filteredCandidates[index]?.name ?? "",
-                  mode: "MANUAL",
-                })),
-              );
-              setError(
-                filteredCandidates.length < origins.length
-                  ? "No hay suficientes diplomados disponibles en este grupo. Completa o cambia el filtro."
-                  : "",
-              );
-            }}
-          >
-            Proponer del grupo · sin usar primero
+      <div className="inventory-batch-toolbar">
+        <InventoryReplacementGroupFilter
+          directory={directory}
+          country={country}
+          groupId={groupId}
+          usage={usage}
+          busy={busy}
+          onChange={(id, filter) => {
+            setGroupId(id);
+            setUsage(filter);
+            setPlan((current) =>
+              current.map((p) => ({ ...p, to: "", mode: "MANUAL" })),
+            );
+            setError("");
+          }}
+        />
+        <div className="row">
+          {groupId && (
+            <button
+              type="button"
+              disabled={busy || !filteredCandidates.length}
+              onClick={() => {
+                setPlan(
+                  origins.map((i, index) => ({
+                    from: i.name,
+                    to: filteredCandidates[index]?.name ?? "",
+                    mode: "MANUAL",
+                  })),
+                );
+                setError(
+                  filteredCandidates.length < origins.length
+                    ? "No hay suficientes diplomados disponibles en este grupo. Completa o cambia el filtro."
+                    : "",
+                );
+              }}
+            >
+              Proponer del grupo · sin usar primero
+            </button>
+          )}
+          <button type="button" disabled={busy} onClick={() => propose(true)}>
+            Azar · misma categoría
           </button>
-        )}
-        <button type="button" disabled={busy} onClick={() => propose(true)}>
-          Azar · misma categoría
-        </button>
-        <button type="button" disabled={busy} onClick={() => propose(false)}>
-          Azar · otras categorías
-        </button>
-        <small>Revisa o cambia cualquier propuesta antes de confirmar.</small>
+          <button type="button" disabled={busy} onClick={() => propose(false)}>
+            Azar · otras categorías
+          </button>
+        </div>
       </div>
       {error && <p role="alert">{error}</p>}
+      <div className="inventory-batch-column-headings" aria-hidden="true">
+        <span>Sale · por desactivar</span>
+        <span></span>
+        <span>Entra · por hacer campaña</span>
+        <span></span>
+      </div>
       <div className="inventory-batch-list">
         {plan.map((p, index) => (
           <div className="inventory-batch-pair" key={p.from}>
             <span>
-              <small>Por desactivar</small>
               <strong>{p.from}</strong>
             </span>
             <b aria-hidden="true">→</b>
             <label>
-              <span>Nuevo · por hacer campaña</span>
               <SheetSearchSelect
                 label={`Reemplazo de ${p.from}`}
                 value={p.to}
@@ -190,7 +195,7 @@ export function InventoryBatchReplacement({
               disabled={!p.to || busy}
               onClick={() => onInspect(p.to)}
             >
-              Ver antecedentes ↗
+              Antecedentes
             </button>
           </div>
         ))}

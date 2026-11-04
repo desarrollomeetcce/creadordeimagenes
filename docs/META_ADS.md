@@ -1,5 +1,19 @@
 # Meta Ads: consulta y análisis
 
+## Top: individual original y lote compacto · 2026-11-04
+
+Una selección o un bloque de un solo diplomado abre el selector individual original. Dos o más usan revisión de lote con máximo1100px, controles de grupo/uso/azar juntos, títulos Sale/Entra una sola vez y una línea por pareja; detalle permanece disponible. No cambia esquema, validación ni confirmación del reemplazo.4 recorridos Chromium adicionales verifican selección1/bloque1, lote2 <280px de alto, ancho acotado, filtros que reinician propuesta, categoría insuficiente, completar manualmente, antecedentes, Cancelar y móvil390px. Cero escrituras durante revisión; snapshot completo de alias, días, activaciones, eventos y campañas idéntico, catálogo6 y revisiones de grupos1 intactos. Fixture exclusivo retirado. La publicación conjunta incluye el ajuste anterior de grupos; Hostinger real sigue sin comprobación.
+
+
+## Grupos: filas bajas, añadir con aceptación y reemplazo por grupo · 2026-11-04
+
+Acciones de fila reducidas a Antecedentes/Reemplazar en una línea con ancho inicial170 ajustable; azar/categoría quedan dentro de revisión y Quitar del grupo sigue en selección masiva. Detalle no parte la palabra. No se fuerza una altura que oculte los nombres/categorías. Selector de sustitutos limita la propuesta y búsqueda a Todos los grupos o grupo elegido; cambiarlo limpia pares incompatibles y errores, conserva validación por categoría y confirmación del intercambio con ambas revisiones. No se aplica filtro de país al intercambio organizativo. Top mantiene uso por país y simplifica etiqueta Todos los grupos.
+
+Añadir diplomado abre confirmación con nombre/grupo; Cancelar no toca selección ni miembros. Aceptar añade solo al borrador y Guardar cambios persiste. Antecedentes omite solo fila sin país, uso, historia ni cifras; un registro material sin país conserva acceso y etiqueta Sin país registrado. No se borra información ni se añaden consultas de presentación/Graph.
+
+Validación:289 unitarias,14 integraciones de reemplazo/administración, typecheck/build y7 recorridos Chromium con datos exclusivos. Fila simple <80px, dos botones alineados, añadir/cancelar/guardar, retiro pendiente local, filtro por grupo y categoría insuficiente, invalidación de sustituto fuera de alcance, intercambio aprobado con revisiones, Top, historial vacío/material y modal móvil. Snapshot físico PE/BO/HN idéntico, baseV1/G10.25 y campañaG42.55 conservadas; solo1 alta y1 intercambio guardados, catálogo5 y ciclos previos conservados. Fixtures retirados. Se corrigieron dos aserciones del arnés (esperar opciones renderizadas y dato sintético por período) y se repitió el recorrido completo con éxito. Hostinger real sin comprobación desde este entorno.
+
+
 ## Uso binario por país · 2026-11-04
 
 Crear, Editar, catálogo y reemplazos comparten Usado (✓) desde12 horas registradas y Sin usar (—) por debajo del umbral o sin evidencia suficiente. Manual Usado/Sin usar prevalece; Automático restaura el cálculo. Se retiran interrogación, reloj, En prueba y Uso sin confirmar de esta vista. Filtro Todos solo reúne ambos estados; Sin usar primero mantiene prioridad. Preferencias antiguas TEST/UNKNOWN se muestran como Sin usar sin vaciar el selector.

@@ -32,6 +32,7 @@ export function InventoryGroupReplacements({
   const [snapshot] = useState(() => ({ directory, group, itemIds }));
   const [expanded, setExpanded] = useState(false),
     [mode, setMode] = useState<GroupReplacementMode>(initialMode),
+    [candidateGroupId, setCandidateGroupId] = useState(""),
     [pairs, setPairs] = useState(() =>
       initialMode === "ANY"
         ? itemIds.map((itemId) => ({ itemId, replacementId: "" }))
@@ -54,7 +55,7 @@ export function InventoryGroupReplacements({
     return item ? [item] : [];
   });
   const memberIds = new Set(source.members.map((member) => member.itemId));
-  const candidates = catalog.filter((item) => !memberIds.has(item.id));
+
   const itemById = new Map(catalog.map((item) => [item.id, item]));
   const groupByItem = new Map(
     snapshot.directory.groups.flatMap((group) =>
@@ -69,6 +70,25 @@ export function InventoryGroupReplacements({
   const membership = (id: string) =>
     groupByItem.get(id) ??
     groupByName.get(categoryKey(itemById.get(id)?.name ?? ""));
+  const candidates = catalog.filter(
+    (item) =>
+      !memberIds.has(item.id) &&
+      (!candidateGroupId || membership(item.id)?.id === candidateGroupId),
+  );
+  function changeCandidateGroup(id: string) {
+    setCandidateGroupId(id);
+    setPairs((current) =>
+      current.map((pair) => ({
+        ...pair,
+        replacementId:
+          !id || membership(pair.replacementId)?.id === id
+            ? pair.replacementId
+            : "",
+      })),
+    );
+    setMode("ANY");
+    setError("");
+  }
   const ready =
     pairs.length > 0 &&
     sources.length === pairs.length &&
@@ -164,6 +184,24 @@ export function InventoryGroupReplacements({
         </button>
       </header>
       <div className="inventory-group-replacement-modes">
+        <label>
+          Diplomados de un grupo
+          <select
+            aria-label="Grupo de los sustitutos"
+            value={candidateGroupId}
+            disabled={busy || committed}
+            onChange={(event) => changeCandidateGroup(event.target.value)}
+          >
+            <option value="">Todos los grupos</option>
+            {snapshot.directory.groups
+              .filter((group) => group.id !== source.id)
+              .map((group) => (
+                <option key={group.id} value={group.id}>
+                  {group.name} ({group.members.length})
+                </option>
+              ))}
+          </select>
+        </label>
         {(
           [
             ["ANY", "Al azar"],

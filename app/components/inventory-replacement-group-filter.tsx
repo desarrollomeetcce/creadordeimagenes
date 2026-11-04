@@ -27,7 +27,7 @@ export function InventoryReplacementGroupFilter({
           disabled={busy}
           onChange={(e) => onChange(e.target.value, usage)}
         >
-          <option value="">Todos los grupos y sin grupo</option>
+          <option value="">Todos los grupos</option>
           {directory.groups.map((g) => (
             <option key={g.id} value={g.id}>
               {g.name} ({g.members.length})

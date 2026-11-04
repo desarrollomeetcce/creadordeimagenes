@@ -253,6 +253,13 @@ export function InventoryTop({
     setMode(same ? "SAME" : "OTHER");
     setCandidate(next.name);
   }
+  function reviewReplacements(names: string[]) {
+    setCandidate("");
+    setMode("MANUAL");
+    setError("");
+    setBatch(names.length > 1 ? [...names] : []);
+    setReplaceName(names.length === 1 ? names[0] : "");
+  }
   const disabled = busy || !directory.canEdit || !evaluation.ready;
   return (
     <div className="inventory-top-manager">
@@ -332,8 +339,7 @@ export function InventoryTop({
           className="primary inventory-batch-trigger"
           disabled={disabled || !selected.length}
           onClick={() => {
-            setBatch([...selected]);
-            setReplaceName("");
+            reviewReplacements(selected);
           }}
         >
           ↔ Reemplazar seleccionados ({selected.length})
@@ -668,8 +674,7 @@ export function InventoryTop({
                                 .filter((r) => rank(r.point) === rank(p))
                                 .map((r) => r.item.name);
                               setSelected(names);
-                              setBatch(names);
-                              setReplaceName("");
+                              reviewReplacements(names);
                             }}
                           >
                             ↔ Reemplazar bloque

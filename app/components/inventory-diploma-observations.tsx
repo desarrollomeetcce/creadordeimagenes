@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import { financialRequest as api } from "./financial-request";
+import { countryName } from "../../lib/meta-ads/countries";
 import { categoryKey } from "../../lib/meta-ads/category-paste";
 import type {
   InventorySheetActivationReport,
@@ -113,13 +114,23 @@ export function InventoryDiplomaObservations({
       alive = false;
     };
   }, [listId, name, columnKey]);
-  const rows = data ?? [],
+  // Countryless empty placeholders are not a historical country to select.
+  // Material records remain visible even when their country was not recorded.
+  const rows = (data ?? []).filter(
+      (row) =>
+        row.country?.trim() ||
+        row.history?.length ||
+        row.usage !== "NEVER" ||
+        row.sales !== null ||
+        row.budget !== null,
+    ),
     current = rows.find((r) => r.tableId + ":" + r.country === selected),
     history = current?.history ?? [];
   const label = (r: (typeof rows)[number]) =>
-    columns.find((c) => c.value === r.tableId + ":" + r.country)?.label ??
-    r.country ??
-    r.tableId;
+    columns
+      .find((c) => c.value === r.tableId + ":" + r.country)
+      ?.label?.trim() ||
+    (r.country?.trim() ? countryName(r.country) : "Sin país registrado");
   const warnings = history.filter(
     (h) => h.complete && ["ALERT", "CRITICAL"].includes(h.assessment.status),
   ).length;

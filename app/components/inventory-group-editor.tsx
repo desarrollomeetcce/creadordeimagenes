@@ -95,6 +95,10 @@ export function InventoryGroupEditor({
     requested: number;
     key: string;
   } | null>(null);
+  const [addition, setAddition] = useState<{
+    item: TrialItem;
+    key: string;
+  } | null>(null);
   const [removal, setRemoval] = useState<{
     ids: string[];
     persisted: string[];
@@ -143,7 +147,7 @@ export function InventoryGroupEditor({
       label: c.name,
       width: 48,
     })),
-    { key: "selection", label: "Acciones", width: 130 },
+    { key: "selection", label: "Acciones", width: 170 },
   ];
   const usageCell = (item: TrialItem, country: string): GroupUsageCell =>
     usage[JSON.stringify([categoryKey(item.name), country])] ?? {
@@ -445,28 +449,24 @@ export function InventoryGroupEditor({
     setSelectedIds((v) =>
       v.includes(id) ? v.filter((x) => x !== id) : [...v, id],
     );
-  function replaceRandom(item: TrialItem, same: boolean) {
-    const candidates = pool.filter(
-      (i) =>
-        !ids.includes(i.id) &&
-        (same
-          ? i.primaryIds.length === item.primaryIds.length &&
-            i.primaryIds.every((c) => item.primaryIds.includes(c))
-          : !i.primaryIds.some((c) => item.primaryIds.includes(c)) &&
-            i.primaryIds.length > 0),
-    );
-    const next = candidates[Math.floor(Math.random() * candidates.length)];
-    if (!next) {
-      setError(
-        "No hay otro diplomado libre con esa condición. Puedes elegirlo con Editar.",
+  function approveAddition() {
+    if (!addition || addition.key !== draftKey) return;
+    const item = catalogById.get(addition.item.id);
+    if (
+      !item ||
+      occupied.has(categoryKey(item.name)) ||
+      ids.includes(item.id)
+    ) {
+      setReviewError(
+        "El diplomado o su grupo cambió. Cierra y elige de nuevo.",
       );
       return;
     }
-    setIds((v) => v.map((x) => (x === item.id ? next.id : x)));
-    setCheckedIds((current) =>
-      current.map((id) => (id === item.id ? next.id : id)),
-    );
-    setError("");
+    setIds((current) => [...new Set([...current, item.id])]);
+    setCheckedIds((current) => [...new Set([...current, item.id])]);
+    setAddition(null);
+    setReviewError("");
+    setNotice("Diplomado añadido al borrador. Guarda los cambios del grupo.");
   }
   function approveProposal() {
     if (!proposal || proposal.key !== draftKey) return;
@@ -853,6 +853,28 @@ export function InventoryGroupEditor({
               </li>
             ))}
           </ul>
+        </InventoryGroupActionDialog>
+      )}
+      {addition && (
+        <InventoryGroupActionDialog
+          title="Añadir diplomado al grupo"
+          busy={busy || externalBusy}
+          error={reviewError}
+          canAccept={addition.key === draftKey && directory.canEdit}
+          acceptLabel="Aceptar y añadir"
+          onAccept={approveAddition}
+          onClose={() => {
+            setAddition(null);
+            setReviewError("");
+          }}
+        >
+          <p>
+            ¿Añadir <strong>{addition.item.name}</strong> al grupo «{name}»?
+          </p>
+          <small>
+            Se incorporará al borrador. Guarda los cambios para confirmar su
+            pertenencia. Su uso por país e historial se conservan.
+          </small>
         </InventoryGroupActionDialog>
       )}
       {removal && (
@@ -1246,13 +1268,11 @@ export function InventoryGroupEditor({
                         .filter((item) => !ids.includes(item.id))
                         .map((item) => ({ value: item.id, label: item.name }))}
                       onSelect={(id) => {
-                        setIds((current) => [...new Set([...current, id])]);
-                        setCheckedIds((current) => [
-                          ...new Set([...current, id]),
-                        ]);
-                        setNotice(
-                          "Diplomado añadido al borrador. Guarda los cambios del grupo.",
-                        );
+                        const item = catalogById.get(id);
+                        if (item) {
+                          setReviewError("");
+                          setAddition({ item, key: draftKey });
+                        }
                       }}
                     />
                   ) : (
@@ -1759,85 +1779,48 @@ export function InventoryGroupEditor({
                                 </td>
                               );
                             })}
-                            <td>
-                              <button
-                                type="button"
-                                className="inventory-group-history"
-                                onClick={() => setObservations(i.name)}
-                              >
-                                Antecedentes ↗
-                              </button>
-                              {assigned ? (
-                                <small>En {assigned}</small>
-                              ) : (
-                                ids.includes(i.id) && (
-                                  <div className="inventory-group-row-actions">
-                                    <button
-                                      disabled={busy}
-                                      onClick={() => {
-                                        if (
-                                          editing &&
-                                          group?.members.some(
-                                            (member) => member.itemId === i.id,
-                                          )
-                                        ) {
-                                          setReplacementMode("ANY");
-                                          setReplacementIds([i.id]);
-                                          return;
-                                        }
-                                        setReplacing(i.id);
-                                        setOnlySelected(false);
-                                        setQuery("");
-                                        setPrimary([]);
-                                        setSecondary([]);
-                                        setSheets([]);
-                                      }}
-                                    >
-                                      ↔ Reemplazar
-                                    </button>
-                                    <button
-                                      disabled={busy}
-                                      onClick={() => {
-                                        if (
-                                          editing &&
-                                          group?.members.some(
-                                            (member) => member.itemId === i.id,
-                                          )
-                                        ) {
-                                          setReplacementMode("SAME");
-                                          setReplacementIds([i.id]);
-                                        } else replaceRandom(i, true);
-                                      }}
-                                    >
-                                      Azar · misma
-                                    </button>
-                                    <button
-                                      disabled={busy}
-                                      onClick={() => {
-                                        if (
-                                          editing &&
-                                          group?.members.some(
-                                            (member) => member.itemId === i.id,
-                                          )
-                                        ) {
-                                          setReplacementMode("OTHER");
-                                          setReplacementIds([i.id]);
-                                        } else replaceRandom(i, false);
-                                      }}
-                                    >
-                                      Azar · otra
-                                    </button>
-                                    <button
-                                      disabled={busy}
-                                      aria-label={"Quitar del grupo " + i.name}
-                                      title="Quita solo la pertenencia al grupo; conserva el diplomado y sus datos en el inventario"
-                                      onClick={() => reviewRemoval([i.id])}
-                                    >
-                                      Quitar del grupo
-                                    </button>
-                                  </div>
-                                )
-                              )}
+                            <td className="inventory-group-actions-cell">
+                              <div className="inventory-group-actions-inline">
+                                <button
+                                  type="button"
+                                  className="inventory-group-history"
+                                  onClick={() => setObservations(i.name)}
+                                >
+                                  Antecedentes
+                                </button>
+                                {assigned ? (
+                                  <small>En {assigned}</small>
+                                ) : (
+                                  ids.includes(i.id) && (
+                                    <div className="inventory-group-row-actions">
+                                      <button
+                                        disabled={busy}
+                                        onClick={() => {
+                                          if (
+                                            editing &&
+                                            group?.members.some(
+                                              (member) =>
+                                                member.itemId === i.id,
+                                            )
+                                          ) {
+                                            setReplacementMode("ANY");
+                                            setReplacementIds([i.id]);
+                                            return;
+                                          }
+                                          setReplacing(i.id);
+                                          setOnlySelected(false);
+                                          setQuery("");
+                                          setPrimary([]);
+                                          setSecondary([]);
+                                          setSheets([]);
+                                        }}
+                                      >
+                                        Reemplazar
+                                      </button>
+                                    </div>
+                                  )
+                                )}
+                              </div>
                             </td>
                           </tr>
                         </Fragment>
