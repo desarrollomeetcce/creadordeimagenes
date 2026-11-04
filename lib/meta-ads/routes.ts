@@ -668,6 +668,8 @@ export async function metaRoutes(
       );
     }
   }
+  if(path === "inventory/unify-preview" && method === "POST") return send(await (await import("./inventory-unification")).previewInventoryUnification(actor,await body()));
+  if(path === "inventory/unify" && method === "POST") return send(await (await import("./inventory-unification")).unifyInventoryDiplomas(actor,await body()));
   if (path === "inventory/remove-preview" && method === "POST") {
     ownerOnly(actor);
     const b = z

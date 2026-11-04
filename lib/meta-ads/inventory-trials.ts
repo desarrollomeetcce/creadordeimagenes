@@ -390,6 +390,25 @@ async function exclusiveMembers(
     );
   }
 }
+async function uniqueGroupName(
+  tx: Prisma.TransactionClient,
+  listId: string,
+  name: string,
+  exceptId?: string,
+) {
+  const groups = await tx.metaInventoryTrialGroup.findMany({
+    where: { sheetId: listId, archivedAt: null },
+    select: { id: true, name: true },
+  });
+  demand(
+    !groups.some(
+      (group) =>
+        group.id !== exceptId && categoryKey(group.name) === categoryKey(name),
+    ),
+    "Ya existe un grupo con ese nombre. Usa Asignar a grupo para agregar diplomados.",
+    409,
+  );
+}
 export async function saveInventoryTrial(actor: Actor, input: unknown) {
   const b = trialChange.parse(input);
   return db.$transaction(
@@ -542,6 +561,7 @@ export async function saveInventoryTrial(actor: Actor, input: unknown) {
           }
         }
 
+        await uniqueGroupName(tx, b.listId, b.name);
         dateCheck(b.since);
         demand(
           new Set(b.itemIds).size === b.itemIds.length &&
@@ -629,6 +649,8 @@ export async function saveInventoryTrial(actor: Actor, input: unknown) {
         "El grupo cambió. Actualiza antes de guardar.",
         409,
       );
+      if ((b.action === "RENAME" || b.action === "MEMBERS") && b.name)
+        await uniqueGroupName(tx, b.listId, b.name, g.id);
       const p = g.payload as unknown as TrialPayload;
       if (b.action === "MEMBERS" || b.action === "ADD_MEMBERS") {
         dateCheck(b.since);

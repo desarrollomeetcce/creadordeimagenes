@@ -1,4 +1,5 @@
 "use client";
+import {InventoryDiplomaUnification} from "./inventory-diploma-unification";
 import { InventoryCountryCorrection } from "./inventory-country-correction";
 import { inventorySheetCountryLabel } from "../../lib/meta-ads/inventory-sheet-column-policy";
 import { InventoryMetaSync } from "./inventory-meta-sync";
@@ -176,8 +177,8 @@ export function InventoryCatalog({
     column?: string;
     replaceName?: string;
   } | null>(null);
-  const [groupRemoval,setGroupRemoval]=useState<string[]|null>(null);
-  const [groupRemovedIds,setGroupRemovedIds]=useState<string[]>([]);
+  const [groupUnification,setGroupUnification]=useState<string[]|null>(null);
+  const [unifiedSelection,setUnifiedSelection]=useState<{sourceIds:string[];targetId:string}|null>(null);
   const [evaluation, setEvaluation] = useState<string | null>(null);
   const [groupFilter, setGroupFilter] = useState("");
   const [groupOrder, setGroupOrder] = useWorkbookPreference<string>(
@@ -197,8 +198,10 @@ export function InventoryCatalog({
     setTrialDirectory(null);
     setGroupFilter("");
     setGroupEditor(null);
-    setGroupRemoval(null);
-    setGroupRemovedIds([]);
+
+    setGroupUnification(null);
+    setUnifiedSelection(null);
+
     setEvaluation(null);
     void api("meta-ads/inventory/trials?" + new URLSearchParams({ listId }))
       .then((d: TrialDirectory) => {
@@ -1825,8 +1828,9 @@ export function InventoryCatalog({
             </>
           }
           directory={trialDirectory}
-          onDeleteSelection={setGroupRemoval}
-          removedIds={groupRemovedIds}
+          onUnifySelection={sheetDirectory?.canCorrectCountry ? setGroupUnification : undefined}
+          unifiedSelection={unifiedSelection}
+          onGroupsChanged={async () => { await Promise.all([reloadGroups(), reloadCategories(), onChanged()]); }}
           onUsageChange={(key,cell)=>setTrialDirectory(previous=>previous ? {...previous,usage:{...previous.usage,[key]:cell}} : previous)}
           group={trialGroups.find((g) => g.id === groupEditor.id)}
           initialNames={groupEditor.names}
@@ -3461,13 +3465,13 @@ export function InventoryCatalog({
           }}
         />
       )}
-      {groupRemoval && <InventorySelectionDelete listId={listId} ids={groupRemoval} simpleConfirm wholeDiplomas onClose={()=>setGroupRemoval(null)} onRemoved={async removed=>{
-        setGroupRemovedIds(current=>[...new Set([...current,...removed])]);
+      {groupUnification && trialDirectory && <InventoryDiplomaUnification listId={listId} sourceIds={groupUnification} catalog={trialDirectory.catalog} onClose={()=>setGroupUnification(null)} onUnified={async result=>{
         await Promise.all([onChanged(),reloadCategories(),reloadGroups(),reloadSheetDirectory()]);
+        setUnifiedSelection({sourceIds:result.sourceIds,targetId:result.targetId});
         setCountryReload(current=>current+1);
-        setSelected(current=>current.filter(id=>!removed.includes(id)));
-        setGroupRemoval(null);
-        setMessage("Diplomados seleccionados eliminados.");
+        setSelected([]);
+        setGroupUnification(null);
+        setMessage("Diplomados unificados en «"+result.targetName+"», con sus hojas e historial.");
       }}/>}
       {bulkIds && (
         <InventorySelectionDelete

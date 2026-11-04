@@ -1,6 +1,14 @@
 "use client";
-import { Fragment, useEffect, useRef, useState, type ReactNode } from "react";
+import {
+  Fragment,
+  useContext,
+  useEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import { financialRequest as api } from "./financial-request";
+import { CurrentUserId } from "./role-guide";
 import { SheetSearchSelect } from "./sheet-search-select";
 import { matchesSearchWords } from "../../lib/search";
 import { categoryKey } from "../../lib/meta-ads/category-paste";
@@ -27,9 +35,10 @@ export function InventoryGroupEditor({
   initialNames,
   onClose,
   onSaved,
+  onGroupsChanged,
   onUsageChange,
-  onDeleteSelection,
-  removedIds = [],
+  onUnifySelection,
+  unifiedSelection,
   topContent,
   initialTab,
   onChooseGroup,
@@ -46,11 +55,21 @@ export function InventoryGroupEditor({
   initialNames: string[];
   onClose: () => void;
   onSaved: (id: string) => Promise<void>;
+  onGroupsChanged?: () => Promise<void>;
   onUsageChange?: (key: string, cell: GroupUsageCell) => void;
-  onDeleteSelection?: (ids: string[]) => void;
-  removedIds?: string[];
+  onUnifySelection?: (ids: string[]) => void;
+  unifiedSelection?: { sourceIds: string[]; targetId: string } | null;
 }) {
   const dialog = useRef<HTMLDialogElement>(null);
+  const userId = useContext(CurrentUserId);
+  const pinKey = `inventory-group-pins:v1:${userId}:${directory.listId}`;
+  const [groupAction, setGroupAction] = useState<{
+    kind: "assign" | "archive" | "rename" | "menu";
+    group: TrialGroup | null;
+  } | null>(null);
+  const groupActionPending = useRef(false);
+  const [renameValue, setRenameValue] = useState("");
+  const [notice, setNotice] = useState("");
   const [managementTab, setManagementTab] = useState<"create" | "edit" | "top">(
     initialTab ?? (group ? "edit" : "create"),
   );
@@ -67,6 +86,9 @@ export function InventoryGroupEditor({
   );
   const countryOptions = directory.countries;
   const [usage, setUsage] = useState(directory.usage);
+  useEffect(() => {
+    setUsage(directory.usage);
+  }, [directory.usage]);
   const [clock, setClock] = useState(Date.now);
   useEffect(() => {
     const timer = setInterval(() => {
@@ -79,16 +101,16 @@ export function InventoryGroupEditor({
     country: string;
   } | null>(null);
   const columnSpecs = [
-    { key: "name", label: "Diplomado", width: 300 },
-    { key: "primary", label: "Categoría principal", width: 160 },
-    { key: "secondary", label: "Categorías secundarias", width: 170 },
-    { key: "group", label: "Grupo", width: 110 },
+    { key: "name", label: "Diplomado", width: 230 },
+    { key: "primary", label: "Categoría principal", width: 110 },
+    { key: "secondary", label: "Categorías secundarias", width: 120 },
+    { key: "group", label: "Grupo", width: 75 },
     ...countryOptions.map((c) => ({
       key: "usage:" + c.code,
       label: c.name,
-      width: 130,
+      width: 48,
     })),
-    { key: "selection", label: "Acciones", width: 240 },
+    { key: "selection", label: "Acciones", width: 130 },
   ];
   const usageCell = (item: TrialItem, country: string): GroupUsageCell =>
     usage[JSON.stringify([categoryKey(item.name), country])] ?? {
@@ -145,6 +167,37 @@ export function InventoryGroupEditor({
     ]),
   ]);
   const countries = group?.countries ?? countryOptions.map((c) => c.code);
+  const [browsedGroupId, setBrowsedGroupId] = useState(group?.id ?? "");
+  const [pinnedGroupIds, setPinnedGroupIds] = useState<string[]>([]);
+  useEffect(() => {
+    try {
+      const raw = JSON.parse(localStorage.getItem(pinKey) || "[]");
+      setPinnedGroupIds(
+        Array.isArray(raw)
+          ? raw
+              .filter((value): value is string => typeof value === "string")
+              .slice(0, 100)
+          : [],
+      );
+    } catch {
+      setPinnedGroupIds([]);
+    }
+  }, [pinKey]);
+  function pinGroups(update: (current: string[]) => string[]) {
+    setPinnedGroupIds((current) => {
+      const next = update(current);
+      try {
+        localStorage.setItem(pinKey, JSON.stringify(next));
+      } catch {}
+      return next;
+    });
+  }
+  const browsedGroup = directory.groups.find(
+    (entry) => entry.id === browsedGroupId,
+  );
+  const browsedMembers = browsedGroup
+    ? new Set(browsedGroup.members.map((member) => member.itemId))
+    : null;
   const [query, setQuery] = useState(""),
     [primary, setPrimary] = useState<string[]>([]),
     [secondary, setSecondary] = useState<string[]>([]),
@@ -156,11 +209,15 @@ export function InventoryGroupEditor({
     [error, setError] = useState(""),
     [committed, setCommitted] = useState(false);
   useEffect(() => {
-    if (!removedIds.length) return;
-    const removed = new Set(removedIds);
-    setIds((current) => current.filter((id) => !removed.has(id)));
-    if (replacing && removed.has(replacing)) setReplacing(null);
-  }, [removedIds]);
+    if (!unifiedSelection) return;
+    const sources = new Set(unifiedSelection.sourceIds);
+    setIds((current) => [
+      ...new Set(
+        current.map((id) => (sources.has(id) ? unifiedSelection.targetId : id)),
+      ),
+    ]);
+    if (replacing && sources.has(replacing)) setReplacing(null);
+  }, [unifiedSelection]);
   useEffect(() => {
     dialog.current?.showModal();
   }, []);
@@ -196,6 +253,7 @@ export function InventoryGroupEditor({
   const pool = catalog.filter((i) => !occupied.has(categoryKey(i.name)));
   const matching = catalog.filter(
     (i) =>
+      (!browsedMembers || browsedMembers.has(i.id)) &&
       matchesSearchWords(i.name, query) &&
       (!primary.length || i.primaryNames.some((n) => primary.includes(n))) &&
       (!secondary.length ||
@@ -203,7 +261,7 @@ export function InventoryGroupEditor({
       (!sheets.length || i.sheets?.some((s) => sheets.includes(s.id))),
   );
   const filtered = matching.filter((i) => !onlySelected || ids.includes(i.id));
-  const eligible = filtered.filter((i) => !occupied.has(categoryKey(i.name)));
+  const eligible = filtered;
   const proposalPool = matching.filter(
     (i) => !occupied.has(categoryKey(i.name)),
   );
@@ -211,7 +269,7 @@ export function InventoryGroupEditor({
     [pageSize, setPageSize] = useState(50);
   useEffect(() => {
     setPage(1);
-  }, [query, primary, secondary, onlySelected]);
+  }, [query, primary, secondary, onlySelected, browsedGroupId]);
   const ordered = filtered
     .slice()
     .sort(
@@ -248,6 +306,59 @@ export function InventoryGroupEditor({
     }
     setIds((v) => v.map((x) => (x === item.id ? next.id : x)));
     setError("");
+  }
+  async function applyGroupAction() {
+    if (
+      !groupAction?.group ||
+      groupAction.kind === "menu" ||
+      groupActionPending.current
+    )
+      return;
+    groupActionPending.current = true;
+    setBusy(true);
+    setError("");
+    setNotice("");
+    let saved = false;
+    try {
+      const target = groupAction.group;
+      await api("meta-ads/inventory/trials", "POST", {
+        action:
+          groupAction.kind === "assign"
+            ? "ADD_MEMBERS"
+            : groupAction.kind === "rename"
+              ? "RENAME"
+              : "ARCHIVE",
+        listId: directory.listId,
+        groupId: target.id,
+        revision: target.revision,
+        ...(groupAction.kind === "assign"
+          ? { itemIds: ids, since: limaToday() }
+          : groupAction.kind === "rename"
+            ? { name: renameValue }
+            : {}),
+      });
+      saved = true;
+      setGroupAction(null);
+      if (groupAction.kind === "archive") setBrowsedGroupId("");
+      if (groupAction.kind === "rename" && group?.id === target.id)
+        setName(renameValue);
+      await onGroupsChanged?.();
+      setNotice(
+        groupAction.kind === "assign"
+          ? `Diplomados asignados a ${target.name}.`
+          : groupAction.kind === "rename"
+            ? `Nombre actualizado: ${renameValue}.`
+            : `Grupo ${target.name} eliminado de la lista. Sus diplomados e historial se conservan.`,
+      );
+    } catch (error) {
+      setError(
+        (saved ? "Cambio guardado. Actualiza la vista. " : "") +
+          (error instanceof Error ? error.message : "No se pudo guardar."),
+      );
+    } finally {
+      setBusy(false);
+      groupActionPending.current = false;
+    }
   }
   async function save() {
     setBusy(true);
@@ -333,7 +444,7 @@ export function InventoryGroupEditor({
               disabled={busy || externalBusy || !directory.canEdit}
               onClick={() => setManagementTab("edit")}
             >
-              Grupos guardados
+              Editar grupos
             </button>
           </nav>
         )}
@@ -361,6 +472,116 @@ export function InventoryGroupEditor({
           </button>
         </div>
       </header>
+      {groupAction && (
+        <InventoryGroupActionDialog
+          title={
+            groupAction.kind === "assign"
+              ? "Asignar a grupo"
+              : groupAction.kind === "rename"
+                ? "Editar nombre del grupo"
+                : groupAction.kind === "menu"
+                  ? (groupAction.group?.name ?? "Grupo")
+                  : "Eliminar grupo"
+          }
+          busy={busy}
+          error={error}
+          canAccept={
+            !!groupAction.group &&
+            (groupAction.kind !== "assign" || ids.length > 0) &&
+            (groupAction.kind !== "rename" || !!renameValue.trim())
+          }
+          showAccept={groupAction.kind !== "menu"}
+          onAccept={() => void applyGroupAction()}
+          onClose={() => {
+            if (!busy) {
+              setGroupAction(null);
+              setError("");
+            }
+          }}
+        >
+          {groupAction.kind === "assign" ? (
+            <>
+              <p>
+                Agregar {ids.length} diplomados seleccionados sin retirar los
+                que ya tiene el grupo.
+              </p>
+              <SheetSearchSelect
+                label="Grupo para asignar seleccionados"
+                value={groupAction.group?.id ?? ""}
+                placeholder="Busca el grupo destino…"
+                disabled={busy}
+                options={directory.groups.map((entry) => ({
+                  value: entry.id,
+                  label: entry.name,
+                }))}
+                onSelect={(id) =>
+                  setGroupAction({
+                    kind: "assign",
+                    group:
+                      directory.groups.find((entry) => entry.id === id) ?? null,
+                  })
+                }
+              />
+              <small>
+                Si un diplomado ya pertenece a otro grupo, se avisará sin
+                cambiar su asignación.
+              </small>
+            </>
+          ) : groupAction.kind === "rename" ? (
+            <label>
+              Nombre del grupo
+              <input
+                aria-label="Nuevo nombre del grupo"
+                value={renameValue}
+                maxLength={100}
+                disabled={busy}
+                onChange={(event) => setRenameValue(event.target.value)}
+              />
+            </label>
+          ) : groupAction.kind === "menu" ? (
+            <div className="inventory-group-context-actions">
+              <button
+                type="button"
+                disabled={!directory.canEdit}
+                onClick={() => {
+                  setRenameValue(groupAction.group?.name ?? "");
+                  setGroupAction({ ...groupAction, kind: "rename" });
+                }}
+              >
+                Editar nombre
+              </button>
+              {onChooseGroup && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    const id = groupAction.group?.id;
+                    setGroupAction(null);
+                    if (id) onChooseGroup(id);
+                  }}
+                >
+                  Editar diplomados
+                </button>
+              )}
+              <button
+                type="button"
+                className="danger"
+                disabled={!directory.canEdit}
+                onClick={() =>
+                  setGroupAction({ ...groupAction, kind: "archive" })
+                }
+              >
+                Eliminar grupo
+              </button>
+            </div>
+          ) : (
+            <p>
+              ¿Eliminar el grupo «{groupAction.group?.name}» de la lista? Sus
+              diplomados, hojas, ventas, vínculos e historial se conservarán. La
+              publicidad seguirá igual.
+            </p>
+          )}
+        </InventoryGroupActionDialog>
+      )}
       {categoryPicker && (
         <InventoryGroupCategoryDialog
           title={
@@ -408,6 +629,11 @@ export function InventoryGroupEditor({
           onClose={() => setObservations("")}
         />
       )}
+      {notice && (
+        <p role="status" className="inventory-group-notice">
+          {notice}
+        </p>
+      )}
       {managementTab === "top" ? (
         topContent
       ) : (
@@ -425,66 +651,150 @@ export function InventoryGroupEditor({
                 />
               </label>
             )}
-            <strong>Mis grupos</strong>
-            {directory.groups.map((g) => (
+            <div className="inventory-group-browser">
+              <label>
+                Mis grupos
+                <SheetSearchSelect
+                  label="Buscar grupos"
+                  className="primary inventory-group-find"
+                  value={browsedGroupId}
+                  placeholder="Buscar grupos…"
+                  disabled={busy || externalBusy}
+                  options={[
+                    { value: "", label: "Todos los grupos" },
+                    ...directory.groups.map((entry) => ({
+                      value: entry.id,
+                      label: `${entry.name} (${entry.members.length})`,
+                    })),
+                  ]}
+                  onSelect={setBrowsedGroupId}
+                />
+              </label>
               <button
                 type="button"
-                key={g.id}
-                aria-pressed={group?.id === g.id && managementTab === "edit"}
-                disabled={busy || externalBusy || !onChooseGroup}
-                onClick={() => onChooseGroup?.(g.id)}
+                disabled={
+                  !browsedGroup ||
+                  busy ||
+                  pinnedGroupIds.includes(browsedGroupId)
+                }
+                onClick={() =>
+                  pinGroups((current) => [...current, browsedGroupId])
+                }
               >
-                {g.name} <span>{g.members.length}</span>
+                Fijar
               </button>
-            ))}
-            {!directory.groups.length && (
-              <small>Aún no hay grupos guardados.</small>
-            )}
-            {(managementTab !== "edit" || group) && (
-              <label className="inventory-group-inline-search">
-                Buscar inventario
-                <input
-                  type="search"
-                  aria-label="Buscar inventario para grupo"
-                  placeholder="Nombre del diplomado…"
-                  value={query}
-                  onChange={(e) => setQuery(e.target.value)}
-                />
-              </label>
-            )}
-            {onChooseGroup && !!directory.groups.length && (
-              <label>
-                Elegir grupo
-                <SheetSearchSelect
-                  label="Filtrar grupo"
-                  value={group?.id ?? ""}
-                  placeholder="Elige un grupo…"
-                  options={directory.groups.map((g) => ({
-                    value: g.id,
-                    label: g.name,
-                  }))}
-                  onSelect={onChooseGroup}
-                />
-              </label>
-            )}
+              {pinnedGroupIds.map((id) => {
+                const entry = directory.groups.find(
+                  (candidate) => candidate.id === id,
+                );
+                return entry ? (
+                  <span
+                    className="inventory-group-pin"
+                    key={id}
+                    onContextMenu={(event) => {
+                      event.preventDefault();
+                      if (busy || externalBusy) return;
+                      setError("");
+                      setGroupAction({ kind: "menu", group: entry });
+                    }}
+                  >
+                    <button
+                      type="button"
+                      aria-pressed={browsedGroupId === id}
+                      disabled={busy || externalBusy}
+                      onClick={() => setBrowsedGroupId(id)}
+                    >
+                      {entry.name} <small>{entry.members.length}</small>
+                    </button>
+                    <button
+                      type="button"
+                      aria-label={`Acciones de ${entry.name}`}
+                      disabled={busy || externalBusy}
+                      onClick={() => {
+                        setError("");
+                        setGroupAction({ kind: "menu", group: entry });
+                      }}
+                    >
+                      ⋯
+                    </button>
+                    <button
+                      type="button"
+                      aria-label={`Desfijar ${entry.name}`}
+                      disabled={busy}
+                      onClick={() =>
+                        pinGroups((current) =>
+                          current.filter((value) => value !== id),
+                        )
+                      }
+                    >
+                      ×
+                    </button>
+                  </span>
+                ) : null;
+              })}
+              {managementTab === "edit" &&
+                browsedGroup &&
+                onChooseGroup &&
+                browsedGroup.id !== group?.id && (
+                  <button
+                    type="button"
+                    disabled={busy || externalBusy}
+                    onClick={() => onChooseGroup(browsedGroup.id)}
+                  >
+                    Editar {browsedGroup.name}
+                  </button>
+                )}
+              {managementTab === "edit" && browsedGroup && onGroupsChanged && (
+                <button
+                  type="button"
+                  className="danger"
+                  disabled={busy || externalBusy || !directory.canEdit}
+                  onClick={() => {
+                    setError("");
+                    setGroupAction({ kind: "archive", group: browsedGroup });
+                  }}
+                >
+                  Eliminar grupo
+                </button>
+              )}
+              {managementTab === "edit" && onChooseGroup && (
+                <div
+                  className="inventory-group-edit-list"
+                  aria-label="Todos los grupos para editar"
+                >
+                  {directory.groups.map((entry) => (
+                    <button
+                      type="button"
+                      key={entry.id}
+                      aria-pressed={group?.id === entry.id}
+                      disabled={busy || externalBusy}
+                      onClick={() => onChooseGroup(entry.id)}
+                    >
+                      {entry.name} <small>{entry.members.length}</small>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
             {(managementTab !== "edit" || group) && (
               <div className="row inventory-group-proposal">
-                <label>
-                  Cantidad
+                <label className="inventory-group-inline-search">
+                  Buscar inventario
                   <input
-                    type="number"
-                    aria-label="Cantidad aleatoria del grupo"
-                    min={1}
-                    max={100}
-                    value={count}
-                    onChange={(e) => setCount(Number(e.target.value))}
+                    type="search"
+                    aria-label="Buscar inventario para grupo"
+                    placeholder="Nombre del diplomado…"
+                    value={query}
+                    onChange={(event) => setQuery(event.target.value)}
                   />
                 </label>
                 <button
                   disabled={busy || !count || count > 100}
                   onClick={() => {
                     const proposal = diverseTrialItems(proposalPool, count, []);
-                    setIds(proposal.map((i) => i.id));
+                    setIds((current) => [
+                      ...new Set([...current, ...proposal.map((i) => i.id)]),
+                    ]);
                     setOnlySelected(true);
                     setReplacing(null);
                     setError(
@@ -497,6 +807,18 @@ export function InventoryGroupEditor({
                   Proponer al azar
                 </button>
                 <label>
+                  Cantidad
+                  <input
+                    type="number"
+                    aria-label="Cantidad aleatoria del grupo"
+                    min={1}
+                    max={100}
+                    value={count}
+                    onChange={(e) => setCount(Number(e.target.value))}
+                  />
+                </label>
+
+                <label>
                   <input
                     type="checkbox"
                     checked={onlySelected}
@@ -505,18 +827,29 @@ export function InventoryGroupEditor({
                   Ver seleccionados ({ids.length})
                 </label>
                 <button
+                  type="button"
+                  className="inventory-group-clear"
                   disabled={busy}
                   onClick={() => {
                     setQuery("");
                     setPrimary([]);
                     setSecondary([]);
                     setSheets([]);
+                    setBrowsedGroupId("");
                     setOnlySelected(false);
                   }}
                 >
                   Limpiar filtros
                 </button>
-                <button disabled={busy} onClick={() => setIds([])}>
+                <button
+                  type="button"
+                  className="inventory-group-deselect"
+                  disabled={busy || !ids.length}
+                  onClick={() => {
+                    setIds([]);
+                    setOnlySelected(false);
+                  }}
+                >
                   Quitar selección
                 </button>
               </div>
@@ -524,7 +857,8 @@ export function InventoryGroupEditor({
           </div>
           {managementTab === "edit" && !group && (
             <p className="inventory-group-empty">
-              Elige un grupo guardado para ver sus diplomados y editarlo.
+              Busca un grupo para ver sus diplomados. Pulsa Editar para
+              modificarlo.
             </p>
           )}
           {(managementTab !== "edit" || group) && (
@@ -537,26 +871,38 @@ export function InventoryGroupEditor({
                   >
                     <div className="inventory-group-selection-actions">
                       <strong>{ids.length} seleccionados</strong>
-                      {onDeleteSelection && (
+                      {onGroupsChanged && (
                         <button
                           type="button"
-                          className="danger"
+                          className="primary"
+                          disabled={
+                            busy ||
+                            externalBusy ||
+                            !directory.canEdit ||
+                            !directory.groups.length ||
+                            ids.length > 1500
+                          }
+                          onClick={() => {
+                            setError("");
+                            setGroupAction({ kind: "assign", group: null });
+                          }}
+                        >
+                          Asignar a grupo
+                        </button>
+                      )}
+                      {onUnifySelection && (
+                        <button
+                          type="button"
                           disabled={
                             busy ||
                             externalBusy ||
                             committed ||
                             !directory.canEdit ||
-                            !ids.length ||
-                            ids.length > 1000
+                            ids.length > 100
                           }
-                          title={
-                            ids.length > 1000
-                              ? "Elige hasta 1000 diplomados por eliminación"
-                              : "Eliminar del inventario los diplomados seleccionados"
-                          }
-                          onClick={() => onDeleteSelection([...ids])}
+                          onClick={() => onUnifySelection([...ids])}
                         >
-                          Eliminar seleccionados ({ids.length})
+                          Unificar con oficial
                         </button>
                       )}
                     </div>
@@ -671,7 +1017,15 @@ export function InventoryGroupEditor({
                       </th>
                       {columnSpecs.slice(1).map((c, index) => (
                         <th key={c.key}>
-                          {c.label}
+                          {c.key.startsWith("usage:") ? (
+                            <abbr title={c.label}>
+                              {c.key === "usage:SV"
+                                ? "SAL"
+                                : c.label.slice(0, 3).toLocaleUpperCase("es")}
+                            </abbr>
+                          ) : (
+                            c.label
+                          )}
                           {(c.key === "primary" || c.key === "secondary") && (
                             <button
                               type="button"
@@ -731,7 +1085,7 @@ export function InventoryGroupEditor({
                                   checked={ids.includes(i.id)}
                                   disabled={
                                     busy ||
-                                    (!!assigned && !ids.includes(i.id)) ||
+                                    (!!assigned && !!replacing) ||
                                     (!!replacing && ids.includes(i.id))
                                   }
                                   onChange={() => {
@@ -777,7 +1131,10 @@ export function InventoryGroupEditor({
                                       ? "? Sin confirmar"
                                       : "○ Falta usar";
                               return (
-                                <td key={c.code}>
+                                <td
+                                  key={c.code}
+                                  className="inventory-group-country-cell"
+                                >
                                   <button
                                     type="button"
                                     className="inventory-group-usage"
@@ -785,7 +1142,7 @@ export function InventoryGroupEditor({
                                     data-manual={
                                       cell.mode !== "AUTO" || undefined
                                     }
-                                    aria-label={`Editar uso de ${i.name} en ${c.name}`}
+                                    aria-label={`Editar uso de ${i.name} en ${c.name}: ${label}`}
                                     title={`${label} · ${cell.mode === "AUTO" ? "Automático" : "Manual"}${cell.activationHours === null ? " · Inicio desconocido" : ` · ${cell.activationHours.toFixed(1)} h registradas`}`}
                                     disabled={
                                       busy || externalBusy || !directory.canEdit
@@ -797,9 +1154,17 @@ export function InventoryGroupEditor({
                                       })
                                     }
                                   >
-                                    {label}
+                                    <span aria-hidden="true">
+                                      {status === "USED"
+                                        ? "✓"
+                                        : status === "TEST"
+                                          ? "◷"
+                                          : status === "UNKNOWN"
+                                            ? "?"
+                                            : "—"}
+                                    </span>
                                     {cell.mode !== "AUTO" && (
-                                      <small>Manual</small>
+                                      <small aria-hidden="true">•</small>
                                     )}
                                   </button>
                                   <button
@@ -821,7 +1186,7 @@ export function InventoryGroupEditor({
                                       setObservations(i.name);
                                     }}
                                   >
-                                    Detalle ↗
+                                    ↗
                                   </button>
                                 </td>
                               );
@@ -1221,5 +1586,82 @@ export function InventoryGroupSelect({
         if (id) return onSelect(id);
       }}
     />
+  );
+}
+
+function InventoryGroupActionDialog({
+  title,
+  busy,
+  error,
+  canAccept,
+  showAccept = true,
+  onAccept,
+  onClose,
+  children,
+}: {
+  title: string;
+  busy: boolean;
+  error: string;
+  canAccept: boolean;
+  showAccept?: boolean;
+  onAccept: () => void;
+  onClose: () => void;
+  children: ReactNode;
+}) {
+  const ref = useRef<HTMLDialogElement>(null);
+  const [expanded, setExpanded] = useState(false);
+  useEffect(() => {
+    ref.current?.showModal();
+  }, []);
+  return (
+    <dialog
+      ref={ref}
+      className="trial-dialog inventory-group-action"
+      aria-label={title}
+      data-expanded={expanded || undefined}
+      onCancel={(event) => {
+        event.preventDefault();
+        if (!busy) onClose();
+      }}
+    >
+      <header>
+        <h3>{title}</h3>
+        <button
+          type="button"
+          aria-label={
+            expanded ? "Restaurar acción de grupo" : "Maximizar acción de grupo"
+          }
+          onClick={() => setExpanded((value) => !value)}
+        >
+          {expanded ? "Restaurar" : "Maximizar"}
+        </button>
+        <button
+          type="button"
+          className="ui-close-button"
+          aria-label="Cerrar acción de grupo"
+          disabled={busy}
+          onClick={onClose}
+        >
+          ×
+        </button>
+      </header>
+      {children}
+      {error && <p role="alert">{error}</p>}
+      <footer>
+        <button type="button" disabled={busy} onClick={onClose}>
+          Cancelar
+        </button>
+        {showAccept && (
+          <button
+            type="button"
+            className="primary"
+            disabled={busy || !canAccept}
+            onClick={onAccept}
+          >
+            {busy ? "Guardando…" : "Aceptar"}
+          </button>
+        )}
+      </footer>
+    </dialog>
   );
 }
