@@ -477,3 +477,8 @@ Estado local de ampliación de tabla independiente del tamaño de ventana. Tabla
 ### Ajuste de altura de grupos (2026-11-04)
 
 Navegación ocupa header junto a controles de ventana, sin título visible redundante. Búsqueda independiente dentro de franja verde de nombre/Mis grupos; los chips aparecen debajo solo con selección. Estado, dos ampliaciones, anchos y guardado permanecen; no consultas por modificar distribución o buscar.
+
+
+## Eliminación desde grupos y disposición final compacta (2026-11-04)
+
+Solo ampliar ventana; controles en franja verde y una barra inferior con rango/paginación/Cancelar/Crear. Chips persisten entre búsquedas y Eliminar seleccionados abre preview+Aceptar/Cancelar sin palabra escrita. Modo wholeDiplomas en rutas existentes: catalogIds identifica explícitamente diplomados de lista autorizada; expansión por categoríaKey exacta incluye todas sus fichas/alias, sin semejanza semántica. Confirmar exige mismos IDs expandidos y tokens vigentes bajo884411, sin borrado parcial. Limpia miembros activos/config solo del ámbito eliminado, conserva otros miembros/ciclos, audita; días de registros seleccionados se eliminan según aviso. No opera sobre publicidad externa. UI poda IDs eliminados conservando borrador y búsqueda; máximo1000 hojas/fichas por confirmación.

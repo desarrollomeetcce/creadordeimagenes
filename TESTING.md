@@ -1,3 +1,9 @@
+## Eliminar desde grupos y una sola barra inferior · 2026-11-04
+
+- npm test286 correctos; typecheck/build correctos.26 integraciones en base exclusiva: inventory-diploma-removal.integration, inventory-selection-actions.integration e inventory-trials.integration. Incluye expansión exacta por IDs/lista, cambio de vínculos/datos posterior a preview bloqueado de forma atómica, confirmación con limpieza de grupo/config, preservación de Educación V5/categoría/ciclo y diploma no seleccionado, rechazo de contexto ajeno/permiso revocado/selección parcial y regresión de quitar hojas.
+-5 controles Chromium: solo ampliar ventana y franja/pie compactos (footer<55px, franja<155px a1530px); marcar dos typos y cancelar alerta sin campo de texto elimina cero; cambio concurrente V2→3 causa409 sin borrado; nueva revisión y Aceptar eliminan solo seleccionados/alias, conservan búsqueda/borrador/Educación V9; no reaparición tras recarga y móvil sin errores/desbordamiento. Primer intento del runner se inició antes de Ready del servidor y se corrigió el orden; ejecución completa final correcta.
+- Evidencia /workspace/work/group-remove-{unit,types,build,integration,browser,cleanup}.txt, capturas group-remove-desktop/mobile.png. Cleanup comprueba Educación V9/categoría y V1/G10.25/asesor/alias/estado base antes de borrar fixtures QA. Sin Graph/generación real ni eliminación sobre Hostinger.
+
 ## Cabecera compacta de grupos · 2026-11-04
 
 npm test286 correctos, typecheck/build correctos y7 controles Chromium. Se confirma nav dentro de header sin h2 visible duplicado, fila de navegación menor45px, búsqueda en franja verde y sin espacio de chips vacíos. Se conservan las6 regresiones de controles/selección/guardado/categorías/uso/móvil del bloque anterior, sin GET al buscar. Evidencia /workspace/work/group-spacing-{unit,types,build,browser,cleanup}.txt y group-spacing-desktop/mobile.png. Cleanup conserva V1/G10.25/asesor/vínculo/publicidad. Hostinger no verificado.

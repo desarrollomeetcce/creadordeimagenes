@@ -673,6 +673,7 @@ export async function metaRoutes(
     const b = z
       .object({
         listId: z.string().min(1).max(100),
+        wholeDiplomas: z.boolean().optional(),
         ids: z.array(z.string().min(1).max(100)).min(1).max(1000),
       })
       .strict()
@@ -680,7 +681,7 @@ export async function metaRoutes(
     return send(
       await (
         await import("./inventory-catalog")
-      ).previewRemoveInventorySelection(actor, b.listId, b.ids),
+      ).previewRemoveInventorySelection(actor, b.listId, b.ids, b.wholeDiplomas),
     );
   }
   if (path === "inventory/remove" && method === "POST") {
@@ -689,6 +690,8 @@ export async function metaRoutes(
       .object({
         listId: z.string().min(1).max(100),
         preserveCatalog: z.boolean().optional(),
+        wholeDiplomas: z.boolean().optional(),
+        catalogIds: z.array(z.string().min(1).max(100)).min(1).max(1000).optional(),
         entries: z
           .array(
             z

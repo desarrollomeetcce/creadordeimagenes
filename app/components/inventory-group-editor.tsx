@@ -28,6 +28,8 @@ export function InventoryGroupEditor({
   onClose,
   onSaved,
   onUsageChange,
+  onDeleteSelection,
+  removedIds = [],
   topContent,
   initialTab,
   onChooseGroup,
@@ -45,13 +47,13 @@ export function InventoryGroupEditor({
   onClose: () => void;
   onSaved: (id: string) => Promise<void>;
   onUsageChange?: (key: string, cell: GroupUsageCell) => void;
+  onDeleteSelection?: (ids: string[]) => void;
+  removedIds?: string[];
 }) {
   const dialog = useRef<HTMLDialogElement>(null);
   const [managementTab, setManagementTab] = useState<"create" | "edit" | "top">(
     initialTab ?? (group ? "edit" : "create"),
   );
-  const [showExpandedControls, setShowExpandedControls] = useState(false);
-  const [tableExpanded, setTableExpanded] = useState(false);
   const [categoryPicker, setCategoryPicker] = useState<
     "primary" | "secondary" | null
   >(null);
@@ -153,6 +155,12 @@ export function InventoryGroupEditor({
   const [busy, setBusy] = useState(false),
     [error, setError] = useState(""),
     [committed, setCommitted] = useState(false);
+  useEffect(() => {
+    if (!removedIds.length) return;
+    const removed = new Set(removedIds);
+    setIds((current) => current.filter((id) => !removed.has(id)));
+    if (replacing && removed.has(replacing)) setReplacing(null);
+  }, [removedIds]);
   useEffect(() => {
     dialog.current?.showModal();
   }, []);
@@ -282,10 +290,8 @@ export function InventoryGroupEditor({
   return (
     <dialog
       ref={dialog}
-      className="trial-dialog inventory-group-editor"
+      className="trial-dialog inventory-group-editor inventory-group-editor-compact"
       data-expanded={expanded || undefined}
-      data-table-focus={(tableExpanded && managementTab !== "top") || undefined}
-      data-show-controls={showExpandedControls || undefined}
       aria-label={
         group ? "Editar " + group.name : "Crear grupo desde inventario"
       }
@@ -461,75 +467,7 @@ export function InventoryGroupEditor({
                 />
               </label>
             )}
-            {tableExpanded && (
-              <button
-                type="button"
-                className="inventory-group-extra-controls"
-                aria-expanded={showExpandedControls}
-                onClick={() => setShowExpandedControls((v) => !v)}
-              >
-                {showExpandedControls
-                  ? "Ocultar controles"
-                  : "Mostrar controles"}
-              </button>
-            )}
-          </div>
-          {managementTab === "edit" && !group && (
-            <p className="inventory-group-empty">
-              Elige un grupo guardado para ver sus diplomados y editarlo.
-            </p>
-          )}
-          {(managementTab !== "edit" || group) && (
-            <>
-              {ids.length > 0 && (
-                <div className="inventory-group-search-section">
-                  <div
-                    className="inventory-group-selected"
-                    aria-label="Diplomados seleccionados para el grupo"
-                  >
-                    <strong>{ids.length} seleccionados</strong>
-                    <div className="inventory-group-selected-chips">
-                      {ids.map((id) => (
-                        <span
-                          key={id}
-                          className="inventory-group-selection-chip"
-                        >
-                          <span
-                            title={
-                              catalogById.get(id)?.name ??
-                              "Diplomado no disponible"
-                            }
-                          >
-                            {catalogById.get(id)?.name ??
-                              "Diplomado no disponible"}
-                          </span>
-                          <button
-                            type="button"
-                            disabled={busy || externalBusy}
-                            aria-label={
-                              "Quitar de selección " +
-                              (catalogById.get(id)?.name ?? "diplomado")
-                            }
-                            onClick={() => {
-                              setIds((current) =>
-                                current.filter((value) => value !== id),
-                              );
-                              if (replacing === id) setReplacing(null);
-                            }}
-                          >
-                            ×
-                          </button>
-                        </span>
-                      ))}
-                      {!ids.length && (
-                        <small>
-                          Los diplomados que marques aparecerán aquí.
-                        </small>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              )}
+            {(managementTab !== "edit" || group) && (
               <div className="row inventory-group-proposal">
                 <label>
                   Cantidad
@@ -582,11 +520,88 @@ export function InventoryGroupEditor({
                   Quitar selección
                 </button>
               </div>
-              <small className="inventory-group-usage-legend">
-                ✓ Usado: al menos 12 horas de activación registrada · ◷ En
-                prueba: menos de 12 horas · ○ Falta usar. Pulsa un estado para
-                corregirlo manualmente o volver a Automático.
-              </small>
+            )}
+          </div>
+          {managementTab === "edit" && !group && (
+            <p className="inventory-group-empty">
+              Elige un grupo guardado para ver sus diplomados y editarlo.
+            </p>
+          )}
+          {(managementTab !== "edit" || group) && (
+            <>
+              {ids.length > 0 && (
+                <div className="inventory-group-search-section">
+                  <div
+                    className="inventory-group-selected"
+                    aria-label="Diplomados seleccionados para el grupo"
+                  >
+                    <div className="inventory-group-selection-actions">
+                      <strong>{ids.length} seleccionados</strong>
+                      {onDeleteSelection && (
+                        <button
+                          type="button"
+                          className="danger"
+                          disabled={
+                            busy ||
+                            externalBusy ||
+                            committed ||
+                            !directory.canEdit ||
+                            !ids.length ||
+                            ids.length > 1000
+                          }
+                          title={
+                            ids.length > 1000
+                              ? "Elige hasta 1000 diplomados por eliminación"
+                              : "Eliminar del inventario los diplomados seleccionados"
+                          }
+                          onClick={() => onDeleteSelection([...ids])}
+                        >
+                          Eliminar seleccionados ({ids.length})
+                        </button>
+                      )}
+                    </div>
+                    <div className="inventory-group-selected-chips">
+                      {ids.map((id) => (
+                        <span
+                          key={id}
+                          className="inventory-group-selection-chip"
+                        >
+                          <span
+                            title={
+                              catalogById.get(id)?.name ??
+                              "Diplomado no disponible"
+                            }
+                          >
+                            {catalogById.get(id)?.name ??
+                              "Diplomado no disponible"}
+                          </span>
+                          <button
+                            type="button"
+                            disabled={busy || externalBusy}
+                            aria-label={
+                              "Quitar de selección " +
+                              (catalogById.get(id)?.name ?? "diplomado")
+                            }
+                            onClick={() => {
+                              setIds((current) =>
+                                current.filter((value) => value !== id),
+                              );
+                              if (replacing === id) setReplacing(null);
+                            }}
+                          >
+                            ×
+                          </button>
+                        </span>
+                      ))}
+                      {!ids.length && (
+                        <small>
+                          Los diplomados que marques aparecerán aquí.
+                        </small>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
               {!countryOptions.length && (
                 <p role="status">
                   Vincula una hoja de país al inventario para mostrar sus
@@ -652,31 +667,7 @@ export function InventoryGroupEditor({
                             )
                           }
                         />{" "}
-                        Diplomado ({filtered.length})
-                        <button
-                          type="button"
-                          className="inventory-group-table-max"
-                          title={
-                            tableExpanded
-                              ? "Restaurar tabla de grupos"
-                              : "Maximizar tabla de grupos"
-                          }
-                          aria-label={
-                            tableExpanded
-                              ? "Restaurar tabla de grupos"
-                              : "Maximizar tabla de grupos"
-                          }
-                          aria-pressed={tableExpanded}
-                          onClick={() => {
-                            setTableExpanded((v) => !v);
-                            setShowExpandedControls(false);
-                          }}
-                        >
-                          {tableExpanded
-                            ? "Restaurar tabla"
-                            : "Maximizar tabla"}
-                        </button>
-                        {handle(0)}
+                        Diplomado ({filtered.length}){handle(0)}
                       </th>
                       {columnSpecs.slice(1).map((c, index) => (
                         <th key={c.key}>
@@ -902,59 +893,54 @@ export function InventoryGroupEditor({
                   </tbody>
                 </table>
               </div>
-              <div className="inventory-group-pagination">
-                <span>
-                  {ordered.length ? (currentPage - 1) * pageSize + 1 : 0}–
-                  {Math.min(currentPage * pageSize, ordered.length)} de{" "}
-                  {ordered.length} diplomados
-                </span>
-                <label>
-                  Por página
-                  <select
-                    aria-label="Diplomados por página del grupo"
-                    value={pageSize}
-                    onChange={(e) => {
-                      setPageSize(Number(e.target.value));
-                      setPage(1);
-                    }}
-                  >
-                    {[25, 50, 100, 200].map((n) => (
-                      <option key={n} value={n}>
-                        {n}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <button
-                  type="button"
-                  disabled={currentPage <= 1}
-                  onClick={() => setPage(currentPage - 1)}
-                >
-                  Anterior
-                </button>
-                <span>
-                  {currentPage} / {pages}
-                </span>
-                <button
-                  type="button"
-                  disabled={currentPage >= pages}
-                  onClick={() => setPage(currentPage + 1)}
-                >
-                  Siguiente
-                </button>
-              </div>
-              <small>
-                La selección se conserva al cambiar filtros. Cada diplomado
-                pertenece a un solo grupo. Los cambios se aplican al guardar;
-                los ciclos anteriores se conservan.
-              </small>
               {error && (
                 <p role="alert" className="notice error">
                   {error}
                 </p>
               )}
               <footer>
-                <span>{ids.length} diplomados seleccionados</span>
+                <div className="inventory-group-pagination">
+                  <span>
+                    {ordered.length ? (currentPage - 1) * pageSize + 1 : 0}–
+                    {Math.min(currentPage * pageSize, ordered.length)} de{" "}
+                    {ordered.length} diplomados
+                  </span>
+                  <label>
+                    Por página
+                    <select
+                      aria-label="Diplomados por página del grupo"
+                      value={pageSize}
+                      onChange={(e) => {
+                        setPageSize(Number(e.target.value));
+                        setPage(1);
+                      }}
+                    >
+                      {[25, 50, 100, 200].map((n) => (
+                        <option key={n} value={n}>
+                          {n}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <button
+                    type="button"
+                    disabled={currentPage <= 1}
+                    onClick={() => setPage(currentPage - 1)}
+                  >
+                    Anterior
+                  </button>
+                  <span>
+                    {currentPage} / {pages}
+                  </span>
+                  <button
+                    type="button"
+                    disabled={currentPage >= pages}
+                    onClick={() => setPage(currentPage + 1)}
+                  >
+                    Siguiente
+                  </button>
+                </div>
+
                 <button disabled={busy} onClick={onClose}>
                   Cancelar
                 </button>
