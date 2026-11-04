@@ -386,7 +386,7 @@ export function InventoryGroupEditor({
           (editing && !replacing
             ? ids.includes(i.id)
             : replacing || !browsedMembers || browsedMembers.has(i.id)) &&
-          ((editing && !replacing) || matchesSearchWords(i.name, query)) &&
+          matchesSearchWords(i.name, query) &&
           (!primary.length ||
             i.primaryNames.some((n) => primary.includes(n))) &&
           (!secondary.length ||
@@ -1554,6 +1554,20 @@ export function InventoryGroupEditor({
                           }
                         />{" "}
                         Diplomado ({filtered.length}){handle(0)}
+                        {editing && !replacing && (
+                          <input
+                            className="inventory-group-name-search"
+                            type="search"
+                            aria-label="Buscar diplomado dentro del grupo"
+                            placeholder="Buscar en este grupo…"
+                            value={query}
+                            disabled={busy || externalBusy}
+                            onChange={(event) => setQuery(event.target.value)}
+                            onKeyDown={(event) => {
+                              if (event.key === "Enter") event.preventDefault();
+                            }}
+                          />
+                        )}
                       </th>
                       {columnSpecs.slice(1).map((c, index) => (
                         <th key={c.key}>

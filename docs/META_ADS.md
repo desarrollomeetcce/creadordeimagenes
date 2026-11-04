@@ -1,5 +1,12 @@
 # Meta Ads: consulta y análisis
 
+## Editar grupos: buscar desde el encabezado Diplomado · 2026-11-04
+
+Buscador visible bajo Diplomado filtra solo miembros del grupo/borrador abierto, con búsqueda por palabras, fragmentos, mayúsculas y tildes mediante matchesSearchWords existente. Reutiliza consulta local por grupo y reset de página; Limpiar filtros restaura filas sin desmarcar. Crear conserva cuadro de búsqueda propio; Añadir inventario mantiene selector independiente. Enter no envía el formulario ni guarda un borrador sucio.
+
+290 unitarias, typecheck/build y4 recorridos Chromium: búsqueda local en cabecera sin requests, selección oculta conservada, seleccionar filtrados y restaurar casillas, exclusión de diplomado externo, Enter con nombre editado sin escritura, Crear/Editar y grupos con consultas/borradores separados, Limpiar filtros y móvil/maximizar. Snapshot DB exacto de nombres/payloads/revisiones/ciclos de ambos grupos y de todas las hojas/filas/días/estados/eventos/asesores/objetos/gasto; catálogo5 intacto. Fixture exclusivo retirado. Sin rutas, modelos ni datos reales modificados; Hostinger no verificado desde este entorno.
+
+
 ## Hojas: Por asignar y Por desactivar siempre antes de grupos normales · 2026-11-04
 
 Partición local compartida de las hojas de países: Por asignar primero, Por desactivar después y luego agrupación normal por asesor/categoría. STOP se separa antes de comprobar falta de asesor/moneda para que no caiga en Por asignar. Nueva banda ámbar y borde en nombres; pendientes quedan fuera de cabeceras normales. Se respeta el orden elegido dentro de cada bloque y los filtros existentes. pendingAssignmentAt heredado no devuelve una fila inactiva a Por asignar tras confirmación.
