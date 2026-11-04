@@ -353,352 +353,381 @@ export function MetaAliasAction({
               : `calc(100dvh - ${position.top + 8}px)`,
         }}
       >
-        <header className="meta-alias-context">
-          <small>
-            <span aria-hidden="true">⠿</span>{" "}
-            {bulk ? "Asignación masiva" : "Asignando inventario a"}
-            <span className="meta-alias-drag-hint">Arrastra para mover</span>
-            <button
-              type="button"
-              className="meta-alias-expand"
-              aria-label={
-                expanded
-                  ? "Restaurar tamaño de asignación"
-                  : "Maximizar asignación"
-              }
-              aria-expanded={expanded}
-              onClick={() => setExpanded((v) => !v)}
-            >
-              {expanded ? "↙" : "↗"}
-            </button>
-          </small>
-          <strong>
-            {bulk ? `${bulkCount} elementos seleccionados` : name}
-          </strong>
-        </header>
-        <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            if (extraSaveDisabled) return;
-            if (
-              draftAdvisor &&
-              advisorWarning &&
-              confirmedAdvisor !== draftAdvisor &&
-              savedContext?.advisorConflicts?.some(
-                (a) => a.advisorId !== draftAdvisor,
-              )
-            ) {
-              if (
-                !confirm(
-                  `${advisorWarning}. ¿Deseas guardar el asesor seleccionado? Si la hoja tiene otro titular, el cambio quedará por revisar conservando el historial.`,
-                )
-              )
-                return;
-              setConfirmedAdvisor(draftAdvisor);
-            }
-            const item = catalog.find((c) => c.catalogId === draftAlias);
-            if (item || (customName && draftAlias === "new:" + customName)) {
-              popover.current?.hidePopover();
-              onAssign(
-                null,
-                draftCountry,
-                {
-                  tableId: draftTable,
-                  ...(item
-                    ? {
-                        catalogId: item.catalogId,
-                        inventorySheetId: item.inventorySheetId,
-                      }
-                    : {
-                        name: customName,
-                        ...(draftList ? { inventorySheetId: draftList } : {}),
-                      }),
-                },
-                details,
-              );
-            } else assign(draftAlias || null, draftAlias ? draftCountry : null);
-          }}
-        >
-          {lockIdentity ? (
-            <dl
-              className="meta-sync-summary"
-              aria-label="Inventario y país guardados"
-            >
-              <div>
-                <dt>Lista</dt>
-                <dd title={inventories.find((i) => i.id === draftList)?.name}>
-                  {inventories.find((i) => i.id === draftList)?.name ??
-                    "Inventario"}
-                </dd>
-              </div>
-              <div>
-                <dt>Hoja / país</dt>
-                <dd title={countryName(draftCountry)}>
-                  {tables.find((t) => t.id === draftTable)?.name ?? "Hoja"} ·{" "}
-                  {draftCountry}
-                </dd>
-              </div>
-            </dl>
-          ) : (
-            <fieldset className="meta-sync-identity">
-              <label>
-                Lista de inventario
-                <SheetSearchSelect
-                  label="Lista de inventario"
-                  placeholder="Todas las listas"
-                  value={draftList}
-                  options={[
-                    { value: "", label: "Todas las listas" },
-                    ...inventories.map((t) => ({ value: t.id, label: t.name })),
-                  ]}
-                  onSelect={(v) => {
-                    setDraftList(v);
-                    setDraftTable("");
-                    setDraftAlias("");
-                    setDraftCountry("");
-                    setCustomName("");
-                  }}
-                />
-              </label>
-              <label>
-                Tabla
-                <SheetSearchSelect
-                  label="Tabla de inventario"
-                  placeholder="Elige una tabla"
-                  value={draftTable}
-                  disabled={disabled}
-                  options={[
-                    { value: "", label: "Elige una tabla" },
-                    ...tables.map((t) => ({ value: t.id, label: t.name })),
-                  ]}
-                  onSelect={(v) => {
-                    setDraftTable(v);
-                    setDraftCurrency(
-                      providedTables?.find((t) => t.id === v)
-                        ?.defaultCurrency ?? "",
-                    );
-                    setDraftAlias("");
-                    setDraftCountry("");
-                    setCustomName("");
-                  }}
-                />
-              </label>
-              <label>
-                {bulk
-                  ? `Inventario para ${bulkCount} seleccionados`
-                  : "Inventario"}
-                <SheetSearchSelect
-                  label={
-                    bulk
-                      ? "Inventario para seleccionados"
-                      : `Inventario de ${name}`
+        {open && (
+          <>
+            <header className="meta-alias-context">
+              <small>
+                <span aria-hidden="true">⠿</span>{" "}
+                {bulk ? "Asignación masiva" : "Asignando inventario a"}
+                <span className="meta-alias-drag-hint">
+                  Arrastra para mover
+                </span>
+                <button
+                  type="button"
+                  className="meta-alias-expand"
+                  aria-label={
+                    expanded
+                      ? "Restaurar tamaño de asignación"
+                      : "Maximizar asignación"
                   }
-                  placeholder="Elige un elemento del inventario"
-                  value={draftAlias}
-                  disabled={disabled || !draftTable}
-                  options={options}
-                  onCreate={(name) => {
-                    setCustomName(name);
-                    setDraftAlias("new:" + name);
-                  }}
-                  createLabel="Añadir nuevo a esta tabla"
-                  createOnEnter
-                  onSelect={(v) => {
-                    setDraftAlias(v);
-                    if (!v) setDraftCountry("");
-                  }}
-                />
-              </label>
-              <label>
-                País
-                <SheetSearchSelect
-                  label="País del inventario"
-                  placeholder="Selecciona un país"
-                  value={draftCountry}
-                  disabled={
-                    disabled || !draftAlias || contextLoading || !!contextError
-                  }
-                  options={[
-                    { value: "", label: "Selecciona un país" },
-                    ...countryOptions.map((c) => ({
-                      value: c.code,
-                      label: `${c.code} · ${c.name}`,
-                    })),
-                  ]}
-                  onSelect={setDraftCountry}
-                />
-              </label>
-            </fieldset>
-          )}
-          <div className="meta-alias-details-row">
-            <label>
-              Asesor
-              <SheetSearchSelect
-                label="Asesor del inventario"
-                value={draftAdvisor}
-                placeholder="Conservar / sin asesor"
-                disabled={
-                  disabled || !draftAlias || contextLoading || !!contextError
-                }
-                options={[
-                  { value: "", label: "Conservar / sin asesor" },
-                  ...(savedContext?.advisorId &&
-                  !advisors.some((a) => a.id === savedContext.advisorId)
-                    ? [
-                        {
-                          value: savedContext.advisorId,
-                          label: savedContext.advisorName ?? "Asesor actual",
-                        },
-                      ]
-                    : []),
-                  ...advisors.map((a) => ({
-                    value: a.id,
-                    label: a.name + (a.sheet ? " · " + a.sheet.name : ""),
-                  })),
-                ]}
-                onSelect={(id) => {
-                  const different =
-                    id &&
-                    ((savedContext?.advisorId &&
-                      id !== savedContext.advisorId) ||
-                      savedContext?.advisorConflicts?.some(
-                        (a) => a.advisorId !== id,
-                      ));
+                  aria-expanded={expanded}
+                  onClick={() => setExpanded((v) => !v)}
+                >
+                  {expanded ? "↙" : "↗"}
+                </button>
+              </small>
+              <strong>
+                {bulk ? `${bulkCount} elementos seleccionados` : name}
+              </strong>
+            </header>
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                if (extraSaveDisabled) return;
+                if (
+                  draftAdvisor &&
+                  advisorWarning &&
+                  confirmedAdvisor !== draftAdvisor &&
+                  savedContext?.advisorConflicts?.some(
+                    (a) => a.advisorId !== draftAdvisor,
+                  )
+                ) {
                   if (
-                    different &&
                     !confirm(
-                      `${advisorWarning || `Asesor guardado en ${savedContext?.source === "meta" ? "Meta Ads" : savedContext?.source === "inventory" ? "la lista de diplomados" : "la hoja del país"}: ${savedContext?.advisorName}`}. ¿Deseas proponer otro asesor? Se conservará el historial; un titular diferente en la hoja quedará por revisar.`,
+                      `${advisorWarning}. ¿Deseas guardar el asesor seleccionado? Si la hoja tiene otro titular, el cambio quedará por revisar conservando el historial.`,
                     )
                   )
                     return;
-                  setConfirmedAdvisor(different ? id : "");
-                  setDraftAdvisor(id);
-                }}
-              />
-            </label>
-            <label>
-              Moneda
-              <SheetSearchSelect
-                label="Moneda del inventario"
-                value={draftCurrency}
-                placeholder="Conservar / sin moneda"
-                disabled={disabled || !draftAlias}
-                options={[
-                  { value: "", label: "Conservar / sin moneda" },
-                  ...currencyCodes.map((value) => ({ value, label: value })),
-                ]}
-                onSelect={setDraftCurrency}
-              />
-            </label>
-          </div>
-          {contextLoading && (
-            <small role="status">Consultando asesor y moneda guardados…</small>
-          )}
-          {contextError && (
-            <p role="alert">
-              {contextError}{" "}
+                  setConfirmedAdvisor(draftAdvisor);
+                }
+                const item = catalog.find((c) => c.catalogId === draftAlias);
+                if (
+                  item ||
+                  (customName && draftAlias === "new:" + customName)
+                ) {
+                  popover.current?.hidePopover();
+                  onAssign(
+                    null,
+                    draftCountry,
+                    {
+                      tableId: draftTable,
+                      ...(item
+                        ? {
+                            catalogId: item.catalogId,
+                            inventorySheetId: item.inventorySheetId,
+                          }
+                        : {
+                            name: customName,
+                            ...(draftList
+                              ? { inventorySheetId: draftList }
+                              : {}),
+                          }),
+                    },
+                    details,
+                  );
+                } else
+                  assign(draftAlias || null, draftAlias ? draftCountry : null);
+              }}
+            >
+              {lockIdentity ? (
+                <dl
+                  className="meta-sync-summary"
+                  aria-label="Inventario y país guardados"
+                >
+                  <div>
+                    <dt>Lista</dt>
+                    <dd
+                      title={inventories.find((i) => i.id === draftList)?.name}
+                    >
+                      {inventories.find((i) => i.id === draftList)?.name ??
+                        "Inventario"}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>Hoja / país</dt>
+                    <dd title={countryName(draftCountry)}>
+                      {tables.find((t) => t.id === draftTable)?.name ?? "Hoja"}{" "}
+                      · {draftCountry}
+                    </dd>
+                  </div>
+                </dl>
+              ) : (
+                <fieldset className="meta-sync-identity">
+                  <label>
+                    Lista de inventario
+                    <SheetSearchSelect
+                      label="Lista de inventario"
+                      placeholder="Todas las listas"
+                      value={draftList}
+                      options={[
+                        { value: "", label: "Todas las listas" },
+                        ...inventories.map((t) => ({
+                          value: t.id,
+                          label: t.name,
+                        })),
+                      ]}
+                      onSelect={(v) => {
+                        setDraftList(v);
+                        setDraftTable("");
+                        setDraftAlias("");
+                        setDraftCountry("");
+                        setCustomName("");
+                      }}
+                    />
+                  </label>
+                  <label>
+                    Tabla
+                    <SheetSearchSelect
+                      label="Tabla de inventario"
+                      placeholder="Elige una tabla"
+                      value={draftTable}
+                      disabled={disabled}
+                      options={[
+                        { value: "", label: "Elige una tabla" },
+                        ...tables.map((t) => ({ value: t.id, label: t.name })),
+                      ]}
+                      onSelect={(v) => {
+                        setDraftTable(v);
+                        setDraftCurrency(
+                          providedTables?.find((t) => t.id === v)
+                            ?.defaultCurrency ?? "",
+                        );
+                        setDraftAlias("");
+                        setDraftCountry("");
+                        setCustomName("");
+                      }}
+                    />
+                  </label>
+                  <label>
+                    {bulk
+                      ? `Inventario para ${bulkCount} seleccionados`
+                      : "Inventario"}
+                    <SheetSearchSelect
+                      label={
+                        bulk
+                          ? "Inventario para seleccionados"
+                          : `Inventario de ${name}`
+                      }
+                      placeholder="Elige un elemento del inventario"
+                      value={draftAlias}
+                      disabled={disabled || !draftTable}
+                      options={options}
+                      onCreate={(name) => {
+                        setCustomName(name);
+                        setDraftAlias("new:" + name);
+                      }}
+                      createLabel="Añadir nuevo a esta tabla"
+                      createOnEnter
+                      onSelect={(v) => {
+                        setDraftAlias(v);
+                        if (!v) setDraftCountry("");
+                      }}
+                    />
+                  </label>
+                  <label>
+                    País
+                    <SheetSearchSelect
+                      label="País del inventario"
+                      placeholder="Selecciona un país"
+                      value={draftCountry}
+                      disabled={
+                        disabled ||
+                        !draftAlias ||
+                        contextLoading ||
+                        !!contextError
+                      }
+                      options={[
+                        { value: "", label: "Selecciona un país" },
+                        ...countryOptions.map((c) => ({
+                          value: c.code,
+                          label: `${c.code} · ${c.name}`,
+                        })),
+                      ]}
+                      onSelect={setDraftCountry}
+                    />
+                  </label>
+                </fieldset>
+              )}
+              <div className="meta-alias-details-row">
+                <label>
+                  Asesor
+                  <SheetSearchSelect
+                    label="Asesor del inventario"
+                    value={draftAdvisor}
+                    placeholder="Conservar / sin asesor"
+                    disabled={
+                      disabled ||
+                      !draftAlias ||
+                      contextLoading ||
+                      !!contextError
+                    }
+                    options={[
+                      { value: "", label: "Conservar / sin asesor" },
+                      ...(savedContext?.advisorId &&
+                      !advisors.some((a) => a.id === savedContext.advisorId)
+                        ? [
+                            {
+                              value: savedContext.advisorId,
+                              label:
+                                savedContext.advisorName ?? "Asesor actual",
+                            },
+                          ]
+                        : []),
+                      ...advisors.map((a) => ({
+                        value: a.id,
+                        label: a.name + (a.sheet ? " · " + a.sheet.name : ""),
+                      })),
+                    ]}
+                    onSelect={(id) => {
+                      const different =
+                        id &&
+                        ((savedContext?.advisorId &&
+                          id !== savedContext.advisorId) ||
+                          savedContext?.advisorConflicts?.some(
+                            (a) => a.advisorId !== id,
+                          ));
+                      if (
+                        different &&
+                        !confirm(
+                          `${advisorWarning || `Asesor guardado en ${savedContext?.source === "meta" ? "Meta Ads" : savedContext?.source === "inventory" ? "la lista de diplomados" : "la hoja del país"}: ${savedContext?.advisorName}`}. ¿Deseas proponer otro asesor? Se conservará el historial; un titular diferente en la hoja quedará por revisar.`,
+                        )
+                      )
+                        return;
+                      setConfirmedAdvisor(different ? id : "");
+                      setDraftAdvisor(id);
+                    }}
+                  />
+                </label>
+                <label>
+                  Moneda
+                  <SheetSearchSelect
+                    label="Moneda del inventario"
+                    value={draftCurrency}
+                    placeholder="Conservar / sin moneda"
+                    disabled={disabled || !draftAlias}
+                    options={[
+                      { value: "", label: "Conservar / sin moneda" },
+                      ...currencyCodes.map((value) => ({
+                        value,
+                        label: value,
+                      })),
+                    ]}
+                    onSelect={setDraftCurrency}
+                  />
+                </label>
+              </div>
+              {contextLoading && (
+                <small role="status">
+                  Consultando asesor y moneda guardados…
+                </small>
+              )}
+              {contextError && (
+                <p role="alert">
+                  {contextError}{" "}
+                  <button
+                    type="button"
+                    onClick={() =>
+                      onRetrySavedIdentity
+                        ? onRetrySavedIdentity()
+                        : setContextReload((v) => v + 1)
+                    }
+                  >
+                    Reintentar datos guardados
+                  </button>
+                </p>
+              )}
+              {advisorWarning && (
+                <small className="meta-sync-conflict" role="status">
+                  {advisorWarning}. Revisa el asesor antes de guardar.
+                </small>
+              )}
+              {savedContext?.advisorId && (
+                <small>
+                  Asesor{" "}
+                  {savedContext.source === "inventory"
+                    ? "del inventario"
+                    : savedContext.source === "meta"
+                      ? "de Meta Ads"
+                      : "guardado en la hoja"}
+                  : {savedContext.advisorName}.{" "}
+                  {draftAdvisor && draftAdvisor !== savedContext.advisorId
+                    ? savedContext.source === "inventory"
+                      ? "Se usará el asesor seleccionado para esta hoja."
+                      : "El cambio quedará por revisar en la hoja."
+                    : "Se conservará al vincular."}
+                </small>
+              )}
+              {lockIdentity ? (
+                <details className="meta-sync-help">
+                  <summary>Detalles del vínculo</summary>
+                  <small>
+                    Los vínculos guardados se reutilizan en Meta Ads y
+                    Efectividad para este diplomado y país. Las ventas por
+                    asesor se registran en V de cada hoja.
+                  </small>
+                </details>
+              ) : (
+                <small>
+                  Inventario y país vinculan la base y el gasto con Efectividad.
+                  Las ventas por asesor se registran en V de cada hoja. No
+                  cambia la segmentación en Meta.
+                </small>
+              )}
+              {draftAlias && !aliases.some((a) => a.id === draftAlias) && (
+                <small className="meta-alias-add-hint">
+                  Se añadirá sin duplicados, con su estado registrado en Meta.
+                  Si faltan datos, aparecerá en «Por asignar».
+                </small>
+              )}
+              {!aliases.length && !catalog.length && (
+                <p className="hint">Crea los nombres en «Efectividad».</p>
+              )}
+              {extraFields}
+              <div className="row">
+                <button
+                  type="submit"
+                  className="primary"
+                  disabled={
+                    disabled ||
+                    extraSaveDisabled ||
+                    !draftTable ||
+                    !draftAlias ||
+                    !draftCountry ||
+                    contextLoading ||
+                    !!contextError
+                  }
+                >
+                  {triggerLabel
+                    ? "Guardar sincronización"
+                    : "Guardar inventario y país"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => popover.current?.hidePopover()}
+                >
+                  Cancelar
+                </button>
+              </div>
+            </form>
+            {allowRemove && !bulk && !!value && (
               <button
                 type="button"
-                onClick={() =>
-                  onRetrySavedIdentity
-                    ? onRetrySavedIdentity()
-                    : setContextReload((v) => v + 1)
-                }
+                disabled={disabled}
+                onClick={() => assign(null, null)}
               >
-                Reintentar datos guardados
+                Quitar inventario de esta fila
               </button>
-            </p>
-          )}
-          {advisorWarning && (
-            <small className="meta-sync-conflict" role="status">
-              {advisorWarning}. Revisa el asesor antes de guardar.
-            </small>
-          )}
-          {savedContext?.advisorId && (
-            <small>
-              Asesor{" "}
-              {savedContext.source === "inventory"
-                ? "del inventario"
-                : savedContext.source === "meta"
-                  ? "de Meta Ads"
-                  : "guardado en la hoja"}
-              : {savedContext.advisorName}.{" "}
-              {draftAdvisor && draftAdvisor !== savedContext.advisorId
-                ? savedContext.source === "inventory"
-                  ? "Se usará el asesor seleccionado para esta hoja."
-                  : "El cambio quedará por revisar en la hoja."
-                : "Se conservará al vincular."}
-            </small>
-          )}
-          {lockIdentity ? (
-            <details className="meta-sync-help">
-              <summary>Detalles del vínculo</summary>
-              <small>
-                Los vínculos guardados se reutilizan en Meta Ads y Efectividad
-                para este diplomado y país. Las ventas por asesor se registran
-                en V de cada hoja.
-              </small>
-            </details>
-          ) : (
-            <small>
-              Inventario y país vinculan la base y el gasto con Efectividad. Las
-              ventas por asesor se registran en V de cada hoja. No cambia la
-              segmentación en Meta.
-            </small>
-          )}
-          {draftAlias && !aliases.some((a) => a.id === draftAlias) && (
-            <small className="meta-alias-add-hint">
-              Se añadirá sin duplicados, con su estado registrado en Meta. Si
-              faltan datos, aparecerá en «Por asignar».
-            </small>
-          )}
-          {!aliases.length && !catalog.length && (
-            <p className="hint">Crea los nombres en «Efectividad».</p>
-          )}
-          {extraFields}
-          <div className="row">
-            <button
-              type="submit"
-              className="primary"
-              disabled={
-                disabled ||
-                extraSaveDisabled ||
-                !draftTable ||
-                !draftAlias ||
-                !draftCountry ||
-                contextLoading ||
-                !!contextError
-              }
-            >
-              {triggerLabel
-                ? "Guardar sincronización"
-                : "Guardar inventario y país"}
-            </button>
-            <button
-              type="button"
-              onClick={() => popover.current?.hidePopover()}
-            >
-              Cancelar
-            </button>
-          </div>
-        </form>
-        {allowRemove && !bulk && !!value && (
-          <button
-            type="button"
-            disabled={disabled}
-            onClick={() => assign(null, null)}
-          >
-            Quitar inventario de esta fila
-          </button>
-        )}
-        {allowRemove && bulk && (
-          <button
-            type="button"
-            disabled={disabled}
-            onClick={() => assign(null, null)}
-          >
-            Quitar inventario de la selección
-          </button>
+            )}
+            {allowRemove && bulk && (
+              <button
+                type="button"
+                disabled={disabled}
+                onClick={() => assign(null, null)}
+              >
+                Quitar inventario de la selección
+              </button>
+            )}
+          </>
         )}
       </div>
     </>

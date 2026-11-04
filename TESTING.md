@@ -1,3 +1,11 @@
+## Respuesta de inventario y maximizar tabla de grupos · 2026-11-04
+
+- npm test:286 correctos; typecheck/build de producción correctos.
+- inventory-sync-status.integration.test, inventory-sheet-activation.integration.test, effectiveness-speed.integration.test y meta-inventory-context.integration.test:43 correctos en base exclusiva. Directorio/informe coinciden en configuración completa, moneda explícita ausente frente a inferida, revisión de asesor y permiso revocado; V3 se conserva.
+- Chromium768x3: antes198996 nodos/2304 formularios, carga54743ms, selección mediana3249.6ms; después90708 nodos/0 formularios, carga8001ms, selección mediana328.1ms. Tres muestras de selección por variante; comparación local, no benchmark de producción ni garantía general.
+-8 comprobaciones de navegador: formulario único bajo demanda y Cancelar; borrador y Escape; Factor sin GET repetido; color/control durante lectura retenida; respuesta de fondo idéntica sin modificar DOM; nueva hoja conserva selección actual; tabla de grupos amplía más150px y mantiene mismo nodo/borrador/selección sin GET; guardado ya sincronizado no hace PATCH ni segundo GET de contexto. Escenario de respuesta idéntica usa disparador de visibilidad (fondo), separado de actualización manual que cambia su nonce.
+- Evidencia /workspace/work/inventory-ui-speed-{before,final}.json y {unit,integration,types,build,browser,noop,cleanup}.txt; captura inventory-group-focused-table.png. Sin Graph/generaciones reales; fixture retirado con V1/G10.25/asesor/alias/estado intactos. Hostinger no autenticado.
+
 ## Grupos y reemplazos por uso/país · 2026-11-04
 
 - npm test:286 correctos; typecheck y compilación de producción correctos.

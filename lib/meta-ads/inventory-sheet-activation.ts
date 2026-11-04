@@ -155,10 +155,11 @@ export async function inventoryActivationDirectory(
         where: { inventorySheetId: q.listId },
         select: {
           id: true,
+          name: true,
           tableId: true,
           effectivenessRows: {
             where: { legacy: false },
-            select: { id: true, country: true, hidden: true, _count: { select: { days: true } } },
+            select: { id: true, country: true, hidden: true, advisorId: true, displayCurrency: true, currency: true, _count: { select: { days: true } } },
           },
           effectivenessStates: { select: { id: true, country: true, active: true, _count: { select: { events: true } } } },
         },
@@ -228,6 +229,12 @@ export async function inventoryActivationDirectory(
             })),
           }
         : {}),
+      synchronization: Object.fromEntries(linked.flatMap(alias => alias.effectivenessRows
+        .filter(row => row.currency === "")
+        .map(row => [JSON.stringify([categoryKey(alias.name),alias.tableId,row.country]), {
+          aliasId: alias.id,
+          ready: !!row.advisorId && !!row.displayCurrency && !settings.rows[rowKey(alias.id,row.country)]?.advisorReviews?.length,
+        }] as const))),
       revision: list.revision,
       limits: settings.limits,
       cacRules: settings.cacRules,
@@ -1116,7 +1123,7 @@ async function activationReport(
       include: {
         effectivenessRows: {
           where: { legacy: false },
-          select: { country: true, hidden: true },
+          select: { country: true, hidden: true, currency: true, displayCurrency: true, advisorId: true },
         },
         effectivenessStates: {
           include: {
@@ -1428,7 +1435,10 @@ async function activationReport(
             name: alias.name,
             tableId,
             targets,
-            synchronizationReady: rows.length > 0 && rows.every(r => !!r.advisorId && !!r.currency && !r.advisorReviews?.length),
+            synchronizationReady: rows.length > 0 && rows.every(r => {
+              const saved = alias.effectivenessRows.find(candidate => candidate.country === r.country && candidate.currency === "");
+              return !!saved?.advisorId && !!saved.displayCurrency && !settings.rows[rowKey(alias.id,r.country)]?.advisorReviews?.length;
+            }),
             activation: !rows.length
               ? "UNKNOWN"
               : rows.every((r) => r.active)

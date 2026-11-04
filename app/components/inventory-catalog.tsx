@@ -41,7 +41,7 @@ const InventoryTrials = dynamic(
   () => import("./inventory-trials").then((m) => m.InventoryTrials),
   { loading: () => <p role="status">Cargando grupos…</p> },
 );
-import { Fragment, useEffect, useRef, useState, type ReactNode } from "react";
+import { Fragment, memo, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useWorkbookPreference } from "./use-workbook-preference";
 import { financialRequest as api } from "./financial-request";
 import { InventoryCategoryAssign } from "./inventory-category-assign";
@@ -112,6 +112,12 @@ function InventoryActionIcon({
     </svg>
   );
 }
+// Selection changes only the checkbox/name cell. All other cells keep their
+// mounted controls and drafts until their data or permissions actually change.
+const InventoryStableCells = memo(function InventoryStableCells({children}:{children:ReactNode;model:object;evaluation:string}) {
+  return <>{children}</>;
+}, (previous,next)=>previous.model===next.model && previous.evaluation===next.evaluation);
+
 function InventoryCheck({
   label,
   checked,
@@ -384,13 +390,13 @@ export function InventoryCatalog({
     tableId: string;
     name: string;
   } | null>(null);
-  async function reloadSheetDirectory() {
+  const reloadSheetDirectory = useCallback(async () => {
     const next: InventorySheetActivationDirectory = await api(
       "meta-ads/inventory/sheet-activation/directory?" +
         new URLSearchParams({ listId }),
     );
     setSheetDirectory(next);
-  }
+  }, [listId]);
   useEffect(() => {
     let alive = true;
     setSheetDirectory(null);
@@ -687,13 +693,17 @@ export function InventoryCatalog({
     setItemFilter(v.items);
     setSheetFilter(v.sheets);
   };
-  const reloadCategories = async () => {
+  const reloadCategories = useCallback(async () => {
     const next = (await api(
       "meta-ads/inventory/categories?" + new URLSearchParams({ listId }),
     )) as InventoryCategoryState;
     setCategories(next);
     return next;
-  };
+  }, [listId]);
+  const onInventorySynced = useCallback(async () => {
+    setCountryReload(value => value + 1);
+    await Promise.all([onChanged(), reloadCategories(), reloadSheetDirectory()]);
+  }, [onChanged, reloadCategories, reloadSheetDirectory]);
   useEffect(() => {
     let active = true;
     setCategories(null);
@@ -1527,6 +1537,18 @@ export function InventoryCatalog({
     ids: string[];
     names: string[];
   } | null>(null);
+  const selectedForActions = useRef(selected);
+  selectedForActions.current = selected;
+  const cellModel = useMemo(()=>({}),[
+    listId,tables,categories,trialDirectory?.catalog,trialDirectory?.groups,trialDirectory?.canEdit,
+    sheetDirectory,busy,syllabiBusy,categoryDrop,onChanged,onInventorySynced,
+    parameters.join("|"),countryCodes.join("|"),hiddenColumnKeys.join("|"),
+    columns.some(c=>c.key==="gap"),
+  ]);
+  const rowEvaluationVersions=useMemo(()=>new Map(available.map(g=>[g.name,JSON.stringify([
+    countryEvaluation.ready,countryEvaluation.error,countryEvaluation.loading && !countryEvaluation.ready,
+    countryCodes.map(country=>countryEvaluation.lookup.get(JSON.stringify([categoryKey(g.name),country]))),
+  ])])),[listId,tables,categories,countryEvaluation,countryCodes.join("|")]);
   const choose = (ids: string[], checked: boolean) =>
     setSelected((old) =>
       checked
@@ -2188,6 +2210,10 @@ export function InventoryCatalog({
               aria-label="Definir límites del factor"
               disabled={busy || factorLoading || !sheetDirectory}
               onClick={async () => {
+                if (sheetDirectory) {
+                  setFactorOpen(true);
+                  return;
+                }
                 setFactorLoading(true);
                 try {
                   await reloadSheetDirectory();
@@ -3056,6 +3082,7 @@ export function InventoryCatalog({
                             />
                           </div>
                         </td>
+                        <InventoryStableCells model={cellModel} evaluation={rowEvaluationVersions.get(g.name) ?? ""}>
                         {categoryCell(g, "PRIMARY")}
                         {categoryCell(g, "SECONDARY")}
                         <td
@@ -3132,7 +3159,7 @@ export function InventoryCatalog({
                                   );
                                   committed = true;
                                   if (
-                                    g.links.some((a) => selected.includes(a.id))
+                                    g.links.some((a) => selectedForActions.current.includes(a.id))
                                   )
                                     setSelected((old) => [
                                       ...new Set([...old, ...result.aliasIds]),
@@ -3234,7 +3261,8 @@ export function InventoryCatalog({
                             renderSync={(column, point) => {
                               const tableId = column.split(":")[0],
                                 country = column.split(":")[1];
-                              const aliasId = point?.targets[0]?.aliasId;
+                              const saved = sheetDirectory?.synchronization[JSON.stringify([categoryKey(g.name),tableId,country])];
+                              const aliasId = saved?.aliasId ?? point?.targets[0]?.aliasId;
                               const source = g.links[0];
                               return (
                                 <InventoryMetaSync
@@ -3247,7 +3275,7 @@ export function InventoryCatalog({
                                   name={g.name}
                                   country={country}
                                   aliasId={aliasId}
-                                  syncState={point ? (point.synchronizationReady ? "ready" : "pending") : countryEvaluation.loading ? undefined : "pending"}
+                                  syncState={point ? (point.synchronizationReady ? "ready" : "pending") : sheetDirectory ? (saved?.ready ? "ready" : "pending") : undefined}
                                   catalogId={
                                     source
                                       ? (source.standalone
@@ -3256,10 +3284,7 @@ export function InventoryCatalog({
                                       : undefined
                                   }
                                   disabled={busy || !sheetDirectory?.canEdit}
-                                  onSynced={async () => {
-                                    setCountryReload((v) => v + 1);
-                                    await Promise.all([onChanged(), reloadCategories(), reloadSheetDirectory()]);
-                                  }}
+                                  onSynced={onInventorySynced}
                                 />
                               );
                             }}
@@ -3324,6 +3349,7 @@ export function InventoryCatalog({
                             }
                           />
                         </td>
+                        </InventoryStableCells>
                       </SheetSizedRow>
                     ))}
                   </Fragment>

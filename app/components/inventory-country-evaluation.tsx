@@ -4,7 +4,14 @@ import {
   type InventoryCampaignChange,
 } from "./inventory-campaign-control";
 import { InventoryCacStatus as InventoryStatusLabel } from "./inventory-cac-status";
-import { Fragment, useEffect, useMemo, useState, type ReactNode } from "react";
+import {
+  Fragment,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import { financialRequest as api } from "./financial-request";
 import { categoryKey } from "../../lib/meta-ads/category-paste";
 import { cacStatusNames as trialStatusNames } from "../../lib/meta-ads/inventory-cac-policy";
@@ -30,10 +37,12 @@ export function useInventoryCountryEvaluation(
     stamp = JSON.stringify([listId, key, since, until, fromActivation]);
   const [state, setState] = useState<{
       stamp: string;
+      signature: string;
       report: InventorySheetActivationReport;
     } | null>(null),
     [loading, setLoading] = useState(false),
     [error, setError] = useState("");
+  const loadedStamp = useRef("");
   useEffect(() => {
     let alive = true,
       pending = false;
@@ -43,7 +52,8 @@ export function useInventoryCountryEvaluation(
     async function load() {
       if (pending || !key || document.hidden) return;
       pending = true;
-      if (alive) setLoading(true);
+      const initial = loadedStamp.current !== stamp;
+      if (alive && initial) setLoading(true);
       try {
         const report: InventorySheetActivationReport = await api(
           "meta-ads/inventory/sheet-activation/report?" +
@@ -59,18 +69,26 @@ export function useInventoryCountryEvaluation(
           { signal: controller.signal },
         );
         if (alive) {
-          setState({ stamp, report });
+          const signature = JSON.stringify(report);
+          setState((previous) =>
+            previous?.stamp === stamp && previous.signature === signature
+              ? previous
+              : { stamp, report, signature },
+          );
+          loadedStamp.current = stamp;
           setError("");
         }
       } catch (e) {
         if (alive && !controller.signal.aborted) {
-          if ([401, 403].includes((e as { status?: number }).status ?? 0))
+          if ([401, 403].includes((e as { status?: number }).status ?? 0)) {
+            loadedStamp.current = "";
             setState(null);
+          }
           setError((e as Error).message);
         }
       } finally {
         pending = false;
-        if (alive) setLoading(false);
+        if (alive && initial) setLoading(false);
       }
     }
     void load();
@@ -100,7 +118,10 @@ export function useInventoryCountryEvaluation(
       ),
     [report],
   );
-  return { lookup, loading, error, ready: !!report };
+  return useMemo(
+    () => ({ lookup, loading, error, ready: !!report }),
+    [lookup, loading, error, report],
+  );
 }
 export function InventoryRowPinIcon() {
   return (

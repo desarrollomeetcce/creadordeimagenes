@@ -1,5 +1,15 @@
 # Avance por fases · continuación del desarrollo
 
+## Lista de Diplomados: respuesta ágil, estado estable y tabla de grupos ampliada (2026-11-04)
+
+Se reprodujo la demora con768 diplomados y3 países:2304 formularios cerrados y198996 nodos; carga54743ms y mediana de tres selecciones3249.6ms en Chromium local. MetaAliasAction conserva el disparador/popover y monta formulario solo abierto; InventoryMetaSync memoriza props y usa callback estable. Celdas no dependientes de selección conservan su contenido montado con token de modelos/permisos y firma por fila; referencias de selección actuales evitan handlers antiguos al añadir vínculos. Con mismos768x3:90708 nodos,0 formularios cerrados, carga8001ms y mediana328.1ms (alrededor de10x menos espera en selección). Son medidas sintéticas locales, no latencia comprobada en Hostinger.
+
+Una lectura de fondo no alterna loading si ya hay informe, y respuesta idéntica conserva objeto/DOM. Revisión de ámbito y401/403 retiran datos inválidos; continúan permisos/cancelación y actualización existente60s, sin consultas nuevas a Graph ni caché persistente de cifras. Factor abre directorio existente sin GET repetido. Sincronizado/Por sincronizar deriva de fila canónica y campos realmente guardados, no de moneda inferida por informe; snapshot compacto del directorio evita gris al cambiar/cargar evaluación. Deshabilitar temporalmente no desatura su color ni habilita escrituras. Revisiones de asesor y campos faltantes permanecen pendientes.
+
+Por nueva petición, Maximizar tabla en Crear/Grupos guardados pliega controles voluminosos, mantiene búsqueda/resumen/guardar/cancelar y da altura al cuerpo. Mostrar controles y Restaurar recuperan mismos campos, selección, nombre, DOM y scroll sin nueva consulta; tabla usa13px ampliada. Top conserva su expansión de ventana.
+
+286 unitarios,43 integraciones (estado canónico, activación, contexto y rendimiento), typecheck/build y8 controles Chromium correctos. Incluyen popover único/no-op sin PATCH, borrador intacto al seleccionar, Factor sin GET, evaluación retenida sin perder color, respuesta automática idéntica sin mutación DOM, vínculo nuevo seleccionado desde callback vigente y tabla de grupos con más de150px extra de altura/mismo nodo/borrador/selección. Cleanup valida V1/G10.25, asesor, alias y estado publicitario originales antes de retirar solo fixtureQA. No se accedió a la base Hostinger.
+
 ## Grupos: matriz de países, uso de12 horas y reemplazo por grupo (2026-11-04)
 
 Crear y Grupos guardados quedan separados y mantienen el Top. Grupos fijados con recuento y filtro, nombre editable, selección junto al diplomado y reemplazos manuales/azar por categoría. Matriz de diplomado, principal, subcategoría, grupo y países de hojas configuradas; no se añaden países por registros históricos ajenos. Se retiran Hojas, Ventas, Días y Evaluar en del editor. Resizers quedan en el borde con CSS compartido, sin botones vacíos. Tabla con primer nombre fijado, anchos persistentes, páginas locales25/50/100/200 y Cancelar visible.

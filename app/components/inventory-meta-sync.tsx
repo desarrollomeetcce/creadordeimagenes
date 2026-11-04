@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useRef, useState } from "react";
+import { memo, useEffect, useRef, useState } from "react";
 import { MetaAliasAction } from "./meta-alias-action";
 import { fetchJsonResponse } from "../../lib/http-response";
 import type { SavedAssignmentContext } from "../../lib/meta-ads/aliases";
@@ -11,7 +11,7 @@ type Campaign = {
   status: string | null;
   linkedHere: boolean;
 };
-export function InventoryMetaSync({
+export const InventoryMetaSync = memo(function InventoryMetaSync({
   tableId,
   tableName,
   listId,
@@ -321,4 +321,4 @@ export function InventoryMetaSync({
       {message && <small role="status">{message}</small>}
     </span>
   );
-}
+});

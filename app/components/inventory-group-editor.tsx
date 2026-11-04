@@ -51,6 +51,7 @@ export function InventoryGroupEditor({
   const [managementTab, setManagementTab] = useState<"create" | "edit" | "top">(
     initialTab ?? (group ? "edit" : "create"),
   );
+  const [showExpandedControls, setShowExpandedControls] = useState(false);
   const [expanded, setExpanded] = useState(false),
     [observations, setObservations] = useState(""),
     [evaluationColumn, setEvaluationColumn] = useState(
@@ -279,6 +280,8 @@ export function InventoryGroupEditor({
       ref={dialog}
       className="trial-dialog inventory-group-editor"
       data-expanded={expanded || undefined}
+      data-table-focus={(expanded && managementTab !== "top") || undefined}
+      data-show-controls={showExpandedControls || undefined}
       aria-label={
         group ? "Editar " + group.name : "Crear grupo desde inventario"
       }
@@ -298,9 +301,16 @@ export function InventoryGroupEditor({
         <button
           type="button"
           aria-pressed={expanded}
-          onClick={() => setExpanded((v) => !v)}
+          onClick={() => {
+            setExpanded((v) => !v);
+            setShowExpandedControls(false);
+          }}
         >
-          {expanded ? "↙ Restaurar" : "⛶ Maximizar"}
+          {expanded
+            ? "↙ Restaurar vista"
+            : managementTab === "top"
+              ? "⛶ Maximizar"
+              : "⛶ Maximizar tabla"}
         </button>
         <button
           className="ui-close-button"
@@ -418,6 +428,24 @@ export function InventoryGroupEditor({
           )}
           {(managementTab !== "edit" || group) && (
             <>
+              {expanded && (
+                <div className="inventory-group-focused-summary">
+                  <strong>{name || "Crear grupo"}</strong>
+                  <span>
+                    {ids.length} seleccionados · {filtered.length} diplomados
+                  </span>
+                  <button
+                    type="button"
+                    aria-expanded={showExpandedControls}
+                    onClick={() => setShowExpandedControls((v) => !v)}
+                  >
+                    {showExpandedControls
+                      ? "Ocultar controles"
+                      : "Mostrar controles"}
+                  </button>
+                </div>
+              )}
+
               <div className="inventory-group-identity">
                 <label>
                   {group ? "✎ Nombre del grupo" : "Nombre del nuevo grupo"}
