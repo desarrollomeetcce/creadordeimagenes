@@ -1,5 +1,12 @@
 # Meta Ads: consulta y análisis
 
+## Efectividad: rendimiento de lectura y asociaciones (2026-11-03)
+
+Las evaluaciones en segundo plano conservan los datos ya recibidos del mismo ámbito mientras actualizan. Cambiar columnas de países de una misma tabla usa la información ya cargada; cambiar de tabla/período o perder permisos exige lectura autorizada nueva. Las lecturas no toman el bloqueo reservado a guardados. El CAC reciente de las hojas carga sus14 días y mantiene la fórmula; el histórico completo se conserva en sus vistas. Recargas independientes tras editar se ejecutan en paralelo.
+
+Se retiró el aviso grande de asociaciones; Revisar asociaciones conserva la inspección de registros/orígenes y las restricciones para casos no comprobados. Retirar el aviso no traslada fichas, cambia países ni borra ventas. Corregir registros de la instalación real requiere acceso autenticado a esa instalación.
+
+
 ## Sincronización por diplomado y país, sin repetir configuración (2026-11-03)
 
 Desde una fila de Lista de Diplomados o una hoja, el cuadro toma diplomado y país del contexto. Asesor y moneda se recuperan al abrir; si solo hay un asesor guardado en Meta se sugiere sin cruzar países ni reemplazar historia. Las otras vistas usan el mismo registro canónico. Campañas es opcional en la lista: puedes guardar únicamente los datos de la ficha y vincular campañas posteriormente desde Meta Ads. Los vínculos existentes se muestran automáticamente y no hay que guardarlos otra vez.

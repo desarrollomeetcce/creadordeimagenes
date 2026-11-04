@@ -105,7 +105,8 @@ export const activationSettings = (config: Prisma.JsonValue): Settings => {
 const rowKey = (aliasId: string, country: string) => aliasId + "|" + country;
 async function context(tx: Tx, actor: Actor, listId: string, write = false) {
   ownerOnly(actor);
-  await effectivenessLock(tx, actor);
+  if (write) await effectivenessLock(tx, actor);
+  else await checkFinancialContext(actor, tx);
   const access = await financialAccess(actor, tx),
     cap = financialContext(actor);
   demand(
@@ -1074,6 +1075,7 @@ async function activationReport(
   input: unknown,
   authorizedTable?: string,
   sharedTx?: Tx,
+  cacOnly = false,
 ) {
   const q = z
     .object({
@@ -1162,7 +1164,7 @@ async function activationReport(
       403,
     );
     const today = limaDay(new Date()),
-      floor = q.fromActivation
+      floor = cacOnly ? cacWindow(today).since : q.fromActivation
         ? "2004-01-01"
         : [
             new Date(Date.parse(today) - 365 * 86400000)
@@ -1174,7 +1176,7 @@ async function activationReport(
         where: { day: { gte: floor, lte: today } },
       }),
       fx = new Map(rates.map((r) => [r.day, r.rates as FxRates]));
-    const registered = await recordedStarts(
+    const registered = cacOnly ? new Map<string, string>() : await recordedStarts(
       tx,
       aliases.map((a) => a.id),
       today,
@@ -1193,8 +1195,8 @@ async function activationReport(
         )
         .filter((day) => day >= floor && day <= today)
         .sort();
-      const linkedFloor = await recordedTableFloor(tx, tableId, today);
-      const sourceSince =
+      const linkedFloor = cacOnly ? null : await recordedTableFloor(tx, tableId, today);
+      const sourceSince = cacOnly ? cacWindow(today).since :
         [
           ...(linkedFloor && linkedFloor >= floor ? [linkedFloor] : []),
           q.since ?? cacWindow(today).since,
@@ -1236,7 +1238,7 @@ async function activationReport(
               states.find((s) => s.country === r.country)?.revision ?? 0,
           }));
           const history: SheetInterval[] = [];
-          for (const row of rows) {
+          for (const row of cacOnly ? [] : rows) {
             const state = states.find((s) => s.country === row.country),
               observed = reportingActivity(
                 row.days,
@@ -1515,7 +1517,6 @@ export async function financialCatalogStatus(actor: Actor, input: unknown) {
   return db.$transaction(
     async (tx) => {
       ownerOnly(actor);
-      await effectivenessLock(tx, actor);
       await checkFinancialContext(actor, tx);
       const access = await financialAccess(actor, tx),
         cap = financialContext(actor);
@@ -1550,6 +1551,7 @@ export async function financialCatalogStatus(actor: Actor, input: unknown) {
           { listId, tableIds: q.tableId, byCountry: "true" },
           q.tableId,
           tx,
+          true,
         );
         for (const row of report.rows)
           for (const target of row.targets) {

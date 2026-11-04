@@ -1,5 +1,12 @@
 # Pruebas y evidencia
 
+## Concurrencia de lecturas Efectividad y respuesta de botones (2026-11-03)
+
+effectiveness-speed.integration.test.ts compara CAC reciente del informe completo con financialCatalogStatus usando ventas/gasto de14 días y datos antiguos120d fuera del rango. Mantiene884411 en otra conexión PG: directorio, evaluación, CAC y preview deben completar sin liberarlo; una escritura permanece pendiente hasta soltarlo y rechaza revisión antigua. Revalida permisos y verifica que V77/G999 antiguos sigan intactos. Todas las llamadas externas están prohibidas.
+
+Chromium: aviso grande ausente con revisión manual disponible, respuesta de evaluación retenida sin deshabilitar controles/popup, visibilidad de país dentro de la misma tabla sin nueva consulta,403 borra valores operativos retenidos y actualización autorizada los restaura. Tras un guardado metadata objectIds=[] se comprueba que tablas/pestañas/categorías/directorio se solicitan antes de liberar cualquiera de sus respuestas, detectando una cascada serial. Sin Graph/generación. Fixture exclusivo preserva V1/G10.25, asesor/país/alias/estado. No prueba latencia ni reparación de la BD real de Hostinger.
+
+
 ## Contexto reutilizable y diagnóstico de asociaciones adicionales (2026-11-03)
 
 meta-inventory-context.integration.test.ts cubre guardar diploma/país/asesor/moneda sin campañas con recibo, reutilización, protección de V/estado/eventos, rechazo de vacío sin modo/permiso/CAS, sugerencia única de Meta aislada por país, discrepancia Meta/hoja y recibo Meta obsoleto. Regresiones meta-inventory-assignment y effectiveness-sharing. Country correction comprueba identidad actual del registro que origina un aviso, bloqueo de placeholders sin días/Meta y de país sin hoja verificada, conservando registros y país original.

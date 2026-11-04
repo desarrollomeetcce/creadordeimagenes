@@ -5,7 +5,7 @@ import { db } from "../db";
 import { demand } from "../errors";
 import { recordActivity } from "../activity";
 import { effectivenessLock } from "./effectiveness";
-import { financialAccess } from "./financial-access";
+import { financialAccess, checkFinancialContext } from "./financial-access";
 import { activationSettings } from "./inventory-sheet-activation";
 import { inventoryNamedCountry } from "./inventory-sheet-column-policy";
 import { sheetCountryIdentities } from "./sheet-country-identity";
@@ -34,7 +34,7 @@ const confirmation = request.extend({
 export type CountryCorrectionInput = z.infer<typeof request>;
 
 async function plan(tx: Tx, actor: Actor, input: CountryCorrectionInput) {
-  await effectivenessLock(tx, actor);
+  await checkFinancialContext(actor, tx);
   demand(
     (await financialAccess(actor, tx)).isOwner,
     "Solo el propietario puede trasladar asociaciones entre hojas.",
@@ -300,6 +300,7 @@ export async function previewInventoryCountryCorrection(
   const b = request.parse(input);
   return db.$transaction(async (tx) => view(await plan(tx, actor, b)), {
     timeout: 30000,
+    isolationLevel: "RepeatableRead",
   });
 }
 /** Move financial row/state IDs, not copies of sales. Provider facts and row-bound approvals stay untouched. */

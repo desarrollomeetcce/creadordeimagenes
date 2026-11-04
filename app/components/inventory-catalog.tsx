@@ -1612,9 +1612,7 @@ export function InventoryCatalog({
       });
       committed = true;
       setCountryReload((v) => v + 1);
-      await onChanged();
-      await reloadCategories();
-      await reloadSheetDirectory();
+      await Promise.all([onChanged(), reloadCategories(), reloadSheetDirectory()]);
     } catch (e) {
       setMessage(
         (committed ? "Cambio guardado. Actualiza la vista. " : "") +
@@ -1668,8 +1666,7 @@ export function InventoryCatalog({
       committed = true;
       setSelected([]);
       await reloadGroups();
-      await onChanged();
-      await reloadCategories();
+      await Promise.all([onChanged(), reloadCategories()]);
       setMessage(
         `${names.length} diplomado${names.length === 1 ? "" : "s"} asignado${names.length === 1 ? "" : "s"} a ${group.name}.`,
       );
@@ -1787,9 +1784,7 @@ export function InventoryCatalog({
                 onChanged={async () => {
                   setCountryReload((value) => value + 1);
                   await reloadGroups();
-                  await onChanged();
-                  await reloadCategories();
-                  await reloadSheetDirectory();
+                  await Promise.all([onChanged(), reloadCategories(), reloadSheetDirectory()]);
                 }}
                 onDetail={(column, name, aliasId) =>
                   setFullDetail({
@@ -1809,8 +1804,7 @@ export function InventoryCatalog({
           onClose={() => setGroupEditor(null)}
           onSaved={async () => {
             await reloadGroups();
-            await onChanged();
-            await reloadCategories();
+            await Promise.all([onChanged(), reloadCategories()]);
             setGroupEditor(null);
             setSelected([]);
             setMessage("Grupo guardado.");
@@ -1932,8 +1926,7 @@ export function InventoryCatalog({
             restoreImportFocus();
           }}
           onSaved={async (id) => {
-            await onChanged();
-            await reloadCategories();
+            await Promise.all([onChanged(), reloadCategories()]);
             setMessage("Catálogo cargado.");
             onOpenInventory?.(id);
           }}
@@ -1966,80 +1959,16 @@ export function InventoryCatalog({
           items={countryCorrection}
           onClose={() => setCountryCorrection(null)}
           onSaved={async () => {
-            await onChanged();
-            await reloadCategories();
-            await reloadSheetDirectory();
+            await Promise.all([onChanged(), reloadCategories(), reloadSheetDirectory()]);
           }}
         />
-      )}
-      {!!sheetDirectory?.countryIssues?.length && (
-        <details className="inventory-country-review">
-          <summary>
-            Asociaciones adicionales de país por revisar (
-            {sheetDirectory.countryIssues.length})
-          </summary>
-          <p>
-            La fila visible conserva su país. Este aviso reúne otras asociaciones del mismo diplomado cuyo país guardado es distinto al de la hoja; pueden ser registros vacíos u ocultos. No demuestra que la fila visible esté equivocada. Se conserva toda la información.
-          </p>
-          {sheetDirectory.canCorrectCountry && (
-            <button
-              type="button"
-              disabled={busy}
-              onClick={() =>
-                setCountryCorrection(
-                  sheetDirectory.countryIssues!.map((i) => ({
-                    aliasId: i.aliasId,
-                    country: i.country,
-                  })),
-                )
-              }
-            >
-              Corregir asociaciones de país
-            </button>
-          )}
-          <ul>
-            {sheetDirectory.countryIssues.map((issue) => (
-              <li key={issue.aliasId + ":" + issue.country}>
-                <span>
-                  <strong>{issue.name}</strong> · Asociación adicional: {countryName(issue.country)} ({issue.country}) · Hoja: {issue.tableName} ({issue.expectedCountry})
-                </span>
-                <button
-                  type="button"
-                  onClick={() =>
-                    setFullDetail({
-                      tableId: issue.tableId,
-                      aliasId: issue.aliasId,
-                      country: issue.country,
-                      name: issue.name,
-                    })
-                  }
-                >
-                  Ver datos e histórico
-                </button>
-                <details className="country-issue-origin"><summary>Origen del aviso</summary><ul>{issue.origins.map(origin => <li key={origin.id}>{origin.kind}{origin.hidden ? " (oculta)" : ""} · campo <code>country={origin.country}</code> · {origin.days} días guardados · {origin.events} eventos · Registro: <code>{origin.id}</code></li>)}</ul><small>Esto identifica el registro actual. No demuestra qué importación o edición guardó ese país.</small></details>
-                {sheetDirectory.canCorrectCountry && (
-                  <button
-                    type="button"
-                    disabled={busy}
-                    onClick={() =>
-                      setCountryCorrection([
-                        { aliasId: issue.aliasId, country: issue.country },
-                      ])
-                    }
-                  >
-                    Corregir asociación
-                  </button>
-                )}
-              </li>
-            ))}
-          </ul>
-        </details>
       )}
       <div
         className="row inventory-actions-toolbar sheet-toolbar-with-actions"
         aria-label="Acciones del inventario"
       >
         <div className="row sheet-toolbar-controls">
+          {!!sheetDirectory?.countryIssues?.length && sheetDirectory.canCorrectCountry && <button type="button" disabled={busy} onClick={() => setCountryCorrection(sheetDirectory.countryIssues!.map(i => ({aliasId:i.aliasId,country:i.country})))}>Revisar asociaciones</button>}
           <button
             type="button"
             className="inventory-maximize-trigger"
@@ -2608,8 +2537,7 @@ export function InventoryCatalog({
                           );
                           committed = true;
                           setSelected([]);
-                          await onChanged();
-                          await reloadCategories();
+                          await Promise.all([onChanged(), reloadCategories()]);
                           setMessage(
                             result.created
                               ? `Hojas asignadas a ${result.items} inventarios: ${result.created} vínculos nuevos.`
@@ -2901,8 +2829,7 @@ export function InventoryCatalog({
                                 busy ||
                                 !selectedGroups ||
                                 !sheetDirectory?.canEdit ||
-                                !countryEvaluation.ready ||
-                                countryEvaluation.loading
+                                !countryEvaluation.ready
                               }
                               onClick={() =>
                                 void changeSheetActivation(
@@ -2928,8 +2855,7 @@ export function InventoryCatalog({
                                 busy ||
                                 !selectedGroups ||
                                 !sheetDirectory?.canEdit ||
-                                !countryEvaluation.ready ||
-                                countryEvaluation.loading
+                                !countryEvaluation.ready
                               }
                               onClick={() =>
                                 void changeSheetActivation(
@@ -3124,8 +3050,7 @@ export function InventoryCatalog({
                                   name: value.trim(),
                                   ids: g.links.map((a) => a.id),
                                 });
-                                await onChanged();
-                                await reloadCategories();
+                                await Promise.all([onChanged(), reloadCategories()]);
                               }}
                             />
                           </div>
@@ -3211,8 +3136,7 @@ export function InventoryCatalog({
                                     setSelected((old) => [
                                       ...new Set([...old, ...result.aliasIds]),
                                     ]);
-                                  await onChanged();
-                                  await reloadCategories();
+                                  await Promise.all([onChanged(), reloadCategories()]);
                                   setMessage(
                                     result.created
                                       ? `«${g.name}» añadido a ${result.created} hoja${result.created === 1 ? "" : "s"}.`
@@ -3333,9 +3257,7 @@ export function InventoryCatalog({
                                   disabled={busy || !sheetDirectory?.canEdit}
                                   onSynced={async () => {
                                     setCountryReload((v) => v + 1);
-                                    await onChanged();
-                                    await reloadCategories();
-                                    await reloadSheetDirectory();
+                                    await Promise.all([onChanged(), reloadCategories(), reloadSheetDirectory()]);
                                   }}
                                 />
                               );
@@ -3465,8 +3387,7 @@ export function InventoryCatalog({
             if (importView === "file") restoreImportFocus();
           }}
           onSaved={async () => {
-            await onChanged();
-            await reloadCategories();
+            await Promise.all([onChanged(), reloadCategories()]);
             setMessage(
               "Guardado. Las categorías sin ítems se consultan en «Ver categorías».",
             );
@@ -3499,8 +3420,7 @@ export function InventoryCatalog({
           sheetsOnly
           onClose={() => setSheetRemoval(null)}
           onRemoved={async () => {
-            await onChanged();
-            await reloadCategories();
+            await Promise.all([onChanged(), reloadCategories()]);
             await reloadGroups();
             setSelected([]);
             setSheetRemoval(null);
@@ -3514,8 +3434,7 @@ export function InventoryCatalog({
           ids={bulkIds}
           onClose={() => setBulkIds(null)}
           onRemoved={async (ids) => {
-            await onChanged();
-            await reloadCategories();
+            await Promise.all([onChanged(), reloadCategories()]);
             setSelected((old) => old.filter((id) => !bulkIds.includes(id)));
             setBulkIds(null);
             setMessage("Selección eliminada de las hojas confirmadas.");

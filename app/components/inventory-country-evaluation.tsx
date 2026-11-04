@@ -21,11 +21,13 @@ export function useInventoryCountryEvaluation(
   nonce: number,
   period?: { since?: string; until?: string; fromActivation?: boolean },
 ) {
-  const key = tableIds.join(","),
+  const key = [...new Set(tableIds.map((id) => id.split(":")[0]))]
+      .sort()
+      .join(","),
     since = period?.since ?? "",
     until = period?.until ?? "",
     fromActivation = period?.fromActivation ?? false,
-    stamp = JSON.stringify([listId, key, nonce, since, until, fromActivation]);
+    stamp = JSON.stringify([listId, key, since, until, fromActivation]);
   const [state, setState] = useState<{
       stamp: string;
       report: InventorySheetActivationReport;
@@ -35,7 +37,8 @@ export function useInventoryCountryEvaluation(
   useEffect(() => {
     let alive = true,
       pending = false;
-    setState(null);
+    const controller = new AbortController();
+    setState((previous) => (previous?.stamp === stamp ? previous : null));
     setError("");
     async function load() {
       if (pending || !key || document.hidden) return;
@@ -46,21 +49,23 @@ export function useInventoryCountryEvaluation(
           "meta-ads/inventory/sheet-activation/report?" +
             new URLSearchParams({
               listId,
-              tableIds: [
-                ...new Set(tableIds.map((id) => id.split(":")[0])),
-              ].join(","),
+              tableIds: key,
               byCountry: "true",
               ...(since && until ? { since, until } : {}),
               ...(fromActivation ? { fromActivation: "true" } : {}),
             }),
+          "GET",
+          undefined,
+          { signal: controller.signal },
         );
         if (alive) {
           setState({ stamp, report });
           setError("");
         }
       } catch (e) {
-        if (alive) {
-          setState(null);
+        if (alive && !controller.signal.aborted) {
+          if ([401, 403].includes((e as { status?: number }).status ?? 0))
+            setState(null);
           setError((e as Error).message);
         }
       } finally {
@@ -76,6 +81,7 @@ export function useInventoryCountryEvaluation(
     document.addEventListener("visibilitychange", visible);
     return () => {
       alive = false;
+      controller.abort();
       clearInterval(timer);
       document.removeEventListener("visibilitychange", visible);
     };
@@ -156,8 +162,7 @@ export function InventoryCountryCells({
           ),
           active = point?.activation === "ACTIVE",
           mixed = point?.activation === "MIXED",
-          disabled =
-            !canEdit || busy || !evaluation.ready || evaluation.loading,
+          disabled = !canEdit || busy || !evaluation.ready,
           assessment = point?.cac?.meta.assessment ?? {
             status: "PENDING" as const,
             usage: null,

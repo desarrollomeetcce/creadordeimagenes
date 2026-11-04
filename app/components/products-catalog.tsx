@@ -58,9 +58,11 @@ export function ProductsCatalog() {
         ? "VIEW"
         : null;
   useEffect(() => {
-    let live = true;
+    let live = true,
+      pending = false;
     const update = () => {
-      if (document.visibilityState !== "visible") return;
+      if (document.visibilityState !== "visible" || pending) return;
+      pending = true;
       void generalApi("meta-ads/effectiveness-access")
         .then((a) => {
           if (live) {
@@ -71,8 +73,8 @@ export function ProductsCatalog() {
             ]);
             const changed =
               !!accessVersion.current && accessVersion.current !== signature;
+            if (accessVersion.current !== signature) setAccess(a);
             accessVersion.current = signature;
-            setAccess(a);
             if (changed)
               void Promise.all([
                 api("meta-ads/alias-tables"),
@@ -92,7 +94,10 @@ export function ProductsCatalog() {
                 });
           }
         })
-        .catch(() => {});
+        .catch(() => {})
+        .finally(() => {
+          pending = false;
+        });
     };
     update();
     window.addEventListener("focus", update);

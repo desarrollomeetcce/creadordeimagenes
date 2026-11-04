@@ -1,5 +1,16 @@
 # Avance por fases · continuación del desarrollo
 
+## Efectividad: lecturas sin bloquear guardados y menos trabajo repetido (2026-11-03)
+
+Se encontró una causa reproducible de la espera: context de lectura y financialCatalogStatus tomaban884411, compartido con guardados, durante informes largos. Las lecturas ahora revalidan permisos sin ese bloqueo; escritores conservan bloqueo y CAS. La revisión de asociaciones usa snapshot de lectura sin bloquear escrituras; aplicar mantiene su transacción bloqueada. CAC de cabecera financiera usa misma fórmula/14 días con hechos y tasas de ese período, sin traer meses para reconstruir ciclos no usados; evaluación completa e historial mantienen sus rangos y controles.
+
+Frontend mantiene valores del mismo ámbito al recargar evaluación, sin desactivar todos los botones por una lectura de fondo. Cambiar ámbito o recibir401/403 limpia la vista; error temporal no fabrica cifras. Clave de tablas canónica evita otra lectura al ordenar/ocultar países de una tabla ya cargada. Recargas de tablas/pestañas/categorías/directorio independientes se hacen en paralelo. Una respuesta idéntica de permisos no fuerza render de todo el inventario y foco/intervalo no duplican la petición en curso. No se introdujo caché financiera entre peticiones ni llamadas Graph.
+
+Por petición, se retira el aviso grande de asociaciones de la pantalla principal. Revisar asociaciones sigue accesible y mantiene origen, evidencia y bloqueos. No se cambian países ni se borran datos al ocultar ese aviso. El entorno no tiene credenciales/sesión de Hostinger: correcciones de registros reales siguen pendientes de ejecución autenticada, no se afirma que se hayan aplicado.
+
+182 unitarios,5 integraciones de rendimiento y43 regresiones, typecheck/build y5 controles Chromium correctos. Informe completo y CAC acotado coinciden (V28/G56/CAC2) aun con V77/G999120d atrás. Directorio/evaluación/CAC/preview completan con884411 retenido por otro cliente; guardado sí espera y CAS obsoleto falla. Browser conserva controles durante respuesta retenida, cambiar país de misma tabla no consulta,403 retira controles y lectura nueva los restaura; cuatro recargas llegan en paralelo tras guardar sin campaña. Cleanup valida V1/G10.25 y asesor/vínculos/estado originales antes de borrar fixtures exclusivamente.
+
+
 ## Sincronización compacta, campaña opcional y procedencia del país (2026-11-03)
 
 Un único cuadro compacto se usa desde Lista de Diplomados y hojas de país. Título y resumen fijan diplomado/país desde fila y columna; asesor/moneda vienen del contexto canónico. inventory-candidates devuelve ese contexto en la respuesta existente y evita un segundo GET. Vínculos actuales aparecen solos y la búsqueda de campañas queda plegada/opcional. Guardar sin cambios de vínculos ya completos no hace PATCH. Formulario360px con límite520px/viewport, moneda sin desbordamiento, Cancelar visible, arrastre existente y expansión/restauración explícita. Botón verde Sincronizado o ámbar Por sincronizar según configuración de asesor/moneda del informe existente, sin lecturas por fila ni afirmar frescura de métricas.
