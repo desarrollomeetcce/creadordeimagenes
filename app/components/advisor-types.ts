@@ -41,6 +41,7 @@ export type AdvisorSource = {
   days: Record<string, { sales: number | null; na: boolean; partial: boolean }>;
 };
 export type AdvisorSheetData = {
+  advisorOrderRevision?: string;
   tableId: string;
   since: string;
   until: string;

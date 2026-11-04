@@ -453,7 +453,7 @@ export async function authorizeFinancialRequest(
       );
     if (doc.kind === "ADVISORS") {
       demand(
-        /^(advisors(?:\/(sheet|detail|periods|period-history|attendance|absence|contact-base(?:\/bucket)?))?$|effectiveness\/advisor(?:-|$)|manual-base\/advisor$)/.test(
+        /^(advisors(?:\/(sheet|detail|periods|period-history|attendance|absence|order|contact-base(?:\/bucket)?))?$|effectiveness\/advisor(?:-|$)|manual-base\/advisor$)/.test(
           path,
         ),
         "Comparte también la hoja financiera para consultar ese detalle.",

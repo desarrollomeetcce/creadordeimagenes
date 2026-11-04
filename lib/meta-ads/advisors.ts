@@ -1,3 +1,5 @@
+import { orderedAdvisors } from "./advisor-order-policy";
+import { advisorOrderRevision } from "./advisor-order";
 import { recordedStarts } from "./recorded-starts";
 import { isPerformanceManager, performanceManager } from "./performance-access";
 import { performanceEffectivenessSource } from "./effectiveness";
@@ -789,15 +791,10 @@ async function readAdvisorSheet(
               })
             )?.sheetId
           : "default-advisors");
-      demand(
-        (managed && sheetId === "all") ||
-          (sheetId &&
-            (await tx.metaEffectivenessSheet.findFirst({
-              where: { id: sheetId, kind: "ADVISORS", archivedAt: null },
-            }))),
-        "Lista de asesores no disponible.",
-        404,
-      );
+      const advisorList = sheetId && sheetId !== "all" ? await tx.metaEffectivenessSheet.findFirst({
+        where: { id: sheetId, kind: "ADVISORS", archivedAt: null }, select: { id: true, config: true },
+      }) : null;
+      demand((managed && sheetId === "all") || advisorList, "Lista de asesores no disponible.", 404);
       const personWhere =
         managed && sheetId === "all"
           ? { sheet: { archivedAt: null } }
@@ -1259,7 +1256,8 @@ async function readAdvisorSheet(
         assignedBaseEstimate: filters.advisorId
           ? advisorBaseEstimate(estimateRows, dates, filters.advisorId)
           : undefined,
-        rows: people.map((p) => ({
+        advisorOrderRevision: advisorList ? advisorOrderRevision(advisorList.config, people) : undefined,
+        rows: orderedAdvisors(people, advisorList?.config).map((p) => ({
           ...p,
           ...(!personal && !managed
             ? { activeSince: activityStarts.get(p.id) ?? null }

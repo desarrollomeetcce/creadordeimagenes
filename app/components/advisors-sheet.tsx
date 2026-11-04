@@ -1,4 +1,5 @@
 "use client";
+import { moveAdvisorInOrder } from "../../lib/meta-ads/advisor-order-policy";
 import { advisorFinancialSummary } from "../../lib/meta-ads/advisor-financial-summary";
 import { AdvisorCommercialRole } from "./advisor-commercial-role";
 import { AdvisorContactBaseEditor } from "./advisor-contact-base-editor";
@@ -68,6 +69,7 @@ const statuses = [
 export function AdvisorsSheet({
   tables,
   listId = "default-advisors",
+  canEdit = false,
   initialTableId,
   sheetTabs,
   toolbarActions,
@@ -75,6 +77,7 @@ export function AdvisorsSheet({
   onOpenPeriod,
 }: {
   listId?: string;
+  canEdit?: boolean;
   tables: AdvisorTable[];
   initialTableId: string;
   sheetTabs: ReactNode;
@@ -82,6 +85,8 @@ export function AdvisorsSheet({
   onChanged: () => Promise<void>;
   onOpenPeriod?: (period: AdvisorPeriodView) => void;
 }) {
+  const [orderRevision, setOrderRevision] = useState("");
+  const orderPending = useRef(false), draggedAdvisor = useRef<string | null>(null);
   const [contactBase, setContactBase] = useState<{
     advisorId: string;
     name: string;
@@ -204,6 +209,7 @@ export function AdvisorsSheet({
       );
       if (token === sequence.current && context.current === requested) {
         setRows(data.rows);
+        setOrderRevision(data.advisorOrderRevision ?? "");
         setRowsContext(requested);
       }
     } catch (e) {
@@ -246,6 +252,22 @@ export function AdvisorsSheet({
     } finally {
       setBusy(false);
     }
+  };
+  const moveAdvisor = async (source: string, target: string) => {
+    if (!canEdit || busy || orderPending.current || rowsContext !== key || !orderRevision || source === target) return;
+    const ids = rows.map(row => row.id), next = moveAdvisorInOrder(ids, source, target);
+    if (next === ids) return;
+    const requested = key;
+    orderPending.current = true; setBusy(true); setMessage(""); sequence.current++;
+    try {
+      const saved: { advisorIds: string[]; revision: string } = await api("meta-ads/advisors/order", "PUT", { advisorListId: listId, advisorIds: next, expectedRevision: orderRevision });
+      if (context.current !== requested) return;
+      const byId = new Map(rows.map(row => [row.id, row]));
+      setRows(saved.advisorIds.flatMap(id => byId.has(id) ? [byId.get(id)!] : []));
+      setOrderRevision(saved.revision); setMessage("Orden compartido guardado.");
+    } catch (error) {
+      if (context.current === requested) { setMessage((error as Error).message); if ((error as { status?: number }).status === 409) await load(false, true); }
+    } finally { orderPending.current = false; setBusy(false); }
   };
   const showAdvisor = (id: string) => {
     const found = rows.find((p) => p.id === id);
@@ -646,6 +668,9 @@ export function AdvisorsSheet({
                 <SheetSizedRow
                   key={p.id}
                   data-advisor-id={p.id}
+                  onDragOver={e => { if (canEdit && !busy && draggedAdvisor.current && draggedAdvisor.current !== p.id) { e.preventDefault(); e.dataTransfer.dropEffect = "move"; e.currentTarget.dataset.advisorDrop = "true"; } }}
+                  onDragLeave={e => { delete e.currentTarget.dataset.advisorDrop; }}
+                  onDrop={e => { e.preventDefault(); delete e.currentTarget.dataset.advisorDrop; const source = draggedAdvisor.current; draggedAdvisor.current = null; if (source) void moveAdvisor(source, p.id); }}
                   label={p.name}
                   height={rowsLayout.heights[p.id]}
                   onResize={(v) => rowsLayout.resize(p.id, v)}
@@ -653,6 +678,13 @@ export function AdvisorsSheet({
                 >
                   <td className="advisor-name">
                     <div className="advisor-name-actions">
+                      {canEdit && <button type="button" className="advisor-order-handle" draggable={!busy && !!orderRevision}
+                        disabled={busy || !orderRevision || rowsContext !== key}
+                        aria-label={`Mover asesor ${p.name}`} title="Arrastra para cambiar el orden compartido. Alt+↑/↓ también mueve."
+                        onDragStart={e => { if (busy || !orderRevision) { e.preventDefault(); return; } draggedAdvisor.current = p.id; e.dataTransfer.effectAllowed = "move"; e.dataTransfer.setData("application/x-advisor-order", p.id); }}
+                        onDragEnd={() => { draggedAdvisor.current = null; document.querySelectorAll("[data-advisor-drop]").forEach(node => node.removeAttribute("data-advisor-drop")); }}
+                        onKeyDown={e => { if (e.altKey && (e.key === "ArrowUp" || e.key === "ArrowDown")) { e.preventDefault(); const index = filtered.findIndex(person => person.id === p.id), target = filtered[index + (e.key === "ArrowUp" ? -1 : 1)]; if (target) void moveAdvisor(p.id, target.id); } }}
+                      >⠿</button>}
                       <button
                         type="button"
                         className="advisor-detail-trigger"

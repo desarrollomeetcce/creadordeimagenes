@@ -918,6 +918,8 @@ export async function metaRoutes(
       ).deleteAliasTable(actor, z.string().min(1).max(100).parse(parts[2]), b),
     );
   }
+  if (path === "advisors/order" && method === "PUT")
+    return send(await (await import("./advisor-order")).saveAdvisorOrder(actor, await body()));
   if (path === "advisors" && method === "GET")
     return send(await (await import("./advisors")).advisors(actor));
   if (path === "advisors" && (method === "POST" || method === "PATCH")) {

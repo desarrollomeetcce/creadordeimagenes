@@ -906,6 +906,7 @@ export function ProductsCatalog() {
       )}
       {locationReady && advisorSheet && !inventorySheet && (
         <AdvisorsSheet
+          canEdit={canEdit}
           key={special!.id}
           listId={special!.id}
           tables={orderedTables}
