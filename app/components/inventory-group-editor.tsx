@@ -1,4 +1,6 @@
 "use client";
+import { InventoryGroupCategoryAdditions } from "./inventory-group-category-additions";
+import { randomCategoryAdditions } from "../../lib/meta-ads/inventory-group-addition-policy";
 import { InventoryGroupReplacements } from "./inventory-group-replacements";
 import {
   Fragment,
@@ -94,11 +96,16 @@ export function InventoryGroupEditor({
     items: TrialItem[];
     requested: number;
     key: string;
+    category?: string;
   } | null>(null);
   const [addition, setAddition] = useState<{
-    item: TrialItem;
+    items: TrialItem[];
     key: string;
   } | null>(null);
+  const [additionPicker, setAdditionPicker] = useState<"ADD" | "RANDOM" | null>(
+    null,
+  );
+  const [queuedIds, setQueuedIds] = useGroupDraftState<string[]>(draftKey, []);
   const [removal, setRemoval] = useState<{
     ids: string[];
     persisted: string[];
@@ -419,7 +426,9 @@ export function InventoryGroupEditor({
   const eligible = filtered;
   const proposalPool = (editing ? catalog : matching).filter(
     (i) =>
-      !occupied.has(categoryKey(i.name)) && (!editing || !ids.includes(i.id)),
+      !occupied.has(categoryKey(i.name)) &&
+      !queuedIds.includes(i.id) &&
+      (!editing || !ids.includes(i.id)),
   );
   const [page, setPage] = useGroupDraftState(draftKey, 1),
     [pageSize, setPageSize] = useGroupDraftState(draftKey, 50);
@@ -449,24 +458,54 @@ export function InventoryGroupEditor({
     setSelectedIds((v) =>
       v.includes(id) ? v.filter((x) => x !== id) : [...v, id],
     );
+  const availableAdditions = pool.filter((item) => !ids.includes(item.id));
+  const addingChipIds = editing
+    ? [
+        ...new Set([
+          ...queuedIds,
+          ...ids.filter((id) => !draftBase.ids.includes(id)),
+        ]),
+      ]
+    : [];
+  function toggleQueued(id: string) {
+    if (!availableAdditions.some((item) => item.id === id)) return;
+    setQueuedIds((current) =>
+      current.includes(id)
+        ? current.filter((value) => value !== id)
+        : [...current, id],
+    );
+  }
+  function reviewAdditions() {
+    const items = queuedIds.flatMap((id) => {
+      const item = catalogById.get(id);
+      return item ? [item] : [];
+    });
+    if (!items.length) return;
+    setReviewError("");
+    setAdditionPicker(null);
+    setAddition({ items, key: draftKey });
+  }
   function approveAddition() {
     if (!addition || addition.key !== draftKey) return;
-    const item = catalogById.get(addition.item.id);
     if (
-      !item ||
-      occupied.has(categoryKey(item.name)) ||
-      ids.includes(item.id)
+      addition.items.some((old) => {
+        const item = catalogById.get(old.id);
+        return (
+          !item || occupied.has(categoryKey(item.name)) || ids.includes(item.id)
+        );
+      })
     ) {
       setReviewError(
-        "El diplomado o su grupo cambió. Cierra y elige de nuevo.",
+        "El inventario o sus grupos cambiaron. Cierra y revisa los diplomados.",
       );
       return;
     }
-    setIds((current) => [...new Set([...current, item.id])]);
-    setCheckedIds((current) => [...new Set([...current, item.id])]);
+    const additions = addition.items.map((item) => item.id);
+    setIds((current) => [...new Set([...current, ...additions])]);
+    setQueuedIds((current) => current.filter((id) => !additions.includes(id)));
     setAddition(null);
     setReviewError("");
-    setNotice("Diplomado añadido al borrador. Guarda los cambios del grupo.");
+    setNotice("Diplomados añadidos. Guarda los cambios del grupo.");
   }
   function approveProposal() {
     if (!proposal || proposal.key !== draftKey) return;
@@ -482,18 +521,18 @@ export function InventoryGroupEditor({
       return;
     }
     const additions = proposal.items.map((item) => item.id);
-    setIds((current) => [...new Set([...current, ...additions])]);
-    setOnlySelected(true);
-    if (editing) {
-      setCheckedIds((current) => [...new Set([...current, ...additions])]);
-      setOnlyChecked(true);
+    if (editing)
+      setQueuedIds((current) => [...new Set([...current, ...additions])]);
+    else {
+      setIds((current) => [...new Set([...current, ...additions])]);
+      setOnlySelected(true);
     }
     setReplacing(null);
     setProposal(null);
     setReviewError("");
     setError("");
     setNotice(
-      `Propuesta aprobada: ${additions.length} diplomados. ${editing ? "Guarda los cambios para incorporarlos al grupo." : "Pulsa Crear grupo para guardar el borrador."}`,
+      `Propuesta aprobada: ${additions.length} diplomados. ${editing ? "Pulsa Añadir para confirmar los diplomados." : "Pulsa Crear grupo para guardar el borrador."}`,
     );
   }
   function reviewRemoval(itemIds: string[]) {
@@ -677,6 +716,10 @@ export function InventoryGroupEditor({
   }
   async function save() {
     if (savePending.current || committed) return;
+    if (editing && queuedIds.length) {
+      setError("Pulsa Añadir para confirmar primero los nuevos diplomados.");
+      return;
+    }
     savePending.current = true;
     setBusy(true);
     setError("");
@@ -821,7 +864,11 @@ export function InventoryGroupEditor({
       </header>
       {proposal && (
         <InventoryGroupActionDialog
-          title="Revisar propuesta al azar"
+          title={
+            proposal.category
+              ? "Revisar propuesta al azar por categoría"
+              : "Revisar propuesta al azar"
+          }
           busy={false}
           error={reviewError}
           canAccept={proposal.items.length > 0}
@@ -839,8 +886,8 @@ export function InventoryGroupEditor({
           </p>
           {proposal.items.length < proposal.requested && (
             <p>
-              Se encontraron {proposal.items.length} categorías principales
-              diferentes de las {proposal.requested} solicitadas.
+              La propuesta incluye {proposal.items.length} de los{" "}
+              {proposal.requested} diplomados solicitados.
             </p>
           )}
           <ul className="inventory-group-review-list">
@@ -854,6 +901,36 @@ export function InventoryGroupEditor({
             ))}
           </ul>
         </InventoryGroupActionDialog>
+      )}
+      {additionPicker && (
+        <InventoryGroupCategoryAdditions
+          items={
+            editing
+              ? availableAdditions.filter(
+                  (item) =>
+                    additionPicker === "ADD" || !queuedIds.includes(item.id),
+                )
+              : proposalPool
+          }
+          selectedIds={queuedIds}
+          mode={additionPicker}
+          count={count}
+          onCount={setCount}
+          onToggle={toggleQueued}
+          onReview={reviewAdditions}
+          onClose={() => setAdditionPicker(null)}
+          onRandom={(category) => {
+            const items = randomCategoryAdditions(
+              editing ? availableAdditions : proposalPool,
+              category,
+              count,
+              [...ids, ...queuedIds],
+            );
+            setReviewError("");
+            setProposal({ items, requested: count, key: draftKey, category });
+            setAdditionPicker(null);
+          }}
+        />
       )}
       {addition && (
         <InventoryGroupActionDialog
@@ -869,10 +946,18 @@ export function InventoryGroupEditor({
           }}
         >
           <p>
-            ¿Añadir <strong>{addition.item.name}</strong> al grupo «{name}»?
+            ¿Añadir {addition.items.length} diplomados al grupo «{name}»?
+            <span className="sr-only">
+              Revisa los nombres antes de aceptar.
+            </span>
           </p>
+          <ul className="inventory-group-review-list">
+            {addition.items.map((item) => (
+              <li key={item.id}>{item.name}</li>
+            ))}
+          </ul>
           <small>
-            Se incorporará al borrador. Guarda los cambios para confirmar su
+            Se incorporarán al borrador. Guarda los cambios para confirmar su
             pertenencia. Su uso por país e historial se conservan.
           </small>
         </InventoryGroupActionDialog>
@@ -1263,18 +1348,12 @@ export function InventoryGroupEditor({
                     <SheetSearchSelect
                       label="Añadir diplomado al grupo"
                       value=""
-                      placeholder="Buscar diplomado para añadir…"
+                      placeholder="Añadir por diplomado"
                       disabled={busy || externalBusy || !directory.canEdit}
-                      options={pool
-                        .filter((item) => !ids.includes(item.id))
+                      options={availableAdditions
+                        .filter((item) => !queuedIds.includes(item.id))
                         .map((item) => ({ value: item.id, label: item.name }))}
-                      onSelect={(id) => {
-                        const item = catalogById.get(id);
-                        if (item) {
-                          setReviewError("");
-                          setAddition({ item, key: draftKey });
-                        }
-                      }}
+                      onSelect={toggleQueued}
                     />
                   ) : (
                     <input
@@ -1286,10 +1365,25 @@ export function InventoryGroupEditor({
                     />
                   )}
                 </label>
+                {editing && !replacing && (
+                  <button
+                    type="button"
+                    className="inventory-group-add-category"
+                    disabled={busy || externalBusy || !directory.canEdit}
+                    onClick={() => setAdditionPicker("ADD")}
+                  >
+                    Añadir por categoría
+                  </button>
+                )}
                 {
                   <>
                     <button
-                      disabled={busy || !count || count > 100}
+                      disabled={
+                        busy ||
+                        !Number.isInteger(count) ||
+                        count < 1 ||
+                        count > 100
+                      }
                       onClick={() => {
                         const proposal = diverseTrialItems(
                           proposalPool,
@@ -1304,7 +1398,14 @@ export function InventoryGroupEditor({
                         });
                       }}
                     >
-                      Proponer al azar
+                      Al azar
+                    </button>
+                    <button
+                      type="button"
+                      disabled={busy || externalBusy || !directory.canEdit}
+                      onClick={() => setAdditionPicker("RANDOM")}
+                    >
+                      Al azar por categoría
                     </button>
                     <label>
                       Cantidad
@@ -1380,6 +1481,54 @@ export function InventoryGroupEditor({
           )}
           {(managementTab !== "edit" || group) && (
             <>
+              {editing && addingChipIds.length > 0 && (
+                <div
+                  className="inventory-group-additions"
+                  aria-label="Diplomados para añadir al grupo"
+                >
+                  <strong>Añadir: {addingChipIds.length}</strong>
+                  <div className="inventory-group-addition-chips">
+                    {addingChipIds.map((id) => (
+                      <span className="inventory-group-selection-chip" key={id}>
+                        <span title={catalogById.get(id)?.name}>
+                          {catalogById.get(id)?.name ?? "No disponible"}
+                        </span>
+                        <button
+                          type="button"
+                          aria-label={`Quitar de añadir ${catalogById.get(id)?.name}`}
+                          disabled={busy || externalBusy}
+                          onClick={() => {
+                            setQueuedIds((current) =>
+                              current.filter((value) => value !== id),
+                            );
+                            if (!draftBase.ids.includes(id)) {
+                              setIds((current) =>
+                                current.filter((value) => value !== id),
+                              );
+                              setCheckedIds((current) =>
+                                current.filter((value) => value !== id),
+                              );
+                            }
+                          }}
+                        >
+                          ×
+                        </button>
+                      </span>
+                    ))}
+                  </div>
+                  {!!queuedIds.length && (
+                    <button
+                      type="button"
+                      className="primary"
+                      disabled={busy || externalBusy || !directory.canEdit}
+                      onClick={reviewAdditions}
+                    >
+                      Añadir ({queuedIds.length})
+                    </button>
+                  )}
+                  {!queuedIds.length && <small>Pendientes de guardar</small>}
+                </div>
+              )}
               {selectedIds.length > 0 && (
                 <div className="inventory-group-search-section">
                   <div
@@ -1387,7 +1536,7 @@ export function InventoryGroupEditor({
                     aria-label="Diplomados seleccionados para el grupo"
                   >
                     <div className="inventory-group-selection-actions">
-                      <strong>{selectedIds.length} seleccionados</strong>
+                      <strong>Seleccionados: {selectedIds.length}</strong>
                       {editing && group && onGroupsChanged && (
                         <button
                           type="button"
@@ -1908,6 +2057,7 @@ export function InventoryGroupEditor({
                     busy ||
                     !directory.canEdit ||
                     committed ||
+                    (editing && queuedIds.length > 0) ||
                     !!replacing ||
                     ids.length > 1500 ||
                     !name.trim() ||

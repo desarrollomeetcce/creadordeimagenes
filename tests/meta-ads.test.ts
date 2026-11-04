@@ -6316,3 +6316,21 @@ test("financial task blocks keep assignment then pending stops ahead of advisor/
   assert(completed.normal.some(r=>r.id==="stop"));
   assert.deepEqual(financialTaskSections([]),{assignment:[],stopping:[],normal:[]});
 });
+
+
+test("category additions separate primary/secondary matches once and retain uncategorized inventory when cleared", async () => {
+  const {categoryAdditionSections} = await import("../lib/meta-ads/inventory-group-addition-policy");
+  const a={id:"a",name:"A",primaryIds:["cat"],primaryNames:["Educación"],secondaryNames:["Educación"]},b={id:"b",name:"B",primaryIds:[],primaryNames:[],secondaryNames:["Educación"]},c={id:"c",name:"C",primaryIds:[],primaryNames:[],secondaryNames:[]};
+  const original=JSON.stringify([a,b,c]);const sections=categoryAdditionSections([a,a,b,c],"EDUCACIÓN");
+  assert.deepEqual(sections.primary.map(i=>i.id),["a"]);assert.deepEqual(sections.secondary.map(i=>i.id),["b"]);
+  assert.deepEqual(categoryAdditionSections([a,b,c],"").primary.map(i=>i.id),["a","b","c"]);
+  assert.equal(JSON.stringify([a,b,c]),original);
+});
+test("random category addition excludes current/queued ids, uses both category roles and bounds count without duplicates", async () => {
+ const {randomCategoryAdditions}=await import("../lib/meta-ads/inventory-group-addition-policy");
+ const items=Array.from({length:4},(_,i)=>({id:String(i),name:String(i),primaryIds:[],primaryNames:i<2?["Calidad"]:[],secondaryNames:i>=2?["Calidad"]:[]}));
+ const out=randomCategoryAdditions([...items,items[2]],"Calidad",10,["0","1"],()=>0.5);
+ assert.deepEqual(out.map(i=>i.id).sort(),["2","3"]);assert.equal(randomCategoryAdditions(items,"Calidad",1,[],()=>0.5).length,1);
+ for(const count of [0,-1,NaN])assert.equal(randomCategoryAdditions(items,"Calidad",count).length,0);
+ assert.equal(randomCategoryAdditions(items,"",2).length,0);assert.equal(randomCategoryAdditions(items,"Otro",2).length,0);
+});
