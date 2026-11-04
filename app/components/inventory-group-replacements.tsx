@@ -19,6 +19,7 @@ export function InventoryGroupReplacements({
   initialMode = "ANY",
   onClose,
   onApplied,
+  onInspect,
 }: {
   directory: TrialDirectory;
   group: TrialGroup;
@@ -26,6 +27,7 @@ export function InventoryGroupReplacements({
   initialMode?: GroupReplacementMode;
   onClose: () => void;
   onApplied: (group: TrialGroup) => Promise<void>;
+  onInspect: (name: string) => void;
 }) {
   const ref = useRef<HTMLDialogElement>(null),
     pending = useRef(false);
@@ -155,11 +157,61 @@ export function InventoryGroupReplacements({
       pending.current = false;
     }
   }
+  const single = pairs.length === 1;
+  const remaining = pairs.filter((pair) => !pair.replacementId).length;
+  function picker(pair: (typeof pairs)[number]) {
+    const old = itemById.get(pair.itemId);
+    return (
+      <SheetSearchSelect
+        label={`Sustituto de ${old?.name ?? pair.itemId}`}
+        value={pair.replacementId}
+        placeholder="Busca el reemplazo…"
+        disabled={busy || committed}
+        options={candidates
+          .filter(
+            (item) =>
+              item.id === pair.replacementId ||
+              !pairs.some((other) => other.replacementId === item.id),
+          )
+          .map((item) => ({
+            value: item.id,
+            label:
+              item.name + " · " + (membership(item.id)?.name ?? "Sin grupo"),
+          }))}
+        onSelect={(id) => {
+          setPairs((current) =>
+            current.map((entry) =>
+              entry.itemId === pair.itemId
+                ? { ...entry, replacementId: id }
+                : entry,
+            ),
+          );
+          setMode("ANY");
+          setError("");
+        }}
+      />
+    );
+  }
+  const confirmButton = !committed && (
+    <button
+      type="button"
+      className="primary"
+      disabled={busy || !ready}
+      onClick={() => void apply()}
+    >
+      {busy
+        ? "Guardando…"
+        : single
+          ? "Confirmar reemplazo"
+          : `Confirmar ${pairs.length} reemplazos`}
+    </button>
+  );
   return (
     <dialog
       ref={ref}
       className="trial-dialog inventory-group-replacements"
       data-expanded={expanded || undefined}
+      data-single={single || undefined}
       aria-label="Revisar reemplazos de grupo"
       onCancel={(event) => {
         event.preventDefault();
@@ -167,9 +219,21 @@ export function InventoryGroupReplacements({
       }}
     >
       <header>
-        <h3>
-          Reemplazar {pairs.length} diplomados · {source.name}
-        </h3>
+        <div className="inventory-group-replacement-heading">
+          <span className="inventory-group-replacement-scope">
+            Reemplazo en el grupo · {source.name}
+          </span>
+          <h3>
+            {single
+              ? `Reemplazar: ${sources[0]?.name ?? "Diplomado"}`
+              : `Reemplazar ${pairs.length} diplomados`}
+          </h3>
+        </div>
+        {!single && (
+          <span className="inventory-batch-progress" role="status">
+            {remaining ? `Te faltan ${remaining}` : "✓ Propuesta completa"}
+          </span>
+        )}
         <button type="button" onClick={() => setExpanded((value) => !value)}>
           {expanded ? "Restaurar" : "Maximizar"}
         </button>
@@ -205,8 +269,8 @@ export function InventoryGroupReplacements({
         {(
           [
             ["ANY", "Al azar"],
-            ["SAME", "Misma categoría"],
-            ["OTHER", "Otra categoría"],
+            ["SAME", "Azar · misma categoría"],
+            ["OTHER", "Azar · otra categoría"],
             ["DIVERSE", "Uno de cada categoría"],
           ] as const
         ).map(([value, label]) => (
@@ -221,89 +285,88 @@ export function InventoryGroupReplacements({
           </button>
         ))}
       </div>
-      <p>
-        Revisa ambos lados antes de aprobar. Si el sustituto tiene grupo, se
-        intercambian; si no tiene, el saliente queda sin grupo. El uso por país,
-        las hojas, ventas y vínculos siguen a cada diplomado.
-      </p>
-      <div className="inventory-group-replacement-preview">
-        <table>
-          <thead>
-            <tr>
-              <th>Sale</th>
-              <th>Grupo actual</th>
-              <th>Entra</th>
-              <th>Grupo actual</th>
-              <th>El saliente irá a</th>
-            </tr>
-          </thead>
-          <tbody>
+      {single ? (
+        <>
+          <div className="inventory-group-single-picker">
+            {picker(pairs[0])}
+            <button
+              type="button"
+              disabled={busy || !pairs[0].replacementId}
+              onClick={() =>
+                onInspect(itemById.get(pairs[0].replacementId)!.name)
+              }
+            >
+              Antecedentes
+            </button>
+            {confirmButton}
+          </div>
+          {!!pairs[0].replacementId && (
+            <p className="inventory-group-swap-summary" role="status">
+              Entra desde{" "}
+              <strong>
+                {membership(pairs[0].replacementId)?.name ?? "Sin grupo"}
+              </strong>{" "}
+              a <strong>{source.name}</strong>. El saliente{" "}
+              {membership(pairs[0].replacementId) ? (
+                <>
+                  pasa a{" "}
+                  <strong>{membership(pairs[0].replacementId)!.name}</strong>.
+                </>
+              ) : (
+                "queda sin grupo."
+              )}
+            </p>
+          )}
+        </>
+      ) : (
+        <>
+          <div className="inventory-group-swap-columns" aria-hidden="true">
+            <span>Sale de {source.name}</span>
+            <span></span>
+            <span>Entra a {source.name} · grupo de origen en el selector</span>
+            <span></span>
+          </div>
+          <div className="inventory-group-swap-list">
             {pairs.map((pair) => {
-              const old = catalog.find((item) => item.id === pair.itemId),
+              const old = itemById.get(pair.itemId),
                 other = membership(pair.replacementId);
               return (
-                <tr key={pair.itemId}>
-                  <td>{old?.name ?? "No disponible"}</td>
-                  <td>{source.name}</td>
-                  <td>
-                    <SheetSearchSelect
-                      label={`Sustituto de ${old?.name ?? pair.itemId}`}
-                      value={pair.replacementId}
-                      placeholder="Buscar reemplazo…"
-                      disabled={busy || committed}
-                      options={candidates
-                        .filter(
-                          (item) =>
-                            item.id === pair.replacementId ||
-                            !pairs.some(
-                              (other) => other.replacementId === item.id,
-                            ),
-                        )
-                        .map((item) => ({
-                          value: item.id,
-                          label:
-                            item.name +
-                            " · " +
-                            (membership(item.id)?.name ?? "Sin grupo"),
-                        }))}
-                      onSelect={(id) => {
-                        setPairs((current) =>
-                          current.map((entry) =>
-                            entry.itemId === pair.itemId
-                              ? { ...entry, replacementId: id }
-                              : entry,
-                          ),
-                        );
-                        setMode("ANY");
-                        setError("");
-                      }}
-                    />
-                  </td>
-                  <td>{other?.name ?? "Sin grupo"}</td>
-                  <td>
-                    {pair.replacementId ? (other?.name ?? "Sin grupo") : "—"}
-                  </td>
-                </tr>
+                <div className="inventory-group-swap-pair" key={pair.itemId}>
+                  <div>
+                    <strong>{old?.name ?? "No disponible"}</strong>
+                    {pair.replacementId && (
+                      <small className="inventory-group-swap-destination">
+                        → {other?.name ?? "Sin grupo"}
+                      </small>
+                    )}
+                  </div>
+                  <span aria-hidden="true">→</span>
+                  {picker(pair)}
+                  <button
+                    type="button"
+                    disabled={!pair.replacementId || busy}
+                    onClick={() =>
+                      onInspect(itemById.get(pair.replacementId)!.name)
+                    }
+                  >
+                    Antecedentes
+                  </button>
+                </div>
               );
             })}
-          </tbody>
-        </table>
-      </div>
+          </div>
+        </>
+      )}
       {error && <p role="alert">{error}</p>}
       <footer>
+        <small>
+          Solo cambia la pertenencia al grupo. Uso por país, hojas, ventas y
+          campañas se conservan.
+        </small>
         <button type="button" disabled={busy} onClick={onClose}>
           {committed ? "Cerrar" : "Cancelar"}
         </button>
-        {!committed && (
-          <button
-            type="button"
-            className="primary"
-            disabled={busy || !ready}
-            onClick={() => void apply()}
-          >
-            {busy ? "Guardando…" : "Aprobar reemplazos"}
-          </button>
-        )}
+        {!single && confirmButton}
       </footer>
     </dialog>
   );

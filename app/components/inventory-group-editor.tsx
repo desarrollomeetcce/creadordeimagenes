@@ -911,6 +911,7 @@ export function InventoryGroupEditor({
           group={group}
           itemIds={replacementIds}
           initialMode={replacementMode}
+          onInspect={setObservations}
           onClose={() => setReplacementIds(null)}
           onApplied={async (result) => {
             setIds((current) => [
