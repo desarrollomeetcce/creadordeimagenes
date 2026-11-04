@@ -63,6 +63,17 @@ export type AssignmentContext = {
   revision: number;
   inventoryId?: string;
   advisorRevision?: number;
+  metaAdvisorId?: string;
+};
+export type SavedAssignmentContext = AssignmentContext & {
+  advisorId: string | null;
+  advisorName: string | null;
+  currency: string;
+  source?: "row" | "inventory" | "meta" | null;
+  hasRow?: boolean;
+  rowCurrency?: string;
+  advisorConflicts?: { advisorId: string; name: string; source: string }[];
+  inventoryAdvisors?: { id: string; name: string }[];
 };
 export async function metaAssignmentContext(
   actor: Actor,
@@ -78,11 +89,10 @@ export async function metaAssignmentContext(
   demand(isCountryCode(input.country), "País inválido.");
   return db.$transaction(async (tx) => {
     await workspaceEditorOnly(actor, tx);
-    demand(
-      await tx.metaAliasTable.findUnique({ where: { id: input.tableId } }),
-      "Hoja no disponible.",
-      404,
-    );
+    const table = await tx.metaAliasTable.findUnique({
+      where: { id: input.tableId },
+    });
+    demand(table, "Hoja no disponible.", 404);
     let alias = input.aliasId
       ? await tx.metaAlias.findFirst({
           where: {
@@ -170,18 +180,73 @@ export async function metaAssignmentContext(
           where: { aliasId: alias.id, country: input.country },
         })
       : 0;
+    const metaAdvisors = alias
+      ? await tx.metaAdObject.findMany({
+          where: {
+            aliasId: alias.id,
+            aliasCountry: input.country,
+            level: "campaign",
+            advisorId: { not: null },
+            account: await accountWhere(actor),
+          },
+          distinct: ["advisorId"],
+          orderBy: { advisorId: "asc" },
+          take: 21,
+          select: {
+            advisorId: true,
+            advisor: { select: { id: true, name: true } },
+          },
+        })
+      : [];
+    const metaSuggested =
+      !row?.advisorId && !hasHistory && metaAdvisors.length === 1
+        ? metaAdvisors[0].advisor
+        : null;
     const suggested =
-      !row?.advisorId && !hasHistory && assigned.length === 1
+      !row?.advisorId && !hasHistory && !metaSuggested && assigned.length === 1
         ? assigned[0].advisor
         : null;
+    const advisorId =
+      row?.advisorId ?? metaSuggested?.id ?? suggested?.id ?? null;
+    const advisorConflicts = [
+      ...(row?.advisorId
+        ? [
+            {
+              advisorId: row.advisorId,
+              name: row.advisor!.name,
+              source: "Hoja del país",
+            },
+          ]
+        : []),
+      ...metaAdvisors
+        .filter((a) => a.advisor)
+        .map((a) => ({
+          advisorId: a.advisorId!,
+          name: a.advisor!.name,
+          source: "Meta Ads",
+        })),
+    ];
     return {
       aliasId: alias?.id ?? null,
       tableId: input.tableId,
       country: input.country,
       revision: row?.revision ?? 0,
-      advisorId: row?.advisorId ?? suggested?.id ?? null,
-      advisorName: row?.advisor?.name ?? suggested?.name ?? null,
-      source: row?.advisorId ? "row" : suggested ? "inventory" : null,
+      advisorId,
+      advisorName:
+        row?.advisor?.name ?? metaSuggested?.name ?? suggested?.name ?? null,
+      hasRow: !!row,
+      rowCurrency: row?.displayCurrency ?? "",
+      advisorConflicts: advisorConflicts.some((a) => a.advisorId !== advisorId)
+        ? advisorConflicts
+        : [],
+      ...(metaSuggested ? { metaAdvisorId: metaSuggested.id } : {}),
+      source: row?.advisorId
+        ? ("row" as const)
+        : metaSuggested
+          ? ("meta" as const)
+          : suggested
+            ? ("inventory" as const)
+            : null,
       ...(suggested && item
         ? { inventoryId: item.id, advisorRevision: item.advisorRevision }
         : {}),
@@ -189,7 +254,7 @@ export async function metaAssignmentContext(
         id: a.advisorId,
         name: a.advisor.name,
       })),
-      currency: row?.displayCurrency ?? "",
+      currency: row?.displayCurrency || table.defaultCurrency || "",
     };
   });
 }
@@ -524,8 +589,15 @@ export async function assignAliases(
     "El país debe acompañar a un elemento del inventario.",
   );
   const ids = [...new Set(objectIds)];
+  const contextOnly = inventorySync && ids.length === 0;
   demand(
-    ids.length > 0 &&
+    !contextOnly ||
+      (!!country && (!!aliasId || !!selection) && !!assignmentContext),
+    "Indica diplomado, país y contexto guardado.",
+    400,
+  );
+  demand(
+    (ids.length > 0 || contextOnly) &&
       ids.length <= 100 &&
       ids.every((id) => /^\d{1,40}$/.test(id)),
     "Selección de inventario inválida.",
@@ -613,6 +685,26 @@ export async function assignAliases(
           "El asesor o la moneda de la hoja cambiaron. Abre de nuevo la vinculación para ver los datos actuales.",
           409,
         );
+        if (assignmentContext.metaAdvisorId) {
+          const currentMeta = await tx.metaAdObject.findMany({
+            where: {
+              aliasId,
+              aliasCountry: country,
+              level: "campaign",
+              advisorId: { not: null },
+              account: await accountWhere(actor),
+            },
+            distinct: ["advisorId"],
+            take: 2,
+            select: { advisorId: true },
+          });
+          demand(
+            currentMeta.length === 1 &&
+              currentMeta[0].advisorId === assignmentContext.metaAdvisorId,
+            "El asesor guardado en Meta Ads cambió. Abre de nuevo la sincronización.",
+            409,
+          );
+        }
         if (assignmentContext.inventoryId) {
           const item = await tx.metaInventoryItem.findUnique({
             where: { id: assignmentContext.inventoryId },
@@ -628,13 +720,14 @@ export async function assignAliases(
         }
       }
       if (
-        await setInventoryMembership(
+        !contextOnly &&
+        (await setInventoryMembership(
           tx,
           alias.inventorySheetId,
           [alias.id],
           false,
           false,
-        )
+        ))
       )
         alias = await tx.metaAlias.findUniqueOrThrow({
           where: { id: alias.id },
@@ -665,7 +758,7 @@ export async function assignAliases(
       const active =
         metaActive ||
         (state?.active === true && control?.campaignTask !== "CREATE");
-      if (!state || state.active !== active) {
+      if (!contextOnly && (!state || state.active !== active)) {
         const updated = await tx.metaEffectivenessState.upsert({
           where: { aliasId_country: { aliasId, country } },
           create: { aliasId, country, active, revision: 1 },
@@ -694,7 +787,7 @@ export async function assignAliases(
             hidden: false,
           },
         });
-      else if (row.hidden)
+      else if (row.hidden && !contextOnly)
         await tx.metaEffectivenessRow.updateMany({
           where: { aliasId, country, legacy: false },
           data: { hidden: false, revision: { increment: 1 } },
@@ -710,6 +803,20 @@ export async function assignAliases(
       if (advisorId === undefined && row?.advisorId)
         linkedAdvisorId = row.advisorId;
       if (advisorId) {
+        if (
+          !row?.advisorId &&
+          assignmentContext?.metaAdvisorId &&
+          advisorId !== assignmentContext.metaAdvisorId
+        )
+          await (
+            await import("./advisors")
+          ).assignMetaInitialAdvisor(
+            tx,
+            actor,
+            aliasId,
+            country,
+            assignmentContext.metaAdvisorId,
+          );
         const result = await (
           await import("./advisors")
         ).assignMetaInitialAdvisor(tx, actor, aliasId, country, advisorId);
@@ -735,21 +842,23 @@ export async function assignAliases(
           data: { revision: { increment: 1 } },
         });
       }
-      const next = {
-        ...control,
-        ...(advisorReviews.length ? { advisorReviews } : {}),
-        pinned: active ? (control?.pinned ?? false) : true,
-        campaignTask:
-          control?.campaignTask === "STOP"
-            ? ("STOP" as const)
-            : ("NONE" as const),
-        ...((!row?.advisorId && !advisorId) || !importedCurrency
-          ? {
-              pendingAssignmentAt:
-                control?.pendingAssignmentAt ?? new Date().toISOString(),
-            }
-          : {}),
-      };
+      const next = contextOnly
+        ? { ...control, ...(advisorReviews.length ? { advisorReviews } : {}) }
+        : {
+            ...control,
+            ...(advisorReviews.length ? { advisorReviews } : {}),
+            pinned: active ? (control?.pinned ?? false) : true,
+            campaignTask:
+              control?.campaignTask === "STOP"
+                ? ("STOP" as const)
+                : ("NONE" as const),
+            ...((!row?.advisorId && !advisorId) || !importedCurrency
+              ? {
+                  pendingAssignmentAt:
+                    control?.pendingAssignmentAt ?? new Date().toISOString(),
+                }
+              : {}),
+          };
       if (JSON.stringify(next) !== JSON.stringify(control)) {
         settings.rows[key] = next;
         await tx.metaEffectivenessSheet.update({
@@ -765,6 +874,15 @@ export async function assignAliases(
       }
       addedToTable = !row;
     }
+    if (contextOnly)
+      await recordActivity(tx, {
+        data: {
+          actorId: actor.id,
+          action: "META_INVENTORY_CONTEXT_SAVED",
+          resourceId: aliasId,
+          detail: { country, advisorReview },
+        },
+      });
     await tx.metaAdObject.updateMany({
       where: { id: { in: ids } },
       data: {
@@ -1087,6 +1205,7 @@ export async function inventoryMetaCandidates(
           take: 51,
         });
   return {
+    context,
     campaigns: campaigns.slice(0, 50).map((c) => ({
       id: c.id,
       name: c.name,

@@ -1,5 +1,12 @@
 # Pruebas y evidencia
 
+## Contexto reutilizable y diagnóstico de asociaciones adicionales (2026-11-03)
+
+meta-inventory-context.integration.test.ts cubre guardar diploma/país/asesor/moneda sin campañas con recibo, reutilización, protección de V/estado/eventos, rechazo de vacío sin modo/permiso/CAS, sugerencia única de Meta aislada por país, discrepancia Meta/hoja y recibo Meta obsoleto. Regresiones meta-inventory-assignment y effectiveness-sharing. Country correction comprueba identidad actual del registro que origina un aviso, bloqueo de placeholders sin días/Meta y de país sin hoja verificada, conservando registros y país original.
+
+Chromium: compacto360x520 y moneda dentro del viewport, campaña/advisor/PEN precargados con un GET sin alias-context adicional, guardar sin cambios sin PATCH, búsqueda opcional sin asignar por nombre, móvil/recarga, formulario Meta Ads editable, country=AO vacío identificable y bloqueado, identidad fila/columna, arrastre/expandir/restaurar/Cancelar, metadatos sin campaña pasan ámbar→verde tras recarga, aviso Meta Ads/Hoja con cancelación y formulario de hoja con la misma apariencia. Solo un PATCH metadata con objectIds=[] y ninguna llamada Graph/generación. Cleanup exclusivo verifica V1/G10.25 y valores originales. Fuente de aviso no prueba causa de importación/edición real.
+
+
 ## Identidad de usuario y OWNER con acceso completo (2026-11-03)
 
 user-profile.integration.test.ts cubre editar nombre y correo propio/ajeno manteniendo ID/rol/plan/clave, sesión preservada con nombre e invalidada con correo, normalización/unicidad, CAS contra nombre/correo obsoletos, OWNER actual bajo bloqueo y rechazo de campos de rol extra. Promoción ADVISOR→OWNER invalida sesión, defaultAccountView prioriza OWNER sobre vínculo asesor y filtros Proyectos quedan completos. OWNER con bandera IA=false puede leer Cursos IA; demás roles siguen limitados. Se mantienen regresiones user-email, user-access-controls, courses-ai y ai-media. El caso antiguo No AI de OWNER ahora comprueba acceso y la revocación real sigue probándose suspendiendo la cuenta.

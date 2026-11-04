@@ -1975,7 +1975,7 @@ export async function metaRoutes(
         inventorySync: z.literal(true).optional(),
         objectIds: z
           .array(z.string().regex(/^\d{1,40}$/))
-          .min(1)
+          .min(0)
           .max(100),
         assignmentContext: z
           .object({
@@ -1985,6 +1985,7 @@ export async function metaRoutes(
             revision: z.number().int().min(0),
             inventoryId: z.string().min(1).max(100).optional(),
             advisorRevision: z.number().int().min(0).optional(),
+            metaAdvisorId: z.string().min(1).max(100).optional(),
           })
           .strict()
           .optional(),
@@ -2007,6 +2008,7 @@ export async function metaRoutes(
           .optional(),
       })
       .strict()
+      .refine(v => v.objectIds.length > 0 || (v.inventorySync === true && !!v.assignmentContext && !!v.country && (!!v.aliasId || !!v.selection)), "Indica diplomado, país y contexto guardado.")
       .parse(await body());
     return send(
       await (
@@ -2042,6 +2044,7 @@ export async function metaRoutes(
             revision: z.number().int().min(0),
             inventoryId: z.string().min(1).max(100).optional(),
             advisorRevision: z.number().int().min(0).optional(),
+            metaAdvisorId: z.string().min(1).max(100).optional(),
           })
           .strict()
           .optional(),

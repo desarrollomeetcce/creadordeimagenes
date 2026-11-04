@@ -1,5 +1,16 @@
 # Avance por fases · continuación del desarrollo
 
+## Sincronización compacta, campaña opcional y procedencia del país (2026-11-03)
+
+Un único cuadro compacto se usa desde Lista de Diplomados y hojas de país. Título y resumen fijan diplomado/país desde fila y columna; asesor/moneda vienen del contexto canónico. inventory-candidates devuelve ese contexto en la respuesta existente y evita un segundo GET. Vínculos actuales aparecen solos y la búsqueda de campañas queda plegada/opcional. Guardar sin cambios de vínculos ya completos no hace PATCH. Formulario360px con límite520px/viewport, moneda sin desbordamiento, Cancelar visible, arrastre existente y expansión/restauración explícita. Botón verde Sincronizado o ámbar Por sincronizar según configuración de asesor/moneda del informe existente, sin lecturas por fila ni afirmar frescura de métricas.
+
+Campaña no obligatoria: objectIds vacío solo en inventorySync con diplomado/país y recibo vigente; materializa/reutiliza fila de contexto, conserva activación/eventos/pines/tareas, V/G y vínculos existentes. Asesor Meta único puede completar sugerencia si no hay titular/historia, con CAS adicional de su origen. Diferencias nombran literalmente Meta Ads/Hoja del país y solicitan confirmación; titular/historial se conservan mediante revisión. Guardar en una vista permite a las otras leer el mismo alias/país.
+
+Corrección del aviso de países: representa asociaciones adicionales, no prueba que la fila visible AR sea errónea ni que PEN indique Perú. Origen del aviso identifica fila o estado de activación, ID y campo country, visibilidad y counts. No identifica quién/cuándo lo importó o editó sin auditoría real. Se bloquean registros sin días/Meta y destinos sin hoja existente; nunca se crea Angola ni otro país automáticamente. No se movieron registros reales de Hostinger.
+
+182 unitarios,43 integraciones, typecheck/build y10 controles Chromium correctos. Incluye campaña opcional que pasa ámbar→verde y sobrevive recarga, contexto único sin GET duplicado, Meta Ads normal, hoja de país con mismo cuadro, cancelación ante asesor discrepante, ventana móvil/drag/max y cancelación visible. Se demuestra origen country=AO de fila sintética vacía, sin movimiento/creación de país. Cleanup verifica V1/G10.25 y asesor/vínculo/estado originales antes de eliminar solo fixtures. Sin Graph ni generación real.
+
+
 ## Nombre/correo editables y prioridad completa de OWNER (2026-11-03)
 
 Equipo ofrece Editar nombre y correo por persona, incluida la cuenta OWNER propia. Formulario dedicado conserva borrador al fallar, cancelación sin escritura y aviso al cambiar correo. API valida OWNER actual bajo891234 y bloqueo de filas, expected nombre/correo, formato y unicidad sin distinguir mayúsculas. Actualiza mismo User.id sin tocar contraseña/rol/plan/pertenencia/historial. Nombre conserva sesiones y refresca barra propia; correo revoca sesiones y recuperaciones antiguas, e informa que el ingreso usa correo nuevo y contraseña existente.

@@ -174,32 +174,36 @@ async function plan(tx: Tx, actor: Actor, input: CountryCorrectionInput) {
         ? "Esta asociación ya no requiere corrección. Actualiza la lista."
         : !rows.length && !states.length
           ? "No hay registros del país indicado."
-          : candidates.length > 1
-            ? "Varias hojas representan este país. Revisa sus identidades antes de trasladar."
-            : !target &&
-                tables.some(
-                  (t) => categoryKey(t.name) === categoryKey(targetName),
-                )
-              ? "El nombre de destino ya existe con otra identidad de país."
-              : matches.length > 1
-                ? "Hay varias fichas equivalentes en el destino."
-                : destination && destination.inventorySheetId !== list.id
-                  ? "El diplomado de destino pertenece a otra lista de inventario."
-                  : links.length
-                    ? "Hay columnas vinculadas en estas hojas. Revisa sus fuentes antes de trasladar."
-                    : duplicates.some((r) => !empty(r))
-                      ? "El destino ya tiene registros de este diplomado, país y moneda. Se conserva todo; requiere conciliación de ambos históricos."
-                      : sourceState &&
-                          targetState &&
-                          (targetState.events.length ||
-                            sourceState.active !== targetState.active)
-                        ? "El destino tiene un estado o historial de activación diferente. Requiere conciliación."
-                        : sourceControl &&
-                            targetControl &&
-                            JSON.stringify(sourceControl) !==
-                              JSON.stringify(targetControl)
-                          ? "El destino tiene controles de campaña o asesor diferentes."
-                          : "";
+          : !rows.some((r) => r.days.length > 0) && !objects.length
+            ? "Solo hay una asociación sin días guardados ni elementos de Meta vinculados. El país guardado no está confirmado; revisa el registro antes de trasladarlo."
+            : !target && candidates.length === 0
+              ? "No existe una hoja verificada para este país guardado. No se creará una hoja ni se cambiará el país por suposición."
+              : candidates.length > 1
+                ? "Varias hojas representan este país. Revisa sus identidades antes de trasladar."
+                : !target &&
+                    tables.some(
+                      (t) => categoryKey(t.name) === categoryKey(targetName),
+                    )
+                  ? "El nombre de destino ya existe con otra identidad de país."
+                  : matches.length > 1
+                    ? "Hay varias fichas equivalentes en el destino."
+                    : destination && destination.inventorySheetId !== list.id
+                      ? "El diplomado de destino pertenece a otra lista de inventario."
+                      : links.length
+                        ? "Hay columnas vinculadas en estas hojas. Revisa sus fuentes antes de trasladar."
+                        : duplicates.some((r) => !empty(r))
+                          ? "El destino ya tiene registros de este diplomado, país y moneda. Se conserva todo; requiere conciliación de ambos históricos."
+                          : sourceState &&
+                              targetState &&
+                              (targetState.events.length ||
+                                sourceState.active !== targetState.active)
+                            ? "El destino tiene un estado o historial de activación diferente. Requiere conciliación."
+                            : sourceControl &&
+                                targetControl &&
+                                JSON.stringify(sourceControl) !==
+                                  JSON.stringify(targetControl)
+                              ? "El destino tiene controles de campaña o asesor diferentes."
+                              : "";
     // Shared targets with existing advisor history must not change historical attribution silently.
     if (!reason && destination) {
       const count = await tx.metaAdvisorAssignment.count({
@@ -220,6 +224,7 @@ async function plan(tx: Tx, actor: Actor, input: CountryCorrectionInput) {
     plans.push({
       item,
       source,
+      sheetCountry: countries.get(source.tableId) ?? null,
       target,
       targetName,
       destination,
@@ -258,6 +263,25 @@ function view(p: Awaited<ReturnType<typeof plan>>) {
       name: x.source.name,
       country: x.item.country,
       sourceTable: x.source.table.name,
+      sheetCountry: x.sheetCountry,
+      origins: [
+        ...x.rows.map((r) => ({
+          kind: "Fila de Efectividad",
+          id: r.id,
+          country: r.country,
+          hidden: r.hidden,
+          days: r.days.length,
+          events: 0,
+        })),
+        ...x.states.map((s) => ({
+          kind: "Estado de activación",
+          id: s.id,
+          country: s.country,
+          hidden: false,
+          days: 0,
+          events: s.events.length,
+        })),
+      ],
       targetTable: x.targetName,
       createsTable: !x.target,
       rows: x.rows.length,
@@ -341,17 +365,12 @@ export async function correctInventoryCountries(actor: Actor, input: unknown) {
       const results = [];
       for (const x of p.plans) {
         if (x.reason) continue;
-        const target =
-          x.target ??
-          (await tx.metaAliasTable.upsert({
-            where: { name: x.targetName },
-            create: {
-              name: x.targetName,
-              defaultCountry: x.item.country,
-              defaultCurrency: x.source.table.defaultCurrency,
-            },
-            update: {},
-          }));
+        demand(
+          x.target,
+          "El destino necesita revisión manual; no se crean países automáticamente.",
+          409,
+        );
+        const target = x.target;
         const destination =
           x.destination ??
           (await tx.metaAlias.upsert({

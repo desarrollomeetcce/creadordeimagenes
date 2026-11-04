@@ -157,9 +157,9 @@ export async function inventoryActivationDirectory(
           tableId: true,
           effectivenessRows: {
             where: { legacy: false },
-            select: { country: true },
+            select: { id: true, country: true, hidden: true, _count: { select: { days: true } } },
           },
-          effectivenessStates: { select: { country: true } },
+          effectivenessStates: { select: { id: true, country: true, active: true, _count: { select: { events: true } } } },
         },
       }),
       visible = new Set([...settings.sheets, ...linked.map((a) => a.tableId)]);
@@ -200,6 +200,10 @@ export async function inventoryActivationDirectory(
         tableName: table.name,
         country,
         expectedCountry: inventoryNamedCountry(table)!,
+        origins: [
+          ...a.effectivenessRows.filter(r => r.country === country).map(r => ({ kind: "Fila de Efectividad", id: r.id, country: r.country, hidden: r.hidden, days: r._count.days, events: 0 })),
+          ...a.effectivenessStates.filter(s => s.country === country).map(s => ({ kind: "Estado de activación", id: s.id, country: s.country, hidden: false, days: 0, events: s._count.events })),
+        ],
       }));
     });
     const issueNames = countryIssues.length
@@ -1446,6 +1450,7 @@ async function activationReport(
             name: alias.name,
             tableId,
             targets,
+            synchronizationReady: rows.length > 0 && rows.every(r => !!r.advisorId && !!r.currency && !r.advisorReviews?.length),
             activation: !rows.length
               ? "UNKNOWN"
               : rows.every((r) => r.active)

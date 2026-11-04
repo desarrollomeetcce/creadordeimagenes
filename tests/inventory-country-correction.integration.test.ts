@@ -327,6 +327,38 @@ test("Corrección de asociaciones conserva identidades, datos y permisos sin Gra
       },
     );
     await t.test(
+      "Asociaciones sin días ni Meta no prueban el país y no se trasladan",
+      async () => {
+        const a = await alias("empty-country");
+        const row = await db.metaEffectivenessRow.create({
+          data: { aliasId: a.id, country: "PE", currency: "PEN" },
+        });
+        const p = await preview(actor, input(a.id));
+        assert(!p.items[0].ready);
+        assert.match(p.items[0].reason, /país guardado no está confirmado/);
+        assert.equal(p.items[0].origins[0].id, row.id);
+        assert.equal(p.items[0].origins[0].country, "PE");
+        const directory = await inventoryActivationDirectory(actor, { listId });
+        assert.equal(
+          directory.countryIssues?.find(
+            (i) => i.aliasId === a.id && i.country === "PE",
+          )?.origins[0].id,
+          row.id,
+        );
+        await assert.rejects(
+          correct(actor, { ...input(a.id), token: p.token }),
+        );
+        assert.equal(
+          (
+            await db.metaEffectivenessRow.findUniqueOrThrow({
+              where: { id: row.id },
+            })
+          ).aliasId,
+          a.id,
+        );
+      },
+    );
+    await t.test(
       "Conflicto material preserva ambos históricos y bloquea traslado",
       async () => {
         const a = await alias("conflict"),
@@ -393,7 +425,7 @@ test("Corrección de asociaciones conserva identidades, datos y permisos sin Gra
       },
     );
     await t.test(
-      "Crea la hoja del país ausente conservando fila, día y estado",
+      "País guardado sin hoja verificada queda en revisión sin crear destinos",
       async () => {
         const a = await alias("new-country");
         const row = await db.metaEffectivenessRow.create({
@@ -407,17 +439,19 @@ test("Corrección de asociaciones conserva identidades, datos y permisos sin Gra
           },
         });
         const p = await preview(actor, input(a.id, "AX"));
-        assert(p.items[0].ready);
-        assert(p.items[0].createsTable);
-        await correct(actor, { ...input(a.id, "AX"), token: p.token });
-        const moved = await db.metaEffectivenessRow.findUniqueOrThrow({
-          where: { id: row.id },
-          include: { alias: { include: { table: true } }, days: true },
-        });
-        tables.push(moved.alias.table);
-        assert.equal(moved.country, "AX");
-        assert.equal(moved.alias.table.defaultCountry, "AX");
-        assert.equal(moved.days[0].sales, 7);
+        assert(!p.items[0].ready);
+        assert.match(p.items[0].reason, /No existe una hoja verificada/);
+        await assert.rejects(
+          correct(actor, { ...input(a.id, "AX"), token: p.token }),
+        );
+        assert.equal(
+          (
+            await db.metaEffectivenessRow.findUniqueOrThrow({
+              where: { id: row.id },
+            })
+          ).aliasId,
+          a.id,
+        );
       },
     );
     await t.test(

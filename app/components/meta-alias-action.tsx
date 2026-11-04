@@ -12,6 +12,7 @@ import { categoryKey } from "../../lib/meta-ads/category-paste";
 import { currencyCodes } from "../../lib/meta-ads/currency-codes";
 import type {
   AssignmentContext,
+  SavedAssignmentContext,
   MetaInventorySelection,
 } from "../../lib/meta-ads/aliases";
 import { countryName, countryOptions } from "../../lib/meta-ads/countries";
@@ -40,6 +41,8 @@ export function MetaAliasAction({
   extraSaveDisabled = false,
   allowRemove = true,
   lockIdentity = false,
+  savedIdentity,
+  onRetrySavedIdentity,
 }: {
   triggerLabel?: string;
   initialTableId?: string;
@@ -48,6 +51,12 @@ export function MetaAliasAction({
   extraSaveDisabled?: boolean;
   allowRemove?: boolean;
   lockIdentity?: boolean;
+  savedIdentity?: {
+    context: SavedAssignmentContext | null;
+    loading: boolean;
+    error: string;
+  };
+  onRetrySavedIdentity?: () => void;
   name: string;
   value?: string | null;
   country?: string | null;
@@ -79,19 +88,12 @@ export function MetaAliasAction({
     [draftList, setDraftList] = useState(""),
     [draftTable, setDraftTable] = useState("");
   const [open, setOpen] = useState(false),
-    [customName, setCustomName] = useState("");
+    [customName, setCustomName] = useState(""),
+    [expanded, setExpanded] = useState(false);
   const [draftAdvisor, setDraftAdvisor] = useState(""),
     [draftCurrency, setDraftCurrency] = useState("");
-  const [savedContext, setSavedContext] = useState<
-      | (AssignmentContext & {
-          advisorId: string | null;
-          advisorName: string | null;
-          currency: string;
-          source?: "row" | "inventory" | null;
-          inventoryAdvisors?: { id: string; name: string }[];
-        })
-      | null
-    >(null),
+  const [savedContext, setSavedContext] =
+      useState<SavedAssignmentContext | null>(null),
     [contextLoading, setContextLoading] = useState(false),
     [contextError, setContextError] = useState(""),
     [contextReload, setContextReload] = useState(0);
@@ -101,6 +103,23 @@ export function MetaAliasAction({
     setDraftAdvisor("");
     if (!open || !draftTable || !draftAlias || !draftCountry) {
       setContextLoading(false);
+      return;
+    }
+    if (savedIdentity) {
+      const context = savedIdentity.context;
+      setContextError(savedIdentity.error);
+      setContextLoading(
+        savedIdentity.loading || (!context && !savedIdentity.error),
+      );
+      if (
+        context &&
+        context.tableId === draftTable &&
+        context.country === draftCountry
+      ) {
+        setSavedContext(context);
+        setDraftAdvisor(context.advisorId ?? "");
+        setDraftCurrency(context.currency ?? "");
+      }
       return;
     }
     const ac = new AbortController(),
@@ -141,7 +160,20 @@ export function MetaAliasAction({
         if (!ac.signal.aborted) setContextLoading(false);
       });
     return () => ac.abort();
-  }, [open, draftTable, draftAlias, draftCountry, contextReload]);
+  }, [
+    open,
+    draftTable,
+    draftAlias,
+    draftCountry,
+    contextReload,
+    savedIdentity?.context,
+    savedIdentity?.loading,
+    savedIdentity?.error,
+  ]);
+  const [confirmedAdvisor, setConfirmedAdvisor] = useState("");
+  const advisorWarning = savedContext?.advisorConflicts
+    ?.map((a) => `${a.source}: ${a.name}`)
+    .join(" · ");
   const details = {
     ...(savedContext
       ? {
@@ -150,6 +182,9 @@ export function MetaAliasAction({
             tableId: savedContext.tableId,
             country: savedContext.country,
             revision: savedContext.revision,
+            ...(savedContext.metaAdvisorId
+              ? { metaAdvisorId: savedContext.metaAdvisorId }
+              : {}),
             ...(savedContext.inventoryId
               ? {
                   inventoryId: savedContext.inventoryId,
@@ -252,6 +287,8 @@ export function MetaAliasAction({
         }
         onClick={(e) => {
           setCustomName("");
+          setExpanded(false);
+          setConfirmedAdvisor("");
           setDraftAdvisor("");
           setDraftCurrency(
             providedTables?.find(
@@ -290,15 +327,30 @@ export function MetaAliasAction({
         id={id}
         ref={popover}
         popover="auto"
+        data-expanded={expanded ? "true" : undefined}
         onToggle={(e) => {
           const next = e.newState === "open";
           setOpen(next);
           if (next) onOpen?.();
         }}
-        className="meta-alias-popover"
+        className={
+          "meta-alias-popover" + (lockIdentity ? " meta-alias-compact" : "")
+        }
         style={{
           ...position,
-          maxHeight: `calc(100dvh - ${position.top + 8}px)`,
+          ...(expanded
+            ? {
+                top: 8,
+                left: 8,
+                width: "calc(100vw - 16px)",
+                height: "calc(100dvh - 16px)",
+              }
+            : {}),
+          maxHeight: expanded
+            ? "calc(100dvh - 16px)"
+            : lockIdentity
+              ? `min(520px, calc(100dvh - ${position.top + 8}px))`
+              : `calc(100dvh - ${position.top + 8}px)`,
         }}
       >
         <header className="meta-alias-context">
@@ -306,6 +358,19 @@ export function MetaAliasAction({
             <span aria-hidden="true">⠿</span>{" "}
             {bulk ? "Asignación masiva" : "Asignando inventario a"}
             <span className="meta-alias-drag-hint">Arrastra para mover</span>
+            <button
+              type="button"
+              className="meta-alias-expand"
+              aria-label={
+                expanded
+                  ? "Restaurar tamaño de asignación"
+                  : "Maximizar asignación"
+              }
+              aria-expanded={expanded}
+              onClick={() => setExpanded((v) => !v)}
+            >
+              {expanded ? "↙" : "↗"}
+            </button>
           </small>
           <strong>
             {bulk ? `${bulkCount} elementos seleccionados` : name}
@@ -315,6 +380,22 @@ export function MetaAliasAction({
           onSubmit={(e) => {
             e.preventDefault();
             if (extraSaveDisabled) return;
+            if (
+              draftAdvisor &&
+              advisorWarning &&
+              confirmedAdvisor !== draftAdvisor &&
+              savedContext?.advisorConflicts?.some(
+                (a) => a.advisorId !== draftAdvisor,
+              )
+            ) {
+              if (
+                !confirm(
+                  `${advisorWarning}. ¿Deseas guardar el asesor seleccionado? Si la hoja tiene otro titular, el cambio quedará por revisar conservando el historial.`,
+                )
+              )
+                return;
+              setConfirmedAdvisor(draftAdvisor);
+            }
             const item = catalog.find((c) => c.catalogId === draftAlias);
             if (item || (customName && draftAlias === "new:" + customName)) {
               popover.current?.hidePopover();
@@ -338,95 +419,117 @@ export function MetaAliasAction({
             } else assign(draftAlias || null, draftAlias ? draftCountry : null);
           }}
         >
-          <fieldset disabled={lockIdentity} className="meta-sync-identity">
-            <label>
-              Lista de inventario
-              <SheetSearchSelect
-                label="Lista de inventario"
-                placeholder="Todas las listas"
-                value={draftList}
-                options={[
-                  { value: "", label: "Todas las listas" },
-                  ...inventories.map((t) => ({ value: t.id, label: t.name })),
-                ]}
-                onSelect={(v) => {
-                  setDraftList(v);
-                  setDraftTable("");
-                  setDraftAlias("");
-                  setDraftCountry("");
-                  setCustomName("");
-                }}
-              />
-            </label>
-            <label>
-              Tabla
-              <SheetSearchSelect
-                label="Tabla de inventario"
-                placeholder="Elige una tabla"
-                value={draftTable}
-                disabled={disabled}
-                options={[
-                  { value: "", label: "Elige una tabla" },
-                  ...tables.map((t) => ({ value: t.id, label: t.name })),
-                ]}
-                onSelect={(v) => {
-                  setDraftTable(v);
-                  setDraftCurrency(
-                    providedTables?.find((t) => t.id === v)?.defaultCurrency ??
-                      "",
-                  );
-                  setDraftAlias("");
-                  setDraftCountry("");
-                  setCustomName("");
-                }}
-              />
-            </label>
-            <label>
-              {bulk
-                ? `Inventario para ${bulkCount} seleccionados`
-                : "Inventario"}
-              <SheetSearchSelect
-                label={
-                  bulk
-                    ? "Inventario para seleccionados"
-                    : `Inventario de ${name}`
-                }
-                placeholder="Elige un elemento del inventario"
-                value={draftAlias}
-                disabled={disabled || !draftTable}
-                options={options}
-                onCreate={(name) => {
-                  setCustomName(name);
-                  setDraftAlias("new:" + name);
-                }}
-                createLabel="Añadir nuevo a esta tabla"
-                createOnEnter
-                onSelect={(v) => {
-                  setDraftAlias(v);
-                  if (!v) setDraftCountry("");
-                }}
-              />
-            </label>
-            <label>
-              País
-              <SheetSearchSelect
-                label="País del inventario"
-                placeholder="Selecciona un país"
-                value={draftCountry}
-                disabled={
-                  disabled || !draftAlias || contextLoading || !!contextError
-                }
-                options={[
-                  { value: "", label: "Selecciona un país" },
-                  ...countryOptions.map((c) => ({
-                    value: c.code,
-                    label: `${c.code} · ${c.name}`,
-                  })),
-                ]}
-                onSelect={setDraftCountry}
-              />
-            </label>
-          </fieldset>
+          {lockIdentity ? (
+            <dl
+              className="meta-sync-summary"
+              aria-label="Inventario y país guardados"
+            >
+              <div>
+                <dt>Lista</dt>
+                <dd title={inventories.find((i) => i.id === draftList)?.name}>
+                  {inventories.find((i) => i.id === draftList)?.name ??
+                    "Inventario"}
+                </dd>
+              </div>
+              <div>
+                <dt>Hoja / país</dt>
+                <dd title={countryName(draftCountry)}>
+                  {tables.find((t) => t.id === draftTable)?.name ?? "Hoja"} ·{" "}
+                  {draftCountry}
+                </dd>
+              </div>
+            </dl>
+          ) : (
+            <fieldset className="meta-sync-identity">
+              <label>
+                Lista de inventario
+                <SheetSearchSelect
+                  label="Lista de inventario"
+                  placeholder="Todas las listas"
+                  value={draftList}
+                  options={[
+                    { value: "", label: "Todas las listas" },
+                    ...inventories.map((t) => ({ value: t.id, label: t.name })),
+                  ]}
+                  onSelect={(v) => {
+                    setDraftList(v);
+                    setDraftTable("");
+                    setDraftAlias("");
+                    setDraftCountry("");
+                    setCustomName("");
+                  }}
+                />
+              </label>
+              <label>
+                Tabla
+                <SheetSearchSelect
+                  label="Tabla de inventario"
+                  placeholder="Elige una tabla"
+                  value={draftTable}
+                  disabled={disabled}
+                  options={[
+                    { value: "", label: "Elige una tabla" },
+                    ...tables.map((t) => ({ value: t.id, label: t.name })),
+                  ]}
+                  onSelect={(v) => {
+                    setDraftTable(v);
+                    setDraftCurrency(
+                      providedTables?.find((t) => t.id === v)
+                        ?.defaultCurrency ?? "",
+                    );
+                    setDraftAlias("");
+                    setDraftCountry("");
+                    setCustomName("");
+                  }}
+                />
+              </label>
+              <label>
+                {bulk
+                  ? `Inventario para ${bulkCount} seleccionados`
+                  : "Inventario"}
+                <SheetSearchSelect
+                  label={
+                    bulk
+                      ? "Inventario para seleccionados"
+                      : `Inventario de ${name}`
+                  }
+                  placeholder="Elige un elemento del inventario"
+                  value={draftAlias}
+                  disabled={disabled || !draftTable}
+                  options={options}
+                  onCreate={(name) => {
+                    setCustomName(name);
+                    setDraftAlias("new:" + name);
+                  }}
+                  createLabel="Añadir nuevo a esta tabla"
+                  createOnEnter
+                  onSelect={(v) => {
+                    setDraftAlias(v);
+                    if (!v) setDraftCountry("");
+                  }}
+                />
+              </label>
+              <label>
+                País
+                <SheetSearchSelect
+                  label="País del inventario"
+                  placeholder="Selecciona un país"
+                  value={draftCountry}
+                  disabled={
+                    disabled || !draftAlias || contextLoading || !!contextError
+                  }
+                  options={[
+                    { value: "", label: "Selecciona un país" },
+                    ...countryOptions.map((c) => ({
+                      value: c.code,
+                      label: `${c.code} · ${c.name}`,
+                    })),
+                  ]}
+                  onSelect={setDraftCountry}
+                />
+              </label>
+            </fieldset>
+          )}
           <div className="meta-alias-details-row">
             <label>
               Asesor
@@ -454,17 +557,21 @@ export function MetaAliasAction({
                   })),
                 ]}
                 onSelect={(id) => {
-                  if (
+                  const different =
                     id &&
-                    savedContext?.advisorId &&
-                    id !== savedContext.advisorId &&
+                    ((savedContext?.advisorId &&
+                      id !== savedContext.advisorId) ||
+                      savedContext?.advisorConflicts?.some(
+                        (a) => a.advisorId !== id,
+                      ));
+                  if (
+                    different &&
                     !confirm(
-                      savedContext.source === "inventory"
-                        ? `El inventario tiene asignado a ${savedContext.advisorName}. ¿Deseas vincular con otro asesor para esta hoja y país?`
-                        : `El asesor guardado es ${savedContext.advisorName ?? "otro asesor"}. ¿Deseas proponer cambiarlo? Se conservará el titular actual y la diferencia quedará por revisar en la hoja.`,
+                      `${advisorWarning || `Asesor guardado en ${savedContext?.source === "meta" ? "Meta Ads" : savedContext?.source === "inventory" ? "la lista de diplomados" : "la hoja del país"}: ${savedContext?.advisorName}`}. ¿Deseas proponer otro asesor? Se conservará el historial; un titular diferente en la hoja quedará por revisar.`,
                     )
                   )
                     return;
+                  setConfirmedAdvisor(different ? id : "");
                   setDraftAdvisor(id);
                 }}
               />
@@ -492,18 +599,29 @@ export function MetaAliasAction({
               {contextError}{" "}
               <button
                 type="button"
-                onClick={() => setContextReload((v) => v + 1)}
+                onClick={() =>
+                  onRetrySavedIdentity
+                    ? onRetrySavedIdentity()
+                    : setContextReload((v) => v + 1)
+                }
               >
                 Reintentar datos guardados
               </button>
             </p>
+          )}
+          {advisorWarning && (
+            <small className="meta-sync-conflict" role="status">
+              {advisorWarning}. Revisa el asesor antes de guardar.
+            </small>
           )}
           {savedContext?.advisorId && (
             <small>
               Asesor{" "}
               {savedContext.source === "inventory"
                 ? "del inventario"
-                : "guardado"}
+                : savedContext.source === "meta"
+                  ? "de Meta Ads"
+                  : "guardado en la hoja"}
               : {savedContext.advisorName}.{" "}
               {draftAdvisor && draftAdvisor !== savedContext.advisorId
                 ? savedContext.source === "inventory"
@@ -512,11 +630,22 @@ export function MetaAliasAction({
                 : "Se conservará al vincular."}
             </small>
           )}
-          <small>
-            Inventario y país vinculan la base y el gasto con Efectividad. Las
-            ventas por asesor se registran en V de cada hoja. No cambia la
-            segmentación en Meta.
-          </small>
+          {lockIdentity ? (
+            <details className="meta-sync-help">
+              <summary>Detalles del vínculo</summary>
+              <small>
+                Los vínculos guardados se reutilizan en Meta Ads y Efectividad
+                para este diplomado y país. Las ventas por asesor se registran
+                en V de cada hoja.
+              </small>
+            </details>
+          ) : (
+            <small>
+              Inventario y país vinculan la base y el gasto con Efectividad. Las
+              ventas por asesor se registran en V de cada hoja. No cambia la
+              segmentación en Meta.
+            </small>
+          )}
           {draftAlias && !aliases.some((a) => a.id === draftAlias) && (
             <small className="meta-alias-add-hint">
               Se añadirá sin duplicados, con su estado registrado en Meta. Si

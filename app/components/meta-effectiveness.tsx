@@ -2798,6 +2798,7 @@ export function MetaEffectiveness({
                               name={name}
                               country={r.country}
                               aliasId={r.aliasId}
+                              syncState={r.advisorId && r.currency && !r.advisorReviews?.length ? "ready" : "pending"}
                               disabled={busy || readOnly || !r.country}
                               onSynced={async () => {
                                 notifyAdvisorSalesChanged();

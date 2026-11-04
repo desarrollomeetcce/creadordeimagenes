@@ -68,9 +68,10 @@ export function InventoryCountryCorrection({
         </button>
       </header>
       <p>
-        Traslada cada diplomado a la hoja de su país registrado. Conserva
-        ventas, fechas, asesores, activación, historial y vínculos de Meta. Los
-        datos de otros países permanecen en su hoja.
+        Este aviso compara el país guardado de la ficha con la hoja donde está
+        ubicada. Ese campo puede estar equivocado: no verifica el país de las
+        ventas ni la segmentación de Meta. Revisa ambas referencias antes de
+        corregir.
       </p>
       {!preview && !error && (
         <p role="status">Revisando destinos e históricos…</p>
@@ -83,14 +84,36 @@ export function InventoryCountryCorrection({
                 {i.name} · {countryName(i.country)}
               </strong>
               <br />
-              {i.sourceTable} → {i.targetTable}
-              {i.createsTable && i.ready ? " (se creará la hoja)" : ""}
+              Hoja actual: {i.sourceTable}
+              <br />
+              País guardado de esta asociación adicional:{" "}
+              {countryName(i.country)} ({i.country})<br />
+              País de la hoja:{" "}
+              {i.sheetCountry
+                ? countryName(i.sheetCountry) + " (" + i.sheetCountry + ")"
+                : "Sin confirmar"}
+              <br />
+              Hoja que coincide con ese campo: {i.targetTable}
               <br />
               <small>
                 {i.days} días guardados · {i.objects} elementos de Meta
                 vinculados
               </small>
               {i.reason && <p role="status">{i.reason}</p>}
+              <details className="country-issue-origin">
+                <summary>Ver registro que origina el aviso</summary>
+                <ul>
+                  {i.origins.map((origin) => (
+                    <li key={origin.id}>
+                      {origin.kind}
+                      {origin.hidden ? " (oculta)" : ""} ·{" "}
+                      <code>country={origin.country}</code> · {origin.days} días
+                      · {origin.events} eventos · Registro:{" "}
+                      <code>{origin.id}</code>
+                    </li>
+                  ))}
+                </ul>
+              </details>
             </li>
           ))}
         </ul>

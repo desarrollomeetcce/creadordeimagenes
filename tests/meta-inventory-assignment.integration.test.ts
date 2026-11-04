@@ -204,12 +204,25 @@ test("Meta inventory assignment materializes catalog choices atomically and flag
           objectIds.slice(0, 2).sort(),
         );
         assert(linked.campaigns.every((c) => c.linkedHere));
+        assert.equal(linked.context.aliasId, alias.id);
+        assert.equal(linked.context.country, "PE");
+        assert.equal(linked.context.currency, "PEN");
+        assert.deepEqual(
+          linked.context,
+          await metaAssignmentContext(actor, {
+            tableId: table.id,
+            country: "PE",
+            aliasId: alias.id,
+          }),
+        );
         const fromCatalog = await inventoryMetaCandidates(actor, {
           tableId: table.id,
           country: "PE",
           catalogId: "item:" + items[1].id,
         });
         assert.deepEqual(fromCatalog.campaigns, []);
+        assert.equal(fromCatalog.context.aliasId, null);
+        assert.equal(fromCatalog.context.currency, "PEN");
         const unlinked = await inventoryMetaCandidates(actor, {
           tableId: table.id,
           country: "PE",
@@ -882,7 +895,7 @@ test("Meta inventory assignment materializes catalog choices atomically and flag
         });
         assert.equal(ctx.advisorId, person.id);
         assert.equal(ctx.source, "inventory");
-        assert.equal(ctx.currency, "");
+        assert.equal(ctx.currency, "PEN");
         assert.equal(ctx.aliasId, null);
         assert.equal(
           await db.metaAlias.count({ where: { tableId: table.id } }),

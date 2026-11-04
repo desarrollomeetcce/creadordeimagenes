@@ -1975,12 +1975,11 @@ export function InventoryCatalog({
       {!!sheetDirectory?.countryIssues?.length && (
         <details className="inventory-country-review">
           <summary>
-            Asociaciones de país por revisar (
+            Asociaciones adicionales de país por revisar (
             {sheetDirectory.countryIssues.length})
           </summary>
           <p>
-            Estos registros están guardados en una hoja con otro país. Se
-            conservan íntegros, sin mover ni cambiar ventas.
+            La fila visible conserva su país. Este aviso reúne otras asociaciones del mismo diplomado cuyo país guardado es distinto al de la hoja; pueden ser registros vacíos u ocultos. No demuestra que la fila visible esté equivocada. Se conserva toda la información.
           </p>
           {sheetDirectory.canCorrectCountry && (
             <button
@@ -2002,8 +2001,7 @@ export function InventoryCatalog({
             {sheetDirectory.countryIssues.map((issue) => (
               <li key={issue.aliasId + ":" + issue.country}>
                 <span>
-                  <strong>{issue.name}</strong> · {countryName(issue.country)} ·
-                  hoja de origen: {issue.tableName}
+                  <strong>{issue.name}</strong> · Asociación adicional: {countryName(issue.country)} ({issue.country}) · Hoja: {issue.tableName} ({issue.expectedCountry})
                 </span>
                 <button
                   type="button"
@@ -2018,6 +2016,7 @@ export function InventoryCatalog({
                 >
                   Ver datos e histórico
                 </button>
+                <details className="country-issue-origin"><summary>Origen del aviso</summary><ul>{issue.origins.map(origin => <li key={origin.id}>{origin.kind}{origin.hidden ? " (oculta)" : ""} · campo <code>country={origin.country}</code> · {origin.days} días guardados · {origin.events} eventos · Registro: <code>{origin.id}</code></li>)}</ul><small>Esto identifica el registro actual. No demuestra qué importación o edición guardó ese país.</small></details>
                 {sheetDirectory.canCorrectCountry && (
                   <button
                     type="button"
@@ -3323,6 +3322,7 @@ export function InventoryCatalog({
                                   name={g.name}
                                   country={country}
                                   aliasId={aliasId}
+                                  syncState={point ? (point.synchronizationReady ? "ready" : "pending") : countryEvaluation.loading ? undefined : "pending"}
                                   catalogId={
                                     source
                                       ? (source.standalone

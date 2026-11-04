@@ -1,5 +1,14 @@
 # Meta Ads: consulta y análisis
 
+## Sincronización por diplomado y país, sin repetir configuración (2026-11-03)
+
+Desde una fila de Lista de Diplomados o una hoja, el cuadro toma diplomado y país del contexto. Asesor y moneda se recuperan al abrir; si solo hay un asesor guardado en Meta se sugiere sin cruzar países ni reemplazar historia. Las otras vistas usan el mismo registro canónico. Campañas es opcional en la lista: puedes guardar únicamente los datos de la ficha y vincular campañas posteriormente desde Meta Ads. Los vínculos existentes se muestran automáticamente y no hay que guardarlos otra vez.
+
+Verde Sincronizado indica asesor/moneda configurados; ámbar Por sincronizar indica que falta completar/revisar esa configuración. No equivale a verificar que el gasto está al día. Si Meta y la hoja muestran asesores distintos se indican ambos orígenes y se confirma la propuesta, conservando titular/historial. Ventana compacta con Cancelar accesible, arrastre y botón para ampliar/restaurar.
+
+El aviso de asociaciones de país compara registros adicionales country con la identidad de la hoja. AR es Argentina y PEN solo es moneda. Origen del aviso muestra tipo de registro, ID y código; no atribuye el dato a una importación ni verifica segmentación. Datos vacíos sin días ni vínculo Meta quedan bloqueados para traslado. Un país sin hoja verificada no crea una hoja automáticamente. Revisa el registro concreto antes de corregir; la fila visible puede estar correcta.
+
+
 ## Corregir asociación de país (2026-11-03)
 
 En Lista de Diplomados → Asociaciones de país por revisar se ofrece Corregir asociación por fila y Corregir asociaciones de país para el lote. Solo OWNER actual. La revisión muestra diplomado, país guardado, origen y destino. Confirmar traslada los compatibles a su hoja del mismo país; si no existe se crea. No cambia el país ni presupone que el nombre visible de una hoja renombrada sea su identidad.
