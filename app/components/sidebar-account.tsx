@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
-import { roleLabels, managesUsers } from "../../lib/roles";
+import { roleLabels, managesUsers, hasAiModuleAccess } from "../../lib/roles";
 export function SidebarAccount({
   user,
   view,
@@ -26,7 +26,7 @@ export function SidebarAccount({
           ["ai", "⚙", "Ajustes de IA"],
         ]
       : []),
-    ...((user.aiAccessEnabled !== false || user.role === "OWNER") &&
+    ...(hasAiModuleAccess(user) &&
     !["OBSERVER", "SUPERVISOR", "ADVISOR"].includes(user.role)
       ? [["usage", "↗", "Costos de IA"]]
       : []),
@@ -126,7 +126,7 @@ export function SidebarAccount({
           </div>
         )}
         {item("account", "♙", "Mi cuenta")}
-        {user.aiAccessEnabled !== false &&
+        {hasAiModuleAccess(user) &&
           !["OBSERVER", "SUPERVISOR", "ADVISOR"].includes(user.role) &&
           item("plans", "◇", "Mi plan IA")}
         <button type="button" className="sidebar-logout" onClick={logout}>

@@ -1,3 +1,4 @@
+import { hasAiModuleAccess } from "../roles";
 import { assertNoBuild } from "./builds";
 import { withoutResourceModule } from "./resources";
 import { assertLibraryCategory } from "./library";
@@ -44,7 +45,7 @@ export async function courseOwner(u: Actor) {
     fresh?.role === "OWNER" &&
       fresh.status === "APPROVED" &&
       !fresh.archivedAt &&
-      fresh.aiAccessEnabled,
+      hasAiModuleAccess(fresh),
     "Cursos IA requiere una cuenta OWNER vigente con acceso a IA.",
     403,
   );
@@ -59,7 +60,7 @@ async function current(tx: Prisma.TransactionClient, u: Actor) {
     v?.role === "OWNER" &&
       v.status === "APPROVED" &&
       !v.archivedAt &&
-      v.aiAccessEnabled,
+      hasAiModuleAccess(v),
     "El permiso de Cursos IA cambió.",
     403,
   );
@@ -947,7 +948,7 @@ export async function processCourseTask(id: string) {
       user.role !== "OWNER" ||
       user.status !== "APPROVED" ||
       user.archivedAt ||
-      !user.aiAccessEnabled ||
+      !hasAiModuleAccess(user) ||
       t.course.archivedAt
     ) {
       await tx.aICourseTask.update({

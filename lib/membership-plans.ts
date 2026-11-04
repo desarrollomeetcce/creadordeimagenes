@@ -1,3 +1,4 @@
+import { hasAiModuleAccess } from "./roles";
 import { randomUUID } from "node:crypto";
 import type { Prisma } from "@prisma/client";
 import { z } from "zod";
@@ -61,7 +62,7 @@ export async function checkPlanAllowance(
     403,
   );
   demand(
-    user.aiAccessEnabled !== false && !user.archivedAt,
+    hasAiModuleAccess(user) && !user.archivedAt,
     "La cuenta no tiene acceso a IA.",
     403,
   );

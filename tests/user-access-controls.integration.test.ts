@@ -134,7 +134,7 @@ test("Unified account/plan save, No AI, OWNER session actions and reversible ret
       },
     );
     await t.test(
-      "Explicit No AI overrides legacy planless access and OWNER quota exemption",
+      "No AI blocks other roles; OWNER always retains full module access",
       async () => {
         await call(owner, target.id, "PATCH", {
           role: "USER",
@@ -151,9 +151,8 @@ test("Unified account/plan save, No AI, OWNER session actions and reversible ret
           status: "APPROVED",
           aiAccessEnabled: false,
         });
-        await assert.rejects(
-          db.$transaction((tx) => checkPlanAllowance(tx, owner.id, 1, 0n)),
-        );
+        await db.$transaction((tx) => checkPlanAllowance(tx, owner.id, 1, 0n));
+        assert.equal((await db.user.findUniqueOrThrow({where:{id:owner.id}})).aiAccessEnabled,true);
         await call(owner, owner.id, "PATCH", {
           role: "OWNER",
           status: "APPROVED",

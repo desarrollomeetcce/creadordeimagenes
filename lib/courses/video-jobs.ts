@@ -1,3 +1,4 @@
+import { hasAiModuleAccess } from "../roles";
 import { randomUUID } from "node:crypto";
 import { db } from "../db";
 import { AppError, demand } from "../errors";
@@ -64,7 +65,7 @@ export async function pollVideoTask(id: string) {
         u?.role === "OWNER" &&
           u.status === "APPROVED" &&
           !u.archivedAt &&
-          u.aiAccessEnabled,
+          hasAiModuleAccess(u),
         "El permiso cambió.",
         403,
       );

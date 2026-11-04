@@ -117,6 +117,8 @@ export async function userManagement(
   }
   if (parts.length === 3 && parts[2] === "recovery" && req.method === "POST")
     return send(await issuePasswordReset(actor, parts[1], await body()), 201);
+  if (parts.length === 3 && parts[2] === "profile" && req.method === "PATCH")
+    return send(await (await import("./user-profile")).updateUserProfile(actor, parts[1], await body()));
   if (parts.length === 3 && parts[2] === "email" && req.method === "PATCH") {
     const b = z
       .object({
@@ -442,7 +444,7 @@ export async function userManagement(
         data: {
           role: b.role,
           status: b.status,
-          ...(b.aiAccessEnabled !== undefined
+          ...(b.role === "OWNER" ? { aiAccessEnabled: true } : b.aiAccessEnabled !== undefined
             ? { aiAccessEnabled: b.aiAccessEnabled }
             : {}),
           ...(editsPlan

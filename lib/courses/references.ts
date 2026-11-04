@@ -1,3 +1,4 @@
+import { hasAiModuleAccess } from "../roles";
 import { assertNoBuild } from "./builds";
 import { publicReferenceURL } from "./reference-web";
 import { createHash } from "node:crypto";
@@ -52,7 +53,7 @@ async function writable(
     user?.role === "OWNER" &&
       user.status === "APPROVED" &&
       !user.archivedAt &&
-      user.aiAccessEnabled,
+      hasAiModuleAccess(user),
     "El permiso cambió.",
     403,
   );

@@ -1,3 +1,4 @@
+import { hasAiModuleAccess } from "../roles";
 import { z } from "zod";
 import { randomUUID } from "node:crypto";
 import { Prisma } from "@prisma/client";
@@ -99,7 +100,7 @@ export async function changeLibrary(
       fresh?.role === "OWNER" &&
         fresh.status === "APPROVED" &&
         !fresh.archivedAt &&
-        fresh.aiAccessEnabled,
+        hasAiModuleAccess(fresh),
       "El permiso cambió.",
       403,
     );

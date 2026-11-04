@@ -460,7 +460,10 @@ test("Ajustes unificados, carpetas, catálogos y video asíncrono aislado", asyn
           where: { id: u.id },
           data: { aiAccessEnabled: false },
         });
+        await courseOverview(u, cid); // OWNER retains full access despite a legacy No AI flag.
+        await db.user.update({ where: { id: u.id }, data: { status: "SUSPENDED" } });
         await assert.rejects(() => courseOverview(u, cid), /OWNER/);
+        await db.user.update({ where: { id: u.id }, data: { status: "APPROVED" } });
         assert.equal(submits, 2);
         await db.user.update({
           where: { id: u.id },

@@ -1,5 +1,14 @@
 # Avance por fases · continuación del desarrollo
 
+## Nombre/correo editables y prioridad completa de OWNER (2026-11-03)
+
+Equipo ofrece Editar nombre y correo por persona, incluida la cuenta OWNER propia. Formulario dedicado conserva borrador al fallar, cancelación sin escritura y aviso al cambiar correo. API valida OWNER actual bajo891234 y bloqueo de filas, expected nombre/correo, formato y unicidad sin distinguir mayúsculas. Actualiza mismo User.id sin tocar contraseña/rol/plan/pertenencia/historial. Nombre conserva sesiones y refresca barra propia; correo revoca sesiones y recuperaciones antiguas, e informa que el ingreso usa correo nuevo y contraseña existente.
+
+Por aclaración posterior del usuario, OWNER vigente tiene acceso a todos los módulos aunque conserve vínculo personal de asesor o aiAccessEnabled=false heredado. Regla compartida en menú, API, planes y guardas Cursos IA; guardar OWNER habilita acceso IA y Sin IA no se ofrece para ese rol. Los demás roles y controles de aprobación/suspensión/retirada permanecen. OWNER inicia en Proyectos; un vínculo de asesor no lo redirige al portal. Al recuperar foco/visibilidad se revalida auth/me, con máximo una comprobación15s y sin temporizador; error de red preserva pantalla y401 retira vista antigua para volver a ingresar.
+
+43 unitarios y39 integraciones correctos, typecheck/build y5 controles Chromium. Se reproduce OWNER con vínculo asesor y bandera IA=false: menú completo y GET Proyectos/Cursos200; asesor conserva menú restringido, promoción invalida sesión vieja, al volver se pide ingreso y luego ve OWNER completo. Edición/cancelación móvil, nuevo nombre propio y correo propio con mismo password verificados. Sin generaciones/proveedores reales. Cuenta fsalas y base Hostinger no autenticadas aquí; no se afirma haber comprobado su rol almacenado ni desplegado Hostinger.
+
+
 ## Corregir asociaciones de país y etiquetas únicas (2026-11-03)
 
 Se añade acción individual y por lote al aviso del inventario. La vista previa usa país guardado e identidad estable de hoja, muestra origen/destino, días y vínculos; no escribe. Confirmar mueve filas con sus IDs y mantiene días, anotaciones, aprobaciones, estados/eventos y datos Meta; reasocia objetos y asignaciones/soportes del país. Otros países y totales/bases manuales generales quedan íntegros. Copia categorías y controles correspondientes, conserva visibilidad/retirada y revisiones. Destino ausente se crea al confirmar. Conflictos materiales, varios destinos, asignaciones o activaciones incompatibles y columnas vinculadas se muestran sin sobrescribir. OWNER actual, bloqueo884411, CAS de datos y recibo de auditoría idempotente; sin migración ni consultas Graph.

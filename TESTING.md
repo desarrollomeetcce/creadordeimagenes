@@ -1,5 +1,12 @@
 # Pruebas y evidencia
 
+## Identidad de usuario y OWNER con acceso completo (2026-11-03)
+
+user-profile.integration.test.ts cubre editar nombre y correo propio/ajeno manteniendo ID/rol/plan/clave, sesión preservada con nombre e invalidada con correo, normalización/unicidad, CAS contra nombre/correo obsoletos, OWNER actual bajo bloqueo y rechazo de campos de rol extra. Promoción ADVISOR→OWNER invalida sesión, defaultAccountView prioriza OWNER sobre vínculo asesor y filtros Proyectos quedan completos. OWNER con bandera IA=false puede leer Cursos IA; demás roles siguen limitados. Se mantienen regresiones user-email, user-access-controls, courses-ai y ai-media. El caso antiguo No AI de OWNER ahora comprueba acceso y la revocación real sigue probándose suspendiendo la cuenta.
+
+Chromium local con dos contextos autenticados y fixture exclusivo: OWNER legado IA=false+vínculo asesor ve todos los módulos y lectura200; edición por persona/cancelar/móvil, correo+nombre, sesión de asesor revocada que se revalida al recuperar foco, nuevo ingreso OWNER con menú completo, nombre propio reflejado y correo propio con contraseña original. Cero peticiones de generación/Meta y cero errores JS. Cleanup verifica mismos2User.id, rol OWNER y vínculos personales intactos antes de borrar solo fixtures. Las pruebas no acreditan el estado real de fsalas en Hostinger.
+
+
 ## Corrección explícita de asociaciones de país (2026-11-03)
 
 Integración dedicada inventory-country-correction.integration.test.ts: preview sin escrituras y token estable, traslado de IDs con días/anotaciones/aprobaciones/activación/eventos originales, gasto Meta inalterado y lectura canónica V posterior, otro país y totales generales conservados; reintento idempotente, rechazo de histórico de destino con datos, CAS ante edición concurrente, permisos actuales/inventario ajeno, lote mixto sin reactivar ni destapar filas y creación de hoja de país ausente. Etiquetas PERU/Perú/MEXICO/BOLIVIA/BOLVIA y hoja genérica/cruzada. Todos los accesos externos bloqueados.

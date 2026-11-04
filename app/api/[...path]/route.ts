@@ -1,3 +1,4 @@
+import { hasAiModuleAccess } from "@/lib/roles";
 import {libraryJobAccess} from "@/lib/library-access";
 import {libraryImageVisibility} from "@/lib/library-visibility";
 import { instructionPolicySchema,instructionFlags,publicInstructionPolicy } from "@/lib/instruction-policy";
@@ -319,7 +320,7 @@ async function handle(
     }
     const user = await actor();
     if(parts[0]==="courses-ai")return await (await import("@/lib/courses/routes")).courseRoutes(req,parts,user,()=>body(req));
-    if(user.aiAccessEnabled===false && ['projects','categories','subproducts','variations','jobs','orders','attachments','library','exports','presets','folders','assets','generations','generate','tests','brands'].includes(parts[0]))demand(false,'Esta cuenta no tiene acceso a los módulos de IA.',403);
+    if(!hasAiModuleAccess(user) && ['projects','categories','subproducts','variations','jobs','orders','attachments','library','exports','presets','folders','assets','generations','generate','tests','brands'].includes(parts[0]))demand(false,'Esta cuenta no tiene acceso a los módulos de IA.',403);
     if (["SUPERVISOR","ADVISOR"].includes(user.role)) demand(parts[0]==="meta-ads" || ["auth/me","auth/logout","auth/change-password"].includes(route),"Tu rol está destinado a Mi desempeño.",403);
     if(parts[0]==="meta-ads")return await (await import("@/lib/meta-ads/routes")).metaRoutes(req,parts,user,()=>body(req));
     if(parts[0]==="system-resources")return await (await import("@/lib/system-resources")).systemResourceRoutes(req,parts,user,()=>body(req));

@@ -51,6 +51,7 @@ export function UsersPanel({ isOwner }: { isOwner: boolean }) {
     [guideRole, setGuideRole] = useState("SUPERVISOR"),
     [createRole, setCreateRole] = useState("USER"),
     [archived, setArchived] = useState(false),
+    [editingIdentity, setEditingIdentity] = useState<Account | null>(null),
     [actions, setActions] = useState<string | null>(null),
     [removing, setRemoving] = useState<Account | null>(null),
     [sharing, setSharing] = useState<{
@@ -111,7 +112,8 @@ export function UsersPanel({ isOwner }: { isOwner: boolean }) {
               validUntil: u.planValidUntil
                 ? new Date(u.planValidUntil).toISOString()
                 : null,
-              aiAccessEnabled: u.aiAccessEnabled !== false,
+              aiAccessEnabled:
+                u.role === "OWNER" || u.aiAccessEnabled !== false,
             }
           : {}),
         expected: {
@@ -374,6 +376,17 @@ export function UsersPanel({ isOwner }: { isOwner: boolean }) {
                       <th scope="row">
                         <strong>{u.name}</strong>
                         <small title={u.email}>{u.email}</small>
+                        {isOwner && (
+                          <button
+                            type="button"
+                            className="compact"
+                            aria-label={"Editar nombre y correo de " + u.name}
+                            disabled={busy}
+                            onClick={() => setEditingIdentity({ ...u })}
+                          >
+                            Editar nombre y correo
+                          </button>
+                        )}
                       </th>
                       <td>
                         <select
@@ -421,6 +434,7 @@ export function UsersPanel({ isOwner }: { isOwner: boolean }) {
                             <select
                               aria-label={"Plan de IA de " + u.name}
                               value={
+                                u.role !== "OWNER" &&
                                 u.aiAccessEnabled === false
                                   ? "NO_AI"
                                   : (u.planId ?? "")
@@ -440,7 +454,12 @@ export function UsersPanel({ isOwner }: { isOwner: boolean }) {
                                 })
                               }
                             >
-                              <option value="NO_AI">Sin IA</option>
+                              <option
+                                value="NO_AI"
+                                disabled={u.role === "OWNER"}
+                              >
+                                Sin IA
+                              </option>
                               <option value="">Sin plan · acceso previo</option>
                               {u.planId &&
                                 !plans.some((p) => p.id === u.planId) && (
@@ -536,11 +555,22 @@ export function UsersPanel({ isOwner }: { isOwner: boolean }) {
               </table>
             </div>
             <small className="hint">
-              «Sin IA» bloquea los módulos de imágenes. «Acceso previo» conserva
-              la compatibilidad de cuentas antiguas. Meta Ads y Efectividad se
+              OWNER tiene acceso completo. «Sin IA» bloquea los módulos de
+              imágenes para los demás roles. «Acceso previo» conserva la
+              compatibilidad de cuentas antiguas. Meta Ads y Efectividad se
               conceden desde Compartir.
             </small>
           </section>
+          {editingIdentity && (
+            <UserIdentityEditor
+              account={editingIdentity}
+              onClose={() => setEditingIdentity(null)}
+              onSaved={async () => {
+                await refresh();
+                setMessage("Nombre y correo guardados.");
+              }}
+            />
+          )}
           {active && (
             <UserActions
               account={active}
@@ -933,5 +963,126 @@ function AccountEmailEditor({
         </form>
       )}
     </div>
+  );
+}
+
+function UserIdentityEditor({
+  account,
+  onClose,
+  onSaved,
+}: {
+  account: Account;
+  onClose: () => void;
+  onSaved: () => Promise<void>;
+}) {
+  const dialog = useRef<HTMLDialogElement>(null),
+    pending = useRef(false);
+  const [name, setName] = useState(account.name),
+    [email, setEmail] = useState(account.email),
+    [busy, setBusy] = useState(false),
+    [error, setError] = useState("");
+  useEffect(() => {
+    dialog.current?.showModal();
+  }, []);
+  const emailChanged = email.trim().toLowerCase() !== account.email;
+  return (
+    <dialog
+      ref={dialog}
+      className="user-actions-dialog"
+      aria-label="Editar nombre y correo"
+      onCancel={(e) => {
+        if (pending.current) e.preventDefault();
+        else onClose();
+      }}
+    >
+      <header>
+        <h2>Editar nombre y correo</h2>
+        <button
+          type="button"
+          className="ui-close-button"
+          aria-label="Cerrar edición de usuario"
+          disabled={busy}
+          onClick={onClose}
+        >
+          ×
+        </button>
+      </header>
+      <form
+        onSubmit={async (e) => {
+          e.preventDefault();
+          if (pending.current) return;
+          pending.current = true;
+          setBusy(true);
+          setError("");
+          let committed = false;
+          try {
+            const r = await api("users/" + account.id + "/profile", "PATCH", {
+              name,
+              email,
+              expected: { name: account.name, email: account.email },
+            });
+            committed = true;
+            if (r.closesOwnSession || r.reloadOwn) {
+              window.location.reload();
+              return;
+            }
+            await onSaved();
+            onClose();
+          } catch (e) {
+            setError(
+              (committed
+                ? "Los cambios se guardaron. Actualiza la lista: "
+                : "") + (e as Error).message,
+            );
+          } finally {
+            pending.current = false;
+            setBusy(false);
+          }
+        }}
+      >
+        <label>
+          Nombre del usuario
+          <input
+            aria-label="Nombre del usuario"
+            value={name}
+            required
+            maxLength={100}
+            disabled={busy}
+            onChange={(e) => setName(e.target.value)}
+          />
+        </label>
+        <label>
+          Correo electrónico
+          <input
+            aria-label="Correo electrónico del usuario"
+            type="email"
+            value={email}
+            required
+            maxLength={200}
+            disabled={busy}
+            onChange={(e) => setEmail(e.target.value)}
+          />
+        </label>
+        {emailChanged && (
+          <p>
+            Al cambiar el correo se cerrarán las sesiones de esta cuenta. Para
+            volver a entrar, usa el nuevo correo y la misma contraseña.
+          </p>
+        )}
+        {error && <p role="alert">{error}</p>}
+        <footer>
+          <button type="button" disabled={busy} onClick={onClose}>
+            Cancelar
+          </button>
+          <button
+            type="submit"
+            className="primary"
+            disabled={busy || !name.trim() || !email.trim()}
+          >
+            {busy ? "Guardando…" : "Guardar nombre y correo"}
+          </button>
+        </footer>
+      </form>
+    </dialog>
   );
 }

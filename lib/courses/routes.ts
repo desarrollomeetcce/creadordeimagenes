@@ -49,7 +49,6 @@ export async function courseRoutes(
           role: "OWNER",
           status: "APPROVED",
           archivedAt: null,
-          aiAccessEnabled: true,
         },
         select: { id: true, name: true, email: true },
         orderBy: { name: "asc" },

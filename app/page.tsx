@@ -30,7 +30,7 @@ import { emptyHierarchy } from "./components/hierarchy-filters";
 import { InstructionEditor } from "./components/instruction-editor";
 import { SearchSelect } from "./components/search-select";
 import { CurrentRole, CurrentUserId, RoleGuide, useCanEdit } from "./components/role-guide";
-import { roleLabels, managesUsers } from "../lib/roles";
+import { roleLabels, managesUsers, defaultAccountView, hasAiModuleAccess } from "../lib/roles";
 import { HierarchyBreadcrumbs } from "./components/breadcrumbs";
 import { Attachments, type AttachmentsHandle } from "./components/attachments";
 const UsersPanel = dynamic(() => import("./components/users-panel").then(m => m.UsersPanel), { loading: () => <p role="status">Cargando…</p> });
@@ -225,6 +225,29 @@ export default function Home() {
     void reloadUser();
     return () => window.removeEventListener("popstate", pop);
   }, [reloadUser]);
+  useEffect(() => {
+    if (!user?.id) return;
+    const actorId = user.id;
+    let active = true, pending = false, lastAt = 0;
+    const check = async () => {
+      if (!active || pending || document.visibilityState !== "visible" || Date.now() - lastAt < 15000) return;
+      pending = true; lastAt = Date.now();
+      try {
+        const response = await fetch("/api/auth/me", { cache: "no-store" });
+        if (!active) return;
+        if (response.status === 401) { clearGallerySession(); setUser(null); return; }
+        if (!response.ok) return;
+        const fresh = await response.json() as User;
+        if (!active) return;
+        if (fresh.id !== actorId) { window.location.reload(); return; }
+        setUser(previous => previous?.id === actorId && JSON.stringify(previous) !== JSON.stringify(fresh) ? fresh : previous);
+      } catch { /* A temporary network error does not sign the person out. */ }
+      finally { pending = false; }
+    };
+    window.addEventListener("focus", check);
+    document.addEventListener("visibilitychange", check);
+    return () => { active = false; window.removeEventListener("focus", check); document.removeEventListener("visibilitychange", check); };
+  }, [user?.id]);
   const changeAddress = (values: Record<string, string>) => {
     const search = "?" + new URLSearchParams(values).toString();
     if (window.location.search !== search)
@@ -243,7 +266,7 @@ export default function Home() {
       setCollection(null);
       try {
         const params = new URLSearchParams(location);
-        const requested = params.get("view") ?? ((user.advisorLinked || ["SUPERVISOR","ADVISOR"].includes(user.role)) ? "performance" : "projects");
+        const requested = params.get("view") ?? defaultAccountView(user);
         const allowed = [
           "performance",
           "projects",
@@ -262,7 +285,7 @@ export default function Home() {
           ...(user.role === "OWNER"
             ? [
                 "products",
-                ...(user.aiAccessEnabled!==false?["courses-ai"]:[]),
+                ...(hasAiModuleAccess(user)?["courses-ai"]:[]),
                 "ai",
                 "mail",
                 "payments",
@@ -273,7 +296,7 @@ export default function Home() {
             : []),
         ];
         const nextView =
-          allowed.includes(requested) && (user.aiAccessEnabled!==false||!['projects','library','presets','history','trash','jobs'].includes(requested)) &&
+          allowed.includes(requested) && (hasAiModuleAccess(user)||!['projects','library','presets','history','trash','jobs'].includes(requested)) &&
           (!["SUPERVISOR","ADVISOR"].includes(user.role) || ["performance","account"].includes(requested) || (requested==="metaads"&&user.metaAdsShared) || (requested==="products"&&user.effectivenessShared)) &&
           (user.role !== "OBSERVER" ||
             [
@@ -288,7 +311,7 @@ export default function Home() {
               ...(user.effectivenessShared?["products"]:[]),
             ].includes(requested))
             ? requested
-            : (user.aiAccessEnabled===false?(user.effectivenessShared?'products':user.metaAdsShared?'metaads':user.advisorLinked||['SUPERVISOR','ADVISOR'].includes(user.role)?'performance':'account'):(["SUPERVISOR","ADVISOR"].includes(user.role)?"performance":"projects"));
+            : (!hasAiModuleAccess(user)?(user.effectivenessShared?'products':user.metaAdsShared?'metaads':user.advisorLinked||['SUPERVISOR','ADVISOR'].includes(user.role)?'performance':'account'):(["SUPERVISOR","ADVISOR"].includes(user.role)?"performance":"projects"));
         if (active) setView(nextView);
         if (nextView === "collection") {
           const scope = params.get("scope"),
@@ -339,7 +362,7 @@ export default function Home() {
     return () => {
       active = false;
     };
-  }, [location, user?.id, user?.role]);
+  }, [location, user?.id, user?.role, user?.aiAccessEnabled, user?.effectivenessShared, user?.metaAdsShared]);
   const openProject = async (id: string) =>
     changeAddress({ view: "projects", project: id });
   const openCategory = async (id: string) =>
@@ -485,7 +508,7 @@ export default function Home() {
               ["trash", "⌫", "Papelera"],
               ...(user.role === "OWNER"
                 ? [
-                    ...(user.aiAccessEnabled!==false?[["courses-ai", "✦", "Cursos IA"]]:[]),
+                    ...(hasAiModuleAccess(user)?[["courses-ai", "✦", "Cursos IA"]]:[]),
                     ["statistics", "▥", "Estadísticas"],
                     ["website", "◈", "Página web"],
                     ["visual-audit", "▧", "Auditoría visual"],
@@ -494,7 +517,7 @@ export default function Home() {
             ]
               .filter(
                 ([v]) =>
-                  (user.aiAccessEnabled!==false||!['projects','library','presets','history','trash'].includes(v)) && (!["SUPERVISOR","ADVISOR"].includes(user.role) || v==="performance" || (v==="metaads"&&!!user.metaAdsShared) || (v==="products"&&!!user.effectivenessShared)) && (user.role !== "OBSERVER" ||
+                  (hasAiModuleAccess(user)||!['projects','library','presets','history','trash'].includes(v)) && (!["SUPERVISOR","ADVISOR"].includes(user.role) || v==="performance" || (v==="metaads"&&!!user.metaAdsShared) || (v==="products"&&!!user.effectivenessShared)) && (user.role !== "OBSERVER" ||
                   (["projects", "library", "presets", "account", "performance"].includes(v) || (v === "metaads" && !!user.metaAdsShared) || (v==="products"&&!!user.effectivenessShared))),
               )
               .map(([v, icon, label]) => (
@@ -581,14 +604,14 @@ export default function Home() {
 
             ) : view === "presets" ? (
               <Presets />
-            ) : view === "courses-ai" && user.role === "OWNER" && user.aiAccessEnabled!==false ? (
+            ) : view === "courses-ai" && user.role === "OWNER" && hasAiModuleAccess(user) ? (
               <CoursesAI />
             ) : view === "website" && user.role === "OWNER" ? (
               <SiteEditor />
             ) : view === "payments" && user.role === "OWNER" ? (
               <PaymentSettings />
             ) : view === "plans" ? (
-              <MyPlan canPurchase={user.role !== "OBSERVER"&&user.aiAccessEnabled!==false} />
+              <MyPlan canPurchase={user.role !== "OBSERVER"&&hasAiModuleAccess(user)} />
             ) : view === "ai" ? (
               <AISettings />
             ) : view === "mail" && user.role === "OWNER" ? (

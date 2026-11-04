@@ -63,3 +63,23 @@ export function canManageAccount(actor: string, target: string) {
     (actor === "ADMIN" && ["USER", "OBSERVER"].includes(target))
   );
 }
+
+/** A personal advisor link never overrides an elevated account role. */
+export function defaultAccountView(user: {
+  role: string;
+  advisorLinked?: boolean;
+}) {
+  return user.role === "OWNER"
+    ? "projects"
+    : user.advisorLinked || ["SUPERVISOR", "ADVISOR"].includes(user.role)
+      ? "performance"
+      : "projects";
+}
+
+/** OWNER always sees and administers every module; No AI applies to the other roles. */
+export function hasAiModuleAccess(user: {
+  role: string;
+  aiAccessEnabled?: boolean;
+}) {
+  return user.role === "OWNER" || user.aiAccessEnabled !== false;
+}
