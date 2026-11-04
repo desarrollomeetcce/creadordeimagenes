@@ -529,7 +529,11 @@ test("Campañas: períodos de ventas locales, fuentes canónicas acotadas y anun
             until: "2026-10-01",
           }),
         );
-        assert.equal(historical.items[0].id, orderIds.at(-1));
+        for (const o of historical.items as any[]) {
+          assert.equal(o.periods.custom.since, "2026-10-01");
+          assert.equal(o.periods.custom.until, "2026-10-01");
+          assert.equal(o.periods.custom.sales.cac, null);
+        }
         for (const [status, expected] of [
           ["WITHIN", 1],
           ["ALERT", 1],

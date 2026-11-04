@@ -4961,8 +4961,9 @@ test("country header order keeps missing FX last, active first and recorded pend
   assert(compare(active, off, "activation", true) > 0);
   assert(compare(active, off, "factor", false) < 0);
   assert(compare(pending, active, "factor", true) > 0);
-  assert(compare(pending, unused, "status", false) < 0);
-  assert(compare(pending, undefined, "status", true) < 0);
+  assert.equal(compare(pending, unused, "status", false), 0);
+  assert.equal(compare(pending, undefined, "status", true), 0);
+  assert(compare(point("ACTIVE", "NEVER", null, "CRITICAL"), off, "status", false) < 0);
 });
 
 test("Hojas: cuatro identidades históricas retiradas cuentan cero sin borrar el catálogo", async () => {
@@ -5938,7 +5939,7 @@ test("CAC de campañas: estados de inventario, parcial explícito, cero, permiso
   );
 });
 
-test("Estado reciente de campañas: fechas,14d elegidos y sin usar histórico como estado actual", async () => {
+test("Estado de campañas:14d por defecto,7d y calendario explícito incluso histórico", async () => {
   const { campaignEvaluationWindow: select, isRecentCampaignPeriod: recent } =
     await import("../lib/meta-ads/campaign-evaluation-window");
   const today = "2026-11-03",
@@ -5963,18 +5964,18 @@ test("Estado reciente de campañas: fechas,14d elegidos y sin usar histórico co
     ).period,
     fourteen,
   );
-  assert.equal(
+  assert.deepEqual(
     select(
       { ...periods, custom: { since: today, until: today } },
       "custom",
       today,
     ).period,
-    fourteen,
+    { since: today, until: today },
   );
-  assert.equal(select(periods, "old", today).period, fourteen);
-  assert.equal(select(periods, "lifetime", today).period, fourteen);
-  assert.equal(select({ old }, "old", today).period, null);
-  assert.equal(select({ "7": old }, "7", today).period, null);
+  assert.equal(select(periods, "old", today).period, old);
+  assert.equal(select(periods, "lifetime", today).period, periods.lifetime);
+  assert.equal(select({ old }, "old", today).period, old);
+  assert.equal(select({ "7": old }, "7", today).period, old);
   assert(recent(seven, today));
   assert(!recent(old, today));
   assert(!recent({ since: "2026-11-04", until: "2026-11-04" }, today));
@@ -6138,7 +6139,7 @@ test("Meta menú de estado: catálogo de severidad único y filtro persistido va
   const { parseMetaPreferences } = await import("../lib/meta-ads/preferences");
   assert.deepEqual(
     cacSeverityOrder.map((s) => cacStatusNames[s]),
-    ["Normal", "Sin ventas", "Revisar", "Grave", "Crítico"],
+    ["Normal", "Bajo gasto aún", "Revisar", "Grave", "Crítico"],
   );
   for (const evaluationStatus of [...cacSeverityOrder, "PENDING"])
     assert.equal(

@@ -2954,3 +2954,11 @@ button.ui-close-button:disabled, button.window-close:disabled { opacity: .55; }
 .inventory-group-matrix th[data-country-code]{cursor:grab}.inventory-group-matrix th[data-country-code]:active{cursor:grabbing}.inventory-group-matrix th[data-country-dragover]{box-shadow:inset 3px 0 var(--accent)}.inventory-group-matrix th[data-country-code] abbr:focus-visible{outline:2px solid var(--accent);outline-offset:3px}
 
 .inventory-group-country-campaign-state[data-campaign-state=INACTIVE]{font-size:7.5px;white-space:nowrap;overflow-wrap:normal}
+
+.evaluation-date-trigger { font-size:10px; padding:4px 6px; }
+.evaluation-date-menu { position:fixed; inset:auto; margin:0; width:280px; max-width:calc(100vw - 16px); padding:10px; border:1px solid var(--line); border-radius:8px; background:var(--surface); color:var(--ink); box-shadow:0 8px 28px #0003; font-size:11px; }
+.evaluation-date-directions { display:flex; gap:5px; margin-bottom:8px; }
+.evaluation-date-directions button { flex:1; font-size:10px; padding:6px; }
+.evaluation-date-menu .meta-period-trigger { width:100%; }
+.effectiveness-grid .evaluation-date-trigger { display:block; max-width:100%; margin-top:3px; }
+.effectiveness-grid .financial-evaluation .inventory-cac-state { font-size:9px; line-height:1.3; white-space:normal; overflow-wrap:anywhere; }

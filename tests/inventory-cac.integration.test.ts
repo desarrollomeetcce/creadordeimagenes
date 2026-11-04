@@ -148,6 +148,30 @@ test("CAC 14 days, country/source separation, selectable detail, new thresholds 
       cat.rows.find((r) => r.country === "PE")?.cac?.budget.assessment.status,
       "SEVERE",
     );
+    for (const [since, until] of [[date(6), today], [older, today], [older, older]]) {
+      const sheetStatus = await financialCatalogStatus(owner, { tableId: table.id, since, until });
+      const inventoryStatus = await inventoryActivationReport(owner, { listId: list.id, tableIds: table.id, byCountry: "true", since, until });
+      for (const country of ["PE", "EC"]) {
+        const actual = sheetStatus.rows.find(r => r.country === country)?.cac;
+        const expected = inventoryStatus.rows.find(r => r.country === country)?.cac;
+        assert.deepEqual(actual, expected);
+        assert.equal(actual?.since, since);
+        assert.equal(actual?.until, until);
+      }
+    }
+    const fromActivation = await financialCatalogStatus(owner, { tableId: table.id, fromActivation: "true" });
+    assert(fromActivation.rows.every(r => r.cac?.until === today));
+    const inventoryFromActivation = await inventoryActivationReport(owner, { listId: list.id, tableIds: table.id, byCountry: "true", fromActivation: "true" });
+    for (const row of fromActivation.rows) assert.deepEqual(row.cac, inventoryFromActivation.rows.find(r => r.country === row.country)?.cac);
+    assert.equal(fromActivation.rows.find(r => r.country === "PE")?.cac?.since, older);
+    const providerStart = date(20);
+    await db.metaAdObject.update({ where: { id: object.id }, data: { createdTime: new Date(date(21) + "T12:00:00Z"), scheduledStart: new Date(providerStart + "T12:00:00Z") } });
+    const providerPeriod = await financialCatalogStatus(owner, { tableId: table.id, fromActivation: "true" });
+    assert.equal(providerPeriod.rows.find(r => r.country === "PE")?.cac?.since, providerStart);
+    assert.equal(providerPeriod.rows.find(r => r.country === "EC")?.cac?.since, today);
+    await db.metaAdObject.update({ where: { id: object.id }, data: { createdTime: null, scheduledStart: null } });
+    await assert.rejects(financialCatalogStatus(owner, { tableId: table.id, since: today }), /ambas fechas/);
+    await assert.rejects(financialCatalogStatus(owner, { tableId: table.id, since: today, until: older }), /inválido/);
     const sheet = await sheetAnalysis(owner, {
       tableId: table.id,
       since: today,

@@ -62,6 +62,7 @@ import { SheetMultiFilter } from "./sheet-multi-filter";
 import { useInventoryPinnedColumns } from "./use-inventory-pinned-columns";
 import { InventoryRowPinIcon } from "./inventory-country-evaluation";
 import { InventoryCacStatus as InventoryStatusLabel } from "./inventory-cac-status";
+import { EvaluationOrderControl, useEvaluationPeriod, evaluationRange } from "./evaluation-date-control";
 import type { FinancialCatalogStatus } from "../../lib/meta-ads/inventory-sheet-activation";
 import { InventoryMultiSelect } from "./inventory-multi-select";
 import { useWorkbookPreference } from "./use-workbook-preference";
@@ -342,6 +343,9 @@ export function MetaEffectiveness({
   const grid = useInventoryPinnedColumns(
     metadataPins.filter((k) => metadataVisible.includes(k)),
   );
+  const [evaluationPeriod, setEvaluationPeriod] = useEvaluationPeriod(tableId);
+  const evaluationDates = evaluationRange(evaluationPeriod);
+  const evaluationStamp = JSON.stringify(evaluationDates);
   const [catalogStatus, setCatalogStatus] =
     useState<FinancialCatalogStatus | null>(null);
   const [catalogStatusError, setCatalogStatusError] = useState("");
@@ -350,12 +354,10 @@ export function MetaEffectiveness({
       new Map(
         catalogStatus?.rows.map((r) => [
           JSON.stringify([r.aliasId, r.country]),
-          (view === "automatic"
-            ? r.cac?.meta.assessment
-            : r.cac?.budget.assessment) ?? r.assessment,
+          r.cac?.meta.assessment ?? { status: "PENDING" as const, usage: null, value: null, limit: 35 },
         ]) ?? [],
       ),
-    [catalogStatus, view],
+    [catalogStatus],
   );
   const metadataControls = (key: string, label: string) => (
     <span className="financial-column-tools">
@@ -423,7 +425,7 @@ export function MetaEffectiveness({
     if (data)
       void api(
         "meta-ads/effectiveness/catalog-status?" +
-          new URLSearchParams({ tableId }),
+          new URLSearchParams({ tableId, ...Object.fromEntries(Object.entries(evaluationDates).map(([key, value]) => [key, String(value)])) }),
       )
         .then((result: FinancialCatalogStatus) => {
           if (alive) setCatalogStatus(result);
@@ -434,7 +436,7 @@ export function MetaEffectiveness({
     return () => {
       alive = false;
     };
-  }, [tableId, data]);
+  }, [tableId, data, evaluationStamp]);
   const [historyPeriod, setHistoryPeriod] = useState<null | {
     name: string;
     heading?: string;
@@ -2385,6 +2387,8 @@ export function MetaEffectiveness({
                     >
                       Estado{arrow({ kind: "evaluation", direction: "desc" })}
                     </button>{" "}
+                    <EvaluationOrderControl period={evaluationPeriod} onChange={setEvaluationPeriod}
+                      onOrder={(criticalFirst) => setSheetSort({ kind: "evaluation", direction: criticalFirst ? "desc" : "asc" })} />
                     {metadataControls("evaluation", "Estado")}
                     <SheetColumnResizer
                       label="Estado"
@@ -2975,7 +2979,7 @@ export function MetaEffectiveness({
                           hidden={!metadataVisible.includes("evaluation")}
                           title={
                             catalogStatusError ||
-                            `CAC ${view === "automatic" ? "Meta original" : "por presupuesto"} de los últimos 14 días: hoy y los 13 anteriores.`
+                            `CAC con gasto Meta. ${evaluationDates.since ?? "Desde la activación"} — ${evaluationDates.until ?? today}.`
                           }
                         >
                           <InventoryStatusLabel
@@ -2995,7 +2999,7 @@ export function MetaEffectiveness({
                                 statusLookup
                                   .get(JSON.stringify([r.aliasId, r.country]))!
                                   .usage!.toFixed(2)}{" "}
-                            · 14 días
+                            · {evaluationDates.since ?? "Activación"} — {evaluationDates.until ?? today}
                           </small>
                         </td>
                         {days.flatMap((d) => {

@@ -1132,6 +1132,21 @@ async function activationReport(
         },
       },
     });
+    // Only an explicit lifetime evaluation needs provider start metadata; one bounded batch.
+    const providerStarts = q.fromActivation && aliases.length ? await tx.metaAdObject.findMany({
+      where: { aliasId: { in: aliases.map(a => a.id) }, level: "campaign" },
+      select: { aliasId: true, aliasCountry: true, createdTime: true, scheduledStart: true },
+    }) : [];
+    const startsByCountry = new Map<string, string>();
+    const startsByAlias = new Map<string, string>();
+    for (const campaign of providerStarts) {
+      const start = campaign.scheduledStart ?? campaign.createdTime;
+      if (!start || start > new Date()) continue;
+      const key = JSON.stringify([campaign.aliasId, campaign.aliasCountry]);
+      const day = limaDay(start), previous = startsByCountry.get(key);
+      if (!previous || day < previous) startsByCountry.set(key, day);
+      if (campaign.aliasId && (!startsByAlias.has(campaign.aliasId) || day < startsByAlias.get(campaign.aliasId)!)) startsByAlias.set(campaign.aliasId, day);
+    }
     const allowed = new Set([
       ...settings.sheets,
       ...(
@@ -1147,7 +1162,7 @@ async function activationReport(
       403,
     );
     const today = limaDay(new Date()),
-      floor = cacOnly ? cacWindow(today).since : q.fromActivation
+      floor = cacOnly && !q.fromActivation ? (q.since ?? cacWindow(today).since) : q.fromActivation
         ? "2004-01-01"
         : [
             new Date(Date.parse(today) - 365 * 86400000)
@@ -1178,11 +1193,12 @@ async function activationReport(
         )
         .filter((day) => day >= floor && day <= today)
         .sort();
-      const linkedFloor = cacOnly ? null : await recordedTableFloor(tx, tableId, today);
-      const sourceSince = cacOnly ? cacWindow(today).since :
+      const linkedFloor = cacOnly && !q.fromActivation ? null : await recordedTableFloor(tx, tableId, today);
+      const sourceSince = cacOnly && !q.fromActivation ? (q.since ?? cacWindow(today).since) :
         [
           ...(linkedFloor && linkedFloor >= floor ? [linkedFloor] : []),
           q.since ?? cacWindow(today).since,
+          ...tableAliases.flatMap(alias => startsByAlias.get(alias.id) ?? []),
           ...starts,
           ...[...registered.entries()]
             .filter(([key]) =>
@@ -1192,7 +1208,7 @@ async function activationReport(
             .filter((d) => d >= floor && d <= today),
         ].sort()[0] ?? today;
       // Payments can arrive after stopping. Only the next activation closes the sales window.
-      const sourceUntil = today;
+      const sourceUntil = cacOnly ? (q.until ?? today) : today;
       const source = await inventoryEffectivenessSource(
         actor,
         tableId,
@@ -1221,7 +1237,8 @@ async function activationReport(
               states.find((s) => s.country === r.country)?.revision ?? 0,
           }));
           const history: SheetInterval[] = [];
-          for (const row of cacOnly ? [] : rows) {
+          const firstKnownStarts = new Map<string, string>();
+          for (const row of cacOnly && !q.fromActivation ? [] : rows) {
             const state = states.find((s) => s.country === row.country),
               observed = reportingActivity(
                 row.days,
@@ -1248,6 +1265,7 @@ async function activationReport(
                     ...p,
                     through: undefined,
                   }));
+            if (observed.since) firstKnownStarts.set(row.country, observed.since);
             for (const period of ranges.slice(0, q.historyName ? 100 : 1)) {
               const since = period.since
                   ? limaDay(new Date(period.since))
@@ -1469,9 +1487,7 @@ async function activationReport(
                     row: rows[0],
                     ...(q.fromActivation
                       ? {
-                          since: current[0]?.since
-                            ? limaDay(new Date(current[0].since))
-                            : today,
+                          since: startsByCountry.get(JSON.stringify([alias.id, rows[0].country])) ?? firstKnownStarts.get(rows[0].country) ?? (current[0]?.since ? limaDay(new Date(current[0].since)) : today),
                           until: today,
                         }
                       : q.since && q.until
@@ -1499,7 +1515,7 @@ export async function inventoryActivationReport(actor: Actor, input: unknown) {
 }
 /** Aggregate-only read of aliases on the currently authorized financial table. */
 export async function financialCatalogStatus(actor: Actor, input: unknown) {
-  const q = z.object({ tableId: id }).strict().parse(input);
+  const q = z.object({ tableId: id, since: z.iso.date().optional(), until: z.iso.date().optional(), fromActivation: z.literal("true").optional() }).strict().parse(input);
   return db.$transaction(
     async (tx) => {
       ownerOnly(actor);
@@ -1534,7 +1550,7 @@ export async function financialCatalogStatus(actor: Actor, input: unknown) {
         if (!list) continue;
         const report = await activationReport(
           actor,
-          { listId, tableIds: q.tableId, byCountry: "true" },
+          { listId, tableIds: q.tableId, byCountry: "true", since: q.since, until: q.until, fromActivation: q.fromActivation },
           q.tableId,
           tx,
           true,

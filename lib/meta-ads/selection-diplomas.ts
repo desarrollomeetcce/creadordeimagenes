@@ -86,6 +86,11 @@ export function summarizeDiplomaPeriod(
     spend,
     complete && currency === "PEN",
     rules,
+    covered &&
+      !conflict &&
+      !metaPartial &&
+      dates.length === 1 &&
+      currency === "PEN",
   );
   const reason = !linked
     ? "Sin vincular"
@@ -126,7 +131,9 @@ export function summarizeDiplomaPeriod(
       complete && results !== null && results > 0
         ? (sales! / results) * 100
         : null,
-    provisional: complete && partial,
+    provisional:
+      (complete && partial) ||
+      (assessment.status !== "PENDING" && (sales === null || partial)),
     status: assessment.status,
     rulesCurrency: "PEN",
     rules,

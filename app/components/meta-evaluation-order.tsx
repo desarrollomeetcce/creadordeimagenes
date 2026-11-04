@@ -1,5 +1,5 @@
 "use client";
-import { useId, useRef, useState } from "react";
+import { useId, useRef, useState, type ReactNode } from "react";
 import {
   cacSeverityOrder,
   cacStatusNames,
@@ -13,7 +13,9 @@ export function MetaEvaluationOrder({
   onStatus,
   onOrder,
   onCac,
+  dateControl,
 }: {
+  dateControl?: ReactNode;
   sort: string;
   direction: string;
   status: string;
@@ -114,8 +116,9 @@ export function MetaEvaluationOrder({
         >
           Normal → Crítico
         </button>
+        {dateControl}
         <small>
-          Crítico · Grave · Revisar · Sin ventas · Normal. Datos pendientes al
+          Crítico · Grave · Revisar · Bajo gasto aún · Normal. Datos pendientes al
           final.
         </small>
       </div>

@@ -53,7 +53,6 @@ export function compareInventoryEvaluation(
     if (metric === "factor")
       return (p.cac?.meta?.assessment ?? { usage: null, status: "PENDING" })
         .usage;
-    if (p.usage === "NEVER") return null;
     return (
       (
         {
@@ -62,7 +61,6 @@ export function compareInventoryEvaluation(
           ALERT: 3,
           TESTING: 2,
           WITHIN: 1,
-          PENDING: 0,
         } as Record<string, number>
       )[
         (p.cac?.meta?.assessment ?? { usage: null, status: "PENDING" }).status

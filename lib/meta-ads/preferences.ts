@@ -83,7 +83,7 @@ export function parseMetaPreferences(raw: string | null): MetaPreferences {
       "cac",
       "evaluation",
     ],
-    analysisPeriod: ["today", "7", "15", "30", "lifetime"],
+    analysisPeriod: ["today", "7", "14", "15", "30", "lifetime"],
     evaluationStatus: [
       "",
       "WITHIN",

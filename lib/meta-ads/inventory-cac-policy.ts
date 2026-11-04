@@ -15,7 +15,7 @@ export const cacStatusNames = {
   ALERT: "Revisar",
   SEVERE: "Grave",
   CRITICAL: "Crítico",
-  TESTING: "Sin ventas",
+  TESTING: "Bajo gasto aún",
   PENDING: "Datos pendientes",
 };
 export type CacStatus = keyof typeof cacStatusNames;
@@ -61,12 +61,14 @@ export function cacAssessment(
     (sales === null || sales === 0) &&
     amount !== null &&
     Number.isFinite(amount) &&
-    amount >= rules.zero
+    amount >= 0
       ? amount >= rules.critical
         ? "CRITICAL"
         : amount >= rules.severe
           ? "SEVERE"
-          : "ALERT"
+          : amount >= rules.zero
+            ? "ALERT"
+            : "TESTING"
       : null;
   const status: CacStatus =
     noSalesRisk ??

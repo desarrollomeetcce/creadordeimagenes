@@ -258,7 +258,7 @@ export function MetaAnalysisPeriod({
         <form
           onSubmit={(e) => {
             e.preventDefault();
-            if (["today", "7", "15", "30", "lifetime"].includes(preset))
+            if (["today", "7", "14", "15", "30", "lifetime"].includes(preset))
               onPreset(preset, [start, end]);
             else onRange(start, end);
             setOpen(false);

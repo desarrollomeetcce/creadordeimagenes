@@ -1,4 +1,5 @@
 "use client";
+import { EvaluationOrderControl, useEvaluationPeriod, evaluationRange } from "./evaluation-date-control";
 import { groupUsageStatus } from "../../lib/meta-ads/inventory-group-usage-policy";
 import {InventoryDiplomaUnification} from "./inventory-diploma-unification";
 import { InventoryCountryCorrection } from "./inventory-country-correction";
@@ -466,10 +467,12 @@ export function InventoryCatalog({
   const hasCountryColumns = countryCodes.some(
     (id) => visibleCountryMetrics(id).length > 0,
   );
+  const [evaluationPeriod, setEvaluationPeriod] = useEvaluationPeriod(listId);
   const countryEvaluation = useInventoryCountryEvaluation(
     listId,
     hasCountryColumns ? countryCodes : [],
     countryReload,
+    evaluationRange(evaluationPeriod),
   );
   const [topPreference, setTopPreference] = useWorkbookPreference<string>(
     listId,
@@ -1171,8 +1174,7 @@ export function InventoryCatalog({
   } else sections.push(...baseSections);
   if (activeCountrySort) {
     const { country, metric, ascending } = activeCountrySort;
-    const ordered = [...visible].sort(
-      (a, b) =>
+    const compare = (a: (typeof visible)[number], b: (typeof visible)[number]) =>
         compareInventoryEvaluation(
           countryEvaluation.lookup.get(
             JSON.stringify([categoryKey(a.name), country]),
@@ -1182,8 +1184,11 @@ export function InventoryCatalog({
           ),
           metric,
           ascending,
-        ) || a.name.localeCompare(b.name, "es"),
-    );
+        ) || a.name.localeCompare(b.name, "es");
+    if (topSheet) {
+      for (const [, section] of sections) if (section.top) section.groups = [...section.groups].sort(compare);
+    } else {
+    const ordered = [...visible].sort(compare);
     sections.splice(0, sections.length, [
       "country-sort",
       {
@@ -1197,6 +1202,7 @@ export function InventoryCatalog({
         accent: "blue",
       },
     ]);
+    }
   }
   const bandCategorySelector = (section: {
     title: string;
@@ -1776,15 +1782,14 @@ export function InventoryCatalog({
       setBusy(false);
     }
   };
+  const fullDetailPoint = fullDetail ? countryEvaluation.lookup.get(JSON.stringify([categoryKey(fullDetail.name), fullDetail.tableId + ":" + fullDetail.country])) : undefined;
   const fullDetailContent = fullDetail && (
     <EffectivenessHistory
       key={fullDetail.aliasId + ":" + fullDetail.country}
       {...fullDetail}
       autoOpen
-      initialSince={new Date(Date.parse(limaToday()) - 10 * 86400000)
-        .toISOString()
-        .slice(0, 10)}
-      initialUntil={limaToday()}
+      initialSince={fullDetailPoint?.cac?.since ?? evaluationRange(evaluationPeriod).since ?? limaToday()}
+      initialUntil={fullDetailPoint?.cac?.until ?? evaluationRange(evaluationPeriod).until ?? limaToday()}
       onPeriod={() => {}}
       onClose={() => setFullDetail(null)}
     />
@@ -2197,7 +2202,7 @@ export function InventoryCatalog({
           />
           <small>
             {hasCountryColumns
-              ? "CAC y estado: gasto de Meta ÷ ventas registradas · últimos 14 días. * Datos parciales."
+              ? `CAC y estado: gasto de Meta ÷ ventas registradas · ${evaluationRange(evaluationPeriod).since ?? "Desde la activación"} — ${evaluationRange(evaluationPeriod).until ?? limaToday()}. * Datos parciales.`
               : "Incluye categorías principales y secundarias."}
           </small>
           <div
@@ -2863,6 +2868,8 @@ export function InventoryCatalog({
                           }
                         />
                         {countrySortButton(country, metric)}
+                        {metric.key === "status" && <EvaluationOrderControl period={evaluationPeriod} onChange={setEvaluationPeriod}
+                          onOrder={(criticalFirst) => setCountrySort({ country, metric: "status", ascending: !criticalFirst })} />}
                         {metric.key === "activation" && (
                           <span className="inventory-sheet-bulk-controls">
                             <button

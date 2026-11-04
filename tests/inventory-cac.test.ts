@@ -177,7 +177,17 @@ test("zero-sales risk escalates with verified spend without inventing CAC or sal
     assert.equal(cacAssessment(sales, 25, false, undefined, true).status, "ALERT");
     assert.equal(cacAssessment(sales, 82.77, false, undefined, true).value, null);
   }
-  assert.equal(cacAssessment(null, 24.99, false, undefined, true).status, "PENDING");
+  assert.equal(cacAssessment(null, 24.99, false, undefined, true).status, "TESTING");
   assert.equal(cacAssessment(null, 82.77, false).status, "PENDING");
   assert.equal(cacAssessment(0, 82.77, true).status, "CRITICAL");
+});
+
+test("known Meta spend below zero-sales allowance is low spend, with no fabricated CAC", () => {
+  for (const sales of [null, 0]) for (const spend of [0, 5, 24.99]) {
+    const result = cacAssessment(sales, spend, false, undefined, true);
+    assert.equal(result.status, "TESTING");
+    assert.equal(result.value, null);
+  }
+  assert.equal(cacAssessment(0, null, false, undefined, true).status, "PENDING");
+  assert.equal(cacAssessment(null, 10, false).status, "PENDING");
 });

@@ -15,11 +15,14 @@ export function campaignEvaluationWindow<T extends Range>(
   today: string,
 ) {
   const chosen = periods[selected];
+  // Explicit calendar ranges (including historical and lifetime) must be respected.
   if (
-    selected !== "lifetime" &&
+    selected !== "today" &&
     chosen &&
-    (Date.parse(chosen.until) - Date.parse(chosen.since)) / 86400000 + 1 >= 7 &&
-    isRecentCampaignPeriod(chosen, today)
+    validSalesDate(chosen.since) &&
+    validSalesDate(chosen.until) &&
+    chosen.since <= chosen.until &&
+    chosen.until <= today
   )
     return { key: selected, period: chosen, label: "Por el período" };
   const recent = periods["14"];

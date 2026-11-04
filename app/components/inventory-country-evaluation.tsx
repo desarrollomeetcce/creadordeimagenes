@@ -267,7 +267,7 @@ export function InventoryCountryCells({
               hidden={hiddenColumns.includes(`country:${tableId}:factor`)}
               title={
                 point
-                  ? `Gasto Meta: S/ ${point.cac?.meta.penAmount ?? "—"} · Ventas: ${point.cac?.sales ?? point.sales ?? "—"} · Límite: S/ ${assessment?.limit ?? "—"}. Últimos 14 días: hoy y 13 anteriores.`
+                  ? `Gasto Meta: S/ ${point.cac?.meta.penAmount ?? "—"} · Ventas: ${point.cac?.sales ?? point.sales ?? "—"} · Límite: S/ ${assessment?.limit ?? "—"}. ${point.cac?.since ?? "—"} — ${point.cac?.until ?? "—"}.`
                   : "Sin datos de evaluación"
               }
             >

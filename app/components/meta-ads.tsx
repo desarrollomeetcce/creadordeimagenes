@@ -6,6 +6,7 @@ import {
 } from "../../lib/meta-ads/display-format";
 import { joinPendingMetaRead } from "../../lib/meta-ads/pending-read";
 import { campaignEvaluationWindow } from "../../lib/meta-ads/campaign-evaluation-window";
+import { EvaluationDateControl } from "./evaluation-date-control";
 import { MetaEvaluationOrder } from "./meta-evaluation-order";
 import {
   FinancialTableWindow,
@@ -1851,6 +1852,9 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
           setDirection(value);
         })
       }
+      dateControl={<EvaluationDateControl
+        period={{ value: calendar ? "custom" : analysisPeriod === "today" ? "14" : analysisPeriod, since, until }}
+        onChange={(period) => { setAnalysisPeriod(period.value); setCalendar(period.value === "custom" ? "custom" : ""); setSince(period.since); setUntil(period.until); setPage(1); }} />}
       onCac={() => orderByCost("cac")}
     />
   );

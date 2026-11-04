@@ -68,6 +68,14 @@ test("Diploma grouping preserves zero, missing sales and conflicts without choos
     summarizeDiplomaPeriod([{ o: o("1"), p: p(null, 100) }]).sales,
     null,
   );
+  for (const sales of [null, 0]) {
+    const risk = summarizeDiplomaPeriod([{ o: o("1"), p: p(sales, 82.77) }]);
+    assert.equal(risk.status, "CRITICAL");
+    assert.equal(risk.cac, null);
+    assert.equal(risk.sales, sales);
+    assert.equal(risk.provisional, sales === null);
+    assert.equal(summarizeDiplomaPeriod([{ o: o("1"), p: p(sales, 82.77, 2) }]).status, "PENDING");
+  }
   const r = summarizeDiplomaPeriod([
     { o: o("1"), p: p(3, 30, 2) },
     { o: o("2"), p: p(4, 60, 2) },
