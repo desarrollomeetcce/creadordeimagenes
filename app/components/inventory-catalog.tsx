@@ -1835,6 +1835,7 @@ export function InventoryCatalog({
           }
           directory={trialDirectory}
           onGroupsChanged={async () => { await Promise.all([reloadGroups(), reloadCategories(), onChanged()]); }}
+          onUsageBatchChange={updates=>setTrialDirectory(previous=>previous ? {...previous,usage:{...previous.usage,...updates}} : previous)}
           onUsageChange={(key,cell)=>setTrialDirectory(previous=>previous ? {...previous,usage:{...previous.usage,[key]:cell}} : previous)}
           group={trialGroups.find((g) => g.id === (groupEditor.id ?? lastGroupId))}
           initialNames={groupEditor.names}

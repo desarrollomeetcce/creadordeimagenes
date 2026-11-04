@@ -14,6 +14,13 @@ import {
   useState,
   type ReactNode,
 } from "react";
+import { useWorkbookPreference } from "./use-workbook-preference";
+import {
+  orderedGroupCountries,
+  moveGroupCountry,
+} from "../../lib/meta-ads/inventory-group-country-order";
+import { InventoryGroupUsageBatch } from "./inventory-group-usage-batch";
+import { groupCountryCampaignLabels } from "../../lib/meta-ads/inventory-group-country-state";
 import { groupUsageStatus } from "../../lib/meta-ads/inventory-group-usage-policy";
 import { financialRequest as api } from "./financial-request";
 import { useGroupDraftState } from "./use-group-draft-state";
@@ -43,6 +50,7 @@ export function InventoryGroupEditor({
   onSaved,
   onGroupsChanged,
   onUsageChange,
+  onUsageBatchChange,
   topContent,
   initialTab,
   onChooseGroup,
@@ -63,6 +71,7 @@ export function InventoryGroupEditor({
   onSaved: (id: string) => Promise<void>;
   onGroupsChanged?: () => Promise<void>;
   onUsageChange?: (key: string, cell: GroupUsageCell) => void;
+  onUsageBatchChange?: (updates: Record<string, GroupUsageCell>) => void;
 }) {
   const dialog = useRef<HTMLDialogElement>(null);
   const userId = useContext(CurrentUserId);
@@ -122,7 +131,32 @@ export function InventoryGroupEditor({
   const { widths, resize, warning } = useSheetWidths(
     "inventory-group-picker:" + directory.listId,
   );
-  const countryOptions = directory.countries;
+  const [countryOrder, setCountryOrder] = useWorkbookPreference<string[]>(
+    directory.listId,
+    "group-country-order",
+    [],
+  );
+  const countryOptions = useMemo(
+    () => orderedGroupCountries(directory.countries, countryOrder),
+    [directory.countries, countryOrder],
+  );
+  const draggedCountry = useRef<string | null>(null);
+  function moveCountry(from: string, to: string) {
+    if (from !== to)
+      setCountryOrder(
+        moveGroupCountry(
+          countryOptions.map((country) => country.code),
+          from,
+          to,
+        ),
+      );
+  }
+  function clearCountryDrag() {
+    draggedCountry.current = null;
+    dialog.current
+      ?.querySelectorAll<HTMLElement>("[data-country-dragover]")
+      .forEach((element) => delete element.dataset.countryDragover);
+  }
   const [usage, setUsage] = useState(directory.usage);
   useEffect(() => {
     setUsage(directory.usage);
@@ -134,6 +168,10 @@ export function InventoryGroupEditor({
     }, 60000);
     return () => clearInterval(timer);
   }, []);
+  const [usageBatch, setUsageBatch] = useState<{
+    mode: "USED" | "UNUSED";
+    items: TrialItem[];
+  } | null>(null);
   const [usageEditing, setUsageEditing] = useState<{
     item: TrialItem;
     country: string;
@@ -1137,6 +1175,24 @@ export function InventoryGroupEditor({
           onClose={() => setCategoryPicker(null)}
         />
       )}
+      {usageBatch && (
+        <InventoryGroupUsageBatch
+          listId={directory.listId}
+          items={usageBatch.items}
+          countries={countryOptions}
+          usage={usage}
+          mode={usageBatch.mode}
+          onClose={() => setUsageBatch(null)}
+          onApplied={(updates) => {
+            setUsage((previous) => ({ ...previous, ...updates }));
+            onUsageBatchChange?.(updates);
+            setUsageBatch(null);
+            setNotice(
+              "Marca de uso actualizada. La activación y las campañas se conservan.",
+            );
+          }}
+        />
+      )}
       {usageEditing && (
         <InventoryGroupUsageDialog
           item={usageEditing.item.name}
@@ -1545,6 +1601,36 @@ export function InventoryGroupEditor({
                           Quitar del grupo
                         </button>
                       )}
+                      {editing &&
+                        (
+                          [
+                            ["USED", "Marcar usado"],
+                            ["UNUSED", "Marcar sin usar"],
+                          ] as const
+                        ).map(([mode, label]) => (
+                          <button
+                            type="button"
+                            key={mode}
+                            disabled={
+                              busy ||
+                              externalBusy ||
+                              !directory.canEdit ||
+                              selectedIds.length > 1500 ||
+                              !countryOptions.length
+                            }
+                            onClick={() =>
+                              setUsageBatch({
+                                mode,
+                                items: selectedIds.flatMap((id) => {
+                                  const item = catalogById.get(id);
+                                  return item ? [item] : [];
+                                }),
+                              })
+                            }
+                          >
+                            {label}
+                          </button>
+                        ))}
                       {onGroupsChanged && !editing && (
                         <button
                           type="button"
@@ -1690,9 +1776,86 @@ export function InventoryGroupEditor({
                         )}
                       </th>
                       {columnSpecs.slice(1).map((c, index) => (
-                        <th key={c.key}>
+                        <th
+                          key={c.key}
+                          data-country-code={
+                            c.key.startsWith("usage:")
+                              ? c.key.slice(6)
+                              : undefined
+                          }
+                          draggable={c.key.startsWith("usage:") || undefined}
+                          onDragStart={(event) => {
+                            if (
+                              !c.key.startsWith("usage:") ||
+                              (event.target as HTMLElement).closest(
+                                "button,input,select",
+                              )
+                            ) {
+                              event.preventDefault();
+                              return;
+                            }
+                            draggedCountry.current = c.key.slice(6);
+                            event.dataTransfer.effectAllowed = "move";
+                            event.dataTransfer.setData(
+                              "text/x-group-country",
+                              draggedCountry.current,
+                            );
+                          }}
+                          onDragOver={(event) => {
+                            if (
+                              draggedCountry.current &&
+                              c.key.startsWith("usage:")
+                            ) {
+                              event.preventDefault();
+                              event.dataTransfer.dropEffect = "move";
+                              event.currentTarget.dataset.countryDragover =
+                                "true";
+                            }
+                          }}
+                          onDragLeave={(event) => {
+                            delete event.currentTarget.dataset.countryDragover;
+                          }}
+                          onDrop={(event) => {
+                            if (
+                              draggedCountry.current &&
+                              c.key.startsWith("usage:")
+                            ) {
+                              event.preventDefault();
+                              moveCountry(
+                                draggedCountry.current,
+                                c.key.slice(6),
+                              );
+                              clearCountryDrag();
+                            }
+                          }}
+                          onDragEnd={clearCountryDrag}
+                        >
                           {c.key.startsWith("usage:") ? (
-                            <abbr title={c.label}>
+                            <abbr
+                              title={`${c.label} · Arrastra para cambiar de posición. Alt + flechas también permite moverlo.`}
+                              role="button"
+                              tabIndex={0}
+                              aria-label={`Mover país ${c.label}`}
+                              onKeyDown={(event) => {
+                                if (
+                                  event.altKey &&
+                                  (event.key === "ArrowLeft" ||
+                                    event.key === "ArrowRight")
+                                ) {
+                                  event.preventDefault();
+                                  const code = c.key.slice(6),
+                                    index = countryOptions.findIndex(
+                                      (country) => country.code === code,
+                                    ),
+                                    target =
+                                      countryOptions[
+                                        index +
+                                          (event.key === "ArrowRight" ? 1 : -1)
+                                      ];
+                                  if (target) moveCountry(code, target.code);
+                                }
+                              }}
+                            >
                               {c.key === "usage:SV"
                                 ? "SAL"
                                 : c.label.slice(0, 3).toLocaleUpperCase("es")}
@@ -1856,7 +2019,14 @@ export function InventoryGroupEditor({
                             </td>
                             {countryOptions.map((c) => {
                               const cell = usageCell(i, c.code),
-                                status = groupUsageStatus(cell, clock);
+                                status = groupUsageStatus(cell, clock),
+                                campaignState =
+                                  directory.campaignStates?.[
+                                    JSON.stringify([
+                                      categoryKey(i.name),
+                                      c.code,
+                                    ])
+                                  ] ?? "NO_RECORD";
                               const label =
                                 status === "USED" ? "✓ Usado" : "— Sin usar";
                               return (
@@ -1911,6 +2081,20 @@ export function InventoryGroupEditor({
                                   >
                                     Detalle
                                   </button>
+                                  {editing && (
+                                    <span
+                                      className="inventory-group-country-campaign-state"
+                                      data-campaign-state={campaignState}
+                                      aria-label={`Estado de ${i.name} en ${c.name}: ${groupCountryCampaignLabels[campaignState]}`}
+                                      title={`${groupCountryCampaignLabels[campaignState]} · ${i.name} · ${c.name}${campaignState === "MIXED" ? ". Hay registros con estados diferentes; consulta Detalle." : ""}`}
+                                    >
+                                      {
+                                        groupCountryCampaignLabels[
+                                          campaignState
+                                        ]
+                                      }
+                                    </span>
+                                  )}
                                 </td>
                               );
                             })}

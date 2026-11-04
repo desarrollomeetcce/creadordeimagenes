@@ -6343,3 +6343,35 @@ test("plain random group additions include uncategorized diplomas and multiple d
  assert.deepEqual(randomInventoryAdditions([...items,items[2]],10,["a","b"],()=>0.999).map(i=>i.id),["c"]);
  assert.equal(randomInventoryAdditions(items,2).length,2);assert.equal(JSON.stringify(items),original);
 });
+
+
+test("group country campaign label follows operational task/state, preserving absence and conflicting records", async () => {
+ const {groupCountryCampaignState:state,groupCountryCampaignLabels:labels}=await import("../lib/meta-ads/inventory-group-country-state");
+ assert.equal(state([{active:true,task:"NONE"}]),"ACTIVE");assert.equal(state([{active:false,task:"NONE"}]),"INACTIVE");
+ assert.equal(state([{active:false,task:"CREATE"}]),"CREATE");assert.equal(state([{active:true,task:"STOP"}]),"STOP");
+ assert.equal(state([]),"NO_RECORD");assert.equal(state([{active:null,task:"NONE"}]),"NO_RECORD");
+ assert.equal(state([{active:null,task:"CREATE"}]),"CREATE");
+ assert.equal(state([{active:true,task:"NONE"},{active:true,task:"NONE"}]),"ACTIVE");
+ assert.equal(state([{active:true,task:"NONE"},{active:false,task:"NONE"}]),"MIXED");
+ assert.equal(labels.STOP,"Por desactivar");assert.equal(labels.NO_RECORD,"Sin registro");
+});
+
+
+test("bulk usage revision is order independent and checks only selected diploma-country manual versions", async () => {
+ const {usageBatchRevision,usageBatchRevisionPayload}=await import("../lib/meta-ads/inventory-group-usage-batch-policy");
+ const items=[{name:"B"},{name:"A"}], key=JSON.stringify(["a","PE"]), usage={[key]:{revision:"version"},[JSON.stringify(["outside","BO"])]:{revision:"other"}};
+ const first=await usageBatchRevision(items,["PE","EC"],usage);assert.match(first,/^[a-f0-9]{64}$/);
+ assert.equal(first,await usageBatchRevision([...items].reverse(),["EC","PE"],usage));
+ assert.equal(first,await usageBatchRevision(items,["PE","EC"],{...usage,[JSON.stringify(["outside","BO"])]:{revision:"new"}}));
+ assert.notEqual(first,await usageBatchRevision(items,["PE","EC"],{...usage,[key]:{revision:"new"}}));
+ assert.equal(usageBatchRevisionPayload(items,["PE"],{}),usageBatchRevisionPayload([...items,items[0]],["PE","PE"],{}));
+});
+test("group country column order keeps valid saved choices and moves adjacent or distant countries without changing originals", async () => {
+ const {orderedGroupCountries,moveGroupCountry}=await import("../lib/meta-ads/inventory-group-country-order");
+ const countries=[{code:"HN"},{code:"MX"},{code:"PY"},{code:"PE"}],before=JSON.stringify(countries);
+ assert.deepEqual(orderedGroupCountries(countries,["PY","XX","HN","PY"]).map(c=>c.code),["PY","HN","MX","PE"]);
+ assert.deepEqual(orderedGroupCountries(countries,null),countries);
+ assert.deepEqual(moveGroupCountry(countries.map(c=>c.code),"MX","PY"),["HN","PY","MX","PE"]);
+ assert.deepEqual(moveGroupCountry(countries.map(c=>c.code),"PE","HN"),["PE","HN","MX","PY"]);
+ assert.deepEqual(moveGroupCountry(["PE"],"XX","PE"),["PE"]);assert.equal(JSON.stringify(countries),before);
+});

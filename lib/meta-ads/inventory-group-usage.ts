@@ -1,3 +1,7 @@
+import {
+  groupCountryCampaignState,
+  type GroupCountryCampaignState,
+} from "./inventory-group-country-state";
 import type { Prisma } from "@prisma/client";
 import { activationSettings } from "./inventory-sheet-activation";
 import { inventorySheetCountries } from "./inventory-sheet-column-policy";
@@ -43,11 +47,12 @@ export async function inventoryGroupUsage(
   const aliases = await tx.metaAlias.findMany({
     where: { inventorySheetId: listId },
     select: {
+      id: true,
       name: true,
       tableId: true,
       effectivenessRows: {
         where: { legacy: false },
-        select: { country: true },
+        select: { country: true, hidden: true },
       },
       effectivenessStates: {
         select: {
@@ -76,22 +81,22 @@ export async function inventoryGroupUsage(
     tables.map((t) => t.id),
   );
   // Only configured sheets define columns; foreign historical country values never add a country.
-  const codes = [
-    ...new Set(
-      tables.flatMap((t) =>
-        inventorySheetCountries(
-          {
-            ...t,
-            ...(identities.has(t.id)
-              ? { identityCountry: identities.get(t.id)! }
-              : {}),
-          },
-          settings.countries[t.id] ?? [],
-          [],
-        ),
+  const countryCodesByTable = new Map(
+    tables.map((t) => [
+      t.id,
+      inventorySheetCountries(
+        {
+          ...t,
+          ...(identities.has(t.id)
+            ? { identityCountry: identities.get(t.id)! }
+            : {}),
+        },
+        settings.countries[t.id] ?? [],
+        [],
       ),
-    ),
-  ];
+    ]),
+  );
+  const codes = [...new Set([...countryCodesByTable.values()].flat())];
   const countries = codes
     .map((code) => ({ code, name: countryName(code) }))
     .sort((a, b) => a.name.localeCompare(b.name, "es"));
@@ -109,6 +114,59 @@ export async function inventoryGroupUsage(
       if (!a.effectivenessStates.some((s) => s.country === row.country))
         uncertain.add(groupUsageKey(a.name, row.country));
   }
+  const controlsByAlias = new Map<string, string[]>();
+  for (const key of Object.keys(settings.rows)) {
+    const separator = key.lastIndexOf("|"),
+      aliasId = key.slice(0, separator),
+      country = key.slice(separator + 1);
+    if (separator > 0)
+      controlsByAlias.set(aliasId, [
+        ...(controlsByAlias.get(aliasId) ?? []),
+        country,
+      ]);
+  }
+  const observations = new Map<
+    string,
+    { active: boolean | null; task: "NONE" | "CREATE" | "STOP" }[]
+  >();
+  for (const alias of aliases) {
+    const allowed = new Set(countryCodesByTable.get(alias.tableId) ?? []);
+    const ownStates = new Map(
+      alias.effectivenessStates.map((state) => [state.country, state]),
+    );
+    const rowCountries = new Set(
+      alias.effectivenessRows.map((row) => row.country),
+    );
+    for (const country of new Set([
+      ...ownStates.keys(),
+      ...rowCountries,
+      ...(controlsByAlias.get(alias.id) ?? []),
+    ])) {
+      if (!allowed.has(country)) continue;
+      const rawTask = settings.rows[alias.id + "|" + country]?.campaignTask;
+      const task =
+        rawTask === "CREATE" || rawTask === "STOP" ? rawTask : "NONE";
+      const active =
+        ownStates.get(country)?.active ??
+        (rowCountries.has(country)
+          ? !alias.effectivenessRows.some(
+              (row) => row.country === country && row.hidden,
+            )
+          : null);
+      const key = groupUsageKey(alias.name, country);
+      observations.set(key, [
+        ...(observations.get(key) ?? []),
+        { active, task },
+      ]);
+    }
+  }
+  const campaignStates: Record<string, GroupCountryCampaignState> =
+    Object.fromEntries(
+      [...observations].map(([key, rows]) => [
+        key,
+        groupCountryCampaignState(rows),
+      ]),
+    );
   const overrides = groupUsageOverrides(list.config);
   const usage: Record<string, GroupUsageCell> = {};
   for (const key of new Set([
@@ -128,5 +186,5 @@ export async function inventoryGroupUsage(
       revision: overrides[key]?.revision ?? null,
     };
   }
-  return { countries, usage };
+  return { countries, usage, campaignStates };
 }

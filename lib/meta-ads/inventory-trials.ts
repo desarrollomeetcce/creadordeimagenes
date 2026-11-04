@@ -1,3 +1,4 @@
+import { usageBatchRevisionPayload } from "./inventory-group-usage-batch-policy";
 import { groupReplacementMatches } from "./inventory-group-replacement-policy";
 import {
   detachedInventoryAliases,
@@ -61,6 +62,16 @@ export const trialReportQuery = scope
   .strict();
 const edit = { listId: id, groupId: id, revision: z.number().int().positive() };
 export const trialChange = z.discriminatedUnion("action", [
+  z
+    .object({
+      action: z.literal("USAGE_BATCH"),
+      listId: id,
+      itemIds: z.array(id).min(1).max(1500),
+      countries: z.array(country).min(1).max(20),
+      mode: z.enum(["USED", "UNUSED"]),
+      expectedUsageRevision: z.string().regex(/^[a-f0-9]{64}$/),
+    })
+    .strict(),
   z
     .object({
       action: z.literal("USAGE"),
@@ -730,6 +741,90 @@ export async function saveInventoryTrial(actor: Actor, input: unknown) {
           },
         });
         return serialize(updated);
+      }
+      if (b.action === "USAGE_BATCH") {
+        demand(
+          new Set(b.itemIds).size === b.itemIds.length &&
+            new Set(b.countries).size === b.countries.length,
+          "No repitas diplomados ni países.",
+        );
+        const source = await catalog(tx, b.listId),
+          byId = new Map(source.map((item) => [item.id, item]));
+        const items = b.itemIds.map((itemId) => byId.get(itemId));
+        demand(
+          items.every(Boolean),
+          "Un diplomado ya no está disponible. Revisa la selección.",
+          409,
+        );
+        const chosen = items as NonNullable<(typeof items)[number]>[];
+        demand(
+          new Set(chosen.map((item) => categoryKey(item.name))).size ===
+            chosen.length,
+          "No repitas diplomados.",
+        );
+        const matrix = await inventoryGroupUsage(tx, b.listId),
+          allowed = new Set(matrix.countries.map((c) => c.code));
+        demand(
+          b.countries.every((code) => allowed.has(code)),
+          "Un país no pertenece a las hojas de este inventario.",
+          409,
+        );
+        const currentRevision = createHash("sha256")
+          .update(usageBatchRevisionPayload(chosen, b.countries, matrix.usage))
+          .digest("hex");
+        demand(
+          currentRevision === b.expectedUsageRevision,
+          "El uso cambió. Cierra este cuadro y revisa las marcas antes de continuar.",
+          409,
+        );
+        const list = await tx.metaEffectivenessSheet.findUniqueOrThrow({
+            where: { id: b.listId },
+            select: { config: true },
+          }),
+          overrides = groupUsageOverrides(list.config),
+          revision = randomUUID();
+        for (const item of chosen)
+          for (const code of b.countries)
+            overrides[groupUsageKey(item.name, code)] = {
+              mode: b.mode,
+              revision,
+            };
+        await tx.metaEffectivenessSheet.update({
+          where: { id: b.listId },
+          data: {
+            config: {
+              ...(list.config as Prisma.JsonObject),
+              inventoryGroupUsage: overrides,
+            },
+            revision: { increment: 1 },
+          },
+        });
+        const cells = chosen.length * b.countries.length;
+        await recordActivity(tx, {
+          data: {
+            actorId: actor.id,
+            action: "INVENTARIO_USO_MANUAL_LOTE",
+            resourceId: b.listId,
+            detail: {
+              itemIds: b.itemIds,
+              countries: b.countries,
+              mode: b.mode,
+              cells,
+            },
+          },
+        });
+        return {
+          id: b.listId,
+          revision: 0,
+          name: "",
+          createdAt: new Date().toISOString(),
+          members: [],
+          countries: [],
+          reserve: false,
+          cycles: [],
+          rules: { zero: 25, perSale: 50 },
+          usageBatchUpdate: { mode: b.mode, revision, cells },
+        };
       }
       if (b.action === "USAGE") {
         const source = await catalog(tx, b.listId);
