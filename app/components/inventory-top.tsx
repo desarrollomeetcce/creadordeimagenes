@@ -23,6 +23,14 @@ import { categoryKey } from "../../lib/meta-ads/category-paste";
 import { periodTableUrl } from "../../lib/meta-ads/period-table-link";
 import { limaToday } from "./date-range";
 import { matchesSearchWords } from "../../lib/search";
+import { InventoryReplacementGroupFilter } from "./inventory-replacement-group-filter";
+import {
+  groupReplacementCandidates,
+  replacementUsage,
+  replacementUsageLabel,
+  replacementUsageRank,
+  type ReplacementUsageFilter,
+} from "../../lib/meta-ads/inventory-replacement-groups";
 type Mode = "MANUAL" | "SAME" | "OTHER";
 const rank = (p: SheetPoint) =>
   p.campaignTasks.includes("STOP")
@@ -115,7 +123,11 @@ export function InventoryTop({
   const old = catalog.find(
     (i) => categoryKey(i.name) === categoryKey(replaceName),
   );
-  const options = catalog.filter(
+  const [replacementGroup, setReplacementGroup] = useState("");
+  const [replacementFilter, setReplacementFilter] =
+    useState<ReplacementUsageFilter>("ALL");
+  const country = column.split(":")[1] ?? "";
+  const allOptions = catalog.filter(
     (i) =>
       categoryKey(i.name) !== categoryKey(replaceName) &&
       !(
@@ -123,6 +135,13 @@ export function InventoryTop({
         point(i.name)?.activation === "MIXED" ||
         (point(i.name)?.campaignTasks.length ?? 0) > 0
       ),
+  );
+  const options = groupReplacementCandidates(
+    allOptions,
+    directory,
+    country,
+    replacementGroup,
+    replacementFilter,
   );
   const rows = catalog
     .map((item) => ({ item, point: point(item.name) }))
@@ -205,12 +224,24 @@ export function InventoryTop({
     );
   }
   function random(same: boolean) {
-    const pool = options.filter((i) =>
+    let pool = options.filter((i) =>
       same
         ? i.primaryIds.some((id) => old?.primaryIds.includes(id))
         : i.primaryIds.length > 0 &&
           !i.primaryIds.some((id) => old?.primaryIds.includes(id)),
     );
+    if (replacementGroup && pool.length) {
+      const best = Math.min(
+        ...pool.map((i) =>
+          replacementUsageRank(replacementUsage(directory, i.name, country)),
+        ),
+      );
+      pool = pool.filter(
+        (i) =>
+          replacementUsageRank(replacementUsage(directory, i.name, country)) ===
+          best,
+      );
+    }
     const next = pool[Math.floor(Math.random() * pool.length)];
     if (!next) {
       setError(
@@ -222,8 +253,7 @@ export function InventoryTop({
     setMode(same ? "SAME" : "OTHER");
     setCandidate(next.name);
   }
-  const disabled =
-    busy || !directory.canEdit || !evaluation.ready || evaluation.loading;
+  const disabled = busy || !directory.canEdit || !evaluation.ready;
   return (
     <div className="inventory-top-manager">
       <div className="inventory-top-controls">
@@ -332,8 +362,10 @@ export function InventoryTop({
       {!!batch.length && (
         <InventoryBatchReplacement
           key={JSON.stringify([column, batch])}
+          directory={directory}
+          country={country}
           origins={catalog.filter((i) => batch.includes(i.name))}
-          candidates={options.filter(
+          candidates={allOptions.filter(
             (i) => !batch.some((n) => categoryKey(n) === categoryKey(i.name)),
           )}
           busy={disabled}
@@ -341,7 +373,7 @@ export function InventoryTop({
           onInspect={setInspect}
           onConfirm={async (plan) => {
             const valid = plan.every(
-              (p) => point(p.from) && options.some((i) => i.name === p.to),
+              (p) => point(p.from) && allOptions.some((i) => i.name === p.to),
             );
             if (!valid) {
               setError("El Top cambió. Actualiza y revisa la propuesta.");
@@ -401,12 +433,33 @@ export function InventoryTop({
               ×
             </button>
           </header>
+          <InventoryReplacementGroupFilter
+            directory={directory}
+            country={country}
+            groupId={replacementGroup}
+            usage={replacementFilter}
+            busy={disabled}
+            onChange={(group, usage) => {
+              setReplacementGroup(group);
+              setReplacementFilter(usage);
+              setCandidate("");
+              setMode("MANUAL");
+            }}
+          />
           <div className="inventory-top-replacement-controls">
             <SheetSearchSelect
               label="Nuevo diplomado del Top"
               placeholder="Busca el reemplazo…"
               value={candidate}
-              options={options.map((i) => ({ value: i.name, label: i.name }))}
+              options={options.map((i) => ({
+                value: i.name,
+                label:
+                  i.name +
+                  " · " +
+                  replacementUsageLabel(
+                    replacementUsage(directory, i.name, country),
+                  ),
+              }))}
               disabled={disabled}
               onSelect={(name) => {
                 setCandidate(name);
@@ -414,6 +467,19 @@ export function InventoryTop({
                 setError("");
               }}
             />
+            {replacementGroup && (
+              <button
+                type="button"
+                disabled={disabled || !options.length}
+                onClick={() => {
+                  setCandidate(options[0].name);
+                  setMode("MANUAL");
+                  setError("");
+                }}
+              >
+                Proponer del grupo
+              </button>
+            )}
             <button
               type="button"
               disabled={disabled}
@@ -466,6 +532,12 @@ export function InventoryTop({
               Confirmar reemplazo
             </button>
           </div>
+          {!options.length && (
+            <small role="status">
+              No hay candidatos disponibles con este grupo y uso. Los activos o
+              pendientes de campaña en este país no se proponen.
+            </small>
+          )}
           {candidate && (
             <p className="inventory-top-preview">
               <span>{replaceName} · Por desactivar</span>

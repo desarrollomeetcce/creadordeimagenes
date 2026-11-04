@@ -16,9 +16,11 @@ import type {
 import { limaToday } from "./date-range";
 import { useSheetWidths } from "./use-sheet-widths";
 import { SheetColumnResizer } from "./sheet-column-resizer";
-import { useInventoryCountryEvaluation } from "./inventory-country-evaluation";
+import type {
+  GroupUsageCell,
+  GroupUsageMode,
+} from "../../lib/meta-ads/inventory-group-usage";
 import { InventoryDiplomaObservations } from "./inventory-diploma-observations";
-import { countryOptions } from "../../lib/meta-ads/countries";
 
 export function InventoryGroupEditor({
   directory,
@@ -26,6 +28,7 @@ export function InventoryGroupEditor({
   initialNames,
   onClose,
   onSaved,
+  onUsageChange,
   topContent,
   initialTab,
   onChooseGroup,
@@ -42,6 +45,7 @@ export function InventoryGroupEditor({
   initialNames: string[];
   onClose: () => void;
   onSaved: (id: string) => Promise<void>;
+  onUsageChange?: (key: string, cell: GroupUsageCell) => void;
 }) {
   const dialog = useRef<HTMLDialogElement>(null);
   const [managementTab, setManagementTab] = useState<"create" | "edit" | "top">(
@@ -55,21 +59,64 @@ export function InventoryGroupEditor({
   const { widths, resize, warning } = useSheetWidths(
     "inventory-group-picker:" + directory.listId,
   );
-  const evaluation = useInventoryCountryEvaluation(
-    directory.listId,
-    managementTab !== "top" && evaluationColumn ? [evaluationColumn] : [],
-    0,
-  );
+  const countryOptions = directory.countries;
+  const [usage, setUsage] = useState(directory.usage);
+  const [clock, setClock] = useState(Date.now);
+  useEffect(() => {
+    const timer = setInterval(() => {
+      if (!document.hidden) setClock(Date.now());
+    }, 60000);
+    return () => clearInterval(timer);
+  }, []);
+  const [usageEditing, setUsageEditing] = useState<{
+    item: TrialItem;
+    country: string;
+  } | null>(null);
   const columnSpecs = [
     { key: "name", label: "Diplomado", width: 300 },
-    { key: "primary", label: "Categoría principal", width: 120 },
-    { key: "secondary", label: "Categorías secundarias", width: 150 },
-    { key: "sheets", label: "Hojas", width: 100 },
-    { key: "sales", label: "Ventas", width: 60 },
-    { key: "days", label: "Días", width: 60 },
-    { key: "observations", label: "Observaciones", width: 135 },
-    { key: "selection", label: "Selección", width: 220 },
+    { key: "primary", label: "Categoría principal", width: 160 },
+    { key: "secondary", label: "Categorías secundarias", width: 170 },
+    { key: "group", label: "Grupo", width: 110 },
+    ...countryOptions.map((c) => ({
+      key: "usage:" + c.code,
+      label: c.name,
+      width: 130,
+    })),
+    { key: "selection", label: "Acciones", width: 240 },
   ];
+  const usageCell = (item: TrialItem, country: string): GroupUsageCell =>
+    usage[JSON.stringify([categoryKey(item.name), country])] ?? {
+      automatic: "NEVER",
+      activationHours: 0,
+      mode: "AUTO",
+      revision: null,
+    };
+  async function saveUsage(mode: GroupUsageMode) {
+    if (!usageEditing) return;
+    const { item, country } = usageEditing;
+    setBusy(true);
+    setError("");
+    try {
+      const result = await api("meta-ads/inventory/trials", "POST", {
+        action: "USAGE",
+        listId: directory.listId,
+        itemId: item.id,
+        country,
+        mode,
+        expectedRevision: usageCell(item, country).revision,
+      });
+      setUsage((previous) => ({
+        ...previous,
+        [result.usageUpdate.key]: result.usageUpdate.cell,
+      }));
+      onUsageChange?.(result.usageUpdate.key, result.usageUpdate.cell);
+      setUsageEditing(null);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "No se pudo guardar el uso.");
+    } finally {
+      setBusy(false);
+    }
+  }
   const handle = (index: number) => (
     <SheetColumnResizer
       label={columnSpecs[index].label}
@@ -91,21 +138,13 @@ export function InventoryGroupEditor({
         .map((i) => i.id),
     ]),
   ]);
-  const [countries, setCountries] = useState(
-    group?.countries ??
-      (directory.groups.length
-        ? [...new Set(directory.groups.flatMap((g) => g.countries))].slice(
-            0,
-            20,
-          )
-        : ["PE", "EC", "BO", "CO"]),
-  );
+  const countries = group?.countries ?? countryOptions.map((c) => c.code);
   const [query, setQuery] = useState(""),
     [primary, setPrimary] = useState<string[]>([]),
     [secondary, setSecondary] = useState<string[]>([]),
     [sheets, setSheets] = useState<string[]>([]);
   const [count, setCount] = useState(10),
-    [onlySelected, setOnlySelected] = useState(false),
+    [onlySelected, setOnlySelected] = useState(!!group),
     [replacing, setReplacing] = useState<string | null>(null);
   const [busy, setBusy] = useState(false),
     [error, setError] = useState(""),
@@ -155,6 +194,11 @@ export function InventoryGroupEditor({
   const proposalPool = matching.filter(
     (i) => !occupied.has(categoryKey(i.name)),
   );
+  const [page, setPage] = useState(1),
+    [pageSize, setPageSize] = useState(50);
+  useEffect(() => {
+    setPage(1);
+  }, [query, primary, secondary, onlySelected]);
   const ordered = filtered
     .slice()
     .sort(
@@ -164,6 +208,12 @@ export function InventoryGroupEditor({
           .localeCompare(b.primaryNames.join(" · "), "es") ||
         a.name.localeCompare(b.name, "es"),
     );
+  const pages = Math.max(1, Math.ceil(ordered.length / pageSize)),
+    currentPage = Math.min(page, pages);
+  const visibleItems = ordered.slice(
+    (currentPage - 1) * pageSize,
+    currentPage * pageSize,
+  );
   const toggle = (id: string) =>
     setIds((v) => (v.includes(id) ? v.filter((x) => x !== id) : [...v, id]));
   function replaceRandom(item: TrialItem, same: boolean) {
@@ -238,7 +288,13 @@ export function InventoryGroupEditor({
       }}
     >
       <header>
-        <h2>Crear / modificar grupo</h2>
+        <h2>
+          {managementTab === "top"
+            ? "Top · evaluar y reemplazar"
+            : managementTab === "edit"
+              ? "Editar grupo"
+              : "Crear grupo"}
+        </h2>
         <button
           type="button"
           aria-pressed={expanded}
@@ -255,6 +311,25 @@ export function InventoryGroupEditor({
           ×
         </button>
       </header>
+      {usageEditing && (
+        <InventoryGroupUsageDialog
+          item={usageEditing.item.name}
+          country={
+            countryOptions.find((c) => c.code === usageEditing.country)?.name ??
+            usageEditing.country
+          }
+          cell={usageCell(usageEditing.item, usageEditing.country)}
+          busy={busy}
+          error={error}
+          onSave={saveUsage}
+          onClose={() => {
+            if (!busy) {
+              setUsageEditing(null);
+              setError("");
+            }
+          }}
+        />
+      )}
       {observations && (
         <InventoryDiplomaObservations
           listId={directory.listId}
@@ -264,19 +339,21 @@ export function InventoryGroupEditor({
           onClose={() => setObservations("")}
         />
       )}
-      {topContent && (
+      {(topContent || onChooseGroup) && (
         <nav
           className="inventory-management-tabs"
           aria-label="Gestionar inventario"
         >
-          <button
-            type="button"
-            aria-pressed={managementTab === "top"}
-            disabled={busy || externalBusy}
-            onClick={() => setManagementTab("top")}
-          >
-            Top · evaluar y reemplazar
-          </button>
+          {topContent && (
+            <button
+              type="button"
+              aria-pressed={managementTab === "top"}
+              disabled={busy || externalBusy}
+              onClick={() => setManagementTab("top")}
+            >
+              Top · evaluar y reemplazar
+            </button>
+          )}
           <button
             type="button"
             aria-pressed={managementTab === "create"}
@@ -294,7 +371,7 @@ export function InventoryGroupEditor({
             disabled={busy || externalBusy || !directory.canEdit}
             onClick={() => setManagementTab("edit")}
           >
-            Modificar grupo
+            Grupos guardados
           </button>
         </nav>
       )}
@@ -302,35 +379,66 @@ export function InventoryGroupEditor({
         topContent
       ) : (
         <>
-          {managementTab === "edit" && onChooseGroup && (
-            <label className="inventory-management-group">
-              Grupo a modificar
-              <SheetSearchSelect
-                label="Grupo a modificar"
-                value={group?.id ?? ""}
-                placeholder="Elige un grupo…"
-                options={directory.groups.map((group) => ({
-                  value: group.id,
-                  label: group.name,
-                }))}
-                onSelect={onChooseGroup}
-              />
-            </label>
+          {onChooseGroup && !!directory.groups.length && (
+            <div
+              className="inventory-saved-groups"
+              aria-label="Grupos guardados"
+            >
+              <strong>Mis grupos</strong>
+              {directory.groups.map((g) => (
+                <button
+                  type="button"
+                  key={g.id}
+                  aria-pressed={group?.id === g.id && managementTab === "edit"}
+                  disabled={busy || externalBusy}
+                  onClick={() => onChooseGroup(g.id)}
+                >
+                  {g.name} <span>{g.members.length}</span>
+                </button>
+              ))}
+              <label>
+                Filtrar grupo
+                <SheetSearchSelect
+                  label="Filtrar grupo"
+                  value={group?.id ?? ""}
+                  placeholder="Elige un grupo…"
+                  options={directory.groups.map((g) => ({
+                    value: g.id,
+                    label: g.name,
+                  }))}
+                  onSelect={onChooseGroup}
+                />
+              </label>
+            </div>
+          )}
+          {managementTab === "edit" && !group && (
+            <p className="inventory-group-empty">
+              Elige un grupo guardado para ver sus diplomados y editarlo.
+            </p>
           )}
           {(managementTab !== "edit" || group) && (
             <>
+              <div className="inventory-group-identity">
+                <label>
+                  {group ? "✎ Nombre del grupo" : "Nombre del nuevo grupo"}
+                  <input
+                    aria-label="Nombre del grupo"
+                    value={name}
+                    maxLength={100}
+                    disabled={busy || externalBusy}
+                    onChange={(e) => setName(e.target.value)}
+                  />
+                </label>
+                <div>
+                  <strong>{ids.length} diplomados</strong>
+                  <span>
+                    {group
+                      ? "Edita la selección o reemplaza un diplomado; confirma con Guardar cambios."
+                      : "Marca diplomados de la lista o prepara una propuesta al azar."}
+                  </span>
+                </div>
+              </div>
               <div className="inventory-group-editor-controls">
-                {
-                  <label>
-                    Nombre
-                    <input
-                      aria-label="Nombre del grupo"
-                      value={name}
-                      maxLength={100}
-                      onChange={(e) => setName(e.target.value)}
-                    />
-                  </label>
-                }
                 <label>
                   Buscar inventario
                   <input
@@ -365,33 +473,6 @@ export function InventoryGroupEditor({
                     onChange={setSecondary}
                   />
                 </label>
-                <label>
-                  Hojas
-                  <InventoryMultiSelect
-                    label="Hojas para grupo"
-                    options={sheetOptions.map((s) => ({
-                      value: s.id,
-                      label: s.name,
-                    }))}
-                    values={sheets}
-                    onChange={setSheets}
-                  />
-                </label>
-                {!group && (
-                  <label>
-                    Países
-                    <InventoryMultiSelect
-                      label="Países del grupo"
-                      all={false}
-                      options={countryOptions.map((c) => ({
-                        value: c.code,
-                        label: c.name,
-                      }))}
-                      values={countries}
-                      onChange={setCountries}
-                    />
-                  </label>
-                )}
               </div>
               <div className="row inventory-group-proposal">
                 <label>
@@ -445,20 +526,18 @@ export function InventoryGroupEditor({
                   Quitar selección
                 </button>
               </div>
-              {!!evaluationColumns.length && (
-                <label className="inventory-group-evaluate-in">
-                  Evaluar en{" "}
-                  <SheetSearchSelect
-                    label="País de evaluación del grupo"
-                    value={evaluationColumn}
-                    options={evaluationColumns}
-                    onSelect={setEvaluationColumn}
-                  />
-                </label>
+              <small className="inventory-group-usage-legend">
+                ✓ Usado: al menos 12 horas de activación registrada · ◷ En
+                prueba: menos de 12 horas · ○ Falta usar. Pulsa un estado para
+                corregirlo manualmente o volver a Automático.
+              </small>
+              {!countryOptions.length && (
+                <p role="status">
+                  Vincula una hoja de país al inventario para mostrar sus
+                  columnas.
+                </p>
               )}
-              {(warning || evaluation.error) && (
-                <small role="status">{warning || evaluation.error}</small>
-              )}
+              {warning && <small role="status">{warning}</small>}
               {replacing && (
                 <p role="status" className="notice">
                   Elige el reemplazo de{" "}
@@ -473,6 +552,7 @@ export function InventoryGroupEditor({
               )}
               <div className="table-scroll inventory-group-picker-table">
                 <table
+                  className="sheet-resizable-table inventory-group-matrix"
                   style={{
                     tableLayout: "fixed",
                     width: columnSpecs.reduce(
@@ -516,7 +596,7 @@ export function InventoryGroupEditor({
                             )
                           }
                         />{" "}
-                        Inventario ({filtered.length}){handle(0)}
+                        Diplomado ({filtered.length}){handle(0)}
                       </th>
                       {columnSpecs.slice(1).map((c, index) => (
                         <th key={c.key}>
@@ -527,21 +607,24 @@ export function InventoryGroupEditor({
                     </tr>
                   </thead>
                   <tbody>
-                    {ordered.map((i, index) => {
+                    {visibleItems.map((i, index) => {
                       const heading =
                         i.primaryNames.join(" · ") || "Sin categoría principal";
                       const assigned = occupied.get(categoryKey(i.name));
-                      const point = evaluation.lookup.get(
-                        JSON.stringify([categoryKey(i.name), evaluationColumn]),
+                      const memberGroup = directory.groups.find((g) =>
+                        g.members.some(
+                          (m) => categoryKey(m.name) === categoryKey(i.name),
+                        ),
                       );
                       return (
                         <Fragment key={i.id}>
                           {(index === 0 ||
                             heading !==
-                              (ordered[index - 1].primaryNames.join(" · ") ||
-                                "Sin categoría principal")) && (
+                              (visibleItems[index - 1].primaryNames.join(
+                                " · ",
+                              ) || "Sin categoría principal")) && (
                             <tr className="inventory-group-band">
-                              <th colSpan={8}>{heading}</th>
+                              <th colSpan={columnSpecs.length}>{heading}</th>
                             </tr>
                           )}
                           <tr
@@ -577,19 +660,88 @@ export function InventoryGroupEditor({
                             <td>{i.primaryNames.join(" · ") || "—"}</td>
                             <td>{i.secondaryNames?.join(" · ") || "—"}</td>
                             <td>
-                              {i.sheets?.map((s) => s.name).join(" · ") || "—"}
+                              <span className="inventory-group-chip">
+                                {memberGroup?.name ??
+                                  (ids.includes(i.id) ? name : "Sin grupo")}
+                              </span>
                             </td>
-                            <td>{point?.sales ?? "—"}</td>
-                            <td>{point?.activeDays ?? "—"}</td>
+                            {countryOptions.map((c) => {
+                              const cell = usageCell(i, c.code),
+                                status =
+                                  cell.mode === "USED"
+                                    ? "USED"
+                                    : cell.mode === "UNUSED"
+                                      ? "NEVER"
+                                      : cell.nextUsedAt &&
+                                          Date.parse(cell.nextUsedAt) <= clock
+                                        ? "USED"
+                                        : cell.automatic;
+                              const label =
+                                status === "USED"
+                                  ? "✓ Usado"
+                                  : status === "TEST"
+                                    ? "◷ En prueba"
+                                    : status === "UNKNOWN"
+                                      ? "? Sin confirmar"
+                                      : "○ Falta usar";
+                              return (
+                                <td key={c.code}>
+                                  <button
+                                    type="button"
+                                    className="inventory-group-usage"
+                                    data-usage={status}
+                                    data-manual={
+                                      cell.mode !== "AUTO" || undefined
+                                    }
+                                    aria-label={`Editar uso de ${i.name} en ${c.name}`}
+                                    title={`${label} · ${cell.mode === "AUTO" ? "Automático" : "Manual"}${cell.activationHours === null ? " · Inicio desconocido" : ` · ${cell.activationHours.toFixed(1)} h registradas`}`}
+                                    disabled={
+                                      busy || externalBusy || !directory.canEdit
+                                    }
+                                    onClick={() =>
+                                      setUsageEditing({
+                                        item: i,
+                                        country: c.code,
+                                      })
+                                    }
+                                  >
+                                    {label}
+                                    {cell.mode !== "AUTO" && (
+                                      <small>Manual</small>
+                                    )}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className="inventory-group-country-detail"
+                                    aria-label={`Ver detalle de ${i.name} en ${c.name}`}
+                                    title={`Ver detalle guardado en ${c.name}`}
+                                    disabled={
+                                      !evaluationColumns.some((column) =>
+                                        column.value.endsWith(":" + c.code),
+                                      )
+                                    }
+                                    onClick={() => {
+                                      setEvaluationColumn(
+                                        evaluationColumns.find((column) =>
+                                          column.value.endsWith(":" + c.code),
+                                        )!.value,
+                                      );
+                                      setObservations(i.name);
+                                    }}
+                                  >
+                                    Detalle ↗
+                                  </button>
+                                </td>
+                              );
+                            })}
                             <td>
                               <button
                                 type="button"
+                                className="inventory-group-history"
                                 onClick={() => setObservations(i.name)}
                               >
-                                Ver antecedentes ↗
+                                Antecedentes ↗
                               </button>
-                            </td>
-                            <td>
                               {assigned ? (
                                 <small>En {assigned}</small>
                               ) : (
@@ -606,7 +758,7 @@ export function InventoryGroupEditor({
                                         setSheets([]);
                                       }}
                                     >
-                                      Editar
+                                      ↔ Reemplazar
                                     </button>
                                     <button
                                       disabled={busy}
@@ -641,13 +793,54 @@ export function InventoryGroupEditor({
                     })}
                     {!filtered.length && (
                       <tr>
-                        <td colSpan={8}>
+                        <td colSpan={columnSpecs.length}>
                           No hay resultados con estos filtros.
                         </td>
                       </tr>
                     )}
                   </tbody>
                 </table>
+              </div>
+              <div className="inventory-group-pagination">
+                <span>
+                  {ordered.length ? (currentPage - 1) * pageSize + 1 : 0}–
+                  {Math.min(currentPage * pageSize, ordered.length)} de{" "}
+                  {ordered.length} diplomados
+                </span>
+                <label>
+                  Por página
+                  <select
+                    aria-label="Diplomados por página del grupo"
+                    value={pageSize}
+                    onChange={(e) => {
+                      setPageSize(Number(e.target.value));
+                      setPage(1);
+                    }}
+                  >
+                    {[25, 50, 100, 200].map((n) => (
+                      <option key={n} value={n}>
+                        {n}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <button
+                  type="button"
+                  disabled={currentPage <= 1}
+                  onClick={() => setPage(currentPage - 1)}
+                >
+                  Anterior
+                </button>
+                <span>
+                  {currentPage} / {pages}
+                </span>
+                <button
+                  type="button"
+                  disabled={currentPage >= pages}
+                  onClick={() => setPage(currentPage + 1)}
+                >
+                  Siguiente
+                </button>
               </div>
               <small>
                 La selección se conserva al cambiar filtros. Cada diplomado
@@ -681,13 +874,108 @@ export function InventoryGroupEditor({
                   }
                   onClick={() => void save()}
                 >
-                  {busy ? "Guardando…" : "Guardar grupo"}
+                  {busy
+                    ? "Guardando…"
+                    : group
+                      ? "Guardar cambios"
+                      : "Crear grupo"}
                 </button>
               </footer>
             </>
           )}
         </>
       )}
+    </dialog>
+  );
+}
+
+function InventoryGroupUsageDialog({
+  item,
+  country,
+  cell,
+  busy,
+  error,
+  onSave,
+  onClose,
+}: {
+  item: string;
+  country: string;
+  cell: GroupUsageCell;
+  busy: boolean;
+  error: string;
+  onSave: (mode: GroupUsageMode) => Promise<void>;
+  onClose: () => void;
+}) {
+  const ref = useRef<HTMLDialogElement>(null);
+  useEffect(() => {
+    ref.current?.showModal();
+  }, []);
+  return (
+    <dialog
+      ref={ref}
+      className="trial-dialog inventory-group-usage-dialog"
+      aria-label={`Uso de ${item} en ${country}`}
+      onCancel={(e) => {
+        e.preventDefault();
+        if (!busy) onClose();
+      }}
+    >
+      <header>
+        <h3>Uso en {country}</h3>
+        <button
+          type="button"
+          className="ui-close-button"
+          disabled={busy}
+          onClick={onClose}
+          aria-label="Cerrar uso"
+        >
+          ×
+        </button>
+      </header>
+      <strong>{item}</strong>
+      <p>
+        Este estado sirve para organizar los grupos. No activa ni pausa
+        campañas.
+      </p>
+      <small>
+        Registro automático:{" "}
+        {cell.automatic === "USED"
+          ? "Usado"
+          : cell.automatic === "TEST"
+            ? "En prueba"
+            : cell.automatic === "UNKNOWN"
+              ? "Sin confirmar"
+              : "Falta usar"}
+        {cell.activationHours !== null
+          ? ` · ${cell.activationHours.toFixed(1)} horas`
+          : " · Sin inicio verificable"}
+        .
+      </small>
+      <div className="inventory-group-usage-options">
+        {(
+          [
+            ["USED", "✓ Marcar usado"],
+            ["UNUSED", "○ Marcar falta usar"],
+            ["AUTO", "↻ Automático · 12 horas"],
+          ] as const
+        ).map(([mode, label]) => (
+          <button
+            type="button"
+            key={mode}
+            aria-pressed={cell.mode === mode}
+            disabled={busy}
+            onClick={() => void onSave(mode)}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+      {error && <p role="alert">{error}</p>}
+      <footer>
+        <button type="button" disabled={busy} onClick={onClose}>
+          Cancelar
+        </button>
+      </footer>
     </dialog>
   );
 }

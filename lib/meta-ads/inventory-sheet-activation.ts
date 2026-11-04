@@ -16,7 +16,7 @@ import {
 import { reportingActivity } from "./reporting-activity";
 import { recordedStarts, recordedTableFloor } from "./recorded-starts";
 import { z } from "zod";
-import { inventoryUsage } from "./inventory-usage";
+import { inventoryUsage, inventoryActivationPeriods as periods } from "./inventory-usage";
 import type { Prisma } from "@prisma/client";
 import { db } from "../db";
 import { demand } from "../errors";
@@ -1046,30 +1046,6 @@ export type SheetInterval = {
   country: string;
   partialDays: boolean;
 };
-function periods(
-  events: { active: boolean; createdAt: Date; snapshot: Prisma.JsonValue }[],
-  active: boolean,
-) {
-  const result: {
-    since: string | null;
-    until: string | null;
-    inferred?: boolean;
-  }[] = [];
-  let start: string | null = null,
-    on = events.length
-      ? (((events[0].snapshot as Record<string, unknown>)?.priorActive as
-          boolean | undefined) ?? !events[0].active)
-      : active;
-  for (const e of events) {
-    if (e.active === on) continue;
-    const time = e.createdAt.toISOString();
-    if (e.active) start = time;
-    else result.push({ since: start, until: time });
-    on = e.active;
-  }
-  if (on) result.push({ since: start, until: null });
-  return result.reverse();
-}
 async function activationReport(
   actor: Actor,
   input: unknown,

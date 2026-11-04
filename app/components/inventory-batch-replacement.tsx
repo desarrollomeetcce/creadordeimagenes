@@ -3,6 +3,13 @@ import { useState } from "react";
 import { SheetSearchSelect } from "./sheet-search-select";
 import { categoryKey } from "../../lib/meta-ads/category-paste";
 import type { TrialDirectory } from "../../lib/meta-ads/inventory-trials";
+import { InventoryReplacementGroupFilter } from "./inventory-replacement-group-filter";
+import {
+  groupReplacementCandidates,
+  replacementUsage,
+  replacementUsageLabel,
+  type ReplacementUsageFilter,
+} from "../../lib/meta-ads/inventory-replacement-groups";
 type Item = TrialDirectory["catalog"][number];
 export type ReplacementPlan = {
   from: string;
@@ -12,11 +19,15 @@ export type ReplacementPlan = {
 export function InventoryBatchReplacement({
   origins,
   candidates,
+  directory,
+  country,
   busy,
   onClose,
   onConfirm,
   onInspect,
 }: {
+  directory: TrialDirectory;
+  country: string;
   origins: Item[];
   candidates: Item[];
   busy: boolean;
@@ -28,9 +39,18 @@ export function InventoryBatchReplacement({
     origins.map((i) => ({ from: i.name, to: "", mode: "MANUAL" })),
   );
   const [error, setError] = useState("");
+  const [groupId, setGroupId] = useState("");
+  const [usage, setUsage] = useState<ReplacementUsageFilter>("ALL");
+  const filteredCandidates = groupReplacementCandidates(
+    candidates,
+    directory,
+    country,
+    groupId,
+    usage,
+  );
   const remaining = plan.filter((p) => !p.to).length;
   const available = (index: number) =>
-    candidates.filter(
+    filteredCandidates.filter(
       (i) =>
         !plan.some(
           (p, n) => n !== index && categoryKey(p.to) === categoryKey(i.name),
@@ -40,7 +60,7 @@ export function InventoryBatchReplacement({
     // Work locally: no campaign changes until the entire plan is confirmed.
     const used = new Set<string>();
     const next = origins.map((i) => {
-      const pool = candidates.filter(
+      const pool = filteredCandidates.filter(
         (c) =>
           !used.has(categoryKey(c.name)) &&
           (same
@@ -84,7 +104,44 @@ export function InventoryBatchReplacement({
           ×
         </button>
       </header>
+      <InventoryReplacementGroupFilter
+        directory={directory}
+        country={country}
+        groupId={groupId}
+        usage={usage}
+        busy={busy}
+        onChange={(id, filter) => {
+          setGroupId(id);
+          setUsage(filter);
+          setPlan((current) =>
+            current.map((p) => ({ ...p, to: "", mode: "MANUAL" })),
+          );
+          setError("");
+        }}
+      />
       <div className="row">
+        {groupId && (
+          <button
+            type="button"
+            disabled={busy || !filteredCandidates.length}
+            onClick={() => {
+              setPlan(
+                origins.map((i, index) => ({
+                  from: i.name,
+                  to: filteredCandidates[index]?.name ?? "",
+                  mode: "MANUAL",
+                })),
+              );
+              setError(
+                filteredCandidates.length < origins.length
+                  ? "No hay suficientes diplomados disponibles en este grupo. Completa o cambia el filtro."
+                  : "",
+              );
+            }}
+          >
+            Proponer del grupo · sin usar primero
+          </button>
+        )}
         <button type="button" disabled={busy} onClick={() => propose(true)}>
           Azar · misma categoría
         </button>
@@ -110,7 +167,12 @@ export function InventoryBatchReplacement({
                 placeholder="Busca un diplomado…"
                 options={available(index).map((i) => ({
                   value: i.name,
-                  label: i.name,
+                  label:
+                    i.name +
+                    " · " +
+                    replacementUsageLabel(
+                      replacementUsage(directory, i.name, country),
+                    ),
                 }))}
                 disabled={busy}
                 onSelect={(to) => {

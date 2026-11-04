@@ -13,6 +13,7 @@ import {
   financialAccess,
   financialContext,
   scopePermission,
+  checkFinancialContext,
 } from "./financial-access";
 import {
   effectiveness,
@@ -33,6 +34,11 @@ import {
 } from "./inventory-trial-policy";
 import { isCountryCode } from "./countries";
 import type { Actor } from "./service";
+import {
+  inventoryGroupUsage,
+  groupUsageOverrides,
+  groupUsageKey,
+} from "./inventory-group-usage";
 const id = z.string().min(1).max(100),
   day = z.string().date(),
   country = z.string().refine(isCountryCode, "País no válido."),
@@ -54,6 +60,16 @@ export const trialReportQuery = scope
   .strict();
 const edit = { listId: id, groupId: id, revision: z.number().int().positive() };
 export const trialChange = z.discriminatedUnion("action", [
+  z
+    .object({
+      action: z.literal("USAGE"),
+      listId: id,
+      itemId: id,
+      country,
+      mode: z.enum(["AUTO", "USED", "UNUSED"]),
+      expectedRevision: z.string().uuid().nullable(),
+    })
+    .strict(),
   z
     .object({
       action: z.literal("REMOVE_MEMBERS"),
@@ -160,7 +176,8 @@ async function context(
   write = false,
 ) {
   ownerOnly(actor);
-  await effectivenessLock(tx, actor);
+  if (write) await effectivenessLock(tx, actor);
+  else await checkFinancialContext(actor, tx);
   const access = await financialAccess(actor, tx),
     cap = financialContext(actor),
     permission = scopePermission(access, cap?.scope ?? "ALL");
@@ -332,6 +349,7 @@ export async function inventoryTrials(actor: Actor, input: unknown) {
       return {
         listId: b.listId,
         canEdit: permission === "EDIT",
+        ...(await inventoryGroupUsage(tx, b.listId)),
         catalog: await catalog(tx, b.listId),
         groups: (
           await tx.metaInventoryTrialGroup.findMany({
@@ -377,6 +395,76 @@ export async function saveInventoryTrial(actor: Actor, input: unknown) {
   return db.$transaction(
     async (tx) => {
       await context(tx, actor, b.listId, true);
+      if (b.action === "USAGE") {
+        const source = await catalog(tx, b.listId);
+        const item = source.find((i) => i.id === b.itemId);
+        demand(item, "El diplomado ya no está disponible.", 409);
+        const matrix = await inventoryGroupUsage(tx, b.listId);
+        demand(
+          matrix.countries.some((c) => c.code === b.country),
+          "El país no pertenece a las hojas de este inventario.",
+          409,
+        );
+        const list = await tx.metaEffectivenessSheet.findUniqueOrThrow({
+          where: { id: b.listId },
+          select: { config: true },
+        });
+        const key = groupUsageKey(item.name, b.country),
+          overrides = groupUsageOverrides(list.config);
+        demand(
+          (overrides[key]?.revision ?? null) === b.expectedRevision,
+          "El uso cambió. Reabre el grupo antes de guardar.",
+          409,
+        );
+        if (b.mode === "AUTO") delete overrides[key];
+        else overrides[key] = { mode: b.mode, revision: randomUUID() };
+        await tx.metaEffectivenessSheet.update({
+          where: { id: b.listId },
+          data: {
+            config: {
+              ...(list.config as Prisma.JsonObject),
+              inventoryGroupUsage: overrides,
+            },
+            revision: { increment: 1 },
+          },
+        });
+        await recordActivity(tx, {
+          data: {
+            actorId: actor.id,
+            action: "INVENTARIO_USO_MANUAL",
+            resourceId: b.listId,
+            detail: {
+              itemId: item.id,
+              country: b.country,
+              before: matrix.usage[key]?.mode ?? "AUTO",
+              after: b.mode,
+            },
+          },
+        });
+        // Same response shape keeps older group-only API consumers compatible.
+        return {
+          id: b.listId,
+          revision: 0,
+          name: "",
+          createdAt: new Date().toISOString(),
+          members: [],
+          countries: [],
+          reserve: false,
+          cycles: [],
+          rules: { zero: 25, perSale: 50 },
+          usageUpdate: {
+            key,
+            cell: {
+              ...(matrix.usage[key] ?? {
+                automatic: "NEVER" as const,
+                activationHours: 0,
+              }),
+              mode: b.mode,
+              revision: overrides[key]?.revision ?? null,
+            },
+          },
+        };
+      }
       if (b.action === "REMOVE_MEMBERS") {
         demand(
           new Set(b.groups.map((g) => g.groupId)).size === b.groups.length,

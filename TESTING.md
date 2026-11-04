@@ -1,3 +1,10 @@
+## Grupos y reemplazos por uso/país · 2026-11-04
+
+- npm test:286 correctos; typecheck y compilación de producción correctos.
+- inventory-group-usage.integration.test + inventory-trials.integration.test + inventory-sheet-activation.integration.test:53 correctos contra base exclusiva. Corte de12h y clic breve, solapes sin duplicar horas, inicio incierto, reloj siguiente umbral, países de hojas sin AO histórico, persistencia manual/AUTO, CAS, aislamiento y rol revocado; V3 y activación se conservan. Filtrado de grupo por país y prioridad de uso con override manual.
+- Chromium:6 controles correctos: matriz sin botones vacíos y resize por borde; páginas/filtros sin GET de evaluación; registro automático/manual y creación/renombrado/reapertura; reemplazos de grupo con prioridad y filtros locales; propuesta por lote sin confirmar cambios; detalle bajo demanda, móvil sin desbordamiento ni errores de JS. Se corrigió el escenario inicial de la prueba para elegir Ecuador explícitamente en Top (Perú no tenía activos); ejecución completa final pasó.
+- Evidencia en /workspace/work/group-matrix-{unit,integration,types,build,browser,cleanup}.txt y capturas group-matrix-desktop/mobile y group-replacement-desktop.png. Pruebas sin Graph/generaciones reales; fixture de uso y grupos borrado, con V1/G10.25 y asesor/publicidad intactos. Hostinger no autenticado aquí.
+
 # Pruebas y evidencia
 
 ## Concurrencia de lecturas Efectividad y respuesta de botones (2026-11-03)

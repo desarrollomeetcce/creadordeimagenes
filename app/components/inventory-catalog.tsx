@@ -1799,6 +1799,7 @@ export function InventoryCatalog({
             </>
           }
           directory={trialDirectory}
+          onUsageChange={(key,cell)=>setTrialDirectory(previous=>previous ? {...previous,usage:{...previous.usage,[key]:cell}} : previous)}
           group={trialGroups.find((g) => g.id === groupEditor.id)}
           initialNames={groupEditor.names}
           onClose={() => setGroupEditor(null)}
