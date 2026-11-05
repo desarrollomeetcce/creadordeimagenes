@@ -51,6 +51,7 @@ export async function effectivenessDetail(
           b.since,
           b.until,
           tx,
+          {name:alias.name,country:b.country},
         ),
         state
           ? tx.metaEffectivenessEvent.findFirst({
@@ -71,17 +72,14 @@ export async function effectivenessDetail(
             })
           : [],
         state
-          ? tx.metaEffectivenessEvent.findMany({
-              where: { stateId: state.id, createdAt: { lte: new Date(asOf) } },
-              select: {
-                id: true,
-                active: true,
-                createdAt: true,
-                snapshot: true,
-              },
-              orderBy: [{ createdAt: "asc" }, { id: "asc" }],
-              take: 10001,
-            })
+          ? tx.$queryRaw<{id:string;active:boolean;createdAt:Date;snapshot:Record<string,unknown>}[]>`
+              SELECT id, active, "createdAt", jsonb_build_object(
+                'priorActive', snapshot->'priorActive', 'reason', snapshot->'reason',
+                'since', snapshot->'since', 'until', snapshot->'until',
+                'sales', snapshot->'sales', 'salesPartial', snapshot->'salesPartial'
+              ) AS snapshot FROM "MetaEffectivenessEvent"
+              WHERE "stateId"=${state.id} AND "createdAt"<=${new Date(asOf)}
+              ORDER BY "createdAt",id LIMIT 10001`
           : [],
       ]);
       demand(
@@ -104,6 +102,7 @@ export async function effectivenessDetail(
             b.since,
             b.until,
             tx,
+            {name:alias.name,country:b.country},
           )
         ).rows.find((r) => r.aliasId === b.aliasId && r.country === b.country);
       demand(row, "Fila de inventario y país no disponible.", 404);
@@ -166,6 +165,7 @@ export async function effectivenessDetail(
                 first,
                 today,
                 tx,
+                {name:alias.name,country:b.country},
               )
             ).rows.find(
               (r) => r.aliasId === alias.id && r.country === b.country,

@@ -175,6 +175,23 @@ test("Uso manual compartido por diplomado y país: persistencia, CAS, permisos e
       assert.equal(basic.usageReady,false);assert.equal(basic.catalog.length,1);assert.equal(basic.usage[groupUsageKey(item.name,"PE")].mode,"UNUSED");assert.equal(basic.usage[groupUsageKey(item.name,"PE")].automatic,"UNKNOWN");
       const usage=await inventoryTrials(actor,{listId:list.id,mode:"usage"});assert.equal(usage.usageReady,true);assert.equal(usage.catalog.length,0);assert.equal(usage.groups.length,0);assert.equal(usage.usage[groupUsageKey(item.name,"PE")].automatic,"USED");assert.equal(usage.usage[groupUsageKey(item.name,"PE")].mode,"UNUSED");
     });
+    await t.test("Catálogo canónico, categorías heredadas y desfijados sobreviven a la proyección ligera",async()=>{
+      const saved=(await db.metaEffectivenessSheet.findUniqueOrThrow({where:{id:list.id}})).config as any;
+      const cats=await Promise.all(["Canónica","Heredada"].map((name,n)=>db.metaInventoryCategory.create({data:{sheetId:list.id,kind:"PRIMARY",name,key:tag+"-"+n}})));
+      const legacy=await db.metaAlias.create({data:{tableId:tables[1].id,inventorySheetId:list.id,name:"Heredado "+tag}});
+      try{
+        await db.metaInventoryItemCategory.create({data:{itemId:item.id,categoryId:cats[0].id}});
+        await db.metaInventoryCategoryAssignment.createMany({data:[{aliasId:alias.id,categoryId:cats[1].id},{aliasId:legacy.id,categoryId:cats[1].id}]});
+        await db.metaEffectivenessSheet.update({where:{id:list.id},data:{config:{...saved,unrelatedHeavySetting:"x".repeat(100000),inventoryActivation:{...saved.inventoryActivation,detachedAliases:[alias.id]}}}});
+        const fast=await inventoryTrials(actor,{listId:list.id,mode:"directory"});
+        assert.deepEqual(fast.catalog.find(i=>i.id===item.id)?.primaryNames,["Canónica"]);
+        assert.deepEqual(fast.catalog.find(i=>i.id===item.id)?.sheets,[]);
+        assert.deepEqual(fast.catalog.find(i=>i.id===legacy.id)?.primaryNames,["Heredada"]);
+        assert.equal(fast.usage[groupUsageKey(item.name,"PE")].mode,"UNUSED");
+        const usage=await inventoryTrials(actor,{listId:list.id,mode:"usage"});assert.equal(usage.usage[groupUsageKey(item.name,"PE")].automatic,"USED");assert.equal(usage.usage[groupUsageKey(item.name,"PE")].mode,"UNUSED");
+        assert.equal(((await db.metaEffectivenessSheet.findUniqueOrThrow({where:{id:list.id}})).config as any).unrelatedHeavySetting.length,100000);
+      }finally{await db.metaEffectivenessSheet.update({where:{id:list.id},data:{config:saved}});await db.metaAlias.delete({where:{id:legacy.id}});await db.metaInventoryCategory.deleteMany({where:{id:{in:cats.map(c=>c.id)}}});}
+    });
     await t.test(
       "Conflicto concurrente, país ajeno e inventario ajeno rechazados",
       async () => {

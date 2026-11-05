@@ -254,6 +254,15 @@ async function context(
   );
   return permission;
 }
+/** The picker needs overrides and detached IDs, not financial row controls or unrelated settings. */
+async function directoryConfiguration(tx:Prisma.TransactionClient,listId:string):Promise<Prisma.JsonValue>{
+  const rows=await tx.$queryRaw<{config:Prisma.JsonValue}[]>`
+    SELECT jsonb_build_object('inventoryGroupUsage',config->'inventoryGroupUsage',
+      'inventoryActivation',jsonb_build_object('detachedAliases',config#>'{inventoryActivation,detachedAliases}')) AS config
+    FROM "MetaEffectivenessSheet" WHERE id=${listId}`;
+  demand(rows.length,"Inventario no disponible.",404);
+  return rows[0].config;
+}
 async function catalog(
   tx: Prisma.TransactionClient,
   listId: string,
@@ -279,19 +288,18 @@ async function catalog(
         id: true,
         name: true,
         table: { select: { id: true, name: true } },
-        categoryAssignments: {
-          where: { category: { sheetId: listId } },
-          select: {
-            category: { select: { id: true, name: true, kind: true } },
-          },
-        },
       },
     }),
   ]);
-  const config = suppliedConfig ?? (await tx.metaEffectivenessSheet.findUniqueOrThrow({
-    where: { id: listId },
-    select: { config: true },
-  })).config;
+  const canonicalNames=new Set(items.map(item=>categoryKey(item.name)));
+  const legacyIds=aliases.filter(alias=>!canonicalNames.has(categoryKey(alias.name))).map(alias=>alias.id);
+  const legacyTags=legacyIds.length ? await tx.metaInventoryCategoryAssignment.findMany({
+    where:{aliasId:{in:legacyIds},category:{sheetId:listId}},
+    select:{aliasId:true,category:{select:{id:true,name:true,kind:true}}},
+  }) : [];
+  const tagsByAlias=new Map<string,(typeof legacyTags)[number]["category"][]>();
+  for(const tag of legacyTags){const bucket=tagsByAlias.get(tag.aliasId);if(bucket)bucket.push(tag.category);else tagsByAlias.set(tag.aliasId,[tag.category]);}
+  const config = suppliedConfig ?? await directoryConfiguration(tx,listId);
   const detached = new Set([
     ...detachedInventoryAliases(config),
     ...(await physicallyHiddenInventoryAliases(
@@ -302,7 +310,7 @@ async function catalog(
   const out = new Map<string, TrialItem>();
   for (const alias of aliases) {
     const k = categoryKey(alias.name),
-      tags = alias.categoryAssignments.map((x) => x.category),
+      tags = tagsByAlias.get(alias.id) ?? [],
       item = out.get(k) ?? {
         id: alias.id,
         name: alias.name,
@@ -398,7 +406,7 @@ export async function inventoryTrials(actor: Actor, input: unknown) {
   return db.$transaction(
     async (tx) => {
       const permission = await context(tx, actor, b.listId);
-      const metadataConfig=b.mode === "directory" ? (await tx.metaEffectivenessSheet.findUniqueOrThrow({where:{id:b.listId},select:{config:true}})).config : undefined;
+      const metadataConfig=b.mode === "directory" ? await directoryConfiguration(tx,b.listId) : undefined;
       const overrides=metadataConfig ? Object.fromEntries(Object.entries(groupUsageOverrides(metadataConfig)).map(([key,rule])=>[key,{mode:rule.mode,revision:rule.revision,automatic:"UNKNOWN" as const,activationHours:null}])) : {};
       return {
         listId: b.listId,

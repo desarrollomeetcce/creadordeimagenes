@@ -11,6 +11,7 @@ import {
 import { sheetAnalysis } from "../lib/meta-ads/sheet-analysis";
 import { effectivenessDetail } from "../lib/meta-ads/effectiveness-detail";
 import { authorizeFinancialRequest } from "../lib/meta-ads/financial-access";
+import { inventoryEffectivenessSource } from "../lib/meta-ads/effectiveness";
 import { limaDay } from "../lib/meta-ads/advisor-attribution";
 test("CAC 14 days, country/source separation, selectable detail, new thresholds and scoped revision guards", async () => {
   assert(
@@ -129,6 +130,18 @@ test("CAC 14 days, country/source separation, selectable detail, new thresholds 
         actions: { "onsite_conversion.messaging_conversation_started_7d": 100 },
       })),
     });
+    // The detail reads a single diploma/country, but must produce the canonical full-sheet row.
+    const sibling = await db.metaAlias.create({data:{tableId:table.id,inventorySheetId:list.id,name:tag+"-unrelated"}});
+    try {
+      await db.metaEffectivenessRow.create({data:{aliasId:sibling.id,country:"PE",currency:"",displayCurrency:"PEN",days:{create:{day:today,sales:999,salesOverridden:true}}}});
+      await db.$transaction(async tx=>{
+        const full=await inventoryEffectivenessSource(owner,table.id,date(13),today,tx);
+        const focused=await inventoryEffectivenessSource(owner,table.id,date(13),today,tx,{name:alias.name,country:"PE"});
+        assert.equal(focused.rows.length,1);assert.equal(focused.table.aliases.length,1);
+        assert.deepEqual(focused.rows[0],full.rows.find(r=>r.aliasId===alias.id&&r.country==="PE"));
+        assert(full.rows.some(r=>r.aliasId===sibling.id));assert(full.rows.some(r=>r.country==="EC"));
+      });
+    } finally {await db.metaEffectivenessRow.deleteMany({where:{aliasId:sibling.id}});await db.metaAlias.delete({where:{id:sibling.id}});}
     const report = await inventoryActivationReport(owner, {
         listId: list.id,
         tableIds: table.id,

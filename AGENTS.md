@@ -1,5 +1,8 @@
 # Instrucciones para desarrollo
 
+- Detalle/Grupos05/11: fuente financiera puede acotarse por nombre/country SOLO para detalle, incluidos vinculados del mismo nombre/país; no usar salesOnly para omitir Meta/FX. Mantener valores idénticos, acumulado/retirados, permisos, límites y CAS. Proyectar seis campos de eventos necesarios, nunca snapshot entero. Cierre/cambio de detalle aborta peticiones; refresco mismo ámbito conserva datos y401/403 limpia. Grupos proyecta JSON necesario y evita categorías de aliases cuando existe ítem canónico; conservar legado, países, overrides y desfijados. Usuario pidió solo opinión sobre crear grupos integrado/desplegable en Lista: NO implementar esa interfaz todavía.
+
+
 - Verificación adicional Efectividad05/11: BroadcastChannel también transporta origen de página+escritor. Excluir el eco propio tanto del evento local como del canal, pero no avisos de otra pestaña aunque use el mismo ID React. Test con canal simulado activo, no deshabilitado; conserva foco/visibilidad y avisos externos.
 
 

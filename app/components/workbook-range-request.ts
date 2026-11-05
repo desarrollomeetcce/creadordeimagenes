@@ -7,6 +7,7 @@ export async function readRangePages<T>(
   path: string,
   params: Record<string, string>,
   accept?: () => boolean,
+  signal?: AbortSignal,
 ): Promise<T[]> {
   const windows: { since: string; until: string }[] = [];
   const { since, until } = params;
@@ -26,14 +27,14 @@ export async function readRangePages<T>(
   }
   const pages: T[] = [];
   for (let i = 0; i < windows.length; i += 2) {
-    if (accept && !accept())
+    if (signal?.aborted || (accept && !accept()))
       throw Error("Consulta sustituida por otro período.");
     pages.push(
       ...(await Promise.all(
         windows
           .slice(i, i + 2)
           .map((w) =>
-            api(path + "?" + new URLSearchParams({ ...params, ...w })),
+            api(path + "?" + new URLSearchParams({ ...params, ...w }), "GET", undefined, {signal}),
           ),
       )),
     );

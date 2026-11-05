@@ -172,8 +172,9 @@ export function EffectivenessHistory({
     if (!open || !valid) return;
     let active = true;
     setLoading(true);
-    setData(null);
+    if(loadedQuery !== query) setData(null);
     setMessage("");
+    const controller = new AbortController();
     let version = 0;
     let inFlight = false;
     const load = () => {
@@ -191,6 +192,7 @@ export function EffectivenessHistory({
           reportUntil: until,
         },
         () => active && request === version,
+        controller.signal,
       )
         .then((pages) => {
           const v: Detail = {
@@ -203,7 +205,10 @@ export function EffectivenessHistory({
           }
         })
         .catch((e) => {
-          if (active && request === version) setMessage(e.message);
+          if (active && request === version && !controller.signal.aborted) {
+            if([401,403].includes(e.status ?? 0))setData(null);
+            setMessage(e.message);
+          }
         })
         .finally(() => {
           inFlight = false;
@@ -215,6 +220,7 @@ export function EffectivenessHistory({
       unsubscribe = subscribeAdvisorSalesChanged(load);
     return () => {
       active = false;
+      controller.abort();
       clearInterval(timer);
       unsubscribe();
     };

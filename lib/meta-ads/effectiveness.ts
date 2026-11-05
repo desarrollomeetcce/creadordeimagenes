@@ -194,6 +194,7 @@ export async function inventoryEffectivenessSource(
   since: string,
   until: string,
   client: Prisma.TransactionClient,
+  target?: {name:string;country:string},
 ) {
   ownerOnly(actor);
   return readEffectiveness(
@@ -206,6 +207,8 @@ export async function inventoryEffectivenessSource(
     false,
     undefined,
     true,
+    undefined,
+    target,
   );
 }
 /** Internal Meta report aggregate. Scope is revalidated against accessible campaigns;
@@ -369,6 +372,7 @@ async function readEffectiveness(
   advisorScope?: string,
   includeHidden = false,
   salesOnly?: { name: string; country: string }[],
+  target?: {name:string;country:string},
 ): Promise<EffectivenessSheet> {
   demand(
     !path.includes(tableId) && path.length < 9,
@@ -384,7 +388,7 @@ async function readEffectiveness(
       defaultCountry: true,
       defaultCurrency: true,
       aliases: {
-        ...(salesOnly
+        ...(target ? {where:{name:target.name}} : salesOnly
           ? { where: { name: { in: salesOnly.map((t) => t.name) } } }
           : {}),
         select: {
@@ -414,8 +418,8 @@ async function readEffectiveness(
       : client.metaAdObject.findMany({
           where: {
             level: "campaign",
-            alias: { tableId },
-            aliasCountry: { not: null },
+            alias: { tableId, ...(target ? {name:target.name} : {}) },
+            aliasCountry: target?.country ?? { not: null },
             account: advisorScope ? {} : await accountWhere(actor),
           },
           select: {
@@ -439,7 +443,8 @@ async function readEffectiveness(
     client.metaEffectivenessRow.findMany({
       where: {
         legacy: false,
-        alias: { tableId },
+        alias: { tableId, ...(target ? {name:target.name} : {}) },
+        ...(target ? {country:target.country} : {}),
         ...(salesOnly
           ? {
               OR: salesOnly.map((t) => ({
@@ -484,7 +489,7 @@ async function readEffectiveness(
     salesOnly
       ? Promise.resolve([])
       : client.metaEffectivenessState.findMany({
-          where: { alias: { tableId } },
+          where: { alias: { tableId, ...(target ? {name:target.name} : {}) }, ...(target ? {country:target.country} : {}) },
           select: {
             aliasId: true,
             country: true,
@@ -510,7 +515,8 @@ async function readEffectiveness(
       ? Promise.resolve([])
       : client.metaAdvisorSupport.findMany({
           where: {
-            alias: { tableId },
+            alias: { tableId, ...(target ? {name:target.name} : {}) },
+            ...(target ? {country:target.country} : {}),
             cancelledAt: null,
             since: { lte: limaDay() },
             until: { gte: limaDay() },
@@ -832,6 +838,7 @@ async function readEffectiveness(
       advisorScope,
       includeHidden,
       salesOnly,
+      target,
     );
     linkedSourceName = source.table.name;
     const names = new Map(source.table.aliases.map((a) => [a.id, a.name]));
@@ -980,13 +987,13 @@ async function readEffectiveness(
     salesOnly
       ? Promise.resolve([])
       : client.metaAdvisorAssignment.findMany({
-          where: { alias: { tableId } },
+          where: { alias: { tableId, ...(target ? {name:target.name} : {}) }, ...(target ? {country:target.country} : {}) },
         }),
     salesOnly
       ? Promise.resolve([])
       : client.metaAdvisorSalesApproval.findMany({
           where: {
-            row: { alias: { tableId } },
+            row: { alias: { tableId, ...(target ? {name:target.name} : {}) }, ...(target ? {country:target.country} : {}) },
             day: { gte: since, lte: until },
           },
           include: { row: { select: { aliasId: true, country: true } } },

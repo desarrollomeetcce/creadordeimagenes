@@ -2,6 +2,7 @@ import {
   groupCountryCampaignState,
   type GroupCountryCampaignState,
 } from "./inventory-group-country-state";
+import { demand } from "../errors";
 import type { Prisma } from "@prisma/client";
 import { activationSettings } from "./inventory-sheet-activation";
 import { inventorySheetCountries } from "./inventory-sheet-column-policy";
@@ -39,10 +40,12 @@ export async function inventoryGroupUsage(
   tx: Prisma.TransactionClient,
   listId: string,
 ) {
-  const list = await tx.metaEffectivenessSheet.findUniqueOrThrow({
-    where: { id: listId },
-    select: { config: true },
-  });
+  const configs=await tx.$queryRaw<{config:Prisma.JsonValue}[]>`
+    SELECT jsonb_build_object('inventoryActivation',config->'inventoryActivation',
+      'inventoryGroupUsage',config->'inventoryGroupUsage') AS config
+    FROM "MetaEffectivenessSheet" WHERE id=${listId}`;
+  const list=configs[0];
+  demand(list,"Inventario no disponible.",404);
   const settings = activationSettings(list.config);
   const storedAliases = await tx.metaAlias.findMany({
     where: { inventorySheetId: listId },

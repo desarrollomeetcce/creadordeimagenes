@@ -1,4 +1,13 @@
 
+### 2026-11-05 · Detalle por diplomado y consultas ligeras de Grupos
+
+- Detalle usa fuente financiera acotada al nombre/country en ambas lecturas (período y acumulado), incluidos Meta, estados, apoyos, aprobaciones y fuentes vinculadas por el mismo nombre/país. Llamadores generales conservan lectura completa. Proyección de eventos solo priorActive/reason/since/until/sales/salesPartial, mismos límites10000, permisos, retiros y períodos.
+- readRangePages admite cancelación opcional; cerrar/cambiar detalle aborta peticiones pendientes. Actualizar el mismo ámbito conserva valores confirmados mientras carga;401/403 limpia.
+- Grupos lee configuración JSON proyectada (directorio: overrides+desfijados; uso: activation+overrides), sin transferir configuración ajena. Categorías del ítem canónico prevalecen como antes; consultar categorías de aliases solo para nombres sin ítem canónico y preservar legados/hojas/desfijados. Sin caché de historial, migración, cambios de cálculo ni consultas externas.
+- Validación:317 unitarias,77 integraciones, typecheck/build y4 comprobaciones Chromium. Comparación HTTP conserva exactos días/CAC/retiros y catálogo/países/overrides/estados. Ensayo local de156 ítems/11 hojas/1672 vínculos/4MB de configuración ajena: mediana caliente de directorio129→84ms; uso62→62ms. Detalle150 diplomados/2100hechos/100snapshots:103→83ms. No son mediciones del dominio real ni garantías de carga en frío.
+- Propuesta del usuario de crear grupos desde franja/desplegable en la lista: pidió OPINIÓN, todavía no implementarla. Conservar interfaz de Grupos existente.
+
+
 
 - Verificación adicional Efectividad05/11: BroadcastChannel también transporta origen de página+escritor. Excluir el eco propio tanto del evento local como del canal, pero no avisos de otra pestaña aunque use el mismo ID React. Test con canal simulado activo, no deshabilitado; conserva foco/visibilidad y avisos externos.
 
