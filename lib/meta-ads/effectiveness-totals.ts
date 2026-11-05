@@ -1,3 +1,6 @@
+import { totalDailyStatistics } from "./total-daily-statistics";
+import { convertMoney, type FxRates } from "./exchange-rates";
+import { readCacRules } from "./inventory-cac-policy";
 import {
   manualBaseValue,
   manualBaseAllocationsSchema,
@@ -26,13 +29,11 @@ export async function effectivenessTotals(
     })
   )?.id;
   demand(sheetId, "Hoja de totales no disponible.", 404);
-  demand(
-    await db.metaEffectivenessSheet.findFirst({
-      where: { id: sheetId, kind: "TOTALS", archivedAt: null },
-    }),
-    "Hoja de totales no disponible.",
-    404,
-  );
+  const totalSheet = await db.metaEffectivenessSheet.findFirst({
+    where: { id: sheetId, kind: "TOTALS", archivedAt: null },
+    select: { config: true },
+  });
+  demand(totalSheet, "Hoja de totales no disponible.", 404);
   const [sheet, stored, manualBase, advisorBase] = await Promise.all([
     effectiveness(actor, tableId, since, until),
     db.metaEffectivenessTotalDay.findMany({
@@ -45,6 +46,17 @@ export async function effectivenessTotals(
       where: { tableId, day: { gte: since, lte: until } },
     }),
   ]);
+  const fxDays =
+    sheet.rows.some((r) => r.currency && r.currency !== "PEN") ||
+    stored.some((r) => r.currency && r.currency !== "PEN")
+      ? await db.metaFxDay.findMany({
+          where: { day: { gte: since, lte: until } },
+          select: { day: true, rates: true },
+        })
+      : [];
+  const rates = new Map(fxDays.map((d) => [d.day, d.rates as FxRates]));
+  const config = totalSheet?.config as Record<string, unknown> | null;
+  const rules = readCacRules(config?.dailyCacRules);
   const assigned = new Map(
     manualBase.map((r) => [JSON.stringify([r.country, r.day]), r]),
   );
@@ -74,6 +86,7 @@ export async function effectivenessTotals(
   return {
     tableId,
     name: sheet.table.name,
+    dailyCacRules: rules,
     missingFxDays: sheet.missingFxDays,
     groups: [...groups.values()].map((g) => ({
       country: g.country,
@@ -170,15 +183,43 @@ export async function effectivenessTotals(
               pending: false,
               partial: false,
             };
+          const totalDay = {
+            historicalSales: typeof historical === "number",
+            sums,
+            metaSums,
+            manual,
+            sharedManualBase: !!base,
+            revision: entry?.revision ?? 0,
+          };
+          const pen = (amount: number | null) =>
+            amount === null || !g.currency
+              ? null
+              : convertMoney(amount, g.currency, "PEN", rates.get(day));
           return [
             day,
             {
-              historicalSales: typeof historical === "number",
-              sums,
-              metaSums,
-              manual,
-              sharedManualBase: !!base,
-              revision: entry?.revision ?? 0,
+              ...totalDay,
+              penRate: g.currency
+                ? convertMoney(1, g.currency, "PEN", rates.get(day))
+                : null,
+              dailyStatistics: {
+                manual: totalDailyStatistics(
+                  totalDay,
+                  "manual",
+                  pen(
+                    typeof manual.totalSpend === "number"
+                      ? manual.totalSpend
+                      : null,
+                  ),
+                  rules,
+                ),
+                automatic: totalDailyStatistics(
+                  totalDay,
+                  "automatic",
+                  pen(metaSums.spend.value),
+                  rules,
+                ),
+              },
             },
           ];
         }),

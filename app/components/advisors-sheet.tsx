@@ -6,6 +6,7 @@ import { AdvisorContactBaseEditor } from "./advisor-contact-base-editor";
 import { notifyAdvisorSalesChanged } from "./advisor-sales-events";
 import { advisorDayEffectiveness } from "../../lib/meta-ads/advisor-day-effectiveness";
 import { matchesSearchWords } from "../../lib/search";
+import { CacStateBadge } from "./cac-state-badge";
 import { useSheetTextFit } from "./use-sheet-text-fit";
 import { SheetDataFillBadge } from "./sheet-data-fill-badge";
 import type { AdvisorPeriodView } from "../../lib/meta-ads/advisor-period-history";
@@ -923,11 +924,11 @@ function FragmentHeaders({
           {header("metaSpend", "G Meta", "Gasto de Meta", "automatic")}
           <th
             scope="col"
-            aria-label="Efectividad y CAC Meta"
+            aria-label="Efectividad, CAC y estado Meta"
             className="advisor-meta-metrics-heading"
           >
             <span className="advisor-statistics-title">Estadísticas</span>
-            {handle(day + "metaMetrics", "Efectividad y CAC Meta " + day)}
+            {handle(day + "metaMetrics", "Efectividad, CAC y estado Meta " + day)}
             <div className="advisor-metric-half">
               <span>
                 Efectividad<small>V / B Meta × 100</small>
@@ -936,6 +937,11 @@ function FragmentHeaders({
             <div className="advisor-metric-half">
               <span>
                 CAC Meta<small>G Meta / V</small>
+              </span>
+            </div>
+            <div className="advisor-metric-half">
+              <span>
+                Estado<small>CAC del día</small>
               </span>
             </div>
           </th>
@@ -1156,6 +1162,26 @@ function AdvisorDay({
                     ))
                   : "—"}
               </strong>
+            </div>
+            <div
+              className="advisor-metric-half"
+              aria-label={`Estado CAC ${person.name} ${day}`}
+            >
+              <small>Estado</small>
+              {metaMoney.length ? (
+                metaMoney.map((m) => (
+                  <span key={m.currency}>
+                    {metaMoney.length > 1 ? m.currency + " · " : ""}
+                    <CacStateBadge
+                      status={m.status}
+                      partial={m.statusPartial}
+                      fxPending={m.fxPending}
+                    />
+                  </span>
+                ))
+              ) : (
+                <CacStateBadge />
+              )}
             </div>
           </td>
         </>

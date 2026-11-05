@@ -1,4 +1,5 @@
 "use client";
+import { CacStateBadge } from "./cac-state-badge";
 import { advisorFinancialSummary } from "../../lib/meta-ads/advisor-financial-summary";
 import type { AdvisorDayData } from "./advisor-types";
 const number = (n: number) =>
@@ -71,6 +72,26 @@ export function AdvisorFinancialSummary({
         Costo de adquisición (CAC)
         <strong>{value("metaCac")}</strong>
         <small>G Meta / ventas · no se divide entre cero.</small>
+      </span>
+      <span data-advisor-cac-state="period">
+        Estado del asesor
+        <strong>
+          {summary.money.length ? (
+            summary.money.map((m) => (
+              <span key={m.currency} style={{ display: "block" }}>
+                {summary.money.length > 1 ? m.currency + " · " : ""}
+                <CacStateBadge
+                  status={m.status}
+                  partial={m.statusPartial}
+                  fxPending={m.fxPending}
+                />
+              </span>
+            ))
+          ) : (
+            <CacStateBadge />
+          )}
+        </strong>
+        <small>Desempeño del período · CAC Meta evaluado en soles.</small>
       </span>
       {summary.assignmentPartial && (
         <span className="advisor-metric-context">

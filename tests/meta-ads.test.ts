@@ -6449,3 +6449,25 @@ test("Detalle de inventario: destinos del mismo diplomado por país/hoja, sin al
   assert.deepEqual(inventoryDetailDestinations("Otro ausente",aliases,columns),[]);
   assert(!inventoryDetailDestinations("Criminalística Internacional",[...aliases,{id:"duplicate",tableId:"t1",name:"Criminalística Internacional",standalone:false}],columns).some(d=>d.tableId==="t1"));
 });
+
+test("Totales diarios: efectividad/CAC por fuente y estado del país con ceros, N.A., parciales y moneda", async () => {
+ const {totalDailyStatistics} = await import("../lib/meta-ads/total-daily-statistics");
+ const v=(value:number|null,partial=false)=>({value,known:value===null?0:1,expected:1,na:0,pending:false,partial});
+ const cell={sums:{sales:v(10),base:v(999),spend:v(999),budget:v(99),fixedCost:v(null)},metaSums:{base:v(200),spend:v(700)},manual:{baseManual:100,totalSpend:200},revision:0};
+ assert.deepEqual(totalDailyStatistics(cell,"manual",200),{effectiveness:10,cac:20,status:"WITHIN",partial:false,fxPending:false});
+ assert.deepEqual(totalDailyStatistics(cell,"automatic",700),{effectiveness:5,cac:70,status:"CRITICAL",partial:false,fxPending:false});
+ for(const[g,status]of [[24.99,"TESTING"],[25,"ALERT"],[50,"SEVERE"],[65,"CRITICAL"]] as const){const d={...cell,sums:{...cell.sums,sales:v(0)},manual:{baseManual:0,totalSpend:g}};assert.equal(totalDailyStatistics(d,"manual",g).status,status);assert.equal(totalDailyStatistics(d,"manual",g).cac,null);}
+ assert.equal(totalDailyStatistics(cell,"automatic",null).status,"PENDING");
+ assert.equal(totalDailyStatistics(cell,"automatic",null).fxPending,true);
+ const partial={...cell,sums:{...cell.sums,sales:v(10,true)}};assert.equal(totalDailyStatistics(partial,"automatic",700).partial,true);
+ const na={...cell,sums:{...cell.sums,sales:{...v(null),na:1}}};assert.equal(totalDailyStatistics(na,"manual",200).status,"PENDING");
+ const usd={...cell,sums:{...cell.sums,sales:v(1)},manual:{baseManual:10,totalSpend:20}};assert.equal(totalDailyStatistics(usd,"manual",80).cac,20);assert.equal(totalDailyStatistics(usd,"manual",80).status,"CRITICAL");
+});
+test("Estado del asesor: CAC Meta del período, ceros y conversiones conocidas sin mezclar monedas", async () => {
+ const {advisorFinancialSummary}=await import("../lib/meta-ads/advisor-financial-summary");
+ const day={day:"2026-11-01",sales:3,financial:{currencies:[{currency:"PEN",budget:1,spend:417.47,sales:3,partial:false}],base:655,metaPartial:false,assignmentPartial:false,updatedAt:null}};
+ assert.equal(advisorFinancialSummary([day]).money[0].status,"CRITICAL");
+ assert.equal(advisorFinancialSummary([{...day,financial:{...day.financial,currencies:[{...day.financial.currencies[0],currency:"USD",spend:20,spendPen:80,sales:1}]}}]).money[0].status,"CRITICAL");
+ assert.equal(advisorFinancialSummary([{...day,financial:{...day.financial,currencies:[{...day.financial.currencies[0],currency:"USD",spend:20}]}}]).money[0].status,"PENDING");
+ assert.equal(advisorFinancialSummary([{...day,sales:0,financial:{...day.financial,currencies:[{...day.financial.currencies[0],spend:10,sales:0}]}}]).money[0].status,"TESTING");
+});

@@ -1,3 +1,4 @@
+import { convertMoney, type FxRates } from "./exchange-rates";
 import { advisorMetaPeriods } from "./advisor-meta-periods";
 import { advisorAssignmentPeriods } from "./advisor-periods";
 import type { AssignmentChange } from "./advisor-attribution";
@@ -8,6 +9,8 @@ export type AdvisorFinancialDay = {
     currency: string;
     budget: number | null;
     spend: number | null;
+    spendPen?: number | null;
+    spendPenPartial?: boolean;
     sales: number | null;
     partial: boolean;
     budgetPartial?: boolean;
@@ -26,6 +29,7 @@ export function advisorFinancialMetrics(
   dates: string[],
   personIds: Set<string>,
   asOf = new Date(),
+  rates?: Map<string, FxRates>,
 ) {
   const output = new Map<string, Record<string, AdvisorFinancialDay>>();
   for (const row of rows) {
@@ -103,7 +107,14 @@ export function advisorFinancialMetrics(
           money.budgetPartial = true;
         if (metaOwner === id) {
           const spend = cell?.metaSpend ?? null;
-          if (spend !== null) money.spend = (money.spend ?? 0) + spend;
+          if (spend !== null) {
+            money.spend = (money.spend ?? 0) + spend;
+            const pen = currency
+              ? convertMoney(spend, currency, "PEN", rates?.get(day))
+              : null;
+            if (pen === null) money.spendPenPartial = true;
+            else money.spendPen = (money.spendPen ?? 0) + pen;
+          }
           if (cell?.sourceBase !== null && cell?.sourceBase !== undefined)
             sum.base = (sum.base ?? 0) + cell.sourceBase;
         }

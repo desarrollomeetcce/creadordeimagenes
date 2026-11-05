@@ -6,6 +6,7 @@ import {
   type AdvisorAnalysisView,
 } from "../../lib/meta-ads/advisor-analysis-view";
 import { advisorFinancialSummary } from "../../lib/meta-ads/advisor-financial-summary";
+import { CacStateBadge } from "./cac-state-badge";
 import { countryOptions } from "../../lib/meta-ads/countries";
 import { summaryPeriod } from "../../lib/meta-ads/summary-period";
 import { SummaryPeriodNotice } from "./summary-period-notice";
@@ -464,12 +465,13 @@ export function AdvisorTeamAnalysis({
                     <thead>
                       <tr>
                         <th>Asesor</th>
-                        <th>Estado</th>
+                        <th>Situación laboral</th>
                         <th>Ventas (V)</th>
                         <th>{basis}</th>
                         <th>V/{basis} %</th>
                         <th>Gasto Meta (G)</th>
                         <th>CAC · G/V</th>
+                        <th>Estado · CAC</th>
                         <th>Promedio por día con V</th>
                         <th>Cobertura V / base</th>
                         <th>Detalle</th>
@@ -493,6 +495,23 @@ export function AdvisorTeamAnalysis({
                           </td>
                           <td>{moneyText(r.id, "spend")}</td>
                           <td>{moneyText(r.id, "metaCac")}</td>
+                          <td data-advisor-cac-state={r.id}>
+                            {financial.get(r.id)?.money.map((m) => (
+                              <span
+                                key={m.currency}
+                                style={{ display: "block" }}
+                              >
+                                {(financial.get(r.id)?.money.length ?? 0) > 1
+                                  ? m.currency + " · "
+                                  : ""}
+                                <CacStateBadge
+                                  status={m.status}
+                                  partial={m.statusPartial}
+                                  fxPending={m.fxPending}
+                                />
+                              </span>
+                            ))}
+                          </td>
                           <td>{fmt(r.average)}</td>
                           <td>
                             {r.knownSales}/{r.days} · {r.knownBase}/{r.days}{" "}

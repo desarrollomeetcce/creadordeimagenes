@@ -1248,10 +1248,13 @@ async function readAdvisorSheet(
           "Selecciona una asignación válida con hoja, inventario, país y asesor.",
           404,
         );
+      const financialRates = !personal && !managed && financialRows.some(r=>r.currency && r.currency!=="PEN") ? await tx.metaFxDay.findMany({where:{day:{gte:since,lte:until}},select:{day:true,rates:true}}) : [];
       const financial = advisorFinancialMetrics(
         financialRows,
         dates,
         personIds,
+        new Date(),
+        new Map(financialRates.map(d=>[d.day,d.rates as import("./exchange-rates").FxRates])),
       );
       return {
         tableId,

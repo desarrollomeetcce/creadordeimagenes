@@ -1,3 +1,4 @@
+import { cacAssessment } from "./inventory-cac-policy";
 import { observedPeriodRatio } from "./observed-period-ratio";
 import { periodComparison } from "./period-comparison";
 import type { AdvisorFinancialDay } from "./advisor-financial-metrics";
@@ -21,8 +22,39 @@ export function advisorFinancialSummary(
       parts.some((p) => p?.[key] != null)
         ? parts.reduce((n, p) => n + (p?.[key] ?? 0), 0)
         : null;
+    const salesParts = parts.filter((p) => p?.sales != null);
+    const sales = salesParts.length
+      ? salesParts.reduce((n, p) => n + p!.sales!, 0)
+      : null;
+    const penParts = parts.map(
+      (p) => p?.spendPen ?? (currency === "PEN" ? (p?.spend ?? null) : null),
+    );
+    const fxPending = parts.some(
+      (p, i) => p?.spend != null && (p.spendPenPartial || penParts[i] === null),
+    );
+    const amountPen =
+      fxPending || !penParts.some((p) => p !== null)
+        ? null
+        : penParts.reduce<number>((n, p) => n + (p ?? 0), 0);
+    const assessment = cacAssessment(
+      sales,
+      amountPen,
+      sales !== null && amountPen !== null,
+      undefined,
+      amountPen !== null,
+    );
     return {
       currency,
+      status: assessment.status,
+      fxPending,
+      statusPartial:
+        parts.some((p) => !p || p.partial || p.sales === null) ||
+        days.some(
+          (d) =>
+            !d.financial ||
+            d.financial.metaPartial ||
+            d.financial.assignmentPartial,
+        ),
       budget: sum("budget"),
       spend: sum("spend"),
       budgetCac: periodComparison(

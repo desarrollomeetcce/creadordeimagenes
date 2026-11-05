@@ -1,4 +1,6 @@
 "use client";
+import { totalDailyStatistics } from "../../lib/meta-ads/total-daily-statistics";
+import { CacStateBadge } from "./cac-state-badge";
 import { useSheetTextFit } from "./use-sheet-text-fit";
 import { subscribeAdvisorSalesChanged } from "./advisor-sales-events";
 import { useSheetWidths } from "./use-sheet-widths";
@@ -225,6 +227,22 @@ export function EffectivenessTotals({
     () => totalSourceBlocks(data, country, currency),
     [data, country, currency],
   );
+  const statisticCurrencyFormats = useMemo(
+    () =>
+      new Map(
+        [...new Set(blocks.map((b) => b.currency).filter(Boolean))].map(
+          (code) => [
+            code,
+            new Intl.NumberFormat("es-PE", {
+              style: "currency",
+              currency: code,
+              maximumFractionDigits: 2,
+            }),
+          ],
+        ),
+      ),
+    [blocks],
+  );
   const displayTables = data.filter((t) =>
     blocks.some((b) => b.table.tableId === t.tableId),
   );
@@ -236,6 +254,27 @@ export function EffectivenessTotals({
     totalViewColumns(effectiveMode, parameters.enabled[mode]),
   );
   const columns = columnTools.columns;
+  const statisticsColumns = [
+    {
+      key: "effectiveness",
+      label: mode === "automatic" ? "Efectividad Meta" : "Efectividad manual",
+      formula: mode === "automatic" ? "V / B × 100" : "V / BM × 100",
+      width: 122,
+    },
+    {
+      key: "cac",
+      label: mode === "automatic" ? "CAC Meta" : "CAC manual",
+      formula: mode === "automatic" ? "G Meta / V" : "GM / V",
+      width: 112,
+    },
+    {
+      key: "status",
+      label: "Estado del día",
+      formula: "Total del país · CAC en S/",
+      width: 140,
+    },
+  ] as const;
+
   const layoutColumns = [
     { key: "date", width: 100 },
     ...blocks.flatMap((block) => [
@@ -244,6 +283,10 @@ export function EffectivenessTotals({
       ...columns.map((m) => ({
         key: block.key + ":" + m.key,
         width: widths[block.table.tableId + ":" + m.key] ?? 76,
+      })),
+      ...statisticsColumns.map((m) => ({
+        key: block.key + ":statistics:" + m.key,
+        width: m.width,
       })),
     ]),
   ];
@@ -646,7 +689,7 @@ export function EffectivenessTotals({
                       colSpan={
                         blocks.filter((b) => b.table.tableId === t.tableId)
                           .length *
-                        (columns.length + 2)
+                        (columns.length + 2 + statisticsColumns.length)
                       }
                     >
                       <div className="totals-source-heading">
@@ -789,6 +832,22 @@ export function EffectivenessTotals({
                         <SheetDataFillBadge kind={columnTools.kind(m.key)} />
                       </th>
                     )),
+                    ...statisticsColumns.map((m) => (
+                      <th
+                        key={block.key + ":statistics:" + m.key}
+                        data-total-statistic={m.key}
+                        className={`totals-statistics totals-statistics-${m.key}`}
+                        title={`Estadísticas del día por país. ${m.formula}. No es una evaluación individual de diplomados.`}
+                      >
+                        {m.label}
+                        {handle(
+                          block.key + ":statistics:" + m.key,
+                          `${block.table.name} ${block.country} ${m.label}`,
+                          m.width,
+                        )}
+                        <small>{m.formula}</small>
+                      </th>
+                    )),
                   ])}
                 </tr>
               </thead>
@@ -829,6 +888,28 @@ export function EffectivenessTotals({
                             x.country === g.country &&
                             x.currency === g.currency,
                         )?.days[day];
+                      const amount =
+                        mode === "automatic"
+                          ? (cell?.metaSums?.spend?.value ?? null)
+                          : typeof cell?.manual.totalSpend === "number"
+                            ? cell.manual.totalSpend
+                            : null;
+                      const rate =
+                        cell?.penRate ?? (g.currency === "PEN" ? 1 : null);
+                      const amountPen =
+                        amount === null || !g.currency
+                          ? null
+                          : amount === 0
+                            ? 0
+                            : rate === null
+                              ? null
+                              : amount * rate;
+                      const stat = totalDailyStatistics(
+                        cell,
+                        mode,
+                        amountPen,
+                        t.dailyCacRules,
+                      );
                       return [
                         <td
                           key={block.key + ":country"}
@@ -861,7 +942,10 @@ export function EffectivenessTotals({
                         </td>,
                         ...columns.map((m) => {
                           const sum = m.sum
-                            ? cell?.sums?.[m.key as SheetMetric]
+                            ? mode === "automatic" &&
+                              (m.key === "base" || m.key === "spend")
+                              ? cell?.metaSums?.[m.key]
+                              : cell?.sums?.[m.key as SheetMetric]
                             : undefined;
                           return (
                             <td
@@ -969,6 +1053,46 @@ export function EffectivenessTotals({
                                     )
                                   }
                                 />
+                              )}
+                            </td>
+                          );
+                        }),
+                        ...statisticsColumns.map((m) => {
+                          const value =
+                            m.key === "status" ? null : (stat?.[m.key] ?? null);
+                          return (
+                            <td
+                              key={block.key + ":statistics:" + m.key}
+                              data-source-table={t.tableId}
+                              data-country={g.country}
+                              data-currency={g.currency}
+                              data-metric={m.key}
+                              data-readonly="true"
+                              className={`totals-statistics totals-statistics-${m.key}`}
+                              title={`${day} · ${g.country} · ${m.formula}. ${stat?.partial ? "Totales parciales; la evaluación puede cambiar al completar registros." : "Totales de esta fecha, país y moneda."}${stat?.fxPending ? " Falta tasa diaria para evaluar en soles." : ""}`}
+                            >
+                              {m.key === "status" ? (
+                                <span className="inventory-cac-state">
+                                  <CacStateBadge
+                                    status={stat?.status}
+                                    partial={stat?.partial}
+                                    fxPending={stat?.fxPending}
+                                  />
+                                </span>
+                              ) : value === null ? (
+                                "—"
+                              ) : (
+                                (m.key === "effectiveness"
+                                  ? value.toLocaleString("es-PE", {
+                                      maximumFractionDigits: 2,
+                                    }) + " %"
+                                  : g.currency
+                                    ? statisticCurrencyFormats
+                                        .get(g.currency)!
+                                        .format(value)
+                                    : value.toLocaleString("es-PE", {
+                                        maximumFractionDigits: 2,
+                                      })) + (stat?.partial ? " *" : "")
                               )}
                             </td>
                           );

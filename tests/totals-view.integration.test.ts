@@ -172,6 +172,10 @@ test("Totales: bloques vacíos sin perder B/BM, ceros o N.A. ni cambiar los dato
         assert.equal(g.days["2026-10-20"].sums.sales.value, 0);
       },
     );
+    await t.test("Estadísticas diarias evalúan país/fecha con GM manual separado del gasto Meta", async()=>{
+      const entry=await db.metaEffectivenessTotalDay.create({data:{sheetId:lists[1].id,tableId:tables[0].id,country:"AR",currency:"PEN",day:"2026-10-20",values:{totalSpend:70}}});
+      try {const data=await effectivenessTotals(u,tables[0].id,"2026-10-20","2026-10-20",lists[1].id);const d=data.groups.find(g=>g.country==="AR")!.days["2026-10-20"];assert.equal(d.dailyStatistics.manual.status,"CRITICAL");assert.equal(d.dailyStatistics.manual.cac,null);assert.equal(d.dailyStatistics.automatic.status,"TESTING");assert.equal(d.dailyStatistics.automatic.cac,null);}finally{await db.metaEffectivenessTotalDay.deleteMany({where:{sheetId:entry.sheetId,tableId:entry.tableId,country:entry.country,currency:entry.currency,day:entry.day}});}
+    });
     await t.test("CAC original de Meta permanece separado de ajustes manuales de gasto", async () => {
       const row = await db.metaEffectivenessRow.findFirstOrThrow({where:{aliasId:aliases[0].id,country:"AR"}});
       const cell = await db.metaEffectivenessDay.findUniqueOrThrow({where:{rowId_day:{rowId:row.id,day:"2026-10-20"}}});

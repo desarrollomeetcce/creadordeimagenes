@@ -12,6 +12,8 @@ export const formatTotalDetail = (v: TotalValue) =>
 export type ManualTotalMetric =
   "baseManual" | "advisorBase" | "totalSpend" | "fixedCost";
 export type TotalDay = {
+  penRate?: number | null;
+  dailyStatistics?: Record<"manual" | "automatic", import("./total-daily-statistics").TotalDailyStatistics>;
   metaSums?: Partial<Record<"base" | "spend", TotalValue>>;
   historicalSales?: boolean;
   sharedManualBase?: boolean;
@@ -20,6 +22,7 @@ export type TotalDay = {
   revision: number;
 };
 export type TotalSheet = {
+  dailyCacRules?: import("./inventory-cac-policy").CacRules;
   tableId: string;
   name: string;
   missingFxDays: string[];
