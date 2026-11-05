@@ -1,4 +1,5 @@
 import test from "node:test";
+import {workbookSheets} from "../lib/meta-ads/workbook-sheets";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import argon2 from "argon2";
@@ -139,6 +140,12 @@ test("Compartir Efectividad por módulo y documento no expone otras hojas", asyn
   const fail = (p: Promise<unknown>, status: number) =>
     assert.rejects(p, (e: any) => e.status === status);
   try {
+    await t.test("Compact workbook directory omits heavy config and preserves tab choices",async()=>{
+      await db.metaEffectivenessSheet.update({where:{id:totals.id},data:{config:{selected:[tables[0].id],unrelatedHeavySetting:"x".repeat(100000)}}});
+      const compact=await workbookSheets(owner,true),row=compact.find(s=>s.id===totals.id)!;
+      assert.deepEqual(row.config,{selected:[tables[0].id]});
+      assert.equal(((await db.metaEffectivenessSheet.findUniqueOrThrow({where:{id:totals.id}})).config as any).unrelatedHeavySetting.length,100000);
+    });
     await t.test(
       "OWNER comparte documento; nadie más delega ni gana rol general",
       async () => {
@@ -164,6 +171,9 @@ test("Compartir Efectividad por módulo y documento no expone otras hojas", asyn
           listed.map((x: any) => x.id),
           [lists[0].id],
         );
+        const compact=await (await call(viewer,"financial/workbook-sheets?mode=directory")).json();
+        assert.deepEqual(compact.map((x:any)=>x.id),[lists[0].id]);
+        assert(!compact.some((x:any)=>x.id===totals.id));
         const data = await (
           await call(
             viewer,

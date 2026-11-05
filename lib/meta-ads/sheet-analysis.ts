@@ -4,7 +4,7 @@ import { financialContext, checkFinancialContext } from "./financial-access";
 import { demand } from "../errors";
 import { recordedStarts, recordedTableFloor } from "./recorded-starts";
 import { db } from "../db";
-import { inventoryEffectivenessSource } from "./effectiveness";
+import { inventoryEffectivenessSource, type EffectivenessTarget } from "./effectiveness";
 import { inventoryReportSummary } from "./inventory-report-summary";
 import { activationSettings } from "./inventory-sheet-activation";
 import {
@@ -17,7 +17,7 @@ import type { Actor } from "./service";
 /** Only financial document readers reach this service; source authorizes the exact table before other reads. */
 export async function sheetAnalysis(
   actor: Actor,
-  q: { tableId: string; since: string; until: string },
+  q: { tableId: string; since: string; until: string;target?:EffectivenessTarget },
 ) {
   return db.$transaction(
     async (tx) => {
@@ -37,6 +37,7 @@ export async function sheetAnalysis(
         q.since,
         q.until,
         tx,
+        q.target,
       );
       const asOf = new Date().toISOString(),
         today = limaDay(new Date(asOf));
@@ -49,6 +50,7 @@ export async function sheetAnalysis(
           id: true,
           inventorySheet: { select: { config: true } },
           effectivenessStates: {
+            ...(q.target?{where:{country:q.target.country}}:{}),
             select: {
               country: true,
               events: {
@@ -61,7 +63,7 @@ export async function sheetAnalysis(
       });
       const first = await tx.metaEffectivenessDay.aggregate({
         where: {
-          row: { aliasId: { in: aliases.map((a) => a.id) } },
+          row: { aliasId: { in: aliases.map((a) => a.id) },...(q.target?{country:q.target.country}:{}) },
           day: { lte: today },
         },
         _min: { day: true },
@@ -70,7 +72,7 @@ export async function sheetAnalysis(
         [
           first._min.day,
           cacWindow(today).since,
-          await recordedTableFloor(tx, q.tableId, today),
+          q.target?null:await recordedTableFloor(tx, q.tableId, today),
           ...aliases.flatMap((a) =>
             a.effectivenessStates.flatMap((s) =>
               s.events.map((e) => limaDay(e.createdAt)),
@@ -85,6 +87,7 @@ export async function sheetAnalysis(
         since,
         today,
         tx,
+        q.target,
       );
       const rates = await tx.metaFxDay.findMany({
           where: { day: { gte: since, lte: today } },
@@ -120,9 +123,9 @@ export async function sheetAnalysis(
         });
       const where = { tableId: q.tableId, day: { gte: q.since, lte: q.until } };
       const [bm, bc, legacy] = await Promise.all([
-        tx.metaManualBaseDay.findMany({ where }),
-        tx.metaAdvisorBaseDay.findMany({ where }),
-        tx.metaEffectivenessTotalDay.findMany({
+        q.target?Promise.resolve([]):tx.metaManualBaseDay.findMany({ where }),
+        q.target?Promise.resolve([]):tx.metaAdvisorBaseDay.findMany({ where }),
+        q.target?Promise.resolve([]):tx.metaEffectivenessTotalDay.findMany({
           where,
           orderBy: [{ sheetId: "asc" }, { currency: "asc" }],
         }),

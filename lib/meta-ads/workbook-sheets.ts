@@ -1,4 +1,4 @@
-import type { Prisma } from "@prisma/client";
+import { Prisma } from "@prisma/client";
 import { sharedTabWhere } from "./financial-access";
 import { z } from "zod";
 import { db } from "../db";
@@ -60,8 +60,15 @@ export function parseWorkbookConfig(
     );
   return c;
 }
-export async function workbookSheets(actor: Actor) {
+export async function workbookSheets(actor: Actor, directory=false) {
   ownerOnly(actor);
+  if(directory)return db.$transaction(async tx=>{
+    const rows=await tx.metaEffectivenessSheet.findMany({where:{archivedAt:null,...sharedTabWhere(actor)},select:{id:true,kind:true,name:true,revision:true},orderBy:[{createdAt:"asc"},{id:"asc"}]});
+    if(!rows.length)return [];
+    const configs=await tx.$queryRaw<{id:string;config:Prisma.JsonValue}[]>`SELECT id,jsonb_build_object('selected',config->'selected') AS config FROM "MetaEffectivenessSheet" WHERE id IN (${Prisma.join(rows.map(row=>row.id))})`;
+    const byId=new Map(configs.map(row=>[row.id,row.config]));
+    return rows.map(row=>({...row,config:byId.get(row.id)??{}}));
+  },{isolationLevel:"RepeatableRead"});
   return db.metaEffectivenessSheet.findMany({
     where: { archivedAt: null, ...sharedTabWhere(actor) },
     orderBy: [{ createdAt: "asc" }, { id: "asc" }],

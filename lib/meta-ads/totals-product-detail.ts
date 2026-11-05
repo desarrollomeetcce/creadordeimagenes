@@ -1,7 +1,7 @@
 import { db } from "../db";
 import {ownerOnly} from "./financial-access";
 import type { Actor } from "./service";
-import { effectiveness } from "./effectiveness";
+import { effectiveness, type EffectivenessTarget } from "./effectiveness";
 import { advisorSalesPlan } from "./advisor-sales-plan";
 import { sumEffectivenessDay } from "./effectiveness-total-values";
 import type { TotalProductReport } from "./totals-product-summary";
@@ -14,19 +14,20 @@ export async function totalsProductDetail(
     currency: string;
     since: string;
     until: string;
+    target?:EffectivenessTarget;
   },
 ) {
   ownerOnly(actor);
   return db.$transaction(
     async (tx) => {
       const [sheet, assignments, approvals] = await Promise.all([
-        effectiveness(actor, q.tableId, q.since, q.until, tx),
+        effectiveness(actor, q.tableId, q.since, q.until, tx,[],false,q.target),
         tx.metaAdvisorAssignment.findMany({
-          where: { alias: { tableId: q.tableId }, country: q.country },
+          where: { alias: { tableId: q.tableId, ...(q.target&&"names" in q.target?{name:{in:q.target.names}}:{}) }, country: q.country },
         }),
         tx.metaAdvisorSalesApproval.findMany({
           where: {
-            row: { alias: { tableId: q.tableId }, country: q.country },
+            row: { alias: { tableId: q.tableId, ...(q.target&&"names" in q.target?{name:{in:q.target.names}}:{}) }, country: q.country },
             day: { gte: q.since, lte: q.until },
           },
           include: { row: { select: { aliasId: true } } },

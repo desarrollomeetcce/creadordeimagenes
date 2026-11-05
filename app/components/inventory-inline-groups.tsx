@@ -108,6 +108,7 @@ export function InventoryInlineGroups({
       ].sort((a, b) => a.localeCompare(b, "es")),
     [directory.catalog],
   );
+  const freeCategoryCounts=useMemo(()=>{const counts=new Map<string,number>();for(const item of free)for(const key of new Set([...item.primaryNames,...(item.secondaryNames??[])].map(categoryKey)))counts.set(key,(counts.get(key)??0)+1);return counts;},[free]);
   async function run(body: Record<string, unknown>, reload = false) {
     if (pending.current) return;
     pending.current = true;
@@ -260,8 +261,8 @@ export function InventoryInlineGroups({
           value={category}
           placeholder="Por categoría"
           options={[
-            { value: "", label: "Todas las categorías" },
-            ...categoryOptions.map((c) => ({ value: c, label: c })),
+            { value: "", label: `Todas las categorías (${free.length})` },
+            ...categoryOptions.map((c) => ({ value: c, label: `${c} (${freeCategoryCounts.get(categoryKey(c))??0})` })),
           ]}
           disabled={busy}
           onSelect={(c) => {

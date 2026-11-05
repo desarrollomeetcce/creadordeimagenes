@@ -1,4 +1,13 @@
 
+### 2026-11-05 · Carga independiente y trabajo reducido de Inventario
+
+ProductsCatalog divide Inventario, hoja financiera, Asesores y Totales en componentes dinámicos. Asesores se consulta solo al abrir la hoja que lo usa; hover/foco de pestaña prepara JS sin consultar métricas. Callback de recarga estable. Las vistas ajenas no se montaban simultáneamente, pero su código y el directorio de asesores sí se cargaban antes.
+
+Categorías calcula pertenencia/conteos por una pasada memoizada, selección usa Set y las versiones de evaluación solo se construyen para filas montadas/países visibles. Memo de fila conserva cambios de selección completa/parcial, altura, parámetros, arrastre y datos; funciones diferidas evitan construir controles de celdas intactas. Contexto de lectura de activación proyecta config.inventoryActivation en PostgreSQL; escritores siguen leyendo JSON íntegro y usando lock/CAS.
+
+Verificación319 unitarias,38 integraciones (CAC/activación/permisos y lectura con100KB ajenos seguida de escritura que conserva esos100KB), typecheck/build y4 recorridos Chromium. Ensayo local con768 diplomados/57 categorías y CPU4×: código descargado1376046→1106620bytes (~20% menos); petición de asesores1→0; selección media339→324ms, p95455→396ms. Apertura4819→4790ms, sin mejora clara del tiempo total en ese ensayo. Orden de100 filas idéntico, selección conservada, sin lectura financiera de hoja al abrir Inventario; entrar a la hoja sí carga sus datos y asesores. No son medidas del dominio privado ni garantía de rapidez de las consultas reales. Datos sintéticos exclusivos, sin Graph/ads/IA reales.
+
+
 ### 2026-11-05 · Grupos sin franja fija
 
 Crear grupo/Por reemplazar se sitúan junto a Seleccionar categoría en la misma franja. Crear abre diálogo movible con solo diplomados sin grupo, catálogo ya recibido, filtro local, selección por casillas, categoría, azar/cantidad y creación explícita al pie.50 filas iniciales con ampliación por50. El formulario deja de reservar espacio mientras está cerrado.
@@ -2633,3 +2642,9 @@ Directorio de Grupos separado de su historial: modo rápido con catálogo/grupos
 Página de Facebook tiene búsqueda local, logos de la lectura actual y diálogo maximizable. Logos limitados a CDN Meta, carga diferida, fallback de iniciales y lectura básica si picture es rechazado. CSP permite esos hosts concretos, sin exponer tokens.
 
 Validación317 unitarias,36 comprobaciones de activación/uso,4 HTTP y4 Chromium: cuatro estados, CAS, hechos/otro país preservados, token de fila canónico; directorio básico sin historial y enriquecimiento sin catálogo duplicado;45 páginas con logos, filtro sin API por tecla, maximización/selección; fila gris actualizada sin GET de hoja; Lista/Grupos seleccionables con alias-tables e historial retenidos, Top espera uso real. Pruebas sintéticas sin IA ni publicidad con cargo. No certifica latencia del host privado real.
+
+## 2026-11-05 · Inventario acotado y evaluación de seleccionados
+
+Pruebas sintéticas de directorio: JSON ajeno100KB omitido en lecturas y conservado tras escritura; metadatos selected y permisos VIEW intactos. Evaluación seleccionada compara filas contra la evaluación completa, excluye999 ventas de un diplomado ajeno y888 de otro país; manual G no se convierte en gasto Meta; bases globales excluidas, lista ajena y rol sin permiso rechazados. Sin Graph ni publicidad real.
+
+Benchmark local768 diplomados/57 categorías/CPU4×: -19.6% JS inicial y sin consulta de asesores al abrir Inventario. Apertura inicial similar; no afirmar una ganancia grande por esa medición. Categorías en Crear grupo muestran total disponible y conteos sin duplicados, sin lecturas adicionales al abrir.

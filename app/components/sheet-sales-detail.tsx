@@ -77,9 +77,11 @@ export function SheetSalesDetail({
   initialSince,
   initialUntil,
   onClose,
+  scopedSelection,
 }: {
   tableId: string;
   selection?: string[];
+  scopedSelection?:{listId:string;country:string;names:string[]};
   inventoryAliases?: { id: string; inventorySheetId?: string }[];
   name: string;
   initialSince: string;
@@ -90,7 +92,7 @@ export function SheetSalesDetail({
     id = useId();
   const [since, setSince] = useState(initialSince),
     [until, setUntil] = useState(initialUntil),
-    [country, setCountry] = useState("__all"),
+    [country, setCountry] = useState(scopedSelection?.country??"__all"),
     [blocks, setBlocks] = useState<SheetSalesBlock[]>([]),
     [fetching, setLoading] = useState(true),
     [error, setError] = useState(""),
@@ -98,7 +100,7 @@ export function SheetSalesDetail({
     [selected, setSelected] = useState("__all"),
     [query, setQuery] = useState(""),
     [status, setStatus] = useState("all"),
-    [activity, setActivity] = useState("all"),
+    [activity, setActivity] = useState(scopedSelection?"operational":"all"),
     [threshold, setThreshold] = useState(2),
     [ascending, setAscending] = useState(true),
     [sortKey, setSortKey] = useState<SheetSalesSort>("sales"),
@@ -142,7 +144,8 @@ export function SheetSalesDetail({
     </th>
   );
   const [loadedQuery, setLoadedQuery] = useState("");
-  const rangeQuery = JSON.stringify([tableId, since, until]);
+  const scopeKey=JSON.stringify(scopedSelection??null);
+  const rangeQuery = JSON.stringify([tableId, since, until,scopeKey]);
   const loading = fetching || (!error && loadedQuery !== rangeQuery);
   const dates = useMemo(() => {
     const result: string[] = [];
@@ -159,6 +162,7 @@ export function SheetSalesDetail({
   }, []);
   useEffect(() => {
     if (!dates.length) return;
+    const controller=new AbortController();
     let active = true,
       inFlight = false;
     setBlocks([]);
@@ -168,7 +172,8 @@ export function SheetSalesDetail({
       if (!active || inFlight || document.hidden) return;
       inFlight = true;
       try {
-        const pages = await readRangePages<EffectivenessSheet>(
+        const scoped=scopedSelection?await readRangePages<import("../../lib/meta-ads/selection-analysis").SelectionAnalysis>("meta-ads/effectiveness/selection-analysis",{tableId,listId:scopedSelection.listId,country:scopedSelection.country,names:JSON.stringify(scopedSelection.names),since,until},()=>active,controller.signal):null;
+        const pages = scoped?scoped.map(p=>p.sheet):await readRangePages<EffectivenessSheet>(
             "meta-ads/effectiveness",
             { tableId, since, until },
             () => active,
@@ -190,7 +195,7 @@ export function SheetSalesDetail({
         for (let i = 0; i < groups.length; i += 2) {
           const batch = await Promise.all(
             groups.slice(i, i + 2).map(async (group) => {
-              const pp = await readRangePages<TotalProductPage>(
+              const pp = scoped?scoped.flatMap(p=>p.products.filter(v=>v.country===group.country&&v.currency===group.currency)):await readRangePages<TotalProductPage>(
                 "meta-ads/effectiveness/totals/product-detail",
                 { tableId, ...group, since, until },
                 () => active,
@@ -210,7 +215,7 @@ export function SheetSalesDetail({
           result.push(...batch);
           if (!active) return;
         }
-        const ap = await readRangePages<SheetAnalysis>(
+        const ap = scoped?scoped.map(p=>p.analysis):await readRangePages<SheetAnalysis>(
           "meta-ads/effectiveness/sheet-analysis",
           { tableId, since, until },
           () => active,
@@ -252,25 +257,27 @@ export function SheetSalesDetail({
       unsubscribe = subscribeAdvisorSalesChanged(load);
     return () => {
       active = false;
+      controller.abort();
       clearInterval(timer);
       unsubscribe();
     };
-  }, [tableId, since, until, reload, dates]);
+  }, [tableId, since, until, reload, dates,scopeKey]);
   const countries = [
       ...new Set([
         ...blocks.map((b) => b.country),
         ...(country !== "__all" ? [country] : []),
       ]),
     ].sort(),
+    operationalSelection = activity === "operational" ? sourceRows.filter(r=>(r.active||r.campaignTask==="CREATE")&&(!selection||selection.includes(JSON.stringify([r.aliasId,r.country])))).map(r=>JSON.stringify([r.aliasId,r.country])) : selection,
     visibleBlocks = filterSheetSalesBlocks(
       blocks,
       country,
-      activity,
-      selection,
+      activity === "operational" ? "all" : activity,
+      operationalSelection,
     ),
     products = useMemo(
       () => sheetSalesProducts(visibleBlocks, dates),
-      [blocks, country, dates, activity, selection],
+      [blocks, country, dates, activity, selection,sourceRows],
     ),
     chosen = products.find((p) => p.aliasId === selected),
     focus = chosen ? [chosen] : products;
@@ -337,7 +344,7 @@ export function SheetSalesDetail({
           <dialog
             ref={dialog}
             className="meta-detail sheet-sales-detail"
-            aria-label={`Detalle de toda la hoja ${name}`}
+            aria-label={selection?`Evaluación de seleccionados ${name}`:`Detalle de toda la hoja ${name}`}
             onCancel={onClose}
           >
             <DetailStickyHeader>
@@ -426,6 +433,7 @@ export function SheetSalesDetail({
                 />
                 <SheetSearchSelect
                   label="País del análisis de toda la hoja"
+                  disabled={!!scopedSelection}
                   value={country}
                   options={[
                     { value: "__all", label: "Todos los países" },
@@ -450,6 +458,7 @@ export function SheetSalesDetail({
                       setSelected("__all");
                     }}
                   >
+                    {scopedSelection&&<option value="operational">Activos y por hacer campaña</option>}
                     <option value="all">Todos · activos e inactivos</option>
                     <option value="active">Activos</option>
                     <option value="inactive">Inactivos</option>
@@ -474,7 +483,7 @@ export function SheetSalesDetail({
               </div>
             </DetailStickyHeader>
             {loading && (
-              <p role="status">Consultando todos los diplomados del período…</p>
+              <p role="status">{scopedSelection?`Consultando ${scopedSelection.names.length} diplomados seleccionados de ${countryName(scopedSelection.country)}…`:"Consultando todos los diplomados del período…"}</p>
             )}
             {error && <p role="alert">{error}</p>}
             {!dates.length && (

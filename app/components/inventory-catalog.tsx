@@ -1,5 +1,6 @@
 "use client";
 import dynamic from "next/dynamic";
+const SelectedInventoryEvaluation=dynamic(()=>import("./sheet-sales-detail").then(m=>m.SheetSalesDetail));
 const InventoryCompactEvaluation=dynamic(()=>import("./inventory-compact-evaluation").then(m=>m.InventoryCompactEvaluation));
 import {useInventoryCountryViewport} from "./use-inventory-country-viewport";
 import {InventoryInlineGroups} from "./inventory-inline-groups";
@@ -45,7 +46,7 @@ import {
   type FinancialTableWindowMode,
 } from "./financial-table-window";
 import { useInventoryPinnedColumns } from "./use-inventory-pinned-columns";
-import { Fragment, memo, useContext, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { Fragment, memo, useContext, useCallback, useEffect, useMemo, useRef, useState, type ComponentProps, type ReactNode } from "react";
 import { useWorkbookPreference } from "./use-workbook-preference";
 import { financialRequest as api } from "./financial-request";
 import { InventoryCategoryAssign } from "./inventory-category-assign";
@@ -119,9 +120,13 @@ function InventoryActionIcon({
 }
 // Selection changes only the checkbox/name cell. All other cells keep their
 // mounted controls and drafts until their data or permissions actually change.
-const InventoryStableCells = memo(function InventoryStableCells({children}:{children:ReactNode;model:object;evaluation:string}) {
-  return <>{children}</>;
+const InventoryStableCells = memo(function InventoryStableCells({children,render}:{children?:ReactNode;render?:()=>ReactNode;model:object;evaluation:string}) {
+  return <>{render?render():children}</>;
 }, (previous,next)=>previous.model===next.model && previous.evaluation===next.evaluation);
+
+// Skip rebuilding unchanged row controls when a different diploma is selected.
+type InventorySizedRowProps=ComponentProps<typeof SheetSizedRow>&{model:object;evaluation:string;selection:string;"data-selected"?:boolean;"data-inventory-name"?:string};
+const InventorySizedRow=memo(function InventorySizedRow({model,evaluation,selection,...props}:InventorySizedRowProps){return <SheetSizedRow {...props}/>},(previous,next)=>previous.model===next.model&&previous.evaluation===next.evaluation&&previous.selection===next.selection&&previous.height===next.height&&previous.label===next.label&&previous["data-selected"]===next["data-selected"]);
 
 function InventoryCheck({
   label,
@@ -175,8 +180,9 @@ export function InventoryCatalog({
     null,
   );
   const [categories, setCategories] = useState<InventoryCategoryState | null>(null);
+  const [selectionEvaluation,setSelectionEvaluation]=useState<{column:string;names:string[];ids:string[];since:string;until:string}|null>(null);
   const [replacementDraft,setReplacementDraft]=useState<{column:string;names:string[]}|null>(null);
-  useEffect(()=>setReplacementDraft(null),[listId]);
+  useEffect(()=>{setReplacementDraft(null);setSelectionEvaluation(null)},[listId]);
   const [groupUnification,setGroupUnification]=useState<string[]|null>(null);
   const [groupFilter, setGroupFilter] = useState("");
   const [groupOrder, setGroupOrder] = useWorkbookPreference<string>(
@@ -805,10 +811,10 @@ export function InventoryCatalog({
   const categoryIds = (g: { links: { id: string }[] }) => [
     ...new Set(g.links.flatMap((a) => categories?.assignments[a.id] ?? [])),
   ];
-  const categoryById = new Map(categories?.categories.map((c) => [c.id, c]));
-  const syllabiByName = new Map(
+  const categoryById = useMemo(()=>new Map(categories?.categories.map((c) => [c.id, c])),[categories?.categories]);
+  const syllabiByName = useMemo(()=>new Map(
     categories?.items?.map((i) => [i.name, i.syllabi ?? []]),
-  );
+  ),[categories?.items]);
   const directoryNames = [
     ...new Set(categories?.categories.map((c) => c.name) ?? []),
   ].sort((a, b) => a.localeCompare(b, "es"));
@@ -911,33 +917,12 @@ export function InventoryCatalog({
           : [],
     ),
   ].filter((name) => name === noCategory || directoryNames.includes(name));
-  const membership = new Map(
-    available.map((g) => [
-      g.name,
-      new Set(groupCategories(g).map((c) => c.name)),
-    ]),
-  );
-  const categoryCounts = new Map(
-    directoryNames.map((name) => [
-      name,
-      available.filter((g) => membership.get(g.name)!.has(name)).length,
-    ]),
-  );
-  const levelCategoryCounts = {
-    PRIMARY: new Map<string, number>(),
-    SECONDARY: new Map<string, number>(),
-  };
-  for (const group of available) {
-    const assigned = groupCategories(group);
-    for (const kind of ["PRIMARY", "SECONDARY"] as const)
-      for (const name of new Set(
-        assigned.filter((c) => c.kind === kind).map((c) => c.name),
-      ))
-        levelCategoryCounts[kind].set(
-          name,
-          (levelCategoryCounts[kind].get(name) ?? 0) + 1,
-        );
-  }
+  const {membership,categoryCounts,levelCategoryCounts}=useMemo(()=>{
+    const membership=new Map<string,Set<string>>(),categoryCounts=new Map(directoryNames.map(name=>[name,0]));
+    const levelCategoryCounts={PRIMARY:new Map<string,number>(),SECONDARY:new Map<string,number>()};
+    for(const group of available){const assigned=groupCategories(group),names=new Set(assigned.map(c=>c.name));membership.set(group.name,names);for(const name of names)categoryCounts.set(name,(categoryCounts.get(name)??0)+1);for(const kind of ["PRIMARY","SECONDARY"] as const)for(const name of new Set(assigned.filter(c=>c.kind===kind).map(c=>c.name)))levelCategoryCounts[kind].set(name,(levelCategoryCounts[kind].get(name)??0)+1);}
+    return {membership,categoryCounts,levelCategoryCounts};
+  },[available,categories]);
   const categoryOptions = [
     { value: noCategory, label: "Sin categorías" },
     ...directoryNames.map((name) => ({
@@ -1506,6 +1491,7 @@ export function InventoryCatalog({
     );
   };
   const [selected, setSelected] = useState<string[]>([]);
+  const selectedSet=useMemo(()=>new Set(selected),[selected]);
   const [bulkIds, setBulkIds] = useState<string[] | null>(null);
   const [sheetRemoval, setSheetRemoval] = useState<string[] | null>(null);
   const sheetAssignment = useRef<{
@@ -1515,7 +1501,7 @@ export function InventoryCatalog({
   const visibleIds = visible.flatMap((g) => g.links.map((a) => a.id)),
     selectedVisible = visibleIds.filter((id) => selected.includes(id)),
     selectedGroups = visible.filter((g) =>
-      g.links.some((a) => selected.includes(a.id)),
+      g.links.some((a) => selectedSet.has(a.id)),
     ).length;
   const [assignment, setAssignment] = useState<{
     kind: "PRIMARY" | "SECONDARY";
@@ -1531,14 +1517,14 @@ export function InventoryCatalog({
   selectedForActions.current = selected;
   const cellModel = useMemo(()=>({}),[
     listId,tables,categories,trialDirectory?.catalog,trialDirectory?.groups,trialDirectory?.canEdit,
-    sheetDirectory,busy,syllabiBusy,categoryDrop,onChanged,onInventorySynced,replacementDraft,trialDirectory?.usage,trialDirectory?.usageReady,
+    sheetDirectory,busy,syllabiBusy,categoryDrop,draggingCategory,onChanged,onInventorySynced,replacementDraft,trialDirectory?.usage,trialDirectory?.usageReady,
     parameters.join("|"),countryCodes.join("|"),viewportCountries.join("|"),hiddenColumnKeys.join("|"),
     columns.some(c=>c.key==="gap"),
   ]);
-  const rowEvaluationVersions=useMemo(()=>new Map(available.map(g=>[g.name,JSON.stringify([
+  const rowEvaluationVersions=useMemo(()=>new Map(available.filter(g=>mountedInventoryNames.has(g.name)).map(g=>[g.name,JSON.stringify([
     countryEvaluation.ready,countryEvaluation.error,countryEvaluation.loading && !countryEvaluation.ready,
-    countryCodes.map(country=>countryEvaluation.lookup.get(JSON.stringify([categoryKey(g.name),country]))),
-  ])])),[listId,tables,categories,countryEvaluation,countryCodes.join("|")]);
+    viewportCountries.map(country=>countryEvaluation.lookup.get(JSON.stringify([categoryKey(g.name),country]))),
+  ])])),[available,countryEvaluation,viewportCountries.join("|"),JSON.stringify([...mountedInventoryNames])]);
   const choose = (ids: string[], checked: boolean) =>
     setSelected((old) =>
       checked
@@ -2080,7 +2066,7 @@ export function InventoryCatalog({
             </button>
           </div>
         </div>
-        {trialDirectory&&<InventoryInlineGroups directory={trialDirectory} groupId={groupFilter} selectedNames={available.filter(g=>g.links.some(a=>selected.includes(a.id))).map(g=>g.name)} countries={[...new Map(knownCountries.map(id=>{const code=id.slice(id.lastIndexOf(":")+1);return [code,{code,name:countryName(code)}] as const})).values()]} onGroupSelect={id=>{setGroupFilter(id);setTopPreference("");}} onSelectNames={names=>{const chosen=new Set(names.map(categoryKey));setSelected(available.filter(g=>chosen.has(categoryKey(g.name))).flatMap(g=>g.links.map(a=>a.id)));}} onPatched={async group=>{const byName=new Map(trialDirectory.catalog.map(i=>[categoryKey(i.name),i]));const needsReload=group.members.some(m=>byName.get(categoryKey(m.name))?.id!==m.itemId);setTrialDirectory(current=>current?{...current,groups:current.groups.some(g=>g.id===group.id)?current.groups.map(g=>g.id===group.id?group:g):[...current.groups,group]}:current);setGroupFilter(group.id);setSelected([]);if(needsReload)await reloadGroups();}} categoryFilter={activeCategories.length===1?activeCategories[0]:""} onCategoryFilter={name=>{selectCategories(name?[name]:[]);setGroupFilter("");setTopPreference("");}} replacement={replacementDraft} replacementColumns={countryCodes.map(id=>({id,label:countryCodes.filter(v=>v.split(":")[1]===id.split(":")[1]).length>1?sheetLabel(id):countryName(id.split(":")[1])}))} defaultColumn={topSheet||""} onReplacementChange={setReplacementDraft} onReplacementApplied={async column=>{countryEvaluation.refresh([column]);setSelected([]);await Promise.all([onChanged(),reloadCategories(),reloadSheetDirectory(),reloadGroups()]);}} onReload={reloadGroups} onInspect={name=>{const column=topSheet||countryCodes[0];const point=countryEvaluation.lookup.get(JSON.stringify([categoryKey(name),column]));if(point?.targets[0])setFullDetail({name,aliasId:point.targets[0].aliasId,tableId:column.split(":")[0],country:column.split(":")[1]});else setMessage("Este diplomado no tiene datos en el país seleccionado.");}}/>}
+        {trialDirectory&&<InventoryInlineGroups directory={trialDirectory} groupId={groupFilter} selectedNames={available.filter(g=>g.links.some(a=>selectedSet.has(a.id))).map(g=>g.name)} countries={[...new Map(knownCountries.map(id=>{const code=id.slice(id.lastIndexOf(":")+1);return [code,{code,name:countryName(code)}] as const})).values()]} onGroupSelect={id=>{setGroupFilter(id);setTopPreference("");}} onSelectNames={names=>{const chosen=new Set(names.map(categoryKey));setSelected(available.filter(g=>chosen.has(categoryKey(g.name))).flatMap(g=>g.links.map(a=>a.id)));}} onPatched={async group=>{const byName=new Map(trialDirectory.catalog.map(i=>[categoryKey(i.name),i]));const needsReload=group.members.some(m=>byName.get(categoryKey(m.name))?.id!==m.itemId);setTrialDirectory(current=>current?{...current,groups:current.groups.some(g=>g.id===group.id)?current.groups.map(g=>g.id===group.id?group:g):[...current.groups,group]}:current);setGroupFilter(group.id);setSelected([]);if(needsReload)await reloadGroups();}} categoryFilter={activeCategories.length===1?activeCategories[0]:""} onCategoryFilter={name=>{selectCategories(name?[name]:[]);setGroupFilter("");setTopPreference("");}} replacement={replacementDraft} replacementColumns={countryCodes.map(id=>({id,label:countryCodes.filter(v=>v.split(":")[1]===id.split(":")[1]).length>1?sheetLabel(id):countryName(id.split(":")[1])}))} defaultColumn={topSheet||""} onReplacementChange={setReplacementDraft} onReplacementApplied={async column=>{countryEvaluation.refresh([column]);setSelected([]);await Promise.all([onChanged(),reloadCategories(),reloadSheetDirectory(),reloadGroups()]);}} onReload={reloadGroups} onInspect={name=>{const column=topSheet||countryCodes[0];const point=countryEvaluation.lookup.get(JSON.stringify([categoryKey(name),column]));if(point?.targets[0])setFullDetail({name,aliasId:point.targets[0].aliasId,tableId:column.split(":")[0],country:column.split(":")[1]});else setMessage("Este diplomado no tiene datos en el país seleccionado.");}}/>}
         {usageError&&<small role="status">{usageError} <button type="button" onClick={()=>void reloadUsage()}>Reintentar uso</button></small>}
         {showParameter("countries") && (
           <div className="inventory-country-controls">
@@ -2624,7 +2610,7 @@ export function InventoryCatalog({
                   selected.includes(id),
                 );
                 const selectedSectionGroups = section.groups.filter((g) =>
-                  g.links.some((a) => selected.includes(a.id)),
+                  g.links.some((a) => selectedSet.has(a.id)),
                 ).length;
                 return (
                   <Fragment key={key}>
@@ -2707,6 +2693,11 @@ export function InventoryCatalog({
                                 {selectedSectionGroups} seleccionado
                                 {selectedSectionGroups === 1 ? "" : "s"}
                               </small>
+                              {topSheet?.includes(":")&&<button type="button" aria-label={`Evaluar ${selectedSectionGroups} seleccionados en ${sheetLabel(topSheet)}`} onClick={()=>{
+                                const chosen=section.groups.filter(g=>g.links.some(a=>selectedSet.has(a.id))),range=evaluationRange(evaluationPeriod),starts=chosen.flatMap(g=>{const point=countryEvaluation.lookup.get(JSON.stringify([categoryKey(g.name),topSheet]));return point?.since?[point.since]:[]}).sort();
+                                const since=range.since??starts[0]?.slice(0,10);if(!since){setMessage("Elige un período de evaluación antes de abrir la selección.");return}
+                                setSelectionEvaluation({column:topSheet,names:chosen.map(g=>g.name),ids:chosen.flatMap(g=>g.links.filter(a=>!a.standalone&&a.tableId===topSheet.split(":")[0]).map(a=>a.id)),since,until:range.until??limaToday()});
+                              }}>Evaluar seleccionados ({selectedSectionGroups})</button>}
                               <button
                                 type="button"
                                 className="inventory-band-delete"
@@ -2724,7 +2715,10 @@ export function InventoryCatalog({
                       </th>
                     </tr>
                     {section.groups.filter(group=>mountedInventoryNames.has(group.name)).map((g) => (
-                      <SheetSizedRow
+                      <InventorySizedRow
+                        selection={`${g.links.every(a=>selectedSet.has(a.id))}:${g.links.some(a=>selectedSet.has(a.id))}`}
+                        model={cellModel}
+                        evaluation={rowEvaluationVersions.get(g.name)??""}
                         label={g.name}
                         height={rowsLayout.heights[g.links[0].id]}
                         onResize={(v) => rowsLayout.resize(g.links[0].id, v)}
@@ -2732,7 +2726,7 @@ export function InventoryCatalog({
                         key={g.name}
                         data-inventory-name={g.name}
                         data-selected={
-                          g.links.some((a) => selected.includes(a.id)) ||
+                          g.links.some((a) => selectedSet.has(a.id)) ||
                           undefined
                         }
                       >
@@ -2744,11 +2738,11 @@ export function InventoryCatalog({
                             <InventoryCheck
                               label={`Seleccionar inventario ${g.name}`}
                               checked={g.links.every((a) =>
-                                selected.includes(a.id),
+                                selectedSet.has(a.id),
                               )}
                               mixed={
-                                g.links.some((a) => selected.includes(a.id)) &&
-                                !g.links.every((a) => selected.includes(a.id))
+                                g.links.some((a) => selectedSet.has(a.id)) &&
+                                !g.links.every((a) => selectedSet.has(a.id))
                               }
                               disabled={busy}
                               onChange={(checked) =>
@@ -2774,7 +2768,7 @@ export function InventoryCatalog({
                             />
                           </div>
                         </td>
-                        <InventoryStableCells model={cellModel} evaluation={rowEvaluationVersions.get(g.name) ?? ""}>
+                        <InventoryStableCells model={cellModel} evaluation={rowEvaluationVersions.get(g.name) ?? ""} render={()=> <>
                         {categoryCell(g, "PRIMARY")}
                         {categoryCell(g, "SECONDARY")}
                         <td
@@ -3019,8 +3013,8 @@ export function InventoryCatalog({
                             }
                           />
                         </td>
-                        </InventoryStableCells>
-                      </SheetSizedRow>
+                        </>}/>
+                      </InventorySizedRow>
                     ))}
                   </Fragment>
                 );
@@ -3126,6 +3120,7 @@ export function InventoryCatalog({
           }}
         />
       )}
+      {selectionEvaluation&&<SelectedInventoryEvaluation tableId={selectionEvaluation.column.split(":")[0]} selection={selectionEvaluation.ids.map(id=>JSON.stringify([id,selectionEvaluation.column.split(":")[1]]))} scopedSelection={{listId,country:selectionEvaluation.column.split(":")[1],names:selectionEvaluation.names}} inventoryAliases={selectionEvaluation.ids.map(id=>({id,inventorySheetId:listId}))} name={`${selectionEvaluation.names.length} diplomados · ${countryName(selectionEvaluation.column.split(":")[1])}`} initialSince={selectionEvaluation.since} initialUntil={selectionEvaluation.until} onClose={()=>setSelectionEvaluation(null)}/>}
       {compactEvaluation&&trialDirectory?.groups.find(g=>g.id===compactEvaluation.groupId)&&<InventoryCompactEvaluation listId={listId} group={trialDirectory.groups.find(g=>g.id===compactEvaluation.groupId)!} focusName={compactEvaluation.name} onClose={()=>setCompactEvaluation(null)}/>}
       {groupUnification && trialDirectory && <InventoryDiplomaUnification listId={listId} sourceIds={groupUnification} catalog={trialDirectory.catalog} onClose={()=>setGroupUnification(null)} onUnified={async result=>{
         await Promise.all([onChanged(),reloadCategories(),reloadGroups(),reloadSheetDirectory()]);

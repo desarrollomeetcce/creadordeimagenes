@@ -44,7 +44,7 @@ import {
   readFinancialSharing,
   saveFinancialSharing,
 } from "./financial-access";
-import { demand } from "../errors";
+import { demand, AppError } from "../errors";
 import { recordActivity } from "../activity";
 import {
   connectionSelect,
@@ -796,7 +796,7 @@ export async function metaRoutes(
   }
   if (path === "workbook-sheets" && method === "GET")
     return send(
-      await (await import("./workbook-sheets")).workbookSheets(actor),
+      await (await import("./workbook-sheets")).workbookSheets(actor, z.enum(["directory"]).optional().parse(req.nextUrl.searchParams.get("mode")??undefined)==="directory"),
     );
   if (path === "workbook-sheets" && method === "POST") {
     ownerOnly(actor);
@@ -1624,6 +1624,14 @@ export async function metaRoutes(
         await import("./sheet-analysis")
       ).sheetActivityStart(actor, q.tableId),
     );
+  }
+  if(path==="effectiveness/selection-analysis"&&method==="GET"){
+    ownerOnly(actor);
+    const raw=Object.fromEntries(req.nextUrl.searchParams);
+    let names:unknown;try{names=JSON.parse(raw.names??"null")}catch{throw new AppError("Selección inválida.",400)}
+    const q=z.object({listId:z.string().min(1).max(100),tableId:z.string().min(1).max(100),country:z.string().refine(isCountryCode),names:z.array(z.string().min(1).max(500)).min(1).max(1000),since:z.string().date(),until:z.string().date()}).strict().parse({...raw,names});
+    demand(new Set(q.names).size===q.names.length&&q.since<=q.until&&(Date.parse(q.until)-Date.parse(q.since))/86400000<31,"Elige una selección única y un período de hasta31 días.");
+    return send(await (await import("./selection-analysis")).selectionAnalysis(actor,q));
   }
   if (path === "effectiveness/sheet-analysis" && method === "GET") {
     ownerOnly(actor);

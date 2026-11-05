@@ -1788,6 +1788,8 @@ test("Activación por hoja: selección, pin, historial y permisos", async (t) =>
       const before=await db.metaEffectivenessEvent.count({where:{state:{aliasId:alias.id}}});assert.equal(before,4);
     });
     await t.test("Resumen compacto conserva CAC y contexto de reemplazo solo lee vínculos autorizados", async () => {
+      const original=(await db.metaEffectivenessSheet.findUniqueOrThrow({where:{id:list.id}})).config as Record<string,any>;
+      await db.metaEffectivenessSheet.update({where:{id:list.id},data:{config:{...original,unrelatedLargeSetting:"x".repeat(100000)}}});
       const full=await inventoryActivationReport(owner,{listId:list.id,tableIds:pe.id,byCountry:"true",since:yesterday,until:today});
       const compact=await inventoryActivationReport(owner,{listId:list.id,tableIds:pe.id,byCountry:"true",since:yesterday,until:today,summary:"true"});
       assert.deepEqual(compact.rows.map(r=>({name:r.name,country:r.country,activation:r.activation,targets:r.targets,cac:r.cac})),full.rows.map(r=>({name:r.name,country:r.country,activation:r.activation,targets:r.targets,cac:r.cac})));
@@ -1796,6 +1798,9 @@ test("Activación por hoja: selección, pin, historial y permisos", async (t) =>
       assert.equal(context.canEdit,true);assert(context.rows.length>0);assert(context.rows.every(r=>r.targets.every(t=>t.country==="PE")));assert(context.rows.every(r=>!('days' in r)&&!('events' in r)));
       await assert.rejects(()=>inventoryReplacementContext(owner,{listId:other.id,tableId:pe.id,country:"PE"}),/pertenece/);
       assert.equal(await db.metaEffectivenessEvent.count({where:{state:{alias:{inventorySheetId:list.id}}}}),before);
+      const row=full.rows.find(r=>r.country==="PE"&&r.targets.length)!;
+      await inventoryActivationChange(owner,{listId:list.id,tableId:pe.id,country:"PE",items:[{name:row.name,targets:row.targets}],pinned:!row.pinned});
+      assert.equal(((await db.metaEffectivenessSheet.findUniqueOrThrow({where:{id:list.id}})).config as any).unrelatedLargeSetting.length,100000,"Projected readers must not make writers discard unrelated settings");
     });
   } finally {
     await db.metaAlias

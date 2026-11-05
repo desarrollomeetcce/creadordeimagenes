@@ -19,11 +19,11 @@ import { CurrentUserId, CurrentRole } from "./role-guide";
 import { financialRequest as api } from "./financial-request";
 import { SheetTabColorDialog, useSheetTabColors } from "./sheet-tab-colors";
 import { useSheetOrder } from "./use-sheet-order";
-import { InventoryCatalog } from "./inventory-catalog";
-import { MetaEffectiveness } from "./meta-effectiveness";
+const InventoryCatalog=dynamic(()=>import("./inventory-catalog").then(m=>m.InventoryCatalog),{loading:()=> <p role="status">Cargando vista…</p>});
+const MetaEffectiveness=dynamic(()=>import("./meta-effectiveness").then(m=>m.MetaEffectiveness),{loading:()=> <p role="status">Cargando vista…</p>});
 import { DeleteAliasTable } from "./delete-alias-table";
-import { AdvisorsSheet } from "./advisors-sheet";
-import { EffectivenessTotals } from "./effectiveness-totals";
+const AdvisorsSheet=dynamic(()=>import("./advisors-sheet").then(m=>m.AdvisorsSheet),{loading:()=> <p role="status">Cargando vista…</p>});
+const EffectivenessTotals=dynamic(()=>import("./effectiveness-totals").then(m=>m.EffectivenessTotals),{loading:()=> <p role="status">Cargando vista…</p>});
 import {
   parsePeriodTableLink,
   type PeriodTableLink,
@@ -41,6 +41,7 @@ type CatalogTable = {
 };
 export function ProductsCatalog() {
   const actualRole = useContext(CurrentRole);
+  const warmFinancialView=useCallback(()=>{void import("./meta-effectiveness").catch(()=>{});},[]);
   const [access, setAccess] = useState<{
     isOwner: boolean;
     global: "VIEW" | "EDIT" | null;
@@ -78,7 +79,7 @@ export function ProductsCatalog() {
             if (changed)
               void Promise.all([
                 api("meta-ads/alias-tables"),
-                api("meta-ads/workbook-sheets"),
+                api("meta-ads/workbook-sheets?mode=directory"),
               ])
                 .then(([tables, sheets]) => {
                   if (live) {
@@ -313,7 +314,7 @@ export function ProductsCatalog() {
   };
   useEffect(() => {
     let active = true;
-    void api("meta-ads/workbook-sheets")
+    void api("meta-ads/workbook-sheets?mode=directory")
       .then((v) => {
         if (active) {
           setSpecials(v);
@@ -327,14 +328,14 @@ export function ProductsCatalog() {
       active = false;
     };
   }, []);
-  const load = async () => {
+  const load = useCallback(async () => {
     const [v, sheets]: [CatalogTable[], Special[]] = await Promise.all([
       api("meta-ads/alias-tables"),
-      api("meta-ads/workbook-sheets"),
+      api("meta-ads/workbook-sheets?mode=directory"),
     ]);
     setTables(v);
     setSpecials(sheets);
-  };
+  }, []);
   useEffect(() => {
     let active = true;
     void api("meta-ads/alias-tables")
@@ -421,7 +422,7 @@ export function ProductsCatalog() {
       );
       setContextTable(null);
       try {
-        setSpecials(await api("meta-ads/workbook-sheets"));
+        setSpecials(await api("meta-ads/workbook-sheets?mode=directory"));
         setMessage("Pestaña eliminada. Sus registros se conservaron.");
       } catch {
         setMessage("Pestaña eliminada. Recarga para actualizar el libro.");
@@ -551,7 +552,9 @@ export function ProductsCatalog() {
     { id: string; name: string; label?: string }[]
   >([]);
   const loadAdvisors = async () => setAdvisors(await api("meta-ads/advisors"));
+  const needsAdvisors=locationReady&&!loading&&specialsLoaded&&!inventorySheet&&!totals&&!advisorSheet;
   useEffect(() => {
+    if(!needsAdvisors)return;
     let active = true;
     void api("meta-ads/advisors")
       .then((v) => {
@@ -563,7 +566,7 @@ export function ProductsCatalog() {
     return () => {
       active = false;
     };
-  }, []);
+  }, [needsAdvisors]);
   const {
     ids: sheetOrder,
     move: moveSheet,
@@ -684,6 +687,8 @@ export function ProductsCatalog() {
                 }
                 draggable
                 data-sheet-id={t.id}
+                onPointerEnter={warmFinancialView}
+                onFocus={warmFinancialView}
                 onContextMenu={(e) => {
                   e.preventDefault();
                   openMenu(t, e.clientX, e.clientY, e.currentTarget);

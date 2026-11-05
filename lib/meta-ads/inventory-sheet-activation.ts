@@ -122,9 +122,14 @@ async function context(tx: Tx, actor: Actor, listId: string, write = false) {
     "Sin permiso de edición.",
     403,
   );
-  const list = await tx.metaEffectivenessSheet.findFirst({
+  // Read-only inventory views need activation settings, not unrelated workbook JSON.
+  // Writers retain the complete config so their merge cannot drop other settings.
+  const list = write ? await tx.metaEffectivenessSheet.findFirst({
     where: { id: listId, kind: "INVENTORY", archivedAt: null },
-  });
+  }) : (await tx.$queryRaw<{id:string;revision:number;config:Prisma.JsonValue}[]>`
+    SELECT id,revision,jsonb_build_object('inventoryActivation',config->'inventoryActivation') AS config
+    FROM "MetaEffectivenessSheet" WHERE id=${listId} AND kind='INVENTORY' AND "archivedAt" IS NULL
+  `)[0];
   demand(list, "Inventario no disponible.", 404);
   return { list, access, canEdit: permission === "EDIT" };
 }
