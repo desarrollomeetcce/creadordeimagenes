@@ -1,5 +1,8 @@
 # Instrucciones para desarrollo
 
+- Efectividad fluidez05/11: una suscripción foco/visibilidad, notificaciones con escritor local excluido solo en esa instancia; mantener otras ventanas. Reusar respuesta únicamente si TODO JSON coincide, nunca solo CAS; no perder FX, permisos, montos ni aprobaciones. Evaluación mantiene el mismo ámbito mientras actualiza, refresco60s/guardado explícito, limpiar cambio de ámbito/401/403; no volver a consultar hoja si FX devuelve todo ready:false. Hojas50filas iniciales+Mostrar50más sin descargar ni recortar el conjunto para cálculos/filtros/acciones; selección global rotulada filtradas. Índices internos por alias/país preservan orden/primer find y todas las guardas.
+
+
 - Grupos fluidez05/11: conservar ventana compartida. Ordenar catálogo solo al cambiar directorio, búsqueda diferida, Sets para selección y componente memo de países con props estables;25 filas iniciales con25/50/100/200 disponibles. Directorio en memoria15s/máx10 claves usuario+documento+lista, coalescido, errores expulsados; invalidar antes/finalmente de escrituras financieras incluso fallo, EXCEPTO POST effectiveness/fx que es lectura. Recarga explícita de guardados fuerza servidor. No almacenar catálogo en localStorage, compartir entre usuarios, cachear uso/historial ni suprimir validación/CAS. Medidas sintéticas no acreditan latencia del dominio privado.
 
 

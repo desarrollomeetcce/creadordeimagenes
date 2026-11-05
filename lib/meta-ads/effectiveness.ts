@@ -572,6 +572,11 @@ async function readEffectiveness(
         .map((s) => key(s.aliasId, s.country)),
     ),
     fx = new Map(snapshots.map((s) => [s.day, s]));
+  const statesByPair = new Map(states.map(s=>[key(s.aliasId,s.country),s]));
+  const hiddenPairs = new Set(stored.filter(s=>s.hidden).map(s=>key(s.aliasId,s.country)));
+  const supportsByPair = new Map<string, (typeof supports)[number][]>();
+  for(const support of supports){const k=key(support.aliasId,support.country);const bucket=supportsByPair.get(k);if(bucket)bucket.push(support);else supportsByPair.set(k,[support]);}
+  const aliasNames = new Map(table.aliases.map(a=>[a.id,a.name]));
   const rows = new Map<string, EffectivenessRow>();
   const get = (a: string, p: string) => {
     const k = key(a, p);
@@ -579,8 +584,7 @@ async function readEffectiveness(
     if (!r) {
       r = {
         aliasId: a,
-        supports: supports
-          .filter((s) => s.aliasId === a && s.country === p)
+        supports: (supportsByPair.get(k) ?? [])
           .map((s) => ({
             id: s.id,
             advisorId: s.advisorId,
@@ -598,14 +602,12 @@ async function readEffectiveness(
         campaigns: 0,
         timezones: [],
         active:
-          states.find((s) => s.aliasId === a && s.country === p)?.active ??
-          !stored.some((s) => s.aliasId === a && s.country === p && s.hidden),
+          statesByPair.get(k)?.active ??
+          !hiddenPairs.has(k),
         stateRevision:
-          states.find((s) => s.aliasId === a && s.country === p)?.revision ?? 0,
+          statesByPair.get(k)?.revision ?? 0,
         lastStateChange:
-          states
-            .find((s) => s.aliasId === a && s.country === p)
-            ?.events[0]?.createdAt.toISOString() ?? null,
+          statesByPair.get(k)?.events[0]?.createdAt.toISOString() ?? null,
         token: "",
         advisorChanges: {},
         ...(campaignTasks.has(a + "|" + p)
@@ -838,7 +840,7 @@ async function readEffectiveness(
     );
     const metrics = salesOnly ? ["sales" as const] : linkMetrics(columnLink);
     for (const r of rows.values()) {
-      const name = table.aliases.find((a) => a.id === r.aliasId)!.name;
+      const name = aliasNames.get(r.aliasId)!;
       const origin = r.country ? sources.get(key(name, r.country)) : undefined;
       for (
         let at = Date.parse(since);
@@ -990,20 +992,17 @@ async function readEffectiveness(
           include: { row: { select: { aliasId: true, country: true } } },
         }),
   ]);
+  const historyByPair = new Map<string, (typeof advisorHistory)[number][]>();
+  for(const event of advisorHistory){const k=key(event.aliasId,event.country);const bucket=historyByPair.get(k);if(bucket)bucket.push(event);else historyByPair.set(k,[event]);}
+  const approvalsByPairDay = new Map<string,(typeof approvals)[number]>();
+  for(const approval of approvals){const k=JSON.stringify([approval.row.aliasId,approval.row.country,approval.day]);if(!approvalsByPairDay.has(k))approvalsByPairDay.set(k,approval);}
   for (const r of rows.values()) {
-    const changes = advisorHistory.filter(
-      (e) => e.aliasId === r.aliasId && e.country === r.country,
-    );
+    const changes = historyByPair.get(key(r.aliasId,r.country)) ?? [];
     if (!changes.length) continue;
     for (let at = Date.parse(since); at <= Date.parse(until); at += 86400000) {
       const day = new Date(at).toISOString().slice(0, 10),
         c = r.days[day];
-      const approval = approvals.find(
-        (a) =>
-          a.row.aliasId === r.aliasId &&
-          a.row.country === r.country &&
-          a.day === day,
-      );
+      const approval = approvalsByPairDay.get(JSON.stringify([r.aliasId,r.country,day]));
       const plan = advisorSalesPlan(
         r.advisorId,
         changes,

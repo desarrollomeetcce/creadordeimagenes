@@ -1,4 +1,5 @@
 "use client";
+import { reuseFinancialResponse } from "../../lib/reuse-financial-response";
 import { InventoryCampaignControl, type InventoryCampaignChange } from "./inventory-campaign-control";
 import { financialTaskSections } from "../../lib/meta-ads/financial-task-sections";
 import { InventoryMetaSync } from "./inventory-meta-sync";
@@ -39,6 +40,7 @@ import {
 import {
   Fragment,
   useEffect,
+  useId,
   useMemo,
   useRef,
   useState,
@@ -232,6 +234,7 @@ export function MetaEffectiveness({
     settings.aliasColumnName.trim().toLowerCase() === "alias"
       ? "Inventario"
       : settings.aliasColumnName;
+  const notificationSource = useId();
   const rowsLayout = useSheetHeights("financial:" + tableId);
   const temporaryCategories = useFinancialCategories(tableId);
   const [salesReview, setSalesReview] = useState<{
@@ -417,25 +420,30 @@ export function MetaEffectiveness({
         new Set(data.rows.map((row) => row.aliasId)).size,
       );
   }, [data, tableId, onPresenceChanged]);
+  const catalogScope = useRef("");
+  const [catalogRefresh,setCatalogRefresh] = useState(0);
   useEffect(() => {
-    let alive = true;
-    setCatalogStatus(null);
+    let alive = true, pending = false;
+    const scope=JSON.stringify([tableId,evaluationStamp]);
+    if(catalogScope.current!==scope){setCatalogStatus(null);catalogScope.current=scope;}
     setCatalogStatusError("");
-    if (data)
-      void api(
-        "meta-ads/effectiveness/catalog-status?" +
-          new URLSearchParams({ tableId, ...Object.fromEntries(Object.entries(evaluationDates).map(([key, value]) => [key, String(value)])) }),
-      )
-        .then((result: FinancialCatalogStatus) => {
-          if (alive) setCatalogStatus(result);
-        })
-        .catch((e: Error) => {
-          if (alive) setCatalogStatusError(e.message);
-        });
-    return () => {
-      alive = false;
+    if(!data)return;
+    const controller=new AbortController();
+    const load=async()=>{
+      if(pending || !alive || document.hidden)return;
+      pending=true;
+      try{
+        const result:FinancialCatalogStatus=await api("meta-ads/effectiveness/catalog-status?"+new URLSearchParams({tableId,...Object.fromEntries(Object.entries(evaluationDates).map(([key,value])=>[key,String(value)]))}),"GET",undefined,{signal:AbortSignal.any([controller.signal,AbortSignal.timeout(15000)])});
+        if(alive){setCatalogStatus(previous=>reuseFinancialResponse(previous,result));setCatalogStatusError("");}
+      }catch(e){if(alive && !controller.signal.aborted){if([401,403].includes((e as {status?:number}).status??0))setCatalogStatus(null);setCatalogStatusError((e as Error).message);}}
+      finally{pending=false;}
     };
-  }, [tableId, data, evaluationStamp]);
+    void load();
+    const timer=setInterval(()=>void load(),60000);
+    const visible=()=>{if(!document.hidden)void load();};
+    document.addEventListener("visibilitychange",visible);
+    return()=>{alive=false;controller.abort();clearInterval(timer);document.removeEventListener("visibilitychange",visible);};
+  }, [tableId, data, evaluationStamp, catalogRefresh]);
   const [historyPeriod, setHistoryPeriod] = useState<null | {
     name: string;
     heading?: string;
@@ -558,15 +566,15 @@ export function MetaEffectiveness({
         ]),
       })
         .then((v: Data) => {
-          if (active && queryVersion.current === version) setData(v);
+          if (active && queryVersion.current === version) setData(previous=>reuseFinancialResponse(previous,v));
           const days = v.missingFxDays.filter(
             (d) => !attemptedFx.current.has(d),
           );
           if (days.length && !readOnly) {
             days.forEach((d) => attemptedFx.current.add(d));
             void api("meta-ads/effectiveness/fx", "POST", { days })
-              .then(() => {
-                if (active) load();
+              .then((result: {days:{day:string;ready:boolean}[]}) => {
+                if (active && result.days.some(day=>day.ready)) load();
               })
               .catch((e) => {
                 if (active) setMessage(e.message);
@@ -591,32 +599,30 @@ export function MetaEffectiveness({
     };
     load();
     const timer = setInterval(load, 30000);
-    window.addEventListener("focus", load);
-    document.addEventListener("visibilitychange", load);
-    const unsubscribe = subscribeAdvisorSalesChanged(load);
+    const unsubscribe = subscribeAdvisorSalesChanged(load,notificationSource);
     return () => {
       active = false;
       clearInterval(timer);
       controller?.abort();
-      window.removeEventListener("focus", load);
-      document.removeEventListener("visibilitychange", load);
       unsubscribe();
     };
-  }, [query, valid, readOnly]);
+  }, [query, valid, readOnly, notificationSource]);
   const refresh = async () => {
     const version = ++queryVersion.current;
     const v: Data = await api(query);
-    if (queryVersion.current === version && currentRange.current === query)
-      setData(v);
+    if (queryVersion.current === version && currentRange.current === query) {
+      setData(previous=>reuseFinancialResponse(previous,v));
+      setCatalogRefresh(n=>n+1);
+    }
     const days = v.missingFxDays.filter((d) => !attemptedFx.current.has(d));
     if (days.length && !readOnly) {
       days.forEach((d) => attemptedFx.current.add(d));
       void api("meta-ads/effectiveness/fx", "POST", { days })
-        .then(async () => {
-          if (currentRange.current !== query) return;
+        .then(async (result: {days:{day:string;ready:boolean}[]}) => {
+          if (currentRange.current !== query || !result.days.some(day=>day.ready)) return;
           const seq = ++queryVersion.current;
           const next: Data = await api(query);
-          if (queryVersion.current === seq) setData(next);
+          if (queryVersion.current === seq) setData(previous=>reuseFinancialResponse(previous,next));
         })
         .catch((e) => setMessage(e.message));
     }
@@ -628,7 +634,7 @@ export function MetaEffectiveness({
     names = false,
   ) => {
     await api(path, method, body);
-    notifyAdvisorSalesChanged();
+    notifyAdvisorSalesChanged(notificationSource);
     try {
       if (names) await onNamesChanged();
       await refresh();
@@ -793,7 +799,7 @@ export function MetaEffectiveness({
           rowRevision: r.rowRevision,
         });
         manualVersions.current.set(key, revision + 1);
-        notifyAdvisorSalesChanged();
+        notifyAdvisorSalesChanged(notificationSource);
         try {
           await refresh();
           setMessage("");
@@ -1037,6 +1043,9 @@ export function MetaEffectiveness({
     ...pendingStopRows,
     ...normalDisplayedRows,
   ];
+  const [rowLimit,setRowLimit] = useState(50);
+  const rowWindowKey = JSON.stringify([tableId,country,selectedAliases,stateFilter,valueFilter,view,grouping,activeSort]);
+  useEffect(()=>{setRowLimit(50);},[rowWindowKey]);
   const firstAdvisorBands = new Map(
     grouping === "advisor"
       ? advisorSections.map((g) => {
@@ -1336,7 +1345,7 @@ export function MetaEffectiveness({
                   }
                 : old,
             );
-            notifyAdvisorSalesChanged();
+            notifyAdvisorSalesChanged(notificationSource);
             try {
               await refresh();
               setMessage(
@@ -1395,7 +1404,7 @@ export function MetaEffectiveness({
           {...bulkAdvisor}
           onClose={() => setBulkAdvisor(null)}
           onSaved={async () => {
-            notifyAdvisorSalesChanged();
+            notifyAdvisorSalesChanged(notificationSource);
             await refresh();
           }}
         />
@@ -1897,7 +1906,7 @@ export function MetaEffectiveness({
                       <input
                         type="checkbox"
                         className="sheet-alias-select"
-                        aria-label="Seleccionar todas las filas visibles"
+                        aria-label="Seleccionar todas las filas filtradas"
                         checked={allVisibleSelected}
                         disabled={busy || !eligibleRows.length}
                         title="Selecciona las filas visibles con país para activar o desactivar en bloque"
@@ -2370,7 +2379,7 @@ export function MetaEffectiveness({
                 )}
               </thead>
               <tbody>
-                {displayedRows.map((r) => {
+                {displayedRows.slice(0,rowLimit).map((r) => {
                   const name = names.get(r.aliasId) ?? "Inventario";
                   const campaignLabel =
                     r.campaignTask === "CREATE"
@@ -2691,7 +2700,7 @@ export function MetaEffectiveness({
                               }
                               disabled={busy || readOnly || !r.country}
                               onSynced={async () => {
-                                notifyAdvisorSalesChanged();
+                                notifyAdvisorSalesChanged(notificationSource);
                                 await onNamesChanged();
                                 await refresh();
                               }}
@@ -3065,6 +3074,7 @@ export function MetaEffectiveness({
                     </Fragment>
                   );
                 })}
+                {displayedRows.length > 50 && <tr className="sheet-row-window"><td colSpan={Math.max(1,visibleMetadata.length + days.length * visibleMetrics.length)}><span role="status">Mostrando {Math.min(rowLimit,displayedRows.length)} de {displayedRows.length} filas</span>{rowLimit < displayedRows.length && <button type="button" onClick={()=>setRowLimit(n=>n+50)}>Mostrar 50 filas más</button>}</td></tr>}
                 <tr className="sheet-new-row">
                   <td
                     className="effectiveness-name"

@@ -1,4 +1,14 @@
 
+### 2026-11-05 · Efectividad: recargas y tablas grandes
+
+Validación: npm test317/317, refresh2/2, integración37/37 (CAC, activación, grupos), typecheck/build correctos; Chromium120filas: foco2GET+2evaluaciones→1GET+0evaluaciones redundantes,50/100/120filas por demanda sinGET y foco del editor retenido. FX ready:false→1GET / ready:true→2GET sin bucle;4regresiones de páginas/hojas/Grupos. Todo sintético y base exclusiva, sin IA con cargo ni campañas reales. No se acredita latencia/estado de Hostinger.
+
+
+- Foco/visibilidad pasan por un solo suscriptor coalescido; notificación local identifica al escritor para que su refresh explícito no se duplique. Otras vistas y pestañas siguen recibiendo cambios.
+- Respuestas idénticas conservan referencia comparando todos los campos (no solo tokens); evitar reconstruir tabla/evaluación sin cambios. Evaluación conserva datos del mismo ámbito durante actualización, refresco independiente60s y explícito tras guardar; limpiar al cambiar ámbito o401/403. FX sin tasas disponibles no dispara otro GET; tasas listas sí refrescan una vez.
+- Hojas grandes dibujan50 filas iniciales con Mostrar50más; datos completos, filtros, cálculos y acciones masivas intactos y selector dice todas las filas filtradas. Ampliar no consulta. Índices en memoria por alias/país para estados, apoyos, historia y aprobaciones, conservando primer registro donde antes se usaba find. Sin nueva caché de servidor, migraciones ni consultas Graph.
+
+
 ### 2026-11-05 · Grupos: menos trabajo por selección y reapertura
 
 Validación final: npm test317/317, caché4/4 (deduplicación/expiración/ámbitos, invalidación/respuestas atrasadas, errores/capacidad, FX de lectura), typecheck y build correctos. Chromium: ensayo1000×20 y12 selecciones+búsqueda+diálogo de uso; navegación hoja→Grupos con una sola consulta;4 regresiones de páginas/hojas/cargas secundarias. Datos exclusivos y proveedores simulados, cero llamadas con cargo/campañas reales.
