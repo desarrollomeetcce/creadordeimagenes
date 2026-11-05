@@ -1,5 +1,7 @@
 "use client";
 const eventName = "effectiveness-sales-updated";
+let pageOrigin: string | undefined;
+const currentOrigin = () => (pageOrigin ??= crypto.randomUUID());
 export function notifyAdvisorSalesChanged(source?: string) {
   window.dispatchEvent(new CustomEvent(eventName, {detail:{source}}));
   try {
@@ -7,7 +9,7 @@ export function notifyAdvisorSalesChanged(source?: string) {
   } catch {}
   try {
     const channel = new BroadcastChannel(eventName);
-    channel.postMessage("refresh");
+    channel.postMessage({source,origin:currentOrigin()});
     channel.close();
   } catch {}
 }
@@ -25,7 +27,10 @@ export function subscribeAdvisorSalesChanged(refresh: () => void, ownSource?: st
   let channel: BroadcastChannel | undefined;
   try {
     channel = new BroadcastChannel(eventName);
-    channel.onmessage = () => update();
+    channel.onmessage = event => {
+      if (ownSource && event.data?.origin === currentOrigin() && event.data?.source === ownSource) return;
+      update();
+    };
   } catch {}
   window.addEventListener(eventName, update);
   window.addEventListener("storage", storage);

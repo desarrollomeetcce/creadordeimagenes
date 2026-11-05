@@ -1,5 +1,8 @@
 # Instrucciones para desarrollo
 
+- Verificación adicional Efectividad05/11: BroadcastChannel también transporta origen de página+escritor. Excluir el eco propio tanto del evento local como del canal, pero no avisos de otra pestaña aunque use el mismo ID React. Test con canal simulado activo, no deshabilitado; conserva foco/visibilidad y avisos externos.
+
+
 - Efectividad fluidez05/11: una suscripción foco/visibilidad, notificaciones con escritor local excluido solo en esa instancia; mantener otras ventanas. Reusar respuesta únicamente si TODO JSON coincide, nunca solo CAS; no perder FX, permisos, montos ni aprobaciones. Evaluación mantiene el mismo ámbito mientras actualiza, refresco60s/guardado explícito, limpiar cambio de ámbito/401/403; no volver a consultar hoja si FX devuelve todo ready:false. Hojas50filas iniciales+Mostrar50más sin descargar ni recortar el conjunto para cálculos/filtros/acciones; selección global rotulada filtradas. Índices internos por alias/país preservan orden/primer find y todas las guardas.
 
 

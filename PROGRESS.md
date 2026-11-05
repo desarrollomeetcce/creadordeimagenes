@@ -1,4 +1,7 @@
 
+
+- Verificación adicional Efectividad05/11: BroadcastChannel también transporta origen de página+escritor. Excluir el eco propio tanto del evento local como del canal, pero no avisos de otra pestaña aunque use el mismo ID React. Test con canal simulado activo, no deshabilitado; conserva foco/visibilidad y avisos externos.
+
 ### 2026-11-05 · Efectividad: recargas y tablas grandes
 
 Validación: npm test317/317, refresh2/2, integración37/37 (CAC, activación, grupos), typecheck/build correctos; Chromium120filas: foco2GET+2evaluaciones→1GET+0evaluaciones redundantes,50/100/120filas por demanda sinGET y foco del editor retenido. FX ready:false→1GET / ready:true→2GET sin bucle;4regresiones de páginas/hojas/Grupos. Todo sintético y base exclusiva, sin IA con cargo ni campañas reales. No se acredita latencia/estado de Hostinger.

@@ -9,13 +9,16 @@ test('unchanged financial payload retains reference; amounts, FX, rights and app
 });
 test('writer skips only its own local notification; other views, focus and remote events still refresh',()=>{
  const saved=new Map<string,PropertyDescriptor|undefined>();for(const k of ['window','document','localStorage','requestAnimationFrame','cancelAnimationFrame','BroadcastChannel'])saved.set(k,Object.getOwnPropertyDescriptor(globalThis,k));
+ const channels=new Set<FakeChannel>();
+ class FakeChannel {onmessage?: (event:{data:unknown})=>void;constructor(_name:string){channels.add(this)}postMessage(data:unknown){for(const c of channels)if(c!==this)c.onmessage?.({data})}close(){channels.delete(this)}}
  const w=new EventTarget(),d=Object.assign(new EventTarget(),{hidden:false}),frames=new Map<number,()=>void>();let id=0,writes=0;
- Object.defineProperties(globalThis,{window:{configurable:true,value:w},document:{configurable:true,value:d},localStorage:{configurable:true,value:{setItem(){writes++}}},requestAnimationFrame:{configurable:true,value:(fn:()=>void)=>{frames.set(++id,fn);return id}},cancelAnimationFrame:{configurable:true,value:(id:number)=>frames.delete(id)},BroadcastChannel:{configurable:true,value:undefined}});
+ Object.defineProperties(globalThis,{window:{configurable:true,value:w},document:{configurable:true,value:d},localStorage:{configurable:true,value:{setItem(){writes++}}},requestAnimationFrame:{configurable:true,value:(fn:()=>void)=>{frames.set(++id,fn);return id}},cancelAnimationFrame:{configurable:true,value:(id:number)=>frames.delete(id)},BroadcastChannel:{configurable:true,value:FakeChannel}});
  const flush=()=>{const batch=[...frames.values()];frames.clear();batch.forEach(f=>f())};let writer=0,other=0;const stop=subscribeAdvisorSalesChanged(()=>writer++,'writer'),stopOther=subscribeAdvisorSalesChanged(()=>other++,'other');
  try{notifyAdvisorSalesChanged('writer');flush();assert.equal(writer,0);assert.equal(other,1);assert.equal(writes,1);
  notifyAdvisorSalesChanged();flush();assert.equal(writer,1);assert.equal(other,2);
  w.dispatchEvent(new Event('focus'));d.dispatchEvent(new Event('visibilitychange'));flush();assert.equal(writer,2);assert.equal(other,3);
  d.hidden=true;notifyAdvisorSalesChanged();flush();assert.equal(writer,2);assert.equal(other,3);
- stop();stopOther();d.hidden=false;w.dispatchEvent(new Event('focus'));flush();assert.equal(writer,2);
+ const remote=new FakeChannel('test');d.hidden=false;remote.postMessage({source:'writer',origin:'another-browser-tab'});flush();assert.equal(writer,3);assert.equal(other,4);remote.close();
+ stop();stopOther();d.hidden=false;w.dispatchEvent(new Event('focus'));flush();assert.equal(writer,3);
  }finally{stop();stopOther();for(const[k,v]of saved){if(v)Object.defineProperty(globalThis,k,v);else Reflect.deleteProperty(globalThis,k)}}
 });
