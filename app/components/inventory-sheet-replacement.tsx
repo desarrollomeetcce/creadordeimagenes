@@ -1,5 +1,7 @@
 "use client";
-import { useEffect, useRef, useState } from "react";
+import { useContext, useEffect, useRef, useState } from "react";
+import { CurrentUserId } from "./role-guide";
+import { readGroupDirectory } from "./inventory-group-directory-cache";
 import type { TrialDirectory } from "../../lib/meta-ads/inventory-trials";
 import { financialRequest as api } from "./financial-request";
 import { InventoryGroupEditor } from "./inventory-group-editor";
@@ -31,6 +33,7 @@ export function InventorySheetReplacement({
   onChanged: () => Promise<void>;
   onClose: () => void;
 }) {
+  const userId = useContext(CurrentUserId);
   const dialog = useRef<HTMLDialogElement>(null);
   const [directory, setDirectory] = useState<TrialDirectory | null>(null);
   const [error, setError] = useState("");
@@ -44,7 +47,7 @@ export function InventorySheetReplacement({
   useEffect(() => {
     dialog.current?.showModal();
     let alive = true;
-    void api("meta-ads/inventory/trials?" + new URLSearchParams({ listId, mode: "directory" }))
+    void readGroupDirectory(userId,listId,()=>api("meta-ads/inventory/trials?" + new URLSearchParams({ listId, mode: "directory" })))
       .then((data: TrialDirectory) => {
         if (alive) setDirectory(data);
       })

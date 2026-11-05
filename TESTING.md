@@ -1,3 +1,13 @@
+
+### 2026-11-05 · Grupos: menos trabajo por selección y reapertura
+
+Validación final: npm test317/317, caché4/4 (deduplicación/expiración/ámbitos, invalidación/respuestas atrasadas, errores/capacidad, FX de lectura), typecheck y build correctos. Chromium: ensayo1000×20 y12 selecciones+búsqueda+diálogo de uso; navegación hoja→Grupos con una sola consulta;4 regresiones de páginas/hojas/cargas secundarias. Datos exclusivos y proveedores simulados, cero llamadas con cargo/campañas reales.
+
+
+- Se conserva la ventana compartida y todas las acciones. Página inicial25 (opciones25/50/100/200), países en componente memoizado con props estables; seleccionar/buscar no reconstruye sus controles. Catálogo se ordena una vez por directorio, búsquedas diferidas y selección indexada con Sets.
+- Directorio de grupos en memoria15s, máximo10 entradas, clave usuario/documento/lista; coalescer lecturas pendientes, expulsar fallos y nunca repoblar tras invalidación. Escrituras financieras invalidan antes y al finalizar incluso error; POST effectiveness/fx es consulta de lectura y no invalida. Recargas explícitas tras guardar siguen forzando consulta. Sin almacenamiento persistente ni caché compartida entre usuarios.
+- Ensayo comparativo con1000 diplomados,20 países, Chromium CPU4×: apertura3951→1850ms; selección media203→106ms, p95 297→176ms. Inicial50→25 filas (1000→500 celdas de país). Medición local sintética, no acredita latencia ni publicación de generator.agenciamagneto.org.
+
 ## Instrucciones de imagen: límite y composición opcional · 2026-11-05
 
 La prueba real de Ajustes generó una imagen con texto según el usuario; no es solo una verificación de catálogo. El fallo posterior identificado por el nuevo diagnóstico es generación de imagen / HTTP400 / campo prompt con GPT Image2; no acredita que calidad/resolución/dirección creativa estén mal. La causa exacta histórica no se puede reconstruir: no se guardó longitud ni código concreto. Auditoría de la conversión a pestañas20d02199: se movieron controles de credenciales/cambió título; las funciones de guardado y las solicitudes de proveedor permanecieron idénticas desde antes de ese cambio hasta8ac276b9.

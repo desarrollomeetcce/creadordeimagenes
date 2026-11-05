@@ -10,6 +10,8 @@ import {
 import { InventoryGroupReplacements } from "./inventory-group-replacements";
 import {
   Fragment,
+  memo,
+  useDeferredValue,
   useContext,
   useEffect,
   useMemo,
@@ -45,6 +47,8 @@ import type {
 } from "../../lib/meta-ads/inventory-group-usage";
 import { InventoryDiplomaObservations } from "./inventory-diploma-observations";
 
+const EMPTY_EVALUATION_COLUMNS: {value:string;label:string}[] = [];
+
 export function InventoryGroupEditor({
   directory: sourceDirectory,
   group: selectedGroup,
@@ -59,7 +63,7 @@ export function InventoryGroupEditor({
   onChooseGroup,
   onTabChange,
   externalBusy = false,
-  evaluationColumns = [],
+  evaluationColumns = EMPTY_EVALUATION_COLUMNS,
   initialCountry = "",
   adsDestination,
   onUsageLoaded,
@@ -388,6 +392,14 @@ export function InventoryGroupEditor({
     dialog.current?.showModal();
   }, []);
   const catalog = directory.catalog;
+  // Sort only when the directory changes, not on every checkbox or keystroke.
+  const sortedCatalog = useMemo(() => {
+    const collator = new Intl.Collator("es");
+    return [...catalog].sort((a,b) => collator.compare(a.primaryNames.join(" · "), b.primaryNames.join(" · ")) || collator.compare(a.name,b.name));
+  }, [catalog]);
+  const selectedIdSet = useMemo(() => new Set(ids), [ids]);
+  const checkedIdSet = useMemo(() => new Set(checkedIds), [checkedIds]);
+  const searchQuery = useDeferredValue(query);
   const catalogById = useMemo(
     () => new Map(catalog.map((item) => [item.id, item])),
     [catalog],
@@ -461,12 +473,12 @@ export function InventoryGroupEditor({
   );
   const matching = useMemo(
     () =>
-      catalog.filter(
+      sortedCatalog.filter(
         (i) =>
           (editing && !replacing
-            ? ids.includes(i.id)
+            ? selectedIdSet.has(i.id)
             : replacing || !browsedMembers || browsedMembers.has(i.id)) &&
-          matchesSearchWords(i.name, query) &&
+          matchesSearchWords(i.name, searchQuery) &&
           (!primary.length ||
             i.primaryNames.some((n) => primary.includes(n))) &&
           (!secondary.length ||
@@ -474,12 +486,12 @@ export function InventoryGroupEditor({
           (!sheets.length || i.sheets?.some((s) => sheets.includes(s.id))),
       ),
     [
-      catalog,
+      sortedCatalog,
       editing,
       replacing,
-      ids,
+      selectedIdSet,
       browsedMembers,
-      query,
+      searchQuery,
       primary,
       secondary,
       sheets,
@@ -489,12 +501,12 @@ export function InventoryGroupEditor({
     () =>
       editing
         ? onlyChecked
-          ? matching.filter((item) => checkedIds.includes(item.id))
+          ? matching.filter((item) => checkedIdSet.has(item.id))
           : matching
         : onlySelected
-          ? matching.filter((item) => ids.includes(item.id))
+          ? matching.filter((item) => selectedIdSet.has(item.id))
           : matching,
-    [matching, editing, onlyChecked, checkedIds, onlySelected, ids],
+    [matching, editing, onlyChecked, checkedIdSet, onlySelected, selectedIdSet],
   );
   const eligible = filtered;
   const proposalPool = (editing ? catalog : matching).filter(
@@ -504,23 +516,11 @@ export function InventoryGroupEditor({
       (!editing || !ids.includes(i.id)),
   );
   const [page, setPage] = useGroupDraftState(draftKey, 1),
-    [pageSize, setPageSize] = useGroupDraftState(draftKey, 50);
+    [pageSize, setPageSize] = useGroupDraftState(draftKey, 25);
   useEffect(() => {
     setPage(1);
   }, [query, primary, secondary, onlySelected, browsedGroupId]);
-  const ordered = useMemo(
-    () =>
-      filtered
-        .slice()
-        .sort(
-          (a, b) =>
-            a.primaryNames
-              .join(" · ")
-              .localeCompare(b.primaryNames.join(" · "), "es") ||
-            a.name.localeCompare(b.name, "es"),
-        ),
-    [filtered],
-  );
+  const ordered = filtered;
   const pages = Math.max(1, Math.ceil(ordered.length / pageSize)),
     currentPage = Math.min(page, pages);
   const visibleItems = ordered.slice(
@@ -2140,87 +2140,7 @@ export function InventoryGroupEditor({
                                 </span>
                               )}
                             </td>
-                            {countryOptions.map((c) => {
-                              const cell = usageCell(i, c.code),
-                                status = groupUsageStatus(cell, clock),
-                                campaignState =
-                                  directory.campaignStates?.[
-                                    JSON.stringify([
-                                      categoryKey(i.name),
-                                      c.code,
-                                    ])
-                                  ] ?? "NO_RECORD";
-                              const label =
-                                status === "USED" ? "✓ Usado" : "— Sin usar";
-                              return (
-                                <td
-                                  key={c.code}
-                                  className="inventory-group-country-cell"
-                                >
-                                  <button
-                                    type="button"
-                                    className="inventory-group-usage"
-                                    data-usage={status}
-                                    data-manual={
-                                      cell.mode !== "AUTO" || undefined
-                                    }
-                                    aria-label={`Editar uso de ${i.name} en ${c.name}: ${label}`}
-                                    title={`${label} · ${cell.mode === "AUTO" ? "Automático" : "Manual"}${cell.activationHours === null ? "" : ` · ${cell.activationHours.toFixed(1)} h registradas`}`}
-                                    disabled={
-                                      busy || externalBusy || !directory.canEdit
-                                    }
-                                    onClick={() =>
-                                      setUsageEditing({
-                                        item: i,
-                                        country: c.code,
-                                      })
-                                    }
-                                  >
-                                    <span aria-hidden="true">
-                                      {status === "USED" ? "✓" : "—"}
-                                    </span>
-                                    {cell.mode !== "AUTO" && (
-                                      <small aria-hidden="true">•</small>
-                                    )}
-                                  </button>
-                                  <button
-                                    type="button"
-                                    className="inventory-group-country-detail"
-                                    aria-label={`Ver detalle de ${i.name} en ${c.name}`}
-                                    title={`Ver detalle guardado en ${c.name}`}
-                                    disabled={
-                                      !evaluationColumns.some((column) =>
-                                        column.value.endsWith(":" + c.code),
-                                      )
-                                    }
-                                    onClick={() => {
-                                      setEvaluationColumn(
-                                        evaluationColumns.find((column) =>
-                                          column.value.endsWith(":" + c.code),
-                                        )!.value,
-                                      );
-                                      setObservations(i.name);
-                                    }}
-                                  >
-                                    Detalle
-                                  </button>
-                                  {editing && (
-                                    <span
-                                      className="inventory-group-country-campaign-state"
-                                      data-campaign-state={campaignState}
-                                      aria-label={`Estado de ${i.name} en ${c.name}: ${groupCountryCampaignLabels[campaignState]}`}
-                                      title={`${groupCountryCampaignLabels[campaignState]} · ${i.name} · ${c.name}${campaignState === "MIXED" ? ". Hay registros con estados diferentes; consulta Detalle." : ""}`}
-                                    >
-                                      {
-                                        groupCountryCampaignLabels[
-                                          campaignState
-                                        ]
-                                      }
-                                    </span>
-                                  )}
-                                </td>
-                              );
-                            })}
+                            <GroupCountryCells i={i} countryOptions={countryOptions} usage={usage} campaignStates={directory.campaignStates} clock={clock} busy={busy} externalBusy={externalBusy} canEdit={directory.canEdit} editing={editing} evaluationColumns={evaluationColumns} setUsageEditing={setUsageEditing} setEvaluationColumn={setEvaluationColumn} setObservations={setObservations}/>
                             <td className="inventory-group-actions-cell">
                               <div className="inventory-group-actions-inline">
                                 <button
@@ -2685,3 +2605,97 @@ function InventoryGroupActionDialog({
     </dialog>
   );
 }
+
+const EMPTY_GROUP_USAGE: GroupUsageCell = {automatic:"NEVER",activationHours:0,mode:"AUTO",revision:null};
+/** Selection changes do not rebuild the unchanged country controls. */
+const GroupCountryCells = memo(function GroupCountryCells({i,countryOptions,usage,campaignStates,clock,busy,externalBusy,canEdit,editing,evaluationColumns,setUsageEditing,setEvaluationColumn,setObservations}: {
+  i: TrialItem;
+  countryOptions: TrialDirectory["countries"];
+  usage: TrialDirectory["usage"];
+  campaignStates: TrialDirectory["campaignStates"];
+  clock:number; busy:boolean; externalBusy:boolean; canEdit:boolean; editing:boolean;
+  evaluationColumns: {value:string;label:string}[];
+  setUsageEditing:(value:{item:TrialItem;country:string})=>void;
+  setEvaluationColumn:(value:string)=>void;
+  setObservations:(value:string)=>void;
+}) {return <>{countryOptions.map(c=>{
+                              const cell = usage[JSON.stringify([categoryKey(i.name),c.code])] ?? EMPTY_GROUP_USAGE,
+                                status = groupUsageStatus(cell, clock),
+                                campaignState =
+                                  campaignStates?.[
+                                    JSON.stringify([
+                                      categoryKey(i.name),
+                                      c.code,
+                                    ])
+                                  ] ?? "NO_RECORD";
+                              const label =
+                                status === "USED" ? "✓ Usado" : "— Sin usar";
+                              return (
+                                <td
+                                  key={c.code}
+                                  className="inventory-group-country-cell"
+                                >
+                                  <button
+                                    type="button"
+                                    className="inventory-group-usage"
+                                    data-usage={status}
+                                    data-manual={
+                                      cell.mode !== "AUTO" || undefined
+                                    }
+                                    aria-label={`Editar uso de ${i.name} en ${c.name}: ${label}`}
+                                    title={`${label} · ${cell.mode === "AUTO" ? "Automático" : "Manual"}${cell.activationHours === null ? "" : ` · ${cell.activationHours.toFixed(1)} h registradas`}`}
+                                    disabled={
+                                      busy || externalBusy || !canEdit
+                                    }
+                                    onClick={() =>
+                                      setUsageEditing({
+                                        item: i,
+                                        country: c.code,
+                                      })
+                                    }
+                                  >
+                                    <span aria-hidden="true">
+                                      {status === "USED" ? "✓" : "—"}
+                                    </span>
+                                    {cell.mode !== "AUTO" && (
+                                      <small aria-hidden="true">•</small>
+                                    )}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className="inventory-group-country-detail"
+                                    aria-label={`Ver detalle de ${i.name} en ${c.name}`}
+                                    title={`Ver detalle guardado en ${c.name}`}
+                                    disabled={
+                                      !evaluationColumns.some((column) =>
+                                        column.value.endsWith(":" + c.code),
+                                      )
+                                    }
+                                    onClick={() => {
+                                      setEvaluationColumn(
+                                        evaluationColumns.find((column) =>
+                                          column.value.endsWith(":" + c.code),
+                                        )!.value,
+                                      );
+                                      setObservations(i.name);
+                                    }}
+                                  >
+                                    Detalle
+                                  </button>
+                                  {editing && (
+                                    <span
+                                      className="inventory-group-country-campaign-state"
+                                      data-campaign-state={campaignState}
+                                      aria-label={`Estado de ${i.name} en ${c.name}: ${groupCountryCampaignLabels[campaignState]}`}
+                                      title={`${groupCountryCampaignLabels[campaignState]} · ${i.name} · ${c.name}${campaignState === "MIXED" ? ". Hay registros con estados diferentes; consulta Detalle." : ""}`}
+                                    >
+                                      {
+                                        groupCountryCampaignLabels[
+                                          campaignState
+                                        ]
+                                      }
+                                    </span>
+                                  )}
+                                </td>
+                              );
+  })}</>;});

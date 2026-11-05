@@ -14,6 +14,8 @@ import {
   InventoryGroupEditor,
   InventoryGroupSelect,
 } from "./inventory-group-editor";
+import { CurrentUserId } from "./role-guide";
+import { readGroupDirectory } from "./inventory-group-directory-cache";
 import type { TrialDirectory } from "../../lib/meta-ads/inventory-trials";
 import {
   InventoryCountryCells,
@@ -44,7 +46,7 @@ const InventoryTrials = dynamic(
   () => import("./inventory-trials").then((m) => m.InventoryTrials),
   { loading: () => <p role="status">Cargando grupos…</p> },
 );
-import { Fragment, memo, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { Fragment, memo, useContext, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useWorkbookPreference } from "./use-workbook-preference";
 import { financialRequest as api } from "./financial-request";
 import { InventoryCategoryAssign } from "./inventory-category-assign";
@@ -195,14 +197,15 @@ export function InventoryCatalog({
     "",
   );
   const evaluationDialog = useRef<HTMLDialogElement>(null);
+  const groupUserId = useContext(CurrentUserId);
   const groupLoad = useRef<{listId:string; promise:Promise<void>} | null>(null);
   const activeGroupList = useRef(listId); activeGroupList.current = listId;
   const [groupLoadError, setGroupLoadError] = useState("");
-  async function reloadGroups() {
+  async function reloadGroups(refresh = true) {
     if (groupLoad.current?.listId === listId) return groupLoad.current.promise;
     const requestedList = listId;
     setGroupLoadError("");
-    const promise = api("meta-ads/inventory/trials?" + new URLSearchParams({ listId:requestedList, mode: "directory" })).then((data: TrialDirectory) => { if (activeGroupList.current === requestedList) setTrialDirectory(data); }).catch(e => { if (activeGroupList.current === requestedList) setGroupLoadError(e.message); throw e; }).finally(() => { if (groupLoad.current?.promise === promise) groupLoad.current = null; });
+    const promise = readGroupDirectory(groupUserId,requestedList,()=>api("meta-ads/inventory/trials?" + new URLSearchParams({ listId:requestedList, mode: "directory" })),refresh).then((data: TrialDirectory) => { if (activeGroupList.current === requestedList) setTrialDirectory(data); }).catch(e => { if (activeGroupList.current === requestedList) setGroupLoadError(e.message); throw e; }).finally(() => { if (groupLoad.current?.promise === promise) groupLoad.current = null; });
     groupLoad.current = {listId:requestedList,promise};
     return promise;
   }
@@ -217,7 +220,7 @@ export function InventoryCatalog({
 
 
     setEvaluation(null);
-    void reloadGroups()
+    void reloadGroups(false)
       .catch((e) => {
         if (active) setMessage(e.message);
       });

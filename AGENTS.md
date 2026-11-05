@@ -1,5 +1,8 @@
 # Instrucciones para desarrollo
 
+- Grupos fluidez05/11: conservar ventana compartida. Ordenar catálogo solo al cambiar directorio, búsqueda diferida, Sets para selección y componente memo de países con props estables;25 filas iniciales con25/50/100/200 disponibles. Directorio en memoria15s/máx10 claves usuario+documento+lista, coalescido, errores expulsados; invalidar antes/finalmente de escrituras financieras incluso fallo, EXCEPTO POST effectiveness/fx que es lectura. Recarga explícita de guardados fuerza servidor. No almacenar catálogo en localStorage, compartir entre usuarios, cachear uso/historial ni suprimir validación/CAS. Medidas sintéticas no acreditan latencia del dominio privado.
+
+
 - Hojas/Páginas/Rendimiento05/11: control de hojas usa menú compartido Inventario con cuatro estados (lista, por hacer, por desactivar, desactivada), colores manuales existentes y sin escritura a Meta. PATCH effectiveness/state guarda tarea+estado por alias/país bajo lock/CAS, snapshot/priorActive y acuse con filas/tokens canónicos; aplicar solo ese par sin GET de hoja ni perder selección/hechos.
 
 - Grupos rápido05/11: inventory/trials mode=directory devuelve nombres/categorías/grupos y overrides manuales sin historial (automatic UNKNOWN); mode=usage enriquece países/uso sin repetir catálogo. Crear/Editar y Top con reemplazos cargan uso coalescido bajo demanda; Anuncios no espera ese historial. Top no muestra filtros de uso incompletos. Lista muestra pestañas antes de alias-tables, restaura inventario sin esperar todas las hojas y prioriza catálogo/categorías sobre evaluaciones. Conteos históricos solo para asociaciones de país conflictivas, sin cambiar sus cifras.
