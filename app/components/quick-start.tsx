@@ -6,6 +6,7 @@ export function QuickStart() {
   const requestId = useRef(crypto.randomUUID());
   const [busy, setBusy] = useState(false), [error, setError] = useState("");
   const [projects,setProjects]=useState<Project[]>([]),[loading,setLoading]=useState(true);
+  const [count,setCount]=useState(1);
   const [projectId,setProjectId]=useState(""),[projectName,setProjectName]=useState("");
   const [categoryId,setCategoryId]=useState(""),[productName,setProductName]=useState("");
   const project=projects.find(p=>p.id===projectId);
@@ -21,15 +22,16 @@ export function QuickStart() {
       window.location.assign("?"+new URLSearchParams({view:"projects",category:result.categoryId,subproduct:result.subproductId}));
     } catch(reason) {setError(reason instanceof Error?reason.message:"No se pudo continuar.");setBusy(false);}
   }
-  return <form className="panel stack quick-start-form" onSubmit={submit}>
-    <h2>Inicia rápido</h2>
-    <p className="quick-start-guide">Genera de manera rápida las variaciones de las imágenes que quieras.</p>
+  return <form className="panel stack quick-start-form creative-composer" onSubmit={submit}>
+    <div className="creative-composer-heading"><div><span className="eyebrow">Nueva creación</span><h2>De tu idea al afiche</h2></div><span className="badge">Paso 1 · Preparar</span></div>
+
     <div className="fields quick-start-destinations">
       <div><SearchSelect label="Proyecto · elige o escribe un nombre nuevo" value={projectName} required disabled={busy||loading} loading={loading} browseOnToggle options={projects.map(p=>({id:p.id,label:p.name}))} onChange={value=>{setProjectName(value);setProjectId("");setCategoryId("");setProductName("");}} onSelect={option=>{setProjectId(option.id);setProjectName(option.label);setCategoryId("");setProductName("");}} /><small className="hint">{projectId?"Proyecto existente: se conservará su configuración.":"Se creará un proyecto con este nombre."}</small></div>
       <div><SearchSelect label="Producto · elige o escribe un nombre nuevo" value={productName} required disabled={busy||loading} browseOnToggle options={(project?.categories??[]).map(p=>({id:p.id,label:p.name}))} onChange={value=>{setProductName(value);setCategoryId("");}} onSelect={option=>{setCategoryId(option.id);setProductName(option.label);}} /><small className="hint">{categoryId?"El subproducto nuevo se añadirá al final de este producto.":project&&!project.canCreateProduct?"En este proyecto elige un producto compartido de la lista.":"Se creará un producto con este nombre."}</small></div>
     </div>
-    <div className="fields"><label>Tema / nombre del subproducto nuevo<input name="name" maxLength={160} required placeholder="Por ejemplo: Terapia infantil" /></label><label>Variaciones<input type="number" name="count" min={1} max={12} defaultValue={1} required /></label></div>
-    <label>¿Qué imagen quieres crear?<textarea name="prompt" maxLength={30000} placeholder="Describe el anuncio, el estilo, los textos y los detalles que debe incluir." /></label>
+    <div className="fields"><label>Tema / nombre del subproducto nuevo<input name="name" maxLength={160} required placeholder="Por ejemplo: Terapia infantil" /></label><label>Variaciones<input type="number" name="count" min={1} max={12} value={count} onChange={e=>setCount(Number(e.target.value))} required /></label></div>
+    <div className="creative-quantity" role="group" aria-label="Cantidad de variaciones">{[1,3,6,9,12].map(n=><button type="button" key={n} aria-pressed={count===n} disabled={busy} onClick={()=>setCount(n)}>{n} {n===1?"imagen":"imágenes"}</button>)}</div>
+    <label>¿Qué imagen quieres crear?<textarea rows={4} name="prompt" maxLength={30000} placeholder="Describe el anuncio, el estilo, los textos y los detalles que debe incluir." /></label>
     <p className="hint">Solo necesitas los nombres. El subproducto siempre será nuevo; después puedes generar directamente o revisar sus instrucciones.</p>
     <button className="primary" disabled={busy||loading||!!(project&&!project.canCreateProduct&&!categoryId)}>{busy?"Preparando…":"Continuar al subproducto"}</button>
     {error&&<p role="alert" className="notice">{error}</p>}

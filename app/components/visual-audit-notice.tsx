@@ -14,7 +14,7 @@ async function request(path: string, method = "GET", data?: unknown) {
     );
   return result;
 }
-export function VisualAuditNotice() {
+export function VisualAuditNotice({ compact = false }: { compact?: boolean }) {
   const [notice, setNotice] = useState<{
       enabled: boolean;
       retentionDays: number;
@@ -47,11 +47,8 @@ export function VisualAuditNotice() {
       window.clearInterval(timer);
     };
   }, []);
-  return (
-    <aside
-      className="notice visual-audit-notice"
-      aria-label="Conservación de miniaturas de auditoría"
-    >
+  const content = (
+    <>
       {notice ? (
         notice.enabled ? (
           <>
@@ -72,6 +69,32 @@ export function VisualAuditNotice() {
         "No se pudo consultar la política de miniaturas. Consulta al OWNER antes de generar contenido sensible."
       ) : (
         "Consultando la política de conservación de miniaturas…"
+      )}
+    </>
+  );
+  return (
+    <aside
+      className={
+        "notice visual-audit-notice" + (compact ? " visual-audit-compact" : "")
+      }
+      aria-label="Conservación de miniaturas de auditoría"
+    >
+      {compact ? (
+        <details>
+          <summary>
+            Privacidad ·{" "}
+            {notice
+              ? notice.enabled
+                ? `miniaturas ${notice.retentionDays} días`
+                : "miniaturas desactivadas"
+              : error
+                ? "información no disponible"
+                : "consultando…"}
+          </summary>
+          <div>{content}</div>
+        </details>
+      ) : (
+        content
       )}
     </aside>
   );

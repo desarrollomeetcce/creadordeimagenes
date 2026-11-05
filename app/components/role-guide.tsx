@@ -4,12 +4,28 @@ import { roleLabels, roleAbilities } from "../../lib/roles";
 export const CurrentUserId = createContext("");
 export const CurrentRole = createContext("OBSERVER");
 export const useCanEdit = () => useContext(CurrentRole) !== "OBSERVER";
-export function RoleGuide({ name, role }: { name: string; role: string }) {
+export function RoleGuide({
+  name,
+  role,
+  compact = false,
+}: {
+  name: string;
+  role: string;
+  compact?: boolean;
+}) {
   return (
-    <details className="role-guide">
+    <details className={"role-guide" + (compact ? " role-guide-compact" : "")}>
       <summary>
-        Hola {name}, tu rol es {roleLabels[role] ?? role}. Consulta lo que
-        puedes hacer.
+        {compact ? (
+          <>
+            {name} · {roleLabels[role] ?? role}
+          </>
+        ) : (
+          <>
+            Hola {name}, tu rol es {roleLabels[role] ?? role}. Consulta lo que
+            puedes hacer.
+          </>
+        )}
       </summary>
       <ul>
         {(roleAbilities[role] ?? []).map((item) => (

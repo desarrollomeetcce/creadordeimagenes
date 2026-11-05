@@ -1,5 +1,7 @@
 "use client";
 import dynamic from "next/dynamic";
+import "./components/creative-workspace.css";
+const ProjectImagePreview = dynamic(() => import("./components/project-image-preview").then(m => m.ProjectImagePreview));
 import {EffectivenessLegend} from "./components/effectiveness-legend";
 const ProductsCatalog=dynamic(()=>import("./components/products-catalog").then(m=>m.ProductsCatalog),{loading:()=> <p role="status">Cargando efectividad…</p>});
 const AdvisorPerformance=dynamic(()=>import("./components/advisor-performance").then(m=>m.AdvisorPerformance),{loading:()=> <p role="status">Cargando desempeño…</p>});
@@ -547,8 +549,8 @@ export default function Home() {
             {view !== "performance" && view !== "products" && view !== "courses-ai" && view !== "ai" && <span className="badge">Producción publicitaria</span>}
 
           </header>
-          <main className={view === "products" ? "effectiveness-main" : undefined}>
-            {!["metaads", "products", "performance", "courses-ai", "ai"].includes(view) && <><RoleGuide name={user.name} role={user.role} /><VisualAuditNotice key={user.id} /></>}
+          <main className={view === "products" ? "effectiveness-main" : view === "projects" ? "creative-projects-main" : ["library","jobs"].includes(view) ? "creative-library-main" : undefined}>
+            {!["metaads", "products", "performance", "courses-ai", "ai"].includes(view) && <div className={["projects","library","jobs"].includes(view) ? "creative-context-bar" : undefined}><RoleGuide compact={["projects","library","jobs"].includes(view)} name={user.name} role={user.role} /><VisualAuditNotice compact={["projects","library","jobs"].includes(view)} key={user.id} /></div>}
             {project && view === "projects" && (
               <HierarchyBreadcrumbs
                 project={project}
@@ -879,38 +881,25 @@ function Projects({
     }, "Proyecto creado");
   };
   return (
-    <>
-      <div className="heading">
+    <section className="creative-projects-home">
+      <div className="heading creative-home-heading">
         <div>
-          <div className="eyebrow">Tu espacio creativo</div>
-          <h1>{trash ? "Papelera" : "Inicia"}</h1>
+          <div className="eyebrow">Estudio creativo</div>
+          <h1>{trash ? "Papelera" : "Proyectos"}</h1>
           <p className="muted">
             {trash
               ? "Restaura tus proyectos. El historial administrativo se conserva."
-              : "Organiza tus campañas y convierte tus ideas en publicidad."}
+              : "Tus ideas, tus proyectos y tus próximos afiches."}
           </p>
         </div>
         {!trash && canEdit && (
-          <div className="row start-actions"><button className="primary" type="button" aria-expanded={quick} onClick={()=>{setQuick(!quick);setCreate(false);}}>Inicia rápido</button><button type="button" aria-expanded={create} onClick={() => {setCreate(!create);setQuick(false);}}>＋ Añadir proyecto</button></div>
+          <div className="row start-actions"><button className="primary" type="button" aria-expanded={quick} onClick={()=>{setQuick(!quick);setCreate(false);}}>✦ Crear imágenes</button><button type="button" aria-expanded={create} onClick={() => {setCreate(!create);setQuick(false);}}>＋ Nuevo proyecto</button></div>
         )}
       </div>
-      {!trash && (
-        <div className="intro">
-          <div>
-            <strong>Una configuración. Muchas posibilidades.</strong>
-            <p className="muted">
-              Define las instrucciones del proyecto y reutilízalas en cada
-              producto y subproducto.
-            </p>
-          </div>
-          <span className="badge" style={{ alignSelf: "center" }}>
-            Proyecto → Producto → Subproducto → Variaciones
-          </span>
-        </div>
-      )}
+      {!trash && <div className="creative-path" aria-label="Estructura del espacio creativo"><span>Proyecto</span><span aria-hidden="true">›</span><span>Producto</span><span aria-hidden="true">›</span><span>Subproducto</span><span aria-hidden="true">›</span><strong>Afiches</strong></div>}
       {!trash&&quick&&<QuickStart />}
       {create && (
-        <form className="panel stack" onSubmit={submit}>
+        <form className="panel stack creative-project-form" onSubmit={submit}>
           <h2>Nuevo proyecto</h2>
           <label>
             Nombre
@@ -930,8 +919,8 @@ function Projects({
           </button>
         </form>
       )}
-      <div className="row spread" style={{ marginBottom: 20 }}>
-        <strong>{items.length} proyectos</strong>
+      <div className="row spread creative-project-list-heading">
+        <strong>{items.length} {items.length === 1 ? "proyecto" : "proyectos"}</strong>
         <input
           aria-label="Buscar proyectos"
           style={{ maxWidth: 280 }}
@@ -940,18 +929,20 @@ function Projects({
           onChange={(e) => setQuery(e.target.value)}
         />
       </div>
-      <div className="grid">
+      <div className="grid creative-project-grid">
+        {!trash && canEdit && !query && <button type="button" className="creative-new-project-card" aria-label="Crear un nuevo proyecto" onClick={()=>{setCreate(true);setQuick(false);}}><span aria-hidden="true">＋</span><strong>Nuevo proyecto</strong><small>Organiza una nueva línea de afiches</small></button>}
         {items
           .filter((i) => i.name.toLowerCase().includes(query.toLowerCase()))
           .map((p) => (
-            <article className="card" key={p.id}>
+            <article className="card creative-project-card" key={p.id}>
+              <div className="creative-project-cover" aria-hidden="true"><span>{p.name.split(/\s+/).filter(Boolean).slice(0,2).map(word=>word[0]).join("").toUpperCase()}</span><i/><i/><i/></div>
               <div className="row spread">
-                <div className="tile">▦</div>
+                <small>PROYECTO</small>
                 <span className="badge">
                   {trash ? "En papelera" : "Activo"}
                 </span>
               </div>
-              <h3>{p.name}</h3>
+              <h3 title={p.name}>{p.name}</h3>
               <p className="muted">
                 {p.description || "Un espacio para tus próximas campañas."}
               </p>
@@ -978,16 +969,17 @@ function Projects({
             </article>
           ))}
       </div>
-      {!items.length && (
+      {!items.length && !t.busy && (
         <div className="empty">
           {trash
             ? "No hay proyectos en papelera."
             : "Crea tu primer proyecto para comenzar."}
         </div>
       )}
+      {items.length > 0 && query && !items.some(i=>i.name.toLowerCase().includes(query.toLowerCase())) && <div className="empty">No encontramos proyectos con ese nombre. <button type="button" onClick={()=>setQuery("")}>Limpiar búsqueda</button></div>}
       {trash&&canEdit&&<ProductTrash />}
       {t.notice}
-    </>
+    </section>
   );
 }
 function PromptForm({
@@ -1090,6 +1082,7 @@ function ProjectEditor({
   openCollection: () => void;
 }) {
   const [create, setCreate] = useState(false);
+  const [previewImages, setPreviewImages] = useState(false);
   const [share, setShare] = useState(false);
   const [brandOpen, setBrandOpen] = useState(false);
   const [brandHost,setBrandHost]=useState<HTMLDivElement|null>(null);
@@ -1097,19 +1090,21 @@ function ProjectEditor({
   const projectInstructions=useRef<HTMLDetailsElement>(null);
   const t = useTask();
   return (
-    <>
+    <section className="creative-project-space">
       <div className="heading project-heading">
         <div><div className="eyebrow">Proyecto</div><h1>{p.name}</h1><p className="muted">{p.description}</p></div>
       </div>
       <div className="project-action-bar" aria-label="Acciones del proyecto">
         {p.canEdit !== false && <button type="button" className="primary" aria-expanded={create} onClick={() => setCreate(!create)}>＋ Añadir producto</button>}
         <div className="brand-selector-host" ref={setBrandHost} />
-        <button type="button" onClick={openCollection}>Ver afiches del proyecto</button>
+        <button type="button" aria-expanded={previewImages} onClick={()=>setPreviewImages(v=>!v)}>▧ Vista de afiches</button>
+        <button type="button" onClick={openCollection}>Abrir Biblioteca ↗</button>
         {p.canManageAccess && <button type="button" aria-expanded={share} onClick={() => setShare(!share)}>Compartir proyecto</button>}
         {p.canManageAccess && <button type="button" className="danger" onClick={() => {
           if (confirm("¿Enviar este proyecto a la papelera? Su auditoría se conservará.")) void t.run(async () => { await api("projects/" + p.id, "DELETE"); back(); });
         }}>Eliminar proyecto</button>}
       </div>
+      {previewImages && <ProjectImagePreview scope="project" id={p.id} onOpenLibrary={openCollection} />}
       <div id="project-brand" hidden={!brandOpen}><button type="button" className="brand-collapse" onClick={()=>setBrandOpen(false)}>Reducir identidad de marca</button><BrandKit key={p.id} projectId={p.id} selectorHost={brandHost} onOpen={()=>setBrandOpen(true)} /></div>
       <details ref={projectInstructions} className="project-instruction-section">
         <summary><span>Instrucciones del proyecto y adjuntos</span><label className="row" onClick={e=>e.stopPropagation()}><input type="checkbox" checked={projectPolicy.includeSelf===false} onChange={e=>{setProjectPolicy({...projectPolicy,includeSelf:!e.target.checked});if(projectInstructions.current)projectInstructions.current.open=true;}} />No incluir instrucciones</label></summary>
@@ -1152,9 +1147,9 @@ function ProjectEditor({
       <h2 style={{ marginTop: 28 }}>
         Productos <span className="muted">· {p.categories.length}</span>
       </h2>
-      <div className="grid">
+      <div className="grid creative-product-grid">
         {p.categories.map((c) => (
-          <article className="card" key={c.id}>
+          <article className="card creative-product-card" key={c.id}>
             <div className="tile">≡</div>
             <h3>{c.name}</h3>
             <p className="muted">
@@ -1177,7 +1172,7 @@ function ProjectEditor({
         </div>
       )}
       {t.notice}
-    </>
+    </section>
   );
 }
 function SettingsFields({
@@ -1284,6 +1279,7 @@ function CategoryEditor({
   const [statisticsDates,setStatisticsDates]=useState({from:"",to:""});
   const {orders:statusBySubproduct,counts:imageCounts,statistics,statisticsError}=useSubproductStatuses(c.project.id,c.id,statisticsDates.from,statisticsDates.to);
   const [sharing, setSharing] = useState(false);
+  const [previewImages, setPreviewImages] = useState(false);
   const [selectionSharing,setSelectionSharing]=useState(false);
   const canSeeCosts=useCanEdit();
   const [trashOpen,setTrashOpen]=useState(false);
@@ -1298,7 +1294,7 @@ function CategoryEditor({
   const [lines, setLines] = useState("");
   const t = useTask();
   return (
-    <>
+    <section className="creative-product-space">
       <div className="heading">
         <div>
           <div className="eyebrow">Producto</div>
@@ -1309,11 +1305,13 @@ function CategoryEditor({
         </div>
       </div>
       <div className="project-action-bar" aria-label="Acciones del producto">
-       <button type="button" onClick={openCollection}>Ver afiches del producto</button>
+       <button type="button" aria-expanded={previewImages} onClick={()=>setPreviewImages(v=>!v)}>▧ Vista de afiches</button>
+       <button type="button" onClick={openCollection}>Abrir Biblioteca ↗</button>
        {c.canManageAccess&&<button type="button" aria-expanded={sharing} onClick={()=>setSharing(!sharing)}>Compartir producto</button>}
        {c.canManageAccess&&<button type="button" className="danger" onClick={()=>{if(confirm("¿Enviar este producto a la papelera? Sus subproductos e historial se conservarán; solo se cancelan trabajos pendientes."))void t.run(async()=>{await api("categories/"+c.id,"DELETE");back();},"Producto enviado a papelera");}}>Eliminar producto</button>}
        {c.canManageAccess&&<button type="button" aria-expanded={productTrashOpen} onClick={()=>setProductTrashOpen(!productTrashOpen)}>Buscar productos eliminados</button>}
       </div>
+      {previewImages && <ProjectImagePreview scope="category" id={c.id} onOpenLibrary={openCollection} />}
       {sharing&&c.canManageAccess&&<ProjectSharing projectId={c.id} scope="category" />}
       {productTrashOpen&&<ProductTrash projectId={c.project.id} onRestored={refresh} />}
       <details hidden={!c.canEdit}>
@@ -1530,7 +1528,7 @@ function CategoryEditor({
       )}
       {t.notice}
       </section>
-    </>
+    </section>
   );
 }
 function BatchGeneration({
@@ -1812,16 +1810,8 @@ function SubproductRow({
         </span>
       </summary>
       <div className="inside stack">
-        <details className="subproduct-configuration" open={configOpen} onToggle={event=>setConfigOpen(event.currentTarget.open)}><summary>Configuración</summary><div className="inside stack">
-        {templates.picker}
-        <InstructionPolicyControls scope="subproduct" value={policy} onChange={value=>{setPolicy(value);setReview(false);setSourceDirty(true);setPreview(null);setReviewOpen(false);}} />
-        <p className="hint subproduct-inheritance">Herencias: {policy.includeProject!==false?<>Proyecto: <strong>{ancestry.project}</strong></>:"Proyecto: no incluida"} · {policy.includeProduct!==false?<>Producto: <strong>{ancestry.product}</strong></>:"Producto: no incluida"}. Las exclusiones del origen también se respetan.</p>
-        <p className="notice">
-          Eje temático: <strong>{name || sub.name}</strong>. Todas las
-          variaciones tratarán de este tema y deben mencionar su nombre. Las
-          instrucciones particulares añaden detalles a las instrucciones
-          generales activas.
-        </p>
+        <div className="subproduct-brief">
+          <div className="creative-brief-heading"><strong>Tu próxima creación</strong><span className="badge">{(custom||forceOwn?s:inherited).count} variaciones · {(custom||forceOwn?s:inherited).format}</span></div>
         <label style={{ marginTop: 18 }}>
           Tema / nombre del subproducto
           <input
@@ -1840,6 +1830,12 @@ function SubproductRow({
           }}
           placeholder="Escribe solo las excepciones o indicaciones adicionales."
         />}
+          <label className="row creative-sample-choice"><input type="checkbox" checked={previewFirst} onChange={e=>setPreviewFirst(e.target.checked)} />Aprobar la primera muestra antes del resto</label>
+        </div>
+        <details className="subproduct-configuration" open={configOpen} onToggle={event=>setConfigOpen(event.currentTarget.open)}><summary>Formato, estilo, herencias y referencias</summary><div className="inside stack">
+        {templates.picker}
+        <InstructionPolicyControls scope="subproduct" value={policy} onChange={value=>{setPolicy(value);setReview(false);setSourceDirty(true);setPreview(null);setReviewOpen(false);}} />
+        <p className="hint subproduct-inheritance">Herencias: {policy.includeProject!==false?<>Proyecto: <strong>{ancestry.project}</strong></>:"Proyecto: no incluida"} · {policy.includeProduct!==false?<>Producto: <strong>{ancestry.product}</strong></>:"Producto: no incluida"}. Las exclusiones del origen también se respetan.</p>
         <div id={"sub-settings-"+sub.id} className={preview?.needsSettings?"field-invalid":""}>
         <label className="row">
           <input
@@ -1893,14 +1889,6 @@ function SubproductRow({
               El análisis convencional detecta conflictos básicos; confirma el
               contenido comercial antes de enviarlo.
             </p>
-            <label className="row">
-              <input
-                type="checkbox"
-                checked={previewFirst}
-                onChange={(e) => setPreviewFirst(e.target.checked)}
-              />
-              Revisar y aprobar la primera muestra antes de generar las demás.
-            </label>
             <label className="row">
               <input
                 type="checkbox"
