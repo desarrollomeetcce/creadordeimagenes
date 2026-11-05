@@ -1,5 +1,16 @@
 # Meta Ads: consulta y análisis
 
+## Detalles coherentes y estado laboral compartido · 2026-11-04
+
+Validación:196 unitarias,8 pruebas de integración (permisos/CAS/estado compartido y Totales con Meta15 frente a ajuste manual999), TypeScript y build correctos.6 comprobaciones de navegador: equipo3.47%/CAC18.23 parcial; detalle asesor; filtros/estado laboral; diplomado; hoja completa; Totales y móvil, sin errores y solo2 PATCH laborales intencionales. Snapshots de ventas/presupuesto/Meta/BC/asignaciones/Totales exactos y fixtures exclusivos eliminados. Revisión React: hooks estables, controles etiquetados, sin consultas al alternar vista, fuentes monetarias separadas.
+
+Detalles de asesor/equipo/hoja/diplomado conservan solo Vista automática y Vista manual. Automática inicial salvo apertura explícita desde una hoja manual; Totales mantiene Total automático/manual. Se retiran modos Hoy/Ayer/Análisis del período/Datos Meta. Modos heredados relativos se normalizan a manual sin mover fechas; calendario y hojas/inventario/país siguen disponibles. Reabrir diplomado hereda modo y rango actual de la hoja. BC corresponde a manual; B Meta a automática. BM no reaparece en resumen manual del asesor.
+
+CAC de detalles usa gasto original de Meta/ventas en ambas vistas, nunca presupuesto como sustituto. Efectividad V/B×100 en automática y V/BC×100 manual de asesores/hoja. Cocientes sobre totales observados del mismo período se muestran provisionales si falta cobertura, sin convertir blancos en cero ni dividir por ventas/base cero o mezclar monedas. Caso V195/B5614/G3555.82:3.47% y CAC18.23, con asterisco por días parciales. El comparador estricto existente permanece para otros cálculos. Totales expone metaSums base/spend originales separados de ajustes manuales, sin nuevas consultas; estadísticas toman esta fuente explícita. Conservar avisos de FX, atribución y faltantes.
+
+Asesores añade columna Estado del asesor con Activo/Inactivo y filtro Todos/Activos/Inactivos en el propio encabezado. Nombre inicial260px más columna90px, cuentas de fechas derivadas intactas. Análisis del equipo incluye selector y columna de estado, conserva conteos de asesores, ventas y falta de registro. Inactividad es laboral, independiente de asistencia, roles comerciales y campañas; mantiene históricos y filas. Estado compartido en config.advisorInactiveIds de la lista, activo por defecto sin migración. PATCH advisors existente acepta employmentActive, bajo permisos/lock/CAS de revisión; conserva resto de config y audita estado. VIEW no escribe, EDIT solo ámbito autorizado; refresco existente comparte cambios.
+
+
 ## Asesores manual sin BM ni efectividad V/BM · 2026-11-04
 
 Validación:194 unitarias, TypeScript/build y3 comprobaciones de navegador correctos: automática6 columnas intacta; manual5 columnas sobre2 fechas sin BM/V÷BM; móvil/cambio de vista sin errores ni escrituras. Fuente V1/G10.25, asesor y campaña conservados; fixture exclusivo eliminado.

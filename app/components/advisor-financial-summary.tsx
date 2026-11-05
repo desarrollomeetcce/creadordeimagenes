@@ -31,10 +31,7 @@ export function AdvisorFinancialSummary({
         v[key] === null
           ? `${v.currency || "Moneda pendiente"}: —`
           : money(v[key]!, v.currency) +
-            (v.partial ||
-            (!meta && v.budgetPartial) ||
-            summary.assignmentPartial ||
-            (meta && summary.metaPartial)
+            (v.partial || summary.assignmentPartial || summary.metaPartial
               ? " *"
               : ""),
       )
@@ -66,20 +63,14 @@ export function AdvisorFinancialSummary({
         </>
       )}
       <span>
-        {meta ? "Gasto Meta (G)" : "Presupuesto (P)"}
-        <strong>{value(meta ? "spend" : "budget")}</strong>
-        <small>
-          {meta
-            ? "Gasto informado por Meta, sin ajustes manuales."
-            : "Presupuestos asignados de las fechas elegidas."}
-        </small>
+        Gasto Meta (G)
+        <strong>{value("spend")}</strong>
+        <small>Gasto informado por Meta, sin ajustes manuales.</small>
       </span>
       <span>
         Costo de adquisición (CAC)
-        <strong>{value(meta ? "metaCac" : "budgetCac")}</strong>
-        <small>
-          {meta ? "G / ventas" : "P / ventas"} · no se divide entre cero.
-        </small>
+        <strong>{value("metaCac")}</strong>
+        <small>G Meta / ventas · no se divide entre cero.</small>
       </span>
       {summary.assignmentPartial && (
         <span className="advisor-metric-context">

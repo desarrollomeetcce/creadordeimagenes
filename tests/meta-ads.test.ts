@@ -5285,6 +5285,15 @@ test("Ventas registradas: inicio automático, fecha manual independiente y dupli
   );
 });
 
+test("Detalles: modos heredados relativos se normalizan a manual sin cambiar el rango elegido", async () => {
+  const { detailAnalysisView, detailAnalysisViews, advisorAnalysisDefaults } = await import("../lib/meta-ads/advisor-analysis-view");
+  assert.deepEqual(detailAnalysisViews, [["meta", "Vista automática"], ["period", "Vista manual"]]);
+  for (const view of ["today", "yesterday", "period", "meta"] as const) {
+    const normalized = detailAnalysisView(view);
+    assert.equal(normalized, view === "meta" ? "meta" : "period");
+    assert.deepEqual(advisorAnalysisDefaults(normalized, "2026-11-04", "2026-10-01", "2026-10-17"), {since:"2026-10-01",until:"2026-10-17",allInventory:false});
+  }
+});
 test("Asesores: Hoy/Ayer fijan solo valores iniciales; Meta y período permiten rango elegido", async () => {
   const { advisorAnalysisDefaults } =
     await import("../lib/meta-ads/advisor-analysis-view");
@@ -5348,7 +5357,7 @@ test("Asesores: P/V y G/V respetan origen, misma fecha, monedas y ventas cero", 
       { day: "2026-10-29", sales: 2 },
       { day: "2026-10-30", sales: null, financial },
     ]).effectiveness,
-    null,
+    2,
   );
   assert.equal(
     advisorFinancialSummary([
@@ -6420,4 +6429,12 @@ test("group country column order keeps valid saved choices and moves adjacent or
  assert.deepEqual(moveGroupCountry(countries.map(c=>c.code),"MX","PY"),["HN","PY","MX","PE"]);
  assert.deepEqual(moveGroupCountry(countries.map(c=>c.code),"PE","HN"),["PE","HN","MX","PY"]);
  assert.deepEqual(moveGroupCountry(["PE"],"XX","PE"),["PE"]);assert.equal(JSON.stringify(countries),before);
+});
+
+test("Equipo: cocientes de totales observados muestran porcentaje/CAC parcial sin inventar ventas faltantes", async () => {
+  const {observedPeriodRatio} = await import("../lib/meta-ads/observed-period-ratio");
+  assert.deepEqual(observedPeriodRatio([{numerator:195,denominator:5614},{numerator:null,denominator:0}]), {value:195/5614*100,partial:true});
+  assert.equal(observedPeriodRatio([{numerator:3555.82,denominator:195},{numerator:0,denominator:null}],1).value,3555.82/195);
+  assert.equal(observedPeriodRatio([{numerator:null,denominator:40}]).value,null);
+  assert.equal(observedPeriodRatio([{numerator:10,denominator:0}],1).value,null);
 });

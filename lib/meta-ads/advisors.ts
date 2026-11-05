@@ -1,3 +1,4 @@
+import { advisorEmploymentActive } from "./advisor-analysis-view";
 import { orderedAdvisors } from "./advisor-order-policy";
 import { advisorOrderRevision } from "./advisor-order";
 import { recordedStarts } from "./recorded-starts";
@@ -103,6 +104,7 @@ export async function saveAdvisor(
     revision?: number;
     sheetId?: string;
     commercialRole?: "ADVISOR" | "SUPERVISOR";
+    employmentActive?: boolean;
   },
 ) {
   ownerOnly(actor);
@@ -156,12 +158,21 @@ export async function saveAdvisor(
             ...(b.commercialRole ? { commercialRole: b.commercialRole } : {}),
           },
         });
+    if (b.employmentActive !== undefined) {
+      demand(b.id, "Selecciona un asesor existente.");
+      const sheet = await tx.metaEffectivenessSheet.findUniqueOrThrow({where:{id:sheetId},select:{config:true}});
+      demand(sheet.config === null || (typeof sheet.config === "object" && !Array.isArray(sheet.config)), "Configuración de hoja no válida.", 409);
+      const config = sheet.config && typeof sheet.config === "object" && !Array.isArray(sheet.config) ? sheet.config : {};
+      const inactive = new Set(Array.isArray(config.advisorInactiveIds) ? config.advisorInactiveIds.filter((id): id is string => typeof id === "string") : []);
+      if (b.employmentActive) inactive.delete(row.id); else inactive.add(row.id);
+      await tx.metaEffectivenessSheet.update({where:{id:sheetId},data:{config:{...config,advisorInactiveIds:[...inactive]}}});
+    }
     await recordActivity(tx, {
       data: {
         actorId: actor.id,
         action: "META_ASESOR_GUARDADO",
         resourceId: row.id,
-        detail: { commercialRole: row.commercialRole },
+        detail: { commercialRole: row.commercialRole, ...(b.employmentActive !== undefined ? { employmentActive: b.employmentActive } : {}) },
       },
     });
     return row;
@@ -1259,6 +1270,7 @@ async function readAdvisorSheet(
         advisorOrderRevision: advisorList ? advisorOrderRevision(advisorList.config, people) : undefined,
         rows: orderedAdvisors(people, advisorList?.config).map((p) => ({
           ...p,
+          employmentActive: advisorEmploymentActive(advisorList?.config, p.id),
           ...(!personal && !managed
             ? { activeSince: activityStarts.get(p.id) ?? null }
             : {}),

@@ -12,7 +12,7 @@ import {
   VerticalDetailLayout,
   InventoryDetailSlot,
 } from "./inventory-detail-layout";
-import { periodComparison } from "../../lib/meta-ads/period-comparison";
+import { observedPeriodRatio } from "../../lib/meta-ads/observed-period-ratio";
 import { periodTableUrl } from "../../lib/meta-ads/period-table-link";
 import { TotalsDailyBreakdown } from "./totals-daily-breakdown";
 import { TotalsPeriodProducts } from "./totals-period-products";
@@ -89,7 +89,13 @@ export function TotalsDetail({
   )
     for (let at = Date.parse(since); at <= Date.parse(until); at += 86400000)
       days.push(new Date(at).toISOString().slice(0, 10));
-  const [mode, setMode] = useState<TotalDetailView>(initialView ?? initialMode),
+  const [mode, setMode] = useState<TotalDetailView>(
+      initialView === "automatic"
+        ? "automatic"
+        : initialView === "manual"
+          ? "manual"
+          : initialMode,
+    ),
     [blockKey, setBlockKey] = useState(
       initialSelection?.blockKey ?? blocks[0]?.key ?? "",
     ),
@@ -171,7 +177,7 @@ export function TotalsDetail({
     setSelectedDay("");
   };
   const loading = parentLoading || rangeLoading;
-  const focusDays = summaryPeriod(days, mode, limaToday()).days;
+  const focusDays = days;
   const dayIndex = days.indexOf(selectedDay);
   const columns = totalViewColumns(
     mode,
@@ -192,15 +198,33 @@ export function TotalsDetail({
   );
   const value = (day: string, column: TotalColumn) =>
     totalDetailValue(group?.days[day], column);
+  const ratioValue = (day: string, column: TotalColumn, meta: boolean) =>
+    meta && (column.key === "base" || column.key === "spend")
+      ? (group?.days[day]?.metaSums?.[column.key]?.value ?? null)
+      : value(day, column).value;
   const monetary = (column: TotalColumn) =>
     !["sales", "base", "baseManual", "advisorBase"].includes(column.key);
   const summarize = (column: TotalColumn) =>
     totalDetailSummary(focusDays.map((day) => value(day, column)));
+  const summarizeMeta = (key: "base" | "spend") =>
+    totalDetailSummary(
+      focusDays.map(
+        (day) =>
+          group?.days[day]?.metaSums?.[key] ?? {
+            value: null,
+            known: 0,
+            expected: 1,
+            na: 0,
+            pending: false,
+            partial: true,
+          },
+      ),
+    );
   const sold = summarize(manualTotalColumns.find((c) => c.key === "sales")!),
     bm = summarize(manualTotalColumns.find((c) => c.key === "baseManual")!),
     gm = summarize(manualTotalColumns.find((c) => c.key === "totalSpend")!),
-    base = summarize(automaticTotalColumns.find((c) => c.key === "base")!),
-    spend = summarize(automaticTotalColumns.find((c) => c.key === "spend")!);
+    base = summarizeMeta("base"),
+    spend = summarizeMeta("spend");
   const ratioColumn = (v: typeof sold): TotalColumn =>
     v === sold
       ? manualTotalColumns[0]
@@ -226,13 +250,13 @@ export function TotalsDetail({
       percent: false,
     },
     {
-      name: "Ventas / B Meta",
+      name: "Efectividad Meta · V/B × 100",
       numerator: sold,
       denominator: base,
       percent: true,
     },
     {
-      name: "Costo por venta · G Meta",
+      name: "CAC Meta · G/V",
       numerator: spend,
       denominator: sold,
       percent: false,
@@ -243,14 +267,12 @@ export function TotalsDetail({
       denominator: base,
       percent: false,
     },
-  ].filter((r) =>
-    mode === "automatic"
-      ? r.name.includes("Meta")
-      : mode === "today"
-        ? false
-        : mode === "yesterday"
-          ? !r.name.includes("Meta")
-          : !r.name.includes("Meta"),
+  ].filter(
+    (r) =>
+      r.name === "CAC Meta · G/V" ||
+      (mode === "automatic"
+        ? r.name.includes("Meta")
+        : !r.name.includes("Meta")),
   );
   const chartValue = (day: string, column: TotalColumn) =>
     value(day, column).value;
@@ -501,14 +523,18 @@ export function TotalsDetail({
                             today={limaToday()}
                           />
                           {ratios.map((r) => {
-                            const comparison = periodComparison(
+                            const comparison = observedPeriodRatio(
                               focusDays.map((day) => ({
-                                numerator: value(day, ratioColumn(r.numerator))
-                                  .value,
-                                denominator: value(
+                                numerator: ratioValue(
+                                  day,
+                                  ratioColumn(r.numerator),
+                                  r.name.includes("Meta"),
+                                ),
+                                denominator: ratioValue(
                                   day,
                                   ratioColumn(r.denominator),
-                                ).value,
+                                  r.name.includes("Meta"),
+                                ),
                               })),
                               r.percent ? 100 : 1,
                             );
@@ -534,13 +560,15 @@ export function TotalsDetail({
                                         ? " %"
                                         : " " + (block.currency || ""))}
                                   {result !== null &&
-                                  (r.numerator.partial || r.denominator.partial)
+                                  (comparison.partial ||
+                                    r.numerator.partial ||
+                                    r.denominator.partial)
                                     ? " *"
                                     : ""}
                                 </strong>
                                 <small>
-                                  {comparison.mismatched
-                                    ? "Faltan datos de las mismas fechas para comparar el período."
+                                  {comparison.partial
+                                    ? "Cálculo parcial con los totales registrados del período."
                                     : r.percent
                                       ? "Ventas y base de las mismas fechas del período"
                                       : "Inversión por resultado; no representa utilidad"}
@@ -550,11 +578,11 @@ export function TotalsDetail({
                           })}
                         </div>
                         <p className="hint">
-                          Indicadores calculados solo con los parámetros de esta
-                          vista. No se reemplaza una fuente por otra si falta un
-                          dato. V cuenta ventas; sin un importe de ingresos no
-                          se calcula ganancia monetaria. Indicadores del día o
-                          período seleccionado; * cobertura parcial.
+                          El CAC usa gasto original de Meta y ventas del
+                          período. No se reemplaza una fuente por otra si falta
+                          un dato. V cuenta ventas; sin un importe de ingresos
+                          no se calcula ganancia monetaria. Indicadores del día
+                          o período seleccionado; * cobertura parcial.
                         </p>
                       </DetailSection>
                     ),

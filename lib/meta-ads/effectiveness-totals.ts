@@ -125,6 +125,35 @@ export async function effectivenessTotals(
             else manual.advisorBase = value;
           }
           const sums = sumEffectivenessDay(g.rows, day);
+          const originalMeta = sumEffectivenessDay(
+            g.rows.map((r) => {
+              const c = r.days[day];
+              return {
+                ...r,
+                days: c
+                  ? {
+                      [day]: {
+                        ...c,
+                        base: c.sourceBase ?? null,
+                        spend: c.metaSpend ?? null,
+                        manual: [],
+                        na: c.na.filter((k) => k !== "base" && k !== "spend"),
+                        fxPending:
+                          c.metaSpend === null && c.sourceSpend.length
+                            ? ["spend" as const]
+                            : [],
+                      },
+                    }
+                  : {},
+              };
+            }),
+            day,
+          );
+          const metaSums = {
+            base: originalMeta.base,
+            spend: originalMeta.spend,
+          };
+
           const historical = (
             entry?.values as Record<string, unknown> | undefined
           )?.historicalSales;
@@ -146,6 +175,7 @@ export async function effectivenessTotals(
             {
               historicalSales: typeof historical === "number",
               sums,
+              metaSums,
               manual,
               sharedManualBase: !!base,
               revision: entry?.revision ?? 0,

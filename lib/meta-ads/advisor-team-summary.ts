@@ -1,4 +1,4 @@
-import { periodComparison } from "./period-comparison";
+import { observedPeriodRatio } from "./observed-period-ratio";
 type Person = {
   id: string;
   name: string;
@@ -44,7 +44,7 @@ export function advisorTeamRows(people: Person[], basis: "BC" | "BM" | "B") {
       name: p.name,
       sales,
       base,
-      percent: periodComparison(
+      percent: observedPeriodRatio(
         days.map((d) => ({
           numerator: d.na ? null : d.sales,
           denominator: baseValue(d) ?? null,

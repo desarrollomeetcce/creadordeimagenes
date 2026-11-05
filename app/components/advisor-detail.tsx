@@ -1,6 +1,8 @@
 "use client";
 import {
   advisorAnalysisDefaults,
+  detailAnalysisView,
+  detailAnalysisViews,
   type AdvisorAnalysisView,
 } from "../../lib/meta-ads/advisor-analysis-view";
 import { advisorFinancialSummary } from "../../lib/meta-ads/advisor-financial-summary";
@@ -17,6 +19,7 @@ import {
   type ReactNode,
 } from "react";
 import { financialRequest as api } from "./financial-request";
+import { observedPeriodRatio } from "../../lib/meta-ads/observed-period-ratio";
 import { periodComparison } from "../../lib/meta-ads/period-comparison";
 import { DetailPeriodPresets } from "./detail-period-presets";
 import { MetaDateRange } from "./meta-date-range";
@@ -86,7 +89,7 @@ export function AdvisorDetail({
   initialTableId,
   initialAliasId,
   initialCountry,
-  initialAnalysisView = "today",
+  initialAnalysisView = "meta",
   initialSince,
   initialUntil,
   initialRangeSelected = false,
@@ -117,7 +120,7 @@ export function AdvisorDetail({
     });
   };
   const initialDefaults = advisorAnalysisDefaults(
-    initialAnalysisView,
+    detailAnalysisView(initialAnalysisView),
     limaToday(),
     initialSince,
     initialUntil,
@@ -138,20 +141,15 @@ export function AdvisorDetail({
     [until, setUntil] = useState(initialDefaults.until),
     [bars, setBars] = useState<AdvisorMetric>("results"),
     [line, setLine] = useState<AdvisorMetric>(
-      initialAnalysisView === "meta"
-        ? "metaBase"
-        : initialAnalysisView === "today"
-          ? "advisorBase"
-          : initialAnalysisView === "yesterday"
-            ? "manualBase"
-            : "cost",
+      initialAnalysisView === "meta" ? "metaBase" : "advisorBase",
     ),
     [data, setData] = useState<AdvisorSheetData | null>(null),
     [message, setMessage] = useState(""),
     [loading, setLoading] = useState(true),
     [reload, setReload] = useState(0);
-  const [analysisView, setAnalysisView] =
-    useState<AdvisorAnalysisView>(initialAnalysisView);
+  const [analysisView, setAnalysisView] = useState<AdvisorAnalysisView>(
+    detailAnalysisView(initialAnalysisView),
+  );
   const selectAnalysis = (view: AdvisorAnalysisView) => {
     const defaults = advisorAnalysisDefaults(view, limaToday(), since, until);
     setSince(defaults.since);
@@ -163,18 +161,10 @@ export function AdvisorDetail({
     previousView.current = null;
     setDayPage(0);
     setBars("results");
-    setLine(
-      view === "meta"
-        ? "metaBase"
-        : view === "today"
-          ? "advisorBase"
-          : view === "yesterday"
-            ? "manualBase"
-            : "cost",
-    );
+    setLine(view === "meta" ? "metaBase" : "advisorBase");
   };
-  const showBM = analysisView === "period" || analysisView === "yesterday",
-    showBC = analysisView === "period" || analysisView === "today";
+  const showBM = false,
+    showBC = analysisView === "period";
   useEffect(() => {
     if (!autoDay) return;
     const update = () => {
@@ -535,7 +525,7 @@ export function AdvisorDetail({
       denominator: row!.days[day].manualBase ?? null,
     })),
   );
-  const bcComparison = periodComparison(
+  const bcComparison = observedPeriodRatio(
     summaryDays.map((day) => ({
       numerator: row!.days[day].na ? null : row!.days[day].sales,
       denominator: row!.days[day].advisorBase ?? null,
@@ -631,35 +621,6 @@ export function AdvisorDetail({
   );
   const summary = row ? (
     <div className="advisor-detail-summary" aria-label="Resumen del asesor">
-      {(analysisView === "today" || analysisView === "yesterday") && (
-        <div
-          className="advisor-analysis-note advisor-compact-note"
-          role="note"
-          data-summary-view={analysisView}
-          data-cutoff={
-            summaryDays.at(-1) ??
-            summaryPeriod(days, analysisView, limaToday()).cutoff
-          }
-        >
-          <strong>
-            {analysisView === "yesterday"
-              ? summaryDays.length
-                ? `Días completos hasta ${summaryDays.at(-1)!.split("-").reverse().join("/")}`
-                : "Sin días completos en este período"
-              : `Avance hasta ${(summaryDays.at(-1) ?? limaToday()).split("-").reverse().join("/")}`}
-          </strong>
-          <span>
-            {aliasId
-              ? "BM y BC son generales; consulta todo el inventario para comparar."
-              : "Puedes cambiar el período para consultar más fechas."}
-          </span>
-          {aliasId && (
-            <button type="button" onClick={() => setAliasId("")}>
-              Ver todo el inventario
-            </button>
-          )}
-        </div>
-      )}
       {analysisView === "meta" && (
         <AdvisorMetaNotice
           hasMetaSource={financialSummary.hasMetaSource}
@@ -715,50 +676,9 @@ export function AdvisorDetail({
             <small>
               {aliasId
                 ? "BC corresponde a la hoja completa; quita el filtro de inventario para comparar."
-                : bcComparison.mismatched
-                  ? "Faltan ventas o BC de las mismas fechas para comparar el período."
+                : bcComparison.partial
+                  ? "Cálculo parcial con los totales registrados del período."
                   : "Ventas y BC de las mismas fechas del período"}
-            </small>
-          </span>
-        )}
-        {showBM && (
-          <span>
-            Base manual (BM)
-            <strong>
-              {bmTotal === null ? "—" : number(bmTotal)}
-              {bmDays.length > 0 && bmDays.length < summaryDays.length
-                ? " *"
-                : ""}
-            </strong>
-            <small>
-              {bmDays.length}/{summaryDays.length} días con BM · recibida de
-              Totales al día siguiente.
-            </small>
-          </span>
-        )}
-        {showBM && (
-          <span>
-            Ventas / BM
-            <strong>
-              {!aliasId && bmComparison.value !== null
-                ? bmComparison.value!.toLocaleString("es-PE", {
-                    maximumFractionDigits: 2,
-                  }) + " %"
-                : "—"}
-              {!aliasId &&
-              sales !== null &&
-              bmTotal !== null &&
-              bmTotal > 0 &&
-              (partial || bmDays.length < summaryDays.length)
-                ? " *"
-                : ""}
-            </strong>
-            <small>
-              {aliasId
-                ? "BM corresponde a la hoja completa; quita el filtro de inventario para comparar."
-                : bmComparison.mismatched
-                  ? "Faltan ventas o BM de las mismas fechas para comparar el período."
-                  : "Ventas y BM de las mismas fechas del período"}
             </small>
           </span>
         )}
@@ -1213,22 +1133,20 @@ export function AdvisorDetail({
         country={country}
         onStatistics={selectPeriod}
       >
-        {row && (
+        {row && showBC && (
           <>
             <h4>
               {showBM && showBC ? "BM y BC" : showBM ? "BM" : "BC"} por hoja y
               país
             </h4>
             <p className="hint">
-              BM y BC son repartos manuales independientes de esta persona. No
-              se calculan por asignaciones ni se convierten por moneda; no
-              dependen del filtro de diplomado. % BM = ventas / BM y % BC =
-              ventas / BC de la misma fecha, hoja y país. % BM está disponible
-              después de cerrar el día; una base vacía o cero no produce
-              porcentaje.
+              BC corresponde al asesor y a la hoja completos. No se calculan por
+              asignaciones ni se convierten por moneda; no depende del filtro de
+              diplomado. % BC = ventas / BC de la misma fecha, hoja y país; una
+              base vacía o cero no produce porcentaje.
             </p>
             <div className="table-scroll advisor-source-scroll">
-              <table aria-label="BM y BC del asesor por hoja y país">
+              <table aria-label="BC del asesor por hoja y país">
                 <thead>
                   <tr>
                     <th>Fecha</th>
@@ -1277,7 +1195,7 @@ export function AdvisorDetail({
                   {!sourceBaseRows.length && (
                     <tr>
                       <td colSpan={3 + (showBM ? 2 : 0) + (showBC ? 2 : 0)}>
-                        No hay BM ni BC registradas en este período.
+                        No hay BC registrada en este período.
                       </td>
                     </tr>
                   )}
@@ -1371,14 +1289,7 @@ export function AdvisorDetail({
               role="group"
               aria-label="Vista de análisis del asesor"
             >
-              {(
-                [
-                  ["period", "Análisis del período"],
-                  ["today", "Hoy · avance provisional"],
-                  ["yesterday", "Ayer · día completo"],
-                  ["meta", "Datos Meta"],
-                ] as const
-              ).map(([value, label]) => (
+              {detailAnalysisViews.map(([value, label]) => (
                 <button
                   key={value}
                   type="button"

@@ -19,6 +19,7 @@ export type AdvisorDayData = {
   absence: AbsenceView;
 };
 export type AdvisorPerson = {
+  employmentActive?: boolean;
   activeSince?: string | null;
   commercialRole?: string;
   id: string;

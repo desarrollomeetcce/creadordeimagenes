@@ -7,8 +7,8 @@ export type TotalDetailView = "manual" | "automatic" | "today" | "yesterday";
 export const totalDetailViewNames: Record<TotalDetailView, string> = {
   manual: "Total manual",
   automatic: "Total automático",
-  today: "Hoy · avance provisional",
-  yesterday: "Ayer · día completo",
+  today: "Total manual",
+  yesterday: "Total manual",
 };
 /** Compatible parameters remain opt-in; defaults omit retired columns without deleting history. */
 export function totalViewColumns(

@@ -76,6 +76,7 @@ export function SheetSalesDetail({
   name,
   initialSince,
   initialUntil,
+  initialMode = "meta",
   onClose,
 }: {
   tableId: string;
@@ -84,12 +85,13 @@ export function SheetSalesDetail({
   name: string;
   initialSince: string;
   initialUntil: string;
+  initialMode?: "manual" | "meta";
   onClose: () => void;
 }) {
   const dialog = useRef<HTMLDialogElement>(null),
     id = useId();
-  const [since, setSince] = useState(limaToday()),
-    [until, setUntil] = useState(limaToday()),
+  const [since, setSince] = useState(initialSince),
+    [until, setUntil] = useState(initialUntil),
     [country, setCountry] = useState("__all"),
     [blocks, setBlocks] = useState<SheetSalesBlock[]>([]),
     [fetching, setLoading] = useState(true),
@@ -103,9 +105,7 @@ export function SheetSalesDetail({
     [ascending, setAscending] = useState(true),
     [sortKey, setSortKey] = useState<SheetSalesSort>("sales"),
     [page, setPage] = useState(0);
-  const [profile, setProfile] = useState<"today" | "yesterday" | "meta">(
-    "today",
-  );
+  const [profile, setProfile] = useState<"manual" | "meta">(initialMode);
   const [sourceRows, setSourceRows] = useState<EffectivenessRow[]>([]);
   const [analysis, setAnalysis] = useState<SheetAnalysis>({
     rows: [],
@@ -396,9 +396,8 @@ export function SheetSalesDetail({
               <div className="row sheet-sales-detail-controls">
                 {(
                   [
-                    ["today", "Hoy · avance"],
-                    ["yesterday", "Ayer · completo"],
-                    ["meta", "Datos Meta"],
+                    ["meta", "Vista automática"],
+                    ["manual", "Vista manual"],
                   ] as const
                 ).map(([key, label]) => (
                   <button
@@ -407,13 +406,6 @@ export function SheetSalesDetail({
                     aria-pressed={profile === key}
                     onClick={() => {
                       setProfile(key);
-                      if (key !== "meta") {
-                        const day =
-                          key === "today"
-                            ? limaToday()
-                            : shiftCalendarDay(limaToday(), -1);
-                        range(day, day);
-                      }
                     }}
                   >
                     {label}
@@ -669,10 +661,7 @@ export function SheetSalesDetail({
                                       );
                                       const e = r?.evaluation;
                                       if (!r || !e) return <div key={c}>—</div>;
-                                      const a =
-                                        profile === "meta"
-                                          ? e.meta.assessment
-                                          : e.budget.assessment;
+                                      const a = e.meta.assessment;
                                       return (
                                         <div
                                           key={c}
@@ -700,12 +689,9 @@ export function SheetSalesDetail({
                                             {e.since} · {e.days} días
                                           </small>
                                           <small
-                                            title={`CAC en soles · últimos 14 días (hoy provisional). Normal: menor de S/ ${e.rules.review}; Revisar: desde S/ ${e.rules.review}; Grave: desde S/ ${e.rules.severe}; Crítico: desde S/ ${e.rules.critical}.`}
+                                            title={`CAC en soles · últimos 14 días. Normal: menor de S/ ${e.rules.review}; Revisar: desde S/ ${e.rules.review}; Grave: desde S/ ${e.rules.severe}; Crítico: desde S/ ${e.rules.critical}.`}
                                           >
-                                            {profile === "meta"
-                                              ? "CAC Meta"
-                                              : "CAC presupuesto"}
-                                            :{" "}
+                                            CAC Meta :{" "}
                                             {a.usage === null
                                               ? "—"
                                               : "S/ " + a.usage.toFixed(2)}{" "}
@@ -1118,6 +1104,7 @@ export function SheetSalesDetail({
             )}
             {detail && (
               <EffectivenessHistory
+                initialMode={profile}
                 {...detail}
                 tableId={tableId}
                 initialSince={since}

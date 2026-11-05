@@ -1,3 +1,4 @@
+import { observedPeriodRatio } from "./observed-period-ratio";
 import { periodComparison } from "./period-comparison";
 import type { AdvisorFinancialDay } from "./advisor-financial-metrics";
 export function advisorFinancialSummary(
@@ -31,7 +32,7 @@ export function advisorFinancialSummary(
         })),
         1,
       ).value,
-      metaCac: periodComparison(
+      metaCac: observedPeriodRatio(
         parts.map((p) => ({
           numerator: p?.spend ?? null,
           denominator: p?.sales ?? null,
@@ -54,7 +55,7 @@ export function advisorFinancialSummary(
         d.financial?.currencies.some((c) => c.spend != null),
     ),
     base,
-    effectiveness: periodComparison(
+    effectiveness: observedPeriodRatio(
       days.map((d) => ({
         numerator: d.sales,
         denominator: d.financial?.base ?? null,

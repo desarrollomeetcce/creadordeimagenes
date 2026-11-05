@@ -172,6 +172,18 @@ test("Totales: bloques vacíos sin perder B/BM, ceros o N.A. ni cambiar los dato
         assert.equal(g.days["2026-10-20"].sums.sales.value, 0);
       },
     );
+    await t.test("CAC original de Meta permanece separado de ajustes manuales de gasto", async () => {
+      const row = await db.metaEffectivenessRow.findFirstOrThrow({where:{aliasId:aliases[0].id,country:"AR"}});
+      const cell = await db.metaEffectivenessDay.findUniqueOrThrow({where:{rowId_day:{rowId:row.id,day:"2026-10-20"}}});
+      try {
+        await db.metaEffectivenessDay.update({where:{rowId_day:{rowId:cell.rowId,day:cell.day}},data:{annotations:{spend:{value:999,currency:"PEN"}}}});
+        const data = await effectivenessTotals(u,tables[0].id,"2026-10-20","2026-10-20",lists[1].id);
+        const day = data.groups.find(g=>g.country==="AR")!.days["2026-10-20"];
+        assert.equal(day.sums.spend.value,999);
+        assert.equal(day.metaSums.spend.value,15);
+        assert.equal(day.metaSums.base.value,10);
+      } finally {await db.metaEffectivenessDay.update({where:{rowId_day:{rowId:cell.rowId,day:cell.day}},data:{annotations:cell.annotations as any}});}
+    });
     await t.test(
       "Una fecha sin datos conserva solo el país conocido; Sin país explícito sigue consultable",
       async () => {

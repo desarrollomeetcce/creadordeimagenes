@@ -11,7 +11,7 @@ export function SheetAnalysisCounters({
 }: {
   rows: EffectivenessRow[];
   bases: SheetAnalysis["bases"];
-  mode: "today" | "yesterday" | "meta";
+  mode: "manual" | "meta";
   country: string;
   dates: string[];
   sales: string;
@@ -32,29 +32,27 @@ export function SheetAnalysisCounters({
       for (const row of chosen.filter((r) => r.currency === currency))
         for (const day of dates) {
           const d = row.days[day],
-            n = mode === "meta" ? d?.metaSpend : d?.budget;
-          if (
-            typeof n === "number" &&
-            (mode === "meta" || !d?.na.includes("budget"))
-          )
-            amount = (amount ?? 0) + n;
+            n = d?.metaSpend;
+          if (typeof n === "number") amount = (amount ?? 0) + n;
           else partial = true;
           if (typeof d?.sales === "number" && !d.na.includes("sales"))
             v = (v ?? 0) + d.sales;
           else partial = true;
           if (
             d?.partialMetrics.includes("sales") ||
-            d?.partialMetrics.includes(mode === "meta" ? "spend" : "budget")
+            d?.partialMetrics.includes("spend")
           )
             partial = true;
         }
       const money = (n: number | null) =>
         n === null
           ? "—"
-          : (currency ? new Intl.NumberFormat("es-PE", {
-              style: "currency",
-              currency,
-            }).format(n) : nf(n)) + (partial ? " *" : "");
+          : (currency
+              ? new Intl.NumberFormat("es-PE", {
+                  style: "currency",
+                  currency,
+                }).format(n)
+              : nf(n)) + (partial ? " *" : "");
       return {
         currency,
         amount: money(amount),
@@ -81,7 +79,7 @@ export function SheetAnalysisCounters({
     for (const c of countries)
       for (const day of dates) {
         const b = bases.find((b) => b.country === c && b.day === day),
-          v = mode === "today" ? b?.bc : b?.bm;
+          v = b?.bc;
         if (typeof v === "number") base = (base ?? 0) + v;
         else basePartial = true;
         for (const row of chosen.filter((r) => r.country === c)) {
@@ -91,12 +89,7 @@ export function SheetAnalysisCounters({
           else salesPartial = true;
         }
       }
-  const label =
-    mode === "meta"
-      ? "Base Meta (B)"
-      : mode === "today"
-        ? "Por contactar (BC)"
-        : "Base manual (BM)";
+  const label = mode === "meta" ? "Base Meta (B)" : "Por contactar (BC)";
   return (
     <div className="sheet-sales-overview sheet-analysis-overview">
       <div>
@@ -111,13 +104,7 @@ export function SheetAnalysisCounters({
         </strong>
       </div>
       <div>
-        <span>
-          {mode === "meta"
-            ? "Ventas / B"
-            : mode === "today"
-              ? "Ventas / BC"
-              : "Ventas / BM"}
-        </span>
+        <span>{mode === "meta" ? "Efectividad V/B" : "Efectividad V/BC"}</span>
         <strong>
           {base !== null && base > 0 && pairedSales !== null
             ? nf((pairedSales / base) * 100) +
@@ -127,7 +114,7 @@ export function SheetAnalysisCounters({
         </strong>
       </div>
       <div>
-        <span>{mode === "meta" ? "Gasto Meta (G)" : "Presupuesto (P)"}</span>
+        <span>Gasto Meta (G)</span>
         <strong>
           {monetary.map((m) => (
             <small key={m.currency}>{m.amount}</small>
@@ -135,7 +122,7 @@ export function SheetAnalysisCounters({
         </strong>
       </div>
       <div>
-        <span>{mode === "meta" ? "CAC · G/V" : "CAC · P/V"}</span>
+        <span>CAC Meta · G/V</span>
         <strong>
           {monetary.map((m) => (
             <small key={m.currency}>{m.cac}</small>

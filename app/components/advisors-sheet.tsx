@@ -133,6 +133,7 @@ export function AdvisorsSheet({
         ["sales", 60],
         ["effectivenessBC", 112],
       ] as const);
+  const [employment, setEmployment] = useState("all");
   const [teamAnalysis, setTeamAnalysis] = useState(false);
   const [detailVersion, setDetailVersion] = useState(0);
   const [detailDay, setDetailDay] = useState<string | null>(null);
@@ -341,9 +342,13 @@ export function AdvisorsSheet({
     for (let d = Date.parse(since); d <= Date.parse(until); d += 86400000)
       days.push(new Date(d).toISOString().slice(0, 10));
   const { visibleDays, navigation } = useReportDayPages(days);
-  const filtered = (rowsContext === key ? rows : []).filter((p) =>
-    matchesSearchWords(p.name, query),
-  );
+  const filtered = (rowsContext === key ? rows : [])
+    .filter(
+      (p) =>
+        employment === "all" ||
+        (p.employmentActive !== false) === (employment === "active"),
+    )
+    .filter((p) => matchesSearchWords(p.name, query));
   return (
     <section
       className="sheet-view advisor-sheet"
@@ -481,7 +486,8 @@ export function AdvisorsSheet({
             className="effectiveness-grid advisor-grid sheet-resizable-table"
             style={{
               width:
-                (widths.advisor ?? 300) +
+                (widths.advisor ?? 260) +
+                90 +
                 visibleDays.reduce(
                   (sum, day) =>
                     sum +
@@ -495,7 +501,8 @@ export function AdvisorsSheet({
             }}
           >
             <colgroup>
-              <col style={{ width: widths.advisor ?? 300 }} />
+              <col style={{ width: widths.advisor ?? 260 }} />
+              <col style={{ width: 90 }} />
               {visibleDays.flatMap((day) =>
                 dayColumns.map(([column, fallback]) => (
                   <col
@@ -554,6 +561,20 @@ export function AdvisorsSheet({
                       </button>
                     )}
                   </div>
+                </th>
+                <th rowSpan={2} scope="col">
+                  Estado del asesor
+                  <label>
+                    <select
+                      aria-label="Filtrar asesores activos o inactivos"
+                      value={employment}
+                      onChange={(e) => setEmployment(e.target.value)}
+                    >
+                      <option value="all">Todos</option>
+                      <option value="active">Activos</option>
+                      <option value="inactive">Inactivos</option>
+                    </select>
+                  </label>
                 </th>
                 {visibleDays.map((d) => (
                   <th key={d} colSpan={dayColumns.length} scope="colgroup">
@@ -656,6 +677,7 @@ export function AdvisorsSheet({
                           ⠿
                         </button>
                       )}
+
                       <button
                         type="button"
                         className="advisor-detail-trigger"
@@ -721,6 +743,26 @@ export function AdvisorsSheet({
                         </button>
                       </div>
                     )}
+                  </td>
+                  <td data-readonly="true">
+                    <select
+                      aria-label={`Estado laboral de ${p.name}`}
+                      value={
+                        p.employmentActive === false ? "inactive" : "active"
+                      }
+                      disabled={!canEdit || busy || loading}
+                      onChange={(e) =>
+                        void write("meta-ads/advisors", "PATCH", {
+                          id: p.id,
+                          name: p.name,
+                          revision: p.revision,
+                          employmentActive: e.target.value === "active",
+                        })
+                      }
+                    >
+                      <option value="active">Activo</option>
+                      <option value="inactive">Inactivo</option>
+                    </select>
                   </td>
                   {visibleDays.map((d) => {
                     const c = p.days[d];
@@ -814,7 +856,7 @@ export function AdvisorsSheet({
           initialTableId={tableId}
           initialAliasId={aliasId}
           initialCountry={country}
-          initialAnalysisView="period"
+          initialAnalysisView={showMeta ? "meta" : "period"}
           initialRangeSelected={!!detailDay}
           initialSince={detailDay ?? since}
           initialUntil={detailDay ?? until}
@@ -869,7 +911,7 @@ function FragmentHeaders({
           {header(
             "effectivenessBC",
             "Efectividad",
-            "De hoy",
+            "Ventas / BC",
             "automatic",
             "V / BC × 100",
           )}

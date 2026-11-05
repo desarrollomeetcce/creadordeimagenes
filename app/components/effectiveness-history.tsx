@@ -1,4 +1,5 @@
 "use client";
+import { observedPeriodRatio } from "../../lib/meta-ads/observed-period-ratio";
 import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { subscribeAdvisorSalesChanged } from "./advisor-sales-events";
 import { periodTableUrl } from "../../lib/meta-ads/period-table-link";
@@ -69,6 +70,7 @@ export function EffectivenessHistory({
   initialUntil,
   onPeriod,
   autoOpen = false,
+  initialMode = "meta",
   onClose,
 }: {
   aliasId: string;
@@ -79,6 +81,7 @@ export function EffectivenessHistory({
   initialUntil: string;
   onPeriod: (period: ActivePeriod) => void;
   autoOpen?: boolean;
+  initialMode?: "manual" | "meta";
   onClose?: () => void;
 }) {
   const id = useId(),
@@ -90,11 +93,13 @@ export function EffectivenessHistory({
     [message, setMessage] = useState(""),
     [loading, setLoading] = useState(false),
     [bars, setBars] = useState<SheetMetric>("sales"),
-    [line, setLine] = useState<SheetMetric>("budget"),
+    [line, setLine] = useState<SheetMetric>(
+      initialMode === "meta" ? "spend" : "budget",
+    ),
     [page, setPage] = useState(0),
     [reload, setReload] = useState(0),
     [expanded, setExpanded] = useState(false);
-  const [mode, setMode] = useState<"manual" | "meta">("manual");
+  const [mode, setMode] = useState<"manual" | "meta">(initialMode);
   const [loadedQuery, setLoadedQuery] = useState("");
   useEffect(() => {
     if (autoOpen) pop.current?.showPopover();
@@ -123,6 +128,11 @@ export function EffectivenessHistory({
           ),
         }
       : rawData;
+  const metaEffectiveness = observedPeriodRatio(
+    Object.values(rawData?.days ?? {})
+      .filter((d) => !d.na.includes("sales"))
+      .map((d) => ({ numerator: d.sales, denominator: d.sourceBase ?? null })),
+  );
   const displayMetrics = sheetMetrics.filter((m) =>
     mode === "meta"
       ? ["sales", "base", "spend"].includes(m.key)
@@ -213,6 +223,9 @@ export function EffectivenessHistory({
           title="Ver estados por fecha y evolución de parámetros"
           popoverTarget={id}
           onClick={() => {
+            setMode(initialMode);
+            setBars("sales");
+            setLine(initialMode === "meta" ? "spend" : "budget");
             setSince(initialSince);
             setUntil(initialUntil);
             setPage(0);
@@ -291,8 +304,8 @@ export function EffectivenessHistory({
                   <div className="row alias-detail-controls">
                     {(
                       [
+                        ["meta", "Vista automática"],
                         ["manual", "Vista manual"],
-                        ["meta", "Datos Meta"],
                       ] as const
                     ).map(([key, label]) => (
                       <button
@@ -347,7 +360,10 @@ export function EffectivenessHistory({
                   </p>
                 )}
                 {data?.lifetime && (
-                  <InventoryCacCounters summary={data.periodCac} mode={mode} />
+                  <InventoryCacCounters
+                    summary={data.periodCac}
+                    effectiveness={metaEffectiveness}
+                  />
                 )}
                 <p className="inventory-detail-order-hint">
                   Arrastra ⠿ para ordenar. Se aplica a los detalles de todos los

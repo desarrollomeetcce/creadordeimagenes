@@ -939,6 +939,7 @@ export async function metaRoutes(
             .object({
               name: z.string().trim().min(1).max(100),
               commercialRole: z.enum(["ADVISOR", "SUPERVISOR"]).optional(),
+              employmentActive: z.boolean().optional(),
               id: z.string().min(1).max(80),
               revision: z.number().int().nonnegative(),
             })

@@ -1,6 +1,8 @@
 "use client";
 import {
   advisorAnalysisDefaults,
+  detailAnalysisView,
+  detailAnalysisViews,
   type AdvisorAnalysisView,
 } from "../../lib/meta-ads/advisor-analysis-view";
 import { advisorFinancialSummary } from "../../lib/meta-ads/advisor-financial-summary";
@@ -25,7 +27,7 @@ export function AdvisorTeamAnalysis({
   tables,
   initialTableId,
   initialCountry,
-  initialView = "period",
+  initialView = "meta",
   initialSince,
   initialUntil,
   onClose,
@@ -39,10 +41,11 @@ export function AdvisorTeamAnalysis({
   initialUntil: string;
   onClose: () => void;
 }) {
+  const [employment, setEmployment] = useState("all");
   const [personId, setPersonId] = useState<string | null>(null);
   const onAdvisor = (id: string) => setPersonId(id);
   const initialDefaults = advisorAnalysisDefaults(
-    initialView,
+    detailAnalysisView(initialView),
     limaToday(),
     initialSince,
     initialUntil,
@@ -50,11 +53,13 @@ export function AdvisorTeamAnalysis({
   const [autoDay, setAutoDay] = useState(initialDefaults.allInventory);
   const [aliasId, setAliasId] = useState("");
   const dialog = useRef<HTMLDialogElement>(null),
-    [view, setView] = useState<AdvisorAnalysisView>(initialView),
+    [view, setView] = useState<AdvisorAnalysisView>(
+      detailAnalysisView(initialView),
+    ),
     [since, setSince] = useState(initialDefaults.since),
     [until, setUntil] = useState(initialDefaults.until),
-    [basis, setBasis] = useState<"BC" | "BM" | "B">(
-      initialView === "meta" ? "B" : initialView === "yesterday" ? "BM" : "BC",
+    [basis, setBasis] = useState<"BC" | "B">(
+      initialView === "meta" ? "B" : "BC",
     ),
     [tableId, setTableId] = useState(initialTableId),
     [country, setCountry] = useState(initialCountry),
@@ -123,7 +128,11 @@ export function AdvisorTeamAnalysis({
       document.removeEventListener("visibilitychange", load);
     };
   }, [key, reload, listId, tableId, country, since, until, aliasId]);
-  const periodPeople = data?.key === key ? data.value.rows : [];
+  const periodPeople = (data?.key === key ? data.value.rows : []).filter(
+    (p) =>
+      employment === "all" ||
+      (p.employmentActive !== false) === (employment === "active"),
+  );
   const periodDays = Object.keys(periodPeople[0]?.days ?? {}).sort();
   const summaryDaySet = new Set(
     summaryPeriod(periodDays, view, limaToday()).days,
@@ -181,11 +190,7 @@ export function AdvisorTeamAnalysis({
                   maximumFractionDigits: 2,
                 }).format(m[key]!)
               : fmt(m[key]!) + " · moneda pendiente") +
-            (m.partial ||
-            (view !== "meta" && m.budgetPartial) ||
-            (view === "meta" && financial.get(id)?.metaPartial)
-              ? " *"
-              : ""),
+            (m.partial || financial.get(id)?.metaPartial ? " *" : ""),
       )
       .join(" · ") || "—";
   const colors = [
@@ -203,9 +208,7 @@ export function AdvisorTeamAnalysis({
     setAutoDay(d.allInventory);
     if (d.allInventory) setAliasId("");
     setView(next);
-    if (next !== "period")
-      setBasis(next === "meta" ? "B" : next === "today" ? "BC" : "BM");
-    else if (basis === "B") setBasis("BC");
+    setBasis(next === "meta" ? "B" : "BC");
   };
   useEffect(() => {
     if (!autoDay) return;
@@ -239,14 +242,7 @@ export function AdvisorTeamAnalysis({
             </button>
           </header>
           <div className="row" role="group" aria-label="Período del equipo">
-            {(
-              [
-                ["today", "Hoy · avance provisional"],
-                ["yesterday", "Ayer · día completo"],
-                ["period", "Análisis del período"],
-                ["meta", "Datos Meta"],
-              ] as const
-            ).map(([v, label]) => (
+            {detailAnalysisViews.map(([v, label]) => (
               <button
                 key={v}
                 aria-pressed={view === v}
@@ -315,6 +311,21 @@ export function AdvisorTeamAnalysis({
               ]}
               onSelect={setCountry}
             />
+            <label>
+              Estado del asesor
+              <select
+                aria-label="Filtrar estado laboral del equipo"
+                value={employment}
+                onChange={(e) => {
+                  setEmployment(e.target.value);
+                  setPage(0);
+                }}
+              >
+                <option value="all">Todos</option>
+                <option value="active">Activos</option>
+                <option value="inactive">Inactivos</option>
+              </select>
+            </label>
             <button onClick={() => setReload((n) => n + 1)}>
               Actualizar análisis
             </button>
@@ -326,7 +337,7 @@ export function AdvisorTeamAnalysis({
               </strong>
               <span>
                 {aliasId
-                  ? "BM y BC son del asesor y país completos; no se registran por diplomado."
+                  ? "BC corresponde al asesor y país completos; no se registra por diplomado."
                   : basis === "BC"
                     ? "BC suma los cortes declarados por el asesor en las fechas elegidas; no representa una base de 24 horas."
                     : "Ventas y BM de las mismas fechas completas. BM se registra al día siguiente."}
@@ -394,22 +405,6 @@ export function AdvisorTeamAnalysis({
                   <option value="percent">Efectividad V/{basis}</option>
                 </select>
               </label>
-              {view === "period" && (
-                <label>
-                  Base de comparación
-                  <select
-                    aria-label="Base del comparativo del equipo"
-                    value={basis}
-                    onChange={(e) => {
-                      setBasis(e.target.value as "BC" | "BM");
-                      setPage(0);
-                    }}
-                  >
-                    <option value="BC">BC · por contactar</option>
-                    <option value="BM">BM · manual</option>
-                  </select>
-                </label>
-              )}
             </div>
             <h3>
               Comparativo por asesor ·{" "}
@@ -469,15 +464,12 @@ export function AdvisorTeamAnalysis({
                     <thead>
                       <tr>
                         <th>Asesor</th>
+                        <th>Estado</th>
                         <th>Ventas (V)</th>
                         <th>{basis}</th>
                         <th>V/{basis} %</th>
-                        <th>
-                          {view === "meta"
-                            ? "Gasto Meta (G)"
-                            : "Presupuesto (P)"}
-                        </th>
-                        <th>CAC · {view === "meta" ? "G/V" : "P/V"}</th>
+                        <th>Gasto Meta (G)</th>
+                        <th>CAC · G/V</th>
                         <th>Promedio por día con V</th>
                         <th>Cobertura V / base</th>
                         <th>Detalle</th>
@@ -487,24 +479,20 @@ export function AdvisorTeamAnalysis({
                       {visible.map((r) => (
                         <tr key={r.id}>
                           <th>{r.name}</th>
+                          <td>
+                            {periodPeople.find((p) => p.id === r.id)
+                              ?.employmentActive === false
+                              ? "Inactivo"
+                              : "Activo"}
+                          </td>
                           <td>{fmt(r.sales)}</td>
                           <td>{fmt(r.base)}</td>
                           <td>
                             {fmt(aliasId && basis !== "B" ? null : r.percent)}
                             {r.partial && r.percent !== null ? " *" : ""}
                           </td>
-                          <td>
-                            {moneyText(
-                              r.id,
-                              view === "meta" ? "spend" : "budget",
-                            )}
-                          </td>
-                          <td>
-                            {moneyText(
-                              r.id,
-                              view === "meta" ? "metaCac" : "budgetCac",
-                            )}
-                          </td>
+                          <td>{moneyText(r.id, "spend")}</td>
+                          <td>{moneyText(r.id, "metaCac")}</td>
                           <td>{fmt(r.average)}</td>
                           <td>
                             {r.knownSales}/{r.days} · {r.knownBase}/{r.days}{" "}

@@ -1420,6 +1420,7 @@ export function MetaEffectiveness({
         <AdvisorDetail
           key={`${advisorDetail.id}:${advisorDetail.aliasId}:${advisorDetail.country}`}
           openRequest={detailVersion}
+          initialAnalysisView={view === "automatic" ? "meta" : "period"}
           person={{
             id: advisorDetail.id,
             name: advisorDetail.name,
@@ -2706,6 +2707,7 @@ export function MetaEffectiveness({
                               }}
                             />
                             <EffectivenessHistory
+                              initialMode={view === "automatic" ? "meta" : "manual"}
                               tableId={tableId}
                               aliasId={r.aliasId}
                               country={r.country}
@@ -3279,6 +3281,7 @@ export function MetaEffectiveness({
       )}
       {sheetSalesDetailOpen && (
         <SheetSalesDetail
+          initialMode={view === "automatic" ? "meta" : "manual"}
           selection={sheetDetailSelection}
           inventoryAliases={tables.find((t) => t.id === tableId)?.aliases ?? []}
           tableId={tableId}

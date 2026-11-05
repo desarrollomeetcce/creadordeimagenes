@@ -3,12 +3,12 @@ import type { InventoryCacSummary } from "../../lib/meta-ads/inventory-cac";
 import { InventoryCacStatus } from "./inventory-cac-status";
 export function InventoryCacCounters({
   summary: s,
-  mode,
+  effectiveness,
 }: {
   summary: InventoryCacSummary;
-  mode: "manual" | "meta";
+  effectiveness?: { value: number | null; partial: boolean };
 }) {
-  const source = mode === "meta" ? s.meta : s.budget;
+  const source = s.meta;
   const nf = (n: number | null) =>
     n === null
       ? "—"
@@ -47,20 +47,33 @@ export function InventoryCacCounters({
           <strong>{s.days}</strong>
         </div>
         <div className="inventory-lifetime-counter">
-          <span>{mode === "meta" ? "Gasto Meta (G)" : "Presupuesto (P)"}</span>
+          <span>Gasto Meta (G)</span>
           <strong>
             {money(source.amount)}
             {source.partial && source.amount !== null ? " *" : ""}
           </strong>
         </div>
         <div className="inventory-lifetime-counter">
-          <span>{mode === "meta" ? "CAC · G/V" : "CAC · P/V"}</span>
+          <span>CAC Meta · G/V</span>
           <strong>
             {money(source.cac)}
             {source.partial && source.cac !== null ? " *" : ""}
           </strong>
           {s.sales === 0 && <small>Sin ventas</small>}
         </div>
+        {effectiveness && (
+          <div className="inventory-lifetime-counter">
+            <span>Efectividad Meta · V/B × 100</span>
+            <strong>
+              {nf(effectiveness.value)}
+              {effectiveness.value !== null ? " %" : ""}
+              {effectiveness.value !== null &&
+              (effectiveness.partial || s.salesPartial || source.partial)
+                ? " *"
+                : ""}
+            </strong>
+          </div>
+        )}
         <div className="inventory-lifetime-counter">
           <span>Estado · CAC en soles</span>
           <strong className="inventory-cac-state">
