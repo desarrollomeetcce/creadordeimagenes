@@ -1,5 +1,14 @@
 # Meta Ads: consulta y análisis
 
+## Paginación de fechas compacta al pie izquierdo · 2026-11-04
+
+Ampliación del mismo bloque: se retiran del toolbar financiero Sincronizar o vincular columnas, Pegar inventario y Subir archivo. Se elimina montaje/estado/import del panel de sincronización inaccesible; vínculos almacenados y rutas siguen intactos, aviso conserva procedencia sin dirigir a botón retirado. Pegado de celdas existente conserva flujo propio. Filtros/Colores/Selección/Activar/Desactivar/Eliminar seleccionadas se ordenan en flex compacto, con controles28px y grupos que fluyen en una línea si hay espacio, sin anchuras forzadas móviles.
+
+Se retira la franja grande superior de Período completo/Fechas siguientes. Hoja financiera muestra al pie de la tabla, tras el desplazamiento horizontal, solo Anterior · Página N de M · Siguiente. Tamaño10px y ancho ajustado al contenido, sin fondo/franja ni expansión móvil. Fechas completas y aviso de que las acciones afectan fechas visibles permanecen en tooltip accesible. Asesores mueve también su paginación compartida al pie; useReportDayPages conserva algoritmo/contexto y usa misma presentación compacta.
+
+194 unitarias existentes correctas, typecheck/build y4 recorridos Chromium: tres controles retirados y barra restante en una línea1920px; pie menor de300×38px al borde inferior izquierdo sin banner superior, navegación ida/vuelta en ventanas31 días exactas, estados deshabilitados y pantalla390px en una línea sin errores/escrituras. FuenteV1/G10.25, asesor/país/activación intactos y fixture exclusivo retirado. Evidencia compact-date-pages-{unit,types,build,browser,cleanup}.txt. No cambios de rutas, permisos, fechas calculadas, consultas, registros o fuente CAC. Hostinger continúa sin comprobación directa desde el entorno.
+
+
 ## Asesores: orden compartido por arrastre y teclado · 2026-11-04
 
 Hoja de Asesores añade asa ⠿ junto al nombre para arrastrar a otra fila; Alt+↑/↓ permite lo mismo con teclado. Orden completo de IDs se guarda en config.advisorOrder de la pestaña, nunca en localStorage. Todos los lectores reciben el mismo orden del reporte; se conserva en F5, filtros/fechas y usa refresco existente30s para otras vistas abiertas, sin nuevo sondeo. EDIT puede cambiarlo, VIEW no muestra asas y servidor rechaza sus escrituras. Buscar no elimina otros asesores: movimiento usa lista completa y conserva filas ocultas. Nuevos miembros se añaden al final, referencias ausentes/duplicadas guardadas se normalizan al leer.

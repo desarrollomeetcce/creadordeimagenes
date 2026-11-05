@@ -1,4 +1,8 @@
 # Instrucciones para desarrollo
+- Toolbar financiero04/11: retirar Sincronizar o vincular columnas/Pegar inventario/Subir archivo de esta vista; compactar filtros, colores y acciones en mínima altura, una línea cuando quepa. Conservar vínculos/hechos/rutas y pegado de celdas; no mostrar indicación hacia botón retirado.
+
+
+- Fechas04/11: sin franja grande superior; navegación al pie izquierdo de tabla, compacta Anterior · Página N de M · Siguiente, también en Asesores. Mantener ventanas31/contexto y acciones sobre fechas visibles; fechas completas/aviso en tooltip, sin escrituras ni consultas extra. En móvil conservar línea pequeña sin ancho completo.
 
 - Asesores04/11: orden compartido por pestaña en config.advisorOrder, asa ⠿/arrastre y Alt+flechas, no preferencia local. Todos los lectores reciben orden; VIEW sin asas/escritura, EDIT con alcance exacto. Reusar refresco30s existente. PUT advisors/order bajo884411, permiso vigente, miembros completos únicos y SHA256 del orden, stale/otra hoja/revocación rechazan sin parcial. Preservar config ajena y todos los hechos; no-op no audita. Nuevos IDs al final, selección/búsqueda/fechas/F5 no cambian orden. Guardado aplica acuse sin reconsultar métricas y descarta respuestas previas.
 

@@ -72,7 +72,6 @@ import { SheetColumnResizer } from "./sheet-column-resizer";
 import { SheetSizedRow } from "./sheet-sized-row";
 import { useSheetHeights } from "./use-sheet-heights";
 import { useSheetWidths } from "./use-sheet-widths";
-import { EffectivenessSync } from "./effectiveness-sync";
 import { EffectivenessHistory } from "./effectiveness-history";
 import { useSheetTextFit } from "./use-sheet-text-fit";
 import { SheetActiveFill } from "./sheet-active-fill";
@@ -239,7 +238,6 @@ export function MetaEffectiveness({
     country: string;
     day: string;
   } | null>(null);
-  const [syncOpen, setSyncOpen] = useState(false);
   const [assignment, setAssignment] = useState<{
     row: Row;
     advisorId: string | null;
@@ -1108,7 +1106,6 @@ export function MetaEffectiveness({
     setStateFilter("");
     setValueFilter(null);
     setSelectedMetrics(null);
-    setSyncOpen(false);
     setMessage("");
   };
   useEffect(() => {
@@ -1453,7 +1450,6 @@ export function MetaEffectiveness({
             to={reportRange?.until ?? until}
             onChange={chooseReportRange}
           />
-          <span className="sheet-filter-label">Filtros:</span>
           <label>
             País
             <SheetSearchSelect
@@ -1588,7 +1584,7 @@ export function MetaEffectiveness({
         <div
           className="sheet-control-group"
           role="group"
-          aria-label="Formato y sincronización"
+          aria-label="Formato"
         >
           <SheetColorsControl
             tableId={tableId}
@@ -1597,13 +1593,6 @@ export function MetaEffectiveness({
             onRules={setColorRules}
             onError={setMessage}
           />
-          <button
-            className={syncOpen ? "primary" : ""}
-            aria-expanded={syncOpen}
-            onClick={() => setSyncOpen((v) => !v)}
-          >
-            ⇄ Sincronizar o vincular columnas
-          </button>
         </div>
         <div
           className="sheet-activation-actions"
@@ -1642,7 +1631,7 @@ export function MetaEffectiveness({
               })
             }
           >
-            Eliminar filas seleccionadas ({selectedVisibleRows.length})
+            Eliminar seleccionadas ({selectedVisibleRows.length})
           </button>
           {selectedPairs.length > 0 && (
             <button
@@ -1666,100 +1655,7 @@ export function MetaEffectiveness({
             </button>
           )}
         </div>
-        <div
-          className="sheet-control-group sheet-import-actions"
-          role="group"
-          aria-label="Añadir inventario"
-        >
-          <button
-            onClick={() => {
-              setCsv(false);
-              setPaste("");
-            }}
-          >
-            Pegar inventario
-          </button>
-          <label className="sheet-file">
-            Subir archivo
-            <input
-              type="file"
-              aria-label="Subir lista de inventario"
-              accept=".txt,.tsv,.csv,text/plain,text/csv"
-              onChange={async (e) => {
-                const f = e.target.files?.[0];
-                e.target.value = "";
-                if (!f) return;
-                if (f.size > 100000) {
-                  setMessage("El archivo admite hasta 100 KB.");
-                  return;
-                }
-                try {
-                  setCsv(f.name.toLowerCase().endsWith(".csv"));
-                  setPaste(await f.text());
-                } catch {
-                  setMessage("No se pudo leer el archivo.");
-                }
-              }}
-            />
-          </label>
-        </div>
       </div>
-      {syncOpen && (
-        <EffectivenessSync
-          tableId={tableId}
-          tables={tables}
-          since={since}
-          until={until}
-          onSynced={async () => {
-            await onNamesChanged();
-            await refresh();
-          }}
-        />
-      )}
-      {reportRange && reportWindow && (
-        <nav
-          className="sheet-period-nav"
-          aria-label="Período de consulta de la hoja"
-        >
-          <span>
-            Período completo: {reportRange.since} — {reportRange.until}.
-            Mostrando {since} — {until}. Las ediciones y acciones se aplican a
-            las fechas visibles.
-          </span>
-          <div className="row">
-            <button
-              type="button"
-              disabled={!reportWindow.previous}
-              onClick={() => {
-                const w = activePeriodWindow(
-                  reportRange.since,
-                  reportRange.until,
-                  reportWindow.previous!,
-                );
-                setSince(w.since);
-                setUntil(w.until);
-              }}
-            >
-              ← Fechas anteriores
-            </button>
-            <button
-              type="button"
-              disabled={!reportWindow.next}
-              onClick={() => {
-                const w = activePeriodWindow(
-                  reportRange.since,
-                  reportRange.until,
-                  reportWindow.next!,
-                );
-                setSince(w.since);
-                setUntil(w.until);
-              }}
-            >
-              Fechas siguientes →
-            </button>
-          </div>
-        </nav>
-      )}
       {historyPeriod && historyWindow && (
         <div
           className="sheet-period-nav"
@@ -1812,8 +1708,7 @@ export function MetaEffectiveness({
           {data.columnLink.since
             ? `${data.columnLink.since} — ${data.columnLink.until}.`
             : "Todas las fechas."}{" "}
-          Edita las cifras en el origen. Actualización automática; puedes
-          desvincular desde «Sincronizar o vincular columnas».
+          Edita las cifras en el origen; su actualización es automática.
         </p>
       )}
       <div className="sheet-help">
@@ -3364,6 +3259,46 @@ export function MetaEffectiveness({
             </table>
           </div>
           <SheetHorizontalNavigation target={horizontalScroll} />
+      {reportRange && reportWindow && (
+        <nav
+          className="compact-date-pagination"
+          title={`Período completo: ${reportRange.since} — ${reportRange.until}. Mostrando ${since} — ${until}. Las acciones se aplican a las fechas visibles.`}
+          aria-label="Período de consulta de la hoja"
+        >
+            <button
+              type="button"
+              disabled={!reportWindow.previous}
+              onClick={() => {
+                const w = activePeriodWindow(
+                  reportRange.since,
+                  reportRange.until,
+                  reportWindow.previous!,
+                );
+                setSince(w.since);
+                setUntil(w.until);
+              }}
+            >
+              Anterior
+            </button>
+            <span>Página {Math.floor((Date.parse(since) - Date.parse(reportRange.since)) / (31 * 86400000)) + 1} de {Math.ceil(((Date.parse(reportRange.until) - Date.parse(reportRange.since)) / 86400000 + 1) / 31)}</span>
+            <button
+              type="button"
+              disabled={!reportWindow.next}
+              onClick={() => {
+                const w = activePeriodWindow(
+                  reportRange.since,
+                  reportRange.until,
+                  reportWindow.next!,
+                );
+                setSince(w.since);
+                setUntil(w.until);
+              }}
+            >
+              Siguiente
+            </button>
+        </nav>
+      )}
+
         </FinancialTableWindow>
       )}
       {sheetSalesDetailOpen && (

@@ -12,24 +12,24 @@ export function useReportDayPages(days: string[], pageSize = 31) {
   const visibleDays = days.slice(start, end);
   const navigation =
     pages > 1 ? (
-      <nav className="row report-day-pages" aria-label="Páginas de fechas">
+      <nav className="report-day-pages compact-date-pagination"
+        title={`Período completo: ${days[0]} — ${days.at(-1)}. Mostrando ${visibleDays[0]} — ${visibleDays.at(-1)}.`} aria-label="Páginas de fechas">
         <button
           type="button"
           disabled={!page}
           onClick={() => setSelection({ context, page: page - 1 })}
         >
-          ← Fechas anteriores
+          Anterior
         </button>
         <span>
-          {visibleDays[0]} — {visibleDays.at(-1)} · Página {page + 1} de {pages}
-          . Período completo: {days[0]} — {days.at(-1)}
+          Página {page + 1} de {pages}
         </span>
         <button
           type="button"
           disabled={page + 1 >= pages}
           onClick={() => setSelection({ context, page: page + 1 })}
         >
-          Fechas siguientes →
+          Siguiente
         </button>
       </nav>
     ) : null;

@@ -477,7 +477,6 @@ export function AdvisorsSheet({
           {message}
         </p>
       )}
-      {navigation}
       {!valid && (
         <p role="alert">Elige un período válido de hasta diez años.</p>
       )}
@@ -807,6 +806,7 @@ export function AdvisorsSheet({
           )}
         </div>
       )}
+      {navigation}
       {rolePerson && (
         <AdvisorCommercialRole
           name={rolePerson.name}
