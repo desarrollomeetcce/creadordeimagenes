@@ -2827,3 +2827,10 @@ Validación:315 unitarias, typecheck/build;12 comprobaciones de navegador y9 int
 Directorio de páginas usa promote_pages con alternativa me/accounts cuando no hay resultados o falla, páginas limitadas y deduplicadas; preparación de campaña usa la misma autorización. Selector muestra fallo/ausencia junto al campo y permite reconsulta explícita sin cachear vacíos. Cambiar cuenta limpia página anterior. X separada de selección en cada pestaña elimina mediante endpoint existente, confirmación y eliminación lógica; campañas de Meta conservadas, selección local solo tras acuse.
 
 Validación316 unitarias, typecheck/build y4 comprobaciones Chromium con transporte sintético: selector recupera página con promote_pages vacío, cambiar diplomado no consulta directorios, cancelar X no escribe, eliminación confirmada afecta una sola carpeta y persiste F5. No se usaron credenciales reales ni publicación publicitaria.
+
+
+### 2026-11-05 · Una sola ventana de grupos para anuncios
+
+Estudio reutiliza InventoryGroupEditor. Anuncios Meta IA está en esa ventana junto a Crear/Editar, con país y checks existentes; elimina el selector emergente adicional. En estudio importa al producto actual y cierra; desde otras vistas guarda selección privada y deriva directamente a Proyectos. La acción no crea/edita grupos ni publica anuncios. Directorio reutilizado, refresco solo tras mutación de grupos.
+
+316 unitarias, typecheck/build y3 comprobaciones Chromium sintéticas: abre el editor habitual sin segundo modal, importa checks directamente sin guardar grupo ni selección intermedia, acción disponible también en Editar sin errores JS. Sin llamadas publicitarias/IA reales.

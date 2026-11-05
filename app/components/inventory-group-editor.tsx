@@ -1,6 +1,6 @@
 "use client";
-import dynamic from "next/dynamic";
-const InventoryMetaPicker = dynamic(()=>import("./inventory-meta-picker").then(m=>m.InventoryMetaPicker));
+import { countryOptions as advertisingCountries } from "../../lib/meta-ads/countries";
+import { studioRequest } from "./inventory-meta-picker";
 import { InventoryGroupCategoryAdditions } from "./inventory-group-category-additions";
 import {
   randomCategoryAdditions,
@@ -60,7 +60,11 @@ export function InventoryGroupEditor({
   onTabChange,
   externalBusy = false,
   evaluationColumns = [],
+  initialCountry = "",
+  onChooseForAds,
 }: {
+  initialCountry?: string;
+  onChooseForAds?: (ids: string[], country: string) => Promise<void>;
   evaluationColumns?: { value: string; label: string }[];
   externalBusy?: boolean;
   topContent?: ReactNode;
@@ -77,7 +81,8 @@ export function InventoryGroupEditor({
   onUsageBatchChange?: (updates: Record<string, GroupUsageCell>) => void;
 }) {
   const dialog = useRef<HTMLDialogElement>(null);
-  const [metaPicker,setMetaPicker]=useState(false);
+  const [adsCountry, setAdsCountry] = useState(initialCountry || (selectedGroup?.countries.length === 1 ? selectedGroup.countries[0] : ""));
+  useEffect(() => { if (selectedGroup?.countries.length === 1) setAdsCountry(selectedGroup.countries[0]); }, [selectedGroup?.id]);
   const userId = useContext(CurrentUserId);
   const pinKey = `inventory-group-pins:v1:${userId}:${directory.listId}`;
   const [groupAction, setGroupAction] = useState<{
@@ -295,6 +300,21 @@ export function InventoryGroupEditor({
       setManagementTab("edit");
     } else setBrowsedGroupId(id);
   };
+  const adsPending = useRef(false);
+  async function goToAds() {
+    if (adsPending.current || !selectedIds.length || !adsCountry) return;
+    adsPending.current = true;
+    setBusy(true);
+    setError("");
+    try {
+      if (onChooseForAds) await onChooseForAds([...selectedIds], adsCountry);
+      else {
+        const saved = await studioRequest("/selections", "POST", { listId: directory.listId, country: adsCountry, itemIds: [...selectedIds] });
+        window.location.assign("?" + new URLSearchParams({ view: "projects", selection: saved.id }));
+      }
+    } catch (e) { setError(e instanceof Error ? e.message : "No se pudo abrir Anuncios Meta IA."); }
+    finally { adsPending.current = false; setBusy(false); }
+  }
   const countries = group?.countries ?? countryOptions.map((c) => c.code);
   const [browsedGroupId, setBrowsedGroupId] = useGroupDraftState(
     draftKey,
@@ -895,7 +915,7 @@ export function InventoryGroupEditor({
   }
   return (
     <>
-    {metaPicker&&<InventoryMetaPicker directory={directory} initialCountry={selectedGroup?.countries.length===1?selectedGroup.countries[0]:""} onClose={()=>setMetaPicker(false)}/>}
+
     <dialog
       ref={dialog}
       className="trial-dialog inventory-group-editor inventory-group-editor-compact"
@@ -909,7 +929,7 @@ export function InventoryGroupEditor({
       }}
     >
       <header className="inventory-group-header">
-        {(topContent || onChooseGroup) && (
+        {(
           <nav
             className="inventory-management-tabs"
             aria-label="Gestionar inventario"
@@ -940,7 +960,8 @@ export function InventoryGroupEditor({
             >
               Editar grupos
             </button>
-            <button type="button" disabled={busy||externalBusy} onClick={()=>setMetaPicker(true)}>Anuncios Meta IA</button>
+            <select aria-label="País para anuncios Meta" value={adsCountry} disabled={busy || externalBusy} onChange={e => setAdsCountry(e.target.value)}><option value="">País de anuncios</option>{advertisingCountries.map(c => <option key={c.code} value={c.code}>{c.name}</option>)}</select>
+            <button type="button" disabled={busy || externalBusy || !selectedIds.length || !adsCountry} onClick={() => void goToAds()}>Anuncios Meta IA →</button>
           </nav>
         )}
         <div className="inventory-group-window-actions">

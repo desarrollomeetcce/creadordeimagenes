@@ -17,8 +17,8 @@ import "./studio-workspace.css";
 const Attachments = dynamic(() =>
   import("./attachments").then((m) => m.Attachments),
 );
-const InventoryMetaPicker = dynamic(() =>
-  import("./inventory-meta-picker").then((m) => m.InventoryMetaPicker),
+const InventoryGroupEditor = dynamic(() =>
+  import("./inventory-group-editor").then((m) => m.InventoryGroupEditor),
 );
 const modes = [
   { id: "Imagen + Texto", label: "Imagen + texto" },
@@ -387,7 +387,14 @@ export function CreativeStudio({ userId }: { userId: string }) {
     setZone("canvas");
     setNotice("✓ " + added.length + " diplomados listos en este producto");
   }
+  const [pickerGroupId, setPickerGroupId] = useState("");
+  async function refreshPicker() {
+    const next = await studioRequest("/inventory/" + inventoryId);
+    inventoryCache.current.set(inventoryId, next);
+    setPicker(next);
+  }
   async function openInventory() {
+    setPickerGroupId("");
     if (!inventoryId) return;
     let dir = inventoryCache.current.get(inventoryId);
     if (!dir) {
@@ -1338,11 +1345,16 @@ export function CreativeStudio({ userId }: { userId: string }) {
         )}
       </StudioColumns>
       {picker && (
-        <InventoryMetaPicker
+        <InventoryGroupEditor
           directory={picker}
+          group={picker.groups.find((g: any) => g.id === pickerGroupId)}
+          initialNames={[]}
           initialCountry={country}
           onClose={() => setPicker(null)}
-          onChoose={addItems}
+          onChooseForAds={addItems}
+          onChooseGroup={setPickerGroupId}
+          onSaved={async id => { await refreshPicker(); setPickerGroupId(id); }}
+          onGroupsChanged={refreshPicker}
         />
       )}
       {preview && (
