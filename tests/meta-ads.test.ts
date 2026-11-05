@@ -6525,3 +6525,25 @@ test("Meta confirmed status: preserve metrics, scope and newer observations; des
  const resumed=applyMetaStatusAck(changed,{...ack,status:"ACTIVE",effectiveStatus:null,seenAt:"2026-11-04T04:00:00Z"});
  assert.equal(resumed.effectiveStatus,"");assert.equal(resumed.statusStale,true);
 });
+
+import { metaPeriodCovered } from "../lib/meta-ads/realtime-policy";
+import { observedPeriodCost, isObservedPartialPeriod } from "../lib/meta-ads/period-display";
+test("Calendar Meta: historical and recent coverage compose without crossing gaps, objects or bounds", () => {
+ const receipt={checkedAt:"2026-11-05T05:00:00Z",since:"2026-11-04",until:"2026-11-05",objects:["a"]};
+ const history={since:"2026-10-06",until:"2026-11-04"};
+ assert(metaPeriodCovered(receipt,"a","2026-10-30","2026-11-05",history));
+ assert(metaPeriodCovered(receipt,"a","2026-11-05","2026-11-05",history));
+ assert(metaPeriodCovered({},"a","2026-10-30","2026-11-04",history));
+ assert(!metaPeriodCovered(receipt,"b","2026-10-30","2026-11-05",history));
+ assert(!metaPeriodCovered(receipt,"a","2026-10-30","2026-11-05",{...history,until:"2026-11-02"}));
+ assert(!metaPeriodCovered(receipt,"a","2026-10-01","2026-11-05",history));
+ assert(!metaPeriodCovered(receipt,"a","2026-10-30","2026-11-06",history));
+ assert(!metaPeriodCovered(receipt,"a","2026-10-30","2026-11-05",null));
+});
+test("Calendar partial facts: weighted cost stays visible, missing results never become zero cost", () => {
+ const p={state:"UNAVAILABLE",reportedMeta:true,metaPartial:true,spend:26.65,results:75,cost:null};
+ assert(isObservedPartialPeriod(p));assert.equal(observedPeriodCost(p),26.65/75);
+ assert.equal(observedPeriodCost({...p,results:0}),null);
+ assert(!isObservedPartialPeriod({...p,reportedMeta:false}));
+ assert.equal(observedPeriodCost({...p,reportedMeta:false}),null);
+});

@@ -1,6 +1,6 @@
 import { metaSearchConditions } from "./keyword-search";
 import { recentMetaDataVersions } from "./data-versions";
-import { realtimeCoverage, statusIsStale } from "./realtime-policy";
+import { realtimeCoverage, metaPeriodCovered, statusIsStale } from "./realtime-policy";
 import { isCountryCode } from "./countries";
 import { parseDeliveryFilters } from "./state-filter";
 import { metaCampaignSalesData } from "./effectiveness";
@@ -439,9 +439,8 @@ export async function dashboard(actor: Actor, params: URLSearchParams) {
           (focused && key === "lifetime" && !total) ||
           (focused &&
             key === "custom" &&
-            !liveCovered &&
-            (customSince! < shiftDay(reportUntil, -29) ||
-              customUntil! > reportUntil))
+            !metaPeriodCovered(a.realtimeState, o.id, customSince!, customUntil!,
+              a.syncedAt ? { since: shiftDay(reportUntil, -29), until: reportUntil } : null))
             ? "UNAVAILABLE"
             : results > 0
               ? "RESULTS"

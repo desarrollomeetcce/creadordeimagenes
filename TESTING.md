@@ -1,3 +1,9 @@
+## Calendario Meta incluyendo hoy · 2026-11-05
+
+Meta calendario05/11: Gasto por fecha suma exactamente since/until seleccionados; costo por resultado=ΣG/Σresultados, no CAC ni promedio de costos diarios. Cobertura de rango custom puede componerse de ventana histórica ya sincronizada + recibo reciente contiguo por objeto: hoy no debe invalidar todo si ambos tramos están acreditados. No cruzar huecos, objetos, días futuros ni extender ventana30 por suposición. Si hay cifras guardadas pero falta cobertura, mostrar gasto y costo observados con* y tooltip de parcial; conservar metaAvailable=false/estadoUNAVAILABLE y no inventar ceros ni clasificación completa. Sin hechos sigue Informe pendiente, sin resultados costo—. Reusar agregados/recibos existentes; cero nuevas lecturas Graph/importaciones/escrituras de negocio por calendario.
+
+Validado:205 unitarias,9 integración de cobertura real con Meta sintético (informe general de ayer + recibo hoy, ponderación20/5=4, otros objetos/huecos siguen pendientes, sin nuevas llamadas proveedor), typecheck/build.4 comprobaciones Chromium: rango7 suma20/resultados20=1; hoy10.25/5=2.05; ayer9.75/15=0.65; otra fila sin recibo muestra4*/2*=2* sin fingir cobertura, F5/móvil/0 escriturasAPI/0 errores. Snapshot de objetos/diarios QA idéntico, limpieza exclusiva confirmada. Logs calendar-live-* en /workspace/work. No verificado registro real de Hostinger.
+
 ## Comparador Meta simplificado, aclaración final · 2026-11-05
 
 Aclaración final05/11 del usuario: retirar únicamente columna Campañas·Meta e interruptores de activación del comparador emergente. Conservar evaluación financiera y acciones evolución/reemplazo. Activar/pausar queda en tabla principal; quitar props/callback de escritura del comparador. Prioridad fluidez, sin ayuda bajo buscador ni más consultas por mostrar botones. Sustituye pedido previo de interruptores en comparador.

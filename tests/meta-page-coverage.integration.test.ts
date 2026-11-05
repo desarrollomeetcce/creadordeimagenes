@@ -258,6 +258,27 @@ test("Páginas Meta: no desaparecen informes de hoy al consultar otras filas", a
         assert.equal(calls, n);
       },
     );
+    await t.test("Calendario7 días hasta hoy combina informe de ayer con recibo reciente sin pedir histórico", async()=>{
+      for(const id of ids) await db.metaAdDaily.upsert({where:{objectId_day_scope:{objectId:id,day:yesterday,scope:"7d_click,1d_view|impression"}},create:{accountId:aid,objectId:id,day:yesterday,scope:"7d_click,1d_view|impression",spend:9,impressions:30,actions:{"onsite_conversion.messaging_conversation_started_7d":3}},update:{spend:9,impressions:30,actions:{"onsite_conversion.messaging_conversation_started_7d":3}}});
+      const n=calls;
+      const r=await dashboard(actor,new URLSearchParams({accounts:aid,level:"campaign",analysisPeriod:"custom",since:shiftDay(today,-6),until:today,summary:"1"}));
+      const p=r.items.find(i=>i.id===ids[0])!.periods.custom;
+      assert.equal(p.spend,20);assert.equal(p.results,5);assert.equal(p.cost,4);
+      assert.equal(p.state,"RESULTS");assert(p.metaAvailable);assert.equal(p.metaPartial,false);
+      assert.equal(r.items.find(i=>i.id===ids[0])!.periods.today.spend,11);
+      assert.equal(r.summary!.currencies[0].spend,51);
+      assert.equal(calls,n);
+    });
+    await t.test("Sin recibo de hoy conserva sumas parciales y no acredita cobertura de otro objeto",async()=>{
+      const a=await db.metaAdAccount.findUniqueOrThrow({where:{id:aid}}),saved=a.realtimeState as any;
+      await db.metaAdAccount.update({where:{id:aid},data:{realtimeState:{...saved,objects:[ids[0]],coverage:{[ids[0]]:firstCheck}}}});
+      try {
+        const r=await dashboard(actor,new URLSearchParams({accounts:aid,level:"campaign",analysisPeriod:"custom",since:shiftDay(today,-6),until:today}));
+        const p=r.items.find(i=>i.id===ids[1])!.periods.custom;
+        assert.equal(p.state,"UNAVAILABLE");assert.equal(p.metaAvailable,false);assert(p.metaPartial);assert(p.reportedMeta);assert.equal(p.spend,31);assert.equal(p.results,5);
+        assert(r.items.find(i=>i.id===ids[0])!.periods.custom.metaAvailable);
+      } finally {await db.metaAdAccount.update({where:{id:aid},data:{realtimeState:saved}})}
+    });
     await t.test(
       "Fallo posterior conserva confirmaciones y gastos de otras filas",
       async () => {

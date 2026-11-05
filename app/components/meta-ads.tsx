@@ -1,5 +1,6 @@
 "use client";
 import dynamic from "next/dynamic";
+import { isObservedPartialPeriod, observedPeriodCost } from "../../lib/meta-ads/period-display";
 import { applyMetaStatusAck, matchesMetaStatusFilter, type MetaStatusAck } from "../../lib/meta-ads/status-ack";
 import { MetaKeywordSearch } from "./meta-keyword-search";
 import { campaignMetaTiming } from "../../lib/meta-ads/campaign-meta-timing";
@@ -232,9 +233,12 @@ function MetaObjectLink({ item }: { item: Item }) {
 const money = formatMetaMoney;
 
 function cost(p: Period, currency: string) {
-  if (p.state === "UNAVAILABLE") return "Informe pendiente";
-  return p.cost !== null
-    ? money(p.cost, currency)
+  const partial = isObservedPartialPeriod(p);
+  if (p.state === "UNAVAILABLE" && !partial) return "Informe pendiente";
+  const value = observedPeriodCost(p);
+  if (partial) return value !== null ? money(value, currency) + " *" : "— *";
+  return value !== null
+    ? money(value, currency)
     : p.state === "NO_RESULTS"
       ? "Sin resultados"
       : p.state === "INACTIVE"
@@ -260,9 +264,9 @@ function periodSpend(p: Period | undefined, currency: string) {
   return (
     <small
       className="meta-period-spend"
-      title={`Gasto real de Meta para ${date(p.since)} – ${date(p.until)}. Moneda de la cuenta; no presupuesto ni gasto manual.`}
+      title={`Gasto real de Meta para ${date(p.since)} – ${date(p.until)}. Moneda de la cuenta; no presupuesto ni gasto manual. * Suma parcial: falta confirmar parte del período, no se imputan ceros.`}
     >
-      Gasto {p.state === "UNAVAILABLE" ? "—" : money(p.spend, currency)}
+      Gasto {p.state === "UNAVAILABLE" && !isObservedPartialPeriod(p) ? "—" : money(p.spend, currency) + (isObservedPartialPeriod(p) ? " *" : "")}
     </small>
   );
 }
@@ -2156,13 +2160,13 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
       label: "Gasto por fecha",
       highlight: true,
       cellClass: "meta-analysis-spend",
-      title: "Gasto del periodo de análisis seleccionado",
+      title: "Suma del gasto Meta en el período seleccionado. * Datos parciales: falta confirmar parte del período.",
       render: (o) => {
         const p = o.periods[calendar ? "custom" : analysisPeriod];
         return p &&
-          p.state !== "UNAVAILABLE" &&
+          (p.state !== "UNAVAILABLE" || isObservedPartialPeriod(p)) &&
           (!calendar || (p.since === since && p.until === until))
-          ? money(p.spend, o.currency)
+          ? money(p.spend, o.currency) + (isObservedPartialPeriod(p) ? " *" : "")
           : "Informe pendiente";
       },
     },
@@ -2194,9 +2198,9 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
           {calendar &&
             o.periods.custom?.since === since &&
             o.periods.custom.until === until &&
-            o.periods.custom.state !== "UNAVAILABLE" && (
+            (o.periods.custom.state !== "UNAVAILABLE" || isObservedPartialPeriod(o.periods.custom)) && (
               <small className="meta-result-count">
-                {o.periods.custom.results} resultados
+                {o.periods.custom.results} resultados{isObservedPartialPeriod(o.periods.custom) ? " *" : ""}
               </small>
             )}
           {calendar &&

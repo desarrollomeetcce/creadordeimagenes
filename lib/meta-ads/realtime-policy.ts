@@ -31,6 +31,21 @@ export function realtimeCoverage(
     until <= s.until
   );
 }
+/** A saved historical window and the recent receipt may jointly cover a calendar range.
+ * Adjacent coverage is enough; never bridge a missing day or another object's receipt. */
+export function metaPeriodCovered(
+  raw: unknown,
+  objectId: string,
+  since: string,
+  until: string,
+  history: { since: string; until: string } | null,
+) {
+  if (realtimeCoverage(raw, objectId, since, until)) return true;
+  if (!history || since < history.since || since > history.until || until < since) return false;
+  if (until <= history.until) return true;
+  const tail = new Date(Date.parse(history.until) + 86400000).toISOString().slice(0, 10);
+  return realtimeCoverage(raw, objectId, tail, until);
+}
 /** Keep completed rows from other pages of the same two-day window/revision.
  * These are receipts, not spend caches: every amount still comes from MetaAdDaily. */
 export function mergeRealtimeCoverage(
