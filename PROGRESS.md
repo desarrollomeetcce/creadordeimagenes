@@ -1,4 +1,13 @@
 
+### 2026-11-05 · Grupos sin franja fija
+
+Crear grupo/Por reemplazar se sitúan junto a Seleccionar categoría en la misma franja. Crear abre diálogo movible con solo diplomados sin grupo, catálogo ya recibido, filtro local, selección por casillas, categoría, azar/cantidad y creación explícita al pie.50 filas iniciales con ampliación por50. El formulario deja de reservar espacio mientras está cerrado.
+
+Reemplazo en popover compacto anclado a los botones; selección por país desde tabla/Top o buscador existente, revisión y confirmación sin desplazar tabla. Conserva reemplazo atómico, STOP/CREATE únicamente en país elegido y datos/estados de los demás países. Posición y altura acotadas al viewport; cierre tras guardar.
+
+Validación319 unitarias, typecheck/build y5 recorridos Chromium: cabecera compacta menor190px en1900px; apertura Crear sin nueva petición y exclusión de ocupados; creación por categoría/casillas; dos orígenes en popover mantienen exactamente la posición de tabla, no escriben al preparar y confirman STOP/CREATE en Colombia con Perú intacto. Datos sintéticos exclusivos, sin Graph/IA/ads reales. Popover anclado junto a categoría verificado en1900×1200 y800×650, dentro del viewport. No acredita despliegue del dominio privado.
+
+
 ### 2026-11-05 · Crear y reemplazar en dos líneas
 
 Crear grupo muestra título editable con sugerencia del número faltante, buscador acumulativo con chips, categoría que filtra la lista principal, cantidad y botones separados Azar/Azar por categoría. Agregar confirma la creación o añade a un grupo seleccionado, con permisos, unicidad y CAS existentes. Se conservan filtros/acciones de asignación de grupos en la tabla.

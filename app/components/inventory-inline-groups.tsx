@@ -1,5 +1,5 @@
 "use client";
-import { useMemo, useRef, useState, useId } from "react";
+import { useMemo, useRef, useState, useId, useEffect } from "react";
 import type {
   TrialDirectory,
   TrialGroup,
@@ -65,9 +65,14 @@ export function InventoryInlineGroups({
     [draftName, setDraftName] = useState<string | null>(null),
     [count, setCount] = useState(10),
     [countryChoice, setCountryChoice] = useState<string[] | null>(null);
-  const category=categoryFilter;
+  const [category,setCategory]=useState("");
+  const [creating,setCreating]=useState(false),[query,setQuery]=useState(""),[limit,setLimit]=useState(50);
+  const creationDialog=useRef<HTMLDialogElement>(null),replacePanel=useRef<HTMLDivElement>(null),controls=useRef<HTMLDivElement>(null);
+  const replacementId=useId();
+  function positionReplacement(show=false){const panel=replacePanel.current,rect=controls.current?.getBoundingClientRect();if(!panel)return;const top=Math.max(8,Math.min((rect?.bottom??104)+6,innerHeight-260));panel.style.top=top+"px";panel.style.left=Math.max(8,Math.min(rect?.left??8,innerWidth-740))+"px";panel.style.maxHeight=Math.max(180,innerHeight-top-12)+"px";if(show)panel.showPopover()}
+  useEffect(()=>{if(replacement?.names.length)positionReplacement(true)},[replacement]);
   const nameList = useId();
-  const group = directory.groups.find((g) => g.id === groupId);
+  const group = directory.groups.find((g) => !creating && g.id === groupId);
   const suggestions = useMemo(
     () => suggestedGroupNames(directory.groups.map((g) => g.name)),
     [directory.groups],
@@ -120,6 +125,7 @@ export function InventoryInlineGroups({
       else await onPatched(result);
       onSelectNames([]);
       setMessage("Grupo actualizado.");
+      if(body.action==="CREATE"){creationDialog.current?.close();setCreating(false);}
       return true;
     } catch (e) {
       setMessage(
@@ -211,11 +217,14 @@ export function InventoryInlineGroups({
     }
     onReplacementChange({ column, names: [...new Set(names)] });
   }
+  const visibleFree=free.filter(i=>(!category||[...i.primaryNames,...(i.secondaryNames??[])].some(c=>categoryKey(c)===categoryKey(category)))&&categoryKey(i.name).includes(categoryKey(query)));
   return (
     <section
       className="inventory-inline-groups inventory-group-workbench"
       aria-label="Grupos integrados"
     >
+      <div ref={controls} className="inventory-group-compact-actions"><button type="button" disabled={!directory.canEdit} onClick={()=>{setCreating(true);setDraftName(suggestions[0]);setCategory("");setQuery("");setLimit(50);setMessage("");onSelectNames(selectedNames.filter(n=>!membership.has(categoryKey(n))));creationDialog.current?.showModal()}}>+ Crear grupo</button><button type="button" popoverTarget={replacementId} onClick={()=>positionReplacement()}>Por reemplazar{replacement?.names.length?` (${replacement.names.length})`:""}</button></div>
+      <dialog ref={creationDialog} className="trial-dialog inventory-create-group-dialog" aria-label="Crear grupo con diplomados sin grupo" onCancel={()=>setCreating(false)}><header><h2>Crear grupo</h2><button type="button" aria-label="Cerrar crear grupo" onClick={()=>{creationDialog.current?.close();setCreating(false)}}>×</button></header>
       <div className="inventory-workbench-line" aria-label="Crear grupo">
         <strong>Crear grupo</strong>
         <input
@@ -256,7 +265,8 @@ export function InventoryInlineGroups({
           ]}
           disabled={busy}
           onSelect={(c) => {
-            onCategoryFilter(c);
+            setCategory(c);
+            setLimit(50);
           }}
         />
         <label className="inventory-random-count">
@@ -294,21 +304,7 @@ export function InventoryInlineGroups({
           onChange={setCountryChoice}
           disabled={busy}
         />
-        <button
-          type="button"
-          className="primary"
-          disabled={busy || !directory.canEdit || !selected.length || (!!group&&sameGroupName(group.name,name)&&!additions.length)}
-          onClick={() =>
-            void (group && sameGroupName(group.name, name)
-              ? add()
-              : create(name))
-          }
-        >
-          {group && sameGroupName(group.name, name)
-            ? "Agregar al grupo"
-            : "Agregar · crear grupo"}{" "}
-          ({selected.length})
-        </button>
+        <small>{selected.length} seleccionados</small>
         {!!group && (
           <InventoryActionMenu label="Acciones del grupo">
             <button
@@ -355,6 +351,9 @@ export function InventoryInlineGroups({
           ))}
         </div>
       )}
+      <div className="inventory-free-diplomas"><label>Buscar entre diplomados sin grupo<input type="search" value={query} onChange={e=>{setQuery(e.target.value);setLimit(50)}}/></label><small>{visibleFree.length} diplomados sin grupo · {selected.length} seleccionados</small><div className="inventory-free-diploma-list">{visibleFree.slice(0,limit).map(item=><label key={item.id}><input type="checkbox" aria-label={'Incluir sin grupo '+item.name} checked={selectedNames.includes(item.name)} onChange={e=>onSelectNames(e.target.checked?[...new Set([...selectedNames,item.name])]:selectedNames.filter(n=>n!==item.name))}/>{item.name}</label>)}</div>{visibleFree.length>limit&&<button type="button" onClick={()=>setLimit(n=>n+50)}>Mostrar50más</button>}</div>{message&&<p role="status">{message}</p>}<footer><button type="button" className="primary" disabled={busy||!directory.canEdit||!selected.length} onClick={()=>void create(name)}>Crear grupo ({selected.length})</button></footer>
+      </dialog>
+      <div ref={replacePanel} id={replacementId} popover="auto" className="inventory-replace-compact-popover"><header><strong>Reemplazar en un país</strong><button type="button" aria-label="Cerrar reemplazos" onClick={()=>replacePanel.current?.hidePopover()}>×</button></header>
       <div
         className="inventory-workbench-line inventory-workbench-replace"
         aria-label="Por reemplazar"
@@ -443,17 +442,19 @@ export function InventoryInlineGroups({
             name={replacement.names[0]}
             names={replacement.names}
             directoryOverride={directory}
+            source="meta"
             sheetName={
               replacementColumns.find((c) => c.id === replacement.column)
                 ?.label ?? ""
             }
             since=""
             until=""
-            onClose={() => onReplacementChange(null)}
+            onClose={() => {onReplacementChange(null);replacePanel.current?.hidePopover()}}
             onChanged={() => onReplacementApplied(replacement.column)}
           />
         </>
       )}
+      </div>
     </section>
   );
 }
