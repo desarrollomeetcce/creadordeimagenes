@@ -1,4 +1,7 @@
 "use client";
+import dynamic from "next/dynamic";
+import { campaignMetaTiming } from "../../lib/meta-ads/campaign-meta-timing";
+import { CampaignTiming } from "./campaign-timing";
 import {
   formatMetaMoney,
   formatMetaDate,
@@ -125,6 +128,7 @@ type Period = {
   since: string;
   until: string;
 };
+const MetaInventoryReplacement = dynamic(() => import("./inventory-sheet-replacement").then(m=>m.InventorySheetReplacement));
 export type Item = {
   aliasId: string | null;
   aliasCountry?: string | null;
@@ -3963,6 +3967,10 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
       </FinancialTableWindow>
       {selectionDetail && (
         <MetaSelectionDetail
+          canEdit={owner && !viewOnly}
+          statusBusy={busy}
+          statusMessage={message}
+          onToggleStatus={changeStatus}
           dataRevision={revision + reportRevision}
           {...selectionDetail}
           initialPeriod={calendar ? "custom" : analysisPeriod}
@@ -3974,6 +3982,8 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
       {selected && (
         <MetaDetail
           item={selected}
+          canReplace={owner && !viewOnly}
+          onInventoryChanged={()=>setReportRevision(n=>n+1)}
           period={detailPeriod ?? (calendar ? "custom" : analysisPeriod)}
           onClose={() => {
             setSelected(null);
@@ -3990,12 +4000,18 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
 function MetaDetail({
   item: o,
   period,
+  canReplace,
+  onInventoryChanged,
   onClose,
 }: {
   item: Item;
   period: string;
+  canReplace: boolean;
+  onInventoryChanged: () => void;
   onClose: () => void;
 }) {
+  const [replacementOpen,setReplacementOpen] = useState(false);
+  const replacement = o.level === "campaign" && o.alias?.tableId && o.alias?.inventorySheetId && o.aliasCountry && !o.alias.detached ? {listId:o.alias.inventorySheetId,tableId:o.alias.tableId,country:o.aliasCountry,name:o.alias.name} : null;
   const ref = useRef<HTMLDialogElement>(null);
   useEffect(() => {
     ref.current?.showModal();
@@ -4004,7 +4020,7 @@ function MetaDetail({
     <dialog
       ref={ref}
       className="meta-detail"
-      onCancel={onClose}
+      onCancel={e=>{if(e.target===e.currentTarget)onClose()}}
       onClick={(e) => {
         if (e.target !== e.currentTarget) return;
         const r = e.currentTarget.getBoundingClientRect();
@@ -4032,7 +4048,11 @@ function MetaDetail({
       <p className="meta-detail-alias">
         Inventario: <strong>{o.alias?.name ?? "Sin inventario"}</strong> · País:{" "}
         <strong>{countryName(o.aliasCountry)}</strong>
+        {canReplace && replacement && <button type="button" className="meta-inventory-replace-trigger" onClick={()=>setReplacementOpen(true)} title="Preparar reemplazo en la hoja: anterior por desactivar campaña y nuevo por hacer campaña. No modifica anuncios de Meta.">↔ Reemplazar en la hoja</button>}
       </p>
+      {replacementOpen && replacement && <MetaInventoryReplacement {...replacement} source="meta" sheetName={o.alias?.table?.name ?? "Hoja sincronizada"} since={o.periods[period]?.since ?? ""} until={o.periods[period]?.until ?? ""} onClose={()=>setReplacementOpen(false)} onChanged={async()=>onInventoryChanged()}/>}
+
+      {o.level === "campaign" && <CampaignTiming meta={campaignMetaTiming([{id:o.id,scheduledStart:o.scheduledStart,createdTime:o.createdTime,firstReport:o.firstDelivery}],new Date().toISOString(),o.timezone)}/>}
       {o.level === "campaign" && (
         <div className="meta-table">
           <table className="meta-campaign-periods">

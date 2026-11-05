@@ -76,7 +76,6 @@ export function SheetSalesDetail({
   name,
   initialSince,
   initialUntil,
-  initialMode = "meta",
   onClose,
 }: {
   tableId: string;
@@ -85,7 +84,6 @@ export function SheetSalesDetail({
   name: string;
   initialSince: string;
   initialUntil: string;
-  initialMode?: "manual" | "meta";
   onClose: () => void;
 }) {
   const dialog = useRef<HTMLDialogElement>(null),
@@ -105,7 +103,7 @@ export function SheetSalesDetail({
     [ascending, setAscending] = useState(true),
     [sortKey, setSortKey] = useState<SheetSalesSort>("sales"),
     [page, setPage] = useState(0);
-  const [profile, setProfile] = useState<"manual" | "meta">(initialMode);
+  const [profile, setProfile] = useState<"manual" | "meta">("meta");
   const [sourceRows, setSourceRows] = useState<EffectivenessRow[]>([]);
   const [analysis, setAnalysis] = useState<SheetAnalysis>({
     rows: [],

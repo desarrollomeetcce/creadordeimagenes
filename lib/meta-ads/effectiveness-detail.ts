@@ -1,3 +1,4 @@
+import { campaignMetaTiming } from "./campaign-meta-timing";
 import { inventoryCacSummary } from "./inventory-cac";
 import { recordedTableFloor } from "./recorded-starts";
 import { activePeriods } from "./active-periods";
@@ -116,7 +117,7 @@ export async function effectivenessDetail(
         createdAt: e.createdAt.toISOString(),
       });
       const today = limaDay(new Date(asOf));
-      const [firstDay, meta] = await Promise.all([
+      const [firstDay, meta, campaigns] = await Promise.all([
         tx.metaEffectivenessDay.aggregate({
           where: {
             row: { aliasId: alias.id, country: b.country },
@@ -137,10 +138,12 @@ export async function effectivenessDetail(
           },
           select: {
             day: true,
+            objectId: true,
             spend: true,
             account: { select: { currency: true } },
           },
         }),
+        tx.metaAdObject.findMany({where:{aliasId:alias.id,aliasCountry:b.country,level:"campaign",account:await accountWhere(actor)},select:{id:true,scheduledStart:true,createdTime:true}}),
       ]);
       const allPeriods = activePeriods(fullEvents.map(serialize), asOf);
       const first =
@@ -241,7 +244,11 @@ export async function effectivenessDetail(
       const legacyHistoryUnavailable =
         !!legacyRemoval &&
         !(legacyRemoval.detail as Record<string, unknown>)?.preservedHistory;
+      const firstMetaReports = new Map<string,string>();
+      for (const d of meta) if (!firstMetaReports.has(d.objectId) || d.day < firstMetaReports.get(d.objectId)!) firstMetaReports.set(d.objectId,d.day);
+      const timing = {meta:campaignMetaTiming(campaigns.map(c=>({...c,firstReport:firstMetaReports.get(c.id) ?? null})),asOf),internalStart:allPeriods[0]?.since ?? firstDay._min.day,internalSource:allPeriods.length?"activation" as const:"record" as const};
       return {
+        timing,
         lifetime,
         report,
         periodCac,

@@ -43,10 +43,6 @@ export function InventoryCacCounters({
           </strong>
         </div>
         <div className="inventory-lifetime-counter">
-          <span>Días con registro</span>
-          <strong>{s.days}</strong>
-        </div>
-        <div className="inventory-lifetime-counter">
           <span>Gasto Meta (G)</span>
           <strong>
             {money(source.amount)}
@@ -60,6 +56,7 @@ export function InventoryCacCounters({
             {source.partial && source.cac !== null ? " *" : ""}
           </strong>
           {s.sales === 0 && <small>Sin ventas</small>}
+          {s.sales !== null && s.sales > 0 && source.amount === null && <small>Gasto Meta no disponible o sin conversión.</small>}
         </div>
         {effectiveness && (
           <div className="inventory-lifetime-counter">
@@ -74,13 +71,24 @@ export function InventoryCacCounters({
             </strong>
           </div>
         )}
-        <div className="inventory-lifetime-counter">
-          <span>Estado · CAC en soles</span>
-          <strong className="inventory-cac-state">
-            <InventoryCacStatus status={source.assessment.status} />
-          </strong>
-        </div>
       </div>
+      <div className="inventory-cac-period-state">
+        <span>Estado · CAC en soles</span>
+        <strong className="inventory-cac-state">
+          <InventoryCacStatus status={source.assessment.status} />
+        </strong>
+      </div>
+      {s.sales === null ? (
+        <p className="hint">
+          Ventas sin registrar en este período. El gasto de Meta no permite
+          deducir ventas; CAC y efectividad requieren ese registro.
+        </p>
+      ) : s.sales === 0 ? (
+        <p className="hint">
+          Cero ventas registradas: el CAC queda como —. El estado se evalúa
+          según el gasto conocido.
+        </p>
+      ) : null}
       <small className="inventory-lifetime-help">
         N/A se excluye; cero es un registro. Los importes conservan su fuente.{" "}
         {source.partial ? "* Datos parciales." : ""}

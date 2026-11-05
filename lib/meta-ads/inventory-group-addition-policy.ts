@@ -52,3 +52,10 @@ export function randomCategoryAdditions(
     random,
   );
 }
+/** Replace one proposed entry without mutating the rest, duplicating entries or selecting the same item again. */
+export function replaceRandomAddition(proposal: TrialItem[], itemId: string, pool: TrialItem[], excluded: string[] = [], category?: string, random = Math.random) {
+ if(!proposal.some(item=>item.id===itemId)) return null;
+ const blocked=[...excluded,...proposal.map(item=>item.id)];
+ const replacement=(category ? randomCategoryAdditions(pool,category,1,blocked,random) : randomInventoryAdditions(pool,1,blocked,random))[0];
+ return replacement ? proposal.map(item=>item.id===itemId?replacement:item) : null;
+}

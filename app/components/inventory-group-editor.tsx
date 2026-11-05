@@ -3,6 +3,7 @@ import { InventoryGroupCategoryAdditions } from "./inventory-group-category-addi
 import {
   randomCategoryAdditions,
   randomInventoryAdditions,
+  replaceRandomAddition,
 } from "../../lib/meta-ads/inventory-group-addition-policy";
 import { InventoryGroupReplacements } from "./inventory-group-replacements";
 import {
@@ -503,14 +504,7 @@ export function InventoryGroupEditor({
   ]
     .sort((a, b) => a.localeCompare(b, "es"))
     .map((name) => ({ value: name, label: name }));
-  const addingChipIds = editing
-    ? [
-        ...new Set([
-          ...queuedIds,
-          ...ids.filter((id) => !draftBase.ids.includes(id)),
-        ]),
-      ]
-    : [];
+  const addingChipIds = editing ? [...new Set(queuedIds)] : [];
   function toggleQueued(id: string) {
     if (!availableAdditions.some((item) => item.id === id)) return;
     setQueuedIds((current) =>
@@ -519,8 +513,17 @@ export function InventoryGroupEditor({
         : [...current, id],
     );
   }
-  function acceptQueuedAdditions() {
-    if (!queuedIds.length) return;
+  async function acceptQueuedAdditions() {
+    if (
+      !group ||
+      !queuedIds.length ||
+      savePending.current ||
+      committed ||
+      busy ||
+      externalBusy ||
+      !directory.canEdit
+    )
+      return;
     if (
       queuedIds.some((id) => {
         const item = catalogById.get(id);
@@ -534,10 +537,74 @@ export function InventoryGroupEditor({
       );
       return;
     }
-    setIds((current) => [...new Set([...current, ...queuedIds])]);
-    setQueuedIds([]);
+    const additions = [...queuedIds];
+    const baseIds = [...draftBase.ids];
+    savePending.current = true;
+    setBusy(true);
     setError("");
-    setNotice("Diplomados añadidos. Guarda los cambios del grupo.");
+    setNotice("Guardando diplomados añadidos…");
+    let saved = false;
+    try {
+      const result: TrialGroup = await api(
+        "meta-ads/inventory/trials",
+        "POST",
+        {
+          action: "ADD_MEMBERS",
+          listId: directory.listId,
+          groupId: group.id,
+          revision: draftBase.revision,
+          itemIds: additions,
+          since: limaToday(),
+        },
+      );
+      saved = true;
+      const persisted = result.members.map((member) => member.itemId);
+      setIds((current) => [
+        ...new Set([
+          ...current.filter(
+            (id) => !additions.includes(id) || persisted.includes(id),
+          ),
+          ...persisted.filter((id) => !baseIds.includes(id)),
+        ]),
+      ]);
+      setDraftBase({
+        revision: result.revision,
+        name: result.name,
+        ids: persisted,
+      });
+      setQueuedIds((current) =>
+        current.filter((id) => !additions.includes(id)),
+      );
+      await onGroupsChanged?.();
+      setNotice(
+        `Diplomados añadidos a «${result.name}» y guardados automáticamente.`,
+      );
+    } catch (e) {
+      setNotice(saved ? "Los diplomados ya están guardados en el grupo." : "");
+      setError(
+        (saved
+          ? "Se guardaron los añadidos, pero no se pudo actualizar la vista. "
+          : "No se pudieron guardar los añadidos; puedes volver a intentarlo. ") +
+          (e instanceof Error ? e.message : "Revisa la conexión."),
+      );
+    } finally {
+      savePending.current = false;
+      setBusy(false);
+    }
+  }
+  function replaceProposedItem(itemId: string, category?: string) {
+    if (!proposal || proposal.key !== draftKey) return;
+    const selectedCategory=category ?? proposal.category;
+    if (!replaceRandomAddition(proposal.items,itemId,proposalPool,[...ids,...queuedIds],selectedCategory,()=>0)) {
+      setReviewError(selectedCategory ? `No hay otro diplomado disponible de «${selectedCategory}». La propuesta se mantiene.` : "No hay otro diplomado disponible. La propuesta se mantiene.");
+      return;
+    }
+    setReviewError("");
+    setProposal(current=>{
+      if(!current || current.key!==draftKey)return current;
+      const items=replaceRandomAddition(current.items,itemId,proposalPool,[...ids,...queuedIds],selectedCategory);
+      return items ? {...current,items,category:current.category===selectedCategory?current.category:undefined} : current;
+    });
   }
   function approveProposal() {
     if (!proposal || proposal.key !== draftKey) return;
@@ -923,13 +990,18 @@ export function InventoryGroupEditor({
             </p>
           )}
           {proposal.category && <small>Categoría: {proposal.category}</small>}
-          <ul className="inventory-group-review-list">
+          <ul className="inventory-group-review-list inventory-group-review-editable">
             {proposal.items.map((item) => (
-              <li key={item.id}>
+              <li key={item.id} data-proposed-item={item.id}>
                 <strong>{item.name}</strong>
                 <small>
                   {item.primaryNames.join(" · ") || "Sin categoría principal"}
                 </small>
+                {item.secondaryNames?.length ? <small>Secundarias: {item.secondaryNames.join(" · ")}</small> : null}
+                <div className="inventory-proposal-row-actions">
+                  <button type="button" aria-label={`Cambiar al azar ${item.name}`} onClick={()=>replaceProposedItem(item.id)}>Cambiar al azar</button>
+                  <SheetSearchSelect label={`Cambiar por categoría ${item.name}`} value="" placeholder="Cambiar por categoría" options={additionCategoryOptions} onSelect={category=>replaceProposedItem(item.id,category)}/>
+                </div>
               </li>
             ))}
           </ul>
@@ -1525,17 +1597,10 @@ export function InventoryGroupEditor({
                           aria-label={`Quitar de añadir ${catalogById.get(id)?.name}`}
                           disabled={busy || externalBusy}
                           onClick={() => {
+                            if (savePending.current) return;
                             setQueuedIds((current) =>
                               current.filter((value) => value !== id),
                             );
-                            if (!draftBase.ids.includes(id)) {
-                              setIds((current) =>
-                                current.filter((value) => value !== id),
-                              );
-                              setCheckedIds((current) =>
-                                current.filter((value) => value !== id),
-                              );
-                            }
                           }}
                         >
                           ×
@@ -1553,7 +1618,6 @@ export function InventoryGroupEditor({
                       Aceptar añadidos ({queuedIds.length})
                     </button>
                   )}
-                  {!queuedIds.length && <small>Pendientes de guardar</small>}
                 </div>
               )}
               {selectedIds.length > 0 && (

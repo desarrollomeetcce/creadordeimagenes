@@ -59,6 +59,7 @@ export function InventorySheetReplacement({
       className="trial-dialog inventory-group-editor"
       data-expanded={expanded || undefined}
       aria-label="Reemplazar diplomado en la hoja"
+      data-effectiveness-document={"TAB:"+listId}
       onCancel={(e) => {
         e.preventDefault();
         if (!busy) onClose();
@@ -82,6 +83,7 @@ export function InventorySheetReplacement({
           Cerrar
         </button>
       </header>
+      <p className="hint">Al confirmar, el anterior queda por desactivar campaña y el nuevo, por hacer campaña en esta hoja y país. No modifica campañas en Meta Ads.</p>
       {error ? (
         <p role="alert">{error}</p>
       ) : !directory ? (

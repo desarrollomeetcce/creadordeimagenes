@@ -6471,3 +6471,22 @@ test("Estado del asesor: CAC Meta del período, ceros y conversiones conocidas s
  assert.equal(advisorFinancialSummary([{...day,financial:{...day.financial,currencies:[{...day.financial.currencies[0],currency:"USD",spend:20}]}}]).money[0].status,"PENDING");
  assert.equal(advisorFinancialSummary([{...day,sales:0,financial:{...day.financial,currencies:[{...day.financial.currencies[0],spend:10,sales:0}]}}]).money[0].status,"TESTING");
 });
+
+test("Propuesta al azar: cambiar solo una fila conserva las demás, excluye duplicados y permite categoría secundaria", async()=>{
+ const {replaceRandomAddition}=await import("../lib/meta-ads/inventory-group-addition-policy");
+ const item=(id:string,primary:string[],secondary:string[]=[])=>({id,name:id,primaryNames:primary,secondaryNames:secondary,tableIds:[]}) as any;
+ const a=item("a",["Calidad"]),b=item("b",["Salud"]),c=item("c",["Ambiente"],["Calidad"]),d=item("d",["Salud"]);
+ const original=[a,b],copy=JSON.stringify(original);
+ const changed=replaceRandomAddition(original,"a",[a,b,c,d],[],"Calidad",()=>0)!;
+ assert.equal(changed[0].id,"c");assert.equal(changed[1],b);assert.equal(JSON.stringify(original),copy);assert.equal(new Set(changed.map(i=>i.id)).size,2);
+ assert.equal(replaceRandomAddition(original,"a",[a,b]),null);assert.equal(replaceRandomAddition(original,"a",[a,b,c],["c"]),null);assert.equal(replaceRandomAddition(original,"missing",[a,b,c]),null);
+});
+
+test("Inicio Meta: fecha reportada, creación e informes quedan diferenciados de la activación interna",async()=>{
+ const {campaignMetaTiming}=await import("../lib/meta-ads/campaign-meta-timing");
+ const report=campaignMetaTiming([{id:"a",scheduledStart:"2026-10-01T12:00:00Z",createdTime:"2026-09-20T12:00:00Z"},{id:"b",scheduledStart:"2026-10-15T12:00:00Z"}],"2026-11-04T12:00:00Z");
+ assert.equal(report.day,"2026-10-15");assert.equal(report.days,21);assert.equal(report.source,"scheduled");
+ assert.equal(campaignMetaTiming([{id:"c",createdTime:"2026-10-01T12:00:00Z"}],"2026-11-04T12:00:00Z").source,"created");
+ assert.equal(campaignMetaTiming([{id:"d",firstReport:"2026-10-22"}],"2026-11-04T12:00:00Z").source,"reporting");
+ assert.equal(campaignMetaTiming([],"2026-11-04T12:00:00Z").start,null);
+});

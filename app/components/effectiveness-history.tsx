@@ -1,4 +1,5 @@
 "use client";
+import { CampaignTiming } from "./campaign-timing";
 import { countryName } from "../../lib/meta-ads/countries";
 import {
   inventoryDetailDestinationKey,
@@ -44,6 +45,7 @@ type Cell = Record<SheetMetric, number | null> & {
 import type { InventoryLifetimeSummary } from "../../lib/meta-ads/inventory-lifetime-summary";
 import type { InventoryReportSummary } from "../../lib/meta-ads/inventory-report-summary";
 type Detail = {
+  timing?: {meta:import("../../lib/meta-ads/campaign-meta-timing").CampaignMetaTiming;internalStart:string|null;internalSource:"activation"|"record"};
   periodCac: InventoryCacSummary;
   report: InventoryReportSummary;
   lifetime: InventoryLifetimeSummary;
@@ -374,7 +376,7 @@ export function EffectivenessHistory({
                     ))}
                     <MetaDateRange
                       maxDays={3660}
-                      activeSince={data?.report.since}
+                      activeSince={data?.timing?.meta.day ?? data?.report.since}
                       from={since}
                       to={until}
                       onChange={(a, b) => {
@@ -398,6 +400,7 @@ export function EffectivenessHistory({
                     </p>
                   )}
                 </DetailStickyHeader>
+                {data?.timing && <CampaignTiming {...data.timing}/>}
                 {!valid && (
                   <p role="alert">
                     Elige un período válido de hasta diez años.

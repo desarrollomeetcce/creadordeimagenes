@@ -9,6 +9,7 @@ import {
 import { quickRange } from "../../lib/meta-ads/date-range";
 import { campaignEvaluationWindow } from "../../lib/meta-ads/campaign-evaluation-window";
 import { MetaCampaignAssessment } from "./meta-campaign-assessment";
+import { DetailStickyHeader } from "./detail-sticky-header";
 import { MetaAnalysisPeriod } from "./meta-analysis-period";
 import { MetaDiplomaOverview } from "./meta-diploma-overview";
 import { MetaDailyDetail } from "./meta-daily-detail";
@@ -64,8 +65,16 @@ export function MetaSelectionDetail({
   initialUntil,
   onClose,
   dataRevision = 0,
+  canEdit = false,
+  statusBusy = false,
+  statusMessage = "",
+  onToggleStatus,
 }: {
   dataRevision?: number;
+  canEdit?: boolean;
+  statusBusy?: boolean;
+  statusMessage?: string;
+  onToggleStatus?: (item:Item)=>void;
   ids: string[];
   accounts: string[];
   level: string;
@@ -189,6 +198,7 @@ export function MetaSelectionDetail({
         if (e.target === e.currentTarget) onClose();
       }}
     >
+      <DetailStickyHeader>
       <header className="row spread">
         <div>
           <h2>
@@ -231,9 +241,14 @@ export function MetaSelectionDetail({
           Actualizar comparación
         </button>
       </div>
+      {(statusBusy || statusMessage) && <p role="status" className="hint">{statusBusy ? "Actualizando estado de la campaña…" : statusMessage}</p>}
+      </DetailStickyHeader>
       {level === "campaign" && (
         <div hidden={!rows.length}>
           <MetaDiplomaOverview
+            canEdit={canEdit}
+            statusBusy={statusBusy || loading}
+            onToggleStatus={onToggleStatus}
             items={rows}
             period={period}
             since={since}

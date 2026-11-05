@@ -1561,9 +1561,10 @@ test("Activación por hoja: selección, pin, historial y permisos", async (t) =>
           byCountry: "true",
           fromActivation: "true",
         });
-        assert.equal(fromActivation.rows[0].cac!.since, today);
-        assert.equal(fromActivation.rows[0].cac!.sales, 4);
-        assert.equal(fromActivation.rows[0].cac!.budget.penAmount, 999);
+        // Without provider start metadata, lifetime evaluation begins at first known reporting data, independently of the latest internal cycle.
+        assert.equal(fromActivation.rows[0].cac!.since, dates[0]);
+        assert.equal(fromActivation.rows[0].cac!.sales, 5);
+        assert.equal(fromActivation.rows[0].cac!.budget.penAmount, 2048);
 
         assert.equal(prior.sales, 1);
         assert.equal(prior.salesUntil, dates[2]);

@@ -3281,7 +3281,6 @@ export function MetaEffectiveness({
       )}
       {sheetSalesDetailOpen && (
         <SheetSalesDetail
-          initialMode={view === "automatic" ? "meta" : "manual"}
           selection={sheetDetailSelection}
           inventoryAliases={tables.find((t) => t.id === tableId)?.aliases ?? []}
           tableId={tableId}
