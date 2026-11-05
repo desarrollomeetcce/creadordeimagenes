@@ -550,3 +550,16 @@ test('Meta HTTP: un reintento GET transitorio, sin repetir acciones, permisos, c
   calls=0;const controller=new AbortController();globalThis.fetch=async()=>{calls++;controller.abort();return new Response('',{status:502});};await assert.rejects(()=>fetchJsonResponse('/api/meta-ads/accounts',{signal:controller.signal}));assert.equal(calls,1);
  }finally{globalThis.fetch=original;}
 });
+
+test("diagnóstico de generación: solo intentos fallidos y metadatos públicos acotados", async () => {
+  const {generationDiagnostics,openAIRejection} = await import("../lib/generation-diagnostics");
+  const snapshot = {imageProvider:"openai",imageModel:"gpt-image-1",creativeProvider:"openai",creativeModel:"gpt-5-mini",prompt:"privado",encryptedKey:"secreto",attachmentIds:["privado"]};
+  const failed = {id:"job-failed",status:"UNCERTAIN",error:"Error seguro",snapshot};
+  assert.deepEqual(generationDiagnostics([{...failed,status:"COMPLETED"},failed]),[{jobId:"job-failed",status:"UNCERTAIN",error:"Error seguro",imageProvider:"openai",imageModel:"gpt-image-1",creativeProvider:"openai",creativeModel:"gpt-5-mini"}]);
+  assert.equal(generationDiagnostics(Array.from({length:20},()=>failed)).length,5);
+  assert.equal(generationDiagnostics([{...failed,snapshot:null}])[0].imageModel,null);
+  assert.equal(generationDiagnostics([{...failed,snapshot:{imageModel:"<script>"}}])[0].imageModel,null);
+  assert.equal(openAIRejection(500,"unsupported_parameter","size"),null);
+  assert.equal(openAIRejection(400,"secret-key","private prompt"),null);
+  assert.match(openAIRejection(404,"model_not_found")!,/no tiene acceso/);
+});

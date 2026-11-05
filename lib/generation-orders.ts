@@ -1,3 +1,4 @@
+import { generationDiagnostics } from "./generation-diagnostics";
 import {orderRecovery,continuationError,reportContinuationError} from "./order-recovery";
 import { dismissedOrders } from "./order-dismissal";
 import { emptyStoppedOrder } from "./order-visibility";
@@ -99,6 +100,7 @@ export function orderSummary(
     status: order.status,
     ...orderRecovery(order.status,jobs,order.error,user.role!=="OBSERVER"&&(user.id===order.actorId||user.role==="OWNER")),
     canReviewConnection:user.role==="OWNER",
+    diagnostics: user.role !== "OBSERVER" && (user.id === order.actorId || user.role === "OWNER") ? generationDiagnostics(jobs) : [],
     createdAt: order.createdAt,
     mode: String(first?.executionMode ?? "background"),
     requested: (order.jobIds as string[]).length,
@@ -556,7 +558,7 @@ export async function libraryOrders(
       deletedAt: Date | null;
       revision: number | null;
     }[]
-  >`SELECT j.id,j.status,j.error,j."projectId",j."subproductId",c.id AS "productId",p.name AS "projectName",c.name AS "productName",s.name AS "subproductName",jsonb_build_object('executionMode',j.snapshot->'executionMode','orderFinalCount',j.snapshot->'orderFinalCount','previewFirst',j.snapshot->'previewFirst','index',j.snapshot->'index') AS snapshot,v.id AS "variationId",v."reviewStatus",v."deletedAt",v.revision FROM "GenerationJob" j LEFT JOIN "Variation" v ON v."jobId"=j.id LEFT JOIN "Subproduct" s ON s.id=j."subproductId" LEFT JOIN "Category" c ON c.id=s."categoryId" LEFT JOIN "Project" p ON p.id=j."projectId" WHERE j.id=ANY(${ids}::text[])`;
+  >`SELECT j.id,j.status,j.error,j."projectId",j."subproductId",c.id AS "productId",p.name AS "projectName",c.name AS "productName",s.name AS "subproductName",jsonb_build_object('executionMode',j.snapshot->'executionMode','orderFinalCount',j.snapshot->'orderFinalCount','previewFirst',j.snapshot->'previewFirst','index',j.snapshot->'index','imageProvider',j.snapshot->'imageProvider','imageModel',j.snapshot->'imageModel','creativeProvider',j.snapshot->'creativeProvider','creativeModel',j.snapshot->'creativeModel') AS snapshot,v.id AS "variationId",v."reviewStatus",v."deletedAt",v.revision FROM "GenerationJob" j LEFT JOIN "Variation" v ON v."jobId"=j.id LEFT JOIN "Subproduct" s ON s.id=j."subproductId" LEFT JOIN "Category" c ON c.id=s."categoryId" LEFT JOIN "Project" p ON p.id=j."projectId" WHERE j.id=ANY(${ids}::text[])`;
   return records.map((order) => {
     const rows = jobs.filter((j) => order.jobIds.includes(j.id));
     const context = rows[0];

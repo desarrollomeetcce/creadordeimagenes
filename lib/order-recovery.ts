@@ -16,7 +16,7 @@ export function orderRecovery(status:string,jobs:Job[],message:string|null,canMa
  else if(canApproveSample)hint="La muestra se conserva. Apruébala para continuar únicamente con las imágenes pendientes.";
  const detail=message&&message.trim().length>10?message:jobs.find(j=>j.error&&j.error.trim().length>10)?.error;
  const error=detail??(interrupted?"La ejecución se interrumpió antes de completar el lote. La imagen ya generada se conserva. Revisa la acción disponible para continuar.":null);
- return {canContinuePending,canApproveSample,recoveryHint:hint,error,needsConnectionReview:!!error&&/verificar la conexión|verifica.*conexión|conexión.*verific/i.test(error)};
+ return {canContinuePending,canApproveSample,recoveryHint:hint,error,needsConnectionReview:!!error&&/verificar la conexión|verifica.*conexión|conexión.*verific|no admite el modelo|OpenAI rechazó|modelo o los parámetros/i.test(error)};
 }
 /** Do not expose exception bodies, SQL, provider responses or credentials. */
 export function continuationError(error:unknown){

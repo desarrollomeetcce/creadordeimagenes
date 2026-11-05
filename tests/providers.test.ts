@@ -616,3 +616,21 @@ test("apoyo híbrido: presupuestos de salida explícitos en OpenAI y Google",asy
   await adapter('openai').direct(key,'gpt-4.1-mini','Visual JSON',true,undefined,'low',384);await adapter('google').direct(key,'gemini-2.5-flash','Visual JSON',true,undefined,'low',384);
  });assert.equal(requests[0].max_output_tokens,384);assert.equal(requests[1].generationConfig.maxOutputTokens,384);assert.equal(requests[0].text.format.type,'json_object');assert.equal(requests[1].generationConfig.responseMimeType,'application/json');
 });
+
+test("OpenAI: rechazo identifica etapa y campo permitido sin filtrar mensajes ni repetir solicitudes", async () => {
+  let calls = 0;
+  await transport(async () => {
+    calls++;
+    return Response.json({error:{code:"unsupported_parameter",param:"output_format",message:`privado ${key} contenido del prompt`}}, {status:400});
+  }, async () => {
+    await assert.rejects(adapter("openai").generate(key,{model:"gpt-image-1",prompt:"Brief privado",quality:"low",size:"1024x1024"}), e => {
+      assert(e instanceof Error);
+      assert.match(e.message,/Generación de imagen: OpenAI rechazó/);
+      assert.match(e.message,/formato de salida/);
+      assert(!e.message.includes(key));
+      assert(!e.message.includes("contenido del prompt"));
+      return true;
+    });
+    assert.equal(calls,1);
+  });
+});

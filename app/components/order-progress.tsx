@@ -34,6 +34,7 @@ export type OrderProgress = {
     reviewStatus: string;
     deletedAt: string | null;
   } | null;
+  diagnostics?: { jobId: string; status: string; error: string | null; imageProvider: string | null; imageModel: string | null; creativeProvider: string | null; creativeModel: string | null }[];
   jobs?: {
     id: string;
     status: string;
@@ -276,7 +277,19 @@ export function OrderProgressCard({
               </button>
             )}
           {o.needsConnectionReview&&o.canReviewConnection&&<a className="button" href="?view=ai">Revisar conexión de IA</a>}
-          {(o.failed>0||o.uncertain>0)&&<a className="button" href={"?"+new URLSearchParams({view:"jobs",...(o.scope??{})})}>Ver motivo en Generaciones</a>}
+          {(o.failed > 0 || o.uncertain > 0) && <details className="order-error-detail">
+            <summary>Ver detalle del error</summary>
+            {o.diagnostics?.length ? o.diagnostics.map(d => <div key={d.jobId}>
+              <p>{d.error ?? o.error ?? "No se guardó un motivo específico para este intento."}</p>
+              <dl>
+                <dt>Proveedor de imagen</dt><dd>{d.imageProvider ?? "No registrado"}</dd>
+                <dt>Modelo de imagen</dt><dd>{d.imageModel ?? "No registrado"}</dd>
+                <dt>Dirección creativa</dt><dd>{[d.creativeProvider, d.creativeModel].filter(Boolean).join(" · ") || "No registrada"}</dd>
+                <dt>Intento</dt><dd style={{overflowWrap:"anywhere"}}>{d.jobId}</dd>
+              </dl>
+            </div>) : <p>{o.error ?? "No se guardó un motivo específico para este intento."}</p>}
+            <small>Son los datos guardados del intento. Abrir este detalle no genera imágenes ni repite solicitudes.</small>
+          </details>}
           {o.status !== "ACCEPTED" && o.completed > 0 && !o.running && (
             <button
               type="button"

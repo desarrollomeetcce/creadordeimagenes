@@ -1,3 +1,4 @@
+import { openAIRejection } from "../generation-diagnostics";
 import { openAIThinking, type ReasoningLevel } from "../creative-level";
 import { FalAdapter } from "./fal";
 import { ReplicateAdapter } from "./replicate";
@@ -129,11 +130,13 @@ class OpenAIAdapter implements ProviderAdapter {
     }
     if (!r.ok) {
       let code: string | undefined;
+      let param: string | undefined;
       try {
         const failure = await r.json();
         if (typeof failure?.error?.code === "string") code = failure.error.code;
+        if (typeof failure?.error?.param === "string") param = failure.error.param;
       } catch {}
-      throw new AppError(providerError(r.status, code), 502);
+      throw new AppError(`${path.startsWith("images/") ? "Generación de imagen" : path === "responses" ? "Dirección creativa" : "Conexión OpenAI"}: ${openAIRejection(r.status, code, param) ?? providerError(r.status, code)}`, 502);
     }
     try {
       return await r.json();
