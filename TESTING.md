@@ -2524,3 +2524,10 @@ Chromium7 comprobaciones:5 campañas→4 diplomados, V compartida21 una vez y to
 315/315 unitarias, typecheck y compilación de producción. Chromium12 comprobaciones: tres columnas/centro ancho, separadores teclado/arrastre/F5 sin escrituras, búsqueda inmediata sin consultas por tecla, duplicados, guardado solo elegido, publicación pausada completa sintética, inventario/grupos local, móvil sin overflow/errores, Biblioteca tabla/tarjetas, tema oscuro/tabs horizontales, creación proyecto/producto/país/diplomado y carga manual sin autorización/cargo IA.
 
 Integración HTTP/BD9: roles y módulo IA, ámbito de proyecto/producto, nombres/idempotencia, reserva/muestra inicial y herencia proyecto+subproducto sin prompt histórico de producto, selección canónica privada, permisos Meta/país/afiches, activación con confirmación de gasto y CAS concurrente, pérdida de acuse sin repetir, revisión de imagen cambiada antes de carga. Objetos locales confirmados y alias canónico exacto, cero métricas diarias inventadas. Transporte OpenAI/Graph simulado explícito y restringido a base studio_columns_qa_*; afiches locales deterministas. No certifica publicación, aprobación o entrega real de Meta ni el host privado del usuario.
+
+
+### 2026-11-05 · Páginas Meta y eliminación de carpetas del estudio
+
+Directorio de páginas usa promote_pages con alternativa me/accounts cuando no hay resultados o falla, páginas limitadas y deduplicadas; preparación de campaña usa la misma autorización. Selector muestra fallo/ausencia junto al campo y permite reconsulta explícita sin cachear vacíos. Cambiar cuenta limpia página anterior. X separada de selección en cada pestaña elimina mediante endpoint existente, confirmación y eliminación lógica; campañas de Meta conservadas, selección local solo tras acuse.
+
+Validación316 unitarias, typecheck/build y4 comprobaciones Chromium con transporte sintético: selector recupera página con promote_pages vacío, cambiar diplomado no consulta directorios, cancelar X no escribe, eliminación confirmada afecta una sola carpeta y persiste F5. No se usaron credenciales reales ni publicación publicitaria.

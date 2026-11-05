@@ -68,6 +68,8 @@ export function StudioCampaign({
     })),
     [resources, setResources] = useState<any>({ pages: [], audiences: [] }),
     [loading, setLoading] = useState(false),
+    [pageError, setPageError] = useState(""),
+    [resourceReload, setResourceReload] = useState(0),
     [busy, setBusy] = useState(false),
     [error, setError] = useState(""),
     [draft, setDraft] = useState<any>(null),
@@ -117,9 +119,12 @@ export function StudioCampaign({
   }, [latestLaunchId]);
   useEffect(() => {
     if (!form.accountId) return;
+    setPageError("");
     const cached = resourceCache.current.get(form.accountId);
     if (cached) {
       setResources(cached);
+      if (cached.pages.length === 1) setForm(f => ({ ...f, pageId: cached.pages[0].id, whatsapp: f.whatsapp || cached.pages[0].whatsapp }));
+      setLoading(false);
       return;
     }
     const controller = new AbortController();
@@ -132,7 +137,9 @@ export function StudioCampaign({
       controller.signal,
     )
       .then((r) => {
-        resourceCache.current.set(form.accountId, r);
+        if (controller.signal.aborted) return;
+        if (r.pages.length) resourceCache.current.set(form.accountId, r);
+        else setPageError("Meta no devolvió páginas para esta conexión. Revisa que la credencial tenga acceso a la página y permiso pages_show_list.");
         setResources(r);
         if (r.pages.length === 1)
           setForm((f) => ({
@@ -142,13 +149,13 @@ export function StudioCampaign({
           }));
       })
       .catch((e) => {
-        if (!controller.signal.aborted) setError(e.message);
+        if (!controller.signal.aborted) setPageError(e.message);
       })
       .finally(() => {
         if (!controller.signal.aborted) setLoading(false);
       });
     return () => controller.abort();
-  }, [form.accountId]);
+  }, [form.accountId, resourceReload]);
   useEffect(() => {
     if (review) dialog.current?.showModal();
   }, [review]);
@@ -195,7 +202,7 @@ export function StudioCampaign({
         currency: currency || "USD",
       }).format(n);
   function update(key: keyof CampaignConfig, value: unknown) {
-    setForm((f) => ({ ...f, [key]: value }));
+    setForm((f) => ({ ...f, [key]: value, ...(key === "accountId" ? { pageId: "" } : {}) }));
     if (draft?.status === "DRAFT") setDraft(null);
     setSpend(false);
     setError("");
@@ -328,6 +335,13 @@ export function StudioCampaign({
             ))}
           </select>
         </label>
+        {form.accountId && !loading && (pageError || !resources.pages.length) && (
+          <div className="studio-page-error" role="status">
+            <p>{pageError || "No hay páginas disponibles en esta conexión."}</p>
+            <button type="button" disabled={locked} onClick={() => { resourceCache.current.delete(form.accountId); setResourceReload(n => n + 1); }}>Volver a consultar páginas</button>
+            <a href="?view=metaads">Revisar conexión Meta</a>
+          </div>
+        )}
         <label>
           WhatsApp vinculado a la página
           <input

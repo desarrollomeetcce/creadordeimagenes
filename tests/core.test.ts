@@ -586,3 +586,13 @@ test('estudio: presupuesto por moneda, plantillas y plan de dos públicos sin ac
  const plan=launchPlan(items,true),firstActive=plan.findIndex(s=>s.kind==='ACTIVATE');assert(firstActive>plan.findIndex(s=>s.kind==='VERIFY'));assert.equal(plan.at(-1)!.kind,'VERIFY_LIVE');
  const targeting=audienceTargeting(c,0,{geo_locations:{countries:['PE']}});assert.deepEqual(targeting.geo_locations,{countries:['UY']});assert.equal(targeting.targeting_automation.advantage_audience,1);
 });
+
+test("Meta studio pages: empty account directory falls back, pagination is bounded and failures remain visible", async () => {
+ const {discoverCampaignPages}=await import("../lib/creative-studio/pages");
+ const calls:string[]=[];
+ const result=await discoverCampaignPages(async(edge,after)=>{calls.push(edge+":"+(after??""));return edge==="promote_pages"?{data:[]} : after?{data:[{id:"2",name:"Second"}]}:{data:[{id:"1",name:"First"}],paging:{next:"untrusted URL never followed",cursors:{after:"cursor"}}}});
+ assert.deepEqual(result.data.map(p=>p.id),["1","2"]);assert.deepEqual(calls,["promote_pages:","pages:","pages:cursor"]);
+ let count=0;const direct=await discoverCampaignPages(async()=>{count++;return{data:[{id:"3",name:"Authorized"}]}});assert.equal(direct.data.length,1);assert.equal(count,1);
+ await assert.rejects(discoverCampaignPages(async()=>{throw Error("missing permission")}),/missing permission/);
+ let bounded=0;const limit=await discoverCampaignPages(async()=>({data:[{id:String(++bounded)}],paging:{next:true,cursors:{after:String(bounded)}}}));assert.equal(bounded,4);assert.equal(limit.paging?.next,true);
+});

@@ -175,6 +175,20 @@ export function CreativeStudio({ userId }: { userId: string }) {
   }
   const contextRef = useRef(context);
   contextRef.current = context;
+  async function removeSubproduct(sub: any) {
+    const sequence = productSeq.current;
+    if (!confirm(`¿Eliminar la carpeta «${sub.name}» y retirarla de este producto? Sus afiches dejarán de mostrarse aquí. Las campañas ya publicadas en Meta no se eliminan.`)) return;
+    const response = await fetch("/api/subproducts/" + encodeURIComponent(sub.id), { method: "DELETE" });
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.error || "No se pudo eliminar la carpeta.");
+    if (!mounted.current || sequence !== productSeq.current) return;
+    const remaining = product.subproducts.filter((s: any) => s.id !== sub.id);
+    setProduct((p: any) => ({ ...p, subproducts: remaining }));
+    setSelected((p) => { const next = { ...p }; delete next[sub.id]; return next; });
+    setTargetSubs((ids) => ids.filter(id => id !== sub.id));
+    if (activeSub === sub.id) { setActiveSub(remaining[0]?.id ?? ""); setPage(1); }
+    setNotice("Carpeta eliminada. Las campañas de Meta se conservan.");
+  }
   async function chooseProduct(id: string, initialSub?: string) {
     const seq = ++productSeq.current;
     setLoading(true);
@@ -938,9 +952,9 @@ export function CreativeStudio({ userId }: { userId: string }) {
               aria-label="Diplomados del producto"
             >
               {product.subproducts.map((s: any) => (
+                <div className="studio-sub-tab" key={s.id}>
                 <button
                   type="button"
-                  key={s.id}
                   aria-pressed={activeSub === s.id}
                   onClick={() => {
                     setActiveSub(s.id);
@@ -952,6 +966,8 @@ export function CreativeStudio({ userId }: { userId: string }) {
                     <span>{selected[s.id].length} ✓</span>
                   ) : null}
                 </button>
+                <button type="button" className="studio-remove-tab" aria-label={"Eliminar carpeta " + s.name} title={"Eliminar carpeta " + s.name} disabled={busy} onClick={() => void run(() => removeSubproduct(s))}>×</button>
+                </div>
               ))}
               <button
                 type="button"

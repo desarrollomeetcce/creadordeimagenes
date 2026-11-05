@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { discoverCampaignPages } from "./pages";
 import { db } from "../db";
 import { demand, AppError } from "../errors";
 import { resourceAccess, rateLimit } from "../auth";
@@ -42,7 +43,7 @@ export async function launchResources(actor: Actor, accountId: string) {
   const a = await primaryAccount(actor, accountId);
   const { reader: r } = await reader(a.connectionId, false, true);
   const settled = await Promise.allSettled([
-    r.launchRequest(a.id, "promote_pages"),
+    discoverCampaignPages((edge, after) => r.launchRequest(a.id, edge, undefined, undefined, undefined, after)),
     r.launchRequest(a.id, "saved_audiences"),
   ]);
   if (settled[0].status === "rejected") throw settled[0].reason;
@@ -155,7 +156,7 @@ export async function createLaunch(actor: Actor, input: unknown) {
     };
   });
   const { reader: r } = await reader(a.connectionId, false, true);
-  const pages = await r.launchRequest(a.id, "promote_pages");
+  const pages = await discoverCampaignPages((edge, after) => r.launchRequest(a.id, edge, undefined, undefined, undefined, after));
   demand(
     (pages.data ?? []).some((p: any) => String(p.id) === b.config.pageId),
     "La página no está autorizada para anunciar desde esta cuenta. Comprueba la vinculación.",

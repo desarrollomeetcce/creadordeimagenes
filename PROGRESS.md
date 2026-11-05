@@ -2820,3 +2820,10 @@ Proyectos abre tres columnas ajustables, con centro amplio, búsqueda/creación 
 Tercera columna publica mediante conexiones Meta existentes: cuenta principal, página, WhatsApp, presupuesto explícito, plantillas por país y dos conjuntos por diplomado. Revisión final y confirmación adicional para ACTIVE. Borradores/recibos persistentes, CAS y parada sin reintento ante incertidumbre; creación PAUSED, verificación y activación opcional posterior. Objetos confirmados aparecen localmente sin inventar gasto ni reimportar histórico. Migración aditiva de configuración del estudio y dos tablas.
 
 Validación:315 unitarias, typecheck/build;12 comprobaciones de navegador y9 integraciones HTTP/BD con transportes sintéticos, incluidas pérdida de acuse y revisiones de imágenes. Base temporal exclusiva y afiches locales, ninguna generación o publicación publicitaria con cargo real. Permisos/conexiones/aceptación de Meta reales requieren comprobación con la cuenta del usuario.
+
+
+### 2026-11-05 · Páginas Meta y eliminación de carpetas del estudio
+
+Directorio de páginas usa promote_pages con alternativa me/accounts cuando no hay resultados o falla, páginas limitadas y deduplicadas; preparación de campaña usa la misma autorización. Selector muestra fallo/ausencia junto al campo y permite reconsulta explícita sin cachear vacíos. Cambiar cuenta limpia página anterior. X separada de selección en cada pestaña elimina mediante endpoint existente, confirmación y eliminación lógica; campañas de Meta conservadas, selección local solo tras acuse.
+
+Validación316 unitarias, typecheck/build y4 comprobaciones Chromium con transporte sintético: selector recupera página con promote_pages vacío, cambiar diplomado no consulta directorios, cancelar X no escribe, eliminación confirmada afecta una sola carpeta y persiste F5. No se usaron credenciales reales ni publicación publicitaria.

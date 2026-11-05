@@ -260,14 +260,15 @@ export class MetaReader {
     },
   ) {}
   /** Explicit studio operations; never called by polling/import or financial views. */
-  async launchRequest(accountId:string, edge:"promote_pages"|"saved_audiences"|"adimages"|"campaigns"|"adsets"|"adcreatives"|"ads"|"object"|"objects", body?:Record<string,unknown>, objectId?:string, readFields?:string) {
+  async launchRequest(accountId:string, edge:"pages"|"promote_pages"|"saved_audiences"|"adimages"|"campaigns"|"adsets"|"adcreatives"|"ads"|"object"|"objects", body?:Record<string,unknown>, objectId?:string, readFields?:string, after?:string) {
     demand(this.transport === "API" && /^\d{1,40}$/.test(accountId), "Publicar requiere una conexión verificada de Marketing API.",409);
     demand((edge!=="object" && edge!=="objects") || !!objectId && /^\d{1,40}(?:,\d{1,40}){0,24}$/.test(objectId),"Identificador Meta no válido.");
     await this.quota?.beforeRead();
-    const path=edge==="objects"?"":edge==="object"?objectId!:`act_${accountId}/${edge}`;
+    const path=edge==="pages"?"me/accounts":edge==="objects"?"":edge==="object"?objectId!:`act_${accountId}/${edge}`;
     const params=new URLSearchParams();
     if(body){for(const [key,value] of Object.entries(body))if(value!==undefined)params.set(key,typeof value==="object"?JSON.stringify(value):String(value));}
     else { params.set("fields",readFields??(edge==="saved_audiences"?"id,name,targeting":"id,name"));params.set("limit","100"); }
+    if(!body && after){demand(after.length<=1000,"Cursor Meta no válido.");params.set("after",after);}
     if(!body && edge==="objects"){params.set("ids",objectId!);params.set("fields",readFields??"id,status,effective_status,account_id");}
     if(!body && edge==="object")params.set("fields",readFields??"id,status,effective_status,account_id");
     if(this.appSecret)params.set("appsecret_proof",createHmac("sha256",this.appSecret).update(this.token).digest("hex"));
