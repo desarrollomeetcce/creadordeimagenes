@@ -1,4 +1,13 @@
 
+### 2026-11-05 · Lista compacta, grupos integrados y reemplazo Meta
+
+Una columna por país con activación, uso independiente y estado que abre el detalle; sincronización bajo demanda en el menú, países reordenables y filtros locales. Grupos integrados con búsqueda, sugerencias de números faltantes, selección/azar/categoría y acciones con revisión CAS. La pertenencia de cada diplomado se cambia con desplegable local. Aclaración final: conservar Evaluar junto al grupo; tabla compacta de países con V/G, fecha Hasta y estado guardado, sin hojas/categorías/presupuesto/factor y sin sondeo periódico; Sin gasto no implica No activo.
+
+Meta permite propuesta inline de reemplazos múltiples del mismo inventario/hoja/país, origen→destino y azar; usa el reemplazo atómico existente. Contexto inicial solo vínculos/revisiones, uso bajo demanda y antecedentes explícitos. No cambia campañas reales al preparar. Lista monta100 filas y solo controles de países visibles, con evaluación en memoria por usuario/lista/período, actualización explícita y120s; conserva todos los datos para filtros/orden. Resumen acotado conserva CAC, proyección de eventos sin snapshots enteros.
+
+Validación:318 unitarias;77 integraciones de regresión y28 del archivo de activación ampliado (una nueva compara CAC completo/resumen y permisos del contexto); typecheck y build. Chromium: cambio de grupo con MOVE_MEMBER y sin consultas financieras al abrir, crear Grupo1 desde checks, columna compacta única y Meta con dos pares de reemplazo/azar local sin historial ni escritura. Evaluación compacta verificada en Chromium: un GET del grupo, sin directorio adicional; V/G y países sin categorías/hojas, maximización/cierre y Activo conservado sin gasto. Datos exclusivos sintéticos, cero IA/Graph o publicidad real. Despliegue del dominio privado requiere comprobación externa; las pruebas no acreditan su latencia.
+
+
 ### 2026-11-05 · Detalle por diplomado y consultas ligeras de Grupos
 
 - Detalle usa fuente financiera acotada al nombre/country en ambas lecturas (período y acumulado), incluidos Meta, estados, apoyos, aprobaciones y fuentes vinculadas por el mismo nombre/país. Llamadores generales conservan lectura completa. Proyección de eventos solo priorActive/reason/since/until/sales/salesPartial, mismos límites10000, permisos, retiros y períodos.

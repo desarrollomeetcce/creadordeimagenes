@@ -23,6 +23,7 @@ export const InventoryMetaSync = memo(function InventoryMetaSync({
   disabled,
   onSynced,
   syncState,
+  menu = false,
 }: {
   tableId: string;
   tableName: string;
@@ -34,6 +35,7 @@ export const InventoryMetaSync = memo(function InventoryMetaSync({
   catalogId?: string;
   disabled?: boolean;
   syncState?: "ready" | "pending";
+  menu?: boolean;
   onSynced: () => Promise<void>;
 }) {
   const [campaigns, setCampaigns] = useState<Campaign[]>([]),
@@ -139,7 +141,7 @@ export const InventoryMetaSync = memo(function InventoryMetaSync({
         initialTableId={tableId}
         initialListId={listId}
         triggerLabel={
-          status === "ready"
+          menu ? "Sincronizar" : status === "ready"
             ? "Sincronizado"
             : status === "pending"
               ? "Por sincronizar"

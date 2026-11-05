@@ -1,3 +1,7 @@
+- Aclaración final evaluación05/11: conservar Evaluar junto al grupo por diplomado; cuadro compacto con países como columnas, solo V y gasto G de Meta, período y estado guardado. Sin columnas de hojas/categorías/presupuesto/factor. Sin gasto no implica desactivado; conservar null/0/NA y marcar parcial. Sin polling al abrir esa evaluación.
+
+- Aclaración posterior del usuario05/11: autorizado integrar grupos en Lista, columna compacta por país, reemplazo Meta inline y desplegable para cambiar pertenencia desde la fila; retirar Evaluar de Grupo. Esta instrucción sustituye la restricción anterior de opinión solamente. Preservar permisos, CAS y hechos financieros.
+
 # Instrucciones para desarrollo
 
 - Detalle/Grupos05/11: fuente financiera puede acotarse por nombre/country SOLO para detalle, incluidos vinculados del mismo nombre/país; no usar salesOnly para omitir Meta/FX. Mantener valores idénticos, acumulado/retirados, permisos, límites y CAS. Proyectar seis campos de eventos necesarios, nunca snapshot entero. Cierre/cambio de detalle aborta peticiones; refresco mismo ámbito conserva datos y401/403 limpia. Grupos proyecta JSON necesario y evita categorías de aliases cuando existe ítem canónico; conservar legado, países, overrides y desfijados. Usuario pidió solo opinión sobre crear grupos integrado/desplegable en Lista: NO implementar esa interfaz todavía.

@@ -1,20 +1,25 @@
 "use client";
-import { useContext, useEffect, useRef, useState } from "react";
+import { useContext, useEffect, useMemo, useRef, useState } from "react";
 import { CurrentUserId } from "./role-guide";
 import { readGroupDirectory } from "./inventory-group-directory-cache";
 import type { TrialDirectory } from "../../lib/meta-ads/inventory-trials";
+import type { InventoryReplacementContext } from "../../lib/meta-ads/inventory-sheet-activation";
+import { categoryKey } from "../../lib/meta-ads/category-paste";
 import { financialRequest as api } from "./financial-request";
-import { InventoryGroupEditor } from "./inventory-group-editor";
-import { InventoryTop } from "./inventory-top";
+import {
+  InventoryBatchReplacement,
+  type ReplacementPlan,
+} from "./inventory-batch-replacement";
 import { EffectivenessHistory } from "./effectiveness-history";
+import { limaToday } from "./date-range";
 import { countryName } from "../../lib/meta-ads/countries";
-
-/** Reuses the same country-scoped proposal and atomic replacement as Inventory. */
+/** Inline, country-scoped replacement plan. Opening reads metadata; history is explicit. */
 export function InventorySheetReplacement({
   listId,
   tableId,
   country,
   name,
+  names,
   sheetName,
   since,
   until,
@@ -27,105 +32,217 @@ export function InventorySheetReplacement({
   tableId: string;
   country: string;
   name: string;
+  names?: string[];
   sheetName: string;
   since: string;
   until: string;
   onChanged: () => Promise<void>;
   onClose: () => void;
 }) {
-  const userId = useContext(CurrentUserId);
-  const dialog = useRef<HTMLDialogElement>(null);
-  const [directory, setDirectory] = useState<TrialDirectory | null>(null);
-  const [error, setError] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [selectedGroupId, setSelectedGroupId] = useState("");
-  const [expanded, setExpanded] = useState(false);
-  const [detail, setDetail] = useState<{
-    name: string;
-    aliasId: string;
-  } | null>(null);
+  const userId = useContext(CurrentUserId),
+    pending = useRef(false),
+    usageRequest = useRef<Promise<void> | null>(null);
+  const [directory, setDirectory] = useState<TrialDirectory | null>(null),
+    [context, setContext] = useState<InventoryReplacementContext | null>(null),
+    [error, setError] = useState(""),
+    [busy, setBusy] = useState(false),
+    [inspect, setInspect] = useState<{ name: string; aliasId: string } | null>(
+      null,
+    ),
+    [retry, setRetry] = useState(0),
+    [saved, setSaved] = useState(false);
+  const requestedNames = useMemo(
+    () => [...new Set(names?.length ? names : [name])],
+    [name, JSON.stringify(names)],
+  );
   useEffect(() => {
-    dialog.current?.showModal();
     let alive = true;
-    void readGroupDirectory(userId,listId,()=>api("meta-ads/inventory/trials?" + new URLSearchParams({ listId, mode: "directory" })))
-      .then((data: TrialDirectory) => {
-        if (alive) setDirectory(data);
+    const controller = new AbortController();
+    setContext(null);
+    setDirectory(null);
+    setError("");
+    setSaved(false);
+    void Promise.all([
+      readGroupDirectory(userId, listId, () =>
+        api(
+          "meta-ads/inventory/trials?" +
+            new URLSearchParams({ listId, mode: "directory" }),
+        ),
+      ),
+      api(
+        "meta-ads/inventory/sheet-activation/replacement-context?" +
+          new URLSearchParams({ listId, tableId, country }),
+        "GET",
+        undefined,
+        { signal: controller.signal },
+      ),
+    ])
+      .then(([d, c]) => {
+        if (alive) {
+          setDirectory(d);
+          setContext(c);
+        }
       })
-      .catch((e: Error) => {
-        if (alive) setError(e.message);
+      .catch((e) => {
+        if (alive && !controller.signal.aborted) setError(e.message);
       });
     return () => {
       alive = false;
+      controller.abort();
     };
-  }, [listId]);
-  async function reloadDirectory() { const next = await api("meta-ads/inventory/trials?" + new URLSearchParams({ listId, mode: "directory" })); setDirectory(next); }
-  if (directory) return <InventoryGroupEditor directory={directory} onUsageLoaded={usage=>setDirectory(current=>current?{...current,...usage,usageReady:true}:current)} group={directory.groups.find(g => g.id === selectedGroupId)} initialNames={[]} initialCountry={country} initialTab="top" onChooseGroup={setSelectedGroupId} onClose={onClose} externalBusy={busy} onSaved={async id => { await reloadDirectory(); setSelectedGroupId(id); }} onGroupsChanged={reloadDirectory} topContent={<><p className="hint">Al confirmar un reemplazo, el anterior queda por desactivar y el nuevo por hacer campaña en esta hoja y país. Las campañas de Meta se conservan.</p><InventoryTop directory={directory} source={source} initialRange={source === "meta" && since && until ? [since, until] : undefined} columns={[{value:tableId+":"+country,label:sheetName+" · "+countryName(country)}]} initialReplaceName={name} onBusyChange={setBusy} onChanged={onChanged} onDetail={(_column,name,aliasId) => setDetail({name,aliasId})}/>{detail && <EffectivenessHistory {...detail} tableId={tableId} country={country} initialSince={since} initialUntil={until} autoOpen onClose={()=>setDetail(null)} onPeriod={()=>{}}/>}</>}/>;
+  }, [listId, tableId, country, userId, retry]);
+  const points = useMemo(
+    () =>
+      new Map(context?.rows.map((row) => [categoryKey(row.name), row]) ?? []),
+    [context],
+  );
+  const sourceNames = new Set(requestedNames.map(categoryKey));
+  const origins =
+    directory?.catalog.filter((i) => sourceNames.has(categoryKey(i.name))) ??
+    [];
+  const candidates =
+    directory?.catalog.filter(
+      (i) =>
+        !sourceNames.has(categoryKey(i.name)) &&
+        (points.get(categoryKey(i.name))?.available ?? true),
+    ) ?? [];
+  const loadUsage = () => {
+    if (usageRequest.current) return;
+    const query = api(
+      "meta-ads/inventory/trials?" +
+        new URLSearchParams({ listId, mode: "usage" }),
+    )
+      .then((data: TrialDirectory) =>
+        setDirectory((current) =>
+          current
+            ? {
+                ...current,
+                usage: data.usage,
+                usageReady: true,
+                countries: data.countries,
+                campaignStates: data.campaignStates,
+              }
+            : current,
+        ),
+      )
+      .catch((e) => setError(e.message))
+      .finally(() => {
+        if (usageRequest.current === query) usageRequest.current = null;
+      });
+    usageRequest.current = query;
+  };
+  async function confirm(plan: ReplacementPlan[]) {
+    if (pending.current || saved || !context?.canEdit) return;
+    pending.current = true;
+    setBusy(true);
+    setError("");
+    let written = false;
+    try {
+      if (origins.length !== requestedNames.length)
+        throw Error(
+          "Un diplomado ya no está en el catálogo. Actualiza la selección.",
+        );
+      if (plan.some((p) => !points.get(categoryKey(p.from))?.hasRecord))
+        throw Error("Un origen no tiene registros en esta hoja y país.");
+      await api("meta-ads/inventory/sheet-activation/replace-batch", "POST", {
+        listId,
+        tableId,
+        country,
+        replacements: plan.map((p) => ({
+          from: {
+            name: p.from,
+            targets: points.get(categoryKey(p.from))!.targets,
+          },
+          to: {
+            name: p.to,
+            targets: points.get(categoryKey(p.to))?.targets ?? [],
+          },
+          mode: p.mode,
+        })),
+      });
+      written = true;
+      setSaved(true);
+      await onChanged();
+      onClose();
+    } catch (e) {
+      setError(
+        (written
+          ? "Los cambios ya se guardaron. Falta actualizar la vista. "
+          : "") + (e as Error).message,
+      );
+    } finally {
+      pending.current = false;
+      setBusy(false);
+    }
+  }
   return (
-    <dialog
-      ref={dialog}
-      className="trial-dialog inventory-group-editor"
-      data-expanded={expanded || undefined}
-      aria-label="Reemplazar diplomado en la hoja"
-      data-effectiveness-document={"TAB:"+listId}
-      onCancel={(e) => {
-        e.preventDefault();
-        if (!busy) onClose();
-      }}
+    <section
+      className="inventory-meta-replacement-panel"
+      aria-label={`Reemplazar diplomados en ${countryName(country)}`}
+      data-effectiveness-document={"TAB:" + listId}
     >
-      <header>
-        <h2>Reemplazar diplomado · {countryName(country)}</h2>
-        <button
-          type="button"
-          aria-pressed={expanded}
-          onClick={() => setExpanded((v) => !v)}
-        >
-          {expanded ? "↙ Restaurar" : "⛶ Maximizar"}
-        </button>
-        <button
-          type="button"
-          className="ui-close-button"
-          disabled={busy}
-          onClick={onClose}
-        >
-          Cerrar
-        </button>
-      </header>
-      <p className="hint">Al confirmar, el anterior queda por desactivar campaña y el nuevo, por hacer campaña en esta hoja y país. No modifica campañas en Meta Ads.</p>
-      {error ? (
-        <p role="alert">{error}</p>
-      ) : !directory ? (
-        <p role="status">Cargando diplomados…</p>
+      <div className="inventory-meta-replacement-heading">
+        <strong>Reemplazar · {countryName(country)}</strong>
+        <small>{sheetName}</small>
+        {!directory && (
+          <button type="button" onClick={onClose}>
+            ×
+          </button>
+        )}
+      </div>
+      {error && (
+        <p role="alert">
+          {error}
+          {!directory && (
+            <button type="button" onClick={() => setRetry((n) => n + 1)}>
+              Reintentar
+            </button>
+          )}
+        </p>
+      )}
+      {!directory || !context ? (
+        <p role="status">Preparando catálogo y vínculos…</p>
+      ) : origins.length !== requestedNames.length ? (
+        <p role="alert">
+          Un diplomado ya no está disponible en este inventario.
+        </p>
       ) : (
-        <InventoryTop
+        <InventoryBatchReplacement
+          key={JSON.stringify([requestedNames, tableId, country, retry])}
+          origins={origins}
+          candidates={candidates}
           directory={directory}
-          source={source}
-          initialRange={
-            source === "meta" && since && until ? [since, until] : undefined
-          }
-          columns={[
-            {
-              value: tableId + ":" + country,
-              label: sheetName + " · " + countryName(country),
-            },
-          ]}
-          initialReplaceName={name}
-          onBusyChange={setBusy}
-          onChanged={onChanged}
-          onDetail={(_column, name, aliasId) => setDetail({ name, aliasId })}
+          country={country}
+          busy={busy}
+          canConfirm={!saved && context.canEdit}
+          onClose={onClose}
+          onUsageNeeded={loadUsage}
+          onConfirm={confirm}
+          onInspect={(name) => {
+            const point = points.get(categoryKey(name));
+            if (point?.hasRecord)
+              setInspect({ name, aliasId: point.targets[0].aliasId });
+            else
+              setError(
+                `${name}: no hay historial guardado en ${countryName(country)}.`,
+              );
+          }}
         />
       )}
-      {detail && (
+      {inspect && (
         <EffectivenessHistory
-          {...detail}
           tableId={tableId}
+          aliasId={inspect.aliasId}
+          name={inspect.name}
           country={country}
-          initialSince={since}
-          initialUntil={until}
+          initialSince={since || limaToday()}
+          initialUntil={until || limaToday()}
+          initialMode={source === "meta" ? "meta" : "manual"}
           autoOpen
-          onClose={() => setDetail(null)}
+          onClose={() => setInspect(null)}
           onPeriod={() => {}}
         />
       )}
-    </dialog>
+    </section>
   );
 }

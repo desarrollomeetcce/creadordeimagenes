@@ -46,6 +46,7 @@ export function MetaDiplomaOverview({
     tableId: string;
     country: string;
     name: string;
+    names?:string[];
   } | null>(null);
   const groups = useMemo(
     () =>
@@ -68,6 +69,11 @@ export function MetaDiplomaOverview({
       })),
     [items, period],
   );
+  const [checkedDiplomas,setCheckedDiplomas]=useState<string[]>([]);
+  const checked=groups.filter(g=>checkedDiplomas.includes(g.key));
+  const checkedObjects=checked.flatMap(g=>{const item=g.items.find(o=>o.alias?.tableId&&o.alias.inventorySheetId&&o.aliasCountry);return item?[item]:[]});
+  const checkedScopes=new Set(checkedObjects.map(o=>JSON.stringify([o.alias!.inventorySheetId,o.alias!.tableId,o.aliasCountry])));
+  const checkedReady=checked.length>0&&checkedObjects.length===checked.length&&checkedScopes.size===1;
   const currencies = [...new Set(groups.map((g) => g.currency))];
   const status = (v: number | null) =>
     v === null
@@ -328,10 +334,23 @@ export function MetaDiplomaOverview({
         solo seleccionaste parte de las campañas vinculadas, su gasto no se
         divide entre todas las ventas del diplomado.
       </p>
+      <div className="row"><button type="button" disabled={!checkedReady} title="Selecciona diplomados de una misma hoja y país" onClick={()=>{const first=checkedObjects[0];if(first?.alias)setReplacement({listId:first.alias.inventorySheetId!,tableId:first.alias.tableId!,country:first.aliasCountry!,name:first.alias.name,names:[...new Set(checkedObjects.map(o=>o.alias!.name))]});}}>Reemplazar {checked.length||"seleccionados"}{checked.length?" diplomados":""}</button><button type="button" disabled={!checkedDiplomas.length} onClick={()=>setCheckedDiplomas([])}>Quitar selección</button></div>
+      {replacement && (
+        <InventorySheetReplacement
+          source="meta"
+          {...replacement}
+          sheetName={replacement.name}
+          since={since}
+          until={until}
+          onClose={() => setReplacement(null)}
+          onChanged={async () => onChanged()}
+        />
+      )}
       <div className="table-scroll">
         <table className="meta-diploma-table">
           <thead>
             <tr>
+              <th>Elegir</th>
               <th>Diplomado</th>
               <th>País</th>
               <th>Ventas</th>
@@ -356,6 +375,7 @@ export function MetaDiplomaOverview({
                 );
               return (
                 <tr key={g.key} data-diploma-key={g.key}>
+                  <td><input type="checkbox" aria-label={`Elegir para reemplazar ${g.name} ${g.country}`} checked={checkedDiplomas.includes(g.key)} onChange={e=>setCheckedDiplomas(current=>e.target.checked?[...current,g.key]:current.filter(id=>id!==g.key))}/></td>
                   <th>
                     {g.name}
                     <small>
@@ -482,17 +502,7 @@ export function MetaDiplomaOverview({
           />
         </section>
       )}
-      {replacement && (
-        <InventorySheetReplacement
-          source="meta"
-          {...replacement}
-          sheetName={replacement.name}
-          since={since}
-          until={until}
-          onClose={() => setReplacement(null)}
-          onChanged={async () => onChanged()}
-        />
-      )}
+
     </section>
   );
 }

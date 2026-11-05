@@ -17,7 +17,7 @@ import { reportingActivity } from "./reporting-activity";
 import { recordedStarts, recordedTableFloor } from "./recorded-starts";
 import { z } from "zod";
 import { inventoryUsage, inventoryActivationPeriods as periods } from "./inventory-usage";
-import type { Prisma } from "@prisma/client";
+import { Prisma } from "@prisma/client";
 import { db } from "../db";
 import { demand } from "../errors";
 import { recordActivity } from "../activity";
@@ -43,7 +43,7 @@ import {
 } from "./inventory-factor-policy";
 import { trialAssessment, trialDays } from "./inventory-trial-policy";
 import { convertMoney, type FxRates } from "./exchange-rates";
-import type { Actor } from "./service";
+import {accountWhere, type Actor} from "./service";
 type Tx = Prisma.TransactionClient;
 const id = z.string().min(1).max(100),
   name = z.string().trim().min(1).max(150);
@@ -506,6 +506,17 @@ export async function syncInventoryActivationVisibility(
     });
   }
 }
+/** Metadata-only replacement preview: no daily facts, lifetime report or Graph calls. */
+export async function inventoryReplacementContext(actor:Actor,input:unknown){
+ const q=z.object({listId:id,tableId:id,country:z.string().refine(isCountryCode)}).strict().parse(input);
+ return db.$transaction(async tx=>{
+  const {list,canEdit}=await context(tx,actor,q.listId),settings=activationSettings(list.config);
+  const aliases=await tx.metaAlias.findMany({where:{tableId:q.tableId,inventorySheetId:q.listId},select:{id:true,name:true,effectivenessStates:{where:{country:q.country},select:{active:true,revision:true}},effectivenessRows:{where:{country:q.country,legacy:false},select:{hidden:true}},objects:{where:{level:"campaign",aliasCountry:q.country,account:await accountWhere(actor)},select:{id:true},take:1}}});
+  demand(settings.sheets.includes(q.tableId)||aliases.length,"Una hoja no pertenece a este Inventario.",403);
+  return {canEdit,rows:aliases.map(alias=>{const state=alias.effectivenessStates[0],task=settings.rows[rowKey(alias.id,q.country)]?.campaignTask??"NONE";return {name:alias.name,hasRecord:!!state||!!alias.effectivenessRows.length||!!alias.objects.length,available:!(state?.active??alias.effectivenessRows.length>0)&&task==="NONE",targets:[{aliasId:alias.id,country:q.country,revision:state?.revision??0}]};})};
+ },{timeout:30000});
+}
+export type InventoryReplacementContext=Awaited<ReturnType<typeof inventoryReplacementContext>>;
 const target = z
   .object({
     aliasId: id,
@@ -1074,11 +1085,14 @@ async function activationReport(
       tableIds: z.string().max(2500),
       byCountry: z.literal("true").optional(),
       country: z.string().refine(isCountryCode).optional(),
+      summary:z.literal("true").optional(),
       historyName: name.optional(),
       historyTableId: id.optional(),
     })
     .strict()
     .parse(input);
+  demand(!q.summary||!q.historyName,"El resumen no consulta historial individual.");
+  cacOnly=cacOnly||q.summary==="true";
   const reportToday = limaDay(new Date());
   demand(!!q.since === !!q.until, "Indica ambas fechas del período.");
   demand(!q.fromActivation || !q.since, "Elige rango o desde activación.");
@@ -1117,7 +1131,7 @@ async function activationReport(
         "Inventario no disponible.",
         404,
       );
-    const aliases = await tx.metaAlias.findMany({
+    const storedAliases = await tx.metaAlias.findMany({
       where: {
         inventorySheetId: list.id,
         tableId: { in: tableIds },
@@ -1130,13 +1144,16 @@ async function activationReport(
           where: { legacy: false },
           select: { country: true, hidden: true, currency: true, displayCurrency: true, advisorId: true },
         },
-        effectivenessStates: {
-          include: {
-            events: { orderBy: [{ createdAt: "asc" }, { id: "asc" }] },
-          },
-        },
+        effectivenessStates: {select:{id:true,country:true,active:true,revision:true}},
       },
     });
+    const eventRows=storedAliases.length?await tx.$queryRaw<{id:string;stateId:string;active:boolean;createdAt:Date;priorActive:unknown}[]>`
+      SELECT e.id,e."stateId",e.active,e."createdAt",e.snapshot->'priorActive' AS "priorActive"
+      FROM "MetaEffectivenessEvent" e JOIN "MetaEffectivenessState" s ON s.id=e."stateId"
+      WHERE s."aliasId" IN (${Prisma.join(storedAliases.map(alias=>alias.id))}) ORDER BY e."createdAt",e.id`:[];
+    const byState=new Map<string,{id:string;active:boolean;createdAt:Date;snapshot:Record<string,unknown>}[]>();
+    for(const event of eventRows){const item={id:event.id,active:event.active,createdAt:event.createdAt,snapshot:typeof event.priorActive==="boolean"?{priorActive:event.priorActive}:{}};const bucket=byState.get(event.stateId);if(bucket)bucket.push(item);else byState.set(event.stateId,[item]);}
+    const aliases=storedAliases.map(alias=>({...alias,effectivenessStates:alias.effectivenessStates.map(state=>({...state,events:byState.get(state.id)??[]}))}));
     // Only an explicit lifetime evaluation needs provider start metadata; one bounded batch.
     const providerStarts = q.fromActivation && aliases.length ? await tx.metaAdObject.findMany({
       where: { aliasId: { in: aliases.map(a => a.id) }, level: "campaign" },

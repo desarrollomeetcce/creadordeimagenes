@@ -385,6 +385,8 @@ export async function metaRoutes(
         Object.fromEntries(req.nextUrl.searchParams),
       ),
     );
+  if(path === "inventory/sheet-activation/replacement-context" && method === "GET")
+    return send(await (await import("./inventory-sheet-activation")).inventoryReplacementContext(actor,Object.fromEntries(req.nextUrl.searchParams)));
   if (path === "inventory/sheet-activation/report" && method === "GET")
     return send(
       await (

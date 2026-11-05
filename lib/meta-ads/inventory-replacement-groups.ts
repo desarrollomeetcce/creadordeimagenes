@@ -21,7 +21,7 @@ export const replacementUsageRank = (
 
 export function groupReplacementCandidates(
   items: TrialItem[],
-  directory: Pick<TrialDirectory, "groups" | "usage">,
+  directory: Pick<TrialDirectory, "groups" | "usage"> & Partial<Pick<TrialDirectory,"usageReady">>,
   country: string,
   groupId: string,
   filter: ReplacementUsageFilter,
@@ -31,6 +31,7 @@ export function groupReplacementCandidates(
   return items
     .filter(
       (i) =>
+        (directory.usageReady!==false||filter==="ALL") &&
         (!groupId || (!!group && members.has(categoryKey(i.name)))) &&
         (() => {
           const s = replacementUsage(directory, i.name, country);
@@ -43,8 +44,8 @@ export function groupReplacementCandidates(
     )
     .sort(
       (a, b) =>
-        replacementUsageRank(replacementUsage(directory, a.name, country)) -
-          replacementUsageRank(replacementUsage(directory, b.name, country)) ||
+        (directory.usageReady===false?0:replacementUsageRank(replacementUsage(directory, a.name, country)) -
+          replacementUsageRank(replacementUsage(directory, b.name, country))) ||
         a.name.localeCompare(b.name, "es"),
     );
 }

@@ -1,4 +1,11 @@
 "use client";
+import dynamic from "next/dynamic";
+const InventoryCompactEvaluation=dynamic(()=>import("./inventory-compact-evaluation").then(m=>m.InventoryCompactEvaluation));
+import {useInventoryCountryViewport} from "./use-inventory-country-viewport";
+import {InventoryInlineGroups} from "./inventory-inline-groups";
+import {InventoryUsageControl} from "./inventory-usage-control";
+import {compactCountryHidden} from "../../lib/meta-ads/inventory-inline-policy";
+import {orderedGroupCountries,moveGroupCountry} from "../../lib/meta-ads/inventory-group-country-order";
 import { EvaluationOrderControl, useEvaluationPeriod, evaluationRange } from "./evaluation-date-control";
 import { groupUsageStatus } from "../../lib/meta-ads/inventory-group-usage-policy";
 import {InventoryDiplomaUnification} from "./inventory-diploma-unification";
@@ -10,10 +17,7 @@ import {
   InventoryColumnVisibility,
   inventoryParameters,
 } from "./inventory-column-visibility";
-import {
-  InventoryGroupEditor,
-  InventoryGroupSelect,
-} from "./inventory-group-editor";
+import {InventoryGroupSelect} from "./inventory-group-select";
 import { CurrentUserId } from "./role-guide";
 import { readGroupDirectory } from "./inventory-group-directory-cache";
 import type { TrialDirectory } from "../../lib/meta-ads/inventory-trials";
@@ -27,7 +31,7 @@ import {
   type InventoryActivationSelection,
 } from "./inventory-deactivation-confirm";
 import type { InventoryCampaignChange } from "./inventory-campaign-control";
-import { InventoryTop, inventoryTopPriority } from "./inventory-top";
+import {inventoryTopPriority} from "../../lib/meta-ads/inventory-top-priority";
 import { InventoryFactorSettings } from "./inventory-factor-settings";
 import { InventorySheetHistory } from "./inventory-sheet-history";
 import { EffectivenessHistory } from "./effectiveness-history";
@@ -41,11 +45,6 @@ import {
   type FinancialTableWindowMode,
 } from "./financial-table-window";
 import { useInventoryPinnedColumns } from "./use-inventory-pinned-columns";
-import dynamic from "next/dynamic";
-const InventoryTrials = dynamic(
-  () => import("./inventory-trials").then((m) => m.InventoryTrials),
-  { loading: () => <p role="status">Cargando grupos…</p> },
-);
 import { Fragment, memo, useContext, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useWorkbookPreference } from "./use-workbook-preference";
 import { financialRequest as api } from "./financial-request";
@@ -176,27 +175,13 @@ export function InventoryCatalog({
     null,
   );
   const [categories, setCategories] = useState<InventoryCategoryState | null>(null);
-  const [groupEditor, setGroupEditor] = useState<{
-    id?: string;
-    names: string[];
-    tab?: "create" | "edit" | "top";
-    column?: string;
-    replaceName?: string;
-  } | null>(null);
-  const [lastGroupId,setLastGroupId]=useWorkbookPreference<string>(listId,"group-editor-last-id","");
-  const [lastGroupTab,setLastGroupTab]=useWorkbookPreference<string>(listId,"group-editor-last-tab","create");
-  const [groupWasOpen,setGroupWasOpen]=useWorkbookPreference<string>(listId,"group-editor-open","no");
-  const groupRestoreList=useRef<string|null>(null);
-  const rememberedTab: "create"|"edit"|"top"=["create","edit","top"].includes(lastGroupTab)?lastGroupTab as "create"|"edit"|"top":"create";
   const [groupUnification,setGroupUnification]=useState<string[]|null>(null);
-  const [evaluation, setEvaluation] = useState<string | null>(null);
   const [groupFilter, setGroupFilter] = useState("");
   const [groupOrder, setGroupOrder] = useWorkbookPreference<string>(
     listId,
     "group-order",
     "",
   );
-  const evaluationDialog = useRef<HTMLDialogElement>(null);
   const groupUserId = useContext(CurrentUserId);
   const groupLoad = useRef<{listId:string; promise:Promise<void>} | null>(null);
   const activeGroupList = useRef(listId); activeGroupList.current = listId;
@@ -211,15 +196,12 @@ export function InventoryCatalog({
   }
   useEffect(() => {
     let active = true;
-    groupRestoreList.current=null;
     setTrialDirectory(null);
     setGroupFilter("");
-    setGroupEditor(null);
 
     setGroupUnification(null);
 
 
-    setEvaluation(null);
     void reloadGroups(false)
       .catch((e) => {
         if (active) setMessage(e.message);
@@ -228,33 +210,20 @@ export function InventoryCatalog({
       active = false;
     };
   }, [listId]);
-  useEffect(()=>{
-    if(!trialDirectory||trialDirectory.listId!==listId||groupRestoreList.current===listId)return;
-    groupRestoreList.current=listId;
-    const valid=trialDirectory.groups.some(group=>group.id===lastGroupId);
-    if(lastGroupId&&!valid)setLastGroupId("");
-    if(groupWasOpen==="yes"&&!groupEditor)setGroupEditor({names:[],id:valid?lastGroupId:undefined,tab:rememberedTab});
-  },[trialDirectory,listId,lastGroupId,groupWasOpen,rememberedTab]);
-  useEffect(()=>{if(groupEditor?.id&&trialDirectory?.listId===listId&&trialDirectory.groups.some(group=>group.id===groupEditor.id))setLastGroupId(groupEditor.id);},[groupEditor?.id,listId]);
-  useEffect(()=>{if(groupEditor&&trialDirectory?.listId===listId&&groupRestoreList.current===listId)setGroupWasOpen("yes");},[!!groupEditor,listId,trialDirectory?.listId]);
-  useEffect(() => {
-    if (evaluation) evaluationDialog.current?.showModal();
-  }, [evaluation]);
+  const [compactEvaluation,setCompactEvaluation]=useState<{groupId:string;name:string}|null>(null);
   const trialGroups = trialDirectory?.groups ?? [];
-  const trialItemsById = new Map(
-    trialDirectory?.catalog.map((i) => [i.id, i]) ?? [],
-  );
-  const trialGroupByName = new Map(
-    trialGroups.flatMap((g) =>
-      g.members.map(
-        (m) =>
-          [
-            categoryKey(trialItemsById.get(m.itemId)?.name ?? m.name),
-            g,
-          ] as const,
-      ),
-    ),
-  );
+  const trialItemsByName = useMemo(()=>new Map(trialDirectory?.catalog.map(i=>[categoryKey(i.name),i])??[]),[trialDirectory?.catalog]);
+  const trialItemsById = useMemo(()=>new Map(trialDirectory?.catalog.map(i=>[i.id,i])??[]),[trialDirectory?.catalog]);
+  const trialGroupByName = useMemo(()=>new Map(trialGroups.flatMap(g=>g.members.map(m=>[categoryKey(trialItemsById.get(m.itemId)?.name??m.name),g] as const))),[trialDirectory?.groups,trialItemsById]);
+  const usageLoading = useRef<{listId:string;request:Promise<void>}|null>(null);
+  const [usageError,setUsageError]=useState("");
+  const reloadUsage = useCallback(()=>{
+    if(usageLoading.current?.listId===listId)return usageLoading.current.request;
+    setUsageError("");
+    const request=api("meta-ads/inventory/trials?"+new URLSearchParams({listId,mode:"usage"})).then((data:TrialDirectory)=>setTrialDirectory(current=>current?.listId===listId?{...current,usage:data.usage,countries:data.countries,campaignStates:data.campaignStates,usageReady:true}:current)).catch(e=>setUsageError(e.message)).finally(()=>{if(usageLoading.current?.request===request)usageLoading.current=null;});
+    usageLoading.current={listId,request};return request;
+  },[listId]);
+  useEffect(()=>{if(trialDirectory?.listId===listId&&trialDirectory.usageReady===false)void reloadUsage();},[listId,trialDirectory?.listId,trialDirectory?.usageReady,reloadUsage]);
   const categoryDrag = useRef<{
       name: string;
       categoryId: string;
@@ -444,8 +413,10 @@ export function InventoryCatalog({
       alive = false;
     };
   }, [listId]);
-  const knownCountries =
-    sheetDirectory?.columns.map((column) => column.id) ?? [];
+  const [countryBlockOrder,setCountryBlockOrder] = useWorkbookPreference<string[]>(listId,"inventory-country-block-order-v1",[]);
+  const draggedCountryBlock = useRef<string|null>(null);
+  const knownCountries = useMemo(()=>orderedGroupCountries((sheetDirectory?.columns??[]).map(column=>({code:column.id})),countryBlockOrder).map(c=>c.code),[sheetDirectory?.columns,countryBlockOrder]);
+  const moveCountryBlock=(from:string,to:string)=>setCountryBlockOrder(moveGroupCountry(knownCountries,from,to));
   const sheetLabel = (id: string) => {
     const column = sheetDirectory?.columns.find((column) => column.id === id);
     const table = sheetDirectory?.tables.find(
@@ -468,19 +439,11 @@ export function InventoryCatalog({
     string[]
   >(listId, "inventory-hidden-columns", []);
   const visibleCountryMetrics = (id: string) =>
-    inventoryCountryMetrics.filter(
-      (metric) => !hiddenColumnKeys.includes(`country:${id}:${metric.key}`),
-    );
+    compactCountryHidden(hiddenColumnKeys,id) ? [] : inventoryCountryMetrics;
   const hasCountryColumns = countryCodes.some(
     (id) => visibleCountryMetrics(id).length > 0,
   );
   const [evaluationPeriod, setEvaluationPeriod] = useEvaluationPeriod(listId);
-  const countryEvaluation = useInventoryCountryEvaluation(
-    listId,
-    hasCountryColumns && trialDirectory && categories ? countryCodes : [],
-    countryReload,
-    evaluationRange(evaluationPeriod),
-  );
   const [topPreference, setTopPreference] = useWorkbookPreference<string>(
     listId,
     "inventory-top-sheet",
@@ -497,6 +460,9 @@ export function InventoryCatalog({
     "inventory-campaign-filter",
     "",
   );
+  const [countryFilterChoice,setCountryFilterChoice] = useWorkbookPreference<string[]>(listId,"inventory-country-filters-v2",[]);
+  const countryFilters=useMemo(()=>new Map(countryFilterChoice.flatMap(value=>{try{const pair=JSON.parse(value);return Array.isArray(pair)&&pair.length===2&&pair.every(v=>typeof v==="string")?[pair as [string,string]]:[]}catch{return[]}})),[countryFilterChoice]);
+  const setCountryFilter=(column:string,value:string)=>{setCampaignFilter("");setCountryFilterChoice(current=>[...current.filter(entry=>{try{return JSON.parse(entry)[0]!==column}catch{return false}}),...(value?[JSON.stringify([column,value])]:[])]);};
   const topSheet =
     countryCodes.includes(topPreference) &&
     visibleCountryMetrics(topPreference).length
@@ -556,28 +522,23 @@ export function InventoryCatalog({
       </button>
     );
   };
-  const campaignMatches = (name: string) => {
-    if (!activeCampaignFilter) return true;
-    const point = countryEvaluation.lookup.get(
-      JSON.stringify([categoryKey(name), campaignFilterSheet]),
-    );
-    if (["NEVER", "TEST", "USED", "UNKNOWN"].includes(activeCampaignFilter)) {
-      const code=campaignFilterSheet.slice(campaignFilterSheet.lastIndexOf(":")+1);
-      const cell=trialDirectory?.usage[JSON.stringify([categoryKey(name),code])];
-      const status=groupUsageStatus(cell??{automatic:point?.usage??"NEVER",mode:"AUTO"});
-      return countryEvaluation.ready && status === (activeCampaignFilter === "USED" ? "USED" : "NEVER");
-    }
-    if (activeCampaignFilter === "HISTORY")
-      return countryEvaluation.ready && !!point && point.usage !== "NEVER";
-    if (activeCampaignFilter === "ACTIVE")
-      return point?.activation === "ACTIVE" || point?.activation === "MIXED";
-    if (activeCampaignFilter === "INACTIVE")
-      return !point || point.activation === "INACTIVE";
-    return (
-      point?.campaignTasks.includes(
-        activeCampaignFilter as "CREATE" | "STOP",
-      ) ?? false
-    );
+  const viewportCountries=useInventoryCountryViewport(countryCodes,inventoryWindowMode);
+  const evaluationCountries=[...new Set([...viewportCountries,...countryFilters.keys(),...(topSheet?[topSheet]:[]),...(activeCountrySort?[activeCountrySort.country]:[]),...(activeCampaignFilter?[campaignFilterSheet]:[])])].filter(id=>countryCodes.includes(id));
+  const countryEvaluation=useInventoryCountryEvaluation(listId,hasCountryColumns&&trialDirectory&&categories?evaluationCountries:[],countryReload,evaluationRange(evaluationPeriod),true);
+  const campaignMatches = (name:string) => {
+    const matches=(column:string,filter:string)=>{
+      const point=countryEvaluation.lookup.get(JSON.stringify([categoryKey(name),column]));
+      if(filter.startsWith("status:"))return countryEvaluation.ready&&(point?.cac?.meta.assessment.status??"PENDING")===filter.slice(7);
+      if(["NEVER","TEST","USED","UNKNOWN"].includes(filter)){
+        const code=column.slice(column.lastIndexOf(":")+1),cell=trialDirectory?.usage[JSON.stringify([categoryKey(name),code])];
+        return trialDirectory?.usageReady!==false&&groupUsageStatus(cell??{automatic:point?.usage??"NEVER",mode:"AUTO"})===(filter==="USED"?"USED":"NEVER");
+      }
+      if(filter==="HISTORY")return countryEvaluation.ready&&!!point&&point.usage!=="NEVER";
+      if(filter==="ACTIVE")return point?.activation==="ACTIVE"||point?.activation==="MIXED";
+      if(filter==="INACTIVE")return countryEvaluation.ready&&(!point||point.activation==="INACTIVE");
+      return point?.campaignTasks.includes(filter as "CREATE"|"STOP")??false;
+    };
+    return countryCodes.every(column=>{const filter=countryFilters.get(column)||(column===campaignFilterSheet?activeCampaignFilter:"");return !filter||matches(column,filter)});
   };
   const columns = [
     { key: "inventory", label: "Inventario", width: 340 },
@@ -585,13 +546,7 @@ export function InventoryCatalog({
     { key: "secondary", label: "Categorías secundarias", width: 202 },
     { key: "sheets", label: "Hojas", width: 380 },
     { key: "group", label: "Grupo", width: 230 },
-    ...countryCodes.flatMap((country) =>
-      inventoryCountryMetrics.map((metric) => ({
-        key: `country:${country}:${metric.key}`,
-        label: sheetLabel(country) + " · " + metric.label,
-        width: metric.width,
-      })),
-    ),
+    ...countryCodes.filter(country=>!compactCountryHidden(hiddenColumnKeys,country)).map(country=>({key:`country:${country}:compact`,label:sheetLabel(country),width:158})),
     { key: "gap", label: "", width: 22 },
     { key: "syllabi", label: "Temarios", width: 285 },
   ].filter(
@@ -730,8 +685,8 @@ export function InventoryCatalog({
     setCategories(next);
     return next;
   }, [listId]);
-  const onInventorySynced = useCallback(async () => {
-    setCountryReload(value => value + 1);
+  const onInventorySynced = useCallback(async (column?:string) => {
+    countryEvaluation.refresh(column?[column]:undefined);
     await Promise.all([onChanged(), reloadCategories(), reloadSheetDirectory()]);
   }, [onChanged, reloadCategories, reloadSheetDirectory]);
   useEffect(() => {
@@ -879,7 +834,7 @@ export function InventoryCatalog({
     tableName: string;
     inventorySheetId?: string;
     standalone: boolean;
-  }[] = [
+  }[] = useMemo(()=>[
     ...tables.flatMap((t) =>
       t.aliases
         .filter(
@@ -904,13 +859,8 @@ export function InventoryCatalog({
     (a, b) =>
       a.name.localeCompare(b.name, "es") ||
       a.tableName.localeCompare(b.tableName, "es"),
-  );
-  const grouped = new Map<string, { name: string; links: typeof items }>();
-  for (const a of items) {
-    if (!grouped.has(a.name)) grouped.set(a.name, { name: a.name, links: [] });
-    grouped.get(a.name)!.links.push(a);
-  }
-  const available = [...grouped.values()];
+  ),[tables,categories?.items,listId]);
+  const available = useMemo(()=>{const grouped=new Map<string,{name:string;links:typeof items}>();for(const item of items){const prior=grouped.get(item.name);if(prior)prior.links.push(item);else grouped.set(item.name,{name:item.name,links:[item]});}return [...grouped.values()];},[items]);
   const itemFilterTrack = useRef<HTMLDivElement>(null),
     previousItemFilterCount = useRef(0);
   const itemGroupById = new Map(
@@ -1003,6 +953,7 @@ export function InventoryCatalog({
     selectCategories([]);
     setGroupFilter("");
     setCampaignFilter("");
+    setCountryFilterChoice([]);
     setCountrySort(null);
   };
   const matchesCategory = (g: (typeof available)[number]) =>
@@ -1136,12 +1087,11 @@ export function InventoryCatalog({
       },
     ]);
   if (groupOrder === "groups") {
+    const buckets=new Map<string|null,typeof remainingVisible>();
+    for(const item of remainingVisible){const key=trialGroupByName.get(categoryKey(item.name))?.id??null;const bucket=buckets.get(key);if(bucket)bucket.push(item);else buckets.set(key,[item]);}
     for (const trial of [...trialGroups, null]) {
-      const members = remainingVisible.filter(
-        (g) =>
-          (trialGroupByName.get(categoryKey(g.name))?.id ?? null) ===
-          (trial?.id ?? null),
-      );
+      const members = buckets.get(trial?.id??null)??[];
+      const memberNames=new Set(members.map(m=>m.name));
       if (!members.length) continue;
       const entries =
         grouping === "primary"
@@ -1152,7 +1102,7 @@ export function InventoryCatalog({
                     key,
                     {
                       ...section,
-                      groups: section.groups.filter((g) => members.includes(g)),
+                      groups: section.groups.filter((g) => memberNames.has(g.name)),
                     },
                   ] as const,
               )
@@ -1570,12 +1520,17 @@ export function InventoryCatalog({
     ids: string[];
     names: string[];
   } | null>(null);
+  const [inventoryRowLimit,setInventoryRowLimit]=useState(100);
+  const inventoryWindowKey=JSON.stringify([listId,filters,groupFilter,groupOrder,grouping,topSheet,activeCountrySort,countryFilterChoice,catalogCategories]);
+  useEffect(()=>setInventoryRowLimit(100),[inventoryWindowKey]);
+  const orderedInventoryNames=sections.flatMap(([,section])=>section.groups.map(group=>group.name));
+  const mountedInventoryNames=new Set(orderedInventoryNames.slice(0,inventoryRowLimit));
   const selectedForActions = useRef(selected);
   selectedForActions.current = selected;
   const cellModel = useMemo(()=>({}),[
     listId,tables,categories,trialDirectory?.catalog,trialDirectory?.groups,trialDirectory?.canEdit,
-    sheetDirectory,busy,syllabiBusy,categoryDrop,onChanged,onInventorySynced,
-    parameters.join("|"),countryCodes.join("|"),hiddenColumnKeys.join("|"),
+    sheetDirectory,busy,syllabiBusy,categoryDrop,onChanged,onInventorySynced,trialDirectory?.usage,trialDirectory?.usageReady,
+    parameters.join("|"),countryCodes.join("|"),viewportCountries.join("|"),hiddenColumnKeys.join("|"),
     columns.some(c=>c.key==="gap"),
   ]);
   const rowEvaluationVersions=useMemo(()=>new Map(available.map(g=>[g.name,JSON.stringify([
@@ -1678,9 +1633,20 @@ export function InventoryCatalog({
       setBusy(false);
     }
   }
+  async function changeAssignedGroup(source:TrialDirectory["groups"][number],targetId:string,name:string){
+    if(busy||!trialDirectory?.canEdit||source.id===targetId)return;
+    const target=trialDirectory.groups.find(group=>group.id===targetId),member=source.members.find(item=>categoryKey(item.name)===categoryKey(name));
+    if(!target||!member)return;
+    setBusy(true);setMessage("");
+    let written=false;
+    try{await api("meta-ads/inventory/trials","POST",{action:"MOVE_MEMBER",listId,groupId:source.id,revision:source.revision,itemId:member.itemId,targetGroupId:target.id,targetRevision:target.revision,since:limaToday()});written=true;await reloadGroups();}
+    catch(e){setMessage((written?"Traslado guardado; falta actualizar la vista. ":"")+(e as Error).message);}
+    finally{setBusy(false);}
+  }
   async function assignGroupDirectly(id: string, names: string[]) {
     if (id === "new") {
-      setGroupEditor({ names });
+      setGroupFilter("");
+      document.querySelector("[aria-label=\"Grupos integrados\"]")?.scrollIntoView({block:"nearest"});
       return;
     }
     if (busy || !trialDirectory?.canEdit || !names.length) return;
@@ -1804,97 +1770,7 @@ export function InventoryCatalog({
       className="inventory-catalog sheet-view"
       aria-label="Inventario sin países"
     >
-      {groupEditor && !trialDirectory && <InventoryGroupLoading error={groupLoadError} onClose={()=>{setGroupWasOpen("no");setGroupEditor(null);}} onRetry={()=>{void reloadGroups().catch(()=>{});}}/>}
-      {groupEditor && trialDirectory && (
-        <InventoryGroupEditor
-          key={[listId,groupEditor.column,groupEditor.replaceName].join(":")}
-          evaluationColumns={knownCountries
-            .filter((id) => id.includes(":"))
-            .map((id) => ({ value: id, label: sheetLabel(id) }))}
-          initialTab={groupEditor.tab ?? rememberedTab}
-          onTabChange={tab=>{setLastGroupTab(tab);setGroupEditor(previous=>previous?{...previous,tab}:previous);}}
-          externalBusy={busy}
-          onChooseGroup={id=>{if(id)setLastGroupId(id);setLastGroupTab(id?"edit":"create");setGroupEditor(previous=>({...previous,names:previous?.names??[],id:id||undefined,tab:id?"edit":"create"}));}}
-          topContent={
-            <>
-              <InventoryTop
-                onBusyChange={setBusy}
-                directory={trialDirectory}
-                columns={knownCountries
-                  .filter((id) => id.includes(":"))
-                  .map((id) => ({ value: id, label: sheetLabel(id) }))}
-                initialColumn={
-                  groupEditor.column ?? topSheet ?? countryCodes[0]
-                }
-                initialReplaceName={groupEditor.replaceName}
-                onChanged={async () => {
-                  setCountryReload((value) => value + 1);
-                  await reloadGroups();
-                  await Promise.all([onChanged(), reloadCategories(), reloadSheetDirectory()]);
-                }}
-                onDetail={(column, name, aliasId) =>
-                  setFullDetail({
-                    tableId: column.split(":")[0],
-                    country: column.split(":")[1],
-                    name,
-                    aliasId,
-                  })
-                }
-              />
-              {fullDetailContent}
-            </>
-          }
-          directory={trialDirectory}
-          onUsageLoaded={usage=>setTrialDirectory(current=>current && current.listId===trialDirectory.listId ? {...current,...usage,usageReady:true} : current)}
-          onGroupsChanged={async () => { await Promise.all([reloadGroups(), reloadCategories(), onChanged()]); }}
-          onUsageBatchChange={updates=>setTrialDirectory(previous=>previous ? {...previous,usage:{...previous.usage,...updates}} : previous)}
-          onUsageChange={(key,cell)=>setTrialDirectory(previous=>previous ? {...previous,usage:{...previous.usage,[key]:cell}} : previous)}
-          group={trialGroups.find((g) => g.id === (groupEditor.id ?? lastGroupId))}
-          initialNames={groupEditor.names}
-          onClose={() => {setGroupWasOpen("no");setGroupEditor(null);}}
-          onSaved={async id => {
-            setLastGroupId(id);
-            await reloadGroups();
-            await Promise.all([onChanged(), reloadCategories()]);
-            setGroupWasOpen("yes");
-            setLastGroupTab("edit");
-            setGroupEditor(previous=>({...previous,id,names:[],tab:"edit"}));
-            setSelected([]);
-            setMessage("Grupo guardado.");
-          }}
-        />
-      )}
-      {evaluation && (
-        <dialog
-          ref={evaluationDialog}
-          className="trial-dialog inventory-group-evaluation"
-          aria-label="Evaluación del grupo por país"
-          onCancel={(e) => {
-            e.preventDefault();
-            setEvaluation(null);
-            void reloadGroups().catch((e) => setMessage(e.message));
-          }}
-        >
-          <header>
-            <h2>
-              {trialGroups.find((g) => g.id === evaluation)?.name ?? "Grupo"} ·
-              Evaluación por país
-            </h2>
-            <button
-              className="ui-close-button"
-              aria-label="Cerrar evaluación del grupo"
-              onClick={() => {
-                setEvaluation(null);
-                void reloadGroups().catch((e) => setMessage(e.message));
-              }}
-            >
-              ×
-            </button>
-          </header>
-          <InventoryTrials listId={listId} fixedGroupId={evaluation} />
-        </dialog>
-      )}
-      {!groupEditor && fullDetailContent}
+      {fullDetailContent}
       {activationHistory && (
         <InventorySheetHistory
           listId={listId}
@@ -2033,23 +1909,6 @@ export function InventoryCatalog({
           >
             ⛶ Maximizar inventario
           </button>
-          <button
-            type="button"
-            aria-label="Crear / modificar grupo"
-            title="Crear o modificar grupos y evaluar el Top"
-            onClick={() =>
-              setGroupEditor({
-                tab: selectedVisible.length ? "create" : rememberedTab,
-                names: available
-                  .filter((g) =>
-                    g.links.some((a) => selectedVisible.includes(a.id)),
-                  )
-                  .map((g) => g.name),
-              })
-            }
-          >
-            Grupos
-          </button>
           <div
             className="inventory-toolbar-main"
             role="group"
@@ -2122,27 +1981,14 @@ export function InventoryCatalog({
           <InventoryColumnVisibility
             values={parameters}
             onChange={setParameterChoice}
-            hiddenColumns={countryCodes.flatMap((id) =>
-              inventoryCountryMetrics
-                .filter((metric) =>
-                  hiddenColumnKeys.includes(`country:${id}:${metric.key}`),
-                )
-                .map((metric) => ({
-                  key: `country:${id}:${metric.key}`,
-                  label: sheetLabel(id) + " · " + metric.label,
-                })),
-            )}
+            hiddenColumns={countryCodes.filter(id=>compactCountryHidden(hiddenColumnKeys,id)).map(id=>({key:`country:${id}:compact`,label:sheetLabel(id)}))}
             sheetColumns={knownCountries.map((id) => ({
               id,
               label: sheetLabel(id),
               checked:
                 countryCodes.includes(id) &&
                 visibleCountryMetrics(id).length > 0,
-              partial:
-                countryCodes.includes(id) &&
-                visibleCountryMetrics(id).length > 0 &&
-                visibleCountryMetrics(id).length <
-                  inventoryCountryMetrics.length,
+              partial:false,
             }))}
             onToggleSheet={(id, checked) => {
               if (checked) {
@@ -2232,6 +2078,8 @@ export function InventoryCatalog({
             </button>
           </div>
         </div>
+        {trialDirectory&&<InventoryInlineGroups directory={trialDirectory} groupId={groupFilter} selectedNames={available.filter(g=>g.links.some(a=>selected.includes(a.id))).map(g=>g.name)} countries={[...new Map(knownCountries.map(id=>{const code=id.slice(id.lastIndexOf(":")+1);return [code,{code,name:countryName(code)}] as const})).values()]} onGroupSelect={id=>{setGroupFilter(id);setTopPreference("");}} onSelectNames={names=>{const chosen=new Set(names.map(categoryKey));setSelected(available.filter(g=>chosen.has(categoryKey(g.name))).flatMap(g=>g.links.map(a=>a.id)));}} onPatched={async group=>{const byName=new Map(trialDirectory.catalog.map(i=>[categoryKey(i.name),i]));const needsReload=group.members.some(m=>byName.get(categoryKey(m.name))?.id!==m.itemId);setTrialDirectory(current=>current?{...current,groups:current.groups.some(g=>g.id===group.id)?current.groups.map(g=>g.id===group.id?group:g):[...current.groups,group]}:current);setGroupFilter(group.id);setSelected([]);if(needsReload)await reloadGroups();}} onReload={reloadGroups} onInspect={name=>{const column=topSheet||countryCodes[0];const point=countryEvaluation.lookup.get(JSON.stringify([categoryKey(name),column]));if(point?.targets[0])setFullDetail({name,aliasId:point.targets[0].aliasId,tableId:column.split(":")[0],country:column.split(":")[1]});else setMessage("Este diplomado no tiene datos en el país seleccionado.");}}/>}
+        {usageError&&<small role="status">{usageError} <button type="button" onClick={()=>void reloadUsage()}>Reintentar uso</button></small>}
         {showParameter("countries") && (
           <div className="inventory-country-controls">
             <button
@@ -2329,7 +2177,7 @@ export function InventoryCatalog({
               <tr>
                 <th
                   scope="col"
-                  rowSpan={hasCountryColumns ? 2 : 1}
+                  rowSpan={1}
                   hidden={!showParameter("inventory")}
                 >
                   {columnHandle("inventory", "Inventario")}
@@ -2434,7 +2282,7 @@ export function InventoryCatalog({
                   <th
                     key={kind}
                     scope="col"
-                    rowSpan={hasCountryColumns ? 2 : 1}
+                    rowSpan={1}
                     hidden={
                       !showParameter(
                         kind === "PRIMARY" ? "primary" : "secondary",
@@ -2512,7 +2360,7 @@ export function InventoryCatalog({
                 ))}
                 <th
                   scope="col"
-                  rowSpan={hasCountryColumns ? 2 : 1}
+                  rowSpan={1}
                   hidden={!showParameter("sheets")}
                 >
                   {columnHandle("sheets", "Hojas")}
@@ -2646,7 +2494,7 @@ export function InventoryCatalog({
                 </th>
                 <th
                   scope="col"
-                  rowSpan={hasCountryColumns ? 2 : 1}
+                  rowSpan={1}
                   hidden={!showParameter("group")}
                 >
                   {columnHandle("group", "Grupo")}
@@ -2670,19 +2518,7 @@ export function InventoryCatalog({
                       title="Filtrar filas; no cambia sus asignaciones"
                       aria-label="Filtrar inventario por grupo"
                       value={groupFilter}
-                      onChange={(e) => {
-                        if (e.target.value === "new")
-                          setGroupEditor({
-                            names: visible
-                              .filter((g) =>
-                                g.links.some((a) =>
-                                  selectedVisible.includes(a.id),
-                                ),
-                              )
-                              .map((g) => g.name),
-                          });
-                        else setGroupFilter(e.target.value);
-                      }}
+                      onChange={e=>{if(e.target.value==="new"){setGroupFilter("");document.querySelector('[aria-label="Grupos integrados"]')?.scrollIntoView({block:"nearest"});}else setGroupFilter(e.target.value);}}
                     >
                       <option value="">Ver: todos los grupos</option>
                       <option value="none">Ver: sin grupo</option>
@@ -2755,191 +2591,29 @@ export function InventoryCatalog({
                     </button>
                   </InventoryActionMenu>
                 </th>
-                {countryCodes.map((country) => (
-                  <th
-                    key={country}
-                    scope="colgroup"
-                    hidden={!visibleCountryMetrics(country).length}
-                    colSpan={Math.max(1, visibleCountryMetrics(country).length)}
-                    className="inventory-country-heading"
-                    data-country-block={country}
-                  >
-                    {pinControl(
-                      visibleCountryMetrics(country).map(
-                        (metric) => `country:${country}:${metric.key}`,
-                      ),
-                      sheetLabel(country),
-                    )}
-                    {hideControl(
-                      inventoryCountryMetrics.map(
-                        (metric) => `country:${country}:${metric.key}`,
-                      ),
-                      sheetLabel(country),
-                    )}
-                    <span className="inventory-sheet-heading-name">
-                      {sheetLabel(country)}
-                    </span>
-                    <button
-                      type="button"
-                      className="inventory-sheet-top-control"
-                      aria-label={`Ver Top de ${sheetLabel(country)}`}
-                      aria-pressed={topSheet === country}
-                      title="Activos y pendientes primero, seguidos de los grupos"
-                      onClick={() => {
-                        setTopPreference(topSheet === country ? "" : country);
-                        setGroupFilter("");
-                        setGroupOrder("groups");
-                      }}
-                    >
-                      Top
-                    </button>{" "}
-                    <button
-                      type="button"
-                      aria-label={`Analizar Top de ${sheetLabel(country)}`}
-                      title="Ver resultados y reemplazar diplomados"
-                      disabled={busy || !trialDirectory}
-                      onClick={() =>
-                        setGroupEditor({
-                          names: [],
-                          tab: "top",
-                          column: country,
-                        })
-                      }
-                    >
-                      ↗
-                    </button>
-                    <select
-                      className="inventory-campaign-filter"
-                      aria-label={`Filtrar campañas de ${sheetLabel(country)}`}
-                      value={
-                        campaignFilterSheet === country ? (["TEST","UNKNOWN"].includes(campaignFilter)?"NEVER":campaignFilter) : ""
-                      }
-                      onChange={(e) => {
-                        setCampaignFilterSheet(country);
-                        setCampaignFilter(e.target.value);
-                      }}
-                    >
-                      <option value="">Todos</option>
-                      <option value="ACTIVE">Activos</option>
-                      <option value="CREATE">Por hacer campaña</option>
-                      <option value="STOP">Por desactivar campaña</option>
-                      <option value="INACTIVE">Desactivados</option>
-                      <option value="HISTORY">
-                        Con historial de activación
-                      </option>
-                      <option value="NEVER">Sin usar</option>
-                      <option value="USED">Usado</option>
-                    </select>
-                  </th>
-                ))}
+                {countryCodes.map(column=><th key={column} scope="col" hidden={compactCountryHidden(hiddenColumnKeys,column)} className="inventory-country-heading inventory-country-heading-compact" data-country-block={column} onDragOver={e=>{if(draggedCountryBlock.current)e.preventDefault();}} onDrop={e=>{e.preventDefault();if(draggedCountryBlock.current)moveCountryBlock(draggedCountryBlock.current,column);draggedCountryBlock.current=null;}}>
+                  <SheetColumnResizer label={sheetLabel(column)} onResize={value=>resize(`country:${column}:compact`,value)} onReset={()=>resize(`country:${column}:compact`)}/>
+                  <div className="inventory-country-title"><span draggable tabIndex={0} className="inventory-country-drag" aria-label={`Reordenar país ${sheetLabel(column)}`} title="Arrastra para ordenar · Alt + flechas" onDragStart={e=>{draggedCountryBlock.current=column;e.dataTransfer.setData("text/plain",column);e.dataTransfer.effectAllowed="move";}} onDragEnd={()=>{draggedCountryBlock.current=null}} onKeyDown={e=>{if(e.altKey&&["ArrowLeft","ArrowRight"].includes(e.key)){e.preventDefault();const index=knownCountries.indexOf(column),next=knownCountries[index+(e.key==="ArrowLeft"?-1:1)];if(next)moveCountryBlock(column,next);}}}>⠿ {countryName(column.slice(column.lastIndexOf(":")+1))}</span><button type="button" className="inventory-sheet-top-control" aria-label={`Ver Top de ${sheetLabel(column)}`} aria-pressed={topSheet===column} onClick={()=>{setTopPreference(topSheet===column?"":column);setGroupFilter("");setGroupOrder("groups");}}>Top</button>{hideControl([`country:${column}:compact`],sheetLabel(column))}</div>
+                  <div className="inventory-country-filter-row"><select aria-label={`Filtrar campañas de ${sheetLabel(column)}`} value={countryFilters.get(column)||(column===campaignFilterSheet?campaignFilter:"")} onChange={e=>setCountryFilter(column,e.target.value)}><option value="">Todos</option><optgroup label="Campaña"><option value="ACTIVE">Activados</option><option value="INACTIVE">Desactivados</option><option value="CREATE">Por hacer campaña</option><option value="STOP">Por desactivar</option></optgroup><optgroup label="Uso"><option value="USED">Usados</option><option value="NEVER">Sin usar</option><option value="HISTORY">Con historial</option></optgroup><optgroup label="Evaluación"><option value="status:CRITICAL">Crítico</option><option value="status:SEVERE">Grave</option><option value="status:ALERT">Revisar</option><option value="status:WITHIN">Normal</option><option value="status:TESTING">Bajo gasto aún</option><option value="status:PENDING">Datos pendientes</option></optgroup></select><EvaluationOrderControl period={evaluationPeriod} onChange={setEvaluationPeriod} onOrder={criticalFirst=>setCountrySort({country:column,metric:"status",ascending:!criticalFirst})}/></div>
+                </th>)}
                 <th
-                  rowSpan={hasCountryColumns ? 2 : 1}
+                  rowSpan={1}
                   hidden={!columns.some((c) => c.key === "gap")}
                   aria-hidden="true"
                   className="inventory-column-gap"
                 />
                 <th
                   scope="col"
-                  rowSpan={hasCountryColumns ? 2 : 1}
+                  rowSpan={1}
                   hidden={!showParameter("syllabi")}
                 >
                   {columnHandle("syllabi", "Temarios")}Temarios
                 </th>
               </tr>
-              {hasCountryColumns && (
-                <tr className="inventory-country-subheaders">
-                  {countryCodes.flatMap((country) =>
-                    visibleCountryMetrics(country).map((metric) => (
-                      <th
-                        scope="col"
-                        key={country + ":" + metric.key}
-                        data-country-block={country}
-                        data-country-metric={metric.key}
-                        aria-sort={
-                          activeCountrySort?.country === country &&
-                          activeCountrySort.metric === metric.key
-                            ? activeCountrySort.ascending
-                              ? "ascending"
-                              : "descending"
-                            : "none"
-                        }
-                      >
-                        <SheetColumnResizer
-                          label={sheetLabel(country) + " · " + metric.label}
-                          onResize={(v) =>
-                            resize(`country:${country}:${metric.key}`, v)
-                          }
-                          onReset={() =>
-                            resize(`country:${country}:${metric.key}`)
-                          }
-                        />
-                        {countrySortButton(country, metric)}
-                        {metric.key === "status" && <EvaluationOrderControl period={evaluationPeriod} onChange={setEvaluationPeriod}
-                          onOrder={(criticalFirst) => setCountrySort({ country, metric: "status", ascending: !criticalFirst })} />}
-                        {metric.key === "activation" && (
-                          <span className="inventory-sheet-bulk-controls">
-                            <button
-                              type="button"
-                              aria-label={`Activar en ${sheetLabel(country)}`}
-                              title="Activar seleccionados"
-                              disabled={
-                                busy ||
-                                !selectedGroups ||
-                                !sheetDirectory?.canEdit ||
-                                !countryEvaluation.ready
-                              }
-                              onClick={() =>
-                                void changeSheetActivation(
-                                  country,
-                                  visible
-                                    .filter((g) =>
-                                      g.links.some((a) =>
-                                        selectedVisible.includes(a.id),
-                                      ),
-                                    )
-                                    .map((g) => g.name),
-                                  { active: true },
-                                )
-                              }
-                            >
-                              ◉
-                            </button>
-                            <button
-                              type="button"
-                              aria-label={`Desactivar en ${sheetLabel(country)}`}
-                              title="Desactivar seleccionados"
-                              disabled={
-                                busy ||
-                                !selectedGroups ||
-                                !sheetDirectory?.canEdit ||
-                                !countryEvaluation.ready
-                              }
-                              onClick={() =>
-                                void changeSheetActivation(
-                                  country,
-                                  visible
-                                    .filter((g) =>
-                                      g.links.some((a) =>
-                                        selectedVisible.includes(a.id),
-                                      ),
-                                    )
-                                    .map((g) => g.name),
-                                  { active: false },
-                                )
-                              }
-                            >
-                              ○
-                            </button>
-                          </span>
-                        )}
-                      </th>
-                    )),
-                  )}
-                </tr>
-              )}
             </thead>
             <tbody>
               {sections.map(([key, section]) => {
+                if(!section.groups.some(group=>mountedInventoryNames.has(group.name)))return null;
                 // Sections are built from `visible`: never select the whole category directory.
                 const sectionIds = section.groups.flatMap((g) =>
                   g.links.map((a) => a.id),
@@ -2969,26 +2643,12 @@ export function InventoryCatalog({
                                 <button
                                   disabled={!trialDirectory?.canEdit}
                                   onClick={() =>
-                                    setGroupEditor({
-                                      id: section.trialId,
-                                      names: [],
-                                    })
+                                    setGroupFilter(section.trialId!)
                                   }
                                 >
                                   Editar grupo
                                 </button>
-                                <button
-                                  aria-label={
-                                    "Detalle de evaluación de " +
-                                    section.trialTitle +
-                                    " por país"
-                                  }
-                                  onClick={() =>
-                                    setEvaluation(section.trialId!)
-                                  }
-                                >
-                                  Evaluar por país ↗
-                                </button>
+
                               </>
                             )}
                           </div>
@@ -3061,7 +2721,7 @@ export function InventoryCatalog({
                         </div>
                       </th>
                     </tr>
-                    {section.groups.map((g) => (
+                    {section.groups.filter(group=>mountedInventoryNames.has(group.name)).map((g) => (
                       <SheetSizedRow
                         label={g.name}
                         height={rowsLayout.heights[g.links[0].id]}
@@ -3220,17 +2880,9 @@ export function InventoryCatalog({
                             );
                             return assigned ? (
                               <div className="inventory-group-cell">
-                                <button
-                                  disabled={!trialDirectory?.canEdit}
-                                  onClick={() =>
-                                    setGroupEditor({
-                                      id: assigned.id,
-                                      names: [],
-                                    })
-                                  }
-                                >
-                                  {assigned.name}
-                                </button>
+                                <button type="button" className="inventory-row-evaluate" aria-label={`Evaluar ${g.name} en ${assigned.name}`} onClick={()=>setCompactEvaluation({groupId:assigned.id,name:g.name})}>Evaluar ↗</button>
+                                <InventoryGroupSelect groups={trialGroups} value={assigned.id} label={`Cambiar grupo de ${g.name}`} disabled={!trialDirectory?.canEdit||busy} onSelect={id=>id!=="new"?changeAssignedGroup(assigned,id,g.name):assignGroupDirectly(id,[g.name])}/>
+
                                 <button
                                   type="button"
                                   className="inventory-remove"
@@ -3257,16 +2909,7 @@ export function InventoryCatalog({
                                 >
                                   ×
                                 </button>
-                                <button
-                                  aria-label={
-                                    "Detalle de evaluación de " +
-                                    assigned.name +
-                                    " por país"
-                                  }
-                                  onClick={() => setEvaluation(assigned.id)}
-                                >
-                                  Evaluar ↗
-                                </button>
+
                               </div>
                             ) : (
                               <InventoryGroupSelect
@@ -3286,8 +2929,10 @@ export function InventoryCatalog({
                             busy={busy}
                             name={g.name}
                             countries={countryCodes}
+                            visibleCountries={viewportCountries}
                             hiddenColumns={hiddenColumnKeys}
                             evaluation={countryEvaluation}
+                            renderUsage={(column,point)=>{const code=column.slice(column.lastIndexOf(":")+1),item=trialItemsByName.get(categoryKey(g.name));return <InventoryUsageControl listId={listId} itemId={item?.id} name={g.name} country={code} ready={trialDirectory?.usageReady===true} canEdit={!!trialDirectory?.canEdit&&!busy} cell={trialDirectory?.usage[JSON.stringify([categoryKey(g.name),code])]} onApplied={cell=>setTrialDirectory(current=>current?{...current,usage:{...current.usage,[JSON.stringify([categoryKey(g.name),code])]:cell}}:current)}/>;}}
                             renderSync={(column, point) => {
                               const tableId = column.split(":")[0],
                                 country = column.split(":")[1];
@@ -3295,7 +2940,7 @@ export function InventoryCatalog({
                               const aliasId = saved?.aliasId ?? point?.targets[0]?.aliasId;
                               const source = g.links[0];
                               return (
-                                <InventoryMetaSync
+                                <InventoryMetaSync menu
                                   tableId={tableId}
                                   tableName={
                                     tables.find((t) => t.id === tableId)
@@ -3314,21 +2959,12 @@ export function InventoryCatalog({
                                       : undefined
                                   }
                                   disabled={busy || !sheetDirectory?.canEdit}
-                                  onSynced={onInventorySynced}
+                                  onSynced={()=>onInventorySynced(column)}
                                 />
                               );
                             }}
 
                             sheetLabel={sheetLabel}
-                            onReplace={(tableId, name) =>
-                              setGroupEditor({
-                                names: [],
-                                tab: "top",
-                                column: tableId,
-                                replaceName: name,
-                              })
-                            }
-
                             onChange={(tableId, name, change) =>
                               void changeSheetActivation(
                                 tableId,
@@ -3385,6 +3021,7 @@ export function InventoryCatalog({
                   </Fragment>
                 );
               })}
+              {orderedInventoryNames.length>100&&<tr className="inventory-row-window"><td colSpan={Math.max(1,columns.length)}><span role="status">Mostrando {Math.min(inventoryRowLimit,orderedInventoryNames.length)} de {orderedInventoryNames.length} diplomados</span>{inventoryRowLimit<orderedInventoryNames.length&&<button type="button" onClick={()=>setInventoryRowLimit(n=>n+100)}>Mostrar 100 diplomados más</button>}</td></tr>}
             </tbody>
             <tfoot>
               {newRowOpen && (
@@ -3485,6 +3122,7 @@ export function InventoryCatalog({
           }}
         />
       )}
+      {compactEvaluation&&trialDirectory?.groups.find(g=>g.id===compactEvaluation.groupId)&&<InventoryCompactEvaluation listId={listId} group={trialDirectory.groups.find(g=>g.id===compactEvaluation.groupId)!} focusName={compactEvaluation.name} onClose={()=>setCompactEvaluation(null)}/>}
       {groupUnification && trialDirectory && <InventoryDiplomaUnification listId={listId} sourceIds={groupUnification} catalog={trialDirectory.catalog} onClose={()=>setGroupUnification(null)} onUnified={async result=>{
         await Promise.all([onChanged(),reloadCategories(),reloadGroups(),reloadSheetDirectory()]);
         setCountryReload(current=>current+1);

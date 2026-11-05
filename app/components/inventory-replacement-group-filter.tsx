@@ -9,7 +9,9 @@ export function InventoryReplacementGroupFilter({
   usage,
   busy,
   onChange,
+  onUsageNeeded,
 }: {
+  onUsageNeeded?:()=>void;
   directory: TrialDirectory;
   country: string;
   groupId: string;
@@ -42,7 +44,7 @@ export function InventoryReplacementGroupFilter({
           value={usage}
           disabled={busy}
           onChange={(e) =>
-            onChange(groupId, e.target.value as ReplacementUsageFilter)
+            {onChange(groupId, e.target.value as ReplacementUsageFilter);if(e.target.value!=="ALL"&&directory.usageReady===false)onUsageNeeded?.();}
           }
         >
           <option value="ALL">Todos</option>

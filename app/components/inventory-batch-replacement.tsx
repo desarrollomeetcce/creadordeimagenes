@@ -25,7 +25,11 @@ export function InventoryBatchReplacement({
   onClose,
   onConfirm,
   onInspect,
+  onUsageNeeded,
+  canConfirm = true,
 }: {
+  onUsageNeeded?:()=>void;
+  canConfirm?:boolean;
   directory: TrialDirectory;
   country: string;
   origins: Item[];
@@ -56,24 +60,24 @@ export function InventoryBatchReplacement({
           (p, n) => n !== index && categoryKey(p.to) === categoryKey(i.name),
         ),
     );
-  function propose(same: boolean) {
+  function propose(same: boolean | null) {
     // Work locally: no campaign changes until the entire plan is confirmed.
     const used = new Set<string>();
     const next = origins.map((i) => {
       const pool = filteredCandidates.filter(
         (c) =>
           !used.has(categoryKey(c.name)) &&
-          (same
+          (same === null || (same
             ? c.primaryIds.some((id) => i.primaryIds.includes(id))
             : c.primaryIds.length > 0 &&
-              !c.primaryIds.some((id) => i.primaryIds.includes(id))),
+              !c.primaryIds.some((id) => i.primaryIds.includes(id)))),
       );
       const chosen = pool[Math.floor(Math.random() * pool.length)];
       if (chosen) used.add(categoryKey(chosen.name));
       return {
         from: i.name,
         to: chosen?.name ?? "",
-        mode: same ? ("SAME" as const) : ("OTHER" as const),
+        mode: same === null ? ("MANUAL" as const) : same ? ("SAME" as const) : ("OTHER" as const),
       };
     });
     setPlan(next);
@@ -107,6 +111,7 @@ export function InventoryBatchReplacement({
       <div className="inventory-batch-toolbar">
         <InventoryReplacementGroupFilter
           directory={directory}
+          onUsageNeeded={onUsageNeeded}
           country={country}
           groupId={groupId}
           usage={usage}
@@ -143,6 +148,7 @@ export function InventoryBatchReplacement({
               Proponer del grupo · sin usar primero
             </button>
           )}
+          <button type="button" disabled={busy} onClick={() => propose(null)}>Al azar</button>
           <button type="button" disabled={busy} onClick={() => propose(true)}>
             Azar · misma categoría
           </button>
@@ -175,9 +181,9 @@ export function InventoryBatchReplacement({
                   label:
                     i.name +
                     " · " +
-                    replacementUsageLabel(
+                    (directory.usageReady===false?"Uso por consultar":replacementUsageLabel(
                       replacementUsage(directory, i.name, country),
-                    ),
+                    )),
                 }))}
                 disabled={busy}
                 onSelect={(to) => {
@@ -208,7 +214,7 @@ export function InventoryBatchReplacement({
         <button
           type="button"
           className="primary"
-          disabled={busy || !!remaining}
+          disabled={busy || !!remaining || !canConfirm}
           onClick={() => void onConfirm(plan)}
         >
           {busy

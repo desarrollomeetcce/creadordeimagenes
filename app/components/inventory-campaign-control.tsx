@@ -1,5 +1,5 @@
 "use client";
-import { useId, useRef, useState } from "react";
+import { useId, useRef, useState, type ReactNode } from "react";
 import type { InventoryCampaignTask } from "../../lib/meta-ads/inventory-sheet-activation";
 export type InventoryCampaignChange = {
   active?: boolean;
@@ -12,12 +12,16 @@ export function InventoryCampaignControl({
   task,
   disabled,
   onChange,
+  extraActions,
+  pending = false,
 }: {
   title: string;
   activation: string;
   task: string;
   disabled: boolean;
   onChange: (change: InventoryCampaignChange) => void;
+  extraActions?: ReactNode;
+  pending?: boolean;
 }) {
   const id = useId(),
     popover = useRef<HTMLDivElement>(null),
@@ -25,7 +29,7 @@ export function InventoryCampaignControl({
     [position, setPosition] = useState({ left: 8, top: 8 });
   const active = activation === "ACTIVE",
     mixed = activation === "MIXED",
-    label =
+    label = pending ? "Cargando estado" :
       task === "CREATE"
         ? "Por hacer campaña"
         : task === "STOP"
@@ -36,7 +40,7 @@ export function InventoryCampaignControl({
               ? "Activado"
               : mixed
                 ? "Mixto"
-                : "Desactivado";
+                : activation === "UNKNOWN" ? "Sin asignar" : "Desactivado";
   const choose = (change: InventoryCampaignChange) => {
     popover.current?.hidePopover();
     onChange(change);
@@ -82,10 +86,11 @@ export function InventoryCampaignControl({
           <>
             <strong>{title}</strong>
             <small>Registro manual de campaña</small>
+            {extraActions}
             <button
               type="button"
               role="menuitem"
-              disabled={disabled}
+              disabled={disabled || pending}
               onClick={() => choose({ active: true, campaignTask: "NONE" })}
             >
               <span className="campaign-menu-dot campaign-ready" />
@@ -94,7 +99,7 @@ export function InventoryCampaignControl({
             <button
               type="button"
               role="menuitem"
-              disabled={disabled}
+              disabled={disabled || pending}
               onClick={() => choose({ active: true, campaignTask: "CREATE" })}
             >
               <span className="campaign-menu-dot campaign-create" />
@@ -103,7 +108,7 @@ export function InventoryCampaignControl({
             <button
               type="button"
               role="menuitem"
-              disabled={disabled}
+              disabled={disabled || pending}
               onClick={() => choose({ campaignTask: "STOP" })}
             >
               <span className="campaign-menu-dot campaign-stop" />
@@ -112,7 +117,7 @@ export function InventoryCampaignControl({
             <button
               type="button"
               role="menuitem"
-              disabled={disabled}
+              disabled={disabled || pending}
               onClick={() => choose({ active: false, campaignTask: "NONE" })}
             >
               <span className="campaign-menu-dot campaign-off" />
@@ -133,7 +138,7 @@ export function InventoryCampaignControl({
               <button
                 type="button"
                 role="menuitem"
-                disabled={disabled}
+                disabled={disabled || pending}
                 onClick={() => choose({ campaignTask: "NONE" })}
               >
                 Quitar pendiente

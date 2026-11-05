@@ -603,3 +603,13 @@ test("Meta studio: system-user assigned pages are discovered after empty user di
  const calls: string[] = []; const result = await discoverCampaignPages(async edge => { calls.push(edge); return { data: edge === "assigned_pages" ? [{ id: "54321", name: "Assigned" }] : [] }; });
  assert.deepEqual(calls, ["promote_pages", "pages", "assigned_pages"]); assert.equal(result.data[0].id, "54321");
 });
+
+
+import {suggestedGroupNames,groupCreationName,compactCountryHidden} from "../lib/meta-ads/inventory-inline-policy";
+test("Integrated groups suggest missing numbers and preserve compact country visibility",()=>{
+ assert.deepEqual(suggestedGroupNames(["Grupo 1","Grupo 2","Grupo 4","Grupo 20"]),["Grupo 3","Grupo 5","Grupo 6"]);
+ assert.equal(groupCreationName("  9  "),"Grupo 9");assert.equal(groupCreationName("Grupo Salud"),"Grupo Salud");
+ assert.equal(compactCountryHidden(["country:t:CO:activation"],"t:CO"),false);
+ assert.equal(compactCountryHidden(["activation","factor","status"].map(k=>"country:t:CO:"+k),"t:CO"),true);
+ assert.equal(compactCountryHidden(["country:t:CO:compact"],"t:CO"),true);
+});

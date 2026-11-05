@@ -4,6 +4,7 @@ import { randomUUID } from "node:crypto";
 import { createAliasTable, renameAliasTable } from "../lib/meta-ads/aliases";
 import { db } from "../lib/db";
 import {
+  inventoryReplacementContext,
   inventoryActivationDirectory,
   inventoryActivationAddSheet,
   inventoryActivationChange,
@@ -1785,6 +1786,16 @@ test("Activación por hoja: selección, pin, historial y permisos", async (t) =>
       assert.equal(await db.metaEffectivenessDay.count({where:{row:{aliasId:alias.id}}}),0);
       await assert.rejects(()=>setEffectivenessState(owner,{tableId:table.id,aliasId:alias.id,country:"PE",revision:initial,since:today,until:today,metrics:["sales"],active:true,campaignTask:"CREATE"}),/estado cambió/);
       const before=await db.metaEffectivenessEvent.count({where:{state:{aliasId:alias.id}}});assert.equal(before,4);
+    });
+    await t.test("Resumen compacto conserva CAC y contexto de reemplazo solo lee vínculos autorizados", async () => {
+      const full=await inventoryActivationReport(owner,{listId:list.id,tableIds:pe.id,byCountry:"true",since:yesterday,until:today});
+      const compact=await inventoryActivationReport(owner,{listId:list.id,tableIds:pe.id,byCountry:"true",since:yesterday,until:today,summary:"true"});
+      assert.deepEqual(compact.rows.map(r=>({name:r.name,country:r.country,activation:r.activation,targets:r.targets,cac:r.cac})),full.rows.map(r=>({name:r.name,country:r.country,activation:r.activation,targets:r.targets,cac:r.cac})));
+      const before=await db.metaEffectivenessEvent.count({where:{state:{alias:{inventorySheetId:list.id}}}});
+      const context=await inventoryReplacementContext(owner,{listId:list.id,tableId:pe.id,country:"PE"});
+      assert.equal(context.canEdit,true);assert(context.rows.length>0);assert(context.rows.every(r=>r.targets.every(t=>t.country==="PE")));assert(context.rows.every(r=>!('days' in r)&&!('events' in r)));
+      await assert.rejects(()=>inventoryReplacementContext(owner,{listId:other.id,tableId:pe.id,country:"PE"}),/pertenece/);
+      assert.equal(await db.metaEffectivenessEvent.count({where:{state:{alias:{inventorySheetId:list.id}}}}),before);
     });
   } finally {
     await db.metaAlias

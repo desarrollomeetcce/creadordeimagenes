@@ -818,6 +818,7 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
       }
     />
   );
+  const [replacementBatch,setReplacementBatch]=useState<{listId:string;tableId:string;country:string;name:string;names:string[]}|null>(null);
   const selectedIds = new Set(selectedObjects.map((o) => o.id));
   const summarySelectionKey = selectedObjects
     .filter(
@@ -1930,6 +1931,10 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
       )}
     </>
   );
+  const replacementSelection=items.filter(item=>selectedIds.has(item.id)&&item.level==="campaign"&&item.alias?.tableId&&item.alias?.inventorySheetId&&item.aliasCountry&&!item.alias.detached);
+  const replacementScopes=new Set(replacementSelection.map(item=>JSON.stringify([item.alias!.inventorySheetId,item.alias!.tableId,item.aliasCountry])));
+  const canBatchReplace=selectedCount>0&&replacementSelection.length===selectedCount&&replacementScopes.size===1;
+  const replacementSelectionNames=[...new Set(replacementSelection.map(item=>item.alias!.name))];
   const levelControls = () => (
     <>
       <label
@@ -1950,6 +1955,7 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
         />
         <span>Selección ({selectedCount})</span>
       </label>
+      {owner&&!viewOnly&&level==="campaign"&&selectedCount>0&&<button type="button" className="meta-inventory-replace-trigger" disabled={!canBatchReplace||busy} title={canBatchReplace?"Preparar cambios en la hoja y país seleccionados":"Selecciona campañas vinculadas de una misma hoja, inventario y país"} onClick={()=>{const first=replacementSelection[0];if(first?.alias)setReplacementBatch({listId:first.alias.inventorySheetId!,tableId:first.alias.tableId!,country:first.aliasCountry!,name:first.alias.name,names:replacementSelectionNames});}}>↔ Reemplazar {replacementSelectionNames.length||selectedCount} diplomados</button>}
       <div
         className="meta-level-tabs"
         role="tablist"
@@ -3792,6 +3798,7 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
                     </div>
                   </div>
                 </div>
+                {replacementBatch&&<MetaInventoryReplacement key={JSON.stringify(replacementBatch)} {...replacementBatch} source="meta" sheetName="Selección de campañas" since={calendar ? since : ""} until={calendar ? until : ""} onClose={()=>setReplacementBatch(null)} onChanged={async()=>{setReportRevision(n=>n+1);}}/>}
                 {view === "cards" && (
                   <div className="meta-result-controls">
                     {levelControls()}
