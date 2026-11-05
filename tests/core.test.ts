@@ -613,3 +613,11 @@ test("Integrated groups suggest missing numbers and preserve compact country vis
  assert.equal(compactCountryHidden(["activation","factor","status"].map(k=>"country:t:CO:"+k),"t:CO"),true);
  assert.equal(compactCountryHidden(["country:t:CO:compact"],"t:CO"),true);
 });
+
+
+test("Page discovery stops on quota/auth and separates provider failures from permissions",async()=>{
+ const {discoverCampaignPages}=await import("../lib/creative-studio/pages");const {campaignPageIssue}=await import("../lib/creative-studio/page-errors");const {MetaGraphError}=await import("../lib/meta-ads/graph-error");
+ const make=(code:number)=>new MetaGraphError(400,{error:{code,message:"safe"}},"",{version:"v23.0",endpoint:"pages",fields:"id,name"});
+ for(const code of [4,17,190]){let count=0;const error=make(code);await assert.rejects(discoverCampaignPages(async()=>{count++;throw error}));assert.equal(count,1);assert.equal(campaignPageIssue(error).kind,code===190?"AUTH":"RATE_LIMIT")}
+ const quota=make(4);quota.retryAt=new Date("2026-11-05T23:00:00Z");assert.equal(campaignPageIssue(quota).retryAt,"2026-11-05T23:00:00.000Z");assert.equal(campaignPageIssue(make(200)).kind,"PERMISSION");assert.equal(campaignPageIssue(Error("temporary network")).kind,"UNAVAILABLE");
+});

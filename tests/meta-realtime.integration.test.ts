@@ -140,20 +140,15 @@ test("Meta visible: estado actual y gasto breve independientes del histórico", 
       const batch = JSON.parse(
         new URLSearchParams(String(init.body)).get("batch")!,
       );
-      assert.deepEqual(
-        batch.map((p: any) => {
-          assert.equal(p.method, "GET");
-          return p.relative_url.split("?")[0];
-        }),
-        ids,
-      );
+      const requested=batch.map((p:any)=>{assert.equal(p.method,"GET");return p.relative_url.split("?")[0]});
+      assert.deepEqual([...requested].sort(),[...ids].sort());
       if (mode === "revoke")
         await db.metaWorkspaceGrant.update({
           where: { userId: uid },
           data: { permission: "VIEW" },
         });
       return Response.json(
-        ids.map((id) => ({
+        requested.map((id:string) => ({
           code: 200,
           body: JSON.stringify({
             id,

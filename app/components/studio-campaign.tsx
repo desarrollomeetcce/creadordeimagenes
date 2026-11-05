@@ -72,6 +72,7 @@ export function StudioCampaign({
     [loading, setLoading] = useState(false),
     [pageError, setPageError] = useState(""),
     [resourceReload, setResourceReload] = useState(0),
+    [pageRetryAt,setPageRetryAt]=useState<number|null>(null),
     [busy, setBusy] = useState(false),
     [error, setError] = useState(""),
     [draft, setDraft] = useState<any>(null),
@@ -79,6 +80,7 @@ export function StudioCampaign({
     [spend, setSpend] = useState(false),
     [advanced, setAdvanced] = useState(false),
     [halted, setHalted] = useState(false);
+  useEffect(()=>{if(!pageRetryAt)return;const timer=setTimeout(()=>setPageRetryAt(null),Math.max(0,pageRetryAt-Date.now()));return()=>clearTimeout(timer)},[pageRetryAt]);
   const lastCountry = useRef(country);
   const pending = useRef(false),
     dialog = useRef<HTMLDialogElement>(null),
@@ -122,6 +124,7 @@ export function StudioCampaign({
   useEffect(() => {
     if (!form.accountId) return;
     setPageError("");
+    setPageRetryAt(null);
     const cached = resourceCache.current.get(form.accountId);
     if (cached) {
       setResources(cached);
@@ -142,6 +145,7 @@ export function StudioCampaign({
         if (controller.signal.aborted) return;
         if (r.pages.length) resourceCache.current.set(form.accountId, r);
         else setPageError(r.pageWarning || "Meta no devolvió páginas para esta conexión. Revisa que la credencial tenga acceso a la página y permiso pages_show_list.");
+        setPageRetryAt(r.pageIssue?.retryAt?Date.parse(r.pageIssue.retryAt):r.pageIssue?.kind==="RATE_LIMIT"?Date.now()+60000:null);
         setResources(r);
         if (r.pages.length === 1)
           setForm((f) => ({
@@ -317,10 +321,11 @@ export function StudioCampaign({
         {form.accountId && !loading && (pageError || !resources.pages.length) && (
           <div className="studio-page-error" role="status">
             <p>{pageError || "No hay páginas disponibles en esta conexión."}</p>
-            <button type="button" disabled={locked} onClick={() => { resourceCache.current.delete(form.accountId); setResourceReload(n => n + 1); }}>Volver a consultar páginas</button>
-            {resources.canAuthorizePages && resources.connectionId && <button type="button" disabled={busy || locked} onClick={() => { setBusy(true); void fetch("/api/meta-ads/connections/" + encodeURIComponent(resources.connectionId) + "/pages-oauth", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" }).then(async response => { const auth = await response.json(); if (!response.ok) throw Error(auth.error || "No se pudo abrir Facebook."); window.location.assign(auth.url); }).catch(e => setPageError(e.message)).finally(() => setBusy(false)); }}>Autorizar páginas con Facebook</button>}
-            {resources.usesLoginConfiguration && <p>En la configuración de Facebook Login para empresas incluye pages_show_list, ads_read y ads_management y permite las páginas que usarás.</p>}
-            {!resources.canAuthorizePages && <p>Si usas un token manual, actualízalo con pages_show_list y acceso a la página en Conexiones de Meta Ads. Si es un usuario del sistema, asígnale la página en tu negocio de Meta.</p>}
+            {pageRetryAt&&<p>Próximo intento disponible: {new Date(pageRetryAt).toLocaleString("es-PE",{timeZone:"America/Lima"})} (Lima).</p>}
+            <button type="button" disabled={locked || !!pageRetryAt} onClick={() => { resourceCache.current.delete(form.accountId); setResourceReload(n => n + 1); }}>Volver a consultar páginas</button>
+            {resources.pageIssue?.kind!=="RATE_LIMIT" && resources.pageIssue?.kind!=="UNAVAILABLE" && resources.canAuthorizePages && resources.connectionId && <button type="button" disabled={busy || locked} onClick={() => { setBusy(true); void fetch("/api/meta-ads/connections/" + encodeURIComponent(resources.connectionId) + "/pages-oauth", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" }).then(async response => { const auth = await response.json(); if (!response.ok) throw Error(auth.error || "No se pudo abrir Facebook."); window.location.assign(auth.url); }).catch(e => setPageError(e.message)).finally(() => setBusy(false)); }}>Autorizar páginas con Facebook</button>}
+            {resources.pageIssue?.kind!=="RATE_LIMIT" && resources.usesLoginConfiguration && <p>En la configuración de Facebook Login para empresas incluye pages_show_list, ads_read y ads_management y permite las páginas que usarás.</p>}
+            {resources.pageIssue?.kind!=="RATE_LIMIT" && resources.pageIssue?.kind!=="UNAVAILABLE" && !resources.canAuthorizePages && <p>Si usas un token manual, actualízalo con pages_show_list y acceso a la página en Conexiones de Meta Ads. Si es un usuario del sistema, asígnale la página en tu negocio de Meta.</p>}
             <a href="?view=metaads">Revisar conexión Meta</a>
           </div>
         )}

@@ -31,6 +31,18 @@ export function metaQuotaScope(
     )
     .digest("hex");
 }
+/** Credential rotation must not reset a provider pause for the same connection. */
+export async function carryMetaQuota(tx:Prisma.TransactionClient,from:string,to:string){
+ if(from===to)return;
+ await tx.$executeRaw`SELECT pg_advisory_xact_lock(884412)`;
+ for(const prefix of ["","provider:","recovery:"]){
+  const rows=await tx.metaApiQuota.findMany({where:{scope:{in:[prefix+from,prefix+to]}}});
+  if(!rows.some(row=>row.scope===prefix+from))continue;
+  const maxDate=(values:(Date|null)[])=>{const stamps=values.filter((v):v is Date=>!!v).map(v=>v.valueOf());return stamps.length?new Date(Math.max(...stamps)):null};
+  const data={blockedUntil:maxDate(rows.map(row=>row.blockedUntil)),nextReadAt:maxDate(rows.map(row=>row.nextReadAt))!,lastLimitedAt:maxDate(rows.map(row=>row.lastLimitedAt)),failures:Math.max(...rows.map(row=>row.failures))};
+  await tx.metaApiQuota.upsert({where:{scope:prefix+to},create:{scope:prefix+to,...data},update:data});
+ }
+}
 export async function quotaUntil(scope: string) {
   const row = await db.metaApiQuota.findUnique({ where: { scope } });
   return row?.blockedUntil && row.blockedUntil.valueOf() > Date.now()

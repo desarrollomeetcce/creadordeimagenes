@@ -1,0 +1,14 @@
+import test from 'node:test';import assert from 'node:assert/strict';import{randomUUID}from'node:crypto';import{db}from'../lib/db';import{encryptKey}from'../lib/crypto';import{saveToken}from'../lib/meta-ads/service';import{metaQuotaScope}from'../lib/meta-ads/quota';
+test('Rotating a manual token to OAuth preserves provider cooldown and saved import cursor',async()=>{
+ assert(process.env.DATABASE_URL?.includes('library_organization_test')&&process.env.DATABASE_URL.includes('/workspace/work/pgdata'));
+ const tag=randomUUID(),oldToken='old-'+tag,nextToken='new-'+tag,uid='quota-user-'+tag,cid='quota-connection-'+tag,session='quota-session-'+tag,account=String(Date.now())+'83',appId='12345678',metaUserId='87654321';
+ const oldScope=metaQuotaScope({appId,metaUserId:null},oldToken),newScope=metaQuotaScope({appId,metaUserId},nextToken),deadline=new Date(Date.now()+180000),stronger=new Date(Date.now()+240000),cursor={plan:'focus',phase:9,after:'saved-cursor',historyProcessed:42};
+ try{await db.user.create({data:{id:uid,name:'Quota QA',email:tag+'@example.test',passwordHash:'synthetic',role:'OWNER',status:'APPROVED'}});await db.session.create({data:{id:session,userId:uid,expiresAt:new Date(Date.now()+86400000)}});await db.metaConnection.create({data:{id:cid,ownerId:uid,name:tag,transport:'API',appId,encryptedToken:encryptKey(oldToken,'meta:'+cid),verifiedAt:new Date()}});await db.metaAdAccount.create({data:{id:account,connectionId:cid,name:tag,currency:'PEN',timezone:'America/Lima',enabled:true,syncState:cursor}});
+ for(const prefix of ['','provider:','recovery:'])await db.metaApiQuota.create({data:{scope:prefix+oldScope,blockedUntil:deadline,nextReadAt:deadline,failures:3,lastLimitedAt:new Date()}});
+ await db.metaApiQuota.create({data:{scope:newScope,blockedUntil:stronger,nextReadAt:stronger,failures:1}});
+ const revision=await saveToken(cid,nextToken,1,{method:'OAUTH',expiresAt:null,metaUserId,sessionId:session,actorId:uid});assert.equal(revision,2);
+ for(const prefix of ['','provider:','recovery:']){const row=await db.metaApiQuota.findUniqueOrThrow({where:{scope:prefix+newScope}});assert.equal(row.blockedUntil!.valueOf(),(prefix?deadline:stronger).valueOf());assert.equal(row.failures,3);assert(await db.metaApiQuota.findUnique({where:{scope:prefix+oldScope}}));}
+ assert.deepEqual((await db.metaAdAccount.findUniqueOrThrow({where:{id:account}})).syncState,cursor);
+ await assert.rejects(()=>saveToken(cid,'stale-'+tag,1),/conexión cambió/);assert.equal((await db.metaConnection.findUniqueOrThrow({where:{id:cid}})).revision,2);
+ }finally{await db.metaAdAccount.deleteMany({where:{id:account}});await db.metaConnection.deleteMany({where:{id:cid}});await db.session.deleteMany({where:{userId:uid}});await db.user.deleteMany({where:{id:uid}});await db.metaApiQuota.deleteMany({where:{scope:{in:['','provider:','recovery:'].flatMap(p=>[p+oldScope,p+newScope])}}});}
+});

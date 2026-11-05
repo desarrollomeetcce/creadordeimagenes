@@ -89,8 +89,7 @@ export function MetaVisibleRefresh({
       let nextAt: number | null = null;
       let pauseAt: number | null = null;
       let retryable = false;
-      let changed = false,
-        needsAuth = false,
+      let needsAuth = false,
         latest = "",
         errors: string[] = [];
       try {
@@ -139,7 +138,7 @@ export function MetaVisibleRefresh({
                 }),
               },
             );
-            changed ||=
+            const accountChanged =
               r.updated ||
               !!r.statusUpdated ||
               !!(
@@ -147,6 +146,7 @@ export function MetaVisibleRefresh({
                 r.checkedAt &&
                 notified.current.get(accountId) !== r.checkedAt
               );
+            if(accountChanged && mounted.current && currentKey.current===fetchScope)updated.current();
             if (r.checkedAt && (r.updated || r.covered)) {
               if (
                 notified.current.size >= 1000 &&
@@ -229,7 +229,7 @@ export function MetaVisibleRefresh({
                 })
               : "Esperando la próxima lectura.",
         );
-        if (changed) updated.current();
+
       } finally {
         running.current = false;
         if (mounted.current) {

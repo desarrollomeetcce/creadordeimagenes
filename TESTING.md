@@ -1,4 +1,13 @@
 
+### 2026-11-05 · Cuota compartida al renovar Meta y cifras progresivas
+
+Rotación de token manual/OAuth conservaba hechos y cursor pero cambiaba el ámbito de cuota. Ahora transfiere conservadoramente los máximos de blockedUntil/nextReadAt/lastLimitedAt/failures y plazos provider/recovery al nuevo ámbito dentro del guardado CAS, sin borrar el ámbito anterior ni cambiar hechos/agenda. No evita límites de Meta ni acredita la causa de un incidente histórico concreto.
+
+Páginas deja de recorrer endpoints alternativos tras cuota o token rechazado. Respuesta distingue RATE_LIMIT/AUTH/PERMISSION/UNAVAILABLE, mensaje saneado y retryAt; interfaz bloquea reconsulta temprana y no ofrece autorizar Facebook ni guía de permisos por cuota. El refresco visible avisa al tablero por cada cuenta confirmada, sin esperar la respuesta de las restantes.
+
+Validación319 unitarias,25 integraciones (rotación conserva pausa más estricta, provider/recovery, cursor y CAS; lectura visible/incremental/recuperación), typecheck/build,2 Chromium. Navegador mantiene segunda cuenta retenida y confirma consulta del tablero tras la primera; cuota en páginas muestra espera con botón de reconsulta bloqueado y sin OAuth. Mock de estado ahora responde en orden de solicitudes, evitando depender del orden físico de filas de BD. Datos exclusivos sintéticos, cero cambios en anuncios reales; no acredita recuperación del gasto real ni despliegue del dominio privado.
+
+
 ### 2026-11-05 · Arrastre de países
 
 Encabezado de país usa Pointer Events y captura en lugar del arrastre HTML nativo, con umbral6px y destinos limitados a otros países. Mover Perú desplaza los países intermedios y no reordena columnas generales. Orden personal persistente y Alt+flechas conservados; no escrituras al servidor. Validación:318 unitarias, typecheck/build y Chromium con mouse real, destino ajeno ignorado y persistencia tras F5.

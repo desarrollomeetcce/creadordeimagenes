@@ -1,3 +1,5 @@
+- Meta05/11 cuota tras reautorización: saveToken hereda en la misma transacción los plazos máximo de cuota/provider/recovery del ámbito previo al nuevo, sin liberar el anterior ni borrar cursores/hechos; mantener CAS y locks884411→884412. Páginas detiene fallback al recibir cuota/caducidad, distingue permiso de indisponibilidad, respeta retryAt y no propone OAuth por cuota. Actualización visible notifica cada cuenta confirmada, sin esperar la tanda entera. Verificar mocks por IDs solicitados, no orden físico de BD.
+
 - Países05/11: reordenar solo encabezados de país mediante Pointer Events con captura y umbral6px, no arrastre HTML nativo. Ignorar columnas ajenas; conservar orden personal y compatibilidad Alt+flechas. Verificar mouse real y F5.
 
 - Aclaración final evaluación05/11: conservar Evaluar junto al grupo por diplomado; cuadro compacto con países como columnas, solo V y gasto G de Meta, período y estado guardado. Sin columnas de hojas/categorías/presupuesto/factor. Sin gasto no implica desactivado; conservar null/0/NA y marcar parcial. Sin polling al abrir esa evaluación.

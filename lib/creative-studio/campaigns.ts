@@ -1,3 +1,4 @@
+import {campaignPageIssue} from "./page-errors";
 import { z } from "zod";
 import { MetaGraphError } from "../meta-ads/graph-error";
 import { discoverCampaignPages } from "./pages";
@@ -51,8 +52,10 @@ export async function launchResources(actor: Actor, accountId: string) {
   const pages = settled[0].status === "fulfilled" ? settled[0].value : { data: [] };
   const saved =
     settled[1].status === "fulfilled" ? settled[1].value : { data: [] };
+  const pageIssue=settled[0].status === "rejected"?campaignPageIssue(settled[0].reason):null;
   return {
-    pageWarning: settled[0].status === "rejected" ? "Meta no pudo consultar las páginas. Revisa permisos, vigencia y acceso de esta conexión." : "",
+    pageIssue,
+    pageWarning: pageIssue?.message ?? "",
     pages: (pages.data ?? []).map((p: any) => ({
       id: String(p.id),
       name: String(p.name),

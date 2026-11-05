@@ -11,7 +11,7 @@ import {
   metaCanSync,
   metaActor,
 } from "./workspace-access";
-import { metaQuotaScope, quotaHooks, quotaUntil, MetaQuotaWait } from "./quota";
+import { metaQuotaScope, quotaHooks, quotaUntil, MetaQuotaWait, carryMetaQuota } from "./quota";
 import { focusedReportDay } from "./focused-labels";
 import { focusedSyncStep, type FocusState } from "./focused-sync";
 import { writeSyncPage } from "./bulk-sync";
@@ -557,6 +557,11 @@ export async function saveToken(
         "La sesión original ya no está autorizada.",
         401,
       );
+    if(c.transport==="API"&&c.encryptedToken){
+      const previous=metaQuotaScope(c,decryptKey(c.encryptedToken,`meta:${id}`));
+      const next=metaQuotaScope({appId:c.appId,metaUserId:options?.metaUserId??null},token);
+      await carryMetaQuota(tx,previous,next);
+    }
     const changed = await tx.metaConnection.updateMany({
       where: { id, revision: c.revision },
       data: {
