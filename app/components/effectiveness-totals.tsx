@@ -38,6 +38,8 @@ import { ManualBaseEditor } from "./manual-base-editor";
 import {
   TotalsColumnPalette,
   useTotalsColumnTools,
+  useTotalsParameters,
+  TotalsParameters,
 } from "./totals-column-tools";
 import { SheetDataFillBadge } from "./sheet-data-fill-badge";
 import {
@@ -96,9 +98,6 @@ export function EffectivenessTotals({
     month: "2-digit",
     day: "2-digit",
   }).format(new Date());
-  const [analysisView, setAnalysisView] = useState<
-    "period" | "today" | "yesterday"
-  >("period");
   const [periodSince, setSince] = useWorkbookPreference<string>(
       listId,
       "since",
@@ -111,20 +110,17 @@ export function EffectivenessTotals({
     );
   const since = periodSince,
     until = periodUntil;
-  const [mode, setMode] = useWorkbookPreference<"manual" | "automatic">(
-      listId,
-      "mode",
-      "manual",
-    ),
-    [selected, setSelected] = useWorkbookPreference<string[] | null>(
-      listId,
-      "selected",
-      initialSelected !== undefined
-        ? initialSelected
-        : listId === "default-totals" && initialTableId
-          ? [initialTableId]
-          : [],
-    );
+  const [mode, setMode] = useState<"manual" | "automatic">("automatic");
+  useEffect(() => setMode("automatic"), [listId]);
+  const [selected, setSelected] = useWorkbookPreference<string[] | null>(
+    listId,
+    "selected",
+    initialSelected !== undefined
+      ? initialSelected
+      : listId === "default-totals" && initialTableId
+        ? [initialTableId]
+        : [],
+  );
   const [country, setCountry] = useWorkbookPreference<string>(
       listId,
       "country",
@@ -232,18 +228,14 @@ export function EffectivenessTotals({
   const displayTables = data.filter((t) =>
     blocks.some((b) => b.table.tableId === t.tableId),
   );
-  const effectiveMode = analysisView === "period" ? mode : "manual";
+  const effectiveMode = mode;
+  const parameters = useTotalsParameters(listId, mode);
   const columnTools = useTotalsColumnTools(
     listId,
     effectiveMode,
-    totalViewColumns(effectiveMode),
+    totalViewColumns(effectiveMode, parameters.enabled[mode]),
   );
-  const columns =
-    analysisView === "period"
-      ? columnTools.columns
-      : columnTools.columns.filter((c) =>
-          totalViewColumns(analysisView).some((v) => v.key === c.key),
-        );
+  const columns = columnTools.columns;
   const layoutColumns = [
     { key: "date", width: 100 },
     ...blocks.flatMap((block) => [
@@ -381,23 +373,21 @@ export function EffectivenessTotals({
       <strong>Por totales de día</strong>
       <button
         type="button"
-        aria-pressed={mode === "manual" && analysisView === "period"}
+        aria-pressed={mode === "automatic"}
         onClick={() => {
-          setAnalysisView("period");
-          setMode("manual");
-        }}
-      >
-        Total manual
-      </button>
-      <button
-        type="button"
-        aria-pressed={mode === "automatic" && analysisView === "period"}
-        onClick={() => {
-          setAnalysisView("period");
           setMode("automatic");
         }}
       >
         Total automático
+      </button>
+      <button
+        type="button"
+        aria-pressed={mode === "manual"}
+        onClick={() => {
+          setMode("manual");
+        }}
+      >
+        Total manual
       </button>
       {datePicker}
       {rowPicker}
@@ -422,48 +412,29 @@ export function EffectivenessTotals({
       <div className="sheet-toolbar sheet-totals-toolbar">
         <div className="row sheet-view-buttons" aria-label="Vista de totales">
           <button
-            aria-pressed={analysisView === "period" && mode === "manual"}
+            aria-pressed={mode === "automatic"}
             className={
-              "sheet-mode-manual" +
-              (analysisView === "period" && mode === "manual" ? " primary" : "")
+              "sheet-mode-automatic" + (mode === "automatic" ? " primary" : "")
             }
             onClick={() => {
-              setAnalysisView("period");
-              setMode("manual");
-            }}
-          >
-            Total manual
-          </button>
-          <button
-            aria-pressed={analysisView === "period" && mode === "automatic"}
-            className={
-              "sheet-mode-automatic" +
-              (analysisView === "period" && mode === "automatic"
-                ? " primary"
-                : "")
-            }
-            onClick={() => {
-              setAnalysisView("period");
               setMode("automatic");
             }}
           >
             Total automático
           </button>
           <button
-            className="sheet-mode-today"
-            aria-pressed={analysisView === "today"}
-            onClick={() => setAnalysisView("today")}
+            aria-pressed={mode === "manual"}
+            className={
+              "sheet-mode-manual" + (mode === "manual" ? " primary" : "")
+            }
+            onClick={() => {
+              setMode("manual");
+            }}
           >
-            Hoy · avance provisional
-          </button>
-          <button
-            className="sheet-mode-yesterday"
-            aria-pressed={analysisView === "yesterday"}
-            onClick={() => setAnalysisView("yesterday")}
-          >
-            Ayer · día completo
+            Total manual
           </button>
           {toolbarActions}
+          <TotalsParameters parameters={parameters} />
         </div>
         <div
           className="row sheet-totals-filters"
@@ -586,7 +557,8 @@ export function EffectivenessTotals({
           blocks={blocks}
           days={days}
           initialMode={effectiveMode}
-          initialView={analysisView === "period" ? effectiveMode : analysisView}
+          initialView={effectiveMode}
+          enabledColumns={parameters.enabled}
           initialSelection={detailSelection}
           loading={loading}
           message={message}
@@ -594,13 +566,9 @@ export function EffectivenessTotals({
         />
       )}
       <p className="sheet-help">
-        {analysisView === "today"
-          ? "Avance provisional del período: ventas, presupuesto, BC y costo fijo; sin BM ni GM."
-          : analysisView === "yesterday"
-            ? "Datos del día completo en el período: ventas, BM, GM y costo fijo; sin BC ni presupuesto."
-            : mode === "manual"
-              ? "V/P: suma de inventario. BM: reparto manual en Totales. GM: gasto manual por bloque."
-              : "V/B/G: suma de los valores de la vista automática."}{" "}
+        {mode === "manual"
+          ? "V: suma de inventario. BM: reparto manual en Totales. GM: gasto manual por bloque."
+          : "V/B/G: suma de los valores de la vista automática."}{" "}
         Países y monedas separados; N.A. no suma, — sin dato, * suma parcial.
         Las ventas se suman únicamente desde la hoja de origen indicada en cada
         bloque, sin combinar tablas. No modifica Meta Ads.

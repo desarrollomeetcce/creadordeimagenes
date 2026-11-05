@@ -114,11 +114,8 @@ export function AdvisorsSheet({
     month: "2-digit",
     day: "2-digit",
   }).format(new Date());
-  const [dataView, setDataView] = useWorkbookPreference<string>(
-    listId,
-    "advisor-data-view-v2",
-    "meta",
-  );
+  const [dataView, setDataView] = useState("meta");
+  useEffect(() => setDataView("meta"), [listId]);
   const showMeta = dataView === "meta";
   const dayColumns = showMeta
     ? ([
@@ -376,19 +373,19 @@ export function AdvisorsSheet({
           >
             <button
               type="button"
-              aria-pressed={!showMeta}
-              className={!showMeta ? "primary" : ""}
-              onClick={() => setDataView("manual")}
-            >
-              Vista manual
-            </button>
-            <button
-              type="button"
               aria-pressed={showMeta}
               className={showMeta ? "primary" : ""}
               onClick={() => setDataView("meta")}
             >
               Vista automática
+            </button>
+            <button
+              type="button"
+              aria-pressed={!showMeta}
+              className={!showMeta ? "primary" : ""}
+              onClick={() => setDataView("manual")}
+            >
+              Vista manual
             </button>
           </div>
           <MetaDateRange
@@ -674,7 +671,9 @@ export function AdvisorsSheet({
                       >
                         Detalle ↗
                       </button>
-                      <span className="advisor-name-label" title={p.name}>{p.name}</span>
+                      <span className="advisor-name-label" title={p.name}>
+                        {p.name}
+                      </span>
                       <button
                         type="button"
                         className="advisor-commercial-badge"

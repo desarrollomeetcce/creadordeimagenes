@@ -53,6 +53,7 @@ export function TotalsDetail({
   initialMode,
   initialView,
   initialSelection,
+  enabledColumns,
   loading: parentLoading,
   message,
   onClose,
@@ -62,6 +63,7 @@ export function TotalsDetail({
   totalsSheetId?: string;
   initialMode: "manual" | "automatic";
   initialView?: TotalDetailView;
+  enabledColumns?: { manual: string[]; automatic: string[] };
   initialSelection?: { blockKey: string; day: string };
   loading: boolean;
   message: string;
@@ -171,10 +173,14 @@ export function TotalsDetail({
   const loading = parentLoading || rangeLoading;
   const focusDays = summaryPeriod(days, mode, limaToday()).days;
   const dayIndex = days.indexOf(selectedDay);
-  const columns = totalViewColumns(mode);
+  const columns = totalViewColumns(
+    mode,
+    enabledColumns?.[mode === "automatic" ? "automatic" : "manual"],
+  );
   const comparisonColumns = columns;
   const barColumn = comparisonColumns.find((c) => c.key === bars) ?? columns[0],
-    lineColumn = comparisonColumns.find((c) => c.key === line) ?? columns[1];
+    lineColumn =
+      comparisonColumns.find((c) => c.key === line) ?? columns[1] ?? columns[0];
   const report =
     rangeResult?.query === rangeQuery
       ? rangeResult.data
@@ -326,20 +332,18 @@ export function TotalsDetail({
                 disabled={!block}
               />
               <div className="row advisor-detail-controls">
-                {(Object.keys(totalDetailViewNames) as TotalDetailView[]).map(
-                  (view) => (
-                    <button
-                      key={view}
-                      type="button"
-                      aria-pressed={mode === view}
-                      onClick={() => {
-                        setMode(view);
-                      }}
-                    >
-                      {totalDetailViewNames[view]}
-                    </button>
-                  ),
-                )}
+                {(["automatic", "manual"] as TotalDetailView[]).map((view) => (
+                  <button
+                    key={view}
+                    type="button"
+                    aria-pressed={mode === view}
+                    onClick={() => {
+                      setMode(view);
+                    }}
+                  >
+                    {totalDetailViewNames[view]}
+                  </button>
+                ))}
                 <SheetSearchSelect
                   label="Hoja, país y moneda del detalle de Totales"
                   value={block?.key ?? ""}

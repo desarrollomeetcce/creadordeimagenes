@@ -1,3 +1,13 @@
+## Totales: dos vistas, parámetros opcionales y automática al entrar · 2026-11-04
+
+Validación:194 pruebas unitarias sin fallos, TypeScript y build correctos. Navegador:4 grupos de comprobaciones (cuatro países y preferencias antiguas; checks y detalle; persistencia/restablecer y automática al reentrar; Asesores automática, acciones juntas y cero escrituras/errores). Fixture exclusivo: presupuesto20, V1/G10.25 y registros históricos exactos antes de limpieza.
+
+Última instrucción: retirar Hoy avance provisional/Ayer día completo de Totales, incluidos detalles. Mostrar primero Total automático y abrirlo siempre al entrar a la pestaña; Total manual segundo. Asesores igualmente abre automática al entrar, aunque antes se haya elegido manual; elección temporal de modo no se persiste. Fechas/filtros y orden compartido siguen intactos.
+
+Total manual predeterminado V/BM/GM, sin PΣ, BC ni CF. Total automático V/B/G. Parámetros al lado de las acciones de documento permite activar/desactivar columnas compatibles, incluido PΣ en ambas vistas, BC y CF originales. Elección local por usuario/hoja y modo, persistida separada del modo inicial; mínimo una columna, restablecer vuelve a predeterminadas. Proyección aplica a todos los países actuales/futuros, colores, órdenes heredados y detalles/gráficos; las columnas opcionales solo regresan por check explícito, sin reconsultar datos ni borrar historial. Respetar semántica original BC manual y CF automática, no fabricar sumatorias. Gráficos toleran una sola columna.
+
+Importar histórico y Compartir hoja forman un grupo alineado a la derecha en hojas normales y Totales, con acceso de propietario conservado. Parámetros queda junto a ese grupo. No cambia el importador ni permisos ni datos financieros.
+
 ## Asesores: dos vistas, estadísticas combinadas y Totales sin BCΣ/CF · 2026-11-04
 
 Asesores muestra solo Vista manual/Vista automática; elimina Hoy avance provisional, Ayer día completo, Análisis del período y Datos Meta como modos de la página. Por instrucción posterior, Automática es inicial: preferencia nueva advisor-data-view-v2=meta evita restaurar una selección heredada incompatible; una elección explícita posterior se conserva por usuario/lista/F5. Calendario, filtros, actualización y análisis de equipo conservados. Ancho inicial del nombre300px muestra asesores completos, respeta anchos guardados y añade título con nombre.

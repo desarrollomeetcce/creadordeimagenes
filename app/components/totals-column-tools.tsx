@@ -16,7 +16,94 @@ import {
   totalDataFill,
   sheetDataFillLabels,
 } from "../../lib/meta-ads/sheet-data-fill";
-import type { TotalColumn } from "../../lib/meta-ads/totals-detail";
+import {
+  manualTotalColumns,
+  automaticTotalColumns,
+  type TotalColumn,
+} from "../../lib/meta-ads/totals-detail";
+import { totalViewColumns } from "../../lib/meta-ads/total-detail-views";
+export function useTotalsParameters(
+  listId: string,
+  mode: "manual" | "automatic",
+) {
+  const [manual, setManual] = useWorkbookPreference<string[] | null>(
+    listId,
+    "total-parameters-manual-v1",
+    null,
+  );
+  const [automatic, setAutomatic] = useWorkbookPreference<string[] | null>(
+    listId,
+    "total-parameters-automatic-v1",
+    null,
+  );
+  const enabled = {
+    manual: totalViewColumns("manual", manual).map((c) => c.key),
+    automatic: totalViewColumns("automatic", automatic).map((c) => c.key),
+  };
+  return {
+    enabled,
+    available:
+      mode === "manual"
+        ? manualTotalColumns
+        : [...automaticTotalColumns, manualTotalColumns[1]],
+    toggle(key: string) {
+      const current: string[] = enabled[mode];
+      const next = current.includes(key)
+        ? current.filter((k) => k !== key)
+        : [...current, key];
+      if (!next.length) return;
+      (mode === "manual" ? setManual : setAutomatic)(next);
+    },
+    reset() {
+      (mode === "manual" ? setManual : setAutomatic)(null);
+    },
+    mode,
+  };
+}
+export function TotalsParameters({
+  parameters,
+}: {
+  parameters: ReturnType<typeof useTotalsParameters>;
+}) {
+  const id = useId();
+  const selected: string[] = parameters.enabled[parameters.mode];
+  return (
+    <>
+      <button type="button" popoverTarget={id}>
+        Parámetros
+      </button>
+      <div
+        id={id}
+        popover="auto"
+        className="totals-column-palette"
+        aria-label="Parámetros de Totales"
+      >
+        <strong>
+          Parámetros ·{" "}
+          {parameters.mode === "manual" ? "Total manual" : "Total automático"}
+        </strong>
+        {parameters.available.map((c) => (
+          <label key={c.key}>
+            <span>
+              {c.label}
+              {c.sum ? " Σ" : ""} · {c.name}
+            </span>
+            <input
+              type="checkbox"
+              aria-label={`Mostrar ${c.label} en Totales`}
+              checked={selected.includes(c.key)}
+              disabled={selected.length === 1 && selected.includes(c.key)}
+              onChange={() => parameters.toggle(c.key)}
+            />
+          </label>
+        ))}
+        <button type="button" onClick={parameters.reset}>
+          Restablecer parámetros
+        </button>
+      </div>
+    </>
+  );
+}
 type Gesture = {
   key: string;
   x: number;

@@ -776,7 +776,7 @@ export function ProductsCatalog() {
     </nav>
   );
   const documentShare = isOwner ? (
-    <>
+    <div className="sheet-document-actions">
       <FinancialHistoryImport />
       <button
         type="button"
@@ -786,7 +786,7 @@ export function ProductsCatalog() {
       >
         Compartir hoja
       </button>
-    </>
+    </div>
   ) : null;
   if (!access)
     return (

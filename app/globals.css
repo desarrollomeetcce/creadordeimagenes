@@ -2987,3 +2987,6 @@ tr[data-advisor-drop] > td { border-top:2px solid var(--accent)!important; }
 .advisor-grid .advisor-meta-metrics .advisor-metric-half:first-child { background:color-mix(in srgb,var(--accent) 11%,var(--surface)); }
 .advisor-grid .advisor-meta-metrics .advisor-metric-half:last-child { background:color-mix(in srgb,#9670d9 11%,var(--surface)); }
 .advisor-grid .advisor-meta-metrics .advisor-metric-half strong { color:var(--ink); font-size:12px; font-variant-numeric:tabular-nums; }
+
+/* Keep document actions together at the right edge, including compact Totals. */
+.sheet-document-actions{display:flex;align-items:center;gap:5px;flex:0 0 auto;margin-left:auto;flex-wrap:wrap}.products-catalog .sheet-document-actions .sheet-document-share{margin-left:0}

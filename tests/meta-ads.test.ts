@@ -4282,14 +4282,27 @@ import {
   moveDetailModule,
 } from "../lib/meta-ads/inventory-detail-order";
 test("Totales: cada vista muestra únicamente sus parámetros, sin mezclar Meta ni inventar repartos por producto", async () => {
-  const { orderedTotalColumns } = await import("../lib/meta-ads/totals-column-layout");
+  const { orderedTotalColumns } =
+    await import("../lib/meta-ads/totals-column-layout");
   for (const view of ["manual", "automatic", "today", "yesterday"] as const) {
-    const restored = orderedTotalColumns(totalViewColumns(view), ["advisorBase", "fixedCost", "sales"]);
-    assert(!restored.some(c => c.key === "advisorBase" || c.key === "fixedCost"));
+    const restored = orderedTotalColumns(totalViewColumns(view), [
+      "advisorBase",
+      "fixedCost",
+      "budget",
+      "sales",
+    ]);
+    assert(
+      !restored.some(
+        (c) =>
+          c.key === "advisorBase" ||
+          c.key === "fixedCost" ||
+          c.key === "budget",
+      ),
+    );
   }
   assert.deepEqual(
     totalViewColumns("manual").map((c) => c.key),
-    ["sales", "budget", "baseManual", "totalSpend"],
+    ["sales", "baseManual", "totalSpend"],
   );
   assert.deepEqual(
     totalViewColumns("automatic").map((c) => c.key),
@@ -4297,19 +4310,38 @@ test("Totales: cada vista muestra únicamente sus parámetros, sin mezclar Meta 
   );
   assert.deepEqual(
     totalViewColumns("today").map((c) => c.key),
-    ["sales", "budget"],
+    ["sales"],
   );
   assert.deepEqual(
     totalViewColumns("yesterday").map((c) => c.key),
     ["sales", "baseManual", "totalSpend"],
   );
-  assert.deepEqual(totalProductMetrics("manual"), ["sales", "budget"]);
+  assert.deepEqual(
+    totalViewColumns("manual", [
+      "sales",
+      "budget",
+      "advisorBase",
+      "fixedCost",
+    ]).map((c) => c.key),
+    ["sales", "budget", "advisorBase", "fixedCost"],
+  );
+  assert.deepEqual(
+    totalViewColumns("automatic", ["sales", "budget", "fixedCost"]).map(
+      (c) => c.key,
+    ),
+    ["sales", "fixedCost", "budget"],
+  );
+  assert.deepEqual(
+    totalViewColumns("manual", ["unknown"]).map((c) => c.key),
+    ["sales"],
+  );
+  assert.deepEqual(totalProductMetrics("manual"), ["sales"]);
   assert.deepEqual(totalProductMetrics("automatic"), [
     "sales",
     "base",
     "spend",
   ]);
-  assert.deepEqual(totalProductMetrics("today"), ["sales", "budget"]);
+  assert.deepEqual(totalProductMetrics("today"), ["sales"]);
   assert.deepEqual(totalProductMetrics("yesterday"), ["sales"]);
   const ids = [
     "summary",
