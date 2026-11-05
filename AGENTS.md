@@ -1,3 +1,5 @@
+- Países05/11: reordenar solo encabezados de país mediante Pointer Events con captura y umbral6px, no arrastre HTML nativo. Ignorar columnas ajenas; conservar orden personal y compatibilidad Alt+flechas. Verificar mouse real y F5.
+
 - Aclaración final evaluación05/11: conservar Evaluar junto al grupo por diplomado; cuadro compacto con países como columnas, solo V y gasto G de Meta, período y estado guardado. Sin columnas de hojas/categorías/presupuesto/factor. Sin gasto no implica desactivado; conservar null/0/NA y marcar parcial. Sin polling al abrir esa evaluación.
 
 - Aclaración posterior del usuario05/11: autorizado integrar grupos en Lista, columna compacta por país, reemplazo Meta inline y desplegable para cambiar pertenencia desde la fila; retirar Evaluar de Grupo. Esta instrucción sustituye la restricción anterior de opinión solamente. Preservar permisos, CAS y hechos financieros.

@@ -1,4 +1,9 @@
 
+### 2026-11-05 · Arrastre de países
+
+Encabezado de país usa Pointer Events y captura en lugar del arrastre HTML nativo, con umbral6px y destinos limitados a otros países. Mover Perú desplaza los países intermedios y no reordena columnas generales. Orden personal persistente y Alt+flechas conservados; no escrituras al servidor. Validación:318 unitarias, typecheck/build y Chromium con mouse real, destino ajeno ignorado y persistencia tras F5.
+
+
 ### 2026-11-05 · Lista compacta, grupos integrados y reemplazo Meta
 
 Una columna por país con activación, uso independiente y estado que abre el detalle; sincronización bajo demanda en el menú, países reordenables y filtros locales. Grupos integrados con búsqueda, sugerencias de números faltantes, selección/azar/categoría y acciones con revisión CAS. La pertenencia de cada diplomado se cambia con desplegable local. Aclaración final: conservar Evaluar junto al grupo; tabla compacta de países con V/G, fecha Hasta y estado guardado, sin hojas/categorías/presupuesto/factor y sin sondeo periódico; Sin gasto no implica No activo.
