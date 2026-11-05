@@ -6490,3 +6490,20 @@ test("Inicio Meta: fecha reportada, creación e informes quedan diferenciados de
  assert.equal(campaignMetaTiming([{id:"d",firstReport:"2026-10-22"}],"2026-11-04T12:00:00Z").source,"reporting");
  assert.equal(campaignMetaTiming([],"2026-11-04T12:00:00Z").start,null);
 });
+
+import { addMetaSearchPhrase, metaSearchConditions, metaSearchPhrases } from "../lib/meta-ads/keyword-search";
+test("Meta keyword chips: AND across words and phrases, any order, legacy queries and limits", () => {
+  const query = addMetaSearchPhrase(addMetaSearchPhrase("", "PY"), "periodismo");
+  const matches = (name: string, q: string) => metaSearchConditions(q).every(c => name.toLowerCase().includes(c.name.contains));
+  assert.equal(matches("Periodismo internacional - PY", query), true);
+  assert.equal(matches("PY oratoria", query), false);
+  assert.equal(matches("PE periodismo", query), false);
+  const phrases = addMetaSearchPhrase("PY periodismo", "PY deportiva");
+  assert.equal(matches("PY deportiva / PY periodismo", phrases), true);
+  assert.equal(matches("PY periodismo deportiva", phrases), false);
+  assert.deepEqual(metaSearchPhrases("PY periodismo"), ["py periodismo"]);
+  assert.equal(addMetaSearchPhrase(query, " py "), query);
+  assert.equal(addMetaSearchPhrase(query, "  "), query);
+  assert.equal(addMetaSearchPhrase("a".repeat(199), "xx"), "a".repeat(199));
+  assert.deepEqual(metaSearchConditions(""), []);
+});

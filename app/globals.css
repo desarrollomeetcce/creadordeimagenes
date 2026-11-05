@@ -3003,3 +3003,15 @@ tr[data-advisor-drop] > td { border-top:2px solid var(--accent)!important; }
 .campaign-timing{display:flex;flex-wrap:wrap;gap:5px 16px;padding:8px 10px;border:1px solid var(--line);border-radius:7px;font-size:11px;background:var(--soft);margin:7px 0}.campaign-timing small{width:100%;color:var(--muted);font-size:10px}.inventory-cac-period-state{display:flex;align-items:center;gap:8px;font-size:11px;margin-top:9px}.inventory-cac-period-state .inventory-cac-state{display:flex;align-items:center;gap:5px}
 
 .meta-diploma-status-controls{min-width:160px;max-width:250px}.meta-diploma-status-controls>div{display:flex;align-items:center;gap:7px;padding:5px 0}.meta-diploma-status-controls>div>span{font-size:11px}.meta-selection-detail .detail-sticky-header>.hint{margin:5px 0;font-size:11px}
+
+/* Enter-confirmed Meta keyword phrases, shared by normal and expanded toolbars. */
+.meta-keyword-search{display:flex;flex-direction:column;gap:4px;min-width:210px;max-width:100%}
+.meta-keyword-box{display:flex;align-items:center;flex-wrap:wrap;gap:5px;padding:5px;border:1px solid var(--border);border-radius:8px;background:var(--input-bg,transparent);max-width:100%}
+.meta-keyword-box:focus-within{outline:2px solid var(--accent,#70dac2);outline-offset:1px}
+.meta-keyword-box input{flex:1 1 150px;min-width:100px;width:150px;border:0!important;outline:none!important;box-shadow:none!important;min-height:28px!important;padding:3px!important;background:transparent}
+.meta-keyword-chip{display:inline-flex;align-items:center;gap:5px;max-width:100%;border:1px solid #62bba7;border-radius:5px;padding:2px 4px 2px 7px;background:light-dark(#e1f4ed,#25463f)}
+.meta-keyword-chip>span{overflow-wrap:anywhere;min-width:0}
+.meta-keyword-chip button{flex-shrink:0;padding:1px 5px;min-height:26px;border:0;background:transparent;color:inherit}
+.meta-keyword-search small{font-size:10px;opacity:.75}
+.meta-expanded-filters>.meta-keyword-search{flex:1 1 230px;min-width:180px}
+@media(max-width:600px){.meta-expanded-filters>.meta-keyword-search{flex:1 1 100%;min-width:0}.meta-keyword-search{min-width:0}}

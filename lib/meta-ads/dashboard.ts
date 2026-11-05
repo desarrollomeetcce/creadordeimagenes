@@ -1,3 +1,4 @@
+import { metaSearchConditions } from "./keyword-search";
 import { recentMetaDataVersions } from "./data-versions";
 import { realtimeCoverage, statusIsStale } from "./realtime-policy";
 import { isCountryCode } from "./countries";
@@ -145,6 +146,7 @@ export async function dashboard(actor: Actor, params: URLSearchParams) {
         : {}),
     // A recent import must not display thousands of unrelated legacy catalogue rows.
     AND: [
+      ...metaSearchConditions(q),
       {
         OR: scoped.map((a) => {
           const run = (
@@ -188,7 +190,6 @@ export async function dashboard(actor: Actor, params: URLSearchParams) {
       : adset
         ? { adsetId: adset }
         : {}),
-    ...(q ? { name: { contains: q, mode: "insensitive" } } : {}),
     ...(hasFilter("active") ? { status: "ACTIVE" } : {}),
     ...(hasFilter("effective") ? { effectiveStatus: "ACTIVE" } : {}),
     ...(hasFilter("paused")

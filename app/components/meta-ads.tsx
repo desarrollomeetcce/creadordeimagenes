@@ -1,5 +1,6 @@
 "use client";
 import dynamic from "next/dynamic";
+import { MetaKeywordSearch } from "./meta-keyword-search";
 import { campaignMetaTiming } from "../../lib/meta-ads/campaign-meta-timing";
 import { CampaignTiming } from "./campaign-timing";
 import {
@@ -712,6 +713,7 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
     [aliasFilter, setAliasFilter] = useState(""),
     [countryFilter, setCountryFilter] = useState(""),
     [q, setQ] = useState(""),
+    [keywordDraft, setKeywordDraft] = useState(""),
     [search, setSearch] = useState(""),
     [state, setState] = useState("all"),
     [evaluationStatus, setEvaluationStatus] = useState(""),
@@ -943,6 +945,7 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
       setAliasFilter("");
       setCountryFilter("");
       setQ("");
+      setKeywordDraft("");
       setSearch("");
     });
   };
@@ -962,6 +965,7 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
       setAliasFilter("");
       setCountryFilter("");
       setQ("");
+      setKeywordDraft("");
       setSearch("");
       setAccountPickerQuery("");
       setAccountPickerActivity("all");
@@ -2696,16 +2700,8 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
                   ? "Conjuntos"
                   : "Anuncios"}
             </strong>
-            <label className="meta-expanded-search">
-              Buscar por palabra
-              <input
-                type="search"
-                aria-label="Buscar por palabra en Meta Ads ampliado"
-                placeholder="Escribe parte del nombre"
-                value={q}
-                onChange={(e) => setQ(e.target.value)}
-              />
-            </label>
+            <MetaKeywordSearch expanded value={q} draft={keywordDraft}
+              onChange={setQ} onDraftChange={setKeywordDraft} />
             {analysisControl()}
           </div>
         }
@@ -3591,16 +3587,8 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
                       onChange={(value) => resetPage(() => setState(value))}
                     />
 
-                    <label>
-                      Buscar por palabra
-                      <input
-                        type="search"
-                        aria-label="Buscar campañas, conjuntos o anuncios"
-                        placeholder="Escribe parte del nombre"
-                        value={q}
-                        onChange={(e) => setQ(e.target.value)}
-                      />
-                    </label>
+                    <MetaKeywordSearch value={q} draft={keywordDraft}
+                      onChange={setQ} onDraftChange={setKeywordDraft} />
                     <div className="meta-alias-country-filter">
                       <span>Buscar por inventario y país</span>
                       <div>

@@ -1,3 +1,9 @@
+## Búsqueda Meta por palabras y frases · 2026-11-05
+
+Meta05/11: búsqueda por etiquetas confirmadas con Enter (palabra o frase), todas obligatorias sin orden entre etiquetas; frase interna conserva orden/espacios normalizados. X elimina solo filtro, duplicados se ignoran. Misma consulta normal/ampliada y preferencias personales q separadas por saltos de línea, legado plano sigue frase única; límite200 existente. Aplicar AND de name contains insensitive en dashboard antes de paginar/conteos/resumen sin sustituir permisos/ámbito. Borrador sin Enter no consulta. No Graph ni escritura publicitaria por buscar.
+
+Validado:202 pruebas unitarias (0 fallos), typecheck y build de producción;3 comprobaciones Chromium con API/DB QA real: AND previo a paginación, texto provisional sin consultas, duplicado, X, recarga, frases en orden inverso y vista ampliada/móvil. Ninguna escritura publicitaria; fixture exclusivo eliminado tras comprobar V/G/asesor/vínculo/estado conservados. Logs keyword-unit/types/build/browser/cleanup en /workspace/work.
+
 ## Grupos autoguardados, propuestas por fila y controles de detalles/Meta · 2026-11-04
 
 Editar grupo: Aceptar añadidos usa ADD_MEMBERS con revisión base y bloqueo compartido savePending, guarda inmediatamente solo las altas aceptadas, mantiene ventana y borradores ajenos (nombre/otras ediciones). Ack actualiza miembros/base/revisión, limpia cola/etiquetas conX y refresca directorio. Doble clic no duplica POST. X antes de aceptar solo quita selección visual, nunca membresías/registro; después de aceptar no hay chip conX. Error anterior al commit conserva cola para reintentar; error de refresco tras ack informa que ya se guardó. Crear grupo conserva aprobación/guardado explícitos. Regla anterior de altas aceptadas pendientes de Guardar queda sustituida.
