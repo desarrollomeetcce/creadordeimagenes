@@ -1,5 +1,5 @@
 "use client";
-import { useMemo, useRef, useState } from "react";
+import { useMemo, useRef, useState, useId } from "react";
 import type {
   TrialDirectory,
   TrialGroup,
@@ -16,14 +16,10 @@ import {
 } from "../../lib/meta-ads/inventory-group-addition-policy";
 import { financialRequest as api } from "./financial-request";
 import { SheetSearchSelect } from "./sheet-search-select";
-import dynamic from "next/dynamic";
-const InventoryGroupReplacements = dynamic(() =>
-  import("./inventory-group-replacements").then(
-    (m) => m.InventoryGroupReplacements,
-  ),
-);
 import { InventoryMultiSelect } from "./inventory-multi-select";
 import { InventoryActionMenu } from "./inventory-action-menu";
+import dynamic from "next/dynamic";
+const InventorySheetReplacement=dynamic(()=>import("./inventory-sheet-replacement").then(m=>m.InventorySheetReplacement));
 import { limaToday } from "./date-range";
 export function InventoryInlineGroups({
   directory,
@@ -35,6 +31,13 @@ export function InventoryInlineGroups({
   onPatched,
   onReload,
   onInspect,
+  onCategoryFilter,
+  categoryFilter,
+  replacement,
+  replacementColumns,
+  defaultColumn,
+  onReplacementChange,
+  onReplacementApplied,
 }: {
   directory: TrialDirectory;
   groupId: string;
@@ -45,21 +48,31 @@ export function InventoryInlineGroups({
   onPatched: (group: TrialGroup) => Promise<void>;
   onReload: () => Promise<void>;
   onInspect: (name: string) => void;
+  onCategoryFilter: (name: string) => void;
+  categoryFilter:string;
+  replacement: { column: string; names: string[] } | null;
+  replacementColumns: { id: string; label: string }[];
+  defaultColumn: string;
+  onReplacementChange: (
+    draft: { column: string; names: string[] } | null,
+  ) => void;
+  onReplacementApplied: (column: string) => Promise<void>;
 }) {
   const pending = useRef(false),
     requestId = useRef<string | null>(null);
   const [busy, setBusy] = useState(false),
     [message, setMessage] = useState(""),
-    [draftName, setDraftName] = useState(""),
+    [draftName, setDraftName] = useState<string | null>(null),
     [count, setCount] = useState(10),
-    [countryChoice, setCountryChoice] = useState<string[] | null>(null),
-    [replacing, setReplacing] = useState(false);
+    [countryChoice, setCountryChoice] = useState<string[] | null>(null);
+  const category=categoryFilter;
+  const nameList = useId();
   const group = directory.groups.find((g) => g.id === groupId);
   const suggestions = useMemo(
     () => suggestedGroupNames(directory.groups.map((g) => g.name)),
     [directory.groups],
   );
-  const name = draftName || suggestions[0];
+  const name = draftName ?? group?.name ?? suggestions[0];
   const membership = useMemo(
     () =>
       new Map(
@@ -77,19 +90,6 @@ export function InventoryInlineGroups({
     const item = itemsByName.get(categoryKey(n));
     return item ? [item] : [];
   });
-  const selectedGroups = [
-    ...new Set(
-      selectedNames
-        .map((n) => membership.get(categoryKey(n)))
-        .filter((g): g is TrialGroup => !!g),
-    ),
-  ];
-  const replaceGroup =
-    selectedGroups.length === 1 ? selectedGroups[0] : undefined;
-  const replaceIds =
-    replaceGroup?.members
-      .filter((m) => selectedNames.some((n) => sameGroupName(n, m.name)))
-      .map((m) => m.itemId) ?? [];
   const free = useMemo(
     () => directory.catalog.filter((i) => !membership.has(categoryKey(i.name))),
     [directory.catalog, membership],
@@ -98,10 +98,10 @@ export function InventoryInlineGroups({
     () =>
       [
         ...new Set(
-          free.flatMap((i) => [...i.primaryNames, ...(i.secondaryNames ?? [])]),
+          directory.catalog.flatMap((i) => [...i.primaryNames, ...(i.secondaryNames ?? [])]),
         ),
       ].sort((a, b) => a.localeCompare(b, "es")),
-    [free],
+    [directory.catalog],
   );
   async function run(body: Record<string, unknown>, reload = false) {
     if (pending.current) return;
@@ -136,7 +136,7 @@ export function InventoryInlineGroups({
   }
   async function create(value: string) {
     const next = groupCreationName(value);
-    if (next.length > 100 || !next.trim()) {
+    if (next.length > 100 || !value.trim()) {
       setMessage("Usa un nombre de hasta100 caracteres.");
       return;
     }
@@ -147,7 +147,9 @@ export function InventoryInlineGroups({
     setDraftName(next);
     onGroupSelect("");
     if (!selected.length) {
-      setMessage("Marca los diplomados y pulsa + para crear " + next + ".");
+      setMessage(
+        "Marca los diplomados y pulsa Agregar para crear " + next + ".",
+      );
       return;
     }
     const codes = countryChoice ?? countries.map((c) => c.code);
@@ -169,7 +171,7 @@ export function InventoryInlineGroups({
     });
     if (created) {
       requestId.current = null;
-      setDraftName("");
+      setDraftName(null);
     }
   }
   const additions = selected.filter(
@@ -192,97 +194,51 @@ export function InventoryInlineGroups({
     onSelectNames(proposed.map((i) => i.name));
     setMessage(
       proposed.length
-        ? `${proposed.length} diplomados preparados. Pulsa + para ${group ? "añadirlos" : "crear el grupo"}.`
+        ? `${proposed.length} diplomados preparados. Pulsa Agregar para ${group ? "añadirlos" : "crear el grupo"}.`
         : "No hay diplomados libres con ese filtro.",
     );
   }
+  const column = replacement?.column || defaultColumn;
+  const sources = replacement?.names ?? selectedNames;
+  function prepare(names = sources) {
+    if (!column) {
+      setMessage("Elige primero el país que vas a reemplazar.");
+      return;
+    }
+    if (!names.length) {
+      setMessage("Marca diplomados en la lista o búscalos aquí.");
+      return;
+    }
+    onReplacementChange({ column, names: [...new Set(names)] });
+  }
   return (
-    <section className="inventory-inline-groups" aria-label="Grupos integrados">
-      <div className="inventory-inline-group-main">
-        <strong>Grupos</strong>
-        <SheetSearchSelect
-          label="Mis grupos"
-          value={group?.id ?? (groupId === "none" ? "none" : "new:" + name)}
-          placeholder={name}
-          options={[
-            { value: "", label: "Todo el inventario" },
-            { value: "none", label: "Sin grupo" },
-            ...directory.groups.map((g) => ({
-              value: g.id,
-              label: `${g.name} (${g.members.length})`,
-              group: "Mis grupos",
-            })),
-            ...suggestions.map((n) => ({
-              value: "new:" + n,
-              label: n + " · crear",
-              group: "Nuevo grupo",
-            })),
-            ...(draftName && !suggestions.includes(draftName)
-              ? [
-                  {
-                    value: "new:" + draftName,
-                    label: draftName + " · crear",
-                    group: "Nuevo grupo",
-                  },
-                ]
-              : []),
-          ]}
-          disabled={busy}
-          onSelect={(id) => {
-            setMessage("");
-            if (id.startsWith("new:")) {
-              setDraftName(id.slice(4));
-              onGroupSelect("");
-            } else {
-              setDraftName("");
-              onGroupSelect(id);
-            }
+    <section
+      className="inventory-inline-groups inventory-group-workbench"
+      aria-label="Grupos integrados"
+    >
+      <div className="inventory-workbench-line" aria-label="Crear grupo">
+        <strong>Crear grupo</strong>
+        <input
+          aria-label="Título del grupo"
+          className="inventory-group-name"
+          list={nameList}
+          value={name}
+          maxLength={100}
+          onChange={(e) => {
+            setDraftName(e.target.value);
+            requestId.current = null;
           }}
-          onCreate={create}
-          createLabel="Crear grupo"
-          createOnEnter
-          onError={setMessage}
         />
-        <button
-          type="button"
-          className="primary inventory-group-plus"
-          aria-label={group ? "Añadir seleccionados al grupo" : "Crear " + name}
-          title={
-            group ? "Añadir seleccionados a " + group.name : "Crear " + name
-          }
-          disabled={
-            busy ||
-            !directory.canEdit ||
-            !selected.length ||
-            (!!group && !additions.length)
-          }
-          onClick={() => void (group ? add() : create(name))}
-        >
-          +
-        </button>
-        <span
-          className="inventory-inline-selection"
-          title={selectedNames.join(", ")}
-        >
-          {selected.length} seleccionados
-        </span>
-        {!group && (
-          <InventoryMultiSelect
-            label="Países del nuevo grupo"
-            placeholder="Países"
-            values={countryChoice ?? countries.map((c) => c.code)}
-            options={countries.map((c) => ({ value: c.code, label: c.name }))}
-            onChange={setCountryChoice}
-            disabled={busy}
-          />
-        )}
-      </div>
-      <div className="inventory-inline-group-tools">
+        <datalist id={nameList}>
+          {suggestions.map((n) => (
+            <option key={n} value={n} />
+          ))}
+        </datalist>
         <SheetSearchSelect
           label="Añadir diplomado al grupo"
           value=""
           placeholder="Buscar diplomado…"
-          options={free.map((i) => ({ value: i.id, label: i.name }))}
+          options={free.filter(i=>!category||[...i.primaryNames,...(i.secondaryNames??[])].some(c=>categoryKey(c)===categoryKey(category))).map((i) => ({ value: i.id, label: i.name }))}
           disabled={busy || !directory.canEdit}
           onSelect={(id) => {
             const item = directory.catalog.find((i) => i.id === id);
@@ -290,40 +246,69 @@ export function InventoryInlineGroups({
               onSelectNames([...new Set([...selectedNames, item.name])]);
           }}
         />
+        <SheetSearchSelect
+          label="Categoría para crear grupo"
+          value={category}
+          placeholder="Por categoría"
+          options={[
+            { value: "", label: "Todas las categorías" },
+            ...categoryOptions.map((c) => ({ value: c, label: c })),
+          ]}
+          disabled={busy}
+          onSelect={(c) => {
+            onCategoryFilter(c);
+          }}
+        />
+        <label className="inventory-random-count">
+          Cantidad
+          <input
+            type="number"
+            aria-label="Cantidad de diplomados al azar"
+            min={1}
+            max={100}
+            value={count}
+            onChange={(e) =>
+              setCount(Math.max(1, Math.min(100, Number(e.target.value) || 1)))
+            }
+          />
+        </label>
         <button
           type="button"
           disabled={busy || !directory.canEdit}
           onClick={() => random()}
         >
-          Al azar
+          Azar
         </button>
-        <SheetSearchSelect
-          label="Al azar por categoría"
-          value=""
-          placeholder="Al azar por categoría"
-          options={categoryOptions.map((c) => ({ value: c, label: c }))}
-          disabled={busy || !directory.canEdit}
-          onSelect={(category) => random(category)}
+        <button
+          type="button"
+          disabled={busy || !directory.canEdit || !category}
+          onClick={() => random(category)}
+        >
+          Azar por categoría
+        </button>
+        <InventoryMultiSelect
+          label="Países del nuevo grupo"
+          placeholder="Países"
+          values={countryChoice ?? countries.map((c) => c.code)}
+          options={countries.map((c) => ({ value: c.code, label: c.name }))}
+          onChange={setCountryChoice}
+          disabled={busy}
         />
-        <input
-          type="number"
-          aria-label="Cantidad de diplomados al azar"
-          min={1}
-          max={100}
-          value={count}
-          onChange={(e) =>
-            setCount(Math.max(1, Math.min(100, Number(e.target.value) || 1)))
+        <button
+          type="button"
+          className="primary"
+          disabled={busy || !directory.canEdit || !selected.length || (!!group&&sameGroupName(group.name,name)&&!additions.length)}
+          onClick={() =>
+            void (group && sameGroupName(group.name, name)
+              ? add()
+              : create(name))
           }
-        />
-        {replaceGroup && !!replaceIds.length && (
-          <button
-            type="button"
-            disabled={busy || !directory.canEdit}
-            onClick={() => setReplacing(true)}
-          >
-            Reemplazar en grupo
-          </button>
-        )}
+        >
+          {group && sameGroupName(group.name, name)
+            ? "Agregar al grupo"
+            : "Agregar · crear grupo"}{" "}
+          ({selected.length})
+        </button>
         {!!group && (
           <InventoryActionMenu label="Acciones del grupo">
             <button
@@ -346,62 +331,128 @@ export function InventoryInlineGroups({
             >
               Quitar seleccionados del grupo
             </button>
-            {selected.length === 1 &&
-              directory.groups
-                .filter(
-                  (g) =>
-                    g.id !== membership.get(categoryKey(selected[0].name))?.id,
-                )
-                .map((target) => (
-                  <button
-                    type="button"
-                    key={target.id}
-                    disabled={
-                      busy ||
-                      !membership.has(categoryKey(selected[0].name)) ||
-                      !directory.canEdit
-                    }
-                    onClick={() => {
-                      const source = membership.get(
-                        categoryKey(selected[0].name),
-                      )!;
-                      const member = source.members.find((m) =>
-                        sameGroupName(m.name, selected[0].name),
-                      )!;
-                      void run(
-                        {
-                          action: "MOVE_MEMBER",
-                          groupId: source.id,
-                          revision: source.revision,
-                          itemId: member.itemId,
-                          targetGroupId: target.id,
-                          targetRevision: target.revision,
-                          since: limaToday(),
-                        },
-                        true,
-                      );
-                    }}
-                  >
-                    Mover a {target.name}
-                  </button>
-                ))}
           </InventoryActionMenu>
         )}
       </div>
-      {message && <small role="status">{message}</small>}
-      {replacing && replaceGroup && (
-        <InventoryGroupReplacements
-          directory={directory}
-          group={replaceGroup}
-          itemIds={replaceIds}
-          onClose={() => setReplacing(false)}
-          onInspect={onInspect}
-          onApplied={async () => {
-            await onReload();
-            onSelectNames([]);
-            setReplacing(false);
+      {!!selectedNames.length && (
+        <div
+          className="inventory-workbench-selected"
+          aria-label="Diplomados seleccionados para grupo"
+        >
+          {selectedNames.map((n) => (
+            <span key={n}>
+              {n}
+              <button
+                type="button"
+                aria-label={"Quitar selección de " + n}
+                onClick={() =>
+                  onSelectNames(selectedNames.filter((v) => v !== n))
+                }
+              >
+                ×
+              </button>
+            </span>
+          ))}
+        </div>
+      )}
+      <div
+        className="inventory-workbench-line inventory-workbench-replace"
+        aria-label="Por reemplazar"
+      >
+        <strong>Por reemplazar</strong>
+        <select
+          aria-label="País para reemplazar"
+          value={column}
+          onChange={(e) =>
+            onReplacementChange(
+              e.target.value
+                ? { column: e.target.value, names: sources }
+                : null,
+            )
+          }
+        >
+          <option value="">Elige país…</option>
+          {replacementColumns.map((c) => (
+            <option key={c.id} value={c.id}>
+              {c.label}
+            </option>
+          ))}
+        </select>
+        <SheetSearchSelect
+          label="Diplomado por reemplazar"
+          value=""
+          placeholder="Buscar diplomado saliente…"
+          options={directory.catalog
+            .filter((i) => !sources.some((n) => sameGroupName(n, i.name)))
+            .map((i) => ({ value: i.id, label: i.name }))}
+          disabled={busy || !directory.canEdit}
+          onSelect={(id) => {
+            const item = directory.catalog.find((i) => i.id === id);
+            if (item) prepare([...sources, item.name]);
           }}
         />
+        <span className="inventory-inline-selection">
+          {sources.length} seleccionados
+        </span>
+        <button
+          type="button"
+          className="primary"
+          disabled={busy || !directory.canEdit || !column || !sources.length}
+          onClick={() =>
+            prepare(selectedNames.length ? selectedNames : sources)
+          }
+        >
+          Preparar reemplazos
+        </button>
+        {replacement && (
+          <button type="button" onClick={() => onReplacementChange(null)}>
+            Limpiar reemplazos
+          </button>
+        )}
+      </div>
+      {message && <small role="status">{message}</small>}
+      {replacement && replacement.names.length > 0 && (
+        <>
+          <div
+            className="inventory-workbench-selected"
+            aria-label="Diplomados por reemplazar"
+          >
+            {replacement.names.map((n) => (
+              <span key={n}>
+                {n}
+                <button
+                  type="button"
+                  aria-label={"Quitar reemplazo de " + n}
+                  onClick={() =>
+                    onReplacementChange({
+                      ...replacement,
+                      names: replacement.names.filter((v) => v !== n),
+                    })
+                  }
+                >
+                  ×
+                </button>
+              </span>
+            ))}
+          </div>
+          <InventorySheetReplacement
+            key={replacement.column}
+            listId={directory.listId}
+            tableId={replacement.column.split(":")[0]}
+            country={replacement.column.split(":")[1]}
+            name={replacement.names[0]}
+            names={replacement.names}
+            directoryOverride={directory}
+            sheetName={
+              replacementColumns.find((c) => c.id === replacement.column)
+                ?.label ?? ""
+            }
+            since=""
+            until=""
+            onClose={() => onReplacementChange(null)}
+            onChanged={() => onReplacementApplied(replacement.column)}
+          />
+        </>
       )}
     </section>
   );

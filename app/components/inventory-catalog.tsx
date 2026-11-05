@@ -175,6 +175,8 @@ export function InventoryCatalog({
     null,
   );
   const [categories, setCategories] = useState<InventoryCategoryState | null>(null);
+  const [replacementDraft,setReplacementDraft]=useState<{column:string;names:string[]}|null>(null);
+  useEffect(()=>setReplacementDraft(null),[listId]);
   const [groupUnification,setGroupUnification]=useState<string[]|null>(null);
   const [groupFilter, setGroupFilter] = useState("");
   const [groupOrder, setGroupOrder] = useWorkbookPreference<string>(
@@ -1529,7 +1531,7 @@ export function InventoryCatalog({
   selectedForActions.current = selected;
   const cellModel = useMemo(()=>({}),[
     listId,tables,categories,trialDirectory?.catalog,trialDirectory?.groups,trialDirectory?.canEdit,
-    sheetDirectory,busy,syllabiBusy,categoryDrop,onChanged,onInventorySynced,trialDirectory?.usage,trialDirectory?.usageReady,
+    sheetDirectory,busy,syllabiBusy,categoryDrop,onChanged,onInventorySynced,replacementDraft,trialDirectory?.usage,trialDirectory?.usageReady,
     parameters.join("|"),countryCodes.join("|"),viewportCountries.join("|"),hiddenColumnKeys.join("|"),
     columns.some(c=>c.key==="gap"),
   ]);
@@ -2078,7 +2080,7 @@ export function InventoryCatalog({
             </button>
           </div>
         </div>
-        {trialDirectory&&<InventoryInlineGroups directory={trialDirectory} groupId={groupFilter} selectedNames={available.filter(g=>g.links.some(a=>selected.includes(a.id))).map(g=>g.name)} countries={[...new Map(knownCountries.map(id=>{const code=id.slice(id.lastIndexOf(":")+1);return [code,{code,name:countryName(code)}] as const})).values()]} onGroupSelect={id=>{setGroupFilter(id);setTopPreference("");}} onSelectNames={names=>{const chosen=new Set(names.map(categoryKey));setSelected(available.filter(g=>chosen.has(categoryKey(g.name))).flatMap(g=>g.links.map(a=>a.id)));}} onPatched={async group=>{const byName=new Map(trialDirectory.catalog.map(i=>[categoryKey(i.name),i]));const needsReload=group.members.some(m=>byName.get(categoryKey(m.name))?.id!==m.itemId);setTrialDirectory(current=>current?{...current,groups:current.groups.some(g=>g.id===group.id)?current.groups.map(g=>g.id===group.id?group:g):[...current.groups,group]}:current);setGroupFilter(group.id);setSelected([]);if(needsReload)await reloadGroups();}} onReload={reloadGroups} onInspect={name=>{const column=topSheet||countryCodes[0];const point=countryEvaluation.lookup.get(JSON.stringify([categoryKey(name),column]));if(point?.targets[0])setFullDetail({name,aliasId:point.targets[0].aliasId,tableId:column.split(":")[0],country:column.split(":")[1]});else setMessage("Este diplomado no tiene datos en el país seleccionado.");}}/>}
+        {trialDirectory&&<InventoryInlineGroups directory={trialDirectory} groupId={groupFilter} selectedNames={available.filter(g=>g.links.some(a=>selected.includes(a.id))).map(g=>g.name)} countries={[...new Map(knownCountries.map(id=>{const code=id.slice(id.lastIndexOf(":")+1);return [code,{code,name:countryName(code)}] as const})).values()]} onGroupSelect={id=>{setGroupFilter(id);setTopPreference("");}} onSelectNames={names=>{const chosen=new Set(names.map(categoryKey));setSelected(available.filter(g=>chosen.has(categoryKey(g.name))).flatMap(g=>g.links.map(a=>a.id)));}} onPatched={async group=>{const byName=new Map(trialDirectory.catalog.map(i=>[categoryKey(i.name),i]));const needsReload=group.members.some(m=>byName.get(categoryKey(m.name))?.id!==m.itemId);setTrialDirectory(current=>current?{...current,groups:current.groups.some(g=>g.id===group.id)?current.groups.map(g=>g.id===group.id?group:g):[...current.groups,group]}:current);setGroupFilter(group.id);setSelected([]);if(needsReload)await reloadGroups();}} categoryFilter={activeCategories.length===1?activeCategories[0]:""} onCategoryFilter={name=>{selectCategories(name?[name]:[]);setGroupFilter("");setTopPreference("");}} replacement={replacementDraft} replacementColumns={countryCodes.map(id=>({id,label:countryCodes.filter(v=>v.split(":")[1]===id.split(":")[1]).length>1?sheetLabel(id):countryName(id.split(":")[1])}))} defaultColumn={topSheet||""} onReplacementChange={setReplacementDraft} onReplacementApplied={async column=>{countryEvaluation.refresh([column]);setSelected([]);await Promise.all([onChanged(),reloadCategories(),reloadSheetDirectory(),reloadGroups()]);}} onReload={reloadGroups} onInspect={name=>{const column=topSheet||countryCodes[0];const point=countryEvaluation.lookup.get(JSON.stringify([categoryKey(name),column]));if(point?.targets[0])setFullDetail({name,aliasId:point.targets[0].aliasId,tableId:column.split(":")[0],country:column.split(":")[1]});else setMessage("Este diplomado no tiene datos en el país seleccionado.");}}/>}
         {usageError&&<small role="status">{usageError} <button type="button" onClick={()=>void reloadUsage()}>Reintentar uso</button></small>}
         {showParameter("countries") && (
           <div className="inventory-country-controls">
@@ -2932,6 +2934,8 @@ export function InventoryCatalog({
                             visibleCountries={viewportCountries}
                             hiddenColumns={hiddenColumnKeys}
                             evaluation={countryEvaluation}
+                            onReplace={(column,name)=>{setReplacementDraft(current=>({column,names:current?.column===column?[...new Set([...current.names,name])]:[name]}));document.querySelector('[aria-label="Por reemplazar"]')?.scrollIntoView({block:"nearest"});}}
+                            replacementSelection={replacementDraft}
                             renderUsage={(column,point)=>{const code=column.slice(column.lastIndexOf(":")+1),item=trialItemsByName.get(categoryKey(g.name));return <InventoryUsageControl listId={listId} itemId={item?.id} name={g.name} country={code} ready={trialDirectory?.usageReady===true} canEdit={!!trialDirectory?.canEdit&&!busy} cell={trialDirectory?.usage[JSON.stringify([categoryKey(g.name),code])]} onApplied={cell=>setTrialDirectory(current=>current?{...current,usage:{...current.usage,[JSON.stringify([categoryKey(g.name),code])]:cell}}:current)}/>;}}
                             renderSync={(column, point) => {
                               const tableId = column.split(":")[0],

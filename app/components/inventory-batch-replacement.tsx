@@ -43,10 +43,12 @@ export function InventoryBatchReplacement({
     origins.map((i) => ({ from: i.name, to: "", mode: "MANUAL" })),
   );
   const [error, setError] = useState("");
+  const [category,setCategory]=useState("");
+  const categories=[...new Set(candidates.flatMap(i=>[...i.primaryNames,...(i.secondaryNames??[])]))].sort((a,b)=>a.localeCompare(b,"es"));
   const [groupId, setGroupId] = useState("");
   const [usage, setUsage] = useState<ReplacementUsageFilter>("ALL");
   const filteredCandidates = groupReplacementCandidates(
-    candidates,
+    candidates.filter(i=>!category||[...i.primaryNames,...(i.secondaryNames??[])].some(c=>categoryKey(c)===categoryKey(category))),
     directory,
     country,
     groupId,
@@ -125,6 +127,7 @@ export function InventoryBatchReplacement({
             setError("");
           }}
         />
+        <SheetSearchSelect label="Categoría de los reemplazos" value={category} placeholder="Por categoría" options={[{value:"",label:"Todas las categorías"},...categories.map(c=>({value:c,label:c}))]} disabled={busy} onSelect={value=>{setCategory(value);setPlan(current=>current.map(p=>({...p,to:"",mode:"MANUAL"})));}}/>
         <div className="row">
           {groupId && (
             <button
@@ -148,7 +151,7 @@ export function InventoryBatchReplacement({
               Proponer del grupo · sin usar primero
             </button>
           )}
-          <button type="button" disabled={busy} onClick={() => propose(null)}>Al azar</button>
+          <button type="button" disabled={busy} onClick={() => propose(null)}>{category?"Azar por categoría":"Al azar"}</button>
           <button type="button" disabled={busy} onClick={() => propose(true)}>
             Azar · misma categoría
           </button>

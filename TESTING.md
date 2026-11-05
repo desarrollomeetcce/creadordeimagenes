@@ -1,4 +1,13 @@
 
+### 2026-11-05 · Crear y reemplazar en dos líneas
+
+Crear grupo muestra título editable con sugerencia del número faltante, buscador acumulativo con chips, categoría que filtra la lista principal, cantidad y botones separados Azar/Azar por categoría. Agregar confirma la creación o añade a un grupo seleccionado, con permisos, unicidad y CAS existentes. Se conservan filtros/acciones de asignación de grupos en la tabla.
+
+Por reemplazar exige columna/país, toma checks de la lista (incluido Top del país), admite selección desde menú Por reemplazar por diplomado/país y muestra selección local diferenciada. Vista inline con pares sale→entra, búsqueda/categoría y azar; no popup. Preparar no escribe ni publica. Confirmar usa reemplazo atómico existente: STOP saliente, CREATE entrante únicamente en país elegido; grupo general, países restantes, hechos e historial se conservan. Catálogo recibido se reutiliza; contexto fresco de permisos/revisiones, sin consulta por tecla ni generación. Cambio de lista limpia el borrador.
+
+Verificación319 unitarias,45 integraciones de activación/asignación/uso, typecheck/build y5 comprobaciones Chromium: búsqueda acumula dos sin escritura; categoría filtra lista y azar cantidad2 crea Grupo6; menú de Colombia prepara dos pares inline sin modal ni POST; única confirmación verifica STOP/CREATE en Colombia y Perú intacto; Top Perú con dos checks prepara dos pares para Perú sin escribir. Pruebas sintéticas exclusivas sin Graph real ni anuncios con cargo. Publicación main no acredita despliegue/latencia del host privado.
+
+
 ### 2026-11-05 · Cuota compartida al renovar Meta y cifras progresivas
 
 Rotación de token manual/OAuth conservaba hechos y cursor pero cambiaba el ámbito de cuota. Ahora transfiere conservadoramente los máximos de blockedUntil/nextReadAt/lastLimitedAt/failures y plazos provider/recovery al nuevo ámbito dentro del guardado CAS, sin borrar el ámbito anterior ni cambiar hechos/agenda. No evita límites de Meta ni acredita la causa de un incidente histórico concreto.

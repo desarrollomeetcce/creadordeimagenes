@@ -219,8 +219,11 @@ export function InventoryCountryCells({
   renderSync,
   renderUsage,
   visibleCountries,
+  onReplace,
+  replacementSelection,
 }: {
   visibleCountries?: string[];
+  replacementSelection?:{column:string;names:string[]}|null;
   name: string;
   countries: string[];
   hiddenColumns: string[];
@@ -271,7 +274,9 @@ export function InventoryCountryCells({
             data-inventory-country={column}
             data-country-metric="compact"
             className="inventory-country-compact"
+            data-replacing={replacementSelection?.column===column&&replacementSelection.names.includes(name)}
           >
+            {replacementSelection?.column===column&&replacementSelection.names.includes(name)&&<small className="inventory-country-replacing">Por reemplazar</small>}
             <div className="inventory-country-actions">
               <InventoryCampaignControl
                 title={title}
@@ -283,6 +288,7 @@ export function InventoryCountryCells({
                 extraActions={
                   <>
                     {renderSync?.(column, point)}
+                    {onReplace&&<button type="button" role="menuitem" disabled={!canEdit||busy} onClick={e=>{e.currentTarget.closest<HTMLElement>('[popover]')?.hidePopover();onReplace(column,name)}}>Por reemplazar</button>}
                     {point && (
                       <button
                         type="button"

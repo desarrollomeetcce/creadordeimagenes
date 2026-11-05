@@ -26,8 +26,10 @@ export function InventorySheetReplacement({
   onChanged,
   onClose,
   source = "budget",
+  directoryOverride,
 }: {
   source?: "budget" | "meta";
+  directoryOverride?:TrialDirectory;
   listId: string;
   tableId: string;
   country: string;
@@ -63,7 +65,7 @@ export function InventorySheetReplacement({
     setError("");
     setSaved(false);
     void Promise.all([
-      readGroupDirectory(userId, listId, () =>
+      directoryOverride ? Promise.resolve(directoryOverride) : readGroupDirectory(userId, listId, () =>
         api(
           "meta-ads/inventory/trials?" +
             new URLSearchParams({ listId, mode: "directory" }),
