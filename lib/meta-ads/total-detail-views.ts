@@ -1,4 +1,8 @@
-import { manualTotalColumns, automaticTotalColumns } from "./totals-detail";
+import {
+  manualTotalColumns,
+  automaticTotalColumns,
+  type TotalColumn,
+} from "./totals-detail";
 export type TotalDetailView = "manual" | "automatic" | "today" | "yesterday";
 export const totalDetailViewNames: Record<TotalDetailView, string> = {
   manual: "Total manual",
@@ -6,19 +10,26 @@ export const totalDetailViewNames: Record<TotalDetailView, string> = {
   today: "Hoy · avance provisional",
   yesterday: "Ayer · día completo",
 };
-export function totalViewColumns(view: TotalDetailView) {
-  if (view === "automatic") return [...automaticTotalColumns];
+/** Totals presentation omits retired BC sums and fixed-cost entry, preserving stored history. */
+export function totalViewColumns(view: TotalDetailView): TotalColumn[] {
+  const available: readonly TotalColumn[] =
+    view === "automatic" ? automaticTotalColumns : manualTotalColumns;
   const keys =
     view === "today"
-      ? ["sales", "budget", "advisorBase", "fixedCost"]
+      ? ["sales", "budget"]
       : view === "yesterday"
-        ? ["sales", "baseManual", "totalSpend", "fixedCost"]
-        : manualTotalColumns.map((c) => c.key);
-  return manualTotalColumns.filter((c) => keys.includes(c.key));
+        ? ["sales", "baseManual", "totalSpend"]
+        : null;
+  return available.filter(
+    (column) =>
+      column.key !== "advisorBase" &&
+      column.key !== "fixedCost" &&
+      (!keys || keys.includes(column.key)),
+  );
 }
 export function totalProductMetrics(view: TotalDetailView) {
   return view === "automatic"
-    ? (["sales", "base", "spend", "fixedCost"] as const)
+    ? (["sales", "base", "spend"] as const)
     : view === "yesterday"
       ? (["sales"] as const)
       : (["sales", "budget"] as const);

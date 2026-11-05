@@ -192,7 +192,6 @@ export function TotalsDetail({
     totalDetailSummary(focusDays.map((day) => value(day, column)));
   const sold = summarize(manualTotalColumns.find((c) => c.key === "sales")!),
     bm = summarize(manualTotalColumns.find((c) => c.key === "baseManual")!),
-    ba = summarize(manualTotalColumns.find((c) => c.key === "advisorBase")!),
     gm = summarize(manualTotalColumns.find((c) => c.key === "totalSpend")!),
     base = summarize(automaticTotalColumns.find((c) => c.key === "base")!),
     spend = summarize(automaticTotalColumns.find((c) => c.key === "spend")!);
@@ -201,15 +200,12 @@ export function TotalsDetail({
       ? manualTotalColumns[0]
       : v === bm
         ? manualTotalColumns.find((c) => c.key === "baseManual")!
-        : v === ba
-          ? manualTotalColumns.find((c) => c.key === "advisorBase")!
-          : v === gm
-            ? manualTotalColumns.find((c) => c.key === "totalSpend")!
-            : v === base
-              ? automaticTotalColumns.find((c) => c.key === "base")!
-              : automaticTotalColumns.find((c) => c.key === "spend")!;
+        : v === gm
+          ? manualTotalColumns.find((c) => c.key === "totalSpend")!
+          : v === base
+            ? automaticTotalColumns.find((c) => c.key === "base")!
+            : automaticTotalColumns.find((c) => c.key === "spend")!;
   const ratios = [
-    { name: "Ventas / BC", numerator: sold, denominator: ba, percent: true },
     { name: "Ventas / BM", numerator: sold, denominator: bm, percent: true },
     {
       name: "Costo por venta · GM",
@@ -243,11 +239,11 @@ export function TotalsDetail({
     },
   ].filter((r) =>
     mode === "automatic"
-      ? r.name.includes("Meta") || r.name === "Ventas / BC"
+      ? r.name.includes("Meta")
       : mode === "today"
-        ? r.name === "Ventas / BC"
+        ? false
         : mode === "yesterday"
-          ? !r.name.includes("Meta") && r.name !== "Ventas / BC"
+          ? !r.name.includes("Meta")
           : !r.name.includes("Meta"),
   );
   const chartValue = (day: string, column: TotalColumn) =>
@@ -408,7 +404,7 @@ export function TotalsDetail({
                 Cada hoja, país y moneda se consulta por separado. V es la misma
                 suma en ambas vistas.{" "}
                 {mode === "automatic"
-                  ? "B y G proceden de la vista automática; BC se ingresa por asesor; CF suma los costos de la hoja."
+                  ? "B y G proceden de la vista automática."
                   : "Parámetros de esta vista: " +
                     columns.map((c) => c.label).join(", ") +
                     ". Las bases y gastos manuales pertenecen a la hoja y país."}{" "}

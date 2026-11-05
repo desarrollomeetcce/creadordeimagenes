@@ -86,7 +86,8 @@ export function AdvisorsSheet({
   onOpenPeriod?: (period: AdvisorPeriodView) => void;
 }) {
   const [orderRevision, setOrderRevision] = useState("");
-  const orderPending = useRef(false), draggedAdvisor = useRef<string | null>(null);
+  const orderPending = useRef(false),
+    draggedAdvisor = useRef<string | null>(null);
   const [contactBase, setContactBase] = useState<{
     advisorId: string;
     name: string;
@@ -113,25 +114,31 @@ export function AdvisorsSheet({
     month: "2-digit",
     day: "2-digit",
   }).format(new Date());
-  const [analysisView, setAnalysisView] = useState<
-    "period" | "today" | "yesterday"
-  >("period");
   const [dataView, setDataView] = useWorkbookPreference<string>(
     listId,
-    "dataView",
-    "manual",
+    "advisor-data-view-v2",
+    "meta",
   );
   const showMeta = dataView === "meta";
-  const showBM = !showMeta && analysisView !== "today",
-    showBC = !showMeta && analysisView !== "yesterday";
-  const rateBasis =
-    showMeta || analysisView === "period"
-      ? null
-      : analysisView === "today"
-        ? "BC"
-        : "BM";
+  const dayColumns = showMeta
+    ? ([
+        ["attendance", 84],
+        ["absence", 76],
+        ["sales", 60],
+        ["metaBase", 90],
+        ["metaSpend", 110],
+        ["metaMetrics", 124],
+      ] as const)
+    : ([
+        ["attendance", 84],
+        ["absence", 76],
+        ["advisorBase", 100],
+        ["sales", 60],
+        ["effectivenessBC", 112],
+        ["manualBase", 95],
+        ["effectivenessBM", 112],
+      ] as const);
   const [teamAnalysis, setTeamAnalysis] = useState(false);
-  const [teamViewOverride, setTeamViewOverride] = useState<"meta" | null>(null);
   const [detailVersion, setDetailVersion] = useState(0);
   const [detailDay, setDetailDay] = useState<string | null>(null);
   const [periodSince, setSince] = useWorkbookPreference<string>(
@@ -254,20 +261,50 @@ export function AdvisorsSheet({
     }
   };
   const moveAdvisor = async (source: string, target: string) => {
-    if (!canEdit || busy || orderPending.current || rowsContext !== key || !orderRevision || source === target) return;
-    const ids = rows.map(row => row.id), next = moveAdvisorInOrder(ids, source, target);
+    if (
+      !canEdit ||
+      busy ||
+      orderPending.current ||
+      rowsContext !== key ||
+      !orderRevision ||
+      source === target
+    )
+      return;
+    const ids = rows.map((row) => row.id),
+      next = moveAdvisorInOrder(ids, source, target);
     if (next === ids) return;
     const requested = key;
-    orderPending.current = true; setBusy(true); setMessage(""); sequence.current++;
+    orderPending.current = true;
+    setBusy(true);
+    setMessage("");
+    sequence.current++;
     try {
-      const saved: { advisorIds: string[]; revision: string } = await api("meta-ads/advisors/order", "PUT", { advisorListId: listId, advisorIds: next, expectedRevision: orderRevision });
+      const saved: { advisorIds: string[]; revision: string } = await api(
+        "meta-ads/advisors/order",
+        "PUT",
+        {
+          advisorListId: listId,
+          advisorIds: next,
+          expectedRevision: orderRevision,
+        },
+      );
       if (context.current !== requested) return;
-      const byId = new Map(rows.map(row => [row.id, row]));
-      setRows(saved.advisorIds.flatMap(id => byId.has(id) ? [byId.get(id)!] : []));
-      setOrderRevision(saved.revision); setMessage("Orden compartido guardado.");
+      const byId = new Map(rows.map((row) => [row.id, row]));
+      setRows(
+        saved.advisorIds.flatMap((id) => (byId.has(id) ? [byId.get(id)!] : [])),
+      );
+      setOrderRevision(saved.revision);
+      setMessage("Orden compartido guardado.");
     } catch (error) {
-      if (context.current === requested) { setMessage((error as Error).message); if ((error as { status?: number }).status === 409) await load(false, true); }
-    } finally { orderPending.current = false; setBusy(false); }
+      if (context.current === requested) {
+        setMessage((error as Error).message);
+        if ((error as { status?: number }).status === 409)
+          await load(false, true);
+      }
+    } finally {
+      orderPending.current = false;
+      setBusy(false);
+    }
   };
   const showAdvisor = (id: string) => {
     const found = rows.find((p) => p.id === id);
@@ -332,55 +369,6 @@ export function AdvisorsSheet({
       <div className="row sheet-toolbar sheet-toolbar-with-actions">
         <div className="row sheet-toolbar-controls">
           <strong>Asesores</strong>
-          <div
-            className="row sheet-view-buttons"
-            aria-label="Vista de asesores"
-          >
-            {(
-              [
-                ["today", "Hoy · avance provisional"],
-                ["yesterday", "Ayer · día completo"],
-                ["period", "Análisis del período"],
-              ] as const
-            ).map(([value, label]) => (
-              <button
-                key={value}
-                className={
-                  value === "today"
-                    ? "sheet-mode-today"
-                    : value === "yesterday"
-                      ? "sheet-mode-yesterday"
-                      : undefined
-                }
-                aria-pressed={analysisView === value}
-                onClick={() => {
-                  setAnalysisView(value);
-                  if (value === "today" || value === "yesterday") {
-                    const day =
-                      value === "today"
-                        ? today
-                        : new Date(Date.parse(today) - 86400000)
-                            .toISOString()
-                            .slice(0, 10);
-                    setSince(day);
-                    setUntil(day);
-                    setAliasId("");
-                  }
-                }}
-              >
-                {label}
-              </button>
-            ))}
-            <button
-              type="button"
-              onClick={() => {
-                setTeamViewOverride("meta");
-                setTeamAnalysis(true);
-              }}
-            >
-              Datos Meta
-            </button>
-          </div>
           <div
             className="row"
             role="group"
@@ -498,88 +486,29 @@ export function AdvisorsSheet({
             className="effectiveness-grid advisor-grid sheet-resizable-table"
             style={{
               width:
-                (widths.advisor ?? 180) +
+                (widths.advisor ?? 300) +
                 visibleDays.reduce(
-                  (n, d) =>
-                    n +
-                    (widths[d + "attendance"] ?? 84) +
-                    (widths[d + "sales"] ?? 48) +
-                    (widths[d + "absence"] ?? 56) +
-                    (showMeta
-                      ? (widths[d + "metaBase"] ?? 76) +
-                        (widths[d + "metaEffectiveness"] ?? 110) +
-                        (widths[d + "metaSpend"] ?? 110) +
-                        (widths[d + "metaCac"] ?? 100)
-                      : 0) +
-                    (showBM ? (widths[d + "manualBase"] ?? 64) : 0) +
-                    (showBC ? (widths[d + "advisorBase"] ?? 64) : 0) +
-                    (rateBasis ? (widths[d + "effectiveness"] ?? 84) : 0),
+                  (sum, day) =>
+                    sum +
+                    dayColumns.reduce(
+                      (n, [column, fallback]) =>
+                        n + (widths[day + column] ?? fallback),
+                      0,
+                    ),
                   0,
                 ),
             }}
           >
             <colgroup>
-              <col style={{ width: widths.advisor ?? 180 }} />
-              {visibleDays.flatMap((d) => [
-                <col
-                  key={d + "attendance"}
-                  style={{ width: widths[d + "attendance"] ?? 84 }}
-                />,
-                <col
-                  key={d + "absence"}
-                  style={{ width: widths[d + "absence"] ?? 56 }}
-                />,
-                ...(showBM
-                  ? [
-                      <col
-                        key={d + "manualBase"}
-                        style={{ width: widths[d + "manualBase"] ?? 64 }}
-                      />,
-                    ]
-                  : []),
-                ...(showBC
-                  ? [
-                      <col
-                        key={d + "advisorBase"}
-                        style={{ width: widths[d + "advisorBase"] ?? 64 }}
-                      />,
-                    ]
-                  : []),
-                <col
-                  key={d + "sales"}
-                  style={{ width: widths[d + "sales"] ?? 48 }}
-                />,
-                ...(showMeta
-                  ? [
-                      <col
-                        key={d + "metaBase"}
-                        style={{ width: widths[d + "metaBase"] ?? 76 }}
-                      />,
-                      <col
-                        key={d + "metaEffectiveness"}
-                        style={{
-                          width: widths[d + "metaEffectiveness"] ?? 110,
-                        }}
-                      />,
-                      <col
-                        key={d + "metaSpend"}
-                        style={{ width: widths[d + "metaSpend"] ?? 110 }}
-                      />,
-                      <col
-                        key={d + "metaCac"}
-                        style={{ width: widths[d + "metaCac"] ?? 100 }}
-                      />,
-                    ]
-                  : []),
-                ...(rateBasis
-                  ? [
-                      <col
-                        key={d + "effectiveness"}
-                        style={{ width: widths[d + "effectiveness"] ?? 84 }}
-                      />,
-                    ]
-                  : []),
-              ])}
+              <col style={{ width: widths.advisor ?? 300 }} />
+              {visibleDays.flatMap((day) =>
+                dayColumns.map(([column, fallback]) => (
+                  <col
+                    key={day + column}
+                    style={{ width: widths[day + column] ?? fallback }}
+                  />
+                )),
+              )}
             </colgroup>
             <caption className="sr-only">
               Asistencia y ventas diarias por asesor
@@ -594,7 +523,6 @@ export function AdvisorsSheet({
                     type="button"
                     className="advisor-team-trigger"
                     onClick={() => {
-                      setTeamViewOverride(null);
                       setTeamAnalysis(true);
                     }}
                   >
@@ -633,17 +561,7 @@ export function AdvisorsSheet({
                   </div>
                 </th>
                 {visibleDays.map((d) => (
-                  <th
-                    key={d}
-                    colSpan={
-                      3 +
-                      Number(showBM) +
-                      Number(showBC) +
-                      Number(!!rateBasis) +
-                      (showMeta ? 4 : 0)
-                    }
-                    scope="colgroup"
-                  >
+                  <th key={d} colSpan={dayColumns.length} scope="colgroup">
                     {d.slice(8)}.{d.slice(5, 7)}
                   </th>
                 ))}
@@ -654,10 +572,7 @@ export function AdvisorsSheet({
                     key={d}
                     day={d}
                     handle={handle}
-                    showBM={showBM}
-                    showBC={showBC}
                     showMeta={showMeta}
-                    rateBasis={rateBasis}
                   />
                 ))}
               </tr>
@@ -667,9 +582,28 @@ export function AdvisorsSheet({
                 <SheetSizedRow
                   key={p.id}
                   data-advisor-id={p.id}
-                  onDragOver={e => { if (canEdit && !busy && draggedAdvisor.current && draggedAdvisor.current !== p.id) { e.preventDefault(); e.dataTransfer.dropEffect = "move"; e.currentTarget.dataset.advisorDrop = "true"; } }}
-                  onDragLeave={e => { delete e.currentTarget.dataset.advisorDrop; }}
-                  onDrop={e => { e.preventDefault(); delete e.currentTarget.dataset.advisorDrop; const source = draggedAdvisor.current; draggedAdvisor.current = null; if (source) void moveAdvisor(source, p.id); }}
+                  onDragOver={(e) => {
+                    if (
+                      canEdit &&
+                      !busy &&
+                      draggedAdvisor.current &&
+                      draggedAdvisor.current !== p.id
+                    ) {
+                      e.preventDefault();
+                      e.dataTransfer.dropEffect = "move";
+                      e.currentTarget.dataset.advisorDrop = "true";
+                    }
+                  }}
+                  onDragLeave={(e) => {
+                    delete e.currentTarget.dataset.advisorDrop;
+                  }}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    delete e.currentTarget.dataset.advisorDrop;
+                    const source = draggedAdvisor.current;
+                    draggedAdvisor.current = null;
+                    if (source) void moveAdvisor(source, p.id);
+                  }}
                   label={p.name}
                   height={rowsLayout.heights[p.id]}
                   onResize={(v) => rowsLayout.resize(p.id, v)}
@@ -677,13 +611,56 @@ export function AdvisorsSheet({
                 >
                   <td className="advisor-name">
                     <div className="advisor-name-actions">
-                      {canEdit && <button type="button" className="advisor-order-handle" draggable={!busy && !!orderRevision}
-                        disabled={busy || !orderRevision || rowsContext !== key}
-                        aria-label={`Mover asesor ${p.name}`} title="Arrastra para cambiar el orden compartido. Alt+↑/↓ también mueve."
-                        onDragStart={e => { if (busy || !orderRevision) { e.preventDefault(); return; } draggedAdvisor.current = p.id; e.dataTransfer.effectAllowed = "move"; e.dataTransfer.setData("application/x-advisor-order", p.id); }}
-                        onDragEnd={() => { draggedAdvisor.current = null; document.querySelectorAll("[data-advisor-drop]").forEach(node => node.removeAttribute("data-advisor-drop")); }}
-                        onKeyDown={e => { if (e.altKey && (e.key === "ArrowUp" || e.key === "ArrowDown")) { e.preventDefault(); const index = filtered.findIndex(person => person.id === p.id), target = filtered[index + (e.key === "ArrowUp" ? -1 : 1)]; if (target) void moveAdvisor(p.id, target.id); } }}
-                      >⠿</button>}
+                      {canEdit && (
+                        <button
+                          type="button"
+                          className="advisor-order-handle"
+                          draggable={!busy && !!orderRevision}
+                          disabled={
+                            busy || !orderRevision || rowsContext !== key
+                          }
+                          aria-label={`Mover asesor ${p.name}`}
+                          title="Arrastra para cambiar el orden compartido. Alt+↑/↓ también mueve."
+                          onDragStart={(e) => {
+                            if (busy || !orderRevision) {
+                              e.preventDefault();
+                              return;
+                            }
+                            draggedAdvisor.current = p.id;
+                            e.dataTransfer.effectAllowed = "move";
+                            e.dataTransfer.setData(
+                              "application/x-advisor-order",
+                              p.id,
+                            );
+                          }}
+                          onDragEnd={() => {
+                            draggedAdvisor.current = null;
+                            document
+                              .querySelectorAll("[data-advisor-drop]")
+                              .forEach((node) =>
+                                node.removeAttribute("data-advisor-drop"),
+                              );
+                          }}
+                          onKeyDown={(e) => {
+                            if (
+                              e.altKey &&
+                              (e.key === "ArrowUp" || e.key === "ArrowDown")
+                            ) {
+                              e.preventDefault();
+                              const index = filtered.findIndex(
+                                  (person) => person.id === p.id,
+                                ),
+                                target =
+                                  filtered[
+                                    index + (e.key === "ArrowUp" ? -1 : 1)
+                                  ];
+                              if (target) void moveAdvisor(p.id, target.id);
+                            }
+                          }}
+                        >
+                          ⠿
+                        </button>
+                      )}
                       <button
                         type="button"
                         className="advisor-detail-trigger"
@@ -697,7 +674,7 @@ export function AdvisorsSheet({
                       >
                         Detalle ↗
                       </button>
-                      <span className="advisor-name-label">{p.name}</span>
+                      <span className="advisor-name-label" title={p.name}>{p.name}</span>
                       <button
                         type="button"
                         className="advisor-commercial-badge"
@@ -756,10 +733,7 @@ export function AdvisorsSheet({
                         person={p}
                         day={d}
                         cell={c}
-                        showBM={showBM}
-                        showBC={showBC}
                         showMeta={showMeta}
-                        rateBasis={rateBasis}
                         today={today}
                         disabled={busy || loading}
                         onError={setMessage}
@@ -828,7 +802,7 @@ export function AdvisorsSheet({
           tables={tables}
           initialTableId={tableId}
           initialCountry={country}
-          initialView={teamViewOverride ?? analysisView}
+          initialView={showMeta ? "meta" : "period"}
           initialSince={since}
           initialUntil={until}
           onClose={() => setTeamAnalysis(false)}
@@ -843,7 +817,7 @@ export function AdvisorsSheet({
           initialTableId={tableId}
           initialAliasId={aliasId}
           initialCountry={country}
-          initialAnalysisView={analysisView}
+          initialAnalysisView="period"
           initialRangeSelected={!!detailDay}
           initialSince={detailDay ?? since}
           initialUntil={detailDay ?? until}
@@ -857,138 +831,91 @@ export function AdvisorsSheet({
 function FragmentHeaders({
   day,
   handle,
-  showBM,
-  showBC,
   showMeta,
-  rateBasis,
 }: {
-  rateBasis: "BC" | "BM" | null;
-  showBM: boolean;
-  showBC: boolean;
-  showMeta: boolean;
   day: string;
+  showMeta: boolean;
   handle: (key: string, label: string) => ReactNode;
 }) {
+  const header = (
+    key: string,
+    code: string,
+    label: string,
+    kind: "manual" | "automatic",
+    formula?: string,
+    nextDay = false,
+  ) => (
+    <th
+      scope="col"
+      aria-label={label}
+      data-fill-kind={kind}
+      title={formula ?? label}
+    >
+      {code}
+      {handle(day + key, label + " " + day)}
+      <small className="advisor-column-description">{label}</small>
+      {formula ? (
+        <small>{formula}</small>
+      ) : (
+        <SheetDataFillBadge kind={kind} nextDay={nextDay} />
+      )}
+    </th>
+  );
   return (
     <>
-      <th
-        scope="col"
-        title="Asistencia · registro manual del mismo día"
-        aria-label="Asistencia"
-        data-fill-kind="manual"
-      >
-        A{handle(day + "attendance", "Asistencia " + day)}
-        <SheetDataFillBadge kind="manual" />
-      </th>
-      <th
-        scope="col"
-        title="Horas ausentes · registro manual del mismo día"
-        aria-label="Horas ausentes"
-        data-fill-kind="manual"
-      >
-        H{handle(day + "absence", "Horas ausentes " + day)}
-        <SheetDataFillBadge kind="manual" />
-      </th>
-      {showBM && (
-        <th
-          scope="col"
-          title="Base manual recibida de Totales; solo lectura"
-          aria-label="Base manual"
-          data-fill-kind="automatic"
-          data-fill-timing="next-day"
-        >
-          BM{handle(day + "manualBase", "Base manual " + day)}
-          <SheetDataFillBadge kind="automatic" nextDay />
-        </th>
-      )}
-      {showBC && (
-        <th
-          scope="col"
-          title="Base por contactar: registra por asesor, hoja y país"
-          aria-label="Base por contactar"
-          data-fill-kind="manual"
-          data-fill-timing="same-day"
-        >
-          BC{handle(day + "advisorBase", "Base por contactar " + day)}
-          <SheetDataFillBadge kind="manual" />
-        </th>
-      )}
-      <th
-        scope="col"
-        title="Ventas recibidas de las hojas"
-        aria-label="Ventas"
-        data-fill-kind="automatic"
-      >
-        V{handle(day + "sales", "Ventas " + day)}
-        <SheetDataFillBadge kind="automatic" />
-      </th>
-      {showMeta && (
+      {header("attendance", "A", "Asistencia", "manual")}
+      {header("absence", "H", "Inasistencia", "manual")}
+      {!showMeta && header("advisorBase", "BC", "Base por contactar", "manual")}
+      {header("sales", "V", "Ventas", "automatic")}
+      {!showMeta && (
         <>
-          <th
-            scope="col"
-            aria-label="Base Meta"
-            title="B Meta: suma de la base original de todas las campañas asignadas al asesor en las hojas, países y fecha consultados. No usa las anotaciones manuales de B."
-            data-fill-kind="automatic"
-          >
-            B Meta{handle(day + "metaBase", "Base Meta " + day)}
-            <SheetDataFillBadge kind="automatic" />
-          </th>
-          <th
-            scope="col"
-            aria-label="Efectividad Meta Ventas / B"
-            className="advisor-effectiveness advisor-effectiveness-meta"
-            title="Ventas / B Meta de esta misma fecha × 100. Los datos incompletos se marcan con asterisco."
-          >
-            Efect. Meta
-            {handle(day + "metaEffectiveness", "Efectividad Meta " + day)}
-            <small>V / B × 100</small>
-          </th>
-          <th
-            scope="col"
-            aria-label="Gasto Meta"
-            title="Suma del gasto original de las campañas asignadas, por moneda."
-            data-fill-kind="automatic"
-          >
-            G Meta{handle(day + "metaSpend", "Gasto Meta " + day)}
-            <SheetDataFillBadge kind="automatic" />
-          </th>
-          <th
-            scope="col"
-            aria-label="CAC Meta"
-            title="Costo de adquisición: gasto original de Meta / ventas de la misma fecha y moneda. Sin ventas no se divide."
-            data-fill-kind="automatic"
-            className="advisor-effectiveness"
-          >
-            CAC Meta{handle(day + "metaCac", "CAC Meta " + day)}
-            <small>G / V</small>
-          </th>
+          {header(
+            "effectivenessBC",
+            "Efectividad",
+            "De hoy",
+            "automatic",
+            "V / BC × 100",
+          )}
+          {header(
+            "manualBase",
+            "BM",
+            "Base manual",
+            "automatic",
+            undefined,
+            true,
+          )}
+          {header(
+            "effectivenessBM",
+            "Efectividad",
+            "De ayer",
+            "automatic",
+            "V / BM × 100",
+          )}
         </>
       )}
-      {rateBasis && (
-        <th
-          scope="col"
-          aria-label={
-            rateBasis === "BC"
-              ? "Efectividad provisional Ventas / BC"
-              : "Efectividad real Ventas / BM"
-          }
-          className={
-            "advisor-effectiveness advisor-effectiveness-" +
-            rateBasis.toLowerCase()
-          }
-          title={
-            rateBasis === "BC"
-              ? "Efectividad provisional: ventas / BC del mismo día, hasta hoy Lima."
-              : "Efectividad real: ventas / BM del mismo día; disponible desde el día siguiente."
-          }
-        >
-          V / {rateBasis} %
-          {handle(
-            day + "effectiveness",
-            "Efectividad " + rateBasis + " " + day,
-          )}
-          <small>Calculado</small>
-        </th>
+      {showMeta && (
+        <>
+          {header("metaBase", "B Meta", "Base de Meta", "automatic")}
+          {header("metaSpend", "G Meta", "Gasto de Meta", "automatic")}
+          <th
+            scope="col"
+            aria-label="Efectividad y CAC Meta"
+            className="advisor-meta-metrics-heading"
+          >
+            <span className="advisor-statistics-title">Estadísticas</span>
+            {handle(day + "metaMetrics", "Efectividad y CAC Meta " + day)}
+            <div className="advisor-metric-half">
+              <span>
+                Efectividad<small>V / B Meta × 100</small>
+              </span>
+            </div>
+            <div className="advisor-metric-half">
+              <span>
+                CAC Meta<small>G Meta / V</small>
+              </span>
+            </div>
+          </th>
+        </>
       )}
     </>
   );
@@ -996,10 +923,7 @@ function FragmentHeaders({
 function AdvisorDay({
   person,
   day,
-  showBM,
-  showBC,
   showMeta,
-  rateBasis,
   today,
   cell,
   disabled,
@@ -1011,10 +935,7 @@ function AdvisorDay({
 }: {
   person: Person;
   day: string;
-  showBM: boolean;
-  showBC: boolean;
   showMeta: boolean;
-  rateBasis: "BC" | "BM" | null;
   today: string;
   cell: Day;
   disabled: boolean;
@@ -1026,9 +947,11 @@ function AdvisorDay({
     v: import("../../lib/meta-ads/advisor-absence").AbsenceInput,
   ) => Promise<void>;
 }) {
-  const metaMoney = advisorFinancialSummary([
-    { day, sales: cell.sales, financial: cell.financial },
-  ]).money;
+  const metaMoney = showMeta
+    ? advisorFinancialSummary([
+        { day, sales: cell.sales, financial: cell.financial },
+      ]).money
+    : [];
   const metaPartial = !!(
     cell.financial?.metaPartial || cell.financial?.assignmentPartial
   );
@@ -1041,17 +964,32 @@ function AdvisorDay({
     na: cell.na,
     partial: metaPartial || cell.partial,
   });
-  const rate = rateBasis
-    ? advisorDayEffectiveness({
-        day,
-        today,
-        basis: rateBasis,
-        sales: cell.sales,
-        base: rateBasis === "BC" ? cell.advisorBase : cell.manualBase,
-        na: cell.na,
-        partial: cell.partial,
-      })
-    : null;
+  const manualRate = (basis: "BC" | "BM") =>
+    advisorDayEffectiveness({
+      day,
+      today,
+      basis,
+      sales: cell.sales,
+      base: basis === "BC" ? cell.advisorBase : cell.manualBase,
+      na: cell.na,
+      partial: cell.partial,
+    });
+  const rateCell = (basis: "BC" | "BM") => {
+    const rate = manualRate(basis);
+    return (
+      <td
+        data-rate-basis={basis}
+        data-readonly="true"
+        aria-label={`Efectividad ${basis} ${person.name} ${day}`}
+        title={rate.reason}
+        className={`advisor-effectiveness advisor-effectiveness-${basis.toLowerCase()}`}
+      >
+        {rate.value === null
+          ? "—"
+          : advisorRateFormat.format(rate.value) + (cell.partial ? " *" : "")}
+      </td>
+    );
+  };
   return (
     <>
       <td
@@ -1087,20 +1025,7 @@ function AdvisorDay({
           onError={onError}
         />
       </td>
-      {showBM && (
-        <td
-          aria-label={`BM ${person.name} ${day}`}
-          title="Solo lectura: suma del reparto de Totales para este asesor, hojas y países consultados"
-          data-readonly="true"
-          data-fill-kind="automatic"
-          data-fill-timing="next-day"
-        >
-          {cell.manualBase === null || cell.manualBase === undefined
-            ? "—"
-            : cell.manualBase.toLocaleString("es-PE")}
-        </td>
-      )}
-      {showBC && (
+      {!showMeta && (
         <td
           aria-label={`BC ${person.name} ${day}`}
           data-fill-kind="manual"
@@ -1142,17 +1067,28 @@ function AdvisorDay({
           {cell.partial ? " *" : ""}
         </button>
       </td>
+      {!showMeta && rateCell("BC")}
+      {!showMeta && (
+        <td
+          aria-label={`BM ${person.name} ${day}`}
+          title="Solo lectura: suma del reparto de Totales para este asesor, hojas y países consultados"
+          data-readonly="true"
+          data-fill-kind="automatic"
+          data-fill-timing="next-day"
+        >
+          {cell.manualBase === null || cell.manualBase === undefined
+            ? "—"
+            : cell.manualBase.toLocaleString("es-PE")}
+        </td>
+      )}
+      {!showMeta && rateCell("BM")}
       {showMeta && (
         <>
           <td
             aria-label={`B Meta ${person.name} ${day}`}
             data-readonly="true"
             data-fill-kind="automatic"
-            title={
-              metaPartial
-                ? "Base original de Meta parcial o con atribución incompleta; no se inventan los datos pendientes."
-                : "Suma de la base original de Meta de las campañas asignadas al asesor en esta fecha."
-            }
+            title="Base original de Meta de las campañas asignadas en esta fecha; el asterisco indica datos parciales."
           >
             {cell.financial?.base == null
               ? "—"
@@ -1160,22 +1096,10 @@ function AdvisorDay({
                 (metaPartial ? " *" : "")}
           </td>
           <td
-            aria-label={`Efectividad Meta ${person.name} ${day}`}
-            data-readonly="true"
-            data-fill-kind="automatic"
-            className="advisor-effectiveness advisor-effectiveness-meta"
-            title={metaRate.reason}
-          >
-            {metaRate.value === null
-              ? "—"
-              : advisorRateFormat.format(metaRate.value) +
-                (metaPartial || cell.partial ? " *" : "")}
-          </td>
-          <td
             aria-label={`G Meta ${person.name} ${day}`}
             data-readonly="true"
             data-fill-kind="automatic"
-            title="Gasto original de las campañas asignadas, separado por moneda."
+            title="Gasto original de Meta, separado por moneda."
           >
             {metaMoney.length
               ? metaMoney.map((v) => (
@@ -1187,39 +1111,44 @@ function AdvisorDay({
               : "—"}
           </td>
           <td
-            aria-label={`CAC Meta ${person.name} ${day}`}
             data-readonly="true"
             data-fill-kind="automatic"
-            title="Gasto Meta / ventas de la misma moneda y fecha; sin ventas o datos suficientes se muestra —."
+            className="advisor-meta-metrics"
           >
-            {metaMoney.length
-              ? metaMoney.map((v) => (
-                  <span key={v.currency} style={{ display: "block" }}>
-                    {formatMetaMoney(v.metaCac, v.currency)}
-                    {v.metaCac !== null && (metaPartial || v.partial)
-                      ? " *"
-                      : ""}
-                  </span>
-                ))
-              : "—"}
+            <div
+              className="advisor-metric-half"
+              aria-label={`Efectividad Meta ${person.name} ${day}`}
+              title={metaRate.reason}
+            >
+              <small>Efect.</small>
+              <strong>
+                {metaRate.value === null
+                  ? "—"
+                  : advisorRateFormat.format(metaRate.value) +
+                    (metaPartial || cell.partial ? " *" : "")}
+              </strong>
+            </div>
+            <div
+              className="advisor-metric-half"
+              aria-label={`CAC Meta ${person.name} ${day}`}
+              title="Gasto Meta / ventas de la misma fecha y moneda; sin ventas no se divide."
+            >
+              <small>CAC</small>
+              <strong>
+                {metaMoney.length
+                  ? metaMoney.map((v) => (
+                      <span key={v.currency} style={{ display: "block" }}>
+                        {formatMetaMoney(v.metaCac, v.currency)}
+                        {v.metaCac !== null && (metaPartial || v.partial)
+                          ? " *"
+                          : ""}
+                      </span>
+                    ))
+                  : "—"}
+              </strong>
+            </div>
           </td>
         </>
-      )}
-      {rateBasis && rate && (
-        <td
-          data-rate-basis={rateBasis}
-          data-readonly="true"
-          aria-label={`Efectividad ${rateBasis} ${person.name} ${day}`}
-          title={rate.reason}
-          className={
-            "advisor-effectiveness advisor-effectiveness-" +
-            rateBasis.toLowerCase()
-          }
-        >
-          {rate.value === null
-            ? "—"
-            : advisorRateFormat.format(rate.value) + (cell.partial ? " *" : "")}
-        </td>
       )}
     </>
   );

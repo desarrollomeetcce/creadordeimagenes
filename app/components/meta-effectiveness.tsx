@@ -1711,31 +1711,7 @@ export function MetaEffectiveness({
           Edita las cifras en el origen; su actualización es automática.
         </p>
       )}
-      <div className="sheet-help">
-        Edita y pulsa Enter o Tab para guardar; Escape descarta. V, P y CF
-        manuales; B/G de Meta por inventario + país, con ajustes manuales
-        identificados. El asesor es opcional y no condiciona B/G. N.A. no es
-        cero. P, G y CF se muestran en la moneda elegida con la tasa de cada
-        fecha.{" "}
-        {data?.missingFxDays.length ? (
-          <span> Tasas pendientes: {data.missingFxDays.join(", ")}. </span>
-        ) : null}
-        <details>
-          <summary>Cómo se calcula</summary> Ver parámetros elige las columnas
-          visibles de cada fecha; Filtro de inventario elige las filas. Se
-          cruzan con el país y el rango de fechas; Todos incluye la lista
-          completa, aunque haya una búsqueda escrita. Ocultar una columna no
-          borra sus datos. Los importes de monedas distintas se ordenan en
-          grupos separados. Solo campañas, incluidas apagadas; nunca suma sus
-          conjuntos/anuncios. Se consulta lo importado cada 30 s; hoy puede ser
-          parcial y cada cuenta conserva su zona horaria. — sin dato, *
-          cobertura parcial. Cambiar país consulta B/G de ese país sin cambiar
-          las etiquetas de Meta Ads. Cambiar moneda convierte importes sin
-          alterar los originales. Un elemento del inventario puede tener una
-          fila por país. La tasa diaria de referencia proviene de Currency API;
-          no es una cotización bancaria de compra/venta.
-        </details>
-      </div>
+      {!!data?.missingFxDays.length && <p className="sheet-message" role="status">Tasas pendientes: {data.missingFxDays.join(", ")}.</p>}
       {widthWarning && (
         <p className="sheet-message" role="status">
           {widthWarning}

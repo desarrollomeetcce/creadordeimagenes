@@ -1,5 +1,20 @@
 # Meta Ads: consulta y análisis
 
+## Asesores: dos vistas, estadísticas combinadas y Totales sin BCΣ/CF · 2026-11-04
+
+Asesores muestra solo Vista manual/Vista automática; elimina Hoy avance provisional, Ayer día completo, Análisis del período y Datos Meta como modos de la página. Por instrucción posterior, Automática es inicial: preferencia nueva advisor-data-view-v2=meta evita restaurar una selección heredada incompatible; una elección explícita posterior se conserva por usuario/lista/F5. Calendario, filtros, actualización y análisis de equipo conservados. Ancho inicial del nombre300px muestra asesores completos, respeta anchos guardados y añade título con nombre.
+
+Manual: A/Asistencia, H/Inasistencia, BC/Base por contactar, V/Ventas, efectividad V/BC×100, BM/Base manual y efectividad V/BM×100. A/H con descripción sobre badge manual. Última aclaración del usuario prevalece sobre pregunta previa: si el4 completan el cuadro del3, los datos permanecen en3; ambas razones usan V/base de esa misma fecha, sin desplazamiento automático ni lectura adicional del día anterior. Reusar advisorDayEffectiveness, conservar nulos/N.A./cero, parciales y cierre BM vigente; no crear escrituras de porcentajes.
+
+Automática: A,H,V,B Meta,G Meta y una columna Estadísticas partida en dos franjas: Efectividad V/B Meta×100 arriba y CAC G Meta/V abajo. Tonos suaves verde/violeta y fórmulas visibles, importes por moneda, sin dividir ventas cero. Colgroup/colSpan/anchos se derivan de6 columnas automáticas o7 manuales, redimensionadores independientes. Cambiar vista solo cambia presentación local y no consulta. Cifras, asistencia, BC, BM y orden compartido conservados.
+
+Hoja financiera elimina íntegra la línea Edita y pulsa Enter/Tab y Cómo se calcula, sin hueco ni instrucciones permanentes. Los avisos reales de tasas pendientes continúan condicionales; edición/atajos intactos.
+
+Por totales de día retira BCΣ y CF/CFΣ de todas las vistas/paletas/detalle, gráficos de producto y razones derivadas de BC. Total automático deja VΣ/BΣ/GΣ; manual conserva V/P/BM/GM. totalViewColumns aplica proyección global y filtra también preferencias heredadas; países futuros reciben misma regla, sin condicional de Argentina/Perú/etc. No se altera BC en Asesores. Constantes/datos históricos en almacenamiento y cálculos ajenos se conservan, sin migración/borrado ni convertir ausencias a0.
+
+198 unitarias correctas, incluidas fechas iguales/razones/monedas/cero y preferencias de columnas retiradas; typecheck/build y8 recorridos Chromium. Automática inicial pese a preferencia antigua,6 columnas y Estadísticas dividida; V5/B200=2.5%, G40/V5=CAC8; cero confirmado y desconocidos; manual7 con5/50=10% y5/100=5%; ninguna consulta al alternar, elección/F5/asa compartida/móvil; ayuda financiera ausente; Totales PE/EC/BO sin columnas ni paleta heredada, automático V/B/G y detalle sin ellas. Sin errores JS/escrituras. Snapshot completo de personas/asistencia/ventas/días/bases/asignaciones/país/objetos/gasto Meta y CF histórico de Totales idéntico; fixture exclusivo retirado. Evidencia advisor-two-views-{unit,types,build,browser,cleanup}.txt en /workspace/work. Hostinger no verificado desde entorno, sin cambios de datos reales.
+
+
 ## Paginación de fechas compacta al pie izquierdo · 2026-11-04
 
 Ampliación del mismo bloque: se retiran del toolbar financiero Sincronizar o vincular columnas, Pegar inventario y Subir archivo. Se elimina montaje/estado/import del panel de sincronización inaccesible; vínculos almacenados y rutas siguen intactos, aviso conserva procedencia sin dirigir a botón retirado. Pegado de celdas existente conserva flujo propio. Filtros/Colores/Selección/Activar/Desactivar/Eliminar seleccionadas se ordenan en flex compacto, con controles28px y grupos que fluyen en una línea si hay espacio, sin anchuras forzadas móviles.

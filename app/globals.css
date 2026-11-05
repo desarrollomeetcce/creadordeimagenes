@@ -2976,3 +2976,14 @@ tr[data-advisor-drop] > td { border-top:2px solid var(--accent)!important; }
 .financial-sheet-view .sheet-financial-toolbar label>.sheet-search-trigger { width:115px; }
 .financial-sheet-view .sheet-financial-toolbar .sheet-activation-actions { width:auto; gap:4px; font-size:10px; border-top:0; padding-top:0; padding-left:6px; }
 @media(max-width:700px){.financial-sheet-view .sheet-financial-toolbar .sheet-activation-actions { border-left:0; padding-left:0; }.financial-sheet-view .sheet-financial-toolbar .sheet-activation-actions button { flex:none; }}
+.advisor-grid .advisor-column-description { display:block; font-size:9px; line-height:1.2; font-weight:normal; margin:2px 0; }
+.advisor-grid .advisor-meta-metrics, .advisor-grid .advisor-meta-metrics-heading { padding:0!important; }
+.advisor-grid .advisor-metric-half { display:flex; align-items:center; justify-content:space-between; gap:4px; min-height:24px; padding:3px 5px; line-height:1.25; }
+.advisor-grid .advisor-metric-half + .advisor-metric-half { border-top:1px solid var(--line); }
+.advisor-grid .advisor-metric-half small { font-size:9px; color:var(--muted); }
+.advisor-grid .advisor-meta-metrics-heading .advisor-metric-half { justify-content:center; }
+.advisor-grid .advisor-meta-metrics-heading small { display:block; font-weight:normal; }
+.advisor-grid .advisor-statistics-title { display:block; padding:4px; font-size:11px; color:var(--ink); }
+.advisor-grid .advisor-meta-metrics .advisor-metric-half:first-child { background:color-mix(in srgb,var(--accent) 11%,var(--surface)); }
+.advisor-grid .advisor-meta-metrics .advisor-metric-half:last-child { background:color-mix(in srgb,#9670d9 11%,var(--surface)); }
+.advisor-grid .advisor-meta-metrics .advisor-metric-half strong { color:var(--ink); font-size:12px; font-variant-numeric:tabular-nums; }

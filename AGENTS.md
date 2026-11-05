@@ -1,4 +1,6 @@
 # Instrucciones para desarrollo
+
+- Asesores, aclaración final04/11: solo manual/automática, automática inicial (preferencia nueva v2), sin modos Hoy/Ayer/Período/Datos Meta en página. A Asistencia/H Inasistencia; manual BC,V,V/BC,BM,V/BM. Usuario registra día3 aunque escriba día4: comparar mismas fechas, no desplazar ventas/bases por fecha de digitación. Auto A,H,V,B Meta,G Meta, Estadísticas única partida efectividad/CAC, colores discretos y monedas/NA/0/parciales preservados. Alternar no consulta. Retirar ayuda estática Edita/Enter/Tab/Cómo se calcula de hojas, dejando avisos reales condicionales. Totales de día: retirar BCΣ y CF/CFΣ de todas las vistas, paletas/detalles/gráficos y países actuales/futuros, incluidas preferencias guardadas; Auto solo V/B/G. No retirar BC de Asesores ni borrar historia de almacenamiento.
 - Toolbar financiero04/11: retirar Sincronizar o vincular columnas/Pegar inventario/Subir archivo de esta vista; compactar filtros, colores y acciones en mínima altura, una línea cuando quepa. Conservar vínculos/hechos/rutas y pegado de celdas; no mostrar indicación hacia botón retirado.
 
 

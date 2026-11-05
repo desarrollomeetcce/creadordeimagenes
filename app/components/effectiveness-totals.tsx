@@ -19,8 +19,6 @@ import { currencyCodes } from "../../lib/meta-ads/currency-codes";
 import type { TotalValue } from "../../lib/meta-ads/effectiveness-total-values";
 import type { SheetMetric } from "../../lib/meta-ads/period-summary";
 import {
-  manualTotalColumns as manualColumns,
-  automaticTotalColumns as autoColumns,
   type ManualTotalMetric as ManualMetric,
   type TotalDay as Day,
   type TotalSheet,
@@ -238,7 +236,7 @@ export function EffectivenessTotals({
   const columnTools = useTotalsColumnTools(
     listId,
     effectiveMode,
-    effectiveMode === "manual" ? manualColumns : autoColumns,
+    totalViewColumns(effectiveMode),
   );
   const columns =
     analysisView === "period"
@@ -601,8 +599,8 @@ export function EffectivenessTotals({
           : analysisView === "yesterday"
             ? "Datos del día completo en el período: ventas, BM, GM y costo fijo; sin BC ni presupuesto."
             : mode === "manual"
-              ? "V/P: suma de inventario. BM: reparto manual en Totales. BC: suma automática de Asesores por hoja, país y día (sin moneda). GM y CF: valores manuales por bloque."
-              : "V/B/G/CF: suma de los valores de la vista automática. BC se recibe automáticamente desde Asesores."}{" "}
+              ? "V/P: suma de inventario. BM: reparto manual en Totales. GM: gasto manual por bloque."
+              : "V/B/G: suma de los valores de la vista automática."}{" "}
         Países y monedas separados; N.A. no suma, — sin dato, * suma parcial.
         Las ventas se suman únicamente desde la hoja de origen indicada en cada
         bloque, sin combinar tablas. No modifica Meta Ads.
