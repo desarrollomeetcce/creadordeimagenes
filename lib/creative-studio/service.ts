@@ -581,7 +581,7 @@ export async function studioInventory(actor: Actor, listId: string) {
     "TAB:" + listId,
   );
   return (await import("../meta-ads/inventory-trials")).inventoryTrials(cap, {
-    listId,
+    listId, mode: "directory",
   });
 }
 export async function saveInventorySelection(actor: Actor, input: unknown) {

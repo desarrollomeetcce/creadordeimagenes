@@ -30,3 +30,12 @@ Los subproductos nuevos del estudio son borradores lógicos (studio.folderPendin
 Anuncios Meta es una pestaña propia del editor común de grupos, con casillas y sin celdas de estado/uso por país. No se confunde con crear o editar grupos. Hacer anuncios abre una pestaña nueva mediante una selección privada; conserva la pantalla de origen. Si hay producto de destino, la selección se importa directamente. El reemplazo desde Meta/hoja reutiliza ese editor común con Top y su contexto original.
 
 Grupos permanece accesible mientras carga su directorio: muestra progreso/error y reintento sin peticiones duplicadas. La lectura de uso extrae priorActive en SQL sin transferir snapshots completos; los datos históricos no cambian. Para páginas vacías existe reautorización explícita con Facebook y soporte de activos asignados a usuario del sistema. Véase META_PAGE_ACCESS.md para permisos y las dos formas de conexión.
+
+
+## Búsqueda de páginas y carga rápida de inventario
+
+Página de Facebook permite escribir por palabras del nombre o ID, ver logos y ampliar la selección. Filtrar no consulta Graph. Si la foto no está disponible se muestran iniciales; la lista de nombres continúa funcionando.
+
+Lista y Grupos muestran primero nombres/categorías. Usos por país se cargan solo en Crear/Editar o Top, donde los reemplazos necesitan esos datos; Anuncios no los requiere. El directorio básico conserva preferencias manuales y no presenta usos automáticos como confirmados. Las pestañas del libro son accesibles sin esperar la carga completa de asociaciones de todas las hojas.
+
+Los estados manuales de campaña también se editan en la hoja mediante el menú compartido. Son distintos de la evaluación Normal/Revisión/Crítico del Top y no modifican automáticamente campañas reales de Meta. El acuse conserva el historial y actualiza únicamente la fila correspondiente.

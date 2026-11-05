@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { MetaGraphError } from "../meta-ads/graph-error";
 import { discoverCampaignPages } from "./pages";
 import { db } from "../db";
 import { demand, AppError } from "../errors";
@@ -19,6 +20,7 @@ import {
   type LaunchStep,
   type CampaignConfig,
 } from "./campaign-policy";
+function safePagePicture(value: unknown) { try { const u = new URL(String(value)); return u.protocol === "https:" && !u.username && !u.password && (!u.port || u.port === "443") && !u.searchParams.has("access_token") && (u.hostname.endsWith(".fbcdn.net") || u.hostname.endsWith(".fbsbx.com") || u.hostname === "graph.facebook.com") ? u.href : ""; } catch { return ""; } }
 const id = z.string().min(1).max(100);
 async function primaryAccount(actor: Actor, accountId: string) {
   await metaEditorOnly(actor);
@@ -43,7 +45,7 @@ export async function launchResources(actor: Actor, accountId: string) {
   const a = await primaryAccount(actor, accountId);
   const { reader: r } = await reader(a.connectionId, false, true);
   const settled = await Promise.allSettled([
-    discoverCampaignPages((edge, after) => r.launchRequest(a.id, edge, undefined, undefined, undefined, after)),
+    discoverCampaignPages(async (edge, after) => { try { return await r.launchRequest(a.id, edge, undefined, undefined, "id,name,picture.type(square){url}", after); } catch(error) { if(error instanceof MetaGraphError && [100,200].includes(error.diagnostic.code ?? 0)) return r.launchRequest(a.id, edge, undefined, undefined, undefined, after); throw error; } }),
     r.launchRequest(a.id, "saved_audiences"),
   ]);
   const pages = settled[0].status === "fulfilled" ? settled[0].value : { data: [] };
@@ -54,6 +56,7 @@ export async function launchResources(actor: Actor, accountId: string) {
     pages: (pages.data ?? []).map((p: any) => ({
       id: String(p.id),
       name: String(p.name),
+      picture: safePagePicture(p.picture?.data?.url),
       whatsapp: typeof p.whatsapp_number === "string" ? p.whatsapp_number : "",
     })),
     audiences: (saved.data ?? []).map((s: any) => ({

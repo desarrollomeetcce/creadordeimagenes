@@ -21,7 +21,7 @@ const config: NextConfig = {
           {
             key: "Content-Security-Policy",
             value:
-              "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' blob: data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'",
+              "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' blob: data: https://*.fbcdn.net https://*.fbsbx.com https://graph.facebook.com; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'",
           },
         ],
       },

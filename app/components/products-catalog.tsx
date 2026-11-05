@@ -452,6 +452,10 @@ export function ProductsCatalog() {
       setContextTable(null);
     }
   };
+  useEffect(() => {
+    if (!specialsLoaded || locationReady || parsePeriodTableLink(new URLSearchParams(window.location.search))) return;
+    try { const raw = JSON.parse(sessionStorage.getItem(locationKey) || localStorage.getItem(locationKey) || "null"); const saved = specials.find(s => s.id === raw?.specialId && s.kind === "INVENTORY"); if (saved) { setSpecialId(saved.id); setRestoredLocationKey(locationKey); } } catch {}
+  }, [specialsLoaded, specials, locationReady, locationKey]);
   const [view, setView] = useState<"manual" | "automatic">("manual");
   const [tableWindowMode, setTableWindowMode] =
     useState<FinancialTableWindowMode>("inline");
@@ -626,6 +630,7 @@ export function ProductsCatalog() {
                       }
                     }}
                     onClick={() => {
+                      setRestoredLocationKey(locationKey);
                       setSpecialId(t.id);
                       setMessage("");
                       setEditing(null);
@@ -857,12 +862,13 @@ export function ProductsCatalog() {
           {documentShare}
         </div>
       )}
+      {(!locationReady || (loading && !special)) && sheetTabs}
       {message && (
         <p className="sheet-message" role="status">
           {message}
         </p>
       )}
-      {loading && (
+      {loading && !inventorySheet && (
         <p role="status" className="sheet-loading-status">
           Cargando tablas…
         </p>

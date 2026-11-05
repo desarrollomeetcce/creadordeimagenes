@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
+import { StudioPagePicker } from "./studio-page-picker";
 import { StudioMaximize } from "./studio-columns";
 import { studioRequest } from "./inventory-meta-picker";
 import {
@@ -312,30 +313,7 @@ export function StudioCampaign({
             <a href="?view=metaads">Meta Ads</a> para usarlas aquí.
           </p>
         )}
-        <label>
-          Página de Facebook
-          <select
-            aria-label="Página de Facebook"
-            value={form.pageId}
-            disabled={!form.accountId || loading || locked}
-            onChange={(e) => {
-              update("pageId", e.target.value);
-              const p = resources.pages.find(
-                (p: any) => p.id === e.target.value,
-              );
-              if (p?.whatsapp) setForm((f) => ({ ...f, whatsapp: p.whatsapp }));
-            }}
-          >
-            <option value="">
-              {loading ? "Consultando páginas…" : "Selecciona la página"}
-            </option>
-            {resources.pages.map((p: any) => (
-              <option key={p.id} value={p.id}>
-                {p.name}
-              </option>
-            ))}
-          </select>
-        </label>
+        <StudioPagePicker key={form.accountId} pages={resources.pages} value={form.pageId} loading={loading} disabled={!form.accountId || locked} onChange={id=>{update("pageId",id);const page=resources.pages.find((p:any)=>p.id===id);if(page?.whatsapp)setForm(f=>({...f,whatsapp:page.whatsapp}));}}/>
         {form.accountId && !loading && (pageError || !resources.pages.length) && (
           <div className="studio-page-error" role="status">
             <p>{pageError || "No hay páginas disponibles en esta conexión."}</p>

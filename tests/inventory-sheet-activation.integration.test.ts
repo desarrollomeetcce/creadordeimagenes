@@ -1770,6 +1770,22 @@ test("Activación por hoja: selección, pin, historial y permisos", async (t) =>
         );
       },
     );
+    await t.test("Hoja: cuatro estados con acuse por fila, CAS y sin cambiar hechos u otro país", async () => {
+      const table = await db.metaAliasTable.create({data:{name:"Cuatro estados "+tag,defaultCountry:"PE",defaultCurrency:"PEN"}});autoTables.push(table.id);
+      const alias = await db.metaAlias.create({data:{tableId:table.id,inventorySheetId:list.id,name:"Nuevo gris "+tag}});
+      for(const country of ["PE","EC"]) {await db.metaEffectivenessRow.create({data:{aliasId:alias.id,country,currency:"",displayCurrency:"PEN",hidden:false}});await db.metaEffectivenessState.create({data:{aliasId:alias.id,country,active:false,revision:1}});}
+      let row=(await effectiveness(owner,table.id,today,today)).rows.find(r=>r.aliasId===alias.id&&r.country==="PE")!;
+      const initial=row.stateRevision;
+      for(const change of [{active:true,campaignTask:"CREATE"},{active:true,campaignTask:"STOP"},{active:true,campaignTask:"NONE"},{active:false,campaignTask:"NONE"}] as const){
+        const result=await setEffectivenessState(owner,{tableId:table.id,aliasId:alias.id,country:"PE",revision:row.stateRevision,since:today,until:today,metrics:["sales","budget","spend"],...change});
+        assert.equal(result.rows.length,1);row=result.rows[0];assert.equal(row.active,change.active);assert.equal(row.campaignTask,change.campaignTask);
+        const read=(await effectiveness(owner,table.id,today,today)).rows.find(r=>r.aliasId===alias.id&&r.country==="PE")!;assert.equal(read.token,row.token);
+      }
+      assert.equal(row.stateRevision,initial+4);assert.equal((await db.metaEffectivenessState.findUniqueOrThrow({where:{aliasId_country:{aliasId:alias.id,country:"EC"}}})).revision,1);
+      assert.equal(await db.metaEffectivenessDay.count({where:{row:{aliasId:alias.id}}}),0);
+      await assert.rejects(()=>setEffectivenessState(owner,{tableId:table.id,aliasId:alias.id,country:"PE",revision:initial,since:today,until:today,metrics:["sales"],active:true,campaignTask:"CREATE"}),/estado cambió/);
+      const before=await db.metaEffectivenessEvent.count({where:{state:{aliasId:alias.id}}});assert.equal(before,4);
+    });
   } finally {
     await db.metaAlias
       .deleteMany({ where: { inventorySheetId: { in: [list.id, other.id] } } })

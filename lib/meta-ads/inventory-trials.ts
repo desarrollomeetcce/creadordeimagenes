@@ -257,6 +257,7 @@ async function context(
 async function catalog(
   tx: Prisma.TransactionClient,
   listId: string,
+  suppliedConfig?: Prisma.JsonValue,
 ): Promise<TrialItem[]> {
   const [items, aliases] = await Promise.all([
     tx.metaInventoryItem.findMany({
@@ -287,12 +288,12 @@ async function catalog(
       },
     }),
   ]);
-  const list = await tx.metaEffectivenessSheet.findUniqueOrThrow({
+  const config = suppliedConfig ?? (await tx.metaEffectivenessSheet.findUniqueOrThrow({
     where: { id: listId },
     select: { config: true },
-  });
+  })).config;
   const detached = new Set([
-    ...detachedInventoryAliases(list.config),
+    ...detachedInventoryAliases(config),
     ...(await physicallyHiddenInventoryAliases(
       tx,
       aliases.map((a) => a.id),
@@ -393,16 +394,19 @@ function serialize(g: {
 }
 export type TrialGroup = ReturnType<typeof serialize>;
 export async function inventoryTrials(actor: Actor, input: unknown) {
-  const b = scope.parse(input);
+  const b = z.object({listId: id, mode: z.enum(["directory", "usage"]).optional()}).strict().parse(input);
   return db.$transaction(
     async (tx) => {
       const permission = await context(tx, actor, b.listId);
+      const metadataConfig=b.mode === "directory" ? (await tx.metaEffectivenessSheet.findUniqueOrThrow({where:{id:b.listId},select:{config:true}})).config : undefined;
+      const overrides=metadataConfig ? Object.fromEntries(Object.entries(groupUsageOverrides(metadataConfig)).map(([key,rule])=>[key,{mode:rule.mode,revision:rule.revision,automatic:"UNKNOWN" as const,activationHours:null}])) : {};
       return {
         listId: b.listId,
         canEdit: permission === "EDIT",
-        ...(await inventoryGroupUsage(tx, b.listId)),
-        catalog: await catalog(tx, b.listId),
-        groups: (
+        ...(b.mode === "directory" ? { countries: [] as {code:string;name:string}[], usage: overrides as Awaited<ReturnType<typeof inventoryGroupUsage>>["usage"], campaignStates: {} as Awaited<ReturnType<typeof inventoryGroupUsage>>["campaignStates"] } : await inventoryGroupUsage(tx, b.listId)),
+        usageReady: b.mode !== "directory",
+        catalog: b.mode === "usage" ? [] : await catalog(tx, b.listId, metadataConfig),
+        groups: b.mode === "usage" ? [] : (
           await tx.metaInventoryTrialGroup.findMany({
             where: { sheetId: b.listId, archivedAt: null },
             orderBy: { createdAt: "asc" },

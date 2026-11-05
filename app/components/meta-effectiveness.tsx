@@ -1,4 +1,5 @@
 "use client";
+import { InventoryCampaignControl, type InventoryCampaignChange } from "./inventory-campaign-control";
 import { financialTaskSections } from "../../lib/meta-ads/financial-task-sections";
 import { InventoryMetaSync } from "./inventory-meta-sync";
 import { compareFinancialStatus } from "../../lib/meta-ads/inventory-evaluation-order";
@@ -675,26 +676,25 @@ export function MetaEffectiveness({
       setBusy(false);
     }
   };
-  const toggleState = async (r: Row) => {
+  const changeCampaignState = async (r: Row, change: InventoryCampaignChange) => {
+    if ((change.active ?? r.active) === r.active && (change.campaignTask ?? "NONE") === (r.campaignTask ?? "NONE")) return;
+    const range = currentRange.current;
+    ++queryVersion.current;
     setBusy(true);
     try {
-      await mutate("meta-ads/effectiveness/state", "PATCH", {
-        tableId,
-        aliasId: r.aliasId,
-        country: r.country,
-        active: !r.active,
-        revision: r.stateRevision,
-        since,
-        until,
+      const result = await api("meta-ads/effectiveness/state", "PATCH", {
+        tableId, aliasId: r.aliasId, country: r.country,
+        active: change.active ?? r.active,
+        campaignTask: change.campaignTask ?? "NONE",
+        revision: r.stateRevision, since, until,
         metrics: visibleMetrics.map((m) => m.key),
       });
-    } catch (e) {
-      setMessage(
-        e instanceof Error ? e.message : "No se pudo cambiar el estado.",
-      );
-    } finally {
-      setBusy(false);
-    }
+      if (currentRange.current !== range) { notifyAdvisorSalesChanged(); return; }
+      ++queryVersion.current;
+      setData(old => old ? { ...old, rows: old.rows.flatMap(row => row.aliasId === r.aliasId && row.country === r.country ? result.rows : [row]) } : old);
+      setMessage("");
+    } catch (e) { setMessage(e instanceof Error ? e.message : "No se pudo cambiar el estado."); }
+    finally { setBusy(false); }
   };
   const editCell = (r: Row, day: string, metric: SheetMetric, text: string) => {
     const na = /^n\.?a\.?$/i.test(text.trim());
@@ -2605,23 +2605,13 @@ export function MetaEffectiveness({
                                 )
                               }
                             />
-                            <button
-                              type="button"
-                              role="switch"
-                              aria-checked={r.active}
-                              className="meta-status-switch sheet-alias-switch"
-                              data-campaign-task={r.campaignTask ?? "NONE"}
-                              disabled={busy || !r.country}
-                              aria-label={`${campaignLabel} · ${name} ${r.country || "sin país"}. ${r.active ? "Desactivar" : "Activar"}`}
-                              title={
-                                !r.country
-                                  ? "Elige un país para activar o desactivar esta fila"
-                                  : `${campaignLabel} · ${r.country}${r.lastStateChange ? " · " + new Date(r.lastStateChange).toLocaleString("es-PE", { timeZone: "America/Lima" }) : " · por defecto"}. Solo Efectividad.`
-                              }
-                              onClick={() => void toggleState(r)}
-                            >
-                              <span aria-hidden="true" />
-                            </button>
+                            <InventoryCampaignControl
+                              title={`${name} ${r.country || "sin país"}`}
+                              activation={r.active ? "ACTIVE" : "INACTIVE"}
+                              task={r.campaignTask ?? "NONE"}
+                              disabled={busy || readOnly || !r.country}
+                              onChange={change => void changeCampaignState(r, change)}
+                            />
                             <EffectivenessCell
                               label={`Inventario ${name} ${r.country || "sin país"}`}
                               value={name}

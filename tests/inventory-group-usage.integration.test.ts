@@ -170,6 +170,11 @@ test("Uso manual compartido por diplomado y país: persistencia, CAS, permisos e
         );
       },
     );
+    await t.test("Directorio rápido conserva preferencias manuales sin calcular historial; uso diferido sin catálogo duplicado", async () => {
+      const basic=await inventoryTrials(actor,{listId:list.id,mode:"directory"});
+      assert.equal(basic.usageReady,false);assert.equal(basic.catalog.length,1);assert.equal(basic.usage[groupUsageKey(item.name,"PE")].mode,"UNUSED");assert.equal(basic.usage[groupUsageKey(item.name,"PE")].automatic,"UNKNOWN");
+      const usage=await inventoryTrials(actor,{listId:list.id,mode:"usage"});assert.equal(usage.usageReady,true);assert.equal(usage.catalog.length,0);assert.equal(usage.groups.length,0);assert.equal(usage.usage[groupUsageKey(item.name,"PE")].automatic,"USED");assert.equal(usage.usage[groupUsageKey(item.name,"PE")].mode,"UNUSED");
+    });
     await t.test(
       "Conflicto concurrente, país ajeno e inventario ajeno rechazados",
       async () => {

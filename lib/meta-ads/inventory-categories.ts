@@ -28,6 +28,7 @@ type Kind = "PRIMARY" | "SECONDARY";
 async function state(tx: Prisma.TransactionClient, listId: string) {
   const sheet = await tx.metaEffectivenessSheet.findFirst({
     where: { id: listId, kind: "INVENTORY", archivedAt: null },
+    select: { id: true, categoryRevision: true },
   });
   demand(sheet, "Lista de inventario no disponible.", 404);
   const categories = await tx.metaInventoryCategory.findMany({

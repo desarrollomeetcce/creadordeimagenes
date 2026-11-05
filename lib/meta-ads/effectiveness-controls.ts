@@ -174,6 +174,7 @@ export async function setEffectivenessState(
     aliasId: string;
     country: string;
     active: boolean;
+    campaignTask?: "NONE" | "CREATE" | "STOP";
     revision: number;
     since: string;
     until: string;
@@ -181,6 +182,7 @@ export async function setEffectivenessState(
   },
 ) {
   ownerOnly(actor);
+  demand(!(b.active === false && b.campaignTask === "CREATE"), "Por hacer campaña requiere activación de la hoja.");
   return db.$transaction(
     async (tx) => {
       await effectivenessLock(tx, actor);
@@ -190,11 +192,11 @@ export async function setEffectivenessState(
         );
       demand(r, "Fila no disponible.", 404);
       demand(
-        r.stateRevision === b.revision && r.active !== b.active,
+        r.stateRevision === b.revision && (r.active !== b.active || (b.campaignTask !== undefined && (r.campaignTask ?? "NONE") !== b.campaignTask)),
         "El estado cambió. Recarga antes de continuar.",
         409,
       );
-      const snapshot = stateSnapshot(r, b);
+      const snapshot = { ...stateSnapshot(r, b), priorActive: r.active, campaignTask: b.campaignTask ?? "NONE" };
       const state = await tx.metaEffectivenessState.upsert({
         where: { aliasId_country: { aliasId: b.aliasId, country: b.country } },
         create: {
@@ -223,13 +225,15 @@ export async function setEffectivenessState(
             active: b.active,
             since: b.since,
             until: b.until,
+            campaignTask: b.campaignTask ?? "NONE",
           },
         },
       });
       await syncInventoryActivationVisibility(tx, [
-        { aliasId: b.aliasId, country: b.country, active: b.active },
+        { aliasId: b.aliasId, country: b.country, active: b.active, campaignTask: b.campaignTask },
       ]);
-      return { ok: true };
+      const updated = await effectiveness(actor, b.tableId, b.since, b.until, tx);
+      return { ok: true, rows: updated.rows.filter(row => row.aliasId === b.aliasId && row.country === b.country) };
     },
     { timeout: 60000 },
   );

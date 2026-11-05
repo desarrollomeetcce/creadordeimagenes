@@ -151,7 +151,7 @@ export async function inventoryActivationDirectory(
   return db.$transaction(async (tx) => {
     const { list, canEdit, access } = await context(tx, actor, q.listId),
       settings = activationSettings(list.config);
-    const linked = await tx.metaAlias.findMany({
+    const rawLinked = await tx.metaAlias.findMany({
         where: { inventorySheetId: q.listId },
         select: {
           id: true,
@@ -159,12 +159,12 @@ export async function inventoryActivationDirectory(
           tableId: true,
           effectivenessRows: {
             where: { legacy: false },
-            select: { id: true, country: true, hidden: true, advisorId: true, displayCurrency: true, currency: true, _count: { select: { days: true } } },
+            select: { id: true, country: true, hidden: true, advisorId: true, displayCurrency: true, currency: true },
           },
-          effectivenessStates: { select: { id: true, country: true, active: true, _count: { select: { events: true } } } },
+          effectivenessStates: { select: { id: true, country: true, active: true } },
         },
       }),
-      visible = new Set([...settings.sheets, ...linked.map((a) => a.tableId)]);
+      visible = new Set([...settings.sheets, ...rawLinked.map((a) => a.tableId)]);
     const rawTables = await tx.metaAliasTable.findMany({
       where:
         access.isOwner || scopePermission(access, "ALL")
@@ -188,6 +188,11 @@ export async function inventoryActivationDirectory(
         ? { identityCountry: identities.get(t.id)! }
         : {}),
     }));
+    const foreign = rawLinked.filter(alias => { const table=tables.find(t=>t.id===alias.tableId); return table && inventorySheetForeignCountries(table,[...alias.effectivenessRows,...alias.effectivenessStates].map(r=>r.country)).length; });
+    const rowIds=foreign.flatMap(a=>a.effectivenessRows.map(r=>r.id)),stateIds=foreign.flatMap(a=>a.effectivenessStates.map(s=>s.id));
+    const [dayCounts,eventCounts] = await Promise.all([rowIds.length ? tx.metaEffectivenessDay.groupBy({by:["rowId"],where:{rowId:{in:rowIds}},_count:{_all:true}}) : Promise.resolve([]),stateIds.length ? tx.metaEffectivenessEvent.groupBy({by:["stateId"],where:{stateId:{in:stateIds}},_count:{_all:true}}) : Promise.resolve([])]);
+    const daysByRow=new Map(dayCounts.map(c=>[c.rowId,c._count._all])),eventsByState=new Map(eventCounts.map(c=>[c.stateId,c._count._all]));
+    const linked=rawLinked.map(a=>({...a,effectivenessRows:a.effectivenessRows.map(r=>({...r,_count:{days:daysByRow.get(r.id)??0}})),effectivenessStates:a.effectivenessStates.map(s=>({...s,_count:{events:eventsByState.get(s.id)??0}}))}));
     const countryIssues = linked.flatMap((a) => {
       const table = tables.find((t) => t.id === a.tableId);
       if (!table) return [];
@@ -431,7 +436,7 @@ export async function inventoryActivationAddSheet(
 /** Shared by Inventory and the financial sheet controls. Only explicitly managed rows change visibility. */
 export async function syncInventoryActivationVisibility(
   tx: Tx,
-  targets: { aliasId: string; country: string; active: boolean }[],
+  targets: { aliasId: string; country: string; active: boolean; campaignTask?: InventoryCampaignTask }[],
   removed = false,
 ) {
   const aliases = await tx.metaAlias.findMany({
@@ -458,7 +463,7 @@ export async function syncInventoryActivationVisibility(
       settings.rows[key] = {
         ...control,
         pinned: removed ? false : !t.active ? true : (control?.pinned ?? false),
-        campaignTask: "NONE",
+        campaignTask: t.campaignTask ?? "NONE",
       };
       await tx.metaEffectivenessRow.updateMany({
         where: { aliasId: t.aliasId, country: t.country },

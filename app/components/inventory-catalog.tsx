@@ -173,6 +173,7 @@ export function InventoryCatalog({
   const [trialDirectory, setTrialDirectory] = useState<TrialDirectory | null>(
     null,
   );
+  const [categories, setCategories] = useState<InventoryCategoryState | null>(null);
   const [groupEditor, setGroupEditor] = useState<{
     id?: string;
     names: string[];
@@ -201,7 +202,7 @@ export function InventoryCatalog({
     if (groupLoad.current?.listId === listId) return groupLoad.current.promise;
     const requestedList = listId;
     setGroupLoadError("");
-    const promise = api("meta-ads/inventory/trials?" + new URLSearchParams({ listId:requestedList })).then((data: TrialDirectory) => { if (activeGroupList.current === requestedList) setTrialDirectory(data); }).catch(e => { if (activeGroupList.current === requestedList) setGroupLoadError(e.message); throw e; }).finally(() => { if (groupLoad.current?.promise === promise) groupLoad.current = null; });
+    const promise = api("meta-ads/inventory/trials?" + new URLSearchParams({ listId:requestedList, mode: "directory" })).then((data: TrialDirectory) => { if (activeGroupList.current === requestedList) setTrialDirectory(data); }).catch(e => { if (activeGroupList.current === requestedList) setGroupLoadError(e.message); throw e; }).finally(() => { if (groupLoad.current?.promise === promise) groupLoad.current = null; });
     groupLoad.current = {listId:requestedList,promise};
     return promise;
   }
@@ -473,7 +474,7 @@ export function InventoryCatalog({
   const [evaluationPeriod, setEvaluationPeriod] = useEvaluationPeriod(listId);
   const countryEvaluation = useInventoryCountryEvaluation(
     listId,
-    hasCountryColumns ? countryCodes : [],
+    hasCountryColumns && trialDirectory && categories ? countryCodes : [],
     countryReload,
     evaluationRange(evaluationPeriod),
   );
@@ -670,10 +671,7 @@ export function InventoryCatalog({
   );
   const [busy, setBusy] = useState(false),
     [message, setMessage] = useState("");
-  const [categories, setCategories] = useState<InventoryCategoryState | null>(
-      null,
-    ),
-    [categoryManager, setCategoryManager] = useState<
+  const [categoryManager, setCategoryManager] = useState<
       "paste" | "catalog" | null
     >(null),
     [importView, setImportView] = useState<"paste" | "file" | null>(null),
@@ -1844,6 +1842,7 @@ export function InventoryCatalog({
             </>
           }
           directory={trialDirectory}
+          onUsageLoaded={usage=>setTrialDirectory(current=>current && current.listId===trialDirectory.listId ? {...current,...usage,usageReady:true} : current)}
           onGroupsChanged={async () => { await Promise.all([reloadGroups(), reloadCategories(), onChanged()]); }}
           onUsageBatchChange={updates=>setTrialDirectory(previous=>previous ? {...previous,usage:{...previous.usage,...updates}} : previous)}
           onUsageChange={(key,cell)=>setTrialDirectory(previous=>previous ? {...previous,usage:{...previous.usage,[key]:cell}} : previous)}

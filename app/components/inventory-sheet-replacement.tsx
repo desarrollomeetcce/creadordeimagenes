@@ -44,7 +44,7 @@ export function InventorySheetReplacement({
   useEffect(() => {
     dialog.current?.showModal();
     let alive = true;
-    void api("meta-ads/inventory/trials?" + new URLSearchParams({ listId }))
+    void api("meta-ads/inventory/trials?" + new URLSearchParams({ listId, mode: "directory" }))
       .then((data: TrialDirectory) => {
         if (alive) setDirectory(data);
       })
@@ -55,8 +55,8 @@ export function InventorySheetReplacement({
       alive = false;
     };
   }, [listId]);
-  async function reloadDirectory() { const next = await api("meta-ads/inventory/trials?" + new URLSearchParams({ listId })); setDirectory(next); }
-  if (directory) return <InventoryGroupEditor directory={directory} group={directory.groups.find(g => g.id === selectedGroupId)} initialNames={[]} initialCountry={country} initialTab="top" onChooseGroup={setSelectedGroupId} onClose={onClose} externalBusy={busy} onSaved={async id => { await reloadDirectory(); setSelectedGroupId(id); }} onGroupsChanged={reloadDirectory} topContent={<><p className="hint">Al confirmar un reemplazo, el anterior queda por desactivar y el nuevo por hacer campaña en esta hoja y país. Las campañas de Meta se conservan.</p><InventoryTop directory={directory} source={source} initialRange={source === "meta" && since && until ? [since, until] : undefined} columns={[{value:tableId+":"+country,label:sheetName+" · "+countryName(country)}]} initialReplaceName={name} onBusyChange={setBusy} onChanged={onChanged} onDetail={(_column,name,aliasId) => setDetail({name,aliasId})}/>{detail && <EffectivenessHistory {...detail} tableId={tableId} country={country} initialSince={since} initialUntil={until} autoOpen onClose={()=>setDetail(null)} onPeriod={()=>{}}/>}</>}/>;
+  async function reloadDirectory() { const next = await api("meta-ads/inventory/trials?" + new URLSearchParams({ listId, mode: "directory" })); setDirectory(next); }
+  if (directory) return <InventoryGroupEditor directory={directory} onUsageLoaded={usage=>setDirectory(current=>current?{...current,...usage,usageReady:true}:current)} group={directory.groups.find(g => g.id === selectedGroupId)} initialNames={[]} initialCountry={country} initialTab="top" onChooseGroup={setSelectedGroupId} onClose={onClose} externalBusy={busy} onSaved={async id => { await reloadDirectory(); setSelectedGroupId(id); }} onGroupsChanged={reloadDirectory} topContent={<><p className="hint">Al confirmar un reemplazo, el anterior queda por desactivar y el nuevo por hacer campaña en esta hoja y país. Las campañas de Meta se conservan.</p><InventoryTop directory={directory} source={source} initialRange={source === "meta" && since && until ? [since, until] : undefined} columns={[{value:tableId+":"+country,label:sheetName+" · "+countryName(country)}]} initialReplaceName={name} onBusyChange={setBusy} onChanged={onChanged} onDetail={(_column,name,aliasId) => setDetail({name,aliasId})}/>{detail && <EffectivenessHistory {...detail} tableId={tableId} country={country} initialSince={since} initialUntil={until} autoOpen onClose={()=>setDetail(null)} onPeriod={()=>{}}/>}</>}/>;
   return (
     <dialog
       ref={dialog}

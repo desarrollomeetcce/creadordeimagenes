@@ -2549,3 +2549,14 @@ Ventana común Top/Crear/Editar/Anuncios: pestaña de anuncios propia con casill
 Páginas soporta usuarios del sistema mediante assigned_pages. OAuth explícito de páginas solicita ads_read,ads_management,pages_show_list y valida consentimiento antes de sustituir credencial. Permisos de Login empresarial deben estar configurados en Meta. Botón disponible en selector vacío y Conexiones, con instrucciones para token manual/sistema. No se publican contenidos programados ni se solicitan permisos futuros automáticamente.
 
 Validación:317 unitarias, typecheck/build,8 comprobaciones Chromium y6 integraciones HTTP/BD exclusivas. Cabecera sin salto al abrir privacidad, rail persistente, tres maximizaciones sin red, Biblioteca/Anuncios en nuevas pestañas, desfijado sin DELETE/F5/reelección, anuncio plano sin matriz e importación automática, botón OAuth visible, Grupos habilitado con lectura retenida y una sola petición. Backend: scopes/reautorización, rechazo sin pages_show_list conserva token/revisión, permisos, carpeta pendiente frente a explícita y guardado de solo un afiche, proyección reducida conserva24h y400k bytes históricos originales. Transportes sintéticos, sin gasto publicitario/IA real ni acreditación de la conexión particular del usuario.
+
+
+### 2026-11-05 · Estados de hoja, buscador de páginas y Lista/Grupos rápidos
+
+Hoja comparte menú de Inventario: campaña lista, por hacer, por desactivar y desactivada. Mismos colores y registro manual; no pausa/publica en Meta. Lock/CAS, snapshot/priorActive y filas con token canónico en el acuse. Navegador reemplaza solo el par alias/país, sin GET de hoja, conservando selección, ventas/gastos y otros países.
+
+Directorio de Grupos separado de su historial: modo rápido con catálogo/grupos/overrides manuales, modo usage bajo demanda sin duplicar nombres. Crear/Editar y Top de reemplazos enriquecen uso con peticiones coalescidas; Anuncios selecciona inmediatamente. Lista permite elegir/restaurar inventario antes de alias-tables; las evaluaciones esperan a datos básicos. Conteos de eventos/días solo para asociaciones conflictivas; categorías lee solo revisión y datos necesarios.
+
+Página de Facebook tiene búsqueda local, logos de la lectura actual y diálogo maximizable. Logos limitados a CDN Meta, carga diferida, fallback de iniciales y lectura básica si picture es rechazado. CSP permite esos hosts concretos, sin exponer tokens.
+
+Validación317 unitarias,36 comprobaciones de activación/uso,4 HTTP y4 Chromium: cuatro estados, CAS, hechos/otro país preservados, token de fila canónico; directorio básico sin historial y enriquecimiento sin catálogo duplicado;45 páginas con logos, filtro sin API por tecla, maximización/selección; fila gris actualizada sin GET de hoja; Lista/Grupos seleccionables con alias-tables e historial retenidos, Top espera uso real. Pruebas sintéticas sin IA ni publicidad con cargo. No certifica latencia del host privado real.

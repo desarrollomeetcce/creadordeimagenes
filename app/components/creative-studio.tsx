@@ -1341,6 +1341,7 @@ export function CreativeStudio({ userId }: { userId: string }) {
       {picker && (
         <InventoryGroupEditor
           directory={picker}
+          onUsageLoaded={usage=>{const next={...picker,...usage,usageReady:true};inventoryCache.current.set(picker.listId,next);setPicker(next);}}
           group={picker.groups.find((g: any) => g.id === pickerGroupId)}
           initialNames={[]}
           initialCountry={country}

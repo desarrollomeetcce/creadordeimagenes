@@ -46,7 +46,7 @@ import type {
 import { InventoryDiplomaObservations } from "./inventory-diploma-observations";
 
 export function InventoryGroupEditor({
-  directory,
+  directory: sourceDirectory,
   group: selectedGroup,
   initialNames,
   onClose,
@@ -62,7 +62,9 @@ export function InventoryGroupEditor({
   evaluationColumns = [],
   initialCountry = "",
   adsDestination,
+  onUsageLoaded,
 }: {
+  onUsageLoaded?: (value: Pick<TrialDirectory,"usage"|"countries"|"campaignStates"|"usageReady">) => void;
   initialCountry?: string;
   adsDestination?: { project: string; category: string };
   evaluationColumns?: { value: string; label: string }[];
@@ -80,6 +82,10 @@ export function InventoryGroupEditor({
   onUsageChange?: (key: string, cell: GroupUsageCell) => void;
   onUsageBatchChange?: (updates: Record<string, GroupUsageCell>) => void;
 }) {
+  const [enrichment,setEnrichment] = useState<{base:TrialDirectory;data:TrialDirectory}|null>(null);
+  const directory = enrichment?.base === sourceDirectory ? {...sourceDirectory,...enrichment.data,catalog:sourceDirectory.catalog,groups:sourceDirectory.groups} : sourceDirectory;
+  const [usageRetry,setUsageRetry] = useState(0);
+  const usageRequests = useRef(new WeakMap<TrialDirectory,Promise<TrialDirectory>>());
   const dialog = useRef<HTMLDialogElement>(null);
   const [adsCountry, setAdsCountry] = useState(initialCountry || (selectedGroup?.countries.length === 1 ? selectedGroup.countries[0] : ""));
   useEffect(() => { if (selectedGroup?.countries.length === 1) setAdsCountry(selectedGroup.countries[0]); }, [selectedGroup?.id]);
@@ -99,6 +105,15 @@ export function InventoryGroupEditor({
   const [managementTab, setManagementTab] = useState<"create" | "edit" | "top" | "ads">(
     initialTab ?? (selectedGroup ? "edit" : "create"),
   );
+  useEffect(() => {
+    if (directory.usageReady !== false || (!(["create","edit"].includes(managementTab)) && !(managementTab === "top" && topContent))) return;
+    let alive=true;
+    setError("");
+    let request=usageRequests.current.get(sourceDirectory);
+    if (!request) { request=api("meta-ads/inventory/trials?"+new URLSearchParams({listId:directory.listId,mode:"usage"})); usageRequests.current.set(sourceDirectory,request); }
+    void request.then(value=>{if(alive){setEnrichment({base:sourceDirectory,data:value});onUsageLoaded?.({usage:value.usage,countries:value.countries,campaignStates:value.campaignStates,usageReady:true});}}).catch(e=>{if(alive)setError(e.message);usageRequests.current.delete(sourceDirectory);});
+    return ()=>{alive=false;};
+  },[managementTab,sourceDirectory,directory.usageReady,usageRetry]);
   const group = managementTab === "edit" ? selectedGroup : undefined;
   const draftKey = managementTab === "ads" ? "ads" : group ? "edit:" + group.id : "create";
   function changeTab(tab: "create" | "edit" | "top" | "ads") {
@@ -1328,7 +1343,7 @@ export function InventoryGroupEditor({
         </p>
       )}
       {managementTab === "top" ? (
-        topContent ?? <section className="inventory-ads-selection"><h3>Grupos guardados</h3><table className="inventory-group-matrix"><thead><tr><th>Grupo</th><th>Diplomados</th><th>Países</th></tr></thead><tbody>{directory.groups.map(g => <tr key={g.id}><td><button type="button" onClick={() => { onChooseGroup?.(g.id); setManagementTab("edit"); }}>{g.name}</button></td><td>{g.members.length}</td><td>{g.countries.join(", ")}</td></tr>)}</tbody></table></section>
+        topContent && directory.usageReady === false ? <p role="status">{error ? <><span>{error}</span><button type="button" onClick={()=>{usageRequests.current.delete(sourceDirectory);setUsageRetry(n=>n+1);}}>Reintentar estados</button></> : "Cargando uso por país para evaluar y reemplazar…"}</p> : topContent ?? <section className="inventory-ads-selection"><h3>Grupos guardados</h3><table className="inventory-group-matrix"><thead><tr><th>Grupo</th><th>Diplomados</th><th>Países</th></tr></thead><tbody>{directory.groups.map(g => <tr key={g.id}><td><button type="button" onClick={() => { onChooseGroup?.(g.id); setManagementTab("edit"); }}>{g.name}</button></td><td>{g.members.length}</td><td>{g.countries.join(", ")}</td></tr>)}</tbody></table></section>
       ) : managementTab === "ads" ? (
         <section className="inventory-ads-selection" aria-label="Elegir diplomados para anuncios">
           <div className="row inventory-group-proposal">
@@ -1345,6 +1360,7 @@ export function InventoryGroupEditor({
         </section>
       ) : (
         <>
+          {directory.usageReady === false && <p role="status" className="hint">Puedes seleccionar diplomados. {error ? <button type="button" onClick={()=>{usageRequests.current.delete(sourceDirectory);setUsageRetry(n=>n+1);}}>Reintentar estados por país</button> : "Cargando estados por país…"}</p>}
           <div className="inventory-saved-groups" aria-label="Grupos guardados">
             {(managementTab !== "edit" || group) && (
               <label className="inventory-group-name">
