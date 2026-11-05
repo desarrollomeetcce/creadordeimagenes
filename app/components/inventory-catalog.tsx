@@ -74,6 +74,7 @@ import type {
   InventoryCategoryState,
   InventoryCategoryAction,
 } from "./inventory-category-types";
+import { inventoryDetailDestinations } from "../../lib/meta-ads/inventory-detail-destinations";
 import { EffectivenessCell } from "./effectiveness-cell";
 type Table = {
   id: string;
@@ -1787,6 +1788,7 @@ export function InventoryCatalog({
     <EffectivenessHistory
       key={fullDetail.aliasId + ":" + fullDetail.country}
       {...fullDetail}
+      destinations={inventoryDetailDestinations(fullDetail.name,items,sheetDirectory?.columns ?? [])}
       autoOpen
       initialSince={fullDetailPoint?.cac?.since ?? evaluationRange(evaluationPeriod).since ?? limaToday()}
       initialUntil={fullDetailPoint?.cac?.until ?? evaluationRange(evaluationPeriod).until ?? limaToday()}

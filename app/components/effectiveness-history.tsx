@@ -1,4 +1,9 @@
 "use client";
+import { countryName } from "../../lib/meta-ads/countries";
+import {
+  inventoryDetailDestinationKey,
+  type InventoryDetailDestination,
+} from "../../lib/meta-ads/inventory-detail-destinations";
 import { observedPeriodRatio } from "../../lib/meta-ads/observed-period-ratio";
 import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { subscribeAdvisorSalesChanged } from "./advisor-sales-events";
@@ -62,9 +67,10 @@ type Detail = {
 const stamp = (s: string) =>
   new Date(s).toLocaleString("es-PE", { timeZone: "America/Lima" });
 export function EffectivenessHistory({
-  aliasId,
-  tableId,
-  country,
+  aliasId: initialAliasId,
+  tableId: initialTableId,
+  country: initialCountry,
+  destinations,
   name,
   initialSince,
   initialUntil,
@@ -76,6 +82,7 @@ export function EffectivenessHistory({
   aliasId: string;
   tableId: string;
   country: string;
+  destinations?: InventoryDetailDestination[];
   name: string;
   initialSince: string;
   initialUntil: string;
@@ -84,6 +91,27 @@ export function EffectivenessHistory({
   initialMode?: "manual" | "meta";
   onClose?: () => void;
 }) {
+  const initialDestination = {
+    aliasId: initialAliasId,
+    tableId: initialTableId,
+    country: initialCountry,
+    label: `${countryName(initialCountry)} (${initialCountry})`,
+  };
+  const choices = [
+    ...new Map(
+      [initialDestination, ...(destinations ?? [])].map((d) => [
+        inventoryDetailDestinationKey(d),
+        d,
+      ]),
+    ).values(),
+  ];
+  const [destinationKey, setDestinationKey] = useState(
+    inventoryDetailDestinationKey(initialDestination),
+  );
+  const destination =
+    choices.find((d) => inventoryDetailDestinationKey(d) === destinationKey) ??
+    initialDestination;
+  const { aliasId, tableId, country } = destination;
   const id = useId(),
     pop = useRef<HTMLDivElement>(null);
   const [open, setOpen] = useState(false),
@@ -223,6 +251,9 @@ export function EffectivenessHistory({
           title="Ver estados por fecha y evolución de parámetros"
           popoverTarget={id}
           onClick={() => {
+            setDestinationKey(
+              inventoryDetailDestinationKey(initialDestination),
+            );
             setMode(initialMode);
             setBars("sales");
             setLine(initialMode === "meta" ? "spend" : "budget");
@@ -255,9 +286,7 @@ export function EffectivenessHistory({
               <>
                 <DetailStickyHeader>
                   <header className="row">
-                    <strong>
-                      {name} · {country}
-                    </strong>
+                    <strong>{name}</strong>
                   </header>
                   <DetailNavigation
                     closeLabel="Cerrar"
@@ -302,6 +331,28 @@ export function EffectivenessHistory({
                     disabled={!data}
                   />
                   <div className="row alias-detail-controls">
+                    <label>
+                      País
+                      <select
+                        aria-label="País del diplomado"
+                        value={inventoryDetailDestinationKey(destination)}
+                        disabled={choices.length < 2}
+                        onChange={(e) => {
+                          setDestinationKey(e.target.value);
+                          setPage(0);
+                        }}
+                      >
+                        {choices.map((d) => (
+                          <option
+                            key={inventoryDetailDestinationKey(d)}
+                            value={inventoryDetailDestinationKey(d)}
+                          >
+                            {d.label}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+
                     {(
                       [
                         ["meta", "Vista automática"],

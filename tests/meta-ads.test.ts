@@ -6438,3 +6438,14 @@ test("Equipo: cocientes de totales observados muestran porcentaje/CAC parcial si
   assert.equal(observedPeriodRatio([{numerator:null,denominator:40}]).value,null);
   assert.equal(observedPeriodRatio([{numerator:10,denominator:0}],1).value,null);
 });
+
+test("Detalle de inventario: destinos del mismo diplomado por país/hoja, sin alias ambiguos ni otros diplomados", async () => {
+  const {inventoryDetailDestinations,inventoryDetailDestinationKey} = await import("../lib/meta-ads/inventory-detail-destinations");
+  const aliases=[{id:"pe",tableId:"t1",name:"Criminalística Internacional",standalone:false},{id:"co",tableId:"t2",name:"CRIMINALÍSTICA INTERNACIONAL",standalone:false},{id:"other",tableId:"t2",name:"Otro",standalone:false},{id:"standalone",tableId:"t3",name:"Criminalística Internacional",standalone:true}];
+  const columns=[{tableId:"t1",country:"PE",name:"Perú"},{tableId:"t2",country:"CO",name:"Colombia"},{tableId:"t2",country:"MX",name:"Compartida"},{tableId:"t3",country:"BO",name:"Sin alias"}];
+  const result=inventoryDetailDestinations("Criminalística Internacional",aliases,[...columns,columns[0]]);
+  assert.deepEqual(result.map(d=>[d.aliasId,d.tableId,d.country]).sort(),[["co","t2","CO"],["co","t2","MX"],["pe","t1","PE"]]);
+  assert.notEqual(inventoryDetailDestinationKey(result[0]),inventoryDetailDestinationKey(result[1]));
+  assert.deepEqual(inventoryDetailDestinations("Otro ausente",aliases,columns),[]);
+  assert(!inventoryDetailDestinations("Criminalística Internacional",[...aliases,{id:"duplicate",tableId:"t1",name:"Criminalística Internacional",standalone:false}],columns).some(d=>d.tableId==="t1"));
+});

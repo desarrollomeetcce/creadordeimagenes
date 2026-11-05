@@ -1,5 +1,7 @@
 # Instrucciones para desarrollo
 
+- Detalle de inventario04/11: título solo diplomado, selector País dentro de la misma ventana. Resolver tupla alias/hoja/país desde misma fila/lista y directorio ya cargados, no solo cambiar etiqueta ni mezclar datos. Conservar rango/modo, actualizar estadísticas/historia/asesores/enlaces y descartar respuestas atrasadas. Sin alias nuevos, escrituras ni descubrimiento por consultas adicionales; no resolver ambigüedades arbitrariamente.
+
 - Última aclaración04/11: detalles solo manual/automática, automática inicial o modo explícito de origen, rango del calendario estable. CAC siempre Meta G/V, efectividad V/B o V/BC; cocientes de totales observados del período con asterisco por faltantes, nunca imputar0, dividir por0 ni mezclar monedas. Mantener comparador estricto ajeno. Totales estadísticos con metaSums originales separados de ajustes. Estado laboral compartido Activo/Inactivo en columna Asesores y filtro en encabezado, también filtro/estado equipo. Guardar advisorInactiveIds en config bajo PATCH advisors/permisos/lock/CAS, conservar historia/config/filas/roles, activo inicial sin migración; VIEW sin escritura.
 
 - Asesores, última aclaración04/11: retirar BM y efectividad V/BM exclusivamente de la tabla manual;5 columnas A/H/BC/V/V÷BC. Ajustar encabezados/celdas/anchos/colspan. Automática inicial y sus6 columnas intactas, no borrar BM/repartos/historia de Totales ni cálculos ajenos.

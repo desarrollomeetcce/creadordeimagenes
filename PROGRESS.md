@@ -1,3 +1,11 @@
+## País dentro del detalle de diplomado · 2026-11-04
+
+El título del detalle muestra solo el diplomado. Un selector País en la misma ventana cambia el destino completo (tableId, aliasId, country), no solo la etiqueta. Lista de diplomados vigentes pasa destinos obtenidos de aliases ya disponibles en esa misma fila/lista y columnas del directorio existente, incluso si un filtro de presentación oculta columnas. No incluir otros diplomados, aliases separados del inventario ni resolver coincidencias ambiguas arbitrariamente. Etiqueta país/código y hoja distingue países repetidos entre hojas; identidad JSON de la tupla evita colisiones. Otras aperturas sin directorio muestran su país inicial sin inventar destinos.
+
+Cambiar país conserva ventana/ID, rango, modo manual/automático y parámetros elegidos; actualiza CAC, efectividad, gráficos, histórico, ventas por asesor, activaciones y enlaces al período con el alias/hoja/país elegido. No crea aliases ni activa campañas. El sello de consulta oculta datos anteriores inmediatamente; limpieza/versionado existente descarta respuestas atrasadas. Reabrir desde otra celda respeta país inicial. Sin consultas nuevas para descubrir destinos ni precargas de estadísticas ajenas.
+
+Validación:197 unitarias, TypeScript/build correctos y4 comprobaciones de navegador: título/opciones; EC→PE cambia hoja/alias/CAC10.25→20 sin perder modo/fechas; PE→CO mismo alias separa CAC20→30; cambios rápidos ignoran respuesta atrasada, móvil sin errores/escrituras. Snapshot de registros por país exacto y fixtures exclusivos eliminados.
+
 ## Detalles coherentes y estado laboral compartido · 2026-11-04
 
 Validación:196 unitarias,8 pruebas de integración (permisos/CAS/estado compartido y Totales con Meta15 frente a ajuste manual999), TypeScript y build correctos.6 comprobaciones de navegador: equipo3.47%/CAC18.23 parcial; detalle asesor; filtros/estado laboral; diplomado; hoja completa; Totales y móvil, sin errores y solo2 PATCH laborales intencionales. Snapshots de ventas/presupuesto/Meta/BC/asignaciones/Totales exactos y fixtures exclusivos eliminados. Revisión React: hooks estables, controles etiquetados, sin consultas al alternar vista, fuentes monetarias separadas.
