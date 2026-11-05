@@ -50,6 +50,7 @@ type Snapshot = {
   engine?: "ai"|"propiox"|"hybrid";
   engineRevision?:number; subjectName?:string; localQuality?:string;localResolution?:string;
   systemReferences?:SystemReference[];storageReferences?:StoredReference[];resourceScopes?:ResourceScope[];
+  imageQuality?:string; imageResolution?:string;
   prompt: string;
   brand?: {colors?: string[]}|null;
   mode: string;
@@ -247,6 +248,12 @@ export async function runOne(filter?: {
       "El modelo creativo cambió. Vuelve a revisar y autorizar la generación.",
       409,
     );
+    if (engine === "ai" && (s.imageQuality || s.imageResolution)) {
+      demand(!s.imageQuality || imageCapability.qualities.includes(s.imageQuality), "La calidad guardada del proyecto ya no es compatible.",409);
+      demand(!s.imageResolution || imageCapability.resolutions.includes(s.imageResolution), "La resolución guardada del proyecto ya no es compatible.",409);
+      c.quality = s.imageQuality ?? c.quality;
+      c.resolution = s.imageResolution ?? c.resolution;
+    }
     const checkReferences = (references: typeof images) => {
       demand(
         !references.length || imageCapability.supportsReferences !== false,

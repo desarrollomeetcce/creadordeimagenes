@@ -13,12 +13,13 @@ import {
   resolveInstructions,
   validateDistribution,
 } from "./inheritance";
-export async function previewSubproduct(id: string) {
+export async function previewSubproduct(id: string, projectOnly = false) {
   const s = await db.subproduct.findUniqueOrThrow({
     where: { id },
     include: { category: { include: { project: true } } },
   });
   const use = instructionUse(s.category.project.instructionPolicy,s.category.instructionPolicy,s.instructionPolicy,s.category.applyPromptToAll);
+  if (projectOnly) use.product = false;
   const brand = use.project ? await readBrand(s.category.projectId) : null;
   const instructions = resolveInstructions([
     { name: "Identidad de marca", prompt: brandInstructions(brand) },
@@ -93,6 +94,7 @@ export async function generateBatch(
   selected?: string[],
   previewFirst = false,
   requestedEngine?:GenerationEngine,
+  studio?: {projectOnly:boolean;count:number;mode:"Imagen + Texto"|"Texto"|"Imagen";format:string;quality?:string;resolution?:string},
 ) {
   const engines=await engineConfiguration(),engine=requireEngine(engines,requestedEngine);
   const c=engine==="propiox"?null:await configured(engine==="hybrid");
@@ -114,8 +116,8 @@ export async function generateBatch(
   const items = [];
   for (const sub of subs) {
     await resourceAccess(actor, "subproduct", sub.id, "GENERATE");
-    const p = await previewSubproduct(sub.id),
-      s = p.settings;
+    const p = await previewSubproduct(sub.id,studio?.projectOnly),
+      s = studio ? {...p.settings,count:studio.count,textCount:studio.mode==="Texto"?studio.count:0,imageTextCount:studio.mode==="Imagen + Texto"?studio.count:0,imageCount:studio.mode==="Imagen"?studio.count:0,format:studio.format} : p.settings;
     validateDistribution(s);
     demand(
       !p.needsSettings,
@@ -151,6 +153,7 @@ export async function generateBatch(
         key: `${actorId}:${requestId}:${sub.id}:${index}`,
         snapshot: {
           prompt,
+          ...(studio?{imageQuality:studio.quality??c!.quality,imageResolution:studio.resolution??c!.resolution}:{}),
           engine,engineRevision:engines.revision,localQuality:engines.quality,localResolution:engines.resolution,
           resourceScopes:p.resourceScopes,
           systemReferences:selectedSystem.map(a=>({bindingId:a.bindingId,scope:a.scope,resourceId:a.resourceId,...(a.documentId?{documentId:a.documentId}:{}),...(a.variationId?{variationId:a.variationId,versionId:a.versionId??null}:{}),...(a.copyId?{copyId:a.copyId}:{})})),

@@ -1,6 +1,6 @@
 "use client";
 import { uploadResource } from "./resource-upload";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   HierarchyFilters,
   hierarchyFromLocation,
@@ -96,6 +96,8 @@ export type LibraryPicker = {
   onChange: (ids: string[], names: Record<string, string>) => void;
 };
 export function Library({ picker }: { picker?: LibraryPicker } = {}) {
+  const [folderLayout,setFolderLayout]=useState("cards");
+
   const [editing, setEditing] = useState<string | null>(null);
   const [preview, setPreview] = useState<{
     id: string;
@@ -160,6 +162,7 @@ export function Library({ picker }: { picker?: LibraryPicker } = {}) {
   const revision = useRef(0),
     latest = useRef<Data | null>(null);
   latest.current = data;
+  const childCounts=useMemo(()=>{const counts=new Map<string,number>();for(const node of data?.tree??[])if(node.parentId)counts.set(node.parentId,(counts.get(node.parentId)??0)+1);return counts;},[data?.tree]);
   const params = new URLSearchParams({
     ...hierarchy,
     folder,
@@ -1059,6 +1062,7 @@ export function Library({ picker }: { picker?: LibraryPicker } = {}) {
                   ))}
                 </select>
               </label>
+              {!picker&&<div className="library-folder-view" aria-label="Vista de carpetas"><button type="button" aria-pressed={folderLayout==="cards"} onClick={()=>setFolderLayout("cards")}>▦ Tarjetas</button><button type="button" aria-pressed={folderLayout==="list"} onClick={()=>setFolderLayout("list")}>☷ Tabla</button></div>}
               <label>
                 Tamaño
                 <select value={size} onChange={(e) => setSize(e.target.value)}>
@@ -1222,7 +1226,7 @@ export function Library({ picker }: { picker?: LibraryPicker } = {}) {
                 aria-label={group.name}
               >
                 <h3>{group.name}</h3>
-                <div className={"folder-cards size-" + size}>
+                <div className={"folder-cards size-" + size + " layout-"+folderLayout}>
                   {list.map((f) => (
                     <article
                       key={f.id}
@@ -1276,6 +1280,7 @@ export function Library({ picker }: { picker?: LibraryPicker } = {}) {
                             ? "Carpeta conservada · origen eliminado"
                             : "Carpeta de proyecto"}
                       </small>
+                      <small className="library-folder-count">{childCounts.get(f.id)??0} {(f.kind==="project"?"productos":f.kind==="product"?"subproductos":"carpetas")}</small>
                       {!picker && (
                         <button
                           type="button"

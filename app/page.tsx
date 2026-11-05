@@ -1,6 +1,7 @@
 "use client";
 import dynamic from "next/dynamic";
 import "./components/creative-workspace.css";
+const CreativeStudio = dynamic(()=>import("./components/creative-studio").then(m=>m.CreativeStudio),{loading:()=> <p role="status">Abriendo el estudio creativo…</p>});
 const ProjectImagePreview = dynamic(() => import("./components/project-image-preview").then(m => m.ProjectImagePreview));
 import {EffectivenessLegend} from "./components/effectiveness-legend";
 const ProductsCatalog=dynamic(()=>import("./components/products-catalog").then(m=>m.ProductsCatalog),{loading:()=> <p role="status">Cargando efectividad…</p>});
@@ -322,7 +323,7 @@ export default function Home() {
             throw new Error("El enlace de galería no es válido.");
           if (active)
             setCollection({ scope: scope as "project" | "category", id });
-        } else if (nextView === "projects") {
+        } else if (nextView === "projects" && (new URLSearchParams(location).get("legacy")==="1" || user.role==="OBSERVER")) {
           const galleryId = params.get("gallery"),
             categoryId = params.get("category"),
             projectId = params.get("project");
@@ -585,6 +586,8 @@ export default function Home() {
                   openGallery({ id, name: "Afiches", prompt: "" })
                 }
               />
+            ) : view === "projects" && user.role!=="OBSERVER" && new URLSearchParams(location).get("legacy")!=="1" ? (
+              <CreativeStudio userId={user.id}/>
             ) : view === "account" ? (
               <>
                 <AccountSecurity onChanged={reloadUser} />

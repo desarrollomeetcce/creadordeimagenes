@@ -65,6 +65,7 @@ model Session {
   @@index([expiresAt])
 }
 model Project {
+  studio Json @default("{}")
   id String @id @default(cuid())
   seedKey String? @unique
   name String
@@ -90,6 +91,7 @@ model ProjectMember {
   @@id([projectId,userId])
 }
 model Category {
+  studio Json @default("{}")
   id String @id @default(cuid())
   name String
   prompt String @default("")
@@ -106,6 +108,7 @@ model Category {
   @@index([projectId,deletedAt])
 }
 model Subproduct {
+  studio Json @default("{}")
   id String @id @default(cuid())
   name String
   prompt String @default("")
@@ -1497,4 +1500,35 @@ model MetaHistoricalAdvisorSale {
  source MetaFinancialHistoryImport @relation(fields:[importId],references:[id],onDelete:Restrict)
  @@id([advisorId,country,day])
  @@index([day,country])
+}
+
+model CreativeMetaLaunch {
+  id String @id @default(cuid())
+  actorId String
+  projectId String
+  categoryId String
+  requestId String @unique
+  accountId String
+  connectionId String
+  connectionRevision Int
+  status String @default("DRAFT")
+  revision Int @default(1)
+  config Json
+  campaigns Json
+  steps Json @default("[]")
+  error String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@index([actorId,createdAt])
+  @@index([categoryId,createdAt])
+}
+
+model CreativeInventorySelection {
+ id String @id @default(cuid())
+ actorId String
+ listId String
+ country String
+ itemIds Json
+ createdAt DateTime @default(now())
+ @@index([actorId,createdAt])
 }

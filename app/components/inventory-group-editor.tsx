@@ -1,4 +1,6 @@
 "use client";
+import dynamic from "next/dynamic";
+const InventoryMetaPicker = dynamic(()=>import("./inventory-meta-picker").then(m=>m.InventoryMetaPicker));
 import { InventoryGroupCategoryAdditions } from "./inventory-group-category-additions";
 import {
   randomCategoryAdditions,
@@ -75,6 +77,7 @@ export function InventoryGroupEditor({
   onUsageBatchChange?: (updates: Record<string, GroupUsageCell>) => void;
 }) {
   const dialog = useRef<HTMLDialogElement>(null);
+  const [metaPicker,setMetaPicker]=useState(false);
   const userId = useContext(CurrentUserId);
   const pinKey = `inventory-group-pins:v1:${userId}:${directory.listId}`;
   const [groupAction, setGroupAction] = useState<{
@@ -891,6 +894,8 @@ export function InventoryGroupEditor({
     }
   }
   return (
+    <>
+    {metaPicker&&<InventoryMetaPicker directory={directory} initialCountry={selectedGroup?.countries.length===1?selectedGroup.countries[0]:""} onClose={()=>setMetaPicker(false)}/>}
     <dialog
       ref={dialog}
       className="trial-dialog inventory-group-editor inventory-group-editor-compact"
@@ -935,6 +940,7 @@ export function InventoryGroupEditor({
             >
               Editar grupos
             </button>
+            <button type="button" disabled={busy||externalBusy} onClick={()=>setMetaPicker(true)}>Anuncios Meta IA</button>
           </nav>
         )}
         <div className="inventory-group-window-actions">
@@ -2300,6 +2306,7 @@ export function InventoryGroupEditor({
         </>
       )}
     </dialog>
+    </>
   );
 }
 

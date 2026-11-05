@@ -2811,3 +2811,12 @@ Detalle de selección reorientado al análisis de las hojas: barras verticales p
 El dashboard expone reportedMeta y metaPartial para conservar G/resultados realmente guardados ante cobertura incompleta, manteniendo metaAvailable estricto para evaluación. Agrupación no duplica V compartido ni mezcla monedas/objetivos en denominadores; CAC se omite ante subconjunto de campañas compartidas o G incompleto. Actualización visible del padre refresca métricas seleccionadas sin resetear filtros/DOM; fechas conservan la variable del gráfico. No se agregan consultas Graph ni lecturas masivas de histórico.
 
 Evidencia:281 unitarias,19 integraciones campañas/realtime,25 activación/reemplazo; typecheck/build y7 comprobaciones Chromium. Accesos reales de Hostinger/Meta no han sido verificados desde este entorno. Consulta sobre GitHub atendida: pasar a privado no detiene la app existente; requiere conservar autorización de los despliegues. No se cambió visibilidad del repositorio.
+
+
+### 2026-11-05 · Estudio creativo y campañas WhatsApp
+
+Proyectos abre tres columnas ajustables, con centro amplio, búsqueda/creación inmediata de proyectos y carpetas de producto por país. Comportamiento de proyecto y referencias opcionales; el nuevo flujo conserva pero no hereda prompts históricos de producto. Afiches por diplomado, selección, carga manual sin IA, variaciones/muestra inicial y guardado exclusivo de elegidos en Biblioteca. Inventario/grupos enlaza mediante Anuncios Meta IA y selección privada. Biblioteca añade tamaños de carpeta, tabla/tarjetas y conteos disponibles.
+
+Tercera columna publica mediante conexiones Meta existentes: cuenta principal, página, WhatsApp, presupuesto explícito, plantillas por país y dos conjuntos por diplomado. Revisión final y confirmación adicional para ACTIVE. Borradores/recibos persistentes, CAS y parada sin reintento ante incertidumbre; creación PAUSED, verificación y activación opcional posterior. Objetos confirmados aparecen localmente sin inventar gasto ni reimportar histórico. Migración aditiva de configuración del estudio y dos tablas.
+
+Validación:315 unitarias, typecheck/build;12 comprobaciones de navegador y9 integraciones HTTP/BD con transportes sintéticos, incluidas pérdida de acuse y revisiones de imágenes. Base temporal exclusiva y afiches locales, ninguna generación o publicación publicitaria con cargo real. Permisos/conexiones/aceptación de Meta reales requieren comprobación con la cuenta del usuario.

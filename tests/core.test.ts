@@ -575,3 +575,14 @@ test("prompt de imagen: conserva íntegro el brief cuando la dirección opcional
  assert.throws(()=>validateOpenAIImagePrompt("a".repeat(32001)),/No se recortó tu contenido/);
  assert.throws(()=>validateOpenAIImagePrompt(""),/vacías/);
 });
+
+test('estudio: presupuesto por moneda, plantillas y plan de dos públicos sin activación prematura',async()=>{
+ const {campaignConfigSchema,minorBudget,campaignText,launchPlan,launchSummary,audienceTargeting}=await import('../lib/creative-studio/campaign-policy');
+ const c=campaignConfigSchema.parse({accountId:'123',pageId:'456',country:'UY',whatsapp:'+59899999999',dailyBudget:12.5,body:'Diplomado {diplomado} en {pais}',headline:'{codigo} {producto}',code:'ACERO UR',audiences:[{name:'General'},{name:'Otro',ageMin:25}]});
+ assert.equal(c.targetStatus,'PAUSED');assert.equal(minorBudget(12.5,'PEN'),1250);assert.equal(minorBudget(100,'JPY'),100);assert.throws(()=>minorBudget(1.001,'PEN'));
+ assert(!campaignConfigSchema.safeParse({...c,dailyBudget:0}).success);
+ const items=[{subproductId:'s',name:'EIA',variationIds:['v1','v2']}];assert.equal(campaignText(c.headline,items[0],c),'ACERO UR EIA');assert.equal(launchSummary(items,c).ads,4);
+ assert(!launchPlan(items,false).some(s=>s.kind==='ACTIVATE'));
+ const plan=launchPlan(items,true),firstActive=plan.findIndex(s=>s.kind==='ACTIVATE');assert(firstActive>plan.findIndex(s=>s.kind==='VERIFY'));assert.equal(plan.at(-1)!.kind,'VERIFY_LIVE');
+ const targeting=audienceTargeting(c,0,{geo_locations:{countries:['PE']}});assert.deepEqual(targeting.geo_locations,{countries:['UY']});assert.equal(targeting.targeting_automation.advantage_audience,1);
+});
