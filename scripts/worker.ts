@@ -1,3 +1,4 @@
+import { OPENAI_IMAGE_PROMPT_LIMIT, validateOpenAIImagePrompt } from "../lib/providers/openai-input";
 import {resolveSystemReferences,type SystemReference} from "../lib/system-resources";
 import {engineConfiguration,requireEngine,propioxRuntime} from "../lib/generation-engines";
 import {resolveStoredReferences,type StoredReference,type ResourceScope} from "../lib/resource-storage";
@@ -346,6 +347,8 @@ export async function runOne(filter?: {
         ? { bytes: await load(inputPath), mime: "image/png" }
         : null;
       checkReferences([...(input ? [input] : []), ...images]);
+      if (c.provider === "openai") validateOpenAIImagePrompt(preserve
+        ? `${s.prompt}\nEditar solo el fondo o fotografía. Sin textos, letras ni logos: estos se mantienen como capas independientes.` : s.prompt);
       await heartbeat.check();
       called = true;
       const result = await provider!.generate(key, {
@@ -381,13 +384,14 @@ export async function runOne(filter?: {
       creativePlan=composition.backgroundPrompt;
       if(s.mode!=="Texto"){
         const visualImages=images.filter((_,index)=>!/logo/i.test(refs[index].purpose));
-        checkReferences(visualImages);await heartbeat.check();called=true;
+        checkReferences(visualImages);if(c.provider==="openai")validateOpenAIImagePrompt(composition.backgroundPrompt);await heartbeat.check();called=true;
         const result=await provider!.generate(key,{capability:imageCapability,signal,model:c.imageModel!,prompt:composition.backgroundPrompt,quality:c.quality,size:c.resolution,images:visualImages});
         imageUsage=result.usage;backgroundPath=await store(await adaptImage(result.bytes,s.format));written.push(backgroundPath);
       }
       output=await renderDesign(document,backgroundPath?await load(backgroundPath):null,await renderLogos(document));
     } else {
       const brief = artDirection(scopedBrief,s.mode,s.format,s.index,s.renderMode==="editable");
+      if (c.provider === "openai" && s.renderMode !== "editable") validateOpenAIImagePrompt(brief);
       if (s.renderMode !== "editable" || s.mode !== "Texto")
         checkReferences(
           s.renderMode === "editable"
@@ -450,6 +454,7 @@ export async function runOne(filter?: {
           artDirection(scopedBrief,s.mode,s.format,s.index,false),
           s.renderMode === "editable" ? "" : plan.text,
           plan.incomplete,
+          c.provider === "openai" ? OPENAI_IMAGE_PROMPT_LIMIT : Infinity,
         );
         creativePlan = completed.prompt;
         creativeRecovery = completed.recovered && !directImage;

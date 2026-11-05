@@ -634,3 +634,22 @@ test("OpenAI: rechazo identifica etapa y campo permitido sin filtrar mensajes ni
     assert.equal(calls,1);
   });
 });
+
+test("OpenAI: instrucciones demasiado largas se rechazan antes de enviar imagen o referencias", async () => {
+  let calls=0;
+  await transport(async()=>{calls++;throw Error("No debe enviarse");},async()=>{
+    for(const images of [undefined,[{bytes:await png(),mime:"image/png"}]]){
+      await assert.rejects(adapter("openai").generate(key,{model:"gpt-image-2",prompt:"a".repeat(32001),quality:"medium",size:"1024x1024",images}),/32001 caracteres.*32000/);
+    }
+    assert.equal(calls,0);
+  });
+});
+
+test("OpenAI: rechazo del prompt muestra solo longitud y etapa, nunca texto privado",async()=>{
+ const prompt="Instrucciones privadas QA";
+ await transport(async()=>Response.json({error:{code:"invalid_request_error",param:"prompt",message:"Respuesta privada"}},{status:400}),async()=>{
+  await assert.rejects(adapter("openai").generate(key,{model:"gpt-image-2",prompt,quality:"medium",size:"1024x1024"}),e=>{
+   assert(e instanceof Error);assert.match(e.message,/Generación de imagen/);assert(e.message.includes(`${prompt.length} caracteres`));assert(!e.message.includes(prompt));assert(!e.message.includes("Respuesta privada"));return true;
+  });
+ });
+});

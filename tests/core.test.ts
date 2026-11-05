@@ -563,3 +563,15 @@ test("diagnóstico de generación: solo intentos fallidos y metadatos públicos 
   assert.equal(openAIRejection(400,"secret-key","private prompt"),null);
   assert.match(openAIRejection(404,"model_not_found")!,/no tiene acceso/);
 });
+
+test("prompt de imagen: conserva íntegro el brief cuando la dirección opcional excede el límite",async()=>{
+ const {completePosterPrompt}=await import("../lib/creative-recovery");
+ const {validateOpenAIImagePrompt,promptCharacters}=await import("../lib/providers/openai-input");
+ const brief="Instrucciones comerciales autorizadas. "+"a".repeat(31000);
+ const result=completePosterPrompt(brief,"b".repeat(2000),false,32000);
+ assert.equal(result.prompt,brief);assert.equal(result.recovered,true);validateOpenAIImagePrompt(result.prompt);
+ assert(completePosterPrompt(brief,"b".repeat(2000)).prompt.length>32000);
+ assert.equal(promptCharacters("😀"),1);assert.doesNotThrow(()=>validateOpenAIImagePrompt("😀".repeat(32000)));
+ assert.throws(()=>validateOpenAIImagePrompt("a".repeat(32001)),/No se recortó tu contenido/);
+ assert.throws(()=>validateOpenAIImagePrompt(""),/vacías/);
+});

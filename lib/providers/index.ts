@@ -1,3 +1,4 @@
+import { promptCharacters, validateOpenAIImagePrompt } from "./openai-input";
 import { openAIRejection } from "../generation-diagnostics";
 import { openAIThinking, type ReasoningLevel } from "../creative-level";
 import { FalAdapter } from "./fal";
@@ -136,7 +137,10 @@ class OpenAIAdapter implements ProviderAdapter {
         if (typeof failure?.error?.code === "string") code = failure.error.code;
         if (typeof failure?.error?.param === "string") param = failure.error.param;
       } catch {}
-      throw new AppError(`${path.startsWith("images/") ? "Generación de imagen" : path === "responses" ? "Dirección creativa" : "Conexión OpenAI"}: ${openAIRejection(r.status, code, param) ?? providerError(r.status, code)}`, 502);
+      const prompt = body instanceof FormData ? body.get("prompt") : body && typeof body === "object" && "prompt" in body ? (body as {prompt: unknown}).prompt : null;
+      const lengthHint = path.startsWith("images/") && param === "prompt" && typeof prompt === "string"
+        ? ` Instrucciones enviadas: ${promptCharacters(prompt)} caracteres (máximo 32000).` : "";
+      throw new AppError(`${path.startsWith("images/") ? "Generación de imagen" : path === "responses" ? "Dirección creativa" : "Conexión OpenAI"}: ${openAIRejection(r.status, code, param) ?? providerError(r.status, code)}${lengthHint}`, 502);
     }
     try {
       return await r.json();
@@ -168,6 +172,7 @@ class OpenAIAdapter implements ProviderAdapter {
       capability?: ModelCapability;
     },
   ) {
+    validateOpenAIImagePrompt(args.prompt);
     const { images, signal, capability: _capability, ...options } = args;
     let result;
     if (images?.length) {

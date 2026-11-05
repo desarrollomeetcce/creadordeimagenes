@@ -1,3 +1,4 @@
+import { promptCharacters } from "./providers/openai-input";
 import { creativeSchema, planToDesign, type CreativePlan } from "./design";
 
 /** Repairs transport formatting locally; never treats partial JSON as a full plan. */
@@ -31,6 +32,7 @@ export function completePosterPrompt(
   brief: string,
   text: string,
   incomplete = false,
+  maxCharacters = Infinity,
 ) {
   const direction = text.trim();
   if (
@@ -40,8 +42,9 @@ export function completePosterPrompt(
     direction.startsWith("```")
   )
     return { prompt: brief, recovered: true };
-  return {
-    prompt: `${brief}\n\nPROPUESTA DE COMPOSICIÓN\n${direction}\n\nLa propuesta orienta la composición; las instrucciones y datos autorizados anteriores prevalecen. No añadas ofertas, precios, marcas ni otros datos que no estén autorizados en el brief original.`,
-    recovered: false,
-  };
+  const prompt = `${brief}\n\nPROPUESTA DE COMPOSICIÓN\n${direction}\n\nLa propuesta orienta la composición; las instrucciones y datos autorizados anteriores prevalecen. No añadas ofertas, precios, marcas ni otros datos que no estén autorizados en el brief original.`;
+  // The authorized brief is mandatory; the additional composition is optional.
+  // If both do not fit, preserve every character of the brief without a paid retry.
+  if (Number.isFinite(maxCharacters) && promptCharacters(prompt) > maxCharacters) return { prompt: brief, recovered: true };
+  return { prompt, recovered: false };
 }

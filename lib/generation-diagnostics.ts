@@ -21,6 +21,8 @@ export function openAIRejection(status: number, code?: string, param?: string) {
     model_not_found: "El modelo no existe o tu cuenta no tiene acceso a él.",
     unsupported_parameter: "La solicitud contiene un parámetro que ese modelo no admite.",
     unsupported_value: "Uno de los valores no es compatible con ese modelo.",
+    string_above_max_length: "Las instrucciones superan la longitud admitida por el proveedor.",
+    string_too_long: "Las instrucciones superan la longitud admitida por el proveedor.",
     invalid_value: "Uno de los valores enviados no es válido.",
     content_policy_violation: "El proveedor rechazó el contenido por sus políticas.",
     organization_not_verified: "La organización debe completar la verificación para utilizar ese modelo.",
