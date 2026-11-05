@@ -1,5 +1,6 @@
 "use client";
 import {
+  createContext,
   useContext,
   useEffect,
   useRef,
@@ -8,6 +9,12 @@ import {
   type ReactNode,
 } from "react";
 import { CurrentUserId } from "./role-guide";
+const StudioMaxContext = createContext<{ maximized: string; setMaximized: (value: string) => void }>({ maximized: "", setMaximized: () => {} });
+export function StudioMaximize({pane, label}: {pane: string; label: string}) {
+ const {maximized, setMaximized} = useContext(StudioMaxContext);
+ const active = maximized === pane;
+ return <button type="button" className="studio-maximize" aria-label={(active ? "Restaurar " : "Maximizar ") + label} title={(active ? "Restaurar " : "Maximizar ") + label} aria-pressed={active} onClick={() => setMaximized(active ? "" : pane)}>{active ? "↙" : "⛶"}</button>;
+}
 export function StudioColumns({
   children,
   zone,
@@ -21,6 +28,8 @@ export function StudioColumns({
     drag = useRef<{ side: "left" | "right"; x: number; width: number } | null>(
       null,
     );
+  const [maximized, setMaximized] = useState("");
+  useEffect(() => { if (!maximized) return; const close = (e: KeyboardEvent) => { if (e.key === "Escape" && !document.querySelector("dialog[open]")) setMaximized(""); }; document.addEventListener("keydown", close); return () => document.removeEventListener("keydown", close); }, [maximized]);
   const [widths, setWidths] = useState({ left: 290, right: 310 }),
     [room, setRoom] = useState(1500),
     [ready, setReady] = useState(false),
@@ -62,7 +71,8 @@ export function StudioColumns({
       ),
     }));
   return (
-    <div
+    <StudioMaxContext.Provider value={{maximized,setMaximized}}><div
+      data-maximized={maximized || undefined}
       ref={root}
       className={"studio-columns" + (moving ? " studio-resizing" : "")}
       data-zone={zone}
@@ -134,6 +144,6 @@ export function StudioColumns({
           }}
         />
       ))}
-    </div>
+    </div></StudioMaxContext.Provider>
   );
 }

@@ -68,6 +68,8 @@ export async function libraryTree(
         id: true,
         name: true,
         categoryId: true,
+        studio: true,
+        _count: { select: { variations: { where: { deletedAt: null, expired: false } } } },
         deletedAt: true,
         category: {
           select: { deletedAt: true, project: { select: { deletedAt: true } } },
@@ -112,7 +114,7 @@ export async function libraryTree(
         sourceDeleted: !!(p.deletedAt || p.project.deletedAt),
       })),
       ...subs
-        .filter((sub) => !hiddenSubs.has(sub.id))
+        .filter((sub) => !hiddenSubs.has(sub.id) && !((sub.studio as any)?.folderPending === true || ((sub.studio as any)?.folderPending === undefined && (sub.studio as any)?.country && !sub._count.variations)))
         .map((p) => ({
           id: "subproduct:" + p.id,
           name: p.name,

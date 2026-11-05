@@ -260,11 +260,11 @@ export class MetaReader {
     },
   ) {}
   /** Explicit studio operations; never called by polling/import or financial views. */
-  async launchRequest(accountId:string, edge:"pages"|"promote_pages"|"saved_audiences"|"adimages"|"campaigns"|"adsets"|"adcreatives"|"ads"|"object"|"objects", body?:Record<string,unknown>, objectId?:string, readFields?:string, after?:string) {
+  async launchRequest(accountId:string, edge:"assigned_pages"|"pages"|"promote_pages"|"saved_audiences"|"adimages"|"campaigns"|"adsets"|"adcreatives"|"ads"|"object"|"objects", body?:Record<string,unknown>, objectId?:string, readFields?:string, after?:string) {
     demand(this.transport === "API" && /^\d{1,40}$/.test(accountId), "Publicar requiere una conexión verificada de Marketing API.",409);
     demand((edge!=="object" && edge!=="objects") || !!objectId && /^\d{1,40}(?:,\d{1,40}){0,24}$/.test(objectId),"Identificador Meta no válido.");
     await this.quota?.beforeRead();
-    const path=edge==="pages"?"me/accounts":edge==="objects"?"":edge==="object"?objectId!:`act_${accountId}/${edge}`;
+    const path=edge==="assigned_pages"?"me/assigned_pages":edge==="pages"?"me/accounts":edge==="objects"?"":edge==="object"?objectId!:`act_${accountId}/${edge}`;
     const params=new URLSearchParams();
     if(body){for(const [key,value] of Object.entries(body))if(value!==undefined)params.set(key,typeof value==="object"?JSON.stringify(value):String(value));}
     else { params.set("fields",readFields??(edge==="saved_audiences"?"id,name,targeting":"id,name"));params.set("limit","100"); }

@@ -61,14 +61,14 @@ export function InventoryGroupEditor({
   externalBusy = false,
   evaluationColumns = [],
   initialCountry = "",
-  onChooseForAds,
+  adsDestination,
 }: {
   initialCountry?: string;
-  onChooseForAds?: (ids: string[], country: string) => Promise<void>;
+  adsDestination?: { project: string; category: string };
   evaluationColumns?: { value: string; label: string }[];
   externalBusy?: boolean;
   topContent?: ReactNode;
-  initialTab?: "create" | "edit" | "top";
+  initialTab?: "create" | "edit" | "top" | "ads";
   onChooseGroup?: (id: string) => void;
   onTabChange?: (tab: "create" | "edit" | "top") => void;
   directory: TrialDirectory;
@@ -96,16 +96,16 @@ export function InventoryGroupEditor({
   const [assignDraft, setAssignDraft] = useState(false);
   const [renameValue, setRenameValue] = useState("");
   const [notice, setNotice] = useState("");
-  const [managementTab, setManagementTab] = useState<"create" | "edit" | "top">(
+  const [managementTab, setManagementTab] = useState<"create" | "edit" | "top" | "ads">(
     initialTab ?? (selectedGroup ? "edit" : "create"),
   );
   const group = managementTab === "edit" ? selectedGroup : undefined;
-  const draftKey = group ? "edit:" + group.id : "create";
-  function changeTab(tab: "create" | "edit" | "top") {
+  const draftKey = managementTab === "ads" ? "ads" : group ? "edit:" + group.id : "create";
+  function changeTab(tab: "create" | "edit" | "top" | "ads") {
     setManagementTab(tab);
     setError("");
     setNotice("");
-    onTabChange?.(tab);
+    if (tab !== "ads") onTabChange?.(tab);
   }
   useEffect(() => {
     if (initialTab) setManagementTab(initialTab);
@@ -302,17 +302,19 @@ export function InventoryGroupEditor({
   };
   const adsPending = useRef(false);
   async function goToAds() {
-    if (adsPending.current || !selectedIds.length || !adsCountry) return;
+    if (adsPending.current || !ids.length || !adsCountry) return;
+    const target = window.open("about:blank", "_blank");
+    if (!target) { setError("Permite abrir una pestaña nueva para continuar a Anuncios."); return; }
+    target.opener = null;
     adsPending.current = true;
     setBusy(true);
     setError("");
     try {
-      if (onChooseForAds) await onChooseForAds([...selectedIds], adsCountry);
-      else {
-        const saved = await studioRequest("/selections", "POST", { listId: directory.listId, country: adsCountry, itemIds: [...selectedIds] });
-        window.location.assign("?" + new URLSearchParams({ view: "projects", selection: saved.id }));
-      }
-    } catch (e) { setError(e instanceof Error ? e.message : "No se pudo abrir Anuncios Meta IA."); }
+      const saved = await studioRequest("/selections", "POST", { listId: directory.listId, country: adsCountry, itemIds: [...ids] });
+      const params = new URLSearchParams({ view: "projects", selection: saved.id, ...adsDestination });
+      target.location.replace("?" + params);
+      setNotice("Selección enviada al estudio en una pestaña nueva.");
+    } catch (e) { target.close(); setError(e instanceof Error ? e.message : "No se pudo abrir Anuncios."); }
     finally { adsPending.current = false; setBusy(false); }
   }
   const countries = group?.countries ?? countryOptions.map((c) => c.code);
@@ -920,6 +922,7 @@ export function InventoryGroupEditor({
       ref={dialog}
       className="trial-dialog inventory-group-editor inventory-group-editor-compact"
       data-expanded={expanded || undefined}
+      data-effectiveness-document={"TAB:" + directory.listId}
       aria-label={
         group ? "Editar " + group.name : "Crear grupo desde inventario"
       }
@@ -934,7 +937,7 @@ export function InventoryGroupEditor({
             className="inventory-management-tabs"
             aria-label="Gestionar inventario"
           >
-            {topContent && (
+            {(
               <button
                 type="button"
                 aria-pressed={managementTab === "top"}
@@ -960,8 +963,7 @@ export function InventoryGroupEditor({
             >
               Editar grupos
             </button>
-            <select aria-label="País para anuncios Meta" value={adsCountry} disabled={busy || externalBusy} onChange={e => setAdsCountry(e.target.value)}><option value="">País de anuncios</option>{advertisingCountries.map(c => <option key={c.code} value={c.code}>{c.name}</option>)}</select>
-            <button type="button" disabled={busy || externalBusy || !selectedIds.length || !adsCountry} onClick={() => void goToAds()}>Anuncios Meta IA →</button>
+            <button type="button" aria-pressed={managementTab === "ads"} disabled={busy || externalBusy} onClick={() => changeTab("ads")}>Anuncios Meta</button>
           </nav>
         )}
         <div className="inventory-group-window-actions">
@@ -1326,7 +1328,21 @@ export function InventoryGroupEditor({
         </p>
       )}
       {managementTab === "top" ? (
-        topContent
+        topContent ?? <section className="inventory-ads-selection"><h3>Grupos guardados</h3><table className="inventory-group-matrix"><thead><tr><th>Grupo</th><th>Diplomados</th><th>Países</th></tr></thead><tbody>{directory.groups.map(g => <tr key={g.id}><td><button type="button" onClick={() => { onChooseGroup?.(g.id); setManagementTab("edit"); }}>{g.name}</button></td><td>{g.members.length}</td><td>{g.countries.join(", ")}</td></tr>)}</tbody></table></section>
+      ) : managementTab === "ads" ? (
+        <section className="inventory-ads-selection" aria-label="Elegir diplomados para anuncios">
+          <div className="row inventory-group-proposal">
+            <label>Buscar diplomado<input type="search" aria-label="Buscar diplomados para anuncios" value={query} onChange={e => setQuery(e.target.value)}/></label>
+            <label>País<select aria-label="País para anuncios Meta" value={adsCountry} disabled={busy || externalBusy} onChange={e => setAdsCountry(e.target.value)}><option value="">Selecciona el país</option>{advertisingCountries.map(c => <option key={c.code} value={c.code}>{c.name}</option>)}</select></label>
+            <label>Grupo<select aria-label="Grupo para anuncios" value={browsedGroupId} onChange={e => setBrowsedGroupId(e.target.value)}><option value="">Todos los grupos</option>{directory.groups.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}</select></label>
+            <label>Categoría<select aria-label="Categoría para anuncios" value={primary[0] || ""} onChange={e => setPrimary(e.target.value ? [e.target.value] : [])}><option value="">Todas las categorías</option>{primaryOptions.map(c => <option key={c} value={c}>{c}</option>)}</select></label>
+            <label>Cantidad<input type="number" min={1} max={100} aria-label="Cantidad de anuncios al azar" value={count} onChange={e => setCount(Number(e.target.value))}/></label>
+            <button type="button" disabled={busy || !Number.isInteger(count) || count < 1 || count > 100} onClick={() => setIds(randomInventoryAdditions(matching, count, []).map(i => i.id))}>Azar según filtros</button>
+          </div>
+          <div className="table-scroll inventory-group-picker-table"><table className="inventory-group-matrix"><thead><tr><th><input type="checkbox" aria-label="Seleccionar diplomados filtrados para anuncios" checked={!!matching.length && matching.every(i => ids.includes(i.id))} disabled={busy} onChange={e => setIds(current => e.target.checked ? [...new Set([...current, ...matching.map(i => i.id)])] : current.filter(id => !matching.some(i => i.id === id)))}/></th><th>Diplomado</th><th>Categoría</th><th>Grupo</th></tr></thead><tbody>{matching.slice((page-1)*pageSize, page*pageSize).map(i => <tr key={i.id} data-selected={ids.includes(i.id) || undefined}><td><input type="checkbox" aria-label={"Elegir para anuncios " + i.name} checked={ids.includes(i.id)} disabled={busy} onChange={() => setIds(current => current.includes(i.id) ? current.filter(id => id !== i.id) : [...current, i.id])}/></td><td>{i.name}</td><td>{i.primaryNames.join(", ")}</td><td>{directory.groups.filter(g => g.members.some(m => m.itemId === i.id)).map(g => g.name).join(", ") || "—"}</td></tr>)}</tbody></table></div>
+          {error && <p className="notice error" role="alert">{error}</p>}
+          <footer className="row"><span>{ids.length} seleccionados</span><button type="button" disabled={page <= 1} onClick={() => setPage(page-1)}>Anterior</button><button type="button" disabled={page * pageSize >= matching.length} onClick={() => setPage(page+1)}>Siguiente</button><button type="button" className="primary" disabled={busy || externalBusy || !ids.length || ids.length > 100 || !adsCountry} onClick={() => void goToAds()}>Hacer anuncios ↗</button></footer>
+        </section>
       ) : (
         <>
           <div className="inventory-saved-groups" aria-label="Grupos guardados">

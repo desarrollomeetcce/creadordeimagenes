@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
+import { StudioMaximize } from "./studio-columns";
 import { studioRequest } from "./inventory-meta-picker";
 import {
   campaignText,
@@ -139,7 +140,7 @@ export function StudioCampaign({
       .then((r) => {
         if (controller.signal.aborted) return;
         if (r.pages.length) resourceCache.current.set(form.accountId, r);
-        else setPageError("Meta no devolvió páginas para esta conexión. Revisa que la credencial tenga acceso a la página y permiso pages_show_list.");
+        else setPageError(r.pageWarning || "Meta no devolvió páginas para esta conexión. Revisa que la credencial tenga acceso a la página y permiso pages_show_list.");
         setResources(r);
         if (r.pages.length === 1)
           setForm((f) => ({
@@ -261,7 +262,7 @@ export function StudioCampaign({
       className="studio-pane studio-campaign"
       aria-label="Preparar y publicar campaña"
     >
-      <header className="studio-pane-title">
+      <header className="studio-pane-title"><StudioMaximize pane="campaign" label="De afiche a anuncio"/>
         <span className="studio-step violet">03</span>
         <div>
           <span className="studio-eyebrow">TU SIGUIENTE CAMPAÑA</span>
@@ -339,6 +340,9 @@ export function StudioCampaign({
           <div className="studio-page-error" role="status">
             <p>{pageError || "No hay páginas disponibles en esta conexión."}</p>
             <button type="button" disabled={locked} onClick={() => { resourceCache.current.delete(form.accountId); setResourceReload(n => n + 1); }}>Volver a consultar páginas</button>
+            {resources.canAuthorizePages && resources.connectionId && <button type="button" disabled={busy || locked} onClick={() => { setBusy(true); void fetch("/api/meta-ads/connections/" + encodeURIComponent(resources.connectionId) + "/pages-oauth", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" }).then(async response => { const auth = await response.json(); if (!response.ok) throw Error(auth.error || "No se pudo abrir Facebook."); window.location.assign(auth.url); }).catch(e => setPageError(e.message)).finally(() => setBusy(false)); }}>Autorizar páginas con Facebook</button>}
+            {resources.usesLoginConfiguration && <p>En la configuración de Facebook Login para empresas incluye pages_show_list, ads_read y ads_management y permite las páginas que usarás.</p>}
+            {!resources.canAuthorizePages && <p>Si usas un token manual, actualízalo con pages_show_list y acceso a la página en Conexiones de Meta Ads. Si es un usuario del sistema, asígnale la página en tu negocio de Meta.</p>}
             <a href="?view=metaads">Revisar conexión Meta</a>
           </div>
         )}

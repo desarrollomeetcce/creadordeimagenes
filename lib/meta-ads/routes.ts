@@ -2154,11 +2154,11 @@ export async function metaRoutes(
     const id = parts[2];
     const c = await db.metaConnection.findUnique({ where: { id } });
     demand(c, "Conexión no encontrada.", 404);
-    if (parts[3] === "manage-oauth" && method === "POST") {
+    if (["manage-oauth", "pages-oauth"].includes(parts[3]) && method === "POST") {
       z.object({})
         .strict()
         .parse(await body());
-      return beginMarketingOAuth(req, actor, id, true);
+      return beginMarketingOAuth(req, actor, id, true, parts[3] === "pages-oauth");
     }
     if (parts[3] === "app" && method === "PATCH")
       return send(await configureMarketingApp(actor, id, await body()));

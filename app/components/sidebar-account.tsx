@@ -50,6 +50,8 @@ export function SidebarAccount({
         view === id ? "sidebar-account-link active" : "sidebar-account-link"
       }
       key={id}
+      title={label}
+      aria-label={label}
       aria-current={view === id ? "page" : undefined}
       onClick={(event) => {
         if (
@@ -95,6 +97,7 @@ export function SidebarAccount({
               ref={trigger}
               aria-expanded={open}
               aria-controls="sidebar-settings-options"
+              aria-label="Ajustes" title="Ajustes"
               className={options.some(([id]) => id === view) ? "active" : ""}
               onClick={() => setOpen(!open)}
             >
@@ -118,7 +121,7 @@ export function SidebarAccount({
             <small>Equipo y planes</small>
             {item("users", "♙", "Usuarios y accesos")}
             {user.role === "OWNER" && (
-              <a className="sidebar-account-link" href="?view=users&tab=plans">
+              <a className="sidebar-account-link" aria-label="Planes de IA" title="Planes de IA" href="?view=users&tab=plans">
                 <span aria-hidden="true">◇</span>
                 <span>Planes de IA</span>
               </a>
@@ -129,7 +132,7 @@ export function SidebarAccount({
         {hasAiModuleAccess(user) &&
           !["OBSERVER", "SUPERVISOR", "ADVISOR"].includes(user.role) &&
           item("plans", "◇", "Mi plan IA")}
-        <button type="button" className="sidebar-logout" onClick={logout}>
+        <button type="button" className="sidebar-logout" aria-label="Cerrar sesión" title="Cerrar sesión" onClick={logout}>
           <span aria-hidden="true">↪</span>
           <span>Cerrar sesión</span>
         </button>

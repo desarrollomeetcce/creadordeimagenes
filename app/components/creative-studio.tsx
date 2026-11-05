@@ -1,7 +1,7 @@
 "use client";
 import dynamic from "next/dynamic";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { StudioColumns } from "./studio-columns";
+import { StudioColumns, StudioMaximize } from "./studio-columns";
 import { SearchSelect } from "./search-select";
 import { studioRequest } from "./inventory-meta-picker";
 import { StudioCampaign } from "./studio-campaign";
@@ -175,25 +175,23 @@ export function CreativeStudio({ userId }: { userId: string }) {
   }
   const contextRef = useRef(context);
   contextRef.current = context;
+  function unpinnedIds(id: string): string[] { try { const value = JSON.parse(localStorage.getItem("studio-unpinned:v1:"+userId+":"+id) || "[]"); return Array.isArray(value) ? value.filter((x): x is string => typeof x === "string") : []; } catch { return []; } }
+  function visibleProduct(p: any) { const hidden = unpinnedIds(p.id); return { ...p, subproducts: p.subproducts.filter((s: any) => !hidden.includes(s.id)) }; }
   async function removeSubproduct(sub: any) {
-    const sequence = productSeq.current;
-    if (!confirm(`¿Eliminar la carpeta «${sub.name}» y retirarla de este producto? Sus afiches dejarán de mostrarse aquí. Las campañas ya publicadas en Meta no se eliminan.`)) return;
-    const response = await fetch("/api/subproducts/" + encodeURIComponent(sub.id), { method: "DELETE" });
-    const result = await response.json();
-    if (!response.ok) throw new Error(result.error || "No se pudo eliminar la carpeta.");
-    if (!mounted.current || sequence !== productSeq.current) return;
+    if (!confirm(`¿Desfijar «${sub.name}» de este espacio de trabajo? Sus afiches, carpeta y campañas se conservarán. Puedes volver a seleccionarlo desde grupos.`)) return;
+    try { localStorage.setItem("studio-unpinned:v1:"+userId+":"+product.id, JSON.stringify([...new Set([...unpinnedIds(product.id), sub.id])])); } catch { throw Error("No se pudo guardar la selección en este navegador."); }
     const remaining = product.subproducts.filter((s: any) => s.id !== sub.id);
     setProduct((p: any) => ({ ...p, subproducts: remaining }));
     setSelected((p) => { const next = { ...p }; delete next[sub.id]; return next; });
     setTargetSubs((ids) => ids.filter(id => id !== sub.id));
     if (activeSub === sub.id) { setActiveSub(remaining[0]?.id ?? ""); setPage(1); }
-    setNotice("Carpeta eliminada. Las campañas de Meta se conservan.");
+    setNotice("Desfijado. Sus afiches y carpeta se conservan.");
   }
   async function chooseProduct(id: string, initialSub?: string) {
     const seq = ++productSeq.current;
     setLoading(true);
     try {
-      const p = await studioRequest("/products/" + id);
+      const p = visibleProduct(await studioRequest("/products/" + id));
       if (!mounted.current || seq !== productSeq.current) return;
       setProduct(p);
       setProductQuery(p.name);
@@ -285,6 +283,7 @@ export function CreativeStudio({ userId }: { userId: string }) {
       alive = false;
     };
   }, [userId]);
+  useEffect(() => { if (!product || loading) return; const query = new URLSearchParams(window.location.search); if (activeSub) query.set("subproduct",activeSub); else query.delete("subproduct"); history.replaceState(null,"","?"+query); }, [activeSub, product?.id, loading]);
   useEffect(() => {
     setGallery({ items: [], total: 0, pages: 1 });
     if (activeSub) void refreshGallery().catch((e) => setError(e.message));
@@ -292,6 +291,12 @@ export function CreativeStudio({ userId }: { userId: string }) {
   useEffect(() => {
     if (product) draftProducts.current.set(product.id, prompts);
   }, [product?.id, prompts]);
+  const importedSelection = useRef("");
+  useEffect(() => {
+    if (!pendingSelection || !product || !inventoryId || importedSelection.current === pendingSelection.id || busy || loading) return;
+    importedSelection.current = pendingSelection.id;
+    void run(() => addItems(pendingSelection.items.map((i: any) => i.id), pendingSelection.country));
+  }, [pendingSelection, product?.id, inventoryId, busy, loading]);
   function draftProject(prompt: string, s: any) {
     if (project) draftProjects.current.set(project.id, { prompt, settings: s });
   }
@@ -361,7 +366,7 @@ export function CreativeStudio({ userId }: { userId: string }) {
     }
   }
   async function reloadProduct() {
-    const next = await studioRequest("/products/" + productRef.current.id);
+    const next = visibleProduct(await studioRequest("/products/" + productRef.current.id));
     setProduct(next);
     setPrompts((p) => ({
       ...Object.fromEntries(next.subproducts.map((s: any) => [s.id, s.prompt])),
@@ -377,6 +382,7 @@ export function CreativeStudio({ userId }: { userId: string }) {
       "POST",
       { listId: inventoryId, itemIds: ids },
     );
+    try { localStorage.setItem("studio-unpinned:v1:"+userId+":"+product.id, JSON.stringify(unpinnedIds(product.id).filter(id => !added.some((s: any) => s.id === id)))); } catch {}
     await reloadProduct();
     if (added.length) {
       setActiveSub(added[0].id);
@@ -409,6 +415,7 @@ export function CreativeStudio({ userId }: { userId: string }) {
       "POST",
       { names: [manualName.trim()] },
     );
+    try { localStorage.setItem("studio-unpinned:v1:"+userId+":"+product.id, JSON.stringify(unpinnedIds(product.id).filter(id => !added.some((s: any) => s.id === id)))); } catch {}
     await reloadProduct();
     setActiveSub(added[0].id);
     setManualName("");
@@ -515,22 +522,6 @@ export function CreativeStudio({ userId }: { userId: string }) {
     );
   return (
     <section className="creative-studio">
-      <header className="studio-hero">
-        <div className="studio-brand-symbol" aria-hidden="true">
-          ✦
-        </div>
-        <div>
-          <span className="studio-eyebrow">
-            DE LA IDEA A TU PRÓXIMA CAMPAÑA
-          </span>
-          <h1>
-            Estudio creativo<span>Un espacio. Todas tus posibilidades.</span>
-          </h1>
-        </div>
-        <a className="studio-library-link" href="?view=library">
-          ▧ Abrir Biblioteca ↗
-        </a>
-      </header>
       <nav className="studio-mobile-tabs" aria-label="Áreas del estudio">
         {[
           ["project", "01 Proyecto"],
@@ -568,6 +559,7 @@ export function CreativeStudio({ userId }: { userId: string }) {
       <StudioColumns zone={zone}>
         <aside className="studio-pane studio-project">
           <header className="studio-pane-title">
+            <StudioMaximize pane="project" label="Tu proyecto"/>
             <span className="studio-step mint">01</span>
             <div>
               <span className="studio-eyebrow">DALE UNA DIRECCIÓN</span>
@@ -890,8 +882,9 @@ export function CreativeStudio({ userId }: { userId: string }) {
                             {s.name.slice(0, 1)}
                           </span>
                           <span>{s.name}</span>
-                          <small>{s._count?.variations ?? 0}</small>
+                          <small className="studio-folder-status">{s.folderExists ? `${s.folderCount ?? 0} afiches · Carpeta existente` : "Nueva carpeta · Por guardar"}</small>
                         </button>
+                        <button type="button" className="studio-unpin" aria-label={"Desfijar " + s.name} title="Desfijar sin borrar" disabled={busy} onClick={() => void run(() => removeSubproduct(s))}>×</button>
                       </div>
                     ))}
                   </div>
@@ -943,7 +936,7 @@ export function CreativeStudio({ userId }: { userId: string }) {
           className="studio-pane studio-canvas"
           aria-label="Afiches del producto"
         >
-          <header className="studio-pane-title">
+          <header className="studio-pane-title"><StudioMaximize pane="canvas" label="Afiches"/>
             <span className="studio-step amber">02</span>
             <div>
               <span className="studio-eyebrow">EXPLORA. CREA. ELIGE.</span>
@@ -973,7 +966,7 @@ export function CreativeStudio({ userId }: { userId: string }) {
                     <span>{selected[s.id].length} ✓</span>
                   ) : null}
                 </button>
-                <button type="button" className="studio-remove-tab" aria-label={"Eliminar carpeta " + s.name} title={"Eliminar carpeta " + s.name} disabled={busy} onClick={() => void run(() => removeSubproduct(s))}>×</button>
+                <button type="button" className="studio-remove-tab" aria-label={"Desfijar " + s.name} title={"Desfijar " + s.name} disabled={busy} onClick={() => void run(() => removeSubproduct(s))}>×</button>
                 </div>
               ))}
               <button
@@ -1162,13 +1155,14 @@ export function CreativeStudio({ userId }: { userId: string }) {
                           ids: currentSelection,
                         });
                         await refreshGallery();
+                        await reloadProduct();
                         setNotice(
                           "✓ Solo los afiches elegidos se guardaron en su carpeta de Biblioteca",
                         );
                       })
                     }
                   >
-                    ▧ Guardar seleccionados en carpeta
+                    ▧ Subir seleccionados a carpeta
                   </button>
                   <button
                     type="button"
@@ -1327,7 +1321,7 @@ export function CreativeStudio({ userId }: { userId: string }) {
           />
         ) : (
           <aside className="studio-pane studio-campaign studio-campaign-empty">
-            <header className="studio-pane-title">
+            <header className="studio-pane-title"><StudioMaximize pane="campaign" label="De afiche a anuncio"/>
               <span className="studio-step violet">03</span>
               <div>
                 <span className="studio-eyebrow">DEL ESTUDIO A META</span>
@@ -1351,7 +1345,8 @@ export function CreativeStudio({ userId }: { userId: string }) {
           initialNames={[]}
           initialCountry={country}
           onClose={() => setPicker(null)}
-          onChooseForAds={addItems}
+          initialTab="ads"
+          adsDestination={{project: project.id, category: product.id}}
           onChooseGroup={setPickerGroupId}
           onSaved={async id => { await refreshPicker(); setPickerGroupId(id); }}
           onGroupsChanged={refreshPicker}

@@ -2,6 +2,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { TrialDirectory } from "../../lib/meta-ads/inventory-trials";
 import { financialRequest as api } from "./financial-request";
+import { InventoryGroupEditor } from "./inventory-group-editor";
 import { InventoryTop } from "./inventory-top";
 import { EffectivenessHistory } from "./effectiveness-history";
 import { countryName } from "../../lib/meta-ads/countries";
@@ -34,6 +35,7 @@ export function InventorySheetReplacement({
   const [directory, setDirectory] = useState<TrialDirectory | null>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [selectedGroupId, setSelectedGroupId] = useState("");
   const [expanded, setExpanded] = useState(false);
   const [detail, setDetail] = useState<{
     name: string;
@@ -53,6 +55,8 @@ export function InventorySheetReplacement({
       alive = false;
     };
   }, [listId]);
+  async function reloadDirectory() { const next = await api("meta-ads/inventory/trials?" + new URLSearchParams({ listId })); setDirectory(next); }
+  if (directory) return <InventoryGroupEditor directory={directory} group={directory.groups.find(g => g.id === selectedGroupId)} initialNames={[]} initialCountry={country} initialTab="top" onChooseGroup={setSelectedGroupId} onClose={onClose} externalBusy={busy} onSaved={async id => { await reloadDirectory(); setSelectedGroupId(id); }} onGroupsChanged={reloadDirectory} topContent={<><p className="hint">Al confirmar un reemplazo, el anterior queda por desactivar y el nuevo por hacer campaña en esta hoja y país. Las campañas de Meta se conservan.</p><InventoryTop directory={directory} source={source} initialRange={source === "meta" && since && until ? [since, until] : undefined} columns={[{value:tableId+":"+country,label:sheetName+" · "+countryName(country)}]} initialReplaceName={name} onBusyChange={setBusy} onChanged={onChanged} onDetail={(_column,name,aliasId) => setDetail({name,aliasId})}/>{detail && <EffectivenessHistory {...detail} tableId={tableId} country={country} initialSince={since} initialUntil={until} autoOpen onClose={()=>setDetail(null)} onPeriod={()=>{}}/>}</>}/>;
   return (
     <dialog
       ref={dialog}

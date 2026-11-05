@@ -46,11 +46,11 @@ export async function launchResources(actor: Actor, accountId: string) {
     discoverCampaignPages((edge, after) => r.launchRequest(a.id, edge, undefined, undefined, undefined, after)),
     r.launchRequest(a.id, "saved_audiences"),
   ]);
-  if (settled[0].status === "rejected") throw settled[0].reason;
-  const pages = settled[0].value;
+  const pages = settled[0].status === "fulfilled" ? settled[0].value : { data: [] };
   const saved =
     settled[1].status === "fulfilled" ? settled[1].value : { data: [] };
   return {
+    pageWarning: settled[0].status === "rejected" ? "Meta no pudo consultar las páginas. Revisa permisos, vigencia y acceso de esta conexión." : "",
     pages: (pages.data ?? []).map((p: any) => ({
       id: String(p.id),
       name: String(p.name),
@@ -62,6 +62,9 @@ export async function launchResources(actor: Actor, accountId: string) {
     })),
     partial: !!pages.paging?.next || !!saved.paging?.next,
     currency: a.currency,
+    connectionId: a.connectionId,
+    canAuthorizePages: !!a.connection.appId && !!a.connection.encryptedAppSecret,
+    usesLoginConfiguration: !!a.connection.loginConfigId,
   };
 }
 export async function createLaunch(actor: Actor, input: unknown) {

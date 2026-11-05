@@ -194,11 +194,16 @@ export function InventoryCatalog({
     "",
   );
   const evaluationDialog = useRef<HTMLDialogElement>(null);
+  const groupLoad = useRef<{listId:string; promise:Promise<void>} | null>(null);
+  const activeGroupList = useRef(listId); activeGroupList.current = listId;
+  const [groupLoadError, setGroupLoadError] = useState("");
   async function reloadGroups() {
-    const data: TrialDirectory = await api(
-      "meta-ads/inventory/trials?" + new URLSearchParams({ listId }),
-    );
-    setTrialDirectory(data);
+    if (groupLoad.current?.listId === listId) return groupLoad.current.promise;
+    const requestedList = listId;
+    setGroupLoadError("");
+    const promise = api("meta-ads/inventory/trials?" + new URLSearchParams({ listId:requestedList })).then((data: TrialDirectory) => { if (activeGroupList.current === requestedList) setTrialDirectory(data); }).catch(e => { if (activeGroupList.current === requestedList) setGroupLoadError(e.message); throw e; }).finally(() => { if (groupLoad.current?.promise === promise) groupLoad.current = null; });
+    groupLoad.current = {listId:requestedList,promise};
+    return promise;
   }
   useEffect(() => {
     let active = true;
@@ -211,10 +216,7 @@ export function InventoryCatalog({
 
 
     setEvaluation(null);
-    void api("meta-ads/inventory/trials?" + new URLSearchParams({ listId }))
-      .then((d: TrialDirectory) => {
-        if (active) setTrialDirectory(d);
-      })
+    void reloadGroups()
       .catch((e) => {
         if (active) setMessage(e.message);
       });
@@ -1801,6 +1803,7 @@ export function InventoryCatalog({
       className="inventory-catalog sheet-view"
       aria-label="Inventario sin países"
     >
+      {groupEditor && !trialDirectory && <InventoryGroupLoading error={groupLoadError} onClose={()=>{setGroupWasOpen("no");setGroupEditor(null);}} onRetry={()=>{void reloadGroups().catch(()=>{});}}/>}
       {groupEditor && trialDirectory && (
         <InventoryGroupEditor
           key={[listId,groupEditor.column,groupEditor.replaceName].join(":")}
@@ -2032,7 +2035,6 @@ export function InventoryCatalog({
             type="button"
             aria-label="Crear / modificar grupo"
             title="Crear o modificar grupos y evaluar el Top"
-            disabled={!trialDirectory || busy}
             onClick={() =>
               setGroupEditor({
                 tab: selectedVisible.length ? "create" : rememberedTab,
@@ -3576,3 +3578,5 @@ export function InventoryCatalog({
     </section>
   );
 }
+
+function InventoryGroupLoading({error,onClose,onRetry}:{error:string;onClose:()=>void;onRetry:()=>void}) { const ref=useRef<HTMLDialogElement>(null);useEffect(()=>{ref.current?.showModal();},[]);return <dialog ref={ref} className="trial-dialog inventory-group-editor" aria-label="Grupos" onCancel={e=>{e.preventDefault();onClose();}}><header><h2>Grupos</h2><button type="button" className="ui-close-button" aria-label="Cerrar grupos" onClick={onClose}>×</button></header>{error?<><p role="alert">{error}</p><button type="button" onClick={onRetry}>Volver a cargar grupos</button></>:<p role="status">Cargando inventario y grupos…</p>}</dialog>; }

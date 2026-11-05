@@ -3044,10 +3044,12 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
                                 Autorizar activar y pausar con Facebook
                               </button>
                             )}
+                            {c.appSecretConfiguredAt && c.appId && <button type="button" disabled={busy} onClick={() => { void run(async () => { const auth = await api(`meta-ads/connections/${c.id}/pages-oauth`, "POST", {}); window.location.assign(auth.url); }); }}>Autorizar páginas con Facebook</button>}
+                            <p>Para elegir páginas al crear anuncios necesitas pages_show_list y acceso a esas páginas. El permiso se concede en Facebook; la conexión anterior se conserva si falta autorización.</p>
                             {c.loginConfigId && (
                               <p>
                                 En tu configuración de Facebook Login para
-                                empresas incluye ads_read y ads_management antes
+                                empresas incluye ads_read, ads_management y pages_show_list antes
                                 de autorizar.
                               </p>
                             )}

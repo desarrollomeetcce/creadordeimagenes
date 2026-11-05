@@ -1,10 +1,10 @@
 /** Reads only page directories for the selected connection; never ad history. */
 export async function discoverCampaignPages(
-  read: (edge: "promote_pages" | "pages", after?: string) => Promise<Record<string, any>>,
+  read: (edge: "promote_pages" | "pages" | "assigned_pages", after?: string) => Promise<Record<string, any>>,
 ) {
   const pages = new Map<string, any>();
   let partial = false;
-  async function collect(edge: "promote_pages" | "pages") {
+  async function collect(edge: "promote_pages" | "pages" | "assigned_pages") {
     let after: string | undefined;
     const cursors = new Set<string>();
     for (let page = 0; page < 4; page++) {
@@ -22,7 +22,8 @@ export async function discoverCampaignPages(
   let firstError: unknown;
   try { await collect("promote_pages"); } catch (error) { firstError = error; }
   if (!pages.size) {
-    try { await collect("pages"); } catch (error) { throw firstError ?? error; }
+    try { await collect("pages"); } catch (error) { firstError ??= error; }
+    if (!pages.size) { try { await collect("assigned_pages"); } catch (error) { firstError ??= error; } }
     if (!pages.size && firstError) throw firstError;
   }
   return { data: [...pages.values()], ...(partial ? { paging: { next: true } } : {}) };

@@ -44,7 +44,7 @@ export async function inventoryGroupUsage(
     select: { config: true },
   });
   const settings = activationSettings(list.config);
-  const aliases = await tx.metaAlias.findMany({
+  const storedAliases = await tx.metaAlias.findMany({
     where: { inventorySheetId: listId },
     select: {
       id: true,
@@ -56,16 +56,24 @@ export async function inventoryGroupUsage(
       },
       effectivenessStates: {
         select: {
+          id: true,
           country: true,
           active: true,
-          events: {
-            orderBy: [{ createdAt: "asc" }, { id: "asc" }],
-            select: { active: true, createdAt: true, snapshot: true },
-          },
         },
       },
     },
   });
+  // Only priorActive is used to reconstruct intervals; never transfer full financial snapshots.
+  const eventRows = await tx.$queryRaw<{stateId:string; active:boolean; createdAt:Date; priorActive:unknown}[]>`
+    SELECT e."stateId", e.active, e."createdAt", e.snapshot->'priorActive' AS "priorActive"
+    FROM "MetaEffectivenessEvent" e
+    JOIN "MetaEffectivenessState" s ON s.id=e."stateId"
+    JOIN "MetaAlias" a ON a.id=s."aliasId"
+    WHERE a."inventorySheetId"=${listId}
+    ORDER BY e."createdAt", e.id`;
+  const eventsByState = new Map<string, {active:boolean;createdAt:Date;snapshot:Record<string,unknown>}[]>();
+  for (const e of eventRows) { const events = eventsByState.get(e.stateId) ?? []; events.push({active:e.active,createdAt:e.createdAt,snapshot:typeof e.priorActive === "boolean" ? {priorActive:e.priorActive} : {}}); eventsByState.set(e.stateId,events); }
+  const aliases = storedAliases.map(a => ({...a,effectivenessStates:a.effectivenessStates.map(s => ({...s,events:eventsByState.get(s.id) ?? []}))}));
   const tables = await tx.metaAliasTable.findMany({
     where: {
       id: {

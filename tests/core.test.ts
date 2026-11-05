@@ -596,3 +596,10 @@ test("Meta studio pages: empty account directory falls back, pagination is bound
  await assert.rejects(discoverCampaignPages(async()=>{throw Error("missing permission")}),/missing permission/);
  let bounded=0;const limit=await discoverCampaignPages(async()=>({data:[{id:String(++bounded)}],paging:{next:true,cursors:{after:String(bounded)}}}));assert.equal(bounded,4);assert.equal(limit.paging?.next,true);
 });
+
+
+test("Meta studio: system-user assigned pages are discovered after empty user directories", async () => {
+ const { discoverCampaignPages } = await import("../lib/creative-studio/pages");
+ const calls: string[] = []; const result = await discoverCampaignPages(async edge => { calls.push(edge); return { data: edge === "assigned_pages" ? [{ id: "54321", name: "Assigned" }] : [] }; });
+ assert.deepEqual(calls, ["promote_pages", "pages", "assigned_pages"]); assert.equal(result.data[0].id, "54321");
+});

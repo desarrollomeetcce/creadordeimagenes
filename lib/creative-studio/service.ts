@@ -151,7 +151,7 @@ export async function studioProject(actor: Actor, projectId: string) {
 export async function studioProduct(actor: Actor, categoryId: string) {
   studioAccess(actor);
   await resourceAccess(actor, "category", categoryId, "EDIT");
-  return db.category.findUniqueOrThrow({
+  const product = await db.category.findUniqueOrThrow({
     where: { id: categoryId },
     select: {
       id: true,
@@ -181,6 +181,9 @@ export async function studioProduct(actor: Actor, categoryId: string) {
       },
     },
   });
+  const saved = await db.variation.groupBy({ by: ["subproductId"], where: { subproductId: { in: product.subproducts.map(s => s.id) }, deletedAt: null, expired: false, permanent: true, job: { status: "COMPLETED" } }, _count: { _all: true } });
+  return { ...product, subproducts: product.subproducts.map(s => { const count = saved.find(v => v.subproductId === s.id)?._count._all ?? 0; const pending = object(s.studio).folderPending === true || (object(s.studio).folderPending === undefined && !!object(s.studio).country && s._count.variations === 0); return { ...s, savedCount: count, folderExists: !pending || count > 0, folderCount: count || (pending ? 0 : s._count.variations) }; }) };
+
 }
 export async function createStudioProject(actor: Actor, input: unknown) {
   studioAccess(actor);
@@ -410,7 +413,7 @@ export async function addStudioItems(
               includeProduct: false,
               includeSelf: true,
             },
-            studio: json({ country: object(c.studio).country, ...item.source }),
+            studio: json({ country: object(c.studio).country, ...item.source, folderPending: true }),
           },
         });
         existing.push(s);
@@ -522,6 +525,11 @@ export async function saveStudioImages(actor: Actor, input: unknown) {
       where: { id: { in: b.ids } },
       data: { permanent: true },
     });
+    for (const subproductId of new Set(rows.map(r => r.subproductId!))) {
+      await tx.$queryRaw`SELECT id FROM "Subproduct" WHERE id=${subproductId} FOR UPDATE`;
+      const sub = await tx.subproduct.findUniqueOrThrow({ where: { id: subproductId }, select: { studio: true } });
+      await tx.subproduct.update({ where: { id: subproductId }, data: { studio: json({ ...object(sub.studio), folderPending: false }) } });
+    }
     await tx.libraryItem.createMany({
       data: b.ids.map((variationId) => ({ variationId, userId: actor.id })),
       skipDuplicates: true,

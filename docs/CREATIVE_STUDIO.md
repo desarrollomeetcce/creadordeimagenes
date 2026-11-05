@@ -19,3 +19,14 @@ Los objetos confirmados se guardan localmente para la vista Meta, sin inventar e
 Migración aditiva 202611050001_creative_studio: JSON studio en Project/Category/Subproduct y tablas CreativeMetaLaunch/CreativeInventorySelection. No borra prompts, imágenes, auditoría, hechos financieros ni configuraciones existentes. Se aplica mediante db:deploy en el despliegue.
 
 QA usa una base temporal exclusiva, transportes OpenAI/Meta sintéticos y seis afiches locales. Se comprueban UI, permisos, idempotencia, muestra inicial, presupuesto, dos conjuntos, pausa/activación, rechazo de imagen cambiada y pérdida de acuse. No se ejecuta generación ni publicidad con cargo real.
+
+
+## Ajustes posteriores de experiencia y permisos
+
+La cabecera se integra en la franja Proyectos y el menú puede convertirse en un rail de iconos. Cada columna maximiza/restaura sin desmontar contenido; Escape restaura si no hay un diálogo abierto. Biblioteca abre una pestaña nueva. Desfijar retira solo la preferencia de este usuario/producto en el navegador y la selección de trabajo; nunca elimina la carpeta, imágenes ni campañas. Reelección recupera el mismo subproducto.
+
+Los subproductos nuevos del estudio son borradores lógicos (studio.folderPending). No se muestran como carpeta de Biblioteca hasta subir afiches seleccionados; guardar marca las imágenes elegidas permanentes y crea la carpeta visible. No se borran carpetas previas o creadas explícitamente desde Biblioteca; una carpeta guardada sigue existiendo si queda vacía.
+
+Anuncios Meta es una pestaña propia del editor común de grupos, con casillas y sin celdas de estado/uso por país. No se confunde con crear o editar grupos. Hacer anuncios abre una pestaña nueva mediante una selección privada; conserva la pantalla de origen. Si hay producto de destino, la selección se importa directamente. El reemplazo desde Meta/hoja reutiliza ese editor común con Top y su contexto original.
+
+Grupos permanece accesible mientras carga su directorio: muestra progreso/error y reintento sin peticiones duplicadas. La lectura de uso extrae priorActive en SQL sin transferir snapshots completos; los datos históricos no cambian. Para páginas vacías existe reautorización explícita con Facebook y soporte de activos asignados a usuario del sistema. Véase META_PAGE_ACCESS.md para permisos y las dos formas de conexión.

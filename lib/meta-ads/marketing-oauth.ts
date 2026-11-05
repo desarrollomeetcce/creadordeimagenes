@@ -110,6 +110,7 @@ export async function beginMarketingOAuth(
   actor: Actor,
   id: string,
   manage = false,
+  pages = false,
 ) {
   await metaEditorOnly(actor);
   const info = marketingOAuthInfo(process.env.APP_ORIGIN);
@@ -155,7 +156,7 @@ export async function beginMarketingOAuth(
       connectionRevision: c.revision,
       browserHash: tokenHash(browser),
       verifier: encryptKey(
-        manage ? "marketing-manage-flow" : "marketing-code-flow",
+        pages ? "marketing-pages-flow" : manage ? "marketing-manage-flow" : "marketing-code-flow",
         "meta-marketing-oauth:" + key,
       ),
       clientId: c.appId,
@@ -172,7 +173,8 @@ export async function beginMarketingOAuth(
     state,
     ...(c.loginConfigId
       ? { config_id: c.loginConfigId, override_default_response_type: "true" }
-      : { scope: manage ? "ads_read,ads_management" : "ads_read" }),
+      : { scope: pages ? "ads_read,ads_management,pages_show_list" : manage ? "ads_read,ads_management" : "ads_read" }),
+    ...(pages ? { auth_type: "rerequest" } : {}),
   }).toString();
   const response = NextResponse.json(
     { url: url.href },
@@ -283,7 +285,7 @@ export async function finishMarketingOAuth(req: NextRequest) {
     demand(
       row.tokenEndpoint ===
         `https://graph.facebook.com/${c.apiVersion}/oauth/access_token` &&
-        ["marketing-code-flow", "marketing-manage-flow"].includes(flow),
+        ["marketing-code-flow", "marketing-manage-flow", "marketing-pages-flow"].includes(flow),
       "El estado de autorización no es compatible.",
       400,
     );
@@ -375,7 +377,7 @@ export async function finishMarketingOAuth(req: NextRequest) {
       "Facebook no concedió ads_read. Revisa los permisos de tu app y vuelve a conectar.",
       403,
     );
-    if (flow === "marketing-manage-flow")
+    if (flow === "marketing-manage-flow" || flow === "marketing-pages-flow")
       demand(
         permissions.data.some(
           (r: { permission: string; status: string }) =>
@@ -384,6 +386,7 @@ export async function finishMarketingOAuth(req: NextRequest) {
         "Facebook no concedió ads_management. Habilita ese permiso en la app y autoriza nuevamente. Tu conexión anterior se conserva.",
         403,
       );
+    if (flow === "marketing-pages-flow") demand(permissions.data.some((r: any) => r.permission === "pages_show_list" && r.status === "granted"), "Facebook no concedió pages_show_list. Habilítalo en tu app o configuración de Facebook Login para empresas y vuelve a autorizar el acceso a las páginas. Tu credencial anterior se conserva.", 403);
     await activeSession(row.sessionId, row.ownerId);
     await new MetaReader(token, "API", c.apiVersion, secret).get("accounts", {
       accountView: "minimal",
