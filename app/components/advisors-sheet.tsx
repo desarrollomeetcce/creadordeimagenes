@@ -132,8 +132,6 @@ export function AdvisorsSheet({
         ["advisorBase", 100],
         ["sales", 60],
         ["effectivenessBC", 112],
-        ["manualBase", 95],
-        ["effectivenessBM", 112],
       ] as const);
   const [teamAnalysis, setTeamAnalysis] = useState(false);
   const [detailVersion, setDetailVersion] = useState(0);
@@ -875,21 +873,6 @@ function FragmentHeaders({
             "automatic",
             "V / BC × 100",
           )}
-          {header(
-            "manualBase",
-            "BM",
-            "Base manual",
-            "automatic",
-            undefined,
-            true,
-          )}
-          {header(
-            "effectivenessBM",
-            "Efectividad",
-            "De ayer",
-            "automatic",
-            "V / BM × 100",
-          )}
         </>
       )}
       {showMeta && (
@@ -963,17 +946,17 @@ function AdvisorDay({
     na: cell.na,
     partial: metaPartial || cell.partial,
   });
-  const manualRate = (basis: "BC" | "BM") =>
+  const manualRate = (basis: "BC") =>
     advisorDayEffectiveness({
       day,
       today,
       basis,
       sales: cell.sales,
-      base: basis === "BC" ? cell.advisorBase : cell.manualBase,
+      base: cell.advisorBase,
       na: cell.na,
       partial: cell.partial,
     });
-  const rateCell = (basis: "BC" | "BM") => {
+  const rateCell = (basis: "BC") => {
     const rate = manualRate(basis);
     return (
       <td
@@ -1067,20 +1050,6 @@ function AdvisorDay({
         </button>
       </td>
       {!showMeta && rateCell("BC")}
-      {!showMeta && (
-        <td
-          aria-label={`BM ${person.name} ${day}`}
-          title="Solo lectura: suma del reparto de Totales para este asesor, hojas y países consultados"
-          data-readonly="true"
-          data-fill-kind="automatic"
-          data-fill-timing="next-day"
-        >
-          {cell.manualBase === null || cell.manualBase === undefined
-            ? "—"
-            : cell.manualBase.toLocaleString("es-PE")}
-        </td>
-      )}
-      {!showMeta && rateCell("BM")}
       {showMeta && (
         <>
           <td

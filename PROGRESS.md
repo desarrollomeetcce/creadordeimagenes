@@ -1,3 +1,9 @@
+## Asesores manual sin BM ni efectividad V/BM · 2026-11-04
+
+Validación:194 unitarias, TypeScript/build y3 comprobaciones de navegador correctos: automática6 columnas intacta; manual5 columnas sobre2 fechas sin BM/V÷BM; móvil/cambio de vista sin errores ni escrituras. Fuente V1/G10.25, asesor y campaña conservados; fixture exclusivo eliminado.
+
+Se retiran exclusivamente las columnas BM/Base manual y Efectividad de ayer V/BM de la tabla manual de Asesores, incluidos colgroup, anchos, encabezados y celdas. Quedan A/H/BC/V/Efectividad V/BC (5 columnas por fecha). Automática conserva sus6 columnas, estadísticas Meta y entrada predeterminada. Historia y repartos BM de Totales permanecen intactos; no cambia servidor ni cálculos ajenos.
+
 ## Totales: dos vistas, parámetros opcionales y automática al entrar · 2026-11-04
 
 Validación:194 pruebas unitarias sin fallos, TypeScript y build correctos. Navegador:4 grupos de comprobaciones (cuatro países y preferencias antiguas; checks y detalle; persistencia/restablecer y automática al reentrar; Asesores automática, acciones juntas y cero escrituras/errores). Fixture exclusivo: presupuesto20, V1/G10.25 y registros históricos exactos antes de limpieza.
