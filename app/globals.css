@@ -3015,3 +3015,9 @@ tr[data-advisor-drop] > td { border-top:2px solid var(--accent)!important; }
 .meta-keyword-search small{font-size:10px;opacity:.75}
 .meta-expanded-filters>.meta-keyword-search{flex:1 1 230px;min-width:180px}
 @media(max-width:600px){.meta-expanded-filters>.meta-keyword-search{flex:1 1 100%;min-width:0}.meta-keyword-search{min-width:0}}
+
+/* Keep keyword chips inside the same-height filter row without helper text. */
+.meta-main-filters>.meta-keyword-search{min-width:0;font-size:12px;gap:4px;color:var(--label)}
+.meta-keyword-box{height:42px;min-height:42px;flex-wrap:nowrap;overflow-x:auto;overflow-y:hidden;border-color:var(--line);background:var(--surface);color:var(--ink);border-radius:7px;padding:4px 5px}
+.meta-keyword-chip{flex-shrink:0;max-width:none;white-space:nowrap}
+.meta-keyword-box input{flex:1 0 100px;min-width:100px;height:30px!important;margin:0}

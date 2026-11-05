@@ -2,7 +2,7 @@
 import { MetaCampaignAssessment } from "./meta-campaign-assessment";
 import type { CacRules } from "../../lib/meta-ads/inventory-cac-policy";
 import { fetchJsonResponse } from "../../lib/http-response";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { compareDailyRows, type DailySort } from "../../lib/meta-ads/order";
 import { localDay, summarize } from "../../lib/meta-ads/analytics";
 import { quickRange } from "../../lib/meta-ads/date-range";
@@ -38,11 +38,13 @@ const date = (value: string) =>
   });
 export function MetaDailyDetail({
   item,
+  dataRevision = 0,
   initialPeriod = "7",
   initialSince,
   initialUntil,
 }: {
   item: DailyItem;
+  dataRevision?: number;
   initialPeriod?: string;
   initialSince?: string;
   initialUntil?: string;
@@ -84,7 +86,7 @@ export function MetaDailyDetail({
       DailyRow[] | { rows: DailyRow[]; sales: DailySales | null }
     >(`/api/meta-ads/objects/${item.id}/daily?${query}`, {
       cache: "no-store",
-      signal: controller.signal,
+      signal: AbortSignal.any([controller.signal, AbortSignal.timeout(20000)]),
     })
       .then((data) => {
         if (!controller.signal.aborted) {
@@ -105,6 +107,33 @@ export function MetaDailyDetail({
       });
     return () => controller.abort();
   }, [item.id, item.level, preset, since, until]);
+  const recentRevision = useRef(dataRevision);
+  useEffect(() => {
+    if (recentRevision.current === dataRevision) return;
+    if (loading) return;
+    recentRevision.current = dataRevision;
+    // Reuse the parent's saved-data signal: refresh only intersecting today/yesterday, never all history.
+    const yesterday = new Date(today + "T12:00:00Z");
+    yesterday.setUTCDate(yesterday.getUTCDate() - 1);
+    const from = preset === "lifetime" ? yesterday.toISOString().slice(0,10) : [since, yesterday.toISOString().slice(0,10)].sort()[1];
+    const to = preset === "lifetime" ? today : [until, today].sort()[0];
+    if (from > to) return;
+    const controller = new AbortController();
+    const query = new URLSearchParams({since:from,until:to});
+    if(item.level === "campaign") query.set("sales","1");
+    void fetchJsonResponse<DailyRow[] | {rows:DailyRow[];sales:DailySales|null}>(`/api/meta-ads/objects/${item.id}/daily?${query}`,{
+      cache:"no-store",signal:AbortSignal.any([controller.signal,AbortSignal.timeout(20000)]),
+    }).then(data=>{
+      if(controller.signal.aborted)return;
+      const incoming=Array.isArray(data)?data:data.rows;
+      setRows(old=>[...old.filter(r=>r.day<from||r.day>to),...incoming]);
+      if(!Array.isArray(data)&&data.sales) {
+        const fresh=data.sales;
+        setSales(old=>({...fresh,days:[...(old?.days??[]).filter(r=>r.day<from||r.day>to),...fresh.days]}));
+      }
+    }).catch(e=>{if(!controller.signal.aborted)setError(e instanceof Error?e.message:"No se pudo actualizar el dato reciente.")});
+    return ()=>controller.abort();
+  },[dataRevision,item.id,item.level,preset,since,until,today,loading]);
   const money = (value: number) =>
     new Intl.NumberFormat("es-PE", {
       style: "currency",

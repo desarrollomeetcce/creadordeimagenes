@@ -1,4 +1,5 @@
 "use client";
+import { applyMetaStatusAck, type MetaStatusAck } from "../../lib/meta-ads/status-ack";
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import type { Item } from "./meta-ads";
 import { fetchJsonResponse } from "../../lib/http-response";
@@ -65,16 +66,10 @@ export function MetaSelectionDetail({
   initialUntil,
   onClose,
   dataRevision = 0,
-  canEdit = false,
-  statusBusy = false,
-  statusMessage = "",
-  onToggleStatus,
+  statusAck = null,
 }: {
   dataRevision?: number;
-  canEdit?: boolean;
-  statusBusy?: boolean;
-  statusMessage?: string;
-  onToggleStatus?: (item:Item)=>void;
+  statusAck?: MetaStatusAck | null;
   ids: string[];
   accounts: string[];
   level: string;
@@ -102,6 +97,11 @@ export function MetaSelectionDetail({
     [error, setError] = useState(""),
     [reload, setReload] = useState(0),
     [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const latestAck = useRef(statusAck);
+  latestAck.current = statusAck;
+  useEffect(() => {
+    if (statusAck) setRows(old => old.map(item => applyMetaStatusAck(item, statusAck)));
+  }, [statusAck]);
   const [since, until] = range,
     idsKey = [...ids].sort().join(","),
     accountsKey = [...accounts].sort().join(","),
@@ -141,7 +141,7 @@ export function MetaSelectionDetail({
       signal: controller.signal,
     })
       .then((data) => {
-        if (!controller.signal.aborted) setRows(data.items);
+        if (!controller.signal.aborted) setRows(data.items.map(item => latestAck.current ? applyMetaStatusAck(item, latestAck.current) : item));
       })
       .catch((e) => {
         if (!controller.signal.aborted)
@@ -241,14 +241,10 @@ export function MetaSelectionDetail({
           Actualizar comparación
         </button>
       </div>
-      {(statusBusy || statusMessage) && <p role="status" className="hint">{statusBusy ? "Actualizando estado de la campaña…" : statusMessage}</p>}
       </DetailStickyHeader>
       {level === "campaign" && (
         <div hidden={!rows.length}>
           <MetaDiplomaOverview
-            canEdit={canEdit}
-            statusBusy={statusBusy || loading}
-            onToggleStatus={onToggleStatus}
             items={rows}
             period={period}
             since={since}

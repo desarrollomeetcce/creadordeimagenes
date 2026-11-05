@@ -1,5 +1,6 @@
 "use client";
 import dynamic from "next/dynamic";
+import { applyMetaStatusAck, matchesMetaStatusFilter, type MetaStatusAck } from "../../lib/meta-ads/status-ack";
 import { MetaKeywordSearch } from "./meta-keyword-search";
 import { campaignMetaTiming } from "../../lib/meta-ads/campaign-meta-timing";
 import { CampaignTiming } from "./campaign-timing";
@@ -976,23 +977,46 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
       setSort("today");
       setDirection("asc");
     });
+  const statusWritePending = useRef(false);
+  const statusReloadTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const statusAcks = useRef(new Map<string, MetaStatusAck>());
+  const [statusAck, setStatusAck] = useState<MetaStatusAck | null>(null);
+  useEffect(() => () => { if (statusReloadTimer.current) clearTimeout(statusReloadTimer.current); }, []);
+  const reconcileStatus = () => {
+    if (statusReloadTimer.current) clearTimeout(statusReloadTimer.current);
+    statusReloadTimer.current = setTimeout(() => {
+      statusReloadTimer.current = null;
+      setReportRevision(n => n + 1);
+    }, 750);
+  };
   const changeStatus = (o: Item) => {
+    if (busy || statusWritePending.current) return;
     const next = o.status === "ACTIVE" ? "PAUSED" : "ACTIVE";
-    if (
-      !window.confirm(
-        `${next === "ACTIVE" ? "Activar" : "Pausar"} «${o.name}» en Meta?${next === "ACTIVE" ? " Puede reanudar la entrega y el gasto publicitario según su presupuesto." : ""}`,
-      )
-    )
-      return;
-    void run(
-      () =>
-        api(`meta-ads/objects/${o.id}/status`, "POST", {
-          status: next,
-          expectedStatus: o.status,
-          confirmed: true,
-        }),
-      "Estado actualizado en Meta. Los resultados anteriores se conservan.",
-    );
+    if (!window.confirm(`${next === "ACTIVE" ? "Activar" : "Pausar"} «${o.name}» en Meta?${next === "ACTIVE" ? " Puede reanudar la entrega y el gasto publicitario según su presupuesto." : ""}`)) return;
+    statusWritePending.current = true;
+    setBusy(true); setMessage("");
+    void (async () => {
+      try {
+        const ack: MetaStatusAck = await api(`meta-ads/objects/${o.id}/status`, "POST", {
+          status: next, expectedStatus: o.status, confirmed: true,
+        });
+        if (statusAcks.current.size >= 200) statusAcks.current.clear();
+        statusAcks.current.set(ack.objectId, ack);
+        setStatusAck(ack);
+        const remaining = items.map(item => applyMetaStatusAck(item, ack)).filter(item => matchesMetaStatusFilter(item, state));
+        setItems(remaining);
+        setTotal(old => Math.max(0, old - (items.length - remaining.length)));
+        setSelected(old => old ? applyMetaStatusAck(old, ack) : old);
+        setMessage("Estado actualizado en Meta. Los resultados anteriores se conservan.");
+      } catch (error) {
+        setMessage((error as Error).message);
+      } finally {
+        // Reconcile filters/counts once after a burst; no account directory or historical import.
+        reconcileStatus();
+        statusWritePending.current = false;
+        setBusy(false);
+      }
+    })();
   };
   const preferencesKey = `meta-ads:preferences:v1:${userId}`;
   useEffect(() => {
@@ -1312,6 +1336,7 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
     }, 200);
     return () => clearTimeout(timer);
   }, [q]);
+  const lastAccountReadAt = useRef(0);
   const accountReadVersion = useRef(0),
     backgroundAccountReads = useRef(new Map<string, Promise<void>>());
   const accountStatisticsNeeded =
@@ -1328,6 +1353,7 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
       },
     );
     if (requestVersion !== accountReadVersion.current) return;
+    lastAccountReadAt.current = Date.now();
     const key = rows
       .map((a) => a.id)
       .sort()
@@ -1468,17 +1494,19 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
       });
       fetchJsonResponse("/api/meta-ads/dashboard?" + p, {
         cache: "no-store",
-        signal: controller.signal,
+        signal: AbortSignal.any([controller.signal, AbortSignal.timeout(20000)]),
       })
         .then((data) => {
           if (serial.current === current) {
-            setItems(data.items);
+            const reconciled = data.items.map((item: Item) => [...statusAcks.current.values()].reduce((row, ack) => applyMetaStatusAck(row, ack), item)).filter((item: Item) => matchesMetaStatusFilter(item, state));
+            setItems(reconciled);
+            setSelected(old => old ? reconciled.find((item: Item) => item.id === old.id) ?? old : old);
             if (withSummary) {
               setSummary(data.summary ?? null);
               summaryScope.current = summaryKey;
               summaryDisplayScope.current = summaryViewKey;
             }
-            setTotal(data.total);
+            setTotal(Math.max(0, data.total - (data.items.length - reconciled.length)));
             setLimited(data.limited);
           }
         })
@@ -1538,7 +1566,7 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
   useEffect(() => {
     if (!preferencesReady) return;
     const update = () => {
-      if (document.visibilityState === "visible")
+      if (document.visibilityState === "visible" && Date.now() - lastAccountReadAt.current >= 30000)
         void refreshBackground().catch((e) => setMessage(e.message));
     };
     window.addEventListener("focus", update);
@@ -1692,7 +1720,7 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
       controller.abort();
       if (timer) clearTimeout(timer);
     };
-  }, [preferencesReady, pendingKey, refresh]);
+  }, [preferencesReady, pendingKey, refresh, analyticsTab]);
   const run = async (fn: () => Promise<unknown>, success?: string) => {
     setBusy(true);
     setMessage("");
@@ -1958,7 +1986,7 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
         type="button"
         className="meta-selection-detail-trigger"
         aria-label={`Ver detalle de ${summarySelectionKey ? summarySelectionKey.split(",").length : 0} seleccionados`}
-        disabled={!summarySelectionKey || loading}
+        disabled={!summarySelectionKey}
         onClick={() => {
           const ids = summarySelectionKey.split(",").filter(Boolean);
           if (!ids.length) return;
@@ -3721,7 +3749,9 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
                     </div>
                     <div className="meta-pinned-actions">
                       <MetaVisibleRefresh
-                        items={items}
+                        items={selectionDetail
+                          ? selectedObjects.filter(o => selectionDetail.ids.includes(o.id))
+                          : selected ? [selected] : items}
                         accounts={accounts.map((a) => ({
                           ...a,
                           autoSync:
@@ -3955,10 +3985,7 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
       </FinancialTableWindow>
       {selectionDetail && (
         <MetaSelectionDetail
-          canEdit={owner && !viewOnly}
-          statusBusy={busy}
-          statusMessage={message}
-          onToggleStatus={changeStatus}
+          statusAck={statusAck}
           dataRevision={revision + reportRevision}
           {...selectionDetail}
           initialPeriod={calendar ? "custom" : analysisPeriod}
@@ -3970,6 +3997,7 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
       {selected && (
         <MetaDetail
           item={selected}
+          dataRevision={reportRevision}
           canReplace={owner && !viewOnly}
           onInventoryChanged={()=>setReportRevision(n=>n+1)}
           period={detailPeriod ?? (calendar ? "custom" : analysisPeriod)}
@@ -3987,12 +4015,14 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
 }
 function MetaDetail({
   item: o,
+  dataRevision,
   period,
   canReplace,
   onInventoryChanged,
   onClose,
 }: {
   item: Item;
+  dataRevision: number;
   period: string;
   canReplace: boolean;
   onInventoryChanged: () => void;
@@ -4112,6 +4142,7 @@ function MetaDetail({
         </div>
       )}
       <MetaDailyDetail
+        dataRevision={dataRevision}
         key={o.id}
         item={o}
         initialPeriod={period}

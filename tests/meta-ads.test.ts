@@ -6507,3 +6507,21 @@ test("Meta keyword chips: AND across words and phrases, any order, legacy querie
   assert.equal(addMetaSearchPhrase("a".repeat(199), "xx"), "a".repeat(199));
   assert.deepEqual(metaSearchConditions(""), []);
 });
+
+import { applyMetaStatusAck, matchesMetaStatusFilter } from "../lib/meta-ads/status-ack";
+test("Meta confirmed status: preserve metrics, scope and newer observations; descendants keep configured status", () => {
+ const old = { statusStale:false, id:"1", accountId:"a", campaignId:"1", adsetId:"", status:"ACTIVE", effectiveStatus:"ACTIVE", seenAt:"2026-11-04T01:00:00Z", periods:{ spend:123, sales:4 } };
+ const ack = { objectId:"1", accountId:"a", level:"campaign", status:"PAUSED" as const, effectiveStatus:"PAUSED", seenAt:"2026-11-04T02:00:00Z" };
+ const changed = applyMetaStatusAck(old, ack);
+ assert.equal(changed.status,"PAUSED"); assert.equal(changed.periods,old.periods);
+ assert.equal(matchesMetaStatusFilter(changed,"active"),false);
+ assert.equal(matchesMetaStatusFilter(changed,"paused"),true);
+ assert.equal(matchesMetaStatusFilter(changed,"all"),true);
+ const child=applyMetaStatusAck({...old,id:"2"},ack);
+ assert.equal(child.status,"ACTIVE");assert.equal(child.effectiveStatus,"CAMPAIGN_PAUSED");
+ assert.equal(matchesMetaStatusFilter(child,"active"),true);assert.equal(matchesMetaStatusFilter(child,"effective"),false);
+ assert.equal(applyMetaStatusAck({...old,accountId:"other"},ack).status,"ACTIVE");
+ const newer={...old,seenAt:"2026-11-04T03:00:00Z"};assert.equal(applyMetaStatusAck(newer,ack),newer);
+ const resumed=applyMetaStatusAck(changed,{...ack,status:"ACTIVE",effectiveStatus:null,seenAt:"2026-11-04T04:00:00Z"});
+ assert.equal(resumed.effectiveStatus,"");assert.equal(resumed.statusStale,true);
+});

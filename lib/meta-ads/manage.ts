@@ -105,11 +105,13 @@ export async function setMetaStatus(
         );
         await r.setStatus(objectId, status);
         applied = true;
+        const confirmedAt = new Date();
         // Never invent effective status: parents/review can prevent delivery even when configured active.
         await tx.metaAdObject.update({
           where: { id: objectId },
           data: {
             status,
+            seenAt: confirmedAt,
             effectiveStatus: status === "PAUSED" ? "PAUSED" : null,
           },
         });
@@ -124,6 +126,7 @@ export async function setMetaStatus(
               status: "ACTIVE",
             },
             data: {
+              seenAt: confirmedAt,
               effectiveStatus:
                 status === "PAUSED"
                   ? object.level === "campaign"
@@ -132,10 +135,7 @@ export async function setMetaStatus(
                   : null,
             },
           });
-        await tx.metaAdAccount.update({
-          where: { id: object.accountId },
-          data: { syncToken: null, syncLeaseAt: null },
-        });
+        // Preserve the import lease/cursor: seenAt fences older in-flight metadata.
         await recordActivity(tx, {
           data: {
             actorId: actor.id,
@@ -149,7 +149,9 @@ export async function setMetaStatus(
             },
           },
         });
-        return { ok: true, status };
+        return { ok: true, status, objectId, accountId: object.accountId,
+          level: object.level, effectiveStatus: status === "PAUSED" ? "PAUSED" : null,
+          seenAt: confirmedAt.toISOString() };
       },
       { timeout: 45000, maxWait: 10000 },
     );

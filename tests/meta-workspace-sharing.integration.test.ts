@@ -237,7 +237,18 @@ test("Compartir Meta Ads separa visualizar/editar de los roles generales", async
           ).status,
           200,
         );
-        await setMetaStatus(editor, objectId, "PAUSED", "ACTIVE");
+        const leaseAt = new Date();
+        await db.metaAdAccount.update({where:{id:accountId},data:{syncToken:"QA-preserve-lease",syncLeaseAt:leaseAt,syncState:{phase:10,cursor:"QA-history"}}});
+        const startedBeforePause = new Date(Date.now()-1000);
+        const ack = await setMetaStatus(editor, objectId, "PAUSED", "ACTIVE");
+        assert.equal(ack.objectId,objectId); assert.equal(ack.accountId,accountId);
+        assert.equal(ack.status,"PAUSED");assert(Date.parse(ack.seenAt)>startedBeforePause.valueOf());
+        const accountAfter = await db.metaAdAccount.findUniqueOrThrow({where:{id:accountId}});
+        assert.equal(accountAfter.syncToken,"QA-preserve-lease");assert.equal(accountAfter.syncLeaseAt?.toISOString(),leaseAt.toISOString());
+        assert.deepEqual(accountAfter.syncState,{phase:10,cursor:"QA-history"});
+        const {writeSyncPage}=await import("../lib/meta-ads/bulk-sync");
+        await db.$transaction(tx=>writeSyncPage(tx,[{id:objectId,accountId,level:"campaign",name:"QA stale page",status:"ACTIVE",effectiveStatus:"ACTIVE"}],[],true,startedBeforePause));
+        assert.equal((await db.metaAdObject.findUniqueOrThrow({where:{id:objectId}})).status,"PAUSED");
         assert.equal(writes, 1);
         assert.equal(
           (await db.metaAdObject.findUniqueOrThrow({ where: { id: objectId } }))

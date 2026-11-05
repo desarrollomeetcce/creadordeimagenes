@@ -129,6 +129,8 @@ export function MetaVisibleRefresh({
               "/api/meta-ads/accounts/" + accountId + "/refresh-visible",
               {
                 method: "POST",
+                // Reads may finish server-side; a slow response must release the browser poller.
+                signal: AbortSignal.timeout(25000),
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
                   objects,
@@ -193,7 +195,9 @@ export function MetaVisibleRefresh({
           } catch (e) {
             retryable = true;
             errors.push(
-              e instanceof Error
+              e instanceof Error && e.name === "TimeoutError"
+                ? "Meta tardó demasiado en responder. Se conservan los datos y se volverá a consultar sin reiniciar el histórico."
+                : e instanceof Error
                 ? e.message
                 : "No se pudo actualizar esta vista.",
             );
@@ -256,7 +260,7 @@ export function MetaVisibleRefresh({
       void refreshRef.current();
     };
     if (timer.current) clearTimeout(timer.current);
-    timer.current = setTimeout(tick, 0);
+    timer.current = setTimeout(tick, 750);
     window.addEventListener("focus", tick);
     document.addEventListener("visibilitychange", tick);
     return () => {

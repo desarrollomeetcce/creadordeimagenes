@@ -51,7 +51,7 @@ export function MetaKeywordSearch({
           }
           placeholder={
             remaining
-              ? "Palabra o frase + Enter"
+              ? "Buscar…"
               : "Límite de búsqueda alcanzado"
           }
           value={draft}
@@ -77,7 +77,6 @@ export function MetaKeywordSearch({
           }}
         />
       </div>
-      <small>Enter añade · Deben coincidir todos los términos</small>
     </div>
   );
 }

@@ -13,7 +13,6 @@ import {
 import { matchesSearchWords } from "../../lib/search";
 import { MetaCampaignAssessment } from "./meta-campaign-assessment";
 import { MetaDailyDetail } from "./meta-daily-detail";
-import { MetaStatusSwitch } from "./meta-status-switch";
 import { InventorySheetReplacement } from "./inventory-sheet-replacement";
 const names = {
   all: "Todos los diplomados",
@@ -28,18 +27,12 @@ export function MetaDiplomaOverview({
   since,
   until,
   onChanged,
-  canEdit = false,
-  statusBusy = false,
-  onToggleStatus,
 }: {
   items: Item[];
   period: string;
   since: string;
   until: string;
   onChanged: () => void;
-  canEdit?: boolean;
-  statusBusy?: boolean;
-  onToggleStatus?: (item:Item)=>void;
 }) {
   const [query, setQuery] = useState(""),
     [filter, setFilter] = useState("all"),
@@ -347,7 +340,6 @@ export function MetaDiplomaOverview({
               <th>CAC del período</th>
               <th>Efectividad V/B</th>
               <th>Evaluación reciente</th>
-              <th>Campañas · Meta</th>
               <th>Acciones</th>
             </tr>
           </thead>
@@ -418,7 +410,6 @@ export function MetaDiplomaOverview({
                         : "Sin período reciente"}
                     </small>
                   </td>
-                  <td className="meta-diploma-status-controls">{g.items.map(campaign=><div key={campaign.id}><MetaStatusSwitch name={campaign.name} status={campaign.status} delivery={campaign.effectiveStatus} checkedAt={campaign.seenAt} stale={campaign.statusStale} disabled={!canEdit || statusBusy || !onToggleStatus} onToggle={()=>onToggleStatus?.(campaign)}/><span>{campaign.status === "ACTIVE" ? "Activa" : campaign.status === "PAUSED" ? "Pausada" : campaign.status}<small>{campaign.name} · {campaign.accountName}</small></span></div>)}</td>
                   <td>
                     <div className="sheet-diploma-actions">
                       <button type="button" onClick={() => setFocus(o.id)}>
