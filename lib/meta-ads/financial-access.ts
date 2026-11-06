@@ -37,7 +37,15 @@ export async function financialAccess(actor: Actor, tx: Client = db) {
     },
   });
   demand(user?.status === "APPROVED", "La cuenta no está habilitada.", 403);
-  return { isOwner: user.role === "OWNER", grants: user.effectivenessGrants };
+  const grants=[...user.effectivenessGrants];
+  // An Inventory editor edits the Inventory module, including its other inventory tabs.
+  // This does not confer TABLE, TOTALS, ADVISORS, Meta or project permissions.
+  const sourceIds=grants.filter(g=>g.permission==="EDIT"&&g.scope.startsWith("TAB:")).map(g=>g.scope.slice(4));
+  const inventories=user.role!=="OWNER" && !grants.some(g=>g.scope==="ALL") && sourceIds.length
+    ? await tx.metaEffectivenessSheet.findMany({where:{kind:"INVENTORY",archivedAt:null},select:{id:true}}) : [];
+  const inventorySourceScopes=inventories.filter(i=>sourceIds.includes(i.id)).map(i=>"TAB:"+i.id);
+  if(inventorySourceScopes.length)for(const i of inventories){const scope="TAB:"+i.id, existing=grants.find(g=>g.scope===scope);if(existing)existing.permission="EDIT";else grants.push({scope,permission:"EDIT"});}
+  return { isOwner: user.role === "OWNER", grants, inventorySourceScopes };
 }
 export function scopePermission(
   a: Awaited<ReturnType<typeof financialAccess>>,
@@ -92,7 +100,7 @@ export function financialUserWhere(actor: Actor): Prisma.UserWhereInput {
       {
         effectivenessGrants: {
           some: {
-            scope: { in: ["ALL", ctx.scope] },
+            scope: { in: ["ALL", ctx.scope, ...(ctx.kind==="INVENTORY" ? ctx.access.inventorySourceScopes : [])] },
             ...(ctx.write ? { permission: "EDIT" } : {}),
           },
         },

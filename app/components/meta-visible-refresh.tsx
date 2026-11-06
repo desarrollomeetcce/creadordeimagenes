@@ -1,5 +1,5 @@
 "use client";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { visibleRefreshDelay } from "../../lib/meta-ads/realtime-policy";
 import { fetchJsonResponse } from "../../lib/http-response";
 type Target = { id: string; accountId: string };
@@ -21,7 +21,9 @@ export function MetaVisibleRefresh({
   accounts,
   onUpdated,
   onReconnect,
+  extraActions,
 }: {
+  extraActions?:ReactNode;
   items: Target[];
   accounts: {
     id: string;
@@ -270,7 +272,7 @@ export function MetaVisibleRefresh({
       document.removeEventListener("visibilitychange", tick);
     };
   }, [fetchScope]);
-  if (key === "[]") return null;
+  if (key === "[]" && !extraActions) return null;
   return (
     <section
       className="meta-visible-refresh"
@@ -278,7 +280,8 @@ export function MetaVisibleRefresh({
     >
       <button
         type="button"
-        disabled={busy || (pausedUntil !== null && pausedUntil > Date.now())}
+        className="primary"
+        disabled={key === "[]" || busy || (pausedUntil !== null && pausedUntil > Date.now())}
         onClick={() => void refresh(false, true)}
         title={
           (notice ? notice + ". " : "") +
@@ -289,13 +292,9 @@ export function MetaVisibleRefresh({
           ? "↻ Consultando Meta…"
           : pausedUntil && pausedUntil > Date.now()
             ? "Meta en pausa"
-            : checkedAt
-              ? "↻ Meta · " +
-                new Date(checkedAt).toLocaleTimeString("es-PE", {
-                  timeZone: "America/Lima",
-                })
-              : "↻ Actualizar vista"}
+            : "↻ Actualizar vista"}
       </button>
+      {extraActions&&<details className="meta-update-options"><summary aria-label="Opciones de actualización" title="Actualización completa y avance de sincronización">▾</summary><div>{extraActions}</div></details>}
       {pausedUntil && pausedUntil > Date.now() && (
         <button
           type="button"

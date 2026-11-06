@@ -67,6 +67,7 @@ export function CreativeStudio({ userId }: { userId: string }) {
     [mode, setMode] = useState("Imagen + Texto"),
     [allPrompt, setAllPrompt] = useState(false),
     [commonPrompt, setCommonPrompt] = useState("");
+  const handoffCountry=useRef("");
   const draftProducts = useRef(new Map<string, Record<string, string>>());
   const mounted = useRef(true),
     projectSeq = useRef(0),
@@ -166,9 +167,8 @@ export function CreativeStudio({ userId }: { userId: string }) {
       setCount(s.count);
       setMode(s.mode);
       setReferencesOpen(false);
-      const next =
-        p.categories.find((c: any) => c.id === initialProduct) ??
-        (p.categories.length === 1 ? p.categories[0] : null);
+      const compatible=handoffCountry.current ? p.categories.filter((c:any)=>c.studio?.country===handoffCountry.current) : p.categories;
+      const next = compatible.find((c:any)=>c.id===initialProduct) ?? (handoffCountry.current ? compatible[0] : compatible.length===1 ? compatible[0] : null);
       if (next) await chooseProduct(next.id, initialSub);
     } finally {
       if (seq === projectSeq.current) setLoading(false);
@@ -275,17 +275,15 @@ export function CreativeStudio({ userId }: { userId: string }) {
         contextRef.current = c;
         const query = new URLSearchParams(location.search);
         const selectionId = query.get("selection");
-        if (selectionId)
-          void studioRequest("/selections/" + selectionId)
-            .then((s) => {
-              if (alive) {
-                setPendingSelection(s);
-                setInventoryId(s.listId);
-              }
-            })
-            .catch((e) => {
-              if (alive) setError(e.message);
-            });
+        if (selectionId) {
+          const selection=await studioRequest("/selections/"+selectionId);
+          if(!alive)return;
+          handoffCountry.current=selection.country;
+          setPendingSelection(selection);
+          setZone("project");
+          setInventoryId(selection.listId);
+          setCountry(selection.country);
+        }
         let saved: any = {};
         try {
           saved = JSON.parse(
@@ -344,6 +342,8 @@ export function CreativeStudio({ userId }: { userId: string }) {
       !pendingSelection ||
       !product ||
       !inventoryId ||
+      product.studio?.country !== pendingSelection.country ||
+      inventoryId !== pendingSelection.listId ||
       importedSelection.current === pendingSelection.id ||
       busy ||
       loading
@@ -438,7 +438,8 @@ export function CreativeStudio({ userId }: { userId: string }) {
   }
   async function addItems(ids: string[], value: string) {
     if (!product) return;
-    await changeCountry(value);
+    if(pendingSelection && (product.studio?.country !== pendingSelection.country || inventoryId !== pendingSelection.listId))throw Error(`Elige o crea una carpeta de ${countryName(pendingSelection.country)} y conserva el Inventario de la selección.`);
+    if(product.studio?.country !== value)await changeCountry(value);
     const added = await studioRequest(
       "/products/" + product.id + "/items",
       "POST",
@@ -460,6 +461,7 @@ export function CreativeStudio({ userId }: { userId: string }) {
       setTargetSubs(added.map((s: any) => s.id));
     }
     setPicker(null);
+    handoffCountry.current="";
     setPendingSelection(null);
     setZone("canvas");
     setNotice("✓ " + added.length + " diplomados listos en este producto");
@@ -602,6 +604,7 @@ export function CreativeStudio({ userId }: { userId: string }) {
     );
   return (
     <section className="creative-studio">
+      {pendingSelection&&<aside className="notice studio-replacement-handoff" role="status"><strong>Para anuncios · {countryName(pendingSelection.country)}</strong><p>{pendingSelection.items.map((i:any)=>i.name).join(" · ")}</p><small>Elige o crea una carpeta de este país. La selección se añadirá sin generar ni publicar anuncios.</small></aside>}
       <nav className="studio-mobile-tabs" aria-label="Áreas del estudio">
         {[
           ["project", "01 Proyecto"],
@@ -824,6 +827,7 @@ export function CreativeStudio({ userId }: { userId: string }) {
                 ✓ Guardar proyecto
               </button>
               <div className="studio-section-divider" />
+
               <div className="studio-project-picker studio-product-picker">
                 <SearchSelect
                   label="Producto / carpeta"
@@ -835,7 +839,7 @@ export function CreativeStudio({ userId }: { userId: string }) {
                     if (product && value !== product.name) {
                       setProduct(null);
                       setActiveSub("");
-                      setCountry("");
+                      setCountry(pendingSelection?.country??"");
                       setTargetSubs([]);
                       setSelected({});
                     }
@@ -917,7 +921,7 @@ export function CreativeStudio({ userId }: { userId: string }) {
                     <button
                       type="button"
                       className="primary"
-                      disabled={busy}
+                      disabled={busy || product.studio?.country !== pendingSelection.country || inventoryId !== pendingSelection.listId}
                       onClick={() =>
                         void run(() =>
                           addItems(

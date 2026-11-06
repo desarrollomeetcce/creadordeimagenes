@@ -148,7 +148,8 @@ export function SidebarNavigation({
                 if (!byId.has(id)) return;
                 const r = target.getBoundingClientRect(),
                   after =
-                    innerWidth <= 620
+                    getComputedStyle(target.parentElement!).flexDirection ===
+                    "row"
                       ? e.clientX > r.left + r.width / 2
                       : e.clientY > r.top + r.height / 2;
                 d.target = id;

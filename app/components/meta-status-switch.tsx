@@ -7,6 +7,7 @@ export function MetaStatusSwitch({
   onToggle,
   checkedAt,
   stale = false,
+  pendingStop = false,
 }: {
   name: string;
   status: string;
@@ -15,23 +16,31 @@ export function MetaStatusSwitch({
   onToggle: () => void;
   checkedAt?: string;
   stale?: boolean;
+  pendingStop?: boolean;
 }) {
   if (!["ACTIVE", "PAUSED"].includes(status))
     return <small>Estado no informado</small>;
   const active = status === "ACTIVE";
   return (
-    <button
-      type="button"
-      role="switch"
-      aria-checked={active}
-      aria-label={`${stale ? "Sin verificar. " : ""}${active ? "Desactivar" : "Activar"} ${name} en Meta`}
-      title={`${stale ? "Último estado guardado; necesita actualizar. " : ""}${active ? "Activado" : "Desactivado"} · Entrega: ${delivery}${checkedAt ? " · Consultado: " + new Date(checkedAt).toLocaleString("es-PE",{timeZone:"America/Lima"}) : ""}`}
-      className="meta-status-switch"
-      data-stale={stale || undefined}
-      disabled={disabled}
-      onClick={onToggle}
+    <span
+      className="meta-status-control"
+      data-pending-stop={(active && pendingStop) || undefined}
     >
-      <span aria-hidden="true" />
-    </button>
+      <button
+        type="button"
+        role="switch"
+        aria-checked={active}
+        aria-label={`${stale ? "Sin verificar. " : ""}${active ? "Desactivar" : "Activar"} ${name} en Meta`}
+        title={`${stale ? "Último estado guardado; necesita actualizar. " : ""}${active && pendingStop ? "Por desactivar. Meta todavía no ha confirmado la pausa" : active ? "Activado" : "Desactivado"} · Entrega: ${delivery}${checkedAt ? " · Consultado: " + new Date(checkedAt).toLocaleString("es-PE", { timeZone: "America/Lima" }) : ""}`}
+        className="meta-status-switch"
+        data-stale={stale || undefined}
+        data-pending-stop={(active && pendingStop) || undefined}
+        disabled={disabled}
+        onClick={onToggle}
+      >
+        <span aria-hidden="true" />
+      </button>
+      {active && pendingStop && <small>Por desactivar</small>}
+    </span>
   );
 }

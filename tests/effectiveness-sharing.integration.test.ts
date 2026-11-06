@@ -251,16 +251,7 @@ test("Compartir Efectividad por módulo y documento no expone otras hojas", asyn
           ).status,
           200,
         );
-        await fail(
-          call(
-            editor,
-            "financial/inventory/categories?listId=" + lists[1].id,
-            "GET",
-            {},
-            "TAB:" + lists[1].id,
-          ),
-          403,
-        );
+        assert.equal((await call(editor,"financial/inventory/categories?listId="+lists[1].id,"GET",{},"TAB:"+lists[1].id)).status,200,"Inventory editors can use all inventory tabs, without access to sales/advisors");
         await fail(
           call(
             editor,

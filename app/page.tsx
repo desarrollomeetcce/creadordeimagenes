@@ -1,7 +1,10 @@
 "use client";
 import dynamic from "next/dynamic";
+import { ThemeToggle } from "./components/theme-toggle";
+import "./components/meta-header.css";
 import "./components/creative-workspace.css";
 import "./components/workspace-utilities.css";
+import "./components/responsive-shell.css";
 const utilityViews=["library","jobs","history","visual-audit","website"];
 const CreativeStudio = dynamic(()=>import("./components/creative-studio").then(m=>m.CreativeStudio),{loading:()=> <p role="status">Abriendo el estudio creativo…</p>});
 const ProjectImagePreview = dynamic(() => import("./components/project-image-preview").then(m => m.ProjectImagePreview));
@@ -191,6 +194,10 @@ export default function Home() {
   const [resetToken, setResetToken] = useState("");
   const [view, setView] = useState("projects");
   const [salesAdvisorPeriod,setSalesAdvisorPeriod]=useState<AdvisorPeriodView|null>(null);
+  const [smallNavigation,setSmallNavigation]=useState(false),[mobileMenuOpen,setMobileMenuOpen]=useState(false);
+  const sidebarDialog=useRef<HTMLDialogElement>(null);
+  useEffect(()=>{const media=window.matchMedia("(max-width:900px)");const update=()=>{setSmallNavigation(media.matches);if(!media.matches)setMobileMenuOpen(false)};update();media.addEventListener("change",update);return()=>media.removeEventListener("change",update)},[]);
+  useEffect(()=>{const el=sidebarDialog.current;if(!el)return;if(smallNavigation&&mobileMenuOpen){if(!el.open)el.showModal()}else if(el.open)el.close()},[smallNavigation,mobileMenuOpen,user?.id]);
   const [sidebarMini, setSidebarMini] = useState(false);
   useEffect(() => { if(user) { try { setSidebarMini(localStorage.getItem("sidebar-mini:v1:"+user.id)==="1"); } catch {} } }, [user?.id]);
   const [location, setLocation] = useState("");
@@ -488,12 +495,10 @@ export default function Home() {
     website: "Página y planes",
     collection: "Galería de afiches",
   };
-  const navigate = (v: string) => {setSalesAdvisorPeriod(null);changeAddress({ view: v });};
-  return (
-    <CurrentUserId.Provider value={user.id}><CurrentRole.Provider value={user.role}>
-      <div className={"shell"+(sidebarMini?" sidebar-mini":"")}>
-        <aside className="sidebar">
-          <button className="sidebar-collapse" type="button" aria-label={sidebarMini?"Ampliar menú":"Minimizar menú"} title={sidebarMini?"Ampliar menú":"Minimizar menú"} aria-pressed={sidebarMini} onClick={()=>setSidebarMini(v=>{ const next=!v; try { localStorage.setItem("sidebar-mini:v1:"+user.id,next?"1":"0"); }catch{} return next; })}>{sidebarMini?"☰":"‹"}</button>
+  const navigate = (v: string) => {setMobileMenuOpen(false);setSalesAdvisorPeriod(null);changeAddress({ view: v });};
+  const sidebarContent=<>
+
+          <button className="sidebar-collapse" type="button" aria-label={smallNavigation?"Cerrar menú":sidebarMini?"Ampliar menú":"Minimizar menú"} title={smallNavigation?"Cerrar menú":sidebarMini?"Ampliar menú":"Minimizar menú"} aria-pressed={sidebarMini} onClick={()=>{if(smallNavigation){setMobileMenuOpen(false);return;}setSidebarMini(v=>{ const next=!v; try { localStorage.setItem("sidebar-mini:v1:"+user.id,next?"1":"0"); }catch{} return next; })}}>{smallNavigation?"×":sidebarMini?"☰":"‹"}</button>
           <div className="brand">
             <span>✳</span>estudio
             <span
@@ -519,15 +524,19 @@ export default function Home() {
           <SidebarAccount user={user} view={view} navigate={navigate} logout={() => {
             void api("auth/logout", "POST").then(() => { clearGallerySession(); return reloadUser(); });
           }} />
-        </aside>
+  </>;
+  return (
+    <CurrentUserId.Provider value={user.id}><CurrentRole.Provider value={user.role}>
+      <div className={"shell"+(sidebarMini?" sidebar-mini":"")}>
+        {smallNavigation?<><div className="mobile-nav-bar"><button type="button" aria-label="Abrir menú principal" aria-expanded={mobileMenuOpen} aria-controls="mobile-sidebar" onClick={()=>setMobileMenuOpen(true)}>☰ Menú</button><span className="mobile-nav-brand">estudio <small>AI</small></span></div><dialog id="mobile-sidebar" ref={sidebarDialog} className="sidebar sidebar-mobile-dialog" aria-label="Menú principal de la plataforma" onClose={()=>setMobileMenuOpen(false)} onCancel={()=>setMobileMenuOpen(false)} onClick={e=>{if(e.target!==e.currentTarget)return;const r=e.currentTarget.getBoundingClientRect();if(e.clientX<r.left||e.clientX>r.right||e.clientY<r.top||e.clientY>r.bottom)setMobileMenuOpen(false)}}>{sidebarContent}</dialog></>:<aside className="sidebar">{sidebarContent}</aside>}
         <div className="workspace">
-          <header className={utilityViews.includes(view)?"topbar utility-topbar":financialViews.includes(view) ? "topbar effectiveness-topbar financial-module-topbar" : view==="courses-ai"?"topbar courses-topbar":view==="projects"?"topbar studio-topbar":"topbar"}>
-            {view === "projects" ? <><span className="studio-topbar-brand">▦ Proyectos <strong>✦ Estudio creativo</strong><small>Un espacio. Todas tus posibilidades.</small></span><RoleGuide compact name={user.name} role={user.role}/><VisualAuditNotice compact key={user.id}/><a href="?view=library" target="_blank" rel="noopener noreferrer" title="Abrir Biblioteca">▧ Abrir Biblioteca ↗</a></> : utilityViews.includes(view)?<><div className="utility-title"><h1>{["history","visual-audit"].includes(view)?"Auditoría":titles[view]}</h1>{["history","visual-audit"].includes(view)&&<nav aria-label="Vistas de auditoría"><a href="?view=visual-audit" hidden={user.role!=="OWNER"} aria-current={view==="visual-audit"?"page":undefined} onClick={e=>{if(e.ctrlKey||e.metaKey||e.shiftKey||e.altKey)return;e.preventDefault();navigate("visual-audit")}}>Visual</a><a href="?view=history" aria-current={view==="history"?"page":undefined} onClick={e=>{if(e.ctrlKey||e.metaKey||e.shiftKey||e.altKey)return;e.preventDefault();navigate("history")}}>Historial</a></nav>}</div><div className="utility-account-context"><RoleGuide compact name={user.name} role={user.role}/><VisualAuditNotice compact key={user.id}/></div></>: view === "courses-ai" ? <><h1>Cursos IA</h1><div className="courses-topbar-actions"><button type="button" onClick={()=>window.dispatchEvent(new Event("share-courses"))}>Compartir</button><a href="/?view=ai&aiTab=connections">Ajustes IA</a></div></> : financialViews.includes(view) ? <div className="effectiveness-topbar-title"><div className="effectiveness-title-line"><h1>{titles[view]}</h1>{user.role==="OWNER"&&<button type="button" className="effectiveness-share-button" onClick={()=>window.dispatchEvent(new Event("share-effectiveness"))}>Compartir</button>}</div></div> : <span className="muted">{view === "metaads" ? "Análisis y control de Meta" : titles[view]}</span>}
-            {view === "metaads" && <span className="meta-topbar-role">Rol: <strong>{user.role}</strong></span>}
-            {view !== "performance" && !utilityViews.includes(view) && !financialViews.includes(view) && view !== "courses-ai" && view !== "ai" && view !== "projects" && <span className="badge">Producción publicitaria</span>}
+          <header className={utilityViews.includes(view)?"topbar utility-topbar":financialViews.includes(view) ? "topbar effectiveness-topbar financial-module-topbar" : view==="courses-ai"?"topbar courses-topbar":view==="projects"?"topbar studio-topbar":view==="metaads"?"topbar meta-topbar":"topbar"}>
+            {view === "projects" ? <><span className="studio-topbar-brand">▦ Proyectos <strong>✦ Estudio creativo</strong><small>Un espacio. Todas tus posibilidades.</small></span><RoleGuide compact name={user.name} role={user.role}/><VisualAuditNotice compact key={user.id}/><a href="?view=library" target="_blank" rel="noopener noreferrer" title="Abrir Biblioteca">▧ Abrir Biblioteca ↗</a></> : utilityViews.includes(view)?<><div className="utility-title"><h1>{["history","visual-audit"].includes(view)?"Auditoría":titles[view]}</h1>{["history","visual-audit"].includes(view)&&<nav aria-label="Vistas de auditoría"><a href="?view=visual-audit" hidden={user.role!=="OWNER"} aria-current={view==="visual-audit"?"page":undefined} onClick={e=>{if(e.ctrlKey||e.metaKey||e.shiftKey||e.altKey)return;e.preventDefault();navigate("visual-audit")}}>Visual</a><a href="?view=history" aria-current={view==="history"?"page":undefined} onClick={e=>{if(e.ctrlKey||e.metaKey||e.shiftKey||e.altKey)return;e.preventDefault();navigate("history")}}>Historial</a></nav>}</div><div className="utility-account-context"><RoleGuide compact name={user.name} role={user.role}/><VisualAuditNotice compact key={user.id}/></div></>: view === "courses-ai" ? <><h1>Cursos IA</h1><div className="courses-topbar-actions"><button type="button" onClick={()=>window.dispatchEvent(new Event("share-courses"))}>Compartir</button><a href="/?view=ai&aiTab=connections">Ajustes IA</a></div></> : financialViews.includes(view) ? <div className="effectiveness-topbar-title"><div className="effectiveness-title-line"><h1>{titles[view]}</h1>{user.role==="OWNER"&&<button type="button" className="effectiveness-share-button" onClick={()=>window.dispatchEvent(new Event("share-effectiveness"))}>Compartir</button>}</div></div> : view === "metaads" ? <><h1 className="sr-only">Meta Ads</h1><div id="meta-navigation-slot"/><div className="meta-topbar-actions"><span className="badge">Producción publicitaria</span><div id="meta-share-slot"/><ThemeToggle/></div></> : <span className="muted">{titles[view]}</span>}
+            {view === "metaads" && <span className="sr-only">Rol: {user.role}</span>}
+            {view !== "metaads" && view !== "performance" && !utilityViews.includes(view) && !financialViews.includes(view) && view !== "courses-ai" && view !== "ai" && view !== "projects" && <span className="badge">Producción publicitaria</span>}
 
           </header>
-          <main className={financialViews.includes(view) ? "effectiveness-main" : view === "projects" ? "creative-projects-main" : ["library","jobs"].includes(view) ? "creative-library-main explorer-desktop-main" : utilityViews.includes(view)?"utility-main":undefined}>
+          <main className={financialViews.includes(view) ? "effectiveness-main" : view === "metaads" ? "meta-main" : view === "projects" ? "creative-projects-main" : ["library","jobs"].includes(view) ? "creative-library-main explorer-desktop-main" : utilityViews.includes(view)?"utility-main":undefined}>
             {![...utilityViews,"metaads", ...financialViews, "performance", "courses-ai", "ai", "projects"].includes(view) && <div className={["projects","library","jobs"].includes(view) ? "creative-context-bar" : undefined}><RoleGuide compact={["projects","library","jobs"].includes(view)} name={user.name} role={user.role} /><VisualAuditNotice compact={["projects","library","jobs"].includes(view)} key={user.id} /></div>}
             {project && view === "projects" && (
               <HierarchyBreadcrumbs

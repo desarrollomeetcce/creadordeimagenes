@@ -1,3 +1,4 @@
+import { prepareCampaignInventoryStatus, checkCampaignInventoryStatus, confirmCampaignInventoryStatus } from "./campaign-inventory-status";
 import {
   metaEditorOnly,
   metaEditorUserWhere,
@@ -17,7 +18,9 @@ export async function setMetaStatus(
   objectId: string,
   status: "ACTIVE" | "PAUSED",
   expectedStatus: "ACTIVE" | "PAUSED",
+  options?: { confirmPaused?: boolean; aliasId: string; country: string },
 ) {
+  demand(status !== expectedStatus || (status === "PAUSED" && options?.confirmPaused), "El elemento ya tiene ese estado.", 409);
   await metaEditorOnly(actor);
   await rateLimit("meta:manage:" + actor.id, 20);
   const object = await db.metaAdObject.findUnique({
@@ -25,6 +28,8 @@ export async function setMetaStatus(
     include: { account: true },
   });
   demand(object, "Elemento no disponible.", 404);
+  if(options) demand(object.aliasId === options.aliasId && object.aliasCountry === options.country, "La vinculación cambió. Actualiza antes de continuar.", 409);
+  const inventory = await prepareCampaignInventoryStatus(actor, object, status);
   const { connection, reader: r } = await reader(
     object.account.connectionId,
     true,
@@ -55,7 +60,6 @@ export async function setMetaStatus(
     "El estado cambió en Meta. Sincroniza y revisa antes de modificarlo.",
     409,
   );
-  demand(status !== expectedStatus, "El elemento ya tiene ese estado.", 409);
   let applied = false;
   try {
     return await db.$transaction(
@@ -103,8 +107,8 @@ export async function setMetaStatus(
           "La conexión o los permisos cambiaron. Verifica antes de continuar.",
           409,
         );
-        await r.setStatus(objectId, status);
-        applied = true;
+        await checkCampaignInventoryStatus(tx, inventory, objectId);
+        if(status !== expectedStatus) { await r.setStatus(objectId, status); applied = true; }
         const confirmedAt = new Date();
         // Never invent effective status: parents/review can prevent delivery even when configured active.
         await tx.metaAdObject.update({
@@ -135,11 +139,12 @@ export async function setMetaStatus(
                   : null,
             },
           });
+        const inventoryStatus = await confirmCampaignInventoryStatus(tx, inventory, status);
         // Preserve the import lease/cursor: seenAt fences older in-flight metadata.
         await recordActivity(tx, {
           data: {
             actorId: actor.id,
-            action: "META_ESTADO_CAMBIADO",
+            action: status === expectedStatus ? "META_ESTADO_VERIFICADO" : "META_ESTADO_CAMBIADO",
             resourceId: objectId,
             detail: {
               accountId: object.accountId,
@@ -149,7 +154,7 @@ export async function setMetaStatus(
             },
           },
         });
-        return { ok: true, status, objectId, accountId: object.accountId,
+        return { ok: true, ...inventoryStatus, status, objectId, accountId: object.accountId,
           level: object.level, effectiveStatus: status === "PAUSED" ? "PAUSED" : null,
           seenAt: confirmedAt.toISOString() };
       },

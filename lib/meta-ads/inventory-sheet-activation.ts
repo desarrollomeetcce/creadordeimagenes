@@ -51,6 +51,7 @@ export type InventoryCampaignTask = "NONE" | "CREATE" | "STOP";
 type Control = {
   pinned: boolean;
   campaignTask?: InventoryCampaignTask;
+  metaOrigin?: { accountIds: string[]; campaignIds: string[] };
   pendingAssignmentAt?: string;
   advisorReviews?: { advisorId: string; name: string; createdAt: string }[];
 };
@@ -869,6 +870,27 @@ async function activationChange(actor: Actor, input: unknown, sharedTx?: Tx) {
 export async function inventoryActivationChange(actor: Actor, input: unknown) {
   return activationChange(actor, input);
 }
+/** Server-derived Meta receipt; reuse the same financial CAS, events and visibility rules. */
+export async function inventoryMetaStatusChange(
+  tx: Tx,
+  actor: Actor,
+  scope: { listId: string; tableId: string; aliasId: string; country: string; name: string },
+  change: { active: boolean; campaignTask: InventoryCampaignTask },
+) {
+  const state = await tx.metaEffectivenessState.findUnique({
+    where: { aliasId_country: { aliasId: scope.aliasId, country: scope.country } },
+    select: { revision: true },
+  });
+  await activationChange(actor, {
+    listId: scope.listId, tableId: scope.tableId, country: scope.country,
+    items: [{ name: scope.name, targets: [{ aliasId: scope.aliasId, country: scope.country, revision: state?.revision ?? 0 }] }],
+    ...change,
+  }, tx);
+  return (await tx.metaEffectivenessState.findUniqueOrThrow({
+    where: { aliasId_country: { aliasId: scope.aliasId, country: scope.country } },
+    select: { revision: true },
+  })).revision;
+}
 /** Pair replacement is atomic: retiring item stays on until its campaign is actually stopped. */
 async function activationReplace(actor: Actor, input: unknown, sharedTx?: Tx) {
   const choice = z.object({ name, targets: z.array(target).max(250) }).strict();
@@ -1000,12 +1022,8 @@ async function activationReplace(actor: Actor, input: unknown, sharedTx?: Tx) {
 export async function inventoryActivationReplace(actor: Actor, input: unknown) {
   return activationReplace(actor, input);
 }
-export async function inventoryActivationReplaceBatch(
-  actor: Actor,
-  input: unknown,
-) {
-  const choice = z.object({ name, targets: z.array(target).max(250) }).strict();
-  const b = z
+const choice = z.object({ name, targets: z.array(target).max(250) }).strict();
+export const inventoryReplacementBatchSchema = z
     .object({
       listId: id,
       tableId: id,
@@ -1024,7 +1042,10 @@ export async function inventoryActivationReplaceBatch(
         .max(100),
     })
     .strict()
-    .parse(input);
+;
+
+export async function inventoryActivationReplaceBatch(actor: Actor, input: unknown, sharedTx?: Tx) {
+  const b = inventoryReplacementBatchSchema.parse(input);
   const origins = new Set(b.replacements.map((r) => categoryKey(r.from.name)));
   const destinations = new Set(
     b.replacements.map((r) => categoryKey(r.to.name)),
@@ -1035,8 +1056,7 @@ export async function inventoryActivationReplaceBatch(
       ![...destinations].some((n) => origins.has(n)),
     "No repitas diplomados ni uses uno del bloque que vas a reemplazar.",
   );
-  return db.$transaction(
-    async (tx) => {
+  const run = async (tx: Tx) => {
       const results = [];
       for (const replacement of b.replacements)
         results.push(
@@ -1052,9 +1072,8 @@ export async function inventoryActivationReplaceBatch(
           ),
         );
       return { replaced: results.length, results };
-    },
-    { timeout: 120000 },
-  );
+    };
+  return sharedTx ? run(sharedTx) : db.$transaction(run,{timeout:120000});
 }
 export type SheetInterval = {
   cac?: ReturnType<typeof inventoryCacSummary>;

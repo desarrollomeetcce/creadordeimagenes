@@ -20,9 +20,10 @@ export function InventoryReplacementGroupFilter({
   onChange: (groupId: string, usage: ReplacementUsageFilter) => void;
 }) {
   return (
-    <div className="inventory-replacement-group-filter">
+    <div className="inventory-replacement-group-filter" role="group" aria-label={`Por grupo y uso · ${countryName(country)}`}>
+      <span className="inventory-replacement-filter-label">Por grupo y uso · {countryName(country)}</span>
       <label>
-        Diplomados de un grupo
+        <span className="sr-only">Por grupo</span>
         <select
           aria-label="Grupo de los reemplazos"
           value={groupId}
@@ -38,7 +39,7 @@ export function InventoryReplacementGroupFilter({
         </select>
       </label>
       <label>
-        Uso en {countryName(country)}
+        <span className="sr-only">Uso · {countryName(country)}</span>
         <select
           aria-label="Uso de los reemplazos en el país"
           value={usage}

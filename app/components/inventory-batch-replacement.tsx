@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { SheetSearchSelect } from "./sheet-search-select";
 import { categoryKey } from "../../lib/meta-ads/category-paste";
 import type { TrialDirectory } from "../../lib/meta-ads/inventory-trials";
@@ -15,6 +15,7 @@ export type ReplacementPlan = {
   from: string;
   to: string;
   mode: "MANUAL" | "SAME" | "OTHER";
+  pauseNow?: boolean;
 };
 export function InventoryBatchReplacement({
   origins,
@@ -27,8 +28,12 @@ export function InventoryBatchReplacement({
   onInspect,
   onUsageNeeded,
   canConfirm = true,
+  metaActions = false,
+  onConfirmAndAds,
 }: {
   onUsageNeeded?:()=>void;
+  metaActions?:boolean;
+  onConfirmAndAds?:(plan: ReplacementPlan[])=>Promise<void>;
   canConfirm?:boolean;
   directory: TrialDirectory;
   country: string;
@@ -42,6 +47,8 @@ export function InventoryBatchReplacement({
   const [plan, setPlan] = useState<ReplacementPlan[]>(() =>
     origins.map((i) => ({ from: i.name, to: "", mode: "MANUAL" })),
   );
+  const originKey=JSON.stringify(origins.map(i=>i.name));
+  useEffect(()=>{setPlan(previous=>origins.map(i=>{const old=previous.find(p=>categoryKey(p.from)===categoryKey(i.name));return old ? {...old,to:origins.some(o=>categoryKey(o.name)===categoryKey(old.to))?"":old.to} : {from:i.name,to:"",mode:"MANUAL"}}));},[originKey]);
   const [error, setError] = useState("");
   const [category,setCategory]=useState("");
   const categories=[...new Set(candidates.flatMap(i=>[...i.primaryNames,...(i.secondaryNames??[])]))].sort((a,b)=>a.localeCompare(b,"es"));
@@ -78,6 +85,7 @@ export function InventoryBatchReplacement({
       if (chosen) used.add(categoryKey(chosen.name));
       return {
         from: i.name,
+        pauseNow: plan.find(p=>p.from===i.name)?.pauseNow,
         to: chosen?.name ?? "",
         mode: same === null ? ("MANUAL" as const) : same ? ("SAME" as const) : ("OTHER" as const),
       };
@@ -129,28 +137,6 @@ export function InventoryBatchReplacement({
         />
         <SheetSearchSelect label="Categoría de los reemplazos" value={category} placeholder="Por categoría" options={[{value:"",label:"Todas las categorías"},...categories.map(c=>({value:c,label:c}))]} disabled={busy} onSelect={value=>{setCategory(value);setPlan(current=>current.map(p=>({...p,to:"",mode:"MANUAL"})));}}/>
         <div className="row">
-          {groupId && (
-            <button
-              type="button"
-              disabled={busy || !filteredCandidates.length}
-              onClick={() => {
-                setPlan(
-                  origins.map((i, index) => ({
-                    from: i.name,
-                    to: filteredCandidates[index]?.name ?? "",
-                    mode: "MANUAL",
-                  })),
-                );
-                setError(
-                  filteredCandidates.length < origins.length
-                    ? "No hay suficientes diplomados disponibles en este grupo. Completa o cambia el filtro."
-                    : "",
-                );
-              }}
-            >
-              Proponer del grupo · sin usar primero
-            </button>
-          )}
           <button type="button" disabled={busy} onClick={() => propose(null)}>{category?"Azar por categoría":"Al azar"}</button>
           <button type="button" disabled={busy} onClick={() => propose(true)}>
             Azar · misma categoría
@@ -172,6 +158,7 @@ export function InventoryBatchReplacement({
           <div className="inventory-batch-pair" key={p.from}>
             <span>
               <strong>{p.from}</strong>
+              {metaActions && <select aria-label={`Acción de ${p.from}`} disabled={busy} value={p.pauseNow ? "NOW" : "PENDING"} onChange={e=>setPlan(current=>current.map((v,n)=>n===index?{...v,pauseNow:e.target.value==="NOW"}:v))}><option value="PENDING">Por desactivar</option><option value="NOW">Desactivar ahora en Meta</option></select>}
             </span>
             <b aria-hidden="true">→</b>
             <label>
@@ -222,8 +209,9 @@ export function InventoryBatchReplacement({
         >
           {busy
             ? "Guardando…"
-            : `Confirmar ${plan.length === 1 ? "reemplazo" : plan.length + " reemplazos"}`}
+            : metaActions ? "Reemplazar" : `Confirmar ${plan.length === 1 ? "reemplazo" : plan.length + " reemplazos"}`}
         </button>
+        {onConfirmAndAds && <button type="button" className="primary" disabled={busy || !!remaining || !canConfirm} onClick={()=>void onConfirmAndAds(plan)}>Reemplazar + anuncios ↗</button>}
       </footer>
     </section>
   );

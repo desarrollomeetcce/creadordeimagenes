@@ -5,6 +5,7 @@ import { readGroupDirectory } from "./inventory-group-directory-cache";
 import type { TrialDirectory } from "../../lib/meta-ads/inventory-trials";
 import type { InventoryReplacementContext } from "../../lib/meta-ads/inventory-sheet-activation";
 import { categoryKey } from "../../lib/meta-ads/category-paste";
+import { studioRequest } from "./inventory-meta-picker";
 import { financialRequest as api } from "./financial-request";
 import {
   InventoryBatchReplacement,
@@ -27,8 +28,10 @@ export function InventorySheetReplacement({
   onClose,
   source = "budget",
   directoryOverride,
+  onCompleted,
 }: {
   source?: "budget" | "meta";
+  onCompleted?:(notice:string)=>void;
   directoryOverride?:TrialDirectory;
   listId: string;
   tableId: string;
@@ -133,8 +136,13 @@ export function InventorySheetReplacement({
       });
     usageRequest.current = query;
   };
-  async function confirm(plan: ReplacementPlan[]) {
+  async function confirm(plan: ReplacementPlan[], withAds=false) {
     if (pending.current || saved || !context?.canEdit) return;
+    const pauseNames = source === "meta" ? plan.filter(p=>p.pauseNow).map(p=>p.from) : [];
+    if(pauseNames.length && !window.confirm(`Se reemplazarán los diplomados y se solicitará pausar en Meta todas las campañas vinculadas de: ${pauseNames.join(", ")}, solo en ${countryName(country)}. Si Meta no confirma, quedarán por desactivar. ¿Continuar?`))return;
+    const target=withAds ? window.open("about:blank","_blank") : null;
+    if(withAds && !target){setError("Permite abrir una pestaña nueva para continuar a Proyectos.");return;}
+    if(target){target.opener=null;target.document.title="Preparando Proyectos";target.document.body.textContent="Preparando los diplomados seleccionados…";}
     pending.current = true;
     setBusy(true);
     setError("");
@@ -146,10 +154,17 @@ export function InventorySheetReplacement({
         );
       if (plan.some((p) => !points.get(categoryKey(p.from))?.hasRecord))
         throw Error("Un origen no tiene registros en esta hoja y país.");
-      await api("meta-ads/inventory/sheet-activation/replace-batch", "POST", {
+      let selectionId="";
+      if(withAds){
+        const itemIds=plan.map(p=>directory!.catalog.find(i=>categoryKey(i.name)===categoryKey(p.to))?.id);
+        if(itemIds.some(id=>!id))throw Error("Un reemplazo ya no está disponible en el catálogo.");
+        selectionId=(await studioRequest("/selections","POST",{listId,country,itemIds})).id;
+      }
+      const result=await api(source === "meta" ? "meta-ads/inventory/sheet-activation/replace-meta" : "meta-ads/inventory/sheet-activation/replace-batch", "POST", {
         listId,
         tableId,
         country,
+        ...(source === "meta" ? {pauseNow:pauseNames} : {}),
         replacements: plan.map((p) => ({
           from: {
             name: p.from,
@@ -164,9 +179,11 @@ export function InventorySheetReplacement({
       });
       written = true;
       setSaved(true);
-      await onChanged();
-      onClose();
+      if(target)target.location.replace("?"+new URLSearchParams({view:"projects",selection:selectionId}));
+      const notice=result.warnings?.length ? result.warnings.join(" ") : `Reemplazo guardado en ${countryName(country)}. Los nuevos diplomados quedan por hacer campaña.`;
+      try{await onChanged();}finally{if(onCompleted)onCompleted(notice);else onClose();}
     } catch (e) {
+      if(target && !written)target.close();
       setError(
         (written
           ? "Los cambios ya se guardaron. Falta actualizar la vista. "
@@ -210,7 +227,7 @@ export function InventorySheetReplacement({
         </p>
       ) : (
         <InventoryBatchReplacement
-          key={JSON.stringify([requestedNames, tableId, country, retry])}
+          key={JSON.stringify([tableId, country, retry])}
           origins={origins}
           candidates={candidates}
           directory={directory}
@@ -219,7 +236,9 @@ export function InventorySheetReplacement({
           canConfirm={!saved && context.canEdit}
           onClose={onClose}
           onUsageNeeded={loadUsage}
-          onConfirm={confirm}
+          onConfirm={plan=>confirm(plan)}
+          metaActions={source === "meta"}
+          onConfirmAndAds={source === "meta" ? plan=>confirm(plan,true) : undefined}
           onInspect={(name) => {
             const point = points.get(categoryKey(name));
             if (point?.hasRecord)

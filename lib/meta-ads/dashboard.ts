@@ -1,3 +1,5 @@
+import { pendingInventoryCampaigns } from "./pending-campaigns";
+import { campaignInventoryTasks } from "./campaign-inventory-status";
 import { metaSearchConditions } from "./keyword-search";
 import { recentMetaDataVersions } from "./data-versions";
 import { realtimeCoverage, metaPeriodCovered, statusIsStale } from "./realtime-policy";
@@ -68,7 +70,7 @@ export async function dashboard(actor: Actor, params: URLSearchParams) {
   );
   const business = params.get("business");
   const scoped = allowed.filter((a) => !business || a.businessId === business);
-  if (!scoped.length) return { items: [], total: 0, page: 1, limited: false };
+  if (!scoped.length) return { items: [], pendingCampaigns:[], summary:undefined, total: 0, page: 1, limited: false };
   const q = (params.get("q") ?? "").slice(0, 200),
     state = params.get("state") ?? "all",
     campaign = params.get("campaign"),
@@ -231,11 +233,13 @@ export async function dashboard(actor: Actor, params: URLSearchParams) {
       "La selección cambió. Actualiza los elementos seleccionados.",
       409,
     );
+  const pendingCampaigns=await pendingInventoryCampaigns(actor,scoped.map(a=>a.id),{level,state,q,country});
   const limited = objects.length > 10000;
   const visible = objects.slice(0, 10000);
   if (!visible.length)
     return {
       items: [],
+      pendingCampaigns,
       total: 0,
       page: 1,
       limited,
@@ -382,6 +386,7 @@ export async function dashboard(actor: Actor, params: URLSearchParams) {
     ],
     LINK_CLICKS: ["link_click"],
   };
+  const inventoryTasks = await campaignInventoryTasks(actor, visible);
   let items = visible.map((o) => {
     const context = accountContext.get(o.accountId)!;
     const a = context.account,
@@ -509,6 +514,7 @@ export async function dashboard(actor: Actor, params: URLSearchParams) {
     if (stale) rating = "STALE";
     return {
       ...o,
+      campaignTask: inventoryTasks.get(o.aliasId + "|" + o.aliasCountry) ?? "NONE",
       stale,
       statusStale: statusIsStale(
         o.seenAt,
@@ -840,6 +846,7 @@ export async function dashboard(actor: Actor, params: URLSearchParams) {
   });
   return {
     items: reportedItems,
+    pendingCampaigns,
     total: items.length,
     page,
     limited,

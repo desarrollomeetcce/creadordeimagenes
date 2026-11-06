@@ -13,7 +13,8 @@ export function ThemeToggle() {
       sync();
     };
     window.addEventListener("storage", storage);
-    return () => window.removeEventListener("storage", storage);
+    window.addEventListener("studio-theme-change", sync);
+    return () => { window.removeEventListener("storage", storage); window.removeEventListener("studio-theme-change", sync); };
   }, []);
   return (
     <button
@@ -27,6 +28,7 @@ export function ThemeToggle() {
         document.documentElement.dataset.theme = value;
         setDark(!dark);
         try { localStorage.setItem(key, value); } catch { /* Appearance still works without storage. */ }
+        window.dispatchEvent(new Event("studio-theme-change"));
       }}
     >
       <span aria-hidden="true">{dark ? "☀" : "☾"}</span>

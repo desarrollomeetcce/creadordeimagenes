@@ -1,5 +1,6 @@
 import { parseDeliveryFilters } from "./state-filter";
 export type MetaStatusAck = {
+  inventoryCampaignTask?: "NONE" | "CREATE" | "STOP";
   objectId: string;
   accountId: string;
   level: string;
@@ -29,6 +30,7 @@ export function applyMetaStatusAck<
     return {
       ...item,
       status: ack.status,
+      ...(ack.inventoryCampaignTask ? { campaignTask: ack.inventoryCampaignTask } : {}),
       effectiveStatus: ack.effectiveStatus ?? "",
       seenAt: ack.seenAt,
       statusStale: ack.status === "ACTIVE",

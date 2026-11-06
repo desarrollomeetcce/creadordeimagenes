@@ -354,6 +354,8 @@ export async function metaRoutes(
         Object.fromEntries(req.nextUrl.searchParams),
       ),
     );
+  if (path === "inventory/sheet-activation/replace-meta" && method === "POST")
+    return send(await (await import("./inventory-meta-replace")).inventoryMetaReplace(actor, await body()));
   if (path === "inventory/sheet-activation/replace-batch" && method === "POST")
     return send(
       await (

@@ -2978,3 +2978,14 @@ Biblioteca solicita resultsOnly: galería y paginación incluyen archivos guarda
 ## 2026-11-05 · Reemplazo desde estado de Meta Ads
 
 Reemplazar en la hoja, dentro del detalle de un estado, cierra ese detalle y prepara el editor existente en la pantalla principal. Lleva nombre, lista, hoja física, país, período y etiqueta de hoja del elemento abierto; selecciona únicamente esa campaña entre las campañas actuales y enfoca/desplaza la sección principal. El detalle ya no crea un segundo editor dentro de su ventana. Misma revisión sale→entra, azar, antecedentes explícitos y confirmación/CAS, sin escritura al preparar ni llamadas adicionales de uso/historial. No cambia anuncios Meta ni cálculos.
+
+
+## 2026-11-06 · Meta compacto, reemplazo con anuncios y estados confirmados
+
+Cabecera Meta reutiliza la primera franja para pestañas, Compartir y tema. Actualizar vista conserva resaltado verde y consulta breve; las opciones contienen carga de catálogo/histórico y avance. Se retira recarga duplicada de datos guardados. Menú lateral responsive de altura completa, navegación desplazable y cuenta accesible, cajón nativo en móvil; las columnas de Proyectos siguen el ancho disponible.
+
+El detalle abre reemplazo en su misma ventana; selección abre ventana flotante con minimizar/restaurar/maximizar sin perder propuesta. Filtros compactos en una fila con grupo/uso/país, categoría y azar. Confirmación atómica por país conserva CAS y STOP/CREATE; Reemplazar cierra y Reemplazar + anuncios abre Proyectos en otra pestaña mediante selección privada de todos los entrantes. País y selección llegan antes de restaurar carpetas; no sobrescribir silenciosamente una carpeta de otro país.
+
+Desactivar ahora verifica/pausa todas las campañas vinculadas de cada saliente autorizado. La intención STOP se guarda antes de consultar Meta y persiste si rechaza o no confirma. El acuse actualiza activación/visibilidad mediante el mismo servicio financiero; una campaña pausada no apaga internamente el diplomado si hay otra sin pausa confirmada en ese país. Ventas/días/importes permanecen intactos. CREATE tiene proyección naranja separada de objetos y estadísticas Meta, y la publicación solo completa CREATE tras recibo verificado ACTIVE con permiso financiero; adjuntar/generar o crear PAUSED no activa el diplomado.
+
+Un editor de Inventario hereda acceso a todas las pestañas INVENTORY según la nueva instrucción explícita, con permiso actual revalidado en cada petición. No hereda hojas financieras/Totales/Asesores ni acceso Meta o a proyectos. Proyectos descubre e importa esos inventarios sin requerir rol OWNER. Sin migraciones nuevas en este bloque.

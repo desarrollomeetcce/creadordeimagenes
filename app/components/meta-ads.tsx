@@ -1,5 +1,10 @@
 "use client";
 import dynamic from "next/dynamic";
+import { createPortal } from "react-dom";
+import { studioRequest } from "./inventory-meta-picker";
+import type { PendingInventoryCampaign } from "../../lib/meta-ads/pending-campaigns";
+import { notifyAdvisorSalesChanged } from "./advisor-sales-events";
+import { invalidateGroupDirectories } from "./inventory-group-directory-cache";
 import { isObservedPartialPeriod, observedPeriodCost } from "../../lib/meta-ads/period-display";
 import { applyMetaStatusAck, matchesMetaStatusFilter, type MetaStatusAck } from "../../lib/meta-ads/status-ack";
 import { MetaKeywordSearch } from "./meta-keyword-search";
@@ -131,6 +136,7 @@ type Period = {
   since: string;
   until: string;
 };
+const MetaReplacementWindow=dynamic(()=>import("./meta-replacement-window").then(m=>m.MetaReplacementWindow));
 const MetaInventoryReplacement = dynamic(() => import("./inventory-sheet-replacement").then(m=>m.InventorySheetReplacement));
 export type Item = {
   aliasId: string | null;
@@ -150,6 +156,7 @@ export type Item = {
   timezone: string;
   businessName: string | null;
   status: string;
+  campaignTask?: "NONE" | "CREATE" | "STOP";
   effectiveStatus: string;
   objective: string | null;
   thumbnailUrl: string | null;
@@ -548,6 +555,8 @@ type MetaModuleAccess = {
   accountPreferencesRevision: number;
 };
 export function MetaAds({ role, userId }: { role: string; userId: string }) {
+  const [headerSlots,setHeaderSlots]=useState<{navigation:HTMLElement;share:HTMLElement}|null>(null);
+  useEffect(()=>{const navigation=document.getElementById("meta-navigation-slot"),share=document.getElementById("meta-share-slot");if(navigation&&share)setHeaderSlots({navigation,share});},[]);
   const [moduleAccess, setModuleAccess] = useState<MetaModuleAccess | null>(
     null,
   );
@@ -678,6 +687,7 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
     [accountListBusiness, setAccountListBusiness] = useState(""),
     [accountListPage, setAccountListPage] = useState(1),
     [items, setItems] = useState<Item[]>([]),
+    [pendingCampaigns,setPendingCampaigns]=useState<PendingInventoryCampaign[]>([]),
     [summary, setSummary] = useState<MetaSummary | null>(null),
     [total, setTotal] = useState(0),
     [limited, setLimited] = useState(false),
@@ -819,8 +829,6 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
     />
   );
   const [replacementBatch,setReplacementBatch]=useState<{listId:string;tableId:string;country:string;name:string;names:string[];since?:string;until?:string;sheetName?:string}|null>(null);
-  const replacementSection=useRef<HTMLElement>(null);
-  useEffect(()=>{if(!replacementBatch)return;const frame=requestAnimationFrame(()=>{replacementSection.current?.scrollIntoView({block:"start",behavior:"auto"});replacementSection.current?.focus({preventScroll:true})});return()=>cancelAnimationFrame(frame)},[replacementBatch]);
   const selectedIds = new Set(selectedObjects.map((o) => o.id));
   const summarySelectionKey = selectedObjects
     .filter(
@@ -1014,10 +1022,12 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
         setItems(remaining);
         setTotal(old => Math.max(0, old - (items.length - remaining.length)));
         setSelected(old => old ? applyMetaStatusAck(old, ack) : old);
-        setMessage("Estado actualizado en Meta. Los resultados anteriores se conservan.");
+        setMessage(ack.inventoryCampaignTask === "STOP" ? "Campaña pausada en Meta. El diplomado sigue por desactivar porque tiene otras campañas vinculadas sin pausa confirmada." : "Estado actualizado en Meta. Los resultados anteriores se conservan.");
       } catch (error) {
         setMessage((error as Error).message);
       } finally {
+        invalidateGroupDirectories();
+        notifyAdvisorSalesChanged();
         // Reconcile filters/counts once after a burst; no account directory or historical import.
         reconcileStatus();
         statusWritePending.current = false;
@@ -1507,6 +1517,7 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
           if (serial.current === current) {
             const reconciled = data.items.map((item: Item) => [...statusAcks.current.values()].reduce((row, ack) => applyMetaStatusAck(row, ack), item)).filter((item: Item) => matchesMetaStatusFilter(item, state));
             setItems(reconciled);
+            setPendingCampaigns(data.pendingCampaigns??[]);
             setSelected(old => old ? reconciled.find((item: Item) => item.id === old.id) ?? old : old);
             if (withSummary) {
               setSummary(data.summary ?? null);
@@ -2083,6 +2094,7 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
         <MetaStatusSwitch
           name={o.name}
           status={o.status}
+          pendingStop={o.campaignTask === "STOP"}
           checkedAt={o.seenAt}
           stale={o.statusStale}
           delivery={
@@ -2366,6 +2378,7 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
           <MetaStatusSwitch
             name={o.name}
             status={o.status}
+          pendingStop={o.campaignTask === "STOP"}
             checkedAt={o.seenAt}
             stale={o.statusStale}
             delivery={
@@ -2640,8 +2653,70 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
           onClose={() => setSharingWorkspace(false)}
         />
       )}
-      <div className="meta-section-toolbar">
-        <div className="row" role="tablist" aria-label="Secciones Meta Ads">
+      {headerSlots ? <>{createPortal(
+<div className="row" role="tablist" aria-label="Secciones Meta Ads">
+          {[
+            ["panel", "Rendimiento"],
+            ...(!viewOnly
+              ? [
+                  ["sync", "Sincronización de cuentas"],
+                  ["alerts", "Alertas"],
+                  ["accounts", "Cuentas publicitarias"],
+                ]
+              : []),
+            ...(owner ? [["connections", "Conexiones"]] : []),
+          ].map(([id, label]) => (
+            <button
+              type="button"
+              role="tab"
+              aria-selected={
+                id === "sync"
+                  ? syncOpen && tab === "panel"
+                  : tab === id && !(id === "panel" && syncOpen)
+              }
+              aria-expanded={
+                id === "sync" ? syncOpen && tab === "panel" : undefined
+              }
+              aria-controls={
+                id === "sync" && syncOpen && tab === "panel"
+                  ? "meta-account-sync-panel"
+                  : undefined
+              }
+              ref={id === "panel" ? performanceTab : undefined}
+              className={
+                (
+                  id === "sync"
+                    ? syncOpen && tab === "panel"
+                    : tab === id && !(id === "panel" && syncOpen)
+                )
+                  ? "primary"
+                  : ""
+              }
+              key={id}
+              onClick={() => {
+                if (id === "sync") {
+                  setTab("panel");
+                  setSyncOpen((v) => !v);
+                } else {
+                  setSyncOpen(false);
+                  setTab(id);
+                }
+              }}
+            >
+              {label}
+            </button>
+          ))}
+        </div>,headerSlots.navigation)}{createPortal(
+(moduleAccess?.canShare ?? role === "OWNER") && (
+          <button
+            type="button"
+            className="meta-share-button"
+            onClick={() => setSharingWorkspace(true)}
+          >
+            <span aria-hidden="true">↗</span> Compartir
+          </button>
+        ),headerSlots.share)}</> : <div className="meta-section-toolbar">
+<div className="row" role="tablist" aria-label="Secciones Meta Ads">
           {[
             ["panel", "Rendimiento"],
             ...(!viewOnly
@@ -2694,7 +2769,7 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
             </button>
           ))}
         </div>
-        {(moduleAccess?.canShare ?? role === "OWNER") && (
+{(moduleAccess?.canShare ?? role === "OWNER") && (
           <button
             type="button"
             className="meta-share-button"
@@ -2703,7 +2778,7 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
             <span aria-hidden="true">↗</span> Compartir
           </button>
         )}
-      </div>
+</div>}
       {message && (
         <aside className="notice meta-feedback" role="status">
           <span>{message}</span>
@@ -3672,16 +3747,7 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
                       >
                         Borrar filtros
                       </button>
-                      <button
-                        className="meta-refresh"
-                        type="button"
-                        onClick={reload}
-                        disabled={busy || loading}
-                        aria-label="Actualizar datos guardados"
-                        title="Actualizar vista con los datos guardados"
-                      >
-                        ↻
-                      </button>
+
                     </div>
                   </div>
                   <div
@@ -3773,10 +3839,7 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
                             (!moduleAccess?.primaryInitialized ||
                               primarySet.has(a.id)),
                         }))}
-                        onUpdated={visibleUpdated}
-                        onReconnect={() => setTab("connections")}
-                      />
-                      {chosen.some((a) => a.canSync) && (
+                        extraActions={<>                      {chosen.some((a) => a.canSync) && (
                         <button
                           type="button"
                           className="meta-live-refresh"
@@ -3796,11 +3859,15 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
                         </button>
                       )}
                       <MetaDataFreshness accounts={chosen} compact />
+</>}
+                        onUpdated={visibleUpdated}
+                        onReconnect={() => setTab("connections")}
+                      />
                       {bulkAliasControl()}
                     </div>
                   </div>
                 </div>
-                {replacementBatch&&<section ref={replacementSection} tabIndex={-1} aria-label="Reemplazar diplomados en Meta Ads"><MetaInventoryReplacement key={JSON.stringify(replacementBatch)} {...replacementBatch} source="meta" sheetName={replacementBatch.sheetName??"Selección de campañas"} since={replacementBatch.since??(calendar ? since : "")} until={replacementBatch.until??(calendar ? until : "")} onClose={()=>setReplacementBatch(null)} onChanged={async()=>{setReportRevision(n=>n+1);}}/></section>}
+
                 {view === "cards" && (
                   <div className="meta-result-controls">
                     {levelControls()}
@@ -3998,6 +4065,8 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
           )}
         </div>
       </FinancialTableWindow>
+      {replacementBatch&&<MetaReplacementWindow key={JSON.stringify([replacementBatch.listId,replacementBatch.tableId,replacementBatch.country])} scope={replacementBatch} onClose={()=>setReplacementBatch(null)} onChanged={async()=>{setReportRevision(n=>n+1);invalidateGroupDirectories();notifyAdvisorSalesChanged();}} onCompleted={notice=>{setMessage(notice);setReplacementBatch(null)}}/>}
+      {tab === "panel" && pendingCampaigns.length>0 && <aside className="meta-future-campaigns" aria-label="Diplomados por hacer campaña"><strong>Por hacer campaña · {pendingCampaigns.length}</strong><small>Preparación interna · no son campañas activas de Meta</small><div>{pendingCampaigns.map(p=><div key={p.aliasId+"|"+p.country}><span><b>{p.name}</b><small>{countryName(p.country)} · {p.createdPaused?"Creada, pendiente de activar":"Por hacer campaña"}</small></span><button type="button" disabled={!owner || busy} onClick={()=>{const target=window.open("about:blank","_blank");if(!target){setMessage("Permite abrir una pestaña nueva para continuar a Proyectos.");return;}target.opener=null;void studioRequest("/selections","POST",{listId:p.listId,country:p.country,itemIds:[p.itemId]}).then(s=>target.location.replace("?"+new URLSearchParams({view:"projects",selection:s.id}))).catch(e=>{target.close();setMessage(e.message)});}}>Anuncios ↗</button></div>)}</div></aside>}
       {selectionDetail && (
         <MetaSelectionDetail
           statusAck={statusAck}
@@ -4014,7 +4083,8 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
           item={selected}
           dataRevision={reportRevision}
           canReplace={owner && !viewOnly}
-          onReplace={request=>{setSelectedObjects(current=>[...current.filter(o=>o.level!=="campaign"),{id:selected.id,accountId:selected.accountId,level:"campaign"}]);setSelected(null);setDetailPeriod(null);setReplacementBatch(request)}}
+          onChanged={async()=>{setReportRevision(n=>n+1);invalidateGroupDirectories();notifyAdvisorSalesChanged();}}
+          onCompleted={notice=>{setMessage(notice);setSelected(null);setDetailPeriod(null)}}
           period={detailPeriod ?? (calendar ? "custom" : analysisPeriod)}
           onClose={() => {
             setSelected(null);
@@ -4033,25 +4103,28 @@ function MetaDetail({
   dataRevision,
   period,
   canReplace,
-  onReplace,
+  onChanged,
+  onCompleted,
   onClose,
 }: {
   item: Item;
   dataRevision: number;
   period: string;
   canReplace: boolean;
-  onReplace:(request:{listId:string;tableId:string;country:string;name:string;names:string[];since:string;until:string;sheetName:string})=>void;
+  onChanged:()=>Promise<void>;
+  onCompleted:(notice:string)=>void;
   onClose: () => void;
 }) {
   const replacement = o.level === "campaign" && o.alias?.tableId && o.alias?.inventorySheetId && o.aliasCountry && !o.alias.detached ? {listId:o.alias.inventorySheetId,tableId:o.alias.tableId,country:o.aliasCountry,name:o.alias.name} : null;
   const ref = useRef<HTMLDialogElement>(null);
-  useEffect(() => {
-    ref.current?.showModal();
-  }, []);
+  const [replacementOpen,setReplacementOpen]=useState(false),[minimized,setMinimized]=useState(false),[expanded,setExpanded]=useState(false);
+  useEffect(() => { if(minimized)ref.current?.close();else if(!ref.current?.open)ref.current?.showModal(); }, [minimized]);
   return (
+    <>
     <dialog
       ref={ref}
       className="meta-detail"
+      data-expanded={expanded || undefined}
       onCancel={e=>{if(e.target===e.currentTarget)onClose()}}
       onClick={(e) => {
         if (e.target !== e.currentTarget) return;
@@ -4065,12 +4138,13 @@ function MetaDetail({
           onClose();
       }}
     >
-      <div className="row spread">
+      <header className="row spread">
         <h2>{o.name}</h2>
+        <div className="meta-detail-window-actions"><button type="button" onClick={()=>setMinimized(true)} aria-label="Minimizar evaluación">−</button><button type="button" onClick={()=>setExpanded(v=>!v)} aria-label={expanded?"Restaurar tamaño de evaluación":"Maximizar evaluación"}>{expanded?"❐":"□"}</button>
         <button className="ui-close-button" type="button" onClick={onClose}>
           Cerrar
-        </button>
-      </div>
+        </button></div>
+      </header>
       <p>
         {o.campaignName} / {o.adsetName} / {o.accountName}
       </p>
@@ -4080,8 +4154,9 @@ function MetaDetail({
       <p className="meta-detail-alias">
         Inventario: <strong>{o.alias?.name ?? "Sin inventario"}</strong> · País:{" "}
         <strong>{countryName(o.aliasCountry)}</strong>
-        {canReplace && replacement && <button type="button" className="meta-inventory-replace-trigger" onClick={()=>onReplace({...replacement,names:[replacement.name],since:o.periods[period]?.since??"",until:o.periods[period]?.until??"",sheetName:o.alias?.table?.name??"Hoja sincronizada"})} title="Abrir reemplazo en la pantalla principal. Preparar reemplazo en la hoja: anterior por desactivar campaña y nuevo por hacer campaña. No modifica anuncios de Meta.">↔ Reemplazar en la hoja</button>}
+        {canReplace && replacement && <button type="button" className="meta-inventory-replace-trigger" onClick={()=>setReplacementOpen(v=>!v)} aria-expanded={replacementOpen}>↔ Reemplazar</button>}
       </p>
+      {replacementOpen && replacement && <MetaInventoryReplacement {...replacement} names={[replacement.name]} source="meta" sheetName={o.alias?.table?.name??"Hoja sincronizada"} since={o.periods[period]?.since??""} until={o.periods[period]?.until??""} onClose={()=>setReplacementOpen(false)} onChanged={onChanged} onCompleted={onCompleted}/>}
 
 
       {o.level === "campaign" && <CampaignTiming meta={campaignMetaTiming([{id:o.id,scheduledStart:o.scheduledStart,createdTime:o.createdTime,firstReport:o.firstDelivery}],new Date().toISOString(),o.timezone)}/>}
@@ -4177,6 +4252,8 @@ function MetaDetail({
       </p>
       <MetaObjectLink item={o} />
     </dialog>
+    {minimized&&<button type="button" className="meta-detail-dock" onClick={()=>setMinimized(false)}>↗ {replacementOpen?"Reemplazar":"Evaluación"} · {o.alias?.name??o.name}</button>}
+    </>
   );
 }
 function MetaSharing({

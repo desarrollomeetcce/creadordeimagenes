@@ -1,3 +1,5 @@
+import { inventoryMetaStatusChange } from "../meta-ads/inventory-sheet-activation";
+import { authorizeFinancialRequest,financialAccess,scopePermission } from "../meta-ads/financial-access";
 import { campaignPageDirectory } from "./page-directory";
 import { campaignPageIssue } from "./page-errors";
 import { z } from "zod";
@@ -413,6 +415,7 @@ async function receiptStep(
   step.receipt = result;
   const done = steps.every((s) => s.state === "DONE");
   await db.$transaction(async (tx) => {
+    if(step.kind === "VERIFY" || step.kind === "VERIFY_LIVE")await tx.$executeRaw`SELECT pg_advisory_xact_lock(884411)`;
     const written = await tx.creativeMetaLaunch.updateMany({
       where: { id: d.id, status: "PUBLISHING", revision: d.revision + 1 },
       data: {
@@ -432,12 +435,14 @@ async function receiptStep(
     ) {
       const config = d.config as CampaignConfig,
         item = (d.campaigns as CampaignItem[])[step.campaign];
-      const canonical = item.source?.itemId
+      let canonical = item.source?.itemId
         ? await tx.metaInventoryItem.findUnique({
             where: { id: item.source.itemId },
             select: { sheetId: true, name: true },
           })
         : null;
+      if(!canonical && item.source?.itemId){const legacy=await tx.metaAlias.findUnique({where:{id:item.source.itemId},select:{inventorySheetId:true,name:true}});if(legacy?.inventorySheetId)canonical={sheetId:legacy.inventorySheetId,name:legacy.name};}
+      const pendingAliases = canonical && item.source?.listId ? await tx.$queryRaw<{id:string}[]>`SELECT a.id FROM "MetaAlias" a JOIN "MetaEffectivenessSheet" s ON s.id=a."inventorySheetId" WHERE s.id=${item.source.listId} AND lower(a.name)=lower(${item.name}) AND jsonb_extract_path_text(s.config,'inventoryActivation','rows',a.id||'|'||${config.country},'campaignTask')='CREATE' AND COALESCE(jsonb_extract_path(s.config,'inventoryActivation','rows',a.id||'|'||${config.country},'metaOrigin','accountIds'),'[]'::jsonb) ? ${d.accountId}` : [];
       const aliases =
         canonical &&
         canonical.sheetId === item.source?.listId &&
@@ -447,9 +452,9 @@ async function receiptStep(
               where: {
                 inventorySheetId: item.source.listId,
                 name: { equals: item.name, mode: "insensitive" },
-                table: { defaultCountry: { in: [config.country, ""] } },
+                OR:[{table: { defaultCountry: { in: [config.country, ""] } }},{id:{in:pendingAliases.map(a=>a.id)}}],
               },
-              select: { id: true, table: { select: { defaultCountry: true } } },
+              select: { id: true, tableId:true, name:true, table: { select: { defaultCountry: true } } },
               take: 3,
             })
           : [];
@@ -457,7 +462,8 @@ async function receiptStep(
           (a) => a.table.defaultCountry === config.country,
         ),
         generic = aliases.filter((a) => !a.table.defaultCountry);
-      const alias =
+      const pending=aliases.filter(a=>pendingAliases.some(p=>p.id===a.id));
+      const alias = pending.length===1 ? pending[0] :
         aliases.length === 3
           ? null
           : exact.length === 1
@@ -520,6 +526,15 @@ async function receiptStep(
           create: { id: o.id, ...data },
           update: data,
         });
+      }
+      if(step.kind === "VERIFY_LIVE" && alias && result.confirmed.some((o:any)=>o.id===campaignId&&o.status==="ACTIVE") && item.source?.listId){
+        const listId=item.source.listId, access=await financialAccess(actor,tx);
+        if(scopePermission(access,"TAB:"+listId)==="EDIT"){
+          let cap:Awaited<ReturnType<typeof authorizeFinancialRequest>>|null=null;
+          try{cap=await authorizeFinancialRequest(actor,"inventory/sheet-activation","PATCH",new URLSearchParams(),{listId,tableId:alias.tableId},"TAB:"+listId)}catch{/* Publishing permission never grants financial editing. */}
+          const rows=await tx.$queryRaw<{task:string|null}[]>`SELECT jsonb_extract_path_text(config,'inventoryActivation','rows',${alias.id+"|"+config.country},'campaignTask') AS task FROM "MetaEffectivenessSheet" WHERE id=${listId}`;
+          if(cap && rows[0]?.task==="CREATE")await inventoryMetaStatusChange(tx,cap,{listId,tableId:alias.tableId,aliasId:alias.id,name:alias.name,country:config.country},{active:true,campaignTask:"NONE"});
+        }
       }
     }
     if (done)

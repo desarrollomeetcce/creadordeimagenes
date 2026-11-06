@@ -72,6 +72,7 @@ export function StudioColumns({
     }));
   return (
     <StudioMaxContext.Provider value={{maximized,setMaximized}}><div
+      data-compact={room<920||undefined}
       data-maximized={maximized || undefined}
       ref={root}
       className={"studio-columns" + (moving ? " studio-resizing" : "")}

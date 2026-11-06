@@ -55,12 +55,13 @@ test("Studio discovers shared inventories for project editors and country can be
     });
     const context = await studioContext(editor);
     assert(context.inventories.some((i) => i.id === lists[0].id));
-    assert(!context.inventories.some((i) => i.id === lists[1].id));
+    assert(context.inventories.some((i) => i.id === lists[1].id));
     assert.equal(
       (await studioInventory(editor, lists[0].id)).catalog.length,
       1,
     );
-    await assert.rejects(studioInventory(editor, lists[1].id));
+    assert.equal((await studioInventory(editor, lists[1].id)).catalog.length,0);
+    await assert.rejects(studioInventory(other, lists[1].id));
     const product = await createStudioProduct(editor, p.id, {
       name: "New folder",
       requestId: randomUUID(),
@@ -95,6 +96,7 @@ test("Studio discovers shared inventories for project editors and country can be
       ),
     );
     await assert.rejects(studioInventory(editor, lists[0].id));
+    await assert.rejects(studioInventory(editor, lists[1].id));
   } finally {
     await db.category.deleteMany({ where: { projectId: p.id } });
     await db.projectMember.deleteMany({ where: { projectId: p.id } });
