@@ -116,3 +116,5 @@
 .studio-sub-tab .studio-tab-generation{font-size:10px;white-space:nowrap;color:var(--muted);padding:3px 5px}.studio-sub-tab .studio-tab-generation[data-running]{color:var(--accent)}.studio-poster-meta .image-order-controls{margin-top:8px;width:100%;font-size:10px}.studio-poster-meta .image-order-controls .order-buttons{display:flex;gap:5px;flex-wrap:wrap}.studio-poster-meta .image-order-controls button{font-size:10px;padding:6px}
 
 .studio-composer-tools>.studio-price-field{flex:0 0 auto}.studio-composer-tools .studio-price-field input{width:125px;min-width:0;max-width:100%;padding:7px 8px;border-radius:7px;font-size:11px}
+
+.studio-publish-button[aria-busy=true]{display:flex;align-items:center;justify-content:center;gap:8px;cursor:progress}.studio-publish-button[aria-busy=true]:disabled{opacity:.85}.studio-publish-spinner{display:inline-block;width:14px;height:14px;flex:0 0 14px;border:2px solid currentColor;border-right-color:transparent;border-radius:50%;animation:studio-publish-spin .8s linear infinite}@keyframes studio-publish-spin{to{transform:rotate(360deg)}}@media(prefers-reduced-motion:reduce){.studio-publish-spinner{animation:none}}

@@ -147,12 +147,14 @@ export function StudioCampaign({
     [resourceReload, setResourceReload] = useState(0),
     [pageRetryAt, setPageRetryAt] = useState<number | null>(null),
     [busy, setBusy] = useState(false),
+    [retrying, setRetrying] = useState(false),
     [error, setError] = useState(""),
     [draft, setDraft] = useState<any>(null),
     [review, setReview] = useState(false),
     [spend, setSpend] = useState(false),
     [advanced, setAdvanced] = useState(false),
     [halted, setHalted] = useState(false);
+  const retryInFlight = useRef(false);
   useEffect(() => {
     if (!pageRetryAt) return;
     const timer = setTimeout(
@@ -437,6 +439,10 @@ export function StudioCampaign({
     };
   }, [draft?.id, draft?.status, halted]);
   const locked = busy || aiBusy || draft?.status === "PUBLISHING",
+    publishing = retrying || (draft?.status === "PUBLISHING" && !halted),
+    publishPercent = draft
+      ? Math.round((100 * draft.completed) / Math.max(1, draft.total))
+      : 0,
     account = accounts.find((a) => a.id === form.accountId),
     summary = launchSummary(items, { ...form, planVersion: 2 }),
     currency = account?.currency ?? draft?.config.currency ?? "",
@@ -445,6 +451,49 @@ export function StudioCampaign({
         style: "currency",
         currency: currency || "USD",
       }).format(n);
+  async function retryPublication() {
+    if (!draft || retryInFlight.current) return;
+    retryInFlight.current = true;
+    const context = aiContext.current;
+    setRetrying(true);
+    setBusy(true);
+    setError("");
+    try {
+      const resumable = draft.canResumeWait || draft.canResumeVerification;
+      const next = await studioRequest(
+        "/launches/" + draft.id + (resumable ? "/resume-wait" : ""),
+        resumable ? "POST" : "GET",
+        resumable ? { revision: draft.revision } : undefined,
+      );
+      if (aiContext.current !== context) return;
+      setDraft(next);
+      setHalted(false);
+    } catch (e) {
+      if (aiContext.current !== context) return;
+      // A lost resume response can still have advanced the saved attempt. Read
+      // its state before offering another request with an obsolete revision.
+      try {
+        const current = await studioRequest("/launches/" + draft.id);
+        if (aiContext.current !== context) return;
+        setDraft(current);
+        if (current.status === "PUBLISHING" || current.status === "PUBLISHED") {
+          setHalted(false);
+          return;
+        }
+      } catch {
+        if (aiContext.current !== context) return;
+      }
+      setError(
+        e instanceof Error
+          ? e.message
+          : "No se pudo reintentar la publicación.",
+      );
+    } finally {
+      retryInFlight.current = false;
+      setRetrying(false);
+      setBusy(false);
+    }
+  }
   function update(key: keyof CampaignConfig, value: unknown) {
     setForm((f) => ({
       ...f,
@@ -1419,73 +1468,52 @@ export function StudioCampaign({
           role="status"
         >
           <strong>
-            {draft.canResumeVerification
-              ? "Verificación pendiente"
-              : draft.waiting || draft.canResumeWait
-                ? "En espera de turno"
-                : (
-                    {
-                      DRAFT: "Borrador guardado",
-                      PUBLISHING: "Publicando en Meta…",
-                      PUBLISHED: "✓ Publicación confirmada por Meta",
-                      NEEDS_REVIEW: "Intento incompleto",
-                    } as any
-                  )[draft.status]}
+            {retrying
+              ? "Reintentando publicación…"
+              : draft.canResumeVerification
+                ? "Verificación pendiente"
+                : draft.waiting || draft.canResumeWait
+                  ? "En espera de turno"
+                  : (
+                      {
+                        DRAFT: "Borrador guardado",
+                        PUBLISHING: "Publicando en Meta…",
+                        PUBLISHED: "✓ Publicación confirmada por Meta",
+                        NEEDS_REVIEW: "Intento incompleto",
+                      } as any
+                    )[draft.status]}
           </strong>
-          {draft.status === "PUBLISHING" && (
-            <progress max={draft.total} value={draft.completed} />
+          {(retrying || draft.status === "PUBLISHING") && (
+            <progress
+              aria-label="Avance de publicación"
+              max={draft.total}
+              value={draft.completed}
+            />
           )}
-          <small>
-            {Math.round((100 * draft.completed) / Math.max(1, draft.total))} %
-            confirmado
-          </small>
+          <small>{publishPercent} % confirmado</small>
           {draft.waiting && (
             <p>
               El avance está guardado. Continuará automáticamente después de la
               espera, sin repetir los pasos confirmados.
             </p>
           )}
-          {(draft.canResumeWait || draft.canResumeVerification) && (
-            <>
-              <p>
-                {draft.canResumeVerification
-                  ? "Los pasos confirmados se conservan. Consulta de nuevo los estados para continuar sin crear anuncios duplicados."
-                  : "Este intento se detuvo antes de enviar la siguiente solicitud. Puedes continuar desde el avance guardado."}
-              </p>
-              <button
-                type="button"
-                disabled={locked}
-                onClick={async () => {
-                  const context = aiContext.current;
-                  setBusy(true);
-                  setError("");
-                  try {
-                    const next = await studioRequest(
-                      "/launches/" + draft.id + "/resume-wait",
-                      "POST",
-                      { revision: draft.revision },
-                    );
-                    if (aiContext.current !== context) return;
-                    setDraft(next);
-                    setHalted(false);
-                  } catch (e) {
-                    if (aiContext.current !== context) return;
-                    setError(
-                      e instanceof Error
-                        ? e.message
-                        : "No se pudo continuar el intento.",
-                    );
-                  } finally {
-                    setBusy(false);
-                  }
-                }}
-              >
-                {draft.canResumeVerification
-                  ? "Verificar y continuar"
-                  : "Continuar publicación"}
-              </button>
-            </>
-          )}
+          {!retrying &&
+            draft.status !== "PUBLISHING" &&
+            (draft.canResumeWait || draft.canResumeVerification || halted) && (
+              <>
+                <p>
+                  Se conserva la configuración y el avance confirmado al
+                  reintentar.
+                </p>
+                <button
+                  type="button"
+                  disabled={busy || aiBusy}
+                  onClick={() => void retryPublication()}
+                >
+                  Reintentar
+                </button>
+              </>
+            )}
           {draft.error &&
             !draft.canResumeWait &&
             !draft.canResumeVerification && (
@@ -1494,7 +1522,7 @@ export function StudioCampaign({
                 <p>{draft.error}</p>
               </details>
             )}
-          {(draft.status !== "PUBLISHING" || halted) && (
+          {!retrying && (draft.status !== "PUBLISHING" || halted) && (
             <div className="studio-campaign-recovery">
               <button
                 type="button"
@@ -1542,19 +1570,13 @@ export function StudioCampaign({
               {c.name} ↗
             </a>
           ))}
-          {halted && (
+          {!retrying && halted && draft.status === "PUBLISHING" && (
             <button
               type="button"
-              onClick={() =>
-                void studioRequest("/launches/" + draft.id)
-                  .then((d) => {
-                    setDraft(d);
-                    setHalted(false);
-                  })
-                  .catch((e) => setError(e.message))
-              }
+              disabled={busy || aiBusy}
+              onClick={() => void retryPublication()}
             >
-              Consultar estado y continuar pendientes
+              Reintentar
             </button>
           )}
         </div>
@@ -1564,12 +1586,18 @@ export function StudioCampaign({
           <button
             type="button"
             className="studio-publish-button"
+            aria-busy={publishing || aiBusy}
             disabled={locked || !aiConsent || !items.length}
             onClick={() => void suggest()}
           >
-            {aiBusy
-              ? "Preparando campañas con IA…"
-              : "Crear campañas pausadas con IA"}
+            {(publishing || aiBusy) && (
+              <span className="studio-publish-spinner" aria-hidden="true" />
+            )}
+            {publishing
+              ? `Publicando… ${publishPercent}%`
+              : aiBusy
+                ? "Preparando campañas con IA…"
+                : "Crear campañas pausadas con IA"}
           </button>
         ) : (
           <>
@@ -1583,10 +1611,16 @@ export function StudioCampaign({
             <button
               type="button"
               className="studio-publish-button"
+              aria-busy={publishing}
               disabled={locked || !items.length || !form.accountId || !country}
               onClick={() => void prepare(true)}
             >
-              ↗ Revisar y publicar
+              {publishing && (
+                <span className="studio-publish-spinner" aria-hidden="true" />
+              )}
+              {publishing
+                ? `Publicando… ${publishPercent}%`
+                : "↗ Revisar y publicar"}
             </button>
           </>
         )}
