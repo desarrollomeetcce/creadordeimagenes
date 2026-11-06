@@ -26,12 +26,13 @@ export function HistoryPanel() {
     [error, setError] = useState("");
   useEffect(() => {
     let active = true;
+    const controller = new AbortController();
     setBusy(true);
     setError("");
     const timer = setTimeout(() => {
       void fetch(
         `/api/audit/history?q=${encodeURIComponent(query)}&page=${page}`,
-        { cache: "no-store" },
+        { cache: "no-store", signal: controller.signal },
       )
         .then(async (response) => {
           const result = await response.json();
@@ -48,23 +49,28 @@ export function HistoryPanel() {
     }, 200);
     return () => {
       active = false;
+      controller.abort();
       clearTimeout(timer);
     };
   }, [query, page, refresh]);
   return (
-    <section className="stack">
-      <h1>Historial de actividad</h1>
-      <p className="muted">
-        Quién hizo qué y en qué proyecto, producto o subproducto. Abre una
-        actividad para ampliar los detalles. OWNER consulta todas las personas;
-        las demás cuentas autorizadas consultan sus propias operaciones.
-      </p>
-      <div className="fields">
-        <label>
-          Buscar actividad, persona, proyecto, producto o subproducto
+    <section className="stack utility-history">
+      <div className="utility-section-heading">
+        <div>
+          <span className="utility-eyebrow">Registro de actividad</span>
+          <h2>Todo en una línea de tiempo</h2>
+        </div>
+        <span className="utility-count">
+          {data?.total.toLocaleString("es-PE") ?? "…"} actividades
+        </span>
+      </div>
+      <div className="utility-search-toolbar">
+        <label className="utility-search">
+          <span aria-hidden="true">⌕</span>
           <input
+            type="search"
             aria-label="Filtrar historial"
-            placeholder="Ejemplo: Monitoreo o Cursos y Diplomados"
+            placeholder="Buscar persona, proyecto o actividad…"
             value={query}
             maxLength={200}
             onChange={(e) => {
@@ -78,7 +84,7 @@ export function HistoryPanel() {
           disabled={busy}
           onClick={() => setRefresh((n) => n + 1)}
         >
-          Actualizar historial
+          ↻ Actualizar
         </button>
       </div>
       {error && (
@@ -89,13 +95,13 @@ export function HistoryPanel() {
       {busy && <p role="status">Consultando actividades…</p>}
       {data && (
         <>
-          <p>
-            {data.total} actividades · página {data.page} de {data.pages}
-          </p>
-          <div className="stack" aria-busy={busy}>
+          <div className="history-timeline" aria-busy={busy}>
             {data.rows.map((row) => (
               <details className="panel history-entry" key={row.id}>
                 <summary>
+                  <span className="history-actor-avatar" aria-hidden="true">
+                    {row.actorName[0]?.toUpperCase() ?? "•"}
+                  </span>
                   <span className="history-entry-summary">
                     <span className="history-entry-person">
                       {row.actorName}
@@ -106,7 +112,7 @@ export function HistoryPanel() {
                         · Lima
                       </time>
                     </span>
-                    <span>{row.summary}</span>
+                    <strong>{row.summary}</strong>
                     <small className="muted">Ver detalles</small>
                   </span>
                 </summary>
@@ -164,7 +170,10 @@ export function HistoryPanel() {
           {data.total === 0 && (
             <p className="empty">No hay actividades para esta búsqueda.</p>
           )}
-          <div className="row">
+          <div className="utility-pagination">
+            <span>
+              Página {data.page} de {data.pages}
+            </span>
             <button
               disabled={busy || page <= 1}
               onClick={() => setPage((n) => n - 1)}

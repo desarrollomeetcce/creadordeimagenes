@@ -1,6 +1,8 @@
 "use client";
 import dynamic from "next/dynamic";
 import "./components/creative-workspace.css";
+import "./components/workspace-utilities.css";
+const utilityViews=["library","jobs","history","visual-audit","website"];
 const CreativeStudio = dynamic(()=>import("./components/creative-studio").then(m=>m.CreativeStudio),{loading:()=> <p role="status">Abriendo el estudio creativo…</p>});
 const ProjectImagePreview = dynamic(() => import("./components/project-image-preview").then(m => m.ProjectImagePreview));
 import {SidebarNavigation} from "./components/sidebar-navigation";
@@ -483,7 +485,7 @@ export default function Home() {
     account: "Mi cuenta",
     plans: "Mi plan",
     payments: "Ajustes de pago",
-    website: "Página web",
+    website: "Página y planes",
     collection: "Galería de afiches",
   };
   const navigate = (v: string) => {setSalesAdvisorPeriod(null);changeAddress({ view: v });};
@@ -519,14 +521,14 @@ export default function Home() {
           }} />
         </aside>
         <div className="workspace">
-          <header className={financialViews.includes(view) ? "topbar effectiveness-topbar financial-module-topbar" : view==="courses-ai"?"topbar courses-topbar":view==="projects"?"topbar studio-topbar":"topbar"}>
-            {view === "projects" ? <><span className="studio-topbar-brand">▦ Proyectos <strong>✦ Estudio creativo</strong><small>Un espacio. Todas tus posibilidades.</small></span><RoleGuide compact name={user.name} role={user.role}/><VisualAuditNotice compact key={user.id}/><a href="?view=library" target="_blank" rel="noopener noreferrer" title="Abrir Biblioteca">▧ Abrir Biblioteca ↗</a></> : view === "courses-ai" ? <><h1>Cursos IA</h1><div className="courses-topbar-actions"><button type="button" onClick={()=>window.dispatchEvent(new Event("share-courses"))}>Compartir</button><a href="/?view=ai&aiTab=connections">Ajustes IA</a></div></> : financialViews.includes(view) ? <div className="effectiveness-topbar-title"><div className="effectiveness-title-line"><h1>{titles[view]}</h1>{user.role==="OWNER"&&<button type="button" className="effectiveness-share-button" onClick={()=>window.dispatchEvent(new Event("share-effectiveness"))}>Compartir</button>}</div></div> : <span className="muted">{view === "metaads" ? "Análisis y control de Meta" : titles[view]}</span>}
+          <header className={utilityViews.includes(view)?"topbar utility-topbar":financialViews.includes(view) ? "topbar effectiveness-topbar financial-module-topbar" : view==="courses-ai"?"topbar courses-topbar":view==="projects"?"topbar studio-topbar":"topbar"}>
+            {view === "projects" ? <><span className="studio-topbar-brand">▦ Proyectos <strong>✦ Estudio creativo</strong><small>Un espacio. Todas tus posibilidades.</small></span><RoleGuide compact name={user.name} role={user.role}/><VisualAuditNotice compact key={user.id}/><a href="?view=library" target="_blank" rel="noopener noreferrer" title="Abrir Biblioteca">▧ Abrir Biblioteca ↗</a></> : utilityViews.includes(view)?<><div className="utility-title"><h1>{["history","visual-audit"].includes(view)?"Auditoría":titles[view]}</h1>{["history","visual-audit"].includes(view)&&<nav aria-label="Vistas de auditoría"><a href="?view=visual-audit" hidden={user.role!=="OWNER"} aria-current={view==="visual-audit"?"page":undefined} onClick={e=>{if(e.ctrlKey||e.metaKey||e.shiftKey||e.altKey)return;e.preventDefault();navigate("visual-audit")}}>Visual</a><a href="?view=history" aria-current={view==="history"?"page":undefined} onClick={e=>{if(e.ctrlKey||e.metaKey||e.shiftKey||e.altKey)return;e.preventDefault();navigate("history")}}>Historial</a></nav>}</div><div className="utility-account-context"><RoleGuide compact name={user.name} role={user.role}/><VisualAuditNotice compact key={user.id}/></div></>: view === "courses-ai" ? <><h1>Cursos IA</h1><div className="courses-topbar-actions"><button type="button" onClick={()=>window.dispatchEvent(new Event("share-courses"))}>Compartir</button><a href="/?view=ai&aiTab=connections">Ajustes IA</a></div></> : financialViews.includes(view) ? <div className="effectiveness-topbar-title"><div className="effectiveness-title-line"><h1>{titles[view]}</h1>{user.role==="OWNER"&&<button type="button" className="effectiveness-share-button" onClick={()=>window.dispatchEvent(new Event("share-effectiveness"))}>Compartir</button>}</div></div> : <span className="muted">{view === "metaads" ? "Análisis y control de Meta" : titles[view]}</span>}
             {view === "metaads" && <span className="meta-topbar-role">Rol: <strong>{user.role}</strong></span>}
-            {view !== "performance" && !financialViews.includes(view) && view !== "courses-ai" && view !== "ai" && view !== "projects" && <span className="badge">Producción publicitaria</span>}
+            {view !== "performance" && !utilityViews.includes(view) && !financialViews.includes(view) && view !== "courses-ai" && view !== "ai" && view !== "projects" && <span className="badge">Producción publicitaria</span>}
 
           </header>
-          <main className={financialViews.includes(view) ? "effectiveness-main" : view === "projects" ? "creative-projects-main" : ["library","jobs"].includes(view) ? "creative-library-main" : undefined}>
-            {!["metaads", ...financialViews, "performance", "courses-ai", "ai", "projects"].includes(view) && <div className={["projects","library","jobs"].includes(view) ? "creative-context-bar" : undefined}><RoleGuide compact={["projects","library","jobs"].includes(view)} name={user.name} role={user.role} /><VisualAuditNotice compact={["projects","library","jobs"].includes(view)} key={user.id} /></div>}
+          <main className={financialViews.includes(view) ? "effectiveness-main" : view === "projects" ? "creative-projects-main" : ["library","jobs"].includes(view) ? "creative-library-main explorer-desktop-main" : utilityViews.includes(view)?"utility-main":undefined}>
+            {![...utilityViews,"metaads", ...financialViews, "performance", "courses-ai", "ai", "projects"].includes(view) && <div className={["projects","library","jobs"].includes(view) ? "creative-context-bar" : undefined}><RoleGuide compact={["projects","library","jobs"].includes(view)} name={user.name} role={user.role} /><VisualAuditNotice compact={["projects","library","jobs"].includes(view)} key={user.id} /></div>}
             {project && view === "projects" && (
               <HierarchyBreadcrumbs
                 project={project}

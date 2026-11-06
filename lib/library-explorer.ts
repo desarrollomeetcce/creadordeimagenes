@@ -69,7 +69,11 @@ export async function libraryTree(
         name: true,
         categoryId: true,
         studio: true,
-        _count: { select: { variations: { where: { deletedAt: null, expired: false } } } },
+        _count: {
+          select: {
+            variations: { where: { deletedAt: null, expired: false } },
+          },
+        },
         deletedAt: true,
         category: {
           select: { deletedAt: true, project: { select: { deletedAt: true } } },
@@ -114,7 +118,16 @@ export async function libraryTree(
         sourceDeleted: !!(p.deletedAt || p.project.deletedAt),
       })),
       ...subs
-        .filter((sub) => !hiddenSubs.has(sub.id) && !((sub.studio as any)?.folderPending === true || ((sub.studio as any)?.folderPending === undefined && (sub.studio as any)?.country && !sub._count.variations)))
+        .filter(
+          (sub) =>
+            !hiddenSubs.has(sub.id) &&
+            !(
+              (sub.studio as any)?.folderPending === true ||
+              ((sub.studio as any)?.folderPending === undefined &&
+                (sub.studio as any)?.country &&
+                !sub._count.variations)
+            ),
+        )
         .map((p) => ({
           id: "subproduct:" + p.id,
           name: p.name,
@@ -180,6 +193,31 @@ async function destination(
 export async function explorerData(user: Actor, incoming: URLSearchParams) {
   const params = new URLSearchParams(incoming),
     tree = await libraryTree(user);
+  const query = z
+      .string()
+      .max(200)
+      .parse(params.get("q") ?? "")
+      .trim(),
+    words = query.split(/\s+/).filter(Boolean);
+  const imageSearch: Prisma.VariationWhereInput[] = words.map((word) => ({
+    OR: [
+      { id: { contains: word, mode: "insensitive" } },
+      { model: { contains: word, mode: "insensitive" } },
+      { subproduct: { name: { contains: word, mode: "insensitive" } } },
+      {
+        subproduct: {
+          category: { name: { contains: word, mode: "insensitive" } },
+        },
+      },
+      {
+        subproduct: {
+          category: {
+            project: { name: { contains: word, mode: "insensitive" } },
+          },
+        },
+      },
+    ],
+  }));
   const requested = params.get("folder") ?? "";
   if (
     requested &&
@@ -217,6 +255,7 @@ export async function explorerData(user: Actor, incoming: URLSearchParams) {
             : "");
   if (folder) await destination(user, folder, true);
   const foldersOnly =
+    !query &&
     !folder &&
     !["project", "product", "subproduct"].some((key) => params.get(key));
   const page = z.coerce
@@ -243,10 +282,13 @@ export async function explorerData(user: Actor, incoming: URLSearchParams) {
       404,
     );
   const locationKeys =
-    params.get("recursive") === "true" ||
-    (!incoming.has("folder") && params.get("recursive") !== "false")
-      ? subtree(tree, folder || "__root")
-      : new Set([folder || "__root"]);
+    query && !folder
+      ? new Set(["__root", ...tree.map((n) => n.id)])
+      : !!query ||
+          params.get("recursive") === "true" ||
+          (!incoming.has("folder") && params.get("recursive") !== "false")
+        ? subtree(tree, folder || "__root")
+        : new Set([folder || "__root"]);
   const authorized = await authorizedImages(user);
   const aliasAuthorized = await authorizedImages(user, true);
   const personal = folder.startsWith("folder:") ? folder.slice(7) : null;
@@ -257,7 +299,7 @@ export async function explorerData(user: Actor, incoming: URLSearchParams) {
       : review === "pending"
         ? { reviewStatus: "PENDING" }
         : {}),
-    AND: [authorized, locationFilter(user, locationKeys)],
+    AND: [authorized, locationFilter(user, locationKeys), ...imageSearch],
     ...(Object.keys(dates).length ? { createdAt: dates } : {}),
   };
   if (foldersOnly) where.id = "";
@@ -265,6 +307,13 @@ export async function explorerData(user: Actor, incoming: URLSearchParams) {
     userId: user.id,
     deletedAt: null,
     ...documentLocation(locationKeys),
+    ...(words.length
+      ? {
+          AND: words.map((word) => ({
+            name: { contains: word, mode: "insensitive" as const },
+          })),
+        }
+      : {}),
     ...(kind === "images" || foldersOnly ? { id: "" } : {}),
     ...(Object.keys(dates).length ? { createdAt: dates } : {}),
   };
@@ -275,6 +324,7 @@ export async function explorerData(user: Actor, incoming: URLSearchParams) {
     variation: {
       AND: [
         aliasAuthorized,
+        ...imageSearch,
         ...(review === "all"
           ? []
           : [{ reviewStatus: review === "approved" ? "APPROVED" : "PENDING" }]),
@@ -299,7 +349,8 @@ export async function explorerData(user: Actor, incoming: URLSearchParams) {
     ],
     ...(user.role === "OWNER" ? {} : { actorId: user.id }),
     ...(Object.keys(dates).length ? { createdAt: dates } : {}),
-    ...(personal ||
+    ...(query ||
+    personal ||
     foldersOnly ||
     folder === "loose:root" ||
     kind === "documents" ||
@@ -328,8 +379,8 @@ export async function explorerData(user: Actor, incoming: URLSearchParams) {
         mime: true,
         size: true,
         generationReady: true,
-        previewPath:true,
-        path:true,
+        previewPath: true,
+        path: true,
         createdAt: true,
       },
       take: limit,
@@ -339,29 +390,31 @@ export async function explorerData(user: Actor, incoming: URLSearchParams) {
         { id: "asc" },
       ],
     }),
-    db.generationJob.groupBy({
-      by: ["status"],
-      where: {
-        AND: [
-          ...(personal || folder === "loose:root"
-            ? [{ id: "" }]
-            : [scope.where]),
-          user.role === "OWNER"
-            ? {
-                OR: [
-                  scope.access ?? { id: "" },
-                  { projectId: "connection-test" },
-                ],
-              }
-            : (scope.access ?? { id: "" }),
-        ],
-        ...(user.role !== "OWNER"
-          ? { OR: [{ status: "COMPLETED" }, { actorId: user.id }] }
-          : {}),
-        ...(Object.keys(dates).length ? { createdAt: dates } : {}),
-      },
-      _count: true,
-    }),
+    query
+      ? Promise.resolve([])
+      : db.generationJob.groupBy({
+          by: ["status"],
+          where: {
+            AND: [
+              ...(personal || folder === "loose:root"
+                ? [{ id: "" }]
+                : [scope.where]),
+              user.role === "OWNER"
+                ? {
+                    OR: [
+                      scope.access ?? { id: "" },
+                      { projectId: "connection-test" },
+                    ],
+                  }
+                : (scope.access ?? { id: "" }),
+            ],
+            ...(user.role !== "OWNER"
+              ? { OR: [{ status: "COMPLETED" }, { actorId: user.id }] }
+              : {}),
+            ...(Object.keys(dates).length ? { createdAt: dates } : {}),
+          },
+          _count: true,
+        }),
     db.libraryDocument.count({ where: documentWhere }),
     db.generationJob.count({ where: pendingWhere }),
     db.libraryImageCopy.count({ where: copyWhere }),
@@ -604,21 +657,23 @@ export async function explorerData(user: Actor, incoming: URLSearchParams) {
           },
         ],
       };
-  const excluded = await db.variation.count({
-    where: {
-      AND: [
-        historyVisible,
-        removedLocation,
-        {
-          OR: [
-            { deletedAt: { not: null } },
-            { libraryExclusions: { some: { userId: user.id } } },
+  const excluded = query
+    ? 0
+    : await db.variation.count({
+        where: {
+          AND: [
+            historyVisible,
+            removedLocation,
+            {
+              OR: [
+                { deletedAt: { not: null } },
+                { libraryExclusions: { some: { userId: user.id } } },
+              ],
+            },
           ],
+          ...(Object.keys(dates).length ? { createdAt: dates } : {}),
         },
-      ],
-      ...(Object.keys(dates).length ? { createdAt: dates } : {}),
-    },
-  });
+      });
   const copyLocation = foldersOnly
     ? {}
     : { destinationKey: { in: [...locationKeys] } };
@@ -629,59 +684,64 @@ export async function explorerData(user: Actor, incoming: URLSearchParams) {
     broughtDocuments,
     broughtImages,
     broughtRemoved,
-  ] = await Promise.all([
-    db.libraryImageCopy.count({
-      where: {
-        userId: user.id,
-        ...copyLocation,
-        deletedAt: { not: null },
-        variation: aliasAuthorized,
-        ...(Object.keys(dates).length ? { createdAt: dates } : {}),
-      },
-    }),
-    db.libraryDocument.count({
-      where: {
-        userId: user.id,
-        ...(foldersOnly ? {} : documentLocation(locationKeys)),
-        deletedAt: { not: null },
-        ...(Object.keys(dates).length ? { createdAt: dates } : {}),
-      },
-    }),
-    db.libraryImageCopy.count({
-      where: {
-        userId: user.id,
-        ...copyLocation,
-        variation: aliasAuthorized,
-        ...(Object.keys(dates).length ? { createdAt: dates } : {}),
-      },
-    }),
-    db.libraryDocument.count({
-      where: {
-        userId: user.id,
-        ...(foldersOnly ? {} : documentLocation(locationKeys)),
-        ...(Object.keys(dates).length ? { createdAt: dates } : {}),
-      },
-    }),
-    db.libraryItem.count({
-      where: {
-        userId: user.id,
-        broughtAt: Object.keys(dates).length ? dates : { not: null },
-        variation: {
-          AND: [historyVisible, ...(foldersOnly ? [] : [scopedLocation])],
-        },
-      },
-    }),
-    db.libraryExclusion.count({
-      where: {
-        userId: user.id,
-        broughtAt: Object.keys(dates).length ? dates : { not: null },
-        ...(foldersOnly ? {} : { destinationKey: { in: [...locationKeys] } }),
-        variation: historyVisible,
-      },
-    }),
-  ]);
+  ] = query
+    ? [0, 0, 0, 0, 0, 0]
+    : await Promise.all([
+        db.libraryImageCopy.count({
+          where: {
+            userId: user.id,
+            ...copyLocation,
+            deletedAt: { not: null },
+            variation: aliasAuthorized,
+            ...(Object.keys(dates).length ? { createdAt: dates } : {}),
+          },
+        }),
+        db.libraryDocument.count({
+          where: {
+            userId: user.id,
+            ...(foldersOnly ? {} : documentLocation(locationKeys)),
+            deletedAt: { not: null },
+            ...(Object.keys(dates).length ? { createdAt: dates } : {}),
+          },
+        }),
+        db.libraryImageCopy.count({
+          where: {
+            userId: user.id,
+            ...copyLocation,
+            variation: aliasAuthorized,
+            ...(Object.keys(dates).length ? { createdAt: dates } : {}),
+          },
+        }),
+        db.libraryDocument.count({
+          where: {
+            userId: user.id,
+            ...(foldersOnly ? {} : documentLocation(locationKeys)),
+            ...(Object.keys(dates).length ? { createdAt: dates } : {}),
+          },
+        }),
+        db.libraryItem.count({
+          where: {
+            userId: user.id,
+            broughtAt: Object.keys(dates).length ? dates : { not: null },
+            variation: {
+              AND: [historyVisible, ...(foldersOnly ? [] : [scopedLocation])],
+            },
+          },
+        }),
+        db.libraryExclusion.count({
+          where: {
+            userId: user.id,
+            broughtAt: Object.keys(dates).length ? dates : { not: null },
+            ...(foldersOnly
+              ? {}
+              : { destinationKey: { in: [...locationKeys] } }),
+            variation: historyVisible,
+          },
+        }),
+      ]);
   return {
     orders,
+    query,
     foldersOnly,
     inflight,
     inflightTotal,
@@ -701,7 +761,11 @@ export async function explorerData(user: Actor, incoming: URLSearchParams) {
         user.role !== "OBSERVER" &&
         (user.role === "OWNER" || v.job.actorId === user.id),
     })),
-    documents:documents.map(({path,previewPath,...d})=>({...d,large:path.startsWith("large:"),hasPreview:!!previewPath})),
+    documents: documents.map(({ path, previewPath, ...d }) => ({
+      ...d,
+      large: path.startsWith("large:"),
+      hasPreview: !!previewPath,
+    })),
     total,
     page,
     pages: Math.max(
@@ -709,12 +773,14 @@ export async function explorerData(user: Actor, incoming: URLSearchParams) {
       Math.ceil((total + inflightTotal) / limit),
       Math.ceil(documentCount / limit),
     ),
-    counts: {
-      ...Object.fromEntries(counts.map((c) => [c.status, c._count])),
-      DELETED: excluded + removedCopies + removedDocuments,
-      BROUGHT:
-        broughtCopies + broughtDocuments + broughtImages + broughtRemoved,
-    },
+    counts: query
+      ? {}
+      : {
+          ...Object.fromEntries(counts.map((c) => [c.status, c._count])),
+          DELETED: excluded + removedCopies + removedDocuments,
+          BROUGHT:
+            broughtCopies + broughtDocuments + broughtImages + broughtRemoved,
+        },
   };
 }
 export async function explorerRoutes(
@@ -794,16 +860,33 @@ export async function explorerRoutes(
         where: { id: parts[2], userId: user.id, deletedAt: null },
       });
       demand(d, "Archivo no disponible.", 404);
-      if(req.method==='GET'){
-        const preview=req.nextUrl.searchParams.get('preview')==='1';
-        const filePath=preview&&d.previewPath?d.previewPath:d.path;
-        const headers={'Content-Type':preview&&d.previewPath?'image/webp':d.mime,'Content-Disposition':(preview?'inline':'attachment')+"; filename*=UTF-8''"+encodeURIComponent(d.name),'Cache-Control':'private, no-store','X-Content-Type-Options':'nosniff'};
-        if(filePath.startsWith('large:')){
-          if(preview)return new Response(null,{status:404,headers:{'Cache-Control':'no-store'}});
-          const result=await (await import('./large-uploads')).largeAssetStream(filePath,req.headers.get('range'));
-          return new Response(result.stream,{status:result.status,headers:{...headers,...result.headers}});
+      if (req.method === "GET") {
+        const preview = req.nextUrl.searchParams.get("preview") === "1";
+        const filePath = preview && d.previewPath ? d.previewPath : d.path;
+        const headers = {
+          "Content-Type": preview && d.previewPath ? "image/webp" : d.mime,
+          "Content-Disposition":
+            (preview ? "inline" : "attachment") +
+            "; filename*=UTF-8''" +
+            encodeURIComponent(d.name),
+          "Cache-Control": "private, no-store",
+          "X-Content-Type-Options": "nosniff",
+        };
+        if (filePath.startsWith("large:")) {
+          if (preview)
+            return new Response(null, {
+              status: 404,
+              headers: { "Cache-Control": "no-store" },
+            });
+          const result = await (
+            await import("./large-uploads")
+          ).largeAssetStream(filePath, req.headers.get("range"));
+          return new Response(result.stream, {
+            status: result.status,
+            headers: { ...headers, ...result.headers },
+          });
         }
-        return new Response(fileStream(await load(filePath)),{headers});
+        return new Response(fileStream(await load(filePath)), { headers });
       }
       if (req.method === "DELETE") {
         demand(

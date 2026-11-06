@@ -2,6 +2,7 @@
 import dynamic from "next/dynamic";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { StudioColumns, StudioMaximize } from "./studio-columns";
+import { SheetSearchSelect } from "./sheet-search-select";
 import { SearchSelect } from "./search-select";
 import { studioRequest } from "./inventory-meta-picker";
 import { StudioCampaign } from "./studio-campaign";
@@ -175,16 +176,52 @@ export function CreativeStudio({ userId }: { userId: string }) {
   }
   const contextRef = useRef(context);
   contextRef.current = context;
-  function unpinnedIds(id: string): string[] { try { const value = JSON.parse(localStorage.getItem("studio-unpinned:v1:"+userId+":"+id) || "[]"); return Array.isArray(value) ? value.filter((x): x is string => typeof x === "string") : []; } catch { return []; } }
-  function visibleProduct(p: any) { const hidden = unpinnedIds(p.id); return { ...p, subproducts: p.subproducts.filter((s: any) => !hidden.includes(s.id)) }; }
+  function unpinnedIds(id: string): string[] {
+    try {
+      const value = JSON.parse(
+        localStorage.getItem("studio-unpinned:v1:" + userId + ":" + id) || "[]",
+      );
+      return Array.isArray(value)
+        ? value.filter((x): x is string => typeof x === "string")
+        : [];
+    } catch {
+      return [];
+    }
+  }
+  function visibleProduct(p: any) {
+    const hidden = unpinnedIds(p.id);
+    return {
+      ...p,
+      subproducts: p.subproducts.filter((s: any) => !hidden.includes(s.id)),
+    };
+  }
   async function removeSubproduct(sub: any) {
-    if (!confirm(`¿Desfijar «${sub.name}» de este espacio de trabajo? Sus afiches, carpeta y campañas se conservarán. Puedes volver a seleccionarlo desde grupos.`)) return;
-    try { localStorage.setItem("studio-unpinned:v1:"+userId+":"+product.id, JSON.stringify([...new Set([...unpinnedIds(product.id), sub.id])])); } catch { throw Error("No se pudo guardar la selección en este navegador."); }
+    if (
+      !confirm(
+        `¿Desfijar «${sub.name}» de este espacio de trabajo? Sus afiches, carpeta y campañas se conservarán. Puedes volver a seleccionarlo desde grupos.`,
+      )
+    )
+      return;
+    try {
+      localStorage.setItem(
+        "studio-unpinned:v1:" + userId + ":" + product.id,
+        JSON.stringify([...new Set([...unpinnedIds(product.id), sub.id])]),
+      );
+    } catch {
+      throw Error("No se pudo guardar la selección en este navegador.");
+    }
     const remaining = product.subproducts.filter((s: any) => s.id !== sub.id);
     setProduct((p: any) => ({ ...p, subproducts: remaining }));
-    setSelected((p) => { const next = { ...p }; delete next[sub.id]; return next; });
-    setTargetSubs((ids) => ids.filter(id => id !== sub.id));
-    if (activeSub === sub.id) { setActiveSub(remaining[0]?.id ?? ""); setPage(1); }
+    setSelected((p) => {
+      const next = { ...p };
+      delete next[sub.id];
+      return next;
+    });
+    setTargetSubs((ids) => ids.filter((id) => id !== sub.id));
+    if (activeSub === sub.id) {
+      setActiveSub(remaining[0]?.id ?? "");
+      setPage(1);
+    }
     setNotice("Desfijado. Sus afiches y carpeta se conservan.");
   }
   async function chooseProduct(id: string, initialSub?: string) {
@@ -270,8 +307,12 @@ export function CreativeStudio({ userId }: { userId: string }) {
             categoryId,
             query.get("subproduct") ?? query.get("gallery") ?? undefined,
           );
-        if (c.inventories.length === 1)
-          setInventoryId((x) => x || c.inventories[0].id);
+        if (c.inventories.length)
+          setInventoryId((x) =>
+            c.inventories.some((i: any) => i.id === x)
+              ? x
+              : c.inventories[0].id,
+          );
       })
       .catch((e) => {
         if (alive) setError(e.message);
@@ -283,7 +324,13 @@ export function CreativeStudio({ userId }: { userId: string }) {
       alive = false;
     };
   }, [userId]);
-  useEffect(() => { if (!product || loading) return; const query = new URLSearchParams(window.location.search); if (activeSub) query.set("subproduct",activeSub); else query.delete("subproduct"); history.replaceState(null,"","?"+query); }, [activeSub, product?.id, loading]);
+  useEffect(() => {
+    if (!product || loading) return;
+    const query = new URLSearchParams(window.location.search);
+    if (activeSub) query.set("subproduct", activeSub);
+    else query.delete("subproduct");
+    history.replaceState(null, "", "?" + query);
+  }, [activeSub, product?.id, loading]);
   useEffect(() => {
     setGallery({ items: [], total: 0, pages: 1 });
     if (activeSub) void refreshGallery().catch((e) => setError(e.message));
@@ -293,9 +340,22 @@ export function CreativeStudio({ userId }: { userId: string }) {
   }, [product?.id, prompts]);
   const importedSelection = useRef("");
   useEffect(() => {
-    if (!pendingSelection || !product || !inventoryId || importedSelection.current === pendingSelection.id || busy || loading) return;
+    if (
+      !pendingSelection ||
+      !product ||
+      !inventoryId ||
+      importedSelection.current === pendingSelection.id ||
+      busy ||
+      loading
+    )
+      return;
     importedSelection.current = pendingSelection.id;
-    void run(() => addItems(pendingSelection.items.map((i: any) => i.id), pendingSelection.country));
+    void run(() =>
+      addItems(
+        pendingSelection.items.map((i: any) => i.id),
+        pendingSelection.country,
+      ),
+    );
   }, [pendingSelection, product?.id, inventoryId, busy, loading]);
   function draftProject(prompt: string, s: any) {
     if (project) draftProjects.current.set(project.id, { prompt, settings: s });
@@ -354,7 +414,6 @@ export function CreativeStudio({ userId }: { userId: string }) {
     setZone("canvas");
   }
   async function changeCountry(value: string) {
-    setCountry(value);
     if (product) {
       await studioRequest("/products/" + product.id, "PATCH", {
         country: value,
@@ -364,9 +423,12 @@ export function CreativeStudio({ userId }: { userId: string }) {
         studio: { ...p.studio, country: value },
       }));
     }
+    setCountry(value);
   }
   async function reloadProduct() {
-    const next = visibleProduct(await studioRequest("/products/" + productRef.current.id));
+    const next = visibleProduct(
+      await studioRequest("/products/" + productRef.current.id),
+    );
     setProduct(next);
     setPrompts((p) => ({
       ...Object.fromEntries(next.subproducts.map((s: any) => [s.id, s.prompt])),
@@ -382,7 +444,16 @@ export function CreativeStudio({ userId }: { userId: string }) {
       "POST",
       { listId: inventoryId, itemIds: ids },
     );
-    try { localStorage.setItem("studio-unpinned:v1:"+userId+":"+product.id, JSON.stringify(unpinnedIds(product.id).filter(id => !added.some((s: any) => s.id === id)))); } catch {}
+    try {
+      localStorage.setItem(
+        "studio-unpinned:v1:" + userId + ":" + product.id,
+        JSON.stringify(
+          unpinnedIds(product.id).filter(
+            (id) => !added.some((s: any) => s.id === id),
+          ),
+        ),
+      );
+    } catch {}
     await reloadProduct();
     if (added.length) {
       setActiveSub(added[0].id);
@@ -415,7 +486,16 @@ export function CreativeStudio({ userId }: { userId: string }) {
       "POST",
       { names: [manualName.trim()] },
     );
-    try { localStorage.setItem("studio-unpinned:v1:"+userId+":"+product.id, JSON.stringify(unpinnedIds(product.id).filter(id => !added.some((s: any) => s.id === id)))); } catch {}
+    try {
+      localStorage.setItem(
+        "studio-unpinned:v1:" + userId + ":" + product.id,
+        JSON.stringify(
+          unpinnedIds(product.id).filter(
+            (id) => !added.some((s: any) => s.id === id),
+          ),
+        ),
+      );
+    } catch {}
     await reloadProduct();
     setActiveSub(added[0].id);
     setManualName("");
@@ -559,7 +639,7 @@ export function CreativeStudio({ userId }: { userId: string }) {
       <StudioColumns zone={zone}>
         <aside className="studio-pane studio-project">
           <header className="studio-pane-title">
-            <StudioMaximize pane="project" label="Tu proyecto"/>
+            <StudioMaximize pane="project" label="Tu proyecto" />
             <span className="studio-step mint">01</span>
             <div>
               <span className="studio-eyebrow">DALE UNA DIRECCIÓN</span>
@@ -744,48 +824,69 @@ export function CreativeStudio({ userId }: { userId: string }) {
                 ✓ Guardar proyecto
               </button>
               <div className="studio-section-divider" />
-              <div className="studio-project-picker">
+              <div className="studio-project-picker studio-product-picker">
                 <SearchSelect
                   label="Producto / carpeta"
+                  hideEmpty
                   value={productQuery}
-                  onChange={setProductQuery}
+                  disabled={busy || loading}
+                  onChange={(value) => {
+                    setProductQuery(value);
+                    if (product && value !== product.name) {
+                      setProduct(null);
+                      setActiveSub("");
+                      setCountry("");
+                      setTargetSubs([]);
+                      setSelected({});
+                    }
+                  }}
                   onSelect={(o) => void run(() => chooseProduct(o.id))}
                   options={names(project.categories)}
                 />
-                <button
-                  type="button"
-                  title={
-                    productExists ? "Ya existe el producto" : "Crear producto"
-                  }
-                  disabled={
-                    busy ||
-                    !productQuery.trim() ||
-                    productExists ||
-                    !country ||
-                    !project.canEdit
-                  }
-                  onClick={() => void run(createProduct)}
-                >
-                  ＋ Crear
-                </button>
               </div>
-              <label>
-                País
-                <select
-                  aria-label="País del producto"
-                  value={country}
-                  onChange={(e) =>
-                    void run(() => changeCountry(e.target.value))
-                  }
-                >
-                  <option value="">Selecciona un país</option>
-                  {context.countries.map((c: any) => (
-                    <option key={c.code} value={c.code}>
-                      {c.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
+              <div className="studio-country-create-row">
+                <div className="studio-country-choice">
+                  <span>
+                    País de destino{" "}
+                    {product && country && <small>✓ Guardado</small>}
+                  </span>
+                  <SheetSearchSelect
+                    label="País de destino"
+                    placeholder={
+                      !product ? "Sin país por ahora" : "Selecciona un país"
+                    }
+                    value={country}
+                    disabled={busy}
+                    options={[
+                      ...(!product
+                        ? [{ value: "", label: "Sin país por ahora" }]
+                        : []),
+                      ...context.countries.map((c: any) => ({
+                        value: c.code,
+                        label: c.name + " · " + c.code,
+                      })),
+                    ]}
+                    onSelect={(value) => void run(() => changeCountry(value))}
+                  />
+                </div>
+                {!productExists && (
+                  <button
+                    type="button"
+                    className="studio-create-product"
+                    onMouseDown={(e) => e.preventDefault()}
+                    disabled={busy || !productQuery.trim() || !project.canEdit}
+                    onClick={() => void run(createProduct)}
+                    title="Crear la carpeta con el nombre indicado"
+                  >
+                    ＋ Crear carpeta
+                  </button>
+                )}
+              </div>
+              {!product && (
+                <small className="muted studio-country-hint">
+                  Puedes elegir el país ahora o antes de preparar la campaña.
+                </small>
+              )}
               {product && (
                 <>
                   <div className="studio-inventory-launch">
@@ -882,9 +983,22 @@ export function CreativeStudio({ userId }: { userId: string }) {
                             {s.name.slice(0, 1)}
                           </span>
                           <span>{s.name}</span>
-                          <small className="studio-folder-status">{s.folderExists ? `${s.folderCount ?? 0} afiches · Carpeta existente` : "Nueva carpeta · Por guardar"}</small>
+                          <small className="studio-folder-status">
+                            {s.folderExists
+                              ? `${s.folderCount ?? 0} afiches · Carpeta existente`
+                              : "Nueva carpeta · Por guardar"}
+                          </small>
                         </button>
-                        <button type="button" className="studio-unpin" aria-label={"Desfijar " + s.name} title="Desfijar sin borrar" disabled={busy} onClick={() => void run(() => removeSubproduct(s))}>×</button>
+                        <button
+                          type="button"
+                          className="studio-unpin"
+                          aria-label={"Desfijar " + s.name}
+                          title="Desfijar sin borrar"
+                          disabled={busy}
+                          onClick={() => void run(() => removeSubproduct(s))}
+                        >
+                          ×
+                        </button>
                       </div>
                     ))}
                   </div>
@@ -936,7 +1050,8 @@ export function CreativeStudio({ userId }: { userId: string }) {
           className="studio-pane studio-canvas"
           aria-label="Afiches del producto"
         >
-          <header className="studio-pane-title"><StudioMaximize pane="canvas" label="Afiches"/>
+          <header className="studio-pane-title">
+            <StudioMaximize pane="canvas" label="Afiches" />
             <span className="studio-step amber">02</span>
             <div>
               <span className="studio-eyebrow">EXPLORA. CREA. ELIGE.</span>
@@ -953,20 +1068,29 @@ export function CreativeStudio({ userId }: { userId: string }) {
             >
               {product.subproducts.map((s: any) => (
                 <div className="studio-sub-tab" key={s.id}>
-                <button
-                  type="button"
-                  aria-pressed={activeSub === s.id}
-                  onClick={() => {
-                    setActiveSub(s.id);
-                    setPage(1);
-                  }}
-                >
-                  {s.name}
-                  {selected[s.id]?.length ? (
-                    <span>{selected[s.id].length} ✓</span>
-                  ) : null}
-                </button>
-                <button type="button" className="studio-remove-tab" aria-label={"Desfijar " + s.name} title={"Desfijar " + s.name} disabled={busy} onClick={() => void run(() => removeSubproduct(s))}>×</button>
+                  <button
+                    type="button"
+                    aria-pressed={activeSub === s.id}
+                    onClick={() => {
+                      setActiveSub(s.id);
+                      setPage(1);
+                    }}
+                  >
+                    {s.name}
+                    {selected[s.id]?.length ? (
+                      <span>{selected[s.id].length} ✓</span>
+                    ) : null}
+                  </button>
+                  <button
+                    type="button"
+                    className="studio-remove-tab"
+                    aria-label={"Desfijar " + s.name}
+                    title={"Desfijar " + s.name}
+                    disabled={busy}
+                    onClick={() => void run(() => removeSubproduct(s))}
+                  >
+                    ×
+                  </button>
                 </div>
               ))}
               <button
@@ -1321,7 +1445,8 @@ export function CreativeStudio({ userId }: { userId: string }) {
           />
         ) : (
           <aside className="studio-pane studio-campaign studio-campaign-empty">
-            <header className="studio-pane-title"><StudioMaximize pane="campaign" label="De afiche a anuncio"/>
+            <header className="studio-pane-title">
+              <StudioMaximize pane="campaign" label="De afiche a anuncio" />
               <span className="studio-step violet">03</span>
               <div>
                 <span className="studio-eyebrow">DEL ESTUDIO A META</span>
@@ -1341,15 +1466,22 @@ export function CreativeStudio({ userId }: { userId: string }) {
       {picker && (
         <InventoryGroupEditor
           directory={picker}
-          onUsageLoaded={usage=>{const next={...picker,...usage,usageReady:true};inventoryCache.current.set(picker.listId,next);setPicker(next);}}
+          onUsageLoaded={(usage) => {
+            const next = { ...picker, ...usage, usageReady: true };
+            inventoryCache.current.set(picker.listId, next);
+            setPicker(next);
+          }}
           group={picker.groups.find((g: any) => g.id === pickerGroupId)}
           initialNames={[]}
           initialCountry={country}
           onClose={() => setPicker(null)}
           initialTab="ads"
-          adsDestination={{project: project.id, category: product.id}}
+          adsDestination={{ project: project.id, category: product.id }}
           onChooseGroup={setPickerGroupId}
-          onSaved={async id => { await refreshPicker(); setPickerGroupId(id); }}
+          onSaved={async (id) => {
+            await refreshPicker();
+            setPickerGroupId(id);
+          }}
           onGroupsChanged={refreshPicker}
         />
       )}

@@ -26,9 +26,15 @@ type Row = {
   expiresAt: string;
 };
 type List = { rows: Row[]; page: number; pages: number; total: number };
-async function request(path: string, method = "GET", data?: unknown) {
+async function request(
+  path: string,
+  method = "GET",
+  data?: unknown,
+  signal?: AbortSignal,
+) {
   const response = await fetch("/api/" + path, {
     method,
+    signal,
     cache: "no-store",
     headers: data ? { "Content-Type": "application/json" } : undefined,
     body: data ? JSON.stringify(data) : undefined,
@@ -67,9 +73,15 @@ export function VisualAuditPanel() {
   }, [refresh]);
   useEffect(() => {
     let active = true;
+    const controller = new AbortController();
     setLoading(true);
     const timer = setTimeout(() => {
-      void request(`visual-audit?q=${encodeURIComponent(q)}&page=${page}`)
+      void request(
+        `visual-audit?q=${encodeURIComponent(q)}&page=${page}`,
+        "GET",
+        undefined,
+        controller.signal,
+      )
         .then((data) => {
           if (active) setRows(data);
         })
@@ -82,6 +94,7 @@ export function VisualAuditPanel() {
     }, 200);
     return () => {
       active = false;
+      controller.abort();
       clearTimeout(timer);
     };
   }, [q, page, refresh]);
@@ -107,155 +120,197 @@ export function VisualAuditPanel() {
     } finally {
       if (form)
         for (const input of form.querySelectorAll<HTMLInputElement>(
-          'input[data-secret-input]',
+          "input[data-secret-input]",
         ))
           input.value = "";
       setBusy(false);
     }
   }
   return (
-    <div className="stack">
-      <h1>Auditoría visual y conservación</h1>
-      <p>
-        Solo OWNER puede consultar estas miniaturas y administrar su
-        conservación. Se registra cada nueva versión generada, editada,
-        restaurada o duplicada desde esta actualización; no se procesan afiches
-        anteriores automáticamente.
-      </p>
+    <div className="stack utility-visual-audit">
+      <div className="utility-section-heading">
+        <div>
+          <span className="utility-eyebrow">Versiones y conservación</span>
+          <h2>Un registro visual de tus imágenes</h2>
+        </div>
+      </div>
       {message && (
         <p role="status" className="notice">
           {message}
         </p>
       )}
       {policy && (
-        <section className="panel stack">
-          <h2>Política de conservación</h2>
-          <p>
-            {policy.available} miniaturas disponibles ·{" "}
-            {(policy.usedBytes / 1048576).toFixed(2)} MB de {policy.limitMb} MB
-            · {policy.pendingCleanup} caducadas pendientes de limpieza.
-          </p>
-          {policy.missing > 0 && (
-            <p role="alert" className="notice">
-              Hay {policy.missing} versiones sin miniatura por falta de espacio.
-              Sus afiches se conservaron; amplía la capacidad para próximas
-              versiones. Estas miniaturas no se recuperan automáticamente.
-            </p>
-          )}
-          <form
-            key={policy.revision}
-            className="stack"
-            onSubmit={(event) => {
-              event.preventDefault();
-              const form = event.currentTarget,
-                data = new FormData(form),
-                applyToExisting = data.get("applyToExisting") === "on";
-              if (
-                applyToExisting &&
-                !confirm(
-                  "¿Aplicar el plazo desde la fecha de creación de las miniaturas existentes? Acortarlo puede hacer que caduquen de inmediato. No recupera las ya eliminadas o caducadas.",
-                )
-              )
-                return;
-              void run(
-                () =>
-                  request("visual-audit/policy", "PUT", {
-                    enabled: data.get("enabled") === "on",
-                    retentionDays: Number(data.get("retentionDays")),
-                    limitMb: Number(data.get("limitMb")),
-                    expectedRevision: policy.revision,
-                    applyToExisting,
-                    currentPassword: data.get("currentPassword"),
-                  }),
-                "Política guardada.",
-                form,
-              );
-            }}
-          >
-            <fieldset disabled={busy} className="stack">
-              <legend>Conservación independiente de los originales</legend>
-              <label className="row">
-                <input
-                  type="checkbox"
-                  name="enabled"
-                  defaultChecked={policy.enabled}
-                />
-                Conservar miniaturas de nuevas versiones
-              </label>
-              <label>
-                Días de conservación · puedes usar 30, 90, 365 u otro plazo
-                entre 1 y 3650
-                <input
-                  type="number"
-                  name="retentionDays"
-                  defaultValue={policy.retentionDays}
-                  min={1}
-                  max={3650}
-                  required
-                />
-              </label>
-              <label>
-                Espacio máximo de miniaturas · MB, entre 1 y 256
-                <input
-                  type="number"
-                  name="limitMb"
-                  defaultValue={policy.limitMb}
-                  min={1}
-                  max={256}
-                  required
-                />
-              </label>
-              <label className="row">
-                <input type="checkbox" name="applyToExisting" />
-                Aplicar este plazo también a miniaturas existentes que aún no
-                caducaron
-              </label>
-              <p className="hint">
-                Por defecto los cambios se aplican a nuevas versiones.
-                Desactivar la captura no elimina las anteriores. El plazo se
-                cuenta desde la creación de cada versión. Las miniaturas ocupan
-                espacio en la base de datos y, con almacenamiento PostgreSQL,
-                también cuentan para su límite global.
+        <>
+          <div className="audit-overview">
+            <article>
+              <span>Miniaturas disponibles</span>
+              <strong>{policy.available.toLocaleString("es-PE")}</strong>
+            </article>
+            <article>
+              <span>Espacio utilizado</span>
+              <strong>
+                {(policy.usedBytes / 1048576).toFixed(1)}{" "}
+                <small>de {policy.limitMb} MB</small>
+              </strong>
+              <meter
+                aria-label="Espacio utilizado por miniaturas"
+                min={0}
+                max={policy.limitMb}
+                value={policy.usedBytes / 1048576}
+              />
+            </article>
+            <article>
+              <span>Conservación</span>
+              <strong>
+                {policy.retentionDays} <small>días</small>
+              </strong>
+              <span>
+                {policy.enabled ? "Captura activa" : "Captura desactivada"}
+              </span>
+            </article>
+          </div>
+          <details className="panel audit-policy">
+            <summary>
+              ⚙ Configurar conservación{" "}
+              <small>Plazo, capacidad y limpieza</small>
+            </summary>
+            <div className="stack inside">
+              <p>
+                {policy.available} miniaturas disponibles ·{" "}
+                {(policy.usedBytes / 1048576).toFixed(2)} MB de {policy.limitMb}{" "}
+                MB · {policy.pendingCleanup} caducadas pendientes de limpieza.
               </p>
-              <label>
-                Tu contraseña actual de OWNER
-                <PasswordInput
-                  name="currentPassword"
-                  autoComplete="current-password"
-                  minLength={12}
-                  maxLength={128}
-                  required
-                />
-              </label>
-              <button className="primary">Guardar política de auditoría</button>
-            </fieldset>
-          </form>
-          <p className="hint">
-            Una miniatura caducada deja de mostrarse inmediatamente. La limpieza
-            física se ejecuta al procesar nuevos trabajos o con el botón
-            siguiente. Si el servidor permanece inactivo, hay que programar su
-            limpieza periódica.
-          </p>
-          <button
-            disabled={busy}
-            onClick={() =>
-              void run(async () => {
-                const result = await request("visual-audit/cleanup", "POST");
-                return {
-                  message: `${result.removed} miniaturas caducadas eliminadas físicamente. Los originales y registros de actividad se conservan. Si hay más pendientes, repite la limpieza.`,
-                };
-              }, "Limpieza terminada.")
-            }
-          >
-            Limpiar miniaturas caducadas
-          </button>
-        </section>
+              {policy.missing > 0 && (
+                <p role="alert" className="notice">
+                  Hay {policy.missing} versiones sin miniatura por falta de
+                  espacio. Sus afiches se conservaron; amplía la capacidad para
+                  próximas versiones. Estas miniaturas no se recuperan
+                  automáticamente.
+                </p>
+              )}
+              <form
+                key={policy.revision}
+                className="stack"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  const form = event.currentTarget,
+                    data = new FormData(form),
+                    applyToExisting = data.get("applyToExisting") === "on";
+                  if (
+                    applyToExisting &&
+                    !confirm(
+                      "¿Aplicar el plazo desde la fecha de creación de las miniaturas existentes? Acortarlo puede hacer que caduquen de inmediato. No recupera las ya eliminadas o caducadas.",
+                    )
+                  )
+                    return;
+                  void run(
+                    () =>
+                      request("visual-audit/policy", "PUT", {
+                        enabled: data.get("enabled") === "on",
+                        retentionDays: Number(data.get("retentionDays")),
+                        limitMb: Number(data.get("limitMb")),
+                        expectedRevision: policy.revision,
+                        applyToExisting,
+                        currentPassword: data.get("currentPassword"),
+                      }),
+                    "Política guardada.",
+                    form,
+                  );
+                }}
+              >
+                <fieldset disabled={busy} className="stack">
+                  <legend>Conservación independiente de los originales</legend>
+                  <label className="row">
+                    <input
+                      type="checkbox"
+                      name="enabled"
+                      defaultChecked={policy.enabled}
+                    />
+                    Conservar miniaturas de nuevas versiones
+                  </label>
+                  <label>
+                    Días de conservación · puedes usar 30, 90, 365 u otro plazo
+                    entre 1 y 3650
+                    <input
+                      type="number"
+                      name="retentionDays"
+                      defaultValue={policy.retentionDays}
+                      min={1}
+                      max={3650}
+                      required
+                    />
+                  </label>
+                  <label>
+                    Espacio máximo de miniaturas · MB, entre 1 y 256
+                    <input
+                      type="number"
+                      name="limitMb"
+                      defaultValue={policy.limitMb}
+                      min={1}
+                      max={256}
+                      required
+                    />
+                  </label>
+                  <label className="row">
+                    <input type="checkbox" name="applyToExisting" />
+                    Aplicar este plazo también a miniaturas existentes que aún
+                    no caducaron
+                  </label>
+                  <p className="hint">
+                    Por defecto los cambios se aplican a nuevas versiones.
+                    Desactivar la captura no elimina las anteriores. El plazo se
+                    cuenta desde la creación de cada versión. Las miniaturas
+                    ocupan espacio en la base de datos y, con almacenamiento
+                    PostgreSQL, también cuentan para su límite global.
+                  </p>
+                  <label>
+                    Tu contraseña actual de OWNER
+                    <PasswordInput
+                      name="currentPassword"
+                      autoComplete="current-password"
+                      minLength={12}
+                      maxLength={128}
+                      required
+                    />
+                  </label>
+                  <button className="primary">
+                    Guardar política de auditoría
+                  </button>
+                </fieldset>
+              </form>
+              <p className="hint">
+                Una miniatura caducada deja de mostrarse inmediatamente. La
+                limpieza física se ejecuta al procesar nuevos trabajos o con el
+                botón siguiente. Si el servidor permanece inactivo, hay que
+                programar su limpieza periódica.
+              </p>
+              <button
+                disabled={busy}
+                onClick={() =>
+                  void run(async () => {
+                    const result = await request(
+                      "visual-audit/cleanup",
+                      "POST",
+                    );
+                    return {
+                      message: `${result.removed} miniaturas caducadas eliminadas físicamente. Los originales y registros de actividad se conservan. Si hay más pendientes, repite la limpieza.`,
+                    };
+                  }, "Limpieza terminada.")
+                }
+              >
+                Limpiar miniaturas caducadas
+              </button>
+            </div>
+          </details>
+        </>
       )}
-      <section className="panel stack">
-        <h2>Versiones registradas</h2>
+      <section className="panel stack audit-results">
+        <h3>Versiones registradas</h3>
         <label>
-          Buscar por persona, proyecto, producto, subproducto o modelo
+          Buscar una versión
           <input
+            type="search"
+            placeholder="Persona, proyecto, diplomado o modelo…"
             value={q}
             maxLength={200}
             onChange={(e) => {
@@ -299,7 +354,15 @@ export function VisualAuditPanel() {
                           : "Miniatura caducada"}
                     </p>
                   )}
-                  <strong>{row.projectName}</strong>
+                  <span
+                    className={
+                      "audit-availability" + (row.available ? " available" : "")
+                    }
+                  >
+                    {row.available ? "Disponible" : "Sin miniatura"} · v
+                    {row.versionNumber}
+                  </span>
+                  <strong>{row.subproductName || row.projectName}</strong>
                   <span>
                     {[row.productName, row.subproductName]
                       .filter(Boolean)

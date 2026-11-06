@@ -2954,3 +2954,15 @@ El lateral muestra Inventario, Asesores y Ventas. Inventario y Asesores conserva
 Pestañas antes de controles, cabecera compacta y sin leyenda ni aviso general de rol en estos tres módulos. No se montan vistas financieras de las otras secciones; el directorio de relaciones sigue disponible para sincronizar/evaluar. Configuraciones guardadas sale del lateral: no se borran configuraciones, proyectos ni prompts.
 
 Menú principal reordenable por agarre con ratón/táctil y Alt+flechas, orden local por usuario. Cuenta en botón del nombre con desplegable nativo hacia arriba, Escape/cierre exterior, ajustes y opciones del equipo conservados. Estadísticas y Página web pasan allí; Auditoría agrupa Visual e Historial con los mismos permisos. Sin nuevas consultas para abrir ese menú o reordenarlo.
+
+## 2026-11-05 · Biblioteca, Auditoría y Página/planes
+
+Biblioteca usa el ancho disponible, árbol de carpetas junto al borde izquierdo y un solo título/usuario/privacidad en la primera franja. Ruta de navegación y búsqueda única para carpetas, imágenes y archivos; sin tres selectores de jerarquía ni consulta adicional de sus opciones. Búsqueda350ms con aborto de solicitudes sustituidas, paginación de imágenes/copias/documentos en servidor y palabras obligatorias sin distinción de mayúsculas. Raíz busca en ubicaciones autorizadas del árbol visible, carpeta busca en su descendencia. Resultados conservan permisos, aprobación, caducidad, copias y fechas. Abrir carpeta limpia búsqueda y muestra ruta;50 carpetas iniciales y más bajo demanda. Buscar omite estadísticas generales no mostradas. Detalles secundarios de imagen plegables; aprobación, edición, ampliación y descarga conservadas.
+
+Historial en línea de tiempo con búsqueda y consultas abortables. Auditoría Visual con resumen de espacio/conservación y galería primero; política plegada, mismas contraseñas, revisión y confirmaciones para cambios. Página, Planes y Privacidad en navegación propia; Planes carga solo al entrar, guardados explícitos por sección sin cambios. Diseño adaptable y estilos propios, sin cambios a cuotas, política de conservación ni contenido público al navegar.
+
+## 2026-11-05 · País y acceso compartido en Estudio
+
+Causa del inventario vacío: studioContext devolvía inventarios únicamente al OWNER. Ahora consulta metadatos de listas autorizadas por ALL/TAB, incluidas VIEW/EDIT; fuente e importación siguen revalidando permisos actuales. Selección inicial del primer inventario autorizado; sin exponer listas privadas.
+
+País buscable junto a Producto/carpeta, guardado tras acuse al seleccionar y reutilizado en Campaña. Carpeta puede crearse sin país; preparar una campaña conserva validación obligatoria. El país no sustituye instrucciones del afiche ni el texto del prompt configura la segmentación de Meta. Crear carpeta está junto al país; sugerencias del producto no tapan la acción ni desplazan su clic al perder foco. Cambiar el borrador de nombre separa el producto anterior, evitando guardar el país en la carpeta equivocada. Prompt del proyecto conservado. Sin anuncios reales ni generación pagada en QA.

@@ -118,7 +118,7 @@ export function SidebarAccount({
           {user.role === "OWNER" && (
             <>
               {item("statistics", "▥", "Estadísticas")}
-              {item("website", "◈", "Página web")}
+              {item("website", "◈", "Página y planes")}
             </>
           )}
           {(history || user.role === "OWNER") && (

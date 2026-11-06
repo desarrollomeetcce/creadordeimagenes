@@ -20,6 +20,7 @@ export function SearchSelect({
   loading,
   hasMore,
   browseOnToggle = false,
+  hideEmpty = false,
 }: {
   label: string;
   value: string;
@@ -32,6 +33,7 @@ export function SearchSelect({
   loading?: boolean;
   hasMore?: boolean;
   browseOnToggle?: boolean;
+  hideEmpty?: boolean;
 }) {
   const id = useId(),
     input = useRef<HTMLInputElement>(null);
@@ -50,6 +52,7 @@ export function SearchSelect({
   const visible = filtered.filter(
     (o) => normalized || !collapsed.includes(o.group ?? ""),
   );
+  const showOptions = open && (!hideEmpty || loading || filtered.length > 0);
   const choose = (option: SearchOption) => {
     onSelect(option);
     setOpen(false);
@@ -76,10 +79,10 @@ export function SearchSelect({
           autoComplete="off"
           role="combobox"
           aria-autocomplete="list"
-          aria-expanded={open}
-          aria-controls={open ? id + "-list" : undefined}
+          aria-expanded={!!showOptions}
+          aria-controls={showOptions ? id + "-list" : undefined}
           aria-activedescendant={
-            open && active >= 0 && visible[active]
+            showOptions && active >= 0 && visible[active]
               ? id + "-option-" + visible[active].id
               : undefined
           }
@@ -120,7 +123,7 @@ export function SearchSelect({
           type="button"
           disabled={disabled}
           aria-label={"Desplegar " + label.toLowerCase()}
-          aria-expanded={open}
+          aria-expanded={!!showOptions}
           onClick={() => {
             input.current?.focus();
             setBrowsing(!open);
@@ -131,7 +134,7 @@ export function SearchSelect({
           ▾
         </button>
       </div>
-      {open && (
+      {showOptions && (
         <div
           id={id + "-list"}
           role="listbox"

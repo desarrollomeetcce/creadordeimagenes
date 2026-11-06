@@ -12,6 +12,7 @@ import {
 } from "../auth";
 import { hasAiModuleAccess } from "../roles";
 import { quickStartOptions } from "../quick-start";
+import { financialAccess } from "../meta-ads/financial-access";
 import { workspaceAccess } from "../meta-ads/workspace-access";
 import { accountWhere } from "../meta-ads/service";
 import { countryOptions, isCountryCode } from "../meta-ads/countries";
@@ -55,7 +56,10 @@ const keyName = (s: string) =>
   s.trim().normalize("NFKC").toLocaleLowerCase("es");
 export async function studioContext(actor: Actor) {
   studioAccess(actor);
-  const a = await workspaceAccess(actor);
+  const [a, financial] = await Promise.all([
+    workspaceAccess(actor),
+    financialAccess(actor),
+  ]);
   const [projects, config, inventories, accounts] = await Promise.all([
     quickStartOptions(actor),
     db.providerConfiguration.findUnique({
@@ -68,13 +72,23 @@ export async function studioContext(actor: Actor) {
         models: true,
       },
     }),
-    actor.role === "OWNER"
-      ? db.metaEffectivenessSheet.findMany({
-          where: { kind: "INVENTORY", archivedAt: null },
-          select: { id: true, name: true },
-          orderBy: { name: "asc" },
-        })
-      : Promise.resolve([]),
+    db.metaEffectivenessSheet.findMany({
+      where: {
+        kind: "INVENTORY",
+        archivedAt: null,
+        ...(financial.isOwner || financial.grants.some((g) => g.scope === "ALL")
+          ? {}
+          : {
+              id: {
+                in: financial.grants
+                  .filter((g) => g.scope.startsWith("TAB:"))
+                  .map((g) => g.scope.slice(4)),
+              },
+            }),
+      },
+      select: { id: true, name: true },
+      orderBy: { name: "asc" },
+    }),
     a.canEdit && a.primaryAccountIds.length
       ? db.metaAdAccount.findMany({
           where: {
@@ -181,9 +195,35 @@ export async function studioProduct(actor: Actor, categoryId: string) {
       },
     },
   });
-  const saved = await db.variation.groupBy({ by: ["subproductId"], where: { subproductId: { in: product.subproducts.map(s => s.id) }, deletedAt: null, expired: false, permanent: true, job: { status: "COMPLETED" } }, _count: { _all: true } });
-  return { ...product, subproducts: product.subproducts.map(s => { const count = saved.find(v => v.subproductId === s.id)?._count._all ?? 0; const pending = object(s.studio).folderPending === true || (object(s.studio).folderPending === undefined && !!object(s.studio).country && s._count.variations === 0); return { ...s, savedCount: count, folderExists: !pending || count > 0, folderCount: count || (pending ? 0 : s._count.variations) }; }) };
-
+  const saved = await db.variation.groupBy({
+    by: ["subproductId"],
+    where: {
+      subproductId: { in: product.subproducts.map((s) => s.id) },
+      deletedAt: null,
+      expired: false,
+      permanent: true,
+      job: { status: "COMPLETED" },
+    },
+    _count: { _all: true },
+  });
+  return {
+    ...product,
+    subproducts: product.subproducts.map((s) => {
+      const count =
+        saved.find((v) => v.subproductId === s.id)?._count._all ?? 0;
+      const pending =
+        object(s.studio).folderPending === true ||
+        (object(s.studio).folderPending === undefined &&
+          !!object(s.studio).country &&
+          s._count.variations === 0);
+      return {
+        ...s,
+        savedCount: count,
+        folderExists: !pending || count > 0,
+        folderCount: count || (pending ? 0 : s._count.variations),
+      };
+    }),
+  };
 }
 export async function createStudioProject(actor: Actor, input: unknown) {
   studioAccess(actor);
@@ -290,7 +330,11 @@ export async function createStudioProduct(
   studioAccess(actor);
   await resourceAccess(actor, "project", projectId, "EDIT");
   const b = z
-    .object({ name, country, requestId: z.uuid() })
+    .object({
+      name,
+      country: country.or(z.literal("")).default(""),
+      requestId: z.uuid(),
+    })
     .strict()
     .parse(input);
   return db.$transaction(async (tx) => {
@@ -413,7 +457,11 @@ export async function addStudioItems(
               includeProduct: false,
               includeSelf: true,
             },
-            studio: json({ country: object(c.studio).country, ...item.source, folderPending: true }),
+            studio: json({
+              country: object(c.studio).country,
+              ...item.source,
+              folderPending: true,
+            }),
           },
         });
         existing.push(s);
@@ -525,10 +573,16 @@ export async function saveStudioImages(actor: Actor, input: unknown) {
       where: { id: { in: b.ids } },
       data: { permanent: true },
     });
-    for (const subproductId of new Set(rows.map(r => r.subproductId!))) {
+    for (const subproductId of new Set(rows.map((r) => r.subproductId!))) {
       await tx.$queryRaw`SELECT id FROM "Subproduct" WHERE id=${subproductId} FOR UPDATE`;
-      const sub = await tx.subproduct.findUniqueOrThrow({ where: { id: subproductId }, select: { studio: true } });
-      await tx.subproduct.update({ where: { id: subproductId }, data: { studio: json({ ...object(sub.studio), folderPending: false }) } });
+      const sub = await tx.subproduct.findUniqueOrThrow({
+        where: { id: subproductId },
+        select: { studio: true },
+      });
+      await tx.subproduct.update({
+        where: { id: subproductId },
+        data: { studio: json({ ...object(sub.studio), folderPending: false }) },
+      });
     }
     await tx.libraryItem.createMany({
       data: b.ids.map((variationId) => ({ variationId, userId: actor.id })),
@@ -581,7 +635,8 @@ export async function studioInventory(actor: Actor, listId: string) {
     "TAB:" + listId,
   );
   return (await import("../meta-ads/inventory-trials")).inventoryTrials(cap, {
-    listId, mode: "directory",
+    listId,
+    mode: "directory",
   });
 }
 export async function saveInventorySelection(actor: Actor, input: unknown) {

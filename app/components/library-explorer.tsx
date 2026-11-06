@@ -2,7 +2,6 @@
 import { uploadResource } from "./resource-upload";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  HierarchyFilters,
   hierarchyFromLocation,
   emptyHierarchy,
   type HierarchyValue,
@@ -14,6 +13,7 @@ import {
   hierarchyFolder,
   type FolderNode,
 } from "./folder-navigation";
+import { DateRange } from "./date-range";
 import { SearchSelect } from "./search-select";
 import { useCanEdit } from "./role-guide";
 import { ErrorNotice } from "./error-notice";
@@ -67,6 +67,7 @@ type Doc = {
   generationReady?: boolean;
 };
 type Data = {
+  query?: string;
   orders: OrderProgress[];
   inflight: PendingImage[];
   inflightTotal: number;
@@ -79,7 +80,12 @@ type Data = {
   page: number;
   pages: number;
 };
-async function api(path: string, method = "GET", body?: unknown, signal?: AbortSignal) {
+async function api(
+  path: string,
+  method = "GET",
+  body?: unknown,
+  signal?: AbortSignal,
+) {
   const r = await fetch("/api/library/" + path, {
     method,
     headers: body ? { "Content-Type": "application/json" } : {},
@@ -96,7 +102,20 @@ export type LibraryPicker = {
   onChange: (ids: string[], names: Record<string, string>) => void;
 };
 export function Library({ picker }: { picker?: LibraryPicker } = {}) {
-  const [folderLayout,setFolderLayout]=useState("cards");
+  const [folderLayout, setFolderLayout] = useState("cards");
+  const [searchText, setSearchText] = useState(""),
+    [query, setQuery] = useState(""),
+    [folderLimit, setFolderLimit] = useState(50),
+    [foldersOpen, setFoldersOpen] = useState(false);
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setQuery(searchText.trim());
+      setPage(1);
+      setFolderLimit(50);
+      if (!picker) setSelectionState([]);
+    }, 350);
+    return () => clearTimeout(timer);
+  }, [searchText]);
 
   const [editing, setEditing] = useState<string | null>(null);
   const [preview, setPreview] = useState<{
@@ -162,10 +181,17 @@ export function Library({ picker }: { picker?: LibraryPicker } = {}) {
   const revision = useRef(0),
     latest = useRef<Data | null>(null);
   latest.current = data;
-  const childCounts=useMemo(()=>{const counts=new Map<string,number>();for(const node of data?.tree??[])if(node.parentId)counts.set(node.parentId,(counts.get(node.parentId)??0)+1);return counts;},[data?.tree]);
+  const childCounts = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const node of data?.tree ?? [])
+      if (node.parentId)
+        counts.set(node.parentId, (counts.get(node.parentId) ?? 0) + 1);
+    return counts;
+  }, [data?.tree]);
   const params = new URLSearchParams({
     ...hierarchy,
     folder,
+    q: query,
     page: String(page),
     limit,
     review,
@@ -180,7 +206,12 @@ export function Library({ picker }: { picker?: LibraryPicker } = {}) {
     loadingRequest.current = controller;
     setRefreshing(true);
     try {
-      const result = await api("explorer?" + params, "GET", undefined, controller.signal);
+      const result = await api(
+        "explorer?" + params,
+        "GET",
+        undefined,
+        controller.signal,
+      );
       if (seq === revision.current) {
         setData(result);
         setError("");
@@ -243,6 +274,10 @@ export function Library({ picker }: { picker?: LibraryPicker } = {}) {
     };
   }, [menu]);
   const open = (key: string) => {
+    setSearchText("");
+    setQuery("");
+    setFolderLimit(50);
+    setFoldersOpen(false);
     const h = folderScope(data?.tree ?? [], key, hierarchy);
     setHierarchy(h);
     setFolder(key);
@@ -291,9 +326,28 @@ export function Library({ picker }: { picker?: LibraryPicker } = {}) {
       id,
     });
   };
-  const folders = (data?.tree ?? []).filter(
-    (n) => n.parentId === (folder || null),
-  );
+  const matchingFolders = useMemo(() => {
+    const nodes = data?.tree ?? [],
+      byId = new Map(nodes.map((n) => [n.id, n])),
+      words = query.toLocaleLowerCase("es").split(/\s+/).filter(Boolean);
+    return nodes.filter((n) => {
+      if (!query) return n.parentId === (folder || null);
+      let p = n.parentId,
+        inside = !folder;
+      const seen = new Set<string>([n.id]);
+      while (p && !seen.has(p)) {
+        if (p === folder) inside = true;
+        seen.add(p);
+        p = byId.get(p)?.parentId ?? null;
+      }
+      return (
+        inside &&
+        n.id !== folder &&
+        words.every((w) => n.name.toLocaleLowerCase("es").includes(w))
+      );
+    });
+  }, [data?.tree, folder, query]);
+  const folders = matchingFolders.slice(0, folderLimit);
   const chooseAll = () =>
     setSelected(
       [
@@ -601,28 +655,6 @@ export function Library({ picker }: { picker?: LibraryPicker } = {}) {
             alt={i.subproduct?.name ?? "Prueba de IA"}
           />
         </button>
-        <button
-          type="button"
-          onClick={() =>
-            setPreview({
-              id: i.id,
-              name: i.subproduct?.name ?? "Prueba de IA",
-              revision: i.revision,
-              sourceNotice: i.sourceNotice,
-              subproductHref:
-                i.subproduct && !i.sourceNotice
-                  ? "?" +
-                    new URLSearchParams({
-                      view: "projects",
-                      category: i.subproduct.category.id,
-                      subproduct: i.subproduct.id,
-                    })
-                  : undefined,
-            })
-          }
-        >
-          Ampliar imagen
-        </button>
         <strong>{i.subproduct?.name ?? "Prueba de IA"}</strong>
         {i.copied && (
           <small title="Comparte el archivo, versiones y permisos del original">
@@ -695,39 +727,42 @@ export function Library({ picker }: { picker?: LibraryPicker } = {}) {
             Editar imagen
           </button>
         )}
-        <p className="hint">
-          {i.subproduct
-            ? [
-                i.subproduct.category.project.name,
-                i.subproduct.category.name,
-                i.subproduct.name,
-              ].join(" / ")
-            : "Pruebas"}
-          <br />
-          {new Date(i.createdAt).toLocaleString("es-PE", {
-            timeZone: "America/Lima",
-          })}
-        </p>
-        {i.actualMicros !== undefined && (
+        <details className="library-file-details">
+          <summary>Detalles del archivo</summary>
           <p className="hint">
-            Coste informado:{" "}
-            {i.actualMicros === null
-              ? "No informado"
-              : "USD " + usdMicros(i.actualMicros)}
+            {i.subproduct
+              ? [
+                  i.subproduct.category.project.name,
+                  i.subproduct.category.name,
+                  i.subproduct.name,
+                ].join(" / ")
+              : "Pruebas"}
             <br />
-            <a
-              href={costLink({
-                project: i.subproduct?.category.project.id ?? "none",
-                product: i.subproduct?.category.id ?? "",
-                subproduct: i.subproduct?.id ?? "",
-                from: hierarchy.from,
-                to: hierarchy.to,
-              })}
-            >
-              Ver costos de esta carpeta →
-            </a>
+            {new Date(i.createdAt).toLocaleString("es-PE", {
+              timeZone: "America/Lima",
+            })}
           </p>
-        )}
+          {i.actualMicros !== undefined && (
+            <p className="hint">
+              Coste informado:{" "}
+              {i.actualMicros === null
+                ? "No informado"
+                : "USD " + usdMicros(i.actualMicros)}
+              <br />
+              <a
+                href={costLink({
+                  project: i.subproduct?.category.project.id ?? "none",
+                  product: i.subproduct?.category.id ?? "",
+                  subproduct: i.subproduct?.id ?? "",
+                  from: hierarchy.from,
+                  to: hierarchy.to,
+                })}
+              >
+                Ver costos de esta carpeta →
+              </a>
+            </p>
+          )}
+        </details>
         <a href={"/api/variations/" + i.id + "?download"}>Descargar PNG</a>
         {anchorOrder && (
           <OrderProgressCard
@@ -784,19 +819,7 @@ export function Library({ picker }: { picker?: LibraryPicker } = {}) {
           }}
         />
       )}
-      {!picker && (
-        <div className="heading">
-          <div>
-            <h1>Biblioteca</h1>
-            <p className="muted">
-              Imágenes, revisión y archivos en sus carpetas. Envía las órdenes
-              desde el producto, subproducto o Pruebas; aquí revisas sus
-              resultados y controlas su avance.
-            </p>
-          </div>
-        </div>
-      )}
-      <div className="explorer-layout">
+      <div className={"explorer-layout" + (foldersOpen ? " folders-open" : "")}>
         <FolderTree
           nodes={data?.tree ?? []}
           current={folder}
@@ -831,89 +854,75 @@ export function Library({ picker }: { picker?: LibraryPicker } = {}) {
             if (e.target === e.currentTarget) drop(e, folder || "loose:root");
           }}
         >
-          <FolderBreadcrumbs
-            nodes={data?.tree ?? []}
-            current={folder}
-            onOpen={open}
-          />
-          <div className="explorer-tools stack">
-            <HierarchyFilters
-              library
-              dateSummary={
-                <div
-                  className="period-summary"
-                  role="status"
-                  aria-live="polite"
-                  aria-busy={refreshing}
-                >
-                  <div className="period-summary-counts">
-                    <span>
-                      <strong>
-                        {refreshing
-                          ? "…"
-                          : (data?.counts.COMPLETED ?? 0).toLocaleString(
-                              "es-PE",
-                            )}
-                      </strong>{" "}
-                      {data?.counts.COMPLETED === 1
-                        ? "flyer generado"
-                        : "flyers generados"}
-                    </span>
-                    <span title="Imágenes retiradas de tu Biblioteca y archivos eliminados; no incluye caducados">
-                      <strong>
-                        {refreshing
-                          ? "…"
-                          : (data?.counts.DELETED ?? 0).toLocaleString("es-PE")}
-                      </strong>{" "}
-                      eliminados
-                    </span>
-                    <span title="Archivos añadidos, copias y afiches movidos a la carpeta; se cuentan también si después los eliminaste">
-                      <strong>
-                        {refreshing
-                          ? "…"
-                          : (data?.counts.BROUGHT ?? 0).toLocaleString("es-PE")}
-                      </strong>{" "}
-                      traídos
-                    </span>
-                    <span>
-                      <strong>
-                        {refreshing
-                          ? "…"
-                          : (data?.counts.PENDING ?? 0).toLocaleString("es-PE")}
-                      </strong>{" "}
-                      pendientes
-                    </span>
-                    <span>
-                      <strong>
-                        {refreshing
-                          ? "…"
-                          : (data?.counts.RUNNING ?? 0).toLocaleString("es-PE")}
-                      </strong>{" "}
-                      generando
-                    </span>
-                  </div>
-                  <small>
-                    {hierarchy.from || hierarchy.to
-                      ? "En el período elegido"
-                      : "En todas las fechas"}{" "}
-                    · solo recursos a los que tienes acceso
-                    {hierarchy.project ||
-                    hierarchy.product ||
-                    hierarchy.subproduct
-                      ? " en esta selección"
-                      : ""}
-                    . Incluye todas las páginas.
-                  </small>
-                </div>
-              }
-              value={hierarchy}
-              onChange={(h) => {
-                setHierarchy(h);
-                setFolder(hierarchyFolder(h));
-                setPage(1);
-                if (!picker) setSelected([]);
-              }}
+          <div className="library-address-bar">
+            <button
+              type="button"
+              className="library-folders-toggle"
+              aria-expanded={foldersOpen}
+              onClick={() => setFoldersOpen((v) => !v)}
+            >
+              ☰ Carpetas
+            </button>
+            <FolderBreadcrumbs
+              root="Todas las carpetas"
+              nodes={data?.tree ?? []}
+              current={folder}
+              onOpen={open}
             />
+            <form
+              className="library-search"
+              role="search"
+              onSubmit={(e) => {
+                e.preventDefault();
+                setQuery(searchText.trim());
+                setPage(1);
+                setFolderLimit(50);
+                if (!picker) setSelectionState([]);
+              }}
+            >
+              <span aria-hidden="true">⌕</span>
+              <input
+                type="search"
+                aria-label="Buscar carpetas e imágenes"
+                placeholder="Buscar carpetas, imágenes o archivos…"
+                maxLength={200}
+                value={searchText}
+                onChange={(e) => setSearchText(e.target.value)}
+              />
+              {searchText && (
+                <button
+                  type="button"
+                  aria-label="Limpiar búsqueda"
+                  onClick={() => {
+                    setSearchText("");
+                    setQuery("");
+                    setPage(1);
+                  }}
+                >
+                  ×
+                </button>
+              )}
+            </form>
+          </div>
+          <div className="explorer-tools stack">
+            <div className="library-location-summary">
+              <DateRange
+                from={hierarchy.from}
+                to={hierarchy.to}
+                onChange={(from, to) => {
+                  setHierarchy((h) => ({ ...h, from, to }));
+                  setPage(1);
+                  if (!picker) setSelected([]);
+                }}
+              />
+              <span role="status" aria-busy={refreshing}>
+                {refreshing
+                  ? "Actualizando…"
+                  : query
+                    ? `${matchingFolders.length} carpetas · ${data?.total ?? 0} imágenes · ${data?.documents.length ?? 0} archivos en esta página`
+                    : `${(data?.counts.COMPLETED ?? 0).toLocaleString("es-PE")} imágenes generadas · ${data?.counts.PENDING ?? 0} pendientes · ${data?.counts.RUNNING ?? 0} generando`}
+              </span>
+            </div>
             <div className="explorer-toolbar">
               <details className="other-filters">
                 <summary>Otros filtros</summary>
@@ -1019,7 +1028,7 @@ export function Library({ picker }: { picker?: LibraryPicker } = {}) {
                       })()
                     }
                   >
-                    Seleccionar todo · máximo {picker ? 30 : 200}
+                    Seleccionar visibles · máximo {picker ? 30 : 200}
                   </button>
                   <button type="button" onClick={() => setSelected([])}>
                     Limpiar selección
@@ -1062,7 +1071,27 @@ export function Library({ picker }: { picker?: LibraryPicker } = {}) {
                   ))}
                 </select>
               </label>
-              {!picker&&<div className="library-folder-view" aria-label="Vista de carpetas"><button type="button" aria-pressed={folderLayout==="cards"} onClick={()=>setFolderLayout("cards")}>▦ Tarjetas</button><button type="button" aria-pressed={folderLayout==="list"} onClick={()=>setFolderLayout("list")}>☷ Tabla</button></div>}
+              {!picker && (
+                <div
+                  className="library-folder-view"
+                  aria-label="Vista de carpetas"
+                >
+                  <button
+                    type="button"
+                    aria-pressed={folderLayout === "cards"}
+                    onClick={() => setFolderLayout("cards")}
+                  >
+                    ▦ Tarjetas
+                  </button>
+                  <button
+                    type="button"
+                    aria-pressed={folderLayout === "list"}
+                    onClick={() => setFolderLayout("list")}
+                  >
+                    ☷ Tabla
+                  </button>
+                </div>
+              )}
               <label>
                 Tamaño
                 <select value={size} onChange={(e) => setSize(e.target.value)}>
@@ -1107,11 +1136,7 @@ export function Library({ picker }: { picker?: LibraryPicker } = {}) {
               )}
             </div>
           </div>
-          {!picker && (
-            <p className="library-project-warning" role="note">
-              ⚠ {projectFolderWarning}
-            </p>
-          )}
+
           <div className="row library-folder-tools">
             {" "}
             {canEdit && (
@@ -1226,7 +1251,11 @@ export function Library({ picker }: { picker?: LibraryPicker } = {}) {
                 aria-label={group.name}
               >
                 <h3>{group.name}</h3>
-                <div className={"folder-cards size-" + size + " layout-"+folderLayout}>
+                <div
+                  className={
+                    "folder-cards size-" + size + " layout-" + folderLayout
+                  }
+                >
                   {list.map((f) => (
                     <article
                       key={f.id}
@@ -1280,7 +1309,20 @@ export function Library({ picker }: { picker?: LibraryPicker } = {}) {
                             ? "Carpeta conservada · origen eliminado"
                             : "Carpeta de proyecto"}
                       </small>
-                      <small className="library-folder-count">{childCounts.get(f.id)??0} {(f.kind==="project"?"productos":f.kind==="product"?"subproductos":"carpetas")}</small>
+                      {query && (
+                        <small className="library-result-path">
+                          {data?.tree.find((n) => n.id === f.parentId)?.name ??
+                            "Todas las carpetas"}
+                        </small>
+                      )}
+                      <small className="library-folder-count">
+                        {childCounts.get(f.id) ?? 0}{" "}
+                        {f.kind === "project"
+                          ? "productos"
+                          : f.kind === "product"
+                            ? "subproductos"
+                            : "carpetas"}
+                      </small>
                       {!picker && (
                         <button
                           type="button"
@@ -1300,12 +1342,23 @@ export function Library({ picker }: { picker?: LibraryPicker } = {}) {
               </section>
             );
           })}
+          {matchingFolders.length > folders.length && (
+            <button
+              className="library-more-folders"
+              type="button"
+              onClick={() => setFolderLimit((n) => n + 50)}
+            >
+              Mostrar más carpetas ({folders.length} de {matchingFolders.length}
+              )
+            </button>
+          )}
           <div className={"grid jobs-grid size-" + size}>
             {(
               data?.entries ??
               data?.items.map((i) => ({ kind: "image", id: i.id })) ??
               []
             ).map((entry) => {
+              if ((data?.query ?? "") !== query) return null;
               if (entry.kind === "image") {
                 const item = data?.items.find((i) => i.entryId === entry.id);
                 return item ? renderImage(item) : null;
@@ -1334,53 +1387,59 @@ export function Library({ picker }: { picker?: LibraryPicker } = {}) {
             })}
           </div>
           <div className="folder-cards">
-            {data?.documents.map((d) => (
-              <article
-                key={d.id}
-                className="card"
-                data-library-selection={"d:" + d.id}
-                draggable={canEdit && !busy}
-                onDragStart={(e) => dragStart(e, "d:" + d.id)}
-                onDragEnd={() => {
-                  dragging.current = [];
-                  setDropTarget("");
-                }}
-                onContextMenu={(e) => context(e, "d:" + d.id)}
-              >
-                <label className="row">
-                  <input
-                    type="checkbox"
-                    checked={selected.includes("d:" + d.id)}
-                    onChange={(e) => toggle("d:" + d.id, e.target.checked)}
-                  />
-                  Seleccionar
-                </label>
-                {picker &&
-                  d.mime.startsWith("image/") &&
-                  (!d.large || d.hasPreview) && (
-                    <img
-                      className="library-picker-document"
-                      loading="lazy"
-                      src={`/api/library/documents/${d.id}?preview=1`}
-                      alt={d.name}
+            {((data?.query ?? "") === query ? data?.documents : [])?.map(
+              (d) => (
+                <article
+                  key={d.id}
+                  className="card"
+                  data-library-selection={"d:" + d.id}
+                  draggable={canEdit && !busy}
+                  onDragStart={(e) => dragStart(e, "d:" + d.id)}
+                  onDragEnd={() => {
+                    dragging.current = [];
+                    setDropTarget("");
+                  }}
+                  onContextMenu={(e) => context(e, "d:" + d.id)}
+                >
+                  <label className="row">
+                    <input
+                      type="checkbox"
+                      checked={selected.includes("d:" + d.id)}
+                      onChange={(e) => toggle("d:" + d.id, e.target.checked)}
                     />
-                  )}
-                <strong>📄 {d.name}</strong>
-                <p className="hint">{Math.ceil(d.size / 1024)} KB</p>
-                <a href={"/api/library/documents/" + d.id}>Descargar archivo</a>
-              </article>
-            ))}
+                    Seleccionar
+                  </label>
+                  {picker &&
+                    d.mime.startsWith("image/") &&
+                    (!d.large || d.hasPreview) && (
+                      <img
+                        className="library-picker-document"
+                        loading="lazy"
+                        src={`/api/library/documents/${d.id}?preview=1`}
+                        alt={d.name}
+                      />
+                    )}
+                  <strong>📄 {d.name}</strong>
+                  <p className="hint">{Math.ceil(d.size / 1024)} KB</p>
+                  <a href={"/api/library/documents/" + d.id}>
+                    Descargar archivo
+                  </a>
+                </article>
+              ),
+            )}
           </div>
           {!data && <p>Cargando biblioteca…</p>}
           {data &&
+            !refreshing &&
+            (data.query ?? "") === query &&
             !folders.length &&
             !data.items.length &&
             !data.inflight?.length &&
             !data.documents.length && (
               <p className="empty">
-                No hay imágenes ni archivos con estos filtros. Revisa las
-                órdenes de esta carpeta o crea una carpeta personal para añadir
-                archivos.
+                {query
+                  ? `No encontramos resultados para «${query}». Prueba otra palabra o busca desde Todas las carpetas.`
+                  : "Esta carpeta está vacía. Puedes crear una carpeta o añadir archivos."}
               </p>
             )}
           {data && (
