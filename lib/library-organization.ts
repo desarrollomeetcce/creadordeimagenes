@@ -75,7 +75,19 @@ export function locationFilter(
     ],
   };
   const explicit: Prisma.LibraryItemWhereInput = {
-    userId: user.id,
+    AND: [
+      {
+        OR: [
+          { userId: user.id },
+          {
+            destinationKey: {
+              in: [...keys].filter((k) => k.startsWith("folder:")),
+            },
+          },
+          { folderId: { in: personal } },
+        ],
+      },
+    ],
     OR: [
       { destinationKey: { in: [...keys] } },
       { destinationKey: null, folderId: { in: personal } },
@@ -106,6 +118,7 @@ export async function authorizedImages(
   user: Actor,
   copies = false,
   history = false,
+  sharedIds: string[] = [],
 ): Promise<Prisma.VariationWhereInput> {
   const scope = await hierarchyScope(user, new URLSearchParams(), true);
   const visibility = libraryImageVisibility(user);
@@ -115,7 +128,7 @@ export async function authorizedImages(
     delete visibility.expired;
     visibility.AND = (visibility.AND as Prisma.VariationWhereInput[]).slice(1);
   }
-  return {
+  const native: Prisma.VariationWhereInput = {
     AND: [
       visibility,
       {
@@ -131,6 +144,19 @@ export async function authorizedImages(
       },
     ],
   };
+  return sharedIds.length && !history
+    ? {
+        OR: [
+          native,
+          {
+            id: { in: sharedIds },
+            deletedAt: null,
+            expired: false,
+            OR: [{ permanent: true }, { expiresAt: { gt: new Date() } }],
+          },
+        ],
+      }
+    : native;
 }
 export function documentLocation(
   keys: Set<string>,
@@ -428,7 +454,11 @@ export async function organizeSelection(
               data: {
                 userId: user.id,
                 name: d.name,
-                purpose:d.purpose,description:d.description,text:d.text,previewPath:d.previewPath,generationReady:d.generationReady,
+                purpose: d.purpose,
+                description: d.description,
+                text: d.text,
+                previewPath: d.previewPath,
+                generationReady: d.generationReady,
                 path: d.path,
                 mime: d.mime,
                 size: d.size,

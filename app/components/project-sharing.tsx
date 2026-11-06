@@ -1,19 +1,20 @@
 "use client";
-import { useEffect, useState,useRef } from "react";
+import { useEffect, useState, useRef } from "react";
 import { roleLabels } from "../../lib/roles";
 import { SearchSelect } from "./search-select";
 type Member = {
-  subproductCount?:number;
+  subproductCount?: number;
   userId: string;
   user: { name: string; email: string; status: string; role: string };
 };
 export function ProjectSharing({
   projectId,
-  scope = "project", subproductIds,
+  scope = "project",
+  subproductIds,
 }: {
   projectId: string;
-  subproductIds?:string[];
-  scope?: "project" | "category" | "subproduct";
+  subproductIds?: string[];
+  scope?: "project" | "category" | "subproduct" | "folder";
 }) {
   const [members, setMembers] = useState<Member[]>([]),
     [ready, setReady] = useState(false),
@@ -27,21 +28,33 @@ export function ProjectSharing({
     [hasMore, setHasMore] = useState(false);
   const [allAdmins, setAllAdmins] = useState(false),
     [canSetAdmins, setCanSetAdmins] = useState(false);
+  const [allUsers, setAllUsers] = useState(false),
+    [canSetAllUsers, setCanSetAllUsers] = useState(false),
+    [inherited, setInherited] = useState("");
   const title =
-    scope === "project"
-      ? "proyecto"
-      : scope === "category"
-        ? "producto"
-        : "subproducto";
-  const batch=!!subproductIds?.length;
-  const selectionQuery=batch?"ids="+encodeURIComponent(subproductIds!.join(",")):"";
-  const root = batch?`/api/categories/${projectId}/subproduct-members`:`/api/${scope === "project" ? "projects" : scope === "category" ? "categories" : "subproducts"}/${projectId}/members`;
+    scope === "folder"
+      ? "carpeta personal"
+      : scope === "project"
+        ? "proyecto"
+        : scope === "category"
+          ? "producto"
+          : "subproducto";
+  const batch = !!subproductIds?.length;
+  const selectionQuery = batch
+    ? "ids=" + encodeURIComponent(subproductIds!.join(","))
+    : "";
+  const root = batch
+    ? `/api/categories/${projectId}/subproduct-members`
+    : `/api/${scope === "project" ? "projects" : scope === "category" ? "categories" : scope === "folder" ? "library/folders" : "subproducts"}/${projectId}/members`;
   async function request(path = "", method = "GET", data?: unknown) {
-    const r = await fetch(root + path+(selectionQuery?"?"+selectionQuery:""), {
-      method,
-      headers: data ? { "Content-Type": "application/json" } : {},
-      body: data ? JSON.stringify(data) : undefined,
-    });
+    const r = await fetch(
+      root + path + (selectionQuery ? "?" + selectionQuery : ""),
+      {
+        method,
+        headers: data ? { "Content-Type": "application/json" } : {},
+        body: data ? JSON.stringify(data) : undefined,
+      },
+    );
     const b = await r.json();
     if (!r.ok)
       throw Error(b.error || "No se pudieron administrar los accesos.");
@@ -49,13 +62,20 @@ export function ProjectSharing({
   }
   function loaded(b: any) {
     setMembers(b.members);
+    setAllUsers(b.allUsers === true);
+    setCanSetAllUsers(b.canSetAllUsers === true);
+    setInherited(
+      b.inheritedAllUsers ? b.inheritedFrom || "una carpeta superior" : "",
+    );
     setAllAdmins(b.allAdministrators);
     setCanSetAdmins(b.canSetAdministrators);
     setReady(true);
   }
-  const generation=useRef(0);
+  const generation = useRef(0);
   useEffect(() => {
-    generation.current++;setReady(false);setMessage("");
+    generation.current++;
+    setReady(false);
+    setMessage("");
     let active = true;
     void request()
       .then((b) => {
@@ -67,14 +87,21 @@ export function ProjectSharing({
     return () => {
       active = false;
     };
-  }, [root,selectionQuery]);
+  }, [root, selectionQuery]);
   useEffect(() => {
     const controller = new AbortController();
     setSearching(true);
     const timer = setTimeout(() => {
-      void fetch(root + "/directory?"+(selectionQuery?selectionQuery+"&":"")+"q=" + encodeURIComponent(email), {
-        signal: controller.signal,
-      })
+      void fetch(
+        root +
+          "/directory?" +
+          (selectionQuery ? selectionQuery + "&" : "") +
+          "q=" +
+          encodeURIComponent(email),
+        {
+          signal: controller.signal,
+        },
+      )
         .then(async (r) => {
           const b = await r.json();
           if (!r.ok) throw Error(b.error || "No se pudieron buscar cuentas.");
@@ -94,15 +121,18 @@ export function ProjectSharing({
       clearTimeout(timer);
       controller.abort();
     };
-  }, [root, email,selectionQuery]);
+  }, [root, email, selectionQuery]);
   async function change(path: string, method: string, data?: unknown) {
-    const version=generation.current;
+    const version = generation.current;
     setBusy(true);
     setMessage("");
     try {
       await request(path, method, data);
-      const next=await request();
-      if(version===generation.current){loaded(next);setMessage("Accesos actualizados.");}
+      const next = await request();
+      if (version === generation.current) {
+        loaded(next);
+        setMessage("Accesos actualizados.");
+      }
     } catch (e) {
       setMessage(e instanceof Error ? e.message : "No se pudo guardar.");
     } finally {
@@ -111,16 +141,38 @@ export function ProjectSharing({
   }
   return (
     <section className="panel stack" aria-label={"Accesos del " + title}>
-      <h3>{batch?`Accesos de ${subproductIds!.length} subproductos seleccionados`:`Accesos del ${title}`}</h3>
-      <p>
-        Selecciona una cuenta o escribe su correo. Su rol determina las
-        acciones: Usuario y Administrador pueden ver, descargar, editar y
-        generar; Observador solo ve y descarga. El acceso a este {title} se
-        extiende a su contenido. Los permisos heredados de un nivel superior se
-        retiran en ese nivel. OWNER conserva acceso completo.
+      <h3>
+        {batch
+          ? `Accesos de ${subproductIds!.length} subproductos seleccionados`
+          : `Accesos del ${title}`}
+      </h3>
+      <p className="hint">
+        Incluye subcarpetas actuales y futuras. OWNER siempre tiene acceso.{" "}
+        {scope === "folder"
+          ? "Comparte archivos; no concede acceso a proyectos privados de origen."
+          : "Se conserva el rol de cada usuario."}
       </p>
       {ready && (
         <>
+          {!batch && canSetAllUsers && (
+            <label className="row">
+              <input
+                type="checkbox"
+                checked={allUsers}
+                disabled={busy}
+                onChange={(e) =>
+                  void change("", "PATCH", { allUsers: e.target.checked })
+                }
+              />
+              Todos los usuarios · actuales y futuros
+            </label>
+          )}
+          {inherited && (
+            <small className="hint">
+              Acceso para todos heredado de {inherited}. Se retira en esa
+              carpeta.
+            </small>
+          )}
           {scope === "project" && canSetAdmins && (
             <label className="row">
               <input
@@ -181,7 +233,12 @@ export function ProjectSharing({
           {members.map((m) => (
             <div key={m.userId} className="card stack">
               <strong>{m.user.name}</strong>
-              {batch&&<span>Acceso directo en {m.subproductCount} de {subproductIds!.length} seleccionados.</span>}
+              {batch && (
+                <span>
+                  Acceso directo en {m.subproductCount} de{" "}
+                  {subproductIds!.length} seleccionados.
+                </span>
+              )}
               <span>
                 {m.user.email} · {roleLabels[m.user.role]}
               </span>

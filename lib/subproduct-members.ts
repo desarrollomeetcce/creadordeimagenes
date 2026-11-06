@@ -43,7 +43,16 @@ export async function selectedSubproductMembers(
       issuer?.status === "APPROVED" &&
         (issuer.role === "OWNER" ||
           (issuer.role !== "OBSERVER" &&
-            category.project.ownerId === issuer.id)),
+            (category.project.ownerId === issuer.id ||
+              category.createdById === issuer.id ||
+              (await tx.subproduct.count({
+                where: {
+                  id: { in: ids },
+                  categoryId,
+                  deletedAt: null,
+                  createdById: issuer.id,
+                },
+              })) === ids.length))),
       "Solo el creador del proyecto o el OWNER pueden administrar los accesos.",
       403,
     );

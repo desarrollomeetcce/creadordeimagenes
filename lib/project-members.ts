@@ -32,10 +32,14 @@ export async function scopedMembers(
   );
   const projectId =
     category?.projectId ?? sub?.category.projectId ?? resourceId;
-  const project = await projectAccess(user, projectId);
+  const project = await projectAccess(user, projectId, "NAVIGATE");
   demand(
     user.role === "OWNER" ||
-      (user.role !== "OBSERVER" && project.ownerId === user.id),
+      (user.role !== "OBSERVER" &&
+        (project.ownerId === user.id ||
+          category?.createdById === user.id ||
+          sub?.createdById === user.id ||
+          sub?.category.createdById === user.id)),
     "Solo el creador del proyecto o el OWNER pueden administrar los accesos.",
     403,
   );
@@ -49,6 +53,7 @@ export async function scopedMembers(
     const users = await db.user.findMany({
       where: {
         status: "APPROVED",
+        archivedAt: null,
         ...(q
           ? {
               OR: [
@@ -96,6 +101,25 @@ export async function scopedMembers(
           });
   if (req.method === "GET" && !memberId)
     return send({
+      allUsers:
+        scope === "project"
+          ? project.allUsers
+          : scope === "category"
+            ? category!.allUsers
+            : sub!.allUsers,
+      canSetAllUsers: true,
+      inheritedAllUsers:
+        scope !== "project" &&
+        (project.allUsers ||
+          (scope === "subproduct" && sub!.category.allUsers)),
+      inheritedFrom:
+        scope !== "project"
+          ? scope === "subproduct" && sub!.category.allUsers
+            ? sub!.category.name
+            : project.allUsers
+              ? project.name
+              : null
+          : null,
       members: await list(),
       ownerId: project.ownerId,
       allAdministrators: project.allAdministrators,
@@ -108,31 +132,83 @@ export async function scopedMembers(
   );
   if (req.method === "PATCH") {
     demand(!memberId, "Operación no disponible.", 405);
+    const value = z
+      .object({
+        allUsers: z.boolean().optional(),
+        allAdministrators: z.boolean().optional(),
+      })
+      .strict()
+      .refine((v) => Object.keys(v).length === 1, "Elige un ajuste de acceso.")
+      .parse(await body());
     demand(
-      scope === "project" && !memberId && user.role === "OWNER",
+      value.allAdministrators === undefined ||
+        (scope === "project" && user.role === "OWNER"),
       "Solo OWNER establece el acceso grupal de administradores.",
       403,
     );
-    const value = z
-      .object({ allAdministrators: z.boolean() })
-      .strict()
-      .parse(await body());
     await db.$transaction(async (tx) => {
       await tx.$queryRaw`SELECT id FROM "Project" WHERE id=${projectId} FOR UPDATE`;
-      const current = await tx.user.findUnique({ where: { id: user.id } });
+      const issuer = await tx.user.findUnique({ where: { id: user.id } }),
+        current = await tx.project.findUnique({ where: { id: projectId } });
+      const child =
+        scope === "category"
+          ? await tx.category.findUnique({ where: { id: resourceId } })
+          : scope === "subproduct"
+            ? await tx.subproduct.findUnique({
+                where: { id: resourceId },
+                include: { category: true },
+              })
+            : null;
       demand(
-        current?.role === "OWNER" && current.status === "APPROVED",
-        "Tu cuenta ya no puede administrar este acceso.",
+        issuer?.status === "APPROVED" &&
+          !issuer.archivedAt &&
+          current &&
+          !current.deletedAt &&
+          (issuer.role === "OWNER" ||
+            (issuer.role !== "OBSERVER" &&
+              (current.ownerId === issuer.id ||
+                child?.createdById === issuer.id ||
+                ("category" in (child ?? {}) &&
+                  (child as any).category.createdById === issuer.id)))),
+        "No puedes administrar estos accesos.",
         403,
       );
-      await tx.project.update({ where: { id: projectId }, data: value });
+      demand(
+        scope === "project" || (child && !child.deletedAt),
+        "La carpeta no está disponible.",
+        404,
+      );
+      if (value.allAdministrators !== undefined) {
+        demand(
+          issuer.role === "OWNER",
+          "Solo OWNER administra ese grupo.",
+          403,
+        );
+        await tx.project.update({
+          where: { id: projectId },
+          data: { allAdministrators: value.allAdministrators },
+        });
+      } else if (scope === "project")
+        await tx.project.update({
+          where: { id: projectId },
+          data: { allUsers: value.allUsers },
+        });
+      else if (scope === "category")
+        await tx.category.update({
+          where: { id: resourceId },
+          data: { allUsers: value.allUsers },
+        });
+      else
+        await tx.subproduct.update({
+          where: { id: resourceId },
+          data: { allUsers: value.allUsers },
+        });
       await recordActivity(tx, {
         data: {
           actorId: user.id,
-          action: value.allAdministrators
-            ? "ACCESO_ADMINISTRADORES_ACTIVADO"
-            : "ACCESO_ADMINISTRADORES_DESACTIVADO",
-          resourceId: projectId,
+          action: "ACCESO_CARPETA_GRUPAL_ACTUALIZADO",
+          resourceId,
+          detail: { scope, ...value },
         },
       });
     });
@@ -161,21 +237,42 @@ export async function scopedMembers(
       tx.project.findUnique({ where: { id: projectId } }),
       tx.user.findUnique({ where: { id: user.id } }),
     ]);
+    const child =
+      scope === "category"
+        ? await tx.category.findUnique({ where: { id: resourceId } })
+        : scope === "subproduct"
+          ? await tx.subproduct.findUnique({
+              where: { id: resourceId },
+              include: { category: true },
+            })
+          : null;
     demand(
       current &&
         !current.deletedAt &&
         issuer?.status === "APPROVED" &&
+        !issuer.archivedAt &&
         (issuer.role === "OWNER" ||
-          (issuer.role !== "OBSERVER" && current.ownerId === issuer.id)),
+          (issuer.role !== "OBSERVER" &&
+            (current.ownerId === issuer.id ||
+              child?.createdById === issuer.id ||
+              (scope === "subproduct" &&
+                (child as any)?.category.createdById === issuer.id)))),
       "No puedes administrar estos accesos.",
       403,
+    );
+    demand(
+      scope === "project" || (child && !child.deletedAt),
+      "La carpeta no está disponible.",
+      404,
     );
     const target =
       req.method === "POST"
         ? await tx.user.findUnique({ where: { email: payload!.email } })
         : await tx.user.findUnique({ where: { id: memberId! } });
     demand(
-      target && (req.method === "DELETE" || target.status === "APPROVED"),
+      target &&
+        (req.method === "DELETE" ||
+          (target.status === "APPROVED" && !target.archivedAt)),
       "No existe una cuenta aprobada con ese correo.",
       404,
     );

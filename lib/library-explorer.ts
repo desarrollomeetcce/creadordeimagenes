@@ -1,4 +1,11 @@
 import {
+  personalFolders,
+  personalFolderContext,
+  personalFolderAccess,
+  personalDocumentAccess,
+  delegatedImageIds,
+} from "./personal-folder-access";
+import {
   organizeTree,
   organizeSelection,
   subtree,
@@ -34,6 +41,7 @@ type Node = {
   name: string;
   parentId: string | null;
   kind: string;
+  canManageSharing?: boolean;
   sourceDeleted?: boolean;
   sourceParentId?: string | null;
 };
@@ -46,11 +54,12 @@ const send = (value: unknown, status = 200) =>
 export async function libraryTree(
   user: Actor,
   organized = true,
+  visibleFolders?: Awaited<ReturnType<typeof personalFolders>>,
 ): Promise<Node[]> {
   const [projects, products, subs, folders, states] = await Promise.all([
     db.project.findMany({
       where: libraryProjectFilter(user),
-      select: { id: true, name: true, deletedAt: true },
+      select: { id: true, name: true, ownerId: true, deletedAt: true },
     }),
     db.category.findMany({
       where: libraryCategoryFilter(user),
@@ -58,8 +67,9 @@ export async function libraryTree(
         id: true,
         name: true,
         projectId: true,
+        createdById: true,
         deletedAt: true,
-        project: { select: { deletedAt: true } },
+        project: { select: { deletedAt: true, ownerId: true } },
       },
     }),
     db.subproduct.findMany({
@@ -68,6 +78,7 @@ export async function libraryTree(
         id: true,
         name: true,
         categoryId: true,
+        createdById: true,
         studio: true,
         _count: {
           select: {
@@ -76,20 +87,15 @@ export async function libraryTree(
         },
         deletedAt: true,
         category: {
-          select: { deletedAt: true, project: { select: { deletedAt: true } } },
+          select: {
+            deletedAt: true,
+            createdById: true,
+            project: { select: { deletedAt: true, ownerId: true } },
+          },
         },
       },
     }),
-    db.libraryFolder.findMany({
-      where: { userId: user.id },
-      select: {
-        id: true,
-        name: true,
-        parentId: true,
-        anchorScope: true,
-        anchorId: true,
-      },
-    }),
+    visibleFolders ? Promise.resolve(visibleFolders) : personalFolders(user),
     db.libraryNodeState.findMany({ where: { userId: user.id } }),
   ]);
   const hiddenSubs = await emptyStoppedSubproducts(
@@ -108,6 +114,9 @@ export async function libraryTree(
         name: p.name,
         parentId: null,
         kind: "project",
+        canManageSharing:
+          user.role === "OWNER" ||
+          (user.role !== "OBSERVER" && p.ownerId === user.id),
         sourceDeleted: !!p.deletedAt,
       })),
       ...products.map((p) => ({
@@ -115,6 +124,10 @@ export async function libraryTree(
         name: p.name,
         parentId: "project:" + p.projectId,
         kind: "product",
+        canManageSharing:
+          user.role === "OWNER" ||
+          (user.role !== "OBSERVER" &&
+            (p.createdById === user.id || p.project.ownerId === user.id)),
         sourceDeleted: !!(p.deletedAt || p.project.deletedAt),
       })),
       ...subs
@@ -133,6 +146,12 @@ export async function libraryTree(
           name: p.name,
           parentId: "product:" + p.categoryId,
           kind: "subproduct",
+          canManageSharing:
+            user.role === "OWNER" ||
+            (user.role !== "OBSERVER" &&
+              (p.createdById === user.id ||
+                p.category.createdById === user.id ||
+                p.category.project.ownerId === user.id)),
           sourceDeleted: !!deletedSourceNotice(p),
         })),
       ...(user.role === "OWNER"
@@ -154,6 +173,9 @@ export async function libraryTree(
             ? f.anchorScope + ":" + f.anchorId
             : null,
         kind: "folder",
+        canManageSharing:
+          user.role === "OWNER" ||
+          (user.role !== "OBSERVER" && f.userId === user.id),
       })),
     ],
     organized ? states : [],
@@ -169,11 +191,7 @@ async function destination(
   const [kind, id] = key.split(":");
   demand(id, "Carpeta no válida.");
   if (kind === "folder") {
-    const folder = await db.libraryFolder.findFirst({
-      where: { id, userId: user.id },
-      select: { id: true },
-    });
-    demand(folder, "Carpeta no disponible.", 404);
+    await personalFolderAccess(user, id);
     return { parentId: id, anchorScope: null, anchorId: null };
   }
   demand(
@@ -191,8 +209,9 @@ async function destination(
   return { parentId: null, anchorScope: kind, anchorId: id };
 }
 export async function explorerData(user: Actor, incoming: URLSearchParams) {
+  const sharing = await personalFolderContext(user);
   const params = new URLSearchParams(incoming),
-    tree = await libraryTree(user);
+    tree = await libraryTree(user, true, sharing.folders);
   const query = z
       .string()
       .max(200)
@@ -289,8 +308,15 @@ export async function explorerData(user: Actor, incoming: URLSearchParams) {
           (!incoming.has("folder") && params.get("recursive") !== "false")
         ? subtree(tree, folder || "__root")
         : new Set([folder || "__root"]);
-  const authorized = await authorizedImages(user);
-  const aliasAuthorized = await authorizedImages(user, true);
+  const accessibleFolders = sharing.folders,
+    sharedKeys = [
+      ...sharing.nativeKeys,
+      ...accessibleFolders.map((f) => "folder:" + f.id),
+    ],
+    sharedFolderIds = accessibleFolders.map((f) => f.id);
+  const delegated = await delegatedImageIds(user, accessibleFolders);
+  const authorized = await authorizedImages(user, false, false, delegated);
+  const aliasAuthorized = await authorizedImages(user, true, false, delegated);
   const personal = folder.startsWith("folder:") ? folder.slice(7) : null;
   const where: Prisma.VariationWhereInput = {
     ...(kind === "documents" ? { id: "" } : {}),
@@ -304,21 +330,25 @@ export async function explorerData(user: Actor, incoming: URLSearchParams) {
   };
   if (foldersOnly) where.id = "";
   const documentWhere: Prisma.LibraryDocumentWhereInput = {
-    userId: user.id,
+    AND: [
+      ...words.map((word) => ({
+        name: { contains: word, mode: "insensitive" as const },
+      })),
+      {
+        OR: [
+          { userId: user.id },
+          { destinationKey: null, folderId: { in: sharedFolderIds } },
+          { destinationKey: { in: sharedKeys } },
+        ],
+      },
+    ],
     deletedAt: null,
     ...documentLocation(locationKeys),
-    ...(words.length
-      ? {
-          AND: words.map((word) => ({
-            name: { contains: word, mode: "insensitive" as const },
-          })),
-        }
-      : {}),
     ...(kind === "images" || foldersOnly ? { id: "" } : {}),
     ...(Object.keys(dates).length ? { createdAt: dates } : {}),
   };
   const copyWhere: Prisma.LibraryImageCopyWhereInput = {
-    userId: user.id,
+    OR: [{ userId: user.id }, { destinationKey: { in: sharedKeys } }],
     deletedAt: null,
     destinationKey: { in: [...locationKeys] },
     variation: {
@@ -521,11 +551,21 @@ export async function explorerData(user: Actor, incoming: URLSearchParams) {
         ]
       : [],
   );
+  const sourceVisible = await authorizedImages(user);
+  const sourceRows = await db.variation.findMany({
+      where: { id: { in: items.map((v) => v.id) }, AND: [sourceVisible] },
+      select: { id: true },
+    }),
+    sourceIds = new Set(sourceRows.map((v) => v.id));
   const costs =
     user.role === "OBSERVER"
       ? []
       : await db.usageLedger.findMany({
-          where: { jobId: { in: items.map((v) => v.job.id) } },
+          where: {
+            jobId: {
+              in: items.filter((v) => sourceIds.has(v.id)).map((v) => v.job.id),
+            },
+          },
           select: { jobId: true, actualMicros: true },
         });
   const costMap = new Map(
@@ -758,11 +798,14 @@ export async function explorerData(user: Actor, incoming: URLSearchParams) {
     tree,
     items: items.map((v) => ({
       ...v,
+      ...(!sourceIds.has(v.id)
+        ? { job: { id: "" }, subproduct: null, model: "" }
+        : {}),
       sourceNotice: deletedSourceNotice(v.subproduct),
       ...(user.role !== "OBSERVER"
         ? { actualMicros: costMap.get(v.job.id) ?? null }
         : {}),
-      canEdit: user.role !== "OBSERVER",
+      canEdit: user.role !== "OBSERVER" && sourceIds.has(v.id),
       canApprove:
         user.role !== "OBSERVER" &&
         (user.role === "OWNER" || v.job.actorId === user.id),
@@ -863,10 +906,15 @@ export async function explorerRoutes(
   if (parts[1] === "documents") {
     if (parts[2]) {
       const d = await db.libraryDocument.findFirst({
-        where: { id: parts[2], userId: user.id, deletedAt: null },
+        where: {
+          id: parts[2],
+          ...(req.method === "GET" ? {} : { userId: user.id }),
+          deletedAt: null,
+        },
       });
       demand(d, "Archivo no disponible.", 404);
       if (req.method === "GET") {
+        await personalDocumentAccess(user, d);
         const preview = req.nextUrl.searchParams.get("preview") === "1";
         const filePath = preview && d.previewPath ? d.previewPath : d.path;
         const headers = {

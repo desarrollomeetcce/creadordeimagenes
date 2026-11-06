@@ -20,6 +20,8 @@ enum AccountStatus {
   SUSPENDED
 }
 model User {
+  fixedCostGrant FixedCostGrant?
+  libraryFolderMemberships LibraryFolderMember[]
   aiAccessEnabled Boolean @default(true)
   archivedAt DateTime?
   @@index([archivedAt])
@@ -65,6 +67,7 @@ model Session {
   @@index([expiresAt])
 }
 model Project {
+  allUsers Boolean @default(false)
   studio Json @default("{}")
   id String @id @default(cuid())
   seedKey String? @unique
@@ -91,6 +94,8 @@ model ProjectMember {
   @@id([projectId,userId])
 }
 model Category {
+  allUsers Boolean @default(false)
+  createdById String?
   studio Json @default("{}")
   id String @id @default(cuid())
   name String
@@ -108,6 +113,8 @@ model Category {
   @@index([projectId,deletedAt])
 }
 model Subproduct {
+  allUsers Boolean @default(false)
+  createdById String?
   studio Json @default("{}")
   id String @id @default(cuid())
   name String
@@ -305,6 +312,8 @@ model ImageVersion {
 }
 
 model LibraryFolder {
+  allUsers Boolean @default(false)
+  members LibraryFolderMember[]
   anchorScope String?
   anchorId String?
   id String @id @default(cuid())
@@ -1544,4 +1553,53 @@ model CreativeMetaPageDirectory {
  partial Boolean @default(false)
  fetchedAt DateTime @default(now())
  @@index([fetchedAt])
+}
+
+model LibraryFolderMember {
+  folderId String
+  userId String
+  folder LibraryFolder @relation(fields:[folderId],references:[id],onDelete:Cascade)
+  user User @relation(fields:[userId],references:[id],onDelete:Cascade)
+  @@id([folderId,userId])
+  @@index([userId])
+}
+
+
+model FixedCostSheet {
+  id String @id @default(cuid())
+  name String @unique
+  createdAt DateTime @default(now())
+  entries FixedCostEntry[]
+}
+model FixedCostEntry {
+  id String @id @default(cuid())
+  sheetId String
+  sheet FixedCostSheet @relation(fields:[sheetId],references:[id],onDelete:Restrict)
+  month String
+  date String
+  kind String
+  concept String
+  category String @default("")
+  country String @default("")
+  location String @default("")
+  person String @default("")
+  amount Decimal @db.Decimal(14,2)
+  currency String
+  paid Boolean @default(false)
+  notes String @default("")
+  seriesId String
+  version Int @default(1)
+  createdById String
+  updatedById String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@unique([seriesId,month])
+  @@index([month,sheetId])
+}
+model FixedCostGrant {
+  userId String @id
+  user User @relation(fields:[userId],references:[id],onDelete:Cascade)
+  permission String
+  createdById String
+  createdAt DateTime @default(now())
 }

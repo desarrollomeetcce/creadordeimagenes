@@ -3044,3 +3044,11 @@ Corregido handoff de selección privada que quedaba bloqueado esperando carpeta 
 Etiquetas del reemplazo compartido aclaran Dejar pendiente (interno) y Pausar ahora en Meta. No se modificaron tareas/estados/recibos ni autorización de pausa real: pendiente no solicita Graph y pausa exige acción/confirmación existentes. No se ejecutan IA/generación/publicación al preparar.
 
 Comprobado con TypeScript/build,12 pruebas de política existentes,2 integraciones con base exclusiva y4 escenarios de navegador: entrada desde caché Colombia a Argentina con inventario y2 diplomados, reapertura/unpin sin duplicados, respuesta perdida y recuperación, móvil390/solo escrituras de metadatos. Concurrencia reusa mismos IDs; actor ajeno/fuente incompatible/país cambiado/selección incompleta se rechazan. Datos originales y financieros QA protegidos. Sin migración ni cargos/Meta reales; falta verificar despliegue Hostinger.
+
+### 2026-11-06 · Costos fijos y carpetas compartidas
+
+Módulo nuevo de control mensual con hojas sugeridas editables, tabla inline de50filas, filtros y totales completos por moneda. Fijos/variables, pagado/pendiente y traslado explícito al siguiente mes sin duplicar series. OWNER por defecto; compartir consulta/edición explícita, Observador solo lectura, revalidación servidor y conflictos por versión. No registros comerciales de ejemplo en producción.
+
+Biblioteca incorpora Compartir en proyectos, países/productos, diplomados y personales; usuarios concretos o todos actuales/futuros. OWNER ve carpetas de administradores; creador registrado administra sus propios hijos. Herencia canónica distingue navegación de acceso completo. Delegación personal limitada a archivos; fuente revocada pierde acceso, sin exponer edición/diseño/costes privados. Documentos y búsqueda respetan destino actual.
+
+319 pruebas unitarias existentes, dos de calendario/importes y una integración extensa con cuentas sintéticas: totales, reintentos, traslado, permisos actuales/futuros, descendientes, padres de navegación, bytes/documentos y revocación; cinco comprobaciones Chromium de tabla persistente,390px, compartir personal, límites de origen y Observador. Build correcto. Migraciones aditivas en BD exclusiva; sin Meta/IA reales ni cambios en V7/P23/G49 protegidos. Publicación de código no verifica despliegue Hostinger.

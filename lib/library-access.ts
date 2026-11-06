@@ -14,6 +14,8 @@ export function librarySubproductFilter(
         OR: [
           { category: categoryFullFilter(user) },
           { members: { some: { userId: user.id } } },
+          { allUsers: true },
+          ...(user.role !== "OBSERVER" ? [{ createdById: user.id }] : []),
         ],
       };
 }
@@ -23,7 +25,19 @@ export function libraryCategoryFilter(user: Actor): Prisma.CategoryWhereInput {
     : {
         OR: [
           categoryFullFilter(user),
-          { subproducts: { some: { members: { some: { userId: user.id } } } } },
+          {
+            subproducts: {
+              some: {
+                OR: [
+                  { members: { some: { userId: user.id } } },
+                  { allUsers: true },
+                  ...(user.role !== "OBSERVER"
+                    ? [{ createdById: user.id }]
+                    : []),
+                ],
+              },
+            },
+          },
         ],
       };
 }
@@ -38,9 +52,21 @@ export function libraryProjectFilter(user: Actor): Prisma.ProjectWhereInput {
               some: {
                 OR: [
                   { members: { some: { userId: user.id } } },
+                  { allUsers: true },
+                  ...(user.role !== "OBSERVER"
+                    ? [{ createdById: user.id }]
+                    : []),
                   {
                     subproducts: {
-                      some: { members: { some: { userId: user.id } } },
+                      some: {
+                        OR: [
+                          { members: { some: { userId: user.id } } },
+                          { allUsers: true },
+                          ...(user.role !== "OBSERVER"
+                            ? [{ createdById: user.id }]
+                            : []),
+                        ],
+                      },
                     },
                   },
                 ],

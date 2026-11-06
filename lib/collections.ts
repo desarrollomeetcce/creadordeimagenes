@@ -1,4 +1,6 @@
-import {libraryJobAccess} from "./library-access";
+import { AppError } from "./errors";
+import { delegatedImageIds } from "./personal-folder-access";
+import { libraryJobAccess } from "./library-access";
 import { recordActivity } from "./activity";
 import { z } from "zod";
 import type { Prisma } from "@prisma/client";
@@ -244,21 +246,39 @@ export async function exportCollection(user: User, input: unknown) {
   if ("ids" in b)
     demand(rows.length === new Set(b.ids).size, "Una imagen no existe.", 404);
   const projects = new Map<string, string>();
+  const sharedIds =
+    "ids" in b ? new Set(await delegatedImageIds(user)) : new Set<string>();
+  const delegated = new Set<string>();
   // Authorize the entire selection before reading any bytes or creating a ZIP.
   for (const row of rows) {
-    if (row.job.projectId === "connection-test") {
-      ownerOnly(user);
-      projects.set("connection-test", "Prueba_IA");
-    } else {
-      await libraryJobAccess(user, {
-        ...row.job,
-        subproductId: row.subproductId,
-      });
-      if (!projects.has(row.job.projectId))
-        projects.set(
-          row.job.projectId,
-          (await db.project.findUniqueOrThrow({where:{id:row.job.projectId},select:{name:true}})).name,
-        );
+    try {
+      if (row.job.projectId === "connection-test") {
+        ownerOnly(user);
+        projects.set("connection-test", "Prueba_IA");
+      } else {
+        await libraryJobAccess(user, {
+          ...row.job,
+          subproductId: row.subproductId,
+        });
+        if (!projects.has(row.job.projectId))
+          projects.set(
+            row.job.projectId,
+            (
+              await db.project.findUniqueOrThrow({
+                where: { id: row.job.projectId },
+                select: { name: true },
+              })
+            ).name,
+          );
+      }
+    } catch (error) {
+      if (
+        !(error instanceof AppError) ||
+        ![403, 404].includes(error.status) ||
+        !sharedIds.has(row.id)
+      )
+        throw error;
+      delegated.add(row.id);
     }
 
     demand(
@@ -291,14 +311,16 @@ export async function exportCollection(user: User, input: unknown) {
         413,
       );
     }
-    const project = `${safeFilename(projects.get(row.job.projectId)!)}_${safeFilename(row.job.projectId)}`;
+    const project = `${safeFilename(projects.get(row.job.projectId) ?? "Compartido")}_${safeFilename(row.job.projectId)}`;
     const category = `${safeFilename(row.subproduct?.category.name ?? "Pruebas")}_${safeFilename(row.subproduct?.category.id ?? "general")}`;
     const product = `${safeFilename(row.subproduct?.name ?? "Prueba")}_${safeFilename(row.subproduct?.id ?? "general")}`;
-    const folder = `${project}/${category}/${product}`,
+    const folder = delegated.has(row.id)
+        ? "Archivos_compartidos"
+        : `${project}/${category}/${product}`,
       number = (sequence.get(folder) ?? 0) + 1;
     sequence.set(folder, number);
     zip.file(
-      `${folder}/${safeFilename(row.subproduct?.name ?? "Prueba")}_${String(number).padStart(2, "0")}_${safeFilename(row.id)}.${b.format}`,
+      `${folder}/${safeFilename(delegated.has(row.id) ? "Afiche" : (row.subproduct?.name ?? "Prueba"))}_${String(number).padStart(2, "0")}_${safeFilename(row.id)}.${b.format}`,
       bytes,
     );
   }

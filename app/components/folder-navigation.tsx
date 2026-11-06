@@ -6,6 +6,7 @@ export type FolderNode = {
   parentId: string | null;
   name: string;
   kind: string;
+  canManageSharing?: boolean;
   sourceDeleted?: boolean;
   sourceParentId?: string | null;
 };

@@ -83,6 +83,7 @@ export function fullProjectFilter(
     OR: [
       ...(u.role !== "OBSERVER" ? [{ ownerId: u.id }] : []),
       { members: { some: { userId: u.id } } },
+      { allUsers: true },
       ...(u.role === "ADMIN" ? [{ allAdministrators: true }] : []),
     ],
   };
@@ -95,6 +96,8 @@ export function categoryFullFilter(
     OR: [
       { project: fullProjectFilter(u) },
       { members: { some: { userId: u.id } } },
+      { allUsers: true },
+      ...(u.role !== "OBSERVER" ? [{ createdById: u.id }] : []),
     ],
   };
 }
@@ -110,7 +113,14 @@ export function categoryFilter(
       categoryFullFilter(u),
       {
         subproducts: {
-          some: { deletedAt: null, members: { some: { userId: u.id } } },
+          some: {
+            deletedAt: null,
+            OR: [
+              { members: { some: { userId: u.id } } },
+              { allUsers: true },
+              ...(u.role !== "OBSERVER" ? [{ createdById: u.id }] : []),
+            ],
+          },
         },
       },
     ],
@@ -130,6 +140,8 @@ export function subproductFilter(
     OR: [
       { category: categoryFullFilter(u) },
       { members: { some: { userId: u.id } } },
+      { allUsers: true },
+      ...(u.role !== "OBSERVER" ? [{ createdById: u.id }] : []),
     ],
   };
 }
@@ -146,11 +158,17 @@ export function projectFilter(
             deletedAt: null,
             OR: [
               { members: { some: { userId: u.id } } },
+              { allUsers: true },
+              ...(u.role !== "OBSERVER" ? [{ createdById: u.id }] : []),
               {
                 subproducts: {
                   some: {
                     deletedAt: null,
-                    members: { some: { userId: u.id } },
+                    OR: [
+                      { members: { some: { userId: u.id } } },
+                      { allUsers: true },
+                      ...(u.role !== "OBSERVER" ? [{ createdById: u.id }] : []),
+                    ],
                   },
                 },
               },
@@ -255,10 +273,32 @@ export async function accessFlags(
   } catch {
     fullAccess = false;
   }
+  const category =
+    scope === "category"
+      ? await db.category.findUnique({
+          where: { id },
+          select: { createdById: true },
+        })
+      : null;
+  const sub =
+    scope === "subproduct"
+      ? await db.subproduct.findUnique({
+          where: { id },
+          select: {
+            createdById: true,
+            category: { select: { createdById: true } },
+          },
+        })
+      : null;
   return {
     fullAccess,
     canEdit: fullAccess && u.role !== "OBSERVER",
     canManageAccess:
-      u.role === "OWNER" || (u.role !== "OBSERVER" && project.ownerId === u.id),
+      u.role === "OWNER" ||
+      (u.role !== "OBSERVER" &&
+        (project.ownerId === u.id ||
+          category?.createdById === u.id ||
+          sub?.createdById === u.id ||
+          sub?.category.createdById === u.id)),
   };
 }

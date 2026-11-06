@@ -368,6 +368,7 @@ export async function createStudioProduct(
       data: {
         id: "studio-product-" + b.requestId,
         projectId,
+        createdById: actor.id,
         name: b.name,
         prompt: "",
         applyPromptToAll: false,
@@ -468,6 +469,7 @@ export async function addStudioItems(
         s = await tx.subproduct.create({
           data: {
             categoryId,
+            createdById: actor.id,
             name: item.name,
             settings: {},
             instructionPolicy: {
@@ -794,6 +796,7 @@ export async function prepareInventorySelection(
       return tx.category.create({
         data: {
           projectId: b.projectId,
+          createdById: actor.id,
           name: folderName,
           prompt: "",
           applyPromptToAll: false,

@@ -319,10 +319,12 @@ async function handle(
       return send(result);
     }
     const user = await actor();
+    if(parts[0]==="fixed-costs")return await (await import("@/lib/fixed-costs")).fixedCostRoutes(req,parts,user,()=>body(req));
     if(parts[0]==="creative-studio")return await (await import("@/lib/creative-studio/routes")).creativeStudioRoutes(req,parts,user,()=>body(req));
     if(parts[0]==="courses-ai")return await (await import("@/lib/courses/routes")).courseRoutes(req,parts,user,()=>body(req));
     if(!hasAiModuleAccess(user) && ['projects','categories','subproducts','variations','jobs','orders','attachments','library','exports','presets','folders','assets','generations','generate','tests','brands'].includes(parts[0]))demand(false,'Esta cuenta no tiene acceso a los módulos de IA.',403);
     if (["SUPERVISOR","ADVISOR"].includes(user.role)) demand(parts[0]==="meta-ads" || ["auth/me","auth/logout","auth/change-password"].includes(route),"Tu rol está destinado a Mi desempeño.",403);
+    if(parts[0]==="library"&&parts[1]==="folders"&&parts[2]&&parts[3]==="members"&&parts.length<=5)return await (await import("@/lib/personal-folder-members")).personalFolderMembers(req,parts[2],parts[4],user,()=>body(req));
     if(parts[0]==="meta-ads")return await (await import("@/lib/meta-ads/routes")).metaRoutes(req,parts,user,()=>body(req));
     if(parts[0]==="system-resources")return await (await import("@/lib/system-resources")).systemResourceRoutes(req,parts,user,()=>body(req));
     if(parts[0]==="engines"&&parts[1]==="config"){
@@ -626,7 +628,7 @@ async function handle(
             user.role !== "OBSERVER" &&
             (user.role === "OWNER" ||
               project.ownerId === user.id ||
-              (user.role === "ADMIN" && project.allAdministrators) ||
+              project.allUsers || (user.role === "ADMIN" && project.allAdministrators) ||
               project.members.some((m) => m.userId === user.id)),
         });
       if (method === "PUT")
@@ -639,6 +641,7 @@ async function handle(
         email: user.email,
         role: user.role,
         aiAccessEnabled:user.aiAccessEnabled,
+        fixedCostsShared: !!(await db.fixedCostGrant.findUnique({where:{userId:user.id},select:{userId:true}})),
         effectivenessShared: !!(await db.effectivenessGrant.findFirst({where:{userId:user.id},select:{scope:true}})),
         metaAdsShared: !!(await db.metaWorkspaceGrant.findUnique({where:{userId:user.id},select:{userId:true}})),
         advisorLinked: !!(await db.metaAdvisorPortal.findUnique({where:{userId:user.id},select:{advisorId:true}})),
@@ -949,7 +952,7 @@ async function handle(
         const b = content.parse(await body(req));
         const created = await db.$transaction(async (tx) => {
           const product = await tx.category.create({
-            data: { name: b.name, prompt: b.prompt, projectId: id },
+            data: { name: b.name, prompt: b.prompt, projectId: id,createdById:user.id },
           });
           await recordActivity(tx, {
             data: {
@@ -1170,7 +1173,7 @@ async function handle(
           const rows = [];
           for (const name of b.names)
             rows.push(
-              await tx.subproduct.create({ data: { name, categoryId: id } }),
+              await tx.subproduct.create({ data: { name, categoryId: id,createdById:user.id } }),
             );
           await recordActivity(tx, {
             data: {
@@ -1512,7 +1515,7 @@ async function handle(
         202,
       );
     }
-    if (parts[0] === "variations" && parts[1]) {
+    if (parts[0] === "variations" && parts[1] && !(method==="GET"&&parts.length===2)) {
       const { variationRoutes } = await import("@/lib/variation-routes");
       const response = await variationRoutes(req, parts, user, () => body(req));
       if (response) return response;
@@ -1543,13 +1546,14 @@ async function handle(
         include: { job: true },
       });
       demand(v, "Imagen no encontrada.", 404);
-      if (v.job.projectId === "connection-test") ownerOnly(user);
-      else
-        await libraryJobAccess(
-          user,
-          v.job,
-          method === "GET" ? "VIEW" : "EDIT",
-        );
+      try {
+        if(method==="GET"&&parts.length===2) await (await import("@/lib/versions")).accessibleVariation(user,v.id,"VIEW");
+        else if (v.job.projectId === "connection-test") ownerOnly(user);
+        else await libraryJobAccess(user,v.job,method==="GET"?"VIEW":"EDIT");
+      } catch(error){
+        if(!(error instanceof AppError)||![403,404].includes(error.status)||method!=="GET"||parts.length!==2)throw error;
+        await (await import("@/lib/personal-folder-access")).sharedImageFileAccess(user,v.id);
+      }
       if (method === "GET" && parts.length === 2) {
         demand(
           !v.deletedAt &&

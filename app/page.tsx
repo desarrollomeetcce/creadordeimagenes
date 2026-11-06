@@ -10,6 +10,7 @@ const CreativeStudio = dynamic(()=>import("./components/creative-studio").then(m
 const ProjectImagePreview = dynamic(() => import("./components/project-image-preview").then(m => m.ProjectImagePreview));
 import {SidebarNavigation} from "./components/sidebar-navigation";
 import type {AdvisorPeriodView} from "../lib/meta-ads/advisor-period-history";
+const FixedCosts=dynamic(()=>import("./components/fixed-costs").then(m=>m.FixedCosts),{loading:()=> <p role="status">Cargando costos…</p>});
 const financialViews=["products","inventory","advisors"];
 const ProductsCatalog=dynamic(()=>import("./components/products-catalog").then(m=>m.ProductsCatalog),{loading:()=> <p role="status">Cargando sección…</p>});
 const AdvisorPerformance=dynamic(()=>import("./components/advisor-performance").then(m=>m.AdvisorPerformance),{loading:()=> <p role="status">Cargando desempeño…</p>});
@@ -82,7 +83,7 @@ const Library = LibraryWorkspace;
 const Presets = dynamic(() => import("./components/productivity").then(m => m.Presets));
 const PresetTools = dynamic(() => import("./components/productivity").then(m => m.PresetTools));
 import type { FormEvent } from "react";
-type User = { aiAccessEnabled?:boolean; id: string; name: string; email: string; role: string; advisorLinked?: boolean; metaAdsShared?: boolean; effectivenessShared?:boolean };
+type User = { fixedCostsShared?:boolean; aiAccessEnabled?:boolean; id: string; name: string; email: string; role: string; advisorLinked?: boolean; metaAdsShared?: boolean; effectivenessShared?:boolean };
 type Settings = {
   count: number;
   textCount: number;
@@ -298,6 +299,7 @@ export default function Home() {
           "plans",
           "collection",
           ...(user.effectivenessShared?financialViews:[]),
+          ...(user.role==="OWNER"||user.fixedCostsShared?["fixed-costs"]:[]),
           ...(managesUsers(user.role) ? ["users"] : []),
           ...(user.role === "OWNER"
             ? [
@@ -314,7 +316,7 @@ export default function Home() {
         ];
         const nextView =
           allowed.includes(requested) && (hasAiModuleAccess(user)||!['projects','library','presets','history','trash','jobs'].includes(requested)) &&
-          (!["SUPERVISOR","ADVISOR"].includes(user.role) || ["performance","account"].includes(requested) || (requested==="metaads"&&user.metaAdsShared) || (financialViews.includes(requested)&&user.effectivenessShared)) &&
+          (!["SUPERVISOR","ADVISOR"].includes(user.role) || ["performance","account"].includes(requested) || (requested==="metaads"&&user.metaAdsShared) || (financialViews.includes(requested)&&user.effectivenessShared) || (requested==="fixed-costs"&&user.fixedCostsShared)) &&
           (user.role !== "OBSERVER" ||
             [
               "projects",
@@ -326,6 +328,7 @@ export default function Home() {
               "collection",
               "performance",
               ...(user.effectivenessShared?financialViews:[]),
+          ...(user.fixedCostsShared?["fixed-costs"]:[]),
             ].includes(requested))
             ? requested
             : (!hasAiModuleAccess(user)?(user.effectivenessShared?'products':user.metaAdsShared?'metaads':user.advisorLinked||['SUPERVISOR','ADVISOR'].includes(user.role)?'performance':'account'):(["SUPERVISOR","ADVISOR"].includes(user.role)?"performance":"projects"));
@@ -379,7 +382,7 @@ export default function Home() {
     return () => {
       active = false;
     };
-  }, [location, user?.id, user?.role, user?.aiAccessEnabled, user?.effectivenessShared, user?.metaAdsShared]);
+  }, [location, user?.id, user?.role, user?.aiAccessEnabled, user?.effectivenessShared, user?.metaAdsShared, user?.fixedCostsShared]);
   const openProject = async (id: string) =>
     changeAddress({ view: "projects", project: id });
   const openCategory = async (id: string) =>
@@ -471,6 +474,7 @@ export default function Home() {
     );
   if (!user) return <Login setup={setup} onLogin={reloadUser} />;
   const titles: Record<string, string> = {
+    "fixed-costs":"Costos fijos",
     projects: "Proyectos",
     library: "Biblioteca",
     metaads: "Meta Ads",
@@ -518,9 +522,10 @@ export default function Home() {
             ...(["OWNER","SUPERVISOR","ADVISOR"].includes(user.role)||user.advisorLinked?[["performance","◎","Mi desempeño"]]:[]),
             ["projects","▦","Proyectos"],["library","▧","Biblioteca"],["metaads","▥","Meta Ads"],
             ...(user.role==="OWNER"||user.effectivenessShared?[["inventory","▤","Inventario"],["advisors","♙","Asesores"],["products","▥","Ventas"]]:[]),
+            ...(user.role==="OWNER"||user.fixedCostsShared?[["fixed-costs","▦","Costos fijos"]]:[]),
             ["trash","⌫","Papelera"],
             ...(user.role==="OWNER"&&hasAiModuleAccess(user)?[["courses-ai","✦","Cursos IA"]]:[]),
-          ].filter(([v])=>(hasAiModuleAccess(user)||!["projects","library","trash"].includes(v))&&(!["SUPERVISOR","ADVISOR"].includes(user.role)||v==="performance"||(v==="metaads"&&!!user.metaAdsShared)||(financialViews.includes(v)&&!!user.effectivenessShared))&&(user.role!=="OBSERVER"||["projects","library","performance"].includes(v)||(v==="metaads"&&!!user.metaAdsShared)||(financialViews.includes(v)&&!!user.effectivenessShared)))}/>
+          ].filter(([v])=>(hasAiModuleAccess(user)||!["projects","library","trash"].includes(v))&&(!["SUPERVISOR","ADVISOR"].includes(user.role)||v==="performance"||(v==="metaads"&&!!user.metaAdsShared)||(financialViews.includes(v)&&!!user.effectivenessShared)||(v==="fixed-costs"&&!!user.fixedCostsShared))&&(user.role!=="OBSERVER"||["projects","library","performance"].includes(v)||(v==="metaads"&&!!user.metaAdsShared)||(financialViews.includes(v)&&!!user.effectivenessShared)||(v==="fixed-costs"&&!!user.fixedCostsShared)))}/>
           <SidebarAccount user={user} view={view} navigate={navigate} logout={() => {
             void api("auth/logout", "POST").then(() => { clearGallerySession(); return reloadUser(); });
           }} />
@@ -533,11 +538,11 @@ export default function Home() {
           <header className={utilityViews.includes(view)?"topbar utility-topbar":financialViews.includes(view) ? "topbar effectiveness-topbar financial-module-topbar" : view==="courses-ai"?"topbar courses-topbar":view==="projects"?"topbar studio-topbar":view==="metaads"?"topbar meta-topbar":"topbar"}>
             {view === "projects" ? <><span className="studio-topbar-brand">▦ Proyectos <strong>✦ Estudio creativo</strong><small>Un espacio. Todas tus posibilidades.</small></span><RoleGuide compact name={user.name} role={user.role}/><VisualAuditNotice compact key={user.id}/><a href="?view=library" target="_blank" rel="noopener noreferrer" title="Abrir Biblioteca">▧ Abrir Biblioteca ↗</a></> : utilityViews.includes(view)?<><div className="utility-title"><h1>{["history","visual-audit"].includes(view)?"Auditoría":titles[view]}</h1>{["history","visual-audit"].includes(view)&&<nav aria-label="Vistas de auditoría"><a href="?view=visual-audit" hidden={user.role!=="OWNER"} aria-current={view==="visual-audit"?"page":undefined} onClick={e=>{if(e.ctrlKey||e.metaKey||e.shiftKey||e.altKey)return;e.preventDefault();navigate("visual-audit")}}>Visual</a><a href="?view=history" aria-current={view==="history"?"page":undefined} onClick={e=>{if(e.ctrlKey||e.metaKey||e.shiftKey||e.altKey)return;e.preventDefault();navigate("history")}}>Historial</a></nav>}</div><div className="utility-account-context"><RoleGuide compact name={user.name} role={user.role}/><VisualAuditNotice compact key={user.id}/></div></>: view === "courses-ai" ? <><h1>Cursos IA</h1><div className="courses-topbar-actions"><button type="button" onClick={()=>window.dispatchEvent(new Event("share-courses"))}>Compartir</button><a href="/?view=ai&aiTab=connections">Ajustes IA</a></div></> : financialViews.includes(view) ? <div className="effectiveness-topbar-title"><div className="effectiveness-title-line"><h1>{titles[view]}</h1>{user.role==="OWNER"&&<button type="button" className="effectiveness-share-button" onClick={()=>window.dispatchEvent(new Event("share-effectiveness"))}>Compartir</button>}</div></div> : view === "metaads" ? <><h1 className="sr-only">Meta Ads</h1><div id="meta-navigation-slot"/><div className="meta-topbar-actions"><span className="badge">Producción publicitaria</span><div id="meta-share-slot"/><ThemeToggle/></div></> : <span className="muted">{titles[view]}</span>}
             {view === "metaads" && <span className="sr-only">Rol: {user.role}</span>}
-            {view !== "metaads" && view !== "performance" && !utilityViews.includes(view) && !financialViews.includes(view) && view !== "courses-ai" && view !== "ai" && view !== "projects" && <span className="badge">Producción publicitaria</span>}
+            {view !== "fixed-costs" && view !== "metaads" && view !== "performance" && !utilityViews.includes(view) && !financialViews.includes(view) && view !== "courses-ai" && view !== "ai" && view !== "projects" && <span className="badge">Producción publicitaria</span>}
 
           </header>
           <main className={financialViews.includes(view) ? "effectiveness-main" : view === "metaads" ? "meta-main" : view === "projects" ? "creative-projects-main" : ["library","jobs"].includes(view) ? "creative-library-main explorer-desktop-main" : utilityViews.includes(view)?"utility-main":undefined}>
-            {![...utilityViews,"metaads", ...financialViews, "performance", "courses-ai", "ai", "projects"].includes(view) && <div className={["projects","library","jobs"].includes(view) ? "creative-context-bar" : undefined}><RoleGuide compact={["projects","library","jobs"].includes(view)} name={user.name} role={user.role} /><VisualAuditNotice compact={["projects","library","jobs"].includes(view)} key={user.id} /></div>}
+            {![...utilityViews,"metaads", "fixed-costs", ...financialViews, "performance", "courses-ai", "ai", "projects"].includes(view) && <div className={["projects","library","jobs"].includes(view) ? "creative-context-bar" : undefined}><RoleGuide compact={["projects","library","jobs"].includes(view)} name={user.name} role={user.role} /><VisualAuditNotice compact={["projects","library","jobs"].includes(view)} key={user.id} /></div>}
             {project && view === "projects" && (
               <HierarchyBreadcrumbs
                 project={project}
@@ -588,6 +593,8 @@ export default function Home() {
               <AdvisorPerformance owner={["OWNER","SUPERVISOR"].includes(user.role)} />
             ) : financialViews.includes(view) && (user.role === "OWNER"||user.effectivenessShared) ? (
               <ProductsCatalog key={view} module={view==="inventory"?"inventory":view==="advisors"?"advisors":"sales"} initialAdvisorPeriod={view==="products"?salesAdvisorPeriod:null} onSalesPeriod={period=>{navigate("products");setSalesAdvisorPeriod(period)}} />
+            ) : view === "fixed-costs" && (user.role==="OWNER"||user.fixedCostsShared) ? (
+              <FixedCosts />
             ) : view === "metaads" ? (
               <MetaAds role={user.role} userId={user.id} canCreateCampaign={hasAiModuleAccess(user)&&user.role!=="OBSERVER"} />
             ) : view === "library" ? (

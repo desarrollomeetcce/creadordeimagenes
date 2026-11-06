@@ -1,0 +1,243 @@
+.fixed-costs {
+  max-width: 100%;
+  min-width: 0;
+  gap: 14px;
+}
+.fc-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.fc-heading h1 {
+  margin: 3px 0;
+}
+.fc-toolbar {
+  display: flex;
+  gap: 10px;
+  align-items: end;
+  flex-wrap: wrap;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+}
+.fc-toolbar label {
+  display: grid;
+  gap: 4px;
+  font-size: 12px;
+  min-width: 125px;
+}
+.fc-toolbar input,
+.fc-toolbar select {
+  min-height: 35px;
+  padding: 6px 9px;
+}
+.fc-totals {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.fc-totals article {
+  border: 1px solid var(--line);
+  border-top: 3px solid #58c6b1;
+  border-radius: 10px;
+  padding: 12px 16px;
+  display: grid;
+  gap: 6px;
+  min-width: 240px;
+  background: var(--surface);
+}
+.fc-totals strong {
+  font-size: 25px;
+}
+.fc-totals small {
+  color: var(--muted);
+}
+.fc-totals article > div {
+  display: flex;
+  gap: 16px;
+  font-size: 12px;
+}
+.fc-paid {
+  color: #4cc8ab;
+}
+.fc-pending {
+  color: #e9b55e;
+}
+.fixed-costs .fc-sheets {
+  flex-direction:row;
+  justify-content:flex-start;
+  flex-wrap:nowrap;
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  overflow-x: auto;
+  padding: 3px 0 8px;
+}
+.fixed-costs .fc-sheets button {
+  border:1px solid var(--line);
+  background:var(--surface);
+  white-space: nowrap;
+  font-size: 12px;
+  padding: 8px 12px;
+  border-radius: 8px;
+}
+.fixed-costs .fc-sheets button[aria-pressed="true"] {
+  background: #563679;
+  color: white;
+  border-color: #a17ac5;
+}
+.fc-sheets details {
+  min-width: 70px;
+}
+.fc-sheets details[open] {
+  min-width: 260px;
+}
+.fc-actions {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.fc-actions summary {
+  font-size: 12px;
+  cursor: pointer;
+}
+.fc-actions details {
+  max-width: 280px;
+}
+.fc-table-wrap {
+  overflow: auto;
+  max-width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  max-height: 65vh;
+}
+.fc-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+  min-width: 1280px;
+}
+.fc-table th,
+.fc-table td {
+  border-bottom: 1px solid var(--line);
+  border-right: 1px solid var(--line);
+  padding: 7px 9px;
+  text-align: left;
+  vertical-align: middle;
+}
+.fc-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--surface);
+  white-space: nowrap;
+}
+.fc-table tbody tr:nth-child(even) {
+  background: color-mix(in srgb, var(--surface) 75%, transparent);
+}
+.fc-table tbody th {
+  min-width: 170px;
+  max-width: 260px;
+}
+.fc-table td button {
+  padding: 5px 7px;
+  font-size: 11px;
+}
+.fc-table .fc-number {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.fc-table .fc-note {
+  max-width: 230px;
+  overflow-wrap: anywhere;
+}
+.fc-edit {
+  outline: 2px solid #58c6b1;
+  outline-offset: -2px;
+}
+.fc-edit input,
+.fc-edit select {
+  width: 140px;
+  min-height: 32px;
+  padding: 5px;
+  font-size: 12px;
+}
+.fc-edit input[type="checkbox"] {
+  width: auto;
+  min-height: 0;
+  accent-color: #229f89;
+}
+.fc-fixed {
+  background: #223f52;
+  color: #91d8f6;
+}
+.fc-variable {
+  background: #493858;
+  color: #d8b8f5;
+}
+.fc-empty {
+  padding: 30px !important;
+  text-align: center !important;
+  color: var(--muted);
+}
+.fc-share {
+  display: grid;
+  gap: 10px;
+}
+.fc-share form input {
+  min-width: 200px;
+}
+.fixed-costs footer {
+  font-size: 12px;
+  flex-wrap: wrap;
+}
+.fixed-costs .row {
+  flex-wrap: wrap;
+}
+.fixed-costs .error,
+.fixed-costs .success {
+  margin: 0;
+  padding: 10px;
+  border-radius: 7px;
+}
+.fixed-costs input:focus-visible,
+.fixed-costs button:focus-visible,
+.fixed-costs select:focus-visible,
+.fixed-costs summary:focus-visible {
+  outline: 2px solid #a98cdb;
+  outline-offset: 2px;
+}
+:root:not([data-theme="dark"]) .fc-paid {
+  color: #08785d;
+}
+:root:not([data-theme="dark"]) .fc-pending {
+  color: #92600a;
+}
+@media (max-width: 600px) {
+  .fc-toolbar {
+    gap: 7px;
+  }
+  .fc-toolbar label {
+    min-width: 110px;
+    flex: 1;
+  }
+  .fc-totals article {
+    width: 100%;
+    min-width: 0;
+  }
+  .fc-actions > .row {
+    width: 100%;
+  }
+  .fc-heading h1 {
+    font-size: 23px;
+  }
+  .fc-table-wrap {
+    max-height: 60vh;
+  }
+}

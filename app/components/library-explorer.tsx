@@ -1,4 +1,5 @@
 "use client";
+import { ProjectSharing } from "./project-sharing";
 import { uploadResource } from "./resource-upload";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -102,6 +103,7 @@ export type LibraryPicker = {
   onChange: (ids: string[], names: Record<string, string>) => void;
 };
 export function Library({ picker }: { picker?: LibraryPicker } = {}) {
+  const [shareFolder, setShareFolder] = useState<FolderNode | null>(null);
   const [folderLayout, setFolderLayout] = useState("cards");
   const [searchText, setSearchText] = useState(""),
     [query, setQuery] = useState(""),
@@ -864,6 +866,20 @@ export function Library({ picker }: { picker?: LibraryPicker } = {}) {
             >
               ☰ Carpetas
             </button>
+            {!picker &&
+              data?.tree.find(
+                (n) =>
+                  n.id === folder && n.canManageSharing && !n.sourceDeleted,
+              ) && (
+                <button
+                  type="button"
+                  onClick={() =>
+                    setShareFolder(data!.tree.find((n) => n.id === folder)!)
+                  }
+                >
+                  Compartir carpeta
+                </button>
+              )}
             <FolderBreadcrumbs
               root="Todas las carpetas"
               nodes={data?.tree ?? []}
@@ -1237,6 +1253,29 @@ export function Library({ picker }: { picker?: LibraryPicker } = {}) {
               </div>
             </section>
           )}
+          {shareFolder && (
+            <section
+              className="panel stack"
+              aria-label={"Compartir " + shareFolder.name}
+            >
+              <div className="row">
+                <strong>Compartir · {shareFolder.name}</strong>
+                <button type="button" onClick={() => setShareFolder(null)}>
+                  Cerrar
+                </button>
+              </div>
+              <ProjectSharing
+                projectId={shareFolder.id.slice(
+                  shareFolder.id.indexOf(":") + 1,
+                )}
+                scope={
+                  shareFolder.kind === "product"
+                    ? "category"
+                    : (shareFolder.kind as "project" | "subproduct" | "folder")
+                }
+              />
+            </section>
+          )}
           {[
             { name: "Carpetas de proyectos", personal: false },
             { name: "Carpetas personales", personal: true },
@@ -1324,6 +1363,11 @@ export function Library({ picker }: { picker?: LibraryPicker } = {}) {
                             ? "subproductos"
                             : "carpetas"}
                       </small>
+                      {!picker && f.canManageSharing && !f.sourceDeleted && (
+                        <button type="button" onClick={() => setShareFolder(f)}>
+                          Compartir
+                        </button>
+                      )}
                       {!picker && (
                         <button
                           type="button"
@@ -1516,6 +1560,22 @@ export function Library({ picker }: { picker?: LibraryPicker } = {}) {
               Abrir carpeta
             </button>
           )}
+          {menu.id.startsWith("n:") &&
+            (() => {
+              const node = data?.tree.find((n) => n.id === menu.id.slice(2));
+              return node?.canManageSharing && !node.sourceDeleted ? (
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => {
+                    setShareFolder(node);
+                    setMenu(null);
+                  }}
+                >
+                  Compartir carpeta
+                </button>
+              ) : null;
+            })()}
           {(() => {
             const item = data?.items.find((i) => i.selectionId === menu.id);
             return item ? (
