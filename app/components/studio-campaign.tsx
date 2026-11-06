@@ -1,6 +1,5 @@
 "use client";
 import { useContext, useEffect, useRef, useState } from "react";
-import { createAiPausedCampaigns } from "../../lib/creative-studio/ai-campaign-flow";
 import { CurrentUserId } from "./role-guide";
 import { metaPageWhatsAppNumber } from "../../lib/creative-studio/page-whatsapp";
 import { StudioCampaignHistory } from "./studio-campaign-history";
@@ -12,13 +11,34 @@ import {
   requiresMetaPayer,
   imageDistribution,
   launchSummary,
+  campaignConfigSchema,
+  validateCampaignDestination,
   type CampaignConfig,
   type CampaignItem,
 } from "../../lib/creative-studio/campaign-policy";
 import { SheetSearchSelect } from "./sheet-search-select";
 import { countryName, countryOptions } from "../../lib/meta-ads/countries";
 import { launchPollDelay } from "../../lib/creative-studio/launch-wait";
+import {
+  StudioCampaignPresetPicker,
+  StudioConversationEditor,
+  useCampaignPresets,
+} from "./studio-campaign-presets";
+import {
+  StudioCampaignParentPicker,
+  type CampaignParentOption,
+} from "./studio-campaign-parents";
+import { StudioCampaignPlacements } from "./studio-campaign-placements";
+import { StudioCampaignAudience } from "./studio-campaign-audience";
 const initial: CampaignConfig = {
+  existingCampaignId: undefined,
+  existingAdsetId: undefined,
+  existingAdsetIds: undefined,
+  adsetDailyBudget: undefined,
+  conversation: undefined,
+  placements: undefined,
+  allowExcludedPlacementSpend: false,
+  multiAdvertiser: false,
   planVersion: 2,
   campaignName: "{pais} · {diplomado}",
   aiSuggestionJobId: undefined,
@@ -73,7 +93,21 @@ export function StudioCampaign({
   onRestore,
   onCountryChange,
   countryBusy = false,
+  scopeIds = [],
+  scopeName = "",
+  batch = false,
+  onBatchChange,
+  batchCount = 0,
+  workspaceState,
+  onWorkspaceState,
 }: {
+  scopeIds?: string[];
+  scopeName?: string;
+  batch?: boolean;
+  onBatchChange?: (value: boolean) => void;
+  batchCount?: number;
+  workspaceState?: any;
+  onWorkspaceState?: (value: any) => void;
   onCountryChange?: (country: string) => Promise<unknown>;
   countryBusy?: boolean;
   categoryId: string;
@@ -85,13 +119,37 @@ export function StudioCampaign({
   onRestore: (items: CampaignItem[]) => void;
 }) {
   const userId = useContext(CurrentUserId);
-  const [mode, setMode] = useState<"TRADITIONAL" | "AI">("TRADITIONAL"),
-    [aiPrompt, setAiPrompt] = useState(""),
-    [aiConsent, setAiConsent] = useState(false),
+  const [mode, setMode] = useState<"TRADITIONAL" | "AI">(
+      workspaceState?.mode ?? "TRADITIONAL",
+    ),
+    [aiPrompt, setAiPrompt] = useState(workspaceState?.aiPrompt ?? ""),
+    [aiConsent, setAiConsent] = useState(workspaceState?.aiConsent ?? false),
     [aiBusy, setAiBusy] = useState(false),
-    [aiRequest, setAiRequest] = useState<string | null>(null),
-    [aiProposal, setAiProposal] = useState<any>(null);
+    [aiRequest, setAiRequest] = useState<string | null>(
+      workspaceState?.aiRequest ?? null,
+    ),
+    [aiProposal, setAiProposal] = useState<any>(
+      workspaceState?.aiProposal ?? null,
+    );
   const aiPending = useRef(false);
+  const presets = useCampaignPresets(categoryId);
+  const [selectedCampaign, setSelectedCampaign] = useState<
+    CampaignParentOption | undefined
+  >(workspaceState?.selectedCampaign);
+  const [selectedAdsets, setSelectedAdsets] = useState<CampaignParentOption[]>(
+    workspaceState?.selectedAdsets ?? [],
+  );
+  const [aiFields, setAiFields] = useState(
+    workspaceState?.aiFields ?? {
+      audiences: true,
+      body: false,
+      description: !String(
+        workspaceState?.form?.description ?? template?.description ?? "",
+      ).trim(),
+    },
+  );
+  const [aiNotice, setAiNotice] = useState("");
+  const stages = useRef<Record<string, HTMLDetailsElement | null>>({});
   const [leadForms, setLeadForms] = useState<{ id: string; name: string }[]>(
       [],
     ),
@@ -139,6 +197,10 @@ export function StudioCampaign({
   const [form, setForm] = useState<CampaignConfig>(() => ({
       ...initial,
       ...onlyConfig(template ?? initial),
+      existingCampaignId: undefined,
+      existingAdsetId: undefined,
+      existingAdsetIds: undefined,
+      ...workspaceState?.form,
       country,
     })),
     [resources, setResources] = useState<any>({ pages: [], audiences: [] }),
@@ -149,12 +211,39 @@ export function StudioCampaign({
     [busy, setBusy] = useState(false),
     [retrying, setRetrying] = useState(false),
     [error, setError] = useState(""),
-    [draft, setDraft] = useState<any>(null),
+    [draft, setDraft] = useState<any>(workspaceState?.draft ?? null),
     [review, setReview] = useState(false),
     [spend, setSpend] = useState(false),
     [advanced, setAdvanced] = useState(false),
     [halted, setHalted] = useState(false);
   const retryInFlight = useRef(false);
+  const sessionWriter = useRef(onWorkspaceState);
+  sessionWriter.current = onWorkspaceState;
+  useEffect(() => {
+    sessionWriter.current?.({
+      form,
+      draft,
+      mode,
+      aiPrompt,
+      aiConsent,
+      aiRequest,
+      aiProposal,
+      selectedCampaign,
+      selectedAdsets,
+      aiFields,
+    });
+  }, [
+    form,
+    draft,
+    mode,
+    aiPrompt,
+    aiConsent,
+    aiRequest,
+    aiProposal,
+    selectedCampaign,
+    selectedAdsets,
+    aiFields,
+  ]);
   useEffect(() => {
     if (!pageRetryAt) return;
     const timer = setTimeout(
@@ -248,8 +337,13 @@ export function StudioCampaign({
     country,
     items: items.map((i) => ({ id: i.subproductId, images: i.variationIds })),
     form: { ...form, whatsapp: "" },
+    aiFields,
+    aiPrompt,
   });
+  const lastCategory = useRef(categoryId);
   useEffect(() => {
+    if (lastCategory.current === categoryId) return;
+    lastCategory.current = categoryId;
     setDraft(null);
     setReview(false);
     setError("");
@@ -278,7 +372,8 @@ export function StudioCampaign({
     setSpend(false);
   }, [country]);
   useEffect(() => {
-    if (!latestLaunchId) return;
+    if (!latestLaunchId || workspaceState?.draft || workspaceState?.form)
+      return;
     try {
       const stored = localStorage.getItem(
         "studio-campaign-dismissed:v1:" + userId + ":" + categoryId,
@@ -294,15 +389,43 @@ export function StudioCampaign({
       controller.signal,
     )
       .then((d) => {
+        if (
+          d.config.country !== country ||
+          (scopeIds.length &&
+            (!d.items?.length ||
+              !d.items.every((i: CampaignItem) =>
+                scopeIds.includes(i.subproductId),
+              )))
+        )
+          return;
         setDraft(d);
         setForm(onlyConfig(d.config));
+        if (d.config.existingCampaign)
+          setSelectedCampaign({
+            id: String(d.config.existingCampaign.id),
+            name: String(d.config.existingCampaign.name),
+            objective: d.config.existingCampaign.objective,
+            dailyBudget: d.config.existingCampaign.daily_budget,
+            lifetimeBudget: d.config.existingCampaign.lifetime_budget,
+          });
+        if (d.config.existingAdsets)
+          setSelectedAdsets(
+            d.config.existingAdsets.map((v: any) => ({
+              id: String(v.id),
+              name: v.name,
+              destination: v.destination_type,
+              pageId: v.promoted_object?.page_id,
+              targeting: v.targeting,
+              placementSoftOptOut: v.placement_soft_opt_out,
+            })),
+          );
         restore.current(d.items);
       })
       .catch((e) => {
         if (!controller.signal.aborted) setError(e.message);
       });
     return () => controller.abort();
-  }, [latestLaunchId, userId, categoryId]);
+  }, [latestLaunchId, userId, categoryId, scopeIds.join("|")]);
   useEffect(() => {
     if (!form.accountId) return;
     setPageError("");
@@ -367,37 +490,6 @@ export function StudioCampaign({
       });
     return () => controller.abort();
   }, [form.accountId, resourceReload]);
-  useEffect(() => {
-    if (!advanced || !form.accountId || audiencesFor === form.accountId) return;
-    const controller = new AbortController();
-    setAudienceLoading(true);
-    void studioRequest(
-      "/account-resources/" + form.accountId + "?part=audiences",
-      "GET",
-      undefined,
-      controller.signal,
-    )
-      .then((r) => {
-        if (controller.signal.aborted) return;
-        setResources((current: any) => ({
-          ...current,
-          audiences: r.audiences,
-          audienceWarning: r.audienceWarning,
-        }));
-        setAudiencesFor(form.accountId);
-      })
-      .catch(() => {
-        if (!controller.signal.aborted)
-          setResources((current: any) => ({
-            ...current,
-            audienceWarning: "No se pudieron consultar los públicos guardados.",
-          }));
-      })
-      .finally(() => {
-        if (!controller.signal.aborted) setAudienceLoading(false);
-      });
-    return () => controller.abort();
-  }, [advanced, form.accountId, audiencesFor]);
   useEffect(() => {
     if (review) dialog.current?.showModal();
   }, [review]);
@@ -495,13 +587,31 @@ export function StudioCampaign({
     }
   }
   function update(key: keyof CampaignConfig, value: unknown) {
+    if (key === "accountId") {
+      setSelectedCampaign(undefined);
+      setSelectedAdsets([]);
+    }
+    if (key === "pageId") setSelectedAdsets([]);
     setForm((f) => ({
       ...f,
       [key]: value,
       ...(key === "accountId"
-        ? { pageId: "", whatsapp: "", leadFormId: "" }
+        ? {
+            pageId: "",
+            whatsapp: "",
+            leadFormId: "",
+            existingCampaignId: undefined,
+            existingAdsetId: undefined,
+            existingAdsetIds: undefined,
+          }
         : {}),
-      ...(key === "pageId" ? { leadFormId: "" } : {}),
+      ...(key === "pageId"
+        ? {
+            leadFormId: "",
+            existingAdsetId: undefined,
+            existingAdsetIds: undefined,
+          }
+        : {}),
       ...(key === "specialCategory" && value !== "NONE"
         ? {
             audiences: f.audiences.map((a) => ({
@@ -511,6 +621,11 @@ export function StudioCampaign({
               gender: "ALL" as const,
               strictAge: false,
               savedAudienceId: undefined,
+              platformPresetId: undefined,
+              interests: undefined,
+              customAudiences: undefined,
+              excludedCustomAudiences: undefined,
+              selectionProofs: undefined,
             })),
           }
         : {}),
@@ -530,28 +645,156 @@ export function StudioCampaign({
     const requestId = aiRequest ?? crypto.randomUUID();
     setAiRequest(requestId);
     try {
-      const result = await createAiPausedCampaigns({
+      const config = campaignConfigSchema.parse({
+        ...form,
+        body: aiFields.body ? "Texto generado por IA" : form.body,
+        description: form.description,
+        planVersion: 2,
+      });
+      validateCampaignDestination(config);
+      if (!items.length)
+        throw Error(
+          "Selecciona los afiches de este diplomado antes de generar con IA.",
+        );
+      items.forEach((i) => imageDistribution(i, config));
+      if (!aiFields.audiences && !aiFields.body && !aiFields.description)
+        throw Error("Selecciona al menos un campo para generar con IA.");
+      const result = await studioRequest("/campaign-suggestion", "POST", {
         requestId,
         categoryId,
-        config: form,
-        items,
-        prompt: aiPrompt,
-        request: studioRequest,
-        isCurrent: () => aiContext.current === context,
-        proposal: aiProposal,
-        onProposal: setAiProposal,
-        onPrepared: (d) => setDraft(d),
+        confirmAi: true,
+        prompt:
+          aiPrompt.trim() ||
+          "Propón públicos y textos apropiados para el diplomado. No inventes beneficios.",
+        config,
+        subproductIds: items.map((i) => i.subproductId),
+        fields: {
+          ...aiFields,
+          audiences:
+            !!aiFields.audiences &&
+            !form.existingAdsetId &&
+            !form.existingAdsetIds?.length,
+        },
       });
-      setDraft(result);
-      setForm(onlyConfig(result.config));
-      setHalted(false);
-      setReview(false);
+      if (aiContext.current !== context)
+        throw Error(
+          "Cambió el diplomado o la configuración. La propuesta quedó guardada sin aplicarse.",
+        );
+      setAiProposal(result.proposal);
+      setForm((f) => ({
+        ...f,
+        ...(aiFields.audiences &&
+        !f.existingAdsetId &&
+        !f.existingAdsetIds?.length
+          ? {
+              audiences: result.proposal.audiences.map((a: any) => ({
+                ...a,
+                interestSource: "AI",
+              })),
+              aiSuggestionJobId: result.jobId,
+            }
+          : {}),
+        ...(aiFields.body ? { body: result.proposal.body } : {}),
+        ...(aiFields.description
+          ? { description: result.proposal.description }
+          : {}),
+      }));
+      setAiNotice(
+        "Listo. Revisa los campos completados y publica cuando quieras.",
+      );
+      setAiRequest(null);
+      if (aiFields.body || aiFields.description)
+        stages.current.ads?.setAttribute("open", "");
     } catch (e) {
       setError(e instanceof Error ? e.message : "No se pudo crear la campaña.");
     } finally {
       aiPending.current = false;
       setAiBusy(false);
     }
+  }
+
+  function changeAudienceCount(n: number) {
+    update(
+      "audiences",
+      Array.from(
+        { length: Math.max(1, Math.min(10, n)) },
+        (_, i) =>
+          form.audiences[i] ?? {
+            name: "Público " + (i + 1),
+            ageMin: 18,
+            ageMax: 65,
+            gender: "ALL",
+            strictAge: false,
+          },
+      ),
+    );
+    update("distribution", {});
+  }
+  function applyConfig(patch: Partial<CampaignConfig>) {
+    setForm((f) => ({ ...f, ...patch }));
+    if (draft?.status === "DRAFT") setDraft(null);
+    setAiRequest(null);
+    setAiProposal(null);
+    setError("");
+  }
+  function chooseCampaign(rows: CampaignParentOption[]) {
+    const selected = rows[0];
+    setSelectedCampaign(selected);
+    setSelectedAdsets([]);
+    const objective =
+      selected.objective === "OUTCOME_LEADS"
+        ? "LEADS_WHATSAPP"
+        : selected.objective === "OUTCOME_TRAFFIC"
+          ? "TRAFFIC"
+          : "WHATSAPP";
+    applyConfig({
+      existingCampaignId: selected.id,
+      existingAdsetId: undefined,
+      existingAdsetIds: undefined,
+      objective,
+      specialCategory: (selected.specialCategories?.[0] ??
+        "NONE") as CampaignConfig["specialCategory"],
+      conversation: objective === "TRAFFIC" ? undefined : form.conversation,
+      distribution: {},
+    });
+  }
+  function chooseAdsets(rows: CampaignParentOption[]) {
+    setSelectedAdsets(rows);
+    if (!rows.length) {
+      applyConfig({ existingAdsetIds: undefined, existingAdsetId: undefined });
+      return;
+    }
+    const objective =
+      rows[0].destination === "ON_AD"
+        ? "LEADS"
+        : rows[0].destination === "WEBSITE"
+          ? "TRAFFIC"
+          : selectedCampaign?.objective === "OUTCOME_LEADS"
+            ? "LEADS_WHATSAPP"
+            : "WHATSAPP";
+    applyConfig({
+      existingAdsetId: undefined,
+      existingAdsetIds: rows.map((r) => r.id),
+      objective,
+      conversation:
+        objective === "LEADS" || objective === "TRAFFIC"
+          ? undefined
+          : form.conversation,
+      audiences: rows.map((r) => ({
+        name: r.name,
+        ageMin: Number(r.targeting?.age_min ?? 18),
+        ageMax: Number(r.targeting?.age_max ?? 65),
+        gender:
+          r.targeting?.genders?.[0] === 1
+            ? "MEN"
+            : r.targeting?.genders?.[0] === 2
+              ? "WOMEN"
+              : "ALL",
+        strictAge: false,
+      })),
+      distribution: {},
+    });
+    setAiFields((f: any) => ({ ...f, audiences: false }));
   }
   const leavingBlocked =
     busy || aiBusy || (draft?.status === "PUBLISHING" && !halted);
@@ -599,13 +842,27 @@ export function StudioCampaign({
         description: saved ? next.description : "",
         campaignName: saved ? next.campaignName : initial.campaignName,
         aiSuggestionJobId: undefined,
+        existingCampaignId: undefined,
+        existingAdsetId: undefined,
+        existingAdsetIds: undefined,
+        adsetDailyBudget: undefined,
         audiences: next.audiences.map((a, i) => ({
           ...a,
           name: "Público " + (i + 1),
           interests: undefined,
+          savedAudienceId: undefined,
+          platformPresetId: undefined,
+          customAudiences: undefined,
+          excludedCustomAudiences: undefined,
+          locations: undefined,
+          locales: undefined,
+          selectionProofs: undefined,
+          interestSource: undefined,
         })),
       };
     });
+    setSelectedCampaign(undefined);
+    setSelectedAdsets([]);
     setHistoryOpen(false);
   }
   async function authorizePageAccess() {
@@ -638,10 +895,45 @@ export function StudioCampaign({
     setBusy(true);
     setError("");
     try {
+      const checked = campaignConfigSchema.safeParse({
+        ...form,
+        planVersion: 2,
+      });
+      if (!checked.success) {
+        const names: Record<string, string> = {
+          dailyBudget: "presupuesto",
+          pageId: "página de Facebook",
+          accountId: "cuenta publicitaria",
+          country: "país de destino",
+          body: "texto principal",
+          headline: "headline",
+          audiences: "públicos y cantidad de conjuntos",
+          platforms: "plataformas",
+          existingAdsetIds: "conjuntos existentes",
+          conversation: "plantilla de conversación",
+        };
+        throw Error(
+          "Revisa: " +
+            [
+              ...new Set(
+                checked.error.issues.map(
+                  (i) => names[String(i.path[0])] ?? String(i.path[0]),
+                ),
+              ),
+            ].join(", ") +
+            ".",
+        );
+      }
+      if (!items.length)
+        throw Error("Selecciona los afiches de este diplomado.");
+      items.forEach((i) => {
+        imageDistribution(i, checked.data);
+        validateCampaignDestination(checked.data);
+      });
       const d = await studioRequest("/launches", "POST", {
         requestId: crypto.randomUUID(),
         categoryId,
-        config: { ...form, planVersion: 2 },
+        config: checked.data,
         items: items.map((i) => ({
           subproductId: i.subproductId,
           variationIds: i.variationIds,
@@ -686,38 +978,49 @@ export function StudioCampaign({
       className="studio-pane studio-campaign"
       aria-label="Preparar y publicar campaña"
     >
-      <header className="studio-pane-title">
-        <StudioMaximize pane="campaign" label="De afiche a anuncio" />
+      <header className="studio-pane-title studio-campaign-title">
+        <StudioMaximize pane="campaign" label="Preparar campaña" />
         <span className="studio-step violet">03</span>
         <div>
-          <span className="studio-eyebrow">TU SIGUIENTE CAMPAÑA</span>
-          <h2>De afiche a anuncio</h2>
+          <span className="studio-eyebrow">TU PUBLICIDAD</span>
+          <h2>Campañas</h2>
         </div>
-        <span className="studio-chip">
-          {form.objective === "LEADS"
-            ? "Clientes potenciales"
-            : form.objective === "TRAFFIC"
-              ? "Visitas web"
-              : "WhatsApp"}
-        </span>
+        <nav className="studio-campaign-navigation" aria-label="Campañas">
+          <button
+            type="button"
+            disabled={leavingBlocked}
+            onClick={() => newCampaign()}
+          >
+            ＋ Nueva
+          </button>
+          <button
+            type="button"
+            disabled={leavingBlocked}
+            aria-expanded={historyOpen}
+            onClick={() => setHistoryOpen((v) => !v)}
+          >
+            Bitácora
+          </button>
+        </nav>
       </header>
-      <nav className="studio-campaign-navigation" aria-label="Campañas">
-        <button
-          type="button"
-          disabled={leavingBlocked}
-          onClick={() => newCampaign()}
-        >
-          ＋ Nueva campaña
-        </button>
-        <button
-          type="button"
-          disabled={leavingBlocked}
-          aria-expanded={historyOpen}
-          onClick={() => setHistoryOpen((v) => !v)}
-        >
-          Bitácora
-        </button>
-      </nav>
+      <div className="studio-campaign-scope">
+        <strong title={scopeName}>
+          {scopeName ||
+            items.map((i) => i.name).join(" · ") ||
+            "Selecciona un diplomado"}
+        </strong>
+        {onBatchChange && (
+          <button
+            type="button"
+            disabled={locked}
+            onClick={() => onBatchChange(!batch)}
+          >
+            {batch
+              ? "Volver a este diplomado"
+              : `Selección múltiple${batchCount ? " · " + batchCount : ""}`}
+          </button>
+        )}
+      </div>
       {historyOpen && (
         <StudioCampaignHistory
           categoryId={categoryId}
@@ -725,732 +1028,802 @@ export function StudioCampaign({
           onClose={() => setHistoryOpen(false)}
         />
       )}
-      <div className="studio-selected-summary">
-        <span className="studio-orbit">↗</span>
-        <strong>
-          {summary.campaigns || 0} campañas ·{" "}
-          {items.reduce((n, i) => n + i.variationIds.length, 0)} afiches
-        </strong>
-        <small>
-          {country ? countryName(country) : "Selecciona el país en el producto"}
-        </small>
-        {items.length > 0 && (
-          <div className="studio-mini-tags">
-            {items.map((i) => (
-              <span key={i.subproductId}>
-                {i.name} <b>{i.variationIds.length}</b>
-              </span>
-            ))}
-          </div>
-        )}
-      </div>
-      <fieldset disabled={locked} className="studio-campaign-fields">
-        <label>
-          Cuenta publicitaria principal
-          <select
-            aria-label="Cuenta publicitaria principal"
-            value={form.accountId}
-            onChange={(e) => update("accountId", e.target.value)}
-          >
-            <option value="">Selecciona tu cuenta</option>
-            {accounts.map((a) => (
-              <option key={a.id} value={a.id} disabled={!a.canPublish}>
-                {a.name} · {a.currency}
-                {a.canPublish ? "" : " · revisar conexión"}
-              </option>
-            ))}
-          </select>
-        </label>
-        <div className="studio-personal-pins" aria-label="Cuentas fijadas">
-          <button
-            type="button"
-            disabled={!form.accountId || locked}
-            onClick={pinAccount}
-          >
-            {accountPins.includes(form.accountId)
-              ? "★ Fijada"
-              : "☆ Fijar cuenta"}
-          </button>
-          {accounts
-            .filter((a) => accountPins.includes(a.id))
-            .map((a) => (
-              <button
-                type="button"
-                key={a.id}
-                disabled={!a.canPublish || locked}
-                title={a.name}
-                aria-pressed={form.accountId === a.id}
-                onClick={() => update("accountId", a.id)}
-              >
-                {a.name}
-              </button>
-            ))}
-        </div>
-        {onCountryChange && (
+      <fieldset
+        disabled={locked}
+        className="studio-campaign-fields studio-workbench-fields"
+      >
+        <section className="studio-campaign-identity">
           <label>
-            País de destino
-            <SheetSearchSelect
-              label="País de la campaña"
-              value={country}
-              placeholder="Selecciona un país"
-              disabled={locked || countryBusy}
-              options={countryOptions.map((c) => ({
-                value: c.code,
-                label: c.name + " · " + c.code,
-              }))}
-              onSelect={(v) => void onCountryChange(v)}
-            />
-          </label>
-        )}
-        {!accounts.length && (
-          <p className="hint">
-            Marca tus cuentas principales en{" "}
-            <a href="?view=metaads">Meta Ads</a> para usarlas aquí.
-          </p>
-        )}
-        <StudioPagePicker
-          key={form.accountId}
-          pinScope={userId + ":" + form.accountId}
-          onRefresh={refreshPages}
-          refreshDisabled={!!pageRetryAt}
-          pages={resources.accountId === form.accountId ? resources.pages : []}
-          value={form.pageId}
-          loading={loading && !resources.pages.length}
-          disabled={!form.accountId || locked}
-          onChange={(id) => {
-            if (id !== form.pageId) {
-              update("pageId", id);
-              setForm((f) => ({ ...f, whatsapp: "" }));
-            }
-          }}
-        />
-        {resources.pageCached && resources.pageSavedAt && (
-          <small className="studio-pages-saved">
-            Páginas guardadas ·{" "}
-            {new Date(resources.pageSavedAt).toLocaleString("es-PE", {
-              timeZone: "America/Lima",
-            })}{" "}
-            · Lima
-          </small>
-        )}
-        {form.accountId &&
-          !loading &&
-          (pageError || !resources.pages.length) && (
-            <div className="studio-page-error" role="status">
-              <p>
-                {pageError || "No hay páginas disponibles en esta conexión."}
-              </p>
-              {pageRetryAt && (
-                <p>
-                  Próximo intento disponible:{" "}
-                  {new Date(pageRetryAt).toLocaleString("es-PE", {
-                    timeZone: "America/Lima",
-                  })}{" "}
-                  (Lima).
-                </p>
-              )}
-              <button
-                type="button"
-                disabled={locked || !!pageRetryAt}
-                onClick={refreshPages}
-              >
-                Volver a consultar páginas
-              </button>
-              {resources.pageIssue?.kind !== "RATE_LIMIT" &&
-                resources.pageIssue?.kind !== "UNAVAILABLE" &&
-                resources.canAuthorizePages &&
-                resources.connectionId && (
-                  <button
-                    type="button"
-                    disabled={busy || locked}
-                    onClick={() => {
-                      setBusy(true);
-                      void fetch(
-                        "/api/meta-ads/connections/" +
-                          encodeURIComponent(resources.connectionId) +
-                          "/pages-oauth",
-                        {
-                          method: "POST",
-                          headers: { "Content-Type": "application/json" },
-                          body: "{}",
-                        },
-                      )
-                        .then(async (response) => {
-                          const auth = await response.json();
-                          if (!response.ok)
-                            throw Error(
-                              auth.error || "No se pudo abrir Facebook.",
-                            );
-                          window.location.assign(auth.url);
-                        })
-                        .catch((e) => setPageError(e.message))
-                        .finally(() => setBusy(false));
-                    }}
-                  >
-                    Autorizar páginas con Facebook
-                  </button>
-                )}
-              {resources.pageIssue?.kind !== "RATE_LIMIT" &&
-                resources.usesLoginConfiguration && (
-                  <p>
-                    En la configuración de Facebook Login para empresas incluye
-                    pages_show_list, ads_read y ads_management y permite las
-                    páginas que usarás.
-                  </p>
-                )}
-              {resources.pageIssue?.kind !== "RATE_LIMIT" &&
-                resources.pageIssue?.kind !== "UNAVAILABLE" &&
-                !resources.canAuthorizePages && (
-                  <p>
-                    Si usas un token manual, actualízalo con pages_show_list y
-                    acceso a la página en Conexiones de Meta Ads. Si es un
-                    usuario del sistema, asígnale la página en tu negocio de
-                    Meta.
-                  </p>
-                )}
-              <a href="?view=metaads">Revisar conexión Meta</a>
-            </div>
-          )}
-        <label>
-          Objetivo de campaña
-          <select
-            aria-label="Objetivo de campaña"
-            value={form.objective}
-            onChange={(e) => update("objective", e.target.value)}
-          >
-            <option value="WHATSAPP">Conversaciones por WhatsApp</option>
-            <option value="LEADS">Clientes potenciales · formulario</option>
-            <option value="TRAFFIC">Visitas a tu página web</option>
-          </select>
-        </label>
-        {form.objective === "TRAFFIC" && (
-          <label>
-            Página web de destino
-            <input
-              aria-label="Página web de destino"
-              type="url"
-              placeholder="https://…"
-              value={form.website}
-              onChange={(e) => update("website", e.target.value)}
-            />
-          </label>
-        )}
-        {form.objective === "LEADS" && (
-          <label>
-            Formulario de esta página
+            Cuenta publicitaria principal
             <select
-              aria-label="Formulario de clientes potenciales"
-              disabled={leadLoading}
-              value={form.leadFormId}
-              onChange={(e) => update("leadFormId", e.target.value)}
+              aria-label="Cuenta publicitaria principal"
+              value={form.accountId}
+              onChange={(e) => update("accountId", e.target.value)}
             >
-              <option value="">
-                {leadLoading
-                  ? "Consultando formularios…"
-                  : "Selecciona un formulario activo"}
-              </option>
-              {leadForms.map((f) => (
-                <option key={f.id} value={f.id}>
-                  {f.name}
+              <option value="">Selecciona tu cuenta</option>
+              {accounts.map((a) => (
+                <option key={a.id} value={a.id} disabled={!a.canPublish}>
+                  {a.name} · {a.currency}
+                  {a.canPublish ? "" : " · revisar conexión"}
                 </option>
               ))}
             </select>
-            {leadError && <small role="status">{leadError}</small>}
           </label>
-        )}
-        <div className="studio-budget">
-          <label>
-            Presupuesto diario por campaña <span>{currency}</span>
-            <input
-              aria-label="Presupuesto diario por campaña"
-              type="number"
-              min="0.01"
-              step="0.01"
-              value={form.dailyBudget || ""}
-              placeholder="0.00"
-              onChange={(e) => update("dailyBudget", Number(e.target.value))}
-            />
-          </label>
-          {summary.campaigns > 0 && form.dailyBudget > 0 && (
-            <strong>{money(summary.dailyTotal)} / día en total</strong>
-          )}
-        </div>
-        <label>
-          Nombre de campaña
-          <input
-            aria-label="Nombre de campaña"
-            value={form.campaignName ?? "{pais} · {diplomado}"}
-            maxLength={250}
-            onChange={(e) => update("campaignName", e.target.value)}
-          />
-          <small>Los conjuntos tomarán este nombre más 1, 2…</small>
-        </label>
-        <section className="studio-adset-distribution">
-          <label>
-            Cantidad de conjuntos de anuncios
-            <input
-              aria-label="Cantidad de conjuntos de anuncios"
-              type="number"
-              min="1"
-              max="10"
-              value={form.audiences.length}
-              onChange={(e) => {
-                const n = Math.max(
-                  1,
-                  Math.min(10, Number(e.target.value) || 1),
-                );
-                update(
-                  "audiences",
-                  Array.from(
-                    { length: n },
-                    (_, i) =>
-                      form.audiences[i] ?? {
-                        name: "Público " + (i + 1),
-                        ageMin: 18,
-                        ageMax: 65,
-                        gender: "ALL",
-                        strictAge: false,
-                      },
-                  ),
-                );
-                update("distribution", {});
-              }}
-            />
-          </label>
-          <small>
-            Los afiches se reparten una sola vez. El presupuesto pertenece a la
-            campaña.
-          </small>
-          {items.map((item) => {
-            let counts: number[] = [];
-            try {
-              counts = imageDistribution(item, form);
-            } catch {
-              counts = form.distribution?.[item.subproductId] ?? [];
+          <div className="studio-personal-pins" aria-label="Cuentas fijadas">
+            <button
+              type="button"
+              disabled={!form.accountId || locked}
+              onClick={pinAccount}
+            >
+              {accountPins.includes(form.accountId)
+                ? "★ Fijada"
+                : "☆ Fijar cuenta"}
+            </button>
+            {accounts
+              .filter((a) => accountPins.includes(a.id))
+              .map((a) => (
+                <button
+                  type="button"
+                  key={a.id}
+                  disabled={!a.canPublish || locked}
+                  title={a.name}
+                  aria-pressed={form.accountId === a.id}
+                  onClick={() => update("accountId", a.id)}
+                >
+                  {a.name}
+                </button>
+              ))}
+          </div>
+          <StudioPagePicker
+            key={form.accountId}
+            pinScope={userId + ":" + form.accountId}
+            onRefresh={refreshPages}
+            refreshDisabled={!!pageRetryAt}
+            pages={
+              resources.accountId === form.accountId ? resources.pages : []
             }
-            return (
-              <div key={item.subproductId} className="studio-distribution-item">
-                <strong>
-                  {item.name} · {item.variationIds.length} afiches
-                </strong>
-                {!counts.length ? (
-                  <small role="status">
-                    Selecciona al menos {form.audiences.length} afiches o reduce
-                    los conjuntos.
-                  </small>
-                ) : (
-                  <>
-                    <div className="studio-distribution-counts">
-                      {counts.map((n, i) => (
-                        <label key={i}>
-                          Conjunto {i + 1}
-                          <input
-                            type="number"
-                            min="1"
-                            max="50"
-                            aria-label={
-                              item.name + " · afiches del conjunto " + (i + 1)
-                            }
-                            value={
-                              form.distribution?.[item.subproductId]?.[i] ?? n
-                            }
-                            onChange={(e) =>
-                              update("distribution", {
-                                ...form.distribution,
-                                [item.subproductId]: counts.map((x, j) =>
-                                  j === i ? Number(e.target.value) : x,
-                                ),
-                              })
-                            }
-                          />
-                        </label>
-                      ))}
-                    </div>
-                    <small role="status">
-                      {counts.join(" + ")} = {counts.reduce((a, b) => a + b, 0)}{" "}
-                      / {item.variationIds.length} anuncios
-                      {counts.some((n) => n < 1) ||
-                      counts.reduce((a, b) => a + b, 0) !==
-                        item.variationIds.length
-                        ? " · Ajusta la suma para incluir todos los afiches."
-                        : ""}
-                    </small>
-                  </>
+            value={form.pageId}
+            loading={loading && !resources.pages.length}
+            disabled={!form.accountId || locked}
+            onChange={(id) => {
+              if (id !== form.pageId) {
+                update("pageId", id);
+                setForm((f) => ({ ...f, whatsapp: "" }));
+              }
+            }}
+          />
+          {resources.pageCached && resources.pageSavedAt && (
+            <small className="studio-pages-saved">
+              Páginas guardadas ·{" "}
+              {new Date(resources.pageSavedAt).toLocaleString("es-PE", {
+                timeZone: "America/Lima",
+              })}{" "}
+              · Lima
+            </small>
+          )}
+          {form.accountId &&
+            !loading &&
+            (pageError || !resources.pages.length) && (
+              <div className="studio-page-error" role="status">
+                <p>
+                  {pageError || "No hay páginas disponibles en esta conexión."}
+                </p>
+                {pageRetryAt && (
+                  <p>
+                    Próximo intento disponible:{" "}
+                    {new Date(pageRetryAt).toLocaleString("es-PE", {
+                      timeZone: "America/Lima",
+                    })}{" "}
+                    (Lima).
+                  </p>
                 )}
                 <button
                   type="button"
-                  onClick={() => {
-                    const d = { ...form.distribution };
-                    delete d[item.subproductId];
-                    update("distribution", d);
-                  }}
+                  disabled={locked || !!pageRetryAt}
+                  onClick={refreshPages}
                 >
-                  Repartir equitativamente
+                  Volver a consultar páginas
                 </button>
+                {resources.pageIssue?.kind !== "RATE_LIMIT" &&
+                  resources.pageIssue?.kind !== "UNAVAILABLE" &&
+                  resources.canAuthorizePages &&
+                  resources.connectionId && (
+                    <button
+                      type="button"
+                      disabled={busy || locked}
+                      onClick={() => {
+                        setBusy(true);
+                        void fetch(
+                          "/api/meta-ads/connections/" +
+                            encodeURIComponent(resources.connectionId) +
+                            "/pages-oauth",
+                          {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            body: "{}",
+                          },
+                        )
+                          .then(async (response) => {
+                            const auth = await response.json();
+                            if (!response.ok)
+                              throw Error(
+                                auth.error || "No se pudo abrir Facebook.",
+                              );
+                            window.location.assign(auth.url);
+                          })
+                          .catch((e) => setPageError(e.message))
+                          .finally(() => setBusy(false));
+                      }}
+                    >
+                      Autorizar páginas con Facebook
+                    </button>
+                  )}
+                {resources.pageIssue?.kind !== "RATE_LIMIT" &&
+                  resources.usesLoginConfiguration && (
+                    <p>
+                      En la configuración de Facebook Login para empresas
+                      incluye pages_show_list, ads_read y ads_management y
+                      permite las páginas que usarás.
+                    </p>
+                  )}
+                {resources.pageIssue?.kind !== "RATE_LIMIT" &&
+                  resources.pageIssue?.kind !== "UNAVAILABLE" &&
+                  !resources.canAuthorizePages && (
+                    <p>
+                      Si usas un token manual, actualízalo con pages_show_list y
+                      acceso a la página en Conexiones de Meta Ads. Si es un
+                      usuario del sistema, asígnale la página en tu negocio de
+                      Meta.
+                    </p>
+                  )}
+                <a href="?view=metaads">Revisar conexión Meta</a>
               </div>
-            );
-          })}
+            )}
+          {onCountryChange && (
+            <label>
+              Lugar · país
+              <SheetSearchSelect
+                label="País de la campaña"
+                value={country}
+                placeholder="Selecciona un país"
+                disabled={locked || countryBusy}
+                options={countryOptions.map((c) => ({
+                  value: c.code,
+                  label: c.name + " · " + c.code,
+                }))}
+                onSelect={(v) => void onCountryChange(v)}
+              />
+            </label>
+          )}
+          {!accounts.length && (
+            <p className="hint">
+              Marca tus cuentas principales en{" "}
+              <a href="?view=metaads">Meta Ads</a> para usarlas aquí.
+            </p>
+          )}
         </section>
-        <div className="studio-field-pair">
-          <label>
-            Headline
-            <input
-              aria-label="Headline del anuncio"
-              value={form.headline}
-              onChange={(e) => update("headline", e.target.value)}
-            />
-          </label>
-        </div>
-        <small className="studio-template-help">{"{diplomado} · {pais}"}</small>
-        <section className="studio-placements">
-          <strong>Ubicaciones</strong>
-          <small>
-            Todas las ubicaciones compatibles de las plataformas que
-            selecciones.
-          </small>
-          <div>
-            {(
-              [
-                ["facebook", "Facebook"],
-                ["instagram", "Instagram"],
-                ["messenger", "Messenger"],
-                ["audience_network", "Audience Network"],
-              ] as const
-            ).map(([key, name]) => (
-              <label key={key}>
+        <StudioCampaignParentPicker
+          kind="campaigns"
+          accountId={form.accountId}
+          selected={selectedCampaign ? [selectedCampaign] : []}
+          disabled={locked}
+          onSelect={chooseCampaign}
+          onCreate={() => {
+            setSelectedCampaign(undefined);
+            setSelectedAdsets([]);
+            applyConfig({
+              existingCampaignId: undefined,
+              existingAdsetId: undefined,
+              existingAdsetIds: undefined,
+              distribution: {},
+            });
+          }}
+        />
+        <section className="studio-preparation-data">
+          <div className="studio-budget">
+            {!form.existingCampaignId ? (
+              <label>
+                Presupuesto diario por campaña <span>{currency}</span>
                 <input
-                  type="checkbox"
-                  checked={form.platforms.includes(key)}
+                  aria-label="Presupuesto diario por campaña"
+                  type="number"
+                  min="0.01"
+                  step="0.01"
+                  value={form.dailyBudget || ""}
+                  placeholder="Ej. 7, 15, 20…"
+                  onChange={(e) =>
+                    update("dailyBudget", Number(e.target.value))
+                  }
+                />
+              </label>
+            ) : !form.existingAdsetId &&
+              !form.existingAdsetIds?.length &&
+              !Number(selectedCampaign?.dailyBudget) &&
+              !Number(selectedCampaign?.lifetimeBudget) ? (
+              <label>
+                Presupuesto diario por conjunto nuevo <span>{currency}</span>
+                <input
+                  aria-label="Presupuesto diario por conjunto"
+                  type="number"
+                  min="0.01"
+                  step="0.01"
+                  value={form.adsetDailyBudget ?? ""}
                   onChange={(e) =>
                     update(
-                      "platforms",
-                      e.target.checked
-                        ? [...form.platforms, key]
-                        : form.platforms.filter((p) => p !== key),
+                      "adsetDailyBudget",
+                      Number(e.target.value) || undefined,
                     )
                   }
                 />
-                {name}
               </label>
-            ))}
+            ) : (
+              <div className="studio-existing-budget">
+                <strong>Presupuesto existente</strong>
+                <span>Se conserva el presupuesto de Meta.</span>
+              </div>
+            )}
           </div>
-          <small>
-            Meta validará la compatibilidad con el objetivo. WhatsApp es el
-            destino de conversación, no una ubicación añadida automáticamente.
-          </small>
-        </section>
-        <div
-          className="studio-campaign-modes"
-          role="group"
-          aria-label="Preparación de campaña"
-        >
-          <button
-            type="button"
-            aria-pressed={mode === "TRADITIONAL"}
-            onClick={() => {
-              setMode("TRADITIONAL");
-              setAdvanced(true);
-            }}
-          >
-            Tradicional
-          </button>
-          <button
-            type="button"
-            aria-pressed={mode === "AI"}
-            onClick={() => setMode("AI")}
-          >
-            Con IA
-          </button>
-        </div>
-        {mode === "AI" && (
-          <section className="studio-campaign-ai">
+          {form.existingCampaignId && (
+            <StudioCampaignParentPicker
+              kind="adsets"
+              accountId={form.accountId}
+              campaignId={form.existingCampaignId}
+              selected={selectedAdsets}
+              disabled={locked}
+              onSelect={chooseAdsets}
+              onCreate={() => {
+                setSelectedAdsets([]);
+                applyConfig({
+                  existingAdsetId: undefined,
+                  existingAdsetIds: undefined,
+                  distribution: {},
+                });
+              }}
+            />
+          )}
+          <section className="studio-adset-distribution">
             <label>
-              Instrucciones para la IA · opcional
-              <textarea
-                aria-label="Prompt de campaña IA"
-                rows={4}
-                value={aiPrompt}
-                onChange={(e) => {
-                  setAiPrompt(e.target.value);
-                  setAiRequest(null);
-                  setAiProposal(null);
-                }}
-                placeholder="Indica el enfoque del anuncio y del público…"
+              Cantidad de conjuntos de anuncios
+              <input
+                aria-label="Cantidad de conjuntos de anuncios"
+                type="number"
+                min="1"
+                max="10"
+                disabled={
+                  !!form.existingAdsetId || !!form.existingAdsetIds?.length
+                }
+                value={form.audiences.length}
+                onChange={(e) =>
+                  changeAudienceCount(Number(e.target.value) || 1)
+                }
               />
             </label>
             <small>
-              La IA completa texto, descripción y públicos con intereses
-              consultados a Meta. Conserva tu headline, país, presupuesto y
-              ubicaciones. Las campañas se crean pausadas.
+              {items.reduce((n, i) => n + i.variationIds.length, 0)} afiches
+              elegidos · reparto editable, sin duplicar imágenes.
             </small>
-            <label>
-              Descripción opcional
-              <textarea
-                aria-label="Descripción opcional para IA"
-                rows={2}
-                maxLength={500}
-                value={form.description}
-                placeholder="Déjala vacía para que la redacte la IA"
-                onChange={(e) => update("description", e.target.value)}
-              />
-            </label>
-            <label className="studio-check">
-              <input
-                type="checkbox"
-                checked={aiConsent}
-                onChange={(e) => setAiConsent(e.target.checked)}
-              />
-              Autorizo la IA y su posible cargo, y crear estas campañas pausadas
-              en Meta.
-            </label>
+            {items.map((item) => {
+              let counts: number[] = [];
+              try {
+                counts = imageDistribution(item, form);
+              } catch {
+                counts = form.distribution?.[item.subproductId] ?? [];
+              }
+              return (
+                <div
+                  key={item.subproductId}
+                  className="studio-distribution-item"
+                >
+                  <strong>
+                    {item.name} · {item.variationIds.length} afiches
+                  </strong>
+                  {!counts.length ? (
+                    <small role="status">
+                      Selecciona al menos {form.audiences.length} afiches o
+                      reduce los conjuntos.
+                    </small>
+                  ) : (
+                    <>
+                      <div className="studio-distribution-counts">
+                        {counts.map((n, i) => (
+                          <label key={i}>
+                            Conjunto {i + 1}
+                            <input
+                              type="number"
+                              min="1"
+                              max="50"
+                              aria-label={
+                                item.name + " · afiches del conjunto " + (i + 1)
+                              }
+                              value={
+                                form.distribution?.[item.subproductId]?.[i] ?? n
+                              }
+                              onChange={(e) =>
+                                update("distribution", {
+                                  ...form.distribution,
+                                  [item.subproductId]: counts.map((x, j) =>
+                                    j === i ? Number(e.target.value) : x,
+                                  ),
+                                })
+                              }
+                            />
+                          </label>
+                        ))}
+                      </div>
+                      <small role="status">
+                        {counts.join(" + ")} ={" "}
+                        {counts.reduce((a, b) => a + b, 0)} /{" "}
+                        {item.variationIds.length} anuncios
+                        {counts.some((n) => n < 1) ||
+                        counts.reduce((a, b) => a + b, 0) !==
+                          item.variationIds.length
+                          ? " · Ajusta la suma para incluir todos los afiches."
+                          : ""}
+                      </small>
+                    </>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const d = { ...form.distribution };
+                      delete d[item.subproductId];
+                      update("distribution", d);
+                    }}
+                  >
+                    Repartir equitativamente
+                  </button>
+                </div>
+              );
+            })}
           </section>
-        )}
-        {mode === "TRADITIONAL" && (
-          <>
+        </section>
+        <StudioCampaignPresetPicker
+          categoryId={categoryId}
+          form={form}
+          store={presets}
+          disabled={locked}
+          onApply={(settings) =>
+            applyConfig({
+              ...settings,
+              ...(form.existingCampaignId ? { objective: form.objective } : {}),
+              ...(form.existingAdsetId || form.existingAdsetIds?.length
+                ? {
+                    platforms: form.platforms,
+                    placements: form.placements,
+                    allowExcludedPlacementSpend:
+                      form.allowExcludedPlacementSpend,
+                  }
+                : {}),
+              ...(settings.objective === "LEADS" ||
+              settings.objective === "TRAFFIC"
+                ? { conversation: undefined }
+                : {}),
+            })
+          }
+        />
+        <details
+          className="studio-campaign-stage stage-campaign"
+          open
+          ref={(el) => {
+            stages.current.campaign = el;
+          }}
+        >
+          <summary>
+            <span className="studio-stage-number">01</span>
+            <span>
+              <strong>Campaña</strong>
+              <small>
+                {form.existingCampaignId
+                  ? "Campaña existente"
+                  : "Nombre y objetivo"}
+              </small>
+            </span>
+            <span className="studio-stage-caret">⌄</span>
+          </summary>
+          <div className="studio-stage-body">
+            <label>
+              Nombre de campaña
+              <input
+                aria-label="Nombre de campaña"
+                value={
+                  form.existingCampaignId
+                    ? (selectedCampaign?.name ?? form.campaignName)
+                    : (form.campaignName ?? "{pais} · {diplomado}")
+                }
+                disabled={!!form.existingCampaignId}
+                maxLength={250}
+                onChange={(e) => update("campaignName", e.target.value)}
+              />
+              <small>Variables: [pais] · [diplomado]</small>
+            </label>
+            <label>
+              Objetivo de campaña
+              <select
+                aria-label="Objetivo de campaña"
+                disabled={
+                  !!form.existingCampaignId &&
+                  (selectedCampaign?.objective !== "OUTCOME_LEADS" ||
+                    !!form.existingAdsetId ||
+                    !!form.existingAdsetIds?.length)
+                }
+                value={form.objective}
+                onChange={(e) =>
+                  applyConfig({
+                    objective: e.target.value as CampaignConfig["objective"],
+                    conversation: ["WHATSAPP", "LEADS_WHATSAPP"].includes(
+                      e.target.value,
+                    )
+                      ? form.conversation
+                      : undefined,
+                  })
+                }
+              >
+                <option value="WHATSAPP">Conversaciones por WhatsApp</option>
+                <option value="LEADS_WHATSAPP">
+                  Clientes potenciales · WhatsApp
+                </option>
+                <option value="LEADS">Clientes potenciales · formulario</option>
+                <option value="TRAFFIC">Visitas a tu página web</option>
+              </select>
+            </label>
+            {form.objective === "TRAFFIC" && (
+              <label>
+                Página web de destino
+                <input
+                  aria-label="Página web de destino"
+                  type="url"
+                  placeholder="https://…"
+                  value={form.website}
+                  onChange={(e) => update("website", e.target.value)}
+                />
+              </label>
+            )}
+            {form.objective === "LEADS" && (
+              <label>
+                Formulario de esta página
+                <select
+                  aria-label="Formulario de clientes potenciales"
+                  disabled={leadLoading}
+                  value={form.leadFormId}
+                  onChange={(e) => update("leadFormId", e.target.value)}
+                >
+                  <option value="">
+                    {leadLoading
+                      ? "Consultando formularios…"
+                      : "Selecciona un formulario activo"}
+                  </option>
+                  {leadForms.map((f) => (
+                    <option key={f.id} value={f.id}>
+                      {f.name}
+                    </option>
+                  ))}
+                </select>
+                {leadError && <small role="status">{leadError}</small>}
+              </label>
+            )}
+          </div>
+        </details>
+        <details
+          className="studio-campaign-stage stage-placements"
+          ref={(el) => {
+            stages.current.placements = el;
+          }}
+        >
+          <summary>
+            <span className="studio-stage-number">02</span>
+            <span>
+              <strong>Plataformas y ubicaciones</strong>
+              <small>General para los nuevos anuncios</small>
+            </span>
+            <span className="studio-stage-caret">⌄</span>
+          </summary>
+          <div className="studio-stage-body">
+            {selectedAdsets.length ? (
+              <div className="studio-existing-placements">
+                {selectedAdsets.map((s) => (
+                  <div key={s.id}>
+                    <strong>{s.name}</strong>
+                    <small>
+                      {(s.targeting?.publisher_platforms ?? []).join(" · ") ||
+                        "Ubicaciones configuradas en Meta"}
+                    </small>
+                    <small>
+                      Se conservan las ubicaciones de este conjunto.
+                    </small>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <StudioCampaignPlacements
+                value={form}
+                onChange={applyConfig}
+                readonly={
+                  !!form.existingAdsetId || !!form.existingAdsetIds?.length
+                }
+              />
+            )}
+          </div>
+        </details>
+        <details
+          className="studio-campaign-stage stage-ads"
+          ref={(el) => {
+            stages.current.ads = el;
+          }}
+        >
+          <summary>
+            <span className="studio-stage-number">03</span>
+            <span>
+              <strong>Anuncios y conversación</strong>
+              <small>
+                {items.reduce((n, i) => n + i.variationIds.length, 0)} afiches ·
+                textos comunes
+              </small>
+            </span>
+            <span className="studio-stage-caret">⌄</span>
+          </summary>
+          <div className="studio-stage-body">
+            <label className="studio-check studio-multi-advertiser">
+              <input type="checkbox" checked={false} disabled />
+              Multianunciante desactivado
+            </label>
             <label>
               Texto principal
               <textarea
                 aria-label="Texto principal"
-                rows={4}
                 value={form.body}
+                maxLength={5000}
+                rows={4}
                 onChange={(e) => update("body", e.target.value)}
               />
             </label>
+            <div className="studio-field-pair">
+              <label>
+                Headline
+                <input
+                  aria-label="Headline del anuncio"
+                  value={form.headline}
+                  onChange={(e) => update("headline", e.target.value)}
+                />
+              </label>
+            </div>
+            <small className="studio-template-help">
+              {"{diplomado} · {pais}"}
+            </small>
+
             <label>
               Descripción
               <textarea
                 aria-label="Descripción del anuncio"
-                rows={2}
                 value={form.description}
+                rows={2}
+                maxLength={500}
                 onChange={(e) => update("description", e.target.value)}
               />
             </label>
-          </>
-        )}
-        <button
-          className="studio-advanced-trigger"
-          type="button"
-          aria-expanded={advanced}
-          onClick={() => setAdvanced(!advanced)}
-        >
-          ◈ {mode === "AI" ? "Configuración legal" : "Públicos y configuración"}{" "}
-          {advanced ? "−" : "+"}
-        </button>
-        {advanced && (
-          <div className="studio-advanced">
-            {mode === "TRADITIONAL" && (
-              <>
-                <div className="studio-audience-tabs">
-                  {form.audiences.map((a, i) => (
-                    <section key={i}>
-                      <h3>
-                        {i + 1}. {a.name}
-                      </h3>
-                      <label>
-                        Nombre
-                        <input
-                          value={a.name}
-                          onChange={(e) =>
-                            update(
-                              "audiences",
-                              form.audiences.map((x, j) =>
-                                j === i ? { ...x, name: e.target.value } : x,
-                              ),
-                            )
-                          }
-                        />
-                      </label>
-                      <label>
-                        Público guardado{" "}
-                        {audienceLoading ? "· consultando…" : ""}
-                        {resources.audienceWarning && (
-                          <small>{resources.audienceWarning}</small>
-                        )}
-                        <select
-                          value={a.savedAudienceId ?? ""}
-                          onChange={(e) =>
-                            update(
-                              "audiences",
-                              form.audiences.map((x, j) =>
-                                j === i
-                                  ? {
-                                      ...x,
-                                      savedAudienceId:
-                                        e.target.value || undefined,
-                                    }
-                                  : x,
-                              ),
-                            )
-                          }
-                        >
-                          <option value="">Público amplio</option>
-                          {resources.audiences.map((x: any) => (
-                            <option key={x.id} value={x.id}>
-                              {x.name}
-                            </option>
-                          ))}
-                        </select>
-                      </label>
-                      {a.savedAudienceId ? (
-                        <small>
-                          Se conservarán la edad, género y segmentación del
-                          público guardado.
-                        </small>
-                      ) : (
-                        <>
-                          <div className="studio-field-pair">
-                            <label>
-                              Edad desde
-                              <input
-                                type="number"
-                                min="18"
-                                max="65"
-                                value={a.ageMin}
-                                onChange={(e) =>
-                                  update(
-                                    "audiences",
-                                    form.audiences.map((x, j) =>
-                                      j === i
-                                        ? {
-                                            ...x,
-                                            ageMin: Number(e.target.value),
-                                          }
-                                        : x,
-                                    ),
-                                  )
-                                }
-                              />
-                            </label>
-                            <label>
-                              Hasta
-                              <input
-                                type="number"
-                                min="18"
-                                max="65"
-                                value={a.ageMax}
-                                onChange={(e) =>
-                                  update(
-                                    "audiences",
-                                    form.audiences.map((x, j) =>
-                                      j === i
-                                        ? {
-                                            ...x,
-                                            ageMax: Number(e.target.value),
-                                          }
-                                        : x,
-                                    ),
-                                  )
-                                }
-                              />
-                            </label>
-                          </div>
-                          <label>
-                            Género
-                            <select
-                              value={a.gender}
-                              onChange={(e) =>
-                                update(
-                                  "audiences",
-                                  form.audiences.map((x, j) =>
-                                    j === i
-                                      ? { ...x, gender: e.target.value }
-                                      : x,
-                                  ),
-                                )
-                              }
-                            >
-                              <option value="ALL">Todos</option>
-                              <option value="WOMEN">Mujeres</option>
-                              <option value="MEN">Hombres</option>
-                            </select>
-                          </label>
-                          <label className="studio-check">
-                            <input
-                              type="checkbox"
-                              checked={a.strictAge}
-                              onChange={(e) =>
-                                update(
-                                  "audiences",
-                                  form.audiences.map((x, j) =>
-                                    j === i
-                                      ? { ...x, strictAge: e.target.checked }
-                                      : x,
-                                  ),
-                                )
-                              }
-                            />
-                            Aplicar edades estrictas
-                          </label>
-                          {!a.strictAge && (
-                            <small>
-                              Edades sugeridas · Advantage+ Audience
-                            </small>
-                          )}
-                        </>
-                      )}
-                    </section>
-                  ))}
-                </div>
-                <label>
-                  Descripción adicional
-                  <input
-                    value={form.description}
-                    onChange={(e) => update("description", e.target.value)}
-                  />
-                </label>
-              </>
-            )}
-            <label>
-              Categoría publicitaria
-              <select
-                value={form.specialCategory}
-                onChange={(e) => update("specialCategory", e.target.value)}
-              >
-                <option value="NONE">Ninguna categoría especial</option>
-                <option value="EMPLOYMENT">Empleo</option>
-                <option value="HOUSING">Vivienda</option>
-                <option value="FINANCIAL_PRODUCTS_SERVICES">
-                  Servicios financieros
-                </option>
-              </select>
-            </label>
-            {requiresMetaPayer(country) && (
-              <>
-                <label>
-                  Beneficiario
-                  <input
-                    value={form.beneficiary}
-                    onChange={(e) => update("beneficiary", e.target.value)}
-                  />
-                </label>
-                <label>
-                  Pagador
-                  <input
-                    value={form.payor}
-                    onChange={(e) => update("payor", e.target.value)}
-                  />
-                </label>
-              </>
+            {["WHATSAPP", "LEADS_WHATSAPP"].includes(form.objective) && (
+              <StudioConversationEditor
+                categoryId={categoryId}
+                value={form.conversation}
+                onChange={(value) => update("conversation", value)}
+                store={presets}
+                disabled={locked}
+              />
             )}
           </div>
-        )}
-        {mode === "AI" ? (
-          <p className="hint">Se crearán pausadas, sin activar la entrega.</p>
-        ) : (
-          <label>
-            Al publicar
-            <select
-              aria-label="Estado de publicación"
-              value={form.targetStatus}
-              onChange={(e) => update("targetStatus", e.target.value)}
+        </details>
+        <details
+          className="studio-campaign-stage stage-audiences"
+          ref={(el) => {
+            stages.current.audiences = el;
+          }}
+        >
+          <summary>
+            <span className="studio-stage-number">04</span>
+            <span>
+              <strong>Públicos</strong>
+              <small>
+                {form.audiences.length}{" "}
+                {form.existingAdsetId || form.existingAdsetIds?.length
+                  ? "existentes, sin cambios"
+                  : "por configurar · manual o IA"}
+              </small>
+            </span>
+            <span className="studio-stage-caret">⌄</span>
+          </summary>
+          <div className="studio-stage-body">
+            <div
+              className="studio-campaign-modes"
+              role="group"
+              aria-label="Preparación de campaña"
             >
-              <option value="PAUSED">Crear pausadas para revisar</option>
-              <option value="ACTIVE">
-                Activar y enviar a revisión de Meta
+              <button
+                type="button"
+                aria-pressed={mode === "TRADITIONAL"}
+                onClick={() => setMode("TRADITIONAL")}
+              >
+                Tradicional
+              </button>
+              <button
+                type="button"
+                aria-pressed={mode === "AI"}
+                onClick={() => setMode("AI")}
+              >
+                Con IA
+              </button>
+            </div>
+            {mode === "AI" && (
+              <section className="studio-campaign-ai">
+                <div className="studio-ai-fields">
+                  <strong>¿Qué completará la IA?</strong>
+                  <label className="studio-check">
+                    <input
+                      aria-label="IA para públicos"
+                      type="checkbox"
+                      checked={
+                        !!aiFields.audiences &&
+                        !form.existingAdsetId &&
+                        !form.existingAdsetIds?.length
+                      }
+                      disabled={
+                        !!form.existingAdsetId ||
+                        !!form.existingAdsetIds?.length
+                      }
+                      onChange={(e) => {
+                        setAiRequest(null);
+                        setAiNotice("");
+                        setAiFields((f: any) => ({
+                          ...f,
+                          audiences: e.target.checked,
+                        }));
+                      }}
+                    />
+                    Públicos
+                  </label>
+                  <label className="studio-check">
+                    <input
+                      type="checkbox"
+                      checked={aiFields.description}
+                      onChange={(e) => {
+                        setAiRequest(null);
+                        setAiNotice("");
+                        setAiFields((f: any) => ({
+                          ...f,
+                          description: e.target.checked,
+                        }));
+                      }}
+                    />
+                    Descripción
+                  </label>
+                  <label className="studio-check">
+                    <input
+                      type="checkbox"
+                      checked={aiFields.body}
+                      onChange={(e) => {
+                        setAiRequest(null);
+                        setAiNotice("");
+                        setAiFields((f: any) => ({
+                          ...f,
+                          body: e.target.checked,
+                        }));
+                      }}
+                    />
+                    Texto principal
+                  </label>
+                </div>
+                <label>
+                  Instrucciones para la IA
+                  <textarea
+                    aria-label="Prompt de campaña IA"
+                    value={aiPrompt}
+                    rows={3}
+                    maxLength={12000}
+                    placeholder="Enfoque del público, profesión o beneficios comprobables…"
+                    onChange={(e) => {
+                      setAiPrompt(e.target.value);
+                      setAiRequest(null);
+                      setAiProposal(null);
+                    }}
+                  />
+                </label>
+                <small>
+                  Conserva el headline, presupuesto, país, ubicaciones y
+                  plantilla.
+                </small>
+                <label className="studio-check">
+                  <input
+                    type="checkbox"
+                    checked={aiConsent}
+                    onChange={(e) => setAiConsent(e.target.checked)}
+                  />
+                  Autorizo esta consulta de IA y su posible cargo.
+                </label>
+                <button
+                  type="button"
+                  className="studio-ai-generate"
+                  disabled={locked || !aiConsent || !items.length}
+                  onClick={() => void suggest()}
+                >
+                  {aiBusy ? "Completando con IA…" : "✦ Completar campos con IA"}
+                </button>
+                {aiNotice && <small role="status">{aiNotice}</small>}
+              </section>
+            )}
+            <div className="studio-audience-grid">
+              {form.audiences.map((a, i) => (
+                <StudioCampaignAudience
+                  key={
+                    (form.existingAdsetIds?.[i] ??
+                      form.existingAdsetId ??
+                      "new") +
+                    ":" +
+                    i
+                  }
+                  index={i}
+                  value={a}
+                  config={form}
+                  categoryId={categoryId}
+                  accountId={form.accountId}
+                  existing={
+                    !!form.existingAdsetId || !!form.existingAdsetIds?.length
+                  }
+                  onChange={(value) =>
+                    update(
+                      "audiences",
+                      form.audiences.map((a, j) => (i === j ? value : a)),
+                    )
+                  }
+                />
+              ))}
+            </div>
+          </div>
+        </details>
+        <details className="studio-legal-options">
+          <summary>Configuración legal</summary>
+          <label>
+            Categoría publicitaria
+            <select
+              value={form.specialCategory}
+              disabled={!!form.existingCampaignId}
+              onChange={(e) => update("specialCategory", e.target.value)}
+            >
+              <option value="NONE">Ninguna categoría especial</option>
+              <option value="EMPLOYMENT">Empleo</option>
+              <option value="HOUSING">Vivienda</option>
+              <option value="FINANCIAL_PRODUCTS_SERVICES">
+                Servicios financieros
               </option>
             </select>
           </label>
-        )}
+          {requiresMetaPayer(country) && (
+            <>
+              <label>
+                Beneficiario
+                <input
+                  value={form.beneficiary}
+                  onChange={(e) => update("beneficiary", e.target.value)}
+                />
+              </label>
+              <label>
+                Pagador
+                <input
+                  value={form.payor}
+                  onChange={(e) => update("payor", e.target.value)}
+                />
+              </label>
+            </>
+          )}
+        </details>
+        <label className="studio-publish-state">
+          Al publicar
+          <select
+            aria-label="Estado de publicación"
+            value={form.targetStatus}
+            onChange={(e) => update("targetStatus", e.target.value)}
+          >
+            <option value="PAUSED">Crear pausadas para revisar</option>
+            <option value="ACTIVE">Activar y enviar a revisión de Meta</option>
+          </select>
+        </label>
       </fieldset>
       {error && (
         <p className="notice error" role="alert">
@@ -1582,49 +1955,29 @@ export function StudioCampaign({
         </div>
       )}
       <footer className="studio-campaign-footer">
-        {mode === "AI" ? (
-          <button
-            type="button"
-            className="studio-publish-button"
-            aria-busy={publishing || aiBusy}
-            disabled={locked || !aiConsent || !items.length}
-            onClick={() => void suggest()}
-          >
-            {(publishing || aiBusy) && (
-              <span className="studio-publish-spinner" aria-hidden="true" />
-            )}
-            {publishing
-              ? `Publicando… ${publishPercent}%`
-              : aiBusy
-                ? "Preparando campañas con IA…"
-                : "Crear campañas pausadas con IA"}
-          </button>
-        ) : (
-          <>
-            <button
-              type="button"
-              disabled={locked || !items.length || !form.accountId || !country}
-              onClick={() => void prepare(false)}
-            >
-              Guardar borrador
-            </button>
-            <button
-              type="button"
-              className="studio-publish-button"
-              aria-busy={publishing}
-              disabled={locked || !items.length || !form.accountId || !country}
-              onClick={() => void prepare(true)}
-            >
-              {publishing && (
-                <span className="studio-publish-spinner" aria-hidden="true" />
-              )}
-              {publishing
-                ? `Publicando… ${publishPercent}%`
-                : "↗ Revisar y publicar"}
-            </button>
-          </>
-        )}
+        <button
+          type="button"
+          disabled={locked || !items.length || !form.accountId || !country}
+          onClick={() => void prepare(false)}
+        >
+          Guardar borrador
+        </button>
+        <button
+          type="button"
+          className="studio-publish-button"
+          aria-busy={publishing}
+          disabled={locked || !items.length || !form.accountId || !country}
+          onClick={() => void prepare(true)}
+        >
+          {publishing && (
+            <span className="studio-publish-spinner" aria-hidden="true" />
+          )}
+          {publishing
+            ? `Publicando… ${publishPercent}%`
+            : "↗ Revisar y publicar"}
+        </button>
         <small>
+          {summary.campaigns} campaña{summary.campaigns !== 1 ? "s" : ""} ·{" "}
           {summary.adsets} conjuntos · {summary.ads} anuncios
         </small>
       </footer>
@@ -1665,9 +2018,18 @@ export function StudioCampaign({
             <span>
               {account?.name} · {countryName(draft.config.country)}
             </span>
-            <strong>{money(draft.summary.dailyTotal)} / día</strong>
+            <strong>
+              {draft.config.existingCampaignId
+                ? "Se conserva el presupuesto existente"
+                : money(draft.summary.dailyTotal) + " / día"}
+            </strong>
             <small>
-              {money(draft.config.dailyBudget)} por campaña ·{" "}
+              {draft.config.existingCampaignId
+                ? draft.config.adsetDailyBudget
+                  ? money(draft.config.adsetDailyBudget) +
+                    " por conjunto nuevo · "
+                  : ""
+                : money(draft.config.dailyBudget) + " por campaña · "}
               {draft.summary.adsets} conjuntos · {draft.summary.ads} anuncios
             </small>
           </div>
@@ -1693,7 +2055,9 @@ export function StudioCampaign({
                 {campaignText(draft.config.headline, i, draft.config)}
               </strong>
               {(!draft.config.objective ||
-                draft.config.objective === "WHATSAPP") && (
+                ["WHATSAPP", "LEADS_WHATSAPP"].includes(
+                  draft.config.objective,
+                )) && (
                 <small>
                   WhatsApp:{" "}
                   {draft.config.whatsapp ||

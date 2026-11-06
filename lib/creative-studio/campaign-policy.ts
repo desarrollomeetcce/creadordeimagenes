@@ -2,10 +2,27 @@ import { z } from "zod";
 import { metaInterestSchema } from "./audience-interests";
 import { demand } from "../errors";
 import { countryName, isCountryCode } from "../meta-ads/countries";
+import {
+  conversationSchema,
+  eligiblePlatforms,
+  eligiblePositions,
+  locationSchema,
+  metaId,
+  platformSchema,
+  positionsSchema,
+} from "./campaign-workbench-policy";
 export const audienceSchema = z
   .object({
     name: z.string().trim().min(1).max(100),
     interests: z.array(metaInterestSchema).max(10).optional(),
+    interestSource: z.enum(["MANUAL", "AI"]).optional(),
+    platformPresetId: z.string().uuid().optional(),
+    customAudiences: z.array(metaInterestSchema).max(10).optional(),
+    excludedCustomAudiences: z.array(metaInterestSchema).max(10).optional(),
+    locales: z.array(z.number().int().positive()).max(10).optional(),
+    locations: z.array(locationSchema).max(20).optional(),
+    selectionProofs: z.array(z.string().max(24000)).max(10).optional(),
+    advantageAudience: z.boolean().optional(),
     ageMin: z.number().int().min(18).max(65).default(18),
     ageMax: z.number().int().min(18).max(65).default(65),
     gender: z.enum(["ALL", "MEN", "WOMEN"]).default("ALL"),
@@ -22,7 +39,22 @@ export const campaignConfigSchema = z
     planVersion: z.literal(2).optional(),
     campaignName: z.string().trim().max(250).optional(),
     aiSuggestionJobId: z.string().min(1).max(100).optional(),
-    objective: z.enum(["WHATSAPP", "LEADS", "TRAFFIC"]).default("WHATSAPP"),
+    objective: z
+      .enum(["WHATSAPP", "LEADS_WHATSAPP", "LEADS", "TRAFFIC"])
+      .default("WHATSAPP"),
+    existingCampaignId: metaId.optional(),
+    existingAdsetId: metaId.optional(),
+    existingAdsetIds: z
+      .array(metaId)
+      .min(1)
+      .max(10)
+      .refine((v) => new Set(v).size === v.length)
+      .optional(),
+    adsetDailyBudget: z.number().finite().positive().max(1000000).optional(),
+    conversation: conversationSchema.optional(),
+    placements: positionsSchema.optional(),
+    allowExcludedPlacementSpend: z.boolean().optional(),
+    multiAdvertiser: z.literal(false).optional(),
     website: z.string().max(2000).default(""),
     leadFormId: z
       .string()
@@ -30,9 +62,9 @@ export const campaignConfigSchema = z
       .or(z.literal(""))
       .default(""),
     platforms: z
-      .array(z.enum(["facebook", "instagram", "messenger", "audience_network"]))
+      .array(platformSchema)
       .min(1)
-      .max(4)
+      .max(6)
       .refine((v) => new Set(v).size === v.length)
       .default(["facebook", "instagram"]),
     variables: z
@@ -53,7 +85,7 @@ export const campaignConfigSchema = z
       .regex(/^\+?\d{7,15}$/, "WhatsApp de Meta no válido.")
       .or(z.literal(""))
       .default(""),
-    dailyBudget: z.number().finite().positive().max(1000000),
+    dailyBudget: z.number().finite().nonnegative().max(1000000),
     body: z.string().trim().min(1).max(5000),
     headline: z.string().trim().min(1).max(250),
     description: z.string().max(500).default(""),
@@ -66,7 +98,36 @@ export const campaignConfigSchema = z
     beneficiary: z.string().max(200).default(""),
     payor: z.string().max(200).default(""),
   })
-  .strict();
+  .strict()
+  .superRefine((c, ctx) => {
+    if (!c.existingCampaignId && c.dailyBudget <= 0)
+      ctx.addIssue({
+        code: "custom",
+        path: ["dailyBudget"],
+        message: "Indica un presupuesto diario mayor que cero.",
+      });
+    if (
+      c.existingAdsetId &&
+      (!c.existingCampaignId || c.audiences.length !== 1)
+    )
+      ctx.addIssue({
+        code: "custom",
+        path: ["existingAdsetId"],
+        message: "Selecciona una campaña y un solo conjunto existente.",
+      });
+    if (
+      c.existingAdsetIds &&
+      (!c.existingCampaignId ||
+        c.existingAdsetId ||
+        c.audiences.length !== c.existingAdsetIds.length)
+    )
+      ctx.addIssue({
+        code: "custom",
+        path: ["existingAdsetIds"],
+        message:
+          "Cada conjunto existente debe corresponder a un espacio de distribución.",
+      });
+  });
 export type CampaignConfig = z.infer<typeof campaignConfigSchema>;
 export type CampaignItem = {
   subproductId: string;
@@ -92,6 +153,7 @@ export type LaunchStep = {
   target?: string;
   state: "PENDING" | "RUNNING" | "DONE" | "UNCERTAIN";
   startedAt?: string;
+  existing?: boolean;
   wait?: { reason: "pacing" | "quota"; until: string };
   receipt?: Record<string, any>;
 };
@@ -153,6 +215,8 @@ export function audienceTargeting(
     instagram_positions: _i,
     messenger_positions: _m,
     audience_network_positions: _n,
+    whatsapp_positions: _w,
+    threads_positions: _t,
     genders: _g,
     device_platforms: _d,
     excluded_geo_locations: _eg,
@@ -175,7 +239,43 @@ export function audienceTargeting(
   return {
     ...safeSaved,
     publisher_platforms: config.platforms ?? ["facebook", "instagram"],
-    geo_locations: { countries: [config.country] },
+    ...Object.fromEntries(
+      Object.entries(config.placements ?? {})
+        .filter(
+          ([p, positions]) =>
+            config.platforms.includes(p as any) && positions?.length,
+        )
+        .map(([p, positions]) => [p + "_positions", positions]),
+    ),
+    geo_locations: a.locations?.length
+      ? {
+          ...(a.locations.some((l) => l.kind === "cities")
+            ? {
+                cities: a.locations
+                  .filter((l) => l.kind === "cities")
+                  .map((l) => ({ key: l.id })),
+              }
+            : {}),
+          ...(a.locations.some((l) => l.kind === "regions")
+            ? {
+                regions: a.locations
+                  .filter((l) => l.kind === "regions")
+                  .map((l) => ({ key: l.id })),
+              }
+            : {}),
+        }
+      : { countries: [config.country] },
+    ...(a.customAudiences?.length
+      ? { custom_audiences: a.customAudiences.map(({ id }) => ({ id })) }
+      : {}),
+    ...(a.excludedCustomAudiences?.length
+      ? {
+          excluded_custom_audiences: a.excludedCustomAudiences.map(
+            ({ id }) => ({ id }),
+          ),
+        }
+      : {}),
+    ...(a.locales?.length ? { locales: a.locales } : {}),
     ...(special
       ? {}
       : {
@@ -200,13 +300,16 @@ export function audienceTargeting(
         : { genders: [a.gender === "MEN" ? 1 : 2] }),
     targeting_automation: {
       ...(automation ?? {}),
-      advantage_audience: savedSelected
-        ? automation?.advantage_audience === 0
-          ? 0
-          : 1
-        : special || !a.strictAge
-          ? 1
-          : 0,
+      advantage_audience:
+        a.advantageAudience !== undefined
+          ? Number(a.advantageAudience)
+          : savedSelected
+            ? automation?.advantage_audience === 0
+              ? 0
+              : 1
+            : special || !a.strictAge
+              ? 1
+              : 0,
     },
   };
 }
@@ -228,9 +331,31 @@ export function launchPlan(
     c.variationIds.forEach((_v, j) =>
       add(`image:${i}:${j}`, "IMAGE", i, { image: j }),
     );
-    add(`campaign:${i}`, "CAMPAIGN", i);
+    add(
+      `campaign:${i}`,
+      "CAMPAIGN",
+      i,
+      config?.existingCampaignId
+        ? {
+            existing: true,
+            state: "DONE",
+            receipt: { id: config.existingCampaignId },
+          }
+        : {},
+    );
     for (let a = 0; a < count; a++)
-      add(`set:${i}:${a}`, "ADSET", i, { audience: a });
+      add(`set:${i}:${a}`, "ADSET", i, {
+        audience: a,
+        ...((config?.existingAdsetIds?.[a] ?? config?.existingAdsetId)
+          ? {
+              existing: true,
+              state: "DONE" as const,
+              receipt: {
+                id: config!.existingAdsetIds?.[a] ?? config!.existingAdsetId,
+              },
+            }
+          : {}),
+      });
     c.variationIds.forEach((_v, j) => {
       add(`creative:${i}:${j}`, "CREATIVE", i, { image: j });
       add(`verify-creative:${i}:${j}`, "VERIFY_CREATIVE", i, { image: j });
@@ -258,8 +383,12 @@ export function launchPlan(
               target: `ad:${i}:${a}:${j}`,
             });
       for (let a = 0; a < count; a++)
-        add(`active-set:${i}:${a}`, "ACTIVATE", i, { target: `set:${i}:${a}` });
-      add(`active-campaign:${i}`, "ACTIVATE", i, { target: `campaign:${i}` });
+        if (!config?.existingAdsetId && !config?.existingAdsetIds?.length)
+          add(`active-set:${i}:${a}`, "ACTIVATE", i, {
+            target: `set:${i}:${a}`,
+          });
+      if (!config?.existingCampaignId)
+        add(`active-campaign:${i}`, "ACTIVATE", i, { target: `campaign:${i}` });
       add(`verify-live:${i}`, "VERIFY_LIVE", i);
     });
   }
@@ -267,15 +396,23 @@ export function launchPlan(
 }
 export function launchSummary(items: CampaignItem[], c: CampaignConfig) {
   return {
-    campaigns: items.length,
-    adsets: items.length * c.audiences.length,
+    campaigns: c.existingCampaignId ? 1 : items.length,
+    newCampaigns: c.existingCampaignId ? 0 : items.length,
+    existingCampaigns: c.existingCampaignId ? 1 : 0,
+    adsets:
+      c.existingAdsetIds?.length ??
+      (c.existingAdsetId ? 1 : items.length * c.audiences.length),
     ads: items.reduce(
       (n, i) =>
         n +
         i.variationIds.length * (c.planVersion === 2 ? 1 : c.audiences.length),
       0,
     ),
-    dailyTotal: Math.round(c.dailyBudget * items.length * 1000000) / 1000000,
+    dailyTotal: c.existingCampaignId
+      ? c.existingAdsetId || c.existingAdsetIds?.length
+        ? 0
+        : (c.adsetDailyBudget ?? 0) * items.length * c.audiences.length
+      : Math.round(c.dailyBudget * items.length * 1000000) / 1000000,
   };
 }
 
@@ -321,7 +458,7 @@ export function imageAudience(
   return imageDistribution(item, config).findIndex((n) => (end += n) > image);
 }
 export function campaignObjective(c: Pick<CampaignConfig, "objective">) {
-  return c.objective === "LEADS"
+  return c.objective === "LEADS" || c.objective === "LEADS_WHATSAPP"
     ? "OUTCOME_LEADS"
     : c.objective === "TRAFFIC"
       ? "OUTCOME_TRAFFIC"
@@ -358,6 +495,33 @@ export function campaignCTA(
       : { type: "WHATSAPP_MESSAGE", value: { app_destination: "WHATSAPP" } };
 }
 export function validateCampaignDestination(c: CampaignConfig) {
+  if (!c.existingAdsetId && !c.existingAdsetIds?.length) {
+    demand(
+      c.platforms.every((p) => eligiblePlatforms(c.objective).includes(p)),
+      "Una plataforma seleccionada no admite el destino de esta campaña.",
+    );
+    for (const p of c.platforms)
+      demand(
+        (c.placements?.[p] ?? []).every((id) =>
+          eligiblePositions(c.objective, p).some((v) => v.id === id),
+        ),
+        "Una ubicación seleccionada no es compatible con el destino de esta campaña.",
+      );
+  }
+  demand(
+    !c.conversation || ["WHATSAPP", "LEADS_WHATSAPP"].includes(c.objective),
+    "La plantilla de conversación requiere un destino WhatsApp.",
+  );
+  demand(
+    !c.existingAdsetId || c.existingCampaignId,
+    "Selecciona la campaña del conjunto existente.",
+  );
+  for (const a of c.audiences) {
+    demand(
+      (a.locations ?? []).every((l) => l.country === c.country),
+      "Las ubicaciones del público deben pertenecer al país elegido.",
+    );
+  }
   if (c.specialCategory !== "NONE")
     demand(
       c.audiences.every(
@@ -365,7 +529,10 @@ export function validateCampaignDestination(c: CampaignConfig) {
           a.ageMin === 18 &&
           a.ageMax === 65 &&
           a.gender === "ALL" &&
-          !a.savedAudienceId,
+          !a.savedAudienceId &&
+          !a.interests?.length &&
+          !a.customAudiences?.length &&
+          !a.excludedCustomAudiences?.length,
       ),
       "Las categorías especiales requieren público amplio sin edad, género ni público guardado restringido.",
     );

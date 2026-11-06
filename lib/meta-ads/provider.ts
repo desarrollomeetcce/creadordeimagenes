@@ -305,6 +305,14 @@ export class MetaReader {
                 "status",
                 "effective_status",
                 "account_id",
+                "campaign_id",
+                "destination_type",
+                "optimization_goal",
+                "daily_budget",
+                "lifetime_budget",
+                "targeting",
+                "promoted_object",
+                "placement_soft_opt_out",
               ].includes(f),
             ),
         "La verificación solo permite leer estados de objetos concretos.",
@@ -448,6 +456,129 @@ export class MetaReader {
       )
       .slice(0, 20)
       .map((v: any) => ({ id: String(v.id), name: v.name }));
+  }
+  async campaignDirectory(
+    accountId: string,
+    kind:
+      | "campaigns"
+      | "adsets"
+      | "custom_audiences"
+      | "interests"
+      | "cities"
+      | "regions"
+      | "locales",
+    input: {
+      query?: string;
+      country?: string;
+      campaignId?: string;
+      after?: string;
+    } = {},
+  ) {
+    demand(
+      this.transport === "API" && /^\d{1,40}$/.test(accountId),
+      "Selecciona una cuenta de Marketing API.",
+      409,
+    );
+    demand(!input.after || input.after.length <= 1000, "Cursor no válido.");
+    demand(
+      !input.query || input.query.length <= 80,
+      "Acorta la búsqueda a 80 caracteres.",
+    );
+    const params = new URLSearchParams({
+      limit: kind === "campaigns" || kind === "adsets" ? "50" : "20",
+    });
+    let path = `act_${accountId}/${kind}`,
+      fields = "id,name";
+    if (kind === "campaigns" || kind === "adsets") {
+      fields =
+        kind === "campaigns"
+          ? "id,name,objective,status,effective_status,daily_budget,lifetime_budget,special_ad_categories"
+          : "id,name,campaign_id,status,effective_status,destination_type,optimization_goal,daily_budget,lifetime_budget,targeting,promoted_object,placement_soft_opt_out";
+      const filters: any[] = [
+        { field: "effective_status", operator: "IN", value: ["ACTIVE"] },
+      ];
+      if (kind === "adsets") {
+        demand(
+          !!input.campaignId && /^\d{1,40}$/.test(input.campaignId),
+          "Selecciona una campaña antes de buscar conjuntos.",
+        );
+        filters.push({
+          field: "campaign_id",
+          operator: "IN",
+          value: [input.campaignId],
+        });
+      }
+      if (input.query?.trim())
+        filters.push({
+          field: "name",
+          operator: "CONTAIN",
+          value: input.query.trim(),
+        });
+      params.set("filtering", JSON.stringify(filters));
+    } else if (kind === "custom_audiences") fields = "id,name,subtype";
+    else {
+      demand(
+        (input.query?.trim().length ?? 0) >= 2,
+        "Escribe al menos dos caracteres para buscar.",
+      );
+      params.set("q", input.query!.trim());
+      if (kind === "interests") {
+        path = `act_${accountId}/targetingsearch`;
+        params.set("type", "adinterest");
+      } else if (kind === "locales") {
+        path = "search";
+        params.set("type", "adlocale");
+      } else {
+        demand(
+          /^[A-Z]{2}$/.test(input.country ?? ""),
+          "Selecciona el país antes de buscar lugares.",
+        );
+        path = "search";
+        params.set("type", "adgeolocation");
+        params.set(
+          "location_types",
+          JSON.stringify([kind === "cities" ? "city" : "region"]),
+        );
+        params.set("country_code", input.country!);
+      }
+    }
+    params.set("fields", fields);
+    if (["cities", "regions", "locales", "interests"].includes(kind))
+      params.delete("fields");
+    if (input.after) params.set("after", input.after);
+    if (this.appSecret)
+      params.set(
+        "appsecret_proof",
+        createHmac("sha256", this.appSecret).update(this.token).digest("hex"),
+      );
+    await this.quota?.beforeRead();
+    const response = await external(
+      `https://graph.facebook.com/${this.version}/${path}?${params}`,
+      { method: "GET", headers: { Authorization: "Bearer " + this.token } },
+    );
+    let result: any;
+    try {
+      result = JSON.parse(await boundedResponse(response, 3000000));
+    } catch {
+      throw new AppError(
+        "Meta no confirmó los resultados de la búsqueda.",
+        502,
+      );
+    }
+    if (!response.ok || result?.error) {
+      const error = new MetaGraphError(response.status, result, this.token, {
+        version: this.version,
+        endpoint: path,
+        fields,
+        method: "GET",
+      });
+      await this.quota?.limited(
+        error,
+        retryDelay(response.headers.get("retry-after")),
+      );
+      throw error;
+    }
+    return page(result);
   }
   async setStatus(objectId: string, status: "ACTIVE" | "PAUSED") {
     demand(
@@ -760,7 +891,9 @@ export class MetaReader {
       }
       if (part.code < 200 || part.code >= 300 || row?.error) {
         const error = new MetaGraphError(part.code, row, this.token, {
-          ...context,method:"GET",endpoint:ids[i],
+          ...context,
+          method: "GET",
+          endpoint: ids[i],
         });
         await this.quota?.limited(
           error,

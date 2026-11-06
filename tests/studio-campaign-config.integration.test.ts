@@ -424,7 +424,10 @@ test("AI suggestion requires consent, records one charge reservation, keeps prot
           { subproductId: q.images[0].subId, variationIds: [q.images[0].id] },
         ],
       });
-    await assert.rejects(() => prepare(r.proposal.audiences), /requieren/);
+    await assert.rejects(
+      () => prepare(r.proposal.audiences),
+      /confirmados por Meta/,
+    );
     await assert.rejects(
       () =>
         prepare(

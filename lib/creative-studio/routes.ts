@@ -7,6 +7,13 @@ import { maxUploadBytes, store, remove } from "../storage";
 import { validateUpload } from "../uploads";
 import * as studio from "./service";
 import * as campaigns from "./campaigns";
+import { campaignPresets, saveCampaignPreset } from "./campaign-presets";
+import { searchCampaignParents } from "./campaign-existing";
+import { campaignAudienceOptions } from "./campaign-audience-selection";
+import {
+  savePlatformAudience,
+  platformAudiencePresets,
+} from "./campaign-audience-presets";
 import type { Actor } from "./service";
 const send = (v: unknown, status = 200) =>
   NextResponse.json(v, { status, headers: { "Cache-Control": "no-store" } });
@@ -19,6 +26,51 @@ export async function creativeStudioRoutes(
   studio.studioAccess(actor);
   const p = parts.slice(1),
     method = req.method;
+  if (p[0] === "campaign-presets" && p[1] && p.length === 2) {
+    if (method === "GET") return send(await campaignPresets(actor, p[1]));
+    if (method === "POST")
+      return send(await saveCampaignPreset(actor, p[1], await body()));
+  }
+  if (
+    p[0] === "conversation-presets" &&
+    p[1] &&
+    p.length === 2 &&
+    method === "POST"
+  )
+    return send(
+      await saveCampaignPreset(actor, p[1], await body(), "conversation"),
+    );
+  if (
+    p[0] === "campaign-directory" &&
+    p[1] &&
+    p.length === 2 &&
+    method === "GET"
+  )
+    return send(
+      await searchCampaignParents(
+        actor,
+        p[1],
+        Object.fromEntries(req.nextUrl.searchParams),
+      ),
+    );
+  if (p[0] === "audience-options" && p[1] && p.length === 2 && method === "GET")
+    return send(
+      await campaignAudienceOptions(
+        actor,
+        p[1],
+        Object.fromEntries(req.nextUrl.searchParams),
+      ),
+    );
+  if (p[0] === "audience-save" && p[1] && p.length === 2 && method === "POST")
+    return send(await savePlatformAudience(actor, p[1], await body()));
+  if (p[0] === "audience-presets" && p[1] && p.length === 2 && method === "GET")
+    return send(
+      await platformAudiencePresets(
+        actor,
+        p[1],
+        Object.fromEntries(req.nextUrl.searchParams),
+      ),
+    );
   if (p[0] === "campaign-suggestion" && p.length === 1 && method === "POST")
     return send(
       await (
@@ -51,18 +103,20 @@ export async function creativeStudioRoutes(
   }
   if (p[0] === "products" && p[1]) {
     if (p.length === 2 && method === "GET") {
-      const [product, launch] = await Promise.all([
-        studio.studioProduct(actor, p[1]),
-        db.creativeMetaLaunch.findFirst({
-          where: {
-            categoryId: p[1],
-            ...(actor.role === "OWNER" ? {} : { actorId: actor.id }),
-          },
-          orderBy: { createdAt: "desc" },
-          select: { id: true },
-        }),
-      ]);
-      return send({ ...product, latestLaunchId: launch?.id ?? null });
+      const product = await studio.studioProduct(actor, p[1]);
+      const launches = await db.$queryRaw<
+        { id: string; subproductId: string; createdAt: Date }[]
+      >`SELECT DISTINCT ON (entry->>'subproductId') l.id,entry->>'subproductId' AS "subproductId",l."createdAt" FROM "CreativeMetaLaunch" l CROSS JOIN LATERAL jsonb_array_elements(l.campaigns) entry WHERE l."categoryId"=${p[1]} AND (l."actorId"=${actor.id} OR ${actor.role}='OWNER') ORDER BY entry->>'subproductId',l."createdAt" DESC LIMIT 200`;
+      return send({
+        ...product,
+        latestLaunchIds: Object.fromEntries(
+          launches.map((l) => [l.subproductId, l.id]),
+        ),
+        latestLaunchId:
+          launches.sort(
+            (a, b) => b.createdAt.valueOf() - a.createdAt.valueOf(),
+          )[0]?.id ?? null,
+      });
     }
     if (p.length === 2 && method === "PATCH")
       return send(await studio.setProductCountry(actor, p[1], await body()));

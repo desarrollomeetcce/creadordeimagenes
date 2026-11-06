@@ -4,7 +4,16 @@ import {
   readGenerationPreferences,
   type GenerationPreferences,
 } from "../../lib/creative-studio/generation-preferences";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import { CurrentUserId } from "./role-guide";
+import { templateForAnotherDiploma } from "../../lib/creative-studio/campaign-workbench-policy";
 import { StudioColumns, StudioMaximize } from "./studio-columns";
 import { SheetSearchSelect } from "./sheet-search-select";
 import { SearchSelect } from "./search-select";
@@ -22,6 +31,7 @@ import { ImagePreviewModal } from "./image-preview-modal";
 import { countryName } from "../../lib/meta-ads/countries";
 import type { CampaignItem } from "../../lib/creative-studio/campaign-policy";
 import "./studio-workspace.css";
+import "./studio-campaign-workbench.css";
 const Attachments = dynamic(() =>
   import("./attachments").then((m) => m.Attachments),
 );
@@ -614,12 +624,42 @@ export function CreativeStudio({ userId }: { userId: string }) {
         })),
     [selected, product],
   );
+  const campaignUser = useContext(CurrentUserId);
+  const campaignSessions = useRef<{ user: string; values: Map<string, any> }>({
+    user: campaignUser,
+    values: new Map(),
+  });
+  if (campaignSessions.current.user !== campaignUser)
+    campaignSessions.current = { user: campaignUser, values: new Map() };
+  const [batchCampaign, setBatchCampaign] = useState(false);
+  useEffect(() => setBatchCampaign(false), [product?.id]);
+  const campaignScopeIds = batchCampaign
+    ? (product?.subproducts ?? []).map((s: any) => s.id)
+    : activeSub
+      ? [activeSub]
+      : [];
+  const campaignSessionKey = [
+    campaignUser,
+    product?.id,
+    country,
+    batchCampaign ? "batch" : activeSub,
+  ].join(":");
+  const scopedCampaignItems = batchCampaign
+    ? campaignItems
+    : campaignItems.filter((i) => i.subproductId === activeSub);
   const restoreSelection = useCallback(
     (items: CampaignItem[]) =>
-      setSelected(
-        Object.fromEntries(items.map((i) => [i.subproductId, i.variationIds])),
-      ),
-    [],
+      setSelected((old) => {
+        const next = { ...old };
+        for (const id of campaignScopeIds) delete next[id];
+        return {
+          ...next,
+          ...Object.fromEntries(
+            items.map((i) => [i.subproductId, i.variationIds]),
+          ),
+        };
+      }),
+    [campaignScopeIds.join("|")],
   );
   const names = (list: any[]) => list.map((p) => ({ id: p.id, label: p.name })),
     same = (a: string, b: string) =>
@@ -1608,15 +1648,46 @@ export function CreativeStudio({ userId }: { userId: string }) {
         </section>
         {product ? (
           <StudioCampaign
-            key={product.id}
+            key={campaignSessionKey}
             categoryId={product.id}
             country={country}
             countryBusy={busy}
             onCountryChange={(value) => run(() => changeCountry(value))}
             accounts={context.accounts}
-            items={campaignItems}
-            template={project?.studio?.campaignTemplates?.[country]}
-            latestLaunchId={product.latestLaunchId}
+            items={scopedCampaignItems}
+            scopeIds={campaignScopeIds}
+            scopeName={
+              batchCampaign
+                ? "Selección de diplomados"
+                : (active?.name ?? "Selecciona un diplomado")
+            }
+            batch={batchCampaign}
+            onBatchChange={setBatchCampaign}
+            batchCount={campaignItems.length}
+            workspaceState={campaignSessions.current.values.get(
+              campaignSessionKey,
+            )}
+            onWorkspaceState={(value) => {
+              campaignSessions.current.values.set(campaignSessionKey, value);
+              if (campaignSessions.current.values.size > 50)
+                campaignSessions.current.values.delete(
+                  campaignSessions.current.values.keys().next().value!,
+                );
+            }}
+            template={
+              (!batchCampaign
+                ? active?.studio?.campaignTemplates?.[country]
+                : undefined) ??
+              templateForAnotherDiploma(
+                project?.studio?.campaignTemplates?.[country],
+              )
+            }
+            latestLaunchId={
+              !batchCampaign
+                ? (product.latestLaunchIds?.[activeSub] ??
+                  product.latestLaunchId)
+                : product.latestLaunchId
+            }
             onRestore={restoreSelection}
           />
         ) : (

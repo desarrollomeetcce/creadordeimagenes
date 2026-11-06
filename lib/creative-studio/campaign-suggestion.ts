@@ -40,7 +40,16 @@ export function parseCampaignSuggestion(text: string, count: number) {
     502,
   );
   demand(
-    !result.audiences.some((a) => a.savedAudienceId),
+    !result.audiences.some(
+      (a) =>
+        a.savedAudienceId ||
+        a.platformPresetId ||
+        a.selectionProofs?.length ||
+        a.customAudiences?.length ||
+        a.excludedCustomAudiences?.length ||
+        a.locations?.length ||
+        a.locales?.length,
+    ),
     "La IA no puede inventar identificadores de públicos.",
     502,
   );
@@ -53,19 +62,40 @@ export async function suggestCampaign(actor: Actor, input: unknown) {
       requestId: z.string().uuid(),
       categoryId: z.string().min(1).max(100),
       confirmAi: z.literal(true),
+      fields: z
+        .object({
+          audiences: z.boolean(),
+          body: z.boolean(),
+          description: z.boolean(),
+        })
+        .strict()
+        .default({ audiences: true, body: true, description: true }),
       prompt: z.string().trim().min(1).max(12000),
-      config: campaignConfigSchema.extend({
-        body: z
-          .string()
-          .trim()
-          .max(5000)
-          .optional()
-          .transform((v) => v || "Texto generado por IA"),
-      }),
+      config: z.preprocess((value) => {
+        if (!value || typeof value !== "object" || Array.isArray(value))
+          return value;
+        const c = value as Record<string, unknown>;
+        return {
+          ...c,
+          body:
+            typeof c.body === "string" && c.body.trim()
+              ? c.body
+              : "Texto generado por IA",
+        };
+      }, campaignConfigSchema),
       subproductIds: z.array(z.string().min(1).max(100)).min(1).max(10),
     })
     .strict()
     .parse(input);
+  demand(
+    b.fields.audiences || b.fields.body || b.fields.description,
+    "Selecciona al menos un campo para completar con IA.",
+  );
+  demand(
+    !b.fields.audiences ||
+      (!b.config.existingAdsetId && !b.config.existingAdsetIds?.length),
+    "Los públicos de conjuntos existentes no se modifican con IA.",
+  );
   await resourceAccess(actor, "category", b.categoryId, "EDIT");
   const category = await db.category.findUniqueOrThrow({
     where: { id: b.categoryId },
@@ -87,7 +117,8 @@ export async function suggestCampaign(actor: Actor, input: unknown) {
   const fingerprint = createHash("sha256")
     .update(
       JSON.stringify({
-        audienceVersion: 2,
+        audienceVersion: 3,
+        fields: b.fields,
         categoryId: b.categoryId,
         prompt: b.prompt,
         config: b.config,
@@ -210,7 +241,7 @@ export async function suggestCampaign(actor: Actor, input: unknown) {
     }));
     const secret = decryptKey(creative.encryptedKey),
       signal = AbortSignal.any([heartbeat.signal, AbortSignal.timeout(240000)]);
-    if (b.config.specialCategory === "NONE") {
+    if (b.fields.audiences && b.config.specialCategory === "NONE") {
       called = true;
       const seed = await adapter(creative.provider).direct(
         secret,
@@ -223,8 +254,8 @@ export async function suggestCampaign(actor: Actor, input: unknown) {
           }),
         true,
         signal,
-        undefined,
-        500,
+        "low",
+        1500,
       );
       usages.push(seed.usage);
       demand(!seed.incomplete, "La IA no terminó la selección de temas.", 502);
@@ -243,17 +274,19 @@ export async function suggestCampaign(actor: Actor, input: unknown) {
         409,
       );
     }
-    const prompt =
-      'Devuelve SOLO JSON: {"body":"texto reutilizable con {diplomado}","description":"descripción breve","audiences":[{"name":"perfil concreto","ageMin":18,"ageMax":65,"gender":"ALL","strictAge":false,"interests":[{"id":"ID del catálogo","name":"nombre del catálogo"}]}]}. Exactamente ' +
-      b.config.audiences.length +
-      " públicos. Elige perfiles e intereses diferentes por conjunto del catálogo consultado a Meta. Como máximo un conjunto puede ser amplio (interests vacío); los demás requieren intereses relevantes del catálogo, sin repetir la misma combinación. No inventes IDs, beneficios ni acreditaciones. Para categorías especiales usa interests vacío, edades18–65 y géneroALL. Conserva headline, país, presupuesto y ubicaciones: no los devuelvas. Contexto JSON: " +
-      JSON.stringify({
-        country: b.config.country,
-        objective: b.config.objective,
-        specialCategory: b.config.specialCategory,
-        tasks,
-        metaInterestCatalog: interestCatalog,
-      });
+    const prompt = b.fields.audiences
+      ? 'Devuelve SOLO JSON: {"body":"texto reutilizable con {diplomado}","description":"descripción breve","audiences":[{"name":"perfil concreto","ageMin":18,"ageMax":65,"gender":"ALL","strictAge":false,"interests":[{"id":"ID del catálogo","name":"nombre del catálogo"}]}]}. Exactamente ' +
+        b.config.audiences.length +
+        " públicos. Elige perfiles e intereses diferentes por conjunto del catálogo consultado a Meta. Como máximo un conjunto puede ser amplio (interests vacío); los demás requieren intereses relevantes del catálogo, sin repetir la misma combinación. No inventes IDs, beneficios ni acreditaciones. Para categorías especiales usa interests vacío, edades18–65 y géneroALL. Conserva headline, país, presupuesto y ubicaciones: no los devuelvas. Contexto JSON: " +
+        JSON.stringify({
+          country: b.config.country,
+          objective: b.config.objective,
+          specialCategory: b.config.specialCategory,
+          tasks,
+          metaInterestCatalog: interestCatalog,
+        })
+      : 'Devuelve SOLO JSON {"body":"texto para {diplomado}","description":"descripción breve"}. No generes públicos ni cambies configuraciones. No inventes beneficios, precios ni acreditaciones. Contexto: ' +
+        JSON.stringify({ country: b.config.country, tasks });
     called = true;
     const response = await adapter(creative.provider).direct(
       secret,
@@ -261,20 +294,37 @@ export async function suggestCampaign(actor: Actor, input: unknown) {
       prompt,
       true,
       signal,
-      undefined,
+      "low",
       4500,
     );
     usages.push(response.usage);
     demand(!response.incomplete, "La IA no terminó su propuesta.", 502);
-    const proposal = parseCampaignSuggestion(
-      response.text,
-      b.config.audiences.length,
-    );
-    proposal.audiences = verifiedAudienceInterests(
-      proposal.audiences,
-      interestCatalog,
-      b.config.specialCategory !== "NONE",
-    );
+    const proposal = b.fields.audiences
+      ? parseCampaignSuggestion(response.text, b.config.audiences.length)
+      : {
+          ...z
+            .object({
+              body: z.string().trim().min(1).max(5000),
+              description: z.string().max(500),
+            })
+            .strict()
+            .parse(
+              JSON.parse(
+                response.text
+                  .replace(/^```(?:json)?\s*/, "")
+                  .replace(/\s*```$/, ""),
+              ),
+            ),
+          audiences: b.config.audiences,
+        };
+    if (b.fields.audiences)
+      proposal.audiences = verifiedAudienceInterests(
+        proposal.audiences,
+        interestCatalog,
+        b.config.specialCategory !== "NONE",
+      );
+    if (!b.fields.body) proposal.body = b.config.body;
+    if (!b.fields.description) proposal.description = b.config.description;
     await heartbeat.check();
     const freshMeta = await primaryAccount(actor, b.config.accountId);
     demand(

@@ -11,6 +11,13 @@ import { z } from "zod";
 import { MetaGraphError } from "../meta-ads/graph-error";
 import { MetaQuotaWait } from "../meta-ads/quota";
 import { canResumeLocalWait, canResumeReadVerification } from "./launch-wait";
+import { existingCampaignContext } from "./campaign-existing";
+import { verifyManualAudienceSelections } from "./campaign-audience-selection";
+import { resolvePlatformAudiencePresets } from "./campaign-audience-presets";
+import {
+  placementSoftOptOut,
+  whatsappConversationPayload,
+} from "./campaign-workbench-policy";
 import { discoverCampaignPages } from "./pages";
 import { db } from "../db";
 import { demand, AppError } from "../errors";
@@ -251,7 +258,8 @@ export async function createLaunch(actor: Actor, input: unknown) {
     .parse(input);
   await resourceAccess(actor, "category", b.categoryId, "EDIT");
   const a = await primaryAccount(actor, b.config.accountId);
-  minorBudget(b.config.dailyBudget, a.currency);
+  if (!b.config.existingCampaignId)
+    minorBudget(b.config.dailyBudget, a.currency);
   b.config.planVersion = 2;
   validateCampaignDestination(b.config);
   const c = await db.category.findUniqueOrThrow({
@@ -321,7 +329,21 @@ export async function createLaunch(actor: Actor, input: unknown) {
       },
     };
   });
-  if (b.config.audiences.some((a) => a.interests?.length)) {
+  const resolvedPresets = await resolvePlatformAudiencePresets(
+    a,
+    c.id,
+    b.config,
+  );
+  b.config.audiences = verifyManualAudienceSelections(
+    actor,
+    a,
+    { ...b.config, audiences: resolvedPresets.audiences },
+    resolvedPresets.trusted,
+  );
+  const aiAudienceIndexes = b.config.audiences
+    .map((audience, index) => ({ audience, index }))
+    .filter(({ audience }) => audience.interestSource !== "MANUAL");
+  if (aiAudienceIndexes.some(({ audience }) => audience.interests?.length)) {
     const proof = b.config.aiSuggestionJobId
       ? await db.generationJob.findUnique({
           where: { id: b.config.aiSuggestionJobId },
@@ -343,13 +365,17 @@ export async function createLaunch(actor: Actor, input: unknown) {
       409,
     );
     const { verifiedAudienceInterests } = await import("./audience-interests");
-    b.config.audiences = verifiedAudienceInterests(
-      b.config.audiences,
+    const verified = verifiedAudienceInterests(
+      aiAudienceIndexes.map(({ audience }) => audience),
       snapshot.interestCatalog ?? [],
       b.config.specialCategory !== "NONE",
     );
+    aiAudienceIndexes.forEach(({ index }, i) => {
+      b.config.audiences[index] = verified[i];
+    });
   }
   const { reader: r } = await reader(a.connectionId, false, true);
+  const existing = await existingCampaignContext(r, a.id, b.config);
   const pages = await discoverCampaignPages((edge, after) =>
     r.launchRequest(a.id, edge, undefined, undefined, undefined, after),
   );
@@ -370,7 +396,10 @@ export async function createLaunch(actor: Actor, input: unknown) {
       409,
     );
   }
-  if (b.config.objective === "WHATSAPP" && b.config.whatsapp) {
+  if (
+    ["WHATSAPP", "LEADS_WHATSAPP"].includes(b.config.objective) &&
+    b.config.whatsapp
+  ) {
     const metaNumber = await readMetaPageWhatsApp(r, a.id, b.config.pageId);
     demand(
       metaPageWhatsAppNumber(b.config.whatsapp) === metaNumber,
@@ -410,20 +439,26 @@ export async function createLaunch(actor: Actor, input: unknown) {
   const config = {
     ...b.config,
     currency: a.currency,
-    minorBudget: minorBudget(b.config.dailyBudget, a.currency),
+    minorBudget: b.config.existingCampaignId
+      ? Number(existing.existingCampaign?.daily_budget ?? 0)
+      : minorBudget(b.config.dailyBudget, a.currency),
+    ...(b.config.adsetDailyBudget
+      ? { minorAdsetBudget: minorBudget(b.config.adsetDailyBudget, a.currency) }
+      : {}),
+    ...existing,
     savedTargeting: audiences,
     variationRevisions: Object.fromEntries(vs.map((v) => [v.id, v.revision])),
   };
-  const existing = await db.creativeMetaLaunch.findUnique({
+  const existingLaunch = await db.creativeMetaLaunch.findUnique({
     where: { requestId: b.requestId },
   });
-  if (existing) {
+  if (existingLaunch) {
     demand(
-      existing.actorId === actor.id && existing.categoryId === c.id,
+      existingLaunch.actorId === actor.id && existingLaunch.categoryId === c.id,
       "La solicitud ya existe.",
       409,
     );
-    return publicLaunch(existing);
+    return publicLaunch(existingLaunch);
   }
   const result = await db.$transaction(async (tx) => {
     const result = await tx.creativeMetaLaunch.create({
@@ -454,6 +489,7 @@ export async function createLaunch(actor: Actor, input: unknown) {
         },
       },
     });
+    await tx.$queryRaw`SELECT id FROM "Project" WHERE id=${c.projectId} FOR UPDATE`;
     const p = await tx.project.findUniqueOrThrow({
       where: { id: c.projectId },
     });
@@ -469,6 +505,25 @@ export async function createLaunch(actor: Actor, input: unknown) {
         }),
       },
     });
+    for (const item of items) {
+      await tx.$queryRaw`SELECT id FROM "Subproduct" WHERE id=${item.subproductId} FOR UPDATE`;
+      const sub = await tx.subproduct.findUniqueOrThrow({
+        where: { id: item.subproductId },
+        select: { studio: true },
+      });
+      await tx.subproduct.update({
+        where: { id: item.subproductId },
+        data: {
+          studio: json({
+            ...object(sub.studio),
+            campaignTemplates: {
+              ...object(object(sub.studio).campaignTemplates),
+              [b.config.country]: b.config,
+            },
+          }),
+        },
+      });
+    }
     return result;
   });
   return publicLaunch(result);
@@ -508,10 +563,12 @@ function publicLaunch(d: any) {
       .filter((s) => s.kind === "CAMPAIGN" && s.receipt?.id)
       .map((s) => ({
         id: s.receipt!.id,
-        name: campaignDisplayName(
-          (d.campaigns as CampaignItem[])[s.campaign],
-          config,
-        ),
+        name: s.existing
+          ? String(d.config.existingCampaign?.name ?? s.receipt!.id)
+          : campaignDisplayName(
+              (d.campaigns as CampaignItem[])[s.campaign],
+              config,
+            ),
       })),
     receipts: steps
       .filter((s) => s.receipt?.id)
@@ -593,6 +650,10 @@ export async function beginLaunch(actor: Actor, id: string, input: unknown) {
     409,
   );
   const config = d.config as CampaignConfig;
+  if (config.existingCampaignId) {
+    const { reader: r } = await reader(a.connectionId, false, true);
+    await existingCampaignContext(r, a.id, config);
+  }
   demand(
     config.targetStatus !== "ACTIVE" || b.confirmSpend,
     "Confirma el presupuesto diario antes de publicar activas.",
@@ -718,7 +779,7 @@ async function receiptStep(
             ["CAMPAIGN", "ADSET", "AD"].includes(s.kind) &&
             s.receipt?.id === o.id,
         );
-        if (!source) continue;
+        if (!source || source.existing) continue;
         const previous = await tx.metaAdObject.findUnique({
           where: { id: o.id },
           select: { accountId: true },
@@ -770,6 +831,7 @@ async function receiptStep(
       }
       if (
         step.kind === "VERIFY_LIVE" &&
+        !config.existingCampaignId &&
         alias &&
         result.confirmed.some(
           (o: any) => o.id === campaignId && o.status === "ACTIVE",
@@ -870,6 +932,9 @@ export async function tickLaunch(actor: Actor, id: string) {
       minorBudget: number;
       savedTargeting: any[];
       variationRevisions: Record<string, number>;
+      existingCampaign?: Record<string, any>;
+      existingAdset?: Record<string, any>;
+      minorAdsetBudget?: number;
     },
     items = d.campaigns as unknown as CampaignItem[],
     item = items[step.campaign];
@@ -943,6 +1008,15 @@ export async function tickLaunch(actor: Actor, id: string) {
           step.audience!,
           config.savedTargeting?.[step.audience!],
         ),
+        ...(config.existingCampaignId &&
+        !Number(config.existingCampaign?.daily_budget) &&
+        !Number(config.existingCampaign?.lifetime_budget)
+          ? {
+              daily_budget: config.minorAdsetBudget,
+              bid_strategy: "LOWEST_COST_WITHOUT_CAP",
+            }
+          : {}),
+        placement_soft_opt_out: placementSoftOptOut(config),
         status: "PAUSED",
         ...(config.beneficiary
           ? { dsa_beneficiary: config.beneficiary, dsa_payor: config.payor }
@@ -952,6 +1026,7 @@ export async function tickLaunch(actor: Actor, id: string) {
       edge = "adcreatives";
       body = {
         name: `${campaignDisplayName(item, config)} · Afiche ${step.image! + 1}`,
+        contextual_multi_ads: { enroll_status: "OPT_OUT" },
         object_story_spec: {
           page_id: config.pageId,
           link_data: {
@@ -963,13 +1038,21 @@ export async function tickLaunch(actor: Actor, id: string) {
             message: campaignText(config.body, item, config),
             name: campaignText(config.headline, item, config),
             description: campaignText(config.description, item, config),
+            ...(config.conversation
+              ? {
+                  page_welcome_message: whatsappConversationPayload(
+                    config.conversation,
+                    (t) => campaignText(t, item, config),
+                  ),
+                }
+              : {}),
             call_to_action: campaignCTA(config),
           },
         },
       };
     } else if (step.kind === "VERIFY_CREATIVE") {
       remoteId = resolve(`creative:${step.campaign}:${step.image}`).id;
-      fields = "id,account_id,object_story_spec";
+      fields = "id,account_id,object_story_spec,contextual_multi_ads";
     } else if (step.kind === "AD") {
       edge = "ads";
       body = {
@@ -986,7 +1069,7 @@ export async function tickLaunch(actor: Actor, id: string) {
     } else {
       remoteId = resolve(`campaign:${step.campaign}`).id;
       fields =
-        "id,name,status,effective_status,account_id,daily_budget,objective";
+        "id,name,status,effective_status,account_id,daily_budget,lifetime_budget,objective";
     }
   } catch (e) {
     const error =
@@ -1049,6 +1132,33 @@ export async function tickLaunch(actor: Actor, id: string) {
         "Meta no confirmó la página o el headline exacto. Revisa el creativo antes de activarlo.",
         409,
       );
+      demand(
+        result.contextual_multi_ads?.enroll_status !== "OPT_IN",
+        "Meta devolvió el creativo con multianunciante activado; revisa el anuncio.",
+        409,
+      );
+      if (config.conversation) {
+        const expected = JSON.parse(
+          whatsappConversationPayload(config.conversation, (t) =>
+            campaignText(t, item, config),
+          ),
+        );
+        let returned =
+          result.object_story_spec?.link_data?.page_welcome_message;
+        if (typeof returned === "string") {
+          try {
+            returned = JSON.parse(returned);
+          } catch {}
+        }
+        demand(
+          returned?.text_format?.message?.text ===
+            expected.text_format.message.text &&
+            returned?.text_format?.message?.autofill_message?.content ===
+              expected.text_format.message.autofill_message.content,
+          "Meta no confirmó la plantilla de conversación elegida.",
+          409,
+        );
+      }
       if (config.objective === "LEADS")
         demand(
           String(
@@ -1072,8 +1182,16 @@ export async function tickLaunch(actor: Actor, id: string) {
       );
       demand(
         result.objective === campaignObjective(config) &&
-          Number(result.daily_budget) === config.minorBudget &&
-          result.status === (step.kind === "VERIFY_LIVE" ? "ACTIVE" : "PAUSED"),
+          (config.existingCampaignId
+            ? String(result.daily_budget ?? "") ===
+                String(config.existingCampaign?.daily_budget ?? "") &&
+              String(result.lifetime_budget ?? "") ===
+                String(config.existingCampaign?.lifetime_budget ?? "")
+            : Number(result.daily_budget) === config.minorBudget) &&
+          result.status ===
+            (config.existingCampaignId || step.kind === "VERIFY_LIVE"
+              ? "ACTIVE"
+              : "PAUSED"),
         "Meta no confirmó el estado o presupuesto revisado.",
         409,
       );
@@ -1101,7 +1219,10 @@ export async function tickLaunch(actor: Actor, id: string) {
               String(objects[id]?.id) === id &&
               String(objects[id]?.account_id).replace(/^act_/, "") === a.id &&
               objects[id]?.status ===
-                (step.kind === "VERIFY_LIVE" ? "ACTIVE" : "PAUSED"),
+                (step.kind === "VERIFY_LIVE" ||
+                steps.some((s) => s.existing && s.receipt?.id === id)
+                  ? "ACTIVE"
+                  : "PAUSED"),
           ),
           "Meta no confirmó todos los conjuntos y anuncios. Revisa los objetos creados.",
           409,
