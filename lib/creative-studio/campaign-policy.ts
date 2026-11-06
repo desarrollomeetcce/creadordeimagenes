@@ -195,6 +195,47 @@ export function minorBudget(value: number, currency: string) {
   );
   return minor;
 }
+/** Advantage+ ages are suggestions; Graph requires hard minimum <=25 and maximum 65.
+ * Meta Targeting.age_range carries the selected range. Do not broaden a strict audience.
+ */
+export function advantageAudienceEnabled(
+  a: CampaignConfig["audiences"][number],
+  saved?: Record<string, unknown>,
+  special = false,
+) {
+  if (a.advantageAudience !== undefined) return a.advantageAudience;
+  if (a.savedAudienceId && saved) {
+    const automation = saved.targeting_automation as
+      Record<string, unknown> | undefined;
+    return automation?.advantage_audience !== 0;
+  }
+  return special || !a.strictAge;
+}
+export function audienceAgeSettings(
+  a: CampaignConfig["audiences"][number],
+  saved?: Record<string, unknown>,
+  special = false,
+) {
+  if (special) return {};
+  const native = a.savedAudienceId && saved ? saved : undefined;
+  const minimum =
+    typeof native?.age_min === "number" ? native.age_min : a.ageMin;
+  const maximum =
+    typeof native?.age_max === "number" ? native.age_max : a.ageMax;
+  if (!advantageAudienceEnabled(a, native))
+    return { age_min: minimum, age_max: maximum };
+  const range = native?.age_range;
+  const validRange =
+    Array.isArray(range) &&
+    range.length === 2 &&
+    range.every((n) => Number.isInteger(n) && n >= 18 && n <= 65) &&
+    range[0] <= range[1];
+  return {
+    age_min: Math.min(minimum, 25),
+    age_max: 65,
+    age_range: validRange ? [...range] : [minimum, maximum],
+  };
+}
 export function audienceTargeting(
   config: CampaignConfig,
   index: number,
@@ -219,6 +260,9 @@ export function audienceTargeting(
     audience_network_positions: _n,
     whatsapp_positions: _w,
     threads_positions: _t,
+    age_min: _ageMin,
+    age_max: _ageMax,
+    age_range: _ageRange,
     genders: _g,
     device_platforms: _d,
     excluded_geo_locations: _eg,
@@ -278,18 +322,7 @@ export function audienceTargeting(
         }
       : {}),
     ...(a.locales?.length ? { locales: a.locales } : {}),
-    ...(special
-      ? {}
-      : {
-          age_min:
-            savedSelected && typeof saved?.age_min === "number"
-              ? saved.age_min
-              : a.ageMin,
-          age_max:
-            savedSelected && typeof saved?.age_max === "number"
-              ? saved.age_max
-              : a.ageMax,
-        }),
+    ...audienceAgeSettings(a, saved, special),
     ...detailedGroups(a.interests, a.detailedTargeting),
     ...(savedSelected && !special
       ? genders
@@ -300,16 +333,7 @@ export function audienceTargeting(
         : { genders: [a.gender === "MEN" ? 1 : 2] }),
     targeting_automation: {
       ...(automation ?? {}),
-      advantage_audience:
-        a.advantageAudience !== undefined
-          ? Number(a.advantageAudience)
-          : savedSelected
-            ? automation?.advantage_audience === 0
-              ? 0
-              : 1
-            : special || !a.strictAge
-              ? 1
-              : 0,
+      advantage_audience: Number(advantageAudienceEnabled(a, saved, special)),
     },
   };
 }

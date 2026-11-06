@@ -234,7 +234,7 @@ export function StudioConversationEditor({
           saved,
         ],
       }));
-      setNotice("Plantilla guardada: " + saved.name);
+      setNotice("Guardada en esta plataforma: " + saved.name);
     } catch (e) {
       setNotice(
         e instanceof Error ? e.message : "No se pudo guardar la plantilla.",
@@ -252,7 +252,7 @@ export function StudioConversationEditor({
           disabled={disabled || store.loading}
           onClick={() => void store.load(true).catch(() => {})}
         >
-          {store.loading ? "Cargando…" : "Buscar guardadas"}
+          {store.loading ? "Cargando…" : "Buscar en plataforma"}
         </button>
       </div>
       <select
@@ -302,6 +302,9 @@ export function StudioConversationEditor({
           ))}
         </optgroup>
       </select>
+      <small className="hint">
+        Guardadas aquí · No se sincronizan con la biblioteca de Meta.
+      </small>
       {value && (
         <div className="studio-conversation-fields">
           <label>
@@ -348,7 +351,7 @@ export function StudioConversationEditor({
             }
             onClick={() => void save()}
           >
-            {saving ? "Guardando…" : "Guardar plantilla"}
+            {saving ? "Guardando…" : "Guardar en plataforma"}
           </button>
           <div className="studio-conversation-preview">
             <span>{value.greeting || "Saludo del negocio"}</span>

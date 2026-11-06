@@ -451,7 +451,9 @@ export function StudioCampaignAudience({
             <>
               <div className="studio-audience-demographics">
                 <label>
-                  Desde
+                  {(value.advantageAudience ?? !value.strictAge)
+                    ? "Desde · sugerida"
+                    : "Desde"}
                   <input
                     aria-label={`Edad mínima del público ${index + 1}`}
                     type="number"
@@ -465,7 +467,9 @@ export function StudioCampaignAudience({
                   />
                 </label>
                 <label>
-                  Hasta
+                  {(value.advantageAudience ?? !value.strictAge)
+                    ? "Hasta · sugerida"
+                    : "Hasta"}
                   <input
                     aria-label={`Edad máxima del público ${index + 1}`}
                     type="number"
@@ -512,6 +516,11 @@ export function StudioCampaignAudience({
                 />
                 Público Advantage+
               </label>
+              {!special && (value.advantageAudience ?? !value.strictAge) && (
+                <small className="hint">
+                  Edades sugeridas · Meta puede ampliar el rango.
+                </small>
+              )}
               <div className="studio-audience-tags">
                 {(value.detailedTargeting ?? []).map((v) => (
                   <button

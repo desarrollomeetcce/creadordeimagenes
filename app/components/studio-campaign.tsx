@@ -2169,7 +2169,7 @@ export function StudioCampaign({
                 {draft.config.existingAdsetId ||
                 draft.config.existingAdsetIds?.length
                   ? " · Se conserva la segmentación existente"
-                  : ` · ${a.ageMin}–${a.ageMax} · ` +
+                  : (a.savedAudienceId?" · Edades del público guardado · ":` · ${a.ageMin}–${a.ageMax}${(a.advantageAudience??!a.strictAge)?" · Edades sugeridas (Advantage+)":" · Rango de edad obligatorio"} · `) +
                     [...(a.interests ?? []), ...(a.detailedTargeting ?? [])]
                       .map((v: any) => v.name)
                       .join(" · ")}

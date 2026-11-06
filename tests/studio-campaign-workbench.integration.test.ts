@@ -111,6 +111,15 @@ test("Meta interests -> named platform public -> existing sets with real seriali
     }
     if (edge === "adimages")
       return { images: { qa: { hash: "b".repeat(32) } } };
+    if (edge === "adsets") {
+      assert.equal((body as any).targeting.age_max, 65);
+      assert.equal((body as any).targeting.age_min, 25);
+      assert.deepEqual((body as any).targeting.age_range, [35, 45]);
+      assert.equal(
+        (body as any).targeting.targeting_automation.advantage_audience,
+        1,
+      );
+    }
     const next = String(++seq);
     objects.set(next, {
       ...body,
@@ -129,10 +138,11 @@ test("Meta interests -> named platform public -> existing sets with real seriali
     assert.equal(options.items[0].name, "Ingeniería de minas");
     const audience = {
       name: "Especialistas",
-      ageMin: 25,
-      ageMax: 60,
+      ageMin: 35,
+      ageMax: 45,
       gender: "ALL",
-      strictAge: true,
+      strictAge: false,
+      advantageAudience: true,
       interestSource: "MANUAL",
       interests: [{ id: "600001", name: "Nombre manipulado" }],
       selectionProofs: [options.proof],
@@ -299,6 +309,13 @@ test("Meta interests -> named platform public -> existing sets with real seriali
         );
       }
       for (const c of sets) {
+        assert.deepEqual(c.body.targeting.age_range, [35, 45]);
+        assert.equal(c.body.targeting.age_min, 25);
+        assert.equal(c.body.targeting.age_max, 65);
+        assert.equal(
+          c.body.targeting.targeting_automation.advantage_audience,
+          1,
+        );
         assert.deepEqual(c.body.targeting.flexible_spec, [
           { interests: [{ id: "600001", name: "Ingeniería de minas" }] },
         ]);
