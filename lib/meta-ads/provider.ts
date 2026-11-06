@@ -289,17 +289,40 @@ export class MetaReader {
         (!!objectId && /^\d{1,40}(?:,\d{1,40}){0,24}$/.test(objectId)),
       "Identificador Meta no válido.",
     );
+    if (edge === "objects") {
+      const ids = objectId!.split(",");
+      const fields = readFields ?? "id,status,effective_status,account_id";
+      demand(
+        !body &&
+          !after &&
+          new Set(ids).size === ids.length &&
+          fields
+            .split(",")
+            .every((f) =>
+              [
+                "id",
+                "name",
+                "status",
+                "effective_status",
+                "account_id",
+              ].includes(f),
+            ),
+        "La verificación solo permite leer estados de objetos concretos.",
+      );
+      const result = await this.selectedStatuses(ids, fields);
+      return Object.fromEntries(
+        result.data.map((row) => [String(row.id), row]),
+      );
+    }
     await this.quota?.beforeRead();
     const path =
       edge === "assigned_pages"
         ? "me/assigned_pages"
         : edge === "pages"
           ? "me/accounts"
-          : edge === "objects"
-            ? ""
-            : edge === "object"
-              ? objectId!
-              : `act_${accountId}/${edge}`;
+          : edge === "object"
+            ? objectId!
+            : `act_${accountId}/${edge}`;
     const params = new URLSearchParams();
     if (body) {
       for (const [key, value] of Object.entries(body))
@@ -319,13 +342,6 @@ export class MetaReader {
     if (!body && after) {
       demand(after.length <= 1000, "Cursor Meta no válido.");
       params.set("after", after);
-    }
-    if (!body && edge === "objects") {
-      params.set("ids", objectId!);
-      params.set(
-        "fields",
-        readFields ?? "id,status,effective_status,account_id",
-      );
     }
     if (!body && edge === "object")
       params.set(
@@ -665,8 +681,10 @@ export class MetaReader {
     }
     return { ...minimal, data: [...rows.values()], warnings };
   }
-  private async selectedStatuses(ids: string[]): Promise<Page> {
-    const selectedFields = "id,name,account_id,status,effective_status";
+  private async selectedStatuses(
+    ids: string[],
+    selectedFields = "id,name,account_id,status,effective_status",
+  ): Promise<Page> {
     const proof = this.appSecret
       ? createHmac("sha256", this.appSecret).update(this.token).digest("hex")
       : undefined;
@@ -702,6 +720,7 @@ export class MetaReader {
       version: this.version,
       endpoint: "estados seleccionados (lectura)",
       fields: selectedFields,
+      method: "POST" as const,
     };
     if (
       !r.ok ||
@@ -740,7 +759,9 @@ export class MetaReader {
         throw new AppError("Meta devolvió un estado ilegible.", 502);
       }
       if (part.code < 200 || part.code >= 300 || row?.error) {
-        const error = new MetaGraphError(part.code, row, this.token, context);
+        const error = new MetaGraphError(part.code, row, this.token, {
+          ...context,method:"GET",endpoint:ids[i],
+        });
         await this.quota?.limited(
           error,
           retryDelay(r.headers.get("retry-after")),

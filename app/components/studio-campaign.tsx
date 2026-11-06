@@ -1412,23 +1412,25 @@ export function StudioCampaign({
         <div
           className={
             "studio-publish-progress " +
-            (draft.waiting || draft.canResumeWait
+            (draft.waiting || draft.canResumeWait || draft.canResumeVerification
               ? "waiting"
               : draft.status.toLowerCase())
           }
           role="status"
         >
           <strong>
-            {draft.waiting || draft.canResumeWait
-              ? "En espera de turno"
-              : (
-                  {
-                    DRAFT: "Borrador guardado",
-                    PUBLISHING: "Publicando en Meta…",
-                    PUBLISHED: "✓ Publicación confirmada por Meta",
-                    NEEDS_REVIEW: "Intento incompleto",
-                  } as any
-                )[draft.status]}
+            {draft.canResumeVerification
+              ? "Verificación pendiente"
+              : draft.waiting || draft.canResumeWait
+                ? "En espera de turno"
+                : (
+                    {
+                      DRAFT: "Borrador guardado",
+                      PUBLISHING: "Publicando en Meta…",
+                      PUBLISHED: "✓ Publicación confirmada por Meta",
+                      NEEDS_REVIEW: "Intento incompleto",
+                    } as any
+                  )[draft.status]}
           </strong>
           {draft.status === "PUBLISHING" && (
             <progress max={draft.total} value={draft.completed} />
@@ -1443,11 +1445,12 @@ export function StudioCampaign({
               espera, sin repetir los pasos confirmados.
             </p>
           )}
-          {draft.canResumeWait && (
+          {(draft.canResumeWait || draft.canResumeVerification) && (
             <>
               <p>
-                Este intento se detuvo antes de enviar la siguiente solicitud.
-                Puedes continuar desde el avance guardado.
+                {draft.canResumeVerification
+                  ? "Los pasos confirmados se conservan. Consulta de nuevo los estados para continuar sin crear anuncios duplicados."
+                  : "Este intento se detuvo antes de enviar la siguiente solicitud. Puedes continuar desde el avance guardado."}
               </p>
               <button
                 type="button"
@@ -1477,16 +1480,20 @@ export function StudioCampaign({
                   }
                 }}
               >
-                Continuar publicación
+                {draft.canResumeVerification
+                  ? "Verificar y continuar"
+                  : "Continuar publicación"}
               </button>
             </>
           )}
-          {draft.error && !draft.canResumeWait && (
-            <details>
-              <summary>Ver motivo del intento</summary>
-              <p>{draft.error}</p>
-            </details>
-          )}
+          {draft.error &&
+            !draft.canResumeWait &&
+            !draft.canResumeVerification && (
+              <details>
+                <summary>Ver motivo del intento</summary>
+                <p>{draft.error}</p>
+              </details>
+            )}
           {(draft.status !== "PUBLISHING" || halted) && (
             <div className="studio-campaign-recovery">
               <button

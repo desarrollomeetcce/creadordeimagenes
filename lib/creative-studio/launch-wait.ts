@@ -19,6 +19,26 @@ export function canResumeLocalWait(d: {
     d.steps.slice(index + 1).every((s) => s.state === "PENDING" && !s.receipt)
   );
 }
+export function canResumeReadVerification(d: {
+  status: string;
+  error: string | null;
+  steps: LaunchStep[];
+}) {
+  if (
+    d.status !== "NEEDS_REVIEW" ||
+    !d.error?.includes("The ids query parameter is deprecated in v26.0+")
+  )
+    return false;
+  const index = d.steps.findIndex((s) => s.state !== "DONE");
+  const step = d.steps[index];
+  return (
+    !!step &&
+    (step.kind === "VERIFY" || step.kind === "VERIFY_LIVE") &&
+    step.state === "UNCERTAIN" &&
+    !step.receipt &&
+    d.steps.slice(index + 1).every((s) => s.state === "PENDING" && !s.receipt)
+  );
+}
 export function launchPollDelay(
   next: {
     waiting?: boolean;

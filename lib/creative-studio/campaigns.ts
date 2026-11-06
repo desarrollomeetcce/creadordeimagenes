@@ -10,7 +10,7 @@ import { campaignPageIssue } from "./page-errors";
 import { z } from "zod";
 import { MetaGraphError } from "../meta-ads/graph-error";
 import { MetaQuotaWait } from "../meta-ads/quota";
-import { canResumeLocalWait } from "./launch-wait";
+import { canResumeLocalWait, canResumeReadVerification } from "./launch-wait";
 import { discoverCampaignPages } from "./pages";
 import { db } from "../db";
 import { demand, AppError } from "../errors";
@@ -493,6 +493,11 @@ function publicLaunch(d: any) {
       error: d.error,
       steps,
     }),
+    canResumeVerification: canResumeReadVerification({
+      status: d.status,
+      error: d.error,
+      steps,
+    }),
     config,
     items: d.campaigns,
     summary: launchSummary(d.campaigns, config),
@@ -546,7 +551,8 @@ export async function resumeLaunchWait(
   const steps = structuredClone(d.steps) as LaunchStep[];
   demand(
     d.revision === b.revision &&
-      canResumeLocalWait({ status: d.status, error: d.error, steps }),
+      (canResumeLocalWait({ status: d.status, error: d.error, steps }) ||
+        canResumeReadVerification({ status: d.status, error: d.error, steps })),
     "Este resultado requiere revisión; no se puede repetir automáticamente.",
     409,
   );

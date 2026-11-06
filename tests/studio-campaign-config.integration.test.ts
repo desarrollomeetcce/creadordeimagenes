@@ -12,6 +12,7 @@ import {
   getLaunch,
 } from "../lib/creative-studio/campaigns";
 import { MetaQuotaWait } from "../lib/meta-ads/quota";
+import { MetaGraphError } from "../lib/meta-ads/graph-error";
 import { legacyPacingMessage } from "../lib/creative-studio/launch-wait";
 import { suggestCampaign } from "../lib/creative-studio/campaign-suggestion";
 import { adapter } from "../lib/providers";
@@ -40,11 +41,28 @@ test("Campaign objectives reach verified paused objects with exact distribution,
     fetch = globalThis.fetch;
   let seq = 9908800000;
   let waitInjection: "pacing" | "quota" | null = null;
+  let retiredVerification = true;
   const objects = new Map<string, any>(),
     calls: any[] = [],
     drafts: string[] = [];
-  globalThis.fetch = async () => {
-    throw Error("External transport blocked");
+  globalThis.fetch = async (input, init) => {
+    const url = new URL(String(input)),
+      params = new URLSearchParams(String(init?.body));
+    assert.equal(url.hostname, "graph.facebook.com");
+    assert.equal(init?.method, "POST");
+    assert(!url.searchParams.has("ids") && !params.has("ids"));
+    const batch = JSON.parse(params.get("batch")!);
+    assert(batch.length <= 25);
+    return Response.json(
+      batch.map((part: any) => {
+        assert.equal(part.method, "GET");
+        const u = new URL(part.relative_url, "https://graph.facebook.com/");
+        assert(!u.searchParams.has("ids"));
+        const value = objects.get(u.pathname.slice(1));
+        assert(value);
+        return { code: 200, body: JSON.stringify(value) };
+      }),
+    );
   };
   MetaReader.prototype.launchRequest = async function (
     account,
@@ -75,10 +93,23 @@ test("Campaign objectives reach verified paused objects with exact distribution,
       };
     if (edge === "adimages")
       return { images: { qa: { hash: "b".repeat(32) } } };
-    if (edge === "objects")
-      return Object.fromEntries(
-        id!.split(",").map((id) => [id, objects.get(id)]),
-      );
+    if (edge === "objects") {
+      if (retiredVerification) {
+        retiredVerification = false;
+        throw new MetaGraphError(
+          500,
+          {
+            error: {
+              code: 100,
+              message: "The ids query parameter is deprecated in v26.0+.",
+            },
+          },
+          "synthetic",
+          { version: "v26.0", endpoint: "", fields: fields!, method: "GET" },
+        );
+      }
+      return old.call(this, account, edge, body, id, fields);
+    }
     if (edge === "object") {
       const obj = objects.get(id!);
       assert(obj);
@@ -234,6 +265,25 @@ test("Campaign objectives reach verified paused objects with exact distribution,
       }
       for (let i = 0; i < 25 && state.status === "PUBLISHING"; i++)
         state = await tickLaunch(owner, d.id);
+      if (state.canResumeVerification) {
+        assert.equal(state.status, "NEEDS_REVIEW");
+        const before = calls.filter((c) =>
+          ["campaigns", "adsets", "ads", "adcreatives"].includes(c.edge),
+        ).length;
+        state = await resumeLaunchWait(owner, d.id, {
+          revision: state.revision,
+        });
+        state = await tickLaunch(owner, d.id);
+        for (let i = 0; i < 25 && state.status === "PUBLISHING"; i++)
+          state = await tickLaunch(owner, d.id);
+        assert.equal(
+          calls.filter((c) =>
+            ["campaigns", "adsets", "ads", "adcreatives"].includes(c.edge),
+          ).length,
+          before,
+          "Resume repeats verification reads only; all created object IDs remain unchanged",
+        );
+      }
       assert.equal(state.status, "PUBLISHED", JSON.stringify(state));
       const sent = calls.slice(start);
       assert.equal(sent.filter((c) => c.edge === "ads").length, 2);
